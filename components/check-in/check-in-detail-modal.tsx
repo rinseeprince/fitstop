@@ -98,7 +98,7 @@ export const CheckInDetailModal = ({
 
   return (
     <Dialog open={!!checkInId} onOpenChange={onClose}>
-      <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-[90vw] sm:max-w-[90vw] md:max-w-[85vw] lg:max-w-[80vw] w-full max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <div className="flex items-center justify-between">
             <DialogTitle>
@@ -147,8 +147,7 @@ export const CheckInDetailModal = ({
               <div>
                 <h3 className="text-lg font-semibold mb-4">AI Analysis</h3>
                 <AISummaryCard
-                  checkIn={data.checkIn}
-                  clientId={clientId}
+                  checkInId={checkInId}
                   onUpdate={handleResponseSent}
                 />
               </div>
@@ -157,9 +156,9 @@ export const CheckInDetailModal = ({
             <div>
               <h3 className="text-lg font-semibold mb-4">Your Response</h3>
               <CheckInResponseEditor
-                checkIn={data.checkIn}
+                checkInId={checkInId}
                 clientName={data.client?.name || "Client"}
-                onResponseSent={handleResponseSent}
+                onSent={handleResponseSent}
               />
             </div>
           </div>

@@ -143,6 +143,67 @@ export type Database = {
           created_at?: string;
         };
       };
+      coaches: {
+        Row: {
+          id: string;
+          user_id: string;
+          name: string;
+          email: string;
+          avatar_url: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          name: string;
+          email: string;
+          avatar_url?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          name?: string;
+          email?: string;
+          avatar_url?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      clients: {
+        Row: {
+          id: string;
+          coach_id: string;
+          name: string;
+          email: string;
+          avatar_url: string | null;
+          active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          coach_id: string;
+          name: string;
+          email: string;
+          avatar_url?: string | null;
+          active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          coach_id?: string;
+          name?: string;
+          email?: string;
+          avatar_url?: string | null;
+          active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
     };
   };
 };

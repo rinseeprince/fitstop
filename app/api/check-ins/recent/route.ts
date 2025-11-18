@@ -1,15 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/services/supabase-client";
+import { supabaseAdmin } from "@/services/supabase-admin";
 
 export async function GET(request: NextRequest) {
   try {
     // Get recent check-ins with client info
+    // Using explicit foreign key syntax: clients!client_id
     const { data: checkIns, error } = await supabaseAdmin
       .from("check_ins")
       .select(
         `
         *,
-        clients:client_id (
+        clients!client_id (
           id,
           name,
           email,
@@ -25,7 +26,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Transform the data to include client info at top level
-    const formattedCheckIns = (checkIns || []).map((checkIn) => ({
+    const formattedCheckIns = (checkIns || []).map((checkIn: any) => ({
       id: checkIn.id,
       clientId: checkIn.client_id,
       clientName: checkIn.clients?.name || "Unknown Client",

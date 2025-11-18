@@ -1,5 +1,5 @@
 import useSWR from "swr";
-import type { CheckIn, GetCheckInsResponse } from "@/types/check-in";
+import type { CheckIn, GetCheckInsResponse, Client } from "@/types/check-in";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
@@ -49,6 +49,24 @@ export const useCheckIn = (checkInId: string) => {
 
   return {
     checkIn: data,
+    isLoading,
+    isError: error,
+    mutate,
+  };
+};
+
+// Hook to fetch a single client
+export const useClient = (clientId: string) => {
+  const { data, error, isLoading, mutate } = useSWR<{ client: Client }>(
+    clientId ? `/api/clients/${clientId}` : null,
+    fetcher,
+    {
+      revalidateOnFocus: false,
+    }
+  );
+
+  return {
+    client: data?.client,
     isLoading,
     isError: error,
     mutate,

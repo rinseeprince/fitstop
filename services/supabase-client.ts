@@ -1,23 +1,23 @@
-import { createClient } from "@supabase/supabase-js";
+import { createBrowserClient } from "@supabase/ssr";
 import type { Database } from "@/types/database";
 
-// Supabase configuration
+// Supabase configuration (client-safe environment variables only)
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
-// Client-side Supabase client (for browser)
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error(
+    "Missing Supabase environment variables. Ensure NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY are set."
+  );
+}
 
-// Server-side Supabase client with service role (for API routes)
-export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false,
-  },
-});
+// Client-side Supabase client using SSR package with cookie storage
+// This ensures sessions are stored in cookies (not localStorage) for middleware compatibility
+export const supabase = createBrowserClient<Database>(
+  supabaseUrl,
+  supabaseAnonKey
+);
 
-// Helper to create a Supabase client for server components
-export const createServerClient = () => {
-  return createClient(supabaseUrl, supabaseAnonKey);
-};
+// Export createServerClient from @supabase/ssr for middleware and server components
+// This properly handles cookies for authentication while respecting RLS
+export { createServerClient } from "@supabase/ssr";

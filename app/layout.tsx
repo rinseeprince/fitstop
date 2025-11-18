@@ -2,14 +2,17 @@ import type React from "react"
 import type { Metadata } from "next"
 import { Geist, Geist_Mono, Inter } from "next/font/google"
 import "./globals.css"
+import { ThemeProvider } from "next-themes"
+import { AuthProvider } from "@/contexts/auth-context"
+import { Toaster } from "@/components/ui/toaster"
 
 const _geist = Geist({ subsets: ["latin"] })
 const _geistMono = Geist_Mono({ subsets: ["latin"] })
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "v0 App",
-  description: "Created with v0",
+  title: "CoachHub - Client Management Platform",
+  description: "Manage your fitness coaching clients with ease",
   generator: "v0.app",
   icons: {
     icon: [
@@ -37,7 +40,14 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={inter.className}>{children}</body>
+      <body className={inter.className}>
+        <ThemeProvider attribute="class" defaultTheme="light">
+          <AuthProvider>
+            {children}
+            <Toaster />
+          </AuthProvider>
+        </ThemeProvider>
+      </body>
     </html>
   )
 }

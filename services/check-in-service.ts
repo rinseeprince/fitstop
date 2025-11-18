@@ -1,4 +1,4 @@
-import { supabaseAdmin } from "./supabase-client";
+import { supabaseAdmin } from "./supabase-admin";
 import type {
   CheckIn,
   CheckInFormData,
@@ -26,7 +26,7 @@ export const createCheckInToken = async (
       client_id: clientId,
       token,
       expires_at: expiresAt.toISOString(),
-    })
+    } as any)
     .select()
     .single();
 
@@ -35,8 +35,8 @@ export const createCheckInToken = async (
   }
 
   return {
-    token: data.token,
-    expiresAt: data.expires_at,
+    token: (data as any).token,
+    expiresAt: (data as any).expires_at,
   };
 };
 
@@ -56,20 +56,20 @@ export const validateCheckInToken = async (
 
   // Check if token is expired
   const now = new Date();
-  const expiresAt = new Date(data.expires_at);
+  const expiresAt = new Date((data as any).expires_at);
   if (now > expiresAt) {
     return { valid: false };
   }
 
   // Check if token was already used
-  if (data.used_at) {
+  if ((data as any).used_at) {
     return { valid: false };
   }
 
   return {
     valid: true,
-    clientId: data.client_id,
-    tokenId: data.id,
+    clientId: (data as any).client_id,
+    tokenId: (data as any).id,
   };
 };
 
@@ -78,7 +78,7 @@ export const markTokenAsUsed = async (
   tokenId: string,
   checkInId: string
 ): Promise<void> => {
-  const { error } = await supabaseAdmin
+  const { error } = await (supabaseAdmin as any)
     .from("check_in_tokens")
     .update({
       used_at: new Date().toISOString(),
@@ -96,7 +96,7 @@ export const submitCheckIn = async (
   clientId: string,
   formData: CheckInFormData
 ): Promise<string> => {
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await (supabaseAdmin as any)
     .from("check_ins")
     .insert({
       client_id: clientId,
@@ -134,7 +134,7 @@ export const submitCheckIn = async (
     throw new Error(`Failed to submit check-in: ${error.message}`);
   }
 
-  return data.id;
+  return (data as any).id;
 };
 
 // Get a check-in by ID
@@ -198,7 +198,7 @@ export const updateCheckInStatus = async (
   checkInId: string,
   status: "pending" | "ai_processed" | "reviewed"
 ): Promise<void> => {
-  const { error } = await supabaseAdmin
+  const { error } = await (supabaseAdmin as any)
     .from("check_ins")
     .update({ status })
     .eq("id", checkInId);
@@ -216,7 +216,7 @@ export const updateCheckInAISummary = async (
   aiRecommendations: any,
   aiResponseDraft: string
 ): Promise<void> => {
-  const { error } = await supabaseAdmin
+  const { error } = await (supabaseAdmin as any)
     .from("check_ins")
     .update({
       ai_summary: aiSummary,
@@ -238,7 +238,7 @@ export const updateCheckInResponse = async (
   checkInId: string,
   coachResponse: string
 ): Promise<void> => {
-  const { error } = await supabaseAdmin
+  const { error } = await (supabaseAdmin as any)
     .from("check_ins")
     .update({
       coach_response: coachResponse,
@@ -254,7 +254,7 @@ export const updateCheckInResponse = async (
 
 // Mark response as sent
 export const markResponseAsSent = async (checkInId: string): Promise<void> => {
-  const { error } = await supabaseAdmin
+  const { error } = await (supabaseAdmin as any)
     .from("check_ins")
     .update({
       response_sent_at: new Date().toISOString(),

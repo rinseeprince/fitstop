@@ -3,18 +3,47 @@
 import type { ReactNode } from "react"
 import { SidebarNav } from "./sidebar-nav"
 import { Button } from "./ui/button"
-import { Menu, Bell, User, ChevronLeft, ChevronRight } from "lucide-react"
+import { Menu, Bell, User, ChevronLeft, ChevronRight, LogOut } from "lucide-react"
 import { ThemeToggle } from "./theme-toggle"
 import { motion, AnimatePresence } from "framer-motion"
 import { useState } from "react"
-import { ThemeProvider } from "next-themes"
+import { useAuth } from "@/contexts/auth-context"
+import { useRouter } from "next/navigation"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { useToast } from "@/hooks/use-toast"
 
 export function AppLayout({ children }: { children: ReactNode }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const { coach, logout, loading } = useAuth()
+  const router = useRouter()
+  const { toast } = useToast()
+
+  const handleLogout = async () => {
+    try {
+      await logout()
+      toast({
+        title: "Logged out successfully",
+        description: "See you next time!",
+      })
+      router.push("/login")
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: "Failed to log out",
+        variant: "destructive",
+      })
+    }
+  }
 
   return (
-    <ThemeProvider attribute="class" defaultTheme="light">
-      <div className="flex min-h-screen bg-background">
+    <div className="flex min-h-screen bg-background">
         <AnimatePresence mode="wait">
           <motion.aside
             initial={false}
@@ -50,15 +79,36 @@ export function AppLayout({ children }: { children: ReactNode }) {
                 exit={{ opacity: 0 }}
                 className="border-t border-border/50 p-6"
               >
-                <div className="flex items-center gap-3 rounded-lg bg-muted/50 p-3 transition-all duration-150 hover:bg-muted">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-xs bg-primary/10 text-primary">
-                    <User className="h-4 w-4" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">Coach Name</p>
-                    <p className="text-xs text-muted-foreground truncate">coach@example.com</p>
-                  </div>
-                </div>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button className="flex items-center gap-3 rounded-lg bg-muted/50 p-3 transition-all duration-150 hover:bg-muted w-full text-left">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-xs bg-primary/10 text-primary">
+                        <User className="h-4 w-4" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">
+                          {loading ? "Loading..." : coach?.name || "Coach"}
+                        </p>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {loading ? "" : coach?.email || ""}
+                        </p>
+                      </div>
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-56">
+                    <DropdownMenuLabel>My Account</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => router.push("/settings")}>
+                      <User className="h-4 w-4 mr-2" />
+                      Profile Settings
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={handleLogout} className="text-destructive">
+                      <LogOut className="h-4 w-4 mr-2" />
+                      Log out
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </motion.div>
             )}
           </motion.aside>
@@ -82,6 +132,5 @@ export function AppLayout({ children }: { children: ReactNode }) {
           <main className="flex-1 overflow-y-auto p-6 lg:p-8">{children}</main>
         </div>
       </div>
-    </ThemeProvider>
   )
 }

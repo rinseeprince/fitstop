@@ -5,9 +5,12 @@ import {
   markTokenAsUsed,
   getPreviousCheckIn,
 } from "@/services/check-in-service";
+import { getClientById } from "@/services/client-service";
 import { uploadProgressPhotoFromBase64 } from "@/services/storage-service";
 import { generateCheckInSummary } from "@/services/ai-service";
 import { updateCheckInAISummary, getClientCheckIns } from "@/services/check-in-service";
+import { supabaseAdmin } from "@/services/supabase-admin";
+import { checkInRateLimit } from "@/lib/rate-limit";
 import type {
   ValidateCheckInTokenResponse,
   SubmitCheckInRequest,
@@ -19,6 +22,9 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ token: string }> }
 ) {
+  // Apply rate limiting
+  const rateLimitResult = checkInRateLimit(request);
+  if (rateLimitResult) return rateLimitResult;
   try {
     const { token } = await params;
 
@@ -32,15 +38,31 @@ export async function GET(
       return NextResponse.json(response, { status: 400 });
     }
 
-    // TODO: Fetch actual client info from database
-    // For now, return mock data
+    // Fetch actual client info from database
+    const client = await getClientById(validation.clientId);
+
+    if (!client) {
+      const response: ValidateCheckInTokenResponse = {
+        valid: false,
+        errorMessage: "Client not found",
+      };
+      return NextResponse.json(response, { status: 404 });
+    }
+
+    // Fetch coach info
+    const { data: coach } = await supabaseAdmin
+      .from("coaches")
+      .select("name")
+      .eq("id", client.coachId)
+      .single();
+
     const response: ValidateCheckInTokenResponse = {
       valid: true,
       clientInfo: {
-        id: validation.clientId,
-        name: "Client Name", // TODO: Fetch from database
-        email: "client@example.com",
-        coachName: "Coach Name",
+        id: client.id,
+        name: client.name,
+        email: client.email,
+        coachName: (coach as any)?.name || "Your Coach",
       },
     };
 
@@ -59,6 +81,10 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ token: string }> }
 ) {
+  // Apply rate limiting
+  const rateLimitResult = checkInRateLimit(request);
+  if (rateLimitResult) return rateLimitResult;
+
   try {
     const { token } = await params;
     const body: SubmitCheckInRequest = await request.json();
@@ -116,8 +142,11 @@ export async function POST(
       await markTokenAsUsed(validation.tokenId, checkInId);
     }
 
+    // Get client for AI summary
+    const client = await getClientById(clientId);
+
     // Trigger AI summary generation asynchronously
-    triggerAISummaryGeneration(checkInId, clientId).catch((error) => {
+    triggerAISummaryGeneration(checkInId, clientId, client?.name || "Client").catch((error) => {
       console.error("Error generating AI summary:", error);
     });
 
@@ -142,7 +171,8 @@ export async function POST(
 // Helper function to trigger AI summary generation
 async function triggerAISummaryGeneration(
   checkInId: string,
-  clientId: string
+  clientId: string,
+  clientName: string
 ): Promise<void> {
   try {
     // Get current check-in
@@ -160,7 +190,7 @@ async function triggerAISummaryGeneration(
     const aiSummary = await generateCheckInSummary(
       currentCheckIn,
       previousCheckIns,
-      "Client Name" // TODO: Fetch actual client name
+      clientName
     );
 
     // Update check-in with AI summary

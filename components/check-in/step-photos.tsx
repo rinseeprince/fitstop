@@ -154,7 +154,7 @@ export const StepPhotos = ({ data, onChange }: StepPhotosProps) => {
                 )}
 
                 <input
-                  ref={(el) => (fileInputRefs.current[type] = el)}
+                  ref={(el) => { fileInputRefs.current[type] = el; }}
                   type="file"
                   accept="image/*"
                   capture="environment"

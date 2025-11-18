@@ -127,6 +127,30 @@ export type CheckInToken = {
   createdAt: string;
 };
 
+// Coach record from database
+export type Coach = {
+  id: string;
+  userId?: string; // Reference to auth.users
+  name: string;
+  email: string;
+  avatarUrl?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+// Client record from database
+export type Client = {
+  id: string;
+  coachId: string;
+  name: string;
+  email: string;
+  avatarUrl?: string;
+  notes?: string;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
 // Client info for check-in page
 export type CheckInClientInfo = {
   id: string;
