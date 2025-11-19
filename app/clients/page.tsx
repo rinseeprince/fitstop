@@ -5,10 +5,12 @@ import { AppLayout } from "@/components/app-layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import { ClientStatusBadge } from "@/components/client-status-badge";
 import { EngagementIndicator } from "@/components/engagement-indicator";
 import { AddClientDialog } from "@/components/add-client-dialog";
 import { EditClientDialog } from "@/components/edit-client-dialog";
+import { OverdueBanner } from "@/components/clients/overdue-banner";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,11 +21,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Search, Loader2, Trash2, Eye, Send, MessageSquare, AlertCircle } from "lucide-react";
+import { Search, Loader2, Trash2, Eye, Send, MessageSquare, AlertCircle, Clock } from "lucide-react";
 import Link from "next/link";
 import { useToast } from "@/hooks/use-toast";
 import type { ClientWithCheckInInfo } from "@/services/client-service";
 import { SendCheckInDialog } from "@/components/check-in/send-check-in-dialog";
+import { useOverdueClients } from "@/hooks/use-check-in-data";
 
 type ClientStatus = "active" | "inactive";
 
@@ -36,6 +39,18 @@ export default function ClientsPage() {
   const [deleteClientId, setDeleteClientId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const { toast } = useToast();
+  const { clients: overdueClients } = useOverdueClients();
+
+  // Helper to check if a client is overdue
+  const isClientOverdue = (clientId: string) => {
+    return overdueClients.some((c) => c.id === clientId);
+  };
+
+  // Helper to get days overdue for a client
+  const getClientDaysOverdue = (clientId: string) => {
+    const overdueClient = overdueClients.find((c) => c.id === clientId);
+    return overdueClient?.daysOverdue || 0;
+  };
 
   const fetchClients = async () => {
     try {
@@ -166,6 +181,9 @@ export default function ClientsPage() {
           </div>
           <AddClientDialog onClientAdded={fetchClients} />
         </div>
+
+        {/* Overdue Banner */}
+        <OverdueBanner />
 
         {/* Search and Filters */}
         <Card>
@@ -304,7 +322,15 @@ export default function ClientsPage() {
                                 .join("")}
                             </div>
                             <div>
-                              <span className="font-medium">{client.name}</span>
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium">{client.name}</span>
+                                {isClientOverdue(client.id) && (
+                                  <Badge variant="destructive" className="text-xs">
+                                    <Clock className="h-3 w-3 mr-1" />
+                                    {getClientDaysOverdue(client.id)}d overdue
+                                  </Badge>
+                                )}
+                              </div>
                               <p className="text-xs text-muted-foreground">
                                 {client.email}
                               </p>

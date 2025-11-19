@@ -3,8 +3,9 @@
 import type { ReactNode } from "react"
 import { SidebarNav } from "./sidebar-nav"
 import { Button } from "./ui/button"
-import { Menu, Bell, User, ChevronLeft, ChevronRight, LogOut } from "lucide-react"
+import { Menu, User, ChevronLeft, ChevronRight, LogOut } from "lucide-react"
 import { ThemeToggle } from "./theme-toggle"
+import { NotificationsDropdown } from "./navbar/notifications-dropdown"
 import { motion, AnimatePresence } from "framer-motion"
 import { useState } from "react"
 import { useAuth } from "@/contexts/auth-context"
@@ -122,10 +123,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
             </Button>
             <div className="flex-1" />
             <ThemeToggle />
-            <Button variant="ghost" size="icon" className="relative hover:scale-105 transition-transform duration-150">
-              <Bell className="h-5 w-5" />
-              <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-destructive animate-pulse" />
-            </Button>
+            <NotificationsDropdown />
           </header>
 
           {/* Page Content */}

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/services/supabase-admin";
+import { mapCheckInFromDatabase, type CheckInRow } from "@/types/database";
 
 export async function GET(
   request: NextRequest,
@@ -40,46 +41,20 @@ export async function GET(
       );
     }
 
-    // Type assertion for the relational query result
-    const checkInData = data as any;
-
-    // Transform data to match expected format
-    const checkIn = {
-      id: checkInData.id,
-      clientId: checkInData.client_id,
-      status: checkInData.status,
-      mood: checkInData.mood,
-      energy: checkInData.energy,
-      sleep: checkInData.sleep,
-      stress: checkInData.stress,
-      notes: checkInData.notes,
-      weight: checkInData.weight,
-      weightUnit: checkInData.weight_unit,
-      bodyFatPercentage: checkInData.body_fat_percentage,
-      waist: checkInData.waist,
-      hips: checkInData.hips,
-      chest: checkInData.chest,
-      arms: checkInData.arms,
-      thighs: checkInData.thighs,
-      measurementUnit: checkInData.measurement_unit,
-      photoFront: checkInData.photo_front,
-      photoSide: checkInData.photo_side,
-      photoBack: checkInData.photo_back,
-      workoutsCompleted: checkInData.workouts_completed,
-      adherencePercentage: checkInData.adherence_percentage,
-      prs: checkInData.prs,
-      challenges: checkInData.challenges,
-      aiSummary: checkInData.ai_summary,
-      aiInsights: checkInData.ai_insights,
-      aiRecommendations: checkInData.ai_recommendations,
-      aiResponseDraft: checkInData.ai_response_draft,
-      aiProcessedAt: checkInData.ai_processed_at,
-      coachResponse: checkInData.coach_response,
-      coachReviewedAt: checkInData.coach_reviewed_at,
-      responseSentAt: checkInData.response_sent_at,
-      createdAt: checkInData.created_at,
-      updatedAt: checkInData.updated_at,
+    // Type the relational query result properly
+    type CheckInWithClient = CheckInRow & {
+      clients: {
+        id: string;
+        name: string;
+        email: string;
+        avatar_url: string | null;
+      } | null;
     };
+
+    const checkInData = data as CheckInWithClient;
+
+    // Use mapper function to transform database row to application type
+    const checkIn = mapCheckInFromDatabase(checkInData);
 
     return NextResponse.json({
       checkIn,

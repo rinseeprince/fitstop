@@ -5,12 +5,16 @@ import {
   markTokenAsUsed,
   getPreviousCheckIn,
 } from "@/services/check-in-service";
-import { getClientById } from "@/services/client-service";
+import { getClientById, updateClient } from "@/services/client-service";
 import { uploadProgressPhotoFromBase64 } from "@/services/storage-service";
 import { generateCheckInSummary } from "@/services/ai-service";
 import { updateCheckInAISummary, getClientCheckIns } from "@/services/check-in-service";
+import { markReminderAsResponded } from "@/services/reminder-service";
+import { updateClientAdherenceStats } from "@/services/check-in-tracking-service";
+import { updateClientBMR } from "@/services/bmr-service";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { checkInRateLimit } from "@/lib/rate-limit";
+import { submitCheckInSchema } from "@/lib/validations/check-in";
 import type {
   ValidateCheckInTokenResponse,
   SubmitCheckInRequest,
@@ -87,7 +91,30 @@ export async function POST(
 
   try {
     const { token } = await params;
-    const body: SubmitCheckInRequest = await request.json();
+    const rawBody = await request.json();
+
+    // Validate input using Zod schema
+    const validationResult = submitCheckInSchema.safeParse({
+      ...rawBody,
+      token,
+    });
+
+    if (!validationResult.success) {
+      const response: SubmitCheckInResponse = {
+        success: false,
+        errorMessage: "Invalid input data",
+      };
+      console.error("Validation errors:", validationResult.error.format());
+      return NextResponse.json(
+        {
+          ...response,
+          validationErrors: validationResult.error.format(),
+        },
+        { status: 400 }
+      );
+    }
+
+    const body = validationResult.data;
 
     // Validate token
     const validation = await validateCheckInToken(token);
@@ -131,19 +158,53 @@ export async function POST(
       );
     }
 
-    // Submit check-in
-    const checkInId = await submitCheckIn(clientId, {
-      ...body,
-      ...photoUrls,
-    });
+    // Submit check-in and mark token as used in a coordinated manner
+    let checkInId: string;
+    try {
+      // Step 1: Create the check-in
+      checkInId = await submitCheckIn(clientId, {
+        ...body,
+        ...photoUrls,
+      });
 
-    // Mark token as used
-    if (validation.tokenId) {
-      await markTokenAsUsed(validation.tokenId, checkInId);
+      // Step 2: Mark token as used immediately after successful check-in creation
+      if (validation.tokenId) {
+        await markTokenAsUsed(validation.tokenId, checkInId);
+      }
+    } catch (error) {
+      // If token marking fails after check-in creation, log the issue but don't fail
+      // The check-in exists and the token will eventually expire
+      if (error instanceof Error && error.message.includes("mark token")) {
+        console.error("Check-in created but token marking failed:", error);
+        // Continue with the flow - the check-in was successful
+      } else {
+        // If check-in creation failed, re-throw the error
+        throw error;
+      }
     }
 
-    // Get client for AI summary
+    // Get client for metrics update and AI summary
     const client = await getClientById(clientId);
+
+    // Critical operations that should be awaited
+    try {
+      // Update client's current weight and body fat from check-in, then calculate BMR
+      if (client) {
+        await updateClientMetricsFromCheckIn(client, body);
+      }
+
+      // Update client adherence stats
+      await updateClientAdherenceStats(clientId);
+    } catch (error) {
+      console.error("Error in critical post-submission operations:", error);
+      // Log but don't fail the submission
+    }
+
+    // Non-critical async operations that can run in the background
+    // Mark reminder as responded (if there was a reminder sent)
+    markReminderAsResponded(clientId, checkInId).catch((error) => {
+      console.error("Error marking reminder as responded:", error);
+    });
 
     // Trigger AI summary generation asynchronously
     triggerAISummaryGeneration(checkInId, clientId, client?.name || "Client").catch((error) => {
@@ -165,6 +226,48 @@ export async function POST(
       },
       { status: 500 }
     );
+  }
+}
+
+// Helper function to update client metrics from check-in and calculate BMR
+async function updateClientMetricsFromCheckIn(
+  client: any,
+  checkInData: SubmitCheckInRequest
+): Promise<void> {
+  try {
+    const updates: any = {};
+
+    // Update current weight if provided in check-in
+    if (checkInData.weight !== undefined) {
+      updates.currentWeight = checkInData.weight;
+    }
+
+    // Update current body fat if provided in check-in
+    if (checkInData.bodyFatPercentage !== undefined) {
+      updates.currentBodyFatPercentage = checkInData.bodyFatPercentage;
+    }
+
+    // Only update if we have new data
+    if (Object.keys(updates).length > 0) {
+      // Update client with new current metrics
+      const updatedClient = await updateClient(client.id, updates);
+
+      // Calculate and update BMR if we have all required data
+      const bmr = await updateClientBMR(updatedClient);
+      if (bmr !== null) {
+        // Calculate TDEE (sedentary = BMR × 1.2)
+        const tdee = Math.round(bmr * 1.2);
+
+        // Update BMR and TDEE directly in database
+        await supabaseAdmin
+          .from("clients")
+          .update({ bmr, tdee })
+          .eq("id", client.id);
+      }
+    }
+  } catch (error) {
+    console.error("Error updating client metrics from check-in:", error);
+    throw error;
   }
 }
 

@@ -1,6 +1,28 @@
 // Check-in status types
 export type CheckInStatus = "pending" | "ai_processed" | "reviewed";
 
+// Check-in tracking types
+export type CheckInFrequency = "weekly" | "biweekly" | "monthly" | "custom" | "none";
+
+export type DayOfWeek =
+  | "monday"
+  | "tuesday"
+  | "wednesday"
+  | "thursday"
+  | "friday"
+  | "saturday"
+  | "sunday";
+
+export type ReminderType = "upcoming" | "overdue" | "follow_up";
+
+export type OverdueSeverity = "upcoming" | "due_soon" | "overdue" | "critically_overdue";
+
+export type ReminderPreferences = {
+  enabled: boolean;
+  autoSend: boolean;
+  sendBeforeHours: number;
+};
+
 // Subjective metrics from client check-in
 export type SubjectiveMetrics = {
   mood?: number; // 1-5
@@ -149,6 +171,39 @@ export type Client = {
   active: boolean;
   createdAt: string;
   updatedAt: string;
+
+  // Static profile fields
+  height?: number;
+  heightUnit?: "in" | "cm";
+  gender?: "male" | "female" | "other";
+  dateOfBirth?: string; // ISO date string (YYYY-MM-DD)
+
+  // Goal fields (manually set by coach)
+  goalWeight?: number;
+  goalBodyFatPercentage?: number;
+  weightUnit?: "lbs" | "kg";
+
+  // Current metrics (automatically updated from latest check-in)
+  currentWeight?: number;
+  currentBodyFatPercentage?: number;
+
+  // Calculated fields
+  bmr?: number;
+  tdee?: number;
+
+  // Check-in tracking fields
+  checkInFrequency?: CheckInFrequency;
+  checkInFrequencyDays?: number;
+  expectedCheckInDay?: DayOfWeek;
+  lastReminderSentAt?: string;
+  reminderPreferences?: ReminderPreferences;
+
+  // Adherence tracking fields
+  totalCheckInsExpected?: number;
+  totalCheckInsCompleted?: number;
+  checkInAdherenceRate?: number;
+  currentStreak?: number;
+  longestStreak?: number;
 };
 
 // Client info for check-in page
@@ -242,4 +297,88 @@ export type ProgressChartData = {
   adherence: ChartDataPoint[];
   mood: ChartDataPoint[];
   energy: ChartDataPoint[];
+};
+
+// Check-in reminder record
+export type CheckInReminder = {
+  id: string;
+  clientId: string;
+  sentAt: string;
+  reminderType: ReminderType;
+  daysOverdue: number | null;
+  responded: boolean;
+  respondedAt?: string;
+  checkInId?: string;
+  sentVia: "system" | "manual";
+  notes?: string;
+  createdAt: string;
+};
+
+// Extended client types for tracking
+export type ClientWithCheckInInfo = Client & {
+  lastCheckInDate?: string;
+  engagement?: "high" | "medium" | "low";
+};
+
+export type OverdueClient = Client & {
+  nextExpectedCheckIn: Date | null;
+  daysOverdue: number;
+  severity: OverdueSeverity;
+  lastCheckInDate?: string;
+};
+
+export type ClientDueSoon = Client & {
+  nextExpectedCheckIn: Date | null;
+  daysUntilDue: number;
+  lastCheckInDate?: string;
+};
+
+export type ClientCheckInConfig = {
+  checkInFrequency: CheckInFrequency;
+  checkInFrequencyDays?: number;
+  expectedCheckInDay?: DayOfWeek | null;
+  reminderPreferences: ReminderPreferences;
+};
+
+export type ClientAdherenceStats = {
+  totalCheckInsExpected: number;
+  totalCheckInsCompleted: number;
+  checkInAdherenceRate: number;
+  currentStreak: number;
+  longestStreak: number;
+};
+
+// API Request/Response types for tracking features
+
+export type GetOverdueClientsResponse = {
+  clients: OverdueClient[];
+  total: number;
+};
+
+export type GetClientsDueSoonResponse = {
+  clients: ClientDueSoon[];
+  total: number;
+};
+
+export type SendReminderRequest = {
+  reminderType?: ReminderType;
+};
+
+export type SendReminderResponse = {
+  success: boolean;
+  reminderId?: string;
+  errorMessage?: string;
+};
+
+export type UpdateCheckInConfigRequest = ClientCheckInConfig;
+
+export type UpdateCheckInConfigResponse = {
+  success: boolean;
+  client?: Client;
+  errorMessage?: string;
+};
+
+export type GetClientRemindersResponse = {
+  reminders: CheckInReminder[];
+  total: number;
 };

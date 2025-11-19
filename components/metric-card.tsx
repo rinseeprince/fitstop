@@ -1,6 +1,7 @@
 "use client"
 
 import { motion } from "framer-motion"
+import Link from "next/link"
 import type { LucideIcon } from "lucide-react"
 import { AnimatedCounter } from "./animated-counter"
 import { TrendingUp, TrendingDown } from "lucide-react"
@@ -13,16 +14,17 @@ interface MetricCardProps {
   trend?: { value: string; positive: boolean }
   chart?: number[]
   delay?: number
+  href?: string
 }
 
-export function MetricCard({ title, value, icon: Icon, trend, chart, delay = 0 }: MetricCardProps) {
-  return (
+export function MetricCard({ title, value, icon: Icon, trend, chart, delay = 0, href }: MetricCardProps) {
+  const content = (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay, duration: 0.3, ease: "easeOut" }}
       whileHover={{ scale: 1.02, transition: { duration: 0.15 } }}
-      className="group relative overflow-hidden rounded-lg glass-card shadow-custom-md p-6 transition-all duration-150 hover:shadow-custom-lg"
+      className={`group relative overflow-hidden rounded-lg glass-card shadow-custom-md p-6 transition-all duration-150 hover:shadow-custom-lg ${href ? "cursor-pointer" : ""}`}
     >
       <motion.div
         className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-150"
@@ -75,4 +77,10 @@ export function MetricCard({ title, value, icon: Icon, trend, chart, delay = 0 }
       )}
     </motion.div>
   )
+
+  if (href) {
+    return <Link href={href}>{content}</Link>
+  }
+
+  return content
 }

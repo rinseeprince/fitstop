@@ -148,6 +148,9 @@ export const CheckInDetailModal = ({
                 <h3 className="text-lg font-semibold mb-4">AI Analysis</h3>
                 <AISummaryCard
                   checkInId={checkInId}
+                  summary={data.checkIn.aiSummary}
+                  insights={data.checkIn.aiInsights}
+                  recommendations={data.checkIn.aiRecommendations}
                   onUpdate={handleResponseSent}
                 />
               </div>

@@ -105,6 +105,7 @@ export default function DashboardPage() {
             }}
             chart={[2, 3, 1, 2, 4, unreviewedCount]}
             delay={0.2}
+            href="/check-ins/review"
           />
           <MetricCard title="Unread Messages" value={7} icon={MessageSquare} chart={[12, 10, 8, 9, 8, 7]} delay={0.3} />
           <MetricCard title="Upcoming Calls" value={5} icon={PhoneCall} chart={[3, 4, 6, 5, 4, 5]} delay={0.4} />

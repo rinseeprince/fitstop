@@ -12,17 +12,21 @@ import { CheckInTimeline } from "@/components/check-in/check-in-timeline"
 import { CheckInDetailModal } from "@/components/check-in/check-in-detail-modal"
 import { ProgressCharts } from "@/components/check-in/progress-charts"
 import { PhotoComparison } from "@/components/check-in/photo-comparison"
+import { CheckInScheduleCard } from "@/components/clients/check-in-schedule-card"
 import { useCheckInData, useClient } from "@/hooks/use-check-in-data"
-import { ArrowLeft, MessageSquare, Phone, Mail, Loader2, AlertCircle } from "lucide-react"
+import { ArrowLeft, MessageSquare, Phone, Mail, Loader2, AlertCircle, Calculator } from "lucide-react"
 import Link from "next/link"
+import { useToast } from "@/hooks/use-toast"
 
 export default function ClientProfilePage() {
   const params = useParams()
   const clientId = params.id as string
+  const { toast } = useToast()
 
-  const { client, isLoading: clientLoading, isError: clientError } = useClient(clientId)
+  const { client, isLoading: clientLoading, isError: clientError, mutate: mutateClient } = useClient(clientId)
   const { checkIns, isLoading: checkInsLoading } = useCheckInData(clientId)
   const [selectedCheckInId, setSelectedCheckInId] = useState<string | null>(null)
+  const [isCalculatingBMR, setIsCalculatingBMR] = useState(false)
 
   const handleSelectCheckIn = (checkIn: any) => {
     setSelectedCheckInId(checkIn.id);
@@ -63,6 +67,38 @@ export default function ClientProfilePage() {
     if (months < 1) return "Joined recently";
     if (months === 1) return "Joined 1 month ago";
     return `Joined ${months} months ago`;
+  };
+
+  // Handle BMR calculation
+  const handleCalculateBMR = async () => {
+    setIsCalculatingBMR(true);
+    try {
+      const response = await fetch(`/api/clients/${clientId}/calculate-bmr`, {
+        method: "POST",
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to calculate BMR");
+      }
+
+      toast({
+        title: "BMR Calculated",
+        description: `BMR: ${data.bmr} cal/day, TDEE: ${data.tdee} cal/day`,
+      });
+
+      // Refresh client data
+      mutateClient();
+    } catch (error) {
+      toast({
+        title: "Failed to calculate BMR",
+        description: error instanceof Error ? error.message : "An error occurred",
+        variant: "destructive",
+      });
+    } finally {
+      setIsCalculatingBMR(false);
+    }
   };
 
   return (
@@ -156,30 +192,172 @@ export default function ClientProfilePage() {
 
           {/* Overview Tab */}
           <TabsContent value="overview" className="space-y-6">
-            {/* Contact Info */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Contact Information</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="flex items-center gap-3">
-                    <Mail className="h-5 w-5 text-muted-foreground" />
-                    <div>
-                      <p className="text-sm text-muted-foreground">Email</p>
-                      <p className="font-medium">{client.email}</p>
+            {/* Contact Info & Metrics */}
+            <div className="grid gap-6 lg:grid-cols-2">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Contact Information</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid gap-4">
+                    <div className="flex items-center gap-3">
+                      <Mail className="h-5 w-5 text-muted-foreground" />
+                      <div>
+                        <p className="text-sm text-muted-foreground">Email</p>
+                        <p className="font-medium">{client.email}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Phone className="h-5 w-5 text-muted-foreground" />
+                      <div>
+                        <p className="text-sm text-muted-foreground">Phone</p>
+                        <p className="font-medium text-muted-foreground">Not provided</p>
+                      </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <Phone className="h-5 w-5 text-muted-foreground" />
-                    <div>
-                      <p className="text-sm text-muted-foreground">Phone</p>
-                      <p className="font-medium text-muted-foreground">Not provided</p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+                  <CardTitle>Current Metrics</CardTitle>
+                  {(!client.bmr || !client.tdee) && client.currentWeight && client.height && client.gender && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleCalculateBMR}
+                      disabled={isCalculatingBMR}
+                    >
+                      {isCalculatingBMR ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Calculating...
+                        </>
+                      ) : (
+                        <>
+                          <Calculator className="h-4 w-4 mr-2" />
+                          Calculate BMR
+                        </>
+                      )}
+                    </Button>
+                  )}
+                </CardHeader>
+                <CardContent>
+                  <div className="grid gap-4">
+                    {/* Weight Row */}
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-muted-foreground">Current Weight</p>
+                        <p className="text-2xl font-bold">
+                          {client.currentWeight
+                            ? `${client.currentWeight} ${client.weightUnit || "lbs"}`
+                            : checkIns[0]?.weight
+                            ? `${checkIns[0].weight} ${checkIns[0].weightUnit || client.weightUnit || "lbs"}`
+                            : "Not recorded"}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm text-muted-foreground">Goal Weight</p>
+                        <p className="text-2xl font-bold">
+                          {client.goalWeight
+                            ? `${client.goalWeight} ${client.weightUnit || "lbs"}`
+                            : "Not set"}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Body Fat Row */}
+                    <div className="flex items-center justify-between pt-3 border-t">
+                      <div>
+                        <p className="text-sm text-muted-foreground">Current Body Fat %</p>
+                        <p className="text-2xl font-bold">
+                          {client.currentBodyFatPercentage
+                            ? `${client.currentBodyFatPercentage}%`
+                            : checkIns[0]?.bodyFatPercentage
+                            ? `${checkIns[0].bodyFatPercentage}%`
+                            : "Not recorded"}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm text-muted-foreground">Goal Body Fat %</p>
+                        <p className="text-2xl font-bold">
+                          {client.goalBodyFatPercentage
+                            ? `${client.goalBodyFatPercentage}%`
+                            : "Not set"}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Progress to Goal */}
+                    {client.goalWeight && (client.currentWeight || checkIns[0]?.weight) && (
+                      <div className="flex items-center justify-between pt-3 border-t">
+                        <div>
+                          <p className="text-sm text-muted-foreground">To Goal Weight</p>
+                          <p className={`text-2xl font-bold ${
+                            ((client.currentWeight || checkIns[0]?.weight || 0) - client.goalWeight) > 0
+                              ? "text-orange-600"
+                              : "text-green-600"
+                          }`}>
+                            {Math.abs((client.currentWeight || checkIns[0]?.weight || 0) - client.goalWeight).toFixed(1)} {client.weightUnit || "lbs"}
+                          </p>
+                        </div>
+                        {client.goalBodyFatPercentage && (client.currentBodyFatPercentage || checkIns[0]?.bodyFatPercentage) && (
+                          <div className="text-right">
+                            <p className="text-sm text-muted-foreground">To Goal Body Fat</p>
+                            <p className={`text-2xl font-bold ${
+                              ((client.currentBodyFatPercentage || checkIns[0]?.bodyFatPercentage || 0) - client.goalBodyFatPercentage) > 0
+                                ? "text-orange-600"
+                                : "text-green-600"
+                            }`}>
+                              {Math.abs((client.currentBodyFatPercentage || checkIns[0]?.bodyFatPercentage || 0) - client.goalBodyFatPercentage).toFixed(1)}%
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* BMR, TDEE & Physical Stats */}
+                    <div className="grid grid-cols-2 gap-4 pt-3 border-t">
+                      <div>
+                        <p className="text-sm text-muted-foreground">BMR (Basal Metabolic Rate)</p>
+                        <p className="text-lg font-bold">
+                          {client.bmr
+                            ? `${Math.round(client.bmr)} cal/day`
+                            : "Not calculated"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-muted-foreground">TDEE (Sedentary)</p>
+                        <p className="text-lg font-bold">
+                          {client.tdee
+                            ? `${Math.round(client.tdee)} cal/day`
+                            : "Not calculated"}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 pt-3 border-t">
+                      <div>
+                        <p className="text-sm text-muted-foreground">Height</p>
+                        <p className="text-lg font-bold">
+                          {client.height
+                            ? `${client.height} ${client.heightUnit || "in"}`
+                            : "Not set"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-muted-foreground">Gender</p>
+                        <p className="text-lg font-bold capitalize">
+                          {client.gender || "Not set"}
+                        </p>
+                      </div>
                     </div>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Check-In Schedule */}
+            <CheckInScheduleCard client={client} onUpdate={() => window.location.reload()} />
 
             {/* Progress Charts */}
             <div>

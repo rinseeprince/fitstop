@@ -1,6 +1,6 @@
 import { supabaseAdmin } from "./supabase-admin";
-import type { Client } from "@/types/check-in";
-import type { CreateClientInput, UpdateClientInput } from "@/lib/validations/client";
+import type { Client, ClientCheckInConfig } from "@/types/check-in";
+import type { CreateClientInput, UpdateClientInput, UpdateCheckInConfigInput } from "@/lib/validations/client";
 
 // Extended client type with check-in info
 export type ClientWithCheckInInfo = Client & {
@@ -32,6 +32,26 @@ const mapDatabaseRowToClient = (row: any): Client => ({
   active: row.active,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
+  height: row.height,
+  heightUnit: row.height_unit,
+  gender: row.gender,
+  goalWeight: row.goal_weight,
+  goalBodyFatPercentage: row.goal_body_fat_percentage,
+  weightUnit: row.weight_unit,
+  currentWeight: row.current_weight,
+  currentBodyFatPercentage: row.current_body_fat_percentage,
+  bmr: row.bmr,
+  tdee: row.tdee,
+  checkInFrequency: row.check_in_frequency,
+  checkInFrequencyDays: row.check_in_frequency_days,
+  expectedCheckInDay: row.expected_check_in_day,
+  lastReminderSentAt: row.last_reminder_sent_at,
+  reminderPreferences: row.reminder_preferences,
+  totalCheckInsExpected: row.total_check_ins_expected,
+  totalCheckInsCompleted: row.total_check_ins_completed,
+  checkInAdherenceRate: row.check_in_adherence_rate,
+  currentStreak: row.current_streak,
+  longestStreak: row.longest_streak,
 });
 
 // Create a new client
@@ -46,6 +66,14 @@ export const createClient = async (
       name: clientData.name,
       email: clientData.email,
       notes: clientData.notes || null,
+      height: clientData.height || null,
+      height_unit: clientData.heightUnit || "in",
+      gender: clientData.gender || null,
+      goal_weight: clientData.goalWeight || null,
+      goal_body_fat_percentage: clientData.goalBodyFatPercentage || null,
+      weight_unit: clientData.weightUnit || "lbs",
+      current_weight: clientData.currentWeight || null,
+      current_body_fat_percentage: clientData.currentBodyFatPercentage || null,
       active: true,
     })
     .select()
@@ -131,6 +159,14 @@ export const updateClient = async (
   if (clientData.email !== undefined) updateData.email = clientData.email;
   if (clientData.notes !== undefined) updateData.notes = clientData.notes || null;
   if (clientData.active !== undefined) updateData.active = clientData.active;
+  if (clientData.height !== undefined) updateData.height = clientData.height || null;
+  if (clientData.heightUnit !== undefined) updateData.height_unit = clientData.heightUnit;
+  if (clientData.gender !== undefined) updateData.gender = clientData.gender || null;
+  if (clientData.goalWeight !== undefined) updateData.goal_weight = clientData.goalWeight || null;
+  if (clientData.goalBodyFatPercentage !== undefined) updateData.goal_body_fat_percentage = clientData.goalBodyFatPercentage || null;
+  if (clientData.weightUnit !== undefined) updateData.weight_unit = clientData.weightUnit;
+  if (clientData.currentWeight !== undefined) updateData.current_weight = clientData.currentWeight || null;
+  if (clientData.currentBodyFatPercentage !== undefined) updateData.current_body_fat_percentage = clientData.currentBodyFatPercentage || null;
 
   const { data, error } = await (supabaseAdmin as any)
     .from("clients")
@@ -174,4 +210,31 @@ export const permanentlyDeleteClient = async (clientId: string): Promise<void> =
   if (error) {
     throw new Error(`Failed to permanently delete client: ${error.message}`);
   }
+};
+
+// Update client check-in configuration
+export const updateClientCheckInConfig = async (
+  clientId: string,
+  config: UpdateCheckInConfigInput
+): Promise<Client> => {
+  const updateData: any = {
+    check_in_frequency: config.checkInFrequency,
+    check_in_frequency_days: config.checkInFrequencyDays || null,
+    expected_check_in_day: config.expectedCheckInDay || null,
+    reminder_preferences: config.reminderPreferences,
+    updated_at: new Date().toISOString(),
+  };
+
+  const { data, error } = await (supabaseAdmin as any)
+    .from("clients")
+    .update(updateData)
+    .eq("id", clientId)
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to update check-in config: ${error.message}`);
+  }
+
+  return mapDatabaseRowToClient(data);
 };

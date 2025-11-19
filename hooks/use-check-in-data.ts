@@ -1,5 +1,12 @@
 import useSWR from "swr";
-import type { CheckIn, GetCheckInsResponse, Client } from "@/types/check-in";
+import type {
+  CheckIn,
+  GetCheckInsResponse,
+  Client,
+  GetOverdueClientsResponse,
+  GetClientsDueSoonResponse,
+  GetClientRemindersResponse,
+} from "@/types/check-in";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
@@ -87,6 +94,85 @@ export const useUnreviewedCount = (clientId?: string) => {
 
   return {
     count: data?.total || 0,
+    isLoading,
+    isError: error,
+    mutate,
+  };
+};
+
+// Hook to fetch overdue clients
+export const useOverdueClients = () => {
+  const { data, error, isLoading, mutate } = useSWR<GetOverdueClientsResponse>(
+    "/api/clients/overdue",
+    fetcher,
+    {
+      refreshInterval: 60000, // Refresh every minute
+      revalidateOnFocus: true,
+    }
+  );
+
+  return {
+    clients: data?.clients || [],
+    total: data?.total || 0,
+    isLoading,
+    isError: error,
+    mutate,
+  };
+};
+
+// Hook to fetch clients due soon
+export const useClientsDueSoon = () => {
+  const { data, error, isLoading, mutate } = useSWR<GetClientsDueSoonResponse>(
+    "/api/clients/due-soon",
+    fetcher,
+    {
+      refreshInterval: 60000, // Refresh every minute
+      revalidateOnFocus: true,
+    }
+  );
+
+  return {
+    clients: data?.clients || [],
+    total: data?.total || 0,
+    isLoading,
+    isError: error,
+    mutate,
+  };
+};
+
+// Hook to fetch reminder history for a client
+export const useClientReminders = (clientId: string) => {
+  const { data, error, isLoading, mutate } = useSWR<GetClientRemindersResponse>(
+    clientId ? `/api/clients/${clientId}/reminders` : null,
+    fetcher,
+    {
+      revalidateOnFocus: false,
+    }
+  );
+
+  return {
+    reminders: data?.reminders || [],
+    total: data?.total || 0,
+    isLoading,
+    isError: error,
+    mutate,
+  };
+};
+
+// Hook to fetch all unreviewed check-ins across all clients
+export const useUnreviewedCheckIns = () => {
+  const { data, error, isLoading, mutate } = useSWR<GetCheckInsResponse>(
+    "/api/check-ins/unreviewed",
+    fetcher,
+    {
+      refreshInterval: 30000, // Refresh every 30 seconds
+      revalidateOnFocus: true,
+    }
+  );
+
+  return {
+    checkIns: data?.checkIns || [],
+    total: data?.total || 0,
     isLoading,
     isError: error,
     mutate,

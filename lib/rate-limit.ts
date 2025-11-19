@@ -112,6 +112,6 @@ export function apiRateLimit(request: NextRequest): NextResponse | null {
 export function checkInRateLimit(request: NextRequest): NextResponse | null {
   return rateLimit(request, {
     windowMs: 60 * 1000, // 1 minute
-    maxRequests: 10, // 10 requests per minute
+    maxRequests: 30, // 30 requests per minute
   });
 }
