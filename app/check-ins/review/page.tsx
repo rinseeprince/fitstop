@@ -130,7 +130,7 @@ export default function ReviewCheckInsPage() {
 
         <CheckInDetailModal
           checkInId={selectedCheckInId}
-          clientId={selectedCheckInId ? unreviewedCheckIns.find((ci) => ci.id === selectedCheckInId)?.clientId : null}
+          clientId={selectedCheckInId ? unreviewedCheckIns.find((ci) => ci.id === selectedCheckInId)?.clientId || "" : ""}
           onClose={handleReviewComplete}
           onNavigate={handleNavigate}
           canNavigatePrev={selectedIndex > 0}

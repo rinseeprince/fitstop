@@ -84,6 +84,7 @@ export type AICheckInSummary = {
 export type CheckIn = {
   id: string;
   clientId: string;
+  clientName?: string; // Populated when joining with clients table
   status: CheckInStatus;
 
   // Subjective
@@ -160,6 +161,20 @@ export type Coach = {
   updatedAt: string;
 };
 
+// Nutrition-specific types
+export type UnitPreference = "metric" | "imperial";
+
+export type ActivityLevel =
+  | "sedentary"
+  | "lightly_active"
+  | "moderately_active"
+  | "very_active"
+  | "extremely_active";
+
+export type TrainingVolume = "0-1" | "2-3" | "4-5" | "6-7" | "8+";
+
+export type DietType = "balanced" | "high_carb" | "low_carb" | "keto" | "custom";
+
 // Client record from database
 export type Client = {
   id: string;
@@ -204,6 +219,30 @@ export type Client = {
   checkInAdherenceRate?: number;
   currentStreak?: number;
   longestStreak?: number;
+
+  // Nutrition fields
+  unitPreference?: UnitPreference;
+  workActivityLevel?: ActivityLevel;
+  trainingVolumeHours?: TrainingVolume;
+  proteinTargetGPerKg?: number; // 1.0-3.0 g/kg
+  dietType?: DietType;
+  goalDeadline?: string; // ISO date string
+
+  // Nutrition plan metadata
+  nutritionPlanCreatedDate?: string; // ISO timestamp
+  nutritionPlanBaseWeightKg?: number; // Weight (in kg) when plan was created
+
+  // Locked nutrition targets (from calculation)
+  calorieTarget?: number;
+  proteinTargetG?: number;
+  carbTargetG?: number;
+  fatTargetG?: number;
+
+  // Custom macro overrides
+  customMacrosEnabled?: boolean;
+  customProteinG?: number;
+  customCarbG?: number;
+  customFatG?: number;
 };
 
 // Client info for check-in page
@@ -381,4 +420,145 @@ export type UpdateCheckInConfigResponse = {
 export type GetClientRemindersResponse = {
   reminders: CheckInReminder[];
   total: number;
+};
+
+// Nutrition plan history record
+export type NutritionPlanHistory = {
+  id: string;
+  clientId: string;
+  createdAt: string;
+
+  // Snapshot of client metrics
+  baseWeightKg: number;
+  goalWeightKg?: number;
+  bmr?: number;
+  tdee?: number;
+
+  // Settings used
+  workActivityLevel: ActivityLevel;
+  trainingVolumeHours: TrainingVolume;
+  proteinTargetGPerKg: number;
+  dietType: DietType;
+  goalDeadline?: string;
+
+  // Calculated targets
+  calorieTarget: number;
+  proteinTargetG: number;
+  carbTargetG: number;
+  fatTargetG: number;
+
+  // Metadata
+  createdByCoachId?: string;
+  regenerationReason?: string;
+};
+
+// Nutrition calculation request/response types
+export type GenerateNutritionPlanRequest = {
+  workActivityLevel: ActivityLevel;
+  trainingVolumeHours: TrainingVolume;
+  proteinTargetGPerKg: number;
+  dietType: DietType;
+  goalDeadline?: string;
+  customMacrosEnabled?: boolean;
+  customProteinG?: number;
+  customCarbG?: number;
+  customFatG?: number;
+};
+
+export type GenerateNutritionPlanResponse = {
+  success: boolean;
+  plan?: {
+    calorieTarget: number;
+    proteinTargetG: number;
+    carbTargetG: number;
+    fatTargetG: number;
+    adjustedTdee: number;
+    weeklyWeightChangeKg: number;
+    warnings?: string[];
+  };
+  errorMessage?: string;
+};
+
+// Trend direction for metrics
+export type TrendDirection = "up" | "down" | "stable";
+
+// Metric change with trend
+export type MetricChange = {
+  current?: number;
+  previous?: number;
+  change?: number;
+  percentChange?: number;
+  trend?: TrendDirection;
+};
+
+// Comprehensive check-in comparison data
+export type CheckInComparison = {
+  current: CheckIn;
+  previous: CheckIn | null;
+  client: {
+    id: string;
+    name: string;
+    goalWeight?: number;
+    goalBodyFatPercentage?: number;
+    goalDeadline?: string;
+    currentWeight?: number;
+    currentBodyFatPercentage?: number;
+    weightUnit?: "lbs" | "kg";
+    unitPreference?: UnitPreference;
+    nutritionPlanBaseWeightKg?: number;
+    nutritionPlanCreatedDate?: string;
+  };
+  changes: {
+    weight?: MetricChange;
+    bodyFatPercentage?: MetricChange;
+    waist?: MetricChange;
+    hips?: MetricChange;
+    chest?: MetricChange;
+    arms?: MetricChange;
+    thighs?: MetricChange;
+    workoutsCompleted?: MetricChange;
+    adherencePercentage?: MetricChange;
+    mood?: MetricChange;
+    energy?: MetricChange;
+    sleep?: MetricChange;
+    stress?: MetricChange;
+  };
+  timeBetweenCheckIns?: number; // days
+};
+
+// Goal progress tracking
+export type GoalProgress = {
+  weight?: {
+    current: number;
+    goal: number;
+    startingWeight?: number;
+    remaining: number;
+    percentComplete: number;
+    unit: "lbs" | "kg";
+    isOnTrack: boolean;
+    projectedCompletionDate?: string;
+    avgWeeklyChange?: number;
+    weeksToGoal?: number;
+  };
+  bodyFat?: {
+    current: number;
+    goal: number;
+    startingBodyFat?: number;
+    remaining: number;
+    percentComplete: number;
+    isOnTrack: boolean;
+    avgChange?: number;
+  };
+  deadline?: {
+    date: string;
+    daysRemaining: number;
+    isPastDeadline: boolean;
+  };
+};
+
+// Complete comparison response with goal tracking
+export type GetCheckInComparisonResponse = {
+  comparison: CheckInComparison;
+  goalProgress: GoalProgress;
+  chartData: ProgressChartData;
 };

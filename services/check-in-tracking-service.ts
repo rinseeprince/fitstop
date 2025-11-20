@@ -4,7 +4,7 @@
  */
 
 import { supabaseAdmin } from "./supabase-admin";
-import { getClientsForCoach, getClientById } from "./client-service";
+import { getClientsForCoach, getClientById, type ClientWithCheckInInfo } from "./client-service";
 import {
   addDays,
   differenceInDays,
@@ -42,7 +42,7 @@ export function getFrequencyInDays(
  * Calculate when the next check-in is expected for a client
  * Returns null if client has no check-in schedule (frequency = 'none')
  */
-export function calculateNextExpectedCheckIn(client: Client): Date | null {
+export function calculateNextExpectedCheckIn(client: Client | ClientWithCheckInInfo): Date | null {
   const frequency = client.checkInFrequency || "weekly";
 
   // If client has no check-in schedule, return null
@@ -51,7 +51,7 @@ export function calculateNextExpectedCheckIn(client: Client): Date | null {
   }
 
   // Determine the base date (last check-in or creation date)
-  const lastCheckInDate = client.lastCheckInDate
+  const lastCheckInDate = ("lastCheckInDate" in client && client.lastCheckInDate)
     ? parseISODate(client.lastCheckInDate)
     : parseISODate(client.createdAt);
 
@@ -229,7 +229,7 @@ export async function calculateCurrentStreak(clientId: string): Promise<number> 
     .from("check_ins")
     .select("created_at")
     .eq("client_id", clientId)
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false }) as { data: { created_at: string }[] | null; error: any };
 
   if (error || !checkIns || checkIns.length === 0) {
     return 0;
@@ -278,7 +278,7 @@ export async function calculateLongestStreak(clientId: string): Promise<number> 
     .from("check_ins")
     .select("created_at")
     .eq("client_id", clientId)
-    .order("created_at", { ascending: true });
+    .order("created_at", { ascending: true }) as { data: { created_at: string }[] | null; error: any };
 
   if (error || !checkIns || checkIns.length === 0) {
     return 0;
@@ -337,7 +337,7 @@ export async function updateClientAdherenceStats(clientId: string): Promise<void
   );
   const expectedCount = frequencyDays > 0 ? Math.floor(accountAge / frequencyDays) : 0;
 
-  const { error } = await supabaseAdmin
+  const { error } = await (supabaseAdmin as any)
     .from("clients")
     .update({
       total_check_ins_expected: expectedCount,

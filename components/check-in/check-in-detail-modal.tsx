@@ -9,10 +9,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CheckInDataDisplay } from "./check-in-data-display";
 import { AISummaryCard } from "./ai-summary-card";
 import { CheckInResponseEditor } from "./check-in-response-editor";
-import type { CheckIn } from "@/types/check-in";
+import { CheckInComparisonView } from "./check-in-comparison-view";
+import { GoalProgressView } from "./goal-progress-view";
+import type { CheckIn, GetCheckInComparisonResponse } from "@/types/check-in";
 
 type CheckInDetailModalProps = {
   checkInId: string | null;
@@ -42,11 +45,14 @@ export const CheckInDetailModal = ({
   canNavigateNext = false,
 }: CheckInDetailModalProps) => {
   const [data, setData] = useState<CheckInWithClient | null>(null);
+  const [comparisonData, setComparisonData] = useState<GetCheckInComparisonResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingComparison, setIsLoadingComparison] = useState(false);
 
   useEffect(() => {
     if (!checkInId) {
       setData(null);
+      setComparisonData(null);
       return;
     }
 
@@ -65,7 +71,23 @@ export const CheckInDetailModal = ({
       }
     };
 
+    const fetchComparison = async () => {
+      setIsLoadingComparison(true);
+      try {
+        const response = await fetch(`/api/check-in/${checkInId}/comparison`);
+        if (response.ok) {
+          const result = await response.json();
+          setComparisonData(result);
+        }
+      } catch (error) {
+        console.error("Error fetching comparison:", error);
+      } finally {
+        setIsLoadingComparison(false);
+      }
+    };
+
     fetchCheckIn();
+    fetchComparison();
   }, [checkInId]);
 
   useEffect(() => {
@@ -137,34 +159,77 @@ export const CheckInDetailModal = ({
             <div className="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
           </div>
         ) : data ? (
-          <div className="space-y-6">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <div>
-                <h3 className="text-lg font-semibold mb-4">Check-In Data</h3>
-                <CheckInDataDisplay checkIn={data.checkIn} />
+          <Tabs defaultValue="current" className="w-full">
+            <TabsList className="grid w-full grid-cols-3 mb-6">
+              <TabsTrigger value="current">Current Check-In</TabsTrigger>
+              <TabsTrigger value="comparison">Comparison & Trends</TabsTrigger>
+              <TabsTrigger value="goals">Goal Progress</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="current" className="space-y-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div>
+                  <h3 className="text-lg font-semibold mb-4">Check-In Data</h3>
+                  <CheckInDataDisplay checkIn={data.checkIn} />
+                </div>
+
+                <div>
+                  <h3 className="text-lg font-semibold mb-4">AI Analysis</h3>
+                  <AISummaryCard
+                    checkInId={checkInId}
+                    summary={data.checkIn.aiSummary}
+                    insights={data.checkIn.aiInsights}
+                    recommendations={data.checkIn.aiRecommendations}
+                    onUpdate={handleResponseSent}
+                  />
+                </div>
               </div>
 
               <div>
-                <h3 className="text-lg font-semibold mb-4">AI Analysis</h3>
-                <AISummaryCard
+                <h3 className="text-lg font-semibold mb-4">Your Response</h3>
+                <CheckInResponseEditor
                   checkInId={checkInId}
-                  summary={data.checkIn.aiSummary}
-                  insights={data.checkIn.aiInsights}
-                  recommendations={data.checkIn.aiRecommendations}
-                  onUpdate={handleResponseSent}
+                  clientName={data.client?.name || "Client"}
+                  onSent={handleResponseSent}
                 />
               </div>
-            </div>
+            </TabsContent>
 
-            <div>
-              <h3 className="text-lg font-semibold mb-4">Your Response</h3>
-              <CheckInResponseEditor
-                checkInId={checkInId}
-                clientName={data.client?.name || "Client"}
-                onSent={handleResponseSent}
-              />
-            </div>
-          </div>
+            <TabsContent value="comparison">
+              {isLoadingComparison ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
+                </div>
+              ) : comparisonData ? (
+                <CheckInComparisonView
+                  comparison={comparisonData.comparison}
+                  chartData={comparisonData.chartData}
+                />
+              ) : (
+                <div className="text-center py-12 text-muted-foreground">
+                  Failed to load comparison data
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="goals">
+              {isLoadingComparison ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
+                </div>
+              ) : comparisonData ? (
+                <GoalProgressView
+                  goalProgress={comparisonData.goalProgress}
+                  clientName={data.client?.name || "Client"}
+                  clientData={comparisonData.comparison.client}
+                />
+              ) : (
+                <div className="text-center py-12 text-muted-foreground">
+                  Failed to load goal progress data
+                </div>
+              )}
+            </TabsContent>
+          </Tabs>
         ) : (
           <div className="text-center py-12 text-muted-foreground">
             Failed to load check-in data

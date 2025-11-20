@@ -159,7 +159,7 @@ export async function POST(
     }
 
     // Submit check-in and mark token as used in a coordinated manner
-    let checkInId: string;
+    let checkInId: string | undefined;
     try {
       // Step 1: Create the check-in
       checkInId = await submitCheckIn(clientId, {
@@ -181,6 +181,14 @@ export async function POST(
         // If check-in creation failed, re-throw the error
         throw error;
       }
+    }
+
+    // Ensure checkInId was created
+    if (!checkInId) {
+      return NextResponse.json(
+        { success: false, errorMessage: "Failed to create check-in" },
+        { status: 500 }
+      );
     }
 
     // Get client for metrics update and AI summary
@@ -259,10 +267,17 @@ async function updateClientMetricsFromCheckIn(
         const tdee = Math.round(bmr * 1.2);
 
         // Update BMR and TDEE directly in database
-        await supabaseAdmin
+        const { error: updateError } = await (supabaseAdmin
           .from("clients")
-          .update({ bmr, tdee })
-          .eq("id", client.id);
+          .update(
+            // @ts-expect-error - Database type inference issue
+            { bmr, tdee }
+          )
+          .eq("id", client.id));
+
+        if (updateError) {
+          console.error("Error updating BMR/TDEE:", updateError);
+        }
       }
     }
   } catch (error) {

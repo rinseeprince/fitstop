@@ -29,6 +29,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ checkIns: [], total: 0 }, { status: 200 });
     }
 
+    // @ts-expect-error - Database type inference issue
     const clientIds = clients.map((c) => c.id);
 
     // Fetch all unreviewed check-ins (status = 'ai_processed') for these clients

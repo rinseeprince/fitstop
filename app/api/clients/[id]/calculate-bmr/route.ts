@@ -75,7 +75,10 @@ export async function POST(
     // Update BMR in database
     await supabaseAdmin
       .from("clients")
-      .update({ bmr, tdee })
+      .update(
+        // @ts-expect-error - Database type inference issue
+        { bmr, tdee }
+      )
       .eq("id", id);
 
     return NextResponse.json(

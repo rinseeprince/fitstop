@@ -13,6 +13,7 @@ import { CheckInDetailModal } from "@/components/check-in/check-in-detail-modal"
 import { ProgressCharts } from "@/components/check-in/progress-charts"
 import { PhotoComparison } from "@/components/check-in/photo-comparison"
 import { CheckInScheduleCard } from "@/components/clients/check-in-schedule-card"
+import { NutritionCalculatorCardEnhanced } from "@/components/clients/nutrition-calculator-card-enhanced"
 import { useCheckInData, useClient } from "@/hooks/use-check-in-data"
 import { ArrowLeft, MessageSquare, Phone, Mail, Loader2, AlertCircle, Calculator } from "lucide-react"
 import Link from "next/link"
@@ -407,16 +408,10 @@ export default function ClientProfilePage() {
 
           {/* Nutrition Tab */}
           <TabsContent value="nutrition" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Nutrition Goals</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-center py-12 text-muted-foreground">
-                  <p>Nutrition tracking coming soon</p>
-                </div>
-              </CardContent>
-            </Card>
+            <NutritionCalculatorCardEnhanced
+              client={client}
+              onUpdate={() => mutateClient()}
+            />
           </TabsContent>
 
           {/* Content Tab */}

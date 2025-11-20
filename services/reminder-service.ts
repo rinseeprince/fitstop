@@ -67,7 +67,7 @@ export async function sendCheckInReminder(
     const daysOverdueValue = daysOverdue > 0 ? daysOverdue : null;
 
     // Log reminder in database
-    const { data: reminder, error: reminderError } = await supabaseAdmin
+    const { data: reminder, error: reminderError } = await (supabaseAdmin as any)
       .from("check_in_reminders")
       .insert({
         client_id: clientId,
@@ -83,7 +83,7 @@ export async function sendCheckInReminder(
     }
 
     // Update last reminder sent timestamp on client
-    const { error: updateError } = await supabaseAdmin
+    const { error: updateError } = await (supabaseAdmin as any)
       .from("clients")
       .update({ last_reminder_sent_at: new Date().toISOString() })
       .eq("id", clientId);
@@ -189,7 +189,7 @@ export async function markReminderAsResponded(
   }
 
   // Mark reminder as responded
-  const { error: updateError } = await supabaseAdmin
+  const { error: updateError } = await (supabaseAdmin as any)
     .from("check_in_reminders")
     .update({
       responded: true,

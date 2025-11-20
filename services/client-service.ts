@@ -35,6 +35,7 @@ const mapDatabaseRowToClient = (row: any): Client => ({
   height: row.height,
   heightUnit: row.height_unit,
   gender: row.gender,
+  dateOfBirth: row.date_of_birth,
   goalWeight: row.goal_weight,
   goalBodyFatPercentage: row.goal_body_fat_percentage,
   weightUnit: row.weight_unit,
@@ -52,6 +53,23 @@ const mapDatabaseRowToClient = (row: any): Client => ({
   checkInAdherenceRate: row.check_in_adherence_rate,
   currentStreak: row.current_streak,
   longestStreak: row.longest_streak,
+  // Nutrition fields
+  unitPreference: row.unit_preference,
+  workActivityLevel: row.work_activity_level,
+  trainingVolumeHours: row.training_volume_hours,
+  proteinTargetGPerKg: row.protein_target_g_per_kg,
+  dietType: row.diet_type,
+  goalDeadline: row.goal_deadline,
+  nutritionPlanCreatedDate: row.nutrition_plan_created_date,
+  nutritionPlanBaseWeightKg: row.nutrition_plan_base_weight_kg,
+  calorieTarget: row.calorie_target,
+  proteinTargetG: row.protein_target_g,
+  carbTargetG: row.carb_target_g,
+  fatTargetG: row.fat_target_g,
+  customMacrosEnabled: row.custom_macros_enabled,
+  customProteinG: row.custom_protein_g,
+  customCarbG: row.custom_carb_g,
+  customFatG: row.custom_fat_g,
 });
 
 // Create a new client
