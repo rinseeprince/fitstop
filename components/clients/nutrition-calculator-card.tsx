@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import type { Client, ActivityLevel, TrainingVolume, DietType } from "@/types/check-in";
+import type { Client, ActivityLevel, DietType } from "@/types/check-in";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -35,7 +35,6 @@ export function NutritionCalculatorCard({
 
   const [settings, setSettings] = useState({
     workActivityLevel: client.workActivityLevel || ("sedentary" as ActivityLevel),
-    trainingVolumeHours: client.trainingVolumeHours || ("0-1" as TrainingVolume),
     proteinTargetGPerKg: client.proteinTargetGPerKg || 2.0,
     dietType: client.dietType || ("balanced" as DietType),
     goalDeadline: client.goalDeadline || "",
@@ -69,7 +68,6 @@ export function NutritionCalculatorCard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           workActivityLevel: settings.workActivityLevel,
-          trainingVolumeHours: settings.trainingVolumeHours,
           proteinTargetGPerKg: settings.proteinTargetGPerKg,
           dietType: settings.dietType,
           goalDeadline: settings.goalDeadline || undefined,

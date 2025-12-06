@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getClientById } from "@/services/client-service";
-import { generateNutritionPlan } from "@/services/nutrition-service";
+import { generateNutritionPlan, calculateTDEE } from "@/services/nutrition-service";
+import { getActiveTrainingPlan } from "@/services/training-service";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { apiRateLimit } from "@/lib/rate-limit";
@@ -75,7 +76,8 @@ export async function POST(
       if (
         !body.customProteinG ||
         !body.customCarbG ||
-        !body.customFatG
+        !body.customFatG ||
+        !body.customCalories
       ) {
         return NextResponse.json(
           {
@@ -85,9 +87,24 @@ export async function POST(
         );
       }
 
-      // Calculate total calories from custom macros
-      const customCalories =
+      // Validate custom calories match macro totals (±50 cal tolerance)
+      const calculatedCalories =
         body.customProteinG * 4 + body.customCarbG * 4 + body.customFatG * 9;
+      const difference = Math.abs(body.customCalories - calculatedCalories);
+
+      if (difference > 50) {
+        return NextResponse.json(
+          {
+            error: `Custom calories must be within ±50 calories of macro totals (calculated: ${calculatedCalories} cal)`,
+          },
+          { status: 400 }
+        );
+      }
+
+      // Calculate TDEE when custom macros are set (needed for display)
+      const tdee = client.bmr
+        ? calculateTDEE(client.bmr, body.workActivityLevel)
+        : client.tdee;
 
       // Update client with custom values
       const { error: updateError } = await supabaseAdmin
@@ -104,7 +121,10 @@ export async function POST(
             custom_protein_g: body.customProteinG,
             custom_carb_g: body.customCarbG,
             custom_fat_g: body.customFatG,
-            calorie_target: Math.round(customCalories),
+            custom_calories: body.customCalories,
+            tdee: tdee, // Set TDEE when nutrition settings are configured
+            baseline_calories: body.customCalories, // Custom calories = baseline
+            calorie_target: body.customCalories,
             protein_target_g: body.customProteinG,
             carb_target_g: body.customCarbG,
             fat_target_g: body.customFatG,
@@ -136,7 +156,7 @@ export async function POST(
         protein_target_g_per_kg: body.proteinTargetGPerKg,
         diet_type: body.dietType,
         goal_deadline: body.goalDeadline || null,
-        calorie_target: Math.round(customCalories),
+        calorie_target: body.customCalories,
         protein_target_g: body.customProteinG,
         carb_target_g: body.customCarbG,
         fat_target_g: body.customFatG,
@@ -156,7 +176,7 @@ export async function POST(
         {
           success: true,
           plan: {
-            calorieTarget: Math.round(customCalories),
+            calorieTarget: body.customCalories,
             proteinTargetG: body.customProteinG,
             carbTargetG: body.customCarbG,
             fatTargetG: body.customFatG,
@@ -178,14 +198,17 @@ export async function POST(
       ? weightToKg(client.goalWeight, client.weightUnit || "lbs")
       : undefined;
 
+    // Fetch active training plan for per-day training calories
+    const trainingPlan = await getActiveTrainingPlan(clientId);
+
     const plan = generateNutritionPlan({
       currentWeightKg,
       goalWeightKg,
       bmr: client.bmr!,
-      tdee: client.tdee!,
       gender: client.gender as "male" | "female" | "other",
       workActivityLevel: body.workActivityLevel,
-      trainingVolumeHours: body.trainingVolumeHours,
+      trainingVolumeHours: body.trainingVolumeHours, // Kept for backward compat
+      trainingPlan, // Used for per-day calorie additions in weekly targets
       proteinTargetGPerKg: body.proteinTargetGPerKg,
       dietType: body.dietType,
       goalDeadline: body.goalDeadline,
@@ -193,6 +216,7 @@ export async function POST(
     });
 
     // Update client with calculated plan
+    // TDEE is now calculated and saved when nutrition settings are configured
     const { error: updateError } = await supabaseAdmin
       .from("clients")
       .update(
@@ -204,7 +228,9 @@ export async function POST(
           diet_type: body.dietType,
           goal_deadline: body.goalDeadline || null,
           custom_macros_enabled: false,
-          calorie_target: plan.calorieTarget,
+          tdee: plan.tdee, // Save calculated TDEE (BMR x activity multiplier)
+          baseline_calories: plan.baselineCalories, // Save baseline (TDEE - deficit)
+          calorie_target: plan.calorieTarget, // Backward compat (same as baseline)
           protein_target_g: plan.proteinTargetG,
           carb_target_g: plan.carbTargetG,
           fat_target_g: plan.fatTargetG,
@@ -250,12 +276,15 @@ export async function POST(
       {
         success: true,
         plan: {
+          baselineCalories: plan.baselineCalories,
+          tdee: plan.tdee,
           calorieTarget: plan.calorieTarget,
           proteinTargetG: plan.proteinTargetG,
           carbTargetG: plan.carbTargetG,
           fatTargetG: plan.fatTargetG,
           adjustedTdee: plan.adjustedTdee,
           weeklyWeightChangeKg: plan.weeklyWeightChangeKg,
+          requiredDailyDeficit: plan.requiredDailyDeficit,
           warnings: plan.warnings,
         },
       },

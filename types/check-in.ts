@@ -52,12 +52,104 @@ export type ProgressPhotos = {
   photoBack?: string; // URL
 };
 
-// Training and nutrition metrics
+// Training and nutrition metrics (legacy fields for backward compatibility)
 export type TrainingMetrics = {
   workoutsCompleted?: number;
   adherencePercentage?: number; // 0-100
   prs?: string; // Personal records/wins
   challenges?: string; // Difficulties faced
+};
+
+// Enhanced check-in tracking types
+
+export type SessionCompletionQuality = "full" | "partial" | "skipped";
+
+export type CheckInSessionCompletion = {
+  id?: string;
+  checkInId?: string;
+  trainingSessionId: string;
+  sessionName: string;
+  dayOfWeek?: DayOfWeek;
+  completed: boolean;
+  completionQuality?: SessionCompletionQuality;
+  notes?: string;
+};
+
+export type ExerciseHighlightType = "pr" | "struggle" | "note";
+
+export type CheckInExerciseHighlight = {
+  id?: string;
+  checkInId?: string;
+  exerciseId?: string;
+  exerciseName: string;
+  highlightType: ExerciseHighlightType;
+  details?: string;
+  weightValue?: number;
+  weightUnit?: "lbs" | "kg";
+  reps?: number;
+};
+
+export type CheckInExternalActivity = {
+  id?: string;
+  checkInId?: string;
+  activityName: string;
+  intensityLevel: "low" | "moderate" | "vigorous";
+  durationMinutes: number;
+  estimatedCalories?: number;
+  dayPerformed?: DayOfWeek;
+  notes?: string;
+};
+
+export type NutritionAdherence = {
+  daysOnTarget?: number; // 0-7
+  notes?: string;
+};
+
+// Context types for check-in form
+
+export type CheckInTrainingContext = {
+  hasActivePlan: boolean;
+  planId?: string;
+  planName?: string;
+  sessions: Array<{
+    id: string;
+    name: string;
+    dayOfWeek?: DayOfWeek;
+    focus?: string;
+    exercises: Array<{
+      id: string;
+      name: string;
+      sets: number;
+      repsTarget?: string;
+    }>;
+  }>;
+};
+
+export type CheckInNutritionContext = {
+  hasNutritionPlan: boolean;
+  weeklyTargets?: Array<{
+    day: DayOfWeek;
+    dayLabel: string;
+    isTrainingDay: boolean;
+    calories: number;
+    proteinG: number;
+    carbsG: number;
+    fatG: number;
+  }>;
+  averageTargets?: {
+    calories: number;
+    proteinG: number;
+    carbsG: number;
+    fatG: number;
+  };
+};
+
+// Enhanced training metrics including new structured data
+export type EnhancedTrainingMetrics = TrainingMetrics & {
+  sessionCompletions?: CheckInSessionCompletion[];
+  exerciseHighlights?: CheckInExerciseHighlight[];
+  externalActivities?: CheckInExternalActivity[];
+  nutritionAdherence?: NutritionAdherence;
 };
 
 // AI-generated insights
@@ -110,11 +202,15 @@ export type CheckIn = {
   photoSide?: string;
   photoBack?: string;
 
-  // Training & nutrition
+  // Training & nutrition (legacy fields)
   workoutsCompleted?: number;
   adherencePercentage?: number;
   prs?: string;
   challenges?: string;
+
+  // Enhanced nutrition tracking
+  nutritionDaysOnTarget?: number;
+  nutritionNotes?: string;
 
   // AI fields
   aiSummary?: string;
@@ -137,7 +233,7 @@ export type CheckIn = {
 export type CheckInFormData = SubjectiveMetrics &
   BodyMetrics &
   ProgressPhotos &
-  TrainingMetrics;
+  EnhancedTrainingMetrics;
 
 // Token for magic link authentication
 export type CheckInToken = {
@@ -198,6 +294,10 @@ export type Client = {
   goalBodyFatPercentage?: number;
   weightUnit?: "lbs" | "kg";
 
+  // Starting metrics (original intake values for goal tracking)
+  startingWeight?: number;
+  startingBodyFatPercentage?: number;
+
   // Current metrics (automatically updated from latest check-in)
   currentWeight?: number;
   currentBodyFatPercentage?: number;
@@ -233,6 +333,7 @@ export type Client = {
   nutritionPlanBaseWeightKg?: number; // Weight (in kg) when plan was created
 
   // Locked nutrition targets (from calculation)
+  baselineCalories?: number; // Rest day calories (TDEE - deficit)
   calorieTarget?: number;
   proteinTargetG?: number;
   carbTargetG?: number;
@@ -243,6 +344,11 @@ export type Client = {
   customProteinG?: number;
   customCarbG?: number;
   customFatG?: number;
+  customCalories?: number;
+
+  // Manual BMR/TDEE overrides
+  bmrManualOverride?: boolean;
+  tdeeManualOverride?: boolean;
 };
 
 // Client info for check-in page
@@ -268,6 +374,8 @@ export type CreateCheckInTokenResponse = {
 export type ValidateCheckInTokenResponse = {
   valid: boolean;
   clientInfo?: CheckInClientInfo;
+  trainingContext?: CheckInTrainingContext;
+  nutritionContext?: CheckInNutritionContext;
   errorMessage?: string;
 };
 
@@ -463,6 +571,7 @@ export type GenerateNutritionPlanRequest = {
   customProteinG?: number;
   customCarbG?: number;
   customFatG?: number;
+  customCalories?: number;
 };
 
 export type GenerateNutritionPlanResponse = {
@@ -561,4 +670,26 @@ export type GetCheckInComparisonResponse = {
   comparison: CheckInComparison;
   goalProgress: GoalProgress;
   chartData: ProgressChartData;
+};
+
+// Metric update types
+export type MetricSaveOption = "check-in" | "update-only";
+
+export type UpdateClientMetricsRequest = {
+  currentWeight?: number;
+  currentBodyFatPercentage?: number;
+  goalWeight?: number;
+  goalBodyFatPercentage?: number;
+  bmr?: number;
+  tdee?: number;
+  bmrManualOverride?: boolean;
+  tdeeManualOverride?: boolean;
+  saveOption?: MetricSaveOption;
+};
+
+// Check-in with all related details for AI processing
+export type CheckInWithDetails = CheckIn & {
+  sessionCompletions?: CheckInSessionCompletion[];
+  exerciseHighlights?: CheckInExerciseHighlight[];
+  externalActivities?: CheckInExternalActivity[];
 };

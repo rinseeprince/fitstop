@@ -1,18 +1,19 @@
 "use client";
 
-import { useState } from "react";
-import type { Client, ActivityLevel, TrainingVolume, DietType, UnitPreference } from "@/types/check-in";
+import { useState, useEffect } from "react";
+import type { Client, ActivityLevel, DietType, UnitPreference } from "@/types/check-in";
+import type { TrainingPlan } from "@/types/training";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { NutritionTargetsDisplay } from "./nutrition-targets-display";
 import { NutritionSettingsForm } from "./nutrition-settings-form";
 import { NutritionWarnings } from "./nutrition-warnings";
+import { NutritionDayAccordion } from "./nutrition-day-accordion";
 import { UnitToggle } from "./unit-toggle";
-import { AlertCircle, RefreshCw, Settings2, ChevronDown, ChevronUp, History } from "lucide-react";
+import { AlertCircle, RefreshCw, Settings2, ChevronDown, ChevronUp, History, Dumbbell, Flame } from "lucide-react";
 import { NutritionPlanHistoryModal } from "./nutrition-plan-history-modal";
 import {
   shouldShowRegenerationBanner,
@@ -21,9 +22,15 @@ import {
   weightToKg,
   kgToLbs,
   getActivityLevelLabel,
-  getTrainingVolumeLabel,
   getProteinTargetLabel,
+  getWeeklyNutritionTargets,
+  getTrainingDays,
 } from "@/utils/nutrition-helpers";
+import {
+  calculateDailyTrainingCalories,
+  calculateWeeklyTrainingCalories,
+  getTrainingCaloriesByDay,
+} from "@/utils/training-calorie-helpers";
 import { validateClientForNutrition } from "@/lib/validations/nutrition";
 import { format, addDays } from "date-fns";
 
@@ -44,6 +51,9 @@ export function NutritionCalculatorCardEnhanced({
   const [showCustomMacros, setShowCustomMacros] = useState(false);
   const [settingsChanged, setSettingsChanged] = useState(false);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [customMacrosValidationError, setCustomMacrosValidationError] = useState<string | null>(null);
+  const [trainingPlan, setTrainingPlan] = useState<TrainingPlan | null>(null);
+  const [isLoadingTrainingPlan, setIsLoadingTrainingPlan] = useState(true);
 
   const [unitPreference, setUnitPreference] = useState<UnitPreference>(
     client.unitPreference || "imperial"
@@ -51,7 +61,6 @@ export function NutritionCalculatorCardEnhanced({
 
   const [settings, setSettings] = useState({
     workActivityLevel: client.workActivityLevel || ("sedentary" as ActivityLevel),
-    trainingVolumeHours: client.trainingVolumeHours || ("0-1" as TrainingVolume),
     proteinTargetGPerKg: client.proteinTargetGPerKg || 2.0,
     dietType: client.dietType || ("balanced" as DietType),
     goalDeadline: client.goalDeadline || "",
@@ -61,7 +70,44 @@ export function NutritionCalculatorCardEnhanced({
     protein: client.customProteinG || 0,
     carbs: client.customCarbG || 0,
     fat: client.customFatG || 0,
+    calories: client.customCalories || 0,
   });
+
+  // Fetch training plan on mount
+  useEffect(() => {
+    const fetchTrainingPlan = async () => {
+      try {
+        const res = await fetch(`/api/clients/${client.id}/training`);
+        const data = await res.json();
+        if (data.success && data.plan) {
+          setTrainingPlan(data.plan);
+        }
+      } catch (error) {
+        console.error("Failed to fetch training plan:", error);
+      } finally {
+        setIsLoadingTrainingPlan(false);
+      }
+    };
+    fetchTrainingPlan();
+  }, [client.id]);
+
+  // Validate custom macros whenever they change
+  useEffect(() => {
+    if (customMacros.protein > 0 || customMacros.carbs > 0 || customMacros.fat > 0) {
+      const calculatedCalories = (customMacros.protein * 4) + (customMacros.carbs * 4) + (customMacros.fat * 9);
+      const difference = Math.abs(customMacros.calories - calculatedCalories);
+
+      if (customMacros.calories > 0 && difference > 50) {
+        setCustomMacrosValidationError(
+          `Calories should be within ±50 of calculated total (${calculatedCalories} cal from macros)`
+        );
+      } else {
+        setCustomMacrosValidationError(null);
+      }
+    } else {
+      setCustomMacrosValidationError(null);
+    }
+  }, [customMacros]);
 
   const showBanner =
     client.currentWeight &&
@@ -70,6 +116,33 @@ export function NutritionCalculatorCardEnhanced({
       weightToKg(client.currentWeight, client.weightUnit || "lbs"),
       client.nutritionPlanBaseWeightKg
     );
+
+  // Calculate auto training calories from plan
+  const dailyTrainingCalories = trainingPlan ? calculateDailyTrainingCalories(trainingPlan) : 0;
+  const weeklyTrainingCalories = trainingPlan ? calculateWeeklyTrainingCalories(trainingPlan) : 0;
+  const trainingCaloriesByDay = trainingPlan ? getTrainingCaloriesByDay(trainingPlan) : null;
+
+  // Calculate weekly nutrition targets with training day distribution
+  // Use baselineCalories (TDEE - deficit) as the base, training calories are added per-day
+  const baselineCalories = client.baselineCalories || client.calorieTarget;
+  const weeklyTargets =
+    baselineCalories && client.proteinTargetG
+      ? getWeeklyNutritionTargets(
+          baselineCalories,
+          client.proteinTargetG,
+          trainingPlan,
+          client.dietType || "balanced"
+        )
+      : null;
+
+  // Calculate weekly total and training/rest breakdown
+  const weeklyTotal = weeklyTargets
+    ? weeklyTargets.reduce((sum, day) => sum + day.calories, 0)
+    : (client.calorieTarget || 0) * 7;
+
+  const trainingDaysSet = getTrainingDays(trainingPlan);
+  const trainingDaysCount = trainingDaysSet.size;
+  const restDaysCount = 7 - trainingDaysCount;
 
   const handleUnitChange = async (newUnit: UnitPreference) => {
     setUnitPreference(newUnit);
@@ -98,7 +171,6 @@ export function NutritionCalculatorCardEnhanced({
 
   const handleSettingsChange = (newSettings: {
     workActivityLevel: ActivityLevel;
-    trainingVolumeHours: TrainingVolume;
     proteinTargetGPerKg: number;
     dietType: DietType;
     goalDeadline?: string;
@@ -125,7 +197,6 @@ export function NutritionCalculatorCardEnhanced({
     try {
       const body: any = {
         workActivityLevel: settings.workActivityLevel,
-        trainingVolumeHours: settings.trainingVolumeHours,
         proteinTargetGPerKg: settings.proteinTargetGPerKg,
         dietType: settings.dietType,
         goalDeadline: settings.goalDeadline || undefined,
@@ -136,6 +207,7 @@ export function NutritionCalculatorCardEnhanced({
         body.customProteinG = customMacros.protein;
         body.customCarbG = customMacros.carbs;
         body.customFatG = customMacros.fat;
+        body.customCalories = customMacros.calories;
       }
 
       const res = await fetch(`/api/clients/${client.id}/nutrition`, {
@@ -170,10 +242,17 @@ export function NutritionCalculatorCardEnhanced({
     }
   };
 
-  // Calculate adjusted TDEE (BMR × activity + training calories)
+  // Calculate pure TDEE (BMR × activity multiplier, no training calories)
+  // Training calories are now added per-day in the weekly targets
   const getAdjustedTdee = () => {
-    if (!client.bmr || !client.workActivityLevel || !client.trainingVolumeHours) {
-      return client.tdee || null;
+    // Use saved TDEE if available (calculated when nutrition settings are configured)
+    if (client.tdee) {
+      return client.tdee;
+    }
+
+    // Fallback calculation if TDEE not saved yet
+    if (!client.bmr || !client.workActivityLevel) {
+      return null;
     }
 
     const activityMultipliers = {
@@ -184,28 +263,19 @@ export function NutritionCalculatorCardEnhanced({
       extremely_active: 1.9,
     };
 
-    const trainingCalories = {
-      "0-1": 0,
-      "2-3": 250,
-      "4-5": 400,
-      "6-7": 550,
-      "8+": 700,
-    };
-
     const activityMultiplier = activityMultipliers[client.workActivityLevel];
-    const trainingCals = trainingCalories[client.trainingVolumeHours];
-
-    return Math.round(client.bmr * activityMultiplier + trainingCals);
+    return Math.round(client.bmr * activityMultiplier);
   };
 
-  // Calculate projected timeline
+  // Calculate projected timeline based on baseline calories and TDEE
   const getProjectedDate = () => {
-    if (!client.goalWeight || !client.currentWeight || !client.calorieTarget) {
+    const baseline = client.baselineCalories || client.calorieTarget;
+    if (!client.goalWeight || !client.currentWeight || !baseline) {
       return null;
     }
 
-    const adjustedTdee = getAdjustedTdee();
-    if (!adjustedTdee) return null;
+    const tdee = getAdjustedTdee();
+    if (!tdee) return null;
 
     const currentWeightKg = weightToKg(client.currentWeight, client.weightUnit || "lbs");
     const goalWeightKg = weightToKg(client.goalWeight, client.weightUnit || "lbs");
@@ -213,7 +283,8 @@ export function NutritionCalculatorCardEnhanced({
 
     if (Math.abs(weightToLoseKg) < 0.1) return null;
 
-    const dailyDeficit = adjustedTdee - client.calorieTarget;
+    // Daily deficit is TDEE - baseline (not including training calories which are extra)
+    const dailyDeficit = tdee - baseline;
     const weeklyWeightChangeKg = (dailyDeficit * 7) / 7700;
 
     if (Math.abs(weeklyWeightChangeKg) < 0.01) return null;
@@ -248,7 +319,7 @@ export function NutritionCalculatorCardEnhanced({
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between">
-          <CardTitle>Nutrition Calculator</CardTitle>
+          <CardTitle>Nutrition Plan</CardTitle>
           <div className="flex items-center gap-3">
             <UnitToggle
               value={unitPreference}
@@ -276,7 +347,7 @@ export function NutritionCalculatorCardEnhanced({
       <CardContent className="space-y-6">
         {/* Regeneration Banner */}
         {showBanner && client.currentWeight && client.nutritionPlanBaseWeightKg && (
-          <div className="bg-amber-50 border border-amber-200 rounded-xs p-4">
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
             <div className="flex items-start gap-3">
               <AlertCircle className="h-5 w-5 text-amber-600 mt-0.5 flex-shrink-0" />
               <div className="flex-1 space-y-3">
@@ -339,68 +410,169 @@ export function NutritionCalculatorCardEnhanced({
           </div>
         )}
 
-        {/* Warnings */}
-        {warnings.length > 0 && <NutritionWarnings warnings={warnings} />}
-
-        {/* Targets Display */}
-        <NutritionTargetsDisplay client={client} />
-
-        {/* Additional Info */}
+        {/* Weekly Summary */}
         {client.calorieTarget && (
-          <div className="space-y-3">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 bg-muted/50 rounded-xs">
-              {projectedDate && (
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Projected Timeline (at current deficit)</p>
-                  <p className="text-sm font-medium">
-                    Goal weight by {format(projectedDate, "MMM d, yyyy")}
-                  </p>
-                  {(() => {
-                    const adjustedTdee = getAdjustedTdee();
-                    const dailyDeficit = adjustedTdee ? adjustedTdee - client.calorieTarget! : 0;
-                    const weeklyWeightLoss = (dailyDeficit * 7) / 7700;
-                    return (
-                      <p className="text-xs text-muted-foreground mt-1">
-                        ~{weeklyWeightLoss.toFixed(2)}kg/week loss ({dailyDeficit} cal deficit)
-                      </p>
-                    );
-                  })()}
-                  {client.goalDeadline && new Date(client.goalDeadline) < projectedDate && (
-                    <p className="text-xs text-amber-600 mt-1">
-                      {Math.ceil((projectedDate.getTime() - new Date(client.goalDeadline).getTime()) / (1000 * 60 * 60 * 24))} days past target deadline
-                    </p>
-                  )}
-                  {client.goalDeadline && new Date(client.goalDeadline) > projectedDate && (
-                    <p className="text-xs text-green-600 mt-1">
-                      {Math.ceil((new Date(client.goalDeadline).getTime() - projectedDate.getTime()) / (1000 * 60 * 60 * 24))} days ahead of target
-                    </p>
-                  )}
-                </div>
-              )}
+          <div className="bg-muted/50 rounded-lg p-4">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">Weekly Total</p>
+                <p className="text-2xl font-bold">{weeklyTotal.toLocaleString()} cal</p>
+              </div>
               {weightRemaining && (
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Weight Progress</p>
-                  <p className="text-sm font-medium">
+                <div className="text-right">
+                  <p className="text-xs text-muted-foreground mb-1">Progress</p>
+                  <p className="text-lg font-semibold">
                     {weightRemaining.isLoss ? "-" : "+"}
                     {weightRemaining.value} {weightRemaining.unit} to go
                   </p>
                 </div>
               )}
+              {trainingPlan && (
+                <div className="text-right">
+                  <p className="text-xs text-muted-foreground mb-1">Schedule</p>
+                  <p className="text-sm font-medium">
+                    {trainingDaysCount} training / {restDaysCount} rest days
+                  </p>
+                </div>
+              )}
             </div>
-            {client.goalDeadline && (
-              <div className="p-3 bg-blue-50 border border-blue-200 rounded-xs">
-                <p className="text-xs text-muted-foreground mb-1">Target Deadline</p>
-                <p className="text-sm font-medium text-blue-900">
-                  {format(new Date(client.goalDeadline), "MMM d, yyyy")}
+            {projectedDate && (
+              <div className="mt-3 pt-3 border-t border-muted">
+                <p className="text-xs text-muted-foreground">
+                  Projected goal date:{" "}
+                  <span className="font-medium text-foreground">
+                    {format(projectedDate, "MMM d, yyyy")}
+                  </span>
+                  {client.goalDeadline && new Date(client.goalDeadline) < projectedDate && (
+                    <span className="text-amber-600 ml-2">
+                      ({Math.ceil((projectedDate.getTime() - new Date(client.goalDeadline).getTime()) / (1000 * 60 * 60 * 24))} days past target)
+                    </span>
+                  )}
+                  {client.goalDeadline && new Date(client.goalDeadline) > projectedDate && (
+                    <span className="text-green-600 ml-2">
+                      ({Math.ceil((new Date(client.goalDeadline).getTime() - projectedDate.getTime()) / (1000 * 60 * 60 * 24))} days ahead)
+                    </span>
+                  )}
                 </p>
               </div>
             )}
           </div>
         )}
 
+        {/* Warnings */}
+        {warnings.length > 0 && <NutritionWarnings warnings={warnings} />}
+
+        {/* Day-based Accordion Display */}
+        {weeklyTargets && !client.customMacrosEnabled ? (
+          <NutritionDayAccordion targets={weeklyTargets} />
+        ) : client.calorieTarget ? (
+          // Fallback for custom macros - show same values for all days
+          <div className="text-center py-6 border rounded-lg">
+            <div className="text-4xl font-bold text-primary">
+              {client.calorieTarget.toLocaleString()}
+            </div>
+            <div className="text-sm text-muted-foreground mt-1">
+              calories per day (custom macros)
+            </div>
+            <div className="grid grid-cols-3 gap-4 mt-4 pt-4 border-t mx-4">
+              <div className="text-center">
+                <div className="text-xl font-bold text-blue-500">
+                  {client.customProteinG || client.proteinTargetG}g
+                </div>
+                <div className="text-xs text-muted-foreground">Protein</div>
+              </div>
+              <div className="text-center">
+                <div className="text-xl font-bold text-green-500">
+                  {client.customCarbG || client.carbTargetG}g
+                </div>
+                <div className="text-xs text-muted-foreground">Carbs</div>
+              </div>
+              <div className="text-center">
+                <div className="text-xl font-bold text-amber-500">
+                  {client.customFatG || client.fatTargetG}g
+                </div>
+                <div className="text-xs text-muted-foreground">Fat</div>
+              </div>
+            </div>
+            <p className="text-xs text-amber-600 mt-3">Custom macros active - same targets each day</p>
+          </div>
+        ) : (
+          <div className="text-center py-8 text-muted-foreground">
+            <p>No nutrition plan generated yet</p>
+            <p className="text-sm mt-2">
+              Configure settings below and generate a plan
+            </p>
+          </div>
+        )}
+
+        {/* Auto-Calculated Training Calories Display */}
+        {trainingPlan && (
+          <div className="bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200 rounded-lg p-4">
+            <div className="flex items-start gap-3">
+              <Flame className="h-5 w-5 text-orange-600 mt-0.5 flex-shrink-0" />
+              <div className="flex-1">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-sm font-semibold text-orange-900">Training Calories (Auto-calculated)</h4>
+                  <Badge variant="outline" className="text-orange-700 border-orange-300">
+                    From Training Plan
+                  </Badge>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-2xl font-bold text-orange-700">+{dailyTrainingCalories}</p>
+                    <p className="text-xs text-orange-600">cal/day average</p>
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-orange-700">{weeklyTrainingCalories}</p>
+                    <p className="text-xs text-orange-600">cal/week total</p>
+                  </div>
+                </div>
+                {trainingCaloriesByDay && (
+                  <div className="mt-3 pt-3 border-t border-orange-200">
+                    <p className="text-xs text-orange-700 mb-2">Daily breakdown:</p>
+                    <div className="flex flex-wrap gap-2">
+                      {["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"].map((day) => {
+                        const cals = trainingCaloriesByDay[day as keyof typeof trainingCaloriesByDay] || 0;
+                        const shortDay = day.slice(0, 3);
+                        return (
+                          <div
+                            key={day}
+                            className={`text-xs px-2 py-1 rounded ${
+                              cals > 0
+                                ? "bg-orange-100 text-orange-800"
+                                : "bg-gray-100 text-gray-500"
+                            }`}
+                          >
+                            {shortDay.charAt(0).toUpperCase() + shortDay.slice(1)}: {cals > 0 ? `+${cals}` : "Rest"}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* No Training Plan Message */}
+        {!trainingPlan && !isLoadingTrainingPlan && (
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+            <div className="flex items-start gap-3">
+              <Dumbbell className="h-5 w-5 text-gray-400 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="text-sm text-gray-700">No active training plan</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  Training calories will be calculated automatically when you create a training plan.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Current Settings Display */}
         {client.calorieTarget && !showSettings && (
-          <div className="border rounded-xs p-4 space-y-3">
+          <div className="border rounded-lg p-4 space-y-3">
             <div className="flex items-center justify-between">
               <h4 className="text-sm font-semibold">Current Settings</h4>
               <Button variant="outline" size="sm" onClick={() => setShowSettings(true)}>
@@ -412,12 +584,6 @@ export function NutritionCalculatorCardEnhanced({
                 <span className="text-muted-foreground">Activity Level:</span>
                 <p className="font-medium mt-0.5">
                   {client.workActivityLevel ? getActivityLevelLabel(client.workActivityLevel) : "Not set"}
-                </p>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Training Volume:</span>
-                <p className="font-medium mt-0.5">
-                  {client.trainingVolumeHours ? getTrainingVolumeLabel(client.trainingVolumeHours) : "Not set"}
                 </p>
               </div>
               <div>
@@ -434,13 +600,19 @@ export function NutritionCalculatorCardEnhanced({
                     : "Not set"}
                 </p>
               </div>
+              <div>
+                <span className="text-muted-foreground">Training Calories:</span>
+                <p className="font-medium mt-0.5">
+                  {trainingPlan ? `+${dailyTrainingCalories} cal/day` : "No plan"}
+                </p>
+              </div>
             </div>
           </div>
         )}
 
         {/* Settings Section */}
         {showSettings && (
-          <div className="space-y-4 border rounded-xs p-4">
+          <div className="space-y-4 border rounded-lg p-4">
             <div className="flex items-center justify-between">
               <h3 className="font-semibold flex items-center gap-2">
                 <Settings2 className="h-4 w-4" />
@@ -472,9 +644,9 @@ export function NutritionCalculatorCardEnhanced({
               {showCustomMacros && (
                 <div className="mt-4 space-y-3 pl-4 border-l-2">
                   <p className="text-xs text-muted-foreground">
-                    Override calculated macros with custom values
+                    Override calculated macros with custom values (applies same targets to all days)
                   </p>
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-2 gap-3">
                     <div>
                       <Label htmlFor="custom-protein" className="text-xs">
                         Protein (g)
@@ -517,10 +689,31 @@ export function NutritionCalculatorCardEnhanced({
                         className="mt-1"
                       />
                     </div>
+                    <div>
+                      <Label htmlFor="custom-calories" className="text-xs">
+                        Calories
+                      </Label>
+                      <Input
+                        id="custom-calories"
+                        type="number"
+                        value={customMacros.calories}
+                        onChange={(e) =>
+                          setCustomMacros({ ...customMacros, calories: parseInt(e.target.value) || 0 })
+                        }
+                        className="mt-1"
+                        placeholder={`~${(customMacros.protein * 4 + customMacros.carbs * 4 + customMacros.fat * 9).toString()}`}
+                      />
+                    </div>
                   </div>
+                  {customMacrosValidationError && (
+                    <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-md">
+                      <AlertCircle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                      <p className="text-xs text-amber-800">{customMacrosValidationError}</p>
+                    </div>
+                  )}
                   <Button
                     onClick={() => handleGenerate(true)}
-                    disabled={isGenerating}
+                    disabled={isGenerating || !!customMacrosValidationError}
                     size="sm"
                     variant="outline"
                     className="w-full"
@@ -543,7 +736,7 @@ export function NutritionCalculatorCardEnhanced({
             </div>
 
             {!client.bmr && (
-              <div className="bg-blue-50 border border-blue-200 rounded-xs p-3 text-sm text-blue-900">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-900">
                 <p className="font-medium">BMR not calculated</p>
                 <p className="text-blue-800 mt-1">
                   Calculate BMR first using the button in the Profile tab.

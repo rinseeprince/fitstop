@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { Client, ActivityLevel, TrainingVolume, DietType } from "@/types/check-in";
+import type { Client, ActivityLevel, DietType } from "@/types/check-in";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -17,7 +17,6 @@ type NutritionSettingsFormProps = {
   client: Client;
   onSettingsChange: (settings: {
     workActivityLevel: ActivityLevel;
-    trainingVolumeHours: TrainingVolume;
     proteinTargetGPerKg: number;
     dietType: DietType;
     goalDeadline?: string;
@@ -33,9 +32,6 @@ export function NutritionSettingsForm({
   const [workActivityLevel, setWorkActivityLevel] = useState<ActivityLevel>(
     client.workActivityLevel || "sedentary"
   );
-  const [trainingVolumeHours, setTrainingVolumeHours] = useState<TrainingVolume>(
-    client.trainingVolumeHours || "0-1"
-  );
   const [proteinTargetGPerKg, setProteinTargetGPerKg] = useState<number>(
     client.proteinTargetGPerKg || PROTEIN_TARGETS.high.gPerKg
   );
@@ -48,14 +44,11 @@ export function NutritionSettingsForm({
 
   const handleChange = (
     field: string,
-    value: ActivityLevel | TrainingVolume | number | DietType | string
+    value: ActivityLevel | number | DietType | string
   ) => {
     switch (field) {
       case "workActivityLevel":
         setWorkActivityLevel(value as ActivityLevel);
-        break;
-      case "trainingVolumeHours":
-        setTrainingVolumeHours(value as TrainingVolume);
         break;
       case "proteinTargetGPerKg":
         setProteinTargetGPerKg(value as number);
@@ -74,10 +67,6 @@ export function NutritionSettingsForm({
         field === "workActivityLevel"
           ? (value as ActivityLevel)
           : workActivityLevel,
-      trainingVolumeHours:
-        field === "trainingVolumeHours"
-          ? (value as TrainingVolume)
-          : trainingVolumeHours,
       proteinTargetGPerKg:
         field === "proteinTargetGPerKg"
           ? (value as number)
@@ -119,31 +108,6 @@ export function NutritionSettingsForm({
         </Select>
         <p className="text-xs text-muted-foreground">
           Daily work activity level (multiplier: 1.2x to 1.9x)
-        </p>
-      </div>
-
-      {/* Training Volume */}
-      <div className="space-y-2">
-        <Label htmlFor="training-volume">Training Volume</Label>
-        <Select
-          value={trainingVolumeHours}
-          onValueChange={(value) =>
-            handleChange("trainingVolumeHours", value as TrainingVolume)
-          }
-        >
-          <SelectTrigger id="training-volume">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="0-1">0-1 hours/week (+0 cal)</SelectItem>
-            <SelectItem value="2-3">2-3 hours/week (+250 cal)</SelectItem>
-            <SelectItem value="4-5">4-5 hours/week (+400 cal)</SelectItem>
-            <SelectItem value="6-7">6-7 hours/week (+550 cal)</SelectItem>
-            <SelectItem value="8+">8+ hours/week (+700 cal)</SelectItem>
-          </SelectContent>
-        </Select>
-        <p className="text-xs text-muted-foreground">
-          Weekly training hours (adds calories to TDEE)
         </p>
       </div>
 

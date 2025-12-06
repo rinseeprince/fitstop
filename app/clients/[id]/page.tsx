@@ -14,10 +14,14 @@ import { ProgressCharts } from "@/components/check-in/progress-charts"
 import { PhotoComparison } from "@/components/check-in/photo-comparison"
 import { CheckInScheduleCard } from "@/components/clients/check-in-schedule-card"
 import { NutritionCalculatorCardEnhanced } from "@/components/clients/nutrition-calculator-card-enhanced"
+import { TrainingPlanCard } from "@/components/clients/training-plan-card"
 import { useCheckInData, useClient } from "@/hooks/use-check-in-data"
 import { ArrowLeft, MessageSquare, Phone, Mail, Loader2, AlertCircle, Calculator } from "lucide-react"
 import Link from "next/link"
 import { useToast } from "@/hooks/use-toast"
+import { InlineEditableMetric } from "@/components/clients/inline-editable-metric"
+import { MetricSaveDialog } from "@/components/clients/metric-save-dialog"
+import type { MetricSaveOption } from "@/types/check-in"
 
 export default function ClientProfilePage() {
   const params = useParams()
@@ -28,6 +32,13 @@ export default function ClientProfilePage() {
   const { checkIns, isLoading: checkInsLoading } = useCheckInData(clientId)
   const [selectedCheckInId, setSelectedCheckInId] = useState<string | null>(null)
   const [isCalculatingBMR, setIsCalculatingBMR] = useState(false)
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false)
+  const [pendingMetricUpdate, setPendingMetricUpdate] = useState<{
+    field: string;
+    value: number;
+    metricName: string;
+  } | null>(null)
+  const [isSavingMetric, setIsSavingMetric] = useState(false)
 
   const handleSelectCheckIn = (checkIn: any) => {
     setSelectedCheckInId(checkIn.id);
@@ -99,6 +110,93 @@ export default function ClientProfilePage() {
       });
     } finally {
       setIsCalculatingBMR(false);
+    }
+  };
+
+  // Handle metric update
+  const handleMetricSave = async (field: string, value: number, metricName: string, needsConfirmation: boolean) => {
+    if (needsConfirmation) {
+      setPendingMetricUpdate({ field, value, metricName });
+      setSaveDialogOpen(true);
+    } else {
+      await saveMetric(field, value, "update-only");
+    }
+  };
+
+  // Save metric with option
+  const saveMetric = async (field: string, value: number, saveOption: MetricSaveOption) => {
+    setIsSavingMetric(true);
+    try {
+      const body: any = { saveOption };
+      body[field] = value;
+
+      const response = await fetch(`/api/clients/${clientId}/metrics`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to update metric");
+      }
+
+      toast({
+        title: "Metric Updated",
+        description: `Successfully updated ${pendingMetricUpdate?.metricName || "metric"}`,
+      });
+
+      mutateClient();
+      setSaveDialogOpen(false);
+      setPendingMetricUpdate(null);
+    } catch (error) {
+      toast({
+        title: "Failed to update metric",
+        description: error instanceof Error ? error.message : "An error occurred",
+        variant: "destructive",
+      });
+      throw error;
+    } finally {
+      setIsSavingMetric(false);
+    }
+  };
+
+  // Reset BMR/TDEE to auto-calculation
+  const handleResetToAuto = async (field: "bmr" | "tdee") => {
+    try {
+      const body: any = {};
+      if (field === "bmr") {
+        body.bmrManualOverride = false;
+      } else {
+        body.tdeeManualOverride = false;
+      }
+
+      const response = await fetch(`/api/clients/${clientId}/metrics`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to reset");
+      }
+
+      toast({
+        title: `${field.toUpperCase()} Reset`,
+        description: `${field.toUpperCase()} will now auto-calculate`,
+      });
+
+      mutateClient();
+    } catch (error) {
+      toast({
+        title: "Failed to reset",
+        description: error instanceof Error ? error.message : "An error occurred",
+        variant: "destructive",
+      });
+      throw error;
     }
   };
 
@@ -247,45 +345,53 @@ export default function ClientProfilePage() {
                   <div className="grid gap-4">
                     {/* Weight Row */}
                     <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm text-muted-foreground">Current Weight</p>
-                        <p className="text-2xl font-bold">
-                          {client.currentWeight
-                            ? `${client.currentWeight} ${client.weightUnit || "lbs"}`
-                            : checkIns[0]?.weight
-                            ? `${checkIns[0].weight} ${checkIns[0].weightUnit || client.weightUnit || "lbs"}`
-                            : "Not recorded"}
-                        </p>
-                      </div>
+                      <InlineEditableMetric
+                        label="Current Weight"
+                        value={client.currentWeight || checkIns[0]?.weight}
+                        unit={client.weightUnit || "lbs"}
+                        placeholder="Not recorded"
+                        onSave={(value) => handleMetricSave("currentWeight", value, "current weight", true)}
+                        min={44}
+                        max={550}
+                        step={0.1}
+                      />
                       <div className="text-right">
-                        <p className="text-sm text-muted-foreground">Goal Weight</p>
-                        <p className="text-2xl font-bold">
-                          {client.goalWeight
-                            ? `${client.goalWeight} ${client.weightUnit || "lbs"}`
-                            : "Not set"}
-                        </p>
+                        <InlineEditableMetric
+                          label="Goal Weight"
+                          value={client.goalWeight}
+                          unit={client.weightUnit || "lbs"}
+                          placeholder="Not set"
+                          onSave={(value) => handleMetricSave("goalWeight", value, "goal weight", false)}
+                          min={44}
+                          max={550}
+                          step={0.1}
+                        />
                       </div>
                     </div>
 
                     {/* Body Fat Row */}
                     <div className="flex items-center justify-between pt-3 border-t">
-                      <div>
-                        <p className="text-sm text-muted-foreground">Current Body Fat %</p>
-                        <p className="text-2xl font-bold">
-                          {client.currentBodyFatPercentage
-                            ? `${client.currentBodyFatPercentage}%`
-                            : checkIns[0]?.bodyFatPercentage
-                            ? `${checkIns[0].bodyFatPercentage}%`
-                            : "Not recorded"}
-                        </p>
-                      </div>
+                      <InlineEditableMetric
+                        label="Current Body Fat %"
+                        value={client.currentBodyFatPercentage || checkIns[0]?.bodyFatPercentage}
+                        unit="%"
+                        placeholder="Not recorded"
+                        onSave={(value) => handleMetricSave("currentBodyFatPercentage", value, "current body fat", true)}
+                        min={3}
+                        max={60}
+                        step={0.1}
+                      />
                       <div className="text-right">
-                        <p className="text-sm text-muted-foreground">Goal Body Fat %</p>
-                        <p className="text-2xl font-bold">
-                          {client.goalBodyFatPercentage
-                            ? `${client.goalBodyFatPercentage}%`
-                            : "Not set"}
-                        </p>
+                        <InlineEditableMetric
+                          label="Goal Body Fat %"
+                          value={client.goalBodyFatPercentage}
+                          unit="%"
+                          placeholder="Not set"
+                          onSave={(value) => handleMetricSave("goalBodyFatPercentage", value, "goal body fat", false)}
+                          min={3}
+                          max={60}
+                          step={0.1}
+                        />
                       </div>
                     </div>
 
@@ -319,22 +425,32 @@ export default function ClientProfilePage() {
 
                     {/* BMR, TDEE & Physical Stats */}
                     <div className="grid grid-cols-2 gap-4 pt-3 border-t">
-                      <div>
-                        <p className="text-sm text-muted-foreground">BMR (Basal Metabolic Rate)</p>
-                        <p className="text-lg font-bold">
-                          {client.bmr
-                            ? `${Math.round(client.bmr)} cal/day`
-                            : "Not calculated"}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">TDEE (Sedentary)</p>
-                        <p className="text-lg font-bold">
-                          {client.tdee
-                            ? `${Math.round(client.tdee)} cal/day`
-                            : "Not calculated"}
-                        </p>
-                      </div>
+                      <InlineEditableMetric
+                        label="BMR (Basal Metabolic Rate)"
+                        value={client.bmr}
+                        unit="cal/day"
+                        placeholder="Not calculated"
+                        isManual={client.bmrManualOverride}
+                        onSave={(value) => handleMetricSave("bmr", value, "BMR", false)}
+                        onResetToAuto={() => handleResetToAuto("bmr")}
+                        min={800}
+                        max={5000}
+                        step={1}
+                        formatDisplay={(v) => Math.round(v).toString()}
+                      />
+                      <InlineEditableMetric
+                        label="TDEE (Sedentary)"
+                        value={client.tdee}
+                        unit="cal/day"
+                        placeholder="Not calculated"
+                        isManual={client.tdeeManualOverride}
+                        onSave={(value) => handleMetricSave("tdee", value, "TDEE", false)}
+                        onResetToAuto={() => handleResetToAuto("tdee")}
+                        min={1000}
+                        max={8000}
+                        step={1}
+                        formatDisplay={(v) => Math.round(v).toString()}
+                      />
                     </div>
                     <div className="grid grid-cols-2 gap-4 pt-3 border-t">
                       <div>
@@ -394,16 +510,7 @@ export default function ClientProfilePage() {
 
           {/* Training Plan Tab */}
           <TabsContent value="training" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Current Training Program</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-center py-12 text-muted-foreground">
-                  <p>Training program management coming soon</p>
-                </div>
-              </CardContent>
-            </Card>
+            <TrainingPlanCard client={client} onUpdate={() => mutateClient()} />
           </TabsContent>
 
           {/* Nutrition Tab */}
@@ -451,6 +558,18 @@ export default function ClientProfilePage() {
           </>
         )}
       </div>
+
+      {/* Metric Save Dialog */}
+      {pendingMetricUpdate && (
+        <MetricSaveDialog
+          open={saveDialogOpen}
+          onOpenChange={setSaveDialogOpen}
+          metricName={pendingMetricUpdate.metricName}
+          onSaveAsCheckIn={() => saveMetric(pendingMetricUpdate.field, pendingMetricUpdate.value, "check-in")}
+          onUpdateOnly={() => saveMetric(pendingMetricUpdate.field, pendingMetricUpdate.value, "update-only")}
+          isLoading={isSavingMetric}
+        />
+      )}
     </AppLayout>
   )
 }

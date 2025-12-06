@@ -10,16 +10,28 @@ import { StepPhotos } from "./step-photos";
 import { StepTraining } from "./step-training";
 import { FormSuccess } from "./form-success";
 import { useCheckInForm } from "@/hooks/use-check-in-form";
-import type { CheckInFormData, CheckInClientInfo } from "@/types/check-in";
+import type {
+  CheckInFormData,
+  CheckInClientInfo,
+  CheckInTrainingContext,
+  CheckInNutritionContext,
+} from "@/types/check-in";
 
 type CheckInFormProps = {
   token: string;
   clientInfo: CheckInClientInfo;
+  trainingContext?: CheckInTrainingContext;
+  nutritionContext?: CheckInNutritionContext;
 };
 
 const stepLabels = ["Feeling", "Metrics", "Photos", "Training"];
 
-export const CheckInForm = ({ token, clientInfo }: CheckInFormProps) => {
+export const CheckInForm = ({
+  token,
+  clientInfo,
+  trainingContext,
+  nutritionContext,
+}: CheckInFormProps) => {
   const {
     currentStep,
     formData,
@@ -48,6 +60,12 @@ export const CheckInForm = ({ token, clientInfo }: CheckInFormProps) => {
       const result = await response.json();
 
       if (!response.ok || !result.success) {
+        // If validation failed, try to extract more specific error info
+        if (result.validationErrors) {
+          console.error("Validation errors:", result.validationErrors);
+          // Clear potentially corrupt localStorage data
+          clearSavedData();
+        }
         throw new Error(result.errorMessage || "Failed to submit check-in");
       }
 
@@ -116,7 +134,13 @@ export const CheckInForm = ({ token, clientInfo }: CheckInFormProps) => {
         )}
 
         {currentStep === 4 && (
-          <StepTraining data={formData} onChange={updateFormData} />
+          <StepTraining
+            data={formData}
+            onChange={updateFormData}
+            trainingContext={trainingContext}
+            nutritionContext={nutritionContext}
+            weightUnit={formData.weightUnit || "lbs"}
+          />
         )}
       </div>
 

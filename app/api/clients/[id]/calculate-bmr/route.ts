@@ -69,15 +69,13 @@ export async function POST(
       );
     }
 
-    // Calculate TDEE (sedentary = BMR × 1.2)
-    const tdee = Math.round(bmr * 1.2);
-
-    // Update BMR in database
+    // Update only BMR in database
+    // TDEE is calculated when nutrition settings are configured (activity level determines multiplier)
     await supabaseAdmin
       .from("clients")
       .update(
         // @ts-expect-error - Database type inference issue
-        { bmr, tdee }
+        { bmr }
       )
       .eq("id", id);
 
@@ -85,7 +83,7 @@ export async function POST(
       {
         success: true,
         bmr,
-        tdee
+        message: "BMR calculated. TDEE will be calculated when nutrition settings are configured."
       },
       { status: 200 }
     );

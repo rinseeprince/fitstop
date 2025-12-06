@@ -1,4 +1,4 @@
-import { getCheckInById, getPreviousCheckIn, getClientCheckIns } from "./check-in-service";
+import { getCheckInById, getPreviousCheckIn, getClientCheckIns, getFirstCheckIn } from "./check-in-service";
 import { getClientById } from "./client-service";
 import { prepareChartData } from "@/lib/check-in-utils";
 import { calculateMetricChange, calculateDaysBetween, calculateGoalProgress } from "@/utils/comparison-utils";
@@ -30,10 +30,11 @@ export const getCheckInComparison = async (
     checkInId
   );
 
-  // Fetch all check-ins for chart data (last 10)
-  const { checkIns } = await getClientCheckIns(currentCheckIn.clientId, {
-    limit: 10,
-  });
+  // Fetch all check-ins for chart data (last 10) and first check-in for starting values
+  const [{ checkIns }, firstCheckIn] = await Promise.all([
+    getClientCheckIns(currentCheckIn.clientId, { limit: 10 }),
+    getFirstCheckIn(currentCheckIn.clientId),
+  ]);
 
   // Calculate time between check-ins
   const timeBetweenCheckIns = previousCheckIn
@@ -148,9 +149,11 @@ export const getCheckInComparison = async (
 
   // Weight goal progress
   if (currentCheckIn.weight && client.goalWeight) {
-    const startingWeight = weightCheckIns.length > 0
-      ? weightCheckIns[weightCheckIns.length - 1].weight
-      : currentCheckIn.weight;
+    // Priority: 1) client's starting weight, 2) first check-in, 3) oldest in recent set, 4) current
+    const startingWeight = client.startingWeight
+      ?? firstCheckIn?.weight
+      ?? (weightCheckIns.length > 0 ? weightCheckIns[weightCheckIns.length - 1].weight : undefined)
+      ?? currentCheckIn.weight;
 
     const progress = calculateGoalProgress(
       currentCheckIn.weight,
@@ -187,9 +190,11 @@ export const getCheckInComparison = async (
     currentCheckIn.bodyFatPercentage !== undefined &&
     client.goalBodyFatPercentage !== undefined
   ) {
-    const startingBodyFat = bodyFatCheckIns.length > 0
-      ? bodyFatCheckIns[bodyFatCheckIns.length - 1].bodyFatPercentage
-      : currentCheckIn.bodyFatPercentage;
+    // Priority: 1) client's starting body fat, 2) first check-in, 3) oldest in recent set, 4) current
+    const startingBodyFat = client.startingBodyFatPercentage
+      ?? firstCheckIn?.bodyFatPercentage
+      ?? (bodyFatCheckIns.length > 0 ? bodyFatCheckIns[bodyFatCheckIns.length - 1].bodyFatPercentage : undefined)
+      ?? currentCheckIn.bodyFatPercentage;
 
     const progress = calculateGoalProgress(
       currentCheckIn.bodyFatPercentage,

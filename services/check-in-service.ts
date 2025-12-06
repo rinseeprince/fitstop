@@ -4,6 +4,10 @@ import type {
   CheckInFormData,
   CheckInToken,
   CheckInClientInfo,
+  CheckInSessionCompletion,
+  CheckInExerciseHighlight,
+  CheckInExternalActivity,
+  CheckInWithDetails,
 } from "@/types/check-in";
 
 // Generate a unique token for check-in link
@@ -96,6 +100,14 @@ export const submitCheckIn = async (
   clientId: string,
   formData: CheckInFormData
 ): Promise<string> => {
+  // Calculate legacy fields from enhanced data for backward compatibility
+  const workoutsCompleted = formData.sessionCompletions?.length
+    ? formData.sessionCompletions.filter((s) => s.completed).length
+    : formData.workoutsCompleted;
+  const adherencePercentage = formData.nutritionAdherence?.daysOnTarget !== undefined
+    ? Math.round((formData.nutritionAdherence.daysOnTarget / 7) * 100)
+    : formData.adherencePercentage;
+
   const { data, error } = await (supabaseAdmin as any)
     .from("check_ins")
     .insert({
@@ -121,11 +133,14 @@ export const submitCheckIn = async (
       photo_front: formData.photoFront,
       photo_side: formData.photoSide,
       photo_back: formData.photoBack,
-      // Training metrics
-      workouts_completed: formData.workoutsCompleted,
-      adherence_percentage: formData.adherencePercentage,
+      // Training metrics (legacy)
+      workouts_completed: workoutsCompleted,
+      adherence_percentage: adherencePercentage,
       prs: formData.prs,
       challenges: formData.challenges,
+      // Enhanced nutrition tracking
+      nutrition_days_on_target: formData.nutritionAdherence?.daysOnTarget,
+      nutrition_notes: formData.nutritionAdherence?.notes,
     })
     .select("id")
     .single();
@@ -134,7 +149,25 @@ export const submitCheckIn = async (
     throw new Error(`Failed to submit check-in: ${error.message}`);
   }
 
-  return (data as any).id;
+  const checkInId = (data as any).id;
+
+  // Insert related data - errors here shouldn't fail the entire check-in
+  try {
+    if (formData.sessionCompletions?.length) {
+      await insertSessionCompletions(checkInId, formData.sessionCompletions);
+    }
+    if (formData.exerciseHighlights?.length) {
+      await insertExerciseHighlights(checkInId, formData.exerciseHighlights);
+    }
+    if (formData.externalActivities?.length) {
+      await insertExternalActivities(checkInId, formData.externalActivities);
+    }
+  } catch (relatedDataError) {
+    // Log the error but don't fail the check-in submission
+    console.error("Error inserting related check-in data:", relatedDataError);
+  }
+
+  return checkInId;
 };
 
 // Get a check-in by ID
@@ -191,6 +224,25 @@ export const getClientCheckIns = async (
     checkIns: (data || []).map(mapDatabaseRowToCheckIn),
     total: count || 0,
   };
+};
+
+// Get the first (oldest) check-in for a client
+export const getFirstCheckIn = async (
+  clientId: string
+): Promise<CheckIn | null> => {
+  const { data, error } = await supabaseAdmin
+    .from("check_ins")
+    .select("*")
+    .eq("client_id", clientId)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .single();
+
+  if (error || !data) {
+    return null;
+  }
+
+  return mapDatabaseRowToCheckIn(data);
 };
 
 // Update check-in status
@@ -317,6 +369,8 @@ const mapDatabaseRowToCheckIn = (row: any): CheckIn => {
     adherencePercentage: row.adherence_percentage,
     prs: row.prs,
     challenges: row.challenges,
+    nutritionDaysOnTarget: row.nutrition_days_on_target,
+    nutritionNotes: row.nutrition_notes,
     aiSummary: row.ai_summary,
     aiInsights: row.ai_insights,
     aiRecommendations: row.ai_recommendations,
@@ -328,4 +382,167 @@ const mapDatabaseRowToCheckIn = (row: any): CheckIn => {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+};
+
+// Insert session completions for a check-in
+const insertSessionCompletions = async (
+  checkInId: string,
+  completions: CheckInSessionCompletion[]
+): Promise<void> => {
+  const rows = completions.map((c) => ({
+    check_in_id: checkInId,
+    training_session_id: c.trainingSessionId,
+    completed: c.completed,
+    completion_quality: c.completionQuality || null,
+    notes: c.notes || null,
+  }));
+
+  const { error } = await supabaseAdmin
+    .from("check_in_session_completions")
+    .insert(rows as any);
+
+  if (error) {
+    throw new Error(`Failed to insert session completions: ${error.message}`);
+  }
+};
+
+// Insert exercise highlights for a check-in
+const insertExerciseHighlights = async (
+  checkInId: string,
+  highlights: CheckInExerciseHighlight[]
+): Promise<void> => {
+  const rows = highlights.map((h) => ({
+    check_in_id: checkInId,
+    exercise_id: h.exerciseId || null,
+    exercise_name: h.exerciseName,
+    highlight_type: h.highlightType,
+    details: h.details || null,
+    weight_value: h.weightValue || null,
+    weight_unit: h.weightUnit || null,
+    reps: h.reps || null,
+  }));
+
+  const { error } = await supabaseAdmin
+    .from("check_in_exercise_highlights")
+    .insert(rows as any);
+
+  if (error) {
+    throw new Error(`Failed to insert exercise highlights: ${error.message}`);
+  }
+};
+
+// Insert external activities for a check-in
+const insertExternalActivities = async (
+  checkInId: string,
+  activities: CheckInExternalActivity[]
+): Promise<void> => {
+  const rows = activities.map((a) => ({
+    check_in_id: checkInId,
+    activity_name: a.activityName,
+    intensity_level: a.intensityLevel,
+    duration_minutes: a.durationMinutes,
+    estimated_calories: a.estimatedCalories || null,
+    day_performed: a.dayPerformed || null,
+    notes: a.notes || null,
+  }));
+
+  const { error } = await supabaseAdmin
+    .from("check_in_external_activities")
+    .insert(rows as any);
+
+  if (error) {
+    throw new Error(`Failed to insert external activities: ${error.message}`);
+  }
+};
+
+// Get check-in with all related details
+export const getCheckInWithDetails = async (
+  checkInId: string
+): Promise<CheckInWithDetails | null> => {
+  const checkIn = await getCheckInById(checkInId);
+  if (!checkIn) return null;
+
+  const [sessionCompletions, exerciseHighlights, externalActivities] =
+    await Promise.all([
+      getSessionCompletions(checkInId),
+      getExerciseHighlights(checkInId),
+      getExternalActivities(checkInId),
+    ]);
+
+  return {
+    ...checkIn,
+    sessionCompletions,
+    exerciseHighlights,
+    externalActivities,
+  };
+};
+
+// Get session completions for a check-in
+const getSessionCompletions = async (
+  checkInId: string
+): Promise<CheckInSessionCompletion[]> => {
+  const { data, error } = await supabaseAdmin
+    .from("check_in_session_completions")
+    .select("*, training_sessions(name, day_of_week)")
+    .eq("check_in_id", checkInId);
+
+  if (error) return [];
+
+  return (data || []).map((row: any) => ({
+    id: row.id,
+    checkInId: row.check_in_id,
+    trainingSessionId: row.training_session_id,
+    sessionName: row.training_sessions?.name || "Unknown Session",
+    dayOfWeek: row.training_sessions?.day_of_week,
+    completed: row.completed,
+    completionQuality: row.completion_quality,
+    notes: row.notes,
+  }));
+};
+
+// Get exercise highlights for a check-in
+const getExerciseHighlights = async (
+  checkInId: string
+): Promise<CheckInExerciseHighlight[]> => {
+  const { data, error } = await supabaseAdmin
+    .from("check_in_exercise_highlights")
+    .select("*")
+    .eq("check_in_id", checkInId);
+
+  if (error) return [];
+
+  return (data || []).map((row: any) => ({
+    id: row.id,
+    checkInId: row.check_in_id,
+    exerciseId: row.exercise_id,
+    exerciseName: row.exercise_name,
+    highlightType: row.highlight_type,
+    details: row.details,
+    weightValue: row.weight_value ? parseFloat(row.weight_value) : undefined,
+    weightUnit: row.weight_unit,
+    reps: row.reps,
+  }));
+};
+
+// Get external activities for a check-in
+const getExternalActivities = async (
+  checkInId: string
+): Promise<CheckInExternalActivity[]> => {
+  const { data, error } = await supabaseAdmin
+    .from("check_in_external_activities")
+    .select("*")
+    .eq("check_in_id", checkInId);
+
+  if (error) return [];
+
+  return (data || []).map((row: any) => ({
+    id: row.id,
+    checkInId: row.check_in_id,
+    activityName: row.activity_name,
+    intensityLevel: row.intensity_level,
+    durationMinutes: row.duration_minutes,
+    estimatedCalories: row.estimated_calories,
+    dayPerformed: row.day_performed,
+    notes: row.notes,
+  }));
 };

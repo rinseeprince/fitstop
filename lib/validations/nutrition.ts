@@ -22,7 +22,7 @@ export const unitPreferenceSchema = z.enum(["metric", "imperial"]);
 
 export const nutritionPlanSchema = z.object({
   workActivityLevel: activityLevelSchema,
-  trainingVolumeHours: trainingVolumeSchema,
+  trainingVolumeHours: trainingVolumeSchema.optional(), // Now optional - auto-calculated from training plan
   proteinTargetGPerKg: z
     .number()
     .min(1.0, "Protein target must be at least 1.0g/kg")
@@ -33,7 +33,22 @@ export const nutritionPlanSchema = z.object({
   customProteinG: z.number().positive().optional(),
   customCarbG: z.number().positive().optional(),
   customFatG: z.number().positive().optional(),
-});
+  customCalories: z.number().positive().optional(),
+}).refine(
+  (data) => {
+    // If custom macros are enabled, validate that custom calories match macro totals
+    if (data.customMacrosEnabled && data.customCalories && data.customProteinG && data.customCarbG && data.customFatG) {
+      const calculatedCalories = (data.customProteinG * 4) + (data.customCarbG * 4) + (data.customFatG * 9);
+      const difference = Math.abs(data.customCalories - calculatedCalories);
+      return difference <= 50; // Allow ±50 calorie tolerance
+    }
+    return true;
+  },
+  {
+    message: "Custom calories must be within ±50 calories of macro totals (Protein×4 + Carbs×4 + Fat×9)",
+    path: ["customCalories"],
+  }
+);
 
 export const updateUnitPreferenceSchema = z.object({
   unitPreference: unitPreferenceSchema,
@@ -55,10 +70,6 @@ export function validateClientForNutrition(client: {
 
   if (!client.bmr) {
     errors.push("Client must have BMR calculated (use Calculate BMR button)");
-  }
-
-  if (!client.tdee) {
-    errors.push("Client must have TDEE calculated (use Calculate BMR button)");
   }
 
   if (!client.gender) {

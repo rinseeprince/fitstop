@@ -30,7 +30,12 @@ export default async function CheckInPage({ params }: PageProps) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
       <div className="container max-w-3xl mx-auto px-4 py-12">
-        <CheckInForm token={token} clientInfo={data.clientInfo} />
+        <CheckInForm
+          token={token}
+          clientInfo={data.clientInfo}
+          trainingContext={data.trainingContext}
+          nutritionContext={data.nutritionContext}
+        />
       </div>
     </div>
   );

@@ -4,6 +4,7 @@ import {
   submitCheckIn,
   markTokenAsUsed,
   getPreviousCheckIn,
+  getCheckInWithDetails,
 } from "@/services/check-in-service";
 import { getClientById, updateClient } from "@/services/client-service";
 import { uploadProgressPhotoFromBase64 } from "@/services/storage-service";
@@ -12,6 +13,10 @@ import { updateCheckInAISummary, getClientCheckIns } from "@/services/check-in-s
 import { markReminderAsResponded } from "@/services/reminder-service";
 import { updateClientAdherenceStats } from "@/services/check-in-tracking-service";
 import { updateClientBMR } from "@/services/bmr-service";
+import {
+  getCheckInTrainingContext,
+  getCheckInNutritionContext,
+} from "@/services/check-in-context-service";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { checkInRateLimit } from "@/lib/rate-limit";
 import { submitCheckInSchema } from "@/lib/validations/check-in";
@@ -53,12 +58,18 @@ export async function GET(
       return NextResponse.json(response, { status: 404 });
     }
 
-    // Fetch coach info
-    const { data: coach } = await supabaseAdmin
-      .from("coaches")
-      .select("name")
-      .eq("id", client.coachId)
-      .single();
+    // Fetch coach info and context in parallel
+    const [coachResult, trainingContext, nutritionContext] = await Promise.all([
+      supabaseAdmin
+        .from("coaches")
+        .select("name")
+        .eq("id", client.coachId)
+        .single(),
+      getCheckInTrainingContext(client.id),
+      getCheckInNutritionContext(client.id),
+    ]);
+
+    const coach = coachResult.data;
 
     const response: ValidateCheckInTokenResponse = {
       valid: true,
@@ -68,6 +79,8 @@ export async function GET(
         email: client.email,
         coachName: (coach as any)?.name || "Your Coach",
       },
+      trainingContext,
+      nutritionContext,
     };
 
     return NextResponse.json(response, { status: 200 });
@@ -293,18 +306,18 @@ async function triggerAISummaryGeneration(
   clientName: string
 ): Promise<void> {
   try {
-    // Get current check-in
-    const { checkIns } = await getClientCheckIns(clientId, { limit: 5 });
-    const currentCheckIn = checkIns.find((ci) => ci.id === checkInId);
+    // Get current check-in with all details (session completions, highlights, etc.)
+    const currentCheckIn = await getCheckInWithDetails(checkInId);
 
     if (!currentCheckIn) {
       throw new Error("Check-in not found");
     }
 
-    // Get previous check-ins
+    // Get previous check-ins for comparison
+    const { checkIns } = await getClientCheckIns(clientId, { limit: 5 });
     const previousCheckIns = checkIns.filter((ci) => ci.id !== checkInId);
 
-    // Generate AI summary
+    // Generate AI summary with enhanced data
     const aiSummary = await generateCheckInSummary(
       currentCheckIn,
       previousCheckIns,

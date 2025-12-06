@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import type {
   CheckIn,
+  CheckInWithDetails,
   AICheckInSummary,
   AIInsight,
   AIRecommendation,
@@ -12,7 +13,7 @@ const openai = new OpenAI({
 
 // Generate AI summary for a check-in
 export const generateCheckInSummary = async (
-  currentCheckIn: CheckIn,
+  currentCheckIn: CheckInWithDetails,
   previousCheckIns: CheckIn[],
   clientName: string
 ): Promise<AICheckInSummary> => {
@@ -53,7 +54,7 @@ Your analysis will help coaches quickly understand progress and formulate respon
 
 // Build the prompt for AI analysis
 const buildCheckInAnalysisPrompt = (
-  current: CheckIn,
+  current: CheckInWithDetails,
   previous: CheckIn[],
   clientName: string
 ): string => {
@@ -79,16 +80,59 @@ const buildCheckInAnalysisPrompt = (
       prompt += `- Body Fat: ${current.bodyFatPercentage}%\n`;
   }
 
-  if (current.workoutsCompleted || current.adherencePercentage) {
-    prompt += "\nTraining & Nutrition:\n";
-    if (current.workoutsCompleted)
-      prompt += `- Workouts Completed: ${current.workoutsCompleted}\n`;
-    if (current.adherencePercentage)
-      prompt += `- Adherence: ${current.adherencePercentage}%\n`;
+  // Enhanced training data
+  prompt += "\nTraining:\n";
+  if (current.sessionCompletions?.length) {
+    const completed = current.sessionCompletions.filter((s) => s.completed).length;
+    const total = current.sessionCompletions.length;
+    prompt += `- Sessions: ${completed}/${total} completed\n`;
+    current.sessionCompletions.forEach((s) => {
+      const status = s.completed
+        ? s.completionQuality === "partial"
+          ? "(partial)"
+          : "(full)"
+        : "(skipped)";
+      prompt += `  • ${s.sessionName}: ${status}\n`;
+      if (s.notes) prompt += `    Note: ${s.notes}\n`;
+    });
+  } else if (current.workoutsCompleted) {
+    prompt += `- Workouts Completed: ${current.workoutsCompleted}\n`;
   }
 
-  if (current.prs) prompt += `\nPersonal Records: ${current.prs}\n`;
-  if (current.challenges) prompt += `\nChallenges: ${current.challenges}\n`;
+  // Exercise highlights (PRs, struggles)
+  if (current.exerciseHighlights?.length) {
+    prompt += "\nExercise Highlights:\n";
+    current.exerciseHighlights.forEach((h) => {
+      const type = h.highlightType === "pr" ? "PR" : h.highlightType === "struggle" ? "Struggle" : "Note";
+      prompt += `- [${type}] ${h.exerciseName}`;
+      if (h.weightValue) prompt += ` @ ${h.weightValue}${h.weightUnit}`;
+      if (h.reps) prompt += ` x ${h.reps}`;
+      prompt += "\n";
+      if (h.details) prompt += `  ${h.details}\n`;
+    });
+  }
+
+  // Enhanced nutrition data
+  prompt += "\nNutrition:\n";
+  if (current.nutritionDaysOnTarget !== undefined) {
+    prompt += `- Days on target: ${current.nutritionDaysOnTarget}/7\n`;
+    if (current.nutritionNotes) prompt += `- Notes: ${current.nutritionNotes}\n`;
+  } else if (current.adherencePercentage !== undefined) {
+    prompt += `- Adherence: ${current.adherencePercentage}%\n`;
+  }
+
+  // External activities
+  if (current.externalActivities?.length) {
+    prompt += "\nExternal Activities (outside training plan):\n";
+    current.externalActivities.forEach((a) => {
+      prompt += `- ${a.activityName}: ${a.durationMinutes}min (${a.intensityLevel})`;
+      if (a.estimatedCalories) prompt += ` ~${a.estimatedCalories}cal`;
+      prompt += "\n";
+    });
+  }
+
+  if (current.prs) prompt += `\nPersonal Records (free text): ${current.prs}\n`;
+  if (current.challenges) prompt += `\nChallenges (free text): ${current.challenges}\n`;
   if (current.notes) prompt += `\nNotes: ${current.notes}\n`;
 
   // Previous check-ins for context

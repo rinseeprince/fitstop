@@ -62,6 +62,9 @@ const mapDatabaseRowToClient = (row: any): Client => ({
   goalDeadline: row.goal_deadline,
   nutritionPlanCreatedDate: row.nutrition_plan_created_date,
   nutritionPlanBaseWeightKg: row.nutrition_plan_base_weight_kg,
+  baselineCalories: row.baseline_calories,
+  startingWeight: row.starting_weight,
+  startingBodyFatPercentage: row.starting_body_fat_percentage,
   calorieTarget: row.calorie_target,
   proteinTargetG: row.protein_target_g,
   carbTargetG: row.carb_target_g,
@@ -70,6 +73,9 @@ const mapDatabaseRowToClient = (row: any): Client => ({
   customProteinG: row.custom_protein_g,
   customCarbG: row.custom_carb_g,
   customFatG: row.custom_fat_g,
+  customCalories: row.custom_calories,
+  bmrManualOverride: row.bmr_manual_override,
+  tdeeManualOverride: row.tdee_manual_override,
 });
 
 // Create a new client
@@ -92,6 +98,9 @@ export const createClient = async (
       weight_unit: clientData.weightUnit || "lbs",
       current_weight: clientData.currentWeight || null,
       current_body_fat_percentage: clientData.currentBodyFatPercentage || null,
+      // Auto-populate starting values from initial current values
+      starting_weight: clientData.currentWeight || null,
+      starting_body_fat_percentage: clientData.currentBodyFatPercentage || null,
       active: true,
     })
     .select()
