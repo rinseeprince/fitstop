@@ -288,3 +288,62 @@ export type GetTrainingPlanHistoryResponse = {
   history?: TrainingPlanHistory[];
   errorMessage?: string;
 };
+
+// Builder mode for training plan creation
+export type BuilderMode = "ai" | "manual";
+
+// Manual creation sub-mode
+export type ManualCreationMode = "scratch" | "template";
+
+// Quick suggestion for AI prompt
+export type QuickSuggestion = {
+  id: string;
+  label: string;
+  prompt: string;
+  category: "goal" | "style" | "equipment";
+};
+
+// Workout template for manual creation
+export type WorkoutTemplate = {
+  id: string;
+  name: string;
+  description: string;
+  splitType: TrainingSplitType;
+  frequency: number;
+  sessions: TemplateSession[];
+};
+
+// Template session structure
+export type TemplateSession = {
+  name: string;
+  focus: string;
+  exercises: TemplateExercise[];
+};
+
+// Template exercise structure
+export type TemplateExercise = {
+  name: string;
+  sets: number;
+  repsTarget: string;
+  notes?: string;
+};
+
+// Manual session being built (before saving)
+export type ManualSessionDraft = {
+  tempId: string;
+  name: string;
+  dayOfWeek?: string;
+  focus?: string;
+  exercises: ManualExerciseDraft[];
+};
+
+// Manual exercise being built (before saving)
+export type ManualExerciseDraft = {
+  tempId: string;
+  name: string;
+  sets: number;
+  repsTarget?: string;
+  rpeTarget?: number;
+  restSeconds?: number;
+  notes?: string;
+};

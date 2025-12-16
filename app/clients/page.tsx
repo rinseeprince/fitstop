@@ -10,7 +10,7 @@ import { ClientStatusBadge } from "@/components/client-status-badge";
 import { EngagementIndicator } from "@/components/engagement-indicator";
 import { AddClientDialog } from "@/components/add-client-dialog";
 import { EditClientDialog } from "@/components/edit-client-dialog";
-import { OverdueBanner } from "@/components/clients/overdue-banner";
+import { OverdueBanner } from "@/components/clients/check-in/overdue-banner";
 import {
   AlertDialog,
   AlertDialogAction,

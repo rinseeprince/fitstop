@@ -3,14 +3,13 @@
 import type { TrainingPlan } from "@/types/training";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { RefreshCw, Settings2, Shuffle, Loader2 } from "lucide-react";
+import { Settings2, Shuffle, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 
 type PlanDisplayHeaderProps = {
   plan: TrainingPlan;
   editMode: boolean;
   onToggleEdit: () => void;
-  onRegenerate: () => void;
   onRefreshExercises: () => void;
   isRefreshing?: boolean;
 };
@@ -28,7 +27,6 @@ export function PlanDisplayHeader({
   plan,
   editMode,
   onToggleEdit,
-  onRegenerate,
   onRefreshExercises,
   isRefreshing,
 }: PlanDisplayHeaderProps) {
@@ -67,9 +65,6 @@ export function PlanDisplayHeader({
               <Shuffle className="h-4 w-4 mr-1" />
             )}
             {isRefreshing ? "Refreshing..." : "New Exercises"}
-          </Button>
-          <Button variant="outline" size="sm" onClick={onRegenerate}>
-            <RefreshCw className="h-4 w-4 mr-1" /> Regenerate
           </Button>
         </div>
       </div>

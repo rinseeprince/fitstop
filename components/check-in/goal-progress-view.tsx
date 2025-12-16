@@ -7,7 +7,7 @@ import { Target } from "lucide-react";
 import { GoalDeadlineCard } from "./goal-deadline-card";
 import { WeightGoalCard } from "./weight-goal-card";
 import { BodyFatGoalCard } from "./body-fat-goal-card";
-import { NutritionRegenerationBanner } from "../clients/nutrition-regeneration-banner";
+import { NutritionRegenerationBanner } from "../clients/nutrition/nutrition-regeneration-banner";
 import { useToast } from "@/hooks/use-toast";
 import { useRouter } from "next/navigation";
 

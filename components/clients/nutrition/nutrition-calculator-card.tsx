@@ -6,8 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { NutritionTargetsDisplay } from "./nutrition-targets-display";
-import { NutritionSettingsForm } from "./nutrition-settings-form";
+import { NutritionTargetsDisplay } from "./display/nutrition-targets-display";
+import { NutritionSettingsForm } from "./builder/nutrition-settings-form";
 import { NutritionWarnings } from "./nutrition-warnings";
 import { AlertCircle, RefreshCw, Settings2 } from "lucide-react";
 import {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useOverdueClients } from "@/hooks/use-check-in-data";
-import { OverdueClientCard } from "@/components/clients/overdue-client-card";
+import { OverdueClientCard } from "@/components/clients/check-in/overdue-client-card";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, AlertTriangle } from "lucide-react";
 import Link from "next/link";

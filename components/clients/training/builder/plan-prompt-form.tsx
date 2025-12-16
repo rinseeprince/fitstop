@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { RefreshCw, Loader2 } from "lucide-react";
-import { PreGenerationActivities } from "./pre-generation-activities";
+import { PreGenerationActivities } from "../../activities/pre-generation-activities";
 import type { PreGenerationActivity } from "@/types/training";
 
 type PlanPromptFormProps = {

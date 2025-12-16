@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { TrainingPlan } from "@/types/training";
 
 export const splitTypeSchema = z.enum([
   "push_pull_legs",
@@ -120,4 +121,151 @@ export function validateClientForTraining(client: {
     valid: errors.length === 0,
     errors,
   };
+}
+
+// =============================================================================
+// API Response Validation Schemas
+// =============================================================================
+// These schemas validate API responses at runtime to catch malformed data.
+// They use passthrough() for nested objects to allow additional properties
+// and avoid strict type matching issues with ActivityMetadata.
+
+// Base schema for training plan response - validates structure without strict typing
+const trainingPlanResponseSchema = z.object({
+  id: z.string(),
+  clientId: z.string(),
+  coachId: z.string(),
+  name: z.string(),
+  description: z.string().nullable().optional(),
+  status: planStatusSchema,
+  coachPrompt: z.string(),
+  aiResponseRaw: z.string().nullable().optional(),
+  splitType: splitTypeSchema,
+  frequencyPerWeek: z.number(),
+  programDurationWeeks: z.number().nullable().optional(),
+  sessions: z.array(z.object({
+    id: z.string(),
+    planId: z.string(),
+    name: z.string(),
+    sessionType: z.enum(["training", "external_activity"]),
+    exercises: z.array(z.object({
+      id: z.string(),
+      name: z.string(),
+      sets: z.number(),
+    }).passthrough()),
+  }).passthrough()),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+}).passthrough();
+
+// GET /api/clients/[id]/training response
+const getTrainingPlanApiResponseSchema = z.object({
+  success: z.boolean(),
+  plan: trainingPlanResponseSchema.nullable().optional(),
+  errorMessage: z.string().optional(),
+});
+
+// POST /api/clients/[id]/training response (generate)
+const generateTrainingPlanApiResponseSchema = z.object({
+  success: z.boolean(),
+  plan: trainingPlanResponseSchema.optional(),
+  error: z.string().optional(),
+  errorMessage: z.string().optional(),
+});
+
+// POST /api/clients/[id]/training/manual response
+const saveManualPlanApiResponseSchema = z.object({
+  success: z.boolean(),
+  plan: trainingPlanResponseSchema.optional(),
+  error: z.string().optional(),
+});
+
+// POST /api/clients/[id]/training/suggestions response
+const suggestionsApiResponseSchema = z.object({
+  success: z.boolean(),
+  suggestions: z.array(z.string()).optional(),
+  error: z.string().optional(),
+});
+
+// POST /api/clients/[id]/training/[planId]/refresh-exercises response
+const refreshExercisesApiResponseSchema = z.object({
+  success: z.boolean(),
+  error: z.string().optional(),
+});
+
+// Response types for API calls
+export type GetPlanApiResponse = {
+  success: boolean;
+  plan?: TrainingPlan | null;
+  errorMessage?: string;
+};
+
+export type GeneratePlanApiResponse = {
+  success: boolean;
+  plan?: TrainingPlan;
+  error?: string;
+  errorMessage?: string;
+};
+
+export type SaveManualPlanApiResponse = {
+  success: boolean;
+  plan?: TrainingPlan;
+  error?: string;
+};
+
+export type SuggestionsApiResponse = {
+  success: boolean;
+  suggestions?: string[];
+  error?: string;
+};
+
+export type RefreshExercisesApiResponse = {
+  success: boolean;
+  error?: string;
+};
+
+// Safe parse helpers - validate structure and cast to correct types
+export function parseGetPlanResponse(data: unknown): GetPlanApiResponse | null {
+  const result = getTrainingPlanApiResponseSchema.safeParse(data);
+  if (!result.success) {
+    console.error("Validation error:", result.error.issues);
+    return null;
+  }
+  return result.data as unknown as GetPlanApiResponse;
+}
+
+export function parseGeneratePlanResponse(data: unknown): GeneratePlanApiResponse | null {
+  const result = generateTrainingPlanApiResponseSchema.safeParse(data);
+  if (!result.success) {
+    console.error("Validation error:", result.error.issues);
+    return null;
+  }
+  return result.data as unknown as GeneratePlanApiResponse;
+}
+
+export function parseSaveManualResponse(data: unknown): SaveManualPlanApiResponse | null {
+  const result = saveManualPlanApiResponseSchema.safeParse(data);
+  if (!result.success) {
+    console.error("Validation error:", result.error.issues);
+    return null;
+  }
+  return result.data as unknown as SaveManualPlanApiResponse;
+}
+
+export function parseSuggestionsResponse(data: unknown): SuggestionsApiResponse | null {
+  const result = suggestionsApiResponseSchema.safeParse(data);
+  if (!result.success) {
+    console.error("Validation error:", result.error.issues);
+    return null;
+  }
+  return result.data;
+}
+
+export function parseRefreshExercisesResponse(data: unknown): RefreshExercisesApiResponse | null {
+  const result = refreshExercisesApiResponseSchema.safeParse(data);
+  if (!result.success) {
+    console.error("Validation error:", result.error.issues);
+    return null;
+  }
+  return result.data;
 }
