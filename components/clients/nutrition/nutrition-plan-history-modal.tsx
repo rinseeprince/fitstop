@@ -50,15 +50,15 @@ export function NutritionPlanHistoryModal({
   const getReasonBadge = (reason?: string) => {
     switch (reason) {
       case "initial":
-        return <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">Initial Plan</Badge>;
+        return <Badge className="bg-blue-50 text-blue-600">Initial Plan</Badge>;
       case "regenerated":
-        return <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">Regenerated</Badge>;
+        return <Badge className="bg-green-50 text-green-600">Regenerated</Badge>;
       case "weight_change":
-        return <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">Weight Change</Badge>;
+        return <Badge className="bg-amber-50 text-amber-600">Weight Change</Badge>;
       case "custom_macros":
-        return <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">Custom Macros</Badge>;
+        return <Badge className="bg-violet-50 text-violet-600">Custom Macros</Badge>;
       default:
-        return <Badge variant="outline">Updated</Badge>;
+        return <Badge variant="secondary">Updated</Badge>;
     }
   };
 
@@ -74,13 +74,15 @@ export function NutritionPlanHistoryModal({
 
         {isLoading ? (
           <div className="flex items-center justify-center py-12">
-            <div className="text-muted-foreground">Loading history...</div>
+            <div className="w-5 h-5 border-2 border-muted border-t-primary rounded-full animate-spin" />
           </div>
         ) : history.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-            <History className="h-12 w-12 mb-3 opacity-20" />
-            <p>No nutrition plan history yet</p>
-            <p className="text-sm mt-1">History will appear after regenerating plans</p>
+          <div className="flex flex-col items-center justify-center py-12 text-center">
+            <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-4">
+              <History className="h-8 w-8 text-muted-foreground" />
+            </div>
+            <p className="text-muted-foreground">No nutrition plan history yet</p>
+            <p className="text-sm text-muted-foreground mt-1">History will appear after regenerating plans</p>
           </div>
         ) : (
           <div className="space-y-4">
@@ -91,8 +93,8 @@ export function NutritionPlanHistoryModal({
               return (
                 <div
                   key={entry.id}
-                  className={`border rounded-xs p-4 ${
-                    isLatest ? "border-primary bg-primary/5" : ""
+                  className={`rounded-xl p-5 border ${
+                    isLatest ? "bg-primary/5 border-primary/20" : "bg-white border-gray-200"
                   }`}
                 >
                   <div className="flex items-start justify-between mb-3">
@@ -118,9 +120,9 @@ export function NutritionPlanHistoryModal({
                         {previousEntry && (
                           <span className={`text-xs ml-1 ${
                             entry.calorieTarget > previousEntry.calorieTarget
-                              ? "text-green-600"
+                              ? "text-success"
                               : entry.calorieTarget < previousEntry.calorieTarget
-                              ? "text-red-600"
+                              ? "text-destructive"
                               : "text-muted-foreground"
                           }`}>
                             {entry.calorieTarget > previousEntry.calorieTarget && (
@@ -137,19 +139,19 @@ export function NutritionPlanHistoryModal({
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground mb-1">Protein</p>
-                      <p className="text-lg font-semibold text-blue-600">
+                      <p className="text-lg font-semibold text-primary">
                         {entry.proteinTargetG}g
                       </p>
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground mb-1">Carbs</p>
-                      <p className="text-lg font-semibold text-green-600">
+                      <p className="text-lg font-semibold text-success">
                         {entry.carbTargetG}g
                       </p>
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground mb-1">Fat</p>
-                      <p className="text-lg font-semibold text-amber-600">
+                      <p className="text-lg font-semibold text-warning">
                         {entry.fatTargetG}g
                       </p>
                     </div>

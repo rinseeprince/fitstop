@@ -45,15 +45,15 @@ export function NutritionTargetsDisplay({
   return (
     <div className="space-y-6">
       {/* Calorie Target */}
-      <div className="text-center border-b pb-4">
-        <div className="text-5xl font-bold text-primary">
+      <div className="text-center pb-6">
+        <div className="text-4xl font-bold text-primary">
           {client.calorieTarget.toLocaleString()}
         </div>
         <div className="text-sm text-muted-foreground mt-1">
           calories per day
         </div>
         {client.customMacrosEnabled && (
-          <div className="text-xs text-amber-600 mt-2">Custom macros active</div>
+          <div className="text-xs text-warning mt-2">Custom macros active</div>
         )}
       </div>
 
@@ -80,7 +80,7 @@ export function NutritionTargetsDisplay({
           </div>
           <div className="w-full bg-secondary rounded-full h-2">
             <div
-              className="bg-blue-500 h-2 rounded-full"
+              className="bg-primary h-2 rounded-full"
               style={{ width: `${proteinPct}%` }}
             />
           </div>
@@ -97,7 +97,7 @@ export function NutritionTargetsDisplay({
           </div>
           <div className="w-full bg-secondary rounded-full h-2">
             <div
-              className="bg-green-500 h-2 rounded-full"
+              className="bg-success h-2 rounded-full"
               style={{ width: `${carbPct}%` }}
             />
           </div>
@@ -114,7 +114,7 @@ export function NutritionTargetsDisplay({
           </div>
           <div className="w-full bg-secondary rounded-full h-2">
             <div
-              className="bg-amber-500 h-2 rounded-full"
+              className="bg-warning h-2 rounded-full"
               style={{ width: `${fatPct}%` }}
             />
           </div>
@@ -122,23 +122,23 @@ export function NutritionTargetsDisplay({
       </div>
 
       {/* Macro Summary */}
-      <div className="grid grid-cols-3 gap-4 pt-4 border-t">
-        <div className="text-center">
-          <div className="text-2xl font-bold text-blue-500">{proteinG}g</div>
-          <div className="text-xs text-muted-foreground">Protein</div>
-          <div className="text-xs text-muted-foreground">
+      <div className="grid grid-cols-3 gap-4 pt-6">
+        <div className="text-center bg-blue-50/50 rounded-xl p-4">
+          <div className="text-2xl font-bold text-blue-600">{proteinG}g</div>
+          <div className="text-xs text-gray-500 mt-1">Protein</div>
+          <div className="text-xs text-gray-400">
             {proteinCal} cal
           </div>
         </div>
-        <div className="text-center">
-          <div className="text-2xl font-bold text-green-500">{carbG}g</div>
-          <div className="text-xs text-muted-foreground">Carbs</div>
-          <div className="text-xs text-muted-foreground">{carbCal} cal</div>
+        <div className="text-center bg-green-50/50 rounded-xl p-4">
+          <div className="text-2xl font-bold text-green-600">{carbG}g</div>
+          <div className="text-xs text-gray-500 mt-1">Carbs</div>
+          <div className="text-xs text-gray-400">{carbCal} cal</div>
         </div>
-        <div className="text-center">
-          <div className="text-2xl font-bold text-amber-500">{fatG}g</div>
-          <div className="text-xs text-muted-foreground">Fat</div>
-          <div className="text-xs text-muted-foreground">{fatCal} cal</div>
+        <div className="text-center bg-amber-50/50 rounded-xl p-4">
+          <div className="text-2xl font-bold text-amber-600">{fatG}g</div>
+          <div className="text-xs text-gray-500 mt-1">Fat</div>
+          <div className="text-xs text-gray-400">{fatCal} cal</div>
         </div>
       </div>
     </div>

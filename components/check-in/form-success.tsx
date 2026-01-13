@@ -17,12 +17,12 @@ export const FormSuccess = ({ clientName, coachName }: FormSuccessProps) => {
         transition={{ type: "spring", duration: 0.6 }}
         className="relative mb-8"
       >
-        <div className="w-24 h-24 rounded-full bg-green-100 dark:bg-green-900/20 flex items-center justify-center">
-          <CheckCircle2 className="w-12 h-12 text-green-600 dark:text-green-400" />
+        <div className="w-24 h-24 rounded-full bg-success/15 flex items-center justify-center">
+          <CheckCircle2 className="w-12 h-12 text-success" />
         </div>
 
         <motion.div
-          className="absolute -inset-2 rounded-full border-4 border-green-500/20"
+          className="absolute -inset-2 rounded-full border-4 border-success/20"
           animate={{
             scale: [1, 1.2, 1],
             opacity: [0.5, 0, 0.5],

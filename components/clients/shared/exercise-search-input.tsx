@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { Plus, Search } from "lucide-react";
 
@@ -34,10 +35,9 @@ type ExerciseSearchInputProps = {
 
 export function ExerciseSearchInput({ onSelect }: ExerciseSearchInputProps) {
   const [query, setQuery] = useState("");
-  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [open, setOpen] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
 
   const filteredExercises = query.trim()
     ? commonExercises.filter((e) =>
@@ -45,26 +45,21 @@ export function ExerciseSearchInput({ onSelect }: ExerciseSearchInputProps) {
       ).slice(0, 6)
     : [];
 
-  // Close on outside click
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setShowSuggestions(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
   const handleSelect = (exerciseName: string) => {
     onSelect(exerciseName);
     setQuery("");
-    setShowSuggestions(false);
+    setOpen(false);
     setSelectedIndex(0);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (!showSuggestions) return;
+    if (!open || filteredExercises.length === 0) {
+      if (e.key === "Enter" && query.trim()) {
+        e.preventDefault();
+        handleSelect(query.trim());
+      }
+      return;
+    }
 
     if (e.key === "ArrowDown") {
       e.preventDefault();
@@ -82,40 +77,47 @@ export function ExerciseSearchInput({ onSelect }: ExerciseSearchInputProps) {
         handleSelect(query.trim());
       }
     } else if (e.key === "Escape") {
-      setShowSuggestions(false);
+      setOpen(false);
     }
   };
 
-  return (
-    <div ref={containerRef} className="relative">
-      <div className="relative">
-        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-        <Input
-          ref={inputRef}
-          value={query}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setShowSuggestions(true);
-            setSelectedIndex(0);
-          }}
-          onFocus={() => setShowSuggestions(true)}
-          onKeyDown={handleKeyDown}
-          placeholder="Add exercise..."
-          className="h-8 pl-8 pr-8 text-sm"
-        />
-        {query.trim() && (
-          <button
-            onClick={() => handleSelect(query.trim())}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-indigo-600"
-          >
-            <Plus className="h-4 w-4" />
-          </button>
-        )}
-      </div>
+  const showPopover = open && filteredExercises.length > 0;
 
-      {/* Suggestions Dropdown */}
-      {showSuggestions && filteredExercises.length > 0 && (
-        <div className="absolute z-50 w-full mt-1 bg-white border rounded-lg shadow-lg overflow-hidden">
+  return (
+    <Popover open={showPopover} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+          <Input
+            ref={inputRef}
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setOpen(true);
+              setSelectedIndex(0);
+            }}
+            onFocus={() => setOpen(true)}
+            onKeyDown={handleKeyDown}
+            placeholder="Add exercise..."
+            className="h-8 pl-8 pr-8 text-sm"
+          />
+          {query.trim() && (
+            <button
+              onClick={() => handleSelect(query.trim())}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-primary transition-colors"
+            >
+              <Plus className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+      </PopoverTrigger>
+      <PopoverContent
+        className="w-[var(--radix-popover-trigger-width)] p-0"
+        align="start"
+        sideOffset={4}
+        onOpenAutoFocus={(e) => e.preventDefault()}
+      >
+        <div className="max-h-[200px] overflow-y-auto">
           {filteredExercises.map((exercise, idx) => (
             <button
               key={exercise}
@@ -123,15 +125,15 @@ export function ExerciseSearchInput({ onSelect }: ExerciseSearchInputProps) {
               className={cn(
                 "w-full text-left px-3 py-2 text-sm transition-colors",
                 idx === selectedIndex
-                  ? "bg-indigo-50 text-indigo-700"
-                  : "text-slate-700 hover:bg-slate-50"
+                  ? "bg-primary/10 text-primary"
+                  : "text-foreground hover:bg-muted"
               )}
             >
               {exercise}
             </button>
           ))}
         </div>
-      )}
-    </div>
+      </PopoverContent>
+    </Popover>
   );
 }

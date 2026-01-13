@@ -62,7 +62,7 @@ export function PreGenerationActivities({
               )}
             </div>
             {activities.length > 0 && totalCalories > 0 && (
-              <Badge variant="outline" className="text-orange-600">
+              <Badge variant="outline" className="text-warning">
                 +{totalCalories} cal/week
               </Badge>
             )}

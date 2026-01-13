@@ -1,8 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import { TrainingBuilderProvider } from "@/contexts/training-builder-context";
-import { TrainingBuilderLeftPanel } from "./training-builder-left-panel";
 import { TrainingBuilderRightPanel } from "./training-builder-right-panel";
+import { TrainingPlanGeneratorDrawer } from "./training-plan-generator-drawer";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import type { Client } from "@/types/check-in";
 import { weightToKg } from "@/utils/nutrition-helpers";
@@ -16,6 +17,7 @@ export function TrainingPlanBuilder({
   client,
   onUpdate,
 }: TrainingPlanBuilderProps) {
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const clientWeightKg = client.currentWeight
     ? weightToKg(client.currentWeight, client.weightUnit || "lbs")
     : 70;
@@ -23,20 +25,21 @@ export function TrainingPlanBuilder({
   return (
     <ErrorBoundary>
       <TrainingBuilderProvider clientId={client.id} onUpdate={onUpdate}>
-        <div className="flex flex-col lg:flex-row gap-4 min-h-[600px]">
-          {/* Left Panel - 40% width */}
-          <div className="w-full lg:w-[40%] lg:min-w-[350px] lg:max-w-[450px] bg-white rounded-lg border p-4">
+        <div className="min-h-[600px]">
+          <div className="bg-white rounded-xl shadow-sm p-5 h-full">
             <ErrorBoundary>
-              <TrainingBuilderLeftPanel clientWeightKg={clientWeightKg} />
+              <TrainingBuilderRightPanel
+                clientId={client.id}
+                onOpenGenerator={() => setDrawerOpen(true)}
+              />
             </ErrorBoundary>
           </div>
 
-          {/* Right Panel - 60% width */}
-          <div className="flex-1 bg-white rounded-lg border p-4">
-            <ErrorBoundary>
-              <TrainingBuilderRightPanel clientId={client.id} />
-            </ErrorBoundary>
-          </div>
+          <TrainingPlanGeneratorDrawer
+            open={drawerOpen}
+            onOpenChange={setDrawerOpen}
+            clientWeightKg={clientWeightKg}
+          />
         </div>
       </TrainingBuilderProvider>
     </ErrorBoundary>

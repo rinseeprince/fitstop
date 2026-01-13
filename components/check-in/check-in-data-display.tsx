@@ -38,8 +38,8 @@ export const CheckInDataDisplay = ({ checkIn }: CheckInDataDisplayProps) => {
 
             {checkIn.energy && (
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-orange-100 dark:bg-orange-900/20 flex items-center justify-center">
-                  <Zap className="w-5 h-5 text-orange-600" />
+                <div className="w-10 h-10 rounded-full bg-warning/15 flex items-center justify-center">
+                  <Zap className="w-5 h-5 text-warning" />
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Energy</p>
@@ -50,8 +50,8 @@ export const CheckInDataDisplay = ({ checkIn }: CheckInDataDisplayProps) => {
 
             {checkIn.sleep && (
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/20 flex items-center justify-center">
-                  <Moon className="w-5 h-5 text-blue-600" />
+                <div className="w-10 h-10 rounded-full bg-primary/15 flex items-center justify-center">
+                  <Moon className="w-5 h-5 text-primary" />
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Sleep</p>
@@ -62,8 +62,8 @@ export const CheckInDataDisplay = ({ checkIn }: CheckInDataDisplayProps) => {
 
             {checkIn.stress && (
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/20 flex items-center justify-center">
-                  <AlertTriangle className="w-5 h-5 text-red-600" />
+                <div className="w-10 h-10 rounded-full bg-destructive/15 flex items-center justify-center">
+                  <AlertTriangle className="w-5 h-5 text-destructive" />
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Stress</p>
@@ -89,8 +89,8 @@ export const CheckInDataDisplay = ({ checkIn }: CheckInDataDisplayProps) => {
           <div className="grid grid-cols-2 gap-4">
             {checkIn.weight && (
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-purple-100 dark:bg-purple-900/20 flex items-center justify-center">
-                  <Scale className="w-5 h-5 text-purple-600" />
+                <div className="w-10 h-10 rounded-full bg-accent/15 flex items-center justify-center">
+                  <Scale className="w-5 h-5 text-accent" />
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Weight</p>
@@ -103,8 +103,8 @@ export const CheckInDataDisplay = ({ checkIn }: CheckInDataDisplayProps) => {
 
             {checkIn.bodyFatPercentage && (
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-teal-100 dark:bg-teal-900/20 flex items-center justify-center">
-                  <Activity className="w-5 h-5 text-teal-600" />
+                <div className="w-10 h-10 rounded-full bg-secondary/15 flex items-center justify-center">
+                  <Activity className="w-5 h-5 text-secondary" />
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Body Fat</p>
@@ -152,8 +152,8 @@ export const CheckInDataDisplay = ({ checkIn }: CheckInDataDisplayProps) => {
           <div className="grid grid-cols-2 gap-4">
             {checkIn.workoutsCompleted && (
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-green-100 dark:bg-green-900/20 flex items-center justify-center">
-                  <Activity className="w-5 h-5 text-green-600" />
+                <div className="w-10 h-10 rounded-full bg-success/15 flex items-center justify-center">
+                  <Activity className="w-5 h-5 text-success" />
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Workouts</p>
@@ -164,8 +164,8 @@ export const CheckInDataDisplay = ({ checkIn }: CheckInDataDisplayProps) => {
 
             {checkIn.adherencePercentage !== undefined && (
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/20 flex items-center justify-center">
-                  <Target className="w-5 h-5 text-blue-600" />
+                <div className="w-10 h-10 rounded-full bg-primary/15 flex items-center justify-center">
+                  <Target className="w-5 h-5 text-primary" />
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Adherence</p>
@@ -178,7 +178,7 @@ export const CheckInDataDisplay = ({ checkIn }: CheckInDataDisplayProps) => {
           {checkIn.prs && (
             <div className="pt-3 border-t">
               <div className="flex items-center gap-2 mb-2">
-                <Trophy className="w-4 h-4 text-amber-600" />
+                <Trophy className="w-4 h-4 text-warning" />
                 <p className="text-xs font-medium">Personal Records & Wins</p>
               </div>
               <p className="text-sm whitespace-pre-wrap">{checkIn.prs}</p>

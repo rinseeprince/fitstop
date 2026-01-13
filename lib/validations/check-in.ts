@@ -47,7 +47,7 @@ const optionalInt = (schema: z.ZodNumber) =>
 
 // Session completion schema
 export const sessionCompletionSchema = z.object({
-  trainingSessionId: z.string().uuid(),
+  trainingSessionId: z.string().min(1).max(100),
   sessionName: z.string().min(1).max(100),
   dayOfWeek: optionalDayOfWeek,
   completed: z.preprocess((val) => val === true || val === "true", z.boolean()),
@@ -81,7 +81,7 @@ export const externalActivitySchema = z.object({
 
 // Nutrition adherence schema
 export const nutritionAdherenceSchema = z.object({
-  daysOnTarget: optionalInt(z.number().int().min(0).max(7)),
+  daysOnTarget: optionalInt(z.number().int().min(0).max(30)), // Max 30 for monthly check-ins
   notes: optionalString(1000),
 });
 

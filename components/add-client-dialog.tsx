@@ -99,13 +99,17 @@ export const AddClientDialog = ({ trigger, onClientAdded }: AddClientDialogProps
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
         {trigger || (
-          <Button>
-            <UserPlus className="w-4 h-4 mr-2" />
-            Add New Client
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9 rounded-full transition-all hover:scale-110"
+          >
+            <UserPlus className="h-4 w-4" />
+            <span className="sr-only">Add New Client</span>
           </Button>
         )}
       </DialogTrigger>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Add New Client</DialogTitle>
           <DialogDescription>

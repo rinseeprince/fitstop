@@ -1,6 +1,7 @@
 "use client";
 
-import { quickSuggestions, getSuggestionsByCategory } from "@/lib/training-suggestions";
+import { memo } from "react";
+import { getSuggestionsByCategory } from "@/lib/training-suggestions";
 import { cn } from "@/lib/utils";
 import { Target, Dumbbell, Wrench } from "lucide-react";
 
@@ -13,35 +14,35 @@ const categoryConfig = {
   goal: {
     label: "Goals",
     icon: Target,
-    color: "text-emerald-600",
-    bgColor: "bg-emerald-50",
-    borderColor: "border-emerald-200",
-    selectedBg: "bg-emerald-100",
+    labelColor: "text-success",
+    selectedBg: "bg-success/15",
+    selectedBorder: "border-success/30",
+    selectedText: "text-success",
   },
   style: {
     label: "Training Style",
     icon: Dumbbell,
-    color: "text-indigo-600",
-    bgColor: "bg-indigo-50",
-    borderColor: "border-indigo-200",
-    selectedBg: "bg-indigo-100",
+    labelColor: "text-primary",
+    selectedBg: "bg-primary/15",
+    selectedBorder: "border-primary/30",
+    selectedText: "text-primary",
   },
   equipment: {
     label: "Equipment",
     icon: Wrench,
-    color: "text-amber-600",
-    bgColor: "bg-amber-50",
-    borderColor: "border-amber-200",
-    selectedBg: "bg-amber-100",
+    labelColor: "text-warning",
+    selectedBg: "bg-warning/15",
+    selectedBorder: "border-warning/30",
+    selectedText: "text-warning",
   },
 } as const;
 
-export function QuickSuggestions({ selectedIds, onToggle }: QuickSuggestionsProps) {
+export const QuickSuggestions = memo(function QuickSuggestions({ selectedIds, onToggle }: QuickSuggestionsProps) {
   const categories = ["goal", "style", "equipment"] as const;
 
   return (
     <div className="space-y-4">
-      <div className="text-sm font-medium text-muted-foreground">Quick suggestions</div>
+      <p className="text-sm font-medium text-gray-500">Quick suggestions</p>
       {categories.map((category) => {
         const config = categoryConfig[category];
         const Icon = config.icon;
@@ -49,7 +50,7 @@ export function QuickSuggestions({ selectedIds, onToggle }: QuickSuggestionsProp
 
         return (
           <div key={category} className="space-y-2">
-            <div className={cn("flex items-center gap-1.5 text-xs font-medium", config.color)}>
+            <div className={cn("flex items-center gap-1.5 text-xs font-medium", config.labelColor)}>
               <Icon className="h-3.5 w-3.5" />
               {config.label}
             </div>
@@ -61,14 +62,10 @@ export function QuickSuggestions({ selectedIds, onToggle }: QuickSuggestionsProp
                     key={suggestion.id}
                     onClick={() => onToggle(suggestion.id, suggestion.prompt)}
                     className={cn(
-                      "px-3 py-1.5 text-sm rounded-full border transition-all",
-                      "hover:shadow-sm hover:scale-[1.02] active:scale-[0.98]",
+                      "px-3 py-1.5 text-sm rounded-full transition-colors duration-150",
                       isSelected
-                        ? cn(config.selectedBg, config.borderColor, config.color, "font-medium")
-                        : cn(
-                            "bg-slate-50 border-slate-200 text-slate-700",
-                            "hover:bg-slate-100 hover:border-slate-300"
-                          )
+                        ? cn(config.selectedBg, "border", config.selectedBorder, config.selectedText, "font-medium")
+                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                     )}
                   >
                     {suggestion.label}
@@ -81,4 +78,4 @@ export function QuickSuggestions({ selectedIds, onToggle }: QuickSuggestionsProp
       })}
     </div>
   );
-}
+});

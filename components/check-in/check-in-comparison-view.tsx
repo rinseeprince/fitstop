@@ -15,9 +15,9 @@ const TrendIcon = ({ trend }: { trend?: "up" | "down" | "stable" }) => {
   if (!trend) return null;
 
   if (trend === "up") {
-    return <ArrowUp className="h-4 w-4 text-red-500" />;
+    return <ArrowUp className="h-4 w-4 text-destructive" />;
   } else if (trend === "down") {
-    return <ArrowDown className="h-4 w-4 text-green-500" />;
+    return <ArrowDown className="h-4 w-4 text-success" />;
   } else {
     return <Minus className="h-4 w-4 text-gray-500" />;
   }
@@ -56,14 +56,14 @@ const MetricRow = ({
     ? "text-muted-foreground"
     : inverse
     ? metric.trend === "down"
-      ? "text-green-600 dark:text-green-400"
+      ? "text-success"
       : metric.trend === "up"
-      ? "text-red-600 dark:text-red-400"
+      ? "text-destructive"
       : "text-muted-foreground"
     : metric.trend === "up"
-    ? "text-green-600 dark:text-green-400"
+    ? "text-success"
     : metric.trend === "down"
-    ? "text-red-600 dark:text-red-400"
+    ? "text-destructive"
     : "text-muted-foreground";
 
   return (

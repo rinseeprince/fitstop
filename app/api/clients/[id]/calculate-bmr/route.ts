@@ -60,7 +60,7 @@ export async function POST(
     }
 
     // Calculate BMR
-    const bmr = await updateClientBMR(client);
+    const bmr = updateClientBMR(client);
 
     if (bmr === null) {
       return NextResponse.json(

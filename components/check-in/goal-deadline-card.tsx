@@ -17,16 +17,16 @@ export const GoalDeadlineCard = ({ deadline }: GoalDeadlineCardProps) => {
     <Card
       className={`p-4 ${
         deadline.isPastDeadline
-          ? "bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-900"
-          : "bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-900"
+          ? "bg-destructive/10 border-destructive/30"
+          : "bg-primary/10 border-primary/30"
       }`}
     >
       <div className="flex items-start gap-3">
         <Calendar
           className={`h-5 w-5 mt-0.5 ${
             deadline.isPastDeadline
-              ? "text-red-600 dark:text-red-400"
-              : "text-blue-600 dark:text-blue-400"
+              ? "text-destructive"
+              : "text-primary"
           }`}
         />
         <div className="flex-1">
@@ -39,8 +39,8 @@ export const GoalDeadlineCard = ({ deadline }: GoalDeadlineCardProps) => {
             <p
               className={`text-sm font-medium ${
                 deadline.isPastDeadline
-                  ? "text-red-600 dark:text-red-400"
-                  : "text-blue-600 dark:text-blue-400"
+                  ? "text-destructive"
+                  : "text-primary"
               }`}
             >
               {deadline.isPastDeadline

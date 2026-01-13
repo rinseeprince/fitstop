@@ -129,12 +129,12 @@ export const GoalProgressView = ({
               </p>
             )}
             {hasWeightGoal && goalProgress.weight!.isOnTrack && (
-              <p className="text-green-600 dark:text-green-400 font-medium">
+              <p className="text-success font-medium">
                 ✓ Progress is on track to meet goals
               </p>
             )}
             {hasWeightGoal && !goalProgress.weight!.isOnTrack && (
-              <p className="text-yellow-600 dark:text-yellow-400 font-medium">
+              <p className="text-warning font-medium">
                 ⚠ Consider adjusting approach to stay on track
               </p>
             )}

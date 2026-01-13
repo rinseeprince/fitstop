@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -16,7 +17,7 @@ type DroppableDayCellProps = {
   onDeleteActivity: (sessionId: string, name: string) => void;
 };
 
-export function DroppableDayCell({
+export const DroppableDayCell = memo(function DroppableDayCell({
   dayValue,
   items,
   editMode,
@@ -34,18 +35,20 @@ export function DroppableDayCell({
     <div
       ref={setNodeRef}
       className={cn(
-        "min-h-[100px] rounded-lg border p-1.5 transition-all",
-        hasItems ? "bg-background" : "bg-muted/30 border-dashed",
-        isOver && editMode && "ring-2 ring-primary bg-primary/5"
+        "min-h-[100px] rounded-xl p-2 transition-all duration-150",
+        hasItems
+          ? "bg-white border border-gray-200"
+          : "bg-gray-50 border border-dashed border-gray-200",
+        isOver && editMode && "ring-2 ring-primary/50 bg-primary/5"
       )}
     >
       <SortableContext items={itemIds} strategy={verticalListSortingStrategy}>
         {items.length === 0 ? (
-          <div className="h-full flex items-center justify-center min-h-[80px]">
-            <span className="text-xs text-muted-foreground">Rest</span>
+          <div className="h-full flex items-center justify-center min-h-[100px]">
+            <span className="text-sm text-gray-400">Rest</span>
           </div>
         ) : (
-          <div className="space-y-1">
+          <div className="space-y-2">
             {items.map((item) => (
               <SortableScheduleItem
                 key={item.id}
@@ -63,4 +66,4 @@ export function DroppableDayCell({
       </SortableContext>
     </div>
   );
-}
+});

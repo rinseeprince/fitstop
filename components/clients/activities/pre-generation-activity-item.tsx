@@ -17,9 +17,9 @@ type PreGenerationActivityItemProps = {
 };
 
 const INTENSITY_COLORS = {
-  low: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
-  moderate: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
-  vigorous: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
+  low: "bg-success/15 text-success",
+  moderate: "bg-warning/15 text-warning",
+  vigorous: "bg-destructive/15 text-destructive",
 };
 
 export function PreGenerationActivityItem({
@@ -49,11 +49,11 @@ export function PreGenerationActivityItem({
         {activity.analysis && (
           <div className="flex items-center gap-3 text-sm text-muted-foreground">
             <span className="flex items-center gap-1">
-              <Flame className="h-3 w-3 text-orange-500" />
+              <Flame className="h-3 w-3 text-warning" />
               {activity.analysis.estimatedCalories}
             </span>
             <span className="flex items-center gap-1">
-              <Clock className="h-3 w-3 text-blue-500" />
+              <Clock className="h-3 w-3 text-primary" />
               {activity.analysis.recoveryHours}h
             </span>
             {activity.analysis.recoveryImpact && (

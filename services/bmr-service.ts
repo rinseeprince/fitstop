@@ -1,9 +1,4 @@
-import OpenAI from "openai";
 import type { Client } from "@/types/check-in";
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
 
 export type BMRCalculationData = {
   weight: number; // in lbs or kg
@@ -19,79 +14,62 @@ export type BMRResult = {
   bmr: number; // Basal Metabolic Rate in calories/day
   tdee: number; // Total Daily Energy Expenditure (assuming sedentary)
   method: string; // Which formula was used
-  explanation: string; // AI explanation of the calculation
+  explanation: string; // Explanation of the calculation
 };
 
 /**
- * Calculate BMR using AI to determine the best formula and provide explanation
+ * Calculate BMR using deterministic formulas.
+ * Uses Katch-McArdle when body fat % is available (more accurate),
+ * otherwise falls back to Mifflin-St Jeor.
+ *
+ * @param data - Client metrics for BMR calculation
+ * @returns BMR result with calculated values and method used
  */
-export async function calculateBMRWithAI(
-  data: BMRCalculationData
-): Promise<BMRResult> {
+export function calculateBMR(data: BMRCalculationData): BMRResult {
   // Convert to metric if needed
   const weightKg =
     data.weightUnit === "lbs" ? data.weight * 0.453592 : data.weight;
   const heightCm = data.heightUnit === "in" ? data.height * 2.54 : data.height;
+  const age = data.age ?? 30;
 
-  const age = data.age ?? 30; // Default to 30 if age not provided
+  let bmr: number;
+  let method: string;
+  let explanation: string;
 
-  const prompt = `Calculate the Basal Metabolic Rate (BMR) for a person with the following characteristics:
-- Weight: ${weightKg.toFixed(1)} kg
-- Height: ${heightCm.toFixed(1)} cm
-- Age: ${age} years
-- Gender: ${data.gender}
-${data.bodyFatPercentage ? `- Body Fat Percentage: ${data.bodyFatPercentage}%` : ""}
-
-Please:
-1. Calculate BMR using the most appropriate formula (Mifflin-St Jeor if no body fat %, Katch-McArdle if body fat % is available)
-2. Calculate TDEE assuming sedentary activity level (BMR × 1.2)
-3. Provide a brief explanation of which formula you used and why
-
-Return your response in this exact JSON format:
-{
-  "bmr": <number>,
-  "tdee": <number>,
-  "method": "<formula name>",
-  "explanation": "<brief 1-2 sentence explanation>"
-}`;
-
-  try {
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are a fitness nutrition expert. Calculate BMR and TDEE accurately and return only valid JSON.",
-        },
-        {
-          role: "user",
-          content: prompt,
-        },
-      ],
-      response_format: { type: "json_object" },
-      temperature: 0.3,
-    });
-
-    const result = JSON.parse(
-      response.choices[0].message.content || "{}"
-    ) as BMRResult;
-
-    return result;
-  } catch (error) {
-    console.error("Error calculating BMR with AI:", error);
-    // Fallback to Mifflin-St Jeor formula if AI fails
-    const bmr = calculateMifflinStJeor(weightKg, heightCm, age, data.gender);
-    const tdee = bmr * 1.2;
-
-    return {
-      bmr: Math.round(bmr),
-      tdee: Math.round(tdee),
-      method: "Mifflin-St Jeor (fallback)",
-      explanation:
-        "Calculated using the Mifflin-St Jeor equation, a widely accepted BMR formula.",
-    };
+  if (data.bodyFatPercentage !== undefined && data.bodyFatPercentage > 0) {
+    // Katch-McArdle formula (uses lean body mass)
+    bmr = calculateKatchMcArdle(weightKg, data.bodyFatPercentage);
+    method = "Katch-McArdle";
+    explanation =
+      "Calculated using the Katch-McArdle formula based on lean body mass, which provides more accurate results when body fat percentage is known.";
+  } else {
+    // Mifflin-St Jeor formula
+    bmr = calculateMifflinStJeor(weightKg, heightCm, age, data.gender);
+    method = "Mifflin-St Jeor";
+    explanation =
+      "Calculated using the Mifflin-St Jeor equation, the most accurate BMR formula when body fat percentage is not available.";
   }
+
+  const tdee = bmr * 1.2; // Sedentary activity level
+
+  return {
+    bmr: Math.round(bmr),
+    tdee: Math.round(tdee),
+    method,
+    explanation,
+  };
+}
+
+/**
+ * Katch-McArdle BMR calculation (requires body fat percentage).
+ * Formula: BMR = 370 + (21.6 × lean body mass in kg)
+ */
+function calculateKatchMcArdle(
+  weightKg: number,
+  bodyFatPercentage: number
+): number {
+  const leanBodyMass = weightKg * (1 - bodyFatPercentage / 100);
+  return 370 + 21.6 * leanBodyMass;
 }
 
 /**
@@ -139,9 +117,13 @@ function calculateAge(dateOfBirth: string): number {
 }
 
 /**
- * Update client's BMR in the database after check-in
+ * Calculate BMR for a client using their current metrics.
+ * Returns null if required data is missing.
+ *
+ * @param client - Client object with metrics
+ * @returns BMR value in calories/day, or null if data is missing
  */
-export async function updateClientBMR(client: Client): Promise<number | null> {
+export function updateClientBMR(client: Client): number | null {
   // Check if we have all required data
   if (
     !client.currentWeight ||
@@ -166,11 +148,6 @@ export async function updateClientBMR(client: Client): Promise<number | null> {
     bodyFatPercentage: client.currentBodyFatPercentage,
   };
 
-  try {
-    const result = await calculateBMRWithAI(data);
-    return result.bmr;
-  } catch (error) {
-    console.error("Failed to calculate BMR:", error);
-    return null;
-  }
+  const result = calculateBMR(data);
+  return result.bmr;
 }

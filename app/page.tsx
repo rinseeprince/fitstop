@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from "react"
 import { AppLayout } from "@/components/app-layout"
+import { PageHeader } from "@/components/page-header"
 import { MetricCard } from "@/components/metric-card"
 import { CoachTipCard } from "@/components/coach-tip-card"
 import { FloatingActionButton } from "@/components/floating-action-button"
-import { Users, MessageSquare, PhoneCall, Activity, Clock, TrendingUp, AlertCircle } from "lucide-react"
+import { Users, MessageSquare, PhoneCall, Clock, TrendingUp, AlertCircle } from "lucide-react"
 import { motion } from "framer-motion"
 import { formatRelativeTime } from "@/lib/check-in-utils"
 import Link from "next/link"
@@ -47,45 +48,17 @@ export default function DashboardPage() {
 
     fetchRecentCheckIns()
   }, [])
-  return (
-    <AppLayout>
-      <div className="space-y-6 max-w-7xl mx-auto">
-        <motion.div
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3 }}
-          className="relative overflow-hidden rounded-lg gradient-subtle p-6 shadow-custom-md border border-border/50"
-        >
-          <div className="relative flex items-center gap-4">
-            <motion.div
-              initial={{ scale: 0.8, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              transition={{ delay: 0.1, duration: 0.3 }}
-              className="h-14 w-14 rounded-lg bg-primary/10 flex items-center justify-center text-xl font-semibold text-primary"
-            >
-              CJ
-            </motion.div>
-            <div>
-              <motion.h1
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.15, duration: 0.3 }}
-                className="text-2xl font-semibold text-balance mb-1"
-              >
-                Welcome back, Coach!
-              </motion.h1>
-              <motion.p
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.2, duration: 0.3 }}
-                className="text-muted-foreground text-sm"
-              >
-                Here's what's happening with your clients today
-              </motion.p>
-            </div>
-          </div>
-        </motion.div>
 
+  const pageHeader = (
+    <PageHeader
+      title="Welcome back, Coach!"
+      description="Here's what's happening with your clients today"
+    />
+  )
+
+  return (
+    <AppLayout pageHeader={pageHeader}>
+      <div className="space-y-6 max-w-7xl mx-auto">
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
           <MetricCard
             title="Active Clients"

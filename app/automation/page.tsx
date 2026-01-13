@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { AppLayout } from "@/components/app-layout"
+import { PageHeader } from "@/components/page-header"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import {
@@ -73,75 +74,81 @@ export default function AutomationPage() {
     setRules((prevRules) => prevRules.map((rule) => (rule.id === id ? { ...rule, isActive } : rule)))
   }
 
-  return (
-    <AppLayout>
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-3xl font-bold">Automation</h1>
-            <p className="text-muted-foreground mt-1">Set up automated workflows to save time</p>
+  const createAutomationButton = (
+    <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+      <DialogTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-9 w-9 rounded-full transition-all hover:scale-110"
+        >
+          <Plus className="h-4 w-4" />
+          <span className="sr-only">Create Automation</span>
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Create New Automation</DialogTitle>
+          <DialogDescription>Set up an if-this-then-that workflow</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-6 py-4">
+          <div className="space-y-2">
+            <Label>Automation Name</Label>
+            <Input placeholder="e.g., Send welcome email to new leads" />
           </div>
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="h-4 w-4 mr-2" />
-                Create Automation
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-2xl">
-              <DialogHeader>
-                <DialogTitle>Create New Automation</DialogTitle>
-                <DialogDescription>Set up an if-this-then-that workflow</DialogDescription>
-              </DialogHeader>
-              <div className="space-y-6 py-4">
-                <div className="space-y-2">
-                  <Label>Automation Name</Label>
-                  <Input placeholder="e.g., Send welcome email to new leads" />
-                </div>
 
-                <div className="space-y-3">
-                  <Label>When (Trigger)</Label>
-                  <Select>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select a trigger" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="client-added">Client is added</SelectItem>
-                      <SelectItem value="call-booked">Call is booked</SelectItem>
-                      <SelectItem value="checkin-submitted">Check-in is submitted</SelectItem>
-                      <SelectItem value="weekly">Weekly schedule</SelectItem>
-                      <SelectItem value="monthly">Monthly schedule</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+          <div className="space-y-3">
+            <Label>When (Trigger)</Label>
+            <Select>
+              <SelectTrigger>
+                <SelectValue placeholder="Select a trigger" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="client-added">Client is added</SelectItem>
+                <SelectItem value="call-booked">Call is booked</SelectItem>
+                <SelectItem value="checkin-submitted">Check-in is submitted</SelectItem>
+                <SelectItem value="weekly">Weekly schedule</SelectItem>
+                <SelectItem value="monthly">Monthly schedule</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
 
-                <div className="space-y-3">
-                  <Label>Then (Action)</Label>
-                  <Select>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select an action" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="send-email">Send email</SelectItem>
-                      <SelectItem value="send-sms">Send SMS</SelectItem>
-                      <SelectItem value="send-checkin">Send check-in link</SelectItem>
-                      <SelectItem value="add-tag">Add client tag</SelectItem>
-                      <SelectItem value="move-stage">Move to CRM stage</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
-                  Cancel
-                </Button>
-                <Button onClick={() => setIsDialogOpen(false)}>Create Automation</Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+          <div className="space-y-3">
+            <Label>Then (Action)</Label>
+            <Select>
+              <SelectTrigger>
+                <SelectValue placeholder="Select an action" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="send-email">Send email</SelectItem>
+                <SelectItem value="send-sms">Send SMS</SelectItem>
+                <SelectItem value="send-checkin">Send check-in link</SelectItem>
+                <SelectItem value="add-tag">Add client tag</SelectItem>
+                <SelectItem value="move-stage">Move to CRM stage</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+            Cancel
+          </Button>
+          <Button onClick={() => setIsDialogOpen(false)}>Create Automation</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
 
+  const pageHeader = (
+    <PageHeader
+      title="Automation"
+      description="Set up automated workflows to save time"
+    />
+  )
+
+  return (
+    <AppLayout pageHeader={pageHeader} headerActions={createAutomationButton}>
+      <div className="space-y-6">
         {/* Quick Stats */}
         <div className="grid gap-4 sm:grid-cols-3">
           <Card>

@@ -54,7 +54,9 @@ export function NotificationsDropdown() {
 
         {totalNotifications === 0 ? (
           <div className="py-8 text-center text-sm text-muted-foreground">
-            <CheckCircle className="h-8 w-8 mx-auto mb-2 opacity-20" />
+            <div className="w-12 h-12 bg-muted rounded-full flex items-center justify-center mx-auto mb-2">
+              <CheckCircle className="h-6 w-6 text-muted-foreground" />
+            </div>
             <p className="font-medium">All caught up!</p>
             <p className="text-xs mt-1">No pending check-ins</p>
           </div>
@@ -62,7 +64,7 @@ export function NotificationsDropdown() {
           <div className="max-h-96 overflow-y-auto">
             {criticallyOverdue.length > 0 && (
               <>
-                <div className="px-2 py-1.5 text-xs font-semibold text-red-600 flex items-center gap-1">
+                <div className="px-2 py-1.5 text-xs font-semibold text-destructive flex items-center gap-1">
                   <AlertCircle className="h-3 w-3" />
                   Critically Overdue
                 </div>
@@ -73,7 +75,7 @@ export function NotificationsDropdown() {
                       className="flex items-start gap-3 p-3 cursor-pointer"
                       onClick={() => setOpen(false)}
                     >
-                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-red-100 text-red-600 text-xs font-semibold flex-shrink-0">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-destructive/15 text-destructive text-xs font-semibold flex-shrink-0">
                         {client.name
                           .split(" ")
                           .map((n) => n[0])
@@ -97,7 +99,7 @@ export function NotificationsDropdown() {
 
             {recentOverdue.length > 0 && criticallyOverdue.length === 0 && (
               <>
-                <div className="px-2 py-1.5 text-xs font-semibold text-amber-600 flex items-center gap-1">
+                <div className="px-2 py-1.5 text-xs font-semibold text-warning flex items-center gap-1">
                   <Clock className="h-3 w-3" />
                   Overdue
                 </div>
@@ -108,7 +110,7 @@ export function NotificationsDropdown() {
                       className="flex items-start gap-3 p-3 cursor-pointer"
                       onClick={() => setOpen(false)}
                     >
-                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-100 text-amber-600 text-xs font-semibold flex-shrink-0">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-warning/15 text-warning text-xs font-semibold flex-shrink-0">
                         {client.name
                           .split(" ")
                           .map((n) => n[0])
@@ -132,7 +134,7 @@ export function NotificationsDropdown() {
 
             {recentDueSoon.length > 0 && (
               <>
-                <div className="px-2 py-1.5 text-xs font-semibold text-blue-600 flex items-center gap-1">
+                <div className="px-2 py-1.5 text-xs font-semibold text-primary flex items-center gap-1">
                   <Bell className="h-3 w-3" />
                   Due Soon
                 </div>
@@ -143,7 +145,7 @@ export function NotificationsDropdown() {
                       className="flex items-start gap-3 p-3 cursor-pointer"
                       onClick={() => setOpen(false)}
                     >
-                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 text-blue-600 text-xs font-semibold flex-shrink-0">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/15 text-primary text-xs font-semibold flex-shrink-0">
                         {client.name
                           .split(" ")
                           .map((n) => n[0])

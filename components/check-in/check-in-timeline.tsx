@@ -53,17 +53,17 @@ export const CheckInTimeline = ({
               <div className="flex items-start gap-3 flex-1">
                 <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
                   checkIn.status === "reviewed"
-                    ? "bg-green-100 dark:bg-green-900/20"
+                    ? "bg-success/15"
                     : checkIn.status === "ai_processed"
-                    ? "bg-blue-100 dark:bg-blue-900/20"
-                    : "bg-yellow-100 dark:bg-yellow-900/20"
+                    ? "bg-primary/15"
+                    : "bg-warning/15"
                 }`}>
                   <Icon className={`w-5 h-5 ${
                     checkIn.status === "reviewed"
-                      ? "text-green-600"
+                      ? "text-success"
                       : checkIn.status === "ai_processed"
-                      ? "text-blue-600"
-                      : "text-yellow-600"
+                      ? "text-primary"
+                      : "text-warning"
                   }`} />
                 </div>
 

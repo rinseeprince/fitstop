@@ -37,7 +37,7 @@ export const SessionList = memo(function SessionList({
       {sessions.map((session) => (
         <div
           key={session.tempId}
-          className="border rounded-lg bg-white overflow-hidden"
+          className="border rounded-lg bg-white"
         >
           {/* Session Header */}
           <div className="flex items-center gap-2 p-3 bg-slate-50 border-b">
@@ -51,7 +51,7 @@ export const SessionList = memo(function SessionList({
               variant="ghost"
               size="sm"
               onClick={() => onRemoveSession(session.tempId)}
-              className="text-red-500 hover:text-red-600 hover:bg-red-50"
+              className="text-destructive hover:text-destructive hover:bg-destructive/10"
             >
               <Trash2 className="h-4 w-4" />
             </Button>
@@ -73,7 +73,7 @@ export const SessionList = memo(function SessionList({
                       sets: parseInt(e.target.value) || 3,
                     })
                   }
-                  className="w-14 h-7 text-center"
+                  className="w-16 h-7 px-2 text-center"
                   min={1}
                   max={20}
                 />
@@ -86,13 +86,13 @@ export const SessionList = memo(function SessionList({
                     })
                   }
                   placeholder="8-12"
-                  className="w-16 h-7 text-center"
+                  className="w-20 h-7 px-2 text-center"
                 />
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={() => onRemoveExercise(session.tempId, exercise.tempId)}
-                  className="h-7 w-7 p-0 text-slate-400 hover:text-red-500"
+                  className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </Button>

@@ -2,7 +2,6 @@
 
 import { memo } from "react";
 import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
-import { Badge } from "@/components/ui/badge";
 import {
   Tooltip,
   TooltipContent,
@@ -24,48 +23,41 @@ export const NutritionDayCard = memo(function NutritionDayCard({ dayTarget }: Nu
       <TooltipTrigger asChild>
         <div
           className={cn(
-            "min-h-[100px] rounded-lg border p-2 transition-all cursor-pointer",
-            "hover:ring-2 hover:ring-primary/50 hover:shadow-sm",
+            "min-h-[100px] rounded-xl p-2 transition-all cursor-pointer overflow-hidden",
             dayTarget.isTrainingDay
-              ? "bg-green-50/50 border-green-200"
-              : "bg-muted/30 border-dashed"
+              ? "bg-warning/5 border border-warning/20 hover:shadow-md hover:border-warning/30"
+              : "bg-gray-50 border border-dashed border-gray-200 hover:shadow-md hover:border-gray-300"
           )}
         >
-          <div className="flex flex-col h-full gap-2">
+          <div className="flex flex-col h-full gap-1.5">
             {/* Calories */}
-            <div className="text-center">
-              <p className="text-lg font-bold text-primary">
+            <div className="text-center mb-1">
+              <span className="text-lg xl:text-xl 2xl:text-2xl font-bold text-warning leading-tight">
                 {dayTarget.calories.toLocaleString()}
-              </p>
-              <p className="text-[10px] text-muted-foreground">cal</p>
+              </span>
+              <span className="text-[11px] text-gray-500 block">cal</span>
             </div>
 
             {/* Training/Rest Badge */}
-            <div className="flex justify-center mt-auto">
+            <div className="flex justify-center">
               {dayTarget.isTrainingDay ? (
-                <Badge
-                  variant="default"
-                  className="text-[10px] bg-green-600 hover:bg-green-700 px-1.5 py-0"
-                >
-                  <Dumbbell className="h-2.5 w-2.5 mr-0.5" />
-                  Training
-                </Badge>
+                <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[9px] xl:text-[10px] font-medium bg-blue-50 text-blue-600 whitespace-nowrap">
+                  <Dumbbell className="h-2 w-2 xl:h-2.5 xl:w-2.5 flex-shrink-0" />
+                  <span className="hidden sm:inline">Training</span>
+                </span>
               ) : (
-                <Badge
-                  variant="outline"
-                  className="text-[10px] text-muted-foreground px-1.5 py-0"
-                >
-                  <Moon className="h-2.5 w-2.5 mr-0.5" />
-                  Rest
-                </Badge>
+                <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[9px] xl:text-[10px] font-medium bg-gray-100 text-gray-500 whitespace-nowrap">
+                  <Moon className="h-2 w-2 xl:h-2.5 xl:w-2.5 flex-shrink-0" />
+                  <span className="hidden sm:inline">Rest</span>
+                </span>
               )}
             </div>
 
             {/* Activity indicator */}
             {hasActivities && (
               <div className="text-center">
-                <span className="text-[10px] text-orange-600 flex items-center justify-center gap-0.5">
-                  <Flame className="h-2.5 w-2.5" />
+                <span className="text-[9px] xl:text-[10px] text-warning font-medium flex items-center justify-center gap-0.5">
+                  <Flame className="h-2 w-2 xl:h-2.5 xl:w-2.5 flex-shrink-0" />
                   +{dayTarget.trainingSessionCalories + dayTarget.externalActivityCalories}
                 </span>
               </div>
@@ -75,7 +67,7 @@ export const NutritionDayCard = memo(function NutritionDayCard({ dayTarget }: Nu
       </TooltipTrigger>
       <TooltipContent
         side="bottom"
-        className="w-64 p-0 bg-white border shadow-lg"
+        className="w-64 p-0 bg-white rounded-lg shadow-lg"
         sideOffset={4}
       >
         <NutritionDayTooltip dayTarget={dayTarget} />
@@ -94,38 +86,38 @@ function NutritionDayTooltip({ dayTarget }: NutritionDayTooltipProps) {
     dayTarget.externalActivities && dayTarget.externalActivities.length > 0;
 
   return (
-    <div className="text-foreground">
+    <div className="text-gray-900">
       {/* Header */}
-      <div className="px-3 py-2 border-b bg-muted/30">
+      <div className="px-4 py-3 border-b border-gray-100 bg-gray-50 rounded-t-lg">
         <div className="flex items-center justify-between">
-          <span className="font-semibold text-sm">{dayTarget.dayLabel}</span>
+          <span className="font-semibold text-sm text-gray-900">{dayTarget.dayLabel}</span>
           {dayTarget.isTrainingDay ? (
-            <Badge variant="default" className="text-xs bg-green-600">
-              <Dumbbell className="h-3 w-3 mr-1" />
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-secondary/15 text-secondary">
+              <Dumbbell className="h-3 w-3" />
               Training Day
-            </Badge>
+            </span>
           ) : (
-            <Badge variant="outline" className="text-xs">
-              <Moon className="h-3 w-3 mr-1" />
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+              <Moon className="h-3 w-3" />
               Rest Day
-            </Badge>
+            </span>
           )}
         </div>
       </div>
 
       {/* Calories breakdown */}
-      <div className="px-3 py-2 border-b">
+      <div className="px-4 py-3 border-b border-gray-100">
         <div className="text-center mb-2">
-          <p className="text-2xl font-bold text-primary">
+          <p className="text-2xl font-bold text-warning">
             {dayTarget.calories.toLocaleString()}
           </p>
-          <p className="text-xs text-muted-foreground">total calories</p>
+          <p className="text-xs text-gray-500">total calories</p>
         </div>
         {(dayTarget.trainingSessionCalories > 0 || dayTarget.externalActivityCalories > 0) && (
-          <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
+          <div className="flex items-center justify-center gap-2 text-xs text-gray-500">
             <span>Base: {dayTarget.baselineCalories.toLocaleString()}</span>
             <span>+</span>
-            <span className="flex items-center gap-1 text-orange-600">
+            <span className="flex items-center gap-1 text-warning font-medium">
               <Flame className="h-3 w-3" />
               {dayTarget.trainingSessionCalories + dayTarget.externalActivityCalories}
             </span>
@@ -134,23 +126,23 @@ function NutritionDayTooltip({ dayTarget }: NutritionDayTooltipProps) {
       </div>
 
       {/* Macro breakdown */}
-      <div className="px-3 py-2 border-b">
+      <div className="px-4 py-3 border-b border-gray-100">
         <div className="grid grid-cols-3 gap-2 text-center">
           <div>
-            <p className="text-sm font-bold text-blue-500">{dayTarget.proteinG}g</p>
-            <p className="text-[10px] text-muted-foreground">
+            <p className="text-sm font-bold text-primary">{dayTarget.proteinG}g</p>
+            <p className="text-[10px] text-gray-500">
               Protein ({dayTarget.proteinPercent}%)
             </p>
           </div>
           <div>
-            <p className="text-sm font-bold text-green-500">{dayTarget.carbsG}g</p>
-            <p className="text-[10px] text-muted-foreground">
+            <p className="text-sm font-bold text-success">{dayTarget.carbsG}g</p>
+            <p className="text-[10px] text-gray-500">
               Carbs ({dayTarget.carbsPercent}%)
             </p>
           </div>
           <div>
-            <p className="text-sm font-bold text-amber-500">{dayTarget.fatG}g</p>
-            <p className="text-[10px] text-muted-foreground">
+            <p className="text-sm font-bold text-warning">{dayTarget.fatG}g</p>
+            <p className="text-[10px] text-gray-500">
               Fat ({dayTarget.fatPercent}%)
             </p>
           </div>
@@ -159,13 +151,13 @@ function NutritionDayTooltip({ dayTarget }: NutritionDayTooltipProps) {
 
       {/* Activities */}
       {(hasTrainingSessions || hasExternalActivities) && (
-        <div className="px-3 py-2 space-y-1">
-          <p className="text-xs font-medium text-muted-foreground mb-1">Activities:</p>
+        <div className="px-4 py-3 space-y-1">
+          <p className="text-xs font-medium text-gray-500 mb-1">Activities:</p>
           {hasTrainingSessions &&
             dayTarget.trainingSessions?.map((session, idx) => (
               <div
                 key={`training-${idx}`}
-                className="flex justify-between text-xs text-green-700"
+                className="flex justify-between text-xs text-secondary"
               >
                 <span className="flex items-center gap-1">
                   <Dumbbell className="h-3 w-3" />
@@ -178,7 +170,7 @@ function NutritionDayTooltip({ dayTarget }: NutritionDayTooltipProps) {
             dayTarget.externalActivities?.map((activity, idx) => (
               <div
                 key={`external-${idx}`}
-                className="flex justify-between text-xs text-orange-700"
+                className="flex justify-between text-xs text-warning"
               >
                 <span className="flex items-center gap-1">
                   <Flame className="h-3 w-3" />

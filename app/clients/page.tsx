@@ -2,30 +2,15 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { AppLayout } from "@/components/app-layout";
+import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { ClientStatusBadge } from "@/components/client-status-badge";
-import { EngagementIndicator } from "@/components/engagement-indicator";
 import { AddClientDialog } from "@/components/add-client-dialog";
-import { EditClientDialog } from "@/components/edit-client-dialog";
 import { OverdueBanner } from "@/components/clients/check-in/overdue-banner";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { Search, Loader2, Trash2, Eye, Send, MessageSquare, AlertCircle, Clock } from "lucide-react";
+import { Search, AlertCircle, Clock, ChevronRight, Users } from "lucide-react";
 import Link from "next/link";
-import { useToast } from "@/hooks/use-toast";
 import type { ClientWithCheckInInfo } from "@/services/client-service";
-import { SendCheckInDialog } from "@/components/check-in/send-check-in-dialog";
 import { useOverdueClients } from "@/hooks/use-check-in-data";
 
 type ClientStatus = "active" | "inactive";
@@ -36,9 +21,6 @@ export default function ClientsPage() {
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState<"all" | ClientStatus>("all");
-  const [deleteClientId, setDeleteClientId] = useState<string | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const { toast } = useToast();
   const { clients: overdueClients } = useOverdueClients();
 
   // Helper to check if a client is overdue
@@ -136,380 +118,176 @@ export default function ClientsPage() {
     };
   }, [clients]);
 
-  const handleDeleteClient = async () => {
-    if (!deleteClientId) return;
-
-    setIsDeleting(true);
-    try {
-      const response = await fetch(`/api/clients/${deleteClientId}`, {
-        method: "DELETE",
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to delete client");
-      }
-
-      toast({
-        title: "Client deleted",
-        description: "The client has been deactivated successfully.",
-      });
-
-      // Refresh client list
-      await fetchClients();
-    } catch (err) {
-      toast({
-        title: "Failed to delete client",
-        description: err instanceof Error ? err.message : "An error occurred",
-        variant: "destructive",
-      });
-    } finally {
-      setIsDeleting(false);
-      setDeleteClientId(null);
-    }
-  };
+  const pageHeader = (
+    <PageHeader
+      title="Clients"
+      description="Manage and track your client relationships"
+    />
+  );
 
   return (
-    <AppLayout>
+    <AppLayout pageHeader={pageHeader} headerActions={<AddClientDialog onClientAdded={fetchClients} />}>
       <div className="space-y-6">
-        {/* Header */}
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-3xl font-bold">Clients</h1>
-            <p className="text-muted-foreground mt-1">
-              Manage and track your client relationships
-            </p>
-          </div>
-          <AddClientDialog onClientAdded={fetchClients} />
-        </div>
-
         {/* Overdue Banner */}
         <OverdueBanner />
 
         {/* Search and Filters */}
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex flex-col gap-3 sm:flex-row">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search clients by name or email..."
-                  className="pl-9"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                />
-              </div>
-              <div className="flex gap-2">
-                <Button
-                  variant={activeFilter === "all" ? "default" : "outline"}
-                  onClick={() => setActiveFilter("all")}
-                >
-                  All ({statusCounts.all})
-                </Button>
-                <Button
-                  variant={activeFilter === "active" ? "default" : "outline"}
-                  onClick={() => setActiveFilter("active")}
-                >
-                  Active ({statusCounts.active})
-                </Button>
-                <Button
-                  variant={activeFilter === "inactive" ? "default" : "outline"}
-                  onClick={() => setActiveFilter("inactive")}
-                >
-                  Inactive ({statusCounts.inactive})
-                </Button>
-              </div>
+        <div className="bg-white rounded-xl shadow-sm p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <Input
+                placeholder="Search clients..."
+                className="pl-10"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
             </div>
-          </CardContent>
-        </Card>
+            <div className="bg-gray-100 p-1 rounded-lg inline-flex">
+              <button
+                onClick={() => setActiveFilter("all")}
+                className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${
+                  activeFilter === "all"
+                    ? "bg-white text-gray-900 shadow-sm"
+                    : "text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                All ({statusCounts.all})
+              </button>
+              <button
+                onClick={() => setActiveFilter("active")}
+                className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${
+                  activeFilter === "active"
+                    ? "bg-white text-gray-900 shadow-sm"
+                    : "text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                Active ({statusCounts.active})
+              </button>
+              <button
+                onClick={() => setActiveFilter("inactive")}
+                className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${
+                  activeFilter === "inactive"
+                    ? "bg-white text-gray-900 shadow-sm"
+                    : "text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                Inactive ({statusCounts.inactive})
+              </button>
+            </div>
+          </div>
+        </div>
 
         {/* Loading State */}
         {loading && (
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex flex-col items-center justify-center py-12 space-y-3">
-                <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-                <p className="text-sm text-muted-foreground">Loading clients...</p>
-              </div>
-            </CardContent>
-          </Card>
+          <div className="bg-white rounded-xl shadow-sm p-6">
+            <div className="flex flex-col items-center justify-center py-12 space-y-3">
+              <div className="w-5 h-5 border-2 border-muted border-t-primary rounded-full animate-spin" />
+              <p className="text-sm text-gray-500">Loading clients...</p>
+            </div>
+          </div>
         )}
 
         {/* Error State */}
         {error && !loading && (
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex flex-col items-center justify-center py-12 space-y-3">
-                <AlertCircle className="w-12 h-12 text-destructive" />
-                <div className="text-center space-y-1">
-                  <p className="font-medium">Failed to load clients</p>
-                  <p className="text-sm text-muted-foreground">{error}</p>
-                </div>
-                <Button onClick={fetchClients}>Try Again</Button>
+          <div className="bg-white rounded-xl shadow-sm p-6">
+            <div className="flex flex-col items-center justify-center py-12 space-y-3">
+              <div className="w-16 h-16 bg-destructive/10 rounded-full flex items-center justify-center">
+                <AlertCircle className="w-8 h-8 text-destructive" />
               </div>
-            </CardContent>
-          </Card>
+              <div className="text-center space-y-1">
+                <p className="text-lg font-semibold text-gray-900">Failed to load clients</p>
+                <p className="text-sm text-gray-500">{error}</p>
+              </div>
+              <Button onClick={fetchClients}>Try Again</Button>
+            </div>
+          </div>
         )}
 
         {/* Empty State */}
         {!loading && !error && filteredClients.length === 0 && (
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex flex-col items-center justify-center py-12 space-y-3">
-                <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center">
-                  <Search className="w-8 h-8 text-muted-foreground" />
-                </div>
-                <div className="text-center space-y-1">
-                  <p className="font-medium">
-                    {searchQuery || activeFilter !== "all"
-                      ? "No clients found"
-                      : "No clients yet"}
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    {searchQuery || activeFilter !== "all"
-                      ? "Try adjusting your search or filters"
-                      : "Get started by adding your first client"}
-                  </p>
-                </div>
-                {!searchQuery && activeFilter === "all" && (
-                  <AddClientDialog
-                    onClientAdded={fetchClients}
-                    trigger={<Button>Add Your First Client</Button>}
-                  />
-                )}
+          <div className="bg-white rounded-xl shadow-sm p-6">
+            <div className="flex flex-col items-center justify-center py-16 px-8 text-center">
+              <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-4">
+                <Users className="w-8 h-8 text-muted-foreground" />
               </div>
-            </CardContent>
-          </Card>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                {searchQuery || activeFilter !== "all"
+                  ? "No clients found"
+                  : "No clients yet"}
+              </h3>
+              <p className="text-sm text-gray-500 mb-6 max-w-sm">
+                {searchQuery || activeFilter !== "all"
+                  ? "Try adjusting your search or filters"
+                  : "Get started by adding your first client to manage their training and nutrition."}
+              </p>
+              {!searchQuery && activeFilter === "all" && (
+                <AddClientDialog
+                  onClientAdded={fetchClients}
+                  trigger={
+                    <Button>
+                      Add Your First Client
+                    </Button>
+                  }
+                />
+              )}
+            </div>
+          </div>
         )}
 
         {/* Client List */}
         {!loading && !error && filteredClients.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Client List ({filteredClients.length})</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {/* Desktop Table */}
-              <div className="hidden lg:block overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b">
-                      <th className="pb-3 text-left text-sm font-medium text-muted-foreground">
-                        Name
-                      </th>
-                      <th className="pb-3 text-left text-sm font-medium text-muted-foreground">
-                        Status
-                      </th>
-                      <th className="pb-3 text-left text-sm font-medium text-muted-foreground">
-                        Last Check-In
-                      </th>
-                      <th className="pb-3 text-left text-sm font-medium text-muted-foreground">
-                        Engagement
-                      </th>
-                      <th className="pb-3 text-right text-sm font-medium text-muted-foreground">
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredClients.map((client) => (
-                      <tr key={client.id} className="border-b last:border-0">
-                        <td className="py-4">
-                          <div className="flex items-center gap-3">
-                            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted text-sm font-medium">
-                              {client.name
-                                .split(" ")
-                                .map((n) => n[0])
-                                .join("")}
-                            </div>
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <span className="font-medium">{client.name}</span>
-                                {isClientOverdue(client.id) && (
-                                  <Badge variant="destructive" className="text-xs">
-                                    <Clock className="h-3 w-3 mr-1" />
-                                    {getClientDaysOverdue(client.id)}d overdue
-                                  </Badge>
-                                )}
-                              </div>
-                              <p className="text-xs text-muted-foreground">
-                                {client.email}
-                              </p>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="py-4">
-                          <ClientStatusBadge status={getClientStatus(client)} />
-                        </td>
-                        <td className="py-4 text-sm text-muted-foreground">
-                          {formatLastCheckIn(client.lastCheckInDate)}
-                        </td>
-                        <td className="py-4">
-                          <EngagementIndicator level={client.engagement || "low"} />
-                        </td>
-                        <td className="py-4">
-                          <div className="flex justify-end gap-2">
-                            <Button variant="ghost" size="sm" asChild>
-                              <Link href={`/clients/${client.id}`}>
-                                <Eye className="h-4 w-4 mr-1" />
-                                View
-                              </Link>
-                            </Button>
-                            <SendCheckInDialog
-                              clientId={client.id}
-                              clientName={client.name}
-                              clientEmail={client.email}
-                              trigger={
-                                <Button variant="ghost" size="sm">
-                                  <Send className="h-4 w-4 mr-1" />
-                                  Check-In
-                                </Button>
-                              }
-                            />
-                            <EditClientDialog
-                              client={client}
-                              onClientUpdated={fetchClients}
-                              trigger={
-                                <Button variant="ghost" size="sm">
-                                  <MessageSquare className="h-4 w-4" />
-                                </Button>
-                              }
-                            />
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => setDeleteClientId(client.id)}
-                            >
-                              <Trash2 className="h-4 w-4 text-destructive" />
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+          <div className="space-y-3">
+            {filteredClients.map((client) => {
+              const initials = client.name
+                .split(" ")
+                .map((n) => n[0])
+                .join("")
+                .toUpperCase();
+              const isOverdue = isClientOverdue(client.id);
+              const daysOverdue = getClientDaysOverdue(client.id);
+              const status = getClientStatus(client);
 
-              {/* Mobile Cards */}
-              <div className="space-y-4 lg:hidden">
-                {filteredClients.map((client) => (
-                  <Card key={client.id}>
-                    <CardContent className="pt-6">
-                      <div className="space-y-4">
-                        <div className="flex items-start justify-between">
-                          <div className="flex items-center gap-3">
-                            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted text-sm font-medium">
-                              {client.name
-                                .split(" ")
-                                .map((n) => n[0])
-                                .join("")}
-                            </div>
-                            <div>
-                              <p className="font-medium">{client.name}</p>
-                              <p className="text-xs text-muted-foreground">
-                                {client.email}
-                              </p>
-                              <div className="mt-1">
-                                <ClientStatusBadge
-                                  status={getClientStatus(client)}
-                                />
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="text-muted-foreground">
-                            Last check-in:
-                          </span>
-                          <span>{formatLastCheckIn(client.lastCheckInDate)}</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm text-muted-foreground">
-                            Engagement:
-                          </span>
-                          <EngagementIndicator level={client.engagement || "low"} />
-                        </div>
-                        <div className="flex gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="flex-1 bg-transparent"
-                            asChild
-                          >
-                            <Link href={`/clients/${client.id}`}>
-                              <Eye className="h-4 w-4 mr-1" />
-                              View
-                            </Link>
-                          </Button>
-                          <SendCheckInDialog
-                            clientId={client.id}
-                            clientName={client.name}
-                            clientEmail={client.email}
-                            trigger={
-                              <Button variant="outline" size="sm">
-                                <Send className="h-4 w-4" />
-                              </Button>
-                            }
-                          />
-                          <EditClientDialog
-                            client={client}
-                            onClientUpdated={fetchClients}
-                            trigger={
-                              <Button variant="outline" size="sm">
-                                <MessageSquare className="h-4 w-4" />
-                              </Button>
-                            }
-                          />
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setDeleteClientId(client.id)}
-                          >
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+              return (
+                <Link
+                  key={client.id}
+                  href={`/clients/${client.id}`}
+                  className="flex items-center gap-4 p-4 bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow cursor-pointer group"
+                >
+                  {/* Avatar */}
+                  <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                    <span className="text-sm font-medium text-primary">{initials}</span>
+                  </div>
+
+                  {/* Info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-sm font-medium text-gray-900">{client.name}</h4>
+                      {isOverdue && (
+                        <Badge variant="destructive" className="text-xs">
+                          <Clock className="w-3 h-3" />
+                          {daysOverdue}d overdue
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-500 truncate">
+                      Last check-in: {formatLastCheckIn(client.lastCheckInDate)}
+                    </p>
+                  </div>
+
+                  {/* Status Badge */}
+                  <Badge variant={status === "active" ? "success" : "secondary"}>
+                    {status === "active" ? "Active" : "Inactive"}
+                  </Badge>
+
+                  {/* Arrow */}
+                  <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-gray-600 transition-colors" />
+                </Link>
+              );
+            })}
+          </div>
         )}
       </div>
-
-      {/* Delete Confirmation Dialog */}
-      <AlertDialog
-        open={deleteClientId !== null}
-        onOpenChange={(open) => !open && setDeleteClientId(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Deactivate Client</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will deactivate the client. They won&apos;t appear in active
-              filters, but their data and check-in history will be preserved. You
-              can reactivate them later by editing their profile.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDeleteClient}
-              disabled={isDeleting}
-              className="bg-destructive hover:bg-destructive/90"
-            >
-              {isDeleting ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Deactivating...
-                </>
-              ) : (
-                "Deactivate"
-              )}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </AppLayout>
   );
 }

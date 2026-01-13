@@ -16,20 +16,20 @@ export const BodyFatGoalCard = ({ bodyFatGoal }: BodyFatGoalCardProps) => {
         <div className="flex items-start justify-between">
           <div>
             <h4 className="font-semibold flex items-center gap-2 mb-1">
-              <span className="text-purple-600 dark:text-purple-400">📈</span>
+              <span className="text-accent">📈</span>
               Body Fat Goal
             </h4>
             <div className="flex items-center gap-2">
               {bodyFatGoal.isOnTrack ? (
-                <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+                <CheckCircle2 className="h-4 w-4 text-success" />
               ) : (
-                <AlertCircle className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
+                <AlertCircle className="h-4 w-4 text-warning" />
               )}
               <span
                 className={`text-xs font-medium ${
                   bodyFatGoal.isOnTrack
-                    ? "text-green-600 dark:text-green-400"
-                    : "text-yellow-600 dark:text-yellow-400"
+                    ? "text-success"
+                    : "text-warning"
                 }`}
               >
                 {bodyFatGoal.isOnTrack ? "On Track" : "Needs Attention"}
@@ -77,9 +77,9 @@ export const BodyFatGoalCard = ({ bodyFatGoal }: BodyFatGoalCardProps) => {
             </div>
             <div className="flex items-center gap-2">
               {bodyFatGoal.avgChange < 0 ? (
-                <TrendingDown className="h-4 w-4 text-green-600 dark:text-green-400" />
+                <TrendingDown className="h-4 w-4 text-success" />
               ) : (
-                <TrendingUp className="h-4 w-4 text-red-600 dark:text-red-400" />
+                <TrendingUp className="h-4 w-4 text-destructive" />
               )}
               <span className="font-medium">
                 {Math.abs(bodyFatGoal.avgChange).toFixed(1)}% per check-in

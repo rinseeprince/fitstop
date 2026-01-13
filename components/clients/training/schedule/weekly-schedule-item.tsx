@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import { Badge } from "@/components/ui/badge";
 import {
   Tooltip,
@@ -20,12 +21,12 @@ type WeeklyScheduleItemProps = {
 };
 
 const INTENSITY_COLORS = {
-  low: "bg-green-500",
-  moderate: "bg-yellow-500",
-  vigorous: "bg-red-500",
+  low: "bg-success",
+  moderate: "bg-warning",
+  vigorous: "bg-destructive",
 };
 
-export function WeeklyScheduleItem({
+export const WeeklyScheduleItem = memo(function WeeklyScheduleItem({
   item,
   compact,
   editMode,
@@ -41,38 +42,39 @@ export function WeeklyScheduleItem({
         <TooltipTrigger asChild>
           <div
             className={cn(
-              "rounded-md p-2 text-xs transition-colors cursor-default relative group",
+              "rounded-lg p-2 text-xs transition-all duration-150 cursor-default relative group",
               isActivity
-                ? "bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800"
-                : "bg-primary/10 border border-primary/20"
+                ? "bg-white border border-primary/20"
+                : "bg-white border border-secondary/20"
             )}
           >
             {showDelete && (
               <Button
                 variant="ghost"
                 size="icon"
-                className="absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full bg-destructive text-destructive-foreground opacity-0 group-hover:opacity-100 transition-opacity"
+                aria-label={`Remove ${item.name}`}
+                className="absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full bg-destructive text-white opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity hover:bg-destructive/90 focus-visible:ring-2 focus-visible:ring-destructive focus-visible:ring-offset-2"
                 onClick={(e) => {
                   e.stopPropagation();
                   onDelete();
                 }}
               >
-                <X className="h-3 w-3" />
+                <X className="h-3 w-3" aria-hidden="true" />
               </Button>
             )}
             <div className="flex items-start gap-1.5">
               {editMode && (
-                <GripVertical className="h-3 w-3 mt-0.5 shrink-0 text-muted-foreground" />
+                <GripVertical className="h-3 w-3 mt-0.5 shrink-0 text-gray-400" aria-label="Drag to reorder" />
               )}
               {isActivity ? (
-                <Activity className="h-3 w-3 mt-0.5 shrink-0 text-blue-600 dark:text-blue-400" />
+                <Activity className="h-3 w-3 mt-0.5 shrink-0 text-primary" />
               ) : (
-                <Dumbbell className="h-3 w-3 mt-0.5 shrink-0 text-primary" />
+                <Dumbbell className="h-3 w-3 mt-0.5 shrink-0 text-secondary" />
               )}
               <div className="flex-1 min-w-0">
-                <p className="font-medium truncate">{item.name}</p>
+                <p className="font-medium text-gray-800 truncate">{item.name}</p>
                 {!compact && item.focus && (
-                  <p className="text-muted-foreground truncate text-[10px]">
+                  <p className="text-gray-500 truncate text-[11px]">
                     {item.focus}
                   </p>
                 )}
@@ -81,13 +83,15 @@ export function WeeklyScheduleItem({
 
             <div className="flex items-center justify-between mt-1.5">
               {item.estimatedDurationMinutes && (
-                <span className="flex items-center gap-0.5 text-muted-foreground">
-                  <Clock className="h-2.5 w-2.5" />
+                <span className="flex items-center gap-1 text-gray-500">
+                  <Clock className="h-3 w-3" />
                   {item.estimatedDurationMinutes}m
                 </span>
               )}
               {isActivity && metadata?.intensityLevel && (
                 <div
+                  role="img"
+                  aria-label={`${metadata.intensityLevel} intensity`}
                   className={cn(
                     "h-1.5 w-1.5 rounded-full",
                     INTENSITY_COLORS[metadata.intensityLevel]
@@ -97,13 +101,13 @@ export function WeeklyScheduleItem({
             </div>
           </div>
         </TooltipTrigger>
-        <TooltipContent side="bottom" className="max-w-xs">
+        <TooltipContent side="bottom" className="max-w-xs bg-white rounded-lg shadow-lg p-4">
           <ItemTooltipContent item={item} />
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>
   );
-}
+});
 
 function ItemTooltipContent({ item }: { item: TrainingSession }) {
   const isActivity = item.sessionType === "external_activity";
@@ -112,38 +116,38 @@ function ItemTooltipContent({ item }: { item: TrainingSession }) {
   return (
     <div className="space-y-2">
       <div>
-        <p className="font-medium">{item.name}</p>
+        <p className="font-medium text-gray-900">{item.name}</p>
         {item.focus && (
-          <p className="text-sm text-muted-foreground">{item.focus}</p>
+          <p className="text-sm text-gray-500">{item.focus}</p>
         )}
       </div>
 
       {isActivity && metadata && (
-        <div className="space-y-1 text-sm">
+        <div className="space-y-2 text-sm">
           <div className="flex items-center gap-2">
-            <Badge variant="outline" className="text-xs">
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-secondary/15 text-secondary capitalize">
               {metadata.intensityLevel}
-            </Badge>
-            <span className="flex items-center gap-1">
-              <Flame className="h-3 w-3 text-orange-500" />
+            </span>
+            <span className="flex items-center gap-1 text-gray-600">
+              <Flame className="h-3 w-3 text-warning" />
               {metadata.estimatedCalories} cal
             </span>
-            <span className="flex items-center gap-1">
-              <Clock className="h-3 w-3 text-blue-500" />
+            <span className="flex items-center gap-1 text-gray-600">
+              <Clock className="h-3 w-3 text-primary" />
               {metadata.recoveryHours}h recovery
             </span>
           </div>
           {metadata.muscleGroupsImpacted.length > 0 && (
             <div className="flex flex-wrap gap-1">
               {metadata.muscleGroupsImpacted.map((muscle) => (
-                <Badge key={muscle} variant="secondary" className="text-xs">
+                <span key={muscle} className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-secondary/15 text-secondary">
                   {muscle}
-                </Badge>
+                </span>
               ))}
             </div>
           )}
           {metadata.recoveryImpact && (
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-gray-400">
               {metadata.recoveryImpact}
             </p>
           )}
@@ -153,12 +157,12 @@ function ItemTooltipContent({ item }: { item: TrainingSession }) {
       {!isActivity && (
         <div className="text-sm">
           {item.exercises.length > 0 && (
-            <p className="text-muted-foreground">
+            <p className="text-gray-500">
               {item.exercises.length} exercises
             </p>
           )}
           {item.notes && (
-            <p className="text-xs text-muted-foreground mt-1">
+            <p className="text-xs text-gray-400 mt-1">
               {item.notes}
             </p>
           )}
@@ -166,7 +170,7 @@ function ItemTooltipContent({ item }: { item: TrainingSession }) {
       )}
 
       {item.estimatedDurationMinutes && (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-gray-400">
           ~{item.estimatedDurationMinutes} minutes
         </p>
       )}

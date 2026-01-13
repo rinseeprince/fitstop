@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { memo, useState } from "react";
 import type { TrainingExercise } from "@/types/training";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,7 +18,7 @@ type TrainingExerciseRowProps = {
   onUpdate: () => void;
 };
 
-export function TrainingExerciseRow({
+export const TrainingExerciseRow = memo(function TrainingExerciseRow({
   exercise,
   clientId,
   planId,
@@ -142,22 +142,22 @@ export function TrainingExerciseRow({
             placeholder="Exercise name"
           />
         </div>
-        <div className="col-span-2 flex items-center gap-1">
+        <div className="col-span-3 flex items-center gap-1 min-w-0">
           <Input
             value={editedExercise.sets}
             onChange={(e) =>
               setEditedExercise({ ...editedExercise, sets: parseInt(e.target.value) || 1 })
             }
-            className="h-8 w-12 text-sm text-center"
+            className="h-8 flex-1 min-w-0 px-1.5 text-sm text-center"
             type="number"
             min={1}
             max={20}
           />
-          <span className="text-xs">×</span>
+          <span className="text-xs text-muted-foreground shrink-0">×</span>
           <Input
             value={editedExercise.repsTarget}
             onChange={(e) => setEditedExercise({ ...editedExercise, repsTarget: e.target.value })}
-            className="h-8 w-16 text-sm text-center"
+            className="h-8 flex-[1.5] min-w-0 px-1.5 text-sm text-center"
             placeholder="8-12"
           />
         </div>
@@ -170,7 +170,7 @@ export function TrainingExerciseRow({
                 rpeTarget: e.target.value ? parseFloat(e.target.value) : undefined,
               })
             }
-            className="h-8 text-sm text-center"
+            className="h-8 px-2 text-sm text-center"
             placeholder="RPE"
             type="number"
             min={1}
@@ -187,14 +187,14 @@ export function TrainingExerciseRow({
                 restSeconds: e.target.value ? parseInt(e.target.value) : undefined,
               })
             }
-            className="h-8 text-sm text-center"
+            className="h-8 px-2 text-sm text-center"
             placeholder="Rest (s)"
             type="number"
             min={0}
             max={600}
           />
         </div>
-        <div className="col-span-2 flex justify-end gap-1">
+        <div className="col-span-1 flex justify-end gap-1">
           <Button
             size="sm"
             variant="ghost"
@@ -219,7 +219,7 @@ export function TrainingExerciseRow({
   }
 
   return (
-    <div className="grid grid-cols-12 gap-2 items-center px-2 py-2 hover:bg-muted/30 rounded group">
+    <div className="grid grid-cols-12 gap-2 items-center px-2 py-2 hover:bg-muted/30 rounded-lg group transition-colors">
       <div className="col-span-4 flex items-center gap-2">
         {exercise.isWarmup && (
           <Badge variant="outline" className="text-xs px-1">
@@ -233,32 +233,38 @@ export function TrainingExerciseRow({
           </span>
         )}
       </div>
-      <div className="col-span-2 text-center text-sm">
+      <div className="col-span-3 text-center text-sm">
         {exercise.sets} × {formatReps()}
       </div>
       <div className="col-span-2 text-center text-sm text-muted-foreground">
         {exercise.rpeTarget ? `RPE ${exercise.rpeTarget}` : "-"}
       </div>
       <div className="col-span-2 text-center text-sm text-muted-foreground">{formatRest()}</div>
-      <div className="col-span-2 flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+      <div className="col-span-1 flex justify-end gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
         {editMode && (
           <>
             <Button
               size="sm"
               variant="ghost"
               className="h-7 w-7 p-0"
+              aria-label={`Edit ${exercise.name}`}
               onClick={() => setIsEditing(true)}
             >
-              <Pencil className="h-3 w-3" />
+              <Pencil className="h-3 w-3" aria-hidden="true" />
             </Button>
             <Button
               size="sm"
               variant="ghost"
               className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+              aria-label={`Delete ${exercise.name}`}
               onClick={() => setShowDeleteConfirm(true)}
               disabled={isDeleting}
             >
-              {isDeleting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+              {isDeleting ? (
+                <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
+              ) : (
+                <Trash2 className="h-3 w-3" aria-hidden="true" />
+              )}
             </Button>
           </>
         )}
@@ -275,4 +281,4 @@ export function TrainingExerciseRow({
       />
     </div>
   );
-}
+});

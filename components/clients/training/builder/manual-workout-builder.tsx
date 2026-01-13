@@ -3,10 +3,10 @@
 import { useState, memo } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
 import { WorkoutTemplatePicker } from "../schedule/workout-template-picker";
 import { SessionList } from "../sessions/session-list";
 import { PreGenerationActivities } from "../../activities/pre-generation-activities";
+import { SameDayTrainingCheckbox } from "./same-day-training-checkbox";
 import { useTrainingBuilderContext } from "@/contexts/training-builder-context";
 import { cn } from "@/lib/utils";
 import { Plus, Loader2, Save, LayoutTemplate, PencilRuler } from "lucide-react";
@@ -143,27 +143,7 @@ export const ManualWorkoutBuilder = memo(function ManualWorkoutBuilder({
         clientWeightKg={clientWeightKg}
       />
 
-      {/* Same-day training checkbox */}
-      {builder.preGenerationActivities.length > 0 && (
-        <div className="flex items-start space-x-3 p-3 bg-muted/50 rounded-lg">
-          <Checkbox
-            id="allowSameDayTrainingManual"
-            checked={builder.allowSameDayTraining}
-            onCheckedChange={(checked) => builder.setAllowSameDayTraining(checked === true)}
-          />
-          <div className="grid gap-1.5 leading-none">
-            <label
-              htmlFor="allowSameDayTrainingManual"
-              className="text-sm font-medium cursor-pointer"
-            >
-              Client can train on activity days
-            </label>
-            <p className="text-xs text-muted-foreground">
-              Enable for athletes or clients comfortable with multiple sessions per day
-            </p>
-          </div>
-        </div>
-      )}
+      <SameDayTrainingCheckbox />
 
       {/* Save Button */}
       {builder.manualSessions.length > 0 && (

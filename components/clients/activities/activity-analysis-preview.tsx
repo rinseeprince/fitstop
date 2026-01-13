@@ -27,11 +27,11 @@ export function ActivityAnalysisPreview({
         <>
           <div className="flex items-center gap-4 text-sm">
             <span className="flex items-center gap-1">
-              <Flame className="h-4 w-4 text-orange-500" />
+              <Flame className="h-4 w-4 text-warning" />
               <strong>{analysis.estimatedCalories}</strong> calories
             </span>
             <span className="flex items-center gap-1">
-              <Clock className="h-4 w-4 text-blue-500" />
+              <Clock className="h-4 w-4 text-primary" />
               <strong>{analysis.recoveryHours}h</strong> recovery
             </span>
           </div>

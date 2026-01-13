@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import {
@@ -15,10 +16,16 @@ import type {
   CheckInTrainingContext,
 } from "@/types/check-in";
 
+type ExpandedSession = CheckInTrainingContext["sessions"][0] & {
+  weekNumber?: number;
+  displayName: string;
+};
+
 type TrainingSessionChecklistProps = {
   sessions: CheckInTrainingContext["sessions"];
   completions: CheckInSessionCompletion[];
   onChange: (completions: CheckInSessionCompletion[]) => void;
+  frequencyDays?: number;
 };
 
 const DAY_LABELS: Record<string, string> = {
@@ -35,12 +42,34 @@ export const TrainingSessionChecklist = ({
   sessions,
   completions,
   onChange,
+  frequencyDays = 7,
 }: TrainingSessionChecklistProps) => {
+  // Expand sessions for multi-week frequencies (round to nearest week)
+  const expandedSessions = useMemo((): ExpandedSession[] => {
+    const weeks = Math.round(frequencyDays / 7);
+    if (weeks <= 1) {
+      return sessions.map((s) => ({ ...s, displayName: s.name }));
+    }
+
+    const expanded: ExpandedSession[] = [];
+    for (let week = 1; week <= weeks; week++) {
+      for (const session of sessions) {
+        expanded.push({
+          ...session,
+          id: `${session.id}_week${week}`,
+          weekNumber: week,
+          displayName: `Week ${week}: ${session.name}`,
+        });
+      }
+    }
+    return expanded;
+  }, [sessions, frequencyDays]);
+
   const getCompletion = (sessionId: string) => {
     return completions.find((c) => c.trainingSessionId === sessionId);
   };
 
-  const handleToggle = (session: CheckInTrainingContext["sessions"][0]) => {
+  const handleToggle = (session: ExpandedSession) => {
     const existing = getCompletion(session.id);
 
     if (existing) {
@@ -67,7 +96,7 @@ export const TrainingSessionChecklist = ({
         ...completions,
         {
           trainingSessionId: session.id,
-          sessionName: session.name,
+          sessionName: session.displayName,
           dayOfWeek: session.dayOfWeek,
           completed: true,
           completionQuality: "full",
@@ -96,12 +125,12 @@ export const TrainingSessionChecklist = ({
       <div className="flex items-center justify-between">
         <Label className="text-base font-medium">Training Sessions</Label>
         <span className="text-sm text-muted-foreground">
-          {completedCount}/{sessions.length} completed
+          {completedCount}/{expandedSessions.length} completed
         </span>
       </div>
 
       <div className="space-y-3">
-        {sessions.map((session) => {
+        {expandedSessions.map((session) => {
           const completion = getCompletion(session.id);
           const isCompleted = completion?.completed ?? false;
           const quality = completion?.completionQuality;
@@ -111,7 +140,7 @@ export const TrainingSessionChecklist = ({
               key={session.id}
               className={`p-3 rounded-lg border transition-colors ${
                 isCompleted
-                  ? "bg-green-50 border-green-200 dark:bg-green-950/20 dark:border-green-900"
+                  ? "bg-success/10 border-success/30"
                   : "bg-muted/30 border-border"
               }`}
             >
@@ -129,7 +158,7 @@ export const TrainingSessionChecklist = ({
                       htmlFor={`session-${session.id}`}
                       className="text-sm font-medium cursor-pointer"
                     >
-                      {session.name}
+                      {session.displayName}
                     </label>
                   </div>
                   <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">

@@ -140,6 +140,7 @@ export const CheckInForm = ({
             trainingContext={trainingContext}
             nutritionContext={nutritionContext}
             weightUnit={formData.weightUnit || "lbs"}
+            frequencyDays={clientInfo.checkInFrequencyDays}
           />
         )}
       </div>

@@ -22,15 +22,8 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { Loader2 } from "lucide-react";
 
-type AddSessionDialogProps = {
-  clientId: string;
-  planId: string;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onSuccess: () => void;
-};
-
-const DAYS_OF_WEEK = [
+// Full day names for form display
+const DAYS_OF_WEEK_FULL = [
   { value: "monday", label: "Monday" },
   { value: "tuesday", label: "Tuesday" },
   { value: "wednesday", label: "Wednesday" },
@@ -38,7 +31,15 @@ const DAYS_OF_WEEK = [
   { value: "friday", label: "Friday" },
   { value: "saturday", label: "Saturday" },
   { value: "sunday", label: "Sunday" },
-];
+] as const;
+
+type AddSessionDialogProps = {
+  clientId: string;
+  planId: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSuccess: () => void;
+};
 
 export function AddSessionDialog({
   clientId,
@@ -130,7 +131,7 @@ export function AddSessionDialog({
                   <SelectValue placeholder="Optional" />
                 </SelectTrigger>
                 <SelectContent>
-                  {DAYS_OF_WEEK.map((day) => (
+                  {DAYS_OF_WEEK_FULL.map((day) => (
                     <SelectItem key={day.value} value={day.value}>
                       {day.label}
                     </SelectItem>

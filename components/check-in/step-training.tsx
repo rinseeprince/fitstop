@@ -22,6 +22,7 @@ type StepTrainingProps = {
   nutritionContext?: CheckInNutritionContext;
   clientWeightKg?: number;
   weightUnit?: "lbs" | "kg";
+  frequencyDays?: number;
 };
 
 export const StepTraining = ({
@@ -31,6 +32,7 @@ export const StepTraining = ({
   nutritionContext,
   clientWeightKg,
   weightUnit = "lbs",
+  frequencyDays = 7,
 }: StepTrainingProps) => {
   const hasActivePlan = trainingContext?.hasActivePlan ?? false;
   const hasNutritionPlan = nutritionContext?.hasNutritionPlan ?? false;
@@ -38,12 +40,12 @@ export const StepTraining = ({
   // Legacy adherence color for fallback slider
   const adherenceColor =
     !data.adherencePercentage || data.adherencePercentage < 50
-      ? "text-red-500"
+      ? "text-destructive"
       : data.adherencePercentage < 75
-      ? "text-orange-500"
+      ? "text-warning"
       : data.adherencePercentage < 90
-      ? "text-yellow-500"
-      : "text-green-500";
+      ? "text-warning"
+      : "text-success";
 
   return (
     <div className="space-y-8">
@@ -62,6 +64,7 @@ export const StepTraining = ({
           onChange={(sessionCompletions) =>
             onChange({ ...data, sessionCompletions })
           }
+          frequencyDays={frequencyDays}
         />
       ) : (
         <div className="space-y-3">
@@ -96,6 +99,7 @@ export const StepTraining = ({
           onChange={(nutritionAdherence) =>
             onChange({ ...data, nutritionAdherence })
           }
+          frequencyDays={frequencyDays}
         />
       ) : (
         <div className="space-y-3">

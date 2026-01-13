@@ -11,11 +11,113 @@ import {
 } from "@dnd-kit/core";
 import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { useToast } from "@/hooks/use-toast";
+import { VALID_DAYS, isDayOfWeek, type DayOfWeek } from "@/lib/constants/days";
 import type { TrainingSession, ReorderSessionItem } from "@/types/training";
 
-const VALID_DAYS = [
-  "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"
-];
+/**
+ * Determines the target day for a dropped item based on the drop target
+ */
+function determineTargetDay(
+  overId: string,
+  allItems: TrainingSession[]
+): DayOfWeek | null {
+  // Dropped directly onto a day cell
+  if (isDayOfWeek(overId)) {
+    return overId;
+  }
+
+  // Dropped onto unassigned area
+  if (overId === "unassigned") {
+    return null;
+  }
+
+  // Dropped onto another item - use that item's day
+  const overItem = allItems.find((i) => i.id === overId);
+  if (overItem) {
+    const dayKey = overItem.dayOfWeek?.toLowerCase();
+    if (isDayOfWeek(dayKey)) {
+      return dayKey;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Calculates the reorder updates needed for both source and target collections
+ */
+function calculateReorderUpdates(
+  draggedItem: TrainingSession,
+  targetDay: DayOfWeek | null,
+  overId: string,
+  targetItems: TrainingSession[],
+  sourceItems: TrainingSession[],
+  sourceDay: DayOfWeek | null
+): ReorderSessionItem[] {
+  const updates: ReorderSessionItem[] = [];
+  const activeId = draggedItem.id;
+
+  // Filter out the dragged item and calculate insert position
+  const filteredTargetItems = targetItems.filter((i) => i.id !== activeId);
+  let insertIndex = filteredTargetItems.length;
+
+  if (overId !== targetDay && overId !== "unassigned") {
+    const overIndex = filteredTargetItems.findIndex((i) => i.id === overId);
+    if (overIndex >= 0) insertIndex = overIndex;
+  }
+
+  // Build new target order with dragged item inserted
+  const newTargetItems = [
+    ...filteredTargetItems.slice(0, insertIndex),
+    draggedItem,
+    ...filteredTargetItems.slice(insertIndex),
+  ];
+
+  // Add updates for target collection
+  newTargetItems.forEach((item, idx) => {
+    const currentDay = item.dayOfWeek?.toLowerCase() || null;
+    const needsUpdate = item.id === activeId ||
+                        item.orderIndex !== idx ||
+                        currentDay !== targetDay;
+
+    if (needsUpdate) {
+      updates.push({ sessionId: item.id, dayOfWeek: targetDay, orderIndex: idx });
+    }
+  });
+
+  // Add updates for source collection (if moving between days)
+  if (sourceDay !== targetDay) {
+    sourceItems
+      .filter((i) => i.id !== activeId)
+      .forEach((item, idx) => {
+        if (item.orderIndex !== idx) {
+          updates.push({ sessionId: item.id, dayOfWeek: sourceDay, orderIndex: idx });
+        }
+      });
+  }
+
+  return updates;
+}
+
+/**
+ * Applies optimistic updates to the items list
+ */
+function applyOptimisticUpdates(
+  allItems: TrainingSession[],
+  updates: ReorderSessionItem[]
+): TrainingSession[] {
+  return allItems.map((item) => {
+    const update = updates.find((u) => u.sessionId === item.id);
+    if (update) {
+      return {
+        ...item,
+        dayOfWeek: update.dayOfWeek ?? undefined,
+        orderIndex: update.orderIndex
+      };
+    }
+    return item;
+  });
+}
 
 type UseScheduleDndProps = {
   sessions: TrainingSession[];
@@ -49,12 +151,12 @@ export function useScheduleDnd({
   );
 
   const itemsByDay = useMemo(() => {
-    const map = new Map<string, TrainingSession[]>();
+    const map = new Map<DayOfWeek, TrainingSession[]>();
     VALID_DAYS.forEach((day) => map.set(day, []));
 
     allItems.forEach((item) => {
       const dayKey = item.dayOfWeek?.toLowerCase();
-      if (dayKey && VALID_DAYS.includes(dayKey)) {
+      if (isDayOfWeek(dayKey)) {
         map.get(dayKey)!.push(item);
       }
     });
@@ -65,7 +167,7 @@ export function useScheduleDnd({
 
   const unassignedItems = useMemo(() => {
     return allItems
-      .filter((item) => !item.dayOfWeek || !VALID_DAYS.includes(item.dayOfWeek.toLowerCase()))
+      .filter((item) => !item.dayOfWeek || !isDayOfWeek(item.dayOfWeek.toLowerCase()))
       .sort((a, b) => a.orderIndex - b.orderIndex);
   }, [allItems]);
 
@@ -109,73 +211,33 @@ export function useScheduleDnd({
     const draggedItem = allItems.find((i) => i.id === activeId);
     if (!draggedItem) return;
 
-    // Determine target day
-    let targetDay: string | null = null;
-    if (VALID_DAYS.includes(overId)) {
-      targetDay = overId;
-    } else if (overId === "unassigned") {
-      targetDay = null;
-    } else {
-      const overItem = allItems.find((i) => i.id === overId);
-      if (overItem) {
-        targetDay = overItem.dayOfWeek?.toLowerCase() || null;
-        if (targetDay && !VALID_DAYS.includes(targetDay)) {
-          targetDay = null;
-        }
-      }
-    }
+    // Determine where the item is being dropped
+    const targetDay = determineTargetDay(overId, allItems);
+    const sourceDayRaw = draggedItem.dayOfWeek?.toLowerCase();
+    const sourceDay: DayOfWeek | null = isDayOfWeek(sourceDayRaw) ? sourceDayRaw : null;
 
+    // Get the collections we're working with
     const targetItems = targetDay ? (itemsByDay.get(targetDay) || []) : unassignedItems;
-    const updates: ReorderSessionItem[] = [];
+    const sourceItems = sourceDay ? (itemsByDay.get(sourceDay) || []) : unassignedItems;
 
-    const filteredTargetItems = targetItems.filter((i) => i.id !== activeId);
-
-    let insertIndex = filteredTargetItems.length;
-    if (overId !== targetDay && overId !== "unassigned") {
-      const overIndex = filteredTargetItems.findIndex((i) => i.id === overId);
-      if (overIndex >= 0) insertIndex = overIndex;
-    }
-
-    const newTargetItems = [
-      ...filteredTargetItems.slice(0, insertIndex),
+    // Calculate all needed reorder updates
+    const updates = calculateReorderUpdates(
       draggedItem,
-      ...filteredTargetItems.slice(insertIndex),
-    ];
-
-    newTargetItems.forEach((item, idx) => {
-      const newDay = targetDay || null;
-      const currentDay = item.dayOfWeek?.toLowerCase() || null;
-
-      if (item.id === activeId || item.orderIndex !== idx || currentDay !== newDay) {
-        updates.push({ sessionId: item.id, dayOfWeek: newDay, orderIndex: idx });
-      }
-    });
-
-    const sourceDay = draggedItem.dayOfWeek?.toLowerCase() || null;
-    if (sourceDay !== targetDay) {
-      const sourceItems = sourceDay ? (itemsByDay.get(sourceDay) || []) : unassignedItems;
-      sourceItems
-        .filter((i) => i.id !== activeId)
-        .forEach((item, idx) => {
-          if (item.orderIndex !== idx) {
-            updates.push({ sessionId: item.id, dayOfWeek: sourceDay, orderIndex: idx });
-          }
-        });
-    }
+      targetDay,
+      overId,
+      targetItems,
+      sourceItems,
+      sourceDay
+    );
 
     if (updates.length === 0) return;
 
-    const updatedItems = allItems.map((item) => {
-      const update = updates.find((u) => u.sessionId === item.id);
-      if (update) {
-        return { ...item, dayOfWeek: update.dayOfWeek ?? undefined, orderIndex: update.orderIndex };
-      }
-      return item;
-    });
-
+    // Apply optimistic updates for immediate UI feedback
+    const updatedItems = applyOptimisticUpdates(allItems, updates);
     setOptimisticItems(updatedItems);
     setIsUpdating(true);
 
+    // Persist changes to the server
     try {
       const res = await fetch(
         `/api/clients/${clientId}/training/${planId}/sessions/reorder`,
@@ -213,4 +275,3 @@ export function useScheduleDnd({
   };
 }
 
-export { VALID_DAYS };

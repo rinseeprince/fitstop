@@ -21,28 +21,57 @@ type UseTrainingBuilderProps = {
   onUpdate?: () => void;
 };
 
+/**
+ * Training plan builder hook that orchestrates AI generation and manual plan creation.
+ *
+ * This hook composes several concerns:
+ * - Base training plan CRUD (via useTrainingPlan)
+ * - Builder mode state (AI vs manual)
+ * - AI suggestion management
+ * - Manual session/exercise management
+ * - Template application
+ *
+ * Returns ~30 properties grouped by:
+ * - trainingPlan.* - Base plan state and methods (plan, prompt, generate, etc.)
+ * - mode/manualMode - Builder mode toggles
+ * - AI suggestions - selectedSuggestionIds, aiSuggestions, fetchAiSuggestions
+ * - Manual creation - manualSessions, add/update/remove methods, applyTemplate
+ * - Utilities - refreshExercises, resetBuilder
+ */
 export function useTrainingBuilder({ clientId, onUpdate }: UseTrainingBuilderProps) {
   const { toast } = useToast();
 
-  // Get base training plan functionality
+  // ═══════════════════════════════════════════════════════════════════════════
+  // BASE TRAINING PLAN
+  // ═══════════════════════════════════════════════════════════════════════════
   const trainingPlan = useTrainingPlan({ clientId, onUpdate });
 
-  // Builder mode state
+  // ═══════════════════════════════════════════════════════════════════════════
+  // BUILDER MODE STATE
+  // ═══════════════════════════════════════════════════════════════════════════
   const [mode, setMode] = useState<BuilderMode>("ai");
   const [manualMode, setManualMode] = useState<ManualCreationMode>("template");
 
-  // Quick suggestions state
+  // ═══════════════════════════════════════════════════════════════════════════
+  // AI SUGGESTIONS STATE
+  // ═══════════════════════════════════════════════════════════════════════════
   const [selectedSuggestionIds, setSelectedSuggestionIds] = useState<string[]>([]);
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
   const [aiSuggestions, setAiSuggestions] = useState<string[]>([]);
 
-  // Manual creation state
+  // ═══════════════════════════════════════════════════════════════════════════
+  // MANUAL CREATION STATE
+  // ═══════════════════════════════════════════════════════════════════════════
   const [manualSessions, setManualSessions] = useState<ManualSessionDraft[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<WorkoutTemplate | null>(null);
   const [isSavingManual, setIsSavingManual] = useState(false);
   const [isRefreshingExercises, setIsRefreshingExercises] = useState(false);
 
-  // Toggle suggestion selection
+  // ═══════════════════════════════════════════════════════════════════════════
+  // AI SUGGESTIONS METHODS
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /** Toggle a quick suggestion on/off, updating the prompt accordingly */
   const toggleSuggestion = useCallback((suggestionId: string, promptText: string) => {
     setSelectedSuggestionIds((prev) => {
       const isSelected = prev.includes(suggestionId);
@@ -60,7 +89,7 @@ export function useTrainingBuilder({ clientId, onUpdate }: UseTrainingBuilderPro
     });
   }, [trainingPlan]);
 
-  // Fetch AI-generated prompt suggestions
+  /** Fetch AI-generated prompt suggestions from the server */
   const fetchAiSuggestions = useCallback(async () => {
     setIsLoadingSuggestions(true);
     try {
@@ -91,7 +120,11 @@ export function useTrainingBuilder({ clientId, onUpdate }: UseTrainingBuilderPro
     }
   }, [clientId, toast]);
 
-  // Manual session management
+  // ═══════════════════════════════════════════════════════════════════════════
+  // MANUAL SESSION MANAGEMENT
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /** Add a new manual session to the builder */
   const addManualSession = useCallback((session: ManualSessionDraft) => {
     setManualSessions((prev) => [...prev, session]);
   }, []);
@@ -106,7 +139,11 @@ export function useTrainingBuilder({ clientId, onUpdate }: UseTrainingBuilderPro
     setManualSessions((prev) => prev.filter((s) => s.tempId !== tempId));
   }, []);
 
-  // Manual exercise management
+  // ═══════════════════════════════════════════════════════════════════════════
+  // MANUAL EXERCISE MANAGEMENT
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /** Add an exercise to a manual session */
   const addExerciseToSession = useCallback((sessionTempId: string, exercise: ManualExerciseDraft) => {
     setManualSessions((prev) =>
       prev.map((s) =>
@@ -145,7 +182,11 @@ export function useTrainingBuilder({ clientId, onUpdate }: UseTrainingBuilderPro
     );
   }, []);
 
-  // Apply template to manual sessions
+  // ═══════════════════════════════════════════════════════════════════════════
+  // TEMPLATE AND SAVE OPERATIONS
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /** Apply a workout template to populate manual sessions */
   const applyTemplate = useCallback((template: WorkoutTemplate) => {
     setSelectedTemplate(template);
     const sessions: ManualSessionDraft[] = template.sessions.map((ts) => ({
@@ -163,7 +204,7 @@ export function useTrainingBuilder({ clientId, onUpdate }: UseTrainingBuilderPro
     setManualSessions(sessions);
   }, []);
 
-  // Save manual plan
+  /** Save the manual plan to the server */
   const saveManualPlan = useCallback(async () => {
     if (manualSessions.length === 0) {
       toast({
@@ -220,7 +261,11 @@ export function useTrainingBuilder({ clientId, onUpdate }: UseTrainingBuilderPro
     }
   }, [clientId, manualSessions, selectedTemplate, toast, trainingPlan, onUpdate]);
 
-  // Refresh exercises for all sessions
+  // ═══════════════════════════════════════════════════════════════════════════
+  // EXERCISE REFRESH AND UTILITIES
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /** Refresh exercises for all sessions in the current plan */
   const refreshExercises = useCallback(async () => {
     if (!trainingPlan.plan) return false;
 
@@ -267,7 +312,7 @@ export function useTrainingBuilder({ clientId, onUpdate }: UseTrainingBuilderPro
     }
   }, [clientId, trainingPlan, toast, onUpdate]);
 
-  // Reset builder state
+  /** Reset all builder state to initial values */
   const resetBuilder = useCallback(() => {
     setMode("ai");
     setManualMode("template");

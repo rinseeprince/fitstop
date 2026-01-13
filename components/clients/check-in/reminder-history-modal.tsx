@@ -44,24 +44,24 @@ export function ReminderHistoryModal({
   const getReminderTypeColor = (type: string) => {
     switch (type) {
       case "upcoming":
-        return "bg-blue-100 text-blue-800";
+        return "bg-primary/15 text-primary";
       case "overdue":
-        return "bg-amber-100 text-amber-800";
+        return "bg-warning/15 text-warning";
       case "follow_up":
-        return "bg-red-100 text-red-800";
+        return "bg-destructive/15 text-destructive";
       default:
-        return "bg-gray-100 text-gray-800";
+        return "bg-muted text-muted-foreground";
     }
   };
 
   const getReminderIcon = (reminder: CheckInReminder) => {
     if (reminder.responded) {
-      return <CheckCircle className="h-4 w-4 text-green-600" />;
+      return <CheckCircle className="h-4 w-4 text-success" />;
     }
     if (reminder.reminderType === "follow_up") {
-      return <AlertCircle className="h-4 w-4 text-red-600" />;
+      return <AlertCircle className="h-4 w-4 text-destructive" />;
     }
-    return <Clock className="h-4 w-4 text-amber-600" />;
+    return <Clock className="h-4 w-4 text-warning" />;
   };
 
   return (
@@ -86,10 +86,12 @@ export function ReminderHistoryModal({
             ))}
           </div>
         ) : total === 0 ? (
-          <div className="text-center py-12 text-muted-foreground">
-            <Send className="h-12 w-12 mx-auto mb-4 opacity-20" />
-            <p className="font-medium">No reminders sent yet</p>
-            <p className="text-sm mt-1">
+          <div className="text-center py-12">
+            <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
+              <Send className="h-8 w-8 text-muted-foreground" />
+            </div>
+            <p className="font-medium text-muted-foreground">No reminders sent yet</p>
+            <p className="text-sm text-muted-foreground mt-1">
               Send a reminder to start tracking communication with this client
             </p>
           </div>
@@ -147,7 +149,7 @@ export function ReminderHistoryModal({
                       variant={reminder.responded ? "default" : "outline"}
                       className={
                         reminder.responded
-                          ? "bg-green-100 text-green-800 border-green-300"
+                          ? "bg-success/15 text-success border-success/30"
                           : ""
                       }
                     >
@@ -174,7 +176,7 @@ export function ReminderHistoryModal({
                     </div>
 
                     {reminder.responded && reminder.respondedAt && (
-                      <div className="flex items-center gap-2 text-green-700">
+                      <div className="flex items-center gap-2 text-success">
                         <CheckCircle className="h-3 w-3" />
                         <span>
                           Responded {format(new Date(reminder.respondedAt), "MMM d, yyyy 'at' h:mm a")}

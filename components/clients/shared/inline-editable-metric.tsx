@@ -154,7 +154,7 @@ export function InlineEditableMetric({
               <X className="h-4 w-4" />
             </Button>
           </div>
-          {error && <p className="text-xs text-red-600">{error}</p>}
+          {error && <p className="text-xs text-destructive">{error}</p>}
         </div>
       ) : (
         <div className="flex items-center gap-2 group">

@@ -20,16 +20,39 @@ const insightIcons = {
   trend: TrendingUp,
 };
 
+// Semantic colours from design system (Tailwind v4 CSS variables with opacity)
 const insightColors = {
-  strength: "text-green-600 bg-green-100 dark:bg-green-900/20",
-  concern: "text-red-600 bg-red-100 dark:bg-red-900/20",
-  trend: "text-blue-600 bg-blue-100 dark:bg-blue-900/20",
+  strength: {
+    bg: "bg-success/15",
+    text: "text-success",
+    icon: "text-success",
+  },
+  concern: {
+    bg: "bg-warning/15",
+    text: "text-warning",
+    icon: "text-warning",
+  },
+  trend: {
+    bg: "bg-primary/15",
+    text: "text-primary",
+    icon: "text-primary",
+  },
 };
 
+// Priority Recommendation Cards from design system section 12.3
 const priorityColors = {
-  high: "border-l-red-500 bg-red-50 dark:bg-red-900/10",
-  medium: "border-l-orange-500 bg-orange-50 dark:bg-orange-900/10",
-  low: "border-l-blue-500 bg-blue-50 dark:bg-blue-900/10",
+  high: {
+    border: "border-destructive",
+    label: "text-destructive",
+  },
+  medium: {
+    border: "border-warning",
+    label: "text-warning",
+  },
+  low: {
+    border: "border-primary",
+    label: "text-primary",
+  },
 };
 
 export const AISummaryCard = ({
@@ -72,37 +95,41 @@ export const AISummaryCard = ({
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-            <Sparkles className="w-4 h-4 text-primary" />
+      {/* AI Summary Card - Design System Section 12.3 */}
+      <div className="bg-gradient-to-br from-accent/10 to-primary/10 border border-accent/20 rounded-xl p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 bg-white rounded-full flex items-center justify-center shadow-sm">
+              <Sparkles className="w-3.5 h-3.5 text-accent" />
+            </div>
+            <span className="text-sm font-medium text-gray-900">AI Summary</span>
           </div>
-          <h3 className="font-semibold">AI Summary</h3>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={handleRegenerate}
+            disabled={isRegenerating}
+            className="text-xs text-gray-600 hover:text-gray-900 hover:bg-white/50 h-8 px-2"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${isRegenerating ? "animate-spin" : ""}`} />
+            Regenerate
+          </Button>
         </div>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={handleRegenerate}
-          disabled={isRegenerating}
-        >
-          <RefreshCw className={`w-4 h-4 mr-2 ${isRegenerating ? "animate-spin" : ""}`} />
-          Regenerate
-        </Button>
-      </div>
 
-      {/* Summary */}
-      <div className="glass-card p-4 space-y-3">
         {isEditing ? (
-          <>
+          <div className="space-y-3">
             <Textarea
               value={editedSummary}
               onChange={(e) => setEditedSummary(e.target.value)}
               rows={4}
-              className="resize-none"
+              className="resize-none bg-white/80 border-gray-200 rounded-lg text-sm focus:border-primary focus:ring-2 focus:ring-ring"
             />
             <div className="flex gap-2">
-              <Button size="sm" onClick={handleSave}>
+              <Button
+                size="sm"
+                onClick={handleSave}
+                className="bg-primary hover:bg-primary/90 text-primary-foreground text-xs px-3 py-1.5 rounded-md"
+              >
                 Save
               </Button>
               <Button
@@ -112,21 +139,22 @@ export const AISummaryCard = ({
                   setEditedSummary(summary);
                   setIsEditing(false);
                 }}
+                className="bg-white border-gray-200 text-gray-700 hover:bg-gray-50 text-xs px-3 py-1.5 rounded-md"
               >
                 Cancel
               </Button>
             </div>
-          </>
+          </div>
         ) : (
           <>
-            <p className="text-sm text-muted-foreground leading-relaxed">
-              {editedSummary}
+            <p className="text-sm text-gray-700 leading-relaxed">
+              {editedSummary || "No AI summary available yet."}
             </p>
             <Button
               size="sm"
               variant="ghost"
               onClick={() => setIsEditing(true)}
-              className="text-xs"
+              className="text-xs text-gray-500 hover:text-gray-700 hover:bg-white/50 mt-2 h-7 px-2"
             >
               Edit Summary
             </Button>
@@ -134,20 +162,21 @@ export const AISummaryCard = ({
         )}
       </div>
 
-      {/* Insights */}
+      {/* Key Insights - Semantic colours */}
       {insights.length > 0 && (
-        <div className="space-y-2">
-          <h4 className="text-sm font-semibold">Key Insights</h4>
+        <div className="space-y-3">
+          <h4 className="text-sm font-semibold text-gray-900">Key Insights</h4>
           <div className="space-y-2">
             {insights.map((insight, index) => {
               const Icon = insightIcons[insight.type];
+              const colors = insightColors[insight.type];
               return (
                 <div
                   key={index}
-                  className={`flex items-start gap-3 p-3 rounded-lg ${insightColors[insight.type]}`}
+                  className={`flex items-start gap-3 p-3 rounded-xl ${colors.bg}`}
                 >
-                  <Icon className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                  <p className="text-sm">{insight.text}</p>
+                  <Icon className={`w-4 h-4 mt-0.5 flex-shrink-0 ${colors.icon}`} />
+                  <p className={`text-sm ${colors.text}`}>{insight.text}</p>
                 </div>
               );
             })}
@@ -155,24 +184,25 @@ export const AISummaryCard = ({
         </div>
       )}
 
-      {/* Recommendations */}
+      {/* Recommendations - Priority Cards from Design System Section 12.3 */}
       {recommendations.length > 0 && (
-        <div className="space-y-2">
-          <h4 className="text-sm font-semibold">Recommendations</h4>
+        <div className="space-y-3">
+          <h4 className="text-sm font-semibold text-gray-900">Recommendations</h4>
           <div className="space-y-2">
-            {recommendations.map((rec, index) => (
-              <div
-                key={index}
-                className={`border-l-4 p-3 rounded-r-lg ${priorityColors[rec.priority]}`}
-              >
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-xs font-semibold uppercase">
+            {recommendations.map((rec, index) => {
+              const colors = priorityColors[rec.priority];
+              return (
+                <div
+                  key={index}
+                  className={`bg-white rounded-lg border-l-4 ${colors.border} p-4 shadow-sm`}
+                >
+                  <span className={`text-xs font-semibold uppercase tracking-wide ${colors.label}`}>
                     {rec.priority} Priority
                   </span>
+                  <p className="text-sm text-gray-700 mt-1">{rec.text}</p>
                 </div>
-                <p className="text-sm text-muted-foreground">{rec.text}</p>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

@@ -2,12 +2,13 @@
 
 import { useState } from "react";
 import { AppLayout } from "@/components/app-layout";
+import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { CheckInDetailModal } from "@/components/check-in/check-in-detail-modal";
 import { useUnreviewedCheckIns } from "@/hooks/use-check-in-data";
-import { ArrowLeft, AlertCircle, CheckCircle } from "lucide-react";
+import { AlertCircle, CheckCircle } from "lucide-react";
 import Link from "next/link";
 import { format } from "date-fns";
 
@@ -43,23 +44,17 @@ export default function ReviewCheckInsPage() {
       .toUpperCase();
   };
 
+  const pageHeader = (
+    <PageHeader
+      title="Review Check-Ins"
+      description="Review and provide feedback on client check-ins"
+      backHref="/"
+    />
+  );
+
   return (
-    <AppLayout>
+    <AppLayout pageHeader={pageHeader}>
       <div className="space-y-6">
-        <Button variant="ghost" asChild>
-          <Link href="/">
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to Dashboard
-          </Link>
-        </Button>
-
-        <div>
-          <h1 className="text-3xl font-bold">Review Check-Ins</h1>
-          <p className="text-muted-foreground mt-2">
-            Review and provide feedback on client check-ins
-          </p>
-        </div>
-
         {isLoading ? (
           <Card>
             <CardContent className="pt-6">

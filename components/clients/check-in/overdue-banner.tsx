@@ -20,14 +20,14 @@ export function OverdueBanner() {
   const overdueCount = clients.filter((c) => c.severity === "overdue").length;
 
   return (
-    <Alert variant="destructive" className="mb-6 border-amber-500 bg-amber-50">
-      <AlertTriangle className="h-5 w-5 text-amber-600" />
-      <AlertTitle className="text-amber-900 font-semibold">
+    <Alert variant="destructive" className="mb-6 border-warning/50 bg-warning/10">
+      <AlertTriangle className="h-5 w-5 text-warning" />
+      <AlertTitle className="text-foreground font-semibold">
         {total} {total === 1 ? "client is" : "clients are"} overdue for check-ins
       </AlertTitle>
-      <AlertDescription className="text-amber-800 mt-2">
+      <AlertDescription className="text-muted-foreground mt-2">
         {criticalCount > 0 && (
-          <p className="font-medium">
+          <p className="font-medium text-destructive">
             {criticalCount} critically overdue (4+ days)
           </p>
         )}
@@ -38,7 +38,7 @@ export function OverdueBanner() {
         )}
         <Button
           variant="link"
-          className="mt-3 p-0 h-auto text-amber-900 hover:text-amber-950 font-semibold"
+          className="mt-3 p-0 h-auto text-warning hover:text-warning/80 font-semibold"
           asChild
         >
           <Link href="/clients/overdue">

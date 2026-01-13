@@ -32,29 +32,29 @@ export function WorkoutTemplatePicker({ selectedTemplate, onSelect }: WorkoutTem
               onClick={() => onSelect(template)}
               className={cn(
                 "w-full text-left p-4 rounded-lg border transition-all",
-                "hover:shadow-md hover:border-indigo-300",
+                "hover:shadow-md hover:border-primary/50",
                 isSelected
-                  ? "border-indigo-500 bg-indigo-50 ring-2 ring-indigo-500/20"
-                  : "border-slate-200 bg-white hover:bg-slate-50"
+                  ? "border-primary bg-primary/5 ring-2 ring-primary/20"
+                  : "border-border bg-white hover:bg-muted/50"
               )}
             >
               <div className="flex items-start justify-between">
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
-                    <h4 className="font-medium text-slate-900">{template.name}</h4>
+                    <h4 className="font-medium text-foreground">{template.name}</h4>
                     {isSelected && (
-                      <span className="flex items-center justify-center w-5 h-5 rounded-full bg-indigo-500">
-                        <Check className="h-3 w-3 text-white" />
+                      <span className="flex items-center justify-center w-5 h-5 rounded-full bg-primary">
+                        <Check className="h-3 w-3 text-primary-foreground" />
                       </span>
                     )}
                   </div>
-                  <p className="text-sm text-slate-600 mt-1">{template.description}</p>
+                  <p className="text-sm text-muted-foreground mt-1">{template.description}</p>
                   <div className="flex items-center gap-4 mt-3">
-                    <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                       <Dumbbell className="h-3.5 w-3.5" />
                       {splitTypeLabels[template.splitType]}
                     </div>
-                    <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                       <Calendar className="h-3.5 w-3.5" />
                       {template.frequency} days/week
                     </div>
@@ -63,20 +63,20 @@ export function WorkoutTemplatePicker({ selectedTemplate, onSelect }: WorkoutTem
                 <ChevronRight
                   className={cn(
                     "h-5 w-5 transition-colors",
-                    isSelected ? "text-indigo-500" : "text-slate-400"
+                    isSelected ? "text-primary" : "text-muted-foreground"
                   )}
                 />
               </div>
 
               {/* Session preview */}
               {isSelected && (
-                <div className="mt-4 pt-4 border-t border-indigo-200">
-                  <div className="text-xs font-medium text-indigo-600 mb-2">Sessions included:</div>
+                <div className="mt-4 pt-4 border-t border-primary/20">
+                  <div className="text-xs font-medium text-primary mb-2">Sessions included:</div>
                   <div className="flex flex-wrap gap-2">
                     {template.sessions.map((session, idx) => (
                       <span
                         key={idx}
-                        className="text-xs px-2 py-1 rounded bg-white border border-indigo-200 text-slate-700"
+                        className="text-xs px-2 py-1 rounded bg-white border border-primary/20 text-foreground"
                       >
                         {session.name}
                       </span>

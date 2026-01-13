@@ -85,9 +85,9 @@ export const ExerciseHighlightsSection = ({
   const getIcon = (type: ExerciseHighlightType) => {
     switch (type) {
       case "pr":
-        return <Trophy className="h-4 w-4 text-yellow-500" />;
+        return <Trophy className="h-4 w-4 text-warning" />;
       case "struggle":
-        return <AlertCircle className="h-4 w-4 text-red-500" />;
+        return <AlertCircle className="h-4 w-4 text-destructive" />;
       default:
         return null;
     }

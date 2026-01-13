@@ -12,11 +12,11 @@ type StepSubjectiveProps = {
 };
 
 const moodEmojis = [
-  { value: 1, icon: Frown, label: "Poor", color: "text-red-500" },
-  { value: 2, icon: Meh, label: "Below Average", color: "text-orange-500" },
-  { value: 3, icon: Smile, label: "Good", color: "text-yellow-500" },
-  { value: 4, icon: SmilePlus, label: "Great", color: "text-green-500" },
-  { value: 5, icon: Heart, label: "Excellent", color: "text-emerald-500" },
+  { value: 1, icon: Frown, label: "Poor", color: "text-destructive" },
+  { value: 2, icon: Meh, label: "Below Average", color: "text-warning" },
+  { value: 3, icon: Smile, label: "Good", color: "text-warning" },
+  { value: 4, icon: SmilePlus, label: "Great", color: "text-success" },
+  { value: 5, icon: Heart, label: "Excellent", color: "text-success" },
 ];
 
 export const StepSubjective = ({ data, onChange }: StepSubjectiveProps) => {

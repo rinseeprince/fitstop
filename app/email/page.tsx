@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { AppLayout } from "@/components/app-layout"
+import { PageHeader } from "@/components/page-header"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -15,15 +16,16 @@ export default function EmailPage() {
   const [subject, setSubject] = useState("")
   const [content, setContent] = useState("")
 
-  return (
-    <AppLayout>
-      <div className="space-y-6">
-        {/* Header */}
-        <div>
-          <h1 className="text-3xl font-bold">Email Marketing</h1>
-          <p className="text-muted-foreground mt-1">Compose and send newsletters to your clients</p>
-        </div>
+  const pageHeader = (
+    <PageHeader
+      title="Email Marketing"
+      description="Compose and send newsletters to your clients"
+    />
+  )
 
+  return (
+    <AppLayout pageHeader={pageHeader}>
+      <div className="space-y-6">
         {/* Quick Stats */}
         <div className="grid gap-4 sm:grid-cols-4">
           <Card>

@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { AppLayout } from "@/components/app-layout"
+import { PageHeader } from "@/components/page-header"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -114,14 +115,16 @@ export default function MessagesPage() {
     conv.clientName.toLowerCase().includes(searchQuery.toLowerCase()),
   )
 
-  return (
-    <AppLayout>
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold">Messages</h1>
-          <p className="text-muted-foreground mt-1">Chat with your clients</p>
-        </div>
+  const pageHeader = (
+    <PageHeader
+      title="Messages"
+      description="Chat with your clients"
+    />
+  )
 
+  return (
+    <AppLayout pageHeader={pageHeader}>
+      <div className="space-y-6">
         <div className="grid gap-4 lg:grid-cols-[350px_1fr] h-[calc(100vh-280px)]">
           {/* Conversations List */}
           <Card className="flex flex-col overflow-hidden">

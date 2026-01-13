@@ -59,11 +59,11 @@ export function OverdueClientCard({
   const getSeverityColor = () => {
     switch (client.severity) {
       case "critically_overdue":
-        return "bg-red-100 text-red-800 border-red-300";
+        return "bg-destructive/15 text-destructive border-destructive/30";
       case "overdue":
-        return "bg-amber-100 text-amber-800 border-amber-300";
+        return "bg-warning/15 text-warning border-warning/30";
       default:
-        return "bg-gray-100 text-gray-800 border-gray-300";
+        return "bg-muted text-muted-foreground border-border";
     }
   };
 
@@ -79,7 +79,7 @@ export function OverdueClientCard({
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
             <Avatar className="h-12 w-12">
-              <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white">
+              <AvatarFallback className="bg-gradient-to-br from-primary to-accent text-white">
                 {client.name
                   .split(" ")
                   .map((n) => n[0])

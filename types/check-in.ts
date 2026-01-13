@@ -357,6 +357,7 @@ export type CheckInClientInfo = {
   name: string;
   email: string;
   coachName: string;
+  checkInFrequencyDays?: number; // 7 for weekly, 14 for bi-weekly, etc.
 };
 
 // Request/Response types for API

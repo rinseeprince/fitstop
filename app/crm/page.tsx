@@ -4,6 +4,7 @@ import type React from "react"
 
 import { useState } from "react"
 import { AppLayout } from "@/components/app-layout"
+import { PageHeader } from "@/components/page-header"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
@@ -174,78 +175,84 @@ export default function CRMPage() {
     setIsDialogOpen(false)
   }
 
-  return (
-    <AppLayout>
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-3xl font-bold">CRM Pipeline</h1>
-            <p className="text-muted-foreground mt-1">Track leads through your sales funnel</p>
+  const addLeadButton = (
+    <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+      <DialogTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-9 w-9 rounded-full transition-all hover:scale-110"
+        >
+          <Plus className="h-4 w-4" />
+          <span className="sr-only">Add New Lead</span>
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Add New Lead</DialogTitle>
+          <DialogDescription>
+            Enter the details for your new lead. They will be added to the Cold Lead column.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-4">
+          <div className="space-y-2">
+            <Label htmlFor="name">Name</Label>
+            <Input
+              id="name"
+              placeholder="John Doe"
+              value={newLead.name}
+              onChange={(e) => setNewLead({ ...newLead, name: e.target.value })}
+            />
           </div>
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="h-4 w-4 mr-2" />
-                Add New Lead
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Add New Lead</DialogTitle>
-                <DialogDescription>
-                  Enter the details for your new lead. They will be added to the Cold Lead column.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4 py-4">
-                <div className="space-y-2">
-                  <Label htmlFor="name">Name</Label>
-                  <Input
-                    id="name"
-                    placeholder="John Doe"
-                    value={newLead.name}
-                    onChange={(e) => setNewLead({ ...newLead, name: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    placeholder="john@example.com"
-                    value={newLead.email}
-                    onChange={(e) => setNewLead({ ...newLead, email: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="source">Source</Label>
-                  <Input
-                    id="source"
-                    placeholder="Instagram, Website, Referral..."
-                    value={newLead.source}
-                    onChange={(e) => setNewLead({ ...newLead, source: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="notes">Notes</Label>
-                  <Textarea
-                    id="notes"
-                    placeholder="Add any relevant notes..."
-                    value={newLead.notes}
-                    onChange={(e) => setNewLead({ ...newLead, notes: e.target.value })}
-                  />
-                </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
-                  Cancel
-                </Button>
-                <Button onClick={handleAddLead}>Add Lead</Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+          <div className="space-y-2">
+            <Label htmlFor="email">Email</Label>
+            <Input
+              id="email"
+              type="email"
+              placeholder="john@example.com"
+              value={newLead.email}
+              onChange={(e) => setNewLead({ ...newLead, email: e.target.value })}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="source">Source</Label>
+            <Input
+              id="source"
+              placeholder="Instagram, Website, Referral..."
+              value={newLead.source}
+              onChange={(e) => setNewLead({ ...newLead, source: e.target.value })}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="notes">Notes</Label>
+            <Textarea
+              id="notes"
+              placeholder="Add any relevant notes..."
+              value={newLead.notes}
+              onChange={(e) => setNewLead({ ...newLead, notes: e.target.value })}
+            />
+          </div>
         </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+            Cancel
+          </Button>
+          <Button onClick={handleAddLead}>Add Lead</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
 
+  const pageHeader = (
+    <PageHeader
+      title="CRM Pipeline"
+      description="Track leads through your sales funnel"
+    />
+  )
+
+  return (
+    <AppLayout pageHeader={pageHeader} headerActions={addLeadButton}>
+      <div className="space-y-6">
         {/* Kanban Board */}
         <div className="grid gap-4 lg:grid-cols-4">
           {columns.map((column) => (

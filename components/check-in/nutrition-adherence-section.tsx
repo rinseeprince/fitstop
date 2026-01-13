@@ -13,17 +13,19 @@ type NutritionAdherenceSectionProps = {
   nutritionContext?: CheckInNutritionContext;
   adherence: NutritionAdherence;
   onChange: (adherence: NutritionAdherence) => void;
+  frequencyDays?: number;
 };
 
 export const NutritionAdherenceSection = ({
   nutritionContext,
   adherence,
   onChange,
+  frequencyDays = 7,
 }: NutritionAdherenceSectionProps) => {
   const daysOnTarget = adherence.daysOnTarget ?? 0;
 
   const handleIncrement = () => {
-    if (daysOnTarget < 7) {
+    if (daysOnTarget < frequencyDays) {
       onChange({ ...adherence, daysOnTarget: daysOnTarget + 1 });
     }
   };
@@ -35,17 +37,18 @@ export const NutritionAdherenceSection = ({
   };
 
   const getAdherenceColor = () => {
-    if (daysOnTarget >= 6) return "text-green-600";
-    if (daysOnTarget >= 4) return "text-yellow-600";
-    if (daysOnTarget >= 2) return "text-orange-600";
-    return "text-red-600";
+    const percentage = daysOnTarget / frequencyDays;
+    if (percentage >= 0.85) return "text-success";
+    if (percentage >= 0.57) return "text-warning";
+    return "text-destructive";
   };
 
   const getAdherenceLabel = () => {
-    if (daysOnTarget === 7) return "Perfect week!";
-    if (daysOnTarget >= 5) return "Great progress";
-    if (daysOnTarget >= 3) return "Keep pushing";
-    if (daysOnTarget >= 1) return "Room for improvement";
+    const percentage = daysOnTarget / frequencyDays;
+    if (percentage === 1) return "Perfect!";
+    if (percentage >= 0.7) return "Great progress";
+    if (percentage >= 0.4) return "Keep pushing";
+    if (percentage >= 0.15) return "Room for improvement";
     return "Let's get back on track";
   };
 
@@ -114,7 +117,7 @@ export const NutritionAdherenceSection = ({
             <div className={`text-4xl font-bold ${getAdherenceColor()}`}>
               {daysOnTarget}
             </div>
-            <div className="text-sm text-muted-foreground">of 7 days</div>
+            <div className="text-sm text-muted-foreground">of {frequencyDays} days</div>
           </div>
 
           <Button
@@ -122,7 +125,7 @@ export const NutritionAdherenceSection = ({
             variant="outline"
             size="icon"
             onClick={handleIncrement}
-            disabled={daysOnTarget === 7}
+            disabled={daysOnTarget === frequencyDays}
             className="h-12 w-12"
           >
             <Plus className="h-5 w-5" />
@@ -138,15 +141,15 @@ export const NutritionAdherenceSection = ({
       <div className="h-2 bg-muted rounded-full overflow-hidden">
         <div
           className={`h-full transition-all duration-300 ${
-            daysOnTarget >= 6
-              ? "bg-green-500"
-              : daysOnTarget >= 4
-              ? "bg-yellow-500"
-              : daysOnTarget >= 2
-              ? "bg-orange-500"
-              : "bg-red-500"
+            daysOnTarget / frequencyDays >= 0.85
+              ? "bg-success"
+              : daysOnTarget / frequencyDays >= 0.57
+              ? "bg-warning"
+              : daysOnTarget / frequencyDays >= 0.28
+              ? "bg-warning"
+              : "bg-destructive"
           }`}
-          style={{ width: `${(daysOnTarget / 7) * 100}%` }}
+          style={{ width: `${(daysOnTarget / frequencyDays) * 100}%` }}
         />
       </div>
 

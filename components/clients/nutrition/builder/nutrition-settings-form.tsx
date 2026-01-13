@@ -77,115 +77,124 @@ export function NutritionSettingsForm({
   };
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div className="space-y-4">
       {/* Work Activity Level */}
-      <div className="space-y-2">
-        <Label htmlFor="activity-level">Work Activity Level</Label>
+      <div className="space-y-1.5">
+        <Label htmlFor="activity-level" className="text-sm font-medium text-gray-700">
+          Work Activity Level
+        </Label>
         <Select
           value={workActivityLevel}
           onValueChange={(value) =>
             handleChange("workActivityLevel", value as ActivityLevel)
           }
         >
-          <SelectTrigger id="activity-level">
+          <SelectTrigger id="activity-level" className="bg-white border-gray-200 rounded-lg focus:border-primary focus:ring-2 focus:ring-ring">
             <SelectValue />
           </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="sedentary">Sedentary (desk job)</SelectItem>
-            <SelectItem value="lightly_active">
+          <SelectContent className="bg-white rounded-xl shadow-lg border border-gray-100 p-1">
+            <SelectItem value="sedentary" className="rounded-lg cursor-pointer focus:bg-gray-50">Sedentary (desk job)</SelectItem>
+            <SelectItem value="lightly_active" className="rounded-lg cursor-pointer focus:bg-gray-50">
               Lightly Active (light movement)
             </SelectItem>
-            <SelectItem value="moderately_active">
+            <SelectItem value="moderately_active" className="rounded-lg cursor-pointer focus:bg-gray-50">
               Moderately Active (on feet most of day)
             </SelectItem>
-            <SelectItem value="very_active">
+            <SelectItem value="very_active" className="rounded-lg cursor-pointer focus:bg-gray-50">
               Very Active (physical job)
             </SelectItem>
-            <SelectItem value="extremely_active">
+            <SelectItem value="extremely_active" className="rounded-lg cursor-pointer focus:bg-gray-50">
               Extremely Active (athlete/heavy labor)
             </SelectItem>
           </SelectContent>
         </Select>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-gray-400">
           Daily work activity level (multiplier: 1.2x to 1.9x)
         </p>
       </div>
 
       {/* Protein Target */}
-      <div className="space-y-2">
-        <Label htmlFor="protein-target">Protein Target</Label>
+      <div className="space-y-1.5">
+        <Label htmlFor="protein-target" className="text-sm font-medium text-gray-700">
+          Protein Target
+        </Label>
         <Select
           value={proteinTargetGPerKg.toString()}
           onValueChange={(value) =>
             handleChange("proteinTargetGPerKg", parseFloat(value))
           }
         >
-          <SelectTrigger id="protein-target">
+          <SelectTrigger id="protein-target" className="bg-white border-gray-200 rounded-lg focus:border-primary focus:ring-2 focus:ring-ring">
             <SelectValue />
           </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={PROTEIN_TARGETS.minimum.gPerKg.toString()}>
+          <SelectContent className="bg-white rounded-xl shadow-lg border border-gray-100 p-1">
+            <SelectItem value={PROTEIN_TARGETS.minimum.gPerKg.toString()} className="rounded-lg cursor-pointer focus:bg-gray-50">
               {unitPreference === "metric"
                 ? `${PROTEIN_TARGETS.minimum.gPerKg}g per kg - Minimum`
                 : `${PROTEIN_TARGETS.minimum.gPerLb.toFixed(2)}g per lb - Minimum`}
             </SelectItem>
-            <SelectItem value={PROTEIN_TARGETS.moderate.gPerKg.toString()}>
+            <SelectItem value={PROTEIN_TARGETS.moderate.gPerKg.toString()} className="rounded-lg cursor-pointer focus:bg-gray-50">
               {unitPreference === "metric"
                 ? `${PROTEIN_TARGETS.moderate.gPerKg}g per kg - Moderate`
                 : `${PROTEIN_TARGETS.moderate.gPerLb.toFixed(2)}g per lb - Moderate`}
             </SelectItem>
-            <SelectItem value={PROTEIN_TARGETS.high.gPerKg.toString()}>
+            <SelectItem value={PROTEIN_TARGETS.high.gPerKg.toString()} className="rounded-lg cursor-pointer focus:bg-gray-50">
               {unitPreference === "metric"
                 ? `${PROTEIN_TARGETS.high.gPerKg}g per kg - High`
                 : `${PROTEIN_TARGETS.high.gPerLb.toFixed(2)}g per lb - High`}
             </SelectItem>
-            <SelectItem value={PROTEIN_TARGETS.veryHigh.gPerKg.toString()}>
+            <SelectItem value={PROTEIN_TARGETS.veryHigh.gPerKg.toString()} className="rounded-lg cursor-pointer focus:bg-gray-50">
               {unitPreference === "metric"
                 ? `${PROTEIN_TARGETS.veryHigh.gPerKg}g per kg - Very High`
                 : `${PROTEIN_TARGETS.veryHigh.gPerLb.toFixed(2)}g per lb - Very High`}
             </SelectItem>
           </SelectContent>
         </Select>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-gray-400">
           Protein per {unitPreference === "metric" ? "kg" : "lb"} of body weight
         </p>
       </div>
 
       {/* Diet Type */}
-      <div className="space-y-2">
-        <Label htmlFor="diet-type">Diet Type</Label>
+      <div className="space-y-1.5">
+        <Label htmlFor="diet-type" className="text-sm font-medium text-gray-700">
+          Diet Type
+        </Label>
         <Select
           value={dietType}
           onValueChange={(value) => handleChange("dietType", value as DietType)}
         >
-          <SelectTrigger id="diet-type">
+          <SelectTrigger id="diet-type" className="bg-white border-gray-200 rounded-lg focus:border-primary focus:ring-2 focus:ring-ring">
             <SelectValue />
           </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="balanced">Balanced (50/50 carbs/fat)</SelectItem>
-            <SelectItem value="high_carb">
+          <SelectContent className="bg-white rounded-xl shadow-lg border border-gray-100 p-1">
+            <SelectItem value="balanced" className="rounded-lg cursor-pointer focus:bg-gray-50">Balanced (50/50 carbs/fat)</SelectItem>
+            <SelectItem value="high_carb" className="rounded-lg cursor-pointer focus:bg-gray-50">
               High Carb (65/35 carbs/fat)
             </SelectItem>
-            <SelectItem value="low_carb">Low Carb (25/75 carbs/fat)</SelectItem>
-            <SelectItem value="keto">Keto (10/90 carbs/fat)</SelectItem>
+            <SelectItem value="low_carb" className="rounded-lg cursor-pointer focus:bg-gray-50">Low Carb (25/75 carbs/fat)</SelectItem>
+            <SelectItem value="keto" className="rounded-lg cursor-pointer focus:bg-gray-50">Keto (10/90 carbs/fat)</SelectItem>
           </SelectContent>
         </Select>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-gray-400">
           Carb/fat split for remaining calories after protein
         </p>
       </div>
 
       {/* Goal Deadline */}
-      <div className="space-y-2 md:col-span-2">
-        <Label htmlFor="goal-deadline">Goal Deadline (Optional)</Label>
+      <div className="space-y-1.5">
+        <Label htmlFor="goal-deadline" className="text-sm font-medium text-gray-700">
+          Goal Deadline (Optional)
+        </Label>
         <Input
           id="goal-deadline"
           type="date"
           value={goalDeadline}
           onChange={(e) => handleChange("goalDeadline", e.target.value)}
           min={new Date().toISOString().split("T")[0]}
+          className="w-full px-3.5 py-2.5 bg-white border border-gray-200 rounded-lg text-sm focus:border-primary focus:ring-2 focus:ring-ring focus:outline-none transition-all"
         />
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-gray-400">
           Target date to reach goal weight (affects calorie deficit/surplus)
         </p>
       </div>

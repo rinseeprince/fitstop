@@ -28,7 +28,7 @@ export function SidebarNav() {
         if (response.ok) {
           const data = await response.json()
           const unreviewed = (data.checkIns || []).filter(
-            (ci: any) => ci.status === "ai_processed"
+            (ci: { status: string }) => ci.status === "ai_processed"
           ).length
           setUnreviewedCount(unreviewed)
         }
@@ -44,48 +44,53 @@ export function SidebarNav() {
   }, [])
 
   return (
-    <nav className="flex flex-col gap-2">
+    <nav className="flex flex-col gap-1">
       {navigation.map((item, index) => {
-        const isActive = pathname === item.href
+        // Exact match for home, startsWith for other routes
+        const isActive = item.href === "/"
+          ? pathname === "/"
+          : pathname?.startsWith(item.href)
         return (
           <motion.div
             key={item.name}
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
             transition={{ delay: index * 0.05 }}
           >
             <Link
               href={item.href}
               className={cn(
-                "group relative flex items-center gap-3 rounded-xs px-4 py-3 text-sm font-medium transition-all duration-150",
+                "group relative flex flex-col items-center justify-center rounded-lg px-2 py-3 text-xs font-medium transition-all duration-150",
                 isActive
-                  ? "bg-primary/10 text-primary"
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
+                  ? "bg-white/20 text-white"
+                  : "text-white/70 hover:text-white hover:bg-white/10",
               )}
             >
               {isActive && (
                 <motion.div
                   layoutId="activeNav"
-                  className="absolute inset-0 rounded-xs bg-primary/10"
+                  className="absolute inset-0 rounded-lg bg-white/20"
                   transition={{ type: "spring", bounce: 0.2, duration: 0.4 }}
                 />
               )}
-              <item.icon
-                className={cn(
-                  "relative h-5 w-5 transition-transform duration-150",
-                  isActive && "scale-105",
+              <div className="relative">
+                <item.icon
+                  className={cn(
+                    "relative h-5 w-5 transition-transform duration-150",
+                    isActive && "scale-105",
+                  )}
+                />
+                {item.showBadge && unreviewedCount > 0 && (
+                  <motion.span
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-white text-primary text-[10px] font-medium"
+                  >
+                    {unreviewedCount > 9 ? "9+" : unreviewedCount}
+                  </motion.span>
                 )}
-              />
-              <span className="relative">{item.name}</span>
-              {item.showBadge && unreviewedCount > 0 && (
-                <motion.span
-                  initial={{ scale: 0 }}
-                  animate={{ scale: 1 }}
-                  className="relative ml-auto flex h-5 w-5 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-medium"
-                >
-                  {unreviewedCount}
-                </motion.span>
-              )}
+              </div>
+              <span className="relative mt-1 text-[10px] text-center leading-tight">{item.name}</span>
             </Link>
           </motion.div>
         )

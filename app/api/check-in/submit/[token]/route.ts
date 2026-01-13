@@ -11,7 +11,10 @@ import { uploadProgressPhotoFromBase64 } from "@/services/storage-service";
 import { generateCheckInSummary } from "@/services/ai-service";
 import { updateCheckInAISummary, getClientCheckIns } from "@/services/check-in-service";
 import { markReminderAsResponded } from "@/services/reminder-service";
-import { updateClientAdherenceStats } from "@/services/check-in-tracking-service";
+import {
+  updateClientAdherenceStats,
+  getFrequencyInDays,
+} from "@/services/check-in-tracking-service";
 import { updateClientBMR } from "@/services/bmr-service";
 import {
   getCheckInTrainingContext,
@@ -78,6 +81,10 @@ export async function GET(
         name: client.name,
         email: client.email,
         coachName: (coach as any)?.name || "Your Coach",
+        checkInFrequencyDays: getFrequencyInDays(
+          client.checkInFrequency || "weekly",
+          client.checkInFrequencyDays
+        ),
       },
       trainingContext,
       nutritionContext,
@@ -274,7 +281,7 @@ async function updateClientMetricsFromCheckIn(
       const updatedClient = await updateClient(client.id, updates);
 
       // Calculate and update BMR if we have all required data
-      const bmr = await updateClientBMR(updatedClient);
+      const bmr = updateClientBMR(updatedClient);
       if (bmr !== null) {
         // Calculate TDEE (sedentary = BMR × 1.2)
         const tdee = Math.round(bmr * 1.2);

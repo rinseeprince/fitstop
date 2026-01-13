@@ -24,7 +24,7 @@ export const PhotoComparison = ({ checkIns }: PhotoComparisonProps) => {
     return (
       <Card className="p-8 text-center">
         <div className="flex flex-col items-center gap-3">
-          <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center">
+          <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center">
             <ImageIcon className="w-8 h-8 text-muted-foreground" />
           </div>
           <p className="text-muted-foreground">No progress photos yet</p>

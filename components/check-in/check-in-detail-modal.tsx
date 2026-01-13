@@ -120,13 +120,13 @@ export const CheckInDetailModal = ({
 
   return (
     <Dialog open={!!checkInId} onOpenChange={onClose}>
-      <DialogContent className="max-w-[90vw] sm:max-w-[90vw] md:max-w-[85vw] lg:max-w-[80vw] w-full max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent showCloseButton={false} className="bg-white rounded-2xl shadow-xl p-0 max-w-[90vw] sm:max-w-[90vw] md:max-w-[85vw] lg:max-w-[80vw] w-full max-h-[90vh] overflow-hidden flex flex-col">
+        <DialogHeader className="px-6 py-4 border-b border-gray-100 flex-shrink-0">
           <div className="flex items-center justify-between">
-            <DialogTitle>
+            <DialogTitle className="text-lg font-semibold text-gray-900">
               {data?.client?.name || "Loading..."} - Check-In Review
             </DialogTitle>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
               {onNavigate && (
                 <>
                   <Button
@@ -134,6 +134,7 @@ export const CheckInDetailModal = ({
                     size="icon"
                     onClick={() => onNavigate("prev")}
                     disabled={!canNavigatePrev}
+                    className="w-9 h-9 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all disabled:opacity-50"
                   >
                     <ChevronLeft className="w-4 h-4" />
                   </Button>
@@ -142,12 +143,18 @@ export const CheckInDetailModal = ({
                     size="icon"
                     onClick={() => onNavigate("next")}
                     disabled={!canNavigateNext}
+                    className="w-9 h-9 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all disabled:opacity-50"
                   >
                     <ChevronRight className="w-4 h-4" />
                   </Button>
                 </>
               )}
-              <Button variant="ghost" size="icon" onClick={onClose}>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={onClose}
+                className="w-9 h-9 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all"
+              >
                 <X className="w-4 h-4" />
               </Button>
             </div>
@@ -155,83 +162,102 @@ export const CheckInDetailModal = ({
         </DialogHeader>
 
         {isLoading ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
+          <div className="flex items-center justify-center py-12 px-6">
+            <div className="w-5 h-5 border-2 border-muted border-t-primary rounded-full animate-spin" />
           </div>
         ) : data ? (
-          <Tabs defaultValue="current" className="w-full">
-            <TabsList className="grid w-full grid-cols-3 mb-6">
-              <TabsTrigger value="current">Current Check-In</TabsTrigger>
-              <TabsTrigger value="comparison">Comparison & Trends</TabsTrigger>
-              <TabsTrigger value="goals">Goal Progress</TabsTrigger>
-            </TabsList>
+          <div className="flex-1 overflow-y-auto">
+            <div className="px-6 py-5">
+              <Tabs defaultValue="current" className="w-full">
+                <TabsList className="bg-gray-100 p-1 rounded-lg inline-flex mb-6">
+                  <TabsTrigger
+                    value="current"
+                    className="px-4 py-2 text-sm font-medium rounded-md transition-all data-[state=active]:bg-white data-[state=active]:text-gray-900 data-[state=active]:shadow-sm data-[state=inactive]:text-gray-500 data-[state=inactive]:hover:text-gray-700"
+                  >
+                    Current Check-In
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="comparison"
+                    className="px-4 py-2 text-sm font-medium rounded-md transition-all data-[state=active]:bg-white data-[state=active]:text-gray-900 data-[state=active]:shadow-sm data-[state=inactive]:text-gray-500 data-[state=inactive]:hover:text-gray-700"
+                  >
+                    Comparison & Trends
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="goals"
+                    className="px-4 py-2 text-sm font-medium rounded-md transition-all data-[state=active]:bg-white data-[state=active]:text-gray-900 data-[state=active]:shadow-sm data-[state=inactive]:text-gray-500 data-[state=inactive]:hover:text-gray-700"
+                  >
+                    Goal Progress
+                  </TabsTrigger>
+                </TabsList>
 
-            <TabsContent value="current" className="space-y-6">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div>
-                  <h3 className="text-lg font-semibold mb-4">Check-In Data</h3>
-                  <CheckInDataDisplay checkIn={data.checkIn} />
-                </div>
+                <TabsContent value="current" className="space-y-6">
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900 mb-4">Check-In Data</h3>
+                      <CheckInDataDisplay checkIn={data.checkIn} />
+                    </div>
 
-                <div>
-                  <h3 className="text-lg font-semibold mb-4">AI Analysis</h3>
-                  <AISummaryCard
-                    checkInId={checkInId}
-                    summary={data.checkIn.aiSummary}
-                    insights={data.checkIn.aiInsights}
-                    recommendations={data.checkIn.aiRecommendations}
-                    onUpdate={handleResponseSent}
-                  />
-                </div>
-              </div>
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900 mb-4">AI Analysis</h3>
+                      <AISummaryCard
+                        checkInId={checkInId}
+                        summary={data.checkIn.aiSummary}
+                        insights={data.checkIn.aiInsights}
+                        recommendations={data.checkIn.aiRecommendations}
+                        onUpdate={handleResponseSent}
+                      />
+                    </div>
+                  </div>
 
-              <div>
-                <h3 className="text-lg font-semibold mb-4">Your Response</h3>
-                <CheckInResponseEditor
-                  checkInId={checkInId}
-                  clientName={data.client?.name || "Client"}
-                  onSent={handleResponseSent}
-                />
-              </div>
-            </TabsContent>
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Your Response</h3>
+                    <CheckInResponseEditor
+                      checkInId={checkInId}
+                      clientName={data.client?.name || "Client"}
+                      onSent={handleResponseSent}
+                    />
+                  </div>
+                </TabsContent>
 
-            <TabsContent value="comparison">
-              {isLoadingComparison ? (
-                <div className="flex items-center justify-center py-12">
-                  <div className="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
-                </div>
-              ) : comparisonData ? (
-                <CheckInComparisonView
-                  comparison={comparisonData.comparison}
-                  chartData={comparisonData.chartData}
-                />
-              ) : (
-                <div className="text-center py-12 text-muted-foreground">
-                  Failed to load comparison data
-                </div>
-              )}
-            </TabsContent>
+                <TabsContent value="comparison">
+                  {isLoadingComparison ? (
+                    <div className="flex items-center justify-center py-12">
+                      <div className="w-5 h-5 border-2 border-muted border-t-primary rounded-full animate-spin" />
+                    </div>
+                  ) : comparisonData ? (
+                    <CheckInComparisonView
+                      comparison={comparisonData.comparison}
+                      chartData={comparisonData.chartData}
+                    />
+                  ) : (
+                    <div className="text-center py-12 text-sm text-gray-500">
+                      Failed to load comparison data
+                    </div>
+                  )}
+                </TabsContent>
 
-            <TabsContent value="goals">
-              {isLoadingComparison ? (
-                <div className="flex items-center justify-center py-12">
-                  <div className="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
-                </div>
-              ) : comparisonData ? (
-                <GoalProgressView
-                  goalProgress={comparisonData.goalProgress}
-                  clientName={data.client?.name || "Client"}
-                  clientData={comparisonData.comparison.client}
-                />
-              ) : (
-                <div className="text-center py-12 text-muted-foreground">
-                  Failed to load goal progress data
-                </div>
-              )}
-            </TabsContent>
-          </Tabs>
+                <TabsContent value="goals">
+                  {isLoadingComparison ? (
+                    <div className="flex items-center justify-center py-12">
+                      <div className="w-5 h-5 border-2 border-muted border-t-primary rounded-full animate-spin" />
+                    </div>
+                  ) : comparisonData ? (
+                    <GoalProgressView
+                      goalProgress={comparisonData.goalProgress}
+                      clientName={data.client?.name || "Client"}
+                      clientData={comparisonData.comparison.client}
+                    />
+                  ) : (
+                    <div className="text-center py-12 text-sm text-gray-500">
+                      Failed to load goal progress data
+                    </div>
+                  )}
+                </TabsContent>
+              </Tabs>
+            </div>
+          </div>
         ) : (
-          <div className="text-center py-12 text-muted-foreground">
+          <div className="text-center py-12 px-6 text-sm text-gray-500">
             Failed to load check-in data
           </div>
         )}

@@ -136,14 +136,14 @@ export const SendCheckInDialog = ({
                     onClick={copyToClipboard}
                   >
                     {copied ? (
-                      <Check className="w-4 h-4 text-green-600" />
+                      <Check className="w-4 h-4 text-success" />
                     ) : (
                       <Copy className="w-4 h-4" />
                     )}
                   </Button>
                 </div>
                 {copied && (
-                  <p className="text-xs text-green-600">Copied to clipboard!</p>
+                  <p className="text-xs text-success">Copied to clipboard!</p>
                 )}
               </div>
 

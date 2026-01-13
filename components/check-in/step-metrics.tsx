@@ -28,7 +28,7 @@ export const StepMetrics = ({
     return (
       <span
         className={`text-xs font-medium ${
-          diff > 0 ? "text-orange-600" : "text-green-600"
+          diff > 0 ? "text-warning" : "text-success"
         }`}
       >
         {diff > 0 ? "+" : ""}

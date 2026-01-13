@@ -104,8 +104,9 @@ export const submitCheckIn = async (
   const workoutsCompleted = formData.sessionCompletions?.length
     ? formData.sessionCompletions.filter((s) => s.completed).length
     : formData.workoutsCompleted;
+  // Cap at 100% to satisfy database constraint
   const adherencePercentage = formData.nutritionAdherence?.daysOnTarget !== undefined
-    ? Math.round((formData.nutritionAdherence.daysOnTarget / 7) * 100)
+    ? Math.min(100, Math.round((formData.nutritionAdherence.daysOnTarget / 7) * 100))
     : formData.adherencePercentage;
 
   const { data, error } = await (supabaseAdmin as any)

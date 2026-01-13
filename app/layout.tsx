@@ -1,13 +1,11 @@
 import type React from "react"
 import type { Metadata } from "next"
-import { Geist, Geist_Mono, Inter } from "next/font/google"
+import { Inter } from "next/font/google"
 import "./globals.css"
-import { ThemeProvider } from "next-themes"
 import { AuthProvider } from "@/contexts/auth-context"
 import { Toaster } from "@/components/ui/toaster"
+import { PersistentSidebar } from "@/components/persistent-sidebar"
 
-const _geist = Geist({ subsets: ["latin"] })
-const _geistMono = Geist_Mono({ subsets: ["latin"] })
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
@@ -39,14 +37,13 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en">
       <body className={inter.className}>
-        <ThemeProvider attribute="class" defaultTheme="light">
-          <AuthProvider>
-            {children}
-            <Toaster />
-          </AuthProvider>
-        </ThemeProvider>
+        <AuthProvider>
+          <PersistentSidebar />
+          {children}
+          <Toaster />
+        </AuthProvider>
       </body>
     </html>
   )

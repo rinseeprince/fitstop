@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { WeeklyScheduleItem } from "./weekly-schedule-item";
@@ -13,7 +14,7 @@ type SortableScheduleItemProps = {
   onDelete?: () => void;
 };
 
-export function SortableScheduleItem({
+export const SortableScheduleItem = memo(function SortableScheduleItem({
   item,
   editMode,
   compact,
@@ -60,4 +61,4 @@ export function SortableScheduleItem({
       />
     </div>
   );
-}
+});

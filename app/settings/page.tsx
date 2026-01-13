@@ -1,4 +1,5 @@
 import { AppLayout } from "@/components/app-layout"
+import { PageHeader } from "@/components/page-header"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -6,14 +7,16 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 
 export default function SettingsPage() {
-  return (
-    <AppLayout>
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold">Settings</h1>
-          <p className="text-muted-foreground mt-1">Manage your account and preferences</p>
-        </div>
+  const pageHeader = (
+    <PageHeader
+      title="Settings"
+      description="Manage your account and preferences"
+    />
+  )
 
+  return (
+    <AppLayout pageHeader={pageHeader}>
+      <div className="space-y-6">
         <div className="grid gap-6 lg:grid-cols-2">
           {/* Profile Settings */}
           <Card>

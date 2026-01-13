@@ -119,14 +119,14 @@ export function NutritionCalculatorCard({
       <CardContent className="space-y-6">
         {/* Regeneration Banner */}
         {showBanner && client.currentWeight && client.nutritionPlanBaseWeightKg && (
-          <div className="bg-amber-50 border border-amber-200 rounded-xs p-4">
+          <div className="bg-warning/15 border border-warning/30 rounded-xs p-4">
             <div className="flex items-start gap-3">
-              <AlertCircle className="h-5 w-5 text-amber-600 mt-0.5 flex-shrink-0" />
+              <AlertCircle className="h-5 w-5 text-warning mt-0.5 flex-shrink-0" />
               <div className="flex-1 space-y-2">
-                <p className="text-sm font-medium text-amber-900">
+                <p className="text-sm font-medium text-foreground">
                   Client weight has changed significantly
                 </p>
-                <p className="text-sm text-amber-800">
+                <p className="text-sm text-muted-foreground">
                   Weight changed by{" "}
                   {(() => {
                     const change = getWeightChange(
@@ -233,9 +233,9 @@ export function NutritionCalculatorCard({
               </div>
 
               {!client.bmr && (
-                <div className="bg-blue-50 border border-blue-200 rounded-xs p-3 text-sm text-blue-900">
+                <div className="bg-primary/10 border border-primary/30 rounded-xs p-3 text-sm text-foreground">
                   <p className="font-medium">BMR not calculated</p>
-                  <p className="text-blue-800 mt-1">
+                  <p className="text-muted-foreground mt-1">
                     Calculate BMR first using the button in the Profile tab.
                   </p>
                 </div>

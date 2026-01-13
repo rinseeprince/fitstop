@@ -130,11 +130,11 @@ export const ExternalActivitiesCheckin = ({
   const getIntensityColor = (intensity: string) => {
     switch (intensity) {
       case "low":
-        return "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400";
+        return "bg-success/15 text-success";
       case "moderate":
-        return "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400";
+        return "bg-warning/15 text-warning";
       case "vigorous":
-        return "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400";
+        return "bg-destructive/15 text-destructive";
       default:
         return "bg-muted text-muted-foreground";
     }

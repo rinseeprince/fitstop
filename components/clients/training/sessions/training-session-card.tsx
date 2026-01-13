@@ -103,9 +103,9 @@ export function TrainingSessionCard({
 
   return (
     <>
-      <Accordion type="single" collapsible className="border rounded-lg">
+      <Accordion type="single" collapsible className="rounded-xl border border-gray-200 bg-white overflow-hidden">
         <AccordionItem value={session.id} className="border-0">
-          <AccordionTrigger className="px-4 hover:no-underline">
+          <AccordionTrigger className="px-5 hover:no-underline hover:bg-gray-50/50">
             <div className="flex flex-1 items-center justify-between pr-2">
               <div className="flex items-center gap-3">
                 {isEditing && editMode ? (
@@ -132,7 +132,7 @@ export function TrainingSessionCard({
                   </div>
                 ) : (
                   <span
-                    className="font-medium"
+                    className="font-medium text-base"
                     onClick={(e) => {
                       if (editMode) {
                         e.stopPropagation();
@@ -144,7 +144,7 @@ export function TrainingSessionCard({
                   </span>
                 )}
                 {session.focus && !isEditing && (
-                  <span className="text-sm text-muted-foreground">- {session.focus}</span>
+                  <span className="text-sm text-gray-500">- {session.focus}</span>
                 )}
               </div>
               <div className="flex items-center gap-2">
@@ -179,7 +179,7 @@ export function TrainingSessionCard({
               </div>
             </div>
           </AccordionTrigger>
-          <AccordionContent className="px-4">
+          <AccordionContent className="px-5 pb-5">
             {session.notes && (
               <p className="text-sm text-muted-foreground mb-3 italic">{session.notes}</p>
             )}
@@ -189,10 +189,10 @@ export function TrainingSessionCard({
               {/* Header */}
               <div className="grid grid-cols-12 gap-2 text-xs font-medium text-muted-foreground px-2 py-1">
                 <div className="col-span-4">Exercise</div>
-                <div className="col-span-2 text-center">Sets × Reps</div>
+                <div className="col-span-3 text-center">Sets × Reps</div>
                 <div className="col-span-2 text-center">RPE</div>
                 <div className="col-span-2 text-center">Rest</div>
-                <div className="col-span-2"></div>
+                <div className="col-span-1"></div>
               </div>
 
               {/* Exercise Rows */}
