@@ -1,9 +1,10 @@
 "use client"
 
 import Link from "next/link"
-import { ArrowLeft, MessageSquare } from "lucide-react"
+import { ArrowLeft, MessageSquare, UserPlus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { SendCheckInDialog } from "@/components/check-in/send-check-in-dialog"
+import { InviteClientDialog } from "@/components/clients/invite-client-dialog"
 import { cn } from "@/lib/utils"
 
 const TABS = [
@@ -78,8 +79,18 @@ export function ClientPageHeader({
       {/* Spacer */}
       <div className="flex-1" />
 
-      {/* Send Check-In - small, with right padding for theme/notifications */}
-      <div className="pr-20">
+      {/* Action buttons */}
+      <div className="flex items-center gap-2 pr-20">
+        <InviteClientDialog
+          client={client}
+          trigger={
+            <Button variant="outline" size="sm">
+              <UserPlus className="h-4 w-4 mr-2" />
+              Invite
+            </Button>
+          }
+        />
+
         <SendCheckInDialog
           clientId={client.id}
           clientName={client.name}

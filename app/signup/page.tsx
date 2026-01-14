@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,38 +12,37 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { motion } from "framer-motion";
 import { Chrome, Loader2 } from "lucide-react";
+import { signupSchema, type SignupFormData } from "@/lib/validations/auth";
 
 export default function SignupPage() {
   const router = useRouter();
   const { signup, loginWithGoogle } = useAuth();
   const { toast } = useToast();
-  const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
-  const [formData, setFormData] = useState({
-    name: "",
-    email: "",
-    password: "",
+
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm<SignupFormData>({
+    resolver: zodResolver(signupSchema),
   });
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-
+  const onSubmit = async (data: SignupFormData) => {
     try {
-      await signup(formData.email, formData.password, formData.name);
+      await signup(data.email, data.password, data.name);
       toast({
         title: "Welcome to CoachHub!",
         description: "Your account has been created successfully.",
       });
-      router.push("/");
-    } catch (error: any) {
+      router.push("/dashboard");
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Could not create account";
       toast({
         title: "Signup failed",
-        description: error.message || "Could not create account",
+        description: message,
         variant: "destructive",
       });
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -50,10 +51,11 @@ export default function SignupPage() {
     try {
       await loginWithGoogle();
       // Redirect will be handled by Supabase
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Could not sign up with Google";
       toast({
         title: "Signup failed",
-        description: error.message || "Could not sign up with Google",
+        description: message,
         variant: "destructive",
       });
       setGoogleLoading(false);
@@ -130,7 +132,7 @@ export default function SignupPage() {
               variant="outline"
               className="w-full rounded-xs h-11"
               onClick={handleGoogleSignup}
-              disabled={googleLoading || loading}
+              disabled={googleLoading || isSubmitting}
             >
               {googleLoading ? (
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -156,7 +158,7 @@ export default function SignupPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.5 }}
-            onSubmit={handleSubmit}
+            onSubmit={handleSubmit(onSubmit)}
             className="space-y-4"
           >
             <div className="space-y-2">
@@ -166,11 +168,12 @@ export default function SignupPage() {
                 type="text"
                 placeholder="John Doe"
                 className="rounded-xs h-11"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                required
-                disabled={loading || googleLoading}
+                disabled={isSubmitting || googleLoading}
+                {...register("name")}
               />
+              {errors.name && (
+                <p className="text-xs text-destructive">{errors.name.message}</p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -180,11 +183,12 @@ export default function SignupPage() {
                 type="email"
                 placeholder="coach@example.com"
                 className="rounded-xs h-11"
-                value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                required
-                disabled={loading || googleLoading}
+                disabled={isSubmitting || googleLoading}
+                {...register("email")}
               />
+              {errors.email && (
+                <p className="text-xs text-destructive">{errors.email.message}</p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -194,23 +198,24 @@ export default function SignupPage() {
                 type="password"
                 placeholder="••••••••"
                 className="rounded-xs h-11"
-                value={formData.password}
-                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                required
-                minLength={6}
-                disabled={loading || googleLoading}
+                disabled={isSubmitting || googleLoading}
+                {...register("password")}
               />
-              <p className="text-xs text-muted-foreground">
-                At least 6 characters
-              </p>
+              {errors.password ? (
+                <p className="text-xs text-destructive">{errors.password.message}</p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  At least 8 characters
+                </p>
+              )}
             </div>
 
             <Button
               type="submit"
               className="w-full rounded-xs h-11 gradient-primary hover:opacity-90 transition-opacity"
-              disabled={loading || googleLoading}
+              disabled={isSubmitting || googleLoading}
             >
-              {loading ? (
+              {isSubmitting ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                   Creating account...

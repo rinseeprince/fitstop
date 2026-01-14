@@ -1,0 +1,102 @@
+import { NextRequest, NextResponse } from "next/server"
+import { getAuthenticatedCoachId } from "@/lib/auth-helpers"
+import { sendInvitationSchema } from "@/lib/validations/invitation"
+import { sendInvitation } from "@/services/invitation-service"
+import { supabaseAdmin } from "@/services/supabase-admin"
+
+type ClientRow = {
+  id: string
+  email: string | null
+  name: string
+  coach_id: string
+  user_id: string | null
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    // Verify trainer is authenticated
+    const coachId = await getAuthenticatedCoachId()
+    if (!coachId) {
+      return NextResponse.json(
+        { success: false, error: "Unauthorized" },
+        { status: 401 }
+      )
+    }
+
+    // Parse and validate request body
+    const body = await request.json()
+    const result = sendInvitationSchema.safeParse(body)
+
+    if (!result.success) {
+      return NextResponse.json(
+        { success: false, error: result.error.errors[0].message },
+        { status: 400 }
+      )
+    }
+
+    const { clientId } = result.data
+
+    // Verify the client belongs to this coach
+    const { data, error: clientError } = await supabaseAdmin
+      .from("clients")
+      .select("id, email, name, coach_id, user_id")
+      .eq("id", clientId)
+      .single()
+
+    const client = data as ClientRow | null
+
+    if (clientError || !client) {
+      return NextResponse.json(
+        { success: false, error: "Client not found" },
+        { status: 404 }
+      )
+    }
+
+    if (client.coach_id !== coachId) {
+      return NextResponse.json(
+        { success: false, error: "Not authorized to invite this client" },
+        { status: 403 }
+      )
+    }
+
+    if (!client.email) {
+      return NextResponse.json(
+        { success: false, error: "Client does not have an email address" },
+        { status: 400 }
+      )
+    }
+
+    // Check if client already has an account
+    if (client.user_id) {
+      return NextResponse.json(
+        { success: false, error: "Client already has an account" },
+        { status: 400 }
+      )
+    }
+
+    // Send the invitation
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin
+    const invitationResult = await sendInvitation(clientId, client.email, appUrl)
+
+    if (!invitationResult.success) {
+      return NextResponse.json(
+        { success: false, error: invitationResult.error },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: invitationResult.invitation,
+    })
+  } catch (error) {
+    console.error("Error sending invitation:", error)
+    return NextResponse.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : "Internal server error",
+      },
+      { status: 500 }
+    )
+  }
+}

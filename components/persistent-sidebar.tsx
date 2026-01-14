@@ -15,8 +15,17 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { useToast } from "@/hooks/use-toast"
 
-// Pages that should NOT show the sidebar (auth pages, public pages, etc.)
-const EXCLUDED_PATHS = ["/login", "/signup", "/forgot-password", "/check-in/"]
+// Pages that should NOT show the sidebar (auth pages, public pages, client portal, etc.)
+const EXCLUDED_PATHS = [
+  "/",
+  "/login",
+  "/signup",
+  "/forgot-password",
+  "/reset-password",
+  "/check-in/",
+  "/client/",
+  "/client",
+]
 
 export function PersistentSidebar() {
   const { coach, logout, loading } = useAuth()
@@ -25,7 +34,15 @@ export function PersistentSidebar() {
   const { toast } = useToast()
 
   // Don't render sidebar on excluded paths
-  const shouldHideSidebar = EXCLUDED_PATHS.some(path => pathname?.startsWith(path))
+  // Use exact match for "/" and "/client" to avoid false positives:
+  // - "/" would match all paths since every path starts with "/"
+  // - "/client" would incorrectly match "/clients" (coach's client management page)
+  const shouldHideSidebar = EXCLUDED_PATHS.some(path => {
+    if (path === "/" || path === "/client") {
+      return pathname === path
+    }
+    return pathname?.startsWith(path)
+  })
 
   if (shouldHideSidebar) {
     return null

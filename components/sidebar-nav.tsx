@@ -8,7 +8,7 @@ import { Home, Users, KanbanSquare, MessageSquare, Zap, Mail, Settings } from "l
 import { motion } from "framer-motion"
 
 const navigation = [
-  { name: "Dashboard", href: "/", icon: Home },
+  { name: "Dashboard", href: "/dashboard", icon: Home },
   { name: "Clients", href: "/clients", icon: Users, showBadge: true },
   { name: "CRM", href: "/crm", icon: KanbanSquare },
   { name: "Messages", href: "/messages", icon: MessageSquare },
@@ -20,6 +20,14 @@ const navigation = [
 export function SidebarNav() {
   const pathname = usePathname()
   const [unreviewedCount, setUnreviewedCount] = useState(0)
+  const [optimisticHref, setOptimisticHref] = useState<string | null>(null)
+
+  // Reset optimistic state when pathname catches up
+  useEffect(() => {
+    if (optimisticHref && pathname === optimisticHref) {
+      setOptimisticHref(null)
+    }
+  }, [pathname, optimisticHref])
 
   useEffect(() => {
     const fetchUnreviewedCount = async () => {
@@ -46,10 +54,12 @@ export function SidebarNav() {
   return (
     <nav className="flex flex-col gap-1">
       {navigation.map((item, index) => {
-        // Exact match for home, startsWith for other routes
-        const isActive = item.href === "/"
-          ? pathname === "/"
+        // Exact match for dashboard, startsWith for other routes
+        const isActiveByPath = item.href === "/dashboard"
+          ? pathname === "/dashboard"
           : pathname?.startsWith(item.href)
+        // Use optimistic state for immediate feedback, fall back to pathname
+        const isActive = optimisticHref ? item.href === optimisticHref : isActiveByPath
         return (
           <motion.div
             key={item.name}
@@ -59,6 +69,7 @@ export function SidebarNav() {
           >
             <Link
               href={item.href}
+              onClick={() => setOptimisticHref(item.href)}
               className={cn(
                 "group relative flex flex-col items-center justify-center rounded-lg px-2 py-3 text-xs font-medium transition-all duration-150",
                 isActive

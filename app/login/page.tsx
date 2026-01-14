@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,35 +12,36 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { motion } from "framer-motion";
 import { Chrome, Loader2 } from "lucide-react";
+import { loginSchema, type LoginFormData } from "@/lib/validations/auth";
 
 export default function LoginPage() {
   const router = useRouter();
   const { login, loginWithGoogle } = useAuth();
   const { toast } = useToast();
-  const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
-  const [formData, setFormData] = useState({
-    email: "",
-    password: "",
+
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm<LoginFormData>({
+    resolver: zodResolver(loginSchema),
   });
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-
+  const onSubmit = async (data: LoginFormData) => {
     try {
-      await login(formData.email, formData.password);
+      const role = await login(data.email, data.password);
 
-      // Force a full page reload to pick up the new session
-      window.location.href = "/";
-    } catch (error: any) {
+      // Redirect based on role
+      const redirectTo = role === "client" ? "/client/dashboard" : "/dashboard";
+      router.push(redirectTo);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Invalid email or password";
       toast({
         title: "Login failed",
-        description: error.message || "Invalid email or password",
+        description: message,
         variant: "destructive",
       });
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -47,10 +50,11 @@ export default function LoginPage() {
     try {
       await loginWithGoogle();
       // Redirect will be handled by Supabase
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Could not sign in with Google";
       toast({
         title: "Login failed",
-        description: error.message || "Could not sign in with Google",
+        description: message,
         variant: "destructive",
       });
       setGoogleLoading(false);
@@ -127,7 +131,7 @@ export default function LoginPage() {
               variant="outline"
               className="w-full rounded-xs h-11"
               onClick={handleGoogleLogin}
-              disabled={googleLoading || loading}
+              disabled={googleLoading || isSubmitting}
             >
               {googleLoading ? (
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -153,7 +157,7 @@ export default function LoginPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.5 }}
-            onSubmit={handleSubmit}
+            onSubmit={handleSubmit(onSubmit)}
             className="space-y-4"
           >
             <div className="space-y-2">
@@ -163,11 +167,12 @@ export default function LoginPage() {
                 type="email"
                 placeholder="coach@example.com"
                 className="rounded-xs h-11"
-                value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                required
-                disabled={loading || googleLoading}
+                disabled={isSubmitting || googleLoading}
+                {...register("email")}
               />
+              {errors.email && (
+                <p className="text-xs text-destructive">{errors.email.message}</p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -185,19 +190,20 @@ export default function LoginPage() {
                 type="password"
                 placeholder="••••••••"
                 className="rounded-xs h-11"
-                value={formData.password}
-                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                required
-                disabled={loading || googleLoading}
+                disabled={isSubmitting || googleLoading}
+                {...register("password")}
               />
+              {errors.password && (
+                <p className="text-xs text-destructive">{errors.password.message}</p>
+              )}
             </div>
 
             <Button
               type="submit"
               className="w-full rounded-xs h-11 gradient-primary hover:opacity-90 transition-opacity"
-              disabled={loading || googleLoading}
+              disabled={isSubmitting || googleLoading}
             >
-              {loading ? (
+              {isSubmitting ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                   Signing in...

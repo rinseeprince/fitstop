@@ -48,7 +48,7 @@ export default function ReviewCheckInsPage() {
     <PageHeader
       title="Review Check-Ins"
       description="Review and provide feedback on client check-ins"
-      backHref="/"
+      backHref="/dashboard"
     />
   );
 
@@ -76,7 +76,7 @@ export default function ReviewCheckInsPage() {
                   </p>
                 </div>
                 <Button asChild>
-                  <Link href="/">Back to Dashboard</Link>
+                  <Link href="/dashboard">Back to Dashboard</Link>
                 </Button>
               </div>
             </CardContent>
