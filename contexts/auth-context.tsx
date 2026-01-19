@@ -198,6 +198,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           userProfile = await fetchProfile(authUser.id)
           if (!userProfile) {
             console.error("Could not fetch or create profile")
+            // Sign out to allow clean re-login instead of leaving app in broken state
+            await supabase.auth.signOut()
             return
           }
         }

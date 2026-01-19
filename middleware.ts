@@ -4,11 +4,8 @@ import { createServerClient } from "@supabase/ssr"
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
-  // Public routes that don't require authentication
-  const publicRoutes = [
-    "/", // Marketing landing page
-    "/login",
-    "/signup",
+  // Routes that skip auth entirely (no redirect for logged-in users)
+  const skipAuthRoutes = [
     "/forgot-password",
     "/reset-password",
     "/auth/callback",
@@ -20,9 +17,47 @@ export async function middleware(request: NextRequest) {
   // Check-in API routes are also public (for validating tokens and submitting check-ins)
   const isCheckInApiRoute = pathname.startsWith("/api/check-in/submit/")
 
-  // Allow public routes, check-in routes, and check-in API routes
-  if (publicRoutes.includes(pathname) || isCheckInRoute || isCheckInApiRoute) {
+  // Skip auth check entirely for these routes
+  if (skipAuthRoutes.includes(pathname) || isCheckInRoute || isCheckInApiRoute) {
     return NextResponse.next()
+  }
+
+  // For homepage, login, and signup - check if user is authenticated and redirect to dashboard
+  if (pathname === "/" || pathname === "/login" || pathname === "/signup") {
+    const response = NextResponse.next()
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() {
+            return request.cookies.getAll()
+          },
+          setAll(cookiesToSet) {
+            cookiesToSet.forEach(({ name, value, options }) =>
+              response.cookies.set(name, value, options)
+            )
+          },
+        },
+      }
+    )
+
+    const { data: { session } } = await supabase.auth.getSession()
+
+    if (session) {
+      // User is logged in, redirect to appropriate dashboard
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("user_id", session.user.id)
+        .single()
+
+      const redirectTo = profile?.role === "client" ? "/client/dashboard" : "/dashboard"
+      return NextResponse.redirect(new URL(redirectTo, request.url))
+    }
+
+    // Not logged in, allow access to public page
+    return response
   }
 
   // Create a Supabase client for server-side auth check
@@ -95,14 +130,6 @@ export async function middleware(request: NextRequest) {
 
   if (isTrainer && isClientRoute) {
     // Trainer trying to access client routes -> redirect to trainer dashboard
-    return NextResponse.redirect(new URL("/dashboard", request.url))
-  }
-
-  // If authenticated and trying to access login/signup, redirect based on role
-  if (pathname === "/login" || pathname === "/signup") {
-    if (isClient) {
-      return NextResponse.redirect(new URL("/client/dashboard", request.url))
-    }
     return NextResponse.redirect(new URL("/dashboard", request.url))
   }
 
