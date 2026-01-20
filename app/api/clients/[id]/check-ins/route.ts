@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getClientCheckIns } from "@/services/check-in-service";
+import { parsePaginationParams } from "@/lib/api-utils";
 import type { GetCheckInsResponse } from "@/types/check-in";
 
 export async function GET(
@@ -10,14 +11,26 @@ export async function GET(
     const { id: clientId } = await params;
     const { searchParams } = new URL(request.url);
 
-    // Parse query parameters
-    const limit = searchParams.get("limit")
-      ? parseInt(searchParams.get("limit")!)
-      : 20;
-    const offset = searchParams.get("offset")
-      ? parseInt(searchParams.get("offset")!)
-      : 0;
+    // Parse and validate pagination parameters
+    const pagination = parsePaginationParams(searchParams);
+    if (!pagination.valid) {
+      return NextResponse.json(
+        { success: false, error: pagination.error },
+        { status: 400 }
+      );
+    }
+
+    const { limit, offset } = pagination;
     const status = searchParams.get("status") || undefined;
+
+    // Validate status if provided
+    const validStatuses = ["pending", "ai_processed", "reviewed"];
+    if (status && !validStatuses.includes(status)) {
+      return NextResponse.json(
+        { success: false, error: "Invalid status parameter" },
+        { status: 400 }
+      );
+    }
 
     // Get check-ins
     const result = await getClientCheckIns(clientId, {

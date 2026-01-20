@@ -1,0 +1,452 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import {
+  generateCheckInToken,
+} from './check-in-service'
+
+// Mock the supabase-admin module
+vi.mock('./supabase-admin', () => ({
+  supabaseAdmin: {
+    from: vi.fn(),
+  },
+}))
+
+import { supabaseAdmin } from './supabase-admin'
+
+// Helper to create a chainable mock query
+function createMockQuery(result: { data: unknown; error: unknown }) {
+  const mockQuery = {
+    select: vi.fn().mockReturnThis(),
+    insert: vi.fn().mockReturnThis(),
+    update: vi.fn().mockReturnThis(),
+    delete: vi.fn().mockReturnThis(),
+    eq: vi.fn().mockReturnThis(),
+    lt: vi.fn().mockReturnThis(),
+    order: vi.fn().mockReturnThis(),
+    limit: vi.fn().mockReturnThis(),
+    range: vi.fn().mockReturnThis(),
+    single: vi.fn().mockResolvedValue(result),
+  }
+
+  // Make the query itself thenable for await without .single()
+  const thenableMock = Object.assign(mockQuery, {
+    then: (resolve: (value: typeof result) => void) => Promise.resolve(result).then(resolve),
+  })
+
+  return thenableMock
+}
+
+describe('Check-in Service', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  describe('generateCheckInToken', () => {
+    it('generates a 64-character token', () => {
+      const token = generateCheckInToken()
+      expect(token).toHaveLength(64)
+    })
+
+    it('generates unique tokens', () => {
+      const token1 = generateCheckInToken()
+      const token2 = generateCheckInToken()
+      expect(token1).not.toBe(token2)
+    })
+
+    it('generates alphanumeric tokens', () => {
+      const token = generateCheckInToken()
+      expect(token).toMatch(/^[a-f0-9]+$/i)
+    })
+  })
+
+  describe('createCheckInToken', () => {
+    it('creates a token and returns it with expiry', async () => {
+      const mockToken = 'abc123def456'
+      const mockExpiresAt = new Date()
+      mockExpiresAt.setDate(mockExpiresAt.getDate() + 7)
+
+      const mockQuery = createMockQuery({
+        data: {
+          token: mockToken,
+          expires_at: mockExpiresAt.toISOString(),
+        },
+        error: null,
+      })
+
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+
+      // Dynamically import to get the mocked version
+      const { createCheckInToken } = await import('./check-in-service')
+      const result = await createCheckInToken('client-123')
+
+      expect(result.token).toBe(mockToken)
+      expect(result.expiresAt).toBe(mockExpiresAt.toISOString())
+      expect(supabaseAdmin.from).toHaveBeenCalledWith('check_in_tokens')
+    })
+
+    it('throws error when creation fails', async () => {
+      const mockQuery = createMockQuery({
+        data: null,
+        error: { message: 'Database error' },
+      })
+
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+
+      const { createCheckInToken } = await import('./check-in-service')
+
+      await expect(createCheckInToken('client-123')).rejects.toThrow(
+        'Failed to create check-in token: Database error'
+      )
+    })
+  })
+
+  describe('validateCheckInToken', () => {
+    it('returns valid for unexpired, unused token', async () => {
+      const futureDate = new Date()
+      futureDate.setDate(futureDate.getDate() + 3)
+
+      const mockQuery = createMockQuery({
+        data: {
+          id: 'token-id',
+          client_id: 'client-123',
+          expires_at: futureDate.toISOString(),
+          used_at: null,
+        },
+        error: null,
+      })
+
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+
+      const { validateCheckInToken } = await import('./check-in-service')
+      const result = await validateCheckInToken('valid-token')
+
+      expect(result.valid).toBe(true)
+      expect(result.clientId).toBe('client-123')
+      expect(result.tokenId).toBe('token-id')
+    })
+
+    it('returns invalid for expired token', async () => {
+      const pastDate = new Date()
+      pastDate.setDate(pastDate.getDate() - 1)
+
+      const mockQuery = createMockQuery({
+        data: {
+          id: 'token-id',
+          client_id: 'client-123',
+          expires_at: pastDate.toISOString(),
+          used_at: null,
+        },
+        error: null,
+      })
+
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+
+      const { validateCheckInToken } = await import('./check-in-service')
+      const result = await validateCheckInToken('expired-token')
+
+      expect(result.valid).toBe(false)
+      expect(result.clientId).toBeUndefined()
+    })
+
+    it('returns invalid for used token', async () => {
+      const futureDate = new Date()
+      futureDate.setDate(futureDate.getDate() + 3)
+
+      const mockQuery = createMockQuery({
+        data: {
+          id: 'token-id',
+          client_id: 'client-123',
+          expires_at: futureDate.toISOString(),
+          used_at: new Date().toISOString(),
+        },
+        error: null,
+      })
+
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+
+      const { validateCheckInToken } = await import('./check-in-service')
+      const result = await validateCheckInToken('used-token')
+
+      expect(result.valid).toBe(false)
+    })
+
+    it('returns invalid for non-existent token', async () => {
+      const mockQuery = createMockQuery({
+        data: null,
+        error: { message: 'Not found' },
+      })
+
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+
+      const { validateCheckInToken } = await import('./check-in-service')
+      const result = await validateCheckInToken('nonexistent-token')
+
+      expect(result.valid).toBe(false)
+    })
+  })
+
+  describe('markTokenAsUsed', () => {
+    it('marks token as used successfully', async () => {
+      const mockQuery = createMockQuery({
+        data: {},
+        error: null,
+      })
+
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+
+      const { markTokenAsUsed } = await import('./check-in-service')
+
+      await expect(markTokenAsUsed('token-id', 'check-in-id')).resolves.not.toThrow()
+      expect(mockQuery.update).toHaveBeenCalled()
+      expect(mockQuery.eq).toHaveBeenCalledWith('id', 'token-id')
+    })
+
+    it('throws error on failure', async () => {
+      const mockQuery = createMockQuery({
+        data: null,
+        error: { message: 'Update failed' },
+      })
+      // Override single to return error
+      mockQuery.eq = vi.fn().mockResolvedValue({ data: null, error: { message: 'Update failed' } })
+
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+
+      const { markTokenAsUsed } = await import('./check-in-service')
+
+      await expect(markTokenAsUsed('token-id', 'check-in-id')).rejects.toThrow(
+        'Failed to mark token as used'
+      )
+    })
+  })
+
+  describe('submitCheckIn', () => {
+    it('submits a basic check-in successfully', async () => {
+      const mockInsertQuery = {
+        select: vi.fn().mockReturnThis(),
+        insert: vi.fn().mockReturnThis(),
+        single: vi.fn().mockResolvedValue({
+          data: { id: 'new-check-in-id' },
+          error: null,
+        }),
+      }
+
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockInsertQuery as any)
+
+      const { submitCheckIn } = await import('./check-in-service')
+      const result = await submitCheckIn('client-123', {
+        mood: 4,
+        energy: 7,
+        sleep: 8,
+        stress: 3,
+        weight: 180,
+        weightUnit: 'lbs',
+      })
+
+      expect(result).toBe('new-check-in-id')
+      expect(supabaseAdmin.from).toHaveBeenCalledWith('check_ins')
+    })
+
+    it('calculates adherence from nutrition days on target', async () => {
+      const mockInsertQuery = {
+        select: vi.fn().mockReturnThis(),
+        insert: vi.fn().mockReturnThis(),
+        single: vi.fn().mockResolvedValue({
+          data: { id: 'check-in-id' },
+          error: null,
+        }),
+      }
+
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockInsertQuery as any)
+
+      const { submitCheckIn } = await import('./check-in-service')
+      await submitCheckIn('client-123', {
+        nutritionAdherence: {
+          daysOnTarget: 5,
+        },
+      })
+
+      // With 5 days on target out of 7, adherence should be ~71%
+      expect(mockInsertQuery.insert).toHaveBeenCalled()
+    })
+
+    it('throws error when submission fails', async () => {
+      const mockInsertQuery = {
+        select: vi.fn().mockReturnThis(),
+        insert: vi.fn().mockReturnThis(),
+        single: vi.fn().mockResolvedValue({
+          data: null,
+          error: { message: 'Insert failed' },
+        }),
+      }
+
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockInsertQuery as any)
+
+      const { submitCheckIn } = await import('./check-in-service')
+
+      await expect(submitCheckIn('client-123', { mood: 4 })).rejects.toThrow(
+        'Failed to submit check-in: Insert failed'
+      )
+    })
+  })
+
+  describe('getCheckInById', () => {
+    it('returns check-in when found', async () => {
+      const mockQuery = createMockQuery({
+        data: {
+          id: 'check-in-123',
+          client_id: 'client-456',
+          status: 'pending',
+          mood: 4,
+          energy: 7,
+          created_at: '2024-01-15T00:00:00Z',
+          updated_at: '2024-01-15T00:00:00Z',
+        },
+        error: null,
+      })
+
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+
+      const { getCheckInById } = await import('./check-in-service')
+      const result = await getCheckInById('check-in-123')
+
+      expect(result).not.toBeNull()
+      expect(result?.id).toBe('check-in-123')
+      expect(result?.clientId).toBe('client-456')
+      expect(result?.mood).toBe(4)
+    })
+
+    it('returns null when not found', async () => {
+      const mockQuery = createMockQuery({
+        data: null,
+        error: { message: 'Not found' },
+      })
+
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+
+      const { getCheckInById } = await import('./check-in-service')
+      const result = await getCheckInById('nonexistent')
+
+      expect(result).toBeNull()
+    })
+  })
+
+  describe('getClientCheckIns', () => {
+    it('returns paginated check-ins', async () => {
+      const mockData = [
+        {
+          id: 'check-in-1',
+          client_id: 'client-123',
+          status: 'reviewed',
+          created_at: '2024-01-15T00:00:00Z',
+          updated_at: '2024-01-15T00:00:00Z',
+        },
+        {
+          id: 'check-in-2',
+          client_id: 'client-123',
+          status: 'pending',
+          created_at: '2024-01-08T00:00:00Z',
+          updated_at: '2024-01-08T00:00:00Z',
+        },
+      ]
+
+      const mockQuery = {
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        order: vi.fn().mockReturnThis(),
+        limit: vi.fn().mockReturnThis(),
+        range: vi.fn().mockReturnThis(),
+        then: (resolve: (value: unknown) => void) =>
+          Promise.resolve({ data: mockData, error: null, count: 10 }).then(resolve),
+      }
+
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+
+      const { getClientCheckIns } = await import('./check-in-service')
+      const result = await getClientCheckIns('client-123', { limit: 10, offset: 0 })
+
+      expect(result.checkIns).toHaveLength(2)
+      expect(result.total).toBe(10)
+      expect(result.checkIns[0].id).toBe('check-in-1')
+    })
+
+    it('filters by status when provided', async () => {
+      const mockQuery = {
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        order: vi.fn().mockReturnThis(),
+        limit: vi.fn().mockReturnThis(),
+        then: (resolve: (value: unknown) => void) =>
+          Promise.resolve({ data: [], error: null, count: 0 }).then(resolve),
+      }
+
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+
+      const { getClientCheckIns } = await import('./check-in-service')
+      await getClientCheckIns('client-123', { status: 'pending' })
+
+      // eq should be called twice - once for client_id, once for status
+      expect(mockQuery.eq).toHaveBeenCalledTimes(2)
+    })
+  })
+
+  describe('updateCheckInStatus', () => {
+    it('updates status successfully', async () => {
+      const mockQuery = {
+        update: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockResolvedValue({ data: {}, error: null }),
+      }
+
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+
+      const { updateCheckInStatus } = await import('./check-in-service')
+
+      await expect(updateCheckInStatus('check-in-123', 'reviewed')).resolves.not.toThrow()
+      expect(mockQuery.update).toHaveBeenCalledWith({ status: 'reviewed' })
+    })
+  })
+
+  describe('updateCheckInAISummary', () => {
+    it('updates AI fields and sets status', async () => {
+      const mockQuery = {
+        update: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockResolvedValue({ data: {}, error: null }),
+      }
+
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+
+      const { updateCheckInAISummary } = await import('./check-in-service')
+
+      await updateCheckInAISummary(
+        'check-in-123',
+        'Great progress!',
+        [{ type: 'positive', text: 'Good sleep' }],
+        [{ text: 'Keep it up' }],
+        'Draft response'
+      )
+
+      expect(mockQuery.update).toHaveBeenCalled()
+      const updateCall = mockQuery.update.mock.calls[0][0]
+      expect(updateCall.ai_summary).toBe('Great progress!')
+      expect(updateCall.status).toBe('ai_processed')
+    })
+  })
+
+  describe('updateCheckInResponse', () => {
+    it('updates coach response and sets reviewed status', async () => {
+      const mockQuery = {
+        update: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockResolvedValue({ data: {}, error: null }),
+      }
+
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+
+      const { updateCheckInResponse } = await import('./check-in-service')
+
+      await updateCheckInResponse('check-in-123', 'Great work this week!')
+
+      const updateCall = mockQuery.update.mock.calls[0][0]
+      expect(updateCall.coach_response).toBe('Great work this week!')
+      expect(updateCall.status).toBe('reviewed')
+      expect(updateCall.coach_reviewed_at).toBeDefined()
+    })
+  })
+})

@@ -32,23 +32,35 @@ async function createSupabaseServerClient() {
  * @returns The coach ID if authenticated, null otherwise
  */
 export async function getAuthenticatedCoachId(): Promise<string | null> {
-  const supabase = await createSupabaseServerClient();
+  try {
+    const supabase = await createSupabaseServerClient();
 
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
 
-  if (!session) {
+    if (!session) {
+      return null;
+    }
+
+    // Use maybeSingle() to avoid throwing PGRST116 when no coach found
+    const { data: coach, error } = await supabase
+      .from("coaches")
+      .select("id")
+      .eq("user_id", session.user.id)
+      .maybeSingle();
+
+    // Log unexpected errors but don't throw
+    if (error) {
+      console.error("Error fetching coach:", error.message);
+      return null;
+    }
+
+    return coach?.id || null;
+  } catch (error) {
+    console.error("Unexpected error in getAuthenticatedCoachId:", error);
     return null;
   }
-
-  const { data: coach } = await supabase
-    .from("coaches")
-    .select("id")
-    .eq("user_id", session.user.id)
-    .single();
-
-  return coach?.id || null;
 }
 
 /**
@@ -56,21 +68,33 @@ export async function getAuthenticatedCoachId(): Promise<string | null> {
  * @returns The client ID if authenticated as a client, null otherwise
  */
 export async function getAuthenticatedClientId(): Promise<string | null> {
-  const supabase = await createSupabaseServerClient();
+  try {
+    const supabase = await createSupabaseServerClient();
 
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
 
-  if (!session) {
+    if (!session) {
+      return null;
+    }
+
+    // Use maybeSingle() to avoid throwing PGRST116 when no client found
+    const { data: client, error } = await supabase
+      .from("clients")
+      .select("id")
+      .eq("user_id", session.user.id)
+      .maybeSingle();
+
+    // Log unexpected errors but don't throw
+    if (error) {
+      console.error("Error fetching client:", error.message);
+      return null;
+    }
+
+    return client?.id || null;
+  } catch (error) {
+    console.error("Unexpected error in getAuthenticatedClientId:", error);
     return null;
   }
-
-  const { data: client } = await supabase
-    .from("clients")
-    .select("id")
-    .eq("user_id", session.user.id)
-    .single();
-
-  return client?.id || null;
 }

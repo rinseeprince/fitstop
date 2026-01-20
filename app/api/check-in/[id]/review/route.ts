@@ -4,7 +4,50 @@ import {
   updateCheckInResponse,
   markResponseAsSent,
 } from "@/services/check-in-service";
+import { getClientById } from "@/services/client-service";
+import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import type { ReviewCheckInRequest, ReviewCheckInResponse } from "@/types/check-in";
+
+/**
+ * Verifies coach owns the client associated with a check-in
+ * @returns Object with checkIn if authorized, or error response
+ */
+async function verifyCoachOwnership(checkInId: string) {
+  const coachId = await getAuthenticatedCoachId();
+  if (!coachId) {
+    return {
+      authorized: false,
+      response: NextResponse.json(
+        { success: false, errorMessage: "Unauthorized" },
+        { status: 401 }
+      ),
+    };
+  }
+
+  const checkIn = await getCheckInById(checkInId);
+  if (!checkIn) {
+    return {
+      authorized: false,
+      response: NextResponse.json(
+        { success: false, errorMessage: "Check-in not found" },
+        { status: 404 }
+      ),
+    };
+  }
+
+  const client = await getClientById(checkIn.clientId);
+  if (!client || client.coachId !== coachId) {
+    return {
+      authorized: false,
+      response: NextResponse.json(
+        { success: false, errorMessage: "Forbidden" },
+        { status: 403 }
+      ),
+    };
+  }
+
+  return { authorized: true, checkIn, coachId };
+}
 
 // POST - Submit coach response for a check-in
 export async function POST(
@@ -13,8 +56,14 @@ export async function POST(
 ) {
   try {
     const { id: checkInId } = await params;
-    const body: ReviewCheckInRequest = await request.json();
 
+    // Verify authorization
+    const authResult = await verifyCoachOwnership(checkInId);
+    if (!authResult.authorized) {
+      return authResult.response;
+    }
+
+    const body: ReviewCheckInRequest = await request.json();
     const { coachResponse } = body;
 
     if (!coachResponse) {
@@ -24,20 +73,8 @@ export async function POST(
       );
     }
 
-    // Verify check-in exists
-    const checkIn = await getCheckInById(checkInId);
-    if (!checkIn) {
-      return NextResponse.json(
-        { success: false, errorMessage: "Check-in not found" },
-        { status: 404 }
-      );
-    }
-
     // Update check-in with coach response
     await updateCheckInResponse(checkInId, coachResponse);
-
-    // TODO: Send email/SMS notification to client with response
-    // For now, just mark as sent
     await markResponseAsSent(checkInId);
 
     const response: ReviewCheckInResponse = {
@@ -65,13 +102,10 @@ export async function PATCH(
   try {
     const { id: checkInId } = await params;
 
-    // Verify check-in exists
-    const checkIn = await getCheckInById(checkInId);
-    if (!checkIn) {
-      return NextResponse.json(
-        { success: false, errorMessage: "Check-in not found" },
-        { status: 404 }
-      );
+    // Verify authorization
+    const authResult = await verifyCoachOwnership(checkInId);
+    if (!authResult.authorized) {
+      return authResult.response;
     }
 
     // Mark as reviewed with empty response

@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   validateCheckInToken,
   submitCheckIn,
-  markTokenAsUsed,
+  claimTokenForProcessing,
+  updateTokenWithCheckInId,
+  releaseToken,
   getPreviousCheckIn,
   getCheckInWithDetails,
 } from "@/services/check-in-service";
@@ -178,29 +180,42 @@ export async function POST(
       );
     }
 
-    // Submit check-in and mark token as used in a coordinated manner
+    // Atomically claim token FIRST to prevent race conditions
+    // This ensures only one request can process this token
     let checkInId: string | undefined;
+    let tokenClaimed = false;
+
+    if (validation.tokenId) {
+      tokenClaimed = await claimTokenForProcessing(validation.tokenId);
+      if (!tokenClaimed) {
+        // Token was already claimed by another request (race condition prevented)
+        return NextResponse.json(
+          {
+            success: false,
+            errorMessage: "This check-in link has already been used",
+          },
+          { status: 409 }
+        );
+      }
+    }
+
     try {
-      // Step 1: Create the check-in
+      // Create the check-in (token is already claimed, safe from duplicates)
       checkInId = await submitCheckIn(clientId, {
         ...body,
         ...photoUrls,
       });
 
-      // Step 2: Mark token as used immediately after successful check-in creation
-      if (validation.tokenId) {
-        await markTokenAsUsed(validation.tokenId, checkInId);
+      // Update token with the check-in ID
+      if (validation.tokenId && checkInId) {
+        await updateTokenWithCheckInId(validation.tokenId, checkInId);
       }
     } catch (error) {
-      // If token marking fails after check-in creation, log the issue but don't fail
-      // The check-in exists and the token will eventually expire
-      if (error instanceof Error && error.message.includes("mark token")) {
-        console.error("Check-in created but token marking failed:", error);
-        // Continue with the flow - the check-in was successful
-      } else {
-        // If check-in creation failed, re-throw the error
-        throw error;
+      // If check-in creation failed, release the token so user can retry
+      if (validation.tokenId && tokenClaimed) {
+        await releaseToken(validation.tokenId);
       }
+      throw error;
     }
 
     // Ensure checkInId was created
