@@ -1,0 +1,186 @@
+"use client"
+
+import { useState } from "react"
+import { useParams } from "next/navigation"
+import Link from "next/link"
+import { AppLayout } from "@/components/app-layout"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Tabs, TabsContent } from "@/components/ui/tabs"
+import { CheckInDetailModal } from "@/components/check-in/check-in-detail-modal"
+import { NutritionCalculatorCardEnhanced } from "@/components/clients/nutrition/nutrition-calculator-card-enhanced"
+import { TrainingPlanCard } from "@/components/clients/training/training-plan-card"
+import { MetricsTabContent } from "@/components/clients/metrics/metrics-tab-content"
+import { ClientPageHeader, type ClientTab } from "@/components/clients/client-page-header"
+import { ClientOverviewTab } from "@/components/clients/client-overview-tab"
+import { MetricSaveDialog } from "@/components/clients/check-in/metric-save-dialog"
+import { useCheckInData, useClient } from "@/hooks/use-check-in-data"
+import { useClientMetrics } from "@/hooks/use-client-metrics"
+import { Loader2, AlertCircle } from "lucide-react"
+
+export default function ClientProfilePage() {
+  const params = useParams()
+  const clientId = params.id as string
+
+  const { client, isLoading: clientLoading, isError: clientError, mutate: mutateClient } = useClient(clientId)
+  const { checkIns, isLoading: checkInsLoading } = useCheckInData(clientId)
+  const [selectedCheckInId, setSelectedCheckInId] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<ClientTab>("overview")
+
+  const {
+    isCalculatingBMR,
+    saveDialogOpen,
+    setSaveDialogOpen,
+    pendingMetricUpdate,
+    isSavingMetric,
+    handleCalculateBMR,
+    handleMetricSave,
+    saveMetric,
+    handleResetToAuto,
+  } = useClientMetrics({ clientId, onSuccess: mutateClient })
+
+  const handleSelectCheckIn = (checkIn: any) => {
+    setSelectedCheckInId(checkIn.id)
+  }
+
+  const handleNavigate = (direction: "prev" | "next") => {
+    if (!selectedCheckInId) return
+    const currentIndex = checkIns.findIndex((ci) => ci.id === selectedCheckInId)
+    if (currentIndex === -1) return
+    const newIndex = direction === "prev" ? currentIndex - 1 : currentIndex + 1
+    if (newIndex >= 0 && newIndex < checkIns.length) {
+      setSelectedCheckInId(checkIns[newIndex].id)
+    }
+  }
+
+  const selectedIndex = selectedCheckInId
+    ? checkIns.findIndex((ci) => ci.id === selectedCheckInId)
+    : -1
+
+  // Build the page header component
+  const pageHeader = client ? (
+    <ClientPageHeader
+      client={client}
+      activeTab={activeTab}
+      onTabChange={setActiveTab}
+    />
+  ) : null;
+
+  return (
+    <AppLayout pageHeader={pageHeader}>
+      {/* Loading State */}
+      {clientLoading && (
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex flex-col items-center justify-center py-12 space-y-3">
+              <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">Loading client...</p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Error State */}
+      {clientError && !clientLoading && (
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex flex-col items-center justify-center py-12 space-y-3">
+              <AlertCircle className="w-12 h-12 text-destructive" />
+              <div className="text-center space-y-1">
+                <p className="font-medium">Failed to load client</p>
+                <p className="text-sm text-muted-foreground">
+                  This client may not exist or you don&apos;t have permission to view it.
+                </p>
+              </div>
+              <Button asChild>
+                <Link href="/clients">Back to Clients</Link>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Client Content */}
+      {!clientLoading && !clientError && client && (
+        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as ClientTab)} className="space-y-6">
+          {/* Overview Tab */}
+          <TabsContent value="overview" className="mt-0">
+            <ClientOverviewTab
+              client={client}
+              checkIns={checkIns}
+              isCalculatingBMR={isCalculatingBMR}
+              onCalculateBMR={handleCalculateBMR}
+              onMetricSave={handleMetricSave}
+              onResetToAuto={handleResetToAuto}
+              onSelectCheckIn={handleSelectCheckIn}
+            />
+          </TabsContent>
+
+          {/* Check-In Detail Modal */}
+          <CheckInDetailModal
+            checkInId={selectedCheckInId}
+            clientId={clientId}
+            onClose={() => setSelectedCheckInId(null)}
+            onNavigate={handleNavigate}
+            canNavigatePrev={selectedIndex > 0}
+            canNavigateNext={selectedIndex < checkIns.length - 1 && selectedIndex !== -1}
+          />
+
+          {/* Metrics Tab */}
+          <TabsContent value="metrics" className="space-y-6 mt-0">
+            <MetricsTabContent
+              checkIns={checkIns}
+              client={client}
+              isLoading={checkInsLoading}
+            />
+          </TabsContent>
+
+          {/* Training Plan Tab */}
+          <TabsContent value="training" className="space-y-6 mt-0">
+            <TrainingPlanCard client={client} onUpdate={() => mutateClient()} />
+          </TabsContent>
+
+          {/* Nutrition Tab */}
+          <TabsContent value="nutrition" className="space-y-6 mt-0">
+            <NutritionCalculatorCardEnhanced
+              client={client}
+              onUpdate={() => mutateClient()}
+            />
+          </TabsContent>
+
+          {/* Notes Tab */}
+          <TabsContent value="notes" className="space-y-6 mt-0">
+            <Card>
+              <CardHeader>
+                <CardTitle>Coach Notes</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {client.notes ? (
+                  <div className="p-4 rounded-lg border">
+                    <p className="whitespace-pre-wrap">{client.notes}</p>
+                  </div>
+                ) : (
+                  <div className="text-center py-12 text-muted-foreground">
+                    <p>No notes added yet</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+      )}
+
+      {/* Metric Save Dialog */}
+      {pendingMetricUpdate && (
+        <MetricSaveDialog
+          open={saveDialogOpen}
+          onOpenChange={setSaveDialogOpen}
+          metricName={pendingMetricUpdate.metricName}
+          onSaveAsCheckIn={() => saveMetric(pendingMetricUpdate.field, pendingMetricUpdate.value, "check-in")}
+          onUpdateOnly={() => saveMetric(pendingMetricUpdate.field, pendingMetricUpdate.value, "update-only")}
+          isLoading={isSavingMetric}
+        />
+      )}
+    </AppLayout>
+  )
+}

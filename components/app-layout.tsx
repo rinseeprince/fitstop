@@ -1,0 +1,40 @@
+import type { ReactNode } from "react"
+import { NotificationsDropdown } from "./navbar/notifications-dropdown"
+
+interface AppLayoutProps {
+  children: ReactNode
+  pageHeader?: ReactNode
+  headerActions?: ReactNode
+}
+
+export function AppLayout({ children, pageHeader, headerActions }: AppLayoutProps) {
+  return (
+    <div className="flex min-h-screen bg-background">
+      {/* Main Content - sidebar is now in root layout */}
+      <div className="flex-1 flex flex-col bg-surface-muted lg:ml-20">
+        {/* Header - sticky with solid background and border */}
+        <header className="sticky top-0 z-10 bg-background border-b border-border">
+          {pageHeader ? (
+            <div className="relative">
+              {/* Actions/Notifications in top-right corner */}
+              <div className="absolute top-4 right-6 flex items-center gap-2 z-10">
+                {headerActions}
+                <NotificationsDropdown />
+              </div>
+              {/* Page-specific header content */}
+              {pageHeader}
+            </div>
+          ) : (
+            <div className="flex h-16 items-center justify-end gap-2 px-6 lg:px-8">
+              {headerActions}
+              <NotificationsDropdown />
+            </div>
+          )}
+        </header>
+
+        {/* Page Content */}
+        <main className="flex-1 overflow-y-auto p-6 lg:p-8">{children}</main>
+      </div>
+    </div>
+  )
+}
