@@ -1,5 +1,11 @@
 # CoachHub Development Conventions
 
+## Engineering Philosophy
+- **No band-aid fixes**: Never work around symptoms. Always investigate and understand the root cause before implementing a fix.
+- **Quality over speed**: Take the time to build clean, maintainable solutions rather than quick hacks that create technical debt.
+- **Understand before implementing**: When something doesn't work as expected, research why. Read documentation, check for known issues, and understand the intended design before writing code.
+- **If it feels wrong, it probably is**: If a solution requires fighting against the framework or library's design, step back and find the proper approach.
+
 ## File Size Limits
 - Components: Max 200 lines (split at 250)
 - Services: Max 300 lines (split at 400)
