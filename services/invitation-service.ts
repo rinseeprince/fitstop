@@ -1,16 +1,19 @@
 import { supabase } from "@/services/supabase-client"
 import { supabaseAdmin } from "@/services/supabase-admin"
+import { sendInvitationEmail, generateInviteToken } from "@/services/email-service"
 import type {
   ClientInvitation,
   ClientInvitationRow,
   SendInvitationResponse,
 } from "@/types/auth"
+import { toClientInvitation } from "@/types/auth"
 
 const INVITATION_EXPIRY_DAYS = 7
 
 // Type cast for tables not yet in generated types
 const invitationsTable = "client_invitations"
 const clientsTable = "clients"
+const coachesTable = "coaches"
 
 /**
  * Get invitation status for a client
@@ -32,76 +35,214 @@ export async function getInvitationForClient(
     throw error
   }
 
-  return rowToInvitation(data as ClientInvitationRow)
+  return toClientInvitation(data as ClientInvitationRow)
 }
 
 /**
- * Send a magic link invitation to a client (server-side only)
+ * Get invitation by token (public - no auth required)
+ */
+export async function getInvitationByToken(
+  token: string
+): Promise<{
+  success: boolean
+  invitation?: {
+    id: string
+    clientName: string
+    clientEmail: string
+    coachName: string
+    expiresAt: string | null
+    status: string
+  }
+  error?: string
+}> {
+  try {
+    // Query invitation with client and coach info
+    const { data: invitationData, error: invitationError } = await (supabaseAdmin as any)
+      .from(invitationsTable)
+      .select(`
+        *,
+        client:client_id (
+          id,
+          name,
+          email,
+          coach:coach_id (
+            id,
+            name
+          )
+        )
+      `)
+      .eq("token", token)
+      .single()
+
+    if (invitationError || !invitationData) {
+      return {
+        success: false,
+        error: "Invalid invitation link"
+      }
+    }
+
+    const invitation = invitationData as ClientInvitationRow & {
+      client: {
+        id: string
+        name: string
+        email: string
+        coach: {
+          id: string
+          name: string
+        }
+      }
+    }
+
+    // Check if invitation has expired
+    if (invitation.expires_at && new Date(invitation.expires_at) < new Date()) {
+      return {
+        success: false,
+        error: "This invitation has expired"
+      }
+    }
+
+    // Check if invitation is already accepted
+    if (invitation.status === "accepted") {
+      return {
+        success: false,
+        error: "This invitation has already been used"
+      }
+    }
+
+    return {
+      success: true,
+      invitation: {
+        id: invitation.id,
+        clientName: invitation.client.name,
+        clientEmail: invitation.client.email,
+        coachName: invitation.client.coach.name,
+        expiresAt: invitation.expires_at,
+        status: invitation.status
+      }
+    }
+  } catch (error) {
+    console.error("Error fetching invitation by token:", error)
+    return {
+      success: false,
+      error: "Failed to validate invitation"
+    }
+  }
+}
+
+/**
+ * Send invitation via email with secure token (server-side only)
  */
 export async function sendInvitation(
-  clientId: string,
-  clientEmail: string,
-  appUrl: string
+  clientId: string
 ): Promise<SendInvitationResponse> {
   try {
+    // First, get client and coach info
+    const { data: clientData, error: clientError } = await (supabaseAdmin as any)
+      .from(clientsTable)
+      .select(`
+        *,
+        coach:coach_id (
+          id,
+          name,
+          email
+        )
+      `)
+      .eq("id", clientId)
+      .single()
+
+    if (clientError || !clientData) {
+      return {
+        success: false,
+        error: "Client not found"
+      }
+    }
+
+    const client = clientData as {
+      id: string
+      name: string
+      email: string
+      coach: {
+        id: string
+        name: string
+        email: string
+      }
+    }
+
     // Check if invitation already exists
-    const { data: invitationData } = await (supabaseAdmin as any)
+    const { data: existingInvitation } = await (supabaseAdmin as any)
       .from(invitationsTable)
       .select("*")
       .eq("client_id", clientId)
       .single()
 
-    const existingInvitation = invitationData as ClientInvitationRow | null
+    // Check if already accepted
+    if (existingInvitation?.status === "accepted") {
+      return {
+        success: false,
+        error: "Client has already accepted the invitation"
+      }
+    }
 
+    // Generate secure token and set expiry
+    const token = generateInviteToken()
     const expiresAt = new Date()
     expiresAt.setDate(expiresAt.getDate() + INVITATION_EXPIRY_DAYS)
 
-    // Create or update invitation record
-    if (existingInvitation) {
-      // Check if already accepted
-      if (existingInvitation.status === "accepted") {
-        return {
-          success: false,
-          error: "Client has already accepted the invitation",
-        }
-      }
-
-      // Update existing invitation
-      await (supabaseAdmin as any)
-        .from(invitationsTable)
-        .update({
-          status: "sent",
-          invited_at: new Date().toISOString(),
-          expires_at: expiresAt.toISOString(),
-        })
-        .eq("client_id", clientId)
-    } else {
-      // Create new invitation
-      await (supabaseAdmin as any).from(invitationsTable).insert({
-        client_id: clientId,
-        status: "sent",
-        invited_at: new Date().toISOString(),
-        expires_at: expiresAt.toISOString(),
-      })
+    const invitationData = {
+      client_id: clientId,
+      token,
+      email: client.email,
+      status: "sent",
+      invited_at: new Date().toISOString(),
+      expires_at: expiresAt.toISOString(),
     }
 
-    // Send magic link via Supabase Auth
-    const redirectUrl = `${appUrl}/auth/callback?type=invitation&clientId=${clientId}`
+    // Create or update invitation record
+    if (existingInvitation) {
+      // Update existing invitation with new token
+      const { data: updatedInvitation, error: updateError } = await (supabaseAdmin as any)
+        .from(invitationsTable)
+        .update(invitationData)
+        .eq("client_id", clientId)
+        .select()
+        .single()
 
-    const { error: authError } = await supabaseAdmin.auth.admin.inviteUserByEmail(
-      clientEmail,
-      {
-        redirectTo: redirectUrl,
-        data: {
-          role: "client",
-          clientId: clientId,
-        },
+      if (updateError) {
+        console.error("Error updating invitation:", updateError)
+        return {
+          success: false,
+          error: "Failed to update invitation"
+        }
       }
+    } else {
+      // Create new invitation
+      const { data: newInvitation, error: createError } = await (supabaseAdmin as any)
+        .from(invitationsTable)
+        .insert(invitationData)
+        .select()
+        .single()
+
+      if (createError) {
+        console.error("Error creating invitation:", createError)
+        return {
+          success: false,
+          error: "Failed to create invitation"
+        }
+      }
+    }
+
+    // Send email via Resend
+    const emailResult = await sendInvitationEmail(
+      client.email,
+      client.name,
+      client.coach.name,
+      token
     )
 
-    if (authError) {
-      console.error("Error sending invitation email:", authError)
-      // Revert invitation status
+    if (!emailResult.success) {
+      console.error("Failed to send invitation email:", emailResult.error)
+      
+      // Revert invitation status if email failed
       await (supabaseAdmin as any)
         .from(invitationsTable)
         .update({ status: "pending" })
@@ -109,12 +250,12 @@ export async function sendInvitation(
 
       return {
         success: false,
-        error: authError.message,
+        error: emailResult.error || "Failed to send invitation email"
       }
     }
 
-    // Fetch updated invitation
-    const { data: updatedInvitation } = await (supabaseAdmin as any)
+    // Fetch the final invitation record
+    const { data: finalInvitation } = await (supabaseAdmin as any)
       .from(invitationsTable)
       .select("*")
       .eq("client_id", clientId)
@@ -122,32 +263,115 @@ export async function sendInvitation(
 
     return {
       success: true,
-      invitation: updatedInvitation
-        ? rowToInvitation(updatedInvitation as ClientInvitationRow)
-        : undefined,
+      invitation: finalInvitation ? toClientInvitation(finalInvitation as ClientInvitationRow) : undefined
     }
   } catch (error) {
     console.error("Error in sendInvitation:", error)
     return {
       success: false,
-      error: error instanceof Error ? error.message : "Failed to send invitation",
+      error: error instanceof Error ? error.message : "Failed to send invitation"
     }
   }
 }
 
 /**
- * Mark invitation as accepted and link user to client (server-side only)
+ * Accept invitation by token and link user to client (server-side only)
+ */
+export async function acceptInvitationByToken(
+  token: string,
+  userId: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    // Get invitation by token
+    const { data: invitationData, error: invitationError } = await (supabaseAdmin as any)
+      .from(invitationsTable)
+      .select("*")
+      .eq("token", token)
+      .single()
+
+    if (invitationError || !invitationData) {
+      return {
+        success: false,
+        error: "Invalid invitation token"
+      }
+    }
+
+    const invitation = invitationData as ClientInvitationRow
+
+    // Check if invitation has expired
+    if (invitation.expires_at && new Date(invitation.expires_at) < new Date()) {
+      return {
+        success: false,
+        error: "This invitation has expired"
+      }
+    }
+
+    // Check if invitation is already accepted
+    if (invitation.status === "accepted") {
+      return {
+        success: false,
+        error: "This invitation has already been used"
+      }
+    }
+
+    // Update invitation status
+    const { error: updateError } = await (supabaseAdmin as any)
+      .from(invitationsTable)
+      .update({
+        status: "accepted",
+        accepted_at: new Date().toISOString()
+      })
+      .eq("token", token)
+
+    if (updateError) {
+      console.error("Error updating invitation status:", updateError)
+      return {
+        success: false,
+        error: "Failed to accept invitation"
+      }
+    }
+
+    // Link user_id to client record
+    const { error: linkError } = await (supabaseAdmin as any)
+      .from(clientsTable)
+      .update({ user_id: userId })
+      .eq("id", invitation.client_id)
+
+    if (linkError) {
+      console.error("Error linking user to client:", linkError)
+      return {
+        success: false,
+        error: "Failed to link user to client"
+      }
+    }
+
+    console.log(`Successfully accepted invitation for client ${invitation.client_id} and user ${userId}`)
+    return { success: true }
+  } catch (error) {
+    console.error("Error in acceptInvitationByToken:", error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to accept invitation"
+    }
+  }
+}
+
+/**
+ * Legacy function: Mark invitation as accepted by clientId (for backward compatibility)
+ * @deprecated Use acceptInvitationByToken instead
  */
 export async function acceptInvitation(
   clientId: string,
   userId: string
 ): Promise<void> {
+  console.warn("acceptInvitation is deprecated, use acceptInvitationByToken instead")
+  
   // Update invitation status
   await (supabaseAdmin as any)
     .from(invitationsTable)
     .update({
       status: "accepted",
-      accepted_at: new Date().toISOString(),
+      accepted_at: new Date().toISOString()
     })
     .eq("client_id", clientId)
 
@@ -159,10 +383,9 @@ export async function acceptInvitation(
 }
 
 /**
- * Get client ID from user metadata or invitation
+ * Get client ID from user ID
  */
 export async function getClientIdForUser(userId: string): Promise<string | null> {
-  // First check if already linked
   const { data: client } = await (supabaseAdmin as any)
     .from(clientsTable)
     .select("id")
@@ -174,20 +397,4 @@ export async function getClientIdForUser(userId: string): Promise<string | null>
   }
 
   return null
-}
-
-/**
- * Convert database row to ClientInvitation type
- */
-function rowToInvitation(row: ClientInvitationRow): ClientInvitation {
-  return {
-    id: row.id,
-    clientId: row.client_id,
-    status: row.status,
-    invitedAt: row.invited_at,
-    acceptedAt: row.accepted_at,
-    expiresAt: row.expires_at,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  }
 }

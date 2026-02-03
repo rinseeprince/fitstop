@@ -31,7 +31,7 @@ const steps = [
 
 export default function ClientCheckInPage() {
   const router = useRouter();
-  const { clientData } = useAuth();
+  const { user } = useAuth();
   const [currentStep, setCurrentStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
@@ -54,7 +54,7 @@ export default function ClientCheckInPage() {
   };
 
   const handleSubmit = async () => {
-    if (!clientData) return;
+    if (!user) return;
 
     setIsSubmitting(true);
 
@@ -63,14 +63,14 @@ export default function ClientCheckInPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          clientId: clientData.id,
+          clientId: user.id,
           mood: formData.mood,
           energy: formData.energy,
           sleep: formData.sleep,
           stress: formData.stress,
           notes: formData.notes || null,
           weight: formData.weight ? parseFloat(formData.weight) : null,
-          weightUnit: clientData.weightUnit || "lbs",
+          weightUnit: "lbs",
           bodyFatPercentage: formData.bodyFatPercentage
             ? parseFloat(formData.bodyFatPercentage)
             : null,
@@ -223,7 +223,7 @@ export default function ClientCheckInPage() {
                 <div>
                   <Label htmlFor="weight" className="flex items-center gap-2">
                     <Scale className="h-4 w-4" />
-                    Current Weight ({clientData?.weightUnit || "lbs"})
+                    Current Weight (lbs)
                   </Label>
                   <Input
                     id="weight"

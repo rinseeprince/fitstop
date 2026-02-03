@@ -27,6 +27,8 @@ export type ClientInvitation = {
   id: string
   clientId: string
   status: InvitationStatus
+  token: string | null
+  email: string
   invitedAt: string | null
   acceptedAt: string | null
   expiresAt: string | null
@@ -39,6 +41,8 @@ export type ClientInvitationRow = {
   id: string
   client_id: string
   status: InvitationStatus
+  token: string | null
+  email: string
   invited_at: string | null
   accepted_at: string | null
   expires_at: string | null
@@ -58,12 +62,41 @@ export type SendInvitationResponse = {
 }
 
 export type AcceptInvitationRequest = {
-  password: string
+  token: string
+  userId: string
 }
 
 export type AcceptInvitationResponse = {
   success: boolean
-  redirectUrl?: string
+  error?: string
+}
+
+// New types for token-based invitation flow
+export type InvitationDetailsRequest = {
+  token: string
+}
+
+export type InvitationDetailsResponse = {
+  success: boolean
+  invitation?: {
+    id: string
+    clientName: string
+    clientEmail: string
+    coachName: string
+    expiresAt: string | null
+    status: string
+  }
+  error?: string
+}
+
+export type SignupRequest = {
+  email: string
+  password: string
+  inviteToken: string
+}
+
+export type SignupResponse = {
+  success: boolean
   error?: string
 }
 
@@ -84,6 +117,8 @@ export function toClientInvitation(row: ClientInvitationRow): ClientInvitation {
     id: row.id,
     clientId: row.client_id,
     status: row.status,
+    token: row.token,
+    email: row.email,
     invitedAt: row.invited_at,
     acceptedAt: row.accepted_at,
     expiresAt: row.expires_at,

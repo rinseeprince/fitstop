@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { Home, Users, KanbanSquare, MessageSquare, Zap, Mail, Settings } from "lucide-react"
 import { motion } from "framer-motion"
+import { useAuth } from "@/contexts/auth-context"
 
 const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: Home },
@@ -19,6 +20,7 @@ const navigation = [
 
 export function SidebarNav() {
   const pathname = usePathname()
+  const { isTrainer } = useAuth()
   const [unreviewedCount, setUnreviewedCount] = useState(0)
   const [optimisticHref, setOptimisticHref] = useState<string | null>(null)
 
@@ -30,6 +32,9 @@ export function SidebarNav() {
   }, [pathname, optimisticHref])
 
   useEffect(() => {
+    // Only fetch unreviewed count for trainers
+    if (!isTrainer) return
+
     const fetchUnreviewedCount = async () => {
       try {
         const response = await fetch("/api/check-ins/recent")
@@ -49,7 +54,7 @@ export function SidebarNav() {
     // Refresh every minute
     const interval = setInterval(fetchUnreviewedCount, 60000)
     return () => clearInterval(interval)
-  }, [])
+  }, [isTrainer])
 
   return (
     <nav className="flex flex-col gap-1">

@@ -28,10 +28,20 @@ const EXCLUDED_PATHS = [
 ]
 
 export function PersistentSidebar() {
-  const { coach, logout, loading } = useAuth()
+  const { coach, logout, loading, isClient, isTrainer, role } = useAuth()
   const router = useRouter()
   const pathname = usePathname()
   const { toast } = useToast()
+
+  // Debug logging (temporary)
+  console.log('[Sidebar] Debug:', { 
+    pathname, 
+    loading, 
+    role, 
+    isClient, 
+    isTrainer,
+    shouldRender: !loading && role === "trainer"
+  })
 
   // Don't render sidebar on excluded paths
   // Use exact match for "/" and "/client" to avoid false positives:
@@ -44,7 +54,16 @@ export function PersistentSidebar() {
     return pathname?.startsWith(path)
   })
 
-  if (shouldHideSidebar) {
+  // Hide sidebar in these cases:
+  // 1. On excluded paths
+  // 2. For client users (role-based protection)
+  // 3. While loading and we don't know the role yet
+  if (shouldHideSidebar || isClient || (loading && !isTrainer)) {
+    return null
+  }
+
+  // Extra safety: only show for confirmed trainers
+  if (!loading && role !== "trainer") {
     return null
   }
 

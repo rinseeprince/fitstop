@@ -21,7 +21,7 @@ function getCurrentWeekStart(): string {
 }
 
 export default function ClientTrainingPage() {
-  const { clientData } = useAuth();
+  const { user } = useAuth();
   const [plan, setPlan] = useState<TrainingPlan | null>(null);
   const [completions, setCompletions] = useState<SessionCompletion[]>([]);
   const [loading, setLoading] = useState(true);

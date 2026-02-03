@@ -21,13 +21,13 @@ import type { NutritionTargets, ProgressData } from "@/services/client-portal-se
 
 export default function ClientDashboardPage() {
   const router = useRouter();
-  const { clientData, user } = useAuth();
+  const { user } = useAuth();
   const [plan, setPlan] = useState<TrainingPlan | null>(null);
   const [nutrition, setNutrition] = useState<NutritionTargets | null>(null);
   const [progress, setProgress] = useState<ProgressData | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const firstName = clientData?.name?.split(" ")[0] ||
+  const firstName =
     user?.user_metadata?.name?.split(" ")[0] || "there";
 
   useEffect(() => {
@@ -119,8 +119,8 @@ export default function ClientDashboardPage() {
         </Card>
       </div>
 
-      {/* Current Metrics */}
-      {clientData && (clientData.currentWeight || clientData.goalWeight) && (
+      {/* Current Metrics - Temporarily disabled while updating auth flow */}
+      {/*{clientData && (clientData.currentWeight || clientData.goalWeight) && (
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-base">
@@ -158,7 +158,7 @@ export default function ClientDashboardPage() {
             </div>
           </CardContent>
         </Card>
-      )}
+      )}*/}
 
       {/* Quick Actions */}
       <div className="grid gap-4 sm:grid-cols-2">

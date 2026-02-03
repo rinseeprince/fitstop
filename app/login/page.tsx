@@ -180,7 +180,7 @@ export default function LoginPage() {
               error: error?.message
             });
           } catch (timeoutError) {
-            console.error('[Invite Flow] setSession timed out:', timeoutError.message);
+            console.error('[Invite Flow] setSession timed out:', timeoutError instanceof Error ? timeoutError.message : 'unknown error');
             sessionError = timeoutError;
           }
 
@@ -207,7 +207,7 @@ export default function LoginPage() {
               currentSession = result.data;
               getSessionError = result.error;
             } catch (timeoutError) {
-              console.error('[Invite Flow] getSession timed out:', timeoutError.message);
+              console.error('[Invite Flow] getSession timed out:', timeoutError instanceof Error ? timeoutError.message : 'unknown error');
               
               // Last resort: try to extract user data from the JWT token directly
               console.log('[Invite Flow] Extracting user from JWT token...');

@@ -75,8 +75,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Send the invitation
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin
-    const invitationResult = await sendInvitation(clientId, client.email, appUrl)
+    const invitationResult = await sendInvitation(clientId)
 
     if (!invitationResult.success) {
       return NextResponse.json(

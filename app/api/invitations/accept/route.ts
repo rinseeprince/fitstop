@@ -1,24 +1,60 @@
 import { NextRequest, NextResponse } from "next/server"
-import { acceptInvitation } from "@/services/invitation-service"
+import { acceptInvitationByToken, acceptInvitation } from "@/services/invitation-service"
+import type { AcceptInvitationResponse } from "@/types/auth"
 
-export async function POST(request: NextRequest) {
+export async function POST(request: NextRequest): Promise<NextResponse<AcceptInvitationResponse>> {
   try {
-    const { clientId, userId } = await request.json()
+    const body = await request.json()
+    
+    // Support both new token-based and legacy clientId-based acceptance
+    if (body.token && body.userId) {
+      // New token-based flow
+      const { token, userId } = body
 
-    if (!clientId || !userId) {
+      if (!token || !userId) {
+        return NextResponse.json(
+          { success: false, error: "Missing token or userId" },
+          { status: 400 }
+        )
+      }
+
+      const result = await acceptInvitationByToken(token, userId)
+
+      if (!result.success) {
+        return NextResponse.json(
+          { success: false, error: result.error },
+          { status: 400 }
+        )
+      }
+
+      return NextResponse.json({ success: true })
+
+    } else if (body.clientId && body.userId) {
+      // Legacy clientId-based flow (for backward compatibility)
+      console.warn("Using deprecated clientId-based invitation acceptance")
+      
+      const { clientId, userId } = body
+
+      await acceptInvitation(clientId, userId)
+      return NextResponse.json({ success: true })
+
+    } else {
       return NextResponse.json(
-        { success: false, error: "Missing clientId or userId" },
+        { 
+          success: false, 
+          error: "Missing required fields. Provide either (token, userId) or (clientId, userId)" 
+        },
         { status: 400 }
       )
     }
 
-    await acceptInvitation(clientId, userId)
-
-    return NextResponse.json({ success: true })
   } catch (error) {
     console.error("Error accepting invitation:", error)
     return NextResponse.json(
-      { success: false, error: "Failed to accept invitation" },
+      { 
+        success: false, 
+        error: error instanceof Error ? error.message : "Failed to accept invitation" 
+      },
       { status: 500 }
     )
   }

@@ -18,8 +18,12 @@ export async function middleware(request: NextRequest) {
   // Check-in API routes are also public (for validating tokens and submitting check-ins)
   const isCheckInApiRoute = pathname.startsWith("/api/check-in/submit/")
 
+  // Invitation routes are public (clients access via token-based invite links)
+  const isInviteRoute = pathname.startsWith("/invite/")
+  const isInviteApiRoute = pathname.startsWith("/api/invitations/")
+
   // Skip auth check entirely for these routes
-  if (skipAuthRoutes.includes(pathname) || isCheckInRoute || isCheckInApiRoute) {
+  if (skipAuthRoutes.includes(pathname) || isCheckInRoute || isCheckInApiRoute || isInviteRoute || isInviteApiRoute) {
     return NextResponse.next()
   }
 
