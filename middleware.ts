@@ -9,6 +9,7 @@ export async function middleware(request: NextRequest) {
     "/forgot-password",
     "/reset-password",
     "/auth/callback",
+    "/client/onboarding",
   ]
 
   // Check-in routes are public (clients access via magic link)

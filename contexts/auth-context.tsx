@@ -64,26 +64,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   /** Fetch user profile from database */
   const fetchProfile = async (userId: string): Promise<Profile | null> => {
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("user_id", userId)
-      .single()
+    try {
+      console.log('[Auth] fetchProfile starting for user:', userId)
+      
+      // Add timeout to prevent hanging
+      const fetchPromise = supabase
+        .from("profiles")
+        .select("*")
+        .eq("user_id", userId)
+        .single()
+        
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('fetchProfile timeout')), 5000)
+      )
+      
+      const { data, error } = await Promise.race([fetchPromise, timeoutPromise]) as any
 
-    if (error) {
-      // PGRST116 = no rows returned
-      if (error.code === "PGRST116") return null
-      console.error("Error fetching profile:", error)
+      console.log('[Auth] fetchProfile result:', { data: !!data, error })
+
+      if (error) {
+        // PGRST116 = no rows returned
+        if (error.code === "PGRST116") {
+          console.log('[Auth] No profile found (PGRST116)')
+          return null
+        }
+        console.error("Error fetching profile:", error)
+        return null
+      }
+
+      const row = data as unknown as ProfileRow
+      const profile = {
+        id: row.id,
+        userId: row.user_id,
+        role: row.role,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      }
+      console.log('[Auth] fetchProfile success:', profile)
+      return profile
+    } catch (error) {
+      console.error('[Auth] fetchProfile failed:', error)
       return null
-    }
-
-    const row = data as unknown as ProfileRow
-    return {
-      id: row.id,
-      userId: row.user_id,
-      role: row.role,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
     }
   }
 
@@ -173,47 +194,88 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   /** Initialize user data based on role with retry logic for RLS timing */
   const initializeUserData = async (authUser: User) => {
+    console.log('[Auth] initializeUserData called for user:', authUser.id)
+    
     // Prevent concurrent initialization
-    if (initializingRef.current) return
+    if (initializingRef.current) {
+      console.log('[Auth] initializeUserData already in progress, skipping')
+      return
+    }
     initializingRef.current = true
 
     try {
+      console.log('[Auth] Starting profile fetch for user:', authUser.id)
+      
       // Fetch profile - trigger should have created it
       // Retry a few times in case of RLS timing issues
       let userProfile: Profile | null = null
       for (let i = 0; i < PROFILE_RETRY_COUNT; i++) {
+        console.log('[Auth] Profile fetch attempt', i + 1, 'of', PROFILE_RETRY_COUNT)
         userProfile = await fetchProfile(authUser.id)
-        if (userProfile) break
-        await new Promise((resolve) => setTimeout(resolve, PROFILE_RETRY_DELAY))
+        if (userProfile) {
+          console.log('[Auth] Found profile:', userProfile)
+          break
+        }
+        if (i < PROFILE_RETRY_COUNT - 1) {
+          console.log('[Auth] Profile not found, waiting before retry...')
+          await new Promise((resolve) => setTimeout(resolve, PROFILE_RETRY_DELAY))
+        }
       }
 
       if (!userProfile) {
-        // Fallback: try to create if still not found
-        try {
-          const isInvitedClient = authUser.user_metadata?.role === "client"
-          const defaultRole: UserRole = isInvitedClient ? "client" : "trainer"
-          userProfile = await createProfile(authUser.id, defaultRole)
-        } catch {
-          // Profile might exist but RLS blocking - try one more fetch
-          userProfile = await fetchProfile(authUser.id)
-          if (!userProfile) {
-            console.error("Could not fetch or create profile")
-            // Sign out to allow clean re-login instead of leaving app in broken state
-            await supabase.auth.signOut()
-            return
+        console.log('[Auth] No profile found after retries')
+        // Check if this is an invited client
+        const isInvitedClient = authUser.user_metadata?.role === "client"
+        console.log('[Auth] Is invited client:', isInvitedClient)
+        
+        if (isInvitedClient) {
+          console.log('[Auth] Invited client without profile - creating temporary profile')
+          // For invited clients, set a temporary profile to allow onboarding flow
+          userProfile = {
+            id: '', // Will be created during onboarding
+            userId: authUser.id,
+            role: "client",
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          }
+        } else {
+          console.log('[Auth] Not invited client - trying to create profile')
+          // Fallback: try to create if still not found
+          try {
+            const defaultRole: UserRole = "trainer"
+            userProfile = await createProfile(authUser.id, defaultRole)
+            console.log('[Auth] Created fallback profile:', userProfile)
+          } catch (createError) {
+            console.log('[Auth] Failed to create profile, trying one more fetch')
+            // Profile might exist but RLS blocking - try one more fetch
+            userProfile = await fetchProfile(authUser.id)
+            if (!userProfile) {
+              console.error("Could not fetch or create profile")
+              // Sign out to allow clean re-login instead of leaving app in broken state
+              await supabase.auth.signOut()
+              return
+            }
           }
         }
       }
 
+      console.log('[Auth] Setting profile:', userProfile)
       setProfile(userProfile)
 
       // Only fetch/create coach profile for trainers
       if (userProfile.role === "trainer") {
+        console.log('[Auth] Fetching coach profile for trainer')
         await fetchOrCreateCoachProfile(authUser)
       } else {
+        console.log('[Auth] Not a trainer, clearing coach')
         setCoach(null)
       }
+      
+      console.log('[Auth] initializeUserData complete')
+    } catch (error) {
+      console.error('[Auth] Error in initializeUserData:', error)
     } finally {
+      console.log('[Auth] Clearing initializingRef flag')
       initializingRef.current = false
     }
   }
@@ -222,16 +284,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const initSession = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession()
+        console.log('[Auth] Initializing session...')
+        
+        // Add timeout to getSession to prevent hanging
+        const getSessionPromise = supabase.auth.getSession()
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('getSession timeout')), 5000)
+        )
+        
+        const { data: { session } } = await Promise.race([getSessionPromise, timeoutPromise]) as any
+        console.log('[Auth] Got session:', session ? 'has session' : 'no session')
         setSession(session)
         setUser(session?.user ?? null)
 
         if (session?.user) {
-          await initializeUserData(session.user)
+          console.log('[Auth] Initializing user data for user:', session.user.id)
+          try {
+            await initializeUserData(session.user)
+            console.log('[Auth] User data initialization complete')
+          } catch (initError) {
+            console.error('[Auth] Error initializing user data:', initError)
+            // Continue anyway to set loading to false
+          }
         }
       } catch (error) {
         console.error("Error initializing session:", error)
       } finally {
+        console.log('[Auth] Setting loading to false')
         setLoading(false)
       }
     }
@@ -241,13 +320,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('Auth state change:', event, session ? 'has session' : 'no session')
+      console.log('[Auth] State change:', event, session ? 'has session' : 'no session')
+      
+      // Don't process auth changes while still initializing
+      if (initializingRef.current) {
+        console.log('[Auth] Skipping state change during initialization')
+        return
+      }
+      
       setSession(session)
       setUser(session?.user ?? null)
 
       if (session?.user) {
         try {
+          console.log('[Auth] Auth state change - initializing user data for:', session.user.id)
           await initializeUserData(session.user)
+          console.log('[Auth] Auth state change - user data initialization complete')
         } catch (error) {
           console.error("Error initializing user data on auth change:", error)
         }

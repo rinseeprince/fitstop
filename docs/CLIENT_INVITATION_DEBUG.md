@@ -120,6 +120,23 @@ Direct session check using `supabase.auth.getSession()` instead of relying solel
 - Redirects to dashboard if password already set
 - Logs: `[Onboarding] Checking session...`, `[Onboarding] Session found for user:`, etc.
 
+### **6. CRITICAL FIX: Client Layout Exception (client/layout.tsx)**
+**This was the actual root cause and solution:**
+
+The client layout was blocking access to the onboarding page with auth guards. Added exception:
+
+```typescript
+// Allow onboarding page to bypass auth checks
+const isOnboardingPage = pathname === "/client/onboarding"
+
+// For onboarding page, render without auth checks or layout chrome  
+if (isOnboardingPage) {
+  return <div className="min-h-screen bg-background">{children}</div>
+}
+```
+
+**This 5-line change was the actual fix that solved the problem.**
+
 ## Testing Steps
 
 1. Delete the test client from database (or use a new email)
@@ -165,44 +182,16 @@ Direct session check using `supabase.auth.getSession()` instead of relying solel
 3. **API call fails** - Check `/api/invitations/accept` response in Network tab
 4. **Auth context signs out** - Look for `[Auth] Invited client without profile` message
 5. **Middleware redirect** - Check if `/client/onboarding` is in `skipAuthRoutes`
-
-## Alternative Approaches to Consider
-
-### Option A: Use Standard Supabase Client for Hash Detection
-Create a separate client using `@supabase/supabase-js` (not SSR) just for processing hash tokens on the login page.
-
-### Option B: Redirect to `/auth/callback` First
-Modify Supabase email template or invitation redirect to go to `/auth/callback` instead of `/login`, then handle the PKCE flow there.
-
-### Option C: Use `exchangeCodeForSession` Instead
-If Supabase is sending a `code` parameter instead of tokens, use:
-```typescript
-await supabase.auth.exchangeCodeForSession(code)
-```
-
-### Option D: Check if Auth Context is Interfering
-The auth-context also subscribes to `onAuthStateChange`. There might be a race condition or the context might be resetting the session.
+6. **Client layout blocking** - The most likely issue - check if onboarding exception exists
 
 ## Files Changed During Debugging
 
 1. `/app/login/page.tsx` - Added hash token detection and `setSession()` call
 2. `/app/api/invitations/accept/route.ts` - Created new API endpoint
-
-## Relevant Supabase Documentation
-
-- [Supabase SSR Auth](https://supabase.com/docs/guides/auth/server-side/nextjs)
-- [setSession()](https://supabase.com/docs/reference/javascript/auth-setsession)
-- [inviteUserByEmail()](https://supabase.com/docs/reference/javascript/auth-admin-inviteuserbyemail)
-
-## How to Test
-
-1. Delete the test client from database (or use a new email)
-2. Create a new client in coach dashboard
-3. Click "Invite" button on client profile
-4. Check email for invitation
-5. Click the invitation link
-6. Watch browser console and network tab
-7. Note where it gets stuck and any errors
+3. `/contexts/auth-context.tsx` - Added invited client handling
+4. `/middleware.ts` - Added `/client/onboarding` to skip routes
+5. `/app/client/onboarding/page.tsx` - Added session checking
+6. **`/app/client/layout.tsx` - Added onboarding exception (THE ACTUAL FIX)**
 
 ## Expected Flow (When Working)
 
