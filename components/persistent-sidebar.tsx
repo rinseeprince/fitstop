@@ -33,15 +33,6 @@ export function PersistentSidebar() {
   const pathname = usePathname()
   const { toast } = useToast()
 
-  // Debug logging (temporary)
-  console.log('[Sidebar] Debug:', { 
-    pathname, 
-    loading, 
-    role, 
-    isClient, 
-    isTrainer,
-    shouldRender: !loading && role === "trainer"
-  })
 
   // Don't render sidebar on excluded paths
   // Use exact match for "/" and "/client" to avoid false positives:

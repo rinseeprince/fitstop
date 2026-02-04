@@ -1,7 +1,7 @@
 "use client"
 
 import { useAuth } from "@/contexts/auth-context"
-import { useRouter, usePathname } from "next/navigation"
+import { useRouter } from "next/navigation"
 import { useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { LogOut, Dumbbell } from "lucide-react"
@@ -13,25 +13,16 @@ export default function ClientLayout({
 }) {
   const { user, loading, isClient, logout } = useAuth()
   const router = useRouter()
-  const pathname = usePathname()
-
-  // Allow onboarding page to bypass auth checks
-  const isOnboardingPage = pathname === "/client/onboarding"
 
   useEffect(() => {
-    if (!loading && !user && !isOnboardingPage) {
+    if (!loading && !user) {
       router.push("/login")
     }
-  }, [user, loading, router, isOnboardingPage])
+  }, [user, loading, router])
 
   const handleLogout = async () => {
     await logout()
     router.push("/login")
-  }
-
-  // For onboarding page, render without auth checks or layout chrome
-  if (isOnboardingPage) {
-    return <div className="min-h-screen bg-background">{children}</div>
   }
 
   if (loading) {

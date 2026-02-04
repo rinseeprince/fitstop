@@ -32,10 +32,6 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
-/** Retry delay in ms for profile fetch */
-const PROFILE_RETRY_DELAY = 200
-/** Number of retries for profile fetch */
-const PROFILE_RETRY_COUNT = 3
 
 /** Database row type for coaches table */
 type CoachRow = {
@@ -67,7 +63,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       console.log('[Auth] fetchProfile starting for user:', userId)
       
-      // Add timeout to prevent hanging
+      // Add timeout to prevent hanging (15 seconds for database operations)
       const fetchPromise = supabase
         .from("profiles")
         .select("*")
@@ -75,7 +71,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .single()
         
       const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('fetchProfile timeout')), 5000)
+        setTimeout(() => reject(new Error('fetchProfile timeout')), 15000)
       )
       
       const { data, error } = await Promise.race([fetchPromise, timeoutPromise]) as any
@@ -192,7 +188,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  /** Initialize user data based on role with retry logic for RLS timing */
+  /** Initialize user data based on role */
   const initializeUserData = async (authUser: User) => {
     console.log('[Auth] initializeUserData called for user:', authUser.id)
     
@@ -207,55 +203,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.log('[Auth] Starting profile fetch for user:', authUser.id)
       
       // Fetch profile - trigger should have created it
-      // Retry a few times in case of RLS timing issues
-      let userProfile: Profile | null = null
-      for (let i = 0; i < PROFILE_RETRY_COUNT; i++) {
-        console.log('[Auth] Profile fetch attempt', i + 1, 'of', PROFILE_RETRY_COUNT)
-        userProfile = await fetchProfile(authUser.id)
-        if (userProfile) {
-          console.log('[Auth] Found profile:', userProfile)
-          break
-        }
-        if (i < PROFILE_RETRY_COUNT - 1) {
-          console.log('[Auth] Profile not found, waiting before retry...')
-          await new Promise((resolve) => setTimeout(resolve, PROFILE_RETRY_DELAY))
-        }
-      }
-
+      let userProfile: Profile | null = await fetchProfile(authUser.id)
+      
       if (!userProfile) {
-        console.log('[Auth] No profile found after retries')
-        // Check if this is an invited client
-        const isInvitedClient = authUser.user_metadata?.role === "client"
-        console.log('[Auth] Is invited client:', isInvitedClient)
-        
-        if (isInvitedClient) {
-          console.log('[Auth] Invited client without profile - creating temporary profile')
-          // For invited clients, set a temporary profile to allow onboarding flow
-          userProfile = {
-            id: '', // Will be created during onboarding
-            userId: authUser.id,
-            role: "client",
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          }
-        } else {
-          console.log('[Auth] Not invited client - trying to create profile')
-          // Fallback: try to create if still not found
-          try {
-            const defaultRole: UserRole = "trainer"
-            userProfile = await createProfile(authUser.id, defaultRole)
-            console.log('[Auth] Created fallback profile:', userProfile)
-          } catch (createError) {
-            console.log('[Auth] Failed to create profile, trying one more fetch')
-            // Profile might exist but RLS blocking - try one more fetch
-            userProfile = await fetchProfile(authUser.id)
-            if (!userProfile) {
-              console.error("Could not fetch or create profile")
-              // Sign out to allow clean re-login instead of leaving app in broken state
-              await supabase.auth.signOut()
-              return
-            }
-          }
+        console.log('[Auth] No profile found - trying to create profile')
+        // Fallback: try to create if not found
+        try {
+          const defaultRole: UserRole = "trainer"
+          userProfile = await createProfile(authUser.id, defaultRole)
+          console.log('[Auth] Created fallback profile:', userProfile)
+        } catch (createError) {
+          console.error("Could not fetch or create profile:", createError)
+          // Sign out to allow clean re-login instead of leaving app in broken state
+          await supabase.auth.signOut()
+          return
         }
       }
 
@@ -286,13 +247,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         console.log('[Auth] Initializing session...')
         
-        // Add timeout to getSession to prevent hanging
-        const getSessionPromise = supabase.auth.getSession()
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('getSession timeout')), 5000)
-        )
-        
-        const { data: { session } } = await Promise.race([getSessionPromise, timeoutPromise]) as any
+        // getSession is a local operation, no need for timeout
+        const { data: { session } } = await supabase.auth.getSession()
         console.log('[Auth] Got session:', session ? 'has session' : 'no session')
         setSession(session)
         setUser(session?.user ?? null)
