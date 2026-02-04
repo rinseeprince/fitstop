@@ -53,6 +53,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Track if initialization is in progress to prevent race conditions
   const initializingRef = useRef(false)
+  const initialLoadCompleteRef = useRef(false)
 
   const role = profile?.role ?? null
   const isTrainer = role === "trainer"
@@ -63,7 +64,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       console.log('[Auth] fetchProfile starting for user:', userId)
       
-      // Add timeout to prevent hanging (15 seconds for database operations)
+      // Add timeout to prevent hanging
       const fetchPromise = supabase
         .from("profiles")
         .select("*")
@@ -71,7 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .single()
         
       const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('fetchProfile timeout')), 15000)
+        setTimeout(() => reject(new Error('fetchProfile timeout')), 5000)
       )
       
       const { data, error } = await Promise.race([fetchPromise, timeoutPromise]) as any
@@ -247,8 +248,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         console.log('[Auth] Initializing session...')
         
-        // getSession is a local operation, no need for timeout
-        const { data: { session } } = await supabase.auth.getSession()
+        // Add timeout to getSession to prevent hanging
+        const getSessionPromise = supabase.auth.getSession()
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('getSession timeout')), 5000)
+        )
+        
+        const { data: { session } } = await Promise.race([getSessionPromise, timeoutPromise]) as any
         console.log('[Auth] Got session:', session ? 'has session' : 'no session')
         setSession(session)
         setUser(session?.user ?? null)
@@ -268,6 +274,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } finally {
         console.log('[Auth] Setting loading to false')
         setLoading(false)
+        initialLoadCompleteRef.current = true
       }
     }
 
@@ -278,9 +285,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log('[Auth] State change:', event, session ? 'has session' : 'no session')
       
-      // Don't process auth changes while still initializing
-      if (initializingRef.current) {
-        console.log('[Auth] Skipping state change during initialization')
+      // Don't process auth changes while still initializing or before initial load is complete
+      if (initializingRef.current || !initialLoadCompleteRef.current) {
+        console.log('[Auth] Skipping state change during initialization or before initial load complete')
         return
       }
       

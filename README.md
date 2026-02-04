@@ -5,6 +5,7 @@ A modern fitness coaching platform that helps trainers manage clients, create pe
 ## Features
 
 - **Client Management** - Add, edit, and organize clients with detailed profiles including fitness goals, body metrics, and activity levels
+- **Client Invitations** - Token-based invitation system with email integration for seamless client onboarding
 - **Nutrition Planning** - AI-powered meal plan generation with customizable macros, BMR calculations, and dietary preferences
 - **Training Plans** - Create structured workout programs with exercise tracking, sets/reps, and progression
 - **Check-in System** - Scheduled client check-ins with progress photos, measurements, and goal tracking
@@ -22,6 +23,7 @@ A modern fitness coaching platform that helps trainers manage clients, create pe
 | UI Components | Radix UI, shadcn/ui |
 | Database | Supabase (PostgreSQL) |
 | Authentication | Supabase Auth |
+| Email Service | Resend |
 | AI Integration | OpenAI API |
 | State Management | SWR, React Hook Form |
 | Validation | Zod |
@@ -76,6 +78,9 @@ SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 # OpenAI Configuration
 OPENAI_API_KEY=your_openai_api_key
 
+# Email Service Configuration
+RESEND_API_KEY=your_resend_api_key
+
 # App Configuration
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 ```
@@ -88,6 +93,7 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 │   ├── auth/                  # Authentication pages
 │   ├── clients/               # Client management pages
 │   ├── check-in/              # Check-in submission pages
+│   ├── invite/                # Client invitation pages
 │   └── settings/              # App settings
 ├── components/                # React components
 │   ├── ui/                   # Base UI components (shadcn)
@@ -103,6 +109,7 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 │   │   ├── check-in/         # Client check-in flow
 │   │   └── shared/           # Shared UI components
 │   └── check-in/             # Check-in flow components
+├── emails/                    # Email templates (React Email)
 ├── services/                  # Business logic & API calls
 ├── hooks/                     # Custom React hooks
 ├── lib/                       # Utility libraries & configs
@@ -153,12 +160,37 @@ All API endpoints return consistent JSON:
 }
 ```
 
+## Client Invitation System
+
+CoachHub features a secure token-based invitation system that allows coaches to seamlessly onboard clients:
+
+### How It Works
+1. **Coach sends invitation** - Creates client profile and sends invitation via email
+2. **Secure token generation** - Cryptographically secure 64-character tokens
+3. **Email delivery** - Professional invitation emails sent via Resend
+4. **Client signup** - Token-validated signup page with pre-filled email
+5. **Account linking** - Automatic connection to coach's client record
+
+### Key Features
+- **Security**: Cryptographically secure tokens with expiry (7 days)
+- **User Experience**: Clean, branded email templates with fallback text
+- **Validation**: Multi-layer validation (client, server, database)
+- **Error Handling**: Comprehensive error states and recovery
+- **Email Service**: Resend integration with professional templates
+
+### Implementation
+- **Database**: `client_invitations` table with unique token indexing
+- **Email Templates**: React Email components with responsive design
+- **API Endpoints**: RESTful token validation and acceptance
+- **Frontend**: Dedicated invitation pages with form validation
+
 ## Database
 
 The app uses Supabase (PostgreSQL) with the following core tables:
 
 - `coaches` - Coach profiles and settings
 - `clients` - Client information and goals
+- `client_invitations` - Token-based invitation system with email tracking
 - `check_ins` - Client check-in submissions
 - `nutrition_plans` - Generated meal plans
 - `training_plans` - Workout programs
