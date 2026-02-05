@@ -8,6 +8,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { ContentUploadDialog } from "@/components/content/content-upload-dialog";
+import { FolderDialog } from "@/components/content/folder-dialog";
+import { AssignmentDialog } from "@/components/content/assignment-dialog";
+import {
   Plus,
   FolderPlus,
   Grid,
@@ -23,6 +32,10 @@ import {
   MoreHorizontal,
   Folder,
   FolderOpen,
+  Edit,
+  Trash2,
+  Users,
+  Download,
 } from "lucide-react";
 import type { ContentLibraryResponse, ContentItem, ContentFolder } from "@/types/content";
 
@@ -35,6 +48,13 @@ export default function ContentLibraryPage() {
   const [breadcrumbs, setBreadcrumbs] = useState<{ id: string | null; name: string; }[]>([
     { id: null, name: "Content Library" }
   ]);
+  
+  // Dialog states
+  const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+  const [folderDialogOpen, setFolderDialogOpen] = useState(false);
+  const [assignmentDialogOpen, setAssignmentDialogOpen] = useState(false);
+  const [selectedContent, setSelectedContent] = useState<ContentItem | null>(null);
+  const [editingFolder, setEditingFolder] = useState<ContentFolder | null>(null);
 
   useEffect(() => {
     fetchContent();
@@ -142,6 +162,78 @@ export default function ContentLibraryPage() {
     };
   };
 
+  const handleContentAction = (action: string, content: ContentItem) => {
+    switch (action) {
+      case "assign":
+        setSelectedContent(content);
+        setAssignmentDialogOpen(true);
+        break;
+      case "edit":
+        // TODO: Implement content edit dialog
+        break;
+      case "delete":
+        handleDeleteContent(content.id);
+        break;
+    }
+  };
+
+  const handleFolderAction = (action: string, folder: ContentFolder) => {
+    switch (action) {
+      case "edit":
+        setEditingFolder(folder);
+        setFolderDialogOpen(true);
+        break;
+      case "delete":
+        handleDeleteFolder(folder.id);
+        break;
+    }
+  };
+
+  const handleDeleteContent = async (contentId: string) => {
+    if (!confirm("Are you sure you want to delete this content? This action cannot be undone.")) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/content/items/${contentId}`, {
+        method: "DELETE",
+      });
+
+      if (response.ok) {
+        await fetchContent();
+      }
+    } catch (error) {
+      console.error("Error deleting content:", error);
+    }
+  };
+
+  const handleDeleteFolder = async (folderId: string) => {
+    if (!confirm("Are you sure you want to delete this folder? Content inside will be moved to the root level.")) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/content/folders/${folderId}`, {
+        method: "DELETE",
+      });
+
+      if (response.ok) {
+        await fetchContent();
+        // If we're currently in the deleted folder, navigate to root
+        if (currentFolder === folderId) {
+          navigateToFolder(null);
+        }
+      }
+    } catch (error) {
+      console.error("Error deleting folder:", error);
+    }
+  };
+
+  const handleDialogSuccess = async () => {
+    await fetchContent();
+    setEditingFolder(null);
+  };
+
   const pageHeader = (
     <PageHeader
       title="Content Library"
@@ -151,11 +243,11 @@ export default function ContentLibraryPage() {
           <Button variant="outline" onClick={() => setViewMode(viewMode === "grid" ? "list" : "grid")}>
             {viewMode === "grid" ? <List className="h-4 w-4" /> : <Grid className="h-4 w-4" />}
           </Button>
-          <Button variant="outline">
+          <Button variant="outline" onClick={() => setFolderDialogOpen(true)}>
             <FolderPlus className="h-4 w-4 mr-2" />
             New Folder
           </Button>
-          <Button>
+          <Button onClick={() => setUploadDialogOpen(true)}>
             <Plus className="h-4 w-4 mr-2" />
             Add Content
           </Button>
@@ -237,11 +329,11 @@ export default function ContentLibraryPage() {
               Start building your content library by adding videos, documents, or links.
             </p>
             <div className="flex items-center justify-center gap-2">
-              <Button variant="outline">
+              <Button variant="outline" onClick={() => setFolderDialogOpen(true)}>
                 <FolderPlus className="h-4 w-4 mr-2" />
                 Create Folder
               </Button>
-              <Button>
+              <Button onClick={() => setUploadDialogOpen(true)}>
                 <Plus className="h-4 w-4 mr-2" />
                 Add Content
               </Button>
@@ -257,23 +349,46 @@ export default function ContentLibraryPage() {
           }>
             {/* Folders */}
             {folders.map((folder: ContentFolder) => (
-              <Card
-                key={folder.id}
-                className="cursor-pointer transition-colors hover:bg-muted/50"
-                onClick={() => navigateToFolder(folder)}
-              >
+              <Card key={folder.id} className="group">
                 <CardContent className="p-4">
                   <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-yellow-500/10">
+                    <div 
+                      className="flex h-10 w-10 items-center justify-center rounded-lg bg-yellow-500/10 cursor-pointer"
+                      onClick={() => navigateToFolder(folder)}
+                    >
                       <Folder className="h-5 w-5 text-yellow-600" />
                     </div>
-                    <div className="flex-1 min-w-0">
+                    <div className="flex-1 min-w-0 cursor-pointer" onClick={() => navigateToFolder(folder)}>
                       <p className="font-medium truncate">{folder.name}</p>
                       <p className="text-sm text-muted-foreground">
                         {/* This would need to be calculated */}
-                        0 items
+                        Folder
                       </p>
                     </div>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => handleFolderAction("edit", folder)}>
+                          <Edit className="h-4 w-4 mr-2" />
+                          Rename
+                        </DropdownMenuItem>
+                        <DropdownMenuItem 
+                          onClick={() => handleFolderAction("delete", folder)}
+                          className="text-red-600"
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 </CardContent>
               </Card>
@@ -292,13 +407,46 @@ export default function ContentLibraryPage() {
                         {item.type.replace("_", " ")}
                       </Badge>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                      <MoreHorizontal className="h-4 w-4" />
-                    </Button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => handleContentAction("assign", item)}>
+                          <Users className="h-4 w-4 mr-2" />
+                          Assign to Clients
+                        </DropdownMenuItem>
+                        {(item.type === "pdf" || item.type === "document" || item.type === "image") && (
+                          <DropdownMenuItem onClick={() => window.open(item.storagePath, "_blank")}>
+                            <Download className="h-4 w-4 mr-2" />
+                            Download
+                          </DropdownMenuItem>
+                        )}
+                        {(item.type === "video_link" || item.type === "hyperlink") && (
+                          <DropdownMenuItem onClick={() => window.open(item.url, "_blank")}>
+                            <ExternalLink className="h-4 w-4 mr-2" />
+                            Open Link
+                          </DropdownMenuItem>
+                        )}
+                        <DropdownMenuItem onClick={() => handleContentAction("edit", item)}>
+                          <Edit className="h-4 w-4 mr-2" />
+                          Edit
+                        </DropdownMenuItem>
+                        <DropdownMenuItem 
+                          onClick={() => handleContentAction("delete", item)}
+                          className="text-red-600"
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 </CardHeader>
                 <CardContent>
@@ -322,6 +470,34 @@ export default function ContentLibraryPage() {
           </div>
         )}
       </div>
+
+      {/* Dialogs */}
+      <ContentUploadDialog
+        open={uploadDialogOpen}
+        onOpenChange={setUploadDialogOpen}
+        folders={library ? [...library.folders.filter(f => !f.parentFolderId)] : []}
+        onSuccess={handleDialogSuccess}
+      />
+
+      <FolderDialog
+        open={folderDialogOpen}
+        onOpenChange={(open) => {
+          setFolderDialogOpen(open);
+          if (!open) setEditingFolder(null);
+        }}
+        folders={library ? [...library.folders] : []}
+        folder={editingFolder || undefined}
+        onSuccess={handleDialogSuccess}
+      />
+
+      {selectedContent && (
+        <AssignmentDialog
+          open={assignmentDialogOpen}
+          onOpenChange={setAssignmentDialogOpen}
+          content={selectedContent}
+          onSuccess={handleDialogSuccess}
+        />
+      )}
     </AppLayout>
   );
 }

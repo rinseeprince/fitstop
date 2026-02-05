@@ -1,0 +1,64 @@
+import { NextRequest, NextResponse } from "next/server";
+import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
+import { cookies } from "next/headers";
+import { getContentAssignments } from "@/services/content-service";
+
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { contentId: string } }
+) {
+  try {
+    const supabase = createRouteHandlerClient({ cookies });
+    
+    // Get authenticated user
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return NextResponse.json(
+        { success: false, error: "Unauthorized" },
+        { status: 401 }
+      );
+    }
+
+    // Get coach profile
+    const { data: coach, error: coachError } = await supabase
+      .from("coaches")
+      .select("id")
+      .eq("user_id", user.id)
+      .single();
+
+    if (coachError || !coach) {
+      return NextResponse.json(
+        { success: false, error: "Coach profile not found" },
+        { status: 404 }
+      );
+    }
+
+    // Verify the content belongs to this coach
+    const { data: content, error: contentError } = await supabase
+      .from("content_items")
+      .select("coach_id")
+      .eq("id", params.contentId)
+      .single();
+
+    if (contentError || !content || content.coach_id !== coach.id) {
+      return NextResponse.json(
+        { success: false, error: "Content not found" },
+        { status: 404 }
+      );
+    }
+
+    // Get assignments
+    const assignments = await getContentAssignments(params.contentId);
+
+    return NextResponse.json({
+      success: true,
+      data: assignments,
+    });
+  } catch (error) {
+    console.error("Error fetching assignments:", error);
+    return NextResponse.json(
+      { success: false, error: "Failed to fetch assignments" },
+      { status: 500 }
+    );
+  }
+}

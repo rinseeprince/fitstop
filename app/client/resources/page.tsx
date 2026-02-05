@@ -79,14 +79,25 @@ export default function ClientResourcesPage() {
     }
   };
 
-  const handleContentClick = (item: ContentItem) => {
-    if (item.type === "video_link" || item.type === "hyperlink") {
-      if (item.url) {
-        window.open(item.url, "_blank");
+  const handleContentClick = async (item: ContentItem) => {
+    try {
+      if (item.type === "video_link" || item.type === "hyperlink") {
+        if (item.url) {
+          window.open(item.url, "_blank");
+        }
+        return;
       }
-    } else if (item.storagePath) {
-      // For files, we would need to get a signed URL from the API
-      console.log("Open file:", item.storagePath);
+
+      // For files, get signed URL from API
+      const response = await fetch(`/api/content/download/${item.id}`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.data.url) {
+          window.open(data.data.url, "_blank");
+        }
+      }
+    } catch (error) {
+      console.error("Error opening content:", error);
     }
   };
 
