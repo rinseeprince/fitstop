@@ -15,6 +15,7 @@ import {
   Scale,
   Target,
   ArrowRight,
+  BookOpen,
 } from "lucide-react";
 import type { TrainingPlan } from "@/types/training";
 import type { NutritionTargets, ProgressData } from "@/services/client-portal-service";
@@ -268,6 +269,28 @@ export default function ClientDashboardPage() {
             </p>
             <div className="mt-3 flex items-center text-sm text-primary">
               View progress
+              <ArrowRight className="ml-1 h-4 w-4" />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Resources Card */}
+        <Card
+          className="cursor-pointer transition-colors hover:bg-muted/50"
+          onClick={() => router.push("/client/resources")}
+        >
+          <CardHeader className="flex flex-row items-center gap-3 pb-2">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-purple-500/10">
+              <BookOpen className="h-5 w-5 text-purple-600" />
+            </div>
+            <CardTitle className="text-base">Resources</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground">
+              Access videos, guides, and materials from your coach
+            </p>
+            <div className="mt-3 flex items-center text-sm text-primary">
+              View resources
               <ArrowRight className="ml-1 h-4 w-4" />
             </div>
           </CardContent>

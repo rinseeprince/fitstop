@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { Dumbbell, Utensils, TrendingUp, LayoutDashboard } from "lucide-react";
+import { Dumbbell, Utensils, TrendingUp, LayoutDashboard, BookOpen } from "lucide-react";
 
 const navItems = [
   {
@@ -25,6 +25,11 @@ const navItems = [
     href: "/client/progress",
     label: "Progress",
     icon: TrendingUp,
+  },
+  {
+    href: "/client/resources",
+    label: "Resources",
+    icon: BookOpen,
   },
 ];
 
