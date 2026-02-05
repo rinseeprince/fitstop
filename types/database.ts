@@ -665,6 +665,117 @@ export type Database = {
           updated_at?: string;
         };
       };
+      content_folders: {
+        Row: {
+          id: string;
+          coach_id: string;
+          name: string;
+          parent_folder_id: string | null;
+          sort_order: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          coach_id: string;
+          name: string;
+          parent_folder_id?: string | null;
+          sort_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          coach_id?: string;
+          name?: string;
+          parent_folder_id?: string | null;
+          sort_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      content_items: {
+        Row: {
+          id: string;
+          coach_id: string;
+          folder_id: string | null;
+          title: string;
+          description: string | null;
+          type: "video_link" | "hyperlink" | "pdf" | "image" | "document";
+          url: string | null;
+          storage_path: string | null;
+          file_name: string | null;
+          file_size: number | null;
+          mime_type: string | null;
+          thumbnail_url: string | null;
+          metadata: any;
+          is_library: boolean;
+          sort_order: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          coach_id: string;
+          folder_id?: string | null;
+          title: string;
+          description?: string | null;
+          type: "video_link" | "hyperlink" | "pdf" | "image" | "document";
+          url?: string | null;
+          storage_path?: string | null;
+          file_name?: string | null;
+          file_size?: number | null;
+          mime_type?: string | null;
+          thumbnail_url?: string | null;
+          metadata?: any;
+          is_library?: boolean;
+          sort_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          coach_id?: string;
+          folder_id?: string | null;
+          title?: string;
+          description?: string | null;
+          type?: "video_link" | "hyperlink" | "pdf" | "image" | "document";
+          url?: string | null;
+          storage_path?: string | null;
+          file_name?: string | null;
+          file_size?: number | null;
+          mime_type?: string | null;
+          thumbnail_url?: string | null;
+          metadata?: any;
+          is_library?: boolean;
+          sort_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      content_assignments: {
+        Row: {
+          id: string;
+          content_id: string;
+          client_id: string;
+          assigned_by: string;
+          assigned_at: string;
+        };
+        Insert: {
+          id?: string;
+          content_id: string;
+          client_id: string;
+          assigned_by: string;
+          assigned_at?: string;
+        };
+        Update: {
+          id?: string;
+          content_id?: string;
+          client_id?: string;
+          assigned_by?: string;
+          assigned_at?: string;
+        };
+      };
     };
     Functions: {
       increment_activity_popularity: {
@@ -679,6 +790,9 @@ export type Database = {
 export type CheckInRow = Database["public"]["Tables"]["check_ins"]["Row"];
 export type CheckInTokenRow = Database["public"]["Tables"]["check_in_tokens"]["Row"];
 export type TrainingPlanRow = Database["public"]["Tables"]["training_plans"]["Row"];
+export type ContentFolderRow = Database["public"]["Tables"]["content_folders"]["Row"];
+export type ContentItemRow = Database["public"]["Tables"]["content_items"]["Row"];
+export type ContentAssignmentRow = Database["public"]["Tables"]["content_assignments"]["Row"];
 export type TrainingSessionRow = Database["public"]["Tables"]["training_sessions"]["Row"];
 export type TrainingExerciseRow = Database["public"]["Tables"]["training_exercises"]["Row"];
 export type TrainingPlanHistoryRow = Database["public"]["Tables"]["training_plan_history"]["Row"];
