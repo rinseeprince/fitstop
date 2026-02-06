@@ -238,11 +238,6 @@ export default function ContentLibraryPage() {
     <PageHeader
       title="Content Library"
       description="Organize and share resources with your clients"
-      action={
-        <Button variant="outline" onClick={() => setViewMode(viewMode === "grid" ? "list" : "grid")}>
-          {viewMode === "grid" ? <List className="h-4 w-4" /> : <Grid className="h-4 w-4" />}
-        </Button>
-      }
     />
   );
 
@@ -328,6 +323,9 @@ export default function ContentLibraryPage() {
           <Button variant="outline">
             <Filter className="h-4 w-4 mr-2" />
             Filter
+          </Button>
+          <Button variant="outline" onClick={() => setViewMode(viewMode === "grid" ? "list" : "grid")}>
+            {viewMode === "grid" ? <List className="h-4 w-4" /> : <Grid className="h-4 w-4" />}
           </Button>
         </div>
 

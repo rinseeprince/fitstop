@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { LogOut, Dumbbell } from "lucide-react"
+import { ClientNotificationsDropdown } from "@/components/client/notifications-dropdown"
 
 export default function ClientLayout({
   children,
@@ -49,10 +50,14 @@ export default function ClientLayout({
             <span className="font-semibold">CoachHub</span>
           </div>
 
-          <Button variant="ghost" size="sm" onClick={handleLogout}>
-            <LogOut className="mr-2 h-4 w-4" />
-            Sign out
-          </Button>
+          <div className="flex items-center gap-2">
+            <ClientNotificationsDropdown />
+            
+            <Button variant="ghost" size="sm" onClick={handleLogout}>
+              <LogOut className="mr-2 h-4 w-4" />
+              Sign out
+            </Button>
+          </div>
         </div>
       </header>
 

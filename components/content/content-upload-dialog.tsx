@@ -35,6 +35,7 @@ import {
   AlertCircle,
   CheckCircle,
 } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 import type { ContentType, ContentFolder } from "@/types/content";
 
 interface ContentUploadDialogProps {
@@ -79,19 +80,26 @@ export function ContentUploadDialog({
   const [urlMetadata, setUrlMetadata] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { toast } = useToast();
 
   const onDrop = useCallback((acceptedFiles: File[], rejectedFiles: any[]) => {
     // Handle rejected files
     if (rejectedFiles.length > 0) {
       const error = rejectedFiles[0].errors[0];
+      let errorMessage = "Invalid file";
+      
       if (error.code === "file-too-large") {
-        setError("File size must be less than 50MB");
+        errorMessage = "File size must be less than 50MB";
       } else if (error.code === "file-invalid-type") {
-        setError("File type not supported. Please use PDF, images, or documents.");
-      } else {
-        setError("Invalid file");
+        errorMessage = "File type not supported. Please use PDF, images, or documents.";
       }
+      
+      setError(errorMessage);
+      toast({
+        title: "File rejected",
+        description: errorMessage,
+        variant: "destructive",
+      });
       return;
     }
 
@@ -109,7 +117,7 @@ export function ContentUploadDialog({
       const fileName = newFiles[0].file.name.replace(/\.[^/.]+$/, "");
       setTitle(fileName);
     }
-  }, [title]);
+  }, [title, toast]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -279,10 +287,24 @@ export function ContentUploadDialog({
       setSelectedFolder(undefined);
       setIsLibrary(true);
       
+      toast({
+        title: "Content uploaded",
+        description: uploadType === "file" ? 
+          `Successfully uploaded ${files.length} file${files.length !== 1 ? "s" : ""}` :
+          "Successfully added link",
+      });
+      
       onSuccess?.();
       onOpenChange(false);
     } catch (error) {
-      setError("Failed to upload content. Please try again.");
+      const errorMessage = error instanceof Error ? error.message : "Failed to upload content. Please try again.";
+      setError(errorMessage);
+      
+      toast({
+        title: "Upload failed", 
+        description: errorMessage,
+        variant: "destructive",
+      });
     } finally {
       setLoading(false);
     }
@@ -334,7 +356,7 @@ export function ContentUploadDialog({
                   isDragActive ? "border-primary bg-primary/5" : "border-muted-foreground/25"
                 }`}
               >
-                <input {...getInputProps()} ref={fileInputRef} />
+                <input {...getInputProps()} />
                 <Upload className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
                 <p className="text-sm font-medium">
                   {isDragActive ? "Drop files here" : "Drag & drop files here, or click to select"}

@@ -98,6 +98,7 @@ export interface UpdateContentItemInput {
   folderId?: string;
   title?: string;
   description?: string;
+  storagePath?: string;
   thumbnailUrl?: string;
   metadata?: Record<string, any>;
   isLibrary?: boolean;

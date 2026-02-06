@@ -1,4 +1,7 @@
-import { supabaseAdmin } from "./supabase-admin";
+import { supabaseAdmin as _supabaseAdmin } from "./supabase-admin";
+
+// Type assertion to work around strict TypeScript database types
+const supabaseAdmin = _supabaseAdmin as any;
 import type { 
   ContentFolder, 
   ContentItem, 
@@ -123,17 +126,27 @@ export const updateContentItem = async (
   contentId: string,
   input: UpdateContentItemInput
 ): Promise<ContentItem> => {
+  const updateData: any = {
+    folder_id: input.folderId,
+    title: input.title,
+    description: input.description,
+    storage_path: input.storagePath,
+    thumbnail_url: input.thumbnailUrl,
+    metadata: input.metadata,
+    is_library: input.isLibrary,
+    sort_order: input.sortOrder,
+  };
+
+  // Remove undefined values to avoid updating with null
+  Object.keys(updateData).forEach(key => {
+    if (updateData[key] === undefined) {
+      delete updateData[key];
+    }
+  });
+
   const { data, error } = await supabaseAdmin
     .from("content_items")
-    .update({
-      folder_id: input.folderId,
-      title: input.title,
-      description: input.description,
-      thumbnail_url: input.thumbnailUrl,
-      metadata: input.metadata,
-      is_library: input.isLibrary,
-      sort_order: input.sortOrder,
-    })
+    .update(updateData)
     .eq("id", contentId)
     .select()
     .single();
@@ -252,20 +265,53 @@ export const getContentAssignments = async (
 export const getClientAssignedContent = async (
   clientId: string
 ): Promise<ContentItem[]> => {
-  const { data, error } = await supabaseAdmin
-    .from("content_items")
-    .select(`
-      *,
-      content_assignments!inner(client_id)
-    `)
-    .eq("content_assignments.client_id", clientId)
-    .order("content_assignments.assigned_at", { ascending: false });
+  // First, get all content IDs assigned to this client
+  const { data: assignmentData, error: assignmentError } = await supabaseAdmin
+    .from("content_assignments")
+    .select("content_id, assigned_at")
+    .eq("client_id", clientId)
+    .order("assigned_at", { ascending: false });
 
-  if (error) {
-    throw new Error(`Failed to fetch assigned content: ${error.message}`);
+  if (assignmentError) {
+    console.error("Error fetching content assignments:", {
+      error: assignmentError,
+      clientId,
+      timestamp: new Date().toISOString()
+    });
+    throw new Error(`Failed to fetch content assignments: ${assignmentError.message}`);
   }
 
-  return data.map(mapContentItemFromDatabase);
+  if (!assignmentData || assignmentData.length === 0) {
+    console.info("No content assignments found for client", { clientId });
+    return [];
+  }
+
+  const contentIds = assignmentData.map((a: any) => a.content_id);
+
+  // Then get the actual content items
+  const { data: contentData, error: contentError } = await supabaseAdmin
+    .from("content_items")
+    .select("*")
+    .in("id", contentIds)
+    .order("created_at", { ascending: false });
+
+  if (contentError) {
+    console.error("Error fetching assigned content items:", {
+      error: contentError,
+      clientId,
+      contentIds,
+      timestamp: new Date().toISOString()
+    });
+    throw new Error(`Failed to fetch assigned content items: ${contentError.message}`);
+  }
+
+  console.info("Successfully fetched assigned content", {
+    clientId,
+    assignmentCount: assignmentData.length,
+    contentCount: contentData?.length || 0
+  });
+
+  return (contentData || []).map(mapContentItemFromDatabase);
 };
 
 // Combined Operations

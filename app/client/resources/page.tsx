@@ -25,7 +25,6 @@ export default function ClientResourcesPage() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedType, setSelectedType] = useState<string>("all");
-  const [currentFolder, setCurrentFolder] = useState<string | null>(null);
   const [expandedAssigned, setExpandedAssigned] = useState(true);
 
   useEffect(() => {

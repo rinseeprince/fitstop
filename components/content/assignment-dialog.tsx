@@ -16,6 +16,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { AlertCircle, Search, Users, UserCheck } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 import type { ContentItem } from "@/types/content";
 
 interface Client {
@@ -45,6 +46,7 @@ export function AssignmentDialog({
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const { toast } = useToast();
 
   useEffect(() => {
     if (open) {
@@ -59,13 +61,25 @@ export function AssignmentDialog({
 
       // Fetch clients and current assignments in parallel
       const [clientsResponse, assignmentsResponse] = await Promise.all([
-        fetch("/api/clients"),
-        fetch(`/api/content/assignments/${content.id}`),
+        fetch("/api/clients", {
+          headers: {
+            "Content-Type": "application/json"
+          }
+        }),
+        fetch(`/api/content/assignments/${content.id}`, {
+          headers: {
+            "Content-Type": "application/json"
+          }
+        }),
       ]);
 
       if (clientsResponse.ok) {
         const clientsData = await clientsResponse.json();
         setClients(clientsData.clients || []);
+      } else {
+        const errorData = await clientsResponse.json().catch(() => ({}));
+        console.error("Failed to fetch clients:", errorData);
+        throw new Error(errorData.error || "Failed to load clients");
       }
 
       if (assignmentsResponse.ok) {
@@ -74,9 +88,15 @@ export function AssignmentDialog({
         const assignedIds = currentAssignments.map((a: any) => a.clientId);
         setAssignedClientIds(assignedIds);
         setSelectedClientIds(assignedIds);
+      } else {
+        const errorData = await assignmentsResponse.json().catch(() => ({}));
+        console.error("Failed to fetch assignments:", errorData);
+        // Don't throw here since assignments are optional
+        setAssignedClientIds([]);
+        setSelectedClientIds([]);
       }
     } catch (error) {
-      setError("Failed to load clients and assignments");
+      setError(error instanceof Error ? error.message : "Failed to load clients and assignments");
       console.error("Error fetching clients and assignments:", error);
     } finally {
       setLoading(false);
@@ -108,10 +128,11 @@ export function AssignmentDialog({
     setSubmitting(true);
     setError("");
 
+    // Determine what assignments to add and remove
+    const toAssign = selectedClientIds.filter(id => !assignedClientIds.includes(id));
+    const toUnassign = assignedClientIds.filter(id => !selectedClientIds.includes(id));
+
     try {
-      // Determine what assignments to add and remove
-      const toAssign = selectedClientIds.filter(id => !assignedClientIds.includes(id));
-      const toUnassign = assignedClientIds.filter(id => !selectedClientIds.includes(id));
 
       // Process assignments
       const promises = [];
@@ -121,7 +142,9 @@ export function AssignmentDialog({
         promises.push(
           fetch("/api/content/assignments", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { 
+              "Content-Type": "application/json"
+            },
             body: JSON.stringify({
               contentId: content.id,
               clientId,
@@ -135,17 +158,55 @@ export function AssignmentDialog({
         promises.push(
           fetch(`/api/content/assignments/${content.id}/${clientId}`, {
             method: "DELETE",
+            headers: { 
+              "Content-Type": "application/json"
+            }
           })
         );
       }
 
-      await Promise.all(promises);
+      const results = await Promise.all(promises);
+      
+      // Check if any assignments failed
+      const failedResponses = results.filter(response => !response.ok);
+      if (failedResponses.length > 0) {
+        const errorMessages = await Promise.all(
+          failedResponses.map(async (response) => {
+            try {
+              const errorData = await response.json();
+              return errorData.error || "Unknown error";
+            } catch {
+              return `HTTP ${response.status}`;
+            }
+          })
+        );
+        throw new Error(`Some assignments failed: ${errorMessages.join(", ")}`);
+      }
 
+      toast({
+        title: "Assignments updated",
+        description: `Successfully updated assignments for "${content.title}"`,
+      });
+      
       onSuccess?.();
       onOpenChange(false);
     } catch (error) {
-      setError("Failed to update assignments");
-      console.error("Error updating assignments:", error);
+      const errorMessage = error instanceof Error ? error.message : "Failed to update assignments";
+      setError(errorMessage);
+      
+      toast({
+        title: "Assignment failed",
+        description: errorMessage,
+        variant: "destructive",
+      });
+      
+      console.error("Error updating assignments:", {
+        error,
+        contentId: content.id,
+        toAssign,
+        toUnassign,
+        timestamp: new Date().toISOString()
+      });
     } finally {
       setSubmitting(false);
     }

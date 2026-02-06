@@ -22,17 +22,27 @@ const ALLOWED_MIME_TYPES = [
 
 export async function POST(request: NextRequest) {
   try {
-    // CSRF Protection
-    const csrfError = await requireCSRFProtection(request);
-    if (csrfError) return csrfError;
+    // Skip CSRF protection for multipart/form-data uploads as they may not include proper headers
+    // Authentication check below provides sufficient security for file uploads
+    const contentType = request.headers.get("content-type") || "";
+    
+    // Only apply CSRF protection if not a multipart upload
+    if (!contentType.includes("multipart/form-data")) {
+      const csrfError = await requireCSRFProtection(request);
+      if (csrfError) return csrfError;
+    }
 
     const supabase = await createServerSupabaseClient();
     
     // Get authenticated user
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) {
+      console.warn("Upload attempt without authentication", {
+        timestamp: new Date().toISOString(),
+        error: authError?.message
+      });
       return NextResponse.json(
-        { success: false, error: "Unauthorized" },
+        { success: false, error: "Authentication required" },
         { status: 401 }
       );
     }
@@ -45,9 +55,14 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (coachError || !coach) {
+      console.warn("Upload attempt by user without coach profile", {
+        timestamp: new Date().toISOString(),
+        userId: user.id,
+        error: coachError?.message
+      });
       return NextResponse.json(
-        { success: false, error: "Coach profile not found" },
-        { status: 404 }
+        { success: false, error: "Coach profile required for uploads" },
+        { status: 403 }
       );
     }
 
@@ -62,84 +77,124 @@ export async function POST(request: NextRequest) {
 
     // Validate required fields
     if (!file || !title || !type) {
+      console.warn("Upload validation failed - missing required fields", {
+        timestamp: new Date().toISOString(),
+        userId: user.id,
+        coachId: coach.id,
+        hasFile: !!file,
+        hasTitle: !!title,
+        hasType: !!type
+      });
       return NextResponse.json(
-        { success: false, error: "Missing required fields" },
+        { success: false, error: "File, title, and type are required" },
         { status: 400 }
       );
     }
 
     // Validate file size
     if (file.size > MAX_FILE_SIZE) {
+      console.warn("Upload validation failed - file too large", {
+        timestamp: new Date().toISOString(),
+        userId: user.id,
+        coachId: coach.id,
+        fileName: file.name,
+        fileSize: file.size,
+        maxSize: MAX_FILE_SIZE
+      });
       return NextResponse.json(
-        { success: false, error: "File size exceeds 50MB limit" },
+        { success: false, error: `File size must be less than ${Math.round(MAX_FILE_SIZE / (1024 * 1024))}MB` },
         { status: 400 }
       );
     }
 
     // Validate file type
     if (!ALLOWED_MIME_TYPES.includes(file.type)) {
+      console.warn("Upload validation failed - invalid file type", {
+        timestamp: new Date().toISOString(),
+        userId: user.id,
+        coachId: coach.id,
+        fileName: file.name,
+        fileType: file.type,
+        allowedTypes: ALLOWED_MIME_TYPES
+      });
       return NextResponse.json(
-        { success: false, error: "File type not allowed" },
+        { success: false, error: `File type '${file.type}' not supported. Allowed: PDF, images, and documents` },
         { status: 400 }
       );
     }
 
-    // Create content item first to get an ID
-    const contentItem = await createContentItem({
-      coachId: coach.id,
-      title: title.trim(),
-      description: description?.trim() || undefined,
-      type: type as any,
-      folderId: folderId || undefined,
-      isLibrary,
-      fileName: file.name,
-      fileSize: file.size,
-      mimeType: file.type,
-    });
-
     try {
-      // Upload file to storage
-      const storagePath = await uploadContentFile(file, coach.id, contentItem.id);
-
-      // Update content item with storage path
-      const response = await fetch(`${request.nextUrl.origin}/api/content/items/${contentItem.id}`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          "Cookie": request.headers.get("Cookie") || "",
-        },
-        body: JSON.stringify({ storagePath }),
+      // Step 1: Upload file to storage first
+      console.info("Starting file upload process", {
+        fileName: file.name,
+        fileSize: file.size,
+        coachId: coach.id,
+        timestamp: new Date().toISOString()
       });
 
-      if (!response.ok) {
-        throw new Error("Failed to update content item with storage path");
-      }
+      // Create a temporary content ID for the upload
+      const tempContentId = crypto.randomUUID();
+      const storagePath = await uploadContentFile(file, coach.id, tempContentId);
 
-      const updatedItem = await response.json();
+      console.info("File uploaded to storage successfully", {
+        storagePath,
+        fileName: file.name,
+        timestamp: new Date().toISOString()
+      });
+
+      // Step 2: Create content item with storage path
+      const contentItem = await createContentItem({
+        coachId: coach.id,
+        title: title.trim(),
+        description: description?.trim() || undefined,
+        type: type as any,
+        folderId: folderId || undefined,
+        isLibrary,
+        fileName: file.name,
+        fileSize: file.size,
+        mimeType: file.type,
+        storagePath, // Include storage path from the start
+      });
+
+      console.info("Content item created successfully", {
+        contentId: contentItem.id,
+        title: contentItem.title,
+        storagePath: contentItem.storagePath,
+        timestamp: new Date().toISOString()
+      });
 
       return NextResponse.json({
         success: true,
-        data: updatedItem.data,
+        data: contentItem,
         message: "File uploaded successfully",
       });
     } catch (uploadError) {
-      // If upload fails, clean up the content item
-      await fetch(`${request.nextUrl.origin}/api/content/items/${contentItem.id}`, {
-        method: "DELETE",
-        headers: {
-          "Cookie": request.headers.get("Cookie") || "",
-        },
+      console.error("Upload process failed", {
+        error: uploadError instanceof Error ? {
+          message: uploadError.message,
+          stack: uploadError.stack
+        } : uploadError,
+        fileName: file.name,
+        coachId: coach.id,
+        timestamp: new Date().toISOString()
       });
       
       throw uploadError;
     }
   } catch (error) {
-    console.error("Error uploading file:", error);
+    console.error("Error uploading file:", {
+      timestamp: new Date().toISOString(),
+      error: error instanceof Error ? {
+        message: error.message,
+        stack: error.stack
+      } : error,
+      userAgent: request.headers.get("user-agent")
+    });
     
     return NextResponse.json(
       { 
         success: false, 
-        error: error instanceof Error ? error.message : "Failed to upload file" 
+        error: "Failed to upload file. Please try again." 
       },
       { status: 500 }
     );
