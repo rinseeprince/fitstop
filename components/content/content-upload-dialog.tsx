@@ -73,7 +73,7 @@ export function ContentUploadDialog({
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [url, setUrl] = useState("");
-  const [selectedFolder, setSelectedFolder] = useState<string>("");
+  const [selectedFolder, setSelectedFolder] = useState<string | undefined>(undefined);
   const [isLibrary, setIsLibrary] = useState(true);
   const [files, setFiles] = useState<FileUpload[]>([]);
   const [urlMetadata, setUrlMetadata] = useState<any>(null);
@@ -187,7 +187,7 @@ export function ContentUploadDialog({
         formData.append("title", i === 0 ? title : fileUpload.file.name);
         formData.append("description", i === 0 ? description : "");
         formData.append("type", detectContentType(fileUpload.file));
-        formData.append("folderId", selectedFolder);
+        formData.append("folderId", selectedFolder || "");
         formData.append("isLibrary", String(isLibrary));
 
         const response = await fetch("/api/content/upload", {
@@ -228,7 +228,7 @@ export function ContentUploadDialog({
           description,
           type: detectUrlType(url),
           url,
-          folderId: selectedFolder || undefined,
+          folderId: selectedFolder,
           isLibrary,
           metadata: urlMetadata,
         }),
@@ -276,7 +276,7 @@ export function ContentUploadDialog({
       setUrl("");
       setFiles([]);
       setUrlMetadata(null);
-      setSelectedFolder("");
+      setSelectedFolder(undefined);
       setIsLibrary(true);
       
       onSuccess?.();
@@ -464,12 +464,12 @@ export function ContentUploadDialog({
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Folder</Label>
-                <Select value={selectedFolder} onValueChange={setSelectedFolder}>
+                <Select value={selectedFolder || "none"} onValueChange={(value) => setSelectedFolder(value === "none" ? undefined : value)}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Select folder (optional)" />
+                    <SelectValue placeholder="Select folder" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">No folder</SelectItem>
+                    <SelectItem value="none">No folder</SelectItem>
                     {folders.map((folder) => (
                       <SelectItem key={folder.id} value={folder.id}>
                         {folder.name}

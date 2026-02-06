@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
+import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { createContentFolder, getCoachFolders } from "@/services/content-service";
 
 export async function GET(request: NextRequest) {
@@ -47,6 +48,10 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    // CSRF Protection
+    const csrfError = await requireCSRFProtection(request);
+    if (csrfError) return csrfError;
+
     const supabase = await createServerSupabaseClient();
     
     // Get authenticated user

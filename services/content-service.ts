@@ -424,33 +424,85 @@ export const fetchVideoMetadata = async (url: string): Promise<VideoMetadata | n
   }
 };
 
+// Allowed domains for metadata fetching to prevent SSRF attacks
+const ALLOWED_METADATA_DOMAINS = [
+  'youtube.com',
+  'www.youtube.com',
+  'youtu.be',
+  'vimeo.com',
+  'www.vimeo.com',
+  // Add other trusted domains as needed
+];
+
+const isAllowedDomain = (url: string): boolean => {
+  try {
+    const urlObj = new URL(url);
+    const hostname = urlObj.hostname.toLowerCase();
+    
+    // Check against allowed domains
+    return ALLOWED_METADATA_DOMAINS.some(domain => 
+      hostname === domain || hostname.endsWith('.' + domain)
+    );
+  } catch (error) {
+    return false;
+  }
+};
+
+const sanitizeHtml = (html: string): string => {
+  // Basic HTML sanitization - remove script tags and dangerous content
+  return html
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+    .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '')
+    .replace(/on\w+="[^"]*"/gi, '') // Remove event handlers
+    .replace(/javascript:/gi, '')
+    .trim();
+};
+
 export const fetchLinkMetadata = async (url: string): Promise<LinkMetadata | null> => {
   try {
-    // In a production app, you'd want to use a backend service for this
-    // to avoid CORS issues and for security
-    const response = await fetch(url);
+    // Validate URL format
+    if (!url || typeof url !== 'string') {
+      throw new Error('Invalid URL provided');
+    }
+
+    // Check if domain is allowed
+    if (!isAllowedDomain(url)) {
+      throw new Error('Domain not allowed for metadata fetching');
+    }
+
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'CoachHub-MetadataBot/1.0',
+      },
+      // Add timeout to prevent hanging requests
+      signal: AbortSignal.timeout(10000), // 10 second timeout
+    });
+    
     if (!response.ok) return null;
 
     const html = await response.text();
     
-    // Extract Open Graph tags
+    // Sanitize HTML content before processing
+    const sanitizedHtml = sanitizeHtml(html);
+    
+    // Extract Open Graph tags from sanitized HTML
     const getMetaContent = (property: string): string | undefined => {
-      const match = html.match(
+      const match = sanitizedHtml.match(
         new RegExp(`<meta[^>]*property=["']${property}["'][^>]*content=["']([^"']+)["']`, 'i')
       );
-      return match?.[1];
+      return match?.[1]?.replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
     };
 
     const getMetaTag = (name: string): string | undefined => {
-      const match = html.match(
+      const match = sanitizedHtml.match(
         new RegExp(`<meta[^>]*name=["']${name}["'][^>]*content=["']([^"']+)["']`, 'i')
       );
-      return match?.[1];
+      return match?.[1]?.replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
     };
 
     const getTitleTag = (): string | undefined => {
-      const match = html.match(/<title[^>]*>([^<]+)<\/title>/i);
-      return match?.[1];
+      const match = sanitizedHtml.match(/<title[^>]*>([^<]+)<\/title>/i);
+      return match?.[1]?.replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
     };
 
     return {

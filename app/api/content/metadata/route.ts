@@ -1,8 +1,38 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createServerSupabaseClient } from "@/lib/supabase-server";
+import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { fetchVideoMetadata, fetchLinkMetadata } from "@/services/content-service";
 
 export async function POST(request: NextRequest) {
   try {
+    // CSRF Protection
+    const csrfError = await requireCSRFProtection(request);
+    if (csrfError) return csrfError;
+    const supabase = await createServerSupabaseClient();
+    
+    // Get authenticated user
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return NextResponse.json(
+        { success: false, error: "Unauthorized" },
+        { status: 401 }
+      );
+    }
+
+    // Get coach profile to ensure user is a coach
+    const { data: coach, error: coachError } = await supabase
+      .from("coaches")
+      .select("id")
+      .eq("user_id", user.id)
+      .single();
+
+    if (coachError || !coach) {
+      return NextResponse.json(
+        { success: false, error: "Coach profile not found" },
+        { status: 404 }
+      );
+    }
+
     const { url } = await request.json();
 
     if (!url) {

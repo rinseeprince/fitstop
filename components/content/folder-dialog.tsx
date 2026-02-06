@@ -19,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, X } from "lucide-react";
 import type { ContentFolder } from "@/types/content";
 
 interface FolderDialogProps {
@@ -38,7 +38,7 @@ export function FolderDialog({
   onSuccess,
 }: FolderDialogProps) {
   const [name, setName] = useState(folder?.name || "");
-  const [parentFolderId, setParentFolderId] = useState(folder?.parentFolderId || "");
+  const [parentFolderId, setParentFolderId] = useState<string | undefined>(folder?.parentFolderId);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -83,7 +83,7 @@ export function FolderDialog({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             name: name.trim(),
-            parentFolderId: parentFolderId || undefined,
+            parentFolderId: parentFolderId,
           }),
         });
 
@@ -97,7 +97,7 @@ export function FolderDialog({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             name: name.trim(),
-            parentFolderId: parentFolderId || undefined,
+            parentFolderId: parentFolderId,
           }),
         });
 
@@ -108,7 +108,7 @@ export function FolderDialog({
 
       // Reset form
       setName("");
-      setParentFolderId("");
+      setParentFolderId(undefined);
       
       onSuccess?.();
       onOpenChange(false);
@@ -122,7 +122,7 @@ export function FolderDialog({
   const handleClose = () => {
     if (!loading) {
       setName(folder?.name || "");
-      setParentFolderId(folder?.parentFolderId || "");
+      setParentFolderId(folder?.parentFolderId);
       setError("");
       onOpenChange(false);
     }
@@ -157,12 +157,12 @@ export function FolderDialog({
 
           <div className="space-y-2">
             <Label>Parent Folder</Label>
-            <Select value={parentFolderId} onValueChange={setParentFolderId}>
+            <Select value={parentFolderId || "none"} onValueChange={(value) => setParentFolderId(value === "none" ? undefined : value)}>
               <SelectTrigger>
-                <SelectValue placeholder="None (root level)" />
+                <SelectValue placeholder="Select parent folder" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">None (root level)</SelectItem>
+                <SelectItem value="none">None (root level)</SelectItem>
                 {rootFolders.map((folder) => (
                   <SelectItem key={folder.id} value={folder.id}>
                     {folder.name}

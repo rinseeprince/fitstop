@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
+import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { updateContentFolder, deleteContentFolder, getCoachFolders } from "@/services/content-service";
 
 export async function PATCH(
@@ -8,6 +9,9 @@ export async function PATCH(
 ) {
   const { id } = await params;
   try {
+    // CSRF Protection
+    const csrfError = await requireCSRFProtection(request);
+    if (csrfError) return csrfError;
     const supabase = await createServerSupabaseClient();
     
     // Get authenticated user
@@ -110,6 +114,9 @@ export async function DELETE(
 ) {
   const { id } = await params;
   try {
+    // CSRF Protection
+    const csrfError = await requireCSRFProtection(request);
+    if (csrfError) return csrfError;
     const supabase = await createServerSupabaseClient();
     
     // Get authenticated user

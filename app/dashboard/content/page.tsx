@@ -239,19 +239,9 @@ export default function ContentLibraryPage() {
       title="Content Library"
       description="Organize and share resources with your clients"
       action={
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => setViewMode(viewMode === "grid" ? "list" : "grid")}>
-            {viewMode === "grid" ? <List className="h-4 w-4" /> : <Grid className="h-4 w-4" />}
-          </Button>
-          <Button variant="outline" onClick={() => setFolderDialogOpen(true)}>
-            <FolderPlus className="h-4 w-4 mr-2" />
-            New Folder
-          </Button>
-          <Button onClick={() => setUploadDialogOpen(true)}>
-            <Plus className="h-4 w-4 mr-2" />
-            Add Content
-          </Button>
-        </div>
+        <Button variant="outline" onClick={() => setViewMode(viewMode === "grid" ? "list" : "grid")}>
+          {viewMode === "grid" ? <List className="h-4 w-4" /> : <Grid className="h-4 w-4" />}
+        </Button>
       }
     />
   );
@@ -276,8 +266,31 @@ export default function ContentLibraryPage() {
 
   const { folders, items } = filteredData();
 
+  const headerActions = (
+    <div className="flex items-center gap-1">
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-9 w-9 rounded-full transition-all hover:scale-110"
+        onClick={() => setFolderDialogOpen(true)}
+      >
+        <FolderPlus className="h-4 w-4" />
+        <span className="sr-only">Create New Folder</span>
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-9 w-9 rounded-full transition-all hover:scale-110"
+        onClick={() => setUploadDialogOpen(true)}
+      >
+        <Plus className="h-4 w-4" />
+        <span className="sr-only">Add Content</span>
+      </Button>
+    </div>
+  );
+
   return (
-    <AppLayout pageHeader={pageHeader}>
+    <AppLayout pageHeader={pageHeader} headerActions={headerActions}>
       <div className="space-y-6">
         {/* Breadcrumbs */}
         {breadcrumbs.length > 1 && (
@@ -325,19 +338,9 @@ export default function ContentLibraryPage() {
               <FolderOpen className="h-8 w-8 text-muted-foreground" />
             </div>
             <h3 className="text-lg font-medium mb-2">No content yet</h3>
-            <p className="text-muted-foreground mb-6">
+            <p className="text-muted-foreground">
               Start building your content library by adding videos, documents, or links.
             </p>
-            <div className="flex items-center justify-center gap-2">
-              <Button variant="outline" onClick={() => setFolderDialogOpen(true)}>
-                <FolderPlus className="h-4 w-4 mr-2" />
-                Create Folder
-              </Button>
-              <Button onClick={() => setUploadDialogOpen(true)}>
-                <Plus className="h-4 w-4 mr-2" />
-                Add Content
-              </Button>
-            </div>
           </div>
         )}
 
