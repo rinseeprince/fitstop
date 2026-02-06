@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
-import { cookies } from "next/headers";
+import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { getContentById, getContentFileSignedUrl } from "@/services/content-service";
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { contentId: string } }
+  { params }: { params: Promise<{ contentId: string }> }
 ) {
+  const { contentId } = await params;
   try {
-    const supabase = createRouteHandlerClient({ cookies });
+    const supabase = await createServerSupabaseClient();
     
     // Get authenticated user
     const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -20,7 +20,7 @@ export async function GET(
     }
 
     // Get content item
-    const content = await getContentById(params.contentId);
+    const content = await getContentById(contentId);
 
     // Check if user has access to this content
     let hasAccess = false;
@@ -51,7 +51,7 @@ export async function GET(
           const { data: assignment, error: assignmentError } = await supabase
             .from("content_assignments")
             .select("id")
-            .eq("content_id", params.contentId)
+            .eq("content_id", contentId)
             .eq("client_id", client.id)
             .single();
 

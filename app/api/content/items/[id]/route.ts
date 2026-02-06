@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
-import { cookies } from "next/headers";
+import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { getContentById, updateContentItem, deleteContentItem } from "@/services/content-service";
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   try {
-    const supabase = createRouteHandlerClient({ cookies });
+    const supabase = await createServerSupabaseClient();
     
     // Get authenticated user
     const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -34,7 +34,7 @@ export async function GET(
     }
 
     // Get content item
-    const item = await getContentById(params.id);
+    const item = await getContentById(id);
     
     // Verify ownership
     if (item.coachId !== coach.id) {
@@ -59,10 +59,11 @@ export async function GET(
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   try {
-    const supabase = createRouteHandlerClient({ cookies });
+    const supabase = await createServerSupabaseClient();
     
     // Get authenticated user
     const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -88,7 +89,7 @@ export async function PATCH(
     }
 
     // Verify ownership first
-    const existingItem = await getContentById(params.id);
+    const existingItem = await getContentById(id);
     if (existingItem.coachId !== coach.id) {
       return NextResponse.json(
         { success: false, error: "Content not found" },
@@ -100,7 +101,7 @@ export async function PATCH(
     const body = await request.json();
     
     // Update content item
-    const updatedItem = await updateContentItem(params.id, body);
+    const updatedItem = await updateContentItem(id, body);
 
     return NextResponse.json({
       success: true,
@@ -121,10 +122,11 @@ export async function PATCH(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   try {
-    const supabase = createRouteHandlerClient({ cookies });
+    const supabase = await createServerSupabaseClient();
     
     // Get authenticated user
     const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -150,7 +152,7 @@ export async function DELETE(
     }
 
     // Verify ownership first
-    const existingItem = await getContentById(params.id);
+    const existingItem = await getContentById(id);
     if (existingItem.coachId !== coach.id) {
       return NextResponse.json(
         { success: false, error: "Content not found" },
@@ -159,7 +161,7 @@ export async function DELETE(
     }
 
     // Delete content item
-    await deleteContentItem(params.id);
+    await deleteContentItem(id);
 
     return NextResponse.json({
       success: true,

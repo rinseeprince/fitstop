@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
-import { cookies } from "next/headers";
+import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { updateContentFolder, deleteContentFolder, getCoachFolders } from "@/services/content-service";
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   try {
-    const supabase = createRouteHandlerClient({ cookies });
+    const supabase = await createServerSupabaseClient();
     
     // Get authenticated user
     const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -35,7 +35,7 @@ export async function PATCH(
 
     // Verify folder ownership
     const folders = await getCoachFolders(coach.id);
-    const existingFolder = folders.find(f => f.id === params.id);
+    const existingFolder = folders.find(f => f.id === id);
     
     if (!existingFolder) {
       return NextResponse.json(
@@ -60,7 +60,7 @@ export async function PATCH(
     if (name && name.trim().toLowerCase() !== existingFolder.name.toLowerCase()) {
       const duplicateExists = folders.some(
         folder => 
-          folder.id !== params.id &&
+          folder.id !== id &&
           folder.name.toLowerCase() === name.trim().toLowerCase() &&
           folder.parentFolderId === (parentFolderId !== undefined ? parentFolderId : existingFolder.parentFolderId)
       );
@@ -74,7 +74,7 @@ export async function PATCH(
     }
 
     // Prevent circular parent relationships
-    if (parentFolderId === params.id) {
+    if (parentFolderId === id) {
       return NextResponse.json(
         { success: false, error: "A folder cannot be its own parent" },
         { status: 400 }
@@ -82,7 +82,7 @@ export async function PATCH(
     }
 
     // Update folder
-    const updatedFolder = await updateContentFolder(params.id, {
+    const updatedFolder = await updateContentFolder(id, {
       name: name?.trim(),
       parentFolderId: parentFolderId === "" ? undefined : parentFolderId,
     });
@@ -106,10 +106,11 @@ export async function PATCH(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   try {
-    const supabase = createRouteHandlerClient({ cookies });
+    const supabase = await createServerSupabaseClient();
     
     // Get authenticated user
     const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -136,7 +137,7 @@ export async function DELETE(
 
     // Verify folder ownership
     const folders = await getCoachFolders(coach.id);
-    const existingFolder = folders.find(f => f.id === params.id);
+    const existingFolder = folders.find(f => f.id === id);
     
     if (!existingFolder) {
       return NextResponse.json(
@@ -146,14 +147,14 @@ export async function DELETE(
     }
 
     // Check if folder has subfolders or content
-    const hasSubfolders = folders.some(f => f.parentFolderId === params.id);
+    const hasSubfolders = folders.some(f => f.parentFolderId === id);
     
     // Get content count in folder (this would require additional service method)
     // For now, we'll allow deletion and let the database cascade handle it
     // In production, you might want to check for content and warn the user
 
     // Delete folder (database CASCADE will move content to NULL folder)
-    await deleteContentFolder(params.id);
+    await deleteContentFolder(id);
 
     return NextResponse.json({
       success: true,

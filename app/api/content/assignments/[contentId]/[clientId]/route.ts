@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
-import { cookies } from "next/headers";
+import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { unassignContentFromClient } from "@/services/content-service";
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { contentId: string; clientId: string } }
+  { params }: { params: Promise<{ contentId: string; clientId: string }> }
 ) {
+  const { contentId, clientId } = await params;
   try {
-    const supabase = createRouteHandlerClient({ cookies });
+    const supabase = await createServerSupabaseClient();
     
     // Get authenticated user
     const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -37,7 +37,7 @@ export async function DELETE(
     const { data: content, error: contentError } = await supabase
       .from("content_items")
       .select("coach_id")
-      .eq("id", params.contentId)
+      .eq("id", contentId)
       .single();
 
     if (contentError || !content || content.coach_id !== coach.id) {
@@ -51,7 +51,7 @@ export async function DELETE(
     const { data: client, error: clientError } = await supabase
       .from("clients")
       .select("coach_id")
-      .eq("id", params.clientId)
+      .eq("id", clientId)
       .single();
 
     if (clientError || !client || client.coach_id !== coach.id) {
@@ -62,7 +62,7 @@ export async function DELETE(
     }
 
     // Remove assignment
-    await unassignContentFromClient(params.contentId, params.clientId);
+    await unassignContentFromClient(contentId, clientId);
 
     return NextResponse.json({
       success: true,
