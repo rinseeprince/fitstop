@@ -349,14 +349,46 @@ export const getClientResources = async (
     getCoachContentLibrary(coachId),
   ]);
 
-  // Filter library content to only show library items
+  // Helper function to recursively extract all library items from folders
+  const extractLibraryItems = (
+    folders: ContentFolderWithContents[]
+  ): ContentItem[] => {
+    let allItems: ContentItem[] = [];
+    
+    for (const folder of folders) {
+      // Get items from this folder that are marked as library
+      const folderLibraryItems = (folder.items || [])
+        .filter((item) => item.isLibrary)
+        .map((item) => ({
+          ...item,
+          folderName: folder.name, // Add folder name for context
+        }));
+      
+      allItems = [...allItems, ...folderLibraryItems];
+      
+      // Recursively get items from subfolders
+      if (folder.subfolders && folder.subfolders.length > 0) {
+        const subfolderItems = extractLibraryItems(folder.subfolders);
+        allItems = [...allItems, ...subfolderItems];
+      }
+    }
+    
+    return allItems;
+  };
+
+  // Get all library items from folders (flattened)
+  const itemsFromFolders = extractLibraryItems(libraryContent.folders);
+  
+  // Get root library items (not in any folder)
+  const rootLibraryItems = libraryContent.rootItems.filter((item) => item.isLibrary);
+  
+  // Combine all library items
+  const allLibraryItems = [...rootLibraryItems, ...itemsFromFolders];
+
+  // Return flattened structure for client view
   const filteredLibraryContent = {
-    ...libraryContent,
-    folders: libraryContent.folders.map((folder) => ({
-      ...folder,
-      items: folder.items?.filter((item) => item.isLibrary) || [],
-    })),
-    rootItems: libraryContent.rootItems.filter((item) => item.isLibrary),
+    folders: [], // Clients don't see folder structure
+    rootItems: allLibraryItems, // All library items in flat list
   };
 
   return {

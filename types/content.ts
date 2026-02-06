@@ -33,6 +33,7 @@ export interface ContentItem {
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
+  folderName?: string; // Added for client display context
 }
 
 // Content assignment type

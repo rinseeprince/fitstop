@@ -139,6 +139,15 @@ export default function ClientResourcesPage() {
               </p>
             )}
             
+            {item.folderName && (
+              <div className="mb-2">
+                <Badge variant="outline" className="text-xs">
+                  <FolderOpen className="h-3 w-3 mr-1" />
+                  {item.folderName}
+                </Badge>
+              </div>
+            )}
+            
             <div className="flex items-center justify-between">
               <Badge variant="outline" className="text-xs">
                 {item.type === "video_link" ? "Video" : 
@@ -205,7 +214,7 @@ export default function ClientResourcesPage() {
       <div>
         <h1 className="text-2xl font-bold">Resources</h1>
         <p className="text-muted-foreground">
-          Access videos, guides, and materials from your coach
+          Access all content shared by your coach, including library materials and personal assignments
         </p>
       </div>
 
