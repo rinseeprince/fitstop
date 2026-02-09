@@ -1,7 +1,9 @@
 "use client";
 
-import { Heart, Zap, Moon, AlertTriangle, Scale, Activity, Target, Trophy } from "lucide-react";
+import { Heart, Zap, Moon, AlertTriangle, Scale, Activity, Target, Trophy, Brain } from "lucide-react";
 import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
 import type { CheckIn } from "@/types/check-in";
 import { formatCheckInDate } from "@/lib/check-in-utils";
 
@@ -193,6 +195,70 @@ export const CheckInDataDisplay = ({ checkIn }: CheckInDataDisplayProps) => {
               <p className="text-sm whitespace-pre-wrap">{checkIn.challenges}</p>
             </div>
           )}
+        </Card>
+      )}
+
+      {/* Exercise Highlights */}
+      {(checkIn as any).exerciseHighlights && (checkIn as any).exerciseHighlights.length > 0 && (
+        <Card className="p-4 space-y-4">
+          <h4 className="font-semibold text-sm">Exercise Highlights</h4>
+          <div className="space-y-3">
+            {(checkIn as any).exerciseHighlights.map((highlight: any, index: number) => (
+              <div key={index} className="rounded-lg border p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  {highlight.highlight_type === 'pr' && <Trophy className="h-4 w-4 text-warning" />}
+                  {highlight.highlight_type === 'struggle' && <Target className="h-4 w-4 text-destructive" />}
+                  {highlight.highlight_type === 'note' && <Brain className="h-4 w-4 text-primary" />}
+                  <span className="font-medium text-sm">{highlight.exercise_name}</span>
+                  <Badge variant="outline" className="capitalize text-xs">
+                    {highlight.highlight_type}
+                  </Badge>
+                </div>
+                {highlight.details && (
+                  <p className="text-xs text-muted-foreground mb-2">{highlight.details}</p>
+                )}
+                <div className="flex gap-4 text-xs text-muted-foreground">
+                  {highlight.weight_value && (
+                    <span>{highlight.weight_value} {highlight.weight_unit || 'lbs'}</span>
+                  )}
+                  {highlight.reps && (
+                    <span>{highlight.reps} reps</span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {/* External Activities */}
+      {(checkIn as any).externalActivities && (checkIn as any).externalActivities.length > 0 && (
+        <Card className="p-4 space-y-4">
+          <h4 className="font-semibold text-sm">Other Activities</h4>
+          <div className="space-y-3">
+            {(checkIn as any).externalActivities.map((activity: any, index: number) => (
+              <div key={index} className="rounded-lg border p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-medium text-sm">{activity.activity_name}</span>
+                  <Badge variant="outline" className="capitalize text-xs">
+                    {activity.intensity_level}
+                  </Badge>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                  <div>Duration: {activity.duration_minutes} min</div>
+                  {activity.estimated_calories && (
+                    <div>Calories: {activity.estimated_calories}</div>
+                  )}
+                  {activity.day_performed && (
+                    <div className="col-span-2">Day: {activity.day_performed}</div>
+                  )}
+                </div>
+                {activity.notes && (
+                  <p className="text-xs text-muted-foreground mt-2">{activity.notes}</p>
+                )}
+              </div>
+            ))}
+          </div>
         </Card>
       )}
     </div>

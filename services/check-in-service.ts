@@ -159,6 +159,63 @@ export const markTokenAsUsed = async (
   }
 };
 
+// Get session completions for a check-in
+export const getCheckInSessionCompletions = async (
+  checkInId: string
+): Promise<any[]> => {
+  const { data, error } = await supabaseAdmin
+    .from("check_in_session_completions")
+    .select(`
+      *,
+      training_sessions!inner(name, session_order)
+    `)
+    .eq("check_in_id", checkInId)
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    console.error("Error fetching session completions:", error);
+    return [];
+  }
+
+  return data || [];
+};
+
+// Get exercise highlights for a check-in
+export const getCheckInExerciseHighlights = async (
+  checkInId: string
+): Promise<any[]> => {
+  const { data, error } = await supabaseAdmin
+    .from("check_in_exercise_highlights")
+    .select("*")
+    .eq("check_in_id", checkInId)
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    console.error("Error fetching exercise highlights:", error);
+    return [];
+  }
+
+  return data || [];
+};
+
+// Get external activities for a check-in
+export const getCheckInExternalActivities = async (
+  checkInId: string
+): Promise<any[]> => {
+  const { data, error } = await supabaseAdmin
+    .from("check_in_external_activities")
+    .select("*")
+    .eq("check_in_id", checkInId)
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    console.error("Error fetching external activities:", error);
+    return [];
+  }
+
+  return data || [];
+};
+
 // Submit a check-in
 export const submitCheckIn = async (
   clientId: string,

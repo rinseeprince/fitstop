@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { mapCheckInFromDatabase, type CheckInRow } from "@/types/database";
+import { 
+  getCheckInSessionCompletions, 
+  getCheckInExerciseHighlights, 
+  getCheckInExternalActivities 
+} from "@/services/check-in-service";
 
 export async function GET(
   request: NextRequest,
@@ -56,8 +61,20 @@ export async function GET(
     // Use mapper function to transform database row to application type
     const checkIn = mapCheckInFromDatabase(checkInData);
 
+    // Fetch related data
+    const [sessionCompletions, exerciseHighlights, externalActivities] = await Promise.all([
+      getCheckInSessionCompletions(id),
+      getCheckInExerciseHighlights(id),
+      getCheckInExternalActivities(id)
+    ]);
+
     return NextResponse.json({
-      checkIn,
+      checkIn: {
+        ...checkIn,
+        sessionCompletions,
+        exerciseHighlights,
+        externalActivities,
+      },
       client: checkInData.clients || null,
     });
   } catch (error) {

@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   TrendingUp,
   TrendingDown,
@@ -17,6 +18,10 @@ import {
 } from "lucide-react";
 import type { CheckIn } from "@/types/check-in";
 import type { ProgressData } from "@/services/client-portal-service";
+import { GoalsSection } from "@/components/client/progress/goals-section";
+import { DateRangeSelector } from "@/components/client/progress/date-range-selector";
+import { MetricChartCard } from "@/components/clients/metrics/metric-chart-card";
+import { useClientProgressMetrics } from "@/hooks/use-client-progress-metrics";
 
 export default function ClientProgressPage() {
   const router = useRouter();
@@ -24,12 +29,18 @@ export default function ClientProgressPage() {
   const [checkIns, setCheckIns] = useState<CheckIn[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [dateRange, setDateRange] = useState("90");
+  const [activeTab, setActiveTab] = useState("body");
+
+  // Process metrics data for charts
+  const { bodyMetrics, wellnessMetrics } = useClientProgressMetrics(progressData);
 
   useEffect(() => {
     async function fetchData() {
       try {
+        const days = dateRange === "all" ? 365 : parseInt(dateRange);
         const [progressRes, checkInsRes] = await Promise.all([
-          fetch("/api/client/progress?days=90"),
+          fetch(`/api/client/progress?days=${days}`),
           fetch("/api/client/check-ins?limit=10"),
         ]);
 
@@ -49,7 +60,7 @@ export default function ClientProgressPage() {
     }
 
     fetchData();
-  }, []);
+  }, [dateRange]);
 
   if (loading) {
     return (
@@ -91,6 +102,11 @@ export default function ClientProgressPage() {
         </Button>
       </div>
 
+      {/* Date Range Selector */}
+      <div className="flex justify-end">
+        <DateRangeSelector value={dateRange} onChange={setDateRange} />
+      </div>
+
       {/* Stats Grid */}
       <div className="grid gap-4 sm:grid-cols-3">
         <StatCard
@@ -113,52 +129,63 @@ export default function ClientProgressPage() {
         />
       </div>
 
-      {/* Weight Progress */}
-      {weightHistory.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Weight Progress</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-2xl font-bold">
-                  {lastWeight?.toFixed(1)}
-                  <span className="ml-1 text-sm font-normal text-muted-foreground">
-                    lbs
-                  </span>
-                </p>
-                <p className="text-sm text-muted-foreground">Current weight</p>
-              </div>
-              {weightChange !== null && (
-                <WeightChangeBadge change={weightChange} />
-              )}
-            </div>
-
-            {/* Simple progress visualization */}
-            <div className="mt-4 flex items-end gap-1">
-              {weightHistory.slice(-14).map((point, idx) => {
-                const minWeight = Math.min(...weightHistory.map(p => p.weight || 0));
-                const maxWeight = Math.max(...weightHistory.map(p => p.weight || 0));
-                const range = maxWeight - minWeight || 1;
-                const height = ((point.weight || 0) - minWeight) / range * 60 + 20;
-
-                return (
-                  <div
-                    key={idx}
-                    className="flex-1 rounded-t bg-primary/80"
-                    style={{ height: `${height}px` }}
-                    title={`${point.date}: ${point.weight} lbs`}
-                  />
-                );
-              })}
-            </div>
-            <p className="mt-2 text-xs text-muted-foreground text-center">
-              Last 14 check-ins
-            </p>
-          </CardContent>
-        </Card>
+      {/* Goals Section */}
+      {progressData && (
+        <GoalsSection 
+          client={progressData.client} 
+          latestWeight={lastWeight}
+          latestBodyFat={progressData.bodyFatHistory[progressData.bodyFatHistory.length - 1]?.bodyFatPercentage}
+        />
       )}
+
+      {/* Metrics with Tabs */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Metrics</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="body">Body Metrics</TabsTrigger>
+              <TabsTrigger value="wellness">Wellness</TabsTrigger>
+            </TabsList>
+            
+            <TabsContent value="body" className="mt-6">
+              <div className="max-h-[600px] overflow-y-auto space-y-4 pr-2">
+                {bodyMetrics.map((metric) => (
+                  <MetricChartCard
+                    key={metric.id}
+                    id={metric.id}
+                    name={metric.name}
+                    currentValue={metric.currentValue}
+                    unit={metric.unit}
+                    percentChange={metric.percentChange}
+                    trend={metric.trend}
+                    chartData={metric.chartData}
+                  />
+                ))}
+              </div>
+            </TabsContent>
+            
+            <TabsContent value="wellness" className="mt-6">
+              <div className="max-h-[600px] overflow-y-auto space-y-4 pr-2">
+                {wellnessMetrics.map((metric) => (
+                  <MetricChartCard
+                    key={metric.id}
+                    id={metric.id}
+                    name={metric.name}
+                    currentValue={metric.currentValue}
+                    unit={metric.unit}
+                    percentChange={metric.percentChange}
+                    trend={metric.trend}
+                    chartData={metric.chartData}
+                  />
+                ))}
+              </div>
+            </TabsContent>
+          </Tabs>
+        </CardContent>
+      </Card>
 
       {/* Check-in History */}
       <div>
@@ -252,31 +279,94 @@ function CheckInCard({ checkIn }: { checkIn: CheckIn }) {
     year: "numeric",
   });
 
+  const bodyMetrics = [];
+  if (checkIn.weight) bodyMetrics.push(`Weight: ${checkIn.weight} ${checkIn.weightUnit || "lbs"}`);
+  if (checkIn.bodyFatPercentage) bodyMetrics.push(`Body Fat: ${checkIn.bodyFatPercentage}%`);
+  if (checkIn.waist) bodyMetrics.push(`Waist: ${checkIn.waist} ${checkIn.measurementUnit || "in"}`);
+  if (checkIn.hips) bodyMetrics.push(`Hips: ${checkIn.hips} ${checkIn.measurementUnit || "in"}`);
+  if (checkIn.chest) bodyMetrics.push(`Chest: ${checkIn.chest} ${checkIn.measurementUnit || "in"}`);
+  if (checkIn.arms) bodyMetrics.push(`Arms: ${checkIn.arms} ${checkIn.measurementUnit || "in"}`);
+  if (checkIn.thighs) bodyMetrics.push(`Thighs: ${checkIn.thighs} ${checkIn.measurementUnit || "in"}`);
+
+  const wellnessMetrics = [];
+  if (checkIn.mood) wellnessMetrics.push(`Mood: ${checkIn.mood}/5`);
+  if (checkIn.energy) wellnessMetrics.push(`Energy: ${checkIn.energy}/10`);
+  if (checkIn.sleep) wellnessMetrics.push(`Sleep: ${checkIn.sleep}/10`);
+  if (checkIn.stress) wellnessMetrics.push(`Stress: ${checkIn.stress}/10`);
+
   return (
-    <Card>
+    <Card 
+      className="cursor-pointer hover:shadow-md transition-shadow"
+      onClick={() => window.location.href = `/client/progress/check-in/${checkIn.id}`}
+    >
       <CardContent className="py-4">
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <p className="font-medium">{formattedDate}</p>
-              <Badge variant="outline" className="capitalize">
-                {checkIn.status.replace(/_/g, " ")}
-              </Badge>
-            </div>
-            <div className="mt-2 flex flex-wrap gap-4 text-sm text-muted-foreground">
-              {checkIn.weight && (
-                <span>Weight: {checkIn.weight} {checkIn.weightUnit || "lbs"}</span>
-              )}
-              {checkIn.mood && <span>Mood: {checkIn.mood}/5</span>}
-              {checkIn.energy && <span>Energy: {checkIn.energy}/10</span>}
-            </div>
-            {checkIn.coachResponse && (
-              <div className="mt-3 flex items-start gap-2 rounded-lg bg-muted/50 p-3">
-                <MessageSquare className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                <p className="text-sm">{checkIn.coachResponse}</p>
-              </div>
-            )}
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <p className="font-medium">{formattedDate}</p>
+            <Badge variant="outline" className="capitalize">
+              {checkIn.status.replace(/_/g, " ")}
+            </Badge>
           </div>
+          
+          {/* Body Metrics */}
+          {bodyMetrics.length > 0 && (
+            <div>
+              <p className="text-xs font-medium text-muted-foreground mb-1">Body Measurements</p>
+              <div className="flex flex-wrap gap-2 text-sm">
+                {bodyMetrics.map((metric, idx) => (
+                  <span key={idx} className="bg-muted/50 px-2 py-1 rounded text-xs">
+                    {metric}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          
+          {/* Wellness Metrics */}
+          {wellnessMetrics.length > 0 && (
+            <div>
+              <p className="text-xs font-medium text-muted-foreground mb-1">Wellness</p>
+              <div className="flex flex-wrap gap-2 text-sm">
+                {wellnessMetrics.map((metric, idx) => (
+                  <span key={idx} className="bg-muted/50 px-2 py-1 rounded text-xs">
+                    {metric}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Training & Nutrition */}
+          {(checkIn.workoutsCompleted || checkIn.adherencePercentage || checkIn.nutritionDaysOnTarget) && (
+            <div>
+              <p className="text-xs font-medium text-muted-foreground mb-1">Training & Nutrition</p>
+              <div className="flex flex-wrap gap-2 text-sm">
+                {checkIn.workoutsCompleted && (
+                  <span className="bg-muted/50 px-2 py-1 rounded text-xs">
+                    Workouts: {checkIn.workoutsCompleted}
+                  </span>
+                )}
+                {checkIn.adherencePercentage && (
+                  <span className="bg-muted/50 px-2 py-1 rounded text-xs">
+                    Adherence: {checkIn.adherencePercentage}%
+                  </span>
+                )}
+                {checkIn.nutritionDaysOnTarget && (
+                  <span className="bg-muted/50 px-2 py-1 rounded text-xs">
+                    Nutrition: {checkIn.nutritionDaysOnTarget}/7 days
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+          
+          {/* Coach Response */}
+          {checkIn.coachResponse && (
+            <div className="flex items-start gap-2 rounded-lg bg-muted/50 p-3">
+              <MessageSquare className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+              <p className="text-sm">{checkIn.coachResponse}</p>
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>
