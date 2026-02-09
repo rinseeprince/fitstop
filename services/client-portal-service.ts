@@ -2,6 +2,8 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import type { Client, CheckIn } from "@/types/check-in";
 import type { TrainingPlan, TrainingSession, TrainingExercise } from "@/types/training";
+import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
+import { getWeeklyNutritionTargets } from "@/utils/nutrition-helpers";
 
 // Create authenticated Supabase client for server-side client portal access
 // Uses regular client (not admin) to respect RLS policies
@@ -43,6 +45,7 @@ export type NutritionTargets = {
   dietType?: string;
   unitPreference?: string;
   baselineCalories?: number;
+  dailyTargets?: DailyNutritionTargets[];
 };
 
 // Progress data for charts
@@ -335,7 +338,7 @@ export async function getClientCheckInById(
   return mapRowToCheckIn(data);
 }
 
-// Get nutrition targets for a client
+// Get nutrition targets for a client with daily breakdown
 export async function getClientNutritionTargets(
   clientId: string
 ): Promise<NutritionTargets | null> {
@@ -353,6 +356,21 @@ export async function getClientNutritionTargets(
 
   if (error || !data) return null;
 
+  // Get training plan for daily targets calculation
+  const trainingPlan = await getClientTrainingPlan(clientId);
+  
+  // Calculate daily targets if we have baseline calories and protein target
+  let dailyTargets: DailyNutritionTargets[] | undefined = undefined;
+  
+  if (data.baseline_calories && data.protein_target_g && data.diet_type) {
+    dailyTargets = getWeeklyNutritionTargets(
+      data.baseline_calories,
+      data.protein_target_g,
+      trainingPlan,
+      data.diet_type as any
+    );
+  }
+
   return {
     calorieTarget: data.calorie_target,
     proteinTargetG: data.protein_target_g,
@@ -366,6 +384,7 @@ export async function getClientNutritionTargets(
     dietType: data.diet_type,
     unitPreference: data.unit_preference,
     baselineCalories: data.baseline_calories,
+    dailyTargets,
   };
 }
 

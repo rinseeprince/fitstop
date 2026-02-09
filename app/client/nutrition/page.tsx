@@ -6,6 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Utensils, Flame, Beef, Wheat, Droplets } from "lucide-react";
 import type { NutritionTargets } from "@/services/client-portal-service";
+import { VerticalNutritionView } from "@/components/client-portal/nutrition/vertical-nutrition-view";
 
 export default function ClientNutritionPage() {
   const [targets, setTargets] = useState<NutritionTargets | null>(null);
@@ -55,6 +56,7 @@ export default function ClientNutritionPage() {
   }
 
   const hasNutritionPlan = targets && (targets.calorieTarget || targets.customCalories);
+  const hasDailyTargets = targets?.dailyTargets && targets.dailyTargets.length > 0;
 
   if (!hasNutritionPlan) {
     return (
@@ -74,6 +76,65 @@ export default function ClientNutritionPage() {
     );
   }
 
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold">Nutrition Plan</h1>
+        <p className="mt-1 text-muted-foreground">
+          Your daily macro targets set by your coach
+        </p>
+        {targets.dietType && (
+          <Badge variant="secondary" className="capitalize mt-2">
+            {targets.dietType.replace(/_/g, " ")} diet
+          </Badge>
+        )}
+        {targets.customMacrosEnabled && (
+          <Badge variant="outline" className="ml-2 mt-2">
+            Custom macros
+          </Badge>
+        )}
+      </div>
+
+      {hasDailyTargets ? (
+        <div className="space-y-4">
+          <div className="text-center">
+            <p className="text-sm text-muted-foreground">
+              Your calories vary based on training days. Expand each day for detailed breakdown.
+            </p>
+          </div>
+          <VerticalNutritionView targets={targets.dailyTargets!} />
+        </div>
+      ) : (
+        // Fallback to single daily view if no training plan is available
+        <SingleDayFallback targets={targets} />
+      )}
+
+      {/* Info Card */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">How to Hit Your Targets</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm text-muted-foreground">
+          <p>
+            These are your daily nutrition targets. Focus on hitting your
+            protein goal first, then fill in the rest with carbs and fats.
+          </p>
+          <ul className="list-inside list-disc space-y-1">
+            <li>Track your meals using a food tracking app</li>
+            <li>Aim to be within 10% of each target</li>
+            <li>Consistency matters more than perfection</li>
+            {hasDailyTargets && (
+              <li>Your calories are higher on training days to fuel your workouts</li>
+            )}
+          </ul>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// Fallback component when no daily targets are available
+function SingleDayFallback({ targets }: { targets: NutritionTargets }) {
   // Use custom macros if enabled, otherwise use calculated values
   const calories = targets.customMacrosEnabled && targets.customCalories
     ? targets.customCalories
@@ -89,14 +150,7 @@ export default function ClientNutritionPage() {
     : targets.fatTargetG;
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Nutrition Plan</h1>
-        <p className="mt-1 text-muted-foreground">
-          Your daily macro targets set by your coach
-        </p>
-      </div>
-
+    <>
       {/* Calories Card */}
       <Card className="border-primary/30 bg-primary/5">
         <CardContent className="py-6">
@@ -110,11 +164,6 @@ export default function ClientNutritionPage() {
                 <p className="text-3xl font-bold">{calories?.toLocaleString()}</p>
               </div>
             </div>
-            {targets.dietType && (
-              <Badge variant="secondary" className="capitalize">
-                {targets.dietType.replace(/_/g, " ")}
-              </Badge>
-            )}
           </div>
         </CardContent>
       </Card>
@@ -146,25 +195,7 @@ export default function ClientNutritionPage() {
           bgColor="bg-blue-500/10"
         />
       </div>
-
-      {/* Info Card */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">How to Hit Your Targets</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3 text-sm text-muted-foreground">
-          <p>
-            These are your daily nutrition targets. Focus on hitting your
-            protein goal first, then fill in the rest with carbs and fats.
-          </p>
-          <ul className="list-inside list-disc space-y-1">
-            <li>Track your meals using a food tracking app</li>
-            <li>Aim to be within 10% of each target</li>
-            <li>Consistency matters more than perfection</li>
-          </ul>
-        </CardContent>
-      </Card>
-    </div>
+    </>
   );
 }
 
