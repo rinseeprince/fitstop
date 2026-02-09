@@ -2,115 +2,89 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useAuth } from "@/contexts/auth-context";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ArrowLeft, ArrowRight, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
-import { Slider } from "@/components/ui/slider";
-import {
-  ArrowLeft,
-  ArrowRight,
-  Send,
-  CheckCircle,
-  Smile,
-  Battery,
-  Moon,
-  Brain,
-  Scale,
-  Ruler,
-} from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { ProgressIndicator } from "@/components/check-in/progress-indicator";
+import { StepSubjective } from "@/components/check-in/step-subjective";
+import { StepMetrics } from "@/components/check-in/step-metrics";
+import { StepPhotos } from "@/components/check-in/step-photos";
+import { StepTraining } from "@/components/check-in/step-training";
+import { FormSuccess } from "@/components/check-in/form-success";
+import { useCheckInForm } from "@/hooks/use-check-in-form";
+import { useClientCheckIn } from "@/hooks/use-client-check-in";
+import type { CheckInFormData } from "@/types/check-in";
 import { toast } from "sonner";
 
-const steps = [
-  { id: 1, label: "Feeling" },
-  { id: 2, label: "Body" },
-  { id: 3, label: "Training" },
-];
+const stepLabels = ["Feeling", "Metrics", "Photos", "Training"];
 
 export default function ClientCheckInPage() {
   const router = useRouter();
-  const { user } = useAuth();
-  const [currentStep, setCurrentStep] = useState(1);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { contextData, isLoadingContext, contextError, submitCheckIn } = useClientCheckIn();
+  
+  // Use a dummy token since we don't need it for client app
+  const {
+    currentStep,
+    formData,
+    isSubmitting,
+    setIsSubmitting,
+    updateFormData,
+    nextStep,
+    prevStep,
+    clearSavedData,
+  } = useCheckInForm("client-check-in");
+
   const [isSuccess, setIsSuccess] = useState(false);
-
-  const [formData, setFormData] = useState({
-    mood: 3,
-    energy: 5,
-    sleep: 5,
-    stress: 5,
-    notes: "",
-    weight: "",
-    bodyFatPercentage: "",
-    workoutsCompleted: "",
-    challenges: "",
-    wins: "",
-  });
-
-  const updateField = (field: string, value: string | number) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
-  };
+  const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async () => {
-    if (!user) return;
-
     setIsSubmitting(true);
+    setError(null);
 
     try {
-      const response = await fetch("/api/client/check-ins", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          clientId: user.id,
-          mood: formData.mood,
-          energy: formData.energy,
-          sleep: formData.sleep,
-          stress: formData.stress,
-          notes: formData.notes || null,
-          weight: formData.weight ? parseFloat(formData.weight) : null,
-          weightUnit: "lbs",
-          bodyFatPercentage: formData.bodyFatPercentage
-            ? parseFloat(formData.bodyFatPercentage)
-            : null,
-          workoutsCompleted: formData.workoutsCompleted
-            ? parseInt(formData.workoutsCompleted)
-            : null,
-          challenges: formData.challenges || null,
-          prs: formData.wins || null,
-        }),
-      });
+      const result = await submitCheckIn(formData);
 
-      if (!response.ok) {
-        throw new Error("Failed to submit check-in");
+      if (!result.success) {
+        throw new Error(result.error || "Failed to submit check-in");
       }
 
+      clearSavedData();
       setIsSuccess(true);
       toast.success("Check-in submitted successfully!");
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Failed to submit check-in"
-      );
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Something went wrong";
+      setError(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  if (isSuccess) {
+  // Loading state
+  if (isLoadingContext) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
         <Card className="w-full max-w-md text-center">
           <CardContent className="py-12">
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
-              <CheckCircle className="h-8 w-8 text-green-600" />
-            </div>
-            <h2 className="mb-2 text-2xl font-bold">Check-in Complete!</h2>
-            <p className="mb-6 text-muted-foreground">
-              Your coach will review your progress and get back to you soon.
+            <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
+            <p className="text-muted-foreground">Loading check-in form...</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Error state
+  if (contextError || !contextData) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <Card className="w-full max-w-md text-center">
+          <CardContent className="py-12">
+            <p className="mb-4 text-destructive">
+              {contextError || "Failed to load check-in form"}
             </p>
-            <Button onClick={() => router.push("/client/progress")}>
-              View Progress
+            <Button onClick={() => window.location.reload()}>
+              Try Again
             </Button>
           </CardContent>
         </Card>
@@ -118,278 +92,137 @@ export default function ClientCheckInPage() {
     );
   }
 
-  return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Weekly Check-in</h1>
-        <p className="text-muted-foreground">
-          Let your coach know how you&apos;re doing
-        </p>
+  // Success state
+  if (isSuccess) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
+        <div className="container max-w-3xl mx-auto px-4 py-12">
+          <FormSuccess
+            clientName={contextData.clientInfo.name}
+            coachName={contextData.clientInfo.coachName}
+          />
+        </div>
       </div>
+    );
+  }
 
-      {/* Progress Steps */}
-      <div className="flex items-center justify-center gap-2">
-        {steps.map((step, idx) => (
-          <div key={step.id} className="flex items-center">
-            <div
-              className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-medium ${
-                currentStep >= step.id
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-muted text-muted-foreground"
-              }`}
-            >
-              {step.id}
-            </div>
-            <span
-              className={`ml-2 hidden text-sm sm:inline ${
-                currentStep === step.id ? "font-medium" : "text-muted-foreground"
-              }`}
-            >
-              {step.label}
-            </span>
-            {idx < steps.length - 1 && (
-              <div className="mx-3 h-0.5 w-8 bg-muted sm:w-12" />
+  const canProceed = () => {
+    if (currentStep === 1) return true;
+    if (currentStep === 2) return true;
+    if (currentStep === 3) return true;
+    if (currentStep === 4) return true;
+    return false;
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
+      <div className="container max-w-3xl mx-auto px-4 py-12">
+        <div className="space-y-8">
+          {/* Header */}
+          <div className="text-center">
+            <h1 className="text-3xl font-bold mb-2">Check-In</h1>
+            <p className="text-muted-foreground">
+              Hey {contextData.clientInfo.name}! Let's see how you're doing.
+            </p>
+          </div>
+
+          {/* Progress Indicator */}
+          <ProgressIndicator
+            currentStep={currentStep}
+            totalSteps={4}
+            stepLabels={stepLabels}
+          />
+
+          {/* Form Steps */}
+          <div className="glass-card p-6 md:p-8 min-h-[500px]">
+            {currentStep === 1 && (
+              <StepSubjective
+                data={formData}
+                onChange={updateFormData}
+              />
+            )}
+
+            {currentStep === 2 && (
+              <StepMetrics
+                data={formData}
+                onChange={updateFormData}
+                previousData={{}}
+              />
+            )}
+
+            {currentStep === 3 && (
+              <StepPhotos data={formData} onChange={updateFormData} />
+            )}
+
+            {currentStep === 4 && (
+              <StepTraining
+                data={formData}
+                onChange={updateFormData}
+                trainingContext={contextData.trainingContext}
+                nutritionContext={contextData.nutritionContext}
+                weightUnit={formData.weightUnit || "lbs"}
+                frequencyDays={contextData.clientInfo.checkInFrequencyDays}
+              />
             )}
           </div>
-        ))}
-      </div>
 
-      {/* Step Content */}
-      <Card>
-        <CardContent className="py-6">
-          {currentStep === 1 && (
-            <div className="space-y-6">
-              <CardTitle className="text-lg">How are you feeling?</CardTitle>
-
-              <SliderField
-                label="Overall Mood"
-                icon={Smile}
-                value={formData.mood}
-                min={1}
-                max={5}
-                onChange={(v) => updateField("mood", v)}
-                labels={["Poor", "Great"]}
-              />
-
-              <SliderField
-                label="Energy Level"
-                icon={Battery}
-                value={formData.energy}
-                min={1}
-                max={10}
-                onChange={(v) => updateField("energy", v)}
-                labels={["Low", "High"]}
-              />
-
-              <SliderField
-                label="Sleep Quality"
-                icon={Moon}
-                value={formData.sleep}
-                min={1}
-                max={10}
-                onChange={(v) => updateField("sleep", v)}
-                labels={["Poor", "Great"]}
-              />
-
-              <SliderField
-                label="Stress Level"
-                icon={Brain}
-                value={formData.stress}
-                min={1}
-                max={10}
-                onChange={(v) => updateField("stress", v)}
-                labels={["Low", "High"]}
-              />
-
-              <div>
-                <Label htmlFor="notes">Any notes for your coach?</Label>
-                <Textarea
-                  id="notes"
-                  placeholder="How are things going? Anything you want to share..."
-                  value={formData.notes}
-                  onChange={(e) => updateField("notes", e.target.value)}
-                  className="mt-2"
-                  rows={3}
-                />
-              </div>
+          {/* Error Message */}
+          {error && (
+            <div className="glass-card p-4 border-destructive bg-destructive/10">
+              <p className="text-sm text-destructive text-center">{error}</p>
             </div>
           )}
 
-          {currentStep === 2 && (
-            <div className="space-y-6">
-              <CardTitle className="text-lg">Body Metrics</CardTitle>
+          {/* Navigation Buttons */}
+          <div className="flex items-center justify-between gap-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={currentStep === 1 ? () => router.back() : prevStep}
+              disabled={isSubmitting}
+              className="flex-1 sm:flex-none"
+            >
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              {currentStep === 1 ? "Cancel" : "Back"}
+            </Button>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <Label htmlFor="weight" className="flex items-center gap-2">
-                    <Scale className="h-4 w-4" />
-                    Current Weight (lbs)
-                  </Label>
-                  <Input
-                    id="weight"
-                    type="number"
-                    step="0.1"
-                    placeholder="Enter weight"
-                    value={formData.weight}
-                    onChange={(e) => updateField("weight", e.target.value)}
-                    className="mt-2"
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="bodyFat" className="flex items-center gap-2">
-                    <Ruler className="h-4 w-4" />
-                    Body Fat % (optional)
-                  </Label>
-                  <Input
-                    id="bodyFat"
-                    type="number"
-                    step="0.1"
-                    placeholder="Enter body fat %"
-                    value={formData.bodyFatPercentage}
-                    onChange={(e) =>
-                      updateField("bodyFatPercentage", e.target.value)
-                    }
-                    className="mt-2"
-                  />
-                </div>
-              </div>
-
-              <p className="text-sm text-muted-foreground">
-                Weigh yourself first thing in the morning for consistency.
-              </p>
-            </div>
-          )}
-
-          {currentStep === 3 && (
-            <div className="space-y-6">
-              <CardTitle className="text-lg">Training Summary</CardTitle>
-
-              <div>
-                <Label htmlFor="workouts">Workouts Completed This Week</Label>
-                <Input
-                  id="workouts"
-                  type="number"
-                  min="0"
-                  max="14"
-                  placeholder="Number of workouts"
-                  value={formData.workoutsCompleted}
-                  onChange={(e) =>
-                    updateField("workoutsCompleted", e.target.value)
-                  }
-                  className="mt-2"
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="wins">Wins & PRs</Label>
-                <Textarea
-                  id="wins"
-                  placeholder="Any personal records or achievements?"
-                  value={formData.wins}
-                  onChange={(e) => updateField("wins", e.target.value)}
-                  className="mt-2"
-                  rows={3}
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="challenges">Challenges</Label>
-                <Textarea
-                  id="challenges"
-                  placeholder="What struggles did you face?"
-                  value={formData.challenges}
-                  onChange={(e) => updateField("challenges", e.target.value)}
-                  className="mt-2"
-                  rows={3}
-                />
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Navigation */}
-      <div className="flex items-center justify-between gap-4">
-        {currentStep > 1 ? (
-          <Button
-            variant="outline"
-            onClick={() => setCurrentStep((s) => s - 1)}
-            disabled={isSubmitting}
-          >
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back
-          </Button>
-        ) : (
-          <Button variant="ghost" onClick={() => router.back()}>
-            Cancel
-          </Button>
-        )}
-
-        {currentStep < 3 ? (
-          <Button onClick={() => setCurrentStep((s) => s + 1)}>
-            Next
-            <ArrowRight className="ml-2 h-4 w-4" />
-          </Button>
-        ) : (
-          <Button onClick={handleSubmit} disabled={isSubmitting}>
-            {isSubmitting ? (
-              <>
-                <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                Submitting...
-              </>
+            {currentStep < 4 ? (
+              <Button
+                type="button"
+                onClick={nextStep}
+                disabled={!canProceed() || isSubmitting}
+                className="flex-1 sm:flex-none"
+              >
+                Next
+                <ArrowRight className="w-4 h-4 ml-2" />
+              </Button>
             ) : (
-              <>
-                <Send className="mr-2 h-4 w-4" />
-                Submit
-              </>
+              <Button
+                type="button"
+                onClick={handleSubmit}
+                disabled={isSubmitting}
+                className="flex-1 sm:flex-none"
+              >
+                {isSubmitting ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-primary-foreground/20 border-t-primary-foreground rounded-full animate-spin mr-2" />
+                    Submitting...
+                  </>
+                ) : (
+                  <>
+                    <Send className="w-4 h-4 mr-2" />
+                    Submit Check-In
+                  </>
+                )}
+              </Button>
             )}
-          </Button>
-        )}
-      </div>
-    </div>
-  );
-}
+          </div>
 
-interface SliderFieldProps {
-  label: string;
-  icon: React.ComponentType<{ className?: string }>;
-  value: number;
-  min: number;
-  max: number;
-  onChange: (value: number) => void;
-  labels: [string, string];
-}
-
-function SliderField({
-  label,
-  icon: Icon,
-  value,
-  min,
-  max,
-  onChange,
-  labels,
-}: SliderFieldProps) {
-  return (
-    <div>
-      <Label className="flex items-center gap-2">
-        <Icon className="h-4 w-4" />
-        {label}
-        <span className="ml-auto text-sm text-muted-foreground">
-          {value}/{max}
-        </span>
-      </Label>
-      <Slider
-        value={[value]}
-        min={min}
-        max={max}
-        step={1}
-        onValueChange={([v]) => onChange(v)}
-        className="mt-3"
-      />
-      <div className="mt-1 flex justify-between text-xs text-muted-foreground">
-        <span>{labels[0]}</span>
-        <span>{labels[1]}</span>
+          {/* Auto-save indicator */}
+          <p className="text-xs text-center text-muted-foreground">
+            Your progress is automatically saved
+          </p>
+        </div>
       </div>
     </div>
   );
