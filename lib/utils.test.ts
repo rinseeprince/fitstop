@@ -96,6 +96,7 @@ describe('cn (classname utility)', () => {
       'inline-flex items-center justify-center rounded-md text-sm font-medium',
       'transition-colors focus-visible:outline-none focus-visible:ring-2',
       variant === 'primary' && 'bg-primary text-primary-foreground hover:bg-primary/90',
+      // @ts-expect-error - testing conditional classes with fixed variant
       variant === 'secondary' && 'bg-secondary text-secondary-foreground hover:bg-secondary/80',
       isDisabled && 'pointer-events-none opacity-50'
     )

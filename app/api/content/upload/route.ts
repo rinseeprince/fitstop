@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { uploadContentFile, createContentItem } from "@/services/content-service";
+import type { ContentType } from "@/types/content";
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
@@ -147,7 +148,7 @@ export async function POST(request: NextRequest) {
         coachId: coach.id,
         title: title.trim(),
         description: description?.trim() || undefined,
-        type: type as any,
+        type: type as ContentType,
         folderId: folderId || undefined,
         isLibrary,
         fileName: file.name,

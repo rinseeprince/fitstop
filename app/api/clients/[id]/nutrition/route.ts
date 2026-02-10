@@ -109,9 +109,7 @@ export async function POST(
       // Update client with custom values
       const { error: updateError } = await supabaseAdmin
         .from("clients")
-        .update(
-          // @ts-expect-error - Database type inference issue
-          {
+        .update({
             work_activity_level: body.workActivityLevel,
             training_volume_hours: body.trainingVolumeHours,
             protein_target_g_per_kg: body.proteinTargetGPerKg,
@@ -164,7 +162,7 @@ export async function POST(
         regeneration_reason: "custom_macros",
       };
 
-      const { error: historyError } = await (supabaseAdmin as any)
+      const { error: historyError } = await supabaseAdmin
         .from("nutrition_plan_history")
         .insert(customHistoryData);
 
@@ -219,9 +217,7 @@ export async function POST(
     // TDEE is now calculated and saved when nutrition settings are configured
     const { error: updateError } = await supabaseAdmin
       .from("clients")
-      .update(
-        // @ts-expect-error - Database type inference issue
-        {
+      .update({
           work_activity_level: body.workActivityLevel,
           training_volume_hours: body.trainingVolumeHours,
           protein_target_g_per_kg: body.proteinTargetGPerKg,
@@ -264,7 +260,7 @@ export async function POST(
         : "initial",
     };
 
-    const { error: historyError } = await (supabaseAdmin as any)
+    const { error: historyError } = await supabaseAdmin
       .from("nutrition_plan_history")
       .insert(historyData);
 
@@ -338,10 +334,7 @@ export async function PATCH(
     if (body.unitPreference) {
       const { error } = await supabaseAdmin
         .from("clients")
-        .update(
-          // @ts-expect-error - Database type inference issue
-          { unit_preference: body.unitPreference }
-        )
+        .update({ unit_preference: body.unitPreference })
         .eq("id", clientId);
 
       if (error) throw error;

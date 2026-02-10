@@ -73,10 +73,7 @@ export async function POST(
     // TDEE is calculated when nutrition settings are configured (activity level determines multiplier)
     await supabaseAdmin
       .from("clients")
-      .update(
-        // @ts-expect-error - Database type inference issue
-        { bmr }
-      )
+      .update({ bmr })
       .eq("id", id);
 
     return NextResponse.json(

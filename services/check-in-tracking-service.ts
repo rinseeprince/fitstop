@@ -337,7 +337,7 @@ export async function updateClientAdherenceStats(clientId: string): Promise<void
   );
   const expectedCount = frequencyDays > 0 ? Math.floor(accountAge / frequencyDays) : 0;
 
-  const { error } = await (supabaseAdmin as any)
+  const { error } = await supabaseAdmin
     .from("clients")
     .update({
       total_check_ins_expected: expectedCount,

@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "./supabase-admin";
+import type { Database } from "@/types/database";
 import type {
   CheckIn,
   CheckInFormData,
@@ -30,7 +31,7 @@ export const createCheckInToken = async (
       client_id: clientId,
       token,
       expires_at: expiresAt.toISOString(),
-    } as any)
+    })
     .select()
     .single();
 
@@ -39,8 +40,8 @@ export const createCheckInToken = async (
   }
 
   return {
-    token: (data as any).token,
-    expiresAt: (data as any).expires_at,
+    token: data.token,
+    expiresAt: data.expires_at,
   };
 };
 
@@ -60,20 +61,20 @@ export const validateCheckInToken = async (
 
   // Check if token is expired
   const now = new Date();
-  const expiresAt = new Date((data as any).expires_at);
+  const expiresAt = new Date(data.expires_at);
   if (now > expiresAt) {
     return { valid: false };
   }
 
   // Check if token was already used
-  if ((data as any).used_at) {
+  if (data.used_at) {
     return { valid: false };
   }
 
   return {
     valid: true,
-    clientId: (data as any).client_id,
-    tokenId: (data as any).id,
+    clientId: data.client_id,
+    tokenId: data.id,
   };
 };
 
@@ -86,7 +87,7 @@ export const claimTokenForProcessing = async (
   tokenId: string
 ): Promise<boolean> => {
   // Only claim if used_at is null (not already used)
-  const { data, error } = await (supabaseAdmin as any)
+  const { data, error } = await supabaseAdmin
     .from("check_in_tokens")
     .update({
       used_at: new Date().toISOString(),
@@ -110,7 +111,7 @@ export const updateTokenWithCheckInId = async (
   tokenId: string,
   checkInId: string
 ): Promise<void> => {
-  const { error } = await (supabaseAdmin as any)
+  const { error } = await supabaseAdmin
     .from("check_in_tokens")
     .update({
       check_in_id: checkInId,
@@ -127,7 +128,7 @@ export const updateTokenWithCheckInId = async (
  * This allows the user to retry.
  */
 export const releaseToken = async (tokenId: string): Promise<void> => {
-  const { error } = await (supabaseAdmin as any)
+  const { error } = await supabaseAdmin
     .from("check_in_tokens")
     .update({
       used_at: null,
@@ -146,7 +147,7 @@ export const markTokenAsUsed = async (
   tokenId: string,
   checkInId: string
 ): Promise<void> => {
-  const { error } = await (supabaseAdmin as any)
+  const { error } = await supabaseAdmin
     .from("check_in_tokens")
     .update({
       used_at: new Date().toISOString(),
@@ -230,7 +231,7 @@ export const submitCheckIn = async (
     ? Math.min(100, Math.round((formData.nutritionAdherence.daysOnTarget / 7) * 100))
     : formData.adherencePercentage;
 
-  const { data, error } = await (supabaseAdmin as any)
+  const { data, error } = await supabaseAdmin
     .from("check_ins")
     .insert({
       client_id: clientId,
@@ -271,7 +272,7 @@ export const submitCheckIn = async (
     throw new Error(`Failed to submit check-in: ${error.message}`);
   }
 
-  const checkInId = (data as any).id;
+  const checkInId = data.id;
 
   // Insert related data - errors here shouldn't fail the entire check-in
   try {
@@ -372,7 +373,7 @@ export const updateCheckInStatus = async (
   checkInId: string,
   status: "pending" | "ai_processed" | "reviewed"
 ): Promise<void> => {
-  const { error } = await (supabaseAdmin as any)
+  const { error } = await supabaseAdmin
     .from("check_ins")
     .update({ status })
     .eq("id", checkInId);
@@ -390,7 +391,7 @@ export const updateCheckInAISummary = async (
   aiRecommendations: any,
   aiResponseDraft: string
 ): Promise<void> => {
-  const { error } = await (supabaseAdmin as any)
+  const { error } = await supabaseAdmin
     .from("check_ins")
     .update({
       ai_summary: aiSummary,
@@ -412,7 +413,7 @@ export const updateCheckInResponse = async (
   checkInId: string,
   coachResponse: string
 ): Promise<void> => {
-  const { error } = await (supabaseAdmin as any)
+  const { error } = await supabaseAdmin
     .from("check_ins")
     .update({
       coach_response: coachResponse,
@@ -428,7 +429,7 @@ export const updateCheckInResponse = async (
 
 // Mark response as sent
 export const markResponseAsSent = async (checkInId: string): Promise<void> => {
-  const { error } = await (supabaseAdmin as any)
+  const { error } = await supabaseAdmin
     .from("check_ins")
     .update({
       response_sent_at: new Date().toISOString(),
@@ -521,7 +522,7 @@ const insertSessionCompletions = async (
 
   const { error } = await supabaseAdmin
     .from("check_in_session_completions")
-    .insert(rows as any);
+    .insert(rows);
 
   if (error) {
     throw new Error(`Failed to insert session completions: ${error.message}`);
@@ -546,7 +547,7 @@ const insertExerciseHighlights = async (
 
   const { error } = await supabaseAdmin
     .from("check_in_exercise_highlights")
-    .insert(rows as any);
+    .insert(rows);
 
   if (error) {
     throw new Error(`Failed to insert exercise highlights: ${error.message}`);
@@ -570,7 +571,7 @@ const insertExternalActivities = async (
 
   const { error } = await supabaseAdmin
     .from("check_in_external_activities")
-    .insert(rows as any);
+    .insert(rows);
 
   if (error) {
     throw new Error(`Failed to insert external activities: ${error.message}`);

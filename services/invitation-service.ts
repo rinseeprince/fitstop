@@ -1,5 +1,6 @@
 import { supabase } from "@/services/supabase-client"
 import { supabaseAdmin } from "@/services/supabase-admin"
+import type { Database } from "@/types/database"
 import { sendInvitationEmail, generateInviteToken } from "@/services/email-service"
 import type {
   ClientInvitation,
@@ -21,7 +22,7 @@ const coachesTable = "coaches"
 export async function getInvitationForClient(
   clientId: string
 ): Promise<ClientInvitation | null> {
-  const { data, error } = await (supabase as any)
+  const { data, error } = await supabase
     .from(invitationsTable)
     .select("*")
     .eq("client_id", clientId)
@@ -57,7 +58,7 @@ export async function getInvitationByToken(
 }> {
   try {
     // Query invitation with client and coach info
-    const { data: invitationData, error: invitationError } = await (supabaseAdmin as any)
+    const { data: invitationData, error: invitationError } = await supabaseAdmin
       .from(invitationsTable)
       .select(`
         *,
@@ -137,7 +138,7 @@ export async function sendInvitation(
 ): Promise<SendInvitationResponse> {
   try {
     // First, get client and coach info
-    const { data: clientData, error: clientError } = await (supabaseAdmin as any)
+    const { data: clientData, error: clientError } = await supabaseAdmin
       .from(clientsTable)
       .select(`
         *,
@@ -169,7 +170,7 @@ export async function sendInvitation(
     }
 
     // Check if invitation already exists
-    const { data: existingInvitation } = await (supabaseAdmin as any)
+    const { data: existingInvitation } = await supabaseAdmin
       .from(invitationsTable)
       .select("*")
       .eq("client_id", clientId)
@@ -200,7 +201,7 @@ export async function sendInvitation(
     // Create or update invitation record
     if (existingInvitation) {
       // Update existing invitation with new token
-      const { data: updatedInvitation, error: updateError } = await (supabaseAdmin as any)
+      const { data: updatedInvitation, error: updateError } = await supabaseAdmin
         .from(invitationsTable)
         .update(invitationData)
         .eq("client_id", clientId)
@@ -216,7 +217,7 @@ export async function sendInvitation(
       }
     } else {
       // Create new invitation
-      const { data: newInvitation, error: createError } = await (supabaseAdmin as any)
+      const { data: newInvitation, error: createError } = await supabaseAdmin
         .from(invitationsTable)
         .insert(invitationData)
         .select()
@@ -243,7 +244,7 @@ export async function sendInvitation(
       console.error("Failed to send invitation email:", emailResult.error)
       
       // Revert invitation status if email failed
-      await (supabaseAdmin as any)
+      await supabaseAdmin
         .from(invitationsTable)
         .update({ status: "pending" })
         .eq("client_id", clientId)
@@ -255,7 +256,7 @@ export async function sendInvitation(
     }
 
     // Fetch the final invitation record
-    const { data: finalInvitation } = await (supabaseAdmin as any)
+    const { data: finalInvitation } = await supabaseAdmin
       .from(invitationsTable)
       .select("*")
       .eq("client_id", clientId)
@@ -283,7 +284,7 @@ export async function acceptInvitationByToken(
 ): Promise<{ success: boolean; error?: string }> {
   try {
     // Get invitation by token
-    const { data: invitationData, error: invitationError } = await (supabaseAdmin as any)
+    const { data: invitationData, error: invitationError } = await supabaseAdmin
       .from(invitationsTable)
       .select("*")
       .eq("token", token)
@@ -315,7 +316,7 @@ export async function acceptInvitationByToken(
     }
 
     // Update invitation status
-    const { error: updateError } = await (supabaseAdmin as any)
+    const { error: updateError } = await supabaseAdmin
       .from(invitationsTable)
       .update({
         status: "accepted",
@@ -332,7 +333,7 @@ export async function acceptInvitationByToken(
     }
 
     // Link user_id to client record
-    const { error: linkError } = await (supabaseAdmin as any)
+    const { error: linkError } = await supabaseAdmin
       .from(clientsTable)
       .update({ user_id: userId })
       .eq("id", invitation.client_id)
@@ -367,7 +368,7 @@ export async function acceptInvitation(
   console.warn("acceptInvitation is deprecated, use acceptInvitationByToken instead")
   
   // Update invitation status
-  await (supabaseAdmin as any)
+  await supabaseAdmin
     .from(invitationsTable)
     .update({
       status: "accepted",
@@ -376,7 +377,7 @@ export async function acceptInvitation(
     .eq("client_id", clientId)
 
   // Link user_id to client record
-  await (supabaseAdmin as any)
+  await supabaseAdmin
     .from(clientsTable)
     .update({ user_id: userId })
     .eq("id", clientId)
@@ -386,14 +387,14 @@ export async function acceptInvitation(
  * Get client ID from user ID
  */
 export async function getClientIdForUser(userId: string): Promise<string | null> {
-  const { data: client } = await (supabaseAdmin as any)
+  const { data: client } = await supabaseAdmin
     .from(clientsTable)
     .select("id")
     .eq("user_id", userId)
     .single()
 
   if (client) {
-    return (client as { id: string }).id
+    return client.id
   }
 
   return null

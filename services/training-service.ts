@@ -12,79 +12,75 @@ import type {
   AddExerciseRequest,
   ReorderSessionItem,
 } from "@/types/training";
+import type { ActivityMetadata } from "@/types/external-activity";
+import type { TrainingExerciseRow, TrainingSessionRow, TrainingPlanRow } from "@/lib/database-helpers";
 
 // Map database row to TrainingExercise
-const mapExerciseRow = (row: any): TrainingExercise => ({
+const mapExerciseRow = (row: TrainingExerciseRow): TrainingExercise => ({
   id: row.id,
   sessionId: row.session_id,
   name: row.name,
   orderIndex: row.order_index,
   sets: row.sets,
-  repsMin: row.reps_min,
-  repsMax: row.reps_max,
-  repsTarget: row.reps_target,
-  rpeTarget: row.rpe_target ? parseFloat(row.rpe_target) : undefined,
-  percentage1rm: row.percentage_1rm ? parseFloat(row.percentage_1rm) : undefined,
-  tempo: row.tempo,
-  restSeconds: row.rest_seconds,
-  notes: row.notes,
-  supersetGroup: row.superset_group,
+  repsMin: row.reps_min ?? undefined,
+  repsMax: row.reps_max ?? undefined,
+  repsTarget: row.reps_target ?? undefined,
+  rpeTarget: row.rpe_target ?? undefined,
+  percentage1rm: row.percentage_1rm ?? undefined,
+  tempo: row.tempo ?? undefined,
+  restSeconds: row.rest_seconds ?? undefined,
+  notes: row.notes ?? undefined,
+  supersetGroup: row.superset_group ?? undefined,
   isWarmup: row.is_warmup || false,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
 });
 
 // Map database row to TrainingSession
-const mapSessionRow = (row: any, exercises: TrainingExercise[] = []): TrainingSession => ({
+const mapSessionRow = (row: TrainingSessionRow, exercises: TrainingExercise[] = []): TrainingSession => ({
   id: row.id,
   planId: row.plan_id,
   name: row.name,
-  dayOfWeek: row.day_of_week,
+  dayOfWeek: row.day_of_week ?? undefined,
   orderIndex: row.order_index,
-  focus: row.focus,
-  notes: row.notes,
-  estimatedDurationMinutes: row.estimated_duration_minutes,
+  focus: row.focus ?? undefined,
+  notes: row.notes ?? undefined,
+  estimatedDurationMinutes: row.estimated_duration_minutes ?? undefined,
   exercises,
-  sessionType: row.session_type || "training",
-  activityMetadata: row.activity_metadata,
-  estimatedCalories: row.estimated_calories,
-  caloriesCalculatedAt: row.calories_calculated_at,
+  sessionType: (row.session_type ?? "training") as "training" | "external_activity",
+  activityMetadata: (row.activity_metadata ?? undefined) as ActivityMetadata | undefined,
+  estimatedCalories: row.estimated_calories ?? undefined,
+  caloriesCalculatedAt: row.calories_calculated_at ?? undefined,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
 });
 
 // Map database row to TrainingPlan
-const mapPlanRow = (row: any, sessions: TrainingSession[] = []): TrainingPlan => ({
+const mapPlanRow = (row: TrainingPlanRow, sessions: TrainingSession[] = []): TrainingPlan => ({
   id: row.id,
   clientId: row.client_id,
   coachId: row.coach_id,
   name: row.name,
-  description: row.description,
-  status: row.status,
-  coachPrompt: row.coach_prompt,
-  aiResponseRaw: row.ai_response_raw,
-  splitType: row.split_type,
+  description: row.description ?? undefined,
+  status: row.status as "draft" | "active" | "archived",
+  coachPrompt: row.coach_prompt ?? undefined,
+  aiResponseRaw: row.ai_response_raw ?? undefined,
+  splitType: row.split_type as "push_pull_legs" | "upper_lower" | "full_body" | "bro_split" | "push_pull" | "custom",
   frequencyPerWeek: row.frequency_per_week,
-  programDurationWeeks: row.program_duration_weeks,
-  clientWeightKg: row.client_weight_kg ? parseFloat(row.client_weight_kg) : undefined,
-  clientBodyFatPercentage: row.client_body_fat_percentage
-    ? parseFloat(row.client_body_fat_percentage)
-    : undefined,
-  clientGoalWeightKg: row.client_goal_weight_kg
-    ? parseFloat(row.client_goal_weight_kg)
-    : undefined,
-  clientTdee: row.client_tdee,
-  avgMood: row.avg_mood ? parseFloat(row.avg_mood) : undefined,
-  avgEnergy: row.avg_energy ? parseFloat(row.avg_energy) : undefined,
-  avgSleep: row.avg_sleep ? parseFloat(row.avg_sleep) : undefined,
-  avgStress: row.avg_stress ? parseFloat(row.avg_stress) : undefined,
-  recentAdherencePercentage: row.recent_adherence_percentage
-    ? parseFloat(row.recent_adherence_percentage)
-    : undefined,
+  programDurationWeeks: row.program_duration_weeks ?? undefined,
+  clientWeightKg: row.client_weight_kg ?? undefined,
+  clientBodyFatPercentage: row.client_body_fat_percentage ?? undefined,
+  clientGoalWeightKg: row.client_goal_weight_kg ?? undefined,
+  clientTdee: row.client_tdee ?? undefined,
+  avgMood: row.avg_mood ?? undefined,
+  avgEnergy: row.avg_energy ?? undefined,
+  avgSleep: row.avg_sleep ?? undefined,
+  avgStress: row.avg_stress ?? undefined,
+  recentAdherencePercentage: row.recent_adherence_percentage ?? undefined,
   sessions,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
-  deletedAt: row.deleted_at,
+  deletedAt: row.deleted_at ?? undefined,
 });
 
 // Create a new training plan with sessions and exercises
@@ -131,13 +127,13 @@ export const createTrainingPlan = async (
       avg_sleep: checkInData?.avgSleep || null,
       avg_stress: checkInData?.avgStress || null,
       recent_adherence_percentage: checkInData?.adherencePercentage || null,
-    } as any)
+    })
     .select()
     .single();
 
   if (planError || !planRow) throw new Error(`Failed to create plan: ${planError?.message || "No data returned"}`);
 
-  const planId = (planRow as any).id;
+  const planId = planRow.id;
   const sessions: TrainingSession[] = [];
 
   // Insert sessions and exercises
@@ -154,7 +150,7 @@ export const createTrainingPlan = async (
         focus: sessionData.focus || null,
         notes: sessionData.notes || null,
         estimated_duration_minutes: sessionData.estimatedDurationMinutes || null,
-      } as any)
+      })
       .select()
       .single();
 
@@ -169,7 +165,7 @@ export const createTrainingPlan = async (
       const { data: exerciseRow, error: exerciseError } = await supabaseAdmin
         .from("training_exercises")
         .insert({
-          session_id: (sessionRow as any).id,
+          session_id: sessionRow.id,
           name: exerciseData.name,
           order_index: j,
           sets: exerciseData.sets,
@@ -183,7 +179,7 @@ export const createTrainingPlan = async (
           notes: exerciseData.notes || null,
           superset_group: exerciseData.supersetGroup || null,
           is_warmup: exerciseData.isWarmup || false,
-        } as any)
+        })
         .select()
         .single();
 
@@ -192,10 +188,10 @@ export const createTrainingPlan = async (
       exercises.push(mapExerciseRow(exerciseRow));
     }
 
-    sessions.push(mapSessionRow(sessionRow as any, exercises));
+    sessions.push(mapSessionRow(sessionRow, exercises));
   }
 
-  return mapPlanRow(planRow as any, sessions);
+  return mapPlanRow(planRow, sessions);
 };
 
 // Get active training plan for a client
@@ -212,7 +208,7 @@ export const getActiveTrainingPlan = async (clientId: string): Promise<TrainingP
 
   if (planError || !planRow) return null;
 
-  const planData = planRow as any;
+  const planData = planRow;
 
   // Get sessions
   const { data: sessionRows, error: sessionError } = await supabaseAdmin
@@ -223,7 +219,7 @@ export const getActiveTrainingPlan = async (clientId: string): Promise<TrainingP
 
   if (sessionError) throw new Error(`Failed to fetch sessions: ${sessionError.message}`);
 
-  const sessionList = (sessionRows as any[]) || [];
+  const sessionList = sessionRows || [];
   if (sessionList.length === 0) {
     return mapPlanRow(planData, []);
   }
@@ -240,7 +236,7 @@ export const getActiveTrainingPlan = async (clientId: string): Promise<TrainingP
 
   // Group exercises by session_id
   const exercisesBySession = new Map<string, TrainingExercise[]>();
-  for (const row of (exerciseRows as any[]) || []) {
+  for (const row of exerciseRows || []) {
     const sessionId = row.session_id;
     if (!exercisesBySession.has(sessionId)) {
       exercisesBySession.set(sessionId, []);
@@ -266,7 +262,7 @@ export const getTrainingPlanById = async (planId: string): Promise<TrainingPlan 
 
   if (planError || !planRow) return null;
 
-  const planData = planRow as any;
+  const planData = planRow;
 
   const { data: sessionRows } = await supabaseAdmin
     .from("training_sessions")
@@ -274,7 +270,7 @@ export const getTrainingPlanById = async (planId: string): Promise<TrainingPlan 
     .eq("plan_id", planId)
     .order("order_index", { ascending: true });
 
-  const sessionList = (sessionRows as any[]) || [];
+  const sessionList = sessionRows || [];
   if (sessionList.length === 0) {
     return mapPlanRow(planData, []);
   }
@@ -289,7 +285,7 @@ export const getTrainingPlanById = async (planId: string): Promise<TrainingPlan 
 
   // Group exercises by session_id
   const exercisesBySession = new Map<string, TrainingExercise[]>();
-  for (const row of (exerciseRows as any[]) || []) {
+  for (const row of exerciseRows || []) {
     const sessionId = row.session_id;
     if (!exercisesBySession.has(sessionId)) {
       exercisesBySession.set(sessionId, []);
@@ -319,7 +315,7 @@ export const updateTrainingPlan = async (
   if (updates.programDurationWeeks !== undefined)
     updateData.program_duration_weeks = updates.programDurationWeeks;
 
-  const { error } = await (supabaseAdmin as any)
+  const { error } = await supabaseAdmin
     .from("training_plans")
     .update(updateData)
     .eq("id", planId);
@@ -333,7 +329,7 @@ export const updateTrainingPlan = async (
 
 // Archive training plan
 export const archiveTrainingPlan = async (planId: string): Promise<void> => {
-  const { error } = await (supabaseAdmin as any)
+  const { error } = await supabaseAdmin
     .from("training_plans")
     .update({ status: "archived", updated_at: new Date().toISOString() })
     .eq("id", planId);
@@ -356,7 +352,7 @@ export const updateSession = async (
   if (updates.estimatedDurationMinutes !== undefined)
     updateData.estimated_duration_minutes = updates.estimatedDurationMinutes;
 
-  const { data, error } = await (supabaseAdmin as any)
+  const { data, error } = await supabaseAdmin
     .from("training_sessions")
     .update(updateData)
     .eq("id", sessionId)
@@ -365,7 +361,7 @@ export const updateSession = async (
 
   if (error) throw new Error(`Failed to update session: ${error.message}`);
 
-  const { data: exercises } = await (supabaseAdmin as any)
+  const { data: exercises } = await supabaseAdmin
     .from("training_exercises")
     .select("*")
     .eq("session_id", sessionId)
@@ -380,7 +376,7 @@ export const addSession = async (
   session: AddSessionRequest
 ): Promise<TrainingSession> => {
   // Get max order index
-  const { data: existingSessions } = await (supabaseAdmin as any)
+  const { data: existingSessions } = await supabaseAdmin
     .from("training_sessions")
     .select("order_index")
     .eq("plan_id", planId)
@@ -391,7 +387,7 @@ export const addSession = async (
     ? existingSessions[0].order_index + 1
     : 0;
 
-  const { data, error } = await (supabaseAdmin as any)
+  const { data, error } = await supabaseAdmin
     .from("training_sessions")
     .insert({
       plan_id: planId,
@@ -412,7 +408,7 @@ export const addSession = async (
 
 // Delete session
 export const deleteSession = async (sessionId: string): Promise<void> => {
-  const { error } = await (supabaseAdmin as any).from("training_sessions").delete().eq("id", sessionId);
+  const { error } = await supabaseAdmin.from("training_sessions").delete().eq("id", sessionId);
 
   if (error) throw new Error(`Failed to delete session: ${error.message}`);
 };
@@ -437,7 +433,7 @@ export const updateExercise = async (
   if (updates.supersetGroup !== undefined) updateData.superset_group = updates.supersetGroup;
   if (updates.isWarmup !== undefined) updateData.is_warmup = updates.isWarmup;
 
-  const { data, error } = await (supabaseAdmin as any)
+  const { data, error } = await supabaseAdmin
     .from("training_exercises")
     .update(updateData)
     .eq("id", exerciseId)
@@ -455,7 +451,7 @@ export const addExercise = async (
   exercise: AddExerciseRequest
 ): Promise<TrainingExercise> => {
   // Get max order index
-  const { data: existingExercises } = await (supabaseAdmin as any)
+  const { data: existingExercises } = await supabaseAdmin
     .from("training_exercises")
     .select("order_index")
     .eq("session_id", sessionId)
@@ -466,7 +462,7 @@ export const addExercise = async (
     ? existingExercises[0].order_index + 1
     : 0;
 
-  const { data, error } = await (supabaseAdmin as any)
+  const { data, error } = await supabaseAdmin
     .from("training_exercises")
     .insert({
       session_id: sessionId,
@@ -494,7 +490,7 @@ export const addExercise = async (
 
 // Delete exercise
 export const deleteExercise = async (exerciseId: string): Promise<void> => {
-  const { error } = await (supabaseAdmin as any).from("training_exercises").delete().eq("id", exerciseId);
+  const { error } = await supabaseAdmin.from("training_exercises").delete().eq("id", exerciseId);
 
   if (error) throw new Error(`Failed to delete exercise: ${error.message}`);
 };
@@ -505,7 +501,7 @@ export const replaceSessionExercises = async (
   exercises: AddExerciseRequest[]
 ): Promise<TrainingExercise[]> => {
   // Delete existing exercises
-  const { error: deleteError } = await (supabaseAdmin as any)
+  const { error: deleteError } = await supabaseAdmin
     .from("training_exercises")
     .delete()
     .eq("session_id", sessionId);
@@ -516,7 +512,7 @@ export const replaceSessionExercises = async (
   const newExercises: TrainingExercise[] = [];
   for (let i = 0; i < exercises.length; i++) {
     const exercise = exercises[i];
-    const { data, error } = await (supabaseAdmin as any)
+    const { data, error } = await supabaseAdmin
       .from("training_exercises")
       .insert({
         session_id: sessionId,
@@ -554,12 +550,12 @@ export const saveTrainingPlanHistory = async (
   coachId: string,
   regenerationReason?: string
 ): Promise<void> => {
-  const { error } = await (supabaseAdmin as any).from("training_plan_history").insert({
+  const { error } = await supabaseAdmin.from("training_plan_history").insert({
     client_id: clientId,
     plan_id: planId,
     coach_prompt: coachPrompt,
     ai_response_raw: aiResponseRaw,
-    plan_snapshot: plan as any,
+    plan_snapshot: plan,
     client_metrics_snapshot: {
       weightKg: plan.clientWeightKg,
       bodyFatPercentage: plan.clientBodyFatPercentage,
@@ -575,7 +571,7 @@ export const saveTrainingPlanHistory = async (
     },
     regeneration_reason: regenerationReason || "initial",
     created_by_coach_id: coachId,
-  } as any);
+  });
 
   if (error) console.error("Failed to save training plan history:", error);
 };
@@ -614,7 +610,7 @@ export const reorderSessions = async (
 
   // Update each session's day and order
   for (const update of updates) {
-    const { error } = await (supabaseAdmin as any)
+    const { error } = await supabaseAdmin
       .from("training_sessions")
       .update({
         day_of_week: update.dayOfWeek,
@@ -635,7 +631,7 @@ export const updateSessionCalories = async (
   sessionId: string,
   estimatedCalories: number
 ): Promise<void> => {
-  const { error } = await (supabaseAdmin as any)
+  const { error } = await supabaseAdmin
     .from("training_sessions")
     .update({
       estimated_calories: estimatedCalories,
@@ -668,7 +664,7 @@ export const getSessionWithExercises = async (
     .order("order_index", { ascending: true });
 
   return mapSessionRow(
-    sessionRow as any,
-    ((exerciseRows as any[]) || []).map(mapExerciseRow)
+    sessionRow,
+    (exerciseRows || []).map(mapExerciseRow)
   );
 };

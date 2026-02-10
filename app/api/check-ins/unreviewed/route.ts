@@ -3,7 +3,8 @@ import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { apiRateLimit } from "@/lib/rate-limit";
 import type { GetCheckInsResponse } from "@/types/check-in";
-import { mapCheckInFromDatabase, type CheckInRow } from "@/types/database";
+import { mapCheckInFromDatabase } from "@/lib/mappers";
+import type { CheckInRow } from "@/lib/database-helpers";
 
 export async function GET(request: NextRequest) {
   const rateLimitResult = apiRateLimit(request);
@@ -29,7 +30,6 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ checkIns: [], total: 0 }, { status: 200 });
     }
 
-    // @ts-expect-error - Database type inference issue
     const clientIds = clients.map((c) => c.id);
 
     // Fetch all unreviewed check-ins (status = 'ai_processed') for these clients

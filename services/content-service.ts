@@ -1,7 +1,4 @@
-import { supabaseAdmin as _supabaseAdmin } from "./supabase-admin";
-
-// Type assertion to work around strict TypeScript database types
-const supabaseAdmin = _supabaseAdmin as any;
+import { supabaseAdmin } from "./supabase-admin";
 import type { 
   ContentFolder, 
   ContentItem, 

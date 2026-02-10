@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { NextRequest } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { GET } from './route'
 
 // Mock the dependencies
@@ -39,9 +39,56 @@ describe('/api/client/notifications', () => {
   const mockClient = {
     id: 'client-123',
     name: 'John Doe',
+    email: 'john.doe@example.com',
     checkInFrequency: 'weekly' as const,
     coachId: 'coach-456',
+    active: true,
     createdAt: '2024-01-01T00:00:00Z',
+    updatedAt: '2024-01-01T00:00:00Z',
+    avatarUrl: undefined,
+    notes: undefined,
+    height: undefined,
+    heightUnit: 'in' as const,
+    gender: undefined,
+    dateOfBirth: undefined,
+    goalWeight: undefined,
+    goalBodyFatPercentage: undefined,
+    weightUnit: 'lbs' as const,
+    currentWeight: undefined,
+    currentBodyFatPercentage: undefined,
+    bmr: undefined,
+    tdee: undefined,
+    checkInFrequencyDays: undefined,
+    expectedCheckInDay: undefined,
+    lastReminderSentAt: undefined,
+    reminderPreferences: undefined,
+    totalCheckInsExpected: undefined,
+    totalCheckInsCompleted: undefined,
+    checkInAdherenceRate: undefined,
+    currentStreak: undefined,
+    longestStreak: undefined,
+    unitPreference: 'imperial' as const,
+    workActivityLevel: undefined,
+    trainingVolumeHours: undefined,
+    proteinTargetGPerKg: undefined,
+    dietType: undefined,
+    goalDeadline: undefined,
+    nutritionPlanCreatedDate: undefined,
+    nutritionPlanBaseWeightKg: undefined,
+    baselineCalories: undefined,
+    startingWeight: undefined,
+    startingBodyFatPercentage: undefined,
+    calorieTarget: undefined,
+    proteinTargetG: undefined,
+    carbTargetG: undefined,
+    fatTargetG: undefined,
+    customMacrosEnabled: false,
+    customProteinG: undefined,
+    customCarbG: undefined,
+    customFatG: undefined,
+    customCalories: undefined,
+    bmrManualOverride: undefined,
+    tdeeManualOverride: undefined,
   }
 
   const createMockRequest = () => {
@@ -257,7 +304,7 @@ describe('/api/client/notifications', () => {
 
     it('should respect rate limiting', async () => {
       // Arrange
-      const rateLimitResponse = new Response('Rate limited', { status: 429 })
+      const rateLimitResponse = NextResponse.json({ error: 'Rate limited' }, { status: 429 })
       vi.mocked(apiRateLimit).mockReturnValue(rateLimitResponse)
 
       // Act

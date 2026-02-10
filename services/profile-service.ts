@@ -8,7 +8,7 @@ const profilesTable = "profiles"
  * Get a user's profile by their auth user ID
  */
 export async function getProfileByUserId(userId: string): Promise<Profile | null> {
-  const { data, error } = await (supabase as any)
+  const { data, error } = await supabase
     .from(profilesTable)
     .select("*")
     .eq("user_id", userId)
@@ -33,7 +33,7 @@ export async function createProfile(
   userId: string,
   role: UserRole
 ): Promise<Profile> {
-  const { data, error } = await (supabase as any)
+  const { data, error } = await supabase
     .from(profilesTable)
     .insert({
       user_id: userId,

@@ -23,12 +23,12 @@ import {
   Target,
   Zap,
 } from "lucide-react";
-import type { CheckIn } from "@/types/check-in";
+import type { CheckInWithDetails } from "@/types/check-in";
 
 export default function CheckInDetailPage() {
   const router = useRouter();
   const params = useParams();
-  const [checkIn, setCheckIn] = useState<CheckIn | null>(null);
+  const [checkIn, setCheckIn] = useState<CheckInWithDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 

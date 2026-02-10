@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/services/supabase-admin";
-import { mapCheckInFromDatabase, type CheckInRow } from "@/types/database";
+import { mapCheckInFromDatabase } from "@/lib/mappers";
+import type { CheckInRow } from "@/lib/database-helpers";
 import { 
   getCheckInSessionCompletions, 
   getCheckInExerciseHighlights, 

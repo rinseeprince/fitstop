@@ -1,6 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
-import type { Client, CheckIn } from "@/types/check-in";
+import type { Client, CheckIn, DietType } from "@/types/check-in";
 import type { TrainingPlan, TrainingSession, TrainingExercise } from "@/types/training";
 import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
 import { getWeeklyNutritionTargets } from "@/utils/nutrition-helpers";
@@ -399,7 +399,7 @@ export async function getClientNutritionTargets(
       data.baseline_calories,
       data.protein_target_g,
       trainingPlan,
-      data.diet_type as any
+      data.diet_type as DietType
     );
   }
 

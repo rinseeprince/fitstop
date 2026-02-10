@@ -35,11 +35,11 @@ export async function PUT(
       );
     }
 
-    const client = clientData as any;
+    const client = clientData;
 
     // Validate metric ranges
     if (body.currentWeight !== undefined) {
-      const weightKg = weightToKg(body.currentWeight, client.weight_unit || "lbs");
+      const weightKg = weightToKg(body.currentWeight, (client.weight_unit || "lbs") as "lbs" | "kg");
       if (weightKg < 20 || weightKg > 250) {
         return NextResponse.json(
           { error: "Weight must be between 20-250 kg (44-550 lbs)" },
@@ -135,7 +135,7 @@ export async function PUT(
       updates.bmr_manual_override = false;
       // Recalculate BMR based on current data
       if (client.current_weight && client.height && client.gender && client.date_of_birth) {
-        const weightKg = weightToKg(client.current_weight, client.weight_unit || "lbs");
+        const weightKg = weightToKg(client.current_weight, (client.weight_unit || "lbs") as "lbs" | "kg");
         const heightCm = client.height_unit === "in" ? client.height * 2.54 : client.height;
         const age = new Date().getFullYear() - new Date(client.date_of_birth).getFullYear();
 
@@ -162,7 +162,7 @@ export async function PUT(
     }
 
     // Update client record
-    const { error: updateError } = await (supabaseAdmin as any)
+    const { error: updateError } = await supabaseAdmin
       .from("clients")
       .update(updates)
       .eq("id", clientId);

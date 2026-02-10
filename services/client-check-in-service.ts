@@ -101,13 +101,10 @@ export async function updateClientMetricsFromCheckIn(
         const tdee = Math.round(bmr * 1.2);
 
         // Update BMR and TDEE directly in database
-        const { error: updateError } = await (supabaseAdmin
+        const { error: updateError } = await supabaseAdmin
           .from("clients")
-          .update(
-            // @ts-expect-error - Database type inference issue
-            { bmr, tdee }
-          )
-          .eq("id", client.id));
+          .update({ bmr, tdee })
+          .eq("id", client.id);
 
         if (updateError) {
           console.error("Error updating BMR/TDEE:", updateError);

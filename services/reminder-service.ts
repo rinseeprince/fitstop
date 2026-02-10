@@ -9,6 +9,7 @@ import { createCheckInToken } from "./check-in-service";
 import { getDaysUntilOrPastDue } from "./check-in-tracking-service";
 import { differenceInHours } from "@/lib/date-utils";
 import type { ReminderType, CheckInReminder } from "@/types/check-in";
+import type { CheckInReminderRow } from "@/lib/database-helpers";
 
 /**
  * Generate check-in link from token
@@ -67,7 +68,7 @@ export async function sendCheckInReminder(
     const daysOverdueValue = daysOverdue > 0 ? daysOverdue : null;
 
     // Log reminder in database
-    const { data: reminder, error: reminderError } = await (supabaseAdmin as any)
+    const { data: reminder, error: reminderError } = await supabaseAdmin
       .from("check_in_reminders")
       .insert({
         client_id: clientId,
@@ -83,7 +84,7 @@ export async function sendCheckInReminder(
     }
 
     // Update last reminder sent timestamp on client
-    const { error: updateError } = await (supabaseAdmin as any)
+    const { error: updateError } = await supabaseAdmin
       .from("clients")
       .update({ last_reminder_sent_at: new Date().toISOString() })
       .eq("id", clientId);
@@ -92,7 +93,7 @@ export async function sendCheckInReminder(
       throw new Error(`Failed to update client reminder timestamp: ${updateError.message}`);
     }
 
-    return { success: true, reminderId: (reminder as any).id };
+    return { success: true, reminderId: reminder.id };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
     return { success: false, errorMessage };
@@ -189,14 +190,14 @@ export async function markReminderAsResponded(
   }
 
   // Mark reminder as responded
-  const { error: updateError } = await (supabaseAdmin as any)
+  const { error: updateError } = await supabaseAdmin
     .from("check_in_reminders")
     .update({
       responded: true,
       responded_at: new Date().toISOString(),
       check_in_id: checkInId,
     })
-    .eq("id", (reminder as any).id);
+    .eq("id", reminder.id);
 
   if (updateError) {
     throw new Error(`Failed to mark reminder as responded: ${updateError.message}`);
@@ -228,18 +229,18 @@ export async function getClientReminders(
     return [];
   }
 
-  return data.map((row: any) => ({
+  return data.map((row: CheckInReminderRow) => ({
     id: row.id,
     clientId: row.client_id,
-    sentAt: row.sent_at,
-    reminderType: row.reminder_type,
+    sentAt: row.sent_at ?? new Date().toISOString(),
+    reminderType: row.reminder_type as "upcoming" | "overdue" | "follow_up",
     daysOverdue: row.days_overdue,
-    responded: row.responded,
-    respondedAt: row.responded_at,
-    checkInId: row.check_in_id,
-    sentVia: row.sent_via,
-    notes: row.notes,
-    createdAt: row.created_at,
+    responded: row.responded ?? false,
+    respondedAt: row.responded_at ?? undefined,
+    checkInId: row.check_in_id ?? undefined,
+    sentVia: (row.sent_via ?? "system") as "manual" | "system",
+    notes: row.notes ?? undefined,
+    createdAt: row.created_at ?? new Date().toISOString(),
   }));
 }
 

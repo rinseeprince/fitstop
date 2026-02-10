@@ -5,7 +5,7 @@
 
 import { generateUUID, generateISODate } from './test-utils'
 import type { Client } from '@/types/check-in'
-import type { CheckInRow, CheckInTokenRow, TrainingPlanRow, TrainingSessionRow, TrainingExerciseRow } from '@/types/database'
+import type { CheckInRow, CheckInTokenRow, TrainingPlanRow, TrainingSessionRow, TrainingExerciseRow } from '@/lib/database-helpers'
 
 // =============================================================================
 // Client Builders
@@ -148,6 +148,8 @@ export function createMockCheckInRow(options: MockCheckInOptions = {}): CheckInR
     adherence_percentage: null,
     prs: null,
     challenges: null,
+    nutrition_days_on_target: null,
+    nutrition_notes: null,
     ai_summary: null,
     ai_insights: null,
     ai_recommendations: null,
