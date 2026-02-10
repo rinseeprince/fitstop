@@ -3,7 +3,7 @@ import { getAuthenticatedClientId } from "@/lib/auth-helpers";
 import { getClientById, updateClient } from "@/services/client-service";
 import { uploadProgressPhotoFromBase64 } from "@/services/storage-service";
 import { submitCheckIn, getClientCheckIns } from "@/services/check-in-service";
-import { triggerAISummaryGeneration } from "@/services/client-check-in-service";
+import { triggerAISummaryGeneration, updateClientMetricsFromCheckIn } from "@/services/client-check-in-service";
 import { updateClientAdherenceStats, getFrequencyInDays } from "@/services/check-in-tracking-service";
 import { updateClientBMR } from "@/services/bmr-service";
 import { apiRateLimit } from "@/lib/rate-limit";
@@ -250,12 +250,8 @@ export async function POST(request: NextRequest) {
       // Update client metadata
       const client = await getClientById(clientId);
       if (client) {
-        // Update BMR if weight is provided
-        if (body.weight) {
-          // Update the client's current weight and recalculate BMR
-          const updatedClient = { ...client, currentWeight: body.weight, weightUnit: body.weightUnit || "lbs" };
-          updateClientBMR(updatedClient);
-        }
+        // Update client's current weight, body fat, BMR, and TDEE from check-in data
+        await updateClientMetricsFromCheckIn(client, body);
 
         // Update adherence stats
         await updateClientAdherenceStats(clientId);
