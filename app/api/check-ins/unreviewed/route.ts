@@ -3,7 +3,7 @@ import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { apiRateLimit } from "@/lib/rate-limit";
 import type { GetCheckInsResponse } from "@/types/check-in";
-import { mapCheckInFromDatabase } from "@/lib/mappers";
+import { mapCheckInRow } from "@/lib/mappers";
 import type { CheckInRow } from "@/lib/database-helpers";
 
 export async function GET(request: NextRequest) {
@@ -71,7 +71,7 @@ export async function GET(request: NextRequest) {
 
     // Map the database rows to CheckIn objects using the mapper function
     const checkIns = (checkInsData || []).map((row) =>
-      mapCheckInFromDatabase(row as CheckInWithClient)
+      mapCheckInRow(row as CheckInWithClient)
     );
 
     const response: GetCheckInsResponse = {

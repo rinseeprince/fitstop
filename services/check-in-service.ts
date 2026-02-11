@@ -10,6 +10,7 @@ import type {
   CheckInExternalActivity,
   CheckInWithDetails,
 } from "@/types/check-in";
+import { mapCheckInRow } from "@/lib/mappers";
 
 // Generate a unique token for check-in link
 export const generateCheckInToken = (): string => {
@@ -307,7 +308,7 @@ export const getCheckInById = async (
     return null;
   }
 
-  return mapDatabaseRowToCheckIn(data);
+  return mapCheckInRow(data);
 };
 
 // Get all check-ins for a client
@@ -344,7 +345,7 @@ export const getClientCheckIns = async (
   }
 
   return {
-    checkIns: (data || []).map(mapDatabaseRowToCheckIn),
+    checkIns: (data || []).map(mapCheckInRow),
     total: count || 0,
   };
 };
@@ -365,7 +366,7 @@ export const getFirstCheckIn = async (
     return null;
   }
 
-  return mapDatabaseRowToCheckIn(data);
+  return mapCheckInRow(data);
 };
 
 // Update check-in status
@@ -462,50 +463,9 @@ export const getPreviousCheckIn = async (
     return null;
   }
 
-  return mapDatabaseRowToCheckIn(data);
+  return mapCheckInRow(data);
 };
 
-// Helper function to map database row to CheckIn type
-const mapDatabaseRowToCheckIn = (row: any): CheckIn => {
-  return {
-    id: row.id,
-    clientId: row.client_id,
-    status: row.status,
-    mood: row.mood,
-    energy: row.energy,
-    sleep: row.sleep,
-    stress: row.stress,
-    notes: row.notes,
-    weight: row.weight,
-    weightUnit: row.weight_unit,
-    bodyFatPercentage: row.body_fat_percentage,
-    waist: row.waist,
-    hips: row.hips,
-    chest: row.chest,
-    arms: row.arms,
-    thighs: row.thighs,
-    measurementUnit: row.measurement_unit,
-    photoFront: row.photo_front,
-    photoSide: row.photo_side,
-    photoBack: row.photo_back,
-    workoutsCompleted: row.workouts_completed,
-    adherencePercentage: row.adherence_percentage,
-    prs: row.prs,
-    challenges: row.challenges,
-    nutritionDaysOnTarget: row.nutrition_days_on_target,
-    nutritionNotes: row.nutrition_notes,
-    aiSummary: row.ai_summary,
-    aiInsights: row.ai_insights,
-    aiRecommendations: row.ai_recommendations,
-    aiResponseDraft: row.ai_response_draft,
-    aiProcessedAt: row.ai_processed_at,
-    coachResponse: row.coach_response,
-    coachReviewedAt: row.coach_reviewed_at,
-    responseSentAt: row.response_sent_at,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
-};
 
 // Insert session completions for a check-in
 const insertSessionCompletions = async (

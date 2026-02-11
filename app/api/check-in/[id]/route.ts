@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/services/supabase-admin";
-import { mapCheckInFromDatabase } from "@/lib/mappers";
+import { mapCheckInRow } from "@/lib/mappers";
 import type { CheckInRow } from "@/lib/database-helpers";
 import { 
   getCheckInSessionCompletions, 
@@ -60,7 +60,7 @@ export async function GET(
     const checkInData = data as CheckInWithClient;
 
     // Use mapper function to transform database row to application type
-    const checkIn = mapCheckInFromDatabase(checkInData);
+    const checkIn = mapCheckInRow(checkInData);
 
     // Fetch related data
     const [sessionCompletions, exerciseHighlights, externalActivities] = await Promise.all([

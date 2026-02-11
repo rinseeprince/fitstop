@@ -4,6 +4,7 @@ import type { Client, CheckIn, DietType } from "@/types/check-in";
 import type { TrainingPlan, TrainingSession, TrainingExercise } from "@/types/training";
 import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
 import { getWeeklyNutritionTargets } from "@/utils/nutrition-helpers";
+import { mapClientRow, mapCheckInRow } from "@/lib/mappers";
 
 // Create authenticated Supabase client for server-side client portal access
 // Uses regular client (not admin) to respect RLS policies
@@ -108,102 +109,6 @@ export type SessionCompletion = {
   updatedAt: string;
 };
 
-// Helper to map database row to Client type
-function mapRowToClient(row: any): Client {
-  return {
-    id: row.id,
-    coachId: row.coach_id,
-    name: row.name,
-    email: row.email,
-    avatarUrl: row.avatar_url,
-    notes: row.notes,
-    active: row.active,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    height: row.height,
-    heightUnit: row.height_unit,
-    gender: row.gender,
-    dateOfBirth: row.date_of_birth,
-    goalWeight: row.goal_weight,
-    goalBodyFatPercentage: row.goal_body_fat_percentage,
-    weightUnit: row.weight_unit,
-    currentWeight: row.current_weight,
-    currentBodyFatPercentage: row.current_body_fat_percentage,
-    bmr: row.bmr,
-    tdee: row.tdee,
-    checkInFrequency: row.check_in_frequency,
-    checkInFrequencyDays: row.check_in_frequency_days,
-    expectedCheckInDay: row.expected_check_in_day,
-    totalCheckInsExpected: row.total_check_ins_expected,
-    totalCheckInsCompleted: row.total_check_ins_completed,
-    checkInAdherenceRate: row.check_in_adherence_rate,
-    currentStreak: row.current_streak,
-    longestStreak: row.longest_streak,
-    unitPreference: row.unit_preference,
-    workActivityLevel: row.work_activity_level,
-    trainingVolumeHours: row.training_volume_hours,
-    proteinTargetGPerKg: row.protein_target_g_per_kg,
-    dietType: row.diet_type,
-    goalDeadline: row.goal_deadline,
-    nutritionPlanCreatedDate: row.nutrition_plan_created_date,
-    nutritionPlanBaseWeightKg: row.nutrition_plan_base_weight_kg,
-    baselineCalories: row.baseline_calories,
-    startingWeight: row.starting_weight,
-    startingBodyFatPercentage: row.starting_body_fat_percentage,
-    calorieTarget: row.calorie_target,
-    proteinTargetG: row.protein_target_g,
-    carbTargetG: row.carb_target_g,
-    fatTargetG: row.fat_target_g,
-    customMacrosEnabled: row.custom_macros_enabled,
-    customProteinG: row.custom_protein_g,
-    customCarbG: row.custom_carb_g,
-    customFatG: row.custom_fat_g,
-    bmrManualOverride: row.bmr_manual_override,
-    tdeeManualOverride: row.tdee_manual_override,
-  };
-}
-
-// Helper to map database row to CheckIn type
-function mapRowToCheckIn(row: any): CheckIn {
-  return {
-    id: row.id,
-    clientId: row.client_id,
-    status: row.status,
-    mood: row.mood,
-    energy: row.energy,
-    sleep: row.sleep,
-    stress: row.stress,
-    notes: row.notes,
-    weight: row.weight,
-    weightUnit: row.weight_unit,
-    bodyFatPercentage: row.body_fat_percentage,
-    waist: row.waist,
-    hips: row.hips,
-    chest: row.chest,
-    arms: row.arms,
-    thighs: row.thighs,
-    measurementUnit: row.measurement_unit,
-    photoFront: row.photo_front,
-    photoSide: row.photo_side,
-    photoBack: row.photo_back,
-    workoutsCompleted: row.workouts_completed,
-    adherencePercentage: row.adherence_percentage,
-    prs: row.prs,
-    challenges: row.challenges,
-    aiSummary: row.ai_summary,
-    aiInsights: row.ai_insights,
-    aiRecommendations: row.ai_recommendations,
-    aiResponseDraft: row.ai_response_draft,
-    aiProcessedAt: row.ai_processed_at,
-    coachResponse: row.coach_response,
-    coachReviewedAt: row.coach_reviewed_at,
-    responseSentAt: row.response_sent_at,
-    nutritionDaysOnTarget: row.nutrition_days_on_target,
-    nutritionNotes: row.nutrition_notes,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
-}
 
 // Get client record for the authenticated user
 export async function getClientForCurrentUser(): Promise<Client | null> {
@@ -223,7 +128,7 @@ export async function getClientForCurrentUser(): Promise<Client | null> {
 
   if (error || !data) return null;
 
-  return mapRowToClient(data);
+  return mapClientRow(data);
 }
 
 // Get active training plan for a client
@@ -350,7 +255,7 @@ export async function getClientCheckIns(
 
   if (error || !data) return [];
 
-  return data.map(mapRowToCheckIn);
+  return data.map(mapCheckInRow);
 }
 
 // Get a single check-in by ID
@@ -367,7 +272,7 @@ export async function getClientCheckInById(
 
   if (error || !data) return null;
 
-  return mapRowToCheckIn(data);
+  return mapCheckInRow(data);
 }
 
 // Get nutrition targets for a client with daily breakdown
