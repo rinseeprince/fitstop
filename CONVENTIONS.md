@@ -36,9 +36,49 @@ When files exceed limits, extract:
 ## Security
 - Auth: Check on every protected route/component
 - Input sanitization: All user inputs (especially coach bios, session notes)
-- Rate limiting: API routes (3 attempts for login, 100/hour for searches)
+- Rate limiting: **MANDATORY** - Every API route must include rate limiting as the first check
 - Sensitive data: Never log passwords, tokens, payment info
 - File uploads: Validate type, size, scan (profile pics, workout plans)
+
+### Rate Limiting Requirements
+**ALL new API routes MUST implement rate limiting as the first operation in every handler function.**
+
+#### Rate Limit Types:
+- `authRateLimit`: Auth/invitation routes (5 requests per 15 minutes)
+- `apiRateLimit`: General API endpoints (60 requests per minute)
+- Custom limits: AI/expensive operations (10 requests per minute or stricter)
+
+#### Required Pattern:
+```typescript
+import { apiRateLimit } from "@/lib/rate-limit";
+
+export async function GET(request: NextRequest) {
+  const rateLimitResult = await apiRateLimit(request);
+  if (rateLimitResult) return rateLimitResult;
+
+  // ... rest of handler logic
+}
+```
+
+#### When to Use Each Type:
+- **authRateLimit**: `/api/auth/*`, `/api/invitations/*`, login, signup, password reset
+- **Custom strict limits**: AI endpoints, file processing, expensive computations
+- **apiRateLimit**: All other routes (default choice)
+
+#### Examples:
+```typescript
+// Auth endpoint
+const rateLimitResult = await authRateLimit(request);
+
+// AI endpoint  
+const rateLimitResult = await rateLimit(request, {
+  windowMs: 60 * 1000, // 1 minute
+  maxRequests: 10, // 10 requests per minute
+});
+
+// Standard endpoint
+const rateLimitResult = await apiRateLimit(request);
+```
 
 ## Testing
 - Unit tests: All service functions and utilities
