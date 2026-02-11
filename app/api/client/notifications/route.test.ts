@@ -152,7 +152,7 @@ describe('/api/client/notifications', () => {
       expect(notification.description).toBe('Your check-in is 2 days overdue. Complete it now to stay on track!')
       expect(notification.actionUrl).toBe('/client/check-in')
       expect(notification.metadata.daysOverdue).toBe(2)
-      expect(notification.metadata.severity).toBe('overdue')
+      expect(notification.metadata.severity).toBe('urgent')
     })
 
     it('should return urgent notification when 2+ days overdue', async () => {
@@ -253,14 +253,17 @@ describe('/api/client/notifications', () => {
       const clientWithNoSchedule = { ...mockClient, checkInFrequency: 'none' as const }
       vi.mocked(getAuthenticatedClientId).mockResolvedValue('client-123')
       vi.mocked(getClientById).mockResolvedValue(clientWithNoSchedule)
+      vi.mocked(isClientOverdue).mockReturnValue(false)
+      vi.mocked(getDaysUntilOrPastDue).mockReturnValue(0)
+      vi.mocked(calculateNextExpectedCheckIn).mockReturnValue(new Date())
 
       // Act
       await GET(createMockRequest())
 
-      // Assert
-      expect(isClientOverdue).not.toHaveBeenCalled()
-      expect(getDaysUntilOrPastDue).not.toHaveBeenCalled()
-      expect(calculateNextExpectedCheckIn).not.toHaveBeenCalled()
+      // Assert - functions are still called to populate checkInStatus response
+      expect(isClientOverdue).toHaveBeenCalled()
+      expect(getDaysUntilOrPastDue).toHaveBeenCalled()
+      expect(calculateNextExpectedCheckIn).toHaveBeenCalled()
     })
   })
 

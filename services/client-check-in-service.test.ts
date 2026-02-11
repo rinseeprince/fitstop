@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { triggerAISummaryGeneration } from './client-check-in-service'
+
+// Mock the supabase-admin module
+vi.mock('./supabase-admin', () => ({
+  supabaseAdmin: {
+    from: vi.fn(),
+  },
+}))
 
 // Mock the dependencies
 vi.mock('./ai-service', () => ({
@@ -11,6 +17,16 @@ vi.mock('./check-in-service', () => ({
   updateCheckInAISummary: vi.fn(),
   getClientCheckIns: vi.fn(),
 }))
+
+vi.mock('./client-service', () => ({
+  updateClient: vi.fn(),
+}))
+
+vi.mock('./bmr-service', () => ({
+  updateClientBMR: vi.fn(),
+}))
+
+import { triggerAISummaryGeneration } from './client-check-in-service'
 
 import { generateCheckInSummary } from './ai-service'
 import { 
