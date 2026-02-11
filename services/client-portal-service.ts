@@ -139,7 +139,13 @@ export async function getClientTrainingPlan(
 
   const { data: planData, error: planError } = await supabase
     .from("training_plans")
-    .select("*")
+    .select(`
+      *,
+      training_sessions(
+        *,
+        training_exercises(*)
+      )
+    `)
     .eq("client_id", clientId)
     .eq("status", "active")
     .is("deleted_at", null)
@@ -149,65 +155,56 @@ export async function getClientTrainingPlan(
 
   if (planError || !planData) return null;
 
-  // Fetch sessions
-  const { data: sessionsData } = await supabase
-    .from("training_sessions")
-    .select("*")
-    .eq("plan_id", planData.id)
-    .order("order_index", { ascending: true });
+  // Sort sessions by order_index
+  const sessionList = (planData.training_sessions || []).sort((a: any, b: any) => 
+    a.order_index - b.order_index
+  );
 
-  const sessions: TrainingSession[] = [];
+  // Map sessions and exercises to the expected format
+  const sessions: TrainingSession[] = sessionList.map((session: any) => {
+    // Sort exercises by order_index within each session
+    const exerciseList = (session.training_exercises || []).sort((a: any, b: any) => 
+      a.order_index - b.order_index
+    );
 
-  if (sessionsData) {
-    for (const session of sessionsData) {
-      // Fetch exercises for each session
-      const { data: exercisesData } = await supabase
-        .from("training_exercises")
-        .select("*")
-        .eq("session_id", session.id)
-        .order("order_index", { ascending: true });
+    const exercises: TrainingExercise[] = exerciseList.map((ex: any) => ({
+      id: ex.id,
+      sessionId: ex.session_id,
+      name: ex.name,
+      orderIndex: ex.order_index,
+      sets: ex.sets,
+      repsMin: ex.reps_min,
+      repsMax: ex.reps_max,
+      repsTarget: ex.reps_target,
+      rpeTarget: ex.rpe_target,
+      percentage1rm: ex.percentage_1rm,
+      tempo: ex.tempo,
+      restSeconds: ex.rest_seconds,
+      notes: ex.notes,
+      supersetGroup: ex.superset_group,
+      isWarmup: ex.is_warmup,
+      createdAt: ex.created_at,
+      updatedAt: ex.updated_at,
+    }));
 
-      const exercises: TrainingExercise[] = (exercisesData || []).map(
-        (ex: any) => ({
-          id: ex.id,
-          sessionId: ex.session_id,
-          name: ex.name,
-          orderIndex: ex.order_index,
-          sets: ex.sets,
-          repsMin: ex.reps_min,
-          repsMax: ex.reps_max,
-          repsTarget: ex.reps_target,
-          rpeTarget: ex.rpe_target,
-          percentage1rm: ex.percentage_1rm,
-          tempo: ex.tempo,
-          restSeconds: ex.rest_seconds,
-          notes: ex.notes,
-          supersetGroup: ex.superset_group,
-          isWarmup: ex.is_warmup,
-          createdAt: ex.created_at,
-          updatedAt: ex.updated_at,
-        })
-      );
-
-      sessions.push({
-        id: session.id,
-        planId: session.plan_id,
-        name: session.name,
-        dayOfWeek: session.day_of_week,
-        orderIndex: session.order_index,
-        focus: session.focus,
-        notes: session.notes,
-        estimatedDurationMinutes: session.estimated_duration_minutes,
-        sessionType: session.session_type || "training",
-        activityMetadata: session.activity_metadata,
-        estimatedCalories: session.estimated_calories,
-        caloriesCalculatedAt: session.calories_calculated_at,
-        exercises,
-        createdAt: session.created_at,
-        updatedAt: session.updated_at,
-      });
-    }
-  }
+    return {
+      id: session.id,
+      planId: session.plan_id,
+      name: session.name,
+      dayOfWeek: session.day_of_week,
+      orderIndex: session.order_index,
+      focus: session.focus,
+      notes: session.notes,
+      estimatedDurationMinutes: session.estimated_duration_minutes,
+      sessionType: session.session_type || "training",
+      activityMetadata: session.activity_metadata,
+      estimatedCalories: session.estimated_calories,
+      caloriesCalculatedAt: session.calories_calculated_at,
+      exercises,
+      createdAt: session.created_at,
+      updatedAt: session.updated_at,
+    };
+  });
 
   return {
     id: planData.id,
