@@ -4,14 +4,18 @@ import { getTrainingPlanById, replaceSessionExercises } from "@/services/trainin
 import { regenerateExercisesAI } from "@/services/training-ai-service";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { apiRateLimit } from "@/lib/rate-limit";
+import { requireCSRFProtection } from "@/lib/csrf-protection";
 
 // POST - Refresh exercises for all training sessions in a plan
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; planId: string }> }
 ) {
-  const rateLimitResult = apiRateLimit(request);
+  const rateLimitResult = await apiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
+
+  const csrfError = await requireCSRFProtection(request);
+  if (csrfError) return csrfError;
 
   try {
     const coachId = await getAuthenticatedCoachId();

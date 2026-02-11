@@ -25,6 +25,7 @@ import {
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { updateClientMetricsFromCheckIn, triggerAISummaryGeneration } from "@/services/client-check-in-service";
 import { checkInRateLimit } from "@/lib/rate-limit";
+import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { submitCheckInSchema } from "@/lib/validations/check-in";
 import type {
   ValidateCheckInTokenResponse,
@@ -38,7 +39,7 @@ export async function GET(
   { params }: { params: Promise<{ token: string }> }
 ) {
   // Apply rate limiting
-  const rateLimitResult = checkInRateLimit(request);
+  const rateLimitResult = await checkInRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
   try {
     const { token } = await params;
@@ -109,8 +110,11 @@ export async function POST(
   { params }: { params: Promise<{ token: string }> }
 ) {
   // Apply rate limiting
-  const rateLimitResult = checkInRateLimit(request);
+  const rateLimitResult = await checkInRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
+
+  const csrfError = await requireCSRFProtection(request);
+  if (csrfError) return csrfError;
 
   try {
     const { token } = await params;

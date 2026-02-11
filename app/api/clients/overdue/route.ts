@@ -11,7 +11,7 @@ import type { GetOverdueClientsResponse } from "@/types/check-in";
  */
 export async function GET(request: NextRequest) {
   // Apply rate limiting
-  const rateLimitResult = apiRateLimit(request);
+  const rateLimitResult = await apiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
 
   try {

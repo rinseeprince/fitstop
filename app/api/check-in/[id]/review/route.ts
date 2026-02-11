@@ -8,6 +8,7 @@ import { getClientById } from "@/services/client-service";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import type { ReviewCheckInRequest, ReviewCheckInResponse } from "@/types/check-in";
 import { apiRateLimit } from "@/lib/rate-limit";
+import { requireCSRFProtection } from "@/lib/csrf-protection";
 
 /**
  * Verifies coach owns the client associated with a check-in
@@ -58,6 +59,9 @@ export async function POST(
   const rateLimitResult = await apiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
 
+  const csrfError = await requireCSRFProtection(request);
+  if (csrfError) return csrfError;
+
   try {
     const { id: checkInId } = await params;
 
@@ -105,6 +109,9 @@ export async function PATCH(
 ) {
   const rateLimitResult = await apiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
+
+  const csrfError = await requireCSRFProtection(request);
+  if (csrfError) return csrfError;
 
   try {
     const { id: checkInId } = await params;

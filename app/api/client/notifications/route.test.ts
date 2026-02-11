@@ -33,7 +33,7 @@ import { apiRateLimit } from '@/lib/rate-limit'
 describe('/api/client/notifications', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    vi.mocked(apiRateLimit).mockReturnValue(null)
+    vi.mocked(apiRateLimit).mockResolvedValue(null)
   })
 
   const mockClient = {
@@ -308,7 +308,7 @@ describe('/api/client/notifications', () => {
     it('should respect rate limiting', async () => {
       // Arrange
       const rateLimitResponse = NextResponse.json({ error: 'Rate limited' }, { status: 429 })
-      vi.mocked(apiRateLimit).mockReturnValue(rateLimitResponse)
+      vi.mocked(apiRateLimit).mockResolvedValue(rateLimitResponse)
 
       // Act
       const response = await GET(createMockRequest())

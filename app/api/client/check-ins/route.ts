@@ -7,6 +7,7 @@ import { triggerAISummaryGeneration, updateClientMetricsFromCheckIn } from "@/se
 import { updateClientAdherenceStats, getFrequencyInDays } from "@/services/check-in-tracking-service";
 import { updateClientBMR } from "@/services/bmr-service";
 import { apiRateLimit } from "@/lib/rate-limit";
+import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { clientSubmitCheckInSchema } from "@/lib/validations/check-in";
 import type { SubmitCheckInResponse, CheckInFormData } from "@/types/check-in";
 
@@ -49,7 +50,7 @@ import type { SubmitCheckInResponse, CheckInFormData } from "@/types/check-in";
  * @throws {500} Server error during check-in retrieval
  */
 export async function GET(request: NextRequest) {
-  const rateLimitResult = apiRateLimit(request);
+  const rateLimitResult = await apiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
 
   try {
@@ -138,8 +139,11 @@ export async function GET(request: NextRequest) {
  * @throws {500} Server error during check-in processing
  */
 export async function POST(request: NextRequest) {
-  const rateLimitResult = apiRateLimit(request);
+  const rateLimitResult = await apiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
+
+  const csrfError = await requireCSRFProtection(request);
+  if (csrfError) return csrfError;
 
   try {
     const authenticatedClientId = await getAuthenticatedClientId();

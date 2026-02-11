@@ -5,6 +5,7 @@ import { getActiveTrainingPlan } from "@/services/training-service";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { apiRateLimit } from "@/lib/rate-limit";
+import { requireCSRFProtection } from "@/lib/csrf-protection";
 import {
   nutritionPlanSchema,
   validateClientForNutrition,
@@ -17,8 +18,11 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   // Apply rate limiting
-  const rateLimitResult = apiRateLimit(request);
+  const rateLimitResult = await apiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
+
+  const csrfError = await requireCSRFProtection(request);
+  if (csrfError) return csrfError;
 
   try {
     // Check authentication
@@ -300,8 +304,11 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   // Apply rate limiting
-  const rateLimitResult = apiRateLimit(request);
+  const rateLimitResult = await apiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
+
+  const csrfError = await requireCSRFProtection(request);
+  if (csrfError) return csrfError;
 
   try {
     // Check authentication

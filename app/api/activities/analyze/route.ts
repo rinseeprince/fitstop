@@ -6,12 +6,16 @@ import {
 } from "@/services/activity-ai-service";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { apiRateLimit } from "@/lib/rate-limit";
+import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { analyzeActivitySchema } from "@/lib/validations/external-activity";
 
 // POST - Analyze activity and estimate calories
 export async function POST(request: NextRequest) {
-  const rateLimitResult = apiRateLimit(request);
+  const rateLimitResult = await apiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
+
+  const csrfError = await requireCSRFProtection(request);
+  if (csrfError) return csrfError;
 
   try {
     const coachId = await getAuthenticatedCoachId();

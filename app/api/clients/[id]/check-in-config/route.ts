@@ -3,6 +3,7 @@ import { updateClientCheckInConfig, getClientById } from "@/services/client-serv
 import { updateCheckInConfigSchema } from "@/lib/validations/client";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { apiRateLimit } from "@/lib/rate-limit";
+import { requireCSRFProtection } from "@/lib/csrf-protection";
 import type { UpdateCheckInConfigResponse } from "@/types/check-in";
 
 /**
@@ -15,8 +16,11 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   // Apply rate limiting
-  const rateLimitResult = apiRateLimit(request);
+  const rateLimitResult = await apiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
+
+  const csrfError = await requireCSRFProtection(request);
+  if (csrfError) return csrfError;
 
   try {
     const coachId = await getAuthenticatedCoachId();

@@ -5,7 +5,7 @@ import { apiRateLimit } from "@/lib/rate-limit";
 
 // GET - Search activity suggestions for autocomplete
 export async function GET(request: NextRequest) {
-  const rateLimitResult = apiRateLimit(request);
+  const rateLimitResult = await apiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
 
   try {

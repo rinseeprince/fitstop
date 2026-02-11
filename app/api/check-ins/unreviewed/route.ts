@@ -7,7 +7,7 @@ import { mapCheckInRow } from "@/lib/mappers";
 import type { CheckInRow } from "@/lib/database-helpers";
 
 export async function GET(request: NextRequest) {
-  const rateLimitResult = apiRateLimit(request);
+  const rateLimitResult = await apiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
 
   try {

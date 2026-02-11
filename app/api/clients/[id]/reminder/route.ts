@@ -3,6 +3,7 @@ import { sendCheckInReminder } from "@/services/reminder-service";
 import { getClientById } from "@/services/client-service";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { apiRateLimit } from "@/lib/rate-limit";
+import { requireCSRFProtection } from "@/lib/csrf-protection";
 import type { SendReminderRequest, SendReminderResponse } from "@/types/check-in";
 
 /**
@@ -15,8 +16,11 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   // Apply rate limiting
-  const rateLimitResult = apiRateLimit(request);
+  const rateLimitResult = await apiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
+
+  const csrfError = await requireCSRFProtection(request);
+  if (csrfError) return csrfError;
 
   try {
     const coachId = await getAuthenticatedCoachId();

@@ -44,7 +44,7 @@ import type { ValidateCheckInTokenResponse } from "@/types/check-in";
  * @throws {500} Server error during context retrieval
  */
 export async function GET(request: NextRequest) {
-  const rateLimitResult = apiRateLimit(request);
+  const rateLimitResult = await apiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
 
   try {

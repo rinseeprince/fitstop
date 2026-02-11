@@ -7,6 +7,7 @@ import {
 import { generateCheckInSummary, regenerateAISummary } from "@/services/ai-service";
 import type { GenerateAISummaryResponse } from "@/types/check-in";
 import { rateLimit } from "@/lib/rate-limit";
+import { requireCSRFProtection } from "@/lib/csrf-protection";
 
 export async function POST(
   request: NextRequest,
@@ -18,6 +19,9 @@ export async function POST(
     maxRequests: 10, // 10 requests per minute
   });
   if (rateLimitResult) return rateLimitResult;
+
+  const csrfError = await requireCSRFProtection(request);
+  if (csrfError) return csrfError;
 
   try {
     const { id: checkInId } = await params;

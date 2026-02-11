@@ -2,10 +2,14 @@ import { NextRequest, NextResponse } from "next/server"
 import { acceptInvitationByToken, acceptInvitation } from "@/services/invitation-service"
 import type { AcceptInvitationResponse } from "@/types/auth"
 import { authRateLimit } from "@/lib/rate-limit"
+import { requireCSRFProtection } from "@/lib/csrf-protection"
 
 export async function POST(request: NextRequest): Promise<NextResponse<AcceptInvitationResponse>> {
   const rateLimitResult = await authRateLimit(request);
   if (rateLimitResult) return rateLimitResult as NextResponse<AcceptInvitationResponse>;
+
+  const csrfError = await requireCSRFProtection(request);
+  if (csrfError) return csrfError as NextResponse<AcceptInvitationResponse>;
 
   try {
     const body = await request.json()

@@ -4,6 +4,7 @@ import { weightToKg } from "@/utils/nutrition-helpers";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { apiRateLimit } from "@/lib/rate-limit";
+import { requireCSRFProtection } from "@/lib/csrf-protection";
 
 export async function PUT(
   request: NextRequest,
@@ -11,6 +12,9 @@ export async function PUT(
 ) {
   const rateLimitResult = await apiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
+
+  const csrfError = await requireCSRFProtection(request);
+  if (csrfError) return csrfError;
 
   const { id: clientId } = await params;
 

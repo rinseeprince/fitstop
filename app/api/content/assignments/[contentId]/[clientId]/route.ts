@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { unassignContentFromClient } from "@/services/content-service";
 import { apiRateLimit } from "@/lib/rate-limit";
+import { requireCSRFProtection } from "@/lib/csrf-protection";
 
 export async function DELETE(
   request: NextRequest,
@@ -9,6 +10,9 @@ export async function DELETE(
 ) {
   const rateLimitResult = await apiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
+
+  const csrfError = await requireCSRFProtection(request);
+  if (csrfError) return csrfError;
 
   const { contentId, clientId } = await params;
   try {

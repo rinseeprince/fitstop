@@ -4,6 +4,7 @@ import { getClientById } from "@/services/client-service";
 import { getClientCheckIns } from "@/services/check-in-service";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { apiRateLimit } from "@/lib/rate-limit";
+import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { weightToKg } from "@/utils/nutrition-helpers";
 
 const openai = new OpenAI({
@@ -15,8 +16,11 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const rateLimitResult = apiRateLimit(request);
+  const rateLimitResult = await apiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
+
+  const csrfError = await requireCSRFProtection(request);
+  if (csrfError) return csrfError;
 
   try {
     const coachId = await getAuthenticatedCoachId();

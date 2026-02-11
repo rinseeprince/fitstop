@@ -7,6 +7,7 @@ import {
   getCurrentWeekStart,
 } from "@/services/client-portal-service";
 import { apiRateLimit } from "@/lib/rate-limit";
+import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { z } from "zod";
 
 // Validation schema for marking session complete
@@ -19,7 +20,7 @@ const markCompleteSchema = z.object({
 
 // GET /api/client/training/completions - Get weekly completions
 export async function GET(request: NextRequest) {
-  const rateLimitResult = apiRateLimit(request);
+  const rateLimitResult = await apiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
 
   try {
@@ -56,8 +57,11 @@ export async function GET(request: NextRequest) {
 
 // POST /api/client/training/completions - Mark session complete
 export async function POST(request: NextRequest) {
-  const rateLimitResult = apiRateLimit(request);
+  const rateLimitResult = await apiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
+
+  const csrfError = await requireCSRFProtection(request);
+  if (csrfError) return csrfError;
 
   try {
     const clientId = await getAuthenticatedClientId();
@@ -115,8 +119,11 @@ export async function POST(request: NextRequest) {
 
 // DELETE /api/client/training/completions - Remove session completion
 export async function DELETE(request: NextRequest) {
-  const rateLimitResult = apiRateLimit(request);
+  const rateLimitResult = await apiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
+
+  const csrfError = await requireCSRFProtection(request);
+  if (csrfError) return csrfError;
 
   try {
     const clientId = await getAuthenticatedClientId();

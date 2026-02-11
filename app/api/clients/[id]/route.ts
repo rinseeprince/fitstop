@@ -7,6 +7,7 @@ import {
 import { updateClientSchema } from "@/lib/validations/client";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { apiRateLimit } from "@/lib/rate-limit";
+import { requireCSRFProtection } from "@/lib/csrf-protection";
 
 // Helper to verify client ownership
 async function verifyClientOwnership(
@@ -72,6 +73,9 @@ export async function PATCH(
   const rateLimitResult = await apiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
 
+  const csrfError = await requireCSRFProtection(request);
+  if (csrfError) return csrfError;
+
   try {
     const { id } = await params;
     const coachId = await getAuthenticatedCoachId();
@@ -131,6 +135,9 @@ export async function DELETE(
 ) {
   const rateLimitResult = await apiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
+
+  const csrfError = await requireCSRFProtection(request);
+  if (csrfError) return csrfError;
 
   try {
     const { id } = await params;

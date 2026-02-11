@@ -15,7 +15,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   // Apply rate limiting
-  const rateLimitResult = apiRateLimit(request);
+  const rateLimitResult = await apiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
 
   try {

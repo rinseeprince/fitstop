@@ -13,6 +13,7 @@ import { addExternalActivity } from "@/services/activity-service";
 import { estimateSessionCalories } from "@/services/training-calorie-service";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { apiRateLimit } from "@/lib/rate-limit";
+import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { generateTrainingPlanSchema } from "@/lib/validations/training";
 import { weightToKg } from "@/utils/nutrition-helpers";
 import type { ExternalActivityContext, PreGenerationActivity } from "@/types/training";
@@ -37,8 +38,11 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const rateLimitResult = apiRateLimit(request);
+  const rateLimitResult = await apiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
+
+  const csrfError = await requireCSRFProtection(request);
+  if (csrfError) return csrfError;
 
   try {
     const coachId = await getAuthenticatedCoachId();
@@ -201,7 +205,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const rateLimitResult = apiRateLimit(request);
+  const rateLimitResult = await apiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
 
   try {

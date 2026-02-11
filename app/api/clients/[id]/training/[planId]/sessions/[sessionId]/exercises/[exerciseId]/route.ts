@@ -10,6 +10,7 @@ import {
 import { estimateSessionCalories } from "@/services/training-calorie-service";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { apiRateLimit } from "@/lib/rate-limit";
+import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { updateExerciseSchema } from "@/lib/validations/training";
 import { weightToKg } from "@/utils/nutrition-helpers";
 
@@ -25,8 +26,11 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<RouteParams> }
 ) {
-  const rateLimitResult = apiRateLimit(request);
+  const rateLimitResult = await apiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
+
+  const csrfError = await requireCSRFProtection(request);
+  if (csrfError) return csrfError;
 
   try {
     const coachId = await getAuthenticatedCoachId();
@@ -92,8 +96,11 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<RouteParams> }
 ) {
-  const rateLimitResult = apiRateLimit(request);
+  const rateLimitResult = await apiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
+
+  const csrfError = await requireCSRFProtection(request);
+  if (csrfError) return csrfError;
 
   try {
     const coachId = await getAuthenticatedCoachId();

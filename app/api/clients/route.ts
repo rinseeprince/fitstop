@@ -3,11 +3,12 @@ import { createClient, getClientsForCoach } from "@/services/client-service";
 import { createClientSchema } from "@/lib/validations/client";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { apiRateLimit } from "@/lib/rate-limit";
+import { requireCSRFProtection } from "@/lib/csrf-protection";
 
 // GET /api/clients - List all clients for authenticated coach
 export async function GET(request: NextRequest) {
   // Apply rate limiting
-  const rateLimitResult = apiRateLimit(request);
+  const rateLimitResult = await apiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
   try {
     const coachId = await getAuthenticatedCoachId();
@@ -34,8 +35,11 @@ export async function GET(request: NextRequest) {
 // POST /api/clients - Create a new client
 export async function POST(request: NextRequest) {
   // Apply rate limiting
-  const rateLimitResult = apiRateLimit(request);
+  const rateLimitResult = await apiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
+
+  const csrfError = await requireCSRFProtection(request);
+  if (csrfError) return csrfError;
 
   try {
     const coachId = await getAuthenticatedCoachId();

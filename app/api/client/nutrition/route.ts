@@ -5,7 +5,7 @@ import { apiRateLimit } from "@/lib/rate-limit";
 
 // GET /api/client/nutrition - Get client's nutrition targets
 export async function GET(request: NextRequest) {
-  const rateLimitResult = apiRateLimit(request);
+  const rateLimitResult = await apiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
 
   try {

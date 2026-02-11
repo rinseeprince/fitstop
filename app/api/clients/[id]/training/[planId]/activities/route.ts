@@ -13,6 +13,7 @@ import {
 } from "@/services/activity-ai-service";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { apiRateLimit } from "@/lib/rate-limit";
+import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { addExternalActivitySchema } from "@/lib/validations/external-activity";
 import { weightToKg } from "@/utils/nutrition-helpers";
 
@@ -20,8 +21,11 @@ type RouteParams = { params: Promise<{ id: string; planId: string }> };
 
 // POST - Add external activity to training plan
 export async function POST(request: NextRequest, { params }: RouteParams) {
-  const rateLimitResult = apiRateLimit(request);
+  const rateLimitResult = await apiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
+
+  const csrfError = await requireCSRFProtection(request);
+  if (csrfError) return csrfError;
 
   try {
     const coachId = await getAuthenticatedCoachId();
@@ -125,7 +129,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
 // GET - Get all external activities for a plan
 export async function GET(request: NextRequest, { params }: RouteParams) {
-  const rateLimitResult = apiRateLimit(request);
+  const rateLimitResult = await apiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
 
   try {

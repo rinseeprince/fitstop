@@ -2,10 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { createCheckInToken } from "@/services/check-in-service";
 import type { CreateCheckInTokenRequest, CreateCheckInTokenResponse } from "@/types/check-in";
 import { apiRateLimit } from "@/lib/rate-limit";
+import { requireCSRFProtection } from "@/lib/csrf-protection";
 
 export async function POST(request: NextRequest) {
   const rateLimitResult = await apiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
+
+  const csrfError = await requireCSRFProtection(request);
+  if (csrfError) return csrfError;
 
   try {
     const body: CreateCheckInTokenRequest = await request.json();

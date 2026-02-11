@@ -4,6 +4,7 @@ import { sendInvitationSchema } from "@/lib/validations/invitation"
 import { sendInvitation } from "@/services/invitation-service"
 import { supabaseAdmin } from "@/services/supabase-admin"
 import { authRateLimit } from "@/lib/rate-limit"
+import { requireCSRFProtection } from "@/lib/csrf-protection"
 
 type ClientRow = {
   id: string
@@ -16,6 +17,9 @@ type ClientRow = {
 export async function POST(request: NextRequest) {
   const rateLimitResult = await authRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
+
+  const csrfError = await requireCSRFProtection(request);
+  if (csrfError) return csrfError;
 
   try {
     // Verify trainer is authenticated

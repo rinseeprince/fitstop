@@ -52,7 +52,7 @@ import type { ClientNotification } from "@/hooks/use-client-notifications";
  * @throws {500} Server error during notification retrieval
  */
 export async function GET(request: NextRequest) {
-  const rateLimitResult = apiRateLimit(request);
+  const rateLimitResult = await apiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
 
   try {
