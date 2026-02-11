@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import type { NutritionPlanHistory } from "@/types/check-in";
+import { apiRateLimit } from "@/lib/rate-limit";
 
 export async function GET(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
+  const rateLimitResult = await apiRateLimit(request);
+  if (rateLimitResult) return rateLimitResult;
+
   try {
     const { id: clientId } = await context.params;
 

@@ -2,11 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { getClientCheckIns } from "@/services/check-in-service";
 import { parsePaginationParams } from "@/lib/api-utils";
 import type { GetCheckInsResponse } from "@/types/check-in";
+import { apiRateLimit } from "@/lib/rate-limit";
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const rateLimitResult = await apiRateLimit(request);
+  if (rateLimitResult) return rateLimitResult;
+
   try {
     const { id: clientId } = await params;
     const { searchParams } = new URL(request.url);

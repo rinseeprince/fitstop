@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { unassignContentFromClient } from "@/services/content-service";
+import { apiRateLimit } from "@/lib/rate-limit";
 
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ contentId: string; clientId: string }> }
 ) {
+  const rateLimitResult = await apiRateLimit(request);
+  if (rateLimitResult) return rateLimitResult;
+
   const { contentId, clientId } = await params;
   try {
     const supabase = await createServerSupabaseClient();

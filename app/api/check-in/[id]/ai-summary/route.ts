@@ -6,11 +6,19 @@ import {
 } from "@/services/check-in-service";
 import { generateCheckInSummary, regenerateAISummary } from "@/services/ai-service";
 import type { GenerateAISummaryResponse } from "@/types/check-in";
+import { rateLimit } from "@/lib/rate-limit";
 
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  // Custom stricter rate limit for AI operations (10 requests per minute)
+  const rateLimitResult = await rateLimit(request, {
+    windowMs: 60 * 1000, // 1 minute
+    maxRequests: 10, // 10 requests per minute
+  });
+  if (rateLimitResult) return rateLimitResult;
+
   try {
     const { id: checkInId } = await params;
     const body = await request.json();

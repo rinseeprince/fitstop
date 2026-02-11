@@ -7,11 +7,15 @@ import {
   getCheckInExerciseHighlights, 
   getCheckInExternalActivities 
 } from "@/services/check-in-service";
+import { apiRateLimit } from "@/lib/rate-limit";
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const rateLimitResult = await apiRateLimit(request);
+  if (rateLimitResult) return rateLimitResult;
+
   try {
     const { id } = await params;
 

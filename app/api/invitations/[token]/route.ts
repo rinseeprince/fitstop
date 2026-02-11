@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getInvitationByToken } from "@/services/invitation-service"
 import type { InvitationDetailsResponse } from "@/types/auth"
+import { apiRateLimit } from "@/lib/rate-limit"
 
 /**
  * GET /api/invitations/[token]
@@ -10,6 +11,9 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ token: string }> }
 ): Promise<NextResponse<InvitationDetailsResponse>> {
+  const rateLimitResult = await apiRateLimit(request);
+  if (rateLimitResult) return rateLimitResult as NextResponse<InvitationDetailsResponse>;
+
   try {
     const { token } = await params
 

@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server"
 import { acceptInvitationByToken, acceptInvitation } from "@/services/invitation-service"
 import type { AcceptInvitationResponse } from "@/types/auth"
+import { authRateLimit } from "@/lib/rate-limit"
 
 export async function POST(request: NextRequest): Promise<NextResponse<AcceptInvitationResponse>> {
+  const rateLimitResult = await authRateLimit(request);
+  if (rateLimitResult) return rateLimitResult as NextResponse<AcceptInvitationResponse>;
+
   try {
     const body = await request.json()
     

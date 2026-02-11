@@ -3,6 +3,7 @@ import { getAuthenticatedCoachId } from "@/lib/auth-helpers"
 import { sendInvitationSchema } from "@/lib/validations/invitation"
 import { sendInvitation } from "@/services/invitation-service"
 import { supabaseAdmin } from "@/services/supabase-admin"
+import { authRateLimit } from "@/lib/rate-limit"
 
 type ClientRow = {
   id: string
@@ -13,6 +14,9 @@ type ClientRow = {
 }
 
 export async function POST(request: NextRequest) {
+  const rateLimitResult = await authRateLimit(request);
+  if (rateLimitResult) return rateLimitResult;
+
   try {
     // Verify trainer is authenticated
     const coachId = await getAuthenticatedCoachId()

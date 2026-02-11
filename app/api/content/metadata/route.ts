@@ -2,8 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { fetchVideoMetadata, fetchLinkMetadata } from "@/services/content-service";
+import { apiRateLimit } from "@/lib/rate-limit";
 
 export async function POST(request: NextRequest) {
+  const rateLimitResult = await apiRateLimit(request);
+  if (rateLimitResult) return rateLimitResult;
+
   try {
     // CSRF Protection
     const csrfError = await requireCSRFProtection(request);

@@ -3,11 +3,15 @@ import type { UpdateClientMetricsRequest } from "@/types/check-in";
 import { weightToKg } from "@/utils/nutrition-helpers";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
+import { apiRateLimit } from "@/lib/rate-limit";
 
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const rateLimitResult = await apiRateLimit(request);
+  if (rateLimitResult) return rateLimitResult;
+
   const { id: clientId } = await params;
 
   try {

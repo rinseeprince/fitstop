@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createCheckInToken } from "@/services/check-in-service";
 import type { CreateCheckInTokenRequest, CreateCheckInTokenResponse } from "@/types/check-in";
+import { apiRateLimit } from "@/lib/rate-limit";
 
 export async function POST(request: NextRequest) {
+  const rateLimitResult = await apiRateLimit(request);
+  if (rateLimitResult) return rateLimitResult;
+
   try {
     const body: CreateCheckInTokenRequest = await request.json();
     const { clientId } = body;

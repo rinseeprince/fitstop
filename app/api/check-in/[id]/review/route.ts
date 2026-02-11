@@ -7,6 +7,7 @@ import {
 import { getClientById } from "@/services/client-service";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import type { ReviewCheckInRequest, ReviewCheckInResponse } from "@/types/check-in";
+import { apiRateLimit } from "@/lib/rate-limit";
 
 /**
  * Verifies coach owns the client associated with a check-in
@@ -54,6 +55,9 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const rateLimitResult = await apiRateLimit(request);
+  if (rateLimitResult) return rateLimitResult;
+
   try {
     const { id: checkInId } = await params;
 
@@ -99,6 +103,9 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const rateLimitResult = await apiRateLimit(request);
+  if (rateLimitResult) return rateLimitResult;
+
   try {
     const { id: checkInId } = await params;
 

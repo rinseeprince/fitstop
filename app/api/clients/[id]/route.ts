@@ -6,6 +6,7 @@ import {
 } from "@/services/client-service";
 import { updateClientSchema } from "@/lib/validations/client";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
+import { apiRateLimit } from "@/lib/rate-limit";
 
 // Helper to verify client ownership
 async function verifyClientOwnership(
@@ -21,6 +22,9 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const rateLimitResult = await apiRateLimit(request);
+  if (rateLimitResult) return rateLimitResult;
+
   try {
     const { id } = await params;
     const coachId = await getAuthenticatedCoachId();
@@ -65,6 +69,9 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const rateLimitResult = await apiRateLimit(request);
+  if (rateLimitResult) return rateLimitResult;
+
   try {
     const { id } = await params;
     const coachId = await getAuthenticatedCoachId();
@@ -122,6 +129,9 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const rateLimitResult = await apiRateLimit(request);
+  if (rateLimitResult) return rateLimitResult;
+
   try {
     const { id } = await params;
     const coachId = await getAuthenticatedCoachId();

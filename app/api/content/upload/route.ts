@@ -3,6 +3,7 @@ import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { uploadContentFile, createContentItem } from "@/services/content-service";
 import type { ContentType } from "@/types/content";
+import { apiRateLimit } from "@/lib/rate-limit";
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
@@ -22,6 +23,9 @@ const ALLOWED_MIME_TYPES = [
 ];
 
 export async function POST(request: NextRequest) {
+  const rateLimitResult = await apiRateLimit(request);
+  if (rateLimitResult) return rateLimitResult;
+
   try {
     // Skip CSRF protection for multipart/form-data uploads as they may not include proper headers
     // Authentication check below provides sufficient security for file uploads

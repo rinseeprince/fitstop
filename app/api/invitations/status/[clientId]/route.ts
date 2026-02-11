@@ -3,6 +3,7 @@ import { getAuthenticatedCoachId } from "@/lib/auth-helpers"
 import { supabaseAdmin } from "@/services/supabase-admin"
 import { toClientInvitation } from "@/types/auth"
 import type { ClientInvitationRow } from "@/types/auth"
+import { authRateLimit } from "@/lib/rate-limit"
 
 type ClientRow = {
   id: string
@@ -14,6 +15,9 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ clientId: string }> }
 ) {
+  const rateLimitResult = await authRateLimit(request);
+  if (rateLimitResult) return rateLimitResult;
+
   try {
     const { clientId } = await params
 
