@@ -12,7 +12,7 @@ import {
 import { updateClient } from "@/services/client-service";
 import { updateClientBMR } from "@/services/bmr-service";
 import { supabaseAdmin } from "@/services/supabase-admin";
-import type { SubmitCheckInRequest } from "@/types/check-in";
+import type { SubmitCheckInRequest, CheckInFormData } from "@/types/check-in";
 
 /**
  * Triggers AI summary generation for a completed check-in
@@ -74,7 +74,7 @@ export async function triggerAISummaryGeneration(
  */
 export async function updateClientMetricsFromCheckIn(
   client: any,
-  checkInData: SubmitCheckInRequest
+  checkInData: SubmitCheckInRequest | CheckInFormData
 ): Promise<void> {
   try {
     const updates: any = {};

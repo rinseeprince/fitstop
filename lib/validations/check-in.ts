@@ -132,7 +132,10 @@ export const submitCheckInSchema = z.object({
   token: z.string().min(1),
 });
 
+export const clientSubmitCheckInSchema = submitCheckInSchema.omit({ token: true });
+
 export type SubmitCheckInInput = z.infer<typeof submitCheckInSchema>;
+export type ClientSubmitCheckInInput = z.infer<typeof clientSubmitCheckInSchema>;
 export type SessionCompletionInput = z.infer<typeof sessionCompletionSchema>;
 export type ExerciseHighlightInput = z.infer<typeof exerciseHighlightSchema>;
 export type ExternalActivityInput = z.infer<typeof externalActivitySchema>;

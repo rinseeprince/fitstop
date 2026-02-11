@@ -7,7 +7,7 @@ import { triggerAISummaryGeneration, updateClientMetricsFromCheckIn } from "@/se
 import { updateClientAdherenceStats, getFrequencyInDays } from "@/services/check-in-tracking-service";
 import { updateClientBMR } from "@/services/bmr-service";
 import { apiRateLimit } from "@/lib/rate-limit";
-import { submitCheckInSchema } from "@/lib/validations/check-in";
+import { clientSubmitCheckInSchema } from "@/lib/validations/check-in";
 import type { SubmitCheckInResponse, CheckInFormData } from "@/types/check-in";
 
 /**
@@ -154,10 +154,7 @@ export async function POST(request: NextRequest) {
     const rawBody = await request.json();
 
     // Validate input using the comprehensive schema
-    const validationResult = submitCheckInSchema.safeParse({
-      ...rawBody,
-      token: "client-app", // Dummy token for validation
-    });
+    const validationResult = clientSubmitCheckInSchema.safeParse(rawBody);
 
     if (!validationResult.success) {
       const response: SubmitCheckInResponse = {
