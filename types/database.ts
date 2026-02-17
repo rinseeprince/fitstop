@@ -953,6 +953,254 @@ export type Database = {
           },
         ]
       }
+      daily_external_activities: {
+        Row: {
+          activity_name: string
+          client_id: string
+          created_at: string
+          date: string
+          duration_minutes: number
+          estimated_calories: number | null
+          id: string
+          intensity_level: string
+          notes: string | null
+          updated_at: string
+        }
+        Insert: {
+          activity_name: string
+          client_id: string
+          created_at?: string
+          date: string
+          duration_minutes: number
+          estimated_calories?: number | null
+          id?: string
+          intensity_level: string
+          notes?: string | null
+          updated_at?: string
+        }
+        Update: {
+          activity_name?: string
+          client_id?: string
+          created_at?: string
+          date?: string
+          duration_minutes?: number
+          estimated_calories?: number | null
+          id?: string
+          intensity_level?: string
+          notes?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_external_activities_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      daily_habit_logs: {
+        Row: {
+          client_id: string
+          completed: boolean
+          created_at: string
+          daily_habit_id: string
+          date: string
+          id: string
+          notes: string | null
+          updated_at: string
+          value: number | null
+        }
+        Insert: {
+          client_id: string
+          completed?: boolean
+          created_at?: string
+          daily_habit_id: string
+          date: string
+          id?: string
+          notes?: string | null
+          updated_at?: string
+          value?: number | null
+        }
+        Update: {
+          client_id?: string
+          completed?: boolean
+          created_at?: string
+          daily_habit_id?: string
+          date?: string
+          id?: string
+          notes?: string | null
+          updated_at?: string
+          value?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_habit_logs_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "daily_habit_logs_daily_habit_id_fkey"
+            columns: ["daily_habit_id"]
+            isOneToOne: false
+            referencedRelation: "daily_habits"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      daily_habits: {
+        Row: {
+          client_id: string
+          coach_id: string
+          created_at: string
+          description: string | null
+          id: string
+          is_active: boolean
+          is_boolean: boolean
+          name: string
+          sort_order: number
+          target_unit: string | null
+          target_value: number | null
+          updated_at: string
+        }
+        Insert: {
+          client_id: string
+          coach_id: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          is_boolean?: boolean
+          name: string
+          sort_order?: number
+          target_unit?: string | null
+          target_value?: number | null
+          updated_at?: string
+        }
+        Update: {
+          client_id?: string
+          coach_id?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          is_boolean?: boolean
+          name?: string
+          sort_order?: number
+          target_unit?: string | null
+          target_value?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_habits_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "daily_habits_coach_id_fkey"
+            columns: ["coach_id"]
+            isOneToOne: false
+            referencedRelation: "coaches"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      daily_logs: {
+        Row: {
+          calorie_surplus_deficit: number | null
+          calories_consumed: number | null
+          carbs_g: number | null
+          client_id: string
+          created_at: string
+          date: string
+          energy: number | null
+          fat_g: number | null
+          id: string
+          mood: number | null
+          notes: string | null
+          nutrition_adherence: string | null
+          protein_g: number | null
+          sleep: number | null
+          stress: number | null
+          target_calories: number | null
+          target_carbs_g: number | null
+          target_fat_g: number | null
+          target_protein_g: number | null
+          trained: boolean | null
+          training_session_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          calorie_surplus_deficit?: number | null
+          calories_consumed?: number | null
+          carbs_g?: number | null
+          client_id: string
+          created_at?: string
+          date: string
+          energy?: number | null
+          fat_g?: number | null
+          id?: string
+          mood?: number | null
+          notes?: string | null
+          nutrition_adherence?: string | null
+          protein_g?: number | null
+          sleep?: number | null
+          stress?: number | null
+          target_calories?: number | null
+          target_carbs_g?: number | null
+          target_fat_g?: number | null
+          target_protein_g?: number | null
+          trained?: boolean | null
+          training_session_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          calorie_surplus_deficit?: number | null
+          calories_consumed?: number | null
+          carbs_g?: number | null
+          client_id?: string
+          created_at?: string
+          date?: string
+          energy?: number | null
+          fat_g?: number | null
+          id?: string
+          mood?: number | null
+          notes?: string | null
+          nutrition_adherence?: string | null
+          protein_g?: number | null
+          sleep?: number | null
+          stress?: number | null
+          target_calories?: number | null
+          target_carbs_g?: number | null
+          target_fat_g?: number | null
+          target_protein_g?: number | null
+          trained?: boolean | null
+          training_session_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_logs_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "daily_logs_training_session_id_fkey"
+            columns: ["training_session_id"]
+            isOneToOne: false
+            referencedRelation: "training_sessions"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
       nutrition_daily_goals: {
         Row: {
           actual_calories: number | null
