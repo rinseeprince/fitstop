@@ -22,8 +22,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const body = await request.json();
-    const validationResult = dailyHabitLogSchema.safeParse(body);
+    const rawBody = await request.json();
+    
+    // Convert snake_case to camelCase for compatibility
+    const normalizedBody = {
+      ...rawBody,
+      dailyHabitId: rawBody.dailyHabitId ?? rawBody.daily_habit_id,
+    };
+    
+    const validationResult = dailyHabitLogSchema.safeParse(normalizedBody);
 
     if (!validationResult.success) {
       return NextResponse.json(

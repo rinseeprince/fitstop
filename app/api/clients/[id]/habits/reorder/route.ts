@@ -65,7 +65,7 @@ export async function PUT(
 
     return NextResponse.json({
       success: true,
-      message: "Habits reordered successfully",
+      data: { message: "Habits reordered successfully" },
     });
   } catch (error) {
     console.error("Error reordering habits:", error);

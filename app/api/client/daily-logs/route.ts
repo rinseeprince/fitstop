@@ -4,6 +4,7 @@ import { apiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { dailyLogSchema } from "@/lib/validations/daily-log";
 import { upsertDailyLog, getDailyLogs, getTodaysNutritionTarget } from "@/services/daily-logs-service";
+import { getTodayDateString, getDateDaysAgo } from "@/lib/date-helpers";
 
 export async function POST(request: NextRequest) {
   const rateLimitResult = await apiRateLimit(request);
@@ -96,10 +97,8 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     
     // Default to last 30 days if not provided
-    const endDate = searchParams.get("endDate") || new Date().toISOString().split('T')[0];
-    const defaultStartDate = new Date();
-    defaultStartDate.setDate(defaultStartDate.getDate() - 30);
-    const startDate = searchParams.get("startDate") || defaultStartDate.toISOString().split('T')[0];
+    const endDate = searchParams.get("endDate") || getTodayDateString();
+    const startDate = searchParams.get("startDate") || getDateDaysAgo(30);
 
     const logs = await getDailyLogs(clientId, startDate, endDate);
 

@@ -2,6 +2,10 @@ import { supabaseAdmin } from "./supabase-admin";
 import type { DailyLog, DailyLogInput, NutritionAdherenceStatus } from "@/types/daily-log";
 import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
 import { getClientNutritionTargets, getClientTrainingPlan } from "./client-portal-service";
+import type { Database } from "@/types/database";
+import { getTodayDateString, getDateString, getDateDaysAgo } from "@/lib/date-helpers";
+
+type DailyLogRow = Database["public"]["Tables"]["daily_logs"]["Row"];
 
 type DailyLogInputWithTargets = DailyLogInput & {
   targetCalories?: number;
@@ -64,7 +68,7 @@ export const calculateStreakFromLogs = (
   let checkDate = new Date(today);
   let isCalculatingCurrent = true;
   
-  const todayDate = checkDate.toISOString().split('T')[0];
+  const todayDate = getDateString(checkDate);
   const hasLogToday = sortedLogs.some(log => log.date === todayDate);
   
   if (!hasLogToday) {
@@ -72,7 +76,7 @@ export const calculateStreakFromLogs = (
   }
   
   while (checkDate.getFullYear() >= today.getFullYear() - 1) {
-    const logDate = checkDate.toISOString().split('T')[0];
+    const logDate = getDateString(checkDate);
     const hasLogForDate = sortedLogs.some(log => log.date === logDate);
     
     if (hasLogForDate) {
@@ -157,6 +161,7 @@ export const upsertDailyLog = async (
     .single();
 
   if (error) {
+    console.error("Error upserting daily log:", error);
     throw new Error(`Failed to upsert daily log: ${error.message}`);
   }
 
@@ -200,10 +205,11 @@ export const getDailyLogs = async (
     .order("date", { ascending: true });
 
   if (error) {
+    console.error("Error fetching daily logs:", error);
     throw new Error(`Failed to fetch daily logs: ${error.message}`);
   }
 
-  return (data || []).map((row: any) => ({
+  return (data || []).map((row: DailyLogRow) => ({
     id: row.id,
     clientId: row.client_id,
     date: row.date,
@@ -222,7 +228,7 @@ export const getDailyLogs = async (
     targetProteinG: row.target_protein_g ?? undefined,
     targetCarbsG: row.target_carbs_g ?? undefined,
     targetFatG: row.target_fat_g ?? undefined,
-    nutritionAdherence: row.nutrition_adherence ?? undefined,
+    nutritionAdherence: row.nutrition_adherence as NutritionAdherenceStatus | undefined,
     calorieSurplusDeficit: row.calorie_surplus_deficit ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -230,7 +236,7 @@ export const getDailyLogs = async (
 };
 
 export const getTodayLog = async (clientId: string): Promise<DailyLog | null> => {
-  const today = new Date().toISOString().split('T')[0];
+  const today = getTodayDateString();
   
   const { data, error } = await supabaseAdmin
     .from("daily_logs")
@@ -270,11 +276,10 @@ export const getTodayLog = async (clientId: string): Promise<DailyLog | null> =>
 };
 
 export const calculateStreaks = async (clientId: string): Promise<StreakResult> => {
-  const endDate = new Date().toISOString().split('T')[0];
-  const startDate = new Date();
-  startDate.setDate(startDate.getDate() - 365);
+  const endDate = getTodayDateString();
+  const startDate = getDateDaysAgo(365);
   
-  const logs = await getDailyLogs(clientId, startDate.toISOString().split('T')[0], endDate);
+  const logs = await getDailyLogs(clientId, startDate, endDate);
   
   return calculateStreakFromLogs(logs);
 };

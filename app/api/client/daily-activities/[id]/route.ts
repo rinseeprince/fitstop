@@ -26,8 +26,18 @@ export async function PUT(
       );
     }
 
-    const body = await request.json();
-    const validationResult = dailyExternalActivitySchema.partial().safeParse(body);
+    const rawBody = await request.json();
+    
+    // Convert snake_case to camelCase for compatibility
+    const normalizedBody = {
+      ...rawBody,
+      activityName: rawBody.activityName ?? rawBody.activity_name,
+      intensityLevel: rawBody.intensityLevel ?? rawBody.intensity_level,
+      durationMinutes: rawBody.durationMinutes ?? rawBody.duration_minutes,
+      estimatedCalories: rawBody.estimatedCalories ?? rawBody.estimated_calories,
+    };
+    
+    const validationResult = dailyExternalActivitySchema.partial().safeParse(normalizedBody);
 
     if (!validationResult.success) {
       return NextResponse.json(

@@ -4,6 +4,7 @@ import { apiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { dailyExternalActivitySchema } from "@/lib/validations/daily-activity";
 import { addActivity, getActivities, getActivitiesRange } from "@/services/daily-activities-service";
+import { getTodayDateString } from "@/lib/date-helpers";
 
 export async function POST(request: NextRequest) {
   const rateLimitResult = await apiRateLimit(request);
@@ -22,8 +23,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const body = await request.json();
-    const validationResult = dailyExternalActivitySchema.safeParse(body);
+    const rawBody = await request.json();
+    
+    // Convert snake_case to camelCase for compatibility
+    const normalizedBody = {
+      ...rawBody,
+      activityName: rawBody.activityName ?? rawBody.activity_name,
+      intensityLevel: rawBody.intensityLevel ?? rawBody.intensity_level,
+      durationMinutes: rawBody.durationMinutes ?? rawBody.duration_minutes,
+      estimatedCalories: rawBody.estimatedCalories ?? rawBody.estimated_calories,
+    };
+    
+    const validationResult = dailyExternalActivitySchema.safeParse(normalizedBody);
 
     if (!validationResult.success) {
       return NextResponse.json(
@@ -80,7 +91,7 @@ export async function GET(request: NextRequest) {
     } else if (startDate && endDate) {
       activities = await getActivitiesRange(clientId, startDate, endDate);
     } else {
-      const today = new Date().toISOString().split('T')[0];
+      const today = getTodayDateString();
       activities = await getActivities(clientId, today);
     }
 

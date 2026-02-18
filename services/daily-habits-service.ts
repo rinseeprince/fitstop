@@ -1,5 +1,13 @@
 import { supabaseAdmin } from "./supabase-admin";
 import type { DailyHabit, DailyHabitInput, DailyHabitLog, DailyHabitLogInput } from "@/types/daily-habit";
+import type { Database } from "@/types/database";
+import { getTodayDateString, getDateString, getDateDaysAgo } from "@/lib/date-helpers";
+
+type DailyHabitRow = Database["public"]["Tables"]["daily_habits"]["Row"];
+type DailyHabitLogRow = Database["public"]["Tables"]["daily_habit_logs"]["Row"];
+type DailyHabitLogWithHabit = DailyHabitLogRow & {
+  daily_habits: Pick<DailyHabitRow, 'name' | 'target_value' | 'target_unit' | 'is_boolean'>;
+};
 
 type HabitLogWithDetails = DailyHabitLog & {
   habitName: string;
@@ -29,7 +37,7 @@ export const calculateCurrentStreak = (logs: DailyHabitLog[], today: Date = new 
   let streak = 0;
   let checkDate = new Date(today);
   
-  const todayDate = checkDate.toISOString().split('T')[0];
+  const todayDate = getDateString(checkDate);
   const hasCompletedLogToday = sortedLogs.some(log => log.date === todayDate && log.completed);
   
   // Start from today if completed, otherwise start from yesterday
@@ -39,7 +47,7 @@ export const calculateCurrentStreak = (logs: DailyHabitLog[], today: Date = new 
   
   // Count consecutive completed days working backwards
   while (checkDate.getFullYear() >= today.getFullYear() - 1) {
-    const logDate = checkDate.toISOString().split('T')[0];
+    const logDate = getDateString(checkDate);
     const logForDate = sortedLogs.find(log => log.date === logDate);
     
     // If there's no log for this date OR log exists but not completed, streak ends
@@ -68,10 +76,11 @@ export const getClientHabits = async (clientId: string): Promise<DailyHabit[]> =
     .order("sort_order", { ascending: true });
 
   if (error) {
+    console.error("Error fetching client habits:", error);
     throw new Error(`Failed to fetch client habits: ${error.message}`);
   }
 
-  return (data || []).map((row: any) => ({
+  return (data || []).map((row: DailyHabitRow) => ({
     id: row.id,
     coachId: row.coach_id,
     clientId: row.client_id,
@@ -100,6 +109,7 @@ export const createHabit = async (
     .single();
 
   if (clientError) {
+    console.error("Error validating client:", clientError);
     throw new Error(`Failed to validate client: ${clientError.message}`);
   }
 
@@ -138,6 +148,7 @@ export const createHabit = async (
     .single();
 
   if (error) {
+    console.error("Database operation error:", error);
     throw new Error(`Failed to create habit: ${error.message}`);
   }
 
@@ -161,7 +172,7 @@ export const updateHabit = async (
   habitId: string,
   data: Partial<Pick<DailyHabitInput, 'name' | 'description' | 'targetValue' | 'targetUnit' | 'isBoolean'>>
 ): Promise<DailyHabit> => {
-  const updateData: any = {
+  const updateData: Partial<Database["public"]["Tables"]["daily_habits"]["Update"]> = {
     updated_at: new Date().toISOString(),
   };
 
@@ -179,6 +190,7 @@ export const updateHabit = async (
     .single();
 
   if (error) {
+    console.error("Database operation error:", error);
     throw new Error(`Failed to update habit: ${error.message}`);
   }
 
@@ -208,6 +220,7 @@ export const deactivateHabit = async (habitId: string): Promise<void> => {
     .eq("id", habitId);
 
   if (error) {
+    console.error("Database operation error:", error);
     throw new Error(`Failed to deactivate habit: ${error.message}`);
   }
 };
@@ -259,6 +272,7 @@ export const logHabit = async (
     .single();
 
   if (error) {
+    console.error("Database operation error:", error);
     throw new Error(`Failed to log habit: ${error.message}`);
   }
 
@@ -292,10 +306,11 @@ export const getHabitLogs = async (
     .order("date", { ascending: true });
 
   if (error) {
+    console.error("Database operation error:", error);
     throw new Error(`Failed to fetch habit logs: ${error.message}`);
   }
 
-  return (data || []).map((row: any) => ({
+  return (data || []).map((row: DailyHabitLogWithHabit) => ({
     id: row.id,
     dailyHabitId: row.daily_habit_id,
     clientId: row.client_id,
@@ -313,7 +328,7 @@ export const getHabitLogs = async (
 };
 
 export const getTodayHabitLogs = async (clientId: string): Promise<HabitLogWithDetails[]> => {
-  const today = new Date().toISOString().split('T')[0];
+  const today = getTodayDateString();
   
   const { data, error } = await supabaseAdmin
     .from("daily_habit_logs")
@@ -325,10 +340,11 @@ export const getTodayHabitLogs = async (clientId: string): Promise<HabitLogWithD
     .eq("date", today);
 
   if (error) {
+    console.error("Database operation error:", error);
     throw new Error(`Failed to fetch today's habit logs: ${error.message}`);
   }
 
-  return (data || []).map((row: any) => ({
+  return (data || []).map((row: DailyHabitLogWithHabit) => ({
     id: row.id,
     dailyHabitId: row.daily_habit_id,
     clientId: row.client_id,
@@ -350,24 +366,24 @@ export const getHabitStats = async (
   habitId: string,
   days: number
 ): Promise<HabitStats> => {
-  const endDate = new Date().toISOString().split('T')[0];
-  const startDate = new Date();
-  startDate.setDate(startDate.getDate() - days + 1);
+  const endDate = getTodayDateString();
+  const startDate = getDateDaysAgo(days - 1);
   
   const { data, error } = await supabaseAdmin
     .from("daily_habit_logs")
     .select("*")
     .eq("client_id", clientId)
     .eq("daily_habit_id", habitId)
-    .gte("date", startDate.toISOString().split('T')[0])
+    .gte("date", startDate)
     .lte("date", endDate)
     .order("date", { ascending: true });
 
   if (error) {
+    console.error("Database operation error:", error);
     throw new Error(`Failed to fetch habit stats: ${error.message}`);
   }
 
-  const logs = (data || []).map((row: any) => ({
+  const logs = (data || []).map((row: DailyHabitLogRow) => ({
     id: row.id,
     dailyHabitId: row.daily_habit_id,
     clientId: row.client_id,

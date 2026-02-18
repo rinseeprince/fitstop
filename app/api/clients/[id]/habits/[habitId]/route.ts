@@ -49,11 +49,19 @@ export async function PUT(
       );
     }
 
-    const body = await request.json();
+    const rawBody = await request.json();
+    
+    // Convert snake_case to camelCase for compatibility
+    const normalizedBody = {
+      ...rawBody,
+      targetValue: rawBody.targetValue ?? rawBody.target_value,
+      targetUnit: rawBody.targetUnit ?? rawBody.target_unit,
+      isBoolean: rawBody.isBoolean ?? rawBody.is_boolean,
+    };
     
     // Validate partial input - only validate fields that are provided
     const partialSchema = dailyHabitSchema.partial();
-    const validationResult = partialSchema.safeParse(body);
+    const validationResult = partialSchema.safeParse(normalizedBody);
 
     if (!validationResult.success) {
       return NextResponse.json(
@@ -117,7 +125,7 @@ export async function DELETE(
 
     return NextResponse.json({
       success: true,
-      message: "Habit deactivated successfully",
+      data: { message: "Habit deactivated successfully" },
     });
   } catch (error) {
     console.error("Error deactivating habit:", error);

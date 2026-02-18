@@ -87,8 +87,17 @@ export async function POST(
       );
     }
 
-    const body = await request.json();
-    const validationResult = dailyHabitSchema.safeParse(body);
+    const rawBody = await request.json();
+    
+    // Convert snake_case to camelCase for compatibility
+    const normalizedBody = {
+      ...rawBody,
+      targetValue: rawBody.targetValue ?? rawBody.target_value,
+      targetUnit: rawBody.targetUnit ?? rawBody.target_unit,
+      isBoolean: rawBody.isBoolean ?? rawBody.is_boolean,
+    };
+    
+    const validationResult = dailyHabitSchema.safeParse(normalizedBody);
 
     if (!validationResult.success) {
       return NextResponse.json(

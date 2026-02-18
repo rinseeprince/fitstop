@@ -1,5 +1,8 @@
 import { supabaseAdmin } from "./supabase-admin";
 import type { DailyExternalActivity, DailyExternalActivityInput } from "@/types/daily-activity";
+import type { Database } from "@/types/database";
+
+type DailyExternalActivityRow = Database["public"]["Tables"]["daily_external_activities"]["Row"];
 
 export const addActivity = async (
   clientId: string,
@@ -23,6 +26,7 @@ export const addActivity = async (
     .single();
 
   if (error) {
+    console.error("Database operation error:", error);
     throw new Error(`Failed to add activity: ${error.message}`);
   }
 
@@ -52,10 +56,11 @@ export const getActivities = async (
     .order("created_at", { ascending: true });
 
   if (error) {
+    console.error("Database operation error:", error);
     throw new Error(`Failed to fetch activities: ${error.message}`);
   }
 
-  return (data || []).map((row: any) => ({
+  return (data || []).map((row: DailyExternalActivityRow) => ({
     id: row.id,
     clientId: row.client_id,
     date: row.date,
@@ -84,10 +89,11 @@ export const getActivitiesRange = async (
     .order("created_at", { ascending: true });
 
   if (error) {
+    console.error("Database operation error:", error);
     throw new Error(`Failed to fetch activities: ${error.message}`);
   }
 
-  return (data || []).map((row: any) => ({
+  return (data || []).map((row: DailyExternalActivityRow) => ({
     id: row.id,
     clientId: row.client_id,
     date: row.date,
@@ -116,7 +122,7 @@ export const updateActivity = async (
     throw new Error("Activity not found or access denied");
   }
 
-  const updateData: any = {
+  const updateData: Partial<Database["public"]["Tables"]["daily_external_activities"]["Update"]> = {
     updated_at: new Date().toISOString(),
   };
 
@@ -136,6 +142,7 @@ export const updateActivity = async (
     .single();
 
   if (error) {
+    console.error("Database operation error:", error);
     throw new Error(`Failed to update activity: ${error.message}`);
   }
 
@@ -174,6 +181,7 @@ export const deleteActivity = async (
     .eq("client_id", clientId);
 
   if (error) {
+    console.error("Database operation error:", error);
     throw new Error(`Failed to delete activity: ${error.message}`);
   }
 };

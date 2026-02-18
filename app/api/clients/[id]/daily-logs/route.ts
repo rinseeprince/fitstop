@@ -3,6 +3,7 @@ import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { apiRateLimit } from "@/lib/rate-limit";
 import { getDailyLogs } from "@/services/daily-logs-service";
 import { getClientById } from "@/services/client-service";
+import { getTodayDateString, getDateDaysAgo } from "@/lib/date-helpers";
 
 async function verifyClientOwnership(
   clientId: string,
@@ -41,10 +42,8 @@ export async function GET(
     const { searchParams } = new URL(request.url);
     
     // Default to last 30 days if not provided
-    const endDate = searchParams.get("endDate") || new Date().toISOString().split('T')[0];
-    const defaultStartDate = new Date();
-    defaultStartDate.setDate(defaultStartDate.getDate() - 30);
-    const startDate = searchParams.get("startDate") || defaultStartDate.toISOString().split('T')[0];
+    const endDate = searchParams.get("endDate") || getTodayDateString();
+    const startDate = searchParams.get("startDate") || getDateDaysAgo(30);
 
     const logs = await getDailyLogs(clientId, startDate, endDate);
 
