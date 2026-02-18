@@ -19,10 +19,17 @@ export async function GET(request: NextRequest) {
 
     const log = await getTodayLog(clientId);
 
-    return NextResponse.json({
-      success: true,
-      data: log,
-    });
+    return NextResponse.json(
+      {
+        success: true,
+        data: log,
+      },
+      {
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate',
+        },
+      }
+    );
   } catch (error) {
     console.error("Error fetching today's daily log:", error);
     return NextResponse.json(

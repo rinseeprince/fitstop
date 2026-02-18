@@ -1117,6 +1117,7 @@ export type Database = {
           calories_consumed: number | null
           carbs_g: number | null
           client_id: string
+          completed_activity_ids: Json | null
           created_at: string
           date: string
           energy: number | null
@@ -1133,6 +1134,7 @@ export type Database = {
           target_fat_g: number | null
           target_protein_g: number | null
           trained: boolean | null
+          training_data: Json | null
           training_session_id: string | null
           updated_at: string
         }
@@ -1141,6 +1143,7 @@ export type Database = {
           calories_consumed?: number | null
           carbs_g?: number | null
           client_id: string
+          completed_activity_ids?: Json | null
           created_at?: string
           date: string
           energy?: number | null
@@ -1157,11 +1160,14 @@ export type Database = {
           target_fat_g?: number | null
           target_protein_g?: number | null
           trained?: boolean | null
+          training_data?: Json | null
           training_session_id?: string | null
           updated_at?: string
         }
         Update: {
           calorie_surplus_deficit?: number | null
+          completed_activity_ids?: Json | null
+          training_data?: Json | null
           calories_consumed?: number | null
           carbs_g?: number | null
           client_id?: string

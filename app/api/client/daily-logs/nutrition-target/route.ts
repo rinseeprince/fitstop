@@ -27,14 +27,21 @@ export async function GET(request: NextRequest) {
       getTodaysPlannedActivities(clientId),
     ]);
 
-    return NextResponse.json({
-      success: true,
-      data: {
-        nutritionTarget,
-        trainingSession,
-        plannedActivities,
+    return NextResponse.json(
+      {
+        success: true,
+        data: {
+          nutritionTarget,
+          trainingSession,
+          plannedActivities,
+        },
       },
-    });
+      {
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate',
+        },
+      }
+    );
   } catch (error) {
     console.error("Error fetching nutrition target and context:", error);
     return NextResponse.json(

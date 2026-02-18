@@ -19,10 +19,17 @@ export async function GET(request: NextRequest) {
 
     const streaks = await calculateStreaks(clientId);
 
-    return NextResponse.json({
-      success: true,
-      data: streaks,
-    });
+    return NextResponse.json(
+      {
+        success: true,
+        data: streaks,
+      },
+      {
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate',
+        },
+      }
+    );
   } catch (error) {
     console.error("Error calculating streaks:", error);
     return NextResponse.json(

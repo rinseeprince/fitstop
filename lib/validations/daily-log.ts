@@ -53,6 +53,18 @@ export const dailyLogSchema = z.object({
   // Training tracking
   trained: z.boolean().optional(),
   trainingSessionId: z.string().uuid().optional().nullable().transform((v) => v ?? undefined),
+  completedActivityIds: z.array(z.string()).optional(),
+  trainingData: z.object({
+    sessionCompleted: z.boolean(),
+    trainingSessionId: z.string().nullable(),
+    isAlternativeSession: z.boolean(),
+    activityStatuses: z.record(z.string(), z.boolean()),
+    unplannedActivities: z.array(z.object({
+      activityName: z.string(),
+      intensityLevel: z.string(),
+      durationMinutes: z.number().int().min(1)
+    }))
+  }).nullable().optional(),
   
   // Nutrition tracking (calories_consumed is optional - client may log wellness without calories)
   caloriesConsumed: optionalInt(z.number().int().min(1, "Calories must be positive").max(10000, "Calories must be reasonable")),

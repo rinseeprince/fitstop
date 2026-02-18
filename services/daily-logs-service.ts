@@ -12,6 +12,7 @@ type DailyLogInputWithTargets = DailyLogInput & {
   targetProteinG?: number;
   targetCarbsG?: number;
   targetFatG?: number;
+  completedActivityIds?: string[];
 };
 
 type StreakResult = {
@@ -139,6 +140,8 @@ export const upsertDailyLog = async (
     notes: data.notes,
     trained: data.trained,
     training_session_id: data.trainingSessionId,
+    completed_activity_ids: data.completedActivityIds || null,
+    training_data: data.trainingData || null,
     calories_consumed: data.caloriesConsumed,
     protein_g: data.proteinG,
     carbs_g: data.carbsG,
@@ -176,6 +179,8 @@ export const upsertDailyLog = async (
     notes: result.notes ?? undefined,
     trained: result.trained ?? undefined,
     trainingSessionId: result.training_session_id ?? undefined,
+    completedActivityIds: result.completed_activity_ids ? (result.completed_activity_ids as string[]) : undefined,
+    trainingData: result.training_data as DailyLog['trainingData'],
     caloriesConsumed: result.calories_consumed ?? undefined,
     proteinG: result.protein_g ?? undefined,
     carbsG: result.carbs_g ?? undefined,
@@ -220,6 +225,8 @@ export const getDailyLogs = async (
     notes: row.notes ?? undefined,
     trained: row.trained ?? undefined,
     trainingSessionId: row.training_session_id ?? undefined,
+    completedActivityIds: row.completed_activity_ids ? (row.completed_activity_ids as string[]) : undefined,
+    trainingData: row.training_data as DailyLog['trainingData'],
     caloriesConsumed: row.calories_consumed ?? undefined,
     proteinG: row.protein_g ?? undefined,
     carbsG: row.carbs_g ?? undefined,
@@ -260,6 +267,8 @@ export const getTodayLog = async (clientId: string): Promise<DailyLog | null> =>
     notes: data.notes ?? undefined,
     trained: data.trained ?? undefined,
     trainingSessionId: data.training_session_id ?? undefined,
+    completedActivityIds: data.completed_activity_ids ? (data.completed_activity_ids as string[]) : undefined,
+    trainingData: data.training_data as DailyLog['trainingData'],
     caloriesConsumed: data.calories_consumed ?? undefined,
     proteinG: data.protein_g ?? undefined,
     carbsG: data.carbs_g ?? undefined,

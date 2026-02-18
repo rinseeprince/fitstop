@@ -33,6 +33,8 @@ export async function POST(request: NextRequest) {
       carbsG: rawBody.carbsG ?? rawBody.carbs_g,
       fatG: rawBody.fatG ?? rawBody.fat_g,
       trainingSessionId: rawBody.trainingSessionId ?? rawBody.training_session_id,
+      completedActivityIds: rawBody.completedActivityIds ?? rawBody.completed_activity_ids,
+      trainingData: rawBody.trainingData,
     };
     
     const validationResult = dailyLogSchema.safeParse(normalizedBody);
