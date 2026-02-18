@@ -6,6 +6,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { DailyPulse } from "@/components/daily-pulse/daily-pulse";
 import {
   Dumbbell,
   ClipboardCheck,
@@ -85,6 +86,9 @@ export default function ClientDashboardPage() {
 
   return (
     <div className="space-y-6">
+      {/* Daily Pulse */}
+      <DailyPulse />
+
       {/* Welcome Section */}
       <div>
         <h1 className="text-2xl font-bold">Welcome back, {firstName}!</h1>
