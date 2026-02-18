@@ -28,6 +28,7 @@ export type DailyLog = {
   targetProteinG?: number;
   targetCarbsG?: number;
   targetFatG?: number;
+  nutritionAdherence?: NutritionAdherenceStatus;
   calorieSurplusDeficit?: number;
   
   // Timestamps

@@ -1,0 +1,36 @@
+import { NextRequest, NextResponse } from "next/server";
+import { getAuthenticatedClientId } from "@/lib/auth-helpers";
+import { apiRateLimit } from "@/lib/rate-limit";
+import { calculateStreaks } from "@/services/daily-logs-service";
+
+export async function GET(request: NextRequest) {
+  const rateLimitResult = await apiRateLimit(request);
+  if (rateLimitResult) return rateLimitResult;
+
+  try {
+    const clientId = await getAuthenticatedClientId();
+
+    if (!clientId) {
+      return NextResponse.json(
+        { success: false, error: "Unauthorized" },
+        { status: 401 }
+      );
+    }
+
+    const streaks = await calculateStreaks(clientId);
+
+    return NextResponse.json({
+      success: true,
+      data: streaks,
+    });
+  } catch (error) {
+    console.error("Error calculating streaks:", error);
+    return NextResponse.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to calculate streaks",
+      },
+      { status: 500 }
+    );
+  }
+}
