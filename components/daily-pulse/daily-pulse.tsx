@@ -5,10 +5,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Flame, Edit } from "lucide-react";
 import { useDailyPulse } from "@/hooks/use-daily-pulse";
 import { TrainingSection } from "./training-section";
 import { WellnessSection } from "./wellness-section";
+import { NutritionSection } from "./nutrition-section";
 import { DailyPulseSummary } from "./daily-pulse-summary";
 import { useToast } from "@/hooks/use-toast";
 import type { DailyLog } from "@/types/daily-log";
@@ -34,6 +36,14 @@ export function DailyPulse() {
     notes: undefined,
   });
   
+  // Nutrition state
+  const [nutritionData, setNutritionData] = useState({
+    caloriesConsumed: null as number | null,
+    proteinG: null as number | null,
+    carbsG: null as number | null,
+    fatG: null as number | null,
+  });
+  
   // Training state (lifted state pattern)
   const [sessionCompleted, setSessionCompleted] = useState(false);
   const [currentTrainingSession, setCurrentTrainingSession] = useState(todaysTrainingSession);
@@ -45,7 +55,10 @@ export function DailyPulse() {
 
   // Update form data when todayLog loads or changes
   useEffect(() => {
-    if (todayLog && !isLoading) {
+    // Skip if still loading
+    if (isLoading) return;
+    
+    if (todayLog) {
       setFormData({
         mood: todayLog.mood || undefined,
         energy: todayLog.energy || undefined,
@@ -53,8 +66,15 @@ export function DailyPulse() {
         stress: todayLog.stress || undefined,
         notes: todayLog.notes || undefined,
       });
+      setNutritionData({
+        caloriesConsumed: todayLog.caloriesConsumed || null,
+        proteinG: todayLog.proteinG || null,
+        carbsG: todayLog.carbsG || null,
+        fatG: todayLog.fatG || null,
+      });
       setIsExpanded(false);
-    } else if (!todayLog && !isLoading) {
+    } else {
+      // Only auto-expand if we're done loading and there's no log
       setIsExpanded(true);
     }
   }, [todayLog, isLoading]);
@@ -123,6 +143,10 @@ export function DailyPulse() {
       trained: sessionCompleted,
       trainingSessionId: trainingSessionId,
       trainingData: trainingData,
+      caloriesConsumed: nutritionData.caloriesConsumed || undefined,
+      proteinG: nutritionData.proteinG || undefined,
+      carbsG: nutritionData.carbsG || undefined,
+      fatG: nutritionData.fatG || undefined,
     });
     
     // Handle session completion tracking
@@ -181,6 +205,12 @@ export function DailyPulse() {
       sleep: todayLog?.sleep || undefined,
       stress: todayLog?.stress || undefined,
       notes: todayLog?.notes || undefined,
+    });
+    setNutritionData({
+      caloriesConsumed: todayLog?.caloriesConsumed || null,
+      proteinG: todayLog?.proteinG || null,
+      carbsG: todayLog?.carbsG || null,
+      fatG: todayLog?.fatG || null,
     });
     setIsExpanded(true);
   };
@@ -247,7 +277,14 @@ export function DailyPulse() {
       </CardHeader>
 
       <CardContent>
-        {hasLoggedToday && !isExpanded ? (
+        {isLoading ? (
+          <div className="space-y-3">
+            <Skeleton className="h-4 w-32" />
+            <Skeleton className="h-6 w-full" />
+            <Skeleton className="h-4 w-24" />
+            <Skeleton className="h-6 w-3/4" />
+          </div>
+        ) : hasLoggedToday && !isExpanded ? (
           <div className="space-y-3">
             <div className="flex items-center justify-between text-sm">
               <span className="text-muted-foreground">Today's log complete</span>
@@ -280,6 +317,25 @@ export function DailyPulse() {
               onAddUnplannedActivity={handleAddUnplannedActivity}
               onRemoveUnplannedActivity={handleRemoveUnplannedActivity}
             />
+
+            <Separator />
+            
+            {/* Nutrition Summary */}
+            <NutritionSection
+              isExpanded={false}
+              hasLoggedToday={hasLoggedToday}
+              nutritionTarget={nutritionTarget}
+              sessionCompleted={sessionCompleted}
+              currentTrainingSession={currentTrainingSession}
+              activityStatuses={activityStatuses}
+              plannedActivities={plannedActivities}
+              unplannedActivities={unplannedActivities}
+              caloriesConsumed={nutritionData.caloriesConsumed}
+              proteinG={nutritionData.proteinG}
+              carbsG={nutritionData.carbsG}
+              fatG={nutritionData.fatG}
+              onNutritionChange={setNutritionData}
+            />
           </div>
         ) : (
           <div className="space-y-6">
@@ -310,6 +366,25 @@ export function DailyPulse() {
               onActivityToggle={handleActivityToggle}
               onAddUnplannedActivity={handleAddUnplannedActivity}
               onRemoveUnplannedActivity={handleRemoveUnplannedActivity}
+            />
+
+            <Separator />
+            
+            {/* Nutrition Section */}
+            <NutritionSection
+              isExpanded={true}
+              hasLoggedToday={hasLoggedToday}
+              nutritionTarget={nutritionTarget}
+              sessionCompleted={sessionCompleted}
+              currentTrainingSession={currentTrainingSession}
+              activityStatuses={activityStatuses}
+              plannedActivities={plannedActivities}
+              unplannedActivities={unplannedActivities}
+              caloriesConsumed={nutritionData.caloriesConsumed}
+              proteinG={nutritionData.proteinG}
+              carbsG={nutritionData.carbsG}
+              fatG={nutritionData.fatG}
+              onNutritionChange={setNutritionData}
             />
 
             <Button onClick={handleSave} disabled={isSaving} className="w-full">

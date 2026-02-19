@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedClientId } from "@/lib/auth-helpers";
-import { apiRateLimit } from "@/lib/rate-limit";
+import { clientApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { z } from "zod";
 import { supabaseAdmin } from "@/services/supabase-admin";
@@ -22,7 +22,7 @@ const sessionCompletionSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
-  const rateLimitResult = await apiRateLimit(request);
+  const rateLimitResult = await clientApiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
 
   const csrfError = await requireCSRFProtection(request);
@@ -98,7 +98,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const rateLimitResult = await apiRateLimit(request);
+  const rateLimitResult = await clientApiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
 
   const csrfError = await requireCSRFProtection(request);

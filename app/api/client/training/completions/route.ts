@@ -6,7 +6,7 @@ import {
   removeSessionCompletion,
   getCurrentWeekStart,
 } from "@/services/client-portal-service";
-import { apiRateLimit } from "@/lib/rate-limit";
+import { clientApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { z } from "zod";
 
@@ -20,7 +20,7 @@ const markCompleteSchema = z.object({
 
 // GET /api/client/training/completions - Get weekly completions
 export async function GET(request: NextRequest) {
-  const rateLimitResult = await apiRateLimit(request);
+  const rateLimitResult = await clientApiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
 
   try {
@@ -57,7 +57,7 @@ export async function GET(request: NextRequest) {
 
 // POST /api/client/training/completions - Mark session complete
 export async function POST(request: NextRequest) {
-  const rateLimitResult = await apiRateLimit(request);
+  const rateLimitResult = await clientApiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
 
   const csrfError = await requireCSRFProtection(request);
@@ -119,7 +119,7 @@ export async function POST(request: NextRequest) {
 
 // DELETE /api/client/training/completions - Remove session completion
 export async function DELETE(request: NextRequest) {
-  const rateLimitResult = await apiRateLimit(request);
+  const rateLimitResult = await clientApiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
 
   const csrfError = await requireCSRFProtection(request);

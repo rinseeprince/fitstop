@@ -3,18 +3,7 @@ import { useToast } from "@/hooks/use-toast";
 import { getTodayDateString } from "@/lib/date-helpers";
 import type { TrainingPlan, TrainingSession } from "@/types/training";
 import type { DailyLog } from "@/types/daily-log";
-
-type NutritionTarget = {
-  day: string;
-  calories: number;
-  proteinG: number;
-  carbsG: number;
-  fatG: number;
-  isRestDay: boolean;
-  isLowDay: boolean;
-  isHighDay: boolean;
-  notes?: string | null;
-};
+import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
 
 type TodaysActivity = {
   sessionId: string;
@@ -26,7 +15,7 @@ type TodaysActivity = {
 interface UseDailyPulseReturn {
   todayLog: DailyLog | null;
   streak: number;
-  nutritionTarget: NutritionTarget | null;
+  nutritionTarget: DailyNutritionTargets | null;
   todaysTrainingSession: TrainingSession | null;
   plannedActivities: TodaysActivity[];
   allTrainingSessions: TrainingSession[];
@@ -41,6 +30,10 @@ interface UseDailyPulseReturn {
     trained?: boolean;
     trainingSessionId?: string;
     trainingData?: DailyLog['trainingData'];
+    caloriesConsumed?: number;
+    proteinG?: number;
+    carbsG?: number;
+    fatG?: number;
   }) => Promise<void>;
 }
 
@@ -48,7 +41,7 @@ export function useDailyPulse(): UseDailyPulseReturn {
   const { toast } = useToast();
   const [todayLog, setTodayLog] = useState<DailyLog | null>(null);
   const [streak, setStreak] = useState(0);
-  const [nutritionTarget, setNutritionTarget] = useState<NutritionTarget | null>(null);
+  const [nutritionTarget, setNutritionTarget] = useState<DailyNutritionTargets | null>(null);
   const [todaysTrainingSession, setTodaysTrainingSession] = useState<TrainingSession | null>(null);
   const [plannedActivities, setPlannedActivities] = useState<TodaysActivity[]>([]);
   const [allTrainingSessions, setAllTrainingSessions] = useState<TrainingSession[]>([]);
@@ -56,13 +49,28 @@ export function useDailyPulse(): UseDailyPulseReturn {
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
+    const controller = new AbortController();
+    setIsLoading(true);
+    
     const fetchData = async () => {
       try {
         const [logRes, streakRes, nutritionRes, trainingRes] = await Promise.all([
-          fetch("/api/client/daily-logs/today", { cache: 'no-store' }),
-          fetch("/api/client/daily-logs/streak", { cache: 'no-store' }),
-          fetch("/api/client/daily-logs/nutrition-target", { cache: 'no-store' }),
-          fetch("/api/client/training", { cache: 'no-store' }),
+          fetch("/api/client/daily-logs/today", { 
+            cache: 'no-store',
+            signal: controller.signal 
+          }),
+          fetch("/api/client/daily-logs/streak", { 
+            cache: 'no-store',
+            signal: controller.signal 
+          }),
+          fetch("/api/client/daily-logs/nutrition-target", { 
+            cache: 'no-store',
+            signal: controller.signal 
+          }),
+          fetch("/api/client/training", { 
+            cache: 'no-store',
+            signal: controller.signal 
+          }),
         ]);
 
         if (logRes.ok) {
@@ -103,20 +111,32 @@ export function useDailyPulse(): UseDailyPulseReturn {
             }
           }
         }
+        
+        // Successfully fetched data
+        setIsLoading(false);
 
       } catch (error) {
+        // Don't show error if the request was aborted (user navigated away)
+        if (error instanceof Error && error.name === 'AbortError') {
+          return;
+        }
+        
         console.error("Error fetching daily pulse data:", error);
         toast({
           title: "Error",
           description: "Failed to load daily pulse data",
           variant: "destructive",
         });
-      } finally {
         setIsLoading(false);
       }
     };
 
     fetchData();
+    
+    // Cleanup function to abort requests when component unmounts
+    return () => {
+      controller.abort();
+    };
   }, [toast]);
 
 
@@ -129,6 +149,10 @@ export function useDailyPulse(): UseDailyPulseReturn {
     trained?: boolean;
     trainingSessionId?: string;
     trainingData?: DailyLog['trainingData'];
+    caloriesConsumed?: number;
+    proteinG?: number;
+    carbsG?: number;
+    fatG?: number;
   }) => {
     setIsSaving(true);
     try {

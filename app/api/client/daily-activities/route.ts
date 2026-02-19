@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedClientId } from "@/lib/auth-helpers";
-import { apiRateLimit } from "@/lib/rate-limit";
+import { clientApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { dailyExternalActivitySchema } from "@/lib/validations/daily-activity";
 import { addActivity, getActivities, getActivitiesRange } from "@/services/daily-activities-service";
 import { getTodayDateString } from "@/lib/date-helpers";
 
 export async function POST(request: NextRequest) {
-  const rateLimitResult = await apiRateLimit(request);
+  const rateLimitResult = await clientApiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
 
   const csrfError = await requireCSRFProtection(request);
@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
-  const rateLimitResult = await apiRateLimit(request);
+  const rateLimitResult = await clientApiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
 
   try {

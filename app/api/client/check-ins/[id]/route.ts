@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedClientId } from "@/lib/auth-helpers";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
-import { apiRateLimit } from "@/lib/rate-limit";
+import { clientApiRateLimit } from "@/lib/rate-limit";
 import { 
   getCheckInSessionCompletions, 
   getCheckInExerciseHighlights, 
@@ -38,7 +38,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const rateLimitResult = await apiRateLimit(request);
+  const rateLimitResult = await clientApiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
 
   try {

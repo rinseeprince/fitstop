@@ -47,11 +47,13 @@ export function TrainingSummary({
           ✓ {currentTrainingSession.name}
         </div>
       )}
-      {Object.entries(activityStatuses).filter(([_, completed]) => completed).length > 0 && (
-        <div className="text-sm text-muted-foreground">
-          {Object.entries(activityStatuses).filter(([_, completed]) => completed).length} activities completed
-        </div>
-      )}
+      {plannedActivities
+        .filter(activity => activityStatuses[activity.sessionId])
+        .map(activity => (
+          <div key={activity.sessionId} className="text-sm font-medium">
+            ✓ {activity.activityName}
+          </div>
+        ))}
     </div>
   );
 }

@@ -126,6 +126,17 @@ export async function apiRateLimit(request: NextRequest): Promise<NextResponse |
 }
 
 /**
+ * More permissive rate limit for authenticated client API endpoints
+ * Allows for burst traffic during page navigation while still preventing abuse
+ */
+export async function clientApiRateLimit(request: NextRequest): Promise<NextResponse | null> {
+  return rateLimit(request, {
+    windowMs: 10 * 1000, // 10 seconds
+    maxRequests: 30, // 30 requests per 10 seconds
+  });
+}
+
+/**
  * Lenient rate limit for public check-in submission endpoints
  */
 export async function checkInRateLimit(request: NextRequest): Promise<NextResponse | null> {

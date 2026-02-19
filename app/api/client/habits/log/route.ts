@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedClientId } from "@/lib/auth-helpers";
-import { apiRateLimit } from "@/lib/rate-limit";
+import { clientApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { dailyHabitLogSchema } from "@/lib/validations/daily-habit";
 import { logHabit } from "@/services/daily-habits-service";
 
 export async function POST(request: NextRequest) {
-  const rateLimitResult = await apiRateLimit(request);
+  const rateLimitResult = await clientApiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
 
   const csrfError = await requireCSRFProtection(request);

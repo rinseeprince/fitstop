@@ -7,7 +7,7 @@ import {
 import { getClientById } from "@/services/client-service";
 import { getFrequencyInDays } from "@/services/check-in-tracking-service";
 import { supabaseAdmin } from "@/services/supabase-admin";
-import { apiRateLimit } from "@/lib/rate-limit";
+import { clientApiRateLimit } from "@/lib/rate-limit";
 import type { ValidateCheckInTokenResponse } from "@/types/check-in";
 
 /**
@@ -44,7 +44,7 @@ import type { ValidateCheckInTokenResponse } from "@/types/check-in";
  * @throws {500} Server error during context retrieval
  */
 export async function GET(request: NextRequest) {
-  const rateLimitResult = await apiRateLimit(request);
+  const rateLimitResult = await clientApiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
 
   try {

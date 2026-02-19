@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedClientId } from "@/lib/auth-helpers";
-import { apiRateLimit } from "@/lib/rate-limit";
+import { clientApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { dailyLogSchema } from "@/lib/validations/daily-log";
-import { upsertDailyLog, getDailyLogs, getTodaysNutritionTarget } from "@/services/daily-logs-service";
+import { upsertDailyLog, getDailyLogs, getTodaysNutritionTarget, getTodaysTrainingSession, getTodaysPlannedActivities } from "@/services/daily-logs-service";
+import { calculateUnplannedActivityCalories, calculateAdjustedDayTarget, calculateAdjustedMacros } from "@/utils/nutrition-tracking-helpers";
 import { getTodayDateString, getDateDaysAgo } from "@/lib/date-helpers";
 
 export async function POST(request: NextRequest) {
-  const rateLimitResult = await apiRateLimit(request);
+  const rateLimitResult = await clientApiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
 
   const csrfError = await requireCSRFProtection(request);
@@ -51,16 +52,71 @@ export async function POST(request: NextRequest) {
 
     const data = validationResult.data;
     
-    // Get nutrition targets for today to include in the log
+    // Get nutrition targets and training data for today to calculate adjusted targets
     const nutritionTarget = await getTodaysNutritionTarget(clientId);
+    const todaysTrainingSession = await getTodaysTrainingSession(clientId);
+    const plannedActivities = await getTodaysPlannedActivities(clientId);
     
-    // Add nutrition targets to the validated data
-    const dataWithTargets = {
-      ...data,
+    let adjustedTargets = {
       targetCalories: nutritionTarget?.calories,
       targetProteinG: nutritionTarget?.proteinG,
       targetCarbsG: nutritionTarget?.carbsG,
       targetFatG: nutritionTarget?.fatG,
+    };
+    
+    // Calculate adjusted targets based on training state if nutrition target exists
+    if (nutritionTarget && data.trainingData) {
+      const trainingData = data.trainingData;
+      
+      // Calculate completed training calories
+      const completedTrainingCals = trainingData.sessionCompleted && todaysTrainingSession
+        ? (todaysTrainingSession.estimatedCalories || 0)
+        : 0;
+      
+      // Calculate completed planned activity calories
+      const completedActivityCals = plannedActivities.reduce((sum, activity) => 
+        sum + (trainingData.activityStatuses[activity.sessionId] ? activity.estimatedCalories : 0), 0
+      );
+      
+      // Calculate unplanned activity calories
+      const unplannedActivityCals = trainingData.unplannedActivities.reduce((sum, activity) => 
+        sum + calculateUnplannedActivityCalories({
+          activityName: activity.activityName,
+          intensityLevel: activity.intensityLevel as "low" | "moderate" | "vigorous",
+          durationMinutes: activity.durationMinutes
+        }), 0
+      );
+      
+      // Calculate adjusted calorie target
+      const adjustedCalories = calculateAdjustedDayTarget(
+        nutritionTarget.calories,
+        completedTrainingCals,
+        0, // skippedTrainingCals
+        completedActivityCals,
+        0, // skippedActivityCals
+        unplannedActivityCals
+      );
+      
+      // Calculate adjusted macros
+      const adjustedMacros = calculateAdjustedMacros(
+        adjustedCalories,
+        nutritionTarget.proteinG,
+        nutritionTarget.carbsG,
+        nutritionTarget.fatG
+      );
+      
+      adjustedTargets = {
+        targetCalories: adjustedCalories,
+        targetProteinG: adjustedMacros.proteinG,
+        targetCarbsG: adjustedMacros.carbsG,
+        targetFatG: adjustedMacros.fatG,
+      };
+    }
+    
+    // Add adjusted targets to the validated data
+    const dataWithTargets = {
+      ...data,
+      ...adjustedTargets,
     };
     
     const dailyLog = await upsertDailyLog(clientId, dataWithTargets);
@@ -82,7 +138,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
-  const rateLimitResult = await apiRateLimit(request);
+  const rateLimitResult = await clientApiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
 
   try {

@@ -6,7 +6,7 @@ import {
   getDaysUntilOrPastDue, 
   isClientOverdue 
 } from "@/services/check-in-tracking-service";
-import { apiRateLimit } from "@/lib/rate-limit";
+import { clientApiRateLimit } from "@/lib/rate-limit";
 import type { ClientNotification } from "@/hooks/use-client-notifications";
 
 /**
@@ -52,7 +52,7 @@ import type { ClientNotification } from "@/hooks/use-client-notifications";
  * @throws {500} Server error during notification retrieval
  */
 export async function GET(request: NextRequest) {
-  const rateLimitResult = await apiRateLimit(request);
+  const rateLimitResult = await clientApiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
 
   try {
