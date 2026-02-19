@@ -18,7 +18,6 @@ export type DailyLog = {
   // Training tracking
   trained?: boolean;
   trainingSessionId?: string;
-  completedActivityIds?: string[];
   trainingData?: {
     sessionCompleted: boolean;
     trainingSessionId: string | null;
@@ -62,7 +61,6 @@ export type DailyLogInput = {
   // Training tracking
   trained?: boolean;
   trainingSessionId?: string;
-  completedActivityIds?: string[];
   trainingData?: {
     sessionCompleted: boolean;
     trainingSessionId: string | null;

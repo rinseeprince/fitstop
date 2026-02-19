@@ -40,7 +40,6 @@ interface UseDailyPulseReturn {
     notes?: string;
     trained?: boolean;
     trainingSessionId?: string;
-    completedActivityIds?: string[];
     trainingData?: DailyLog['trainingData'];
   }) => Promise<void>;
 }
@@ -81,11 +80,7 @@ export function useDailyPulse(): UseDailyPulseReturn {
           nutritionData = await nutritionRes.json();
           if (nutritionData.data) {
             setNutritionTarget(nutritionData.data.nutritionTarget);
-            setTodaysTrainingSession(
-              nutritionData.data.trainingSession 
-                ? findSessionById(nutritionData.data.trainingSession.sessionId, trainingRes) 
-                : null
-            );
+            setTodaysTrainingSession(null);
             setPlannedActivities(nutritionData.data.plannedActivities || []);
           }
         }
@@ -124,11 +119,6 @@ export function useDailyPulse(): UseDailyPulseReturn {
     fetchData();
   }, [toast]);
 
-  const findSessionById = (sessionId: string, trainingRes: Response): TrainingSession | null => {
-    // Helper function to find session by ID from training response
-    // This is a placeholder - the actual implementation will be in the response processing
-    return null;
-  };
 
   const saveLog = async (data: {
     mood?: number;
@@ -138,7 +128,6 @@ export function useDailyPulse(): UseDailyPulseReturn {
     notes?: string;
     trained?: boolean;
     trainingSessionId?: string;
-    completedActivityIds?: string[];
     trainingData?: DailyLog['trainingData'];
   }) => {
     setIsSaving(true);

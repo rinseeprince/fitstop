@@ -3,20 +3,13 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Slider } from "@/components/ui/slider";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
-import { Smile, Frown, Meh, SmilePlus, Heart, Flame, ChevronDown, Edit } from "lucide-react";
+import { Flame, Edit } from "lucide-react";
 import { useDailyPulse } from "@/hooks/use-daily-pulse";
 import { TrainingSection } from "./training-section";
-import { cn } from "@/lib/utils";
+import { WellnessSection } from "./wellness-section";
+import { DailyPulseSummary } from "./daily-pulse-summary";
 import { useToast } from "@/hooks/use-toast";
 import type { DailyLog } from "@/types/daily-log";
 type UnplannedActivity = {
@@ -25,13 +18,6 @@ type UnplannedActivity = {
   durationMinutes: number;
 };
 
-const moodEmojis = [
-  { value: 1, icon: Frown, label: "Poor", color: "text-destructive" },
-  { value: 2, icon: Meh, label: "Below Average", color: "text-warning" },
-  { value: 3, icon: Smile, label: "Good", color: "text-warning" },
-  { value: 4, icon: SmilePlus, label: "Great", color: "text-success" },
-  { value: 5, icon: Heart, label: "Excellent", color: "text-success" },
-];
 
 export function DailyPulse() {
   const { todayLog, streak, nutritionTarget, todaysTrainingSession, plannedActivities, allTrainingSessions, isLoading, isSaving, saveLog } = useDailyPulse();
@@ -55,7 +41,6 @@ export function DailyPulse() {
   const [selectedAlternativeSession, setSelectedAlternativeSession] = useState<string | null>(null);
   const [activityStatuses, setActivityStatuses] = useState<Record<string, boolean>>({});
   const [unplannedActivities, setUnplannedActivities] = useState<UnplannedActivity[]>([]);
-  const [customTrainingName, setCustomTrainingName] = useState("");
   const [wasCompletedPreviously, setWasCompletedPreviously] = useState(false);
 
   // Update form data when todayLog loads or changes
@@ -200,10 +185,6 @@ export function DailyPulse() {
     setIsExpanded(true);
   };
 
-  const getMoodEmoji = (value: number | null | undefined) => {
-    if (!value) return null;
-    return moodEmojis.find(m => m.value === value);
-  };
 
   const handleAlternativeSessionSelect = (sessionId: string | null) => {
     setSelectedAlternativeSession(sessionId);
@@ -277,37 +258,7 @@ export function DailyPulse() {
             </div>
             
             {/* Wellness Summary */}
-            <div className="grid grid-cols-4 gap-3 text-center">
-              {todayLog.mood && (() => {
-                const moodData = getMoodEmoji(todayLog.mood);
-                const MoodIcon = moodData?.icon;
-                const moodColor = moodData?.color;
-                return (
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-1">Mood</p>
-                    {MoodIcon && <MoodIcon className={cn("h-5 w-5 mx-auto", moodColor)} />}
-                  </div>
-                );
-              })()}
-              {todayLog.energy && (
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Energy</p>
-                  <p className="font-semibold">{todayLog.energy}/10</p>
-                </div>
-              )}
-              {todayLog.sleep && (
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Sleep</p>
-                  <p className="font-semibold">{todayLog.sleep}/10</p>
-                </div>
-              )}
-              {todayLog.stress && (
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Stress</p>
-                  <p className="font-semibold">{todayLog.stress}/10</p>
-                </div>
-              )}
-            </div>
+            <DailyPulseSummary todayLog={todayLog} />
 
             <Separator />
             
@@ -321,7 +272,6 @@ export function DailyPulse() {
               selectedAlternativeSession={selectedAlternativeSession}
               activityStatuses={activityStatuses}
               unplannedActivities={unplannedActivities}
-              customTrainingName={customTrainingName}
               allTrainingSessions={allTrainingSessions}
               plannedActivities={plannedActivities}
               onSessionCompletedChange={setSessionCompleted}
@@ -329,98 +279,17 @@ export function DailyPulse() {
               onActivityToggle={handleActivityToggle}
               onAddUnplannedActivity={handleAddUnplannedActivity}
               onRemoveUnplannedActivity={handleRemoveUnplannedActivity}
-              onCustomTrainingNameChange={setCustomTrainingName}
             />
           </div>
         ) : (
           <div className="space-y-6">
             {/* Wellness Section */}
-            <div className="space-y-6">
-              <div className="space-y-3">
-                <Label>Overall Mood</Label>
-                <div className="grid grid-cols-5 gap-2">
-                  {moodEmojis.map(({ value, icon: Icon, label, color }) => (
-                    <button
-                      key={value}
-                      type="button"
-                      onClick={() => setFormData({ ...formData, mood: value })}
-                      className={cn(
-                        "flex flex-col items-center gap-1 p-2 rounded-lg border-2 transition-all duration-200 hover:scale-105",
-                        formData.mood === value
-                          ? "border-primary bg-primary/5 shadow-lg"
-                          : "border-border hover:border-primary/50"
-                      )}
-                    >
-                      <Icon className={cn("w-5 h-5", formData.mood === value ? color : "text-muted-foreground")} />
-                      <span className="text-xs font-medium">{label}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <Label>Energy Level</Label>
-                  <span className="text-sm font-semibold text-primary">{formData.energy || 5}/10</span>
-                </div>
-                <Slider
-                  value={[formData.energy || 5]}
-                  onValueChange={(value) => setFormData({ ...formData, energy: value[0] })}
-                  min={1}
-                  max={10}
-                  step={1}
-                  className="w-full"
-                />
-              </div>
-
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <Label>Sleep Quality</Label>
-                  <span className="text-sm font-semibold text-primary">{formData.sleep || 5}/10</span>
-                </div>
-                <Slider
-                  value={[formData.sleep || 5]}
-                  onValueChange={(value) => setFormData({ ...formData, sleep: value[0] })}
-                  min={1}
-                  max={10}
-                  step={1}
-                  className="w-full"
-                />
-              </div>
-
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <Label>Stress Level</Label>
-                  <span className="text-sm font-semibold text-primary">{formData.stress || 5}/10</span>
-                </div>
-                <Slider
-                  value={[formData.stress || 5]}
-                  onValueChange={(value) => setFormData({ ...formData, stress: value[0] })}
-                  min={1}
-                  max={10}
-                  step={1}
-                  className="w-full"
-                />
-              </div>
-
-              <Collapsible open={showNotes} onOpenChange={setShowNotes}>
-                <CollapsibleTrigger asChild>
-                  <Button variant="ghost" size="sm" className="w-full justify-between">
-                    <span>Add notes (optional)</span>
-                    <ChevronDown className={cn("h-4 w-4 transition-transform", showNotes && "rotate-180")} />
-                  </Button>
-                </CollapsibleTrigger>
-                <CollapsibleContent className="pt-2">
-                  <Textarea
-                    placeholder="How are you feeling today?"
-                    value={formData.notes || ""}
-                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                    rows={3}
-                    className="resize-none"
-                  />
-                </CollapsibleContent>
-              </Collapsible>
-            </div>
+            <WellnessSection
+              formData={formData}
+              setFormData={setFormData}
+              showNotes={showNotes}
+              setShowNotes={setShowNotes}
+            />
 
             <Separator />
             
@@ -434,7 +303,6 @@ export function DailyPulse() {
               selectedAlternativeSession={selectedAlternativeSession}
               activityStatuses={activityStatuses}
               unplannedActivities={unplannedActivities}
-              customTrainingName={customTrainingName}
               allTrainingSessions={allTrainingSessions}
               plannedActivities={plannedActivities}
               onSessionCompletedChange={setSessionCompleted}
@@ -442,7 +310,6 @@ export function DailyPulse() {
               onActivityToggle={handleActivityToggle}
               onAddUnplannedActivity={handleAddUnplannedActivity}
               onRemoveUnplannedActivity={handleRemoveUnplannedActivity}
-              onCustomTrainingNameChange={setCustomTrainingName}
             />
 
             <Button onClick={handleSave} disabled={isSaving} className="w-full">

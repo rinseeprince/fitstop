@@ -53,7 +53,6 @@ export const dailyLogSchema = z.object({
   // Training tracking
   trained: z.boolean().optional(),
   trainingSessionId: z.string().uuid().optional().nullable().transform((v) => v ?? undefined),
-  completedActivityIds: z.array(z.string()).optional(),
   trainingData: z.object({
     sessionCompleted: z.boolean(),
     trainingSessionId: z.string().nullable(),

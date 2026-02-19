@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
@@ -14,6 +13,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Dumbbell, Activity, Plus, X, Flame } from "lucide-react";
+import { AddActivityForm } from "./add-activity-form";
+import { TrainingSummary } from "./training-summary";
 import type { TrainingSession } from "@/types/training";
 
 type TodaysActivity = {
@@ -37,7 +38,6 @@ interface TrainingSectionProps {
   selectedAlternativeSession: string | null;
   activityStatuses: Record<string, boolean>;
   unplannedActivities: UnplannedActivity[];
-  customTrainingName: string;
   allTrainingSessions: TrainingSession[];
   plannedActivities: TodaysActivity[];
   onSessionCompletedChange: (completed: boolean) => void;
@@ -45,13 +45,8 @@ interface TrainingSectionProps {
   onActivityToggle: (activityId: string, completed: boolean) => void;
   onAddUnplannedActivity: (activity: UnplannedActivity) => void;
   onRemoveUnplannedActivity: (index: number) => void;
-  onCustomTrainingNameChange: (name: string) => void;
 }
 
-const COMMON_ACTIVITIES = [
-  "Running", "Cycling", "Swimming", "Walking", "Hiking",
-  "Basketball", "Yoga", "Boxing", "Martial Arts"
-];
 
 export function TrainingSection({
   isExpanded,
@@ -62,7 +57,6 @@ export function TrainingSection({
   selectedAlternativeSession,
   activityStatuses,
   unplannedActivities,
-  customTrainingName,
   allTrainingSessions,
   plannedActivities,
   onSessionCompletedChange,
@@ -70,15 +64,9 @@ export function TrainingSection({
   onActivityToggle,
   onAddUnplannedActivity,
   onRemoveUnplannedActivity,
-  onCustomTrainingNameChange,
 }: TrainingSectionProps) {
   const [showSessionPicker, setShowSessionPicker] = useState(false);
   const [showAddActivity, setShowAddActivity] = useState(false);
-  const [newActivity, setNewActivity] = useState<UnplannedActivity>({
-    activityName: "",
-    intensityLevel: "moderate",
-    durationMinutes: 30,
-  });
 
   const totalCalories = 
     (sessionCompleted && currentTrainingSession ? currentTrainingSession.estimatedCalories || 0 : 0) +
@@ -86,37 +74,20 @@ export function TrainingSection({
       sum + (activityStatuses[activity.sessionId] ? activity.estimatedCalories : 0), 0
     );
 
-  const handleAddActivity = () => {
-    if (newActivity.activityName.trim()) {
-      onAddUnplannedActivity(newActivity);
-      setNewActivity({ activityName: "", intensityLevel: "moderate", durationMinutes: 30 });
-      setShowAddActivity(false);
-    }
+  const handleAddActivity = (activity: UnplannedActivity) => {
+    onAddUnplannedActivity(activity);
+    setShowAddActivity(false);
   };
 
   if (!isExpanded) {
     return (
-      <div className="space-y-2">
-        <div className="flex items-center justify-between text-sm">
-          <span className="text-muted-foreground">Training & activities</span>
-          {totalCalories > 0 && (
-            <Badge variant="secondary" className="flex items-center gap-1">
-              <Flame className="h-3 w-3" />
-              {totalCalories} cal
-            </Badge>
-          )}
-        </div>
-        {sessionCompleted && currentTrainingSession && (
-          <div className="text-sm font-medium">
-            ✓ {currentTrainingSession.name}
-          </div>
-        )}
-        {Object.entries(activityStatuses).filter(([_, completed]) => completed).length > 0 && (
-          <div className="text-sm text-muted-foreground">
-            {Object.entries(activityStatuses).filter(([_, completed]) => completed).length} activities completed
-          </div>
-        )}
-      </div>
+      <TrainingSummary
+        sessionCompleted={sessionCompleted}
+        currentTrainingSession={currentTrainingSession}
+        activityStatuses={activityStatuses}
+        plannedActivities={plannedActivities}
+        totalCalories={totalCalories}
+      />
     );
   }
 
@@ -290,53 +261,10 @@ export function TrainingSection({
             Add Activity
           </Button>
         ) : (
-          <div className="space-y-2 p-3 border rounded-lg">
-            <Input
-              list="common-activities"
-              placeholder="Activity name"
-              value={newActivity.activityName}
-              onChange={(e) => setNewActivity({ ...newActivity, activityName: e.target.value })}
-            />
-            <datalist id="common-activities">
-              {COMMON_ACTIVITIES.map((name) => (
-                <option key={name} value={name} />
-              ))}
-            </datalist>
-            <div className="flex gap-2">
-              <Select
-                value={newActivity.intensityLevel}
-                onValueChange={(v) => setNewActivity({
-                  ...newActivity,
-                  intensityLevel: v as "low" | "moderate" | "vigorous"
-                })}
-              >
-                <SelectTrigger className="flex-1">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="low">Low</SelectItem>
-                  <SelectItem value="moderate">Moderate</SelectItem>
-                  <SelectItem value="vigorous">Vigorous</SelectItem>
-                </SelectContent>
-              </Select>
-              <Input
-                type="number"
-                placeholder="Duration (min)"
-                value={newActivity.durationMinutes}
-                onChange={(e) => setNewActivity({
-                  ...newActivity,
-                  durationMinutes: parseInt(e.target.value) || 0
-                })}
-                className="w-24"
-              />
-            </div>
-            <div className="flex gap-2">
-              <Button size="sm" onClick={handleAddActivity}>Add</Button>
-              <Button size="sm" variant="outline" onClick={() => setShowAddActivity(false)}>
-                Cancel
-              </Button>
-            </div>
-          </div>
+          <AddActivityForm
+            onAdd={handleAddActivity}
+            onCancel={() => setShowAddActivity(false)}
+          />
         )}
       </div>
 
