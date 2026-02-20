@@ -56,8 +56,13 @@ export const dailyLogSchema = z.object({
   trainingData: z.object({
     sessionCompleted: z.boolean(),
     trainingSessionId: z.string().nullable(),
+    trainingSessionName: z.string().nullable(),
     isAlternativeSession: z.boolean(),
-    activityStatuses: z.record(z.string(), z.boolean()),
+    activityStatuses: z.record(z.string(), z.object({
+      completed: z.boolean(),
+      activityName: z.string(),
+      estimatedCalories: z.number()
+    })),
     unplannedActivities: z.array(z.object({
       activityName: z.string(),
       intensityLevel: z.string(),

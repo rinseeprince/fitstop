@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getClientById } from "@/services/client-service";
-import { createTrainingPlan, archiveTrainingPlan, getActiveTrainingPlan } from "@/services/training-service";
+import { createTrainingPlan, archiveTrainingPlan, cleanupOrphanedSessionCompletions, getActiveTrainingPlan } from "@/services/training-service";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { apiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
@@ -78,6 +78,7 @@ export async function POST(
     const existingPlan = await getActiveTrainingPlan(clientId);
     if (existingPlan) {
       await archiveTrainingPlan(existingPlan.id);
+      await cleanupOrphanedSessionCompletions(clientId, existingPlan.id);
     }
 
     // Convert to AIGeneratedPlan format for createTrainingPlan

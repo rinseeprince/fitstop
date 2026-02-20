@@ -1,32 +1,23 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import {
   calculateAdjustedDayTarget,
   calculateAdjustedMacros,
-  getCalorieFeedback,
-  calculateUnplannedActivityCalories,
-  type CalorieFeedback
+  getCalorieFeedback
 } from "@/utils/nutrition-tracking-helpers";
+import { getFeedbackText, getFeedbackColor } from "./utils/nutrition-helpers";
+import { createNutritionChangeHandlers } from "./utils/nutrition-change-handlers";
+import { NutritionTargetDisplay } from "./nutrition-target-display";
+import { MacroInputs } from "./macro-inputs";
+import { NutritionSectionCompact } from "./nutrition-section-compact";
 import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
 import type { TrainingSession } from "@/types/training";
-
-type UnplannedActivity = {
-  activityName: string;
-  intensityLevel: "low" | "moderate" | "vigorous";
-  durationMinutes: number;
-};
-
-type TodaysActivity = {
-  sessionId: string;
-  activityName: string;
-  estimatedCalories: number;
-};
+import type { UnplannedActivity, TodaysActivity } from "./daily-pulse-content";
 
 interface NutritionSectionProps {
   isExpanded: boolean;
@@ -34,13 +25,19 @@ interface NutritionSectionProps {
   nutritionTarget: DailyNutritionTargets | null;
   sessionCompleted: boolean;
   currentTrainingSession: TrainingSession | null;
-  activityStatuses: Record<string, boolean>;
+  activityStatuses: Record<string, { completed: boolean; activityName: string; estimatedCalories: number }>;
   plannedActivities: TodaysActivity[];
   unplannedActivities: UnplannedActivity[];
   caloriesConsumed: number | null;
   proteinG: number | null;
   carbsG: number | null;
   fatG: number | null;
+  savedTargets?: {
+    adjustedCalories: number;
+    adjustedProteinG: number;
+    adjustedCarbsG: number;
+    adjustedFatG: number;
+  } | null;
   onNutritionChange: (data: {
     caloriesConsumed: number | null;
     proteinG: number | null;
@@ -62,39 +59,26 @@ export function NutritionSection({
   proteinG,
   carbsG,
   fatG,
+  savedTargets,
   onNutritionChange,
 }: NutritionSectionProps) {
   const [showMacros, setShowMacros] = useState(false);
 
   const calculateAdjustedTargets = () => {
     if (!nutritionTarget) {
-      return {
-        adjustedCalories: 0,
-        adjustedProteinG: 0,
-        adjustedCarbsG: 0,
-        adjustedFatG: 0
-      };
+      return { adjustedCalories: 0, adjustedProteinG: 0, adjustedCarbsG: 0, adjustedFatG: 0 };
     }
 
     const completedTrainingCals = sessionCompleted && currentTrainingSession 
-      ? (currentTrainingSession.estimatedCalories || 0) 
-      : 0;
+      ? (currentTrainingSession.estimatedCalories || 0) : 0;
 
     const completedActivityCals = plannedActivities.reduce((sum, activity) => 
-      sum + (activityStatuses[activity.sessionId] ? activity.estimatedCalories : 0), 0
-    );
-
-    const unplannedActivityCals = unplannedActivities.reduce((sum, activity) => 
-      sum + calculateUnplannedActivityCalories(activity), 0
-    );
+      sum + (activityStatuses[activity.sessionId]?.completed ? activity.estimatedCalories : 0), 0);
 
     const adjustedCalories = calculateAdjustedDayTarget(
-      nutritionTarget.calories,
+      nutritionTarget.baselineCalories,
       completedTrainingCals,
-      0, 
-      completedActivityCals,
-      0, 
-      unplannedActivityCals
+      completedActivityCals
     );
 
     const adjustedMacros = calculateAdjustedMacros(
@@ -112,90 +96,31 @@ export function NutritionSection({
     };
   };
 
-  const { adjustedCalories, adjustedProteinG, adjustedCarbsG, adjustedFatG } = calculateAdjustedTargets();
+  const { adjustedCalories, adjustedProteinG, adjustedCarbsG, adjustedFatG } = 
+    savedTargets || calculateAdjustedTargets();
 
   const calorieFeedback = getCalorieFeedback(caloriesConsumed, adjustedCalories);
   const proteinFeedback = getCalorieFeedback(proteinG, adjustedProteinG);
   const carbsFeedback = getCalorieFeedback(carbsG, adjustedCarbsG);
   const fatFeedback = getCalorieFeedback(fatG, adjustedFatG);
 
-  const getFeedbackText = (feedback: CalorieFeedback, isCalories: boolean = false): string => {
-    if (feedback.direction === "exact") {
-      return "Perfect!";
-    }
-    const prefix = feedback.direction === "over" ? "+" : "-";
-    const value = isCalories ? feedback.difference : feedback.difference;
-    const unit = isCalories ? " cal" : "g";
-    const suffix = feedback.direction === "over" ? " over target" : " under target";
-    return `${prefix}${value}${unit}${suffix}`;
-  };
-
-  const getFeedbackColor = (colour: string): string => {
-    switch (colour) {
-      case "green": return "text-green-600";
-      case "amber": return "text-amber-600";
-      case "red": return "text-red-600";
-      default: return "text-muted-foreground";
-    }
-  };
-
-  const handleCaloriesChange = (value: string) => {
-    const numValue = value === "" ? null : parseInt(value, 10);
-    onNutritionChange({
-      caloriesConsumed: numValue,
-      proteinG,
-      carbsG,
-      fatG
-    });
-  };
-
-  const handleProteinChange = (value: string) => {
-    const numValue = value === "" ? null : parseInt(value, 10);
-    onNutritionChange({
-      caloriesConsumed,
-      proteinG: numValue,
-      carbsG,
-      fatG
-    });
-  };
-
-  const handleCarbsChange = (value: string) => {
-    const numValue = value === "" ? null : parseInt(value, 10);
-    onNutritionChange({
-      caloriesConsumed,
-      proteinG,
-      carbsG: numValue,
-      fatG
-    });
-  };
-
-  const handleFatChange = (value: string) => {
-    const numValue = value === "" ? null : parseInt(value, 10);
-    onNutritionChange({
-      caloriesConsumed,
-      proteinG,
-      carbsG,
-      fatG: numValue
-    });
-  };
+  const {
+    handleCaloriesChange,
+    handleProteinChange,
+    handleCarbsChange,
+    handleFatChange
+  } = createNutritionChangeHandlers(
+    onNutritionChange,
+    { caloriesConsumed, proteinG, carbsG, fatG }
+  );
 
   if (!isExpanded) {
     return (
-      <div className="space-y-2">
-        <div className="flex items-center justify-between text-sm">
-          <span className="text-muted-foreground">Nutrition</span>
-          {caloriesConsumed && (
-            <Badge variant="secondary">
-              {caloriesConsumed} / {adjustedCalories} cal
-            </Badge>
-          )}
-        </div>
-        {caloriesConsumed && (
-          <div className={`text-sm ${getFeedbackColor(calorieFeedback.colour)}`}>
-            {getFeedbackText(calorieFeedback, true)}
-          </div>
-        )}
-      </div>
+      <NutritionSectionCompact
+        caloriesConsumed={caloriesConsumed}
+        nutritionTarget={nutritionTarget}
+        calorieFeedback={calorieFeedback}
+      />
     );
   }
 
@@ -215,11 +140,11 @@ export function NutritionSection({
       <Label className="text-base">Nutrition</Label>
       
       <div className="space-y-4">
-        <div className="text-center">
-          <div className="text-2xl font-semibold">
-            Today's Target: {adjustedCalories} cal
-          </div>
-        </div>
+        <NutritionTargetDisplay
+          nutritionTarget={nutritionTarget}
+          currentTrainingSession={currentTrainingSession}
+          plannedActivities={plannedActivities}
+        />
         
         <div className="space-y-2">
           <Label htmlFor="calories">Calories Consumed</Label>
@@ -233,9 +158,11 @@ export function NutritionSection({
               className="text-lg h-12"
               disabled={!hasLoggedToday && !isExpanded}
             />
-            <div className={`text-sm whitespace-nowrap ${getFeedbackColor(calorieFeedback.colour)}`}>
-              {getFeedbackText(calorieFeedback, true)}
-            </div>
+            {caloriesConsumed !== null && (
+              <div className={`text-sm whitespace-nowrap ${getFeedbackColor(calorieFeedback.colour)}`}>
+                {getFeedbackText(calorieFeedback, true)}
+              </div>
+            )}
           </div>
         </div>
 
@@ -251,73 +178,24 @@ export function NutritionSection({
           </Button>
           
           {showMacros && (
-            <div className="space-y-3 pl-4 border-l-2 border-muted">
-              <div className="space-y-1">
-                <Label htmlFor="protein">Protein (g)</Label>
-                <div className="flex items-center gap-2">
-                  <Input
-                    id="protein"
-                    type="number"
-                    value={proteinG || ""}
-                    onChange={(e) => handleProteinChange(e.target.value)}
-                    placeholder="0"
-                    disabled={!hasLoggedToday && !isExpanded}
-                  />
-                  <div className="text-sm text-muted-foreground whitespace-nowrap">
-                    Target: {adjustedProteinG}g
-                  </div>
-                  {proteinG !== null && (
-                    <div className={`text-sm whitespace-nowrap ${getFeedbackColor(proteinFeedback.colour)}`}>
-                      {getFeedbackText(proteinFeedback)}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <Label htmlFor="carbs">Carbs (g)</Label>
-                <div className="flex items-center gap-2">
-                  <Input
-                    id="carbs"
-                    type="number"
-                    value={carbsG || ""}
-                    onChange={(e) => handleCarbsChange(e.target.value)}
-                    placeholder="0"
-                    disabled={!hasLoggedToday && !isExpanded}
-                  />
-                  <div className="text-sm text-muted-foreground whitespace-nowrap">
-                    Target: {adjustedCarbsG}g
-                  </div>
-                  {carbsG !== null && (
-                    <div className={`text-sm whitespace-nowrap ${getFeedbackColor(carbsFeedback.colour)}`}>
-                      {getFeedbackText(carbsFeedback)}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <Label htmlFor="fat">Fat (g)</Label>
-                <div className="flex items-center gap-2">
-                  <Input
-                    id="fat"
-                    type="number"
-                    value={fatG || ""}
-                    onChange={(e) => handleFatChange(e.target.value)}
-                    placeholder="0"
-                    disabled={!hasLoggedToday && !isExpanded}
-                  />
-                  <div className="text-sm text-muted-foreground whitespace-nowrap">
-                    Target: {adjustedFatG}g
-                  </div>
-                  {fatG !== null && (
-                    <div className={`text-sm whitespace-nowrap ${getFeedbackColor(fatFeedback.colour)}`}>
-                      {getFeedbackText(fatFeedback)}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
+            <MacroInputs
+              proteinG={proteinG}
+              carbsG={carbsG}
+              fatG={fatG}
+              adjustedProteinG={adjustedProteinG}
+              adjustedCarbsG={adjustedCarbsG}
+              adjustedFatG={adjustedFatG}
+              proteinFeedback={proteinFeedback}
+              carbsFeedback={carbsFeedback}
+              fatFeedback={fatFeedback}
+              hasLoggedToday={hasLoggedToday}
+              isExpanded={isExpanded}
+              onProteinChange={handleProteinChange}
+              onCarbsChange={handleCarbsChange}
+              onFatChange={handleFatChange}
+              getFeedbackText={getFeedbackText}
+              getFeedbackColor={getFeedbackColor}
+            />
           )}
         </div>
       </div>

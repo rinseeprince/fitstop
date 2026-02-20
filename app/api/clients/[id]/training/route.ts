@@ -6,6 +6,7 @@ import {
   createTrainingPlan,
   getActiveTrainingPlan,
   archiveTrainingPlan,
+  cleanupOrphanedSessionCompletions,
   saveTrainingPlanHistory,
   updateSessionCalories,
 } from "@/services/training-service";
@@ -103,6 +104,7 @@ export async function POST(
     const existingPlan = await getActiveTrainingPlan(clientId);
     if (existingPlan) {
       await archiveTrainingPlan(existingPlan.id);
+      await cleanupOrphanedSessionCompletions(clientId, existingPlan.id);
     }
 
     // Generate plan via AI with external activities as context

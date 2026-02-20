@@ -100,16 +100,6 @@ export const calculateStreakFromLogs = (
   return { currentStreak, longestStreak };
 };
 
-export const calculateAdjustedTarget = (
-  baseTarget: number,
-  completedTrainingCals: number,
-  skippedTrainingCals: number,
-  completedActivityCals: number,
-  skippedActivityCals: number,
-  unplannedActivityCals: number
-): number => {
-  return baseTarget + completedTrainingCals + completedActivityCals + unplannedActivityCals;
-};
 
 export const getDayOfWeekLowercase = (date: Date): string => {
   const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
@@ -328,7 +318,7 @@ export const getTodaysPlannedActivities = async (clientId: string): Promise<Toda
   return activities.map((activity) => ({
     sessionId: activity.id,
     activityName: activity.name,
-    estimatedCalories: activity.estimatedCalories || 0,
+    estimatedCalories: activity.activityMetadata?.estimatedCalories || 0,
   }));
 };
 

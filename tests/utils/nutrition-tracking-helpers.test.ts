@@ -11,14 +11,20 @@ import {
 
 describe("nutrition-tracking-helpers", () => {
   describe("calculateAdjustedDayTarget", () => {
-    it("should adjust target with various toggle combinations", () => {
-      const baseTarget = 2000;
+    it("should adjust target based on completed training and activities only", () => {
+      const baselineCalories = 2000;
       
-      expect(calculateAdjustedDayTarget(baseTarget, 0, 0, 0, 0, 0)).toBe(2000);
+      // No training or activities completed
+      expect(calculateAdjustedDayTarget(baselineCalories, 0, 0)).toBe(2000);
       
-      expect(calculateAdjustedDayTarget(baseTarget, 400, 0, 200, 0, 150)).toBe(2750);
+      // Training completed (400 cal) and activities completed (200 cal)
+      expect(calculateAdjustedDayTarget(baselineCalories, 400, 200)).toBe(2600);
       
-      expect(calculateAdjustedDayTarget(baseTarget, 400, 300, 200, 100, 0)).toBe(2600);
+      // Only training completed
+      expect(calculateAdjustedDayTarget(baselineCalories, 400, 0)).toBe(2400);
+      
+      // Only activities completed
+      expect(calculateAdjustedDayTarget(baselineCalories, 0, 300)).toBe(2300);
     });
   });
 

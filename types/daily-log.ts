@@ -21,8 +21,13 @@ export type DailyLog = {
   trainingData?: {
     sessionCompleted: boolean;
     trainingSessionId: string | null;
+    trainingSessionName: string | null;
     isAlternativeSession: boolean;
-    activityStatuses: Record<string, boolean>;
+    activityStatuses: Record<string, {
+      completed: boolean;
+      activityName: string;
+      estimatedCalories: number;
+    }>;
     unplannedActivities: Array<{
       activityName: string;
       intensityLevel: string;
@@ -64,8 +69,13 @@ export type DailyLogInput = {
   trainingData?: {
     sessionCompleted: boolean;
     trainingSessionId: string | null;
+    trainingSessionName: string | null;
     isAlternativeSession: boolean;
-    activityStatuses: Record<string, boolean>;
+    activityStatuses: Record<string, {
+      completed: boolean;
+      activityName: string;
+      estimatedCalories: number;
+    }>;
     unplannedActivities: Array<{
       activityName: string;
       intensityLevel: string;

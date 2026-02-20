@@ -3,7 +3,6 @@ import {
   calculateNutritionAdherence,
   calculateCalorieSurplusDeficit,
   calculateStreakFromLogs,
-  calculateAdjustedTarget,
   getDayOfWeekLowercase,
   upsertDailyLog,
   getDailyLogs,
@@ -152,24 +151,6 @@ describe('Daily Logs Service - Pure Functions', () => {
     });
   });
 
-  describe('calculateAdjustedTarget', () => {
-    it('adds completed activities and ignores skipped ones', () => {
-      const result = calculateAdjustedTarget(
-        2000,  // base
-        300,   // completed training
-        200,   // skipped training (ignored)
-        150,   // completed activity
-        100,   // skipped activity (ignored)
-        250    // unplanned activity
-      );
-      expect(result).toBe(2700); // 2000 + 300 + 150 + 250
-    });
-
-    it('works with zero values', () => {
-      const result = calculateAdjustedTarget(2000, 0, 0, 0, 0, 0);
-      expect(result).toBe(2000);
-    });
-  });
 
   describe('getDayOfWeekLowercase', () => {
     it('returns correct lowercase day names', () => {

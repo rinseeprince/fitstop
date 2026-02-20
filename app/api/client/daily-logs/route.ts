@@ -87,14 +87,11 @@ export async function POST(request: NextRequest) {
         }), 0
       );
       
-      // Calculate adjusted calorie target
+      // Calculate adjusted calorie target (NO unplanned activities in target calculation)
       const adjustedCalories = calculateAdjustedDayTarget(
-        nutritionTarget.calories,
+        nutritionTarget.baselineCalories,
         completedTrainingCals,
-        0, // skippedTrainingCals
-        completedActivityCals,
-        0, // skippedActivityCals
-        unplannedActivityCals
+        completedActivityCals
       );
       
       // Calculate adjusted macros

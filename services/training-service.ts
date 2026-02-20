@@ -337,6 +337,36 @@ export const archiveTrainingPlan = async (planId: string): Promise<void> => {
   if (error) throw new Error(`Failed to archive plan: ${error.message}`);
 };
 
+// Clean up orphaned session completions when a plan is replaced
+export const cleanupOrphanedSessionCompletions = async (clientId: string, oldPlanId: string): Promise<void> => {
+  // Get all session IDs from the old plan
+  const { data: oldSessions, error: fetchError } = await supabaseAdmin
+    .from("training_sessions")
+    .select("id")
+    .eq("plan_id", oldPlanId);
+    
+  if (fetchError) {
+    console.error("Error fetching old sessions:", fetchError);
+    return; // Don't fail the whole operation
+  }
+  
+  if (!oldSessions || oldSessions.length === 0) return;
+  
+  const oldSessionIds = oldSessions.map(s => s.id);
+  
+  // Delete completions for these sessions
+  const { error: deleteError } = await supabaseAdmin
+    .from("client_session_completions")
+    .delete()
+    .eq("client_id", clientId)
+    .in("training_session_id", oldSessionIds);
+    
+  if (deleteError) {
+    console.error("Error cleaning up orphaned completions:", deleteError);
+    // Don't throw - this is cleanup, shouldn't fail the main operation
+  }
+};
+
 // Update session
 export const updateSession = async (
   sessionId: string,

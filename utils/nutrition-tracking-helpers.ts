@@ -37,14 +37,11 @@ export function calculateUnplannedActivityCalories(activity: UnplannedActivity):
 }
 
 export function calculateAdjustedDayTarget(
-  baseTarget: number,
+  baselineCalories: number,
   completedTrainingCals: number,
-  skippedTrainingCals: number,
-  completedActivityCals: number,
-  skippedActivityCals: number,
-  unplannedActivityCals: number
+  completedActivityCals: number
 ): number {
-  return baseTarget + completedTrainingCals + completedActivityCals + unplannedActivityCals;
+  return baselineCalories + completedTrainingCals + completedActivityCals;
 }
 
 export function calculateAdjustedMacros(
@@ -53,6 +50,7 @@ export function calculateAdjustedMacros(
   baseCarbsG: number,
   baseFatG: number
 ): MacroCalculationResult {
+  // Protein stays fixed
   const proteinCal = baseProteinG * 4;
   const baseCarbsCal = baseCarbsG * 4;
   const baseFatCal = baseFatG * 9;
@@ -66,8 +64,10 @@ export function calculateAdjustedMacros(
     };
   }
   
+  // Calculate remaining calories after protein (which stays fixed)
   const remainingCal = Math.max(0, adjustedCalories - proteinCal);
   
+  // Preserve the carb/fat ratio from the original plan
   const carbRatio = baseCarbsCal / baseNonProteinCal;
   const newCarbsCal = remainingCal * carbRatio;
   const newFatCal = remainingCal * (1 - carbRatio);

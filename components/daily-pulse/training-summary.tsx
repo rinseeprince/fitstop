@@ -19,7 +19,7 @@ type TodaysActivity = {
 interface TrainingSummaryProps {
   sessionCompleted: boolean;
   currentTrainingSession: TrainingSession | null;
-  activityStatuses: Record<string, boolean>;
+  activityStatuses: Record<string, { completed: boolean; activityName: string; estimatedCalories: number }>;
   plannedActivities: TodaysActivity[];
   totalCalories: number;
 }
@@ -48,7 +48,7 @@ export function TrainingSummary({
         </div>
       )}
       {plannedActivities
-        .filter(activity => activityStatuses[activity.sessionId])
+        .filter(activity => activityStatuses[activity.sessionId]?.completed)
         .map(activity => (
           <div key={activity.sessionId} className="text-sm font-medium">
             ✓ {activity.activityName}
