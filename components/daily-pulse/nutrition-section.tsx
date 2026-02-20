@@ -8,9 +8,10 @@ import { ChevronDown, ChevronUp } from "lucide-react";
 import {
   calculateAdjustedDayTarget,
   calculateAdjustedMacros,
-  getCalorieFeedback
+  getCalorieFeedback,
+  getFeedbackText,
+  getFeedbackColor
 } from "@/utils/nutrition-tracking-helpers";
-import { getFeedbackText, getFeedbackColor } from "./utils/nutrition-helpers";
 import { createNutritionChangeHandlers } from "./utils/nutrition-change-handlers";
 import { NutritionTargetDisplay } from "./nutrition-target-display";
 import { MacroInputs } from "./macro-inputs";

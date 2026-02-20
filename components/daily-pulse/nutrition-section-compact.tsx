@@ -1,8 +1,11 @@
 "use client";
 
 import { Badge } from "@/components/ui/badge";
-import { getFeedbackText, getFeedbackColor } from "./utils/nutrition-helpers";
-import type { CalorieFeedback } from "@/utils/nutrition-tracking-helpers";
+import { 
+  getFeedbackText, 
+  getFeedbackColor,
+  type CalorieFeedback 
+} from "@/utils/nutrition-tracking-helpers";
 import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
 
 interface NutritionSectionCompactProps {
