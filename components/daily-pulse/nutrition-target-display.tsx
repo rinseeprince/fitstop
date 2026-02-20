@@ -19,10 +19,10 @@ export function NutritionTargetDisplay({
   const buildAssumptionsText = () => {
     const parts: string[] = [];
     
-    if (currentTrainingSession && nutritionTarget.trainingSessions.length > 0) {
-      const sessionInfo = nutritionTarget.trainingSessions.find(s => s.name === currentTrainingSession.name);
-      if (sessionInfo) {
-        parts.push(`${sessionInfo.name} (${sessionInfo.calories} cal)`);
+    if (currentTrainingSession) {
+      const calories = currentTrainingSession.estimatedCalories || 0;
+      if (calories > 0) {
+        parts.push(`${currentTrainingSession.name} (${calories} cal)`);
       }
     }
     
