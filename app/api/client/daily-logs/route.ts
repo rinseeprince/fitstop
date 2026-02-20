@@ -75,7 +75,7 @@ export async function POST(request: NextRequest) {
       
       // Calculate completed planned activity calories
       const completedActivityCals = plannedActivities.reduce((sum, activity) => 
-        sum + (trainingData.activityStatuses[activity.sessionId] ? activity.estimatedCalories : 0), 0
+        sum + (trainingData.activityStatuses[activity.sessionId]?.completed ? activity.estimatedCalories : 0), 0
       );
       
       // Calculate unplanned activity calories
