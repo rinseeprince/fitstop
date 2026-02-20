@@ -15,6 +15,16 @@ export function NutritionTargetDisplay({
   currentTrainingSession,
   plannedActivities,
 }: NutritionTargetDisplayProps) {
+  // Calculate dynamic plan target based on current session selection
+  const calculatePlanTarget = () => {
+    const baselineCalories = nutritionTarget.baselineCalories;
+    const currentSessionCalories = currentTrainingSession?.estimatedCalories || 0;
+    const plannedActivityCalories = plannedActivities.reduce(
+      (sum, activity) => sum + activity.estimatedCalories, 0
+    );
+    return baselineCalories + currentSessionCalories + plannedActivityCalories;
+  };
+
   // Build the "Assumes..." text for planned training/activities
   const buildAssumptionsText = () => {
     const parts: string[] = [];
@@ -41,12 +51,13 @@ export function NutritionTargetDisplay({
     return `Assumes ${parts.join(' + ')} completed`;
   };
 
+  const planTarget = calculatePlanTarget();
   const assumptionsText = buildAssumptionsText();
 
   return (
     <div className="text-center space-y-1">
       <div className="text-2xl font-semibold">
-        Today's Target: {nutritionTarget.calories} cal
+        Today's Target: {planTarget} cal
       </div>
       {assumptionsText && (
         <div className="text-sm text-muted-foreground">
