@@ -120,6 +120,7 @@ export function NutritionSection({
       <NutritionSectionCompact
         caloriesConsumed={caloriesConsumed}
         nutritionTarget={nutritionTarget}
+        adjustedCalories={adjustedCalories}
         calorieFeedback={calorieFeedback}
       />
     );
