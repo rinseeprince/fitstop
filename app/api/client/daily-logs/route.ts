@@ -3,7 +3,8 @@ import { getAuthenticatedClientId } from "@/lib/auth-helpers";
 import { clientApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { dailyLogSchema } from "@/lib/validations/daily-log";
-import { upsertDailyLog, getDailyLogs, getTodaysNutritionTarget, getTodaysTrainingSession, getTodaysPlannedActivities } from "@/services/daily-logs-service";
+import { upsertDailyLog, getDailyLogs, getTodaysNutritionTarget, getTodaysPlannedActivities } from "@/services/daily-logs-service";
+import { getClientTrainingPlan } from "@/services/client-portal-service";
 import { calculateUnplannedActivityCalories, calculateAdjustedDayTarget, calculateAdjustedMacros } from "@/utils/nutrition-tracking-helpers";
 import { getTodayDateString, getDateDaysAgo } from "@/lib/date-helpers";
 
@@ -54,7 +55,7 @@ export async function POST(request: NextRequest) {
     
     // Get nutrition targets and training data for today to calculate adjusted targets
     const nutritionTarget = await getTodaysNutritionTarget(clientId);
-    const todaysTrainingSession = await getTodaysTrainingSession(clientId);
+    const trainingPlan = await getClientTrainingPlan(clientId);
     const plannedActivities = await getTodaysPlannedActivities(clientId);
     
     let adjustedTargets = {
@@ -68,10 +69,12 @@ export async function POST(request: NextRequest) {
     if (nutritionTarget && data.trainingData) {
       const trainingData = data.trainingData;
       
-      // Calculate completed training calories
-      const completedTrainingCals = trainingData.sessionCompleted && todaysTrainingSession
-        ? (todaysTrainingSession.estimatedCalories || 0)
-        : 0;
+      // Calculate completed training calories based on the actually selected session
+      let completedTrainingCals = 0;
+      if (trainingData.sessionCompleted && trainingData.trainingSessionId && trainingPlan) {
+        const selectedSession = trainingPlan.sessions.find(s => s.id === trainingData.trainingSessionId);
+        completedTrainingCals = selectedSession?.estimatedCalories || 0;
+      }
       
       // Calculate completed planned activity calories
       const completedActivityCals = plannedActivities.reduce((sum, activity) => 

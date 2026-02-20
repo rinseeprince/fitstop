@@ -251,7 +251,7 @@ When a coach regenerates a training plan, previously logged session IDs may no l
 
 ---
 
-## Key Bugs Fixed (Sessions 9-10)
+## Key Bugs Fixed
 
 These are documented to prevent regressions:
 
@@ -265,6 +265,11 @@ These are documented to prevent regressions:
 | Compact view showing new plan targets after regeneration | Read targets from current plan instead of saved log | Use `todayLog.target_calories` etc. for compact view |
 | Orphaned session crash | Session ID not found in allTrainingSessions | Create display-only object from `trainingSessionName` |
 | Boolean false dropped | `trained: trained || undefined` converts false to undefined | Always use `trained: trained` |
+| Activity completion check used truthy object instead of .completed field | `activityStatuses[id]` is an object which is always truthy even when completed is false | Check `.completed` property explicitly (line 81 in route.ts) |
+| "Assumes..." text disappeared on session switch | Display looked up session name in original scheduled sessions array, which doesn't contain alternative sessions | Read from `currentTrainingSession` directly (nutrition-target-display.tsx) |
+| Plan target headline didn't update on session switch | Displayed static `nutritionTarget.calories` instead of recalculating from baseline + current session + activities | Calculate dynamically from `currentTrainingSession` (nutrition-target-display.tsx lines 19-26) |
+| Server saved wrong target on session switch | Used `getTodaysTrainingSession` (scheduled) instead of looking up `trainingData.trainingSessionId` (actually selected) | Look up selected session from training plan (route.ts lines 74-77) |
+| Compact view ignored skipped activity calories | Compact nutrition display wasn't receiving the adjusted target that accounts for activity completion status | Pass `adjustedCalories` prop to NutritionSectionCompact (daily-pulse-content.tsx line 158) |
 
 ---
 
@@ -280,6 +285,8 @@ These are documented to prevent regressions:
 8. **Habits auto-save, everything else waits for Log Day**.
 9. **Planned activity calories from `activityMetadata.estimatedCalories`** (JSONB), not `estimated_calories` column.
 10. **`activityStatuses` shape** - Record with `{ completed, activityName, estimatedCalories }`, read `.completed` field.
+11. **Always check `activityStatuses[id]?.completed`**, never use `activityStatuses[id]` as a truthy check. The object is always truthy regardless of completion status.
+12. **Use `currentTrainingSession` for display and calculations**, never the originally scheduled session from the plan, since the client may have switched sessions.
 
 ---
 
