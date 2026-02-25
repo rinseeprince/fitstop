@@ -16,6 +16,14 @@ import {
 import type { DailyLog } from "@/types/daily-log";
 import type { TrainingSession } from "@/types/training";
 import type { UnplannedActivity } from "./daily-pulse-content";
+import type { DailyHabitLog } from "@/types/daily-habit";
+
+type HabitLogWithDetails = DailyHabitLog & {
+  habitName: string;
+  targetValue?: number;
+  targetUnit?: string;
+  isBoolean: boolean;
+};
 
 export function DailyPulse() {
   const { 
@@ -24,7 +32,9 @@ export function DailyPulse() {
     nutritionTarget, 
     todaysTrainingSession, 
     plannedActivities, 
-    allTrainingSessions, 
+    allTrainingSessions,
+    habits,
+    habitLogs: initialHabitLogs,
     isLoading, 
     isSaving, 
     saveLog 
@@ -49,6 +59,8 @@ export function DailyPulse() {
   const [unplannedActivities, setUnplannedActivities] = useState<UnplannedActivity[]>([]);
   const [wasCompletedPreviously, setWasCompletedPreviously] = useState(false);
   const [isSessionOrphaned, setIsSessionOrphaned] = useState(false);
+  // Habits state - managed locally for optimistic updates
+  const [habitLogs, setHabitLogs] = useState<HabitLogWithDetails[]>(initialHabitLogs);
 
   // Update form data when todayLog loads or changes
   useEffect(() => {
@@ -58,9 +70,14 @@ export function DailyPulse() {
       setNutritionData(extractNutritionData(todayLog));
       setIsExpanded(false);
     } else {
-      setIsExpanded(true);
+      setIsExpanded(false);
     }
   }, [todayLog, isLoading]);
+  
+  // Update habit logs when initial data changes
+  useEffect(() => {
+    setHabitLogs(initialHabitLogs);
+  }, [initialHabitLogs]);
   // Initialize training data
   useEffect(() => {
     if (!isLoading) {
@@ -225,6 +242,9 @@ export function DailyPulse() {
           plannedActivities={plannedActivities}
           formData={formData}
           nutritionData={nutritionData}
+          habits={habits}
+          habitLogs={habitLogs}
+          onHabitLogsUpdate={setHabitLogs}
           handleEdit={handleEdit}
           handleSave={handleSave}
           setShowNotes={setShowNotes}

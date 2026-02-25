@@ -4,6 +4,7 @@ import { getTodayDateString } from "@/lib/date-helpers";
 import type { TrainingPlan, TrainingSession } from "@/types/training";
 import type { DailyLog } from "@/types/daily-log";
 import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
+import type { DailyHabit, DailyHabitLog } from "@/types/daily-habit";
 
 type TodaysActivity = {
   sessionId: string;
@@ -11,6 +12,12 @@ type TodaysActivity = {
   estimatedCalories: number;
 };
 
+type HabitLogWithDetails = DailyHabitLog & {
+  habitName: string;
+  targetValue?: number;
+  targetUnit?: string;
+  isBoolean: boolean;
+};
 
 interface UseDailyPulseReturn {
   todayLog: DailyLog | null;
@@ -19,6 +26,8 @@ interface UseDailyPulseReturn {
   todaysTrainingSession: TrainingSession | null;
   plannedActivities: TodaysActivity[];
   allTrainingSessions: TrainingSession[];
+  habits: DailyHabit[];
+  habitLogs: HabitLogWithDetails[];
   isLoading: boolean;
   isSaving: boolean;
   saveLog: (data: {
@@ -45,6 +54,8 @@ export function useDailyPulse(): UseDailyPulseReturn {
   const [todaysTrainingSession, setTodaysTrainingSession] = useState<TrainingSession | null>(null);
   const [plannedActivities, setPlannedActivities] = useState<TodaysActivity[]>([]);
   const [allTrainingSessions, setAllTrainingSessions] = useState<TrainingSession[]>([]);
+  const [habits, setHabits] = useState<DailyHabit[]>([]);
+  const [habitLogs, setHabitLogs] = useState<HabitLogWithDetails[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -54,7 +65,7 @@ export function useDailyPulse(): UseDailyPulseReturn {
     
     const fetchData = async () => {
       try {
-        const [logRes, streakRes, nutritionRes, trainingRes] = await Promise.all([
+        const [logRes, streakRes, nutritionRes, trainingRes, habitsRes, habitLogsRes] = await Promise.all([
           fetch("/api/client/daily-logs/today", { 
             cache: 'no-store',
             signal: controller.signal 
@@ -68,6 +79,14 @@ export function useDailyPulse(): UseDailyPulseReturn {
             signal: controller.signal 
           }),
           fetch("/api/client/training", { 
+            cache: 'no-store',
+            signal: controller.signal 
+          }),
+          fetch("/api/client/habits", { 
+            cache: 'no-store',
+            signal: controller.signal 
+          }),
+          fetch("/api/client/habits/logs/today", { 
             cache: 'no-store',
             signal: controller.signal 
           }),
@@ -110,6 +129,16 @@ export function useDailyPulse(): UseDailyPulseReturn {
               }
             }
           }
+        }
+
+        if (habitsRes.ok) {
+          const habitsData = await habitsRes.json();
+          setHabits(habitsData.data || []);
+        }
+
+        if (habitLogsRes.ok) {
+          const habitLogsData = await habitLogsRes.json();
+          setHabitLogs(habitLogsData.data || []);
         }
         
         // Successfully fetched data
@@ -204,6 +233,8 @@ export function useDailyPulse(): UseDailyPulseReturn {
     todaysTrainingSession,
     plannedActivities,
     allTrainingSessions,
+    habits,
+    habitLogs,
     isLoading,
     isSaving,
     saveLog,

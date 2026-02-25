@@ -7,10 +7,12 @@ import { Edit } from "lucide-react";
 import { TrainingSection } from "./training-section";
 import { WellnessSection } from "./wellness-section";
 import { NutritionSection } from "./nutrition-section";
+import { HabitsSection } from "./habits-section";
 import { DailyPulseSummary } from "./daily-pulse-summary";
 import type { DailyLog } from "@/types/daily-log";
 import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
 import type { TrainingSession } from "@/types/training";
+import type { DailyHabit, DailyHabitLog } from "@/types/daily-habit";
 
 // Types moved from types.ts
 export type UnplannedActivity = {
@@ -23,6 +25,13 @@ export type TodaysActivity = {
   sessionId: string;
   activityName: string;
   estimatedCalories: number;
+};
+
+type HabitLogWithDetails = DailyHabitLog & {
+  habitName: string;
+  targetValue?: number;
+  targetUnit?: string;
+  isBoolean: boolean;
 };
 
 interface DailyPulseContentProps {
@@ -52,6 +61,9 @@ interface DailyPulseContentProps {
     carbsG: number | null;
     fatG: number | null;
   };
+  habits: DailyHabit[];
+  habitLogs: HabitLogWithDetails[];
+  onHabitLogsUpdate: (logs: HabitLogWithDetails[]) => void;
   // Handlers
   handleEdit: () => void;
   handleSave: () => void;
@@ -74,7 +86,8 @@ export function DailyPulseContent({
   isLoading, isSaving, isExpanded, hasLoggedToday, showNotes, isSessionOrphaned, todayLog, nutritionTarget,
   sessionCompleted, currentTrainingSession, originalScheduledSessionId, selectedAlternativeSession,
   activityStatuses, unplannedActivities, allTrainingSessions, plannedActivities,
-  formData, nutritionData, handleEdit, handleSave, setShowNotes, setFormData, setSessionCompleted,
+  formData, nutritionData, habits, habitLogs, onHabitLogsUpdate,
+  handleEdit, handleSave, setShowNotes, setFormData, setSessionCompleted,
   handleAlternativeSessionSelect, handleActivityToggle, handleAddUnplannedActivity,
   handleRemoveUnplannedActivity, setNutritionData,
 }: DailyPulseContentProps) {
@@ -101,6 +114,31 @@ export function DailyPulseContent({
         <Skeleton className="h-6 w-full" />
         <Skeleton className="h-4 w-24" />
         <Skeleton className="h-6 w-3/4" />
+      </div>
+    );
+  }
+
+  if (!hasLoggedToday && !isExpanded) {
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-muted-foreground">Log today's wellness, training & nutrition</span>
+          <Button variant="ghost" size="sm" onClick={handleEdit}>
+            <Edit className="h-4 w-4 mr-1" />
+            Expand
+          </Button>
+        </div>
+
+        {habits.length > 0 && (
+          <>
+            <Separator />
+            <HabitsSection
+              habits={habits}
+              habitLogs={habitLogs}
+              onHabitLogsUpdate={onHabitLogsUpdate}
+            />
+          </>
+        )}
       </div>
     );
   }
@@ -157,6 +195,17 @@ export function DailyPulseContent({
           onNutritionChange={setNutritionData}
           savedTargets={savedTargets}
         />
+
+        {habits.length > 0 && (
+          <>
+            <Separator />
+            <HabitsSection
+              habits={habits}
+              habitLogs={habitLogs}
+              onHabitLogsUpdate={onHabitLogsUpdate}
+            />
+          </>
+        )}
       </div>
     );
   }
@@ -209,6 +258,17 @@ export function DailyPulseContent({
         onNutritionChange={setNutritionData}
         savedTargets={savedTargets}
       />
+
+      {habits.length > 0 && (
+        <>
+          <Separator />
+          <HabitsSection
+            habits={habits}
+            habitLogs={habitLogs}
+            onHabitLogsUpdate={onHabitLogsUpdate}
+          />
+        </>
+      )}
 
       <Button onClick={handleSave} disabled={isSaving} className="w-full">
         {isSaving ? "Saving..." : todayLog ? "Update Log" : "Log Day"}

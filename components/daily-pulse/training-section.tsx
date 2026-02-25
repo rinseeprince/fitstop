@@ -64,14 +64,7 @@ export function TrainingSection({
       }
     });
     
-    unplannedActivities.forEach(activity => {
-      // Simplified MET calculation
-      const metValues = { low: 3.5, moderate: 6.0, vigorous: 8.5 };
-      const calories = Math.round(
-        (metValues[activity.intensityLevel] * 70 * activity.durationMinutes) / 60
-      );
-      total += calories;
-    });
+    // Unplanned activities have zero calorie impact per architecture rules
     
     return total;
   };

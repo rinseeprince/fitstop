@@ -1,7 +1,7 @@
 "use client";
 
 import { Badge } from "@/components/ui/badge";
-import { Flame } from "lucide-react";
+import { Flame, Check } from "lucide-react";
 import type { TrainingSession } from "@/types/training";
 
 type UnplannedActivity = {
@@ -43,15 +43,17 @@ export function TrainingSummary({
         )}
       </div>
       {sessionCompleted && currentTrainingSession && (
-        <div className="text-sm font-medium">
-          ✓ {currentTrainingSession.name}
+        <div className="text-sm flex items-center gap-2">
+          {currentTrainingSession.name}
+          <Check className="h-4 w-4 text-green-600" />
         </div>
       )}
       {plannedActivities
         .filter(activity => activityStatuses[activity.sessionId]?.completed)
         .map(activity => (
-          <div key={activity.sessionId} className="text-sm font-medium">
-            ✓ {activity.activityName}
+          <div key={activity.sessionId} className="text-sm flex items-center gap-2">
+            {activity.activityName}
+            <Check className="h-4 w-4 text-green-600" />
           </div>
         ))}
     </div>

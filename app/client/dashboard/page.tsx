@@ -86,9 +86,6 @@ export default function ClientDashboardPage() {
 
   return (
     <div className="space-y-6">
-      {/* Daily Pulse */}
-      <DailyPulse />
-
       {/* Welcome Section */}
       <div>
         <h1 className="text-2xl font-bold">Welcome back, {firstName}!</h1>
@@ -96,6 +93,9 @@ export default function ClientDashboardPage() {
           Track your progress and stay connected with your coach.
         </p>
       </div>
+
+      {/* Daily Pulse */}
+      <DailyPulse />
 
       {/* Quick Stats */}
       <div className="grid gap-4 sm:grid-cols-2">
