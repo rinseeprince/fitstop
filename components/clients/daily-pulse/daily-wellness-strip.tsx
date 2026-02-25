@@ -1,9 +1,11 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { AnimatePresence } from "framer-motion"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { WellnessBarChart } from "./wellness-bar-chart"
 import { AdherenceDotRow } from "./adherence-dot-row"
+import { DayDetailCard } from "./day-detail-card"
 import { getDateDaysAgo } from "@/lib/date-helpers"
 import type { DailyLog } from "@/types/daily-log"
 
@@ -14,6 +16,9 @@ interface DailyWellnessStripProps {
 export function DailyWellnessStrip({ clientId }: DailyWellnessStripProps) {
   const [logs, setLogs] = useState<DailyLog[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [selectedDate, setSelectedDate] = useState<string | null>(null)
+  const [habitLogs, setHabitLogs] = useState<any[]>([])
+  const [isLoadingHabits, setIsLoadingHabits] = useState(false)
   
   useEffect(() => {
     const fetchLogs = async () => {
@@ -63,6 +68,44 @@ export function DailyWellnessStrip({ clientId }: DailyWellnessStripProps) {
     )
   }
   
+  // Fetch habit logs for selected date
+  useEffect(() => {
+    if (!selectedDate) {
+      setHabitLogs([])
+      return
+    }
+    
+    const fetchHabitLogs = async () => {
+      setIsLoadingHabits(true)
+      try {
+        const response = await fetch(
+          `/api/clients/${clientId}/habits/logs?startDate=${selectedDate}&endDate=${selectedDate}`,
+          { cache: 'no-store' }
+        )
+        
+        if (response.ok) {
+          const data = await response.json()
+          setHabitLogs(data.data || [])
+        }
+      } catch (error) {
+        console.error('Error fetching habit logs:', error)
+      } finally {
+        setIsLoadingHabits(false)
+      }
+    }
+    
+    fetchHabitLogs()
+  }, [selectedDate, clientId])
+  
+  // Handle date clicks
+  const handleDateClick = (dateStr: string) => {
+    if (selectedDate === dateStr) {
+      setSelectedDate(null) // Collapse if clicking the same date
+    } else {
+      setSelectedDate(dateStr)
+    }
+  }
+  
   // Prepare data for charts
   const prepareChartData = (metric: "mood" | "energy" | "sleep" | "stress") => {
     const today = new Date()
@@ -76,6 +119,7 @@ export function DailyWellnessStrip({ clientId }: DailyWellnessStripProps) {
       
       data.push({
         date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        dateStr: dateStr,
         value: log ? log[metric] ?? null : null
       })
     }
@@ -103,6 +147,17 @@ export function DailyWellnessStrip({ clientId }: DailyWellnessStripProps) {
   const weekStartStr = weekStart.toISOString().split('T')[0]
   const daysLoggedThisWeek = logs.filter(log => log.date >= weekStartStr).length
   
+  // Get the selected log and habit data
+  const selectedLog = selectedDate ? logs.find(l => l.date === selectedDate) : null
+  const selectedHabits = habitLogs.map(log => ({
+    habitName: log.habitName,
+    completed: log.completed,
+    value: log.value,
+    targetValue: log.targetValue,
+    targetUnit: log.targetUnit,
+    isBoolean: log.isBoolean
+  }))
+  
   return (
     <div className="space-y-6">
       <Card>
@@ -122,24 +177,32 @@ export function DailyWellnessStrip({ clientId }: DailyWellnessStripProps) {
               data={prepareChartData("mood")}
               currentValue={currentValues.mood}
               label="Mood (1-5)"
+              onBarClick={handleDateClick}
+              selectedDate={selectedDate}
             />
             <WellnessBarChart
               metric="energy"
               data={prepareChartData("energy")}
               currentValue={currentValues.energy}
               label="Energy (1-10)"
+              onBarClick={handleDateClick}
+              selectedDate={selectedDate}
             />
             <WellnessBarChart
               metric="sleep"
               data={prepareChartData("sleep")}
               currentValue={currentValues.sleep}
               label="Sleep Quality (1-10)"
+              onBarClick={handleDateClick}
+              selectedDate={selectedDate}
             />
             <WellnessBarChart
               metric="stress"
               data={prepareChartData("stress")}
               currentValue={currentValues.stress}
               label="Stress Level (1-10)"
+              onBarClick={handleDateClick}
+              selectedDate={selectedDate}
             />
           </div>
           
@@ -149,15 +212,29 @@ export function DailyWellnessStrip({ clientId }: DailyWellnessStripProps) {
               logs={logs}
               type="nutrition"
               label="Nutrition Adherence"
+              onDotClick={handleDateClick}
+              selectedDate={selectedDate}
             />
             <AdherenceDotRow
               logs={logs}
               type="training"
               label="Training Completion"
+              onDotClick={handleDateClick}
+              selectedDate={selectedDate}
             />
           </div>
         </CardContent>
       </Card>
+      
+      {/* Expandable Day Detail */}
+      <AnimatePresence>
+        {selectedLog && (
+          <DayDetailCard
+            log={selectedLog}
+            habits={selectedHabits}
+          />
+        )}
+      </AnimatePresence>
     </div>
   )
 }

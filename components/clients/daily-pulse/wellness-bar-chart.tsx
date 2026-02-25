@@ -10,10 +10,13 @@ interface WellnessBarChartProps {
   metric: WellnessMetric
   data: Array<{
     date: string
+    dateStr?: string
     value: number | null
   }>
   currentValue?: number
   label: string
+  onBarClick?: (dateStr: string) => void
+  selectedDate?: string | null
 }
 
 const getBarColor = (metric: WellnessMetric, value: number | null): string => {
@@ -67,7 +70,9 @@ export function WellnessBarChart({
   metric,
   data,
   currentValue,
-  label
+  label,
+  onBarClick,
+  selectedDate
 }: WellnessBarChartProps) {
   const stats = getMetricStats(data)
   const yDomain = getYAxisDomain(metric)
@@ -120,11 +125,19 @@ export function WellnessBarChart({
                 <Bar 
                   dataKey="value"
                   radius={[2, 2, 0, 0]}
+                  onClick={(data: any) => {
+                    if (onBarClick && data.dateStr) {
+                      onBarClick(data.dateStr)
+                    }
+                  }}
                 >
                   {data.map((entry, index) => (
                     <Cell 
                       key={`cell-${index}`} 
-                      fill={getBarColor(metric, entry.value)} 
+                      fill={getBarColor(metric, entry.value)}
+                      stroke={entry.dateStr === selectedDate ? "#3b82f6" : "none"}
+                      strokeWidth={entry.dateStr === selectedDate ? 2 : 0}
+                      style={{ cursor: onBarClick ? 'pointer' : 'default' }}
                     />
                   ))}
                 </Bar>

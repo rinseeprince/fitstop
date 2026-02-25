@@ -7,6 +7,8 @@ interface AdherenceDotRowProps {
   logs: DailyLog[]
   type: "nutrition" | "training"
   label: string
+  onDotClick?: (dateStr: string) => void
+  selectedDate?: string | null
 }
 
 const getDotColor = (type: "nutrition" | "training", log: DailyLog | undefined) => {
@@ -59,7 +61,7 @@ const formatDateForDisplay = (dateString: string): string => {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
-export function AdherenceDotRow({ logs, type, label }: AdherenceDotRowProps) {
+export function AdherenceDotRow({ logs, type, label, onDotClick, selectedDate }: AdherenceDotRowProps) {
   // Create a map of logs by date for quick lookup
   const logsByDate = new Map(logs.map(log => [log.date, log]))
   
@@ -87,11 +89,14 @@ export function AdherenceDotRow({ logs, type, label }: AdherenceDotRowProps) {
             <div
               key={date}
               className="group relative"
+              onClick={() => onDotClick && onDotClick(date)}
+              style={{ cursor: onDotClick ? 'pointer' : 'default' }}
             >
               <div
                 className={cn(
-                  "w-2 h-2 rounded-full transition-transform hover:scale-150",
-                  color
+                  "w-2 h-2 rounded-full transition-all hover:scale-150",
+                  color,
+                  date === selectedDate && "ring-2 ring-blue-500 ring-offset-1 scale-150"
                 )}
               />
               <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-popover border rounded text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-10">
