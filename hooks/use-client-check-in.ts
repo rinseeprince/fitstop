@@ -8,11 +8,13 @@ import type {
   CheckInTrainingContext,
   CheckInNutritionContext,
 } from "@/types/check-in";
+import type { DailyLog } from "@/types/daily-log";
 
 type CheckInContextData = {
   clientInfo: CheckInClientInfo;
   trainingContext?: CheckInTrainingContext;
   nutritionContext?: CheckInNutritionContext;
+  dailyLogs?: DailyLog[];
 };
 
 export function useClientCheckIn() {

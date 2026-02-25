@@ -1,14 +1,18 @@
 "use client";
 
+import { useEffect } from "react";
 import { Smile, Frown, Meh, SmilePlus, Heart } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Textarea } from "@/components/ui/textarea";
+import { DailyLogsSummary, calculateMetricAverages } from "./daily-logs-summary";
 import type { SubjectiveMetrics } from "@/types/check-in";
+import type { DailyLog } from "@/types/daily-log";
 
 type StepSubjectiveProps = {
   data: Partial<SubjectiveMetrics>;
   onChange: (data: Partial<SubjectiveMetrics>) => void;
+  dailyLogs?: DailyLog[];
 };
 
 const moodEmojis = [
@@ -19,7 +23,56 @@ const moodEmojis = [
   { value: 5, icon: Heart, label: "Excellent", color: "text-success" },
 ];
 
-export const StepSubjective = ({ data, onChange }: StepSubjectiveProps) => {
+export const StepSubjective = ({ data, onChange, dailyLogs = [] }: StepSubjectiveProps) => {
+  // Check if we have enough daily logs to show the summary
+  const hasSufficientLogs = dailyLogs.length >= 3;
+  
+  // When we have sufficient logs, calculate and store the averages
+  useEffect(() => {
+    if (hasSufficientLogs && !data.mood) {
+      const averages = calculateMetricAverages(dailyLogs);
+      onChange({
+        ...data,
+        mood: averages.mood,
+        energy: averages.energy,
+        sleep: averages.sleep,
+        stress: averages.stress,
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasSufficientLogs, dailyLogs.length]);
+  
+  // If we have sufficient daily logs, show the summary view
+  if (hasSufficientLogs) {
+    return (
+      <div className="space-y-8">
+        <div>
+          <h3 className="text-lg font-semibold mb-1">Your Week Summary</h3>
+          <p className="text-sm text-muted-foreground">
+            Based on your daily logs from the past week
+          </p>
+        </div>
+        
+        {/* Daily Logs Summary */}
+        <DailyLogsSummary dailyLogs={dailyLogs} />
+        
+        {/* Reflection Text Area */}
+        <div className="space-y-3">
+          <Label htmlFor="reflection">Anything worth noting about how you felt this week?</Label>
+          <Textarea
+            id="reflection"
+            placeholder="Any highlights, challenges, or patterns you noticed? How did you feel overall?"
+            value={data.notes || ""}
+            onChange={(e) => onChange({ ...data, notes: e.target.value })}
+            rows={4}
+            className="resize-none"
+          />
+        </div>
+      </div>
+    );
+  }
+  
+  // Otherwise, show the manual input form (existing implementation)
   return (
     <div className="space-y-8">
       <div>

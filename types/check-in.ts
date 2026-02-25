@@ -1,3 +1,5 @@
+import type { DailyLog } from "./daily-log";
+
 // Check-in status types
 export type CheckInStatus = "pending" | "ai_processed" | "reviewed";
 
@@ -358,6 +360,7 @@ export type CheckInClientInfo = {
   email: string;
   coachName: string;
   checkInFrequencyDays?: number; // 7 for weekly, 14 for bi-weekly, etc.
+  lastCheckInDate?: string; // ISO date string (YYYY-MM-DD) of last check-in
 };
 
 // Request/Response types for API
@@ -377,6 +380,7 @@ export type ValidateCheckInTokenResponse = {
   clientInfo?: CheckInClientInfo;
   trainingContext?: CheckInTrainingContext;
   nutritionContext?: CheckInNutritionContext;
+  dailyLogs?: DailyLog[];
   errorMessage?: string;
 };
 

@@ -139,6 +139,7 @@ export default function ClientCheckInPage() {
               <StepSubjective
                 data={formData}
                 onChange={updateFormData}
+                dailyLogs={contextData.dailyLogs}
               />
             )}
 
