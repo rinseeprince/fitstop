@@ -3,14 +3,23 @@
 import { useMemo } from "react";
 import { CheckCircle2, Activity, Utensils, Flame, TrendingUp, TrendingDown } from "lucide-react";
 import type { DailyLog } from "@/types/daily-log";
+import type { CheckInTrainingContext } from "@/types/check-in";
 import { aggregateDailyLogs } from "@/utils/daily-logs-aggregation";
 
 type DailyLogsTrainingSummaryProps = {
   dailyLogs: DailyLog[];
+  trainingContext?: CheckInTrainingContext;
 };
 
-export const DailyLogsTrainingSummary = ({ dailyLogs }: DailyLogsTrainingSummaryProps) => {
+export const DailyLogsTrainingSummary = ({ dailyLogs, trainingContext }: DailyLogsTrainingSummaryProps) => {
   const aggregated = useMemo(() => aggregateDailyLogs(dailyLogs), [dailyLogs]);
+  
+  // Count total planned training sessions from the training context
+  const totalPlannedTrainingSessions = useMemo(() => {
+    if (!trainingContext?.sessions) return aggregated.totalPlannedSessions;
+    // Count only training sessions (not recovery or other types)
+    return trainingContext.sessions.filter(s => !s.focus || s.focus.toLowerCase().includes('training') || !s.focus.toLowerCase().includes('recovery')).length;
+  }, [trainingContext, aggregated.totalPlannedSessions]);
 
   const getSessionCompletionColor = (completed: number, total: number) => {
     if (total === 0) return "text-muted-foreground";
@@ -52,8 +61,8 @@ export const DailyLogsTrainingSummary = ({ dailyLogs }: DailyLogsTrainingSummary
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">Sessions Completed</span>
-            <span className={`text-sm font-semibold ${getSessionCompletionColor(aggregated.sessionsCompleted, aggregated.totalPlannedSessions)}`}>
-              {aggregated.sessionsCompleted}/{aggregated.totalPlannedSessions || aggregated.totalLoggedDays}
+            <span className={`text-sm font-semibold ${getSessionCompletionColor(aggregated.sessionsCompleted, totalPlannedTrainingSessions)}`}>
+              {aggregated.sessionsCompleted}/{totalPlannedTrainingSessions}
             </span>
           </div>
 
@@ -87,8 +96,8 @@ export const DailyLogsTrainingSummary = ({ dailyLogs }: DailyLogsTrainingSummary
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">Days On Target</span>
-            <span className={`text-sm font-semibold ${getNutritionColor(aggregated.nutritionHitDays, aggregated.totalLoggedDays)}`}>
-              {aggregated.nutritionHitDays}/{aggregated.totalLoggedDays} days
+            <span className={`text-sm font-semibold ${getNutritionColor(aggregated.nutritionHitDays, 7)}`}>
+              {aggregated.nutritionHitDays}/7 days
             </span>
           </div>
 

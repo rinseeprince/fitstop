@@ -64,7 +64,10 @@ export const StepTraining = ({
       {/* Training Sessions Section */}
       {hasDailyLogs ? (
         // Show auto-calculated summary from daily logs
-        <DailyLogsTrainingSummary dailyLogs={dailyLogs} />
+        <DailyLogsTrainingSummary 
+          dailyLogs={dailyLogs} 
+          trainingContext={trainingContext}
+        />
       ) : hasActivePlan && trainingContext && trainingContext.sessions.length > 0 ? (
         <TrainingSessionChecklist
           sessions={trainingContext.sessions}
