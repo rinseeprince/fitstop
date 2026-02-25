@@ -1,3 +1,4 @@
+import { describe, it, expect } from 'vitest';
 import { aggregateDailyLogs, sanitiseReps } from "@/utils/daily-logs-aggregation";
 import type { DailyLog } from "@/types/daily-log";
 
@@ -192,9 +193,9 @@ describe("aggregateDailyLogs", () => {
       {
         id: "1",
         date: "2024-01-01",
-        mood: null,
+        mood: undefined,
         energy: undefined,
-        trained: null,
+        trained: undefined,
       },
       {
         id: "2",

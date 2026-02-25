@@ -8,6 +8,7 @@ import { PhotoComparison } from "@/components/check-in/photo-comparison"
 import { CheckInScheduleCard } from "@/components/clients/check-in/check-in-schedule-card"
 import { InlineEditableMetric } from "@/components/clients/shared/inline-editable-metric"
 import { Phone, Mail, Loader2, Calculator } from "lucide-react"
+import { DailyWellnessStrip } from "@/components/clients/daily-pulse/daily-wellness-strip"
 
 interface ClientOverviewTabProps {
   client: any
@@ -211,6 +212,9 @@ export function ClientOverviewTab({
           </CardContent>
         </Card>
       </div>
+
+      {/* Daily Wellness Strip */}
+      <DailyWellnessStrip clientId={client.id} />
 
       {/* Check-In Schedule */}
       <CheckInScheduleCard client={client} onUpdate={() => window.location.reload()} />

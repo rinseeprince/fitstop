@@ -46,7 +46,7 @@ export default function ClientCheckInPage() {
       // If we have daily logs, aggregate and populate the nutrition data
       let enrichedFormData = { ...formData };
       
-      if (contextData.dailyLogs && contextData.dailyLogs.length > 0) {
+      if (contextData?.dailyLogs && contextData.dailyLogs.length > 0) {
         const aggregated = aggregateDailyLogs(contextData.dailyLogs);
         
         // Auto-populate nutrition days on target from daily logs
