@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { getTodayDateString } from "@/lib/date-helpers";
 import { useToast } from "@/hooks/use-toast";
 import { HabitRow } from "./habit-row";
 import type { DailyHabit, DailyHabitLog } from "@/types/daily-habit";
@@ -17,12 +16,14 @@ interface HabitsSectionProps {
   habits: DailyHabit[];
   habitLogs: HabitLogWithDetails[];
   onHabitLogsUpdate: (logs: HabitLogWithDetails[]) => void;
+  selectedDate: string;
 }
 
 // Helper to create an optimistic log entry
 const createOptimisticLog = (
   habit: DailyHabit,
   completed: boolean,
+  selectedDate: string,
   value?: number,
   existingLog?: HabitLogWithDetails
 ): HabitLogWithDetails => {
@@ -39,7 +40,7 @@ const createOptimisticLog = (
     id: `temp-${habit.id}`,
     dailyHabitId: habit.id,
     clientId: habit.clientId,
-    date: getTodayDateString(),
+    date: selectedDate,
     completed,
     value,
     createdAt: new Date().toISOString(),
@@ -55,6 +56,7 @@ const createOptimisticLog = (
 const saveHabitToAPI = async (
   habitId: string,
   completed: boolean,
+  selectedDate: string,
   value?: number
 ): Promise<DailyHabitLog> => {
   const response = await fetch("/api/client/habits/log", {
@@ -62,7 +64,7 @@ const saveHabitToAPI = async (
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       dailyHabitId: habitId,
-      date: getTodayDateString(),
+      date: selectedDate,
       completed,
       value,
     }),
@@ -76,7 +78,7 @@ const saveHabitToAPI = async (
   return result.data;
 };
 
-export function HabitsSection({ habits, habitLogs, onHabitLogsUpdate }: HabitsSectionProps) {
+export function HabitsSection({ habits, habitLogs, onHabitLogsUpdate, selectedDate }: HabitsSectionProps) {
   const { toast } = useToast();
   const [savingHabits, setSavingHabits] = useState<Set<string>>(new Set());
 
@@ -115,11 +117,11 @@ export function HabitsSection({ habits, habitLogs, onHabitLogsUpdate }: HabitsSe
     setSavingHabits(prev => new Set(prev).add(habitId));
 
     // Optimistic update
-    const optimisticLog = createOptimisticLog(habit, checked, undefined, existingLog);
+    const optimisticLog = createOptimisticLog(habit, checked, selectedDate, undefined, existingLog);
     updateLogs(habitId, optimisticLog);
 
     try {
-      const savedLog = await saveHabitToAPI(habitId, checked);
+      const savedLog = await saveHabitToAPI(habitId, checked, selectedDate, undefined);
       const finalLog: HabitLogWithDetails = {
         ...savedLog,
         habitName: habit.name,
@@ -149,11 +151,11 @@ export function HabitsSection({ habits, habitLogs, onHabitLogsUpdate }: HabitsSe
     const completed = value !== undefined && habit.targetValue ? value >= habit.targetValue : false;
 
     // Optimistic update
-    const optimisticLog = createOptimisticLog(habit, completed, value, existingLog);
+    const optimisticLog = createOptimisticLog(habit, completed, selectedDate, value, existingLog);
     updateLogs(habitId, optimisticLog);
 
     try {
-      const savedLog = await saveHabitToAPI(habitId, completed, value);
+      const savedLog = await saveHabitToAPI(habitId, completed, selectedDate, value);
       const finalLog: HabitLogWithDetails = {
         ...savedLog,
         habitName: habit.name,
@@ -175,7 +177,7 @@ export function HabitsSection({ habits, habitLogs, onHabitLogsUpdate }: HabitsSe
 
   const handleNumericChange = (habit: DailyHabit, value: number | undefined) => {
     const log = logMap.get(habit.id);
-    const updatedLog = createOptimisticLog(habit, false, value, log);
+    const updatedLog = createOptimisticLog(habit, false, selectedDate, value, log);
     updateLogs(habit.id, updatedLog);
   };
 

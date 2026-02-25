@@ -4,8 +4,10 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Flame } from "lucide-react";
+import { getTodayDateString } from "@/lib/date-helpers";
 import { useDailyPulse } from "@/hooks/use-daily-pulse";
 import { DailyPulseContent } from "./daily-pulse-content";
+import { DayNavBar } from "./day-nav-bar";
 import { 
   handleAlternativeSessionSelect as handleAltSession,
   handleSessionCompletion,
@@ -26,6 +28,10 @@ type HabitLogWithDetails = DailyHabitLog & {
 };
 
 export function DailyPulse() {
+  const [selectedDate, setSelectedDate] = useState(getTodayDateString());
+  const [debouncedSelectedDate, setDebouncedSelectedDate] = useState(getTodayDateString());
+  const today = getTodayDateString();
+  
   const { 
     todayLog, 
     streak, 
@@ -35,12 +41,15 @@ export function DailyPulse() {
     allTrainingSessions,
     habits,
     habitLogs: initialHabitLogs,
+    weeklyLogs,
     isLoading, 
     isSaving, 
-    saveLog 
-  } = useDailyPulse();
+    saveLog,
+    updateWeeklyLogs
+  } = useDailyPulse(debouncedSelectedDate);
   const [isExpanded, setIsExpanded] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
+  const [isLocalLoading, setIsLocalLoading] = useState(false);
   // Wellness state
   const [formData, setFormData] = useState<Partial<DailyLog>>({
     mood: undefined, energy: undefined, sleep: undefined, stress: undefined, notes: undefined,
@@ -61,6 +70,50 @@ export function DailyPulse() {
   const [isSessionOrphaned, setIsSessionOrphaned] = useState(false);
   // Habits state - managed locally for optimistic updates
   const [habitLogs, setHabitLogs] = useState<HabitLogWithDetails[]>(initialHabitLogs);
+
+  // Handle date change
+  const handleDateSelect = (date: string) => {
+    if (date === selectedDate) return;
+    
+    // Show loading skeleton immediately
+    setIsLocalLoading(true);
+    
+    // Update UI immediately
+    setSelectedDate(date);
+    
+    // Clear all state when changing dates
+    setIsExpanded(false);
+    setShowNotes(false);
+    setFormData({
+      mood: undefined, energy: undefined, sleep: undefined, stress: undefined, notes: undefined,
+    });
+    setNutritionData({
+      caloriesConsumed: null, proteinG: null, carbsG: null, fatG: null,
+    });
+    setSessionCompleted(false);
+    setCurrentTrainingSession(todaysTrainingSession);
+    setSelectedAlternativeSession(null);
+    setActivityStatuses({});
+    setUnplannedActivities([]);
+    setWasCompletedPreviously(false);
+    setIsSessionOrphaned(false);
+  };
+
+  // Debounce the actual data fetch
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSelectedDate(selectedDate);
+    }, 300);
+    
+    return () => clearTimeout(timer);
+  }, [selectedDate]);
+
+  // Reset local loading when debounce has caught up AND fetch has completed
+  useEffect(() => {
+    if (!isLoading && debouncedSelectedDate === selectedDate) {
+      setIsLocalLoading(false);
+    }
+  }, [isLoading, debouncedSelectedDate, selectedDate]);
 
   // Update form data when todayLog loads or changes
   useEffect(() => {
@@ -165,6 +218,12 @@ export function DailyPulse() {
     });
     await handleSessionCompletion(sessionCompleted, trainingSessionId, todayLog?.trainingSessionId, wasCompletedPreviously, setWasCompletedPreviously);
     await saveUnplannedActivities(unplannedActivities);
+    
+    // Optimistically update weekly logs if a new log was created
+    if (!todayLog && debouncedSelectedDate) {
+      updateWeeklyLogs(debouncedSelectedDate);
+    }
+    
     setIsExpanded(false);
     setShowNotes(false);
   };
@@ -224,8 +283,15 @@ export function DailyPulse() {
       </CardHeader>
 
       <CardContent>
+        <DayNavBar
+          selectedDate={selectedDate}
+          onSelectDate={handleDateSelect}
+          dailyLogs={weeklyLogs}
+          today={today}
+        />
+        
         <DailyPulseContent
-          isLoading={isLoading}
+          isLoading={isLoading || isLocalLoading}
           isSaving={isSaving}
           isExpanded={isExpanded}
           hasLoggedToday={hasLoggedToday}
@@ -256,6 +322,7 @@ export function DailyPulse() {
           handleRemoveUnplannedActivity={handleRemoveUnplannedActivity}
           setNutritionData={setNutritionData}
           isSessionOrphaned={isSessionOrphaned}
+          selectedDate={selectedDate}
         />
       </CardContent>
     </Card>

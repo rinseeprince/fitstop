@@ -6,6 +6,7 @@ import {
   getTodaysTrainingSession, 
   getTodaysPlannedActivities 
 } from "@/services/daily-logs-service";
+import { getTodayDateString, getDateDaysAgo } from "@/lib/date-helpers";
 
 export async function GET(request: NextRequest) {
   const rateLimitResult = await clientApiRateLimit(request);
@@ -21,10 +22,36 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Get date from query params
+    const { searchParams } = new URL(request.url);
+    const date = searchParams.get("date");
+
+    // Validate date if provided
+    if (date) {
+      const today = getTodayDateString();
+      const thirtyDaysAgo = getDateDaysAgo(30);
+      
+      // Check if date is in the future
+      if (date > today) {
+        return NextResponse.json(
+          { success: false, error: "Cannot fetch data for future dates" },
+          { status: 400 }
+        );
+      }
+      
+      // Check if date is too far in the past
+      if (date < thirtyDaysAgo) {
+        return NextResponse.json(
+          { success: false, error: "Cannot fetch data older than 30 days" },
+          { status: 400 }
+        );
+      }
+    }
+
     const [nutritionTarget, trainingSession, plannedActivities] = await Promise.all([
-      getTodaysNutritionTarget(clientId),
-      getTodaysTrainingSession(clientId),
-      getTodaysPlannedActivities(clientId),
+      getTodaysNutritionTarget(clientId, date || undefined),
+      getTodaysTrainingSession(clientId, date || undefined),
+      getTodaysPlannedActivities(clientId, date || undefined),
     ]);
 
     return NextResponse.json(

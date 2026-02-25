@@ -228,14 +228,38 @@ export const getDailyLogs = async (
   }));
 };
 
-export const getTodayLog = async (clientId: string): Promise<DailyLog | null> => {
-  const today = getTodayDateString();
+export const getWeeklyLogs = async (
+  clientId: string,
+  startDate: string,
+  endDate: string
+): Promise<Pick<DailyLog, "date" | "id">[]> => {
+  const { data, error } = await supabaseAdmin
+    .from("daily_logs")
+    .select("id, date")
+    .eq("client_id", clientId)
+    .gte("date", startDate)
+    .lte("date", endDate)
+    .order("date", { ascending: true });
+
+  if (error) {
+    console.error("Error fetching weekly logs:", error);
+    throw new Error(`Failed to fetch weekly logs: ${error.message}`);
+  }
+
+  return (data || []).map((row) => ({
+    id: row.id,
+    date: row.date,
+  }));
+};
+
+export const getTodayLog = async (clientId: string, date?: string): Promise<DailyLog | null> => {
+  const targetDate = date || getTodayDateString();
   
   const { data, error } = await supabaseAdmin
     .from("daily_logs")
     .select("*")
     .eq("client_id", clientId)
-    .eq("date", today)
+    .eq("date", targetDate)
     .single();
 
   if (error || !data) {
@@ -278,9 +302,9 @@ export const calculateStreaks = async (clientId: string): Promise<StreakResult> 
   return calculateStreakFromLogs(logs);
 };
 
-export const getTodaysTrainingSession = async (clientId: string): Promise<TodaysTrainingSession> => {
-  const today = new Date();
-  const todayDayOfWeek = getDayOfWeekLowercase(today);
+export const getTodaysTrainingSession = async (clientId: string, date?: string): Promise<TodaysTrainingSession> => {
+  const targetDate = date ? new Date(date + 'T00:00:00') : new Date();
+  const todayDayOfWeek = getDayOfWeekLowercase(targetDate);
   
   const trainingPlan = await getClientTrainingPlan(clientId);
   
@@ -301,9 +325,9 @@ export const getTodaysTrainingSession = async (clientId: string): Promise<Todays
   };
 };
 
-export const getTodaysPlannedActivities = async (clientId: string): Promise<TodaysActivity[]> => {
-  const today = new Date();
-  const todayDayOfWeek = getDayOfWeekLowercase(today);
+export const getTodaysPlannedActivities = async (clientId: string, date?: string): Promise<TodaysActivity[]> => {
+  const targetDate = date ? new Date(date + 'T00:00:00') : new Date();
+  const todayDayOfWeek = getDayOfWeekLowercase(targetDate);
   
   const trainingPlan = await getClientTrainingPlan(clientId);
   
@@ -322,13 +346,13 @@ export const getTodaysPlannedActivities = async (clientId: string): Promise<Toda
   }));
 };
 
-export const getTodaysNutritionTarget = async (clientId: string): Promise<DailyNutritionTargets | null> => {
+export const getTodaysNutritionTarget = async (clientId: string, date?: string): Promise<DailyNutritionTargets | null> => {
   const nutritionTargets = await getClientNutritionTargets(clientId);
   
   if (!nutritionTargets?.dailyTargets) return null;
   
-  const today = new Date();
-  const todayDayOfWeek = getDayOfWeekLowercase(today);
+  const targetDate = date ? new Date(date + 'T00:00:00') : new Date();
+  const todayDayOfWeek = getDayOfWeekLowercase(targetDate);
   
   const todayTarget = nutritionTargets.dailyTargets.find(
     (target) => target.day === todayDayOfWeek

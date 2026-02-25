@@ -327,8 +327,8 @@ export const getHabitLogs = async (
   }));
 };
 
-export const getTodayHabitLogs = async (clientId: string): Promise<HabitLogWithDetails[]> => {
-  const today = getTodayDateString();
+export const getTodayHabitLogs = async (clientId: string, date?: string): Promise<HabitLogWithDetails[]> => {
+  const targetDate = date || getTodayDateString();
   
   const { data, error } = await supabaseAdmin
     .from("daily_habit_logs")
@@ -337,7 +337,7 @@ export const getTodayHabitLogs = async (clientId: string): Promise<HabitLogWithD
       daily_habits!inner(name, target_value, target_unit, is_boolean)
     `)
     .eq("client_id", clientId)
-    .eq("date", today);
+    .eq("date", targetDate);
 
   if (error) {
     console.error("Database operation error:", error);

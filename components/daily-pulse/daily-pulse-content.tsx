@@ -42,6 +42,7 @@ interface DailyPulseContentProps {
   hasLoggedToday: boolean;
   showNotes: boolean;
   isSessionOrphaned: boolean;
+  selectedDate: string;
   // Data
   todayLog: DailyLog | null;
   nutritionTarget: DailyNutritionTargets | null;
@@ -83,7 +84,7 @@ interface DailyPulseContentProps {
 }
 
 export function DailyPulseContent({
-  isLoading, isSaving, isExpanded, hasLoggedToday, showNotes, isSessionOrphaned, todayLog, nutritionTarget,
+  isLoading, isSaving, isExpanded, hasLoggedToday, showNotes, isSessionOrphaned, selectedDate, todayLog, nutritionTarget,
   sessionCompleted, currentTrainingSession, originalScheduledSessionId, selectedAlternativeSession,
   activityStatuses, unplannedActivities, allTrainingSessions, plannedActivities,
   formData, nutritionData, habits, habitLogs, onHabitLogsUpdate,
@@ -136,6 +137,7 @@ export function DailyPulseContent({
               habits={habits}
               habitLogs={habitLogs}
               onHabitLogsUpdate={onHabitLogsUpdate}
+              selectedDate={selectedDate}
             />
           </>
         )}
@@ -203,6 +205,7 @@ export function DailyPulseContent({
               habits={habits}
               habitLogs={habitLogs}
               onHabitLogsUpdate={onHabitLogsUpdate}
+              selectedDate={selectedDate}
             />
           </>
         )}
@@ -266,6 +269,7 @@ export function DailyPulseContent({
             habits={habits}
             habitLogs={habitLogs}
             onHabitLogsUpdate={onHabitLogsUpdate}
+            selectedDate={selectedDate}
           />
         </>
       )}
