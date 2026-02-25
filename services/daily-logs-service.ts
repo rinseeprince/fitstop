@@ -4,6 +4,7 @@ import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
 import { getClientNutritionTargets, getClientTrainingPlan } from "./client-portal-service";
 import type { Database } from "@/types/database";
 import { getTodayDateString, getDateString, getDateDaysAgo } from "@/lib/date-helpers";
+import { NUTRITION_ADHERENCE_HIT_THRESHOLD, NUTRITION_ADHERENCE_PARTIAL_THRESHOLD } from "@/lib/constants";
 
 type DailyLogRow = Database["public"]["Tables"]["daily_logs"]["Row"];
 
@@ -39,8 +40,8 @@ export const calculateNutritionAdherence = (
   
   const difference = Math.abs(caloriesConsumed - targetCalories);
   
-  if (difference <= 50) return "hit";
-  if (difference <= 200) return "partial";
+  if (difference <= NUTRITION_ADHERENCE_HIT_THRESHOLD) return "hit";
+  if (difference <= NUTRITION_ADHERENCE_PARTIAL_THRESHOLD) return "partial";
   return "missed";
 };
 
@@ -152,7 +153,6 @@ export const upsertDailyLog = async (
     .single();
 
   if (error) {
-    console.error("Error upserting daily log:", error);
     throw new Error(`Failed to upsert daily log: ${error.message}`);
   }
 
@@ -197,7 +197,6 @@ export const getDailyLogs = async (
     .order("date", { ascending: true });
 
   if (error) {
-    console.error("Error fetching daily logs:", error);
     throw new Error(`Failed to fetch daily logs: ${error.message}`);
   }
 
@@ -242,7 +241,6 @@ export const getWeeklyLogs = async (
     .order("date", { ascending: true });
 
   if (error) {
-    console.error("Error fetching weekly logs:", error);
     throw new Error(`Failed to fetch weekly logs: ${error.message}`);
   }
 

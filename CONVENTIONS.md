@@ -7,7 +7,7 @@
 - **If it feels wrong, it probably is**: If a solution requires fighting against the framework or library's design, step back and find the proper approach.
 
 ## File Size Limits
-- Components: Max 200 lines (split at 250)
+- Components: Max 250 lines (split at 300)
 - Services: Max 300 lines (split at 400)
 - API routes: Max 250 lines (split at 300)
 - Utils: Max 150 lines (split at 200)

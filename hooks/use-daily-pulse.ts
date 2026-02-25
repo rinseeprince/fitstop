@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { getTodayDateString } from "@/lib/date-helpers";
+import { fetchWithRetry, fetchWeeklyLogs } from "./use-daily-pulse-helpers";
 import type { TrainingPlan, TrainingSession } from "@/types/training";
 import type { DailyLog } from "@/types/daily-log";
 import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
@@ -63,40 +64,14 @@ export function useDailyPulse(selectedDate: string): UseDailyPulseReturn {
   const [isSaving, setIsSaving] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Helper function to fetch with retry on 429 errors
-  const fetchWithRetry = async (url: string, options: RequestInit, retryCount = 0): Promise<Response> => {
-    const response = await fetch(url, options);
-    
-    if (response.status === 429 && retryCount === 0) {
-      // Wait 1500ms before retry
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      return fetchWithRetry(url, options, 1); // Retry once
-    }
-    
-    return response;
-  };
-
-  // Helper function to fetch weekly logs with retry
-  const fetchWeeklyLogsWithRetry = async () => {
-    try {
-      const today = getTodayDateString();
-      
-      const response = await fetchWithRetry(`/api/client/daily-logs/week?date=${today}`, {
-        cache: 'no-store'
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        setWeeklyLogs(data.data || []);
-      }
-    } catch (error) {
-      console.error("Error fetching weekly logs:", error);
-    }
-  };
-
   // Fetch weekly logs on mount
   useEffect(() => {
-    fetchWeeklyLogsWithRetry();
+    const loadWeeklyLogs = async () => {
+      const today = getTodayDateString();
+      const logs = await fetchWeeklyLogs(today);
+      setWeeklyLogs(logs);
+    };
+    loadWeeklyLogs();
   }, []);
 
   // Fetch data for selected date
@@ -162,11 +137,11 @@ export function useDailyPulse(selectedDate: string): UseDailyPulseReturn {
           setStreak(streakData.data?.currentStreak || 0);
         }
 
-        let nutritionData: any = null;
+        let nutritionData: { data?: { nutritionTarget?: DailyNutritionTargets; trainingSession?: { sessionId: string }; plannedActivities?: TodaysActivity[] } } | null = null;
         if (nutritionRes.ok) {
           nutritionData = await nutritionRes.json();
-          if (nutritionData.data) {
-            setNutritionTarget(nutritionData.data.nutritionTarget);
+          if (nutritionData?.data) {
+            setNutritionTarget(nutritionData.data.nutritionTarget || null);
             setTodaysTrainingSession(null);
             setPlannedActivities(nutritionData.data.plannedActivities || []);
           }
@@ -182,7 +157,7 @@ export function useDailyPulse(selectedDate: string): UseDailyPulseReturn {
             // Update todaysTrainingSession with full session data if we have the ID
             if (nutritionData?.data?.trainingSession) {
               const fullSession = trainingSessions.find(
-                (s: TrainingSession) => s.id === nutritionData.data.trainingSession.sessionId
+                (s: TrainingSession) => s.id === nutritionData.data?.trainingSession?.sessionId
               );
               if (fullSession) {
                 setTodaysTrainingSession(fullSession);
@@ -210,7 +185,7 @@ export function useDailyPulse(selectedDate: string): UseDailyPulseReturn {
           return;
         }
         
-        console.error("Error fetching daily pulse data:", error);
+        // Error already handled by not showing data
         toast({
           title: "Error",
           description: "Failed to load daily pulse data",
@@ -286,7 +261,6 @@ export function useDailyPulse(selectedDate: string): UseDailyPulseReturn {
         setStreak(streakData.data?.currentStreak || 0);
       }
     } catch (error) {
-      console.error("Error saving daily log:", error);
       toast({
         title: "Error",
         description: "Failed to save daily log",

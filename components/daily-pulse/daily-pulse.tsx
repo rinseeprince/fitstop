@@ -5,7 +5,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Flame } from "lucide-react";
 import { getTodayDateString } from "@/lib/date-helpers";
+import { DEBOUNCE_DELAY_MS } from "@/lib/constants";
 import { useDailyPulse } from "@/hooks/use-daily-pulse";
+import { useTrainingRestoration } from "@/hooks/use-training-restoration";
+import { useDailyPulseState } from "@/hooks/use-daily-pulse-state";
 import { DailyPulseContent } from "./daily-pulse-content";
 import { DayNavBar } from "./day-nav-bar";
 import { 
@@ -15,17 +18,12 @@ import {
   extractWellnessData,
   extractNutritionData
 } from "./utils/daily-pulse-handlers";
-import type { DailyLog } from "@/types/daily-log";
-import type { TrainingSession } from "@/types/training";
+import {
+  handleAddUnplannedActivity as createAddHandler,
+  handleRemoveUnplannedActivity as createRemoveHandler,
+  handleActivityToggle as createToggleHandler,
+} from "./utils/daily-pulse-event-handlers";
 import type { UnplannedActivity } from "./daily-pulse-content";
-import type { DailyHabitLog } from "@/types/daily-habit";
-
-type HabitLogWithDetails = DailyHabitLog & {
-  habitName: string;
-  targetValue?: number;
-  targetUnit?: string;
-  isBoolean: boolean;
-};
 
 export function DailyPulse() {
   const [selectedDate, setSelectedDate] = useState(getTodayDateString());
@@ -47,29 +45,20 @@ export function DailyPulse() {
     saveLog,
     updateWeeklyLogs
   } = useDailyPulse(debouncedSelectedDate);
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [showNotes, setShowNotes] = useState(false);
-  const [isLocalLoading, setIsLocalLoading] = useState(false);
-  // Wellness state
-  const [formData, setFormData] = useState<Partial<DailyLog>>({
-    mood: undefined, energy: undefined, sleep: undefined, stress: undefined, notes: undefined,
-  });
-  // Nutrition state
-  const [nutritionData, setNutritionData] = useState({
-    caloriesConsumed: null as number | null, proteinG: null as number | null,
-    carbsG: null as number | null, fatG: null as number | null,
-  });
-  // Training state
-  const [sessionCompleted, setSessionCompleted] = useState(false);
-  const [currentTrainingSession, setCurrentTrainingSession] = useState(todaysTrainingSession);
-  const [originalScheduledSessionId, setOriginalScheduledSessionId] = useState<string | null>(null);
-  const [selectedAlternativeSession, setSelectedAlternativeSession] = useState<string | null>(null);
-  const [activityStatuses, setActivityStatuses] = useState<Record<string, { completed: boolean; activityName: string; estimatedCalories: number }>>({});
-  const [unplannedActivities, setUnplannedActivities] = useState<UnplannedActivity[]>([]);
-  const [wasCompletedPreviously, setWasCompletedPreviously] = useState(false);
-  const [isSessionOrphaned, setIsSessionOrphaned] = useState(false);
-  // Habits state - managed locally for optimistic updates
-  const [habitLogs, setHabitLogs] = useState<HabitLogWithDetails[]>(initialHabitLogs);
+
+  const {
+    isExpanded, setIsExpanded, showNotes, setShowNotes,
+    isLocalLoading, setIsLocalLoading, formData, setFormData,
+    nutritionData, setNutritionData, sessionCompleted, setSessionCompleted,
+    currentTrainingSession, setCurrentTrainingSession,
+    originalScheduledSessionId, setOriginalScheduledSessionId,
+    selectedAlternativeSession, setSelectedAlternativeSession,
+    activityStatuses, setActivityStatuses,
+    unplannedActivities, setUnplannedActivities,
+    wasCompletedPreviously, setWasCompletedPreviously,
+    isSessionOrphaned, setIsSessionOrphaned,
+    habitLogs, setHabitLogs, resetAllState,
+  } = useDailyPulseState(todaysTrainingSession, initialHabitLogs);
 
   // Handle date change
   const handleDateSelect = (date: string) => {
@@ -82,28 +71,14 @@ export function DailyPulse() {
     setSelectedDate(date);
     
     // Clear all state when changing dates
-    setIsExpanded(false);
-    setShowNotes(false);
-    setFormData({
-      mood: undefined, energy: undefined, sleep: undefined, stress: undefined, notes: undefined,
-    });
-    setNutritionData({
-      caloriesConsumed: null, proteinG: null, carbsG: null, fatG: null,
-    });
-    setSessionCompleted(false);
-    setCurrentTrainingSession(todaysTrainingSession);
-    setSelectedAlternativeSession(null);
-    setActivityStatuses({});
-    setUnplannedActivities([]);
-    setWasCompletedPreviously(false);
-    setIsSessionOrphaned(false);
+    resetAllState();
   };
 
   // Debounce the actual data fetch
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSelectedDate(selectedDate);
-    }, 300);
+    }, DEBOUNCE_DELAY_MS);
     
     return () => clearTimeout(timer);
   }, [selectedDate]);
@@ -140,60 +115,21 @@ export function DailyPulse() {
     }
   }, [todaysTrainingSession, isLoading]);
 
-  // Restore training data from saved log
-  const scheduledSessionId = todaysTrainingSession?.id || null;
-  const savedTrainingSessionId = todayLog?.trainingData?.trainingSessionId || null;
-  
-  useEffect(() => {
-    if (isLoading || !todayLog?.trainingData) return;
-    if (isExpanded) return; // Don't overwrite user edits
-    
-    const data = todayLog.trainingData;
-    
-    // Always restore these from training_data
-    setSessionCompleted(data.sessionCompleted);
-    setActivityStatuses(data.activityStatuses || {});
-    setUnplannedActivities(data.unplannedActivities.map(activity => ({
-      ...activity,
-      intensityLevel: activity.intensityLevel as "low" | "moderate" | "vigorous"
-    })));
-    
-    // Always restore the session from training_data if one was logged
-    if (data.trainingSessionId) {
-      const loggedSession = allTrainingSessions.find(s => s.id === data.trainingSessionId);
-      if (loggedSession) {
-        setCurrentTrainingSession(loggedSession);
-        setIsSessionOrphaned(false);
-        
-        // Determine if this is an alternative session based on current schedule
-        if (data.trainingSessionId !== scheduledSessionId) {
-          setSelectedAlternativeSession(data.trainingSessionId);
-        }
-      } else if (data.trainingSessionName) {
-        // Session ID is orphaned (plan was regenerated) - create display-only session
-        const orphanedSession: TrainingSession = {
-          id: data.trainingSessionId,
-          planId: '', // No plan exists anymore
-          name: data.trainingSessionName,
-          orderIndex: 0,
-          exercises: [],
-          sessionType: 'training',
-          estimatedCalories: 0, // We don't have this data anymore
-          createdAt: '',
-          updatedAt: '',
-        };
-        setCurrentTrainingSession(orphanedSession);
-        setIsSessionOrphaned(true);
-        // Mark as orphaned so UI can disable session picker
-        setSelectedAlternativeSession('orphaned');
-      }
-    }
-    
-    if (data.sessionCompleted) {
-      setWasCompletedPreviously(true);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLoading, todayLog?.id, savedTrainingSessionId, scheduledSessionId, isExpanded]);
+  // Restore training data from saved log using custom hook
+  useTrainingRestoration({
+    isLoading,
+    isExpanded,
+    todayLog,
+    todaysTrainingSession,
+    allTrainingSessions,
+    setSessionCompleted,
+    setCurrentTrainingSession,
+    setSelectedAlternativeSession,
+    setActivityStatuses,
+    setUnplannedActivities,
+    setWasCompletedPreviously,
+    setIsSessionOrphaned,
+  });
 
   const handleSave = async () => {
     const trainingSessionId = sessionCompleted && currentTrainingSession ? currentTrainingSession.id : undefined;
@@ -245,25 +181,9 @@ export function DailyPulse() {
     );
   };
 
-  const handleAddUnplannedActivity = (activity: UnplannedActivity) => 
-    setUnplannedActivities([...unplannedActivities, activity]);
-
-  const handleRemoveUnplannedActivity = (index: number) => 
-    setUnplannedActivities(unplannedActivities.filter((_, i) => i !== index));
-
-  const handleActivityToggle = (activityId: string, completed: boolean) => {
-    const activity = plannedActivities.find(a => a.sessionId === activityId);
-    if (activity) {
-      setActivityStatuses({
-        ...activityStatuses,
-        [activityId]: {
-          completed,
-          activityName: activity.activityName,
-          estimatedCalories: activity.estimatedCalories
-        }
-      });
-    }
-  };
+  const handleAddUnplannedActivity = createAddHandler(unplannedActivities, setUnplannedActivities);
+  const handleRemoveUnplannedActivity = createRemoveHandler(unplannedActivities, setUnplannedActivities);
+  const handleActivityToggle = createToggleHandler(plannedActivities, activityStatuses, setActivityStatuses);
 
   const hasLoggedToday = !!todayLog && (todayLog.mood !== null || todayLog.energy !== null || 
     todayLog.sleep !== null || todayLog.stress !== null || todayLog.trained !== null);

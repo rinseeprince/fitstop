@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedClientId } from "@/lib/auth-helpers";
 import { clientApiRateLimit } from "@/lib/rate-limit";
 import { getTodayLog } from "@/services/daily-logs-service";
-import { getTodayDateString, getDateDaysAgo } from "@/lib/date-helpers";
+import { validateDateParameter } from "@/lib/validation-helpers";
 
 export async function GET(request: NextRequest) {
   const rateLimitResult = await clientApiRateLimit(request);
@@ -23,26 +23,8 @@ export async function GET(request: NextRequest) {
     const date = searchParams.get("date");
 
     // Validate date if provided
-    if (date) {
-      const today = getTodayDateString();
-      const thirtyDaysAgo = getDateDaysAgo(30);
-      
-      // Check if date is in the future
-      if (date > today) {
-        return NextResponse.json(
-          { success: false, error: "Cannot fetch logs for future dates" },
-          { status: 400 }
-        );
-      }
-      
-      // Check if date is too far in the past
-      if (date < thirtyDaysAgo) {
-        return NextResponse.json(
-          { success: false, error: "Cannot fetch logs older than 30 days" },
-          { status: 400 }
-        );
-      }
-    }
+    const dateValidation = validateDateParameter(date);
+    if (dateValidation) return dateValidation;
 
     const log = await getTodayLog(clientId, date || undefined);
 

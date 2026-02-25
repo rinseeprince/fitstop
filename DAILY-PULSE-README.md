@@ -24,35 +24,44 @@ Daily Pulse is the daily check-in system on the client dashboard. Clients log we
 
 ```
 components/daily-pulse/
-├── daily-pulse.tsx              (199 lines) - Top-level container. Owns ALL state.
+├── daily-pulse.tsx              (249 lines) - Top-level container. Owns ALL state.
 │                                              Handles save/restore. Renders content.
-├── daily-pulse-content.tsx      (197 lines) - Layout orchestrator. Renders wellness,
+│                                              Manages date selection with debouncing.
+├── daily-pulse-content.tsx      (244 lines) - Layout orchestrator. Renders wellness,
 │                                              training, nutrition, habits sections.
 │                                              Calculates savedTargets for nutrition.
+├── daily-pulse-logged-view.tsx  (142 lines) - Extracted logged view for when day is complete.
+│                                              Shows summary + collapsed sections with edit.
 ├── daily-pulse-summary.tsx      (57 lines)  - Compact view when day is logged.
 │                                              Shows scores, training, calories at a glance.
+├── day-nav-bar.tsx              (94 lines)  - 7-day navigation bar (Mon-Sun).
+│                                              Visual states for logged/today/selected.
 ├── wellness-section.tsx         (124 lines) - Mood emoji selector, energy/sleep/stress
 │                                              sliders, notes input. Presentational only.
-├── training-section.tsx         (132 lines) - Orchestrator for training UI. Renders
+├── training-section.tsx         (127 lines) - Orchestrator for training UI. Renders
 │                                              session toggle, activity list, add form.
-├── session-picker.tsx           (134 lines) - Alternative session selection dropdown.
+├── session-picker.tsx           (143 lines) - Alternative session selection dropdown.
 │                                              Shows all sessions with "(scheduled)" label.
-├── activity-list.tsx            (101 lines) - Renders planned activities with toggles
+├── activity-list.tsx            (100 lines) - Renders planned activities with toggles
 │                                              and unplanned activities with delete.
 ├── add-activity-form.tsx        (92 lines)  - Inline form for unplanned activities.
 │                                              Name (with suggestions), intensity, duration.
-├── nutrition-section.tsx        (195 lines) - Calorie input, macro inputs, dynamic
+├── nutrition-section.tsx        (205 lines) - Calorie input, macro inputs, dynamic
 │                                              target display. Reads training state as
 │                                              props for live recalculation.
-├── nutrition-section-compact.tsx (35 lines) - Compact calorie display.
-├── nutrition-target-display.tsx (57 lines)  - Plan target with "Assumes..." breakdown.
+├── nutrition-section-compact.tsx (40 lines) - Compact calorie display.
+├── nutrition-target-display.tsx (68 lines)  - Plan target with "Assumes..." breakdown.
 ├── macro-inputs.tsx             (112 lines) - Protein/carbs/fat inputs with targets.
-├── training-summary.tsx         (58 lines)  - Compact training summary for logged view.
-├── habits-section.tsx           (TBD)       - Session 11. Boolean toggles, numeric inputs.
-│                                              Auto-saves independently.
+├── training-summary.tsx         (60 lines)  - Compact training summary for logged view.
+├── habit-row.tsx                (87 lines)  - Individual habit row with toggle/input.
+│                                              Handles optimistic updates.
+├── habits-section.tsx           (200 lines) - ✅ COMPLETED Session 11. Boolean toggles,
+│                                              numeric inputs. Auto-saves independently.
 └── utils/
-    ├── daily-pulse-handlers.ts  (81 lines)  - handleSave, handleSessionCompletion.
+    ├── daily-pulse-handlers.ts  (113 lines) - handleSave, handleSessionCompletion.
     │                                          Includes form-data-helpers (merged in).
+    ├── daily-pulse-event-handlers.ts (37 lines) - Extracted event handler factories
+    │                                              for activities and training.
     └── nutrition-change-handlers.ts (52 lines) - Calorie/macro input change handlers.
 ```
 
@@ -65,33 +74,104 @@ components/daily-pulse/
 ```
 
 ### Supporting files
+
+#### Hooks
 ```
-hooks/use-daily-pulse.ts         - All data fetching. Single Promise.all, single isLoading.
-utils/nutrition-tracking-helpers.ts - Pure functions: calculateAdjustedDayTarget,
-                                     calculateAdjustedMacros, getCalorieFeedback,
-                                     getNutritionAdherence. Unit tested.
+hooks/
+├── use-daily-pulse.ts           (300 lines) - Main data fetching hook. Takes selectedDate param.
+│                                              Single Promise.all for 6 endpoints. Manages
+│                                              isLoading, isSaving, weekly logs.
+├── use-daily-pulse-helpers.ts   (36 lines)  - fetchWithRetry (handles 429 rate limits),
+│                                              fetchWeeklyLogs for nav bar.
+├── use-daily-pulse-state.ts     (107 lines) - Extracted state management. All form data,
+│                                              training state, nutrition, habits.
+└── use-training-restoration.ts  (93 lines)  - Restores training data from saved log.
+                                              Handles orphaned sessions.
 ```
+
+#### Services
+```
+services/
+├── daily-logs-service.ts        (359 lines) - Server-side daily logs CRUD operations.
+├── daily-habits-service.ts      (311 lines) - Habits CRUD and log operations.
+├── daily-habits-logic.ts        (51 lines)  - Business logic for habit validation.
+├── daily-habits-stats.ts        (54 lines)  - Habit statistics and aggregation.
+└── daily-activities-service.ts  (213 lines) - External/unplanned activities CRUD.
+```
+
+#### Libraries & Utilities
+```
+lib/
+├── constants.ts                 (14 lines)  - DEBOUNCE_DELAY_MS (300ms),
+│                                              RATE_LIMIT_RETRY_DELAY_MS (1500ms),
+│                                              Nutrition adherence thresholds.
+├── date-helpers.ts              (91 lines)  - Date formatting, getTodayDateString.
+└── validation-helpers.ts        (76 lines)  - Input validation utilities.
+
+utils/
+├── nutrition-tracking-helpers.ts (139 lines) - calculateAdjustedDayTarget,
+│                                               calculateAdjustedMacros, getCalorieFeedback,
+│                                               getNutritionAdherence. Unit tested.
+└── daily-logs-aggregation.ts    (140 lines) - Log aggregation for analytics.
+```
+
+---
+
+## View States
+
+DailyPulse has three distinct view states based on log status and user interaction:
+
+### 1. Unlogged Day (Default)
+Rendered in `daily-pulse-content.tsx`:
+- Full form with all sections expanded
+- "Log Day" button at bottom
+- Day navigation bar at top
+- All inputs editable
+
+### 2. Logged Day - Collapsed View  
+Rendered via `daily-pulse-logged-view.tsx`:
+- Summary card shows wellness scores, training status, calories
+- All sections collapsed to single-line displays
+- "Edit" button in top-right to expand
+- Habits still editable (auto-save independent)
+- Uses saved targets from `todayLog` to survive plan changes
+
+### 3. Logged Day - Expanded View (Editing)
+Back to `daily-pulse-content.tsx` with `isExpanded=true`:
+- Full form like unlogged, but pre-filled
+- "Update" button instead of "Log Day"
+- Can modify any values
+- Uses current plan targets for live recalculation
 
 ---
 
 ## Data Flow
 
-### Fetch (on mount)
+### Date Navigation & Debouncing
 
-`use-daily-pulse.ts` fires a single `Promise.all` with `{ cache: 'no-store' }` on every call:
+1. **Date selection**: User clicks day in `DayNavBar` → `setSelectedDate(date)`
+2. **Debounce**: Changes debounced by `DEBOUNCE_DELAY_MS` (300ms) before fetch
+3. **Week logs**: `fetchWeeklyLogs()` loads current week on mount for nav bar indicators
+
+### Fetch (on date change)
+
+`use-daily-pulse.ts` fires a single `Promise.all` with `{ cache: 'no-store' }` and `selectedDate` parameter:
 
 ```
 Promise.all([
-  GET /api/client/daily-logs/today        → todayLog (or null)
-  GET /api/client/daily-logs/streak       → { currentStreak, longestStreak }
-  GET /api/client/daily-logs/nutrition-target → { nutritionTarget, trainingSession, plannedActivities }
-  GET /api/client/training                → allTrainingSessions
-  GET /api/client/habits                  → habits list        (Session 11)
-  GET /api/client/habits/logs/today       → today's habit logs (Session 11)
+  GET /api/client/daily-logs/today?date={selectedDate}        → todayLog (or null)
+  GET /api/client/daily-logs/streak                           → { currentStreak, longestStreak }
+  GET /api/client/daily-logs/nutrition-target?date={selectedDate} → { nutritionTarget, trainingSession, plannedActivities }
+  GET /api/client/training                                    → allTrainingSessions
+  GET /api/client/habits                                      → habits list
+  GET /api/client/habits/logs/today?date={selectedDate}       → selected day's habit logs
 ])
 ```
 
-Returns all at once. Components never fetch their own data. A single `isLoading` flag is `true` until all resolve. A loading skeleton shows during this time.
+- Uses `fetchWithRetry` helper - retries once on 429 rate limit errors after 1500ms delay
+- Returns all at once. Components never fetch their own data
+- Single `isLoading` flag is `true` until all resolve
+- AbortController cancels previous requests when date changes
 
 ### Restore (from existing log)
 
@@ -145,11 +225,13 @@ Guard: only runs when `isLoading === false` AND `todayLog` is defined.
 5. For each unplanned activity: POST /api/client/daily-activities
 ```
 
-### Habits (auto-save, independent of Log Day)
+### Habits (auto-save, independent of Log Day) ✅ COMPLETED
 
-- Boolean toggle → immediate `POST /api/client/habits/log`
-- Numeric input blur → immediate `POST /api/client/habits/log`
+- Boolean toggle → immediate `POST /api/client/habits/log` with optimistic UI update
+- Numeric input blur → immediate `POST /api/client/habits/log` with optimistic UI update  
+- Date-aware: passes `selectedDate` to log habits for past days
 - Not tied to the Log Day button at all
+- Uses `habit-row.tsx` component for each habit with local state
 
 ---
 
@@ -281,7 +363,7 @@ These are documented to prevent regressions:
 4. **No `JSON.stringify()` on JSONB** - Supabase handles serialization automatically.
 5. **`trained: trained`** - never `trained: trained || undefined` (drops false).
 6. **`{ cache: 'no-store' }`** on all fetches + `Cache-Control: no-store` on all GET routes.
-7. **Components under 200 lines** - extract sub-components if needed.
+7. **Components under 250 lines** - extract sub-components if needed.
 8. **Habits auto-save, everything else waits for Log Day**.
 9. **Planned activity calories from `activityMetadata.estimatedCalories`** (JSONB), not `estimated_calories` column.
 10. **`activityStatuses` shape** - Record with `{ completed, activityName, estimatedCalories }`, read `.completed` field.
@@ -292,16 +374,27 @@ These are documented to prevent regressions:
 
 ## Remaining Sessions
 
-| Session | Feature | Dependencies |
-|---------|---------|-------------|
-| 11 | Habits section in DailyPulse | Services from Session 5, API from Session 6 |
-| 12 | Check-in Step 1 refactor (auto-populate from daily logs) | daily_logs data |
-| 13 | Check-in Step 4 refactor (training auto-summary) | training_data JSONB (new activityStatuses shape) |
-| 14 | Coach wellness strip (bar charts) | Coach daily-logs API |
-| 15 | Expandable day detail | training_data JSONB (trainingSessionName, activityStatuses) |
-| 16 | Alerts + badges | Wellness strip, check-in timeline |
-| 17 | Coach habits management + analytics tab (merged) | Habits service + API |
-| 18 | Client habits on progress page | Habit chart card from Session 17 |
-| 19 | AI check-in review context | training_data JSONB, daily_logs, habits |
-| 20 | Needs attention feed | Alert triggers, training_data activityStatuses |
-| 21 | Roster summary + per-client toggle | Attention feed, AI service |
+| Session | Feature | Dependencies | Status |
+|---------|---------|-------------|--------|
+| 1 | Database Migration | Supabase tables and RLS | ✅ COMPLETED |
+| 2 | TypeScript Types + Zod Schemas | Type definitions and validation | ✅ COMPLETED |
+| 3 | Daily Logs Service | Server-side service functions | ✅ COMPLETED |
+| 4 | Daily Logs API Routes | Client and coach API endpoints | ✅ COMPLETED |
+| 5 | Daily Habits Service | Habits CRUD and stats | ✅ COMPLETED |
+| 6 | Daily Habits API Routes | Coach and client habit endpoints | ✅ COMPLETED |
+| 7 | Daily Activities Service + API | External activities CRUD | ✅ COMPLETED |
+| 8 | DailyPulse - Wellness Section | Mood, energy, sleep, stress UI | ✅ COMPLETED |
+| 9 | DailyPulse - Training & Activities | Training toggles, activities, save/restore | ✅ COMPLETED |
+| 10 | DailyPulse - Nutrition Section | Calorie input, macro tracking, dynamic targets | ✅ COMPLETED |
+| 11 | Habits section in DailyPulse | Services from Session 5, API from Session 6 | ✅ COMPLETED |
+| 12 | Check-in Step 1 refactor (auto-populate from daily logs) | daily_logs data | ✅ COMPLETED |
+| 13 | Check-in Step 4 refactor (training auto-summary) | training_data JSONB (new activityStatuses shape) | ✅ COMPLETED |
+| Day Nav | 7-day navigation bar | Weekly logs fetch, date helpers | ✅ COMPLETED |
+| 14 | Coach wellness strip (bar charts) | Coach daily-logs API | Planned |
+| 15 | Expandable day detail | training_data JSONB (trainingSessionName, activityStatuses) | Planned |
+| 16 | Alerts + badges | Wellness strip, check-in timeline | Planned |
+| 17 | Coach habits management + analytics tab (merged) | Habits service + API | Planned |
+| 18 | Client habits on progress page | Habit chart card from Session 17 | Planned |
+| 19 | AI check-in review context | training_data JSONB, daily_logs, habits | Planned |
+| 20 | Needs attention feed | Alert triggers, training_data activityStatuses | Planned |
+| 21 | Roster summary + per-client toggle | Attention feed, AI service | Planned |

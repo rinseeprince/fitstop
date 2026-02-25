@@ -1,7 +1,9 @@
 import { supabaseAdmin } from "./supabase-admin";
 import type { DailyHabit, DailyHabitInput, DailyHabitLog, DailyHabitLogInput } from "@/types/daily-habit";
 import type { Database } from "@/types/database";
-import { getTodayDateString, getDateString, getDateDaysAgo } from "@/lib/date-helpers";
+import { getTodayDateString, getDateDaysAgo } from "@/lib/date-helpers";
+import { calculateCompletionRate, calculateCurrentStreak, mapArrayIndexToSortOrder } from "./daily-habits-logic";
+import { getHabitStats, type HabitStats } from "./daily-habits-stats";
 
 type DailyHabitRow = Database["public"]["Tables"]["daily_habits"]["Row"];
 type DailyHabitLogRow = Database["public"]["Tables"]["daily_habit_logs"]["Row"];
@@ -16,55 +18,8 @@ type HabitLogWithDetails = DailyHabitLog & {
   isBoolean: boolean;
 };
 
-type HabitStats = {
-  completionRate: number;
-  currentStreak: number;
-};
-
-// Pure logic functions for testability
-export const calculateCompletionRate = (logs: DailyHabitLog[], days: number): number => {
-  if (days <= 0) return 0;
-  
-  const completed = logs.filter(log => log.completed).length;
-  return Math.round((completed / days) * 100);
-};
-
-export const calculateCurrentStreak = (logs: DailyHabitLog[], today: Date = new Date()): number => {
-  if (!logs.length) return 0;
-  
-  const sortedLogs = [...logs].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  
-  let streak = 0;
-  let checkDate = new Date(today);
-  
-  const todayDate = getDateString(checkDate);
-  const hasCompletedLogToday = sortedLogs.some(log => log.date === todayDate && log.completed);
-  
-  // Start from today if completed, otherwise start from yesterday
-  if (!hasCompletedLogToday) {
-    checkDate.setDate(checkDate.getDate() - 1);
-  }
-  
-  // Count consecutive completed days working backwards
-  while (checkDate.getFullYear() >= today.getFullYear() - 1) {
-    const logDate = getDateString(checkDate);
-    const logForDate = sortedLogs.find(log => log.date === logDate);
-    
-    // If there's no log for this date OR log exists but not completed, streak ends
-    if (!logForDate || !logForDate.completed) {
-      break;
-    }
-    
-    streak++;
-    checkDate.setDate(checkDate.getDate() - 1);
-  }
-  
-  return streak;
-};
-
-export const mapArrayIndexToSortOrder = (habitIds: string[]): { id: string; sortOrder: number }[] => {
-  return habitIds.map((id, index) => ({ id, sortOrder: index }));
-};
+// Re-export pure logic functions from separate file
+export { calculateCompletionRate, calculateCurrentStreak, mapArrayIndexToSortOrder } from "./daily-habits-logic";
 
 // Database functions
 export const getClientHabits = async (clientId: string): Promise<DailyHabit[]> => {
@@ -76,7 +31,6 @@ export const getClientHabits = async (clientId: string): Promise<DailyHabit[]> =
     .order("sort_order", { ascending: true });
 
   if (error) {
-    console.error("Error fetching client habits:", error);
     throw new Error(`Failed to fetch client habits: ${error.message}`);
   }
 
@@ -109,7 +63,6 @@ export const createHabit = async (
     .single();
 
   if (clientError) {
-    console.error("Error validating client:", clientError);
     throw new Error(`Failed to validate client: ${clientError.message}`);
   }
 
@@ -148,7 +101,6 @@ export const createHabit = async (
     .single();
 
   if (error) {
-    console.error("Database operation error:", error);
     throw new Error(`Failed to create habit: ${error.message}`);
   }
 
@@ -190,7 +142,6 @@ export const updateHabit = async (
     .single();
 
   if (error) {
-    console.error("Database operation error:", error);
     throw new Error(`Failed to update habit: ${error.message}`);
   }
 
@@ -220,7 +171,6 @@ export const deactivateHabit = async (habitId: string): Promise<void> => {
     .eq("id", habitId);
 
   if (error) {
-    console.error("Database operation error:", error);
     throw new Error(`Failed to deactivate habit: ${error.message}`);
   }
 };
@@ -272,7 +222,6 @@ export const logHabit = async (
     .single();
 
   if (error) {
-    console.error("Database operation error:", error);
     throw new Error(`Failed to log habit: ${error.message}`);
   }
 
@@ -306,7 +255,6 @@ export const getHabitLogs = async (
     .order("date", { ascending: true });
 
   if (error) {
-    console.error("Database operation error:", error);
     throw new Error(`Failed to fetch habit logs: ${error.message}`);
   }
 
@@ -340,7 +288,6 @@ export const getTodayHabitLogs = async (clientId: string, date?: string): Promis
     .eq("date", targetDate);
 
   if (error) {
-    console.error("Database operation error:", error);
     throw new Error(`Failed to fetch today's habit logs: ${error.message}`);
   }
 
@@ -361,42 +308,5 @@ export const getTodayHabitLogs = async (clientId: string, date?: string): Promis
   }));
 };
 
-export const getHabitStats = async (
-  clientId: string,
-  habitId: string,
-  days: number
-): Promise<HabitStats> => {
-  const endDate = getTodayDateString();
-  const startDate = getDateDaysAgo(days - 1);
-  
-  const { data, error } = await supabaseAdmin
-    .from("daily_habit_logs")
-    .select("*")
-    .eq("client_id", clientId)
-    .eq("daily_habit_id", habitId)
-    .gte("date", startDate)
-    .lte("date", endDate)
-    .order("date", { ascending: true });
-
-  if (error) {
-    console.error("Database operation error:", error);
-    throw new Error(`Failed to fetch habit stats: ${error.message}`);
-  }
-
-  const logs = (data || []).map((row: DailyHabitLogRow) => ({
-    id: row.id,
-    dailyHabitId: row.daily_habit_id,
-    clientId: row.client_id,
-    date: row.date,
-    completed: row.completed,
-    value: row.value ?? undefined,
-    notes: row.notes ?? undefined,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  }));
-
-  return {
-    completionRate: calculateCompletionRate(logs, days),
-    currentStreak: calculateCurrentStreak(logs),
-  };
-};
+// Re-export getHabitStats from separate stats file
+export { getHabitStats } from "./daily-habits-stats";

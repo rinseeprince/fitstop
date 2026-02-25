@@ -8,7 +8,7 @@ import { TrainingSection } from "./training-section";
 import { WellnessSection } from "./wellness-section";
 import { NutritionSection } from "./nutrition-section";
 import { HabitsSection } from "./habits-section";
-import { DailyPulseSummary } from "./daily-pulse-summary";
+import { DailyPulseLoggedView } from "./daily-pulse-logged-view";
 import type { DailyLog } from "@/types/daily-log";
 import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
 import type { TrainingSession } from "@/types/training";
@@ -147,69 +147,32 @@ export function DailyPulseContent({
 
   if (hasLoggedToday && !isExpanded) {
     return (
-      <div className="space-y-3">
-        <div className="flex items-center justify-between text-sm">
-          <span className="text-muted-foreground">Today's log complete</span>
-          <Button variant="ghost" size="sm" onClick={handleEdit}>
-            <Edit className="h-4 w-4 mr-1" />
-            Edit
-          </Button>
-        </div>
-        
-        <DailyPulseSummary todayLog={todayLog!} />
-
-        <Separator />
-        
-        <TrainingSection
-          isExpanded={false}
-          hasLoggedToday={hasLoggedToday}
-          sessionCompleted={sessionCompleted}
-          currentTrainingSession={currentTrainingSession}
-          originalScheduledSessionId={originalScheduledSessionId}
-          selectedAlternativeSession={selectedAlternativeSession}
-          activityStatuses={activityStatuses}
-          unplannedActivities={unplannedActivities}
-          allTrainingSessions={allTrainingSessions}
-          plannedActivities={plannedActivities}
-          onSessionCompletedChange={setSessionCompleted}
-          onAlternativeSessionSelect={handleAlternativeSessionSelect}
-          onActivityToggle={handleActivityToggle}
-          onAddUnplannedActivity={handleAddUnplannedActivity}
-          onRemoveUnplannedActivity={handleRemoveUnplannedActivity}
-          isSessionOrphaned={isSessionOrphaned}
-        />
-
-        <Separator />
-        
-        <NutritionSection
-          isExpanded={false}
-          hasLoggedToday={hasLoggedToday}
-          nutritionTarget={nutritionTarget}
-          sessionCompleted={sessionCompleted}
-          currentTrainingSession={currentTrainingSession}
-          activityStatuses={activityStatuses}
-          plannedActivities={plannedActivities}
-          unplannedActivities={unplannedActivities}
-          caloriesConsumed={nutritionData.caloriesConsumed}
-          proteinG={nutritionData.proteinG}
-          carbsG={nutritionData.carbsG}
-          fatG={nutritionData.fatG}
-          onNutritionChange={setNutritionData}
-          savedTargets={savedTargets}
-        />
-
-        {habits.length > 0 && (
-          <>
-            <Separator />
-            <HabitsSection
-              habits={habits}
-              habitLogs={habitLogs}
-              onHabitLogsUpdate={onHabitLogsUpdate}
-              selectedDate={selectedDate}
-            />
-          </>
-        )}
-      </div>
+      <DailyPulseLoggedView
+        todayLog={todayLog!}
+        nutritionTarget={nutritionTarget}
+        sessionCompleted={sessionCompleted}
+        currentTrainingSession={currentTrainingSession}
+        originalScheduledSessionId={originalScheduledSessionId}
+        selectedAlternativeSession={selectedAlternativeSession}
+        activityStatuses={activityStatuses}
+        unplannedActivities={unplannedActivities}
+        allTrainingSessions={allTrainingSessions}
+        plannedActivities={plannedActivities}
+        nutritionData={nutritionData}
+        habits={habits}
+        habitLogs={habitLogs}
+        selectedDate={selectedDate}
+        savedTargets={savedTargets}
+        isSessionOrphaned={isSessionOrphaned}
+        handleEdit={handleEdit}
+        setSessionCompleted={setSessionCompleted}
+        handleAlternativeSessionSelect={handleAlternativeSessionSelect}
+        handleActivityToggle={handleActivityToggle}
+        handleAddUnplannedActivity={handleAddUnplannedActivity}
+        handleRemoveUnplannedActivity={handleRemoveUnplannedActivity}
+        setNutritionData={setNutritionData}
+        onHabitLogsUpdate={onHabitLogsUpdate}
+      />
     );
   }
 
