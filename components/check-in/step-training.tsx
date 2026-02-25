@@ -9,11 +9,13 @@ import { TrainingSessionChecklist } from "./training-session-checklist";
 import { NutritionAdherenceSection } from "./nutrition-adherence-section";
 import { ExerciseHighlightsSection } from "./exercise-highlights-section";
 import { ExternalActivitiesCheckin } from "./external-activities-checkin";
+import { DailyLogsTrainingSummary } from "./daily-logs-training-summary";
 import type {
   EnhancedTrainingMetrics,
   CheckInTrainingContext,
   CheckInNutritionContext,
 } from "@/types/check-in";
+import type { DailyLog } from "@/types/daily-log";
 
 type StepTrainingProps = {
   data: Partial<EnhancedTrainingMetrics>;
@@ -23,6 +25,7 @@ type StepTrainingProps = {
   clientWeightKg?: number;
   weightUnit?: "lbs" | "kg";
   frequencyDays?: number;
+  dailyLogs?: DailyLog[];
 };
 
 export const StepTraining = ({
@@ -33,9 +36,11 @@ export const StepTraining = ({
   clientWeightKg,
   weightUnit = "lbs",
   frequencyDays = 7,
+  dailyLogs = [],
 }: StepTrainingProps) => {
   const hasActivePlan = trainingContext?.hasActivePlan ?? false;
   const hasNutritionPlan = nutritionContext?.hasNutritionPlan ?? false;
+  const hasDailyLogs = dailyLogs && dailyLogs.length > 0;
 
   // Legacy adherence color for fallback slider
   const adherenceColor =
@@ -57,7 +62,10 @@ export const StepTraining = ({
       </div>
 
       {/* Training Sessions Section */}
-      {hasActivePlan && trainingContext && trainingContext.sessions.length > 0 ? (
+      {hasDailyLogs ? (
+        // Show auto-calculated summary from daily logs
+        <DailyLogsTrainingSummary dailyLogs={dailyLogs} />
+      ) : hasActivePlan && trainingContext && trainingContext.sessions.length > 0 ? (
         <TrainingSessionChecklist
           sessions={trainingContext.sessions}
           completions={data.sessionCompletions || []}
@@ -89,42 +97,75 @@ export const StepTraining = ({
         </div>
       )}
 
-      <Separator />
+      {/* Only show separator if NOT using daily logs (daily logs summary includes nutrition) */}
+      {!hasDailyLogs && <Separator />}
 
-      {/* Nutrition Adherence Section */}
-      {hasNutritionPlan ? (
-        <NutritionAdherenceSection
-          nutritionContext={nutritionContext}
-          adherence={data.nutritionAdherence || {}}
-          onChange={(nutritionAdherence) =>
-            onChange({ ...data, nutritionAdherence })
-          }
-          frequencyDays={frequencyDays}
-        />
-      ) : (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <Label>Nutrition Plan Adherence</Label>
-            <span className={`text-sm font-semibold ${adherenceColor}`}>
-              {data.adherencePercentage || 50}%
-            </span>
-          </div>
-          <Slider
-            value={[data.adherencePercentage || 50]}
-            onValueChange={(value) =>
-              onChange({ ...data, adherencePercentage: value[0] })
+      {/* Nutrition Adherence Section - Only show manual entry if no daily logs */}
+      {!hasDailyLogs && (
+        hasNutritionPlan ? (
+          <NutritionAdherenceSection
+            nutritionContext={nutritionContext}
+            adherence={data.nutritionAdherence || {}}
+            onChange={(nutritionAdherence) =>
+              onChange({ ...data, nutritionAdherence })
             }
-            min={0}
-            max={100}
-            step={5}
-            className="w-full"
+            frequencyDays={frequencyDays}
           />
-          <div className="flex justify-between text-xs text-muted-foreground">
-            <span>0% (Didn&apos;t follow)</span>
-            <span>100% (Perfect)</span>
+        ) : (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <Label>Nutrition Plan Adherence</Label>
+              <span className={`text-sm font-semibold ${adherenceColor}`}>
+                {data.adherencePercentage || 50}%
+              </span>
+            </div>
+            <Slider
+              value={[data.adherencePercentage || 50]}
+              onValueChange={(value) =>
+                onChange({ ...data, adherencePercentage: value[0] })
+              }
+              min={0}
+              max={100}
+              step={5}
+              className="w-full"
+            />
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>0% (Didn&apos;t follow)</span>
+              <span>100% (Perfect)</span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              How well did you stick to your nutrition goals?
+            </p>
           </div>
+        )
+      )}
+
+      {/* Additional nutrition question when using daily logs */}
+      {hasDailyLogs && (
+        <div className="space-y-3">
+          <Label htmlFor="nutrition-factors">Anything that affected your nutrition this week?</Label>
+          <Textarea
+            id="nutrition-factors"
+            placeholder="Examples:
+• Travel made it tough to track
+• Social events affected targets
+• Felt extra hungry after hard training
+• Dealing with stress eating"
+            value={data.nutritionAdherence?.notes || ""}
+            onChange={(e) => 
+              onChange({ 
+                ...data, 
+                nutritionAdherence: { 
+                  ...data.nutritionAdherence,
+                  notes: e.target.value 
+                }
+              })
+            }
+            rows={4}
+            className="resize-none"
+          />
           <p className="text-xs text-muted-foreground">
-            How well did you stick to your nutrition goals?
+            Optional: Help your coach understand any nutrition challenges
           </p>
         </div>
       )}

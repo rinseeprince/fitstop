@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import type { CheckInFormData } from "@/types/check-in";
+import { sanitiseReps } from "@/utils/daily-logs-aggregation";
 
 const STORAGE_KEY = "check-in-form-data";
 
@@ -14,7 +15,20 @@ export const useCheckInForm = (token: string) => {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        setFormData(parsed.data);
+        let data = parsed.data;
+        
+        // Sanitize exercise highlights reps when loading from localStorage
+        if (data.exerciseHighlights && Array.isArray(data.exerciseHighlights)) {
+          data = {
+            ...data,
+            exerciseHighlights: data.exerciseHighlights.map((highlight: any) => ({
+              ...highlight,
+              reps: sanitiseReps(highlight.reps)
+            }))
+          };
+        }
+        
+        setFormData(data);
         setCurrentStep(parsed.step);
       } catch (error) {
         console.error("Failed to load saved form data:", error);

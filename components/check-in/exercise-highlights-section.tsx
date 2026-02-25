@@ -71,7 +71,11 @@ export const ExerciseHighlightsSection = ({
         ? parseFloat(newHighlight.weightValue)
         : undefined,
       weightUnit: newHighlight.weightValue ? weightUnit : undefined,
-      reps: newHighlight.reps ? parseInt(newHighlight.reps) : undefined,
+      reps: (() => {
+        if (!newHighlight.reps) return undefined;
+        const parsed = parseInt(newHighlight.reps);
+        return parsed > 0 ? parsed : undefined; // Convert 0 or negative to undefined
+      })(),
     };
 
     onChange([...highlights, highlight]);

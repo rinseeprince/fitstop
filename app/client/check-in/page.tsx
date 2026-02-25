@@ -15,6 +15,7 @@ import { useCheckInForm } from "@/hooks/use-check-in-form";
 import { useClientCheckIn } from "@/hooks/use-client-check-in";
 import type { CheckInFormData } from "@/types/check-in";
 import { toast } from "sonner";
+import { aggregateDailyLogs } from "@/utils/daily-logs-aggregation";
 
 const stepLabels = ["Feeling", "Metrics", "Photos", "Training"];
 
@@ -42,7 +43,25 @@ export default function ClientCheckInPage() {
     setError(null);
 
     try {
-      const result = await submitCheckIn(formData);
+      // If we have daily logs, aggregate and populate the nutrition data
+      let enrichedFormData = { ...formData };
+      
+      if (contextData.dailyLogs && contextData.dailyLogs.length > 0) {
+        const aggregated = aggregateDailyLogs(contextData.dailyLogs);
+        
+        // Auto-populate nutrition days on target from daily logs
+        if (!enrichedFormData.nutritionAdherence) {
+          enrichedFormData.nutritionAdherence = {};
+        }
+        enrichedFormData.nutritionAdherence.daysOnTarget = aggregated.nutritionHitDays;
+        
+        // Auto-populate workouts completed if not manually set
+        if (!enrichedFormData.workoutsCompleted && !enrichedFormData.sessionCompletions?.length) {
+          enrichedFormData.workoutsCompleted = aggregated.sessionsCompleted;
+        }
+      }
+      
+      const result = await submitCheckIn(enrichedFormData);
 
       if (!result.success) {
         throw new Error(result.error || "Failed to submit check-in");
@@ -163,6 +182,7 @@ export default function ClientCheckInPage() {
                 nutritionContext={contextData.nutritionContext}
                 weightUnit={formData.weightUnit || "lbs"}
                 frequencyDays={contextData.clientInfo.checkInFrequencyDays}
+                dailyLogs={contextData.dailyLogs}
               />
             )}
           </div>
