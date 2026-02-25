@@ -20,6 +20,7 @@ export function DailyWellnessStrip({ clientId }: DailyWellnessStripProps) {
   const [habitLogs, setHabitLogs] = useState<any[]>([])
   const [isLoadingHabits, setIsLoadingHabits] = useState(false)
   
+  // Fetch daily logs
   useEffect(() => {
     const fetchLogs = async () => {
       try {
@@ -48,27 +49,7 @@ export function DailyWellnessStrip({ clientId }: DailyWellnessStripProps) {
     fetchLogs()
   }, [clientId])
   
-  if (isLoading) {
-    return (
-      <Card>
-        <CardContent className="p-6">
-          <p className="text-sm text-muted-foreground">Loading wellness data...</p>
-        </CardContent>
-      </Card>
-    )
-  }
-  
-  if (logs.length === 0) {
-    return (
-      <Card>
-        <CardContent className="p-6">
-          <p className="text-sm text-muted-foreground">No daily check-in data yet</p>
-        </CardContent>
-      </Card>
-    )
-  }
-  
-  // Fetch habit logs for selected date
+  // Fetch habit logs for selected date - must be called before any returns
   useEffect(() => {
     if (!selectedDate) {
       setHabitLogs([])
@@ -96,6 +77,27 @@ export function DailyWellnessStrip({ clientId }: DailyWellnessStripProps) {
     
     fetchHabitLogs()
   }, [selectedDate, clientId])
+  
+  // Conditional returns must come after all hooks
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent className="p-6">
+          <p className="text-sm text-muted-foreground">Loading wellness data...</p>
+        </CardContent>
+      </Card>
+    )
+  }
+  
+  if (logs.length === 0) {
+    return (
+      <Card>
+        <CardContent className="p-6">
+          <p className="text-sm text-muted-foreground">No daily check-in data yet</p>
+        </CardContent>
+      </Card>
+    )
+  }
   
   // Handle date clicks
   const handleDateClick = (dateStr: string) => {
