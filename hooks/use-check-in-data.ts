@@ -17,12 +17,14 @@ export const useCheckInData = (
     limit?: number;
     offset?: number;
     status?: string;
+    includeDailyLogCounts?: boolean;
   }
 ) => {
   const params = new URLSearchParams();
   if (options?.limit) params.append("limit", options.limit.toString());
   if (options?.offset) params.append("offset", options.offset.toString());
   if (options?.status) params.append("status", options.status);
+  if (options?.includeDailyLogCounts) params.append("includeDailyLogCounts", "true");
 
   const url = `/api/clients/${clientId}/check-ins?${params.toString()}`;
 

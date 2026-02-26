@@ -75,6 +75,20 @@ export const CheckInTimeline = ({
                     <Badge variant="secondary" className={getStatusColor(checkIn.status)}>
                       {getStatusLabel(checkIn.status)}
                     </Badge>
+                    {(checkIn as any).dailyLogsCount !== undefined && (checkIn as any).expectedDays !== undefined && (
+                      <Badge 
+                        variant="outline"
+                        className={`text-xs ${
+                          (checkIn as any).dailyLogsCount >= (checkIn as any).expectedDays * 0.7 
+                            ? 'bg-success/10 text-success border-success/30'
+                            : (checkIn as any).dailyLogsCount >= (checkIn as any).expectedDays * 0.4
+                            ? 'bg-warning/10 text-warning border-warning/30'
+                            : 'bg-muted text-muted-foreground'
+                        }`}
+                      >
+                        {(checkIn as any).dailyLogsCount}/{(checkIn as any).expectedDays} days logged
+                      </Badge>
+                    )}
                   </div>
 
                   <p className="text-sm text-muted-foreground">

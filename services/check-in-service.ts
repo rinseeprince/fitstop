@@ -318,6 +318,7 @@ export const getClientCheckIns = async (
     limit?: number;
     offset?: number;
     status?: string;
+    includeDailyLogCounts?: boolean;
   }
 ): Promise<{ checkIns: CheckIn[]; total: number }> => {
   let query = supabaseAdmin
@@ -344,8 +345,42 @@ export const getClientCheckIns = async (
     throw new Error(`Failed to fetch check-ins: ${error.message}`);
   }
 
+  const checkIns = (data || []).map(mapCheckInRow);
+  
+  // If daily log counts are requested, fetch them for each check-in period
+  if (options?.includeDailyLogCounts && checkIns.length > 0) {
+    // Calculate daily log counts for each check-in period
+    for (let i = 0; i < checkIns.length; i++) {
+      const currentCheckIn = checkIns[i];
+      const previousCheckIn = i < checkIns.length - 1 ? checkIns[i + 1] : null;
+      
+      // Determine the date range for this check-in period
+      const endDate = new Date(currentCheckIn.createdAt);
+      const startDate = previousCheckIn 
+        ? new Date(previousCheckIn.createdAt) 
+        : new Date(endDate.getTime() - 7 * 24 * 60 * 60 * 1000); // Default to 7 days before
+      
+      // Fetch daily log count for this period
+      const { count: dailyLogsCount } = await supabaseAdmin
+        .from("daily_logs")
+        .select("*", { count: "exact", head: true })
+        .eq("client_id", clientId)
+        .gte("date", startDate.toISOString().split('T')[0])
+        .lte("date", endDate.toISOString().split('T')[0]);
+      
+      // Add the count to the check-in object
+      (checkIns[i] as any).dailyLogsCount = dailyLogsCount || 0;
+      
+      // Calculate the expected days (excluding the start date)
+      const expectedDays = Math.floor(
+        (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
+      );
+      (checkIns[i] as any).expectedDays = Math.max(expectedDays, 1);
+    }
+  }
+  
   return {
-    checkIns: (data || []).map(mapCheckInRow),
+    checkIns,
     total: count || 0,
   };
 };

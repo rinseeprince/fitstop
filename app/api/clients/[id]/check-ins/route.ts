@@ -36,11 +36,15 @@ export async function GET(
       );
     }
 
+    // Check if daily log counts are requested
+    const includeDailyLogCounts = searchParams.get("includeDailyLogCounts") === "true";
+    
     // Get check-ins
     const result = await getClientCheckIns(clientId, {
       limit,
       offset,
       status,
+      includeDailyLogCounts,
     });
 
     const response: GetCheckInsResponse = {

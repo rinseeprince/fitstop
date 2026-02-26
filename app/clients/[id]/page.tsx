@@ -23,7 +23,9 @@ export default function ClientProfilePage() {
   const clientId = params.id as string
 
   const { client, isLoading: clientLoading, isError: clientError, mutate: mutateClient } = useClient(clientId)
-  const { checkIns, isLoading: checkInsLoading } = useCheckInData(clientId)
+  const { checkIns, isLoading: checkInsLoading } = useCheckInData(clientId, {
+    includeDailyLogCounts: true
+  })
   const [selectedCheckInId, setSelectedCheckInId] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<ClientTab>("overview")
 
