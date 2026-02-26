@@ -140,15 +140,6 @@ export function DailyWellnessStrip({ clientId }: DailyWellnessStripProps) {
     stress: mostRecentLog?.stress
   }
   
-  // Calculate days logged this week
-  const today = new Date()
-  const weekStart = new Date(today)
-  weekStart.setDate(today.getDate() - ((today.getDay() + 6) % 7)) // Start on Monday
-  weekStart.setHours(0, 0, 0, 0)
-  
-  const weekStartStr = weekStart.toISOString().split('T')[0]
-  const daysLoggedThisWeek = logs.filter(log => log.date >= weekStartStr).length
-  
   // Get the selected log and habit data
   const selectedLog = selectedDate ? logs.find(l => l.date === selectedDate) : null
   const selectedHabits = habitLogs.map(log => ({
@@ -164,12 +155,7 @@ export function DailyWellnessStrip({ clientId }: DailyWellnessStripProps) {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>Daily Wellness</CardTitle>
-            <span className="text-sm text-muted-foreground">
-              {daysLoggedThisWeek}/7 days logged this week
-            </span>
-          </div>
+          <CardTitle>Daily Wellness</CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
           {/* Wellness Charts Grid */}
