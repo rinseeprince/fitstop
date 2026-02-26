@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { AnimatePresence } from "framer-motion"
+import { AnimatePresence, motion } from "framer-motion"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { WellnessBarChart } from "./wellness-bar-chart"
 import { AdherenceDotRow } from "./adherence-dot-row"
@@ -17,66 +17,49 @@ export function DailyWellnessStrip({ clientId }: DailyWellnessStripProps) {
   const [logs, setLogs] = useState<DailyLog[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
-  const [habitLogs, setHabitLogs] = useState<any[]>([])
-  const [isLoadingHabits, setIsLoadingHabits] = useState(false)
+  const [allHabitLogs, setAllHabitLogs] = useState<any[]>([])
   
-  // Fetch daily logs
+  // Fetch daily logs and habit logs
   useEffect(() => {
-    const fetchLogs = async () => {
+    const fetchData = async () => {
       try {
         const startDate = getDateDaysAgo(28)
         const endDate = new Date().toISOString().split('T')[0]
         
-        const response = await fetch(
-          `/api/clients/${clientId}/daily-logs?startDate=${startDate}&endDate=${endDate}`,
-          { cache: 'no-store' }
-        )
+        // Fetch both daily logs and habit logs in parallel
+        const [dailyLogsResponse, habitLogsResponse] = await Promise.all([
+          fetch(
+            `/api/clients/${clientId}/daily-logs?startDate=${startDate}&endDate=${endDate}`,
+            { cache: 'no-store' }
+          ),
+          fetch(
+            `/api/clients/${clientId}/habits/logs?startDate=${startDate}&endDate=${endDate}`,
+            { cache: 'no-store' }
+          )
+        ])
         
-        if (!response.ok) {
+        if (!dailyLogsResponse.ok) {
           console.error('Failed to fetch daily logs')
-          return
+        } else {
+          const dailyData = await dailyLogsResponse.json()
+          setLogs(dailyData.data || [])
         }
         
-        const data = await response.json()
-        setLogs(data.data || [])
+        if (!habitLogsResponse.ok) {
+          console.error('Failed to fetch habit logs')
+        } else {
+          const habitData = await habitLogsResponse.json()
+          setAllHabitLogs(habitData.data || [])
+        }
       } catch (error) {
-        console.error('Error fetching daily logs:', error)
+        console.error('Error fetching data:', error)
       } finally {
         setIsLoading(false)
       }
     }
     
-    fetchLogs()
+    fetchData()
   }, [clientId])
-  
-  // Fetch habit logs for selected date - must be called before any returns
-  useEffect(() => {
-    if (!selectedDate) {
-      setHabitLogs([])
-      return
-    }
-    
-    const fetchHabitLogs = async () => {
-      setIsLoadingHabits(true)
-      try {
-        const response = await fetch(
-          `/api/clients/${clientId}/habits/logs?startDate=${selectedDate}&endDate=${selectedDate}`,
-          { cache: 'no-store' }
-        )
-        
-        if (response.ok) {
-          const data = await response.json()
-          setHabitLogs(data.data || [])
-        }
-      } catch (error) {
-        console.error('Error fetching habit logs:', error)
-      } finally {
-        setIsLoadingHabits(false)
-      }
-    }
-    
-    fetchHabitLogs()
-  }, [selectedDate, clientId])
   
   // Conditional returns must come after all hooks
   if (isLoading) {
@@ -142,22 +125,25 @@ export function DailyWellnessStrip({ clientId }: DailyWellnessStripProps) {
   
   // Get the selected log and habit data
   const selectedLog = selectedDate ? logs.find(l => l.date === selectedDate) : null
-  const selectedHabits = habitLogs.map(log => ({
-    habitName: log.habitName,
-    completed: log.completed,
-    value: log.value,
-    targetValue: log.targetValue,
-    targetUnit: log.targetUnit,
-    isBoolean: log.isBoolean
-  }))
+  const selectedHabits = selectedDate 
+    ? allHabitLogs
+        .filter(log => log.date === selectedDate)
+        .map(log => ({
+          habitName: log.habitName,
+          completed: log.completed,
+          value: log.value,
+          targetValue: log.targetValue,
+          targetUnit: log.targetUnit,
+          isBoolean: log.isBoolean
+        }))
+    : []
   
   return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>Daily Wellness</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-6">
+    <Card className="relative">
+      <CardHeader>
+        <CardTitle>Daily Wellness</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-6">
           {/* Wellness Charts Grid */}
           <div className="grid gap-4 md:grid-cols-2">
             <WellnessBarChart
@@ -194,35 +180,48 @@ export function DailyWellnessStrip({ clientId }: DailyWellnessStripProps) {
             />
           </div>
           
-          {/* Adherence Dot Rows */}
-          <div className="space-y-4 pt-4 border-t">
-            <AdherenceDotRow
-              logs={logs}
-              type="nutrition"
-              label="Nutrition Adherence"
-              onDotClick={handleDateClick}
-              selectedDate={selectedDate}
-            />
-            <AdherenceDotRow
-              logs={logs}
-              type="training"
-              label="Training Completion"
-              onDotClick={handleDateClick}
-              selectedDate={selectedDate}
-            />
-          </div>
-        </CardContent>
-      </Card>
+        {/* Adherence Dot Rows */}
+        <div className="space-y-4 pt-4 border-t">
+          <AdherenceDotRow
+            logs={logs}
+            type="nutrition"
+            label="Nutrition Adherence"
+            onDotClick={handleDateClick}
+            selectedDate={selectedDate}
+          />
+          <AdherenceDotRow
+            logs={logs}
+            type="training"
+            label="Training Completion"
+            onDotClick={handleDateClick}
+            selectedDate={selectedDate}
+          />
+        </div>
+      </CardContent>
       
-      {/* Expandable Day Detail */}
+      {/* Overlay Backdrop and Day Detail */}
       <AnimatePresence>
         {selectedLog && (
-          <DayDetailCard
-            log={selectedLog}
-            habits={selectedHabits}
-          />
+          <>
+            {/* Semi-transparent backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="absolute inset-0 bg-black/5 rounded-lg z-[5] cursor-pointer"
+              onClick={() => setSelectedDate(null)}
+            />
+            
+            {/* Day Detail Overlay */}
+            <DayDetailCard
+              log={selectedLog}
+              habits={selectedHabits}
+              onClose={() => setSelectedDate(null)}
+            />
+          </>
         )}
       </AnimatePresence>
-    </div>
+    </Card>
   )
 }
