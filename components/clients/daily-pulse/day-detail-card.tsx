@@ -118,9 +118,6 @@ export function DayDetailCard({ log, habits }: DayDetailCardProps) {
                   </span>
                   <span className={`text-sm font-medium ${log.trainingData.sessionCompleted ? 'text-emerald-600' : 'text-red-600'}`}>
                     {log.trainingData.sessionCompleted ? 'Completed' : 'Missed'}
-                    {log.trainingData.sessionCompleted && log.trainingData.trainingSessionId && (
-                      <span className="text-muted-foreground ml-1">(~350 cal)</span>
-                    )}
                   </span>
                 </div>
               )}
@@ -160,7 +157,7 @@ export function DayDetailCard({ log, habits }: DayDetailCardProps) {
                   <span className="text-sm">Calories</span>
                   <span className={`text-sm font-medium ${getNutritionColor(log.caloriesConsumed, log.targetCalories)}`}>
                     {log.caloriesConsumed} cal / Target {log.targetCalories || "—"} cal
-                    {log.calorieSurplusDeficit && (
+                    {log.calorieSurplusDeficit !== undefined && log.calorieSurplusDeficit !== 0 && (
                       <span className="ml-1">
                         ({log.calorieSurplusDeficit > 0 ? '+' : ''}{log.calorieSurplusDeficit})
                       </span>
