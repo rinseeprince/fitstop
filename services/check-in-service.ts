@@ -354,28 +354,41 @@ export const getClientCheckIns = async (
       const currentCheckIn = checkIns[i];
       const previousCheckIn = i < checkIns.length - 1 ? checkIns[i + 1] : null;
       
-      // Determine the date range for this check-in period
+      // For each check-in, we count logs from the PREVIOUS check-in to this one
+      // The endDate is the current check-in date
       const endDate = new Date(currentCheckIn.createdAt);
-      const startDate = previousCheckIn 
-        ? new Date(previousCheckIn.createdAt) 
-        : new Date(endDate.getTime() - 7 * 24 * 60 * 60 * 1000); // Default to 7 days before
+      // The startDate is either the previous check-in date (exclusive) or 7 days before
+      let startDate: Date;
+      
+      if (previousCheckIn) {
+        // Start from the day AFTER the previous check-in
+        startDate = new Date(previousCheckIn.createdAt);
+        startDate.setDate(startDate.getDate() + 1);
+      } else {
+        // For the oldest check-in, look back 7 days
+        startDate = new Date(endDate);
+        startDate.setDate(startDate.getDate() - 6); // 7 days total including end date
+      }
+      
+      const startDateStr = startDate.toISOString().split('T')[0];
+      const endDateStr = endDate.toISOString().split('T')[0];
       
       // Fetch daily log count for this period
       const { count: dailyLogsCount } = await supabaseAdmin
         .from("daily_logs")
         .select("*", { count: "exact", head: true })
         .eq("client_id", clientId)
-        .gte("date", startDate.toISOString().split('T')[0])
-        .lte("date", endDate.toISOString().split('T')[0]);
+        .gte("date", startDateStr)
+        .lte("date", endDateStr);
       
       // Add the count to the check-in object
       (checkIns[i] as any).dailyLogsCount = dailyLogsCount || 0;
       
-      // Calculate the expected days (excluding the start date)
-      const expectedDays = Math.floor(
+      // Calculate the expected days (inclusive of both start and end)
+      const daysDiff = Math.floor(
         (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
-      );
-      (checkIns[i] as any).expectedDays = Math.max(expectedDays, 1);
+      ) + 1; // +1 to make it inclusive
+      (checkIns[i] as any).expectedDays = Math.max(daysDiff, 1);
     }
   }
   

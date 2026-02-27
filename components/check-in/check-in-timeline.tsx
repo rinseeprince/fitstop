@@ -6,9 +6,15 @@ import { Card } from "@/components/ui/card";
 import type { CheckIn } from "@/types/check-in";
 import { formatCheckInDate, formatRelativeTime, getStatusColor, getStatusLabel } from "@/lib/check-in-utils";
 
+// Extended CheckIn type with daily log count fields
+interface CheckInWithLogCounts extends CheckIn {
+  dailyLogsCount?: number;
+  expectedDays?: number;
+}
+
 type CheckInTimelineProps = {
-  checkIns: CheckIn[];
-  onSelectCheckIn?: (checkIn: CheckIn) => void;
+  checkIns: CheckInWithLogCounts[];
+  onSelectCheckIn?: (checkIn: CheckInWithLogCounts) => void;
   selectedCheckInId?: string;
 };
 
@@ -75,18 +81,18 @@ export const CheckInTimeline = ({
                     <Badge variant="secondary" className={getStatusColor(checkIn.status)}>
                       {getStatusLabel(checkIn.status)}
                     </Badge>
-                    {(checkIn as any).dailyLogsCount !== undefined && (checkIn as any).expectedDays !== undefined && (
+                    {checkIn.dailyLogsCount !== undefined && checkIn.expectedDays !== undefined && (
                       <Badge 
                         variant="outline"
                         className={`text-xs ${
-                          (checkIn as any).dailyLogsCount >= (checkIn as any).expectedDays * 0.7 
+                          checkIn.dailyLogsCount >= checkIn.expectedDays * 0.7 
                             ? 'bg-success/10 text-success border-success/30'
-                            : (checkIn as any).dailyLogsCount >= (checkIn as any).expectedDays * 0.4
+                            : checkIn.dailyLogsCount >= checkIn.expectedDays * 0.4
                             ? 'bg-warning/10 text-warning border-warning/30'
                             : 'bg-muted text-muted-foreground'
                         }`}
                       >
-                        {(checkIn as any).dailyLogsCount}/{(checkIn as any).expectedDays} days logged
+                        {checkIn.dailyLogsCount}/{checkIn.expectedDays} days logged
                       </Badge>
                     )}
                   </div>

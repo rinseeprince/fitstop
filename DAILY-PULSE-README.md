@@ -18,10 +18,15 @@ Daily Pulse is the daily check-in system on the client dashboard. Clients log we
 
 5. **Single instance** - One `TrainingSection` rendered with an `isExpanded` prop. Not separate instances for compact/expanded views.
 
+6. **Historical snapshots** - Both training and nutrition data are snapshotted at save time. `training_data` JSONB preserves the training state. `target_calories`, `target_protein_g`, `target_carbs_g`, `target_fat_g` columns preserve the nutrition targets. Coach-side views always read these saved values, never the current plan. This ensures historical accuracy survives plan regeneration.
+
+7. **Date-aware saves** - The server-side save flow uses the log's `date` field (not today's date) when looking up nutrition targets and planned activities. This prevents incorrect targets when editing a past day's log.
+
 ---
 
 ## Component Structure
 
+### Client-side components (Sessions 8-13)
 ```
 components/daily-pulse/
 ├── daily-pulse.tsx              (249 lines) - Top-level container. Owns ALL state.
@@ -67,10 +72,28 @@ components/daily-pulse/
 
 ### Coach-side components (Sessions 14-16)
 ```
-components/daily-pulse/
-├── daily-wellness-strip.tsx     - 28-day bar charts on coach client overview
-├── wellness-bar-chart.tsx       - Reusable Recharts BarChart with colour coding
-├── adherence-dot-row.tsx        - Nutrition/training/day detail on click
+components/clients/daily-pulse/
+├── daily-wellness-strip.tsx     - Main component on coach client overview tab.
+│                                  Fetches 28-day rolling window of daily logs
+│                                  AND habit logs in parallel via Promise.all.
+│                                  Renders 2x2 bar chart grid + adherence dots.
+│                                  Runs detectAlerts() on loaded data.
+│                                  Shows alert badge with count in header.
+│                                  Manages selectedDate state for day detail overlay.
+│                                  Positioned above Check-In Schedule on overview tab.
+├── wellness-bar-chart.tsx       - Reusable Recharts BarChart with Cell component
+│                                  for per-bar conditional colouring. Shows
+│                                  min/avg/max stats and current value.
+├── adherence-dot-row.tsx        - Dot row for nutrition adherence (green/amber/red/grey)
+│                                  and training completion (green/grey). Clickable -
+│                                  clicking a dot opens the day detail overlay.
+└── day-detail-card.tsx          - Overlay popover centered over the charts area.
+                                   Shows full day detail: wellness, training,
+                                   nutrition (calories + indented macros), habits.
+                                   Uses Framer Motion fade + scale animation.
+                                   Click outside or X button to close.
+                                   Styled per DESIGN-SYSTEM.md (overline section
+                                   labels, design system colours, text hierarchy).
 ```
 
 ### Supporting files
@@ -96,7 +119,10 @@ services/
 ├── daily-habits-service.ts      (311 lines) - Habits CRUD and log operations.
 ├── daily-habits-logic.ts        (51 lines)  - Business logic for habit validation.
 ├── daily-habits-stats.ts        (54 lines)  - Habit statistics and aggregation.
-└── daily-activities-service.ts  (213 lines) - External/unplanned activities CRUD.
+├── daily-activities-service.ts  (213 lines) - External/unplanned activities CRUD.
+└── check-in-service.ts                      - Extended in Session 16 to calculate
+                                               dailyLogsCount and expectedDays per
+                                               check-in period (server-side, not client-side).
 ```
 
 #### Libraries & Utilities
@@ -106,13 +132,30 @@ lib/
 │                                              RATE_LIMIT_RETRY_DELAY_MS (1500ms),
 │                                              Nutrition adherence thresholds.
 ├── date-helpers.ts              (91 lines)  - Date formatting, getTodayDateString.
-└── validation-helpers.ts        (76 lines)  - Input validation utilities.
+├── validation-helpers.ts        (76 lines)  - Input validation utilities.
+└── daily-wellness-alerts.ts                 - ✅ Session 16. detectAlerts(dailyLogs[])
+                                               returns array of alerts. Triggers:
+                                               mood/energy drop, no log gap, nutrition
+                                               missed, training missed, high stress.
+                                               Each alert: { type, severity, message,
+                                               affectedDays[] }.
 
 utils/
 ├── nutrition-tracking-helpers.ts (139 lines) - calculateAdjustedDayTarget,
 │                                               calculateAdjustedMacros, getCalorieFeedback,
 │                                               getNutritionAdherence. Unit tested.
 └── daily-logs-aggregation.ts    (140 lines) - Log aggregation for analytics.
+```
+
+#### Tests
+```
+__tests__/
+├── utils/daily-logs-aggregation.test.ts     - Aggregation logic tests.
+└── lib/daily-wellness-alerts.test.ts        - ✅ Session 16. Tests all alert triggers:
+                                               mood drop, energy drop, no log gap,
+                                               nutrition missed, training missed,
+                                               high stress. Edge cases: empty array,
+                                               single day. Uses vitest.
 ```
 
 ---
@@ -216,6 +259,7 @@ Guard: only runs when `isLoading === false` AND `todayLog` is defined.
 
 3. Server auto-calculates and saves:
    - target_calories, target_protein_g, target_carbs_g, target_fat_g
+     (using the log's date for plan lookup, NOT today's date)
    - calorie_surplus_deficit
    - nutrition_adherence ("hit" / "partial" / "missed")
 
@@ -232,6 +276,89 @@ Guard: only runs when `isLoading === false` AND `todayLog` is defined.
 - Date-aware: passes `selectedDate` to log habits for past days
 - Not tied to the Log Day button at all
 - Uses `habit-row.tsx` component for each habit with local state
+
+---
+
+## Coach-Side Data Flow (Sessions 14-16)
+
+### DailyWellnessStrip - Initial Load
+
+`daily-wellness-strip.tsx` fetches all data upfront in a single `Promise.all`:
+
+```
+Promise.all([
+  GET /api/clients/[id]/daily-logs    → 28 days of daily logs (rolling window)
+  GET /api/clients/[id]/habits/logs   → 28 days of habit logs (same date range)
+])
+```
+
+This eliminates per-click loading delays. All data is available immediately when the coach clicks a day.
+
+### 28-Day Rolling Window
+
+The wellness strip always shows the last 28 days (not a calendar month). This ensures the coach always sees 4 full weeks regardless of what day it is.
+
+### Bar Chart Rendering
+
+- 2x2 grid: Mood (1-5), Energy (1-10), Sleep Quality (1-10), Stress Level (1-10)
+- Each bar = one day. No bar for days with no log.
+- Recharts `Cell` component required for conditional per-bar colouring (CSS approach doesn't work with Recharts)
+- Colour thresholds:
+  - Mood: Green (#10b981) 4-5, Amber (#f59e0b) 3, Red (#ef4444) 1-2
+  - Energy: Green 7-10, Amber 4-6, Red 1-3
+  - Sleep: Green 7-10, Amber 4-6, Red 1-3
+  - Stress (INVERTED): Green 1-3, Amber 4-6, Red 7-10
+- Shows min/avg/max below each chart and current value (most recent log) prominently
+
+### Adherence Dot Rows
+
+Below the charts:
+- **Nutrition adherence**: Green dot (hit), amber dot (partial), red dot (missed), grey dot (no log)
+- **Training completion**: Green dot (trained), grey dot (rest/no log)
+
+Both rows are clickable - clicking a dot opens the day detail overlay.
+
+### Day Detail Overlay
+
+When coach clicks a bar or dot:
+1. `selectedDate` state is set
+2. Habit logs for that date are filtered from the pre-loaded 28-day data (no API call)
+3. `day-detail-card.tsx` renders as a centered overlay over the charts area
+4. Uses `position: absolute` relative to the wellness strip card container
+5. Framer Motion animation: fade + scale (0.95 to 1)
+6. Semi-transparent backdrop behind overlay (`bg-black/5`) - clicking it closes the overlay
+7. Card has `onClick={(e) => e.stopPropagation()}` so clicking inside doesn't close
+8. X button in top-right also closes
+
+Data displayed in the overlay:
+- **Wellness**: "Mood 5/5 · Energy 8/10 · Sleep 6/10 · Stress 3/10"
+- **Training**: Session name from `training_data.trainingSessionName` + "Completed" or "Missed"
+- **Nutrition**: "4448 cal / 4448 cal" (actual / target, no "Target" prefix). Macros indented below as sub-items: "Protein 205g / 205g", "Carbs 635g / 635g", "Fat 121g / 121g"
+- **Habits**: Each habit with "Completed" or "Not completed" status
+- **Header**: Date, logged timestamp, close button
+- **Section labels**: UPPERCASE overline pattern per DESIGN-SYSTEM.md (`text-xs font-medium text-gray-400 uppercase tracking-wider`)
+
+### Alert Detection
+
+`detectAlerts()` in `lib/daily-wellness-alerts.ts` runs on the already-loaded 28-day data. No additional API call.
+
+Triggers:
+| Trigger | Condition | Severity |
+|---------|-----------|----------|
+| Mood drop | 2+ points below 7-day rolling average for 3+ consecutive days | High |
+| Energy drop | 2+ points below 7-day rolling average for 3+ consecutive days | High |
+| No log gap | 3+ consecutive days without a log (within provided date range only) | Medium |
+| Nutrition missed | `nutrition_adherence = "missed"` for 3+ consecutive days | Medium |
+| Training missed | 2+ missed assigned sessions in current week (uses `training_data.sessionCompleted === false` where `training_data.trainingSessionId` is set) | High |
+| High stress | Stress 8+ for 3 consecutive days | High |
+
+Each alert returns: `{ type, severity, message, affectedDays[] }` with `affectedDays` sorted chronologically (ascending).
+
+If alerts exist, a warning badge shows on the wellness strip header ("Daily Wellness [!2]"). Clicking the badge opens a popover listing the active alerts.
+
+### Check-In Timeline Badge
+
+`check-in-timeline.tsx` shows "X/Y days logged" badge on each check-in card. The daily log count per check-in period is calculated server-side in `check-in-service.ts` and returned alongside the check-in data (via `includeDailyLogCounts: true` flag). Uses `CheckInWithLogCounts` extended interface (local to the component) to avoid `as any` casts.
 
 ---
 
@@ -290,14 +417,25 @@ adjustedTarget = baselineCalories + completedTrainingCals + completedActivityCal
 - **Protein**: stays FIXED (set by coach, never recalculated)
 - **Carbs/Fat**: recalculated from remaining calories using the SAME RATIO as the original plan. E.g. if the coach set a 60/40 carb/fat split, that ratio is preserved when calories change.
 
-### Saved targets
+### Saved targets (historical accuracy)
+
+When a log is saved, the server snapshots the nutrition targets onto the `daily_logs` row:
+- `target_calories` - adjusted total including training/activity calories
+- `target_protein_g` - fixed from plan
+- `target_carbs_g` - recalculated from adjusted calories
+- `target_fat_g` - recalculated from adjusted calories
+
+These values use the **log's date** for plan lookup (not today's date), ensuring correct targets even when editing a past day's log.
 
 When a log exists:
-- **Compact view**: uses `todayLog.target_calories`, `target_protein_g`, etc. (saved values, not recalculated)
-- **Edit mode**: uses current plan targets for dynamic recalculation (accepted trade-off)
-- **Fresh day**: calculates from current plan
+- **Compact view (client)**: uses `todayLog.target_calories`, `target_protein_g`, etc. (saved values, not recalculated)
+- **Edit mode (client)**: uses current plan targets for dynamic recalculation (accepted trade-off)
+- **Fresh day (client)**: calculates from current plan
+- **Coach detail card**: always reads saved values from the `daily_logs` row (historical accuracy)
 
-This ensures logged data survives plan changes. If a coach regenerates the plan after a client logs, the logged day still shows the targets that were relevant when they saved.
+This ensures logged data survives plan changes. If a coach regenerates the nutrition plan after a client logs, the logged day still shows the targets that were relevant when they saved.
+
+**Edge case**: If a client opens edit mode on an old log after a plan change, the live recalculation uses the current plan targets. The saved values are only overwritten if they actually click Update Log. This is an accepted trade-off since it's rare.
 
 ### Adherence auto-calculation
 
@@ -352,6 +490,15 @@ These are documented to prevent regressions:
 | Plan target headline didn't update on session switch | Displayed static `nutritionTarget.calories` instead of recalculating from baseline + current session + activities | Calculate dynamically from `currentTrainingSession` (nutrition-target-display.tsx lines 19-26) |
 | Server saved wrong target on session switch | Used `getTodaysTrainingSession` (scheduled) instead of looking up `trainingData.trainingSessionId` (actually selected) | Look up selected session from training plan (route.ts lines 74-77) |
 | Compact view ignored skipped activity calories | Compact nutrition display wasn't receiving the adjusted target that accounts for activity completion status | Pass `adjustedCalories` prop to NutritionSectionCompact (daily-pulse-content.tsx line 158) |
+| React hooks order violation in DailyWellnessStrip | useEffect for habit log fetching was called conditionally (behind early return), violating Rules of Hooks | Moved conditional logic inside the useEffect, not around it. All hooks called unconditionally at top level. |
+| Day detail card training calories display | Showed estimated calories "(~350 cal)" next to training completion status unnecessarily | Removed calorie display from training line. Now shows "Leg Day - Completed" only. |
+| Nutrition calories formatting stray "0" | When surplus/deficit was exactly 0, the display appended "0" to the end of the string | Fixed to hide surplus/deficit when exactly 0 or show "(on target)" |
+| Day detail overlay not closing on outside click | Outer motion.div had `stopPropagation()` which blocked clicks from reaching the backdrop | Changed outer div to `onClick={onClose}`, kept `stopPropagation()` only on the inner Card |
+| Double divider under day detail header | Two `border-t` elements rendering below the date header | Removed the duplicate divider |
+| Macro targets saved with wrong day's values | `getTodaysNutritionTarget(clientId)` and `getTodaysPlannedActivities(clientId)` used today's date instead of log's date | Pass `data.date` to both functions so editing Thursday's log on Friday saves Thursday's targets |
+| Habits loading delay in day detail | Habit logs fetched on-demand per click via useEffect, causing visible delay | Prefetched all 28 days of habit logs in initial Promise.all, filtered client-side on click |
+| Alert detection false positive for single day | No-log-gap detection checked between last log and today, triggering falsely for single entries | Only check gaps within the provided date range, not against today |
+| Alert affectedDays wrong sort order | Some triggers iterated backwards, returning dates in descending order | Changed to forward iteration or sorted before returning. All affectedDays now ascending. |
 
 ---
 
@@ -359,7 +506,7 @@ These are documented to prevent regressions:
 
 1. **No `onDataChange` useEffect** - causes infinite loops. State flows down via props only.
 2. **No object refs in useEffect dependency arrays** - objects get new references every render. Use primitive values.
-3. **No `as any`** - use proper types from `types/database.ts`.
+3. **No `as any`** - use proper types from `types/database.ts`. If extending an existing type, create a local interface (e.g. `CheckInWithLogCounts extends CheckIn`).
 4. **No `JSON.stringify()` on JSONB** - Supabase handles serialization automatically.
 5. **`trained: trained`** - never `trained: trained || undefined` (drops false).
 6. **`{ cache: 'no-store' }`** on all fetches + `Cache-Control: no-store` on all GET routes.
@@ -369,6 +516,12 @@ These are documented to prevent regressions:
 10. **`activityStatuses` shape** - Record with `{ completed, activityName, estimatedCalories }`, read `.completed` field.
 11. **Always check `activityStatuses[id]?.completed`**, never use `activityStatuses[id]` as a truthy check. The object is always truthy regardless of completion status.
 12. **Use `currentTrainingSession` for display and calculations**, never the originally scheduled session from the plan, since the client may have switched sessions.
+13. **Coach-side components in `components/clients/daily-pulse/`**, client-side in `components/daily-pulse/`. Never mix them.
+14. **React hooks must be called unconditionally** at the top level of a component. Conditional logic goes inside the hook, not around it.
+15. **Date-aware saves** - always pass the log's `date` field to `getTodaysNutritionTarget()` and `getTodaysPlannedActivities()`. Never rely on today's date for target lookups during save.
+16. **Prefetch data upfront** - coach-side components load all data (daily logs + habit logs) in the initial fetch. No per-click API calls for data that can be loaded in bulk.
+17. **Style per DESIGN-SYSTEM.md** - section labels use overline pattern (`text-xs font-medium text-gray-400 uppercase tracking-wider`), status colours use design system tokens (`text-success`, `text-destructive`, `text-warning`), not hardcoded hex values.
+18. **Framer Motion for overlays** - preferred over CSS transitions for expand/collapse and overlays because it handles `height: auto` properly and provides smoother animations.
 
 ---
 
@@ -390,9 +543,9 @@ These are documented to prevent regressions:
 | 12 | Check-in Step 1 refactor (auto-populate from daily logs) | daily_logs data | ✅ COMPLETED |
 | 13 | Check-in Step 4 refactor (training auto-summary) | training_data JSONB (new activityStatuses shape) | ✅ COMPLETED |
 | Day Nav | 7-day navigation bar | Weekly logs fetch, date helpers | ✅ COMPLETED |
-| 14 | Coach wellness strip (bar charts) | Coach daily-logs API | Planned |
-| 15 | Expandable day detail | training_data JSONB (trainingSessionName, activityStatuses) | Planned |
-| 16 | Alerts + badges | Wellness strip, check-in timeline | Planned |
+| 14 | Coach wellness strip (bar charts) | Coach daily-logs API | ✅ COMPLETED |
+| 15 | Expandable day detail | training_data JSONB (trainingSessionName, activityStatuses) | ✅ COMPLETED |
+| 16 | Alerts + badges | Wellness strip, check-in timeline, daily-wellness-alerts.ts | ✅ COMPLETED |
 | 17 | Coach habits management + analytics tab (merged) | Habits service + API | Planned |
 | 18 | Client habits on progress page | Habit chart card from Session 17 | Planned |
 | 19 | AI check-in review context | training_data JSONB, daily_logs, habits | Planned |
