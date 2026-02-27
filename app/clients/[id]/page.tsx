@@ -14,6 +14,7 @@ import { MetricsTabContent } from "@/components/clients/metrics/metrics-tab-cont
 import { ClientPageHeader, type ClientTab } from "@/components/clients/client-page-header"
 import { ClientOverviewTab } from "@/components/clients/client-overview-tab"
 import { MetricSaveDialog } from "@/components/clients/check-in/metric-save-dialog"
+import { HabitsTabContent } from "@/components/clients/habits/habits-tab-content"
 import { useCheckInData, useClient } from "@/hooks/use-check-in-data"
 import { useClientMetrics } from "@/hooks/use-client-metrics"
 import { Loader2, AlertCircle } from "lucide-react"
@@ -145,6 +146,14 @@ export default function ClientProfilePage() {
           {/* Nutrition Tab */}
           <TabsContent value="nutrition" className="space-y-6 mt-0">
             <NutritionCalculatorCardEnhanced
+              client={client}
+              onUpdate={() => mutateClient()}
+            />
+          </TabsContent>
+
+          {/* Daily Habits Tab */}
+          <TabsContent value="daily-habits" className="space-y-6 mt-0">
+            <HabitsTabContent
               client={client}
               onUpdate={() => mutateClient()}
             />

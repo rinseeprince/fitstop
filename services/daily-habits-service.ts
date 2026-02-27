@@ -70,6 +70,66 @@ export const createHabit = async (
     throw new Error("Coach does not own this client");
   }
 
+  // Check if an inactive habit with the same name exists for this client
+  const { data: existingHabit, error: existingError } = await supabaseAdmin
+    .from("daily_habits")
+    .select("*")
+    .eq("client_id", clientId)
+    .eq("name", data.name)
+    .eq("is_active", false)
+    .single();
+
+  // If an inactive habit exists, reactivate it instead of creating a new one
+  if (existingHabit && !existingError) {
+    // Get the next sort order for reactivated habit
+    const { data: lastActiveHabit } = await supabaseAdmin
+      .from("daily_habits")
+      .select("sort_order")
+      .eq("client_id", clientId)
+      .eq("is_active", true)
+      .order("sort_order", { ascending: false })
+      .limit(1)
+      .single();
+
+    const nextSortOrder = (lastActiveHabit?.sort_order ?? -1) + 1;
+
+    // Update the existing habit to reactivate it and update its fields
+    const { data: reactivatedResult, error: updateError } = await supabaseAdmin
+      .from("daily_habits")
+      .update({
+        is_active: true,
+        description: data.description,
+        target_value: data.targetValue,
+        target_unit: data.targetUnit,
+        is_boolean: data.isBoolean,
+        sort_order: nextSortOrder,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", existingHabit.id)
+      .select()
+      .single();
+
+    if (updateError) {
+      throw new Error(`Failed to reactivate habit: ${updateError.message}`);
+    }
+
+    return {
+      id: reactivatedResult.id,
+      coachId: reactivatedResult.coach_id,
+      clientId: reactivatedResult.client_id,
+      name: reactivatedResult.name,
+      description: reactivatedResult.description ?? undefined,
+      targetValue: reactivatedResult.target_value ?? undefined,
+      targetUnit: reactivatedResult.target_unit ?? undefined,
+      isBoolean: reactivatedResult.is_boolean,
+      isActive: reactivatedResult.is_active,
+      sortOrder: reactivatedResult.sort_order,
+      createdAt: reactivatedResult.created_at,
+      updatedAt: reactivatedResult.updated_at,
+    };
+  }
+
+  // No existing inactive habit found, create a new one
   // Get the next sort order
   const { data: lastHabit } = await supabaseAdmin
     .from("daily_habits")
