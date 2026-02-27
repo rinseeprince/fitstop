@@ -53,10 +53,10 @@ export async function POST(request: NextRequest) {
 
     const data = validationResult.data;
     
-    // Get nutrition targets and training data for today to calculate adjusted targets
-    const nutritionTarget = await getTodaysNutritionTarget(clientId);
+    // Get nutrition targets and training data for the log's date to calculate adjusted targets
+    const nutritionTarget = await getTodaysNutritionTarget(clientId, data.date);
     const trainingPlan = await getClientTrainingPlan(clientId);
-    const plannedActivities = await getTodaysPlannedActivities(clientId);
+    const plannedActivities = await getTodaysPlannedActivities(clientId, data.date);
     
     let adjustedTargets = {
       targetCalories: nutritionTarget?.calories,
