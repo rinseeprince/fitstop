@@ -354,14 +354,14 @@ describe('Daily Logs Service - Database Functions', () => {
             name: 'BJJ',
             dayOfWeek: 'monday',
             sessionType: 'external_activity',
-            estimatedCalories: 400,
+            activityMetadata: { estimatedCalories: 400 },
           },
           {
             id: 'activity-2',
             name: 'Cycling',
             dayOfWeek: 'monday',
             sessionType: 'external_activity',
-            estimatedCalories: 300,
+            activityMetadata: { estimatedCalories: 300 },
           },
           {
             id: 'session-1',

@@ -5,6 +5,7 @@ import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { dailyHabitSchema } from "@/lib/validations/daily-habit";
 import { updateHabit, deactivateHabit } from "@/services/daily-habits-service";
 import { supabaseAdmin } from "@/services/supabase-admin";
+import { z } from "zod";
 
 async function verifyHabitOwnership(
   habitId: string,
@@ -57,10 +58,13 @@ export async function PUT(
       targetValue: rawBody.targetValue ?? rawBody.target_value,
       targetUnit: rawBody.targetUnit ?? rawBody.target_unit,
       isBoolean: rawBody.isBoolean ?? rawBody.is_boolean,
+      isActive: rawBody.isActive ?? rawBody.is_active,
     };
     
     // Validate partial input - only validate fields that are provided
-    const partialSchema = dailyHabitSchema.partial();
+    const partialSchema = dailyHabitSchema.partial().extend({
+      isActive: z.boolean().optional(),
+    });
     const validationResult = partialSchema.safeParse(normalizedBody);
 
     if (!validationResult.success) {

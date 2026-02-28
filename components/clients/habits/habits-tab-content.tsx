@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Loader2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { HabitsSidebar } from "./habits-sidebar";
+import { HabitsGrid } from "./habits-grid";
 import { useClientHabits } from "@/hooks/use-client-habits";
 import type { Client } from "@/types/check-in";
 
@@ -15,6 +16,7 @@ type HabitsTabContentProps = {
 export const HabitsTabContent = ({ client, onUpdate }: HabitsTabContentProps) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedHabitId, setSelectedHabitId] = useState<string | null>(null);
+  const [showInactive, setShowInactive] = useState(false);
 
   const {
     habits,
@@ -23,8 +25,9 @@ export const HabitsTabContent = ({ client, onUpdate }: HabitsTabContentProps) =>
     createHabit,
     updateHabit,
     deleteHabit,
+    reactivateHabit,
     reorderHabits,
-  } = useClientHabits(client.id);
+  } = useClientHabits(client.id, showInactive);
 
   // Filter habits based on search query
   const filteredHabits = searchQuery
@@ -72,31 +75,17 @@ export const HabitsTabContent = ({ client, onUpdate }: HabitsTabContentProps) =>
         onCreateHabit={createHabit}
         onUpdateHabit={updateHabit}
         onDeleteHabit={deleteHabit}
+        onReactivateHabit={reactivateHabit}
         onReorderHabits={reorderHabits}
+        showInactive={showInactive}
+        onToggleShowInactive={setShowInactive}
       />
       
-      {/* Grid area for charts - placeholder for now */}
-      <div className="flex-1">
-        <Card className="h-full min-h-[500px]">
-          <CardContent className="pt-6">
-            {selectedHabitId ? (
-              <div className="flex items-center justify-center h-full text-muted-foreground">
-                <p className="text-center">
-                  Analytics for selected habit will appear here
-                  <br />
-                  <span className="text-sm">(Coming in Session 17b)</span>
-                </p>
-              </div>
-            ) : (
-              <div className="flex items-center justify-center h-full text-muted-foreground">
-                <p className="text-center">
-                  Select a habit to view analytics
-                </p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+      <HabitsGrid
+        habits={filteredHabits}
+        clientId={client.id}
+        selectedHabitId={selectedHabitId}
+      />
     </div>
   );
 };

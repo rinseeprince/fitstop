@@ -224,4 +224,21 @@
   .shadow-custom-lg {
     box-shadow: var(--shadow-lg);
   }
+  
+  /* Pulse ring animation for habit card highlight */
+  @keyframes pulse-ring {
+    0% {
+      box-shadow: 0 0 0 0 rgba(var(--primary), 0.4);
+    }
+    70% {
+      box-shadow: 0 0 0 10px rgba(var(--primary), 0);
+    }
+    100% {
+      box-shadow: 0 0 0 0 rgba(var(--primary), 0);
+    }
+  }
+  
+  .animate-pulse-ring {
+    animation: pulse-ring 1s ease-out;
+  }
 }

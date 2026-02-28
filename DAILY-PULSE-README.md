@@ -58,10 +58,15 @@ components/daily-pulse/
 ├── nutrition-target-display.tsx (68 lines)  - Plan target with "Assumes..." breakdown.
 ├── macro-inputs.tsx             (112 lines) - Protein/carbs/fat inputs with targets.
 ├── training-summary.tsx         (60 lines)  - Compact training summary for logged view.
-├── habit-row.tsx                (87 lines)  - Individual habit row with toggle/input.
-│                                              Handles optimistic updates.
-├── habits-section.tsx           (200 lines) - ✅ COMPLETED Session 11. Boolean toggles,
-│                                              numeric inputs. Auto-saves independently.
+├── habit-row.tsx                (87 lines)  - Individual habit row. ALL habits render as
+│                                              simple toggle switches (done/not done),
+│                                              regardless of boolean or numeric type.
+│                                              Target info shown as context label
+│                                              (e.g. "Take Creatine · 10 Grams").
+├── habits-section.tsx           (200 lines) - ✅ COMPLETED Session 11. All habits render
+│                                              as boolean toggles. Auto-saves independently.
+│                                              Filters habits by created_at date - only
+│                                              shows habits that existed on the selected day.
 └── utils/
     ├── daily-pulse-handlers.ts  (113 lines) - handleSave, handleSessionCompletion.
     │                                          Includes form-data-helpers (merged in).
@@ -70,7 +75,7 @@ components/daily-pulse/
     └── nutrition-change-handlers.ts (52 lines) - Calorie/macro input change handlers.
 ```
 
-### Coach-side components (Sessions 14-16)
+### Coach-side components (Sessions 14-17)
 ```
 components/clients/daily-pulse/
 ├── daily-wellness-strip.tsx     - Main component on coach client overview tab.
@@ -90,10 +95,52 @@ components/clients/daily-pulse/
 └── day-detail-card.tsx          - Overlay popover centered over the charts area.
                                    Shows full day detail: wellness, training,
                                    nutrition (calories + indented macros), habits.
+                                   Habits filtered by created_at date - only shows
+                                   habits that existed on the displayed day.
+                                   Uses completed field for display (not value/isBoolean).
                                    Uses Framer Motion fade + scale animation.
                                    Click outside or X button to close.
                                    Styled per DESIGN-SYSTEM.md (overline section
                                    labels, design system colours, text hierarchy).
+```
+
+### Coach-side habits components (Session 17)
+```
+components/clients/habits/
+├── habits-tab-content.tsx       (90 lines)  - Main tab layout with sidebar + analytics grid.
+│                                              Manages showInactive state and selectedHabitId.
+│                                              Passes habits data to both sidebar and grid.
+├── habits-sidebar.tsx           (173 lines) - Sidebar with search, Active/All toggle,
+│                                              Add Habit button, and habit list. Toggle
+│                                              switches between active-only and all habits
+│                                              (including soft-deleted). Uses bg-gray-100
+│                                              segmented control pattern from DESIGN-SYSTEM.md.
+├── habits-grid.tsx              (133 lines) - Analytics grid with date range selector
+│                                              (7d, 30d, 90d, All time). Renders chart
+│                                              cards for each habit. Handles scroll-to
+│                                              and highlight when habit selected from sidebar.
+├── habit-chart-card.tsx         (175 lines) - Individual card with Recharts BarChart.
+│                                              All habits render as boolean-style charts:
+│                                              green bar for completed, gap for missed.
+│                                              Shows current streak, 7d/30d completion rates.
+│                                              Target info displayed as context text.
+│                                              Highlight animation (ring pulse) on selection.
+├── habit-list-item.tsx          (151 lines) - Habit row with selection state, hover actions.
+│                                              Active habits: edit, delete, reorder actions.
+│                                              Inactive habits: greyed out with "Inactive"
+│                                              label, shows "Reactivate" button only.
+│                                              Two-row layout: name + badge, then type info.
+├── add-habit-dialog.tsx         (146 lines) - Form dialog for creating habits. Name,
+│                                              description, optional numeric target
+│                                              (value + unit). Duplicate name detection.
+├── edit-habit-inline.tsx        (118 lines) - Inline editing. Enter to save, Escape to
+│                                              cancel. Updates name and description.
+├── habit-actions.tsx            (104 lines) - Action buttons: edit, delete (with confirm),
+│                                              reorder up/down. Only shown on hover.
+├── completion-badge.tsx         (25 lines)  - Completion rate with colour coding.
+│                                              Green ≥80%, yellow ≥60%, red <60%.
+└── habit-empty-state.tsx        (35 lines)  - Empty state with example habit suggestions
+                                               and "Create First Habit" button.
 ```
 
 ### Supporting files
@@ -108,8 +155,21 @@ hooks/
 │                                              fetchWeeklyLogs for nav bar.
 ├── use-daily-pulse-state.ts     (107 lines) - Extracted state management. All form data,
 │                                              training state, nutrition, habits.
-└── use-training-restoration.ts  (93 lines)  - Restores training data from saved log.
-                                              Handles orphaned sessions.
+├── use-training-restoration.ts  (93 lines)  - Restores training data from saved log.
+│                                              Handles orphaned sessions.
+├── use-client-habits.ts         (300 lines) - ✅ Session 17. Coach-side habits CRUD hook
+│                                              with SWR caching. Create, update, delete
+│                                              (soft delete), reorder, reactivate.
+│                                              Supports includeInactive param for Active/All
+│                                              toggle. Fetches habits + stats in parallel.
+│                                              Duplicate name error handling. Soft-deleted
+│                                              habits reactivated on re-create (same name).
+└── use-habit-logs.ts            (179 lines) - ✅ Session 17. Habit logs fetch with date
+                                               range filtering (7d, 30d, 90d, all time).
+                                               Transforms logs to chart-ready format.
+                                               SWR with error retry config (3 retries,
+                                               1s interval), deduping (2s), and onError
+                                               logging for debugging.
 ```
 
 #### Services
@@ -117,8 +177,17 @@ hooks/
 services/
 ├── daily-logs-service.ts        (359 lines) - Server-side daily logs CRUD operations.
 ├── daily-habits-service.ts      (311 lines) - Habits CRUD and log operations.
+│                                              Supports includeInactive param on
+│                                              getClientHabits. updateHabit accepts
+│                                              isActive field for reactivation.
+│                                              createHabit checks for inactive habit
+│                                              with same name and reactivates instead
+│                                              of inserting (avoids unique constraint).
 ├── daily-habits-logic.ts        (51 lines)  - Business logic for habit validation.
 ├── daily-habits-stats.ts        (54 lines)  - Habit statistics and aggregation.
+│                                              getHabitStats queries daily_habit_logs
+│                                              by habitId only (no is_active filter),
+│                                              so stats work for inactive habits too.
 ├── daily-activities-service.ts  (213 lines) - External/unplanned activities CRUD.
 └── check-in-service.ts                      - Extended in Session 16 to calculate
                                                dailyLogsCount and expectedDays per
@@ -271,15 +340,17 @@ Guard: only runs when `isLoading === false` AND `todayLog` is defined.
 
 ### Habits (auto-save, independent of Log Day) ✅ COMPLETED
 
-- Boolean toggle → immediate `POST /api/client/habits/log` with optimistic UI update
-- Numeric input blur → immediate `POST /api/client/habits/log` with optimistic UI update  
+- All habits render as simple toggle switches on the client side (done/not done)
+- Numeric habits show target as context label (e.g. "Take Creatine · 10 Grams") but client just toggles
+- Boolean toggle → immediate `POST /api/client/habits/log` with `completed: true/false`
 - Date-aware: passes `selectedDate` to log habits for past days
+- Only shows habits where `created_at <= selectedDate` (habits don't appear for days before they existed)
 - Not tied to the Log Day button at all
 - Uses `habit-row.tsx` component for each habit with local state
 
 ---
 
-## Coach-Side Data Flow (Sessions 14-16)
+## Coach-Side Data Flow (Sessions 14-17)
 
 ### DailyWellnessStrip - Initial Load
 
@@ -323,18 +394,19 @@ Both rows are clickable - clicking a dot opens the day detail overlay.
 When coach clicks a bar or dot:
 1. `selectedDate` state is set
 2. Habit logs for that date are filtered from the pre-loaded 28-day data (no API call)
-3. `day-detail-card.tsx` renders as a centered overlay over the charts area
-4. Uses `position: absolute` relative to the wellness strip card container
-5. Framer Motion animation: fade + scale (0.95 to 1)
-6. Semi-transparent backdrop behind overlay (`bg-black/5`) - clicking it closes the overlay
-7. Card has `onClick={(e) => e.stopPropagation()}` so clicking inside doesn't close
-8. X button in top-right also closes
+3. Habits filtered by `created_at` - only habits that existed on the selected date are shown
+4. `day-detail-card.tsx` renders as a centered overlay over the charts area
+5. Uses `position: absolute` relative to the wellness strip card container
+6. Framer Motion animation: fade + scale (0.95 to 1)
+7. Semi-transparent backdrop behind overlay (`bg-black/5`) - clicking it closes the overlay
+8. Card has `onClick={(e) => e.stopPropagation()}` so clicking inside doesn't close
+9. X button in top-right also closes
 
 Data displayed in the overlay:
 - **Wellness**: "Mood 5/5 · Energy 8/10 · Sleep 6/10 · Stress 3/10"
 - **Training**: Session name from `training_data.trainingSessionName` + "Completed" or "Missed"
 - **Nutrition**: "4448 cal / 4448 cal" (actual / target, no "Target" prefix). Macros indented below as sub-items: "Protein 205g / 205g", "Carbs 635g / 635g", "Fat 121g / 121g"
-- **Habits**: Each habit with "Completed" or "Not completed" status
+- **Habits**: Each habit with "Completed" or "Not logged" status. Display uses `completed` field only (not `value` or `isBoolean`).
 - **Header**: Date, logged timestamp, close button
 - **Section labels**: UPPERCASE overline pattern per DESIGN-SYSTEM.md (`text-xs font-medium text-gray-400 uppercase tracking-wider`)
 
@@ -359,6 +431,43 @@ If alerts exist, a warning badge shows on the wellness strip header ("Daily Well
 ### Check-In Timeline Badge
 
 `check-in-timeline.tsx` shows "X/Y days logged" badge on each check-in card. The daily log count per check-in period is calculated server-side in `check-in-service.ts` and returned alongside the check-in data (via `includeDailyLogCounts: true` flag). Uses `CheckInWithLogCounts` extended interface (local to the component) to avoid `as any` casts.
+
+### Daily Habits Tab (Session 17)
+
+The "Daily Habits" tab on the coach client page provides full habit management and analytics.
+
+**Tab layout**: Sidebar (left, ~30%) + Analytics Grid (right, ~70%).
+
+**Sidebar features**:
+- Search filter for habits
+- Active/All toggle (segmented control) - defaults to Active
+- Add Habit button (opens dialog with name, description, optional numeric target)
+- Habit list with click-to-select, hover actions (edit, delete, reorder)
+- Inactive habits shown greyed out with "Inactive" label and "Reactivate" button
+- Selected habit highlighted with blue accent
+
+**Analytics Grid features**:
+- Date range selector: 7 days, 30 days (default), 90 days, All time
+- One chart card per habit with Recharts BarChart
+- All charts are boolean-style: green bar for completed, gap for missed (no numeric value charts)
+- Each card shows: habit name, target info, current streak, 7d completion rate, 30d completion rate
+- Completion badge colour coding: green ≥80%, yellow ≥60%, red <60%
+- Click habit in sidebar → grid scrolls to and highlights that chart card (ring pulse animation)
+
+**Habit CRUD**:
+- **Create**: Name + optional description + optional numeric target (value + unit). Duplicate name detection shows user-friendly error.
+- **Edit**: Inline editing (Enter to save, Escape to cancel)
+- **Delete**: Soft delete (sets `is_active = false`). Preserves `daily_habit_logs` for historical analytics.
+- **Reorder**: Up/down arrows change `sort_order`
+- **Reactivate**: Inactive habits can be reactivated via button. Sets `is_active = true`.
+- **Re-create**: Creating a habit with the same name as an inactive habit reactivates it instead of failing on unique constraint.
+
+**Data flow**:
+- `use-client-habits.ts` fetches habits + stats via SWR (two parallel fetches)
+- `use-habit-logs.ts` fetches logs for the selected date range via SWR
+- Stats come from the existing hook (no duplicate fetching for chart cards)
+- Logs fetched separately for chart visualization only
+- SWR config: error retry (3 attempts, 1s interval), deduping (2s), onError logging
 
 ---
 
@@ -499,6 +608,9 @@ These are documented to prevent regressions:
 | Habits loading delay in day detail | Habit logs fetched on-demand per click via useEffect, causing visible delay | Prefetched all 28 days of habit logs in initial Promise.all, filtered client-side on click |
 | Alert detection false positive for single day | No-log-gap detection checked between last log and today, triggering falsely for single entries | Only check gaps within the provided date range, not against today |
 | Alert affectedDays wrong sort order | Some triggers iterated backwards, returning dates in descending order | Changed to forward iteration or sorted before returning. All affectedDays now ascending. |
+| Coach day detail showed "Not logged" for completed habits | Display text logic branched on `value` and `isBoolean` instead of `completed` field | Check `completed` field only: true → "Completed", false → "Not completed", no log → "Not logged" |
+| Numeric habit charts showed no data | `use-habit-logs.ts` set `value = log.value ?? 0` for numeric habits, which was null since clients only save `completed` | Changed to `value = log.completed ? 1 : 0` for all habits (boolean-style charts) |
+| Duplicate habit name on re-create after delete | Soft delete (`is_active = false`) preserved the row, unique constraint on `(client_id, name)` blocked re-creation | `createHabit` checks for inactive habit with same name, reactivates it instead of inserting |
 
 ---
 
@@ -522,6 +634,10 @@ These are documented to prevent regressions:
 16. **Prefetch data upfront** - coach-side components load all data (daily logs + habit logs) in the initial fetch. No per-click API calls for data that can be loaded in bulk.
 17. **Style per DESIGN-SYSTEM.md** - section labels use overline pattern (`text-xs font-medium text-gray-400 uppercase tracking-wider`), status colours use design system tokens (`text-success`, `text-destructive`, `text-warning`), not hardcoded hex values.
 18. **Framer Motion for overlays** - preferred over CSS transitions for expand/collapse and overlays because it handles `height: auto` properly and provides smoother animations.
+19. **All habits are boolean toggles on client side** - regardless of whether the habit has a numeric target. Coach defines the target for context, client just toggles done/not done. No numeric input fields on the client.
+20. **Habits filtered by `created_at` date** - only show habits where `created_at <= selectedDate`. Prevents habits appearing on days before they were created. Applies on both client Daily Pulse and coach day detail overlay.
+21. **Soft delete for habits** - delete sets `is_active = false`, never hard deletes. Preserves `daily_habit_logs` for historical analytics. Coach can view inactive habits via Active/All toggle and reactivate them.
+22. **Habit display text uses `completed` field only** - never branch on `isBoolean` or `value` for display. `completed: true` → "Completed", `completed: false` → "Not completed", no log → "Not logged".
 
 ---
 
@@ -546,7 +662,7 @@ These are documented to prevent regressions:
 | 14 | Coach wellness strip (bar charts) | Coach daily-logs API | ✅ COMPLETED |
 | 15 | Expandable day detail | training_data JSONB (trainingSessionName, activityStatuses) | ✅ COMPLETED |
 | 16 | Alerts + badges | Wellness strip, check-in timeline, daily-wellness-alerts.ts | ✅ COMPLETED |
-| 17 | Coach habits management + analytics tab (merged) | Habits service + API | Planned |
+| 17 | Coach habits tab + analytics + Active/All toggle | Habits service + API, soft delete, reactivation | ✅ COMPLETED |
 | 18 | Client habits on progress page | Habit chart card from Session 17 | Planned |
 | 19 | AI check-in review context | training_data JSONB, daily_logs, habits | Planned |
 | 20 | Needs attention feed | Alert triggers, training_data activityStatuses | Planned |

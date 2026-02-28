@@ -137,7 +137,16 @@ export function DailyWellnessStrip({ clientId }: DailyWellnessStripProps) {
   const selectedLog = selectedDate ? logs.find(l => l.date === selectedDate) : null
   const selectedHabits = selectedDate 
     ? allHabitLogs
-        .filter(log => log.date === selectedDate)
+        .filter(log => {
+          // Only show habits that were created on or before the selected date
+          if (log.habitCreatedAt) {
+            const habitCreatedDate = new Date(log.habitCreatedAt).toISOString().split('T')[0];
+            if (habitCreatedDate > selectedDate) {
+              return false;
+            }
+          }
+          return log.date === selectedDate;
+        })
         .map(log => ({
           habitName: log.habitName,
           completed: log.completed,

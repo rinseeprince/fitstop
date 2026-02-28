@@ -8,7 +8,7 @@ import { getHabitStats, type HabitStats } from "./daily-habits-stats";
 type DailyHabitRow = Database["public"]["Tables"]["daily_habits"]["Row"];
 type DailyHabitLogRow = Database["public"]["Tables"]["daily_habit_logs"]["Row"];
 type DailyHabitLogWithHabit = DailyHabitLogRow & {
-  daily_habits: Pick<DailyHabitRow, 'name' | 'target_value' | 'target_unit' | 'is_boolean'>;
+  daily_habits: Pick<DailyHabitRow, 'name' | 'target_value' | 'target_unit' | 'is_boolean' | 'created_at'>;
 };
 
 type HabitLogWithDetails = DailyHabitLog & {
@@ -22,13 +22,21 @@ type HabitLogWithDetails = DailyHabitLog & {
 export { calculateCompletionRate, calculateCurrentStreak, mapArrayIndexToSortOrder } from "./daily-habits-logic";
 
 // Database functions
-export const getClientHabits = async (clientId: string): Promise<DailyHabit[]> => {
-  const { data, error } = await supabaseAdmin
+export const getClientHabits = async (clientId: string, includeInactive = false): Promise<DailyHabit[]> => {
+  let query = supabaseAdmin
     .from("daily_habits")
     .select("*")
-    .eq("client_id", clientId)
-    .eq("is_active", true)
+    .eq("client_id", clientId);
+  
+  if (!includeInactive) {
+    query = query.eq("is_active", true);
+  }
+  
+  // Order by is_active (true first) and then by sort_order
+  query = query.order("is_active", { ascending: false })
     .order("sort_order", { ascending: true });
+
+  const { data, error } = await query;
 
   if (error) {
     throw new Error(`Failed to fetch client habits: ${error.message}`);
@@ -182,7 +190,7 @@ export const createHabit = async (
 
 export const updateHabit = async (
   habitId: string,
-  data: Partial<Pick<DailyHabitInput, 'name' | 'description' | 'targetValue' | 'targetUnit' | 'isBoolean'>>
+  data: Partial<Pick<DailyHabitInput, 'name' | 'description' | 'targetValue' | 'targetUnit' | 'isBoolean'> & { isActive?: boolean }>
 ): Promise<DailyHabit> => {
   const updateData: Partial<Database["public"]["Tables"]["daily_habits"]["Update"]> = {
     updated_at: new Date().toISOString(),
@@ -193,6 +201,7 @@ export const updateHabit = async (
   if (data.targetValue !== undefined) updateData.target_value = data.targetValue;
   if (data.targetUnit !== undefined) updateData.target_unit = data.targetUnit;
   if (data.isBoolean !== undefined) updateData.is_boolean = data.isBoolean;
+  if (data.isActive !== undefined) updateData.is_active = data.isActive;
 
   const { data: result, error } = await supabaseAdmin
     .from("daily_habits")
@@ -307,7 +316,7 @@ export const getHabitLogs = async (
     .from("daily_habit_logs")
     .select(`
       *,
-      daily_habits!inner(name, target_value, target_unit, is_boolean)
+      daily_habits!inner(name, target_value, target_unit, is_boolean, created_at)
     `)
     .eq("client_id", clientId)
     .gte("date", startDate)
@@ -332,6 +341,7 @@ export const getHabitLogs = async (
     targetValue: row.daily_habits.target_value ?? undefined,
     targetUnit: row.daily_habits.target_unit ?? undefined,
     isBoolean: row.daily_habits.is_boolean,
+    habitCreatedAt: row.daily_habits.created_at,
   }));
 };
 
@@ -342,7 +352,7 @@ export const getTodayHabitLogs = async (clientId: string, date?: string): Promis
     .from("daily_habit_logs")
     .select(`
       *,
-      daily_habits!inner(name, target_value, target_unit, is_boolean)
+      daily_habits!inner(name, target_value, target_unit, is_boolean, created_at)
     `)
     .eq("client_id", clientId)
     .eq("date", targetDate);
@@ -365,6 +375,7 @@ export const getTodayHabitLogs = async (clientId: string, date?: string): Promis
     targetValue: row.daily_habits.target_value ?? undefined,
     targetUnit: row.daily_habits.target_unit ?? undefined,
     isBoolean: row.daily_habits.is_boolean,
+    habitCreatedAt: row.daily_habits.created_at,
   }));
 };
 

@@ -18,7 +18,7 @@ const fetcher = async (url: string) => {
   return data.data;
 };
 
-export function useClientHabits(clientId: string | null) {
+export function useClientHabits(clientId: string | null, includeInactive = false) {
   const { toast } = useToast();
   const [habitsWithStats, setHabitsWithStats] = useState<HabitWithStats[]>([]);
   const [isLoadingStats, setIsLoadingStats] = useState(false);
@@ -30,7 +30,7 @@ export function useClientHabits(clientId: string | null) {
     isLoading: habitsLoading,
     mutate: mutateHabits,
   } = useSWR<DailyHabit[]>(
-    clientId ? `/api/clients/${clientId}/habits` : null,
+    clientId ? `/api/clients/${clientId}/habits${includeInactive ? '?includeInactive=true' : ''}` : null,
     fetcher,
     {
       revalidateOnFocus: false,
@@ -207,6 +207,48 @@ export function useClientHabits(clientId: string | null) {
     [clientId, mutateHabits, toast]
   );
 
+  // Reactivate habit
+  const reactivateHabit = useCallback(
+    async (habitId: string) => {
+      if (!clientId) return;
+
+      try {
+        const response = await fetch(`/api/clients/${clientId}/habits/${habitId}`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ isActive: true }),
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || "Failed to reactivate habit");
+        }
+
+        const result = await response.json();
+        
+        // Refetch the habits list
+        await mutateHabits();
+
+        toast({
+          title: "Habit reactivated",
+          description: "The habit has been reactivated successfully.",
+        });
+
+        return result.data as DailyHabit;
+      } catch (error) {
+        toast({
+          title: "Failed to reactivate habit",
+          description: error instanceof Error ? error.message : "An error occurred",
+          variant: "destructive",
+        });
+        throw error;
+      }
+    },
+    [clientId, mutateHabits, toast]
+  );
+
   // Reorder habits
   const reorderHabits = useCallback(
     async (habitIds: string[]) => {
@@ -252,6 +294,7 @@ export function useClientHabits(clientId: string | null) {
     createHabit,
     updateHabit,
     deleteHabit,
+    reactivateHabit,
     reorderHabits,
     refetch: mutateHabits,
   };

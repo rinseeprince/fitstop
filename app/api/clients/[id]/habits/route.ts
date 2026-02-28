@@ -40,7 +40,10 @@ export async function GET(
       );
     }
 
-    const habits = await getClientHabits(clientId);
+    const { searchParams } = new URL(request.url);
+    const includeInactive = searchParams.get("includeInactive") === "true";
+
+    const habits = await getClientHabits(clientId, includeInactive);
 
     return NextResponse.json({
       success: true,

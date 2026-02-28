@@ -24,7 +24,10 @@ type HabitsSidebarProps = {
   onCreateHabit: (data: DailyHabitInput) => Promise<DailyHabit | undefined>;
   onUpdateHabit: (habitId: string, data: Partial<DailyHabitInput>) => Promise<DailyHabit | undefined>;
   onDeleteHabit: (habitId: string) => Promise<void>;
+  onReactivateHabit?: (habitId: string) => Promise<DailyHabit | undefined>;
   onReorderHabits: (habitIds: string[]) => Promise<void>;
+  showInactive?: boolean;
+  onToggleShowInactive?: (value: boolean) => void;
 };
 
 export const HabitsSidebar = ({
@@ -36,7 +39,10 @@ export const HabitsSidebar = ({
   onCreateHabit,
   onUpdateHabit,
   onDeleteHabit,
+  onReactivateHabit,
   onReorderHabits,
+  showInactive = false,
+  onToggleShowInactive,
 }: HabitsSidebarProps) => {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [editingHabitId, setEditingHabitId] = useState<string | null>(null);
@@ -83,6 +89,32 @@ export const HabitsSidebar = ({
             />
           </div>
 
+          {/* Active/All Toggle */}
+          {onToggleShowInactive && (
+            <div className="bg-gray-100 p-1 rounded-lg inline-flex w-full">
+              <button
+                onClick={() => onToggleShowInactive(false)}
+                className={`flex-1 px-3 py-1.5 text-sm font-medium rounded-md transition-all ${
+                  !showInactive
+                    ? "bg-white text-gray-900 shadow-sm"
+                    : "text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                Active
+              </button>
+              <button
+                onClick={() => onToggleShowInactive(true)}
+                className={`flex-1 px-3 py-1.5 text-sm font-medium rounded-md transition-all ${
+                  showInactive
+                    ? "bg-white text-gray-900 shadow-sm"
+                    : "text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                All
+              </button>
+            </div>
+          )}
+
           {/* Add Habit Button */}
           <Button
             onClick={() => setIsAddDialogOpen(true)}
@@ -108,8 +140,8 @@ export const HabitsSidebar = ({
                   habit={habit}
                   isSelected={habit.id === selectedHabitId}
                   isEditing={habit.id === editingHabitId}
-                  canMoveUp={index > 0}
-                  canMoveDown={index < habits.length - 1}
+                  canMoveUp={habit.isActive && index > 0}
+                  canMoveDown={habit.isActive && index < habits.filter(h => h.isActive).length - 1}
                   onClick={() => onSelectHabit(habit.id)}
                   onEdit={() => setEditingHabitId(habit.id)}
                   onCancelEdit={() => setEditingHabitId(null)}
@@ -118,6 +150,7 @@ export const HabitsSidebar = ({
                     setEditingHabitId(null);
                   }}
                   onDelete={() => onDeleteHabit(habit.id)}
+                  onReactivate={onReactivateHabit ? () => onReactivateHabit(habit.id) : undefined}
                   onMoveUp={() => handleMoveUp(habit.id)}
                   onMoveDown={() => handleMoveDown(habit.id)}
                 />

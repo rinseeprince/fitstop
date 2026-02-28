@@ -46,3 +46,12 @@ export type DailyHabitLogInput = {
   value?: number;
   notes?: string;
 };
+
+// Extended habit log with habit details for analytics
+export type HabitLogWithDetails = DailyHabitLog & {
+  habitName: string;
+  targetValue?: number;
+  targetUnit?: string;
+  isBoolean: boolean;
+  habitCreatedAt: string;
+};

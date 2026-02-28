@@ -17,9 +17,14 @@ vi.mock('@/services/check-in-tracking-service', () => ({
   isClientOverdue: vi.fn(),
 }))
 
-vi.mock('@/lib/rate-limit', () => ({
-  apiRateLimit: vi.fn(),
-}))
+vi.mock('@/lib/rate-limit', async (importOriginal) => {
+  const actual = await importOriginal() as Record<string, unknown>
+  return {
+    ...actual,
+    apiRateLimit: vi.fn(),
+    clientApiRateLimit: vi.fn(),
+  }
+})
 
 import { getAuthenticatedClientId } from '@/lib/auth-helpers'
 import { getClientById } from '@/services/client-service'
@@ -28,12 +33,13 @@ import {
   getDaysUntilOrPastDue,
   isClientOverdue 
 } from '@/services/check-in-tracking-service'
-import { apiRateLimit } from '@/lib/rate-limit'
+import { apiRateLimit, clientApiRateLimit } from '@/lib/rate-limit'
 
 describe('/api/client/notifications', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(apiRateLimit).mockResolvedValue(null)
+    vi.mocked(clientApiRateLimit).mockResolvedValue(null)
   })
 
   const mockClient = {
@@ -308,7 +314,7 @@ describe('/api/client/notifications', () => {
     it('should respect rate limiting', async () => {
       // Arrange
       const rateLimitResponse = NextResponse.json({ error: 'Rate limited' }, { status: 429 })
-      vi.mocked(apiRateLimit).mockResolvedValue(rateLimitResponse)
+      vi.mocked(clientApiRateLimit).mockResolvedValue(rateLimitResponse)
 
       // Act
       const response = await GET(createMockRequest())

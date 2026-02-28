@@ -24,14 +24,12 @@ const createOptimisticLog = (
   habit: DailyHabit,
   completed: boolean,
   selectedDate: string,
-  value?: number,
   existingLog?: HabitLogWithDetails
 ): HabitLogWithDetails => {
   if (existingLog) {
     return {
       ...existingLog,
       completed,
-      value,
       updatedAt: new Date().toISOString(),
     };
   }
@@ -42,7 +40,6 @@ const createOptimisticLog = (
     clientId: habit.clientId,
     date: selectedDate,
     completed,
-    value,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     habitName: habit.name,
@@ -56,8 +53,7 @@ const createOptimisticLog = (
 const saveHabitToAPI = async (
   habitId: string,
   completed: boolean,
-  selectedDate: string,
-  value?: number
+  selectedDate: string
 ): Promise<DailyHabitLog> => {
   const response = await fetch("/api/client/habits/log", {
     method: "POST",
@@ -66,7 +62,6 @@ const saveHabitToAPI = async (
       dailyHabitId: habitId,
       date: selectedDate,
       completed,
-      value,
     }),
   });
 
@@ -82,6 +77,13 @@ export function HabitsSection({ habits, habitLogs, onHabitLogsUpdate, selectedDa
   const { toast } = useToast();
   const [savingHabits, setSavingHabits] = useState<Set<string>>(new Set());
 
+  // Filter habits to only show those created on or before the selected date
+  const visibleHabits = habits.filter(habit => {
+    // Compare dates only (ignore time)
+    const habitCreatedDate = new Date(habit.createdAt).toISOString().split('T')[0];
+    return habitCreatedDate <= selectedDate;
+  });
+
   // Create a map for quick log lookup
   const logMap = new Map(habitLogs.map(log => [log.dailyHabitId, log]));
 
@@ -90,6 +92,15 @@ export function HabitsSection({ habits, habitLogs, onHabitLogsUpdate, selectedDa
       <div className="space-y-3">
         <h3 className="text-sm text-muted-foreground">Daily Habits</h3>
         <p className="text-sm text-muted-foreground">No daily habits set up yet</p>
+      </div>
+    );
+  }
+
+  if (visibleHabits.length === 0) {
+    return (
+      <div className="space-y-3">
+        <h3 className="text-sm text-muted-foreground">Daily Habits</h3>
+        <p className="text-sm text-muted-foreground">No habits were active on this date</p>
       </div>
     );
   }
@@ -110,58 +121,24 @@ export function HabitsSection({ habits, habitLogs, onHabitLogsUpdate, selectedDa
     });
   };
 
-  const handleBooleanToggle = async (habit: DailyHabit, checked: boolean) => {
+  const handleToggle = async (habit: DailyHabit, checked: boolean) => {
     const habitId = habit.id;
     const existingLog = logMap.get(habitId);
     
     setSavingHabits(prev => new Set(prev).add(habitId));
 
     // Optimistic update
-    const optimisticLog = createOptimisticLog(habit, checked, selectedDate, undefined, existingLog);
+    const optimisticLog = createOptimisticLog(habit, checked, selectedDate, existingLog);
     updateLogs(habitId, optimisticLog);
 
     try {
-      const savedLog = await saveHabitToAPI(habitId, checked, selectedDate, undefined);
-      const finalLog: HabitLogWithDetails = {
-        ...savedLog,
-        habitName: habit.name,
-        isBoolean: true,
-      };
-      updateLogs(habitId, finalLog);
-    } catch (error) {
-      handleSaveError(habitId, existingLog);
-    } finally {
-      setSavingHabits(prev => {
-        const next = new Set(prev);
-        next.delete(habitId);
-        return next;
-      });
-    }
-  };
-
-  const handleNumericBlur = async (habit: DailyHabit, value: number | undefined) => {
-    const habitId = habit.id;
-    const existingLog = logMap.get(habitId);
-    
-    // Don't save if value hasn't changed
-    if (existingLog?.value === value) return;
-
-    setSavingHabits(prev => new Set(prev).add(habitId));
-
-    const completed = value !== undefined && habit.targetValue ? value >= habit.targetValue : false;
-
-    // Optimistic update
-    const optimisticLog = createOptimisticLog(habit, completed, selectedDate, value, existingLog);
-    updateLogs(habitId, optimisticLog);
-
-    try {
-      const savedLog = await saveHabitToAPI(habitId, completed, selectedDate, value);
+      const savedLog = await saveHabitToAPI(habitId, checked, selectedDate);
       const finalLog: HabitLogWithDetails = {
         ...savedLog,
         habitName: habit.name,
         targetValue: habit.targetValue,
         targetUnit: habit.targetUnit,
-        isBoolean: false,
+        isBoolean: habit.isBoolean,
       };
       updateLogs(habitId, finalLog);
     } catch (error) {
@@ -173,27 +150,19 @@ export function HabitsSection({ habits, habitLogs, onHabitLogsUpdate, selectedDa
         return next;
       });
     }
-  };
-
-  const handleNumericChange = (habit: DailyHabit, value: number | undefined) => {
-    const log = logMap.get(habit.id);
-    const updatedLog = createOptimisticLog(habit, false, selectedDate, value, log);
-    updateLogs(habit.id, updatedLog);
   };
 
   return (
     <div className="space-y-3">
       <h3 className="text-sm text-muted-foreground">Daily Habits</h3>
       
-      {habits.map(habit => (
+      {visibleHabits.map(habit => (
         <HabitRow
           key={habit.id}
           habit={habit}
           log={logMap.get(habit.id)}
           isSaving={savingHabits.has(habit.id)}
-          onBooleanToggle={(checked) => handleBooleanToggle(habit, checked)}
-          onNumericChange={(value) => handleNumericChange(habit, value)}
-          onNumericBlur={(value) => handleNumericBlur(habit, value)}
+          onToggle={(checked) => handleToggle(habit, checked)}
         />
       ))}
     </div>

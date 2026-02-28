@@ -4,6 +4,8 @@ import { cn } from "@/lib/utils";
 import { CompletionBadge } from "./completion-badge";
 import { EditHabitInline } from "./edit-habit-inline";
 import { HabitActions } from "./habit-actions";
+import { Button } from "@/components/ui/button";
+import { RotateCcw } from "lucide-react";
 import type { DailyHabit, DailyHabitInput } from "@/types/daily-habit";
 import type { HabitStats } from "@/services/daily-habits-stats";
 
@@ -22,6 +24,7 @@ type HabitListItemProps = {
   onCancelEdit: () => void;
   onSaveEdit: (data: Partial<DailyHabitInput>) => Promise<void>;
   onDelete: () => void;
+  onReactivate?: () => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
 };
@@ -37,6 +40,7 @@ export const HabitListItem = ({
   onCancelEdit,
   onSaveEdit,
   onDelete,
+  onReactivate,
   onMoveUp,
   onMoveDown,
 }: HabitListItemProps) => {
@@ -54,6 +58,7 @@ export const HabitListItem = ({
     <div
       className={cn(
         "group relative px-3 py-2.5 rounded-lg cursor-pointer transition-all duration-150",
+        !habit.isActive && "opacity-60",
         isSelected
           ? "bg-primary/10 shadow-sm"
           : "hover:bg-gray-50"
@@ -62,37 +67,66 @@ export const HabitListItem = ({
     >
       {/* Row 1: Name and Completion Badge */}
       <div className="flex items-center justify-between gap-3">
-        <p className="text-sm font-medium line-clamp-1 flex-1">
-          {habit.name}
-        </p>
+        <div className="flex items-center gap-2 flex-1">
+          <p className={cn(
+            "text-sm font-medium line-clamp-1",
+            !habit.isActive && "text-muted-foreground"
+          )}>
+            {habit.name}
+          </p>
+          {!habit.isActive && (
+            <span className="text-xs text-muted-foreground bg-gray-100 px-1.5 py-0.5 rounded">
+              Inactive
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-2">
           {/* Completion Badge */}
           {habit.stats && (
             <CompletionBadge completionRate={habit.stats.completionRate} />
           )}
           {/* Actions - visible on hover */}
-          <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-150">
-            <HabitActions
-              canMoveUp={canMoveUp}
-              canMoveDown={canMoveDown}
-              onEdit={(e) => {
-                e.stopPropagation();
-                onEdit();
-              }}
-              onDelete={(e) => {
-                e.stopPropagation();
-                onDelete();
-              }}
-              onMoveUp={(e) => {
-                e.stopPropagation();
-                onMoveUp();
-              }}
-              onMoveDown={(e) => {
-                e.stopPropagation();
-                onMoveDown();
-              }}
-            />
-          </div>
+          {habit.isActive ? (
+            <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+              <HabitActions
+                canMoveUp={canMoveUp}
+                canMoveDown={canMoveDown}
+                onEdit={(e) => {
+                  e.stopPropagation();
+                  onEdit();
+                }}
+                onDelete={(e) => {
+                  e.stopPropagation();
+                  onDelete();
+                }}
+                onMoveUp={(e) => {
+                  e.stopPropagation();
+                  onMoveUp();
+                }}
+                onMoveDown={(e) => {
+                  e.stopPropagation();
+                  onMoveDown();
+                }}
+              />
+            </div>
+          ) : (
+            onReactivate && (
+              <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onReactivate();
+                  }}
+                  className="h-7 px-2 text-xs"
+                >
+                  <RotateCcw className="h-3 w-3 mr-1" />
+                  Reactivate
+                </Button>
+              </div>
+            )
+          )}
         </div>
       </div>
 

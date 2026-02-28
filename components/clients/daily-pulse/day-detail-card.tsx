@@ -205,11 +205,11 @@ export function DayDetailCard({ log, habits, onClose }: DayDetailCardProps) {
                   <div key={idx} className="flex items-center justify-between">
                     <span className="text-sm text-gray-700">{habit.habitName}</span>
                     <span className={`text-sm font-medium ${habit.completed ? 'text-success' : 'text-destructive'}`}>
-                      {habit.isBoolean ? (
-                        habit.completed ? 'Completed' : 'Not completed'
-                      ) : (
-                        habit.value !== undefined ? `${habit.value}${habit.targetUnit ? ' ' + habit.targetUnit : ''}` : 'Not logged'
-                      )}
+                      {habit.completed === true 
+                        ? 'Completed' 
+                        : habit.completed === false 
+                          ? 'Not completed' 
+                          : 'Not logged'}
                     </span>
                   </div>
                 ))}
