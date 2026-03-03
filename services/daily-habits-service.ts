@@ -16,6 +16,7 @@ type HabitLogWithDetails = DailyHabitLog & {
   targetValue?: number;
   targetUnit?: string;
   isBoolean: boolean;
+  habitCreatedAt: string;
 };
 
 // Re-export pure logic functions from separate file

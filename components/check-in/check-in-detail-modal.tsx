@@ -15,11 +15,15 @@ import { AISummaryCard } from "./ai-summary-card";
 import { CheckInResponseEditor } from "./check-in-response-editor";
 import { CheckInComparisonView } from "./check-in-comparison-view";
 import { GoalProgressView } from "./goal-progress-view";
+import { DailyContextSummary } from "./daily-context-summary";
 import type { CheckIn, GetCheckInComparisonResponse } from "@/types/check-in";
+import type { DailyLog } from "@/types/daily-log";
+import type { HabitLogWithDetails } from "@/types/daily-habit";
 
 type CheckInDetailModalProps = {
   checkInId: string | null;
   clientId: string;
+  clientName: string;
   onClose: () => void;
   onNavigate?: (direction: "prev" | "next") => void;
   canNavigatePrev?: boolean;
@@ -39,6 +43,7 @@ type CheckInWithClient = {
 export const CheckInDetailModal = ({
   checkInId,
   clientId,
+  clientName,
   onClose,
   onNavigate,
   canNavigatePrev = false,
@@ -48,6 +53,11 @@ export const CheckInDetailModal = ({
   const [comparisonData, setComparisonData] = useState<GetCheckInComparisonResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingComparison, setIsLoadingComparison] = useState(false);
+  const [dailyLogs, setDailyLogs] = useState<DailyLog[]>([]);
+  const [habitLogs, setHabitLogs] = useState<HabitLogWithDetails[]>([]);
+  const [dailyContextLoading, setDailyContextLoading] = useState(false);
+  const [contextStartDate, setContextStartDate] = useState<Date | null>(null);
+  const [contextEndDate, setContextEndDate] = useState<Date | null>(null);
 
   useEffect(() => {
     if (!checkInId) {
@@ -90,6 +100,86 @@ export const CheckInDetailModal = ({
     fetchComparison();
   }, [checkInId]);
 
+  // Fetch daily context when check-in data is available
+  useEffect(() => {
+    if (!data?.checkIn || !clientId) {
+      setDailyLogs([]);
+      setHabitLogs([]);
+      setContextStartDate(null);
+      setContextEndDate(null);
+      return;
+    }
+
+    const fetchDailyContext = async () => {
+      setDailyContextLoading(true);
+      try {
+        // Calculate date range based on check-in logic
+        const currentCheckIn = data.checkIn;
+        const endDate = new Date(currentCheckIn.createdAt);
+        
+        // Get previous check-in to determine start date
+        let startDate: Date;
+        const prevCheckInResponse = await fetch(
+          `/api/check-in/${checkInId}/previous`,
+          { cache: 'no-store' }
+        );
+        
+        if (prevCheckInResponse.ok) {
+          const prevData = await prevCheckInResponse.json();
+          if (prevData.previousCheckIn) {
+            // Start from day after previous check-in
+            startDate = new Date(prevData.previousCheckIn.createdAt);
+            startDate.setDate(startDate.getDate() + 1);
+          } else {
+            // No previous check-in, look back 7 days
+            startDate = new Date(endDate);
+            startDate.setDate(startDate.getDate() - 6);
+          }
+        } else {
+          // Default to 7 days back
+          startDate = new Date(endDate);
+          startDate.setDate(startDate.getDate() - 6);
+        }
+        
+        // Store the calculated dates for use in the component
+        setContextStartDate(startDate);
+        setContextEndDate(endDate);
+        
+        const startDateStr = startDate.toISOString().split('T')[0];
+        const endDateStr = endDate.toISOString().split('T')[0];
+        
+        // Fetch both daily logs and habit logs in parallel
+        const [logsResponse, habitsResponse] = await Promise.all([
+          fetch(
+            `/api/clients/${clientId}/daily-logs?startDate=${startDateStr}&endDate=${endDateStr}`,
+            { cache: 'no-store' }
+          ),
+          fetch(
+            `/api/clients/${clientId}/habits/logs?startDate=${startDateStr}&endDate=${endDateStr}`,
+            { cache: 'no-store' }
+          ),
+        ]);
+        
+        if (logsResponse.ok) {
+          const logsData = await logsResponse.json();
+          setDailyLogs(logsData.data || []);
+        }
+        
+        if (habitsResponse.ok) {
+          const habitsData = await habitsResponse.json();
+          setHabitLogs(habitsData.data || []);
+        }
+      } catch (error) {
+        console.error('Error fetching daily context:', error);
+        // Don't fail the modal, just hide the daily context section
+      } finally {
+        setDailyContextLoading(false);
+      }
+    };
+
+    fetchDailyContext();
+  }, [data?.checkIn?.id, checkInId, clientId]);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!checkInId) return;
@@ -124,7 +214,7 @@ export const CheckInDetailModal = ({
         <DialogHeader className="px-6 py-4 border-b border-gray-100 flex-shrink-0">
           <div className="flex items-center justify-between">
             <DialogTitle className="text-lg font-semibold text-gray-900">
-              {data?.client?.name || "Loading..."} - Check-In Review
+              {clientName} - Check-In Review
             </DialogTitle>
             <div className="flex items-center gap-1">
               {onNavigate && (
@@ -161,7 +251,7 @@ export const CheckInDetailModal = ({
           </div>
         </DialogHeader>
 
-        {isLoading ? (
+        {isLoading || dailyContextLoading ? (
           <div className="flex items-center justify-center py-12 px-6">
             <div className="w-5 h-5 border-2 border-muted border-t-primary rounded-full animate-spin" />
           </div>
@@ -191,6 +281,16 @@ export const CheckInDetailModal = ({
                 </TabsList>
 
                 <TabsContent value="current" className="space-y-6">
+                  {/* Daily Context Summary - only show if there's data */}
+                  {dailyLogs.length > 0 && data?.checkIn && contextStartDate && contextEndDate && (
+                    <DailyContextSummary
+                      dailyLogs={dailyLogs}
+                      habitLogs={habitLogs}
+                      startDate={contextStartDate}
+                      endDate={contextEndDate}
+                    />
+                  )}
+                  
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <div>
                       <h3 className="text-lg font-semibold text-gray-900 mb-4">Check-In Data</h3>

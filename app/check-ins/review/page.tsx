@@ -126,6 +126,7 @@ export default function ReviewCheckInsPage() {
         <CheckInDetailModal
           checkInId={selectedCheckInId}
           clientId={selectedCheckInId ? unreviewedCheckIns.find((ci) => ci.id === selectedCheckInId)?.clientId || "" : ""}
+          clientName={selectedCheckInId ? unreviewedCheckIns.find((ci) => ci.id === selectedCheckInId)?.clientName || "" : ""}
           onClose={handleReviewComplete}
           onNavigate={handleNavigate}
           canNavigatePrev={selectedIndex > 0}

@@ -5,6 +5,8 @@ import {
   updateCheckInAISummary,
 } from "@/services/check-in-service";
 import { generateCheckInSummary, regenerateAISummary } from "@/services/ai-service";
+import { getDailyLogs } from "@/services/daily-logs-service";
+import { getHabitLogs } from "@/services/daily-habits-service";
 import type { GenerateAISummaryResponse } from "@/types/check-in";
 import { rateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
@@ -43,18 +45,57 @@ export async function POST(
     });
     const previousCheckIns = checkIns.filter((ci) => ci.id !== checkInId);
 
+    // Calculate date range for daily tracking context
+    const endDate = new Date(currentCheckIn.createdAt);
+    let startDate: Date;
+    
+    if (previousCheckIns.length > 0) {
+      // Start from day after the most recent previous check-in
+      startDate = new Date(previousCheckIns[0].createdAt);
+      startDate.setDate(startDate.getDate() + 1);
+    } else {
+      // No previous check-in, look back 7 days
+      startDate = new Date(endDate);
+      startDate.setDate(startDate.getDate() - 6);
+    }
+    
+    const startDateStr = startDate.toISOString().split('T')[0];
+    const endDateStr = endDate.toISOString().split('T')[0];
+    
+    // Fetch daily tracking context for the period
+    let dailyLogs, habitLogs;
+    try {
+      [dailyLogs, habitLogs] = await Promise.all([
+        getDailyLogs(currentCheckIn.clientId, startDateStr, endDateStr),
+        getHabitLogs(currentCheckIn.clientId, startDateStr, endDateStr),
+      ]);
+    } catch (error) {
+      // If daily tracking fetch fails, continue without it
+      console.error('Error fetching daily tracking data:', error);
+      dailyLogs = undefined;
+      habitLogs = undefined;
+    }
+
     // Generate or regenerate AI summary
     const aiSummary = focus
       ? await regenerateAISummary(
           currentCheckIn,
           previousCheckIns,
           "Client Name", // TODO: Fetch actual client name
-          focus
+          focus,
+          dailyLogs,
+          habitLogs,
+          startDate,
+          endDate
         )
       : await generateCheckInSummary(
           currentCheckIn,
           previousCheckIns,
-          "Client Name"
+          "Client Name", // TODO: Fetch actual client name
+          dailyLogs,
+          habitLogs,
+          startDate,
+          endDate
         );
 
     // Update check-in with new AI summary

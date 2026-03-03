@@ -123,6 +123,7 @@ export default function ClientProfilePage() {
           <CheckInDetailModal
             checkInId={selectedCheckInId}
             clientId={clientId}
+            clientName={client.name}
             onClose={() => setSelectedCheckInId(null)}
             onNavigate={handleNavigate}
             canNavigatePrev={selectedIndex > 0}

@@ -6,22 +6,46 @@ import type {
   AIInsight,
   AIRecommendation,
 } from "@/types/check-in";
+import type { DailyLog } from "@/types/daily-log";
+import type { HabitLogWithDetails } from "@/types/daily-habit";
+import { buildDailyContextForAI } from "@/utils/ai-daily-context-builder";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+// Shared AI system prompt for check-in analysis
+const AI_SYSTEM_PROMPT = `You are an expert fitness coach assistant analyzing client check-ins.
+Provide concise, actionable insights and recommendations. Be encouraging but honest about concerns.
+Your analysis will help coaches quickly understand progress and formulate responses.
+
+When daily tracking data is available:
+- Reference specific daily patterns with actual dates and numbers (e.g., "Your energy dropped to 4/10 on Tuesday and Wednesday")
+- Correlate low energy/mood days with nutrition misses or poor sleep (e.g., "The days you missed calories (Tuesday: 180 cal) coincided with low energy scores")
+- Note when daily tracking data contradicts the client's weekly self-report text (e.g., "You mentioned struggling with nutrition, but hit your targets 5 of 7 days")
+- Mention habit adherence trends by name (e.g., "Water intake was perfect at 7/7 days, but Creatine was only 3/7")
+- Note session swaps or skipped activities by name (e.g., "You swapped Leg Day for Full Body on Thursday" or "Skipped Lateral Raises in 2 of 3 upper body sessions")
+- Be specific with numbers, not generic`;
+
 // Generate AI summary for a check-in
 export const generateCheckInSummary = async (
   currentCheckIn: CheckInWithDetails,
   previousCheckIns: CheckIn[],
-  clientName: string
+  clientName: string,
+  dailyLogs?: DailyLog[],
+  habitLogs?: HabitLogWithDetails[],
+  startDate?: Date,
+  endDate?: Date
 ): Promise<AICheckInSummary> => {
   try {
     const prompt = buildCheckInAnalysisPrompt(
       currentCheckIn,
       previousCheckIns,
-      clientName
+      clientName,
+      dailyLogs,
+      habitLogs,
+      startDate,
+      endDate
     );
 
     const completion = await openai.chat.completions.create({
@@ -29,9 +53,7 @@ export const generateCheckInSummary = async (
       messages: [
         {
           role: "system",
-          content: `You are an expert fitness coach assistant analyzing client check-ins.
-Provide concise, actionable insights and recommendations. Be encouraging but honest about concerns.
-Your analysis will help coaches quickly understand progress and formulate responses.`,
+          content: AI_SYSTEM_PROMPT,
         },
         {
           role: "user",
@@ -56,7 +78,11 @@ Your analysis will help coaches quickly understand progress and formulate respon
 const buildCheckInAnalysisPrompt = (
   current: CheckInWithDetails,
   previous: CheckIn[],
-  clientName: string
+  clientName: string,
+  dailyLogs?: DailyLog[],
+  habitLogs?: HabitLogWithDetails[],
+  startDate?: Date,
+  endDate?: Date
 ): string => {
   let prompt = `Analyze this check-in for ${clientName}:\n\n`;
 
@@ -134,6 +160,14 @@ const buildCheckInAnalysisPrompt = (
   if (current.prs) prompt += `\nPersonal Records (free text): ${current.prs}\n`;
   if (current.challenges) prompt += `\nChallenges (free text): ${current.challenges}\n`;
   if (current.notes) prompt += `\nNotes: ${current.notes}\n`;
+
+  // Include daily tracking context if available
+  if (dailyLogs && dailyLogs.length > 0 && startDate && endDate) {
+    const dailyContext = buildDailyContextForAI(dailyLogs, habitLogs || [], startDate, endDate);
+    if (dailyContext) {
+      prompt += `\n${dailyContext}\n`;
+    }
+  }
 
   // Previous check-ins for context
   if (previous.length > 0) {
@@ -250,7 +284,11 @@ export const regenerateAISummary = async (
   checkIn: CheckIn,
   previousCheckIns: CheckIn[],
   clientName: string,
-  focus?: "positive" | "detailed" | "concise"
+  focus?: "positive" | "detailed" | "concise",
+  dailyLogs?: DailyLog[],
+  habitLogs?: HabitLogWithDetails[],
+  startDate?: Date,
+  endDate?: Date
 ): Promise<AICheckInSummary> => {
   const focusInstructions = {
     positive: "Focus on positive aspects and wins. Be extra encouraging.",
@@ -262,7 +300,7 @@ export const regenerateAISummary = async (
   const instruction = focus ? focusInstructions[focus] : "";
 
   // Modify the system prompt based on focus
-  const prompt = buildCheckInAnalysisPrompt(checkIn, previousCheckIns, clientName);
+  const prompt = buildCheckInAnalysisPrompt(checkIn, previousCheckIns, clientName, dailyLogs, habitLogs, startDate, endDate);
   const modifiedPrompt = instruction
     ? `${instruction}\n\n${prompt}`
     : prompt;
@@ -272,7 +310,7 @@ export const regenerateAISummary = async (
     messages: [
       {
         role: "system",
-        content: `You are an expert fitness coach assistant. ${instruction}`,
+        content: instruction ? `${AI_SYSTEM_PROMPT}\n\n${instruction}` : AI_SYSTEM_PROMPT,
       },
       {
         role: "user",

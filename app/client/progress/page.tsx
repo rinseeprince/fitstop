@@ -18,15 +18,19 @@ import {
 } from "lucide-react";
 import type { CheckIn } from "@/types/check-in";
 import type { ProgressData } from "@/services/client-portal-service";
+import type { DailyHabit, DailyHabitLog } from "@/types/daily-habit";
 import { GoalsSection } from "@/components/client/progress/goals-section";
 import { DateRangeSelector } from "@/components/client/progress/date-range-selector";
 import { MetricChartCard } from "@/components/clients/metrics/metric-chart-card";
 import { useClientProgressMetrics } from "@/hooks/use-client-progress-metrics";
+import { HabitsSection } from "@/components/client/progress/habits-section";
 
 export default function ClientProgressPage() {
   const router = useRouter();
   const [progressData, setProgressData] = useState<ProgressData | null>(null);
   const [checkIns, setCheckIns] = useState<CheckIn[]>([]);
+  const [habits, setHabits] = useState<DailyHabit[]>([]);
+  const [habitLogs, setHabitLogs] = useState<DailyHabitLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [dateRange, setDateRange] = useState("90");
@@ -36,23 +40,52 @@ export default function ClientProgressPage() {
   const { bodyMetrics, wellnessMetrics } = useClientProgressMetrics(progressData);
 
   useEffect(() => {
+    const abortController = new AbortController();
+    
     async function fetchData() {
       try {
         const days = dateRange === "all" ? 365 : parseInt(dateRange);
-        const [progressRes, checkInsRes] = await Promise.all([
-          fetch(`/api/client/progress?days=${days}`),
-          fetch("/api/client/check-ins?limit=10"),
+        
+        // Calculate date range for habit logs (last 28 days)
+        const endDate = new Date().toISOString().split('T')[0];
+        const startDate = new Date(Date.now() - 28 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        
+        const [progressRes, checkInsRes, habitsRes, habitLogsRes] = await Promise.all([
+          fetch(`/api/client/progress?days=${days}`, { 
+            cache: 'no-store',
+            signal: abortController.signal 
+          }),
+          fetch("/api/client/check-ins?limit=10", { 
+            cache: 'no-store',
+            signal: abortController.signal 
+          }),
+          fetch('/api/client/habits', { 
+            cache: 'no-store',
+            signal: abortController.signal 
+          }),
+          fetch(`/api/client/habits/logs?startDate=${startDate}&endDate=${endDate}`, { 
+            cache: 'no-store',
+            signal: abortController.signal 
+          })
         ]);
 
         if (!progressRes.ok) throw new Error("Failed to fetch progress");
         if (!checkInsRes.ok) throw new Error("Failed to fetch check-ins");
-
+        
         const progressJson = await progressRes.json();
         const checkInsJson = await checkInsRes.json();
+        const habitsJson = habitsRes.ok ? await habitsRes.json() : { data: [] };
+        const habitLogsJson = habitLogsRes.ok ? await habitLogsRes.json() : { data: [] };
 
         setProgressData(progressJson.data);
         setCheckIns(checkInsJson.data || []);
+        setHabits(habitsJson.data || []);
+        setHabitLogs(habitLogsJson.data || []);
       } catch (err) {
+        // Ignore abort errors
+        if (err instanceof Error && err.name === 'AbortError') {
+          return;
+        }
         setError(err instanceof Error ? err.message : "Something went wrong");
       } finally {
         setLoading(false);
@@ -60,6 +93,11 @@ export default function ClientProgressPage() {
     }
 
     fetchData();
+    
+    // Cleanup: cancel the request if the component unmounts or dateRange changes
+    return () => {
+      abortController.abort();
+    };
   }, [dateRange]);
 
   if (loading) {
@@ -186,6 +224,9 @@ export default function ClientProgressPage() {
           </Tabs>
         </CardContent>
       </Card>
+
+      {/* My Habits Section */}
+      <HabitsSection habits={habits} habitLogs={habitLogs} />
 
       {/* Check-in History */}
       <div>

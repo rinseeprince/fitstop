@@ -12,6 +12,8 @@ import {
 import { updateClient } from "@/services/client-service";
 import { updateClientBMR } from "@/services/bmr-service";
 import { supabaseAdmin } from "@/services/supabase-admin";
+import { getDailyLogs } from "@/services/daily-logs-service";
+import { getHabitLogs } from "@/services/daily-habits-service";
 import type { SubmitCheckInRequest, CheckInFormData } from "@/types/check-in";
 
 /**
@@ -40,11 +42,46 @@ export async function triggerAISummaryGeneration(
     const { checkIns } = await getClientCheckIns(clientId, { limit: 5 });
     const previousCheckIns = checkIns.filter((ci) => ci.id !== checkInId);
 
-    // Generate AI summary with enhanced data
+    // Calculate date range for daily tracking context
+    const endDate = new Date(currentCheckIn.createdAt);
+    let startDate: Date;
+    
+    if (previousCheckIns.length > 0) {
+      // Start from day after the most recent previous check-in
+      startDate = new Date(previousCheckIns[0].createdAt);
+      startDate.setDate(startDate.getDate() + 1);
+    } else {
+      // No previous check-in, look back 7 days
+      startDate = new Date(endDate);
+      startDate.setDate(startDate.getDate() - 6);
+    }
+    
+    const startDateStr = startDate.toISOString().split('T')[0];
+    const endDateStr = endDate.toISOString().split('T')[0];
+    
+    // Fetch daily tracking context for the period
+    let dailyLogs, habitLogs;
+    try {
+      [dailyLogs, habitLogs] = await Promise.all([
+        getDailyLogs(clientId, startDateStr, endDateStr),
+        getHabitLogs(clientId, startDateStr, endDateStr),
+      ]);
+    } catch (error) {
+      // If daily tracking fetch fails, continue without it
+      console.error('Error fetching daily tracking data:', error);
+      dailyLogs = undefined;
+      habitLogs = undefined;
+    }
+
+    // Generate AI summary with enhanced data including daily tracking
     const aiSummary = await generateCheckInSummary(
       currentCheckIn,
       previousCheckIns,
-      clientName
+      clientName,
+      dailyLogs,
+      habitLogs,
+      startDate,
+      endDate
     );
 
     // Update check-in with AI summary for coach review
@@ -55,8 +92,6 @@ export async function triggerAISummaryGeneration(
       aiSummary.recommendations,
       aiSummary.responseDraft
     );
-    
-    console.log(`AI summary generated successfully for check-in ${checkInId}`);
   } catch (error) {
     console.error(`Error in AI summary generation for check-in ${checkInId}:`, error);
     throw error;
