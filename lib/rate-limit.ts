@@ -145,3 +145,14 @@ export async function checkInRateLimit(request: NextRequest): Promise<NextRespon
     maxRequests: 30, // 30 requests per minute
   });
 }
+
+/**
+ * Rate limit for coach-side client management endpoints
+ * Allows burst traffic for dashboard navigation
+ */
+export async function coachApiRateLimit(request: NextRequest): Promise<NextResponse | null> {
+  return rateLimit(request, {
+    windowMs: 10 * 1000, // 10 seconds
+    maxRequests: 30, // 30 requests per 10 seconds
+  });
+}

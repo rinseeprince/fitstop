@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/page-header"
 import { MetricCard } from "@/components/metric-card"
 import { CoachTipCard } from "@/components/coach-tip-card"
 import { FloatingActionButton } from "@/components/floating-action-button"
+import { NeedsAttentionFeed } from "@/components/dashboard/needs-attention-feed"
 import { Users, MessageSquare, PhoneCall, Clock, TrendingUp, AlertCircle } from "lucide-react"
 import { motion } from "framer-motion"
 import { formatRelativeTime } from "@/lib/check-in-utils"
@@ -59,6 +60,9 @@ export default function DashboardPage() {
   return (
     <AppLayout pageHeader={pageHeader}>
       <div className="space-y-6 max-w-7xl mx-auto">
+        {/* Needs Attention Feed - at the top */}
+        <NeedsAttentionFeed />
+        
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
           <MetricCard
             title="Active Clients"

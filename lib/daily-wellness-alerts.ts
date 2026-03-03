@@ -1,4 +1,11 @@
 import type { DailyLog } from "@/types/daily-log"
+import {
+  evaluateMoodEnergyDrop,
+  evaluateLoggingGap,
+  evaluateNutritionMisses,
+  evaluateTrainingMisses,
+  evaluateHighStress
+} from "@/lib/attention-triggers"
 
 export type AlertSeverity = "high" | "medium" | "low"
 
@@ -9,6 +16,8 @@ export type AlertType =
   | "nutrition_missed"
   | "training_missed"
   | "high_stress"
+  | "habit_dropoff"
+  | "activity_cal_mismatch"
 
 export interface WellnessAlert {
   type: AlertType
@@ -29,81 +38,88 @@ export function detectAlerts(dailyLogs: DailyLog[], now: Date = new Date()): Wel
   }
 
   const alerts: WellnessAlert[] = []
+  const endDate = now.toISOString().split('T')[0]
+  const startDate = new Date(now)
+  startDate.setDate(now.getDate() - 28)
+  const dateRange = { start: startDate.toISOString().split('T')[0], end: endDate }
   
-  // Sort logs by date ascending for easier processing
-  const sortedLogs = [...dailyLogs].sort((a, b) => a.date.localeCompare(b.date))
-  
-  // 1. Check for mood drop (2+ points below 7-day average for 3+ consecutive days)
-  const moodDropAlert = checkMetricDrop(sortedLogs, "mood", 2, 3, 7)
-  if (moodDropAlert) {
+  // 1. Check for mood drop
+  const moodDropResult = evaluateMoodEnergyDrop(dailyLogs, "mood")
+  if (moodDropResult) {
     alerts.push({
-      type: "mood_drop",
-      severity: "high",
-      message: "Mood has dropped significantly below average for 3+ consecutive days",
-      affectedDays: moodDropAlert
+      type: moodDropResult.type as AlertType,
+      severity: moodDropResult.severity,
+      message: moodDropResult.message,
+      affectedDays: moodDropResult.affectedDays
     })
   }
   
-  // 2. Check for energy drop (2+ points below 7-day average for 3+ consecutive days)
-  const energyDropAlert = checkMetricDrop(sortedLogs, "energy", 2, 3, 7)
-  if (energyDropAlert) {
+  // 2. Check for energy drop
+  const energyDropResult = evaluateMoodEnergyDrop(dailyLogs, "energy")
+  if (energyDropResult) {
     alerts.push({
-      type: "energy_drop",
-      severity: "high",
-      message: "Energy levels have dropped significantly below average for 3+ consecutive days",
-      affectedDays: energyDropAlert
+      type: energyDropResult.type as AlertType,
+      severity: energyDropResult.severity,
+      message: energyDropResult.message,
+      affectedDays: energyDropResult.affectedDays
     })
   }
   
-  // 3. Check for no log gap (3+ consecutive days without logs)
-  const noLogGapAlert = checkNoLogGap(sortedLogs, 3, now)
-  if (noLogGapAlert) {
+  // 3. Check for no log gap
+  const noLogGapResult = evaluateLoggingGap(dailyLogs, dateRange)
+  if (noLogGapResult) {
     alerts.push({
-      type: "no_log_gap",
-      severity: "medium",
-      message: `No daily logs for ${noLogGapAlert.length} consecutive days`,
-      affectedDays: noLogGapAlert
+      type: noLogGapResult.type as AlertType,
+      severity: noLogGapResult.severity,
+      message: noLogGapResult.message,
+      affectedDays: noLogGapResult.affectedDays
     })
   }
   
-  // 4. Check for nutrition missed (3+ consecutive days)
-  const nutritionMissedAlert = checkNutritionMissed(sortedLogs, 3)
-  if (nutritionMissedAlert) {
+  // 4. Check for nutrition missed
+  const nutritionMissedResult = evaluateNutritionMisses(dailyLogs)
+  if (nutritionMissedResult) {
     alerts.push({
-      type: "nutrition_missed",
-      severity: "medium",
-      message: "Nutrition targets missed for 3+ consecutive days",
-      affectedDays: nutritionMissedAlert
+      type: nutritionMissedResult.type as AlertType,
+      severity: nutritionMissedResult.severity,
+      message: nutritionMissedResult.message,
+      affectedDays: nutritionMissedResult.affectedDays
     })
   }
   
-  // 5. Check for training missed (2+ in current week)
-  const trainingMissedAlert = checkTrainingMissed(sortedLogs, 2, now)
-  if (trainingMissedAlert) {
+  // 5. Check for training missed
+  // Note: plannedSessionCount would need to be passed in for full implementation
+  // For backward compatibility, using a default of 3 sessions per week
+  const trainingMissedResult = evaluateTrainingMisses(dailyLogs, 3, now)
+  if (trainingMissedResult) {
     alerts.push({
-      type: "training_missed",
-      severity: "high",
-      message: `${trainingMissedAlert.length} training sessions missed this week`,
-      affectedDays: trainingMissedAlert
+      type: trainingMissedResult.type as AlertType,
+      severity: trainingMissedResult.severity,
+      message: trainingMissedResult.message,
+      affectedDays: trainingMissedResult.affectedDays
     })
   }
   
-  // 6. Check for high stress (8+ for 3 consecutive days)
-  const highStressAlert = checkHighStress(sortedLogs, 8, 3)
-  if (highStressAlert) {
+  // 6. Check for high stress
+  const highStressResult = evaluateHighStress(dailyLogs)
+  if (highStressResult) {
     alerts.push({
-      type: "high_stress",
-      severity: "high",
-      message: "Stress levels critically high for 3+ consecutive days",
-      affectedDays: highStressAlert
+      type: highStressResult.type as AlertType,
+      severity: highStressResult.severity,
+      message: highStressResult.message,
+      affectedDays: highStressResult.affectedDays
     })
   }
   
   return alerts
 }
 
+// Legacy functions kept for backward compatibility with tests
+// These now just wrap the extracted functions from attention-triggers.ts
+
 /**
  * Checks if a metric has dropped below rolling average for consecutive days
+ * @deprecated Use evaluateMoodEnergyDrop from attention-triggers.ts instead
  */
 function checkMetricDrop(
   logs: DailyLog[],

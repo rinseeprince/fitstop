@@ -13,3 +13,23 @@ export const NUTRITION_ADHERENCE_PARTIAL_THRESHOLD = 200; // Within 200 calories
 
 // Date limits
 export const MAX_DATE_LOOKBACK_DAYS = 30;
+
+// Trigger thresholds for attention alerts
+export const MOOD_ENERGY_DROP_THRESHOLD = 2; // Points below average
+export const MOOD_ENERGY_DROP_CONSECUTIVE_DAYS = 3;
+export const MOOD_ENERGY_ROLLING_DAYS = 7;
+
+export const LOGGING_GAP_THRESHOLD_DAYS = 3;
+
+export const NUTRITION_MISSED_CONSECUTIVE_DAYS = 3;
+
+export const TRAINING_MISSED_WEEKLY_THRESHOLD = 2; // Sessions per week
+
+export const HIGH_STRESS_THRESHOLD = 8; // Stress level
+export const HIGH_STRESS_CONSECUTIVE_DAYS = 3;
+
+export const HABIT_DROPOFF_THRESHOLD_PERCENT = 50; // Completion rate %
+export const HABIT_DROPOFF_DAYS_IN_WEEK = 5; // Days out of 7
+
+export const ACTIVITY_CAL_MISMATCH_DAY_COUNT = 2; // Days in 28-day window
+export const ACTIVITY_CAL_MISMATCH_WINDOW_DAYS = 28;
