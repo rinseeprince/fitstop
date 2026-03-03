@@ -1,4 +1,4 @@
-  # Daily Pulse - Feature README
+# Daily Pulse - Feature README
 
   Daily Pulse is the daily check-in system on the client dashboard. Clients log wellness (mood, energy, sleep, stress), training completion, nutrition intake, and habits each day. Coaches see aggregated data via the wellness strip on the client overview page.
 
@@ -89,6 +89,8 @@
   ├── wellness-bar-chart.tsx       - Reusable Recharts BarChart with Cell component
   │                                  for per-bar conditional colouring. Shows
   │                                  min/avg/max stats and current value.
+  │                                  Imports getBarColor from shared utility
+  │                                  utils/wellness-color-thresholds.ts.
   ├── adherence-dot-row.tsx        - Dot row for nutrition adherence (green/amber/red/grey)
   │                                  and training completion (green/grey). Clickable -
   │                                  clicking a dot opens the day detail overlay.
@@ -143,6 +145,47 @@
                                                 and "Create First Habit" button.
   ```
 
+  ### Check-in review components (Session 19)
+  ```
+  components/check-in/
+  ├── check-in-detail-modal.tsx    - Coach-side check-in review modal. Fetches check-in
+  │                                  data, comparison data, AND daily tracking context
+  │                                  (daily logs + habit logs) for the check-in period.
+  │                                  Shows spinner until ALL data loads (including daily
+  │                                  context) to prevent layout shift. Accepts clientName
+  │                                  prop so title renders immediately without waiting
+  │                                  for fetch. Renders DailyContextSummary at top of
+  │                                  "Current Check-In" tab when daily logs exist.
+  │                                  Date range for daily context calculated from:
+  │                                  - Day after previous check-in to current check-in
+  │                                  - Or 7 days back if no previous check-in
+  │                                  Uses one-shot fetch in useEffect (not SWR) since
+  │                                  this is a transient modal. useEffect depends on
+  │                                  data?.checkIn?.id (primitive), not the data object.
+  ├── daily-context-summary.tsx    (171 lines) - Orchestrator component. Receives dailyLogs,
+  │                                              habitLogs, startDate, endDate as props.
+  │                                              Returns null if no daily logs (section hidden).
+  │                                              Renders DailyContextCharts + text summaries.
+  │                                              Nutrition: avg cal vs avg target with "X of Y
+  │                                              days logged", adherence counts (hit/partial/
+  │                                              missed) using constants from lib/constants.ts.
+  │                                              Training: sessions completed, activities done,
+  │                                              unplanned count. Reads activityStatuses with
+  │                                              .completed field correctly.
+  │                                              Habits: completion rate per habit with proper
+  │                                              denominator based on days existed in period
+  │                                              (max(habitCreatedAt, startDate) to endDate).
+  │                                              All sections hidden when zero relevant data.
+  ├── daily-context-charts.tsx     (105 lines) - Compact bar charts for mood, energy, sleep,
+  │                                              stress. Uses getBarColor from shared utility.
+  │                                              Builds full date range with null values for
+  │                                              missing days (renders as grey bars). Charts
+  │                                              cover the check-in's full date range (not
+  │                                              hardcoded to 7 days). 2x2 grid layout.
+  │                                              Y-axis: mood 0-5, others 0-10.
+  └── ... (other existing check-in components unchanged)
+  ```
+
   ### Supporting files
 
   #### Hooks
@@ -189,9 +232,23 @@
   │                                              by habitId only (no is_active filter),
   │                                              so stats work for inactive habits too.
   ├── daily-activities-service.ts  (213 lines) - External/unplanned activities CRUD.
-  └── check-in-service.ts                      - Extended in Session 16 to calculate
-                                                dailyLogsCount and expectedDays per
-                                                check-in period (server-side, not client-side).
+  ├── check-in-service.ts                      - Extended in Session 16 to calculate
+  │                                              dailyLogsCount and expectedDays per
+  │                                              check-in period (server-side, not client-side).
+  ├── client-check-in-service.ts               - ✅ Updated Session 19. triggerAISummaryGeneration
+  │                                              now calculates check-in date range, fetches
+  │                                              daily logs + habit logs for the period, and
+  │                                              passes them to generateCheckInSummary.
+  └── ai-service.ts                            - ✅ Updated Session 19. AI check-in analysis.
+                                                generateCheckInSummary and regenerateAISummary
+                                                accept optional dailyLogs, habitLogs, startDate,
+                                                endDate params. Shared AI_SYSTEM_PROMPT constant
+                                                used by both functions. System prompt instructs
+                                                AI to reference daily patterns, correlate energy
+                                                with nutrition, note contradictions with self-
+                                                reports, mention habits by name, note session
+                                                swaps. Daily context only included when logs
+                                                exist - otherwise works exactly as before.
   ```
 
   #### Libraries & Utilities
@@ -199,7 +256,9 @@
   lib/
   ├── constants.ts                 (14 lines)  - DEBOUNCE_DELAY_MS (300ms),
   │                                              RATE_LIMIT_RETRY_DELAY_MS (1500ms),
-  │                                              Nutrition adherence thresholds.
+  │                                              Nutrition adherence thresholds
+  │                                              (NUTRITION_ADHERENCE_HIT_THRESHOLD = 50,
+  │                                               NUTRITION_ADHERENCE_PARTIAL_THRESHOLD = 200).
   ├── date-helpers.ts              (91 lines)  - Date formatting, getTodayDateString.
   ├── validation-helpers.ts        (76 lines)  - Input validation utilities.
   └── daily-wellness-alerts.ts                 - ✅ Session 16. detectAlerts(dailyLogs[])
@@ -213,18 +272,66 @@
   ├── nutrition-tracking-helpers.ts (139 lines) - calculateAdjustedDayTarget,
   │                                               calculateAdjustedMacros, getCalorieFeedback,
   │                                               getNutritionAdherence. Unit tested.
-  └── daily-logs-aggregation.ts    (140 lines) - Log aggregation for analytics.
+  ├── daily-logs-aggregation.ts    (140 lines) - Log aggregation for analytics.
+  ├── wellness-color-thresholds.ts (28 lines)  - ✅ Session 19. Shared getBarColor function
+  │                                              extracted from wellness-bar-chart.tsx.
+  │                                              Exports WellnessMetric type and getBarColor.
+  │                                              Colour thresholds: Mood green 4-5, amber 3,
+  │                                              red 1-2. Energy/Sleep green 7-10, amber 4-6,
+  │                                              red 1-3. Stress inverted: green 1-3, amber
+  │                                              4-6, red 7-10. Null returns grey (#e5e7eb).
+  │                                              Used by wellness-bar-chart.tsx and
+  │                                              daily-context-charts.tsx.
+  └── ai-daily-context-builder.ts  (157 lines) - ✅ Session 19. Transforms daily logs + habit
+                                                logs into structured text summary for AI
+                                                prompt. Single export: buildDailyContextForAI(
+                                                dailyLogs, habitLogs, startDate, endDate).
+                                                Per-day summaries: wellness metrics, calories
+                                                vs target with adherence status, training
+                                                session name + activity completion + skipped
+                                                activities by name, habit toggles per day.
+                                                Weekly patterns section: avg calories, nutrition
+                                                adherence counts, session completion + swap
+                                                details by name and day, habit completion rates
+                                                with proper denominators, energy/nutrition
+                                                correlation detection. Uses constants from
+                                                lib/constants.ts for adherence thresholds.
+                                                Returns empty string if no logs (AI prompt
+                                                works as before). Never dumps raw JSON.
+  ```
+
+  #### Types
+  ```
+  types/
+  ├── database.ts                  - Supabase generated types.
+  ├── daily-log.ts                 - DailyLog type with camelCase fields.
+  │                                  date is YYYY-MM-DD string.
+  │                                  caloriesConsumed, targetCalories, etc.
+  │                                  trainingData typed with activityStatuses shape.
+  └── daily-habit.ts               - ✅ Session 19. Shared HabitLogWithDetails type.
+                                    Includes: id, dailyHabitId, clientId, date,
+                                    completed, value?, notes?, habitName,
+                                    targetValue?, targetUnit?, isBoolean,
+                                    habitCreatedAt. Used by daily-context-summary.tsx
+                                    and ai-daily-context-builder.ts. Single source
+                                    of truth - no duplicate type definitions.
   ```
 
   #### Tests
   ```
   __tests__/
   ├── utils/daily-logs-aggregation.test.ts     - Aggregation logic tests.
-  └── lib/daily-wellness-alerts.test.ts        - ✅ Session 16. Tests all alert triggers:
-                                                mood drop, energy drop, no log gap,
-                                                nutrition missed, training missed,
-                                                high stress. Edge cases: empty array,
-                                                single day. Uses vitest.
+  ├── lib/daily-wellness-alerts.test.ts        - ✅ Session 16. Tests all alert triggers:
+  │                                              mood drop, energy drop, no log gap,
+  │                                              nutrition missed, training missed,
+  │                                              high stress. Edge cases: empty array,
+  │                                              single day. Uses vitest.
+  └── services/client-check-in-service.test.ts - ✅ Updated Session 19. Mocks updated for
+                                                new generateCheckInSummary signature (7
+                                                params with optional dailyLogs, habitLogs,
+                                                startDate, endDate). Mocks getDailyLogs
+                                                and getHabitLogs services. Mock check-in
+                                                objects include createdAt timestamps.
   ```
 
   ---
@@ -374,11 +481,12 @@
   - 2x2 grid: Mood (1-5), Energy (1-10), Sleep Quality (1-10), Stress Level (1-10)
   - Each bar = one day. No bar for days with no log.
   - Recharts `Cell` component required for conditional per-bar colouring (CSS approach doesn't work with Recharts)
-  - Colour thresholds:
+  - Colour thresholds defined in `utils/wellness-color-thresholds.ts` (shared utility):
     - Mood: Green (#10b981) 4-5, Amber (#f59e0b) 3, Red (#ef4444) 1-2
     - Energy: Green 7-10, Amber 4-6, Red 1-3
     - Sleep: Green 7-10, Amber 4-6, Red 1-3
     - Stress (INVERTED): Green 1-3, Amber 4-6, Red 7-10
+    - Null: Grey (#e5e7eb) for missing data
   - Shows min/avg/max below each chart and current value (most recent log) prominently
 
   ### Adherence Dot Rows
@@ -471,6 +579,61 @@
 
   ---
 
+  ## Check-In Review Daily Context (Session 19)
+
+  When a coach opens a check-in review modal, daily tracking data from the check-in period is displayed above the existing check-in content, and fed to the AI for richer analysis.
+
+  ### Check-In Detail Modal - Daily Context Fetch
+
+  `check-in-detail-modal.tsx` adds a second useEffect (depends on `data?.checkIn?.id`, not the `data` object) that fetches daily context when the check-in data is available:
+
+  ```
+  1. Fetch previous check-in via GET /api/check-in/{id}/previous
+  2. Calculate date range:
+     - If previous check-in exists: day after previous check-in to current check-in date
+     - If no previous check-in: 7 days back from current check-in date
+  3. Store calculated startDate and endDate in state (contextStartDate, contextEndDate)
+  4. Promise.all with { cache: 'no-store' }:
+     GET /api/clients/{id}/daily-logs?startDate=X&endDate=Y
+     GET /api/clients/{id}/habits/logs?startDate=X&endDate=Y
+  ```
+
+  - Main spinner shows until BOTH check-in data AND daily context finish loading (prevents layout shift)
+  - If daily context fetch fails, modal still works - daily context section is hidden
+  - `clientName` prop passed from parent so title renders immediately (no "Loading..." flash)
+
+  ### Daily Context Summary UI
+
+  `daily-context-summary.tsx` renders at the top of the "Current Check-In" tab. Only renders if at least one daily log exists for the period. Uses check-in period dates (from state), NOT dates derived from log data.
+
+  **Sections displayed:**
+  - **Charts**: Compact 2x2 bar charts for mood/energy/sleep/stress via `daily-context-charts.tsx`. Covers the full check-in date range. Grey bars for missing days (null values). Uses shared `getBarColor` from `utils/wellness-color-thresholds.ts`.
+  - **Nutrition**: "Avg X cal/day vs Y avg target (Z of N days logged)". Adherence counts using thresholds from `lib/constants.ts`. Reads saved `targetCalories` from daily_log rows (historical accuracy), not current plan.
+  - **Training**: "Completed X/Y sessions". Activity completion from `training_data.activityStatuses` (reads `.completed` field). Unplanned activity count from `training_data.unplannedActivities`.
+  - **Habits**: Per-habit "Habit Name: X/Y days" where Y = days the habit existed in the period, calculated as `max(habitCreatedAt, startDate)` to `endDate`. Not based on log entry count.
+
+  All sections handle partial data: "3 of 7 days logged". Sections with zero relevant data are hidden.
+
+  ### AI Analysis Enhancement
+
+  `ai-service.ts` now accepts optional `dailyLogs`, `habitLogs`, `startDate`, `endDate` parameters on both `generateCheckInSummary` and `regenerateAISummary`. When daily logs exist:
+
+  1. `buildDailyContextForAI()` in `utils/ai-daily-context-builder.ts` transforms raw data into structured readable text (not raw JSON dumps)
+  2. The text block is appended to the check-in analysis prompt
+  3. A shared `AI_SYSTEM_PROMPT` constant (used by both generate and regenerate functions) instructs the AI to:
+     - Reference specific daily patterns with actual dates and numbers
+     - Correlate low energy/mood with nutrition misses or poor sleep
+     - Note when daily data contradicts the client's weekly self-report
+     - Mention habit adherence by name
+     - Note session swaps or skipped activities by name
+     - Be specific with numbers, not generic
+
+  When no daily logs exist, both functions work exactly as before (optional params).
+
+  `client-check-in-service.ts` and the AI summary regeneration route both calculate the date range, fetch daily logs + habit logs, and pass them to the AI functions.
+
+  ---
+
   ## training_data JSONB Structure
 
   Stored on the `training_data` column of `daily_logs`:
@@ -541,6 +704,7 @@
   - **Edit mode (client)**: uses current plan targets for dynamic recalculation (accepted trade-off)
   - **Fresh day (client)**: calculates from current plan
   - **Coach detail card**: always reads saved values from the `daily_logs` row (historical accuracy)
+  - **Check-in review summary**: reads saved `targetCalories` from daily_log rows (historical accuracy)
 
   This ensures logged data survives plan changes. If a coach regenerates the nutrition plan after a client logs, the logged day still shows the targets that were relevant when they saved.
 
@@ -554,7 +718,7 @@
   | partial | 51-200 cal from target |
   | missed  | 200+ cal from target   |
 
-  Based on absolute distance. Direction stored in `calorie_surplus_deficit`.
+  Based on absolute distance. Direction stored in `calorie_surplus_deficit`. Thresholds defined in `lib/constants.ts` as `NUTRITION_ADHERENCE_HIT_THRESHOLD` and `NUTRITION_ADHERENCE_PARTIAL_THRESHOLD`. Always import from constants, never hardcode.
 
   ---
 
@@ -611,6 +775,14 @@
   | Coach day detail showed "Not logged" for completed habits | Display text logic branched on `value` and `isBoolean` instead of `completed` field | Check `completed` field only: true → "Completed", false → "Not completed", no log → "Not logged" |
   | Numeric habit charts showed no data | `use-habit-logs.ts` set `value = log.value ?? 0` for numeric habits, which was null since clients only save `completed` | Changed to `value = log.completed ? 1 : 0` for all habits (boolean-style charts) |
   | Duplicate habit name on re-create after delete | Soft delete (`is_active = false`) preserved the row, unique constraint on `(client_id, name)` blocked re-creation | `createHabit` checks for inactive habit with same name, reactivates it instead of inserting |
+  | Check-in daily context used log dates for period | `startDate` passed to DailyContextSummary was derived from `dailyLogs[0].date` (first log) instead of the calculated check-in period start date | Store calculated `contextStartDate` and `contextEndDate` in state, pass those to the component |
+  | Hardcoded adherence thresholds in daily context | Adherence calculation in daily-context-summary.tsx and ai-daily-context-builder.ts used magic numbers 50 and 200 | Import `NUTRITION_ADHERENCE_HIT_THRESHOLD` and `NUTRITION_ADHERENCE_PARTIAL_THRESHOLD` from `lib/constants.ts` |
+  | Habit denominator based on log count | Habit completion showed "X/Y" where Y was number of log entries, not days the habit existed | Calculate denominator as days from `max(habitCreatedAt, startDate)` to `endDate` |
+  | Duplicate HabitLogWithDetails type | Type defined locally in both daily-context-summary.tsx and ai-daily-context-builder.ts, could drift apart | Extracted to shared `types/daily-habit.ts`, both files import from there |
+  | Object ref in useEffect dependency (check-in modal) | useEffect for daily context fetch depended on `data` object, which gets new reference every render | Changed dependency to `data?.checkIn?.id` (primitive value) |
+  | regenerateAISummary missing daily tracking prompt | `regenerateAISummary` had a minimal system prompt without daily tracking instructions, so regenerated summaries lost daily context awareness | Extracted shared `AI_SYSTEM_PROMPT` constant used by both generate and regenerate functions |
+  | AI service recalculated check-in date range | `buildCheckInAnalysisPrompt` independently calculated the date range, risking inconsistency with the modal's calculation | Added optional `startDate` and `endDate` params to AI functions, passed from caller |
+  | Check-in modal title showed "Loading..." | Title used `data?.client?.name || "Loading..."` which flashed before fetch resolved | Added `clientName` prop passed from parent, title renders immediately |
 
   ---
 
@@ -639,6 +811,11 @@
   21. **Soft delete for habits** - delete sets `is_active = false`, never hard deletes. Preserves `daily_habit_logs` for historical analytics. Coach can view inactive habits via Active/All toggle and reactivate them.
   22. **Habit display text uses `completed` field only** - never branch on `isBoolean` or `value` for display. `completed: true` → "Completed", `completed: false` → "Not completed", no log → "Not logged".
   23. Client-side uses fetch with { cache: 'no-store' }, coach-side uses SWR - Daily Pulse, client portal, and progress page components fetch data directly using fetch with { cache: 'no-store' } in Promise.all patterns. Only coach-side components (components/clients/) use SWR hooks. Never use SWR on the client side. When creating new hooks, check hooks/ for existing hooks with similar names to avoid duplicates (e.g. use-client-habits.ts is a coach-side hook, not a client-side one).
+  24. **Nutrition adherence thresholds from constants** - always import `NUTRITION_ADHERENCE_HIT_THRESHOLD` and `NUTRITION_ADHERENCE_PARTIAL_THRESHOLD` from `lib/constants.ts`. Never hardcode 50/200 values.
+  25. **Colour thresholds from shared utility** - always import `getBarColor` from `utils/wellness-color-thresholds.ts`. Never duplicate colour threshold definitions in individual components.
+  26. **Shared types in dedicated files** - types used by multiple files must be in `types/` directory (e.g. `HabitLogWithDetails` in `types/daily-habit.ts`). Never define the same type locally in multiple files.
+  27. **Habit completion denominators** - when showing habit completion rates (e.g. "Water: 3/7 days"), the denominator must be calculated as days from `max(habitCreatedAt, startDate)` to `endDate`. Never use log entry count as the denominator.
+  28. **Check-in period dates from calculation, not log data** - when displaying daily context for a check-in period, always use the calculated period dates (day after previous check-in to current check-in). Never derive the date range from the first/last daily log dates.
 
   ---
 
@@ -665,6 +842,6 @@
   | 16 | Alerts + badges | Wellness strip, check-in timeline, daily-wellness-alerts.ts | ✅ COMPLETED |
   | 17 | Coach habits tab + analytics + Active/All toggle | Habits service + API, soft delete, reactivation | ✅ COMPLETED |
   | 18 | Client habits on progress page | Habit chart card from Session 17 | Planned |
-  | 19 | AI check-in review context | training_data JSONB, daily_logs, habits | Planned |
+  | 19 | AI check-in review context | training_data JSONB, daily_logs, habits | ✅ COMPLETED |
   | 20 | Needs attention feed | Alert triggers, training_data activityStatuses | Planned |
   | 21 | Roster summary + per-client toggle | Attention feed, AI service | Planned |
