@@ -186,6 +186,27 @@
   └── ... (other existing check-in components unchanged)
   ```
 
+  ### Dashboard components (Session 20)
+  ```
+  components/dashboard/
+  └── needs-attention-feed.tsx     (276 lines) - ✅ Session 20. Compact summary card on
+                                                coach dashboard. Single card design with
+                                                positive framing ("X of Y clients on track").
+                                                Priority client section (bg-destructive/5)
+                                                for highest severity client with avatar and
+                                                detailed alert text. Compact list below for
+                                                remaining clients (one line per client, short
+                                                alert text, alert count badge, View link).
+                                                Show max 5 clients (1 priority + 4 compact),
+                                                expandable "and X more" for the rest.
+                                                Empty state: shows card with "All clients
+                                                on track" message and checkmark icon.
+                                                Single motion.div wrapper - content swaps
+                                                inside to avoid remount/animation flicker.
+                                                SWR for data fetching (coach-side).
+                                                Returns null only on error.
+  ```
+
   ### Supporting files
 
   #### Hooks
@@ -232,6 +253,20 @@
   │                                              by habitId only (no is_active filter),
   │                                              so stats work for inactive habits too.
   ├── daily-activities-service.ts  (213 lines) - External/unplanned activities CRUD.
+  ├── attention-feed-service.ts    (313 lines) - ✅ Session 20. Evaluates attention triggers
+  │                                              across ALL of a coach's clients.
+  │                                              evaluateAllClientTriggers(coachId) does
+  │                                              batch queries (not N+1 per client):
+  │                                              clients, daily_logs (28-day window),
+  │                                              daily_habits, daily_habit_logs (28-day
+  │                                              window), training_plans with sessions join.
+  │                                              Groups data by client in application code.
+  │                                              Runs all 7 trigger functions per client.
+  │                                              Returns { clients: ClientWithAlerts[],
+  │                                              totalClientCount } - only clients with
+  │                                              at least one triggered alert included.
+  │                                              Sorted by high severity count, then medium,
+  │                                              then alphabetical.
   ├── check-in-service.ts                      - Extended in Session 16 to calculate
   │                                              dailyLogsCount and expectedDays per
   │                                              check-in period (server-side, not client-side).
@@ -254,19 +289,65 @@
   #### Libraries & Utilities
   ```
   lib/
-  ├── constants.ts                 (14 lines)  - DEBOUNCE_DELAY_MS (300ms),
+  ├── constants.ts                 (34 lines)  - DEBOUNCE_DELAY_MS (300ms),
   │                                              RATE_LIMIT_RETRY_DELAY_MS (1500ms),
   │                                              Nutrition adherence thresholds
   │                                              (NUTRITION_ADHERENCE_HIT_THRESHOLD = 50,
   │                                               NUTRITION_ADHERENCE_PARTIAL_THRESHOLD = 200).
+  │                                              ✅ Session 20: Added trigger threshold
+  │                                              constants: MOOD_ENERGY_DROP_THRESHOLD (2),
+  │                                              MOOD_ENERGY_DROP_CONSECUTIVE_DAYS (3),
+  │                                              MOOD_ENERGY_ROLLING_DAYS (7),
+  │                                              LOGGING_GAP_THRESHOLD_DAYS (3),
+  │                                              NUTRITION_MISSED_CONSECUTIVE_DAYS (3),
+  │                                              TRAINING_MISSED_WEEKLY_THRESHOLD (2),
+  │                                              HIGH_STRESS_THRESHOLD (8),
+  │                                              HIGH_STRESS_CONSECUTIVE_DAYS (3),
+  │                                              HABIT_DROPOFF_THRESHOLD_PERCENT (50),
+  │                                              HABIT_DROPOFF_DAYS_IN_WEEK (5),
+  │                                              ACTIVITY_CAL_MISMATCH_DAY_COUNT (2),
+  │                                              ACTIVITY_CAL_MISMATCH_WINDOW_DAYS (28).
   ├── date-helpers.ts              (91 lines)  - Date formatting, getTodayDateString.
   ├── validation-helpers.ts        (76 lines)  - Input validation utilities.
-  └── daily-wellness-alerts.ts                 - ✅ Session 16. detectAlerts(dailyLogs[])
-                                                returns array of alerts. Triggers:
-                                                mood/energy drop, no log gap, nutrition
-                                                missed, training missed, high stress.
-                                                Each alert: { type, severity, message,
-                                                affectedDays[] }.
+  ├── daily-wellness-alerts.ts     (97 lines)  - ✅ Refactored Session 20. detectAlerts()
+  │                                              is now a thin wrapper that imports and calls
+  │                                              trigger functions from attention-triggers.ts.
+  │                                              AlertType and AlertSeverity types moved to
+  │                                              types/attention-feed.ts (single source of
+  │                                              truth). WellnessAlert interface also moved.
+  │                                              No duplicate logic - all trigger evaluation
+  │                                              lives in the split trigger files.
+  │                                              Legacy private functions removed.
+  ├── attention-triggers.ts        (24 lines)  - ✅ Session 20. Barrel re-export file for
+  │                                              trigger functions. Exports TriggerResult
+  │                                              and MetricDataPoint interfaces. Re-exports
+  │                                              all functions from the three split files.
+  ├── wellness-triggers.ts         (135 lines) - ✅ Session 20. Pure trigger functions:
+  │                                              evaluateMoodEnergyDrop (mood/energy metric,
+  │                                              2+ below 7-day avg for 3+ consecutive days,
+  │                                              High severity) and evaluateHighStress
+  │                                              (stress 8+ for 3 consecutive days, High).
+  │                                              Both check if pattern extends to most recent
+  │                                              log - alerts clear when client recovers.
+  ├── tracking-triggers.ts         (141 lines) - ✅ Session 20. Pure trigger functions:
+  │                                              evaluateLoggingGap (3+ consecutive days
+  │                                              without log, Medium), evaluateNutritionMisses
+  │                                              (nutrition_adherence "missed" for 3+
+  │                                              consecutive days, Medium - clears on
+  │                                              recovery), evaluateTrainingMisses (2+ missed
+  │                                              assigned sessions in current week, High,
+  │                                              accepts optional now param for testing).
+  └── activity-triggers.ts         (140 lines) - ✅ Session 20. Pure trigger functions:
+                                                evaluateHabitDropoff (daily completion rate
+                                                < 50% for 5+ of last 7 days, Medium,
+                                                denominator uses created_at dates per Rule
+                                                27) and evaluateActivityCalMismatch (client
+                                                consumed calories >= target + skipped activity
+                                                calories on 2+ days, High, requires at least
+                                                one occurrence in last 7 days to remain
+                                                active, accepts optional now param for
+                                                testing, reads .completed field from
+                                                activityStatuses).
 
   utils/
   ├── nutrition-tracking-helpers.ts (139 lines) - calculateAdjustedDayTarget,
@@ -308,13 +389,22 @@
   │                                  date is YYYY-MM-DD string.
   │                                  caloriesConsumed, targetCalories, etc.
   │                                  trainingData typed with activityStatuses shape.
-  └── daily-habit.ts               - ✅ Session 19. Shared HabitLogWithDetails type.
-                                    Includes: id, dailyHabitId, clientId, date,
-                                    completed, value?, notes?, habitName,
-                                    targetValue?, targetUnit?, isBoolean,
-                                    habitCreatedAt. Used by daily-context-summary.tsx
-                                    and ai-daily-context-builder.ts. Single source
-                                    of truth - no duplicate type definitions.
+  ├── daily-habit.ts               - ✅ Session 19. Shared HabitLogWithDetails type.
+  │                                  Includes: id, dailyHabitId, clientId, date,
+  │                                  completed, value?, notes?, habitName,
+  │                                  targetValue?, targetUnit?, isBoolean,
+  │                                  habitCreatedAt. Used by daily-context-summary.tsx
+  │                                  and ai-daily-context-builder.ts. Single source
+  │                                  of truth - no duplicate type definitions.
+  └── attention-feed.ts            (42 lines)  - ✅ Session 20. Single source of truth for
+                                    alert types. Defines AlertType (string literal union
+                                    of all 8 trigger types), AlertSeverity, WellnessAlert
+                                    interface. AttentionAlert extends WellnessAlert with
+                                    metricData[] for visualization. ClientWithAlerts
+                                    (clientId, clientName, clientAvatar, alerts[]).
+                                    AttentionFeedResponse for API response shape including
+                                    totalClientCount. Imports MetricDataPoint from
+                                    lib/attention-triggers.ts barrel file.
   ```
 
   #### Tests
@@ -326,6 +416,19 @@
   │                                              nutrition missed, training missed,
   │                                              high stress. Edge cases: empty array,
   │                                              single day. Uses vitest.
+  ├── lib/attention-triggers.test.ts           - ✅ Session 20. Tests all 7 trigger functions
+  │                                              (26 tests). Each trigger tested with:
+  │                                              data that should trigger, data that should
+  │                                              NOT trigger (just below threshold), edge
+  │                                              cases (empty arrays, insufficient data),
+  │                                              correct severity assignment. Alert clearing
+  │                                              tests: streak followed by recovery should
+  │                                              NOT trigger, streak extending to most recent
+  │                                              log SHOULD trigger, streak followed by no
+  │                                              further logs SHOULD trigger. Habit dropoff
+  │                                              verifies denominator uses created_at dates.
+  │                                              Activity cal mismatch verifies .completed
+  │                                              field and 7-day recency requirement.
   └── services/client-check-in-service.test.ts - ✅ Updated Session 19. Mocks updated for
                                                 new generateCheckInSummary signature (7
                                                 params with optional dailyLogs, habitLogs,
@@ -520,21 +623,54 @@
 
   ### Alert Detection
 
-  `detectAlerts()` in `lib/daily-wellness-alerts.ts` runs on the already-loaded 28-day data. No additional API call.
+  `detectAlerts()` in `lib/daily-wellness-alerts.ts` runs on the already-loaded 28-day data. No additional API call. It is a thin wrapper that calls the extracted trigger functions from `lib/attention-triggers.ts`.
+
+  The individual trigger functions are pure functions split across three files (`wellness-triggers.ts`, `tracking-triggers.ts`, `activity-triggers.ts`) and re-exported via the `attention-triggers.ts` barrel file. Both the per-client wellness strip and the roster-level attention feed use the same trigger functions - no duplicate logic.
 
   Triggers:
-  | Trigger | Condition | Severity |
-  |---------|-----------|----------|
-  | Mood drop | 2+ points below 7-day rolling average for 3+ consecutive days | High |
-  | Energy drop | 2+ points below 7-day rolling average for 3+ consecutive days | High |
-  | No log gap | 3+ consecutive days without a log (within provided date range only) | Medium |
-  | Nutrition missed | `nutrition_adherence = "missed"` for 3+ consecutive days | Medium |
-  | Training missed | 2+ missed assigned sessions in current week (uses `training_data.sessionCompleted === false` where `training_data.trainingSessionId` is set) | High |
-  | High stress | Stress 8+ for 3 consecutive days | High |
+  | Trigger | Condition | Severity | Clears when |
+  |---------|-----------|----------|-------------|
+  | Mood drop | 2+ points below 7-day rolling average for 3+ consecutive days | High | Most recent log shows recovery |
+  | Energy drop | 2+ points below 7-day rolling average for 3+ consecutive days | High | Most recent log shows recovery |
+  | No log gap | 3+ consecutive days without a log (within provided date range only) | Medium | Client logs again |
+  | Nutrition missed | `nutrition_adherence = "missed"` for 3+ consecutive days | Medium | Most recent log not missed |
+  | Training missed | 2+ missed assigned sessions in current week (uses `training_data.sessionCompleted === false` where `training_data.trainingSessionId` is set) | High | New week starts |
+  | High stress | Stress 8+ for 3 consecutive days | High | Most recent log shows recovery |
+  | Habit dropoff | Daily completion rate < 50% for 5+ of last 7 days (denominator uses `created_at` dates) | Medium | Rolling 7-day window improves |
+  | Activity cal mismatch | Client consumed calories >= target + skipped activity calories on 2+ days in 28-day window, with at least one occurrence in last 7 days | High | No occurrences in last 7 days |
 
-  Each alert returns: `{ type, severity, message, affectedDays[] }` with `affectedDays` sorted chronologically (ascending).
+  Each alert returns: `{ type, severity, message, affectedDays[], metricData[] }` with `affectedDays` sorted chronologically (ascending). `metricData` contains the last 7 relevant data points for sparkline/visualization rendering.
+
+  **Alert clearing**: Consecutive-day alerts (mood/energy drop, high stress, nutrition missed) only trigger if the pattern extends to the most recent log OR there are no logs after the streak ended (client stopped logging). If the most recent log shows recovery, the alert returns null. Activity cal mismatch requires at least one occurrence in the last 7 days. This prevents stale alerts from persisting after a client recovers.
 
   If alerts exist, a warning badge shows on the wellness strip header ("Daily Wellness [!2]"). Clicking the badge opens a popover listing the active alerts.
+
+  ### Needs Attention Feed (Session 20)
+
+  The coach dashboard (`app/dashboard/page.tsx`) shows a Needs Attention feed at the top, above the metric cards. This aggregates alerts across ALL of a coach's clients into a single compact card.
+
+  **API Route**: `GET /api/dashboard/attention-feed`
+  - `coachApiRateLimit` as first check (30 requests per 10 seconds)
+  - Auth check for coach ID
+  - `Cache-Control: no-store` header
+  - Response: `{ success: true, data: { clients: ClientWithAlerts[], totalClientCount: number } }`
+
+  **Service**: `attention-feed-service.ts` - `evaluateAllClientTriggers(coachId)`
+  - Batch queries all clients' data in as few DB calls as possible (not N+1)
+  - Tables: clients, daily_logs (28 days), daily_habits, daily_habit_logs (28 days), training_plans with training_sessions join
+  - Groups data by client in application code
+  - Runs all 7 trigger functions per client
+  - Returns only clients with at least one alert, sorted by severity
+
+  **UI Design - Compact Summary Card**:
+  - Single card on the dashboard, not a stack of cards per alert
+  - Positive framing header: "Needs Attention" + "X of Y clients on track" success badge
+  - Priority client section (if any high severity): avatar, name, detailed alert text, View link. Uses `bg-destructive/5` background tint.
+  - Compact list for remaining clients: one line per client, short alert text, severity-coloured alert count badge, View link. Max 4 shown.
+  - "and X more" expander reveals hidden clients in place
+  - Empty state (no alerts): card still shows with "All clients on track" checkmark message
+  - Single `motion.div` wrapper - inner content swaps between loading/empty/populated states without remounting. Prevents animation flicker.
+  - SWR for data fetching (coach-side pattern)
 
   ### Check-In Timeline Badge
 
@@ -783,6 +919,10 @@
   | regenerateAISummary missing daily tracking prompt | `regenerateAISummary` had a minimal system prompt without daily tracking instructions, so regenerated summaries lost daily context awareness | Extracted shared `AI_SYSTEM_PROMPT` constant used by both generate and regenerate functions |
   | AI service recalculated check-in date range | `buildCheckInAnalysisPrompt` independently calculated the date range, risking inconsistency with the modal's calculation | Added optional `startDate` and `endDate` params to AI functions, passed from caller |
   | Check-in modal title showed "Loading..." | Title used `data?.client?.name || "Loading..."` which flashed before fetch resolved | Added `clientName` prop passed from parent, title renders immediately |
+  | Consecutive-day alerts never cleared after recovery | Triggers scanned 28-day window for any qualifying streak, regardless of whether client had since logged normal values | Consecutive-day triggers (mood/energy drop, high stress, nutrition missed) now check if streak extends to most recent log. If most recent log shows recovery, alert returns null. Activity cal mismatch requires at least one occurrence in last 7 days. |
+  | Duplicate trigger logic between wellness alerts and attention feed | `daily-wellness-alerts.ts` had full trigger implementations AND new `attention-triggers.ts` had the same logic | Extracted all trigger functions to split files (`wellness-triggers.ts`, `tracking-triggers.ts`, `activity-triggers.ts`). `detectAlerts()` became a thin wrapper. Dead legacy functions removed. |
+  | Loose AlertType typing caused `as AlertType` casts | `TriggerResult.type` was `string`, requiring casts in `detectAlerts()` | Changed `TriggerResult.type` to `AlertType` (imported from `types/attention-feed.ts`). Removed all 6 casts. |
+  | `: any` on training plan query iteration | `trainingPlans.forEach((plan: any)` and `(session: any)` in attention-feed-service.ts | Created `TrainingPlanWithSessions` interface for the joined query result |
 
   ---
 
@@ -816,6 +956,12 @@
   26. **Shared types in dedicated files** - types used by multiple files must be in `types/` directory (e.g. `HabitLogWithDetails` in `types/daily-habit.ts`). Never define the same type locally in multiple files.
   27. **Habit completion denominators** - when showing habit completion rates (e.g. "Water: 3/7 days"), the denominator must be calculated as days from `max(habitCreatedAt, startDate)` to `endDate`. Never use log entry count as the denominator.
   28. **Check-in period dates from calculation, not log data** - when displaying daily context for a check-in period, always use the calculated period dates (day after previous check-in to current check-in). Never derive the date range from the first/last daily log dates.
+  29. **Trigger thresholds from constants** - all attention trigger thresholds must be imported from `lib/constants.ts`. Never hardcode threshold values (2 points, 3 days, stress 8, etc.) in trigger functions or components.
+  30. **AlertType and AlertSeverity from types/attention-feed.ts** - single source of truth for alert type definitions. Both `daily-wellness-alerts.ts` and `attention-triggers.ts` import from there. Never define AlertType locally in multiple files.
+  31. **No duplicate trigger logic** - all trigger evaluation functions live in `lib/wellness-triggers.ts`, `lib/tracking-triggers.ts`, and `lib/activity-triggers.ts`, re-exported via `lib/attention-triggers.ts`. Both the per-client wellness strip (via `detectAlerts()`) and the roster-level attention feed (via `evaluateAllClientTriggers()`) use these same functions. Never duplicate trigger logic.
+  32. **Alerts must self-clear** - consecutive-day triggers only fire if the pattern extends to the most recent log or logging stopped after the pattern. Count-based triggers (activity cal mismatch) require at least one occurrence in the last 7 days. Never trigger on historical patterns that have since resolved.
+  33. **Pure trigger functions accept `now` parameter** - trigger functions that reference the current date (evaluateTrainingMisses, evaluateActivityCalMismatch) accept an optional `now` parameter for testability. Never use `new Date()` directly inside a pure function without making it injectable.
+  34. **Batch queries for roster-level operations** - when querying data across all of a coach's clients (e.g. attention feed), fetch all data in bulk queries then group by client in application code. Never N+1 query per client.
 
   ---
 
@@ -843,5 +989,5 @@
   | 17 | Coach habits tab + analytics + Active/All toggle | Habits service + API, soft delete, reactivation | ✅ COMPLETED |
   | 18 | Client habits on progress page | Habit chart card from Session 17 | Planned |
   | 19 | AI check-in review context | training_data JSONB, daily_logs, habits | ✅ COMPLETED |
-  | 20 | Needs attention feed | Alert triggers, training_data activityStatuses | Planned |
+  | 20 | Needs attention feed | Alert triggers, training_data activityStatuses | ✅ COMPLETED |
   | 21 | Roster summary + per-client toggle | Attention feed, AI service | Planned |
