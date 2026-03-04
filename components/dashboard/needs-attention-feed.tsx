@@ -1,11 +1,11 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import useSWR from "swr"
+import { useState } from "react"
+import Link from "next/link"
 import { motion } from "framer-motion"
-import { AlertCircle, CheckCircle } from "lucide-react"
-import { AttentionCard } from "./attention-card"
-import type { AttentionFeedResponse } from "@/types/attention-feed"
+import { CheckCircle } from "lucide-react"
+import useSWR from "swr"
+import type { AttentionFeedResponse, ClientWithAlerts, AttentionAlert } from "@/types/attention-feed"
 
 const fetcher = async (url: string) => {
   const response = await fetch(url, { cache: "no-store" })
@@ -31,104 +31,247 @@ export function NeedsAttentionFeed() {
     }
   )
 
-  if (isLoading) {
-    return (
-      <div className="rounded-lg glass-card shadow-custom-md p-6 mb-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">Needs Attention</h2>
-          <div className="w-5 h-5 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
-        </div>
-        <p className="text-sm text-muted-foreground">Checking client alerts...</p>
-      </div>
-    )
+  const [showAll, setShowAll] = useState(false)
+
+  // Helper functions for formatting
+  const getShortAlertText = (alert: AttentionAlert): string => {
+    const days = alert.affectedDays.length
+    
+    switch (alert.type) {
+      case "mood_drop":
+        return "Mood drop"
+      case "energy_drop":
+        return "Energy drop"
+      case "high_stress":
+        return `High stress (${days} days)`
+      case "nutrition_missed":
+        return `Nutrition missed (${days} days)`
+      case "training_missed":
+        const match = alert.message.match(/(\d+)\s+.*sessions/)
+        return `${match ? match[1] : days} sessions missed`
+      case "habit_dropoff":
+        const habitMatch = alert.message.match(/(\d+)\s+of.*?(\d+)\s+days/)
+        return habitMatch ? `Low habits (${habitMatch[1]}/${habitMatch[2]} days)` : "Low habits"
+      case "activity_cal_mismatch":
+        return "Overeating on rest days"
+      default:
+        return alert.message
+    }
   }
 
-  if (error) {
-    return (
-      <div className="rounded-lg glass-card shadow-custom-md p-6 mb-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">Needs Attention</h2>
-          <AlertCircle className="h-5 w-5 text-destructive" />
-        </div>
-        <p className="text-sm text-muted-foreground">Failed to load attention feed. Please refresh to try again.</p>
-      </div>
-    )
+  const getPriorityAlertText = (alert: AttentionAlert): string => {
+    const days = alert.affectedDays.length
+    
+    switch (alert.type) {
+      case "mood_drop": {
+        const avg = alert.metricData.length > 0 
+          ? (alert.metricData.reduce((sum, d) => sum + d.value, 0) / alert.metricData.length).toFixed(1)
+          : "low"
+        return `Mood dropped to avg ${avg} for ${days} days`
+      }
+      case "energy_drop": {
+        const avg = alert.metricData.length > 0
+          ? (alert.metricData.reduce((sum, d) => sum + d.value, 0) / alert.metricData.length).toFixed(1)
+          : "low"
+        return `Energy dropped to avg ${avg} for ${days} days`
+      }
+      case "high_stress":
+        return `Stress at 8+ for ${days} days`
+      case "nutrition_missed":
+        return `Nutrition targets missed for ${days} days`
+      case "training_missed":
+        const match = alert.message.match(/(\d+)\s+training sessions/)
+        const count = match ? match[1] : days
+        return `Missed ${count} sessions this week`
+      case "habit_dropoff":
+        return alert.message
+      case "activity_cal_mismatch":
+        return "Calorie intake matched activities despite skipping them"
+      default:
+        return alert.message
+    }
   }
 
-  const clients = data?.clients || []
-  const totalAlerts = clients.reduce((sum, client) => sum + client.alerts.length, 0)
-  const highSeverityCount = clients.reduce(
-    (sum, client) => sum + client.alerts.filter(a => a.severity === "high").length, 
-    0
-  )
+  if (isLoading || error || !data) return null
 
+  const clients = data.clients || []
+  const totalClientCount = data.totalClientCount
+  const clientsOnTrack = totalClientCount - clients.length
+  
+  // Empty state: show compact card with success message
   if (clients.length === 0) {
     return (
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3 }}
-        className="rounded-lg glass-card shadow-custom-md p-6 mb-6"
+        className="bg-white rounded-xl shadow-sm p-5 mb-6"
       >
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">Needs Attention</h2>
-          <motion.div
-            whileHover={{ scale: 1.1 }}
-            transition={{ duration: 0.15 }}
-            className="flex h-9 w-9 items-center justify-center rounded-xs bg-success/10"
-          >
-            <CheckCircle className="h-5 w-5 text-success" />
-          </motion.div>
+        {/* Header with positive framing */}
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-base font-semibold text-gray-900">Needs Attention</h3>
+          <span className="bg-success/15 text-success text-xs font-medium px-2.5 py-0.5 rounded-full">
+            {totalClientCount} of {totalClientCount} clients on track
+          </span>
         </div>
-        <p className="text-sm text-muted-foreground">All clients tracking well</p>
+        {/* Success message */}
+        <div className="flex items-center gap-2">
+          <CheckCircle className="w-4 h-4 text-success" />
+          <span className="text-sm text-gray-500">All clients on track</span>
+        </div>
       </motion.div>
     )
   }
+
+  // Sort clients: high severity first, then by alert count, then alphabetical
+  const sortedClients = [...clients].sort((a, b) => {
+    const aHighCount = a.alerts.filter(alert => alert.severity === "high").length
+    const bHighCount = b.alerts.filter(alert => alert.severity === "high").length
+    
+    if (aHighCount !== bHighCount) {
+      return bHighCount - aHighCount
+    }
+    
+    if (a.alerts.length !== b.alerts.length) {
+      return b.alerts.length - a.alerts.length
+    }
+    
+    return a.clientName.localeCompare(b.clientName)
+  })
+
+  // Identify priority client (top client if they have high severity)
+  const priorityClient = sortedClients[0]?.alerts.some(a => a.severity === "high") 
+    ? sortedClients[0] 
+    : null
+  
+  // Remaining clients for compact list (excluding priority if shown)
+  const compactListClients = priorityClient 
+    ? sortedClients.slice(1) 
+    : sortedClients
+  
+  // Limit compact list to 4 items
+  const visibleCompactClients = showAll 
+    ? compactListClients 
+    : compactListClients.slice(0, 4)
+  
+  const hiddenCount = compactListClients.length - 4
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
-      className="rounded-lg glass-card shadow-custom-md p-6 mb-6"
+      className="bg-white rounded-xl shadow-sm p-5 mb-6"
     >
+      {/* Header with positive framing */}
       <div className="flex items-center justify-between mb-4">
-        <div>
-          <h2 className="text-lg font-semibold">Needs Attention</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            {totalAlerts} alert{totalAlerts !== 1 ? 's' : ''} across {clients.length} client{clients.length !== 1 ? 's' : ''}
-            {highSeverityCount > 0 && (
-              <span className="text-destructive ml-1">
-                ({highSeverityCount} high priority)
-              </span>
-            )}
-          </p>
-        </div>
-        <motion.div
-          whileHover={{ scale: 1.1 }}
-          transition={{ duration: 0.15 }}
-          className="flex h-9 w-9 items-center justify-center rounded-xs bg-warning/10"
-        >
-          <AlertCircle className="h-5 w-5 text-warning" />
-        </motion.div>
+        <h3 className="text-base font-semibold text-gray-900">Needs Attention</h3>
+        <span className="bg-success/15 text-success text-xs font-medium px-2.5 py-0.5 rounded-full">
+          {clientsOnTrack} of {totalClientCount} clients on track
+        </span>
       </div>
 
-      <div className="space-y-3">
-        {clients.map((client, clientIndex) => (
-          <div key={client.clientId}>
-            {client.alerts.map((alert, alertIndex) => (
-              <AttentionCard
-                key={`${client.clientId}-${alert.type}-${alertIndex}`}
-                clientId={client.clientId}
-                clientName={client.clientName}
-                clientAvatar={client.clientAvatar}
-                alert={alert}
-                index={clientIndex}
-              />
-            ))}
+      {/* Priority client section */}
+      {priorityClient && (
+        <div className="bg-destructive/5 rounded-lg p-3 mb-3">
+          <div className="flex items-start gap-3">
+            {/* Avatar */}
+            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+              {priorityClient.clientAvatar ? (
+                <img
+                  src={priorityClient.clientAvatar}
+                  alt={priorityClient.clientName}
+                  className="w-full h-full rounded-full object-cover"
+                />
+              ) : (
+                <span className="text-sm font-medium text-primary">
+                  {priorityClient.clientName.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2)}
+                </span>
+              )}
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-medium text-gray-900">{priorityClient.clientName}</h4>
+                <Link 
+                  href={`/clients/${priorityClient.clientId}`}
+                  className="text-sm text-primary hover:text-primary/80 font-medium"
+                >
+                  View
+                </Link>
+              </div>
+              <p className="text-xs text-gray-600 mt-1">
+                {getPriorityAlertText(
+                  priorityClient.alerts.find(a => a.severity === "high") || priorityClient.alerts[0]
+                )}
+              </p>
+              {priorityClient.alerts.length > 1 && (
+                <p className="text-xs text-gray-500 mt-1">
+                  +{priorityClient.alerts.length - 1} more alert{priorityClient.alerts.length > 2 ? 's' : ''}
+                </p>
+              )}
+            </div>
           </div>
-        ))}
-      </div>
+        </div>
+      )}
+
+      {/* Compact list */}
+      {visibleCompactClients.length > 0 && (
+        <div className="divide-y divide-gray-100">
+          {visibleCompactClients.map(client => {
+            const highAlerts = client.alerts.filter(a => a.severity === "high").length
+            const hasOnlyMedium = highAlerts === 0 && client.alerts.some(a => a.severity === "medium")
+            const mostUrgentAlert = client.alerts.find(a => a.severity === "high") || client.alerts[0]
+
+            return (
+              <div key={client.clientId} className="py-2 flex items-center justify-between">
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  <span className="text-sm text-gray-900">{client.clientName}</span>
+                  {client.alerts.length > 0 && (
+                    <span className={`${
+                      hasOnlyMedium 
+                        ? "bg-warning/15 text-warning" 
+                        : "bg-destructive/15 text-destructive"
+                    } text-xs font-medium px-1.5 py-0.5 rounded-full`}>
+                      {client.alerts.length}
+                    </span>
+                  )}
+                  <span className="text-xs text-gray-500 truncate">
+                    {getShortAlertText(mostUrgentAlert)}
+                    {client.alerts.length > 1 && ` +${client.alerts.length - 1}`}
+                  </span>
+                </div>
+                <Link 
+                  href={`/clients/${client.clientId}`}
+                  className="text-sm text-primary hover:text-primary/80 flex-shrink-0"
+                >
+                  View
+                </Link>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Show more link */}
+      {hiddenCount > 0 && !showAll && (
+        <button
+          onClick={() => setShowAll(true)}
+          className="text-xs text-gray-500 hover:text-gray-700 mt-2"
+        >
+          and {hiddenCount} more
+        </button>
+      )}
+
+      {showAll && compactListClients.length > 4 && (
+        <button
+          onClick={() => setShowAll(false)}
+          className="text-xs text-gray-500 hover:text-gray-700 mt-2"
+        >
+          Show less
+        </button>
+      )}
     </motion.div>
   )
 }

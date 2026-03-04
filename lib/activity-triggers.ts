@@ -76,9 +76,12 @@ export function evaluateHabitDropoff(
 /**
  * Evaluates if client ate as if they completed activities they actually skipped
  */
-export function evaluateActivityCalMismatch(logs: DailyLog[]): TriggerResult | null {
+export function evaluateActivityCalMismatch(
+  logs: DailyLog[],
+  now: Date = new Date()
+): TriggerResult | null {
   // Only look at logs within the window
-  const windowStart = new Date()
+  const windowStart = new Date(now)
   windowStart.setDate(windowStart.getDate() - ACTIVITY_CAL_MISMATCH_WINDOW_DAYS)
   
   const recentLogs = logs.filter(log => {
@@ -113,13 +116,24 @@ export function evaluateActivityCalMismatch(logs: DailyLog[]): TriggerResult | n
     }
   }
   
+  // Check if we have enough mismatches AND at least one is recent (last 7 days)
   if (mismatchDays.length >= ACTIVITY_CAL_MISMATCH_DAY_COUNT) {
-    return {
-      type: "activity_cal_mismatch",
-      severity: "high",
-      message: `Calorie intake matched planned activities despite skipping them on ${mismatchDays.length} days`,
-      affectedDays: mismatchDays.slice(0, ACTIVITY_CAL_MISMATCH_DAY_COUNT),
-      metricData: metricData.slice(-7) // Last 7 data points
+    const sevenDaysAgo = new Date(now)
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+    
+    const hasRecentMismatch = mismatchDays.some(day => {
+      const dayDate = new Date(day + 'T00:00:00')
+      return dayDate >= sevenDaysAgo
+    })
+    
+    if (hasRecentMismatch) {
+      return {
+        type: "activity_cal_mismatch",
+        severity: "high",
+        message: `Calorie intake matched planned activities despite skipping them on ${mismatchDays.length} days`,
+        affectedDays: mismatchDays.slice(0, ACTIVITY_CAL_MISMATCH_DAY_COUNT),
+        metricData: metricData.slice(-7) // Last 7 data points
+      }
     }
   }
   

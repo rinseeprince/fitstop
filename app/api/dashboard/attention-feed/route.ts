@@ -65,12 +65,13 @@ export async function GET(request: NextRequest) {
     }
 
     // Evaluate triggers for all clients
-    const clients = await evaluateAllClientTriggers(coach.id)
+    const { clients, totalClientCount } = await evaluateAllClientTriggers(coach.id)
 
     const response: AttentionFeedResponse = {
       success: true,
       data: {
-        clients
+        clients,
+        totalClientCount
       }
     }
 

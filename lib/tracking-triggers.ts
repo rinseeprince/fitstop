@@ -14,16 +14,13 @@ export function evaluateLoggingGap(
   dateRange: { start: string; end: string }
 ): TriggerResult | null {
   if (logs.length === 0) return null
-  
   const sortedLogs = [...logs].sort((a, b) => a.date.localeCompare(b.date))
   const missingDays: string[] = []
-  
   // Check for gaps between existing logs
   for (let i = 1; i < sortedLogs.length; i++) {
     const currentDate = new Date(sortedLogs[i].date + 'T00:00:00')
     const previousDate = new Date(sortedLogs[i - 1].date + 'T00:00:00')
     const daysBetween = Math.floor((currentDate.getTime() - previousDate.getTime()) / (1000 * 60 * 60 * 24))
-    
     if (daysBetween > LOGGING_GAP_THRESHOLD_DAYS) {
       // Found a gap
       for (let j = 1; j < daysBetween && j <= LOGGING_GAP_THRESHOLD_DAYS; j++) {
@@ -41,13 +38,11 @@ export function evaluateLoggingGap(
       }
     }
   }
-  
   // Check gap from last log to end date
   if (sortedLogs.length > 1) {
     const endDate = new Date(dateRange.end + 'T00:00:00')
     const mostRecentDate = new Date(sortedLogs[sortedLogs.length - 1].date + 'T00:00:00')
     const daysSinceLastLog = Math.floor((endDate.getTime() - mostRecentDate.getTime()) / (1000 * 60 * 60 * 24))
-    
     if (daysSinceLastLog > LOGGING_GAP_THRESHOLD_DAYS) {
       for (let i = 1; i <= Math.min(daysSinceLastLog, LOGGING_GAP_THRESHOLD_DAYS); i++) {
         const missingDate = new Date(mostRecentDate)
@@ -64,7 +59,6 @@ export function evaluateLoggingGap(
       }
     }
   }
-  
   return null
 }
 
@@ -74,34 +68,38 @@ export function evaluateLoggingGap(
 export function evaluateNutritionMisses(logs: DailyLog[]): TriggerResult | null {
   const sortedLogs = [...logs].sort((a, b) => a.date.localeCompare(b.date))
   let consecutiveMissed = 0
-  const affectedDays: string[] = []
-  
+  let currentStreakDays: string[] = []
+  let lastValidStreak: string[] | null = null
   for (let i = 0; i < sortedLogs.length; i++) {
     if (sortedLogs[i].nutritionAdherence === "missed") {
       consecutiveMissed++
-      affectedDays.push(sortedLogs[i].date)
-      
+      currentStreakDays.push(sortedLogs[i].date)
       if (consecutiveMissed >= NUTRITION_MISSED_CONSECUTIVE_DAYS) {
-        // Get last 7 calorie data points for sparkline
-        const recentLogs = sortedLogs.slice(-7)
-        const metricData = recentLogs
-          .filter(log => log.caloriesConsumed !== undefined && log.caloriesConsumed !== null)
-          .map(log => ({ date: log.date, value: log.caloriesConsumed! }))
-        
-        return {
-          type: "nutrition_missed",
-          severity: "medium",
-          message: `Nutrition targets missed for ${NUTRITION_MISSED_CONSECUTIVE_DAYS}+ consecutive days`,
-          affectedDays: affectedDays.slice(-NUTRITION_MISSED_CONSECUTIVE_DAYS),
-          metricData
+        // Check if this streak extends to the most recent logs
+        if (i === sortedLogs.length - 1 || i === sortedLogs.length - 2) {
+          lastValidStreak = [...currentStreakDays]
         }
       }
     } else {
       consecutiveMissed = 0
-      affectedDays.length = 0
+      currentStreakDays = []
     }
   }
-  
+  // Only return alert if the last valid streak exists (pattern is ongoing/recent)
+  if (lastValidStreak && lastValidStreak.length >= NUTRITION_MISSED_CONSECUTIVE_DAYS) {
+    // Get last 7 calorie data points for sparkline
+    const recentLogs = sortedLogs.slice(-7)
+    const metricData = recentLogs
+      .filter(log => log.caloriesConsumed !== undefined && log.caloriesConsumed !== null)
+      .map(log => ({ date: log.date, value: log.caloriesConsumed! }))
+    return {
+      type: "nutrition_missed",
+      severity: "medium",
+      message: `Nutrition targets missed for ${NUTRITION_MISSED_CONSECUTIVE_DAYS}+ consecutive days`,
+      affectedDays: lastValidStreak.slice(-NUTRITION_MISSED_CONSECUTIVE_DAYS),
+      metricData
+    }
+  }
   return null
 }
 
@@ -120,21 +118,17 @@ export function evaluateTrainingMisses(
   const diff = dayOfWeek === 0 ? 6 : dayOfWeek - 1 // Monday is start
   startOfWeek.setDate(today.getDate() - diff)
   startOfWeek.setHours(0, 0, 0, 0)
-  
   const weekLogs = logs.filter(log => {
     const logDate = new Date(log.date + 'T00:00:00')
     return logDate >= startOfWeek
   })
-  
   const missedSessions: string[] = []
-  
   for (const log of weekLogs) {
     // Check if there was a scheduled training session that wasn't completed
     if (log.trainingData?.trainingSessionId && !log.trainingData?.sessionCompleted) {
       missedSessions.push(log.date)
     }
   }
-  
   if (missedSessions.length >= TRAINING_MISSED_WEEKLY_THRESHOLD) {
     return {
       type: "training_missed",
@@ -144,6 +138,5 @@ export function evaluateTrainingMisses(
       metricData: []
     }
   }
-  
   return null
 }

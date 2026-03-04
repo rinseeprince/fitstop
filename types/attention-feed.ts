@@ -20,6 +20,7 @@ export interface AttentionFeedResponse {
   success: boolean
   data: {
     clients: ClientWithAlerts[]
+    totalClientCount: number
   }
 }
 

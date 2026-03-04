@@ -37,7 +37,7 @@ type TrainingSessionRow = Database["public"]["Tables"]["training_sessions"]["Row
 /**
  * Evaluates all attention triggers for all of a coach's clients
  */
-export async function evaluateAllClientTriggers(coachId: string): Promise<ClientWithAlerts[]> {
+export async function evaluateAllClientTriggers(coachId: string): Promise<{ clients: ClientWithAlerts[], totalClientCount: number }> {
   const startDate = getDateDaysAgo(28)
   const endDate = new Date().toISOString().split('T')[0]
   const dateRange = { start: startDate, end: endDate }
@@ -50,12 +50,15 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<Client
 
   if (clientsError || !clients) {
     console.error("Error fetching clients:", clientsError)
-    return []
+    return { clients: [], totalClientCount: 0 }
   }
 
   if (clients.length === 0) {
-    return []
+    return { clients: [], totalClientCount: 0 }
   }
+  
+  // Store total count before filtering
+  const totalClientCount = clients.length
 
   const clientIds = clients.map(c => c.id)
 
@@ -70,7 +73,7 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<Client
 
   if (logsError) {
     console.error("Error fetching daily logs:", logsError)
-    return []
+    return { clients: [], totalClientCount }
   }
 
   // 3. Batch query all habits for all clients
@@ -296,5 +299,5 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<Client
     return a.clientName.localeCompare(b.clientName) // Alphabetical by name
   })
 
-  return clientsWithAlerts
+  return { clients: clientsWithAlerts, totalClientCount }
 }

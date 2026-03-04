@@ -91,6 +91,30 @@ describe('attention-triggers', () => {
       expect(result?.type).toBe('energy_drop')
       expect(result?.severity).toBe('high')
     })
+
+    it('should NOT trigger when streak is followed by recovery', () => {
+      const logs: DailyLog[] = [
+        // Baseline period
+        { id: '1', clientId: 'c1', date: '2024-01-01', mood: 4, createdAt: '', updatedAt: '' },
+        { id: '2', clientId: 'c1', date: '2024-01-02', mood: 5, createdAt: '', updatedAt: '' },
+        { id: '3', clientId: 'c1', date: '2024-01-03', mood: 4, createdAt: '', updatedAt: '' },
+        { id: '4', clientId: 'c1', date: '2024-01-04', mood: 5, createdAt: '', updatedAt: '' },
+        { id: '5', clientId: 'c1', date: '2024-01-05', mood: 4, createdAt: '', updatedAt: '' },
+        { id: '6', clientId: 'c1', date: '2024-01-06', mood: 4, createdAt: '', updatedAt: '' },
+        { id: '7', clientId: 'c1', date: '2024-01-07', mood: 5, createdAt: '', updatedAt: '' },
+        // Drop period
+        { id: '8', clientId: 'c1', date: '2024-01-08', mood: 2, createdAt: '', updatedAt: '' },
+        { id: '9', clientId: 'c1', date: '2024-01-09', mood: 2, createdAt: '', updatedAt: '' },
+        { id: '10', clientId: 'c1', date: '2024-01-10', mood: 2, createdAt: '', updatedAt: '' },
+        // Recovery - mood returns to normal
+        { id: '11', clientId: 'c1', date: '2024-01-11', mood: 4, createdAt: '', updatedAt: '' },
+        { id: '12', clientId: 'c1', date: '2024-01-12', mood: 5, createdAt: '', updatedAt: '' },
+        { id: '13', clientId: 'c1', date: '2024-01-13', mood: 4, createdAt: '', updatedAt: '' },
+      ]
+
+      const result = evaluateMoodEnergyDrop(logs, 'mood')
+      expect(result).toBeNull()
+    })
   })
 
   describe('evaluateLoggingGap', () => {
@@ -158,6 +182,21 @@ describe('attention-triggers', () => {
       const result = evaluateNutritionMisses(logs)
       expect(result).toBeNull()
     })
+
+    it('should NOT trigger when nutrition misses are followed by hits', () => {
+      const logs: DailyLog[] = [
+        { id: '1', clientId: 'c1', date: '2024-01-01', nutritionAdherence: 'missed', createdAt: '', updatedAt: '' },
+        { id: '2', clientId: 'c1', date: '2024-01-02', nutritionAdherence: 'missed', createdAt: '', updatedAt: '' },
+        { id: '3', clientId: 'c1', date: '2024-01-03', nutritionAdherence: 'missed', createdAt: '', updatedAt: '' },
+        // Recovery - nutrition back on track
+        { id: '4', clientId: 'c1', date: '2024-01-04', nutritionAdherence: 'hit', createdAt: '', updatedAt: '' },
+        { id: '5', clientId: 'c1', date: '2024-01-05', nutritionAdherence: 'hit', createdAt: '', updatedAt: '' },
+        { id: '6', clientId: 'c1', date: '2024-01-06', nutritionAdherence: 'partial', createdAt: '', updatedAt: '' },
+      ]
+
+      const result = evaluateNutritionMisses(logs)
+      expect(result).toBeNull()
+    })
   })
 
   describe('evaluateHighStress', () => {
@@ -182,6 +221,21 @@ describe('attention-triggers', () => {
         { id: '1', clientId: 'c1', date: '2024-01-01', stress: 7, createdAt: '', updatedAt: '' },
         { id: '2', clientId: 'c1', date: '2024-01-02', stress: 7, createdAt: '', updatedAt: '' },
         { id: '3', clientId: 'c1', date: '2024-01-03', stress: 7, createdAt: '', updatedAt: '' },
+      ]
+
+      const result = evaluateHighStress(logs)
+      expect(result).toBeNull()
+    })
+
+    it('should NOT trigger when high stress is followed by normal stress', () => {
+      const logs: DailyLog[] = [
+        { id: '1', clientId: 'c1', date: '2024-01-01', stress: 8, createdAt: '', updatedAt: '' },
+        { id: '2', clientId: 'c1', date: '2024-01-02', stress: 9, createdAt: '', updatedAt: '' },
+        { id: '3', clientId: 'c1', date: '2024-01-03', stress: 8, createdAt: '', updatedAt: '' },
+        // Recovery - stress returns to normal
+        { id: '4', clientId: 'c1', date: '2024-01-04', stress: 4, createdAt: '', updatedAt: '' },
+        { id: '5', clientId: 'c1', date: '2024-01-05', stress: 3, createdAt: '', updatedAt: '' },
+        { id: '6', clientId: 'c1', date: '2024-01-06', stress: 2, createdAt: '', updatedAt: '' },
       ]
 
       const result = evaluateHighStress(logs)
@@ -474,6 +528,196 @@ describe('attention-triggers', () => {
       ]
 
       const result = evaluateTrainingMisses(logs, 3)
+      expect(result).toBeNull()
+    })
+  })
+
+  describe('evaluateActivityCalMismatch', () => {
+    it('should not trigger when mismatches are old (none in last 7 days)', () => {
+      const now = new Date('2024-01-25')
+      const logs: DailyLog[] = [
+        // Old mismatches 15+ days ago
+        {
+          id: '1',
+          clientId: 'c1',
+          date: '2024-01-05',
+          caloriesConsumed: 2500,
+          targetCalories: 2500,
+          trainingData: {
+            sessionCompleted: false,
+            trainingSessionId: 'session1',
+            trainingSessionName: 'Upper Body',
+            isAlternativeSession: false,
+            activityStatuses: {
+              'activity1': { completed: false, activityName: 'Activity 1', estimatedCalories: 300 }
+            },
+            unplannedActivities: []
+          },
+          createdAt: '',
+          updatedAt: ''
+        },
+        {
+          id: '2',
+          clientId: 'c1',
+          date: '2024-01-06',
+          caloriesConsumed: 2500,
+          targetCalories: 2500,
+          trainingData: {
+            sessionCompleted: false,
+            trainingSessionId: 'session2',
+            trainingSessionName: 'Lower Body',
+            isAlternativeSession: false,
+            activityStatuses: {
+              'activity1': { completed: false, activityName: 'Activity 1', estimatedCalories: 250 }
+            },
+            unplannedActivities: []
+          },
+          createdAt: '',
+          updatedAt: ''
+        },
+        {
+          id: '3',
+          clientId: 'c1',
+          date: '2024-01-07',
+          caloriesConsumed: 2500,
+          targetCalories: 2500,
+          trainingData: {
+            sessionCompleted: false,
+            trainingSessionId: 'session3',
+            trainingSessionName: 'Core',
+            isAlternativeSession: false,
+            activityStatuses: {
+              'activity1': { completed: false, activityName: 'Activity 1', estimatedCalories: 200 }
+            },
+            unplannedActivities: []
+          },
+          createdAt: '',
+          updatedAt: ''
+        },
+        // Recent logs with no mismatches
+        {
+          id: '4',
+          clientId: 'c1',
+          date: '2024-01-24',
+          caloriesConsumed: 2200,
+          targetCalories: 2500,
+          trainingData: {
+            sessionCompleted: true,
+            trainingSessionId: 'session4',
+            trainingSessionName: 'Upper Body',
+            isAlternativeSession: false,
+            activityStatuses: {
+              'activity1': { completed: true, activityName: 'Activity 1', estimatedCalories: 300 }
+            },
+            unplannedActivities: []
+          },
+          createdAt: '',
+          updatedAt: ''
+        }
+      ]
+
+      const result = evaluateActivityCalMismatch(logs, now)
+      expect(result).toBeNull()
+    })
+
+    it('should trigger when at least one mismatch is in last 7 days', () => {
+      const now = new Date('2024-01-25')
+      const logs: DailyLog[] = [
+        // Old mismatch
+        {
+          id: '1',
+          clientId: 'c1',
+          date: '2024-01-05',
+          caloriesConsumed: 2500,
+          targetCalories: 2500,
+          trainingData: {
+            sessionCompleted: false,
+            trainingSessionId: 'session1',
+            trainingSessionName: 'Upper Body',
+            isAlternativeSession: false,
+            activityStatuses: {
+              'activity1': { completed: false, activityName: 'Activity 1', estimatedCalories: 300 }
+            },
+            unplannedActivities: []
+          },
+          createdAt: '',
+          updatedAt: ''
+        },
+        // Another old mismatch
+        {
+          id: '2',
+          clientId: 'c1',
+          date: '2024-01-06',
+          caloriesConsumed: 2500,
+          targetCalories: 2500,
+          trainingData: {
+            sessionCompleted: false,
+            trainingSessionId: 'session2',
+            trainingSessionName: 'Lower Body',
+            isAlternativeSession: false,
+            activityStatuses: {
+              'activity1': { completed: false, activityName: 'Activity 1', estimatedCalories: 250 }
+            },
+            unplannedActivities: []
+          },
+          createdAt: '',
+          updatedAt: ''
+        },
+        // Recent mismatch (within last 7 days)
+        {
+          id: '3',
+          clientId: 'c1',
+          date: '2024-01-20',
+          caloriesConsumed: 2500,
+          targetCalories: 2500,
+          trainingData: {
+            sessionCompleted: false,
+            trainingSessionId: 'session3',
+            trainingSessionName: 'Core',
+            isAlternativeSession: false,
+            activityStatuses: {
+              'activity1': { completed: false, activityName: 'Activity 1', estimatedCalories: 200 }
+            },
+            unplannedActivities: []
+          },
+          createdAt: '',
+          updatedAt: ''
+        }
+      ]
+
+      const result = evaluateActivityCalMismatch(logs, now)
+      expect(result).not.toBeNull()
+      expect(result?.type).toBe('activity_cal_mismatch')
+      expect(result?.severity).toBe('high')
+      expect(result?.affectedDays).toHaveLength(2) // Limited by ACTIVITY_CAL_MISMATCH_DAY_COUNT
+    })
+
+    it('should check the completed field correctly', () => {
+      const now = new Date('2024-01-25')
+      const logs: DailyLog[] = [
+        {
+          id: '1',
+          clientId: 'c1',
+          date: '2024-01-20',
+          caloriesConsumed: 2500,
+          targetCalories: 2500,
+          trainingData: {
+            sessionCompleted: false,
+            trainingSessionId: 'session1',
+            trainingSessionName: 'Upper Body',
+            isAlternativeSession: false,
+            activityStatuses: {
+              'activity1': { completed: true, activityName: 'Activity 1', estimatedCalories: 300 }, // Completed - no mismatch
+              'activity2': { completed: false, activityName: 'Activity 2', estimatedCalories: 0 } // Skipped but 0 calories
+            },
+            unplannedActivities: []
+          },
+          createdAt: '',
+          updatedAt: ''
+        }
+      ]
+
+      const result = evaluateActivityCalMismatch(logs, now)
       expect(result).toBeNull()
     })
   })

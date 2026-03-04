@@ -22,6 +22,7 @@ export function evaluateMoodEnergyDrop(
 
   // Sort logs by date ascending for chronological processing
   const sortedLogs = [...logs].sort((a, b) => a.date.localeCompare(b.date))
+  let lastValidStreak: { affectedDays: string[], baselineAvg: number } | null = null
   
   // Look for patterns where consecutive days are below rolling average
   for (let i = MOOD_ENERGY_ROLLING_DAYS; i < sortedLogs.length; i++) {
@@ -57,19 +58,29 @@ export function evaluateMoodEnergyDrop(
     }
     
     if (allBelowThreshold && affectedDays.length === MOOD_ENERGY_DROP_CONSECUTIVE_DAYS) {
-      // Get last 7 data points for sparkline
-      const recentLogs = sortedLogs.slice(-7)
-      const metricData = recentLogs
-        .filter(log => log[metric] !== undefined && log[metric] !== null)
-        .map(log => ({ date: log.date, value: log[metric]! }))
+      const streakEndIndex = i + MOOD_ENERGY_DROP_CONSECUTIVE_DAYS - 1
       
-      return {
-        type: `${metric}_drop`,
-        severity: "high",
-        message: `${metric === "mood" ? "Mood" : "Energy"} has dropped significantly below average for ${MOOD_ENERGY_DROP_CONSECUTIVE_DAYS}+ consecutive days`,
-        affectedDays,
-        metricData
+      // Check if this streak extends to the most recent log OR there are no logs after it
+      if (streakEndIndex === sortedLogs.length - 1 || streakEndIndex === sortedLogs.length - 2) {
+        lastValidStreak = { affectedDays, baselineAvg }
       }
+    }
+  }
+  
+  // Only return alert if we found a valid streak that's still ongoing or recent
+  if (lastValidStreak) {
+    // Get last 7 data points for sparkline
+    const recentLogs = sortedLogs.slice(-7)
+    const metricData = recentLogs
+      .filter(log => log[metric] !== undefined && log[metric] !== null)
+      .map(log => ({ date: log.date, value: log[metric]! }))
+    
+    return {
+      type: `${metric}_drop`,
+      severity: "high",
+      message: `${metric === "mood" ? "Mood" : "Energy"} has dropped significantly below average for ${MOOD_ENERGY_DROP_CONSECUTIVE_DAYS}+ consecutive days`,
+      affectedDays: lastValidStreak.affectedDays,
+      metricData
     }
   }
   
@@ -82,33 +93,42 @@ export function evaluateMoodEnergyDrop(
 export function evaluateHighStress(logs: DailyLog[]): TriggerResult | null {
   const sortedLogs = [...logs].sort((a, b) => a.date.localeCompare(b.date))
   let consecutiveHighStress = 0
-  const affectedDays: string[] = []
+  let currentStreakDays: string[] = []
+  let lastValidStreak: string[] | null = null
   
   for (let i = 0; i < sortedLogs.length; i++) {
     const stress = sortedLogs[i].stress
     
     if (stress !== undefined && stress !== null && stress >= HIGH_STRESS_THRESHOLD) {
       consecutiveHighStress++
-      affectedDays.push(sortedLogs[i].date)
+      currentStreakDays.push(sortedLogs[i].date)
       
       if (consecutiveHighStress >= HIGH_STRESS_CONSECUTIVE_DAYS) {
-        // Get last 7 stress data points for sparkline
-        const recentLogs = sortedLogs.slice(-7)
-        const metricData = recentLogs
-          .filter(log => log.stress !== undefined && log.stress !== null)
-          .map(log => ({ date: log.date, value: log.stress! }))
-        
-        return {
-          type: "high_stress",
-          severity: "high",
-          message: `Stress levels critically high for ${HIGH_STRESS_CONSECUTIVE_DAYS}+ consecutive days`,
-          affectedDays: affectedDays.slice(-HIGH_STRESS_CONSECUTIVE_DAYS),
-          metricData
+        // Check if this is the last streak (extends to end or near end of data)
+        if (i === sortedLogs.length - 1 || i === sortedLogs.length - 2) {
+          lastValidStreak = [...currentStreakDays]
         }
       }
     } else {
       consecutiveHighStress = 0
-      affectedDays.length = 0
+      currentStreakDays = []
+    }
+  }
+  
+  // Only return alert if the last valid streak exists (pattern is ongoing/recent)
+  if (lastValidStreak && lastValidStreak.length >= HIGH_STRESS_CONSECUTIVE_DAYS) {
+    // Get last 7 stress data points for sparkline
+    const recentLogs = sortedLogs.slice(-7)
+    const metricData = recentLogs
+      .filter(log => log.stress !== undefined && log.stress !== null)
+      .map(log => ({ date: log.date, value: log.stress! }))
+    
+    return {
+      type: "high_stress",
+      severity: "high",
+      message: `Stress levels critically high for ${HIGH_STRESS_CONSECUTIVE_DAYS}+ consecutive days`,
+      affectedDays: lastValidStreak.slice(-HIGH_STRESS_CONSECUTIVE_DAYS),
+      metricData
     }
   }
   
