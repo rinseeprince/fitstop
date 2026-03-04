@@ -1,8 +1,26 @@
-import type { WellnessAlert, AlertType } from "@/lib/daily-wellness-alerts"
 import type { MetricDataPoint } from "@/lib/attention-triggers"
 
+// Core alert types (moved here to avoid circular dependencies)
+export type AlertSeverity = "high" | "medium" | "low"
+
+export type AlertType = 
+  | "mood_drop"
+  | "energy_drop"
+  | "no_log_gap"
+  | "nutrition_missed"
+  | "training_missed"
+  | "high_stress"
+  | "habit_dropoff"
+  | "activity_cal_mismatch"
+
+export interface WellnessAlert {
+  type: AlertType
+  severity: AlertSeverity
+  message: string
+  affectedDays: string[] // Array of date strings (YYYY-MM-DD)
+}
+
 // Extended alert with metric data for visualization
-// Uses the same AlertType union from daily-wellness-alerts.ts (single source of truth)
 export interface AttentionAlert extends WellnessAlert {
   metricData: MetricDataPoint[] // Last 7 data points for sparkline
 }
@@ -23,6 +41,3 @@ export interface AttentionFeedResponse {
     totalClientCount: number
   }
 }
-
-// Re-export AlertType for convenience
-export type { AlertType } from "@/lib/daily-wellness-alerts"

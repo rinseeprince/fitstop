@@ -34,6 +34,17 @@ type DailyHabitLogRow = Database["public"]["Tables"]["daily_habit_logs"]["Row"]
 type TrainingPlanRow = Database["public"]["Tables"]["training_plans"]["Row"]
 type TrainingSessionRow = Database["public"]["Tables"]["training_sessions"]["Row"]
 
+// Type for the training plan query result with nested sessions
+interface TrainingPlanWithSessions {
+  id: string
+  client_id: string
+  training_sessions: Array<{
+    id: string
+    session_type: string | null
+    day_of_week: string | null
+  }>
+}
+
 /**
  * Evaluates all attention triggers for all of a coach's clients
  */
@@ -221,12 +232,12 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
 
   // Count planned training sessions per client
   if (trainingPlans) {
-    trainingPlans.forEach((plan: any) => {
+    trainingPlans.forEach((plan: TrainingPlanWithSessions) => {
       const clientData = clientDataMap.get(plan.client_id)
       if (clientData && plan.training_sessions) {
         // Count sessions where session_type = 'training' and day_of_week is not null
         const sessionCount = plan.training_sessions.filter(
-          (session: any) => session.session_type === 'training' && session.day_of_week !== null
+          (session) => session.session_type === 'training' && session.day_of_week !== null
         ).length
         clientData.plannedSessionCount = sessionCount
       }
@@ -260,7 +271,7 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
     triggers.forEach(result => {
       if (result) {
         alerts.push({
-          type: result.type as AttentionAlert['type'],
+          type: result.type,
           severity: result.severity,
           message: result.message,
           affectedDays: result.affectedDays,

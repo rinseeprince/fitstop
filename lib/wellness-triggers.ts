@@ -1,5 +1,5 @@
 import type { DailyLog } from "@/types/daily-log"
-import type { AlertSeverity } from "@/lib/daily-wellness-alerts"
+import type { AlertSeverity } from "@/types/attention-feed"
 import type { TriggerResult } from "./attention-triggers"
 import {
   MOOD_ENERGY_DROP_THRESHOLD,

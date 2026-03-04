@@ -3,7 +3,7 @@
  * Split across multiple files to maintain file size limits
  */
 
-import type { AlertSeverity } from "@/lib/daily-wellness-alerts"
+import type { AlertType, AlertSeverity } from "@/types/attention-feed"
 
 // Type definitions
 export interface MetricDataPoint {
@@ -12,7 +12,7 @@ export interface MetricDataPoint {
 }
 
 export interface TriggerResult {
-  type: string
+  type: AlertType
   severity: AlertSeverity
   message: string
   affectedDays: string[]

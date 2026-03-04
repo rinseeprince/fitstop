@@ -9,7 +9,8 @@ import { WellnessBarChart } from "./wellness-bar-chart"
 import { AdherenceDotRow } from "./adherence-dot-row"
 import { DayDetailCard } from "./day-detail-card"
 import { getDateDaysAgo } from "@/lib/date-helpers"
-import { detectAlerts, type WellnessAlert } from "@/lib/daily-wellness-alerts"
+import { detectAlerts } from "@/lib/daily-wellness-alerts"
+import type { WellnessAlert } from "@/types/attention-feed"
 import { AlertTriangle } from "lucide-react"
 import type { DailyLog } from "@/types/daily-log"
 
@@ -194,7 +195,7 @@ export function DailyWellnessStrip({ clientId }: DailyWellnessStripProps) {
                         <p className="text-sm text-gray-700">{alert.message}</p>
                         {alert.affectedDays.length > 0 && (
                           <p className="text-xs text-gray-500 mt-1">
-                            Affected days: {alert.affectedDays.map(day => {
+                            Affected days: {alert.affectedDays.map((day: string) => {
                               const date = new Date(day + 'T00:00:00')
                               return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
                             }).join(', ')}

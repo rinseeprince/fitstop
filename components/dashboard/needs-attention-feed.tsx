@@ -92,36 +92,12 @@ export function NeedsAttentionFeed() {
     }
   }
 
-  if (isLoading || error || !data) return null
+  // Return null only for errors
+  if (error) return null
 
-  const clients = data.clients || []
-  const totalClientCount = data.totalClientCount
+  const clients = data?.clients || []
+  const totalClientCount = data?.totalClientCount || 0
   const clientsOnTrack = totalClientCount - clients.length
-  
-  // Empty state: show compact card with success message
-  if (clients.length === 0) {
-    return (
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3 }}
-        className="bg-white rounded-xl shadow-sm p-5 mb-6"
-      >
-        {/* Header with positive framing */}
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-base font-semibold text-gray-900">Needs Attention</h3>
-          <span className="bg-success/15 text-success text-xs font-medium px-2.5 py-0.5 rounded-full">
-            {totalClientCount} of {totalClientCount} clients on track
-          </span>
-        </div>
-        {/* Success message */}
-        <div className="flex items-center gap-2">
-          <CheckCircle className="w-4 h-4 text-success" />
-          <span className="text-sm text-gray-500">All clients on track</span>
-        </div>
-      </motion.div>
-    )
-  }
 
   // Sort clients: high severity first, then by alert count, then alphabetical
   const sortedClients = [...clients].sort((a, b) => {
@@ -160,117 +136,135 @@ export function NeedsAttentionFeed() {
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3 }}
+      transition={{ duration: 0.3, delay: 0.05 }}
       className="bg-white rounded-xl shadow-sm p-5 mb-6"
     >
-      {/* Header with positive framing */}
-      <div className="flex items-center justify-between mb-4">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-3">
         <h3 className="text-base font-semibold text-gray-900">Needs Attention</h3>
-        <span className="bg-success/15 text-success text-xs font-medium px-2.5 py-0.5 rounded-full">
-          {clientsOnTrack} of {totalClientCount} clients on track
-        </span>
+        {/* Badge only when data is loaded */}
+        {data && (
+          <span className="bg-success/15 text-success text-xs font-medium px-2.5 py-0.5 rounded-full">
+            {clientsOnTrack} of {totalClientCount} clients on track
+          </span>
+        )}
       </div>
 
-      {/* Priority client section */}
-      {priorityClient && (
-        <div className="bg-destructive/5 rounded-lg p-3 mb-3">
-          <div className="flex items-start gap-3">
-            {/* Avatar */}
-            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-              {priorityClient.clientAvatar ? (
-                <img
-                  src={priorityClient.clientAvatar}
-                  alt={priorityClient.clientName}
-                  className="w-full h-full rounded-full object-cover"
-                />
-              ) : (
-                <span className="text-sm font-medium text-primary">
-                  {priorityClient.clientName.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2)}
-                </span>
-              )}
-            </div>
-
-            {/* Content */}
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between">
-                <h4 className="text-sm font-medium text-gray-900">{priorityClient.clientName}</h4>
-                <Link 
-                  href={`/clients/${priorityClient.clientId}`}
-                  className="text-sm text-primary hover:text-primary/80 font-medium"
-                >
-                  View
-                </Link>
-              </div>
-              <p className="text-xs text-gray-600 mt-1">
-                {getPriorityAlertText(
-                  priorityClient.alerts.find(a => a.severity === "high") || priorityClient.alerts[0]
-                )}
-              </p>
-              {priorityClient.alerts.length > 1 && (
-                <p className="text-xs text-gray-500 mt-1">
-                  +{priorityClient.alerts.length - 1} more alert{priorityClient.alerts.length > 2 ? 's' : ''}
-                </p>
-              )}
-            </div>
-          </div>
+      {/* Swap inner content based on state */}
+      {isLoading ? (
+        /* Empty space during loading */
+        <div className="h-6" />
+      ) : clients.length === 0 ? (
+        /* Empty state content */
+        <div className="flex items-center gap-2">
+          <CheckCircle className="w-4 h-4 text-success" />
+          <span className="text-sm text-gray-500">All clients on track</span>
         </div>
-      )}
-
-      {/* Compact list */}
-      {visibleCompactClients.length > 0 && (
-        <div className="divide-y divide-gray-100">
-          {visibleCompactClients.map(client => {
-            const highAlerts = client.alerts.filter(a => a.severity === "high").length
-            const hasOnlyMedium = highAlerts === 0 && client.alerts.some(a => a.severity === "medium")
-            const mostUrgentAlert = client.alerts.find(a => a.severity === "high") || client.alerts[0]
-
-            return (
-              <div key={client.clientId} className="py-2 flex items-center justify-between">
-                <div className="flex items-center gap-2 flex-1 min-w-0">
-                  <span className="text-sm text-gray-900">{client.clientName}</span>
-                  {client.alerts.length > 0 && (
-                    <span className={`${
-                      hasOnlyMedium 
-                        ? "bg-warning/15 text-warning" 
-                        : "bg-destructive/15 text-destructive"
-                    } text-xs font-medium px-1.5 py-0.5 rounded-full`}>
-                      {client.alerts.length}
+      ) : (
+        /* Populated content: priority client + compact list */
+        <>
+          {/* Priority client section */}
+          {priorityClient && (
+            <div className="bg-destructive/5 rounded-lg p-3 mb-3">
+              <div className="flex items-start gap-3">
+                {/* Avatar */}
+                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                  {priorityClient.clientAvatar ? (
+                    <img
+                      src={priorityClient.clientAvatar}
+                      alt={priorityClient.clientName}
+                      className="w-full h-full rounded-full object-cover"
+                    />
+                  ) : (
+                    <span className="text-sm font-medium text-primary">
+                      {priorityClient.clientName.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2)}
                     </span>
                   )}
-                  <span className="text-xs text-gray-500 truncate">
-                    {getShortAlertText(mostUrgentAlert)}
-                    {client.alerts.length > 1 && ` +${client.alerts.length - 1}`}
-                  </span>
                 </div>
-                <Link 
-                  href={`/clients/${client.clientId}`}
-                  className="text-sm text-primary hover:text-primary/80 flex-shrink-0"
-                >
-                  View
-                </Link>
+
+                {/* Content */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-medium text-gray-900">{priorityClient.clientName}</h4>
+                    <Link 
+                      href={`/clients/${priorityClient.clientId}`}
+                      className="text-sm text-primary hover:text-primary/80 font-medium"
+                    >
+                      View
+                    </Link>
+                  </div>
+                  <p className="text-xs text-gray-600 mt-1">
+                    {getPriorityAlertText(
+                      priorityClient.alerts.find(a => a.severity === "high") || priorityClient.alerts[0]
+                    )}
+                  </p>
+                  {priorityClient.alerts.length > 1 && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      +{priorityClient.alerts.length - 1} more alert{priorityClient.alerts.length > 2 ? 's' : ''}
+                    </p>
+                  )}
+                </div>
               </div>
-            )
-          })}
-        </div>
-      )}
+            </div>
+          )}
 
-      {/* Show more link */}
-      {hiddenCount > 0 && !showAll && (
-        <button
-          onClick={() => setShowAll(true)}
-          className="text-xs text-gray-500 hover:text-gray-700 mt-2"
-        >
-          and {hiddenCount} more
-        </button>
-      )}
+          {/* Compact list */}
+          {visibleCompactClients.length > 0 && (
+            <div className="divide-y divide-gray-100">
+              {visibleCompactClients.map(client => {
+                const highAlerts = client.alerts.filter(a => a.severity === "high").length
+                const hasOnlyMedium = highAlerts === 0 && client.alerts.some(a => a.severity === "medium")
+                const mostUrgentAlert = client.alerts.find(a => a.severity === "high") || client.alerts[0]
 
-      {showAll && compactListClients.length > 4 && (
-        <button
-          onClick={() => setShowAll(false)}
-          className="text-xs text-gray-500 hover:text-gray-700 mt-2"
-        >
-          Show less
-        </button>
+                return (
+                  <div key={client.clientId} className="py-2 flex items-center justify-between">
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <span className="text-sm text-gray-900">{client.clientName}</span>
+                      {client.alerts.length > 0 && (
+                        <span className={`${
+                          hasOnlyMedium 
+                            ? "bg-warning/15 text-warning" 
+                            : "bg-destructive/15 text-destructive"
+                        } text-xs font-medium px-1.5 py-0.5 rounded-full`}>
+                          {client.alerts.length}
+                        </span>
+                      )}
+                      <span className="text-xs text-gray-500 truncate">
+                        {getShortAlertText(mostUrgentAlert)}
+                        {client.alerts.length > 1 && ` +${client.alerts.length - 1}`}
+                      </span>
+                    </div>
+                    <Link 
+                      href={`/clients/${client.clientId}`}
+                      className="text-sm text-primary hover:text-primary/80 flex-shrink-0"
+                    >
+                      View
+                    </Link>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {/* Show more link */}
+          {hiddenCount > 0 && !showAll && (
+            <button
+              onClick={() => setShowAll(true)}
+              className="text-xs text-gray-500 hover:text-gray-700 mt-2"
+            >
+              and {hiddenCount} more
+            </button>
+          )}
+
+          {showAll && compactListClients.length > 4 && (
+            <button
+              onClick={() => setShowAll(false)}
+              className="text-xs text-gray-500 hover:text-gray-700 mt-2"
+            >
+              Show less
+            </button>
+          )}
+        </>
       )}
     </motion.div>
   )
