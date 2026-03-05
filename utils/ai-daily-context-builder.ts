@@ -1,6 +1,7 @@
 import type { DailyLog } from "@/types/daily-log";
 import type { HabitLogWithDetails } from "@/types/daily-habit";
 import { NUTRITION_ADHERENCE_HIT_THRESHOLD, NUTRITION_ADHERENCE_PARTIAL_THRESHOLD } from "@/lib/constants";
+import { sanitizeForAIPrompt } from "@/utils/ai-prompt-sanitizer";
 
 export function buildDailyContextForAI(
   dailyLogs: DailyLog[],
@@ -47,14 +48,14 @@ export function buildDailyContextForAI(
     // Training
     if (log.trainingData) {
       if (log.trainingData.trainingSessionName) {
-        context += `Training: "${log.trainingData.trainingSessionName}" ${log.trainingData.sessionCompleted ? 'completed' : 'missed'}`;
+        context += `Training: "${sanitizeForAIPrompt(log.trainingData.trainingSessionName)}" ${log.trainingData.sessionCompleted ? 'completed' : 'missed'}`;
         
         if (log.trainingData.activityStatuses) {
           const activities = Object.values(log.trainingData.activityStatuses);
           const completed = activities.filter(a => a.completed).length;
           context += `, ${completed}/${activities.length} activities done`;
           
-          const skipped = activities.filter(a => !a.completed).map(a => a.activityName);
+          const skipped = activities.filter(a => !a.completed).map(a => sanitizeForAIPrompt(a.activityName));
           if (skipped.length > 0) {
             context += ` (skipped: ${skipped.join(', ')})`;
           }
@@ -68,7 +69,7 @@ export function buildDailyContextForAI(
     // Habits for this day
     const dayHabits = habitLogs.filter(h => h.date === log.date);
     if (dayHabits.length > 0) {
-      const habitStatus = dayHabits.map(h => `${h.habitName} ${h.completed ? '✓' : '✗'}`);
+      const habitStatus = dayHabits.map(h => `${sanitizeForAIPrompt(h.habitName)} ${h.completed ? '✓' : '✗'}`);
       context += `Habits: ${habitStatus.join(', ')}`;
     }
     
@@ -108,7 +109,7 @@ export function buildDailyContextForAI(
       const swapDetails = swaps.map(l => {
         const date = new Date(l.date);
         const dayName = date.toLocaleDateString('en-US', { weekday: 'long' });
-        return `swapped to ${l.trainingData?.trainingSessionName} on ${dayName}`;
+        return `swapped to ${sanitizeForAIPrompt(l.trainingData?.trainingSessionName || '')} on ${dayName}`;
       }).join(', ');
       context += `. Session swaps: ${swapDetails}`;
     }
@@ -125,7 +126,7 @@ export function buildDailyContextForAI(
       const daysExisted = Math.floor((endDate.getTime() - habitStartDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
       
       habitsById[log.dailyHabitId] = {
-        name: log.habitName,
+        name: sanitizeForAIPrompt(log.habitName),
         completed: 0,
         total: Math.max(1, daysExisted),
         createdAt: log.habitCreatedAt,

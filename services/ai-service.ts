@@ -9,6 +9,7 @@ import type {
 import type { DailyLog } from "@/types/daily-log";
 import type { HabitLogWithDetails } from "@/types/daily-habit";
 import { buildDailyContextForAI } from "@/utils/ai-daily-context-builder";
+import { sanitizeForAIPrompt } from "@/utils/ai-prompt-sanitizer";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -84,7 +85,7 @@ const buildCheckInAnalysisPrompt = (
   startDate?: Date,
   endDate?: Date
 ): string => {
-  let prompt = `Analyze this check-in for ${clientName}:\n\n`;
+  let prompt = `Analyze this check-in for ${sanitizeForAIPrompt(clientName)}:\n\n`;
 
   // Current check-in data
   prompt += "**CURRENT CHECK-IN:**\n";
@@ -118,8 +119,8 @@ const buildCheckInAnalysisPrompt = (
           ? "(partial)"
           : "(full)"
         : "(skipped)";
-      prompt += `  • ${s.sessionName}: ${status}\n`;
-      if (s.notes) prompt += `    Note: ${s.notes}\n`;
+      prompt += `  • ${sanitizeForAIPrompt(s.sessionName)}: ${status}\n`;
+      if (s.notes) prompt += `    Note: ${sanitizeForAIPrompt(s.notes)}\n`;
     });
   } else if (current.workoutsCompleted) {
     prompt += `- Workouts Completed: ${current.workoutsCompleted}\n`;
@@ -130,11 +131,11 @@ const buildCheckInAnalysisPrompt = (
     prompt += "\nExercise Highlights:\n";
     current.exerciseHighlights.forEach((h) => {
       const type = h.highlightType === "pr" ? "PR" : h.highlightType === "struggle" ? "Struggle" : "Note";
-      prompt += `- [${type}] ${h.exerciseName}`;
+      prompt += `- [${type}] ${sanitizeForAIPrompt(h.exerciseName)}`;
       if (h.weightValue) prompt += ` @ ${h.weightValue}${h.weightUnit}`;
       if (h.reps) prompt += ` x ${h.reps}`;
       prompt += "\n";
-      if (h.details) prompt += `  ${h.details}\n`;
+      if (h.details) prompt += `  ${sanitizeForAIPrompt(h.details)}\n`;
     });
   }
 
@@ -142,7 +143,7 @@ const buildCheckInAnalysisPrompt = (
   prompt += "\nNutrition:\n";
   if (current.nutritionDaysOnTarget !== undefined) {
     prompt += `- Days on target: ${current.nutritionDaysOnTarget}/7\n`;
-    if (current.nutritionNotes) prompt += `- Notes: ${current.nutritionNotes}\n`;
+    if (current.nutritionNotes) prompt += `- Notes: ${sanitizeForAIPrompt(current.nutritionNotes)}\n`;
   } else if (current.adherencePercentage !== undefined) {
     prompt += `- Adherence: ${current.adherencePercentage}%\n`;
   }
@@ -151,15 +152,15 @@ const buildCheckInAnalysisPrompt = (
   if (current.externalActivities?.length) {
     prompt += "\nExternal Activities (outside training plan):\n";
     current.externalActivities.forEach((a) => {
-      prompt += `- ${a.activityName}: ${a.durationMinutes}min (${a.intensityLevel})`;
+      prompt += `- ${sanitizeForAIPrompt(a.activityName)}: ${a.durationMinutes}min (${a.intensityLevel})`;
       if (a.estimatedCalories) prompt += ` ~${a.estimatedCalories}cal`;
       prompt += "\n";
     });
   }
 
-  if (current.prs) prompt += `\nPersonal Records (free text): ${current.prs}\n`;
-  if (current.challenges) prompt += `\nChallenges (free text): ${current.challenges}\n`;
-  if (current.notes) prompt += `\nNotes: ${current.notes}\n`;
+  if (current.prs) prompt += `\nPersonal Records (free text): ${sanitizeForAIPrompt(current.prs)}\n`;
+  if (current.challenges) prompt += `\nChallenges (free text): ${sanitizeForAIPrompt(current.challenges)}\n`;
+  if (current.notes) prompt += `\nNotes: ${sanitizeForAIPrompt(current.notes)}\n`;
 
   // Include daily tracking context if available
   if (dailyLogs && dailyLogs.length > 0 && startDate && endDate) {
@@ -198,7 +199,7 @@ RECOMMENDATIONS:
 [low] [recommendation text]
 
 RESPONSE_DRAFT:
-[Draft a warm, personalized message to ${clientName} acknowledging their progress and addressing any concerns. Keep it conversational and encouraging.]
+[Draft a warm, personalized message to ${sanitizeForAIPrompt(clientName)} acknowledging their progress and addressing any concerns. Keep it conversational and encouraging.]
 `;
 
   return prompt;
