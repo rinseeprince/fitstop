@@ -4,6 +4,24 @@
 
   ---
 
+  ## Tech Stack
+
+  - **Framework**: Next.js 14 (App Router)
+  - **Database**: Supabase (PostgreSQL with RLS)
+  - **Auth**: Supabase Auth
+  - **Cache / Rate Limiting**: Upstash Redis
+  - **Data Fetching (coach-side)**: SWR
+  - **Data Fetching (client-side)**: fetch with `{ cache: 'no-store' }` in Promise.all
+  - **Charts**: Recharts
+  - **Animations**: Framer Motion
+  - **Styling**: Tailwind CSS
+  - **Icons**: Lucide React
+  - **Forms**: React Hook Form + Zod
+  - **AI**: Anthropic Claude API (claude-sonnet-4-20250514)
+  - **Testing**: Vitest
+
+  ---
+
   ## Architecture
 
   ### Core Principles
@@ -439,6 +457,64 @@
 
   ---
 
+  ## API Route Index
+
+  All routes require authentication unless noted. Rate limit type is listed per route.
+
+  ### Client-side routes (client portal)
+  | Method | Route | Rate Limit | Description |
+  |--------|-------|------------|-------------|
+  | GET | `/api/client/daily-logs/today` | clientApiRateLimit | Fetch log for selected date |
+  | POST | `/api/client/daily-logs` | clientApiRateLimit | Save or update a daily log |
+  | GET | `/api/client/daily-logs/streak` | clientApiRateLimit | Current and longest streak |
+  | GET | `/api/client/daily-logs/nutrition-target` | clientApiRateLimit | Nutrition target + planned activities for date |
+  | GET | `/api/client/training` | clientApiRateLimit | All training sessions for client |
+  | GET | `/api/client/habits` | clientApiRateLimit | Client's active habits |
+  | GET | `/api/client/habits/logs/today` | clientApiRateLimit | Habit logs for selected date |
+  | POST | `/api/client/habits/log` | clientApiRateLimit | Save habit toggle (auto-save) |
+  | POST | `/api/client/session-completions` | clientApiRateLimit | Mark session completed |
+  | DELETE | `/api/client/session-completions` | clientApiRateLimit | Unmark session completed |
+  | POST | `/api/client/daily-activities` | clientApiRateLimit | Log an unplanned activity |
+
+  ### Coach-side routes (coach portal)
+  | Method | Route | Rate Limit | Description |
+  |--------|-------|------------|-------------|
+  | GET | `/api/clients` | coachApiRateLimit | List all coach's clients |
+  | GET | `/api/clients/[id]/daily-logs` | coachApiRateLimit | 28-day rolling window of logs |
+  | GET | `/api/clients/[id]/habits/logs` | coachApiRateLimit | 28-day habit logs |
+  | GET | `/api/clients/[id]/habits` | coachApiRateLimit | Client's habits (coach view) |
+  | POST | `/api/clients/[id]/habits` | coachApiRateLimit | Create habit for client |
+  | PATCH | `/api/clients/[id]/habits/[habitId]` | coachApiRateLimit | Update habit |
+  | DELETE | `/api/clients/[id]/habits/[habitId]` | coachApiRateLimit | Soft delete habit |
+  | GET | `/api/dashboard/attention-feed` | coachApiRateLimit | Needs attention feed (no-store) |
+
+  ### Auth / invitations
+  | Method | Route | Rate Limit | Description |
+  |--------|-------|------------|-------------|
+  | POST | `/api/invitations` | authRateLimit | Send client invitation |
+
+  ---
+
+  ## Environment Variables
+
+  Required in `.env.local`:
+
+  ```
+  # Supabase
+  NEXT_PUBLIC_SUPABASE_URL=
+  NEXT_PUBLIC_SUPABASE_ANON_KEY=
+  SUPABASE_SERVICE_ROLE_KEY=        # Used by supabaseAdmin in services
+
+  # Upstash Redis (rate limiting + any future caching)
+  UPSTASH_REDIS_REST_URL=
+  UPSTASH_REDIS_REST_TOKEN=
+
+  # Anthropic (AI check-in summaries)
+  ANTHROPIC_API_KEY=
+  ```
+
+  ---
+
   ## View States
 
   DailyPulse has three distinct view states based on log status and user interaction:
@@ -450,7 +526,7 @@
   - Day navigation bar at top
   - All inputs editable
 
-  ### 2. Logged Day - Collapsed View  
+  ### 2. Logged Day - Collapsed View
   Rendered via `daily-pulse-logged-view.tsx`:
   - Summary card shows wellness scores, training status, calories
   - All sections collapsed to single-line displays
@@ -933,7 +1009,7 @@
   3. **No `as any`** - use proper types from `types/database.ts`. If extending an existing type, create a local interface (e.g. `CheckInWithLogCounts extends CheckIn`).
   4. **No `JSON.stringify()` on JSONB** - Supabase handles serialization automatically.
   5. **`trained: trained`** - never `trained: trained || undefined` (drops false).
-  6. **`{ cache: 'no-store' }`** on all fetches + `Cache-Control: no-store` on all GET routes.
+  6. **`{ cache: 'no-store' }`** on all client-side fetches + `Cache-Control: no-store` on all GET API routes. The only exception is routes that intentionally cache expensive aggregate queries - this must be explicitly commented in the route file.
   7. **Components under 250 lines** - extract sub-components if needed.
   8. **Habits auto-save, everything else waits for Log Day**.
   9. **Planned activity calories from `activityMetadata.estimatedCalories`** (JSONB), not `estimated_calories` column.
@@ -950,14 +1026,14 @@
   20. **Habits filtered by `created_at` date** - only show habits where `created_at <= selectedDate`. Prevents habits appearing on days before they were created. Applies on both client Daily Pulse and coach day detail overlay.
   21. **Soft delete for habits** - delete sets `is_active = false`, never hard deletes. Preserves `daily_habit_logs` for historical analytics. Coach can view inactive habits via Active/All toggle and reactivate them.
   22. **Habit display text uses `completed` field only** - never branch on `isBoolean` or `value` for display. `completed: true` → "Completed", `completed: false` → "Not completed", no log → "Not logged".
-  23. Client-side uses fetch with { cache: 'no-store' }, coach-side uses SWR - Daily Pulse, client portal, and progress page components fetch data directly using fetch with { cache: 'no-store' } in Promise.all patterns. Only coach-side components (components/clients/) use SWR hooks. Never use SWR on the client side. When creating new hooks, check hooks/ for existing hooks with similar names to avoid duplicates (e.g. use-client-habits.ts is a coach-side hook, not a client-side one).
+  23. **Client-side uses fetch with `{ cache: 'no-store' }`, coach-side uses SWR** - Daily Pulse, client portal, and progress page components fetch data directly using fetch with `{ cache: 'no-store' }` in Promise.all patterns. Only coach-side components (`components/clients/`) use SWR hooks. Never use SWR on the client side. When creating new hooks, check `hooks/` for existing hooks with similar names to avoid duplicates (e.g. `use-client-habits.ts` is a coach-side hook, not a client-side one).
   24. **Nutrition adherence thresholds from constants** - always import `NUTRITION_ADHERENCE_HIT_THRESHOLD` and `NUTRITION_ADHERENCE_PARTIAL_THRESHOLD` from `lib/constants.ts`. Never hardcode 50/200 values.
   25. **Colour thresholds from shared utility** - always import `getBarColor` from `utils/wellness-color-thresholds.ts`. Never duplicate colour threshold definitions in individual components.
   26. **Shared types in dedicated files** - types used by multiple files must be in `types/` directory (e.g. `HabitLogWithDetails` in `types/daily-habit.ts`). Never define the same type locally in multiple files.
   27. **Habit completion denominators** - when showing habit completion rates (e.g. "Water: 3/7 days"), the denominator must be calculated as days from `max(habitCreatedAt, startDate)` to `endDate`. Never use log entry count as the denominator.
   28. **Check-in period dates from calculation, not log data** - when displaying daily context for a check-in period, always use the calculated period dates (day after previous check-in to current check-in). Never derive the date range from the first/last daily log dates.
   29. **Trigger thresholds from constants** - all attention trigger thresholds must be imported from `lib/constants.ts`. Never hardcode threshold values (2 points, 3 days, stress 8, etc.) in trigger functions or components.
-  30. **AlertType and AlertSeverity from types/attention-feed.ts** - single source of truth for alert type definitions. Both `daily-wellness-alerts.ts` and `attention-triggers.ts` import from there. Never define AlertType locally in multiple files.
+  30. **AlertType and AlertSeverity from `types/attention-feed.ts`** - single source of truth for alert type definitions. Both `daily-wellness-alerts.ts` and `attention-triggers.ts` import from there. Never define AlertType locally in multiple files.
   31. **No duplicate trigger logic** - all trigger evaluation functions live in `lib/wellness-triggers.ts`, `lib/tracking-triggers.ts`, and `lib/activity-triggers.ts`, re-exported via `lib/attention-triggers.ts`. Both the per-client wellness strip (via `detectAlerts()`) and the roster-level attention feed (via `evaluateAllClientTriggers()`) use these same functions. Never duplicate trigger logic.
   32. **Alerts must self-clear** - consecutive-day triggers only fire if the pattern extends to the most recent log or logging stopped after the pattern. Count-based triggers (activity cal mismatch) require at least one occurrence in the last 7 days. Never trigger on historical patterns that have since resolved.
   33. **Pure trigger functions accept `now` parameter** - trigger functions that reference the current date (evaluateTrainingMisses, evaluateActivityCalMismatch) accept an optional `now` parameter for testability. Never use `new Date()` directly inside a pure function without making it injectable.
@@ -965,29 +1041,39 @@
 
   ---
 
-  ## Remaining Sessions
+  ## Session History
 
-  | Session | Feature | Dependencies | Status |
-  |---------|---------|-------------|--------|
-  | 1 | Database Migration | Supabase tables and RLS | ✅ COMPLETED |
-  | 2 | TypeScript Types + Zod Schemas | Type definitions and validation | ✅ COMPLETED |
-  | 3 | Daily Logs Service | Server-side service functions | ✅ COMPLETED |
-  | 4 | Daily Logs API Routes | Client and coach API endpoints | ✅ COMPLETED |
-  | 5 | Daily Habits Service | Habits CRUD and stats | ✅ COMPLETED |
-  | 6 | Daily Habits API Routes | Coach and client habit endpoints | ✅ COMPLETED |
-  | 7 | Daily Activities Service + API | External activities CRUD | ✅ COMPLETED |
-  | 8 | DailyPulse - Wellness Section | Mood, energy, sleep, stress UI | ✅ COMPLETED |
-  | 9 | DailyPulse - Training & Activities | Training toggles, activities, save/restore | ✅ COMPLETED |
-  | 10 | DailyPulse - Nutrition Section | Calorie input, macro tracking, dynamic targets | ✅ COMPLETED |
-  | 11 | Habits section in DailyPulse | Services from Session 5, API from Session 6 | ✅ COMPLETED |
-  | 12 | Check-in Step 1 refactor (auto-populate from daily logs) | daily_logs data | ✅ COMPLETED |
-  | 13 | Check-in Step 4 refactor (training auto-summary) | training_data JSONB (new activityStatuses shape) | ✅ COMPLETED |
-  | Day Nav | 7-day navigation bar | Weekly logs fetch, date helpers | ✅ COMPLETED |
-  | 14 | Coach wellness strip (bar charts) | Coach daily-logs API | ✅ COMPLETED |
-  | 15 | Expandable day detail | training_data JSONB (trainingSessionName, activityStatuses) | ✅ COMPLETED |
-  | 16 | Alerts + badges | Wellness strip, check-in timeline, daily-wellness-alerts.ts | ✅ COMPLETED |
-  | 17 | Coach habits tab + analytics + Active/All toggle | Habits service + API, soft delete, reactivation | ✅ COMPLETED |
-  | 18 | Client habits on progress page | Habit chart card from Session 17 | Planned |
-  | 19 | AI check-in review context | training_data JSONB, daily_logs, habits | ✅ COMPLETED |
-  | 20 | Needs attention feed | Alert triggers, training_data activityStatuses | ✅ COMPLETED |
-  | 21 | Roster summary + per-client toggle | Attention feed, AI service | Planned |
+  | Session | Feature | Status |
+  |---------|---------|--------|
+  | 1 | Database Migration | ✅ COMPLETED |
+  | 2 | TypeScript Types + Zod Schemas | ✅ COMPLETED |
+  | 3 | Daily Logs Service | ✅ COMPLETED |
+  | 4 | Daily Logs API Routes | ✅ COMPLETED |
+  | 5 | Daily Habits Service | ✅ COMPLETED |
+  | 6 | Daily Habits API Routes | ✅ COMPLETED |
+  | 7 | Daily Activities Service + API | ✅ COMPLETED |
+  | 8 | DailyPulse - Wellness Section | ✅ COMPLETED |
+  | 9 | DailyPulse - Training & Activities | ✅ COMPLETED |
+  | 10 | DailyPulse - Nutrition Section | ✅ COMPLETED |
+  | 11 | Habits section in DailyPulse | ✅ COMPLETED |
+  | 12 | Check-in Step 1 refactor (auto-populate from daily logs) | ✅ COMPLETED |
+  | 13 | Check-in Step 4 refactor (training auto-summary) | ✅ COMPLETED |
+  | Day Nav | 7-day navigation bar | ✅ COMPLETED |
+  | 14 | Coach wellness strip (bar charts) | ✅ COMPLETED |
+  | 15 | Expandable day detail | ✅ COMPLETED |
+  | 16 | Alerts + badges | ✅ COMPLETED |
+  | 17 | Coach habits tab + analytics + Active/All toggle | ✅ COMPLETED |
+  | 18 | Client habits on progress page | ⏭ SKIPPED - deprioritised |
+  | 19 | AI check-in review context | ✅ COMPLETED |
+  | 20 | Needs attention feed | ✅ COMPLETED |
+  | 21 | Roster summary | ⏮ REVERTED - see note below |
+
+  ### Session 21 - Why it was reverted
+
+  Session 21 attempted to build a weekly roster summary card on the clients page and a dashboard teaser. The implementation was reverted for two reasons:
+
+  First, the feature overlapped significantly with the Needs Attention feed already built in Session 20. The most useful stat ("X clients need follow-up") was already surfaced more usefully with full detail in the existing feed.
+
+  Second, the caching architecture required to make it performant (Redis per-coach cache with browser cache bypass) introduced meaningful complexity that conflicted with the `Cache-Control: no-store` convention used everywhere else in the codebase. After multiple debugging iterations the stats still showed zero, and the effort-to-value ratio was poor.
+
+  The codebase was cleanly reverted to the Session 20 checkpoint. If this feature is revisited, the key decision to make upfront is whether the browser cache conflict is handled by dropping `Cache-Control: max-age` and relying solely on Redis - which avoids the double-caching problem entirely.
