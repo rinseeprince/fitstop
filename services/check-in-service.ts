@@ -12,10 +12,11 @@ import type {
 } from "@/types/check-in";
 import { mapCheckInRow } from "@/lib/mappers";
 
-// Generate a unique token for check-in link
+// Generate a unique token for check-in link (256 bits of entropy, URL-safe)
 export const generateCheckInToken = (): string => {
-  // Use crypto.randomUUID() which works in both Node and Edge runtime
-  return crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '');
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 };
 
 // Create a check-in token for a client

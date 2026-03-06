@@ -36,10 +36,11 @@ export async function getAuthenticatedCoachId(): Promise<string | null> {
     const supabase = await createSupabaseServerClient();
 
     const {
-      data: { session },
-    } = await supabase.auth.getSession();
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
 
-    if (!session) {
+    if (userError || !user) {
       return null;
     }
 
@@ -47,7 +48,7 @@ export async function getAuthenticatedCoachId(): Promise<string | null> {
     const { data: coach, error } = await supabase
       .from("coaches")
       .select("id")
-      .eq("user_id", session.user.id)
+      .eq("user_id", user.id)
       .maybeSingle();
 
     // Log unexpected errors but don't throw
@@ -72,10 +73,11 @@ export async function getAuthenticatedClientId(): Promise<string | null> {
     const supabase = await createSupabaseServerClient();
 
     const {
-      data: { session },
-    } = await supabase.auth.getSession();
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
 
-    if (!session) {
+    if (userError || !user) {
       return null;
     }
 
@@ -83,7 +85,7 @@ export async function getAuthenticatedClientId(): Promise<string | null> {
     const { data: client, error } = await supabase
       .from("clients")
       .select("id")
-      .eq("user_id", session.user.id)
+      .eq("user_id", user.id)
       .maybeSingle();
 
     // Log unexpected errors but don't throw

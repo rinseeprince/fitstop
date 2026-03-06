@@ -56,7 +56,7 @@ export async function GET(
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to fetch client daily logs",
+        error: "Failed to fetch client daily logs",
       },
       { status: 500 }
     );

@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("Error fetching clients:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to fetch clients" },
+      { error: "Failed to fetch clients" },
       { status: 500 }
     );
   }
@@ -71,13 +71,13 @@ export async function POST(request: NextRequest) {
     // Handle duplicate email error
     if (error instanceof Error && error.message.includes("already exists")) {
       return NextResponse.json(
-        { error: error.message },
+        { error: "A client with this email already exists" },
         { status: 409 }
       );
     }
 
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to create client" },
+      { error: "Failed to create client" },
       { status: 500 }
     );
   }

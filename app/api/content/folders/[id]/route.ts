@@ -105,7 +105,7 @@ export async function PATCH(
     return NextResponse.json(
       { 
         success: false, 
-        error: error instanceof Error ? error.message : "Failed to update folder" 
+        error: "Failed to update folder" 
       },
       { status: 500 }
     );
@@ -179,7 +179,7 @@ export async function DELETE(
     return NextResponse.json(
       { 
         success: false, 
-        error: error instanceof Error ? error.message : "Failed to delete folder" 
+        error: "Failed to delete folder" 
       },
       { status: 500 }
     );

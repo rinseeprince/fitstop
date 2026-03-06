@@ -69,7 +69,7 @@ export async function GET(
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to fetch habit stats",
+        error: "Failed to fetch habit stats",
       },
       { status: 500 }
     );

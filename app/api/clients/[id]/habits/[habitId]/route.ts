@@ -89,7 +89,7 @@ export async function PUT(
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to update habit",
+        error: "Failed to update habit",
       },
       { status: 500 }
     );
@@ -136,7 +136,7 @@ export async function DELETE(
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to deactivate habit",
+        error: "Failed to deactivate habit",
       },
       { status: 500 }
     );

@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to add activity",
+        error: "Failed to add activity",
       },
       { status: 500 }
     );
@@ -104,7 +104,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to fetch activities",
+        error: "Failed to fetch activities",
       },
       { status: 500 }
     );

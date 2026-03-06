@@ -108,11 +108,18 @@ export async function PATCH(
       );
     }
 
-    // Parse request body
+    // Parse request body and allowlist permitted fields only
     const body = await request.json();
-    
-    // Update content item
-    const updatedItem = await updateContentItem(id, body);
+    const allowedUpdate: Partial<import("@/types/content").UpdateContentItemInput> = {};
+    if (body.title !== undefined) allowedUpdate.title = body.title;
+    if (body.description !== undefined) allowedUpdate.description = body.description;
+    if (body.folderId !== undefined) allowedUpdate.folderId = body.folderId;
+    if (body.isLibrary !== undefined) allowedUpdate.isLibrary = body.isLibrary;
+    if (body.sortOrder !== undefined) allowedUpdate.sortOrder = body.sortOrder;
+    if (body.metadata !== undefined) allowedUpdate.metadata = body.metadata;
+
+    // Update content item (storagePath, thumbnailUrl, coachId excluded)
+    const updatedItem = await updateContentItem(id, allowedUpdate);
 
     return NextResponse.json({
       success: true,
@@ -124,7 +131,7 @@ export async function PATCH(
     return NextResponse.json(
       { 
         success: false, 
-        error: error instanceof Error ? error.message : "Failed to update content item" 
+        error: "Failed to update content item" 
       },
       { status: 500 }
     );
@@ -189,7 +196,7 @@ export async function DELETE(
     return NextResponse.json(
       { 
         success: false, 
-        error: error instanceof Error ? error.message : "Failed to delete content item" 
+        error: "Failed to delete content item" 
       },
       { status: 500 }
     );

@@ -3,6 +3,7 @@ import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { createContentItem, getCoachContent } from "@/services/content-service";
 import { apiRateLimit } from "@/lib/rate-limit";
+import { createContentItemSchema } from "@/lib/validations/content";
 
 export async function GET(request: NextRequest) {
   const rateLimitResult = await apiRateLimit(request);
@@ -84,34 +85,26 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Parse request body
-    const body = await request.json();
-    const { title, description, type, url, folderId, isLibrary = true, metadata } = body;
-
-    // Validate required fields
-    if (!title || !type) {
+    // Parse and validate request body
+    const rawBody = await request.json();
+    const parseResult = createContentItemSchema.safeParse(rawBody);
+    if (!parseResult.success) {
       return NextResponse.json(
-        { success: false, error: "Title and type are required" },
+        { success: false, error: "Invalid input", details: parseResult.error.format() },
         { status: 400 }
       );
     }
 
-    // For URL types, URL is required
-    if ((type === "video_link" || type === "hyperlink") && !url) {
-      return NextResponse.json(
-        { success: false, error: "URL is required for link content" },
-        { status: 400 }
-      );
-    }
+    const { title, description, type, url, folderId, isLibrary, metadata } = parseResult.data;
 
     // Create content item
     const item = await createContentItem({
       coachId: coach.id,
-      title: title.trim(),
-      description: description?.trim(),
+      title,
+      description,
       type,
-      url: url?.trim(),
-      folderId: folderId || undefined,
+      url,
+      folderId,
       isLibrary,
       metadata: metadata || {},
     });
@@ -126,7 +119,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       { 
         success: false, 
-        error: error instanceof Error ? error.message : "Failed to create content item" 
+        error: "Failed to create content item" 
       },
       { status: 500 }
     );

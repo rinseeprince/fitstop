@@ -1,15 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  getCheckInById,
   getClientCheckIns,
   updateCheckInAISummary,
 } from "@/services/check-in-service";
+import { getClientById } from "@/services/client-service";
 import { generateCheckInSummary, regenerateAISummary } from "@/services/ai-service";
 import { getDailyLogs } from "@/services/daily-logs-service";
 import { getHabitLogs } from "@/services/daily-habits-service";
 import type { GenerateAISummaryResponse } from "@/types/check-in";
 import { rateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
+import { requireCoachOwnsCheckIn } from "@/lib/require-coach-auth";
 
 export async function POST(
   request: NextRequest,
@@ -27,17 +28,18 @@ export async function POST(
 
   try {
     const { id: checkInId } = await params;
+
+    // Verify coach owns this check-in's client
+    const auth = await requireCoachOwnsCheckIn(checkInId);
+    if (!auth.authorized) return auth.response;
+    const currentCheckIn = auth.checkIn;
+
     const body = await request.json();
     const focus = body.focus as "positive" | "detailed" | "concise" | undefined;
 
-    // Get current check-in
-    const currentCheckIn = await getCheckInById(checkInId);
-    if (!currentCheckIn) {
-      return NextResponse.json(
-        { success: false, errorMessage: "Check-in not found" },
-        { status: 404 }
-      );
-    }
+    // Get client name for AI prompt
+    const client = await getClientById(currentCheckIn.clientId);
+    const clientName = client?.name || "Client";
 
     // Get previous check-ins for context
     const { checkIns } = await getClientCheckIns(currentCheckIn.clientId, {
@@ -81,7 +83,7 @@ export async function POST(
       ? await regenerateAISummary(
           currentCheckIn,
           previousCheckIns,
-          "Client Name", // TODO: Fetch actual client name
+          clientName,
           focus,
           dailyLogs,
           habitLogs,
@@ -91,7 +93,7 @@ export async function POST(
       : await generateCheckInSummary(
           currentCheckIn,
           previousCheckIns,
-          "Client Name", // TODO: Fetch actual client name
+          clientName,
           dailyLogs,
           habitLogs,
           startDate,

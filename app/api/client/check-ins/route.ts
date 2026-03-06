@@ -64,8 +64,8 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
-    const limit = parseInt(searchParams.get("limit") || "20", 10);
-    const offset = parseInt(searchParams.get("offset") || "0", 10);
+    const limit = Math.min(Math.max(parseInt(searchParams.get("limit") || "20", 10) || 20, 1), 100);
+    const offset = Math.max(parseInt(searchParams.get("offset") || "0", 10) || 0, 0);
 
     const result = await getClientCheckIns(clientId, { limit, offset });
 
@@ -84,7 +84,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to fetch check-ins",
+        error: "Failed to fetch check-ins",
       },
       { status: 500 }
     );
@@ -275,7 +275,7 @@ export async function POST(request: NextRequest) {
 
       const response: SubmitCheckInResponse = {
         success: false,
-        errorMessage: error instanceof Error ? error.message : "Failed to submit check-in",
+        errorMessage: "Failed to submit check-in",
       };
 
       return NextResponse.json(response, { status: 500 });
@@ -285,7 +285,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to submit check-in",
+        error: "Failed to submit check-in",
       },
       { status: 500 }
     );

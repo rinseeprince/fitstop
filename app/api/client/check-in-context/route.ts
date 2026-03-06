@@ -134,7 +134,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to fetch context",
+        error: "Failed to fetch context",
       },
       { status: 500 }
     );

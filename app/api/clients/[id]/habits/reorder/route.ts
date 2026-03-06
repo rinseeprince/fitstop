@@ -72,7 +72,7 @@ export async function PUT(
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to reorder habits",
+        error: "Failed to reorder habits",
       },
       { status: 500 }
     );

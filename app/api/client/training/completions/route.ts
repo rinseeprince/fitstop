@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to fetch completions",
+        error: "Failed to fetch completions",
       },
       { status: 500 }
     );
@@ -110,7 +110,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to mark complete",
+        error: "Failed to mark complete",
       },
       { status: 500 }
     );
@@ -161,7 +161,7 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to remove completion",
+        error: "Failed to remove completion",
       },
       { status: 500 }
     );

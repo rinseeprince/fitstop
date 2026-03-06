@@ -59,7 +59,7 @@ export async function GET(
   } catch (error) {
     console.error("Error fetching client:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to fetch client" },
+      { error: "Failed to fetch client" },
       { status: 500 }
     );
   }
@@ -116,13 +116,13 @@ export async function PATCH(
     // Handle duplicate email error
     if (error instanceof Error && error.message.includes("already exists")) {
       return NextResponse.json(
-        { error: error.message },
+        { error: "A client with this email already exists" },
         { status: 409 }
       );
     }
 
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to update client" },
+      { error: "Failed to update client" },
       { status: 500 }
     );
   }
@@ -165,7 +165,7 @@ export async function DELETE(
   } catch (error) {
     console.error("Error deleting client:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to delete client" },
+      { error: "Failed to delete client" },
       { status: 500 }
     );
   }

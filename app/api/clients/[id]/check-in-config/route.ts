@@ -71,12 +71,7 @@ export async function PATCH(
   } catch (error) {
     console.error("Error updating check-in config:", error);
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to update check-in config",
-      },
+      { error: "Failed to update check-in config" },
       { status: 500 }
     );
   }

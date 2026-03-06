@@ -3,6 +3,7 @@ import { getClientCheckIns } from "@/services/check-in-service";
 import { parsePaginationParams } from "@/lib/api-utils";
 import type { GetCheckInsResponse } from "@/types/check-in";
 import { apiRateLimit } from "@/lib/rate-limit";
+import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 
 export async function GET(
   request: NextRequest,
@@ -13,6 +14,10 @@ export async function GET(
 
   try {
     const { id: clientId } = await params;
+
+    // Verify coach owns this client
+    const auth = await requireCoachOwnsClient(clientId);
+    if (!auth.authorized) return auth.response;
     const { searchParams } = new URL(request.url);
 
     // Parse and validate pagination parameters

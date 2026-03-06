@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCheckInComparison } from "@/services/comparison-service";
 import { apiRateLimit } from "@/lib/rate-limit";
+import { requireCoachOwnsCheckIn } from "@/lib/require-coach-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +14,11 @@ export async function GET(
 
   try {
     const { id: checkInId } = await params;
+
+    // Verify coach owns this check-in's client
+    const auth = await requireCoachOwnsCheckIn(checkInId);
+    if (!auth.authorized) return auth.response;
+
     const response = await getCheckInComparison(checkInId);
     return NextResponse.json(response);
   } catch (error) {

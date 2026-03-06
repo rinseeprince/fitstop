@@ -62,7 +62,7 @@ export async function PUT(
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to update activity",
+        error: "Failed to update activity",
       },
       { status: statusCode }
     );
@@ -102,7 +102,7 @@ export async function DELETE(
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to delete activity",
+        error: "Failed to delete activity",
       },
       { status: statusCode }
     );

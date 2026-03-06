@@ -57,7 +57,7 @@ export async function GET(
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to fetch habit logs",
+        error: "Failed to fetch habit logs",
       },
       { status: 500 }
     );

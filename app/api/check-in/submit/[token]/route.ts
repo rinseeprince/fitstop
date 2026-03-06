@@ -84,7 +84,7 @@ export async function GET(
         id: client.id,
         name: client.name,
         email: client.email,
-        coachName: coach?.name || "Your Coach",
+        coachName: coach?.name ? coach.name.split(" ")[0] : "Your Coach",
         checkInFrequencyDays: getFrequencyInDays(
           client.checkInFrequency || "weekly",
           client.checkInFrequencyDays

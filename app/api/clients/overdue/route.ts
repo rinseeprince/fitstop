@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(
       {
         error:
-          error instanceof Error ? error.message : "Failed to fetch overdue clients",
+          "Failed to fetch overdue clients",
       },
       { status: 500 }
     );

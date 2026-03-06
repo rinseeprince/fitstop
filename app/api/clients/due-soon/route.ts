@@ -32,12 +32,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("Error fetching clients due soon:", error);
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to fetch clients due soon",
-      },
+      { error: "Failed to fetch clients due soon" },
       { status: 500 }
     );
   }

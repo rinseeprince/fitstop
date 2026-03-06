@@ -1,14 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { apiRateLimit } from "@/lib/rate-limit";
+import { requireCoachAuth, getCoachClientIds } from "@/lib/require-coach-auth";
 
 export async function GET(request: NextRequest) {
   const rateLimitResult = await apiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
 
   try {
+    // Verify coach authentication
+    const auth = await requireCoachAuth();
+    if (!auth.authorized) return auth.response;
+
+    // Scope to this coach's clients only
+    const clientIds = await getCoachClientIds(auth.coachId);
+    if (clientIds.length === 0) {
+      return NextResponse.json({ checkIns: [], total: 0 });
+    }
+
     // Get recent check-ins with client info
-    // Using explicit foreign key syntax: clients!client_id
     const { data: checkIns, error } = await supabaseAdmin
       .from("check_ins")
       .select(
@@ -22,6 +32,7 @@ export async function GET(request: NextRequest) {
         )
       `
       )
+      .in("client_id", clientIds)
       .order("created_at", { ascending: false })
       .limit(10);
 

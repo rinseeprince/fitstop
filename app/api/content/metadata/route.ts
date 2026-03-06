@@ -3,6 +3,7 @@ import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { fetchVideoMetadata, fetchLinkMetadata } from "@/services/content-service";
 import { apiRateLimit } from "@/lib/rate-limit";
+import { validateExternalUrl } from "@/lib/url-safety";
 
 export async function POST(request: NextRequest) {
   const rateLimitResult = await apiRateLimit(request);
@@ -46,20 +47,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate URL format
-    try {
-      new URL(url);
-    } catch (error) {
+    // Validate URL format and block internal/private URLs (SSRF protection)
+    const urlError = validateExternalUrl(url);
+    if (urlError) {
       return NextResponse.json(
-        { success: false, error: "Invalid URL format" },
+        { success: false, error: urlError },
         { status: 400 }
       );
     }
 
     let metadata = null;
 
-    // Check if it's a video URL
-    if (url.includes("youtube.com") || url.includes("youtu.be") || url.includes("vimeo.com")) {
+    // Check if it's a video URL using proper domain matching
+    const parsedUrl = new URL(url);
+    const hostname = parsedUrl.hostname.toLowerCase();
+    const isVideoUrl = ["youtube.com", "www.youtube.com", "youtu.be", "vimeo.com", "www.vimeo.com"]
+      .some(domain => hostname === domain);
+
+    if (isVideoUrl) {
       metadata = await fetchVideoMetadata(url);
     } else {
       // Try to fetch general link metadata

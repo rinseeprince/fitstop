@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to fetch today's log",
+        error: "Failed to fetch today's log",
       },
       { status: 500 }
     );

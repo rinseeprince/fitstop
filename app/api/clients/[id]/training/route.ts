@@ -196,7 +196,7 @@ export async function POST(
   } catch (error) {
     console.error("Error generating training plan:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to generate training plan" },
+      { error: "Failed to generate training plan" },
       { status: 500 }
     );
   }

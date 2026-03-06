@@ -95,7 +95,7 @@ export async function POST(
   } catch (error) {
     console.error("Error refreshing exercises:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to refresh exercises" },
+      { error: "Failed to refresh exercises" },
       { status: 500 }
     );
   }

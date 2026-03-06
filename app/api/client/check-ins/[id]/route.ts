@@ -127,7 +127,7 @@ export async function GET(
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to fetch check-in",
+        error: "Failed to fetch check-in",
       },
       { status: 500 }
     );

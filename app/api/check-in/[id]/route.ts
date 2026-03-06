@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { mapCheckInRow } from "@/lib/mappers";
 import type { CheckInRow } from "@/lib/database-helpers";
-import { 
-  getCheckInSessionCompletions, 
-  getCheckInExerciseHighlights, 
-  getCheckInExternalActivities 
+import {
+  getCheckInSessionCompletions,
+  getCheckInExerciseHighlights,
+  getCheckInExternalActivities
 } from "@/services/check-in-service";
 import { apiRateLimit } from "@/lib/rate-limit";
+import { requireCoachOwnsCheckIn } from "@/lib/require-coach-auth";
 
 export async function GET(
   request: NextRequest,
@@ -19,7 +20,11 @@ export async function GET(
   try {
     const { id } = await params;
 
-    // Get check-in with client info in a single query using relational syntax
+    // Verify coach owns this check-in's client (before fetching detailed data)
+    const auth = await requireCoachOwnsCheckIn(id);
+    if (!auth.authorized) return auth.response;
+
+    // Now fetch full check-in with client info for the response
     const { data, error } = await supabaseAdmin
       .from("check_ins")
       .select(
@@ -36,15 +41,7 @@ export async function GET(
       .eq("id", id)
       .single();
 
-    if (error) {
-      console.error("Error fetching check-in:", error);
-      return NextResponse.json(
-        { error: "Check-in not found" },
-        { status: 404 }
-      );
-    }
-
-    if (!data) {
+    if (error || !data) {
       return NextResponse.json(
         { error: "Check-in not found" },
         { status: 404 }

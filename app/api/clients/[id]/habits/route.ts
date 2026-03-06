@@ -54,7 +54,7 @@ export async function GET(
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to fetch client habits",
+        error: "Failed to fetch client habits",
       },
       { status: 500 }
     );
@@ -124,7 +124,7 @@ export async function POST(
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to create habit",
+        error: "Failed to create habit",
       },
       { status: 500 }
     );

@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to save session completion",
+        error: "Failed to save session completion",
       },
       { status: 500 }
     );
@@ -148,7 +148,7 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to delete session completion",
+        error: "Failed to delete session completion",
       },
       { status: 500 }
     );

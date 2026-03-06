@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
-    const days = parseInt(searchParams.get("days") || "90", 10);
+    const days = Math.min(Math.max(parseInt(searchParams.get("days") || "90", 10) || 90, 1), 365);
 
     const progressData = await getClientProgressData(clientId, days);
 
@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to fetch progress",
+        error: "Failed to fetch progress",
       },
       { status: 500 }
     );

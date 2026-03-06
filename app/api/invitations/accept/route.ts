@@ -3,6 +3,8 @@ import { acceptInvitationByToken, acceptInvitation } from "@/services/invitation
 import type { AcceptInvitationResponse } from "@/types/auth"
 import { authRateLimit } from "@/lib/rate-limit"
 import { requireCSRFProtection } from "@/lib/csrf-protection"
+import { isValidUUID } from "@/lib/api-utils"
+import { supabaseAdmin } from "@/services/supabase-admin"
 
 export async function POST(request: NextRequest): Promise<NextResponse<AcceptInvitationResponse>> {
   const rateLimitResult = await authRateLimit(request);
@@ -40,8 +42,40 @@ export async function POST(request: NextRequest): Promise<NextResponse<AcceptInv
     } else if (body.clientId && body.userId) {
       // Legacy clientId-based flow (for backward compatibility)
       console.warn("Using deprecated clientId-based invitation acceptance")
-      
+
       const { clientId, userId } = body
+
+      // Validate UUID format
+      if (!isValidUUID(clientId) || !isValidUUID(userId)) {
+        return NextResponse.json(
+          { success: false, error: "Invalid parameters" },
+          { status: 400 }
+        )
+      }
+
+      // Verify a pending invitation exists for this client
+      const { data: invitation } = await supabaseAdmin
+        .from("invitations")
+        .select("id, email")
+        .eq("client_id", clientId)
+        .eq("status", "pending")
+        .maybeSingle()
+
+      if (!invitation) {
+        return NextResponse.json(
+          { success: false, error: "No pending invitation found" },
+          { status: 400 }
+        )
+      }
+
+      // Verify the user's email matches the invitation email
+      const { data: { user: invitedUser } } = await supabaseAdmin.auth.admin.getUserById(userId)
+      if (!invitedUser || invitedUser.email !== invitation.email) {
+        return NextResponse.json(
+          { success: false, error: "User does not match invitation" },
+          { status: 403 }
+        )
+      }
 
       await acceptInvitation(clientId, userId)
       return NextResponse.json({ success: true })
@@ -61,7 +95,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<AcceptInv
     return NextResponse.json(
       { 
         success: false, 
-        error: error instanceof Error ? error.message : "Failed to accept invitation" 
+        error: "Failed to accept invitation"
       },
       { status: 500 }
     )

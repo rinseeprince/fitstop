@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import type { UpdateClientMetricsRequest } from "@/types/check-in";
 import { weightToKg } from "@/utils/nutrition-helpers";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { apiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
+import { updateClientMetricsSchema } from "@/lib/validations/client-metrics";
 
 export async function PUT(
   request: NextRequest,
@@ -26,7 +26,15 @@ export async function PUT(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const body: UpdateClientMetricsRequest = await request.json();
+    const rawBody = await request.json();
+    const parseResult = updateClientMetricsSchema.safeParse(rawBody);
+    if (!parseResult.success) {
+      return NextResponse.json(
+        { error: "Invalid input", details: parseResult.error.format() },
+        { status: 400 }
+      );
+    }
+    const body = parseResult.data;
 
     // Get current client data
     const { data: clientData, error: clientError } = await supabaseAdmin

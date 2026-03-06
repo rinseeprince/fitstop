@@ -27,15 +27,8 @@ export async function POST(request: NextRequest) {
   if (rateLimitResult) return rateLimitResult;
 
   try {
-    // Skip CSRF protection for multipart/form-data uploads as they may not include proper headers
-    // Authentication check below provides sufficient security for file uploads
-    const contentType = request.headers.get("content-type") || "";
-    
-    // Only apply CSRF protection if not a multipart upload
-    if (!contentType.includes("multipart/form-data")) {
-      const csrfError = await requireCSRFProtection(request);
-      if (csrfError) return csrfError;
-    }
+    const csrfError = await requireCSRFProtection(request);
+    if (csrfError) return csrfError;
 
     const supabase = await createServerSupabaseClient();
     
@@ -175,25 +168,18 @@ export async function POST(request: NextRequest) {
       });
     } catch (uploadError) {
       console.error("Upload process failed", {
-        error: uploadError instanceof Error ? {
-          message: uploadError.message,
-          stack: uploadError.stack
-        } : uploadError,
+        error: uploadError instanceof Error ? uploadError.message : "Unknown upload error",
         fileName: file.name,
         coachId: coach.id,
         timestamp: new Date().toISOString()
       });
-      
+
       throw uploadError;
     }
   } catch (error) {
     console.error("Error uploading file:", {
       timestamp: new Date().toISOString(),
-      error: error instanceof Error ? {
-        message: error.message,
-        stack: error.stack
-      } : error,
-      userAgent: request.headers.get("user-agent")
+      error: error instanceof Error ? error.message : "Unknown error",
     });
     
     return NextResponse.json(

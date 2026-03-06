@@ -121,7 +121,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   } catch (error) {
     console.error("Error updating activity:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to update activity" },
+      { error: "Failed to update activity" },
       { status: 500 }
     );
   }

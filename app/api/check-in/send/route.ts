@@ -3,6 +3,7 @@ import { createCheckInToken } from "@/services/check-in-service";
 import type { CreateCheckInTokenRequest, CreateCheckInTokenResponse } from "@/types/check-in";
 import { apiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
+import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 
 export async function POST(request: NextRequest) {
   const rateLimitResult = await apiRateLimit(request);
@@ -21,6 +22,10 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    // Verify coach owns this client
+    const auth = await requireCoachOwnsClient(clientId);
+    if (!auth.authorized) return auth.response;
 
     // Create check-in token
     const { token, expiresAt } = await createCheckInToken(clientId);

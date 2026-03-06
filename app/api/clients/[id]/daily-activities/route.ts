@@ -69,7 +69,7 @@ export async function GET(
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to fetch client activities",
+        error: "Failed to fetch client activities",
       },
       { status: 500 }
     );

@@ -70,7 +70,7 @@ export async function POST(
     return NextResponse.json(
       {
         error:
-          error instanceof Error ? error.message : "Failed to send reminder",
+          "Failed to send reminder",
       },
       { status: 500 }
     );

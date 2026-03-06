@@ -121,7 +121,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   } catch (error) {
     console.error("Error adding external activity:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to add activity" },
+      { error: "Failed to add activity" },
       { status: 500 }
     );
   }

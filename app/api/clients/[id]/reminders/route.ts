@@ -43,7 +43,7 @@ export async function GET(
 
     // Get query parameters
     const { searchParams } = new URL(request.url);
-    const limit = parseInt(searchParams.get("limit") || "50");
+    const limit = Math.min(Math.max(parseInt(searchParams.get("limit") || "50", 10) || 50, 1), 100);
 
     // Fetch reminders
     const reminders = await getClientReminders(clientId, limit);
@@ -57,12 +57,7 @@ export async function GET(
   } catch (error) {
     console.error("Error fetching client reminders:", error);
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to fetch client reminders",
-      },
+      { error: "Failed to fetch client reminders" },
       { status: 500 }
     );
   }

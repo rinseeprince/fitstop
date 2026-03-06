@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import type { NutritionPlanHistory } from "@/types/check-in";
 import { apiRateLimit } from "@/lib/rate-limit";
+import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 
 export async function GET(
   request: NextRequest,
@@ -12,6 +13,10 @@ export async function GET(
 
   try {
     const { id: clientId } = await context.params;
+
+    // Verify coach owns this client
+    const auth = await requireCoachOwnsClient(clientId);
+    if (!auth.authorized) return auth.response;
 
     // Fetch nutrition plan history for this client, ordered by creation date (newest first)
     const { data: historyData, error: historyError } = await supabaseAdmin

@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error:
-          error instanceof Error ? error.message : "Failed to analyze activity",
+          "Failed to analyze activity",
       },
       { status: 500 }
     );

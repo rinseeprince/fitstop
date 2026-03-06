@@ -81,7 +81,7 @@ export async function DELETE(
     return NextResponse.json(
       { 
         success: false, 
-        error: error instanceof Error ? error.message : "Failed to unassign content" 
+        error: "Failed to unassign content" 
       },
       { status: 500 }
     );
