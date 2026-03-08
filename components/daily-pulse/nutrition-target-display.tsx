@@ -18,6 +18,9 @@ export function NutritionTargetDisplay({
   // Calculate dynamic plan target based on current session selection
   const calculatePlanTarget = () => {
     const baselineCalories = nutritionTarget.baselineCalories;
+    if (nutritionTarget.includeActivityBurn === false) {
+      return baselineCalories;
+    }
     const currentSessionCalories = currentTrainingSession?.estimatedCalories || 0;
     const plannedActivityCalories = plannedActivities.reduce(
       (sum, activity) => sum + activity.estimatedCalories, 0
@@ -52,7 +55,9 @@ export function NutritionTargetDisplay({
   };
 
   const planTarget = calculatePlanTarget();
-  const assumptionsText = buildAssumptionsText();
+  const assumptionsText = nutritionTarget.includeActivityBurn !== false
+    ? buildAssumptionsText()
+    : null;
 
   return (
     <div className="text-center space-y-1">

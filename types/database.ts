@@ -615,6 +615,7 @@ export type Database = {
           height: number | null
           height_unit: string | null
           id: string
+          include_activity_burn: boolean
           last_reminder_sent_at: string | null
           longest_streak: number | null
           name: string
@@ -670,6 +671,7 @@ export type Database = {
           height?: number | null
           height_unit?: string | null
           id?: string
+          include_activity_burn?: boolean
           last_reminder_sent_at?: string | null
           longest_streak?: number | null
           name: string
@@ -725,6 +727,7 @@ export type Database = {
           height?: number | null
           height_unit?: string | null
           id?: string
+          include_activity_burn?: boolean
           last_reminder_sent_at?: string | null
           longest_streak?: number | null
           name?: string

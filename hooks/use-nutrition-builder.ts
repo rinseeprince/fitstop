@@ -6,6 +6,7 @@ import { useNutritionPlan } from "@/hooks/use-nutrition-plan";
 import type { Client, ActivityLevel, DietType } from "@/types/check-in";
 import { validateClientForNutrition } from "@/lib/validations/nutrition";
 import { weightToKg, getActivityMultiplier } from "@/utils/nutrition-helpers";
+import { CUSTOM_MACRO_CALORIE_TOLERANCE } from "@/lib/constants";
 import { addDays } from "date-fns";
 
 type UseNutritionBuilderProps = {
@@ -52,6 +53,36 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
   );
   const [showCustomMacros, setShowCustomMacros] = useState(false);
 
+  // Activity burn toggle
+  const [includeActivityBurn, setIncludeActivityBurn] = useState(client.includeActivityBurn);
+  const [isSavingBurnToggle, setIsSavingBurnToggle] = useState(false);
+
+  const handleToggleActivityBurn = useCallback(
+    async (value: boolean) => {
+      setIncludeActivityBurn(value);
+      setIsSavingBurnToggle(true);
+      try {
+        const res = await fetch(`/api/clients/${client.id}/nutrition`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ includeActivityBurn: value }),
+        });
+        if (!res.ok) throw new Error("Failed to update");
+        onUpdate?.();
+      } catch {
+        toast({
+          title: "Error",
+          description: "Failed to update activity burn setting",
+          variant: "destructive",
+        });
+        setIncludeActivityBurn(!value);
+      } finally {
+        setIsSavingBurnToggle(false);
+      }
+    },
+    [client.id, onUpdate, toast]
+  );
+
   // Loading states
   const [isGenerating, setIsGenerating] = useState(false);
   const [warnings, setWarnings] = useState<string[]>([]);
@@ -63,7 +94,7 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
         customMacros.protein * 4 + customMacros.carbs * 4 + customMacros.fat * 9;
       const difference = Math.abs(customMacros.calories - calculatedCalories);
 
-      if (customMacros.calories > 0 && difference > 50) {
+      if (customMacros.calories > 0 && difference > CUSTOM_MACRO_CALORIE_TOLERANCE) {
         setCustomMacrosValidationError(
           `Calories should be within ±50 of calculated total (${calculatedCalories} cal from macros)`
         );
@@ -189,6 +220,11 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
     customMacrosValidationError,
     showCustomMacros,
     setShowCustomMacros,
+
+    // Activity burn toggle
+    includeActivityBurn,
+    isSavingBurnToggle,
+    handleToggleActivityBurn,
 
     // Loading states
     isGenerating,

@@ -96,6 +96,7 @@ export function mapClientRow(row: ClientRow): Client {
     proteinTargetG: row.protein_target_g ?? undefined,
     carbTargetG: row.carb_target_g ?? undefined,
     fatTargetG: row.fat_target_g ?? undefined,
+    includeActivityBurn: row.include_activity_burn ?? true,
     customMacrosEnabled: row.custom_macros_enabled ?? false,
     customProteinG: row.custom_protein_g ?? undefined,
     customCarbG: row.custom_carb_g ?? undefined,

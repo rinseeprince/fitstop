@@ -8,9 +8,12 @@ import { apiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import {
   nutritionPlanSchema,
+  nutritionSettingsPatchSchema,
   validateClientForNutrition,
 } from "@/lib/validations/nutrition";
 import { weightToKg } from "@/utils/nutrition-helpers";
+import type { ClientUpdate } from "@/lib/database-helpers";
+import { CUSTOM_MACRO_CALORIE_TOLERANCE } from "@/lib/constants";
 import type { GenerateNutritionPlanRequest } from "@/types/check-in";
 
 export async function POST(
@@ -96,7 +99,7 @@ export async function POST(
         body.customProteinG * 4 + body.customCarbG * 4 + body.customFatG * 9;
       const difference = Math.abs(body.customCalories - calculatedCalories);
 
-      if (difference > 50) {
+      if (difference > CUSTOM_MACRO_CALORIE_TOLERANCE) {
         return NextResponse.json(
           {
             error: `Custom calories must be within ±50 calories of macro totals (calculated: ${calculatedCalories} cal)`,
@@ -336,23 +339,31 @@ export async function PATCH(
     }
 
     const body = await request.json();
+    const validationResult = nutritionSettingsPatchSchema.safeParse(body);
 
-    // Update unit preference if provided
-    if (body.unitPreference) {
-      const { error } = await supabaseAdmin
-        .from("clients")
-        .update({ unit_preference: body.unitPreference })
-        .eq("id", clientId);
-
-      if (error) throw error;
-
-      return NextResponse.json({ success: true }, { status: 200 });
+    if (!validationResult.success) {
+      return NextResponse.json(
+        { error: "Invalid input", details: validationResult.error.errors },
+        { status: 400 }
+      );
     }
 
-    return NextResponse.json(
-      { error: "No valid updates provided" },
-      { status: 400 }
-    );
+    const updates: ClientUpdate = {};
+    if (validationResult.data.unitPreference !== undefined) {
+      updates.unit_preference = validationResult.data.unitPreference;
+    }
+    if (validationResult.data.includeActivityBurn !== undefined) {
+      updates.include_activity_burn = validationResult.data.includeActivityBurn;
+    }
+
+    const { error } = await supabaseAdmin
+      .from("clients")
+      .update(updates)
+      .eq("id", clientId);
+
+    if (error) throw error;
+
+    return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {
     console.error("Error updating nutrition settings:", error);
     return NextResponse.json(

@@ -341,6 +341,9 @@ export type Client = {
   carbTargetG?: number;
   fatTargetG?: number;
 
+  // Activity burn toggle
+  includeActivityBurn: boolean;
+
   // Custom macro overrides
   customMacrosEnabled?: boolean;
   customProteinG?: number;

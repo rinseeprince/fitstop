@@ -70,11 +70,15 @@ export function NutritionSection({
       return { adjustedCalories: 0, adjustedProteinG: 0, adjustedCarbsG: 0, adjustedFatG: 0 };
     }
 
-    const completedTrainingCals = sessionCompleted && currentTrainingSession 
+    const burnIncluded = nutritionTarget.includeActivityBurn !== false;
+
+    const completedTrainingCals = burnIncluded && sessionCompleted && currentTrainingSession
       ? (currentTrainingSession.estimatedCalories || 0) : 0;
 
-    const completedActivityCals = plannedActivities.reduce((sum, activity) => 
-      sum + (activityStatuses[activity.sessionId]?.completed ? activity.estimatedCalories : 0), 0);
+    const completedActivityCals = burnIncluded
+      ? plannedActivities.reduce((sum, activity) =>
+          sum + (activityStatuses[activity.sessionId]?.completed ? activity.estimatedCalories : 0), 0)
+      : 0;
 
     const adjustedCalories = calculateAdjustedDayTarget(
       nutritionTarget.baselineCalories,

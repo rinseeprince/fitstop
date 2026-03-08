@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CUSTOM_MACRO_CALORIE_TOLERANCE } from "@/lib/constants";
 
 export const activityLevelSchema = z.enum([
   "sedentary",
@@ -20,6 +21,14 @@ export const dietTypeSchema = z.enum([
 
 export const unitPreferenceSchema = z.enum(["metric", "imperial"]);
 
+export const nutritionSettingsPatchSchema = z.object({
+  unitPreference: unitPreferenceSchema.optional(),
+  includeActivityBurn: z.boolean().optional(),
+}).refine(
+  (data) => data.unitPreference !== undefined || data.includeActivityBurn !== undefined,
+  { message: "No valid updates provided" }
+);
+
 export const nutritionPlanSchema = z.object({
   workActivityLevel: activityLevelSchema,
   trainingVolumeHours: trainingVolumeSchema.optional(), // Now optional - auto-calculated from training plan
@@ -40,7 +49,7 @@ export const nutritionPlanSchema = z.object({
     if (data.customMacrosEnabled && data.customCalories && data.customProteinG && data.customCarbG && data.customFatG) {
       const calculatedCalories = (data.customProteinG * 4) + (data.customCarbG * 4) + (data.customFatG * 9);
       const difference = Math.abs(data.customCalories - calculatedCalories);
-      return difference <= 50; // Allow ±50 calorie tolerance
+      return difference <= CUSTOM_MACRO_CALORIE_TOLERANCE;
     }
     return true;
   },

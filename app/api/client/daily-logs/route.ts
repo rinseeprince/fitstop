@@ -68,28 +68,30 @@ export async function POST(request: NextRequest) {
     // Calculate adjusted targets based on training state if nutrition target exists
     if (nutritionTarget && data.trainingData) {
       const trainingData = data.trainingData;
-      
+      const burnIncluded = nutritionTarget.includeActivityBurn !== false;
+
       // Calculate completed training calories based on the actually selected session
       let completedTrainingCals = 0;
-      if (trainingData.sessionCompleted && trainingData.trainingSessionId && trainingPlan) {
+      if (burnIncluded && trainingData.sessionCompleted && trainingData.trainingSessionId && trainingPlan) {
         const selectedSession = trainingPlan.sessions.find(s => s.id === trainingData.trainingSessionId);
         completedTrainingCals = selectedSession?.estimatedCalories || 0;
       }
-      
+
       // Calculate completed planned activity calories
-      const completedActivityCals = plannedActivities.reduce((sum, activity) => 
-        sum + (trainingData.activityStatuses[activity.sessionId]?.completed ? activity.estimatedCalories : 0), 0
-      );
-      
+      const completedActivityCals = burnIncluded
+        ? plannedActivities.reduce((sum, activity) =>
+            sum + (trainingData.activityStatuses[activity.sessionId]?.completed ? activity.estimatedCalories : 0), 0)
+        : 0;
+
       // Calculate unplanned activity calories
-      const unplannedActivityCals = trainingData.unplannedActivities.reduce((sum, activity) => 
+      const unplannedActivityCals = trainingData.unplannedActivities.reduce((sum, activity) =>
         sum + calculateUnplannedActivityCalories({
           activityName: activity.activityName,
           intensityLevel: activity.intensityLevel as "low" | "moderate" | "vigorous",
           durationMinutes: activity.durationMinutes
         }), 0
       );
-      
+
       // Calculate adjusted calorie target (NO unplanned activities in target calculation)
       const adjustedCalories = calculateAdjustedDayTarget(
         nutritionTarget.baselineCalories,

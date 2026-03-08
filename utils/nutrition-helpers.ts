@@ -40,6 +40,7 @@ export type DailyNutritionTargets = {
   externalActivityCalories: number;
   externalActivities: Array<{ name: string; calories: number }>;
   totalCaloriesWithActivities: number;
+  includeActivityBurn: boolean;
 };
 
 /**
@@ -199,10 +200,6 @@ export function calculateDailyMacros(
  * Get complete daily nutrition targets for all 7 days
  * Uses baseline calories (TDEE - deficit) and adds actual training calories per day.
  *
- * @param baselineCalories - Rest day calories (TDEE minus required deficit)
- * @param proteinTargetG - Daily protein target in grams
- * @param trainingPlan - Training plan with session data for per-day calories
- * @param dietType - Diet type for macro split
  */
 export function getWeeklyNutritionTargets(
   baselineCalories: number,
@@ -257,6 +254,7 @@ export function getWeeklyNutritionTargets(
       externalActivityCalories,
       externalActivities,
       totalCaloriesWithActivities: dayCalories,
+      includeActivityBurn: true,
     };
   });
 }

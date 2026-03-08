@@ -5,7 +5,7 @@
 
 import { generateUUID, generateISODate } from './test-utils'
 import type { Client } from '@/types/check-in'
-import type { CheckInRow, CheckInTokenRow, TrainingPlanRow, TrainingSessionRow, TrainingExerciseRow } from '@/lib/database-helpers'
+import type { CheckInRow, CheckInTokenRow, ClientRow, TrainingPlanRow, TrainingSessionRow, TrainingExerciseRow } from '@/lib/database-helpers'
 
 // =============================================================================
 // Client Builders
@@ -37,12 +37,13 @@ export function createMockClient(options: MockClientOptions = {}): Client {
     currentWeight: options.currentWeight ?? 180,
     goalWeight: options.goalWeight ?? 170,
     weightUnit: options.weightUnit ?? 'lbs',
+    includeActivityBurn: true,
     createdAt: options.createdAt ?? now,
     updatedAt: options.updatedAt ?? now,
   }
 }
 
-export function createMockClientDatabaseRow(options: MockClientOptions = {}): Record<string, unknown> {
+export function createMockClientDatabaseRow(options: MockClientOptions = {}): ClientRow {
   const client = createMockClient(options)
 
   return {
@@ -57,10 +58,10 @@ export function createMockClientDatabaseRow(options: MockClientOptions = {}): Re
     height_unit: 'in',
     gender: null,
     date_of_birth: null,
-    goal_weight: client.goalWeight,
+    goal_weight: client.goalWeight ?? null,
     goal_body_fat_percentage: null,
-    weight_unit: client.weightUnit,
-    current_weight: client.currentWeight,
+    weight_unit: client.weightUnit ?? null,
+    current_weight: client.currentWeight ?? null,
     current_body_fat_percentage: null,
     bmr: null,
     tdee: null,
@@ -83,12 +84,13 @@ export function createMockClientDatabaseRow(options: MockClientOptions = {}): Re
     nutrition_plan_created_date: null,
     nutrition_plan_base_weight_kg: null,
     baseline_calories: null,
-    starting_weight: client.currentWeight,
+    starting_weight: client.currentWeight ?? null,
     starting_body_fat_percentage: null,
     calorie_target: null,
     protein_target_g: null,
     carb_target_g: null,
     fat_target_g: null,
+    include_activity_burn: true,
     custom_macros_enabled: false,
     custom_protein_g: null,
     custom_carb_g: null,
@@ -96,6 +98,7 @@ export function createMockClientDatabaseRow(options: MockClientOptions = {}): Re
     custom_calories: null,
     bmr_manual_override: null,
     tdee_manual_override: null,
+    user_id: null,
     created_at: client.createdAt,
     updated_at: client.updatedAt,
   }

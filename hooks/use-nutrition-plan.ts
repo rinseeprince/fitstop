@@ -70,7 +70,7 @@ export function useNutritionPlan({ client, onUpdate }: UseNutritionPlanProps) {
   const trainingCaloriesByDay = trainingPlan ? getTrainingCaloriesByDay(trainingPlan) : null;
 
   const baselineCalories = client.baselineCalories || client.calorieTarget;
-  const weeklyTargets: DailyNutritionTargets[] | null =
+  let weeklyTargets: DailyNutritionTargets[] | null =
     baselineCalories && client.proteinTargetG
       ? getWeeklyNutritionTargets(
           baselineCalories,
@@ -79,6 +79,17 @@ export function useNutritionPlan({ client, onUpdate }: UseNutritionPlanProps) {
           client.dietType || "balanced"
         )
       : null;
+
+  // When activity burn is excluded, flatten calories to baseline but keep training day flags
+  if (weeklyTargets && !client.includeActivityBurn) {
+    weeklyTargets = weeklyTargets.map((day) => ({
+      ...day,
+      calories: day.baselineCalories,
+      trainingSessionCalories: 0,
+      externalActivityCalories: 0,
+      totalCaloriesWithActivities: day.baselineCalories,
+    }));
+  }
 
   const weeklyTotal = weeklyTargets
     ? weeklyTargets.reduce((sum, day) => sum + day.calories, 0)

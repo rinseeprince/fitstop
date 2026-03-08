@@ -98,6 +98,9 @@ export function NutritionSettingsDrawer({
             dailyCalories={builder.dailyTrainingCalories}
             weeklyCalories={builder.weeklyTrainingCalories}
             caloriesByDay={builder.trainingCaloriesByDay}
+            includeActivityBurn={builder.includeActivityBurn}
+            onToggleActivityBurn={builder.handleToggleActivityBurn}
+            isSavingToggle={builder.isSavingBurnToggle}
           />
         </div>
 

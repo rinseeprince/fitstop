@@ -46,6 +46,7 @@ export type NutritionTargets = {
   dietType?: string;
   unitPreference?: string;
   baselineCalories?: number;
+  includeActivityBurn: boolean;
   dailyTargets?: DailyNutritionTargets[];
 };
 
@@ -283,19 +284,21 @@ export async function getClientNutritionTargets(
     .select(
       `calorie_target, protein_target_g, carb_target_g, fat_target_g,
        custom_macros_enabled, custom_calories, custom_protein_g, custom_carb_g, custom_fat_g,
-       diet_type, unit_preference, baseline_calories`
+       diet_type, unit_preference, baseline_calories, include_activity_burn`
     )
     .eq("id", clientId)
     .single();
 
   if (error || !data) return null;
 
-  // Get training plan for daily targets calculation
+  const includeActivityBurn = data.include_activity_burn ?? true;
+
+  // Always fetch the real training plan so isTrainingDay flags are preserved
   const trainingPlan = await getClientTrainingPlan(clientId);
-  
+
   // Calculate daily targets if we have baseline calories and protein target
   let dailyTargets: DailyNutritionTargets[] | undefined = undefined;
-  
+
   if (data.baseline_calories && data.protein_target_g && data.diet_type) {
     dailyTargets = getWeeklyNutritionTargets(
       data.baseline_calories,
@@ -303,6 +306,17 @@ export async function getClientNutritionTargets(
       trainingPlan,
       data.diet_type as DietType
     );
+
+    // When activity burn is excluded, flatten calories to baseline but keep training day flags
+    if (!includeActivityBurn) {
+      dailyTargets = dailyTargets.map((day) => ({
+        ...day,
+        calories: day.baselineCalories,
+        trainingSessionCalories: 0,
+        externalActivityCalories: 0,
+        totalCaloriesWithActivities: day.baselineCalories,
+      }));
+    }
   }
 
   return {
@@ -318,6 +332,7 @@ export async function getClientNutritionTargets(
     dietType: data.diet_type,
     unitPreference: data.unit_preference,
     baselineCalories: data.baseline_calories,
+    includeActivityBurn,
     dailyTargets,
   };
 }

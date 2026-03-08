@@ -346,15 +346,20 @@ export const getTodaysPlannedActivities = async (clientId: string, date?: string
 
 export const getTodaysNutritionTarget = async (clientId: string, date?: string): Promise<DailyNutritionTargets | null> => {
   const nutritionTargets = await getClientNutritionTargets(clientId);
-  
+
   if (!nutritionTargets?.dailyTargets) return null;
-  
+
   const targetDate = date ? new Date(date + 'T00:00:00') : new Date();
   const todayDayOfWeek = getDayOfWeekLowercase(targetDate);
-  
+
   const todayTarget = nutritionTargets.dailyTargets.find(
     (target) => target.day === todayDayOfWeek
   );
-  
-  return todayTarget || null;
+
+  if (!todayTarget) return null;
+
+  return {
+    ...todayTarget,
+    includeActivityBurn: nutritionTargets.includeActivityBurn,
+  };
 };
