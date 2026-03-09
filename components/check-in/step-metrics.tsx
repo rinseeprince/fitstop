@@ -195,7 +195,7 @@ export const StepMetrics = ({
                     type="number"
                     step="0.1"
                     placeholder="0.0"
-                    value={(data as any)[key] || ""}
+                    value={data[key as keyof typeof data] as number || ""}
                     onChange={(e) =>
                       onChange({
                         ...data,
@@ -208,7 +208,7 @@ export const StepMetrics = ({
                       <span className="text-xs text-muted-foreground mr-1">
                         {prev}
                       </span>
-                      {renderComparison((data as any)[key], prev)}
+                      {renderComparison(data[key as keyof typeof data] as number | undefined, prev)}
                     </div>
                   )}
                 </div>

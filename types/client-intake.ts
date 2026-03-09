@@ -124,3 +124,50 @@ export type ClientIntakeInput = Omit<
   | "createdAt"
   | "updatedAt"
 >;
+
+// Database row shape (until types/database.ts is regenerated)
+export type ClientIntakeRow = {
+  id: string;
+  client_id: string;
+  status: string;
+  date_of_birth: string | null;
+  gender: string | null;
+  height: number | null;
+  height_unit: string | null;
+  current_weight: number | null;
+  weight_unit: string | null;
+  body_fat_percentage: number | null;
+  work_activity_level: string | null;
+  primary_goal: string | null;
+  goal_details: string | null;
+  target_weight: number | null;
+  goal_deadline: string | null;
+  goal_description: string | null;
+  motivation: string | null;
+  training_experience_level: string | null;
+  training_time_preference: string | null;
+  training_location: string | null;
+  available_equipment: string[] | null;
+  days_per_week: number | null;
+  session_duration_minutes: number | null;
+  dietary_requirements: string[] | null;
+  cooking_frequency: string | null;
+  nutrition_notes: string | null;
+  food_allergies: string | null;
+  diet_description: string | null;
+  has_tracked_macros_before: boolean | null;
+  meals_per_day: number | null;
+  biggest_nutrition_challenge: string | null;
+  injuries_or_limitations: string | null;
+  medical_notes: string | null;
+  previous_coaching_experience: boolean | null;
+  previous_coaching_details: string | null;
+  anything_else: string | null;
+  reviewed_at: string | null;
+  reviewed_by: string | null;
+  coach_review_notes: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+};

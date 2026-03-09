@@ -1,60 +1,59 @@
 import { supabaseAdmin } from "@/services/supabase-admin";
-import type { ClientIntake } from "@/types/client-intake";
+import type { ClientIntake, ClientIntakeRow, ClientIntakeInput } from "@/types/client-intake";
 import { mapClientIntakeRow } from "@/lib/mappers";
 import { intakeStepSchemas, intakeFullSchema } from "@/lib/validations/client-intake";
 
-// Table not yet in generated types — cast to any for .from() calls
-// Once types/database.ts is regenerated, replace with typed table references
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const db = supabaseAdmin as any;
+// Table not yet in generated types — use untyped .from() calls.
+// supabaseAdmin is required here because client_intake is not in the
+// generated Database type, so a typed server client cannot query it.
+// Auth and ownership are enforced at the API route layer; RLS on
+// client_intake provides additional defense-in-depth at the DB level.
+const db = supabaseAdmin as { from: (table: string) => ReturnType<typeof supabaseAdmin.from> };
 const clientsTable = "clients" as const;
 
-// DB row shape (until types/database.ts is regenerated)
-type ClientIntakeRow = {
-  id: string;
-  client_id: string;
-  status: string;
-  date_of_birth: string | null;
-  gender: string | null;
-  height: number | null;
-  height_unit: string | null;
-  current_weight: number | null;
-  weight_unit: string | null;
-  body_fat_percentage: number | null;
-  work_activity_level: string | null;
-  primary_goal: string | null;
-  goal_details: string | null;
-  target_weight: number | null;
-  goal_deadline: string | null;
-  goal_description: string | null;
-  motivation: string | null;
-  training_experience_level: string | null;
-  training_time_preference: string | null;
-  training_location: string | null;
-  available_equipment: string[] | null;
-  days_per_week: number | null;
-  session_duration_minutes: number | null;
-  dietary_requirements: string[] | null;
-  cooking_frequency: string | null;
-  nutrition_notes: string | null;
-  food_allergies: string | null;
-  diet_description: string | null;
-  has_tracked_macros_before: boolean | null;
-  meals_per_day: number | null;
-  biggest_nutrition_challenge: string | null;
-  injuries_or_limitations: string | null;
-  medical_notes: string | null;
-  previous_coaching_experience: boolean | null;
-  previous_coaching_details: string | null;
-  anything_else: string | null;
-  reviewed_at: string | null;
-  reviewed_by: string | null;
-  coach_review_notes: string | null;
-  started_at: string | null;
-  completed_at: string | null;
-  created_at: string | null;
-  updated_at: string | null;
-};
+// Explicit allowlist of camelCase → snake_case field mappings.
+// Prevents arbitrary column names from being written to the DB.
+const FIELD_MAP = {
+  dateOfBirth: "date_of_birth",
+  gender: "gender",
+  height: "height",
+  currentWeight: "current_weight",
+  bodyFatPercentage: "body_fat_percentage",
+  workActivityLevel: "work_activity_level",
+  primaryGoal: "primary_goal",
+  goalDetails: "goal_details",
+  targetWeight: "target_weight",
+  goalDeadline: "goal_deadline",
+  goalDescription: "goal_description",
+  motivation: "motivation",
+  trainingExperienceLevel: "training_experience_level",
+  trainingTimePreference: "training_time_preference",
+  trainingLocation: "training_location",
+  availableEquipment: "available_equipment",
+  daysPerWeek: "days_per_week",
+  sessionDurationMinutes: "session_duration_minutes",
+  dietaryRequirements: "dietary_requirements",
+  cookingFrequency: "cooking_frequency",
+  nutritionNotes: "nutrition_notes",
+  foodAllergies: "food_allergies",
+  dietDescription: "diet_description",
+  hasTrackedMacrosBefore: "has_tracked_macros_before",
+  mealsPerDay: "meals_per_day",
+  biggestNutritionChallenge: "biggest_nutrition_challenge",
+  injuriesOrLimitations: "injuries_or_limitations",
+  medicalNotes: "medical_notes",
+  previousCoachingExperience: "previous_coaching_experience",
+  previousCoachingDetails: "previous_coaching_details",
+  anythingElse: "anything_else",
+} satisfies Partial<Record<keyof ClientIntakeInput, string>>;
+
+/** Custom error class for user-facing validation errors */
+export class IntakeValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "IntakeValidationError";
+  }
+}
 
 /**
  * Create a new intake record for a client
@@ -66,7 +65,10 @@ export async function createIntake(clientId: string): Promise<ClientIntake> {
     .select()
     .single();
 
-  if (error) throw new Error(`Failed to create intake: ${error.message}`);
+  if (error) {
+    console.error("Failed to create intake:", error);
+    throw new Error("Failed to create intake");
+  }
   return mapClientIntakeRow(data as ClientIntakeRow);
 }
 
@@ -86,7 +88,8 @@ export async function getIntake(
 
   if (error) {
     if (error.code === "PGRST116") return null;
-    throw new Error(`Failed to get intake: ${error.message}`);
+    console.error("Failed to get intake:", error);
+    throw new Error("Failed to get intake");
   }
 
   return mapClientIntakeRow(data as ClientIntakeRow);
@@ -98,7 +101,6 @@ export async function getIntake(
 export async function getIntakeByToken(
   token: string
 ): Promise<ClientIntake | null> {
-  // First find the client via invitation token
   const { data: invitation, error: invError } = await db
     .from("client_invitations")
     .select("client_id")
@@ -111,37 +113,39 @@ export async function getIntakeByToken(
 }
 
 /**
- * Save a single step of the intake form
+ * Save a single step of the intake form.
+ * Only allows saving on intakes with status 'pending' or 'in_progress'.
  */
 export async function saveIntakeStep(
   clientId: string,
   step: number,
   data: Record<string, unknown>
 ): Promise<ClientIntake> {
-  // Validate step number
   if (step < 1 || step > 5) {
-    throw new Error(`Invalid step number: ${step}. Must be 1-5.`);
+    throw new IntakeValidationError("Invalid step number. Must be 1-5.");
   }
 
   // Validate data against the step schema
   const schema = intakeStepSchemas[step - 1];
   const result = schema.safeParse(data);
   if (!result.success) {
-    throw new Error(
-      `Validation failed for step ${step}: ${result.error.issues.map((i) => i.message).join(", ")}`
+    throw new IntakeValidationError(
+      `Step ${step} validation failed: ${result.error.issues.map((i) => i.message).join(", ")}`
     );
   }
 
-  // Map camelCase fields to snake_case for DB
+  // Map validated fields to snake_case using explicit allowlist
   const updateData: Record<string, unknown> = {
     updated_at: new Date().toISOString(),
   };
 
-  // Convert validated data keys to snake_case
   const validated = result.data as Record<string, unknown>;
   for (const [key, value] of Object.entries(validated)) {
     if (value !== undefined) {
-      updateData[camelToSnake(key)] = value;
+      const dbColumn = FIELD_MAP[key as keyof typeof FIELD_MAP];
+      if (dbColumn) {
+        updateData[dbColumn] = value;
+      }
     }
   }
 
@@ -151,14 +155,24 @@ export async function saveIntakeStep(
     updateData.started_at = new Date().toISOString();
   }
 
+  // Only allow saving on pending or in_progress intakes
   const { data: updated, error } = await db
     .from("client_intake")
     .update(updateData)
     .eq("client_id", clientId)
+    .in("status", ["pending", "in_progress"])
     .select()
     .single();
 
-  if (error) throw new Error(`Failed to save step ${step}: ${error.message}`);
+  if (error) {
+    if (error.code === "PGRST116") {
+      throw new IntakeValidationError(
+        "Cannot modify this intake. It may already be submitted or reviewed."
+      );
+    }
+    console.error("Failed to save intake step:", error);
+    throw new Error("Failed to save step");
+  }
   return mapClientIntakeRow(updated as ClientIntakeRow);
 }
 
@@ -168,9 +182,12 @@ export async function saveIntakeStep(
 export async function submitIntake(
   clientId: string
 ): Promise<ClientIntake> {
-  // Fetch current intake to validate completeness
   const intake = await getIntake(clientId);
-  if (!intake) throw new Error("No intake found for this client");
+  if (!intake) throw new IntakeValidationError("No intake found for this client");
+
+  if (intake.status !== "in_progress") {
+    throw new IntakeValidationError("Intake is not in progress and cannot be submitted");
+  }
 
   // Validate all required fields are present
   const fullData = {
@@ -206,12 +223,11 @@ export async function submitIntake(
 
   const validation = intakeFullSchema.safeParse(fullData);
   if (!validation.success) {
-    throw new Error(
+    throw new IntakeValidationError(
       `Intake incomplete: ${validation.error.issues.map((i) => i.message).join(", ")}`
     );
   }
 
-  // Update intake status
   const { data: updated, error } = await db
     .from("client_intake")
     .update({
@@ -224,7 +240,10 @@ export async function submitIntake(
     .select()
     .single();
 
-  if (error) throw new Error(`Failed to submit intake: ${error.message}`);
+  if (error) {
+    console.error("Failed to submit intake:", error);
+    throw new Error("Failed to submit intake");
+  }
 
   // Update client onboarding status
   await db
@@ -259,7 +278,10 @@ export async function getCoachPendingIntakes(
     .is("reviewed_at", null)
     .eq("client.coach_id", coachId);
 
-  if (error) throw new Error(`Failed to get pending intakes: ${error.message}`);
+  if (error) {
+    console.error("Failed to get pending intakes:", error);
+    throw new Error("Failed to get pending intakes");
+  }
   return (data || []).map((row: unknown) =>
     mapClientIntakeRow(row as ClientIntakeRow)
   );
@@ -292,7 +314,10 @@ export async function reviewIntake(
     .select()
     .single();
 
-  if (error) throw new Error(`Failed to review intake: ${error.message}`);
+  if (error) {
+    console.error("Failed to review intake:", error);
+    throw new Error("Failed to review intake");
+  }
 
   // Update client onboarding status
   await db
@@ -316,7 +341,6 @@ export async function syncMetricsToClient(
   const intake = await getIntake(clientId);
   if (!intake) throw new Error("No intake found for this client");
 
-  // Fetch current client data to check existing values
   const { data: client, error: clientError } = await db
     .from(clientsTable)
     .select(
@@ -325,10 +349,11 @@ export async function syncMetricsToClient(
     .eq("id", clientId)
     .single();
 
-  if (clientError || !client)
+  if (clientError || !client) {
+    console.error("Failed to fetch client for sync:", clientError);
     throw new Error("Client not found");
+  }
 
-  // Only set fields the client doesn't already have
   const updates: Record<string, unknown> = {
     updated_at: new Date().toISOString(),
   };
@@ -361,22 +386,15 @@ export async function syncMetricsToClient(
     updates.work_activity_level = intake.workActivityLevel;
   }
 
-  // Only update if there are new fields to set
   if (Object.keys(updates).length > 1) {
     const { error } = await supabaseAdmin
       .from(clientsTable)
       .update(updates)
       .eq("id", clientId);
 
-    if (error)
-      throw new Error(`Failed to sync metrics: ${error.message}`);
+    if (error) {
+      console.error("Failed to sync metrics:", error);
+      throw new Error("Failed to sync metrics");
+    }
   }
-}
-
-// -------------------------------------------------------
-// Internal helper
-// -------------------------------------------------------
-
-function camelToSnake(str: string): string {
-  return str.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
 }

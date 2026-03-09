@@ -6,12 +6,12 @@ import { requireCSRFProtection } from "@/lib/csrf-protection"
 import { isValidUUID } from "@/lib/api-utils"
 import { supabaseAdmin } from "@/services/supabase-admin"
 
-export async function POST(request: NextRequest): Promise<NextResponse<AcceptInvitationResponse>> {
+export async function POST(request: NextRequest): Promise<NextResponse<AcceptInvitationResponse> | NextResponse | Response> {
   const rateLimitResult = await authRateLimit(request);
-  if (rateLimitResult) return rateLimitResult as NextResponse<AcceptInvitationResponse>;
+  if (rateLimitResult) return rateLimitResult;
 
   const csrfError = await requireCSRFProtection(request);
-  if (csrfError) return csrfError as NextResponse<AcceptInvitationResponse>;
+  if (csrfError) return csrfError;
 
   try {
     const body = await request.json()

@@ -42,7 +42,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
           '--info-bg': 'var(--card)',
           '--info-text': 'var(--foreground)',
           '--info-border': 'oklch(from var(--primary) l c h / 0.2)',
-        } as React.CSSProperties
+        } as Record<string, string> & React.CSSProperties
       }
       {...props}
     />

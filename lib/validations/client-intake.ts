@@ -123,7 +123,7 @@ export const intakeStep1Schema = z.object({
       },
       { message: "Must be under 100 years old" }
     ),
-  gender: z.string().min(1, "Gender is required"),
+  gender: z.enum(["male", "female", "other", "prefer_not_to_say"]),
   height: z.number().positive("Height must be positive").min(100, "Height must be at least 100cm").max(250, "Height must be under 250cm"),
   currentWeight: z.number().positive("Weight must be positive").min(30, "Weight must be at least 30kg").max(300, "Weight must be under 300kg"),
   bodyFatPercentage: optionalNumber(z.number().min(3, "Body fat must be at least 3%").max(60, "Body fat must be under 60%")),
@@ -281,3 +281,26 @@ export type IntakeStep3Input = z.infer<typeof intakeStep3Schema>;
 export type IntakeStep4Input = z.infer<typeof intakeStep4Schema>;
 export type IntakeStep5Input = z.infer<typeof intakeStep5Schema>;
 export type IntakeFullInput = z.infer<typeof intakeFullSchema>;
+
+// -------------------------------------------------------
+// API route validation schemas
+// -------------------------------------------------------
+
+export const reviewIntakeSchema = z.object({
+  coachReviewNotes: optionalString(2000),
+});
+
+const VALID_DAYS = [
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+  "sunday",
+] as const;
+
+export const activateClientSchema = z.object({
+  welcomeMessage: optionalString(1000),
+  firstCheckInDay: z.enum(VALID_DAYS).optional(),
+});

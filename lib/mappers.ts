@@ -1,5 +1,5 @@
-import type { CheckIn, Client, AIInsight, AIRecommendation } from "@/types/check-in";
-import type { ClientIntake } from "@/types/client-intake";
+import type { CheckIn, Client, AIInsight, AIRecommendation, ReminderPreferences } from "@/types/check-in";
+import type { ClientIntake, ClientIntakeRow } from "@/types/client-intake";
 import type { CheckInRow, ClientRow } from "./database-helpers";
 
 /**
@@ -75,7 +75,7 @@ export function mapClientRow(row: ClientRow): Client {
     checkInFrequencyDays: row.check_in_frequency_days ?? undefined,
     expectedCheckInDay: (row.expected_check_in_day ?? undefined) as "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday" | "sunday" | undefined,
     lastReminderSentAt: row.last_reminder_sent_at ?? undefined,
-    reminderPreferences: (row.reminder_preferences ?? undefined) as any,
+    reminderPreferences: (row.reminder_preferences ?? undefined) as ReminderPreferences | undefined,
     totalCheckInsExpected: row.total_check_ins_expected ?? undefined,
     totalCheckInsCompleted: row.total_check_ins_completed ?? undefined,
     checkInAdherenceRate: row.check_in_adherence_rate ?? undefined,
@@ -114,51 +114,7 @@ export const mapCheckInFromDatabase = mapCheckInRow;
 /**
  * Map a database client_intake row to a ClientIntake type
  */
-export function mapClientIntakeRow(row: {
-  id: string;
-  client_id: string;
-  status: string;
-  date_of_birth: string | null;
-  gender: string | null;
-  height: number | null;
-  height_unit: string | null;
-  current_weight: number | null;
-  weight_unit: string | null;
-  body_fat_percentage: number | null;
-  work_activity_level: string | null;
-  primary_goal: string | null;
-  goal_details: string | null;
-  target_weight: number | null;
-  goal_deadline: string | null;
-  goal_description: string | null;
-  motivation: string | null;
-  training_experience_level: string | null;
-  training_time_preference: string | null;
-  training_location: string | null;
-  available_equipment: string[] | null;
-  days_per_week: number | null;
-  session_duration_minutes: number | null;
-  dietary_requirements: string[] | null;
-  cooking_frequency: string | null;
-  nutrition_notes: string | null;
-  food_allergies: string | null;
-  diet_description: string | null;
-  has_tracked_macros_before: boolean | null;
-  meals_per_day: number | null;
-  biggest_nutrition_challenge: string | null;
-  injuries_or_limitations: string | null;
-  medical_notes: string | null;
-  previous_coaching_experience: boolean | null;
-  previous_coaching_details: string | null;
-  anything_else: string | null;
-  reviewed_at: string | null;
-  reviewed_by: string | null;
-  coach_review_notes: string | null;
-  started_at: string | null;
-  completed_at: string | null;
-  created_at: string | null;
-  updated_at: string | null;
-}): ClientIntake {
+export function mapClientIntakeRow(row: ClientIntakeRow): ClientIntake {
   return {
     id: row.id,
     clientId: row.client_id,

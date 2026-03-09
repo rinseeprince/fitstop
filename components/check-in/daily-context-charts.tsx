@@ -48,7 +48,7 @@ export const DailyContextCharts = ({
     return data;
   };
 
-  const CustomTooltip = ({ active, payload }: any) => {
+  const CustomTooltip = ({ active, payload }: { active?: boolean; payload?: Array<{ value: number | null; payload: { date: string } }> }) => {
     if (!active || !payload || !payload[0]) return null;
     
     const value = payload[0].value;

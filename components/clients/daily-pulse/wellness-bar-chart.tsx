@@ -50,7 +50,7 @@ export function WellnessBarChart({
   const stats = getMetricStats(data)
   const yDomain = getYAxisDomain(metric)
   
-  const CustomTooltip = ({ active, payload }: any) => {
+  const CustomTooltip = ({ active, payload }: { active?: boolean; payload?: Array<{ value: number | null; payload: { date: string } }> }) => {
     if (!active || !payload || !payload[0]) return null
     
     const value = payload[0].value
@@ -98,9 +98,10 @@ export function WellnessBarChart({
                 <Bar 
                   dataKey="value"
                   radius={[2, 2, 0, 0]}
-                  onClick={(data: any) => {
-                    if (onBarClick && data.dateStr) {
-                      onBarClick(data.dateStr)
+                  onClick={(data) => {
+                    const entry = data as unknown as { dateStr?: string }
+                    if (onBarClick && entry.dateStr) {
+                      onBarClick(entry.dateStr)
                     }
                   }}
                 >

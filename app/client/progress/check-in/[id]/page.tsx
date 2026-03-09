@@ -25,6 +25,25 @@ import {
 } from "lucide-react";
 import type { CheckInWithDetails } from "@/types/check-in";
 
+// DB row shapes for exercise highlights and external activities (snake_case from API)
+type ExerciseHighlightRow = {
+  exercise_name: string;
+  highlight_type: string;
+  details?: string;
+  weight_value?: number;
+  weight_unit?: string;
+  reps?: number;
+};
+
+type ExternalActivityRow = {
+  activity_name: string;
+  intensity_level: string;
+  duration_minutes: number;
+  estimated_calories?: number;
+  day_performed?: string;
+  notes?: string;
+};
+
 export default function CheckInDetailPage() {
   const router = useRouter();
   const params = useParams();
@@ -291,7 +310,7 @@ export default function CheckInDetailPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {checkIn.exerciseHighlights.map((highlight: any, index: number) => (
+              {(checkIn.exerciseHighlights as unknown as ExerciseHighlightRow[]).map((highlight, index) => (
                 <div key={index} className="rounded-lg border p-4">
                   <div className="flex items-center gap-2 mb-2">
                     {highlight.highlight_type === 'pr' && <Trophy className="h-4 w-4 text-warning" />}
@@ -329,7 +348,7 @@ export default function CheckInDetailPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {checkIn.externalActivities.map((activity: any, index: number) => (
+              {(checkIn.externalActivities as unknown as ExternalActivityRow[]).map((activity, index) => (
                 <div key={index} className="rounded-lg border p-4">
                   <div className="flex items-center justify-between mb-2">
                     <span className="font-medium">{activity.activity_name}</span>

@@ -48,20 +48,16 @@ export const StepPhotos = ({ data, onChange }: StepPhotosProps) => {
 
     try {
       const base64 = await uploadPhoto(file, type);
-      onChange({
-        ...data,
-        [`photo${type.charAt(0).toUpperCase() + type.slice(1)}`]: base64,
-      } as any);
+      const photoKey = `photo${type.charAt(0).toUpperCase() + type.slice(1)}` as keyof ProgressPhotos;
+      onChange({ ...data, [photoKey]: base64 });
     } catch (error) {
       console.error("Upload failed:", error);
     }
   };
 
   const handleRemovePhoto = (type: "front" | "side" | "back") => {
-    onChange({
-      ...data,
-      [`photo${type.charAt(0).toUpperCase() + type.slice(1)}`]: undefined,
-    } as any);
+    const photoKey = `photo${type.charAt(0).toUpperCase() + type.slice(1)}` as keyof ProgressPhotos;
+    onChange({ ...data, [photoKey]: undefined });
   };
 
   const getPhotoUrl = (type: "front" | "side" | "back") => {

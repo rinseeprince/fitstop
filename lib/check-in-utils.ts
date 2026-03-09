@@ -43,7 +43,7 @@ export const calculateProgressComparison = (
     }
 
     // Measurements changes
-    const measurements: any = {};
+    const measurements: Record<string, number> = {};
     if (current.waist && previous.waist) {
       measurements.waist = Number((current.waist - previous.waist).toFixed(1));
     }

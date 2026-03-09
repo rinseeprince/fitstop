@@ -9,15 +9,16 @@ import { CheckInScheduleCard } from "@/components/clients/check-in/check-in-sche
 import { InlineEditableMetric } from "@/components/clients/shared/inline-editable-metric"
 import { Phone, Mail, Loader2, Calculator } from "lucide-react"
 import { DailyWellnessStrip } from "@/components/clients/daily-pulse/daily-wellness-strip"
+import type { Client, CheckIn } from "@/types/check-in"
 
 interface ClientOverviewTabProps {
-  client: any
-  checkIns: any[]
+  client: Client
+  checkIns: CheckIn[]
   isCalculatingBMR: boolean
   onCalculateBMR: () => void
   onMetricSave: (field: string, value: number, metricName: string, needsConfirmation: boolean) => Promise<void>
   onResetToAuto: (field: "bmr" | "tdee") => Promise<void>
-  onSelectCheckIn: (checkIn: any) => void
+  onSelectCheckIn: (checkIn: CheckIn) => void
 }
 
 export function ClientOverviewTab({

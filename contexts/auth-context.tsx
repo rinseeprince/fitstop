@@ -75,7 +75,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setTimeout(() => reject(new Error('fetchProfile timeout')), 5000)
       )
       
-      const { data, error } = await Promise.race([fetchPromise, timeoutPromise]) as any
+      const { data, error } = await Promise.race([fetchPromise, timeoutPromise]) as Awaited<typeof fetchPromise>
 
       console.log('[Auth] fetchProfile result:', { data: !!data, error })
 
@@ -254,7 +254,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setTimeout(() => reject(new Error('getSession timeout')), 5000)
         )
         
-        const { data: { session } } = await Promise.race([getSessionPromise, timeoutPromise]) as any
+        const { data: { session } } = await Promise.race([getSessionPromise, timeoutPromise]) as Awaited<typeof getSessionPromise>
         console.log('[Auth] Got session:', session ? 'has session' : 'no session')
         setSession(session)
         setUser(session?.user ?? null)
