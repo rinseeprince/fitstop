@@ -15,7 +15,7 @@ interface LeadCardProps {
 export function LeadCard({ lead, onDragStart }: LeadCardProps) {
   return (
     <Card
-      className="cursor-move hover:shadow-md transition-shadow"
+      className="cursor-move transition-shadow"
       draggable
       onDragStart={(e) => onDragStart?.(e, lead)}
     >
@@ -32,7 +32,7 @@ export function LeadCard({ lead, onDragStart }: LeadCardProps) {
           </div>
 
           {lead.source && (
-            <div className="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium">
+            <div className="inline-flex items-center rounded-md bg-muted px-2.5 py-0.5 text-xs font-medium">
               {lead.source}
             </div>
           )}

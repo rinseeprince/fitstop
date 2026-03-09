@@ -26,7 +26,7 @@ export function TrainingPlanBuilder({
     <ErrorBoundary>
       <TrainingBuilderProvider clientId={client.id} onUpdate={onUpdate}>
         <div className="min-h-[600px]">
-          <div className="bg-white rounded-xl shadow-sm p-5 h-full">
+          <div className="bg-card rounded-lg border border-border p-5 h-full">
             <ErrorBoundary>
               <TrainingBuilderRightPanel
                 clientId={client.id}

@@ -61,7 +61,7 @@ export default function ClientNutritionPage() {
   if (!hasNutritionPlan) {
     return (
       <div className="space-y-6">
-        <h1 className="text-2xl font-bold">Nutrition Plan</h1>
+        <h1 className="text-2xl font-semibold">Nutrition Plan</h1>
         <Card>
           <CardContent className="py-12 text-center">
             <Utensils className="mx-auto h-12 w-12 text-muted-foreground/50" />
@@ -79,7 +79,7 @@ export default function ClientNutritionPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">Nutrition Plan</h1>
+        <h1 className="text-2xl font-semibold">Nutrition Plan</h1>
         <p className="mt-1 text-muted-foreground">
           Your daily macro targets set by your coach
         </p>
@@ -156,7 +156,7 @@ function SingleDayFallback({ targets }: { targets: NutritionTargets }) {
         <CardContent className="py-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/20">
+              <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/20">
                 <Flame className="h-6 w-6 text-primary" />
               </div>
               <div>
@@ -175,24 +175,24 @@ function SingleDayFallback({ targets }: { targets: NutritionTargets }) {
           value={protein}
           unit="g"
           icon={Beef}
-          color="text-red-500"
-          bgColor="bg-red-500/10"
+          color="text-protein"
+          bgColor="bg-protein/10"
         />
         <MacroCard
           label="Carbs"
           value={carbs}
           unit="g"
           icon={Wheat}
-          color="text-amber-500"
-          bgColor="bg-amber-500/10"
+          color="text-carbs"
+          bgColor="bg-carbs/10"
         />
         <MacroCard
           label="Fat"
           value={fat}
           unit="g"
           icon={Droplets}
-          color="text-blue-500"
-          bgColor="bg-blue-500/10"
+          color="text-fat"
+          bgColor="bg-fat/10"
         />
       </div>
     </>
@@ -225,7 +225,7 @@ function MacroCard({
           </div>
           <div>
             <p className="text-xs text-muted-foreground">{label}</p>
-            <p className="text-xl font-bold">
+            <p className="text-xl font-semibold">
               {value ?? "-"}
               <span className="ml-1 text-sm font-normal text-muted-foreground">
                 {unit}

@@ -32,10 +32,10 @@ export function WorkoutTemplatePicker({ selectedTemplate, onSelect }: WorkoutTem
               onClick={() => onSelect(template)}
               className={cn(
                 "w-full text-left p-4 rounded-lg border transition-all",
-                "hover:shadow-md hover:border-primary/50",
+                "hover:border-primary/30",
                 isSelected
                   ? "border-primary bg-primary/5 ring-2 ring-primary/20"
-                  : "border-border bg-white hover:bg-muted/50"
+                  : "border-border bg-card hover:bg-muted/50"
               )}
             >
               <div className="flex items-start justify-between">
@@ -76,7 +76,7 @@ export function WorkoutTemplatePicker({ selectedTemplate, onSelect }: WorkoutTem
                     {template.sessions.map((session, idx) => (
                       <span
                         key={idx}
-                        className="text-xs px-2 py-1 rounded bg-white border border-primary/20 text-foreground"
+                        className="text-xs px-2 py-1 rounded bg-card border border-primary/20 text-foreground"
                       >
                         {session.name}
                       </span>

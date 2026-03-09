@@ -79,7 +79,7 @@ export function OverdueClientCard({
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
             <Avatar className="h-12 w-12">
-              <AvatarFallback className="bg-gradient-to-br from-primary to-accent text-white">
+              <AvatarFallback className="bg-primary text-primary-foreground">
                 {client.name
                   .split(" ")
                   .map((n) => n[0])

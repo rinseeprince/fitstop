@@ -36,7 +36,7 @@ export function HabitRow({
             </span>
           )}
         </Label>
-        {log?.completed && <Check className="h-4 w-4 text-green-600" />}
+        {log?.completed && <Check className="h-4 w-4 text-success" />}
       </div>
       <Switch
         id={`habit-${habit.id}`}

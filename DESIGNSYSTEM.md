@@ -1,6 +1,6 @@
 # CoachHub Design System
 
-> This document defines the visual language for CoachHub. All UI components and pages should follow these guidelines. When building new features, reference this document to ensure consistency.
+> Minimal & clean aesthetic inspired by Linear, Vercel, and Stripe. This document is the single source of truth for all UI patterns. Every code example is pulled from real component implementations.
 
 ---
 
@@ -10,7 +10,7 @@
 2. [Colours](#2-colours)
 3. [Typography](#3-typography)
 4. [Spacing](#4-spacing)
-5. [Shadows & Elevation](#5-shadows--elevation)
+5. [Borders & Elevation](#5-borders--elevation)
 6. [Border Radius](#6-border-radius)
 7. [Layout](#7-layout)
 8. [Components](#8-components)
@@ -25,96 +25,115 @@
 
 ### 1.1 Core Values
 
-- **Clean over clever** — Prioritise clarity and usability over flashy effects
+- **Restrained** — Monochrome palette with one strong accent colour; let content do the talking
+- **Structured** — Borders and tokens for separation, not shadows or colour washes
+- **Snappy** — Fast, subtle animations (0.15–0.2s); nothing bouncy or theatrical
 - **Consistent** — Same patterns everywhere, no one-off designs
-- **Calm** — Soft colours, generous whitespace, nothing screams for attention
 - **Professional** — Coaches trust us with their business; the UI should feel reliable
-- **AI-forward** — AI features should feel magical but not gimmicky
 
 ### 1.2 Visual Guidelines
 
-- Use shadows instead of borders for depth
-- Prefer subtle backgrounds over harsh dividers
-- Let content breathe with generous padding
-- Reserve bright colours for meaningful actions and states
-- Make interactive elements obviously interactive
+- Use **borders** for separation — `border border-border` on all containers
+- Shadows are barely-there and reserved for **floating layers** (dropdowns, dialogs, segmented-control active thumb)
+- Colour is used **sparingly** — mostly monochrome; colour signals meaning (status, domain, action)
+- No gradients, no glassmorphism, no decorative backgrounds
+- All colours, borders, and backgrounds use **design tokens** — never hardcode `gray-*`, `white`, or hex values
 
 ---
 
 ## 2. Colours
 
-> **IMPORTANT: Tailwind v4 CSS Variables**
+> **Tailwind v4 CSS Variables**
 >
-> This project uses **Tailwind v4** with CSS variables defined in `app/globals.css`.
-> Do NOT use numbered color scales like `bg-primary-600` — they won't work.
+> This project uses **Tailwind v4** with OKLCH CSS variables defined in `app/globals.css`.
+> Do NOT use numbered colour scales like `bg-primary-600` — they don't exist.
 >
 > **Use CSS variable classes with opacity modifiers:**
-> - `bg-primary` — main color
-> - `bg-primary/90` — slightly transparent (hover states)
-> - `bg-primary/15` — light tint (backgrounds)
-> - `bg-primary/10` — very light tint
+> - `bg-primary` — full colour
+> - `bg-primary/10` — 10% tint (badges, highlights)
+> - `bg-primary/5` — 5% tint (card variant backgrounds)
 
-### 2.1 Available CSS Variable Colors
+### 2.1 Token Reference
 
-These colors are defined in `app/globals.css` and available via Tailwind:
-
-| Token | CSS Variable | Usage |
-|-------|-------------|-------|
-| `primary` | `--primary` | Brand blue - buttons, links, accents |
-| `secondary` | `--secondary` | Secondary actions |
-| `accent` | `--accent` | AI/violet features |
-| `destructive` | `--destructive` | Errors, delete actions |
-| `success` | `--success` | Success states |
-| `warning` | `--warning` | Warning states |
-| `muted` | `--muted` | Muted backgrounds |
-| `muted-foreground` | `--muted-foreground` | Secondary text |
+| Token | OKLCH Value (Light) | Role |
+|-------|-------------------|------|
+| `--primary` | `oklch(0.45 0.18 255)` | Deep blue — buttons, links, accent |
+| `--primary-foreground` | `oklch(0.99 0 0)` | Text on primary |
+| `--secondary` | `oklch(0.965 0.002 260)` | Neutral light surface |
+| `--secondary-foreground` | `oklch(0.25 0.004 260)` | Text on secondary |
+| `--accent` | `oklch(0.965 0.002 260)` | Same as secondary (no violet) |
+| `--destructive` | `oklch(0.55 0.2 25)` | Errors, delete actions |
+| `--success` | `oklch(0.55 0.15 155)` | Success states |
+| `--warning` | `oklch(0.7 0.15 75)` | Warning states |
+| `--background` | `oklch(0.985 0 0)` | Page background |
+| `--foreground` | `oklch(0.145 0.004 260)` | Primary text |
+| `--card` | `oklch(1 0 0)` | Card/surface background |
+| `--muted` | `oklch(0.965 0.002 260)` | Muted surfaces, segmented control track |
+| `--muted-foreground` | `oklch(0.556 0.01 260)` | Secondary/helper text |
+| `--border` | `oklch(0.915 0.004 260)` | All borders |
+| `--input` | `oklch(0.915 0.004 260)` | Input borders |
+| `--ring` | `oklch(0.45 0.18 255)` | Focus ring (matches primary) |
+| `--training` | `oklch(0.55 0.12 180)` | Training domain (teal) |
+| `--nutrition` | `oklch(0.6 0.14 55)` | Nutrition domain (amber) |
+| `--error` | `oklch(0.55 0.2 25)` | Error domain (same as destructive) |
+| `--protein` | `oklch(0.55 0.18 255)` | Protein macro colour (blue) |
+| `--carbs` | `oklch(0.6 0.14 55)` | Carbohydrate macro colour (amber) |
+| `--fat` | `oklch(0.55 0.15 25)` | Fat macro colour (red-orange) |
 
 ### 2.2 Colour Usage
 
 | Use Case | Tailwind Class |
 |----------|----------------|
-| Page background | `bg-background` or `bg-muted` |
-| Card background | `bg-white` or `bg-card` |
+| Page background | `bg-background` |
+| Card/surface background | `bg-card` |
+| Primary text | `text-foreground` |
+| Secondary text | `text-muted-foreground` |
+| Borders | `border-border` |
 | Primary button | `bg-primary text-primary-foreground` |
 | Primary button hover | `hover:bg-primary/90` |
-| AI features | `bg-accent` or gradient |
-| Success states | `text-success` or `bg-success/15 text-success` |
-| Warning states | `text-warning` or `bg-warning/15 text-warning` |
-| Error states | `text-destructive` or `bg-destructive/15 text-destructive` |
-| Body text | `text-gray-900` or `text-foreground` |
-| Secondary text | `text-gray-500` or `text-muted-foreground` |
-| Muted text | `text-gray-400` |
-| Borders (when needed) | `border-gray-200` or `border-border` |
+| Badge tint background | `bg-primary/10`, `bg-success/10`, `bg-warning/10`, `bg-destructive/10` |
+| Card variant tint | `bg-training/5 border border-training/15` |
+| Interactive card hover | `hover:border-primary/30` |
+| Protein badge/chart | `bg-protein/10 text-protein` |
+| Carbs badge/chart | `bg-carbs/10 text-carbs` |
+| Fat badge/chart | `bg-fat/10 text-fat` |
 
-### 2.3 Creating Tints with Opacity
-
-Use opacity modifiers to create lighter/darker variants:
+### 2.3 Opacity Tints
 
 ```tsx
-// Light background tint (for badges, highlights)
-className="bg-primary/15"    // ~15% opacity
-className="bg-success/15"
-className="bg-warning/15"
-className="bg-destructive/15"
+// Badges — use /10 opacity
+className="bg-primary/10 text-primary"
+className="bg-success/10 text-success"
+className="bg-warning/10 text-warning"
+className="bg-destructive/10 text-destructive"
 
-// Hover states (slightly darker)
-className="hover:bg-primary/90"
+// Card domain variants — use /5 bg, /15 border
+className="bg-training/5 border border-training/15"
+className="bg-nutrition/5 border border-nutrition/15"
 
-// Very subtle backgrounds
-className="bg-primary/5"
-className="bg-primary/10"
+// Hover accents — use /30
+className="hover:border-primary/30"
+
+// Icon containers — use /10 bg, /15 hover
+className="bg-primary/10 group-hover:bg-primary/15"
 ```
 
-### 2.4 Gradients
-
-Use gradients sparingly, primarily for AI-related features:
+### 2.4 What NOT to Use
 
 ```tsx
-// AI button gradient
-className="bg-gradient-to-r from-primary to-accent hover:from-primary/90 hover:to-accent/90"
+// WRONG — hardcoded grays
+className="text-gray-900"        // Use text-foreground
+className="text-gray-500"        // Use text-muted-foreground
+className="border-gray-200"      // Use border-border
+className="bg-gray-100"          // Use bg-muted
+className="bg-gray-50"           // Use bg-muted/50
+className="bg-white"             // Use bg-card
 
-// AI subtle background
-className="bg-gradient-to-br from-accent/10 to-primary/10"
+// WRONG — gradients
+className="bg-gradient-to-r from-primary to-accent"
+
+// WRONG — /15 opacity for badges (we use /10)
+className="bg-primary/15"
 ```
 
 ---
@@ -123,78 +142,61 @@ className="bg-gradient-to-br from-accent/10 to-primary/10"
 
 ### 3.1 Font Stack
 
-Use Inter as the primary font. If not installed, add to your layout:
+Plus Jakarta Sans is the primary font, loaded via `next/font/google` in the root layout:
 
 ```tsx
-import { Inter } from 'next/font/google'
-
-const inter = Inter({ subsets: ['latin'] })
-
-// In layout.tsx
-<body className={inter.className}>
+import { Plus_Jakarta_Sans } from 'next/font/google'
+const plusJakarta = Plus_Jakarta_Sans({ subsets: ['latin'], weight: ['400', '500', '600', '700'] })
 ```
 
 ### 3.2 Type Scale
 
-| Name | Size | Weight | Line Height | Class |
-|------|------|--------|-------------|-------|
-| Display | 36px | 700 | 1.2 | `text-4xl font-bold tracking-tight` |
-| H1 | 30px | 600 | 1.25 | `text-3xl font-semibold tracking-tight` |
-| H2 | 24px | 600 | 1.3 | `text-2xl font-semibold tracking-tight` |
-| H3 | 20px | 600 | 1.4 | `text-xl font-semibold` |
-| H4 | 18px | 600 | 1.4 | `text-lg font-semibold` |
-| Body | 16px | 400 | 1.5 | `text-base` |
-| Body Small | 14px | 400 | 1.5 | `text-sm` |
-| Caption | 12px | 500 | 1.4 | `text-xs font-medium` |
-| Overline | 12px | 500 | 1.4 | `text-xs font-medium uppercase tracking-wider` |
+| Name | Class | Use Case |
+|------|-------|----------|
+| Display | `text-4xl font-bold tracking-tight` | Hero numbers |
+| H1 | `text-3xl font-semibold tracking-tight` | Page titles |
+| H2 | `text-2xl font-semibold tracking-tight` | Section titles |
+| H3 | `text-xl font-semibold` | Sub-sections |
+| H4 | `text-lg font-semibold` | Card headers |
+| Body | `text-base` | Default body |
+| Body Small | `text-sm` | Most UI text |
+| Caption | `text-xs font-medium` | Labels, badges, metadata |
+| Overline | `text-xs font-medium uppercase tracking-wider` | Column headers, categories |
 
 ### 3.3 Typography Patterns
 
 ```tsx
 // Page title
-<h1 className="text-2xl font-semibold text-gray-900 tracking-tight">
+<h1 className="text-2xl font-semibold text-foreground tracking-tight">
   Training Plan
 </h1>
 
-// Section title
-<h2 className="text-lg font-semibold text-gray-900">
-  BJJ Supportive Strength Program
-</h2>
-
-// Card title
-<h3 className="text-base font-medium text-gray-900">
-  Weekly Overview
+// Section heading
+<h3 className="text-base font-semibold tracking-tight">
+  Needs Attention
 </h3>
 
+// Card title (via CardTitle component)
+<CardTitle>Weekly Overview</CardTitle>
+// Renders: font-semibold text-foreground tracking-tight
+
 // Body text
-<p className="text-sm text-gray-600">
+<p className="text-sm text-muted-foreground">
   A balanced program designed to enhance performance.
 </p>
 
 // Label
-<label className="text-sm font-medium text-gray-700">
+<label className="text-sm font-medium text-foreground">
   Work Activity Level
 </label>
 
-// Helper text
-<p className="text-xs text-gray-400 mt-1">
-  This affects your daily calorie calculations
-</p>
+// Metric label
+<p className="text-sm font-medium text-muted-foreground mb-3">Active Clients</p>
 
-// Overline / category label
-<span className="text-xs font-medium text-gray-400 uppercase tracking-wider">
-  Mon
-</span>
-
-// Large stat number
-<span className="text-3xl font-bold text-gray-900">
+// Large stat
+<h3 className="text-4xl font-semibold tracking-tight">
   2,744
-</span>
-
-// Stat unit
-<span className="text-sm text-gray-500">
-  cal
-</span>
+</h3>
 ```
 
 ---
@@ -203,135 +205,141 @@ const inter = Inter({ subsets: ['latin'] })
 
 ### 4.1 Spacing Scale
 
-Use Tailwind's default spacing scale. Prefer these values for consistency:
+Use Tailwind's default scale. Preferred values:
 
 | Token | Value | Use Case |
 |-------|-------|----------|
-| 1 | 4px | Tight spacing between related elements |
-| 2 | 8px | Default gap between small elements |
-| 3 | 12px | Padding inside compact components |
-| 4 | 16px | Standard padding, gaps between components |
-| 5 | 20px | Breathing room in cards |
-| 6 | 24px | Section padding |
+| 1 | 4px | Tight gaps (badge icon + text) |
+| 2 | 8px | Small element gaps |
+| 3 | 12px | Compact component padding |
+| 4 | 16px | Standard gaps between components |
+| 5 | 20px | Card padding (`p-5`) |
+| 6 | 24px | Section padding, page padding |
 | 8 | 32px | Large section gaps |
-| 12 | 48px | Page section separation |
-| 16 | 64px | Major layout divisions |
 
 ### 4.2 Common Spacing Patterns
 
 ```tsx
-// Card padding
-className="p-5" // 20px all sides
+// Card body padding
+className="p-5"              // 20px — standard card content
+className="p-6"              // 24px — metric cards, spacious cards
 
-// Card with tighter padding
-className="p-4" // 16px all sides
+// Card header/footer padding
+className="px-5 py-4"        // CardHeader, CardFooter
 
-// Gap between cards in a grid
-className="gap-4" // 16px
+// Gap between cards
+className="gap-4"            // 16px grid gap
 
-// Gap between form fields
-className="space-y-4" // 16px vertical
+// Form field spacing
+className="space-y-4"        // 16px between fields
+className="space-y-1.5"      // 6px between label and input
 
-// Gap between label and input
-className="space-y-1.5" // 6px vertical
-
-// Page content padding
-className="p-6" // 24px all sides
-
-// Section margin
-className="mt-8" // 32px top margin
+// Page content
+className="p-6"              // Page padding
+className="mb-6"             // Section spacing
 ```
 
 ---
 
-## 5. Shadows & Elevation
+## 5. Borders & Elevation
 
-### 5.1 Shadow Scale
+### 5.1 Borders Are Primary
 
-Do not use borders for containment. Use shadows instead.
-
-| Level | Class | Use Case |
-|-------|-------|----------|
-| None | — | Flat elements, nested cards |
-| Subtle | `shadow-sm` | Default cards, inputs |
-| Medium | `shadow-md` | Hover states, dropdowns |
-| Large | `shadow-lg` | Modals, popovers |
-| XL | `shadow-xl` | Full-page modals |
-
-### 5.2 Shadow Patterns
+Borders are the primary separation mechanism. Every card, input, and container uses `border border-border`.
 
 ```tsx
-// Default card
-className="bg-white rounded-xl shadow-sm"
+// Standard card
+className="bg-card border border-border rounded-lg"
 
-// Card with hover
-className="bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow"
+// Input
+className="bg-transparent border border-border rounded-md"
 
-// Dropdown menu
-className="bg-white rounded-xl shadow-lg border border-gray-100"
+// Dialog
+className="bg-card border border-border rounded-lg"
 
-// Modal
-className="bg-white rounded-2xl shadow-xl"
+// Divider inside a card
+className="border-b border-border"   // CardHeader bottom
+className="border-t border-border"   // CardFooter top
 
-// Floating action button
-className="bg-primary rounded-full shadow-lg hover:shadow-xl"
+// Table rows
+className="border-b"                 // Row separator
+
+// Tabs
+className="border-b border-border"   // TabsList bottom border
 ```
 
-### 5.3 When to Use Borders
+### 5.2 Shadow Scale
 
-Borders should be rare. Use them for:
-- Dashed outlines (empty states, drop zones)
-- Subtle internal dividers within a card
-- Selected/active states as reinforcement
+Shadows are reserved for **floating** elements only. Defined as CSS custom properties:
+
+| Token | Value | Use Case |
+|-------|-------|----------|
+| `--shadow-sm` | `0 1px 2px rgba(0,0,0,0.04)` | Segmented control active thumb |
+| `--shadow-md` | `0 2px 8px rgba(0,0,0,0.06)` | Dropdowns, dialogs, select content |
+| `--shadow-lg` | `0 4px 12px rgba(0,0,0,0.08)` | — reserved — |
 
 ```tsx
-// Divider inside a card
-<hr className="border-t border-gray-100 my-4" />
+// Segmented control active button
+className="bg-card text-foreground shadow-sm"
 
-// Empty/drop zone
-className="border-2 border-dashed border-gray-200 rounded-xl"
+// Select dropdown content
+className="bg-card rounded-lg shadow-md border border-border"
 
-// Selected state (in addition to background)
-className="bg-primary/10 border border-primary/30 rounded-xl"
+// Dialog content
+className="bg-card border border-border rounded-lg shadow-md"
+```
+
+### 5.3 What NOT to Do
+
+```tsx
+// WRONG — shadows on cards
+className="bg-card rounded-lg shadow-sm"           // No shadow on cards
+className="bg-card rounded-lg hover:shadow-md"      // No shadow hover on cards
+
+// WRONG — shadow on buttons
+className="bg-primary shadow-sm hover:shadow"       // No shadow on buttons
 ```
 
 ---
 
 ## 6. Border Radius
 
-### 6.1 Radius Scale
+### 6.1 Radius Tokens
 
-| Token | Value | Class | Use Case |
-|-------|-------|-------|----------|
-| sm | 6px | `rounded-md` | Small buttons, badges, chips |
-| DEFAULT | 8px | `rounded-lg` | Inputs, small cards |
-| lg | 12px | `rounded-xl` | Cards, containers |
-| xl | 16px | `rounded-2xl` | Modals, large cards |
-| full | 9999px | `rounded-full` | Avatars, circular buttons, pills |
+Defined in `globals.css`:
+
+| Token | Value | Tailwind Class | Use Case |
+|-------|-------|---------------|----------|
+| `--radius` | `0.625rem` (10px) | `rounded-lg` | Cards, segmented control track, select dropdown |
+| `--radius-xs` | `0.375rem` (6px) | `rounded-md` | Buttons, inputs, badges, select items |
+| — | — | `rounded-full` | Avatars only |
 
 ### 6.2 Standard Usage
 
 ```tsx
-// Primary cards and containers
-className="rounded-xl" // 12px
+// Cards and containers
+className="rounded-lg"     // All cards, dialogs, segmented control
 
-// Buttons
-className="rounded-lg" // 8px
+// Buttons (all sizes and variants)
+className="rounded-md"
 
-// Inputs
-className="rounded-lg" // 8px
+// Inputs and selects
+className="rounded-md"
 
-// Badges and chips
-className="rounded-full" // pill shape
+// Badges
+className="rounded-md"
 
 // Avatars
 className="rounded-full"
+```
 
-// Modals
-className="rounded-2xl" // 16px
+### 6.3 What NOT to Do
 
-// Small inline elements
-className="rounded-md" // 6px
+```tsx
+// WRONG
+className="rounded-xl"     // Not used — cards are rounded-lg
+className="rounded-2xl"    // Not used — dialogs are rounded-lg
+className="rounded-full"   // Only for avatars, never for badges
 ```
 
 ---
@@ -341,28 +349,24 @@ className="rounded-md" // 6px
 ### 7.1 Page Structure
 
 ```tsx
-// Standard page layout
-<div className="min-h-screen bg-[#F8FAFA]">
+<div className="min-h-screen bg-background">
   {/* Sidebar - fixed */}
-  <aside className="fixed left-0 top-0 h-screen w-64 bg-white border-r border-gray-100">
+  <aside className="fixed left-0 top-0 h-screen w-64 bg-sidebar border-r border-sidebar-border">
     {/* Sidebar content */}
   </aside>
-  
+
   {/* Main content area */}
   <main className="ml-64">
-    {/* Page header with tabs */}
-    <header className="bg-white border-b border-gray-100 sticky top-0 z-10">
+    {/* Page header */}
+    <header className="border-b border-border sticky top-0 z-10 bg-card">
       <div className="px-6 py-4">
-        {/* Breadcrumb, title, actions */}
+        {/* Title, actions */}
       </div>
-      <nav className="px-6">
-        {/* Tab navigation */}
-      </nav>
     </header>
-    
+
     {/* Page content */}
     <div className="p-6">
-      {/* Content cards */}
+      {/* Content */}
     </div>
   </main>
 </div>
@@ -371,25 +375,15 @@ className="rounded-md" // 6px
 ### 7.2 Content Layout Patterns
 
 ```tsx
-// Two-column layout (sidebar + main)
+// Two-column layout
 <div className="grid grid-cols-[380px_1fr] gap-6">
-  <aside>{/* Left panel */}</aside>
-  <main>{/* Main content */}</main>
-</div>
-
-// Three-column layout
-<div className="grid grid-cols-3 gap-6">
-  {/* Equal columns */}
+  <aside>{/* Panel */}</aside>
+  <main>{/* Content */}</main>
 </div>
 
 // Card grid
 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
   {/* Cards */}
-</div>
-
-// Week calendar grid
-<div className="grid grid-cols-7 gap-3">
-  {/* Day cards */}
 </div>
 
 // Stacked sections
@@ -399,339 +393,306 @@ className="rounded-md" // 6px
 </div>
 ```
 
-### 7.3 Container Widths
-
-```tsx
-// Max content width (for readability)
-className="max-w-4xl" // 896px
-
-// Wide content
-className="max-w-6xl" // 1152px
-
-// Full width with padding
-className="w-full px-6"
-```
-
 ---
 
 ## 8. Components
 
 ### 8.1 Buttons
 
-#### Primary Button
-```tsx
-<Button className="bg-primary hover:bg-primary/90 text-primary-foreground font-medium px-4 py-2.5 rounded-lg shadow-sm hover:shadow transition-all">
-  Save Changes
-</Button>
-```
+Use the `<Button>` component from `components/ui/button.tsx`. All variants use `rounded-md`, no shadows.
 
-#### Secondary Button
-```tsx
-<Button variant="outline" className="bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300 font-medium px-4 py-2.5 rounded-lg transition-all">
-  Cancel
-</Button>
-```
+#### Variants
 
-#### Ghost Button
 ```tsx
-<Button variant="ghost" className="text-gray-600 hover:text-gray-900 hover:bg-gray-100 font-medium px-4 py-2.5 rounded-lg transition-all">
-  <Settings className="w-4 h-4 mr-2" />
+// Primary (default)
+<Button>Save Changes</Button>
+// → bg-primary hover:bg-primary/90 text-primary-foreground rounded-md
+
+// Secondary
+<Button variant="secondary">Cancel</Button>
+// → bg-secondary text-secondary-foreground border border-border hover:bg-muted rounded-md
+
+// Outline
+<Button variant="outline">Settings</Button>
+// → border border-border bg-transparent text-foreground hover:bg-muted rounded-md
+
+// Ghost
+<Button variant="ghost">
+  <Settings className="w-4 h-4" />
   Settings
 </Button>
-```
+// → text-muted-foreground hover:text-foreground hover:bg-muted rounded-md
 
-#### Destructive Button
-```tsx
-<Button className="bg-destructive hover:bg-destructive/90 text-destructive-foreground font-medium px-4 py-2.5 rounded-lg transition-all">
-  Delete Client
-</Button>
-```
+// Destructive
+<Button variant="destructive">Delete Client</Button>
+// → bg-destructive hover:bg-destructive/90 text-destructive-foreground rounded-md
 
-#### AI Button (Gradient)
-```tsx
-<Button className="bg-gradient-to-r from-primary to-accent hover:from-primary/90 hover:to-accent/90 text-primary-foreground font-medium px-4 py-2.5 rounded-lg shadow-sm hover:shadow transition-all">
-  <Sparkles className="w-4 h-4 mr-2" />
+// AI (same styling as primary — no gradient)
+<Button variant="ai">
+  <Sparkles className="w-4 h-4" />
   Generate with AI
 </Button>
+// → bg-primary hover:bg-primary/90 text-primary-foreground rounded-md
+
+// Link
+<Button variant="link">Learn more</Button>
+// → text-primary underline-offset-4 hover:underline
 ```
 
-#### Icon Button
+#### Sizes
+
 ```tsx
-<Button variant="ghost" size="icon" className="w-9 h-9 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all">
+<Button size="sm">Small</Button>      // h-8 px-3 py-1.5 text-sm
+<Button>Default</Button>              // h-10 px-4 py-2.5
+<Button size="lg">Large</Button>      // h-11 px-6 py-3 text-base
+<Button size="icon">                  // h-9 w-9
   <MoreHorizontal className="w-4 h-4" />
 </Button>
 ```
 
-#### Button Sizes
-```tsx
-// Small
-className="text-sm px-3 py-1.5 rounded-md"
+#### Shared Behaviour
 
-// Default
-className="text-sm px-4 py-2.5 rounded-lg"
-
-// Large
-className="text-base px-6 py-3 rounded-lg"
-```
+All buttons include:
+- `transition-colors duration-150`
+- `active:scale-[0.98]`
+- `focus-visible:ring-2 focus-visible:ring-ring`
+- `disabled:pointer-events-none disabled:opacity-50`
 
 ### 8.2 Cards
 
-#### Standard Card
+Use the `<Card>` component from `components/ui/card.tsx`. All variants use `rounded-lg`, border-based separation, no shadows.
+
+#### Variants
+
 ```tsx
-<div className="bg-white rounded-xl shadow-sm p-5">
-  <h3 className="text-lg font-semibold text-gray-900 mb-4">Card Title</h3>
-  <p className="text-sm text-gray-600">Card content goes here.</p>
-</div>
+// Default
+<Card>
+  <CardBody>Content</CardBody>
+</Card>
+// → bg-card border border-border rounded-lg
+
+// Interactive (hoverable)
+<Card variant="interactive">
+  <CardBody>Clickable content</CardBody>
+</Card>
+// → bg-card border border-border hover:border-primary/30 cursor-pointer rounded-lg
+
+// Domain: Training
+<Card variant="training">
+  <CardBody>Training content</CardBody>
+</Card>
+// → bg-training/5 border border-training/15 rounded-lg
+
+// Domain: Nutrition
+<Card variant="nutrition">
+  <CardBody>Nutrition content</CardBody>
+</Card>
+// → bg-nutrition/5 border border-nutrition/15 rounded-lg
+
+// AI (no gradient — plain card)
+<Card variant="ai">
+  <CardBody>AI-generated content</CardBody>
+</Card>
+// → bg-card border border-border rounded-lg
+
+// Status variants
+<Card variant="success">...</Card>   // bg-success/5 border-success/15
+<Card variant="warning">...</Card>   // bg-warning/5 border-warning/15
+<Card variant="error">...</Card>     // bg-destructive/5 border-destructive/15
 ```
 
-#### Interactive Card
+#### Sub-components
+
 ```tsx
-<div className="bg-white rounded-xl shadow-sm p-5 hover:shadow-md transition-shadow cursor-pointer">
-  {/* Content */}
-</div>
-```
+<Card>
+  <CardHeader>
+    <CardTitle>Card Title</CardTitle>
+    <CardAction>
+      <Button variant="ghost" size="icon">
+        <MoreHorizontal className="w-4 h-4" />
+      </Button>
+    </CardAction>
+  </CardHeader>
+  <CardBody>
+    <p className="text-sm text-muted-foreground">Card content</p>
+  </CardBody>
+  <CardFooter>
+    <Button>Save</Button>
+  </CardFooter>
+</Card>
 
-#### Card with Header
-```tsx
-<div className="bg-white rounded-xl shadow-sm overflow-hidden">
-  <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-    <h3 className="font-semibold text-gray-900">Card Title</h3>
-    <Button variant="ghost" size="icon">
-      <MoreHorizontal className="w-4 h-4" />
-    </Button>
-  </div>
-  <div className="p-5">
-    {/* Card body */}
-  </div>
-</div>
-```
-
-#### Coloured Card (Feature-specific)
-```tsx
-// Training card
-<div className="bg-secondary/10 border border-secondary/20 rounded-xl p-4">
-  {/* Training-related content */}
-</div>
-
-// Nutrition card
-<div className="bg-warning/10 border border-warning/20 rounded-xl p-4">
-  {/* Nutrition-related content */}
-</div>
-
-// AI/insight card
-<div className="bg-gradient-to-br from-accent/10 to-primary/10 border border-accent/20 rounded-xl p-4">
-  {/* AI-generated content */}
-</div>
+// CardHeader → px-5 py-4 border-b border-border flex items-center justify-between
+// CardBody   → p-5
+// CardFooter → px-5 py-4 border-t border-border bg-muted/50 rounded-b-lg
+// CardTitle  → font-semibold text-foreground tracking-tight
 ```
 
 ### 8.3 Badges
 
+Use the `<Badge>` component from `components/ui/badge.tsx`. All badges use `rounded-md`, `/10` opacity tints, never `rounded-full`.
+
 ```tsx
-// Status badges (use opacity modifiers for backgrounds)
-<span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-success/15 text-success">
-  Active
-</span>
-
-<span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-warning/15 text-warning">
-  Pending
-</span>
-
-<span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-destructive/15 text-destructive">
-  Overdue
-</span>
-
-// Info badges
-<span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary/15 text-primary">
-  4x/week
-</span>
-
-// Neutral badge
-<span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground">
-  Rest
-</span>
+<Badge>Default</Badge>                    // bg-primary/10 text-primary
+<Badge variant="success">Active</Badge>   // bg-success/10 text-success
+<Badge variant="warning">Pending</Badge>  // bg-warning/10 text-warning
+<Badge variant="destructive">Overdue</Badge> // bg-destructive/10 text-destructive
+<Badge variant="secondary">Draft</Badge>  // bg-muted text-muted-foreground
+<Badge variant="training">Training</Badge> // bg-training/10 text-training
+<Badge variant="nutrition">Nutrition</Badge> // bg-nutrition/10 text-nutrition
+<Badge variant="outline">v2.0</Badge>     // border border-border bg-transparent text-muted-foreground
 
 // Badge with icon
-<span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-secondary/15 text-secondary">
+<Badge variant="training">
   <Dumbbell className="w-3 h-3" />
   Training
-</span>
+</Badge>
+
+// Shared: inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium
 ```
 
 ### 8.4 Inputs
 
-#### Text Input
+Use the `<Input>` component from `components/ui/input.tsx`.
+
 ```tsx
+// Text input
 <div className="space-y-1.5">
-  <label className="text-sm font-medium text-gray-700">
-    Client Name
-  </label>
-  <input
-    type="text"
-    className="w-full px-3.5 py-2.5 bg-white border border-gray-200 rounded-lg text-sm placeholder:text-gray-400 focus:border-primary focus:ring-2 focus:ring-ring focus:outline-none transition-all"
-    placeholder="Enter name"
-  />
-  <p className="text-xs text-gray-400">This will be visible to the client</p>
+  <label className="text-sm font-medium text-foreground">Client Name</label>
+  <Input placeholder="Enter name" />
+  <p className="text-xs text-muted-foreground">This will be visible to the client</p>
 </div>
-```
 
-#### Textarea
-```tsx
-<textarea
-  className="w-full px-3.5 py-2.5 bg-white border border-gray-200 rounded-lg text-sm placeholder:text-gray-400 focus:border-primary focus:ring-2 focus:ring-ring focus:outline-none transition-all resize-none"
-  rows={4}
-  placeholder="Enter description..."
-/>
-```
+// Input classes:
+// bg-transparent border border-border rounded-md text-sm
+// placeholder:text-muted-foreground
+// focus:border-primary focus:ring-1 focus:ring-primary/20
+// disabled:opacity-50 disabled:cursor-not-allowed
 
-#### Input with Icon
-```tsx
+// Input with icon (manual composition)
 <div className="relative">
-  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-  <input
-    type="text"
-    className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-lg text-sm placeholder:text-gray-400 focus:border-primary focus:ring-2 focus:ring-ring focus:outline-none transition-all"
-    placeholder="Search clients..."
-  />
+  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+  <Input className="pl-10" placeholder="Search clients..." />
 </div>
 ```
 
-#### Select (using shadcn/ui)
+### 8.5 Select
+
+Use the `<Select>` components from `components/ui/select.tsx`.
+
 ```tsx
 <Select>
-  <SelectTrigger className="w-full bg-white border-gray-200 rounded-lg focus:border-primary focus:ring-2 focus:ring-ring">
+  <SelectTrigger>
     <SelectValue placeholder="Select option" />
   </SelectTrigger>
-  <SelectContent className="bg-white rounded-xl shadow-lg border border-gray-100 p-1">
-    <SelectItem className="rounded-lg cursor-pointer focus:bg-gray-50">
-      Option 1
-    </SelectItem>
-    <SelectItem className="rounded-lg cursor-pointer focus:bg-gray-50">
-      Option 2
-    </SelectItem>
+  <SelectContent>
+    <SelectItem value="1">Option 1</SelectItem>
+    <SelectItem value="2">Option 2</SelectItem>
   </SelectContent>
 </Select>
+
+// SelectTrigger → bg-transparent border border-border rounded-md
+//                 focus:border-primary focus:ring-1 focus:ring-primary/20
+// SelectContent → bg-card rounded-lg shadow-md border border-border
+// SelectItem    → rounded-md focus:bg-muted cursor-pointer
 ```
 
-### 8.5 Toggles & Switches
+### 8.6 Tabs
 
-#### Segmented Control / Toggle Group
-```tsx
-<div className="bg-gray-100 p-1 rounded-lg inline-flex">
-  {/* Active */}
-  <button className="px-4 py-2 text-sm font-medium bg-white text-gray-900 rounded-md shadow-sm transition-all">
-    <CalendarDays className="w-4 h-4 inline mr-2" />
-    Week
-  </button>
-
-  {/* Inactive */}
-  <button className="px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700 rounded-md transition-all">
-    <List className="w-4 h-4 inline mr-2" />
-    List
-  </button>
-</div>
-```
-
-#### AI/Manual Toggle
-```tsx
-<div className="bg-gray-100 p-1 rounded-lg inline-flex">
-  {/* Active - AI */}
-  <button className="px-4 py-2 text-sm font-medium bg-white text-gray-900 rounded-md shadow-sm flex items-center gap-2">
-    <Sparkles className="w-4 h-4 text-accent" />
-    AI Generation
-  </button>
-
-  {/* Inactive - Manual */}
-  <button className="px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700 rounded-md flex items-center gap-2">
-    <Pencil className="w-4 h-4" />
-    Manual Creation
-  </button>
-</div>
-```
-
-#### Switch (using shadcn/ui)
-```tsx
-<Switch className="data-[state=checked]:bg-primary" />
-```
-
-### 8.6 Chips / Tags
-
-#### Selectable Chip
-```tsx
-// Unselected
-<button className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded-full hover:bg-gray-200 transition-colors">
-  Fat loss
-</button>
-
-// Selected
-<button className="px-3 py-1.5 text-sm bg-primary/15 text-primary rounded-full border border-primary/30">
-  Strength
-</button>
-```
-
-#### Chip Group
-```tsx
-<div className="flex flex-wrap gap-2">
-  <button className="px-3 py-1.5 text-sm bg-primary/15 text-primary rounded-full border border-primary/30">
-    Upper/Lower
-  </button>
-  <button className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded-full hover:bg-gray-200 transition-colors">
-    Push/Pull/Legs
-  </button>
-  <button className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded-full hover:bg-gray-200 transition-colors">
-    Full Body 3x
-  </button>
-</div>
-```
-
-### 8.7 Tabs
+Use the `<Tabs>` components from `components/ui/tabs.tsx`. Underline style with `border-b-2`.
 
 ```tsx
-<div className="border-b border-gray-200">
-  <nav className="flex gap-6">
-    {/* Active tab */}
-    <button className="py-3 text-sm font-medium text-gray-900 border-b-2 border-primary -mb-px">
-      Training Plan
-    </button>
+<Tabs defaultValue="training">
+  <TabsList>
+    <TabsTrigger value="training">Training Plan</TabsTrigger>
+    <TabsTrigger value="nutrition">Nutrition</TabsTrigger>
+    <TabsTrigger value="content">Content Access</TabsTrigger>
+  </TabsList>
+  <TabsContent value="training">...</TabsContent>
+</Tabs>
 
-    {/* Inactive tab */}
-    <button className="py-3 text-sm font-medium text-gray-500 hover:text-gray-700 border-b-2 border-transparent -mb-px transition-colors">
-      Nutrition & Habits
-    </button>
-
-    <button className="py-3 text-sm font-medium text-gray-500 hover:text-gray-700 border-b-2 border-transparent -mb-px transition-colors">
-      Content Access
-    </button>
-  </nav>
-</div>
+// TabsList    → inline-flex border-b border-border bg-transparent
+// TabsTrigger → text-sm font-medium text-muted-foreground border-b-2 border-transparent -mb-px
+//               hover:text-foreground
+//               data-[state=active]:border-primary data-[state=active]:text-foreground
 ```
 
-### 8.8 Modals / Dialogs
+### 8.7 Segmented Control
+
+Use the `<SegmentedControl>` from `components/ui/segmented-control.tsx`.
 
 ```tsx
-// Using shadcn/ui Dialog
-<DialogContent className="bg-white rounded-2xl shadow-xl p-0 max-w-2xl">
-  <DialogHeader className="px-6 py-4 border-b border-gray-100">
-    <DialogTitle className="text-lg font-semibold text-gray-900">
-      Modal Title
-    </DialogTitle>
-  </DialogHeader>
-  
-  <div className="px-6 py-5">
-    {/* Modal content */}
-  </div>
-  
-  <DialogFooter className="px-6 py-4 border-t border-gray-100 bg-gray-50 rounded-b-2xl">
-    <Button variant="outline">Cancel</Button>
-    <Button>Save</Button>
-  </DialogFooter>
-</DialogContent>
+<SegmentedControl
+  options={[
+    { value: "week", label: "Week", icon: <CalendarDays /> },
+    { value: "list", label: "List", icon: <List /> },
+  ]}
+  value={view}
+  onChange={setView}
+/>
+
+// Track    → bg-muted p-1 rounded-lg inline-flex
+// Active   → bg-card text-foreground shadow-sm rounded-md
+// Inactive → text-muted-foreground hover:text-foreground rounded-md
+// Sizes    → default: px-4 py-2 text-sm | sm: px-3 py-1.5 text-xs
 ```
 
-### 8.9 Avatars
+### 8.8 Dialogs / Modals
+
+Use the `<Dialog>` components from `components/ui/dialog.tsx`.
+
+```tsx
+<Dialog>
+  <DialogTrigger asChild>
+    <Button>Open</Button>
+  </DialogTrigger>
+  <DialogContent>
+    <DialogHeader>
+      <DialogTitle>Modal Title</DialogTitle>
+      <DialogDescription>Optional description text</DialogDescription>
+    </DialogHeader>
+    <div>{/* Modal body */}</div>
+    <DialogFooter>
+      <Button variant="outline">Cancel</Button>
+      <Button>Save</Button>
+    </DialogFooter>
+  </DialogContent>
+</Dialog>
+
+// DialogContent → bg-card border border-border rounded-lg shadow-md p-6
+// DialogOverlay → bg-black/40
+// DialogFooter  → flex flex-col-reverse gap-2 sm:flex-row sm:justify-end
+```
+
+### 8.9 Tables
+
+Use the `<Table>` components from `components/ui/table.tsx`.
+
+```tsx
+<Table>
+  <TableHeader>
+    <TableRow>
+      <TableHead>Name</TableHead>
+      <TableHead>Status</TableHead>
+    </TableRow>
+  </TableHeader>
+  <TableBody>
+    <TableRow>
+      <TableCell>Sam Kalepa</TableCell>
+      <TableCell><Badge variant="success">Active</Badge></TableCell>
+    </TableRow>
+  </TableBody>
+</Table>
+
+// TableHead → text-muted-foreground text-xs uppercase tracking-wider font-medium
+// TableRow  → hover:bg-muted/30 border-b
+// TableCell → p-2 align-middle whitespace-nowrap
+```
+
+### 8.10 Avatars
 
 ```tsx
 // With image
-<div className="w-10 h-10 rounded-full overflow-hidden bg-gray-100">
+<div className="w-10 h-10 rounded-full overflow-hidden">
   <img src={avatarUrl} alt={name} className="w-full h-full object-cover" />
 </div>
 
@@ -740,37 +701,7 @@ className="text-base px-6 py-3 rounded-lg"
   <span className="text-sm font-medium text-primary">SK</span>
 </div>
 
-// Avatar sizes
-className="w-8 h-8"   // Small
-className="w-10 h-10" // Default
-className="w-12 h-12" // Large
-className="w-16 h-16" // XL (profile pages)
-```
-
-### 8.10 Toasts / Notifications
-
-```tsx
-// Success toast
-<div className="bg-white rounded-xl shadow-lg border border-gray-100 p-4 flex items-start gap-3 max-w-sm">
-  <div className="w-8 h-8 rounded-full bg-success/15 flex items-center justify-center flex-shrink-0">
-    <Check className="w-4 h-4 text-success" />
-  </div>
-  <div>
-    <p className="text-sm font-medium text-gray-900">Plan saved</p>
-    <p className="text-xs text-gray-500 mt-0.5">Training plan has been updated</p>
-  </div>
-</div>
-
-// Error toast
-<div className="bg-white rounded-xl shadow-lg border border-destructive/20 p-4 flex items-start gap-3 max-w-sm">
-  <div className="w-8 h-8 rounded-full bg-destructive/15 flex items-center justify-center flex-shrink-0">
-    <X className="w-4 h-4 text-destructive" />
-  </div>
-  <div>
-    <p className="text-sm font-medium text-gray-900">Failed to save</p>
-    <p className="text-xs text-gray-500 mt-0.5">Please try again</p>
-  </div>
-</div>
+// Sizes: w-8 h-8 (sm) | w-10 h-10 (default) | w-12 h-12 (lg)
 ```
 
 ---
@@ -779,19 +710,21 @@ className="w-16 h-16" // XL (profile pages)
 
 ### 9.1 Interactive States
 
-Apply to all interactive elements:
-
 ```tsx
-// Hover
-className="hover:bg-gray-50"
-className="hover:shadow-md"
-className="hover:border-gray-300"
+// Hover — cards
+className="hover:border-primary/30"
+
+// Hover — buttons/links
+className="hover:bg-primary/90"         // Primary button
+className="hover:bg-muted"             // Ghost/outline button
+className="hover:text-foreground"      // Text links
 
 // Focus
-className="focus:outline-none focus:ring-2 focus:ring-ring focus:border-primary"
+className="focus-visible:ring-2 focus-visible:ring-ring"      // Buttons
+className="focus:border-primary focus:ring-1 focus:ring-primary/20"  // Inputs
 
 // Active/Pressed
-className="active:scale-[0.98]"
+className="active:scale-[0.98]"        // Buttons only
 
 // Disabled
 className="disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
@@ -799,44 +732,21 @@ className="disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-even
 
 ### 9.2 Loading States
 
-#### Skeleton
 ```tsx
+// Skeleton
 <div className="animate-pulse space-y-3">
-  <div className="h-4 bg-gray-200 rounded w-3/4"></div>
-  <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+  <div className="h-4 bg-muted rounded w-3/4"></div>
+  <div className="h-4 bg-muted rounded w-1/2"></div>
 </div>
-```
 
-#### Shimmer
-```tsx
-// Add to tailwind.config.js
-animation: {
-  shimmer: 'shimmer 1.5s infinite',
-},
-keyframes: {
-  shimmer: {
-    '0%': { transform: 'translateX(-100%)' },
-    '100%': { transform: 'translateX(100%)' },
-  },
-},
+// Spinner
+<div className="w-5 h-5 border-2 border-muted border-t-primary rounded-full animate-spin" />
 
-// Usage
-<div className="relative overflow-hidden bg-gray-100 rounded-xl h-24">
-  <div className="absolute inset-0 -translate-x-full animate-shimmer bg-gradient-to-r from-transparent via-white/60 to-transparent" />
-</div>
-```
-
-#### Spinner
-```tsx
-<div className="w-5 h-5 border-2 border-gray-200 border-t-primary rounded-full animate-spin" />
-```
-
-#### Button Loading State
-```tsx
+// Button loading
 <Button disabled className="relative">
   <span className="opacity-0">Save Changes</span>
   <div className="absolute inset-0 flex items-center justify-center">
-    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+    <div className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
   </div>
 </Button>
 ```
@@ -845,17 +755,17 @@ keyframes: {
 
 ```tsx
 <div className="flex flex-col items-center justify-center py-16 px-8 text-center">
-  <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
-    <Dumbbell className="w-8 h-8 text-gray-400" />
+  <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-4">
+    <Dumbbell className="w-8 h-8 text-muted-foreground" />
   </div>
-  <h3 className="text-lg font-semibold text-gray-900 mb-2">
+  <h3 className="text-lg font-semibold text-foreground mb-2">
     No training plan yet
   </h3>
-  <p className="text-sm text-gray-500 mb-6 max-w-sm">
-    Create a personalised training program for your client using AI or build one manually.
+  <p className="text-sm text-muted-foreground mb-6 max-w-sm">
+    Create a personalised training program for your client.
   </p>
-  <Button className="bg-primary hover:bg-primary/90 text-primary-foreground">
-    <Sparkles className="w-4 h-4 mr-2" />
+  <Button>
+    <Sparkles className="w-4 h-4" />
     Generate with AI
   </Button>
 </div>
@@ -866,10 +776,8 @@ keyframes: {
 ```tsx
 // Form field error
 <div className="space-y-1.5">
-  <label className="text-sm font-medium text-gray-700">Email</label>
-  <input
-    className="w-full px-3.5 py-2.5 border border-destructive rounded-lg text-sm focus:border-destructive focus:ring-2 focus:ring-destructive/20"
-  />
+  <label className="text-sm font-medium text-foreground">Email</label>
+  <Input className="border-destructive focus:border-destructive focus:ring-destructive/20" />
   <p className="text-xs text-destructive flex items-center gap-1">
     <AlertCircle className="w-3 h-3" />
     Please enter a valid email address
@@ -881,67 +789,62 @@ keyframes: {
 
 ## 10. Animation & Transitions
 
-### 10.1 Transition Defaults
+### 10.1 CSS Transitions
 
-Apply to all interactive elements:
+All interactive elements use `transition-colors duration-150`:
 
 ```tsx
-// Standard transition
-className="transition-all duration-150 ease-out"
-
-// Colour only
+// Standard (colour change only — most common)
 className="transition-colors duration-150"
 
-// Shadow only
-className="transition-shadow duration-150"
-
-// Transform only
-className="transition-transform duration-150"
+// All properties (when layout shifts)
+className="transition-all duration-150"
 ```
 
-### 10.2 Duration Scale
+### 10.2 Framer Motion — Entry Animations
 
-| Duration | Use Case |
-|----------|----------|
-| 100ms | Micro-interactions (button press) |
-| 150ms | Standard transitions (hover, focus) |
-| 200ms | Slightly larger elements |
-| 300ms | Page transitions, modals appearing |
-| 500ms | Complex animations |
-
-### 10.3 Easing
+Use `framer-motion` for component entry animations. Keep them **snappy**: small Y offset (6–8px), fast duration (0.15–0.2s), `easeOut` easing.
 
 ```tsx
-// Default (most transitions)
-ease-out
+// Card/section fade up
+<motion.div
+  initial={{ opacity: 0, y: 6 }}
+  animate={{ opacity: 1, y: 0 }}
+  transition={{ duration: 0.2, delay: 0.05 }}
+>
 
-// Entering elements
-ease-out
+// Metric card with staggered delay
+<motion.div
+  initial={{ opacity: 0, y: 8 }}
+  animate={{ opacity: 1, y: 0 }}
+  transition={{ delay: index * 0.05, duration: 0.2, ease: "easeOut" }}
+>
 
-// Exiting elements
-ease-in
-
-// Continuous motion
-ease-in-out
+// Inline element (badge, trend indicator)
+<motion.div
+  initial={{ opacity: 0, scale: 0.8 }}
+  animate={{ opacity: 1, scale: 1 }}
+  transition={{ delay: 0.2 }}
+>
 ```
 
-### 10.4 Common Animations
+### 10.3 Animation Don'ts
 
 ```tsx
-// Fade in
-className="animate-in fade-in duration-200"
+// WRONG — too much Y offset (looks sluggish)
+initial={{ opacity: 0, y: 20 }}
 
-// Slide up
-className="animate-in slide-in-from-bottom-2 duration-200"
+// WRONG — too slow
+transition={{ duration: 0.5 }}
 
-// Scale in (for modals)
-className="animate-in zoom-in-95 duration-200"
+// WRONG — bouncy spring (not our aesthetic)
+transition={{ type: "spring", bounce: 0.4 }}
 
-// Pulse (for notifications)
-className="animate-pulse"
+// WRONG — scale hover effects on cards
+whileHover={{ scale: 1.02 }}
 
-// Spin (for loaders)
-className="animate-spin"
+// WRONG — elaborate stagger delays
+transition={{ delay: index * 0.15 }}   // Keep stagger to 0.05s max
 ```
 
 ---
@@ -950,18 +853,10 @@ className="animate-spin"
 
 ### 11.1 Icon Library
 
-Use Lucide React exclusively for consistency.
+Use **Lucide React** exclusively:
 
 ```tsx
-import { 
-  Dumbbell, 
-  Utensils, 
-  Sparkles, 
-  ChevronRight,
-  Check,
-  X,
-  // etc.
-} from 'lucide-react'
+import { Dumbbell, Utensils, Sparkles, ChevronRight, Check, X } from 'lucide-react'
 ```
 
 ### 11.2 Icon Sizes
@@ -970,165 +865,135 @@ import {
 |------|-------|----------|
 | 12px | `w-3 h-3` | Inline with small text, badges |
 | 16px | `w-4 h-4` | Buttons, inputs, default |
-| 20px | `w-5 h-5` | Navigation, larger buttons |
-| 24px | `w-6 h-6` | Section icons, headers |
-| 32px | `w-8 h-8` | Empty states, feature icons |
+| 20px | `w-5 h-5` | Navigation, icon containers |
+| 24px | `w-6 h-6` | Section icons |
+| 32px | `w-8 h-8` | Empty states |
 
 ### 11.3 Icon Colours
 
 ```tsx
-// Default (matches text)
-className="text-gray-400"
-
-// Interactive
-className="text-gray-400 hover:text-gray-600"
-
-// In primary button
-className="text-primary-foreground"
-
-// Feature-specific
-className="text-primary"
-className="text-accent"       // AI features
-className="text-success"
-className="text-warning"
-className="text-destructive"
+className="text-muted-foreground"                     // Default
+className="text-muted-foreground hover:text-foreground" // Interactive
+className="text-primary-foreground"                   // Inside primary button
+className="text-primary"                              // Accent / feature icon
+className="text-success"                              // Positive states
+className="text-warning"                              // Caution states
+className="text-destructive"                          // Error states
+className="text-training"                             // Training domain
+className="text-nutrition"                            // Nutrition domain
 ```
 
 ---
 
 ## 12. Patterns
 
-### 12.1 Week Calendar
+### 12.1 Metric Card
+
+From `components/metric-card.tsx`:
 
 ```tsx
-<div className="space-y-2">
-  {/* Day headers */}
-  <div className="grid grid-cols-7 gap-3">
-    {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => (
-      <div key={day} className="text-center">
-        <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">
-          {day}
-        </span>
-      </div>
-    ))}
-  </div>
-
-  {/* Day cards */}
-  <div className="grid grid-cols-7 gap-3">
-    {/* Workout day */}
-    <div className="bg-primary/5 border border-primary/20 rounded-xl p-3 hover:shadow-md hover:border-primary/30 transition-all cursor-pointer min-h-[100px]">
-      <div className="flex items-center gap-2 mb-2">
-        <Dumbbell className="w-4 h-4 text-primary" />
-        <span className="text-sm font-medium text-gray-900 truncate">Upper Body</span>
-      </div>
-      <p className="text-xs text-gray-500 truncate">Strength session</p>
-      <div className="flex items-center gap-1 mt-2 text-xs text-gray-400">
-        <Clock className="w-3 h-3" />
-        75m
+<motion.div
+  initial={{ opacity: 0, y: 8 }}
+  animate={{ opacity: 1, y: 0 }}
+  transition={{ delay, duration: 0.2, ease: "easeOut" }}
+  className="rounded-lg bg-card border border-border p-6 transition-colors duration-150 hover:border-primary/30"
+>
+  <div className="flex items-start justify-between">
+    <div className="flex-1">
+      <p className="text-sm font-medium text-muted-foreground mb-3">{title}</p>
+      <div className="flex items-baseline gap-2">
+        <h3 className="text-4xl font-semibold tracking-tight">{value}</h3>
+        {trend && (
+          <div className={`flex items-center gap-1 text-xs font-medium ${
+            trend.positive ? "text-success" : "text-destructive"
+          }`}>
+            {trend.positive ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+            {trend.value}
+          </div>
+        )}
       </div>
     </div>
-
-    {/* Rest day */}
-    <div className="bg-gray-50 border border-dashed border-gray-200 rounded-xl p-3 flex items-center justify-center min-h-[100px]">
-      <span className="text-xs text-gray-400 font-medium">Rest</span>
-    </div>
-
-    {/* Nutrition day */}
-    <div className="bg-warning/5 border border-warning/20 rounded-xl p-3 hover:shadow-md hover:border-warning/30 transition-all cursor-pointer min-h-[100px]">
-      <div className="text-center mb-2">
-        <span className="text-2xl font-bold text-warning">2,744</span>
-        <span className="text-xs text-gray-500 block">cal</span>
-      </div>
-      <div className="flex justify-center">
-        <span className="bg-success text-white text-xs px-2 py-0.5 rounded-full">
-          Training
-        </span>
-      </div>
+    <div className="flex h-12 w-12 items-center justify-center rounded-md bg-primary/10 text-primary">
+      <Icon className="h-5 w-5" />
     </div>
   </div>
-</div>
+</motion.div>
 ```
 
-### 12.2 Stat Card
+### 12.2 Needs Attention Feed
+
+From `components/dashboard/needs-attention-feed.tsx`:
 
 ```tsx
-<div className="bg-white rounded-xl shadow-sm p-5">
-  <div className="flex items-center justify-between mb-1">
-    <span className="text-sm text-gray-500">Weekly Total</span>
-    <TrendingUp className="w-4 h-4 text-success" />
+// Container
+<motion.div
+  initial={{ opacity: 0, y: 6 }}
+  animate={{ opacity: 1, y: 0 }}
+  transition={{ duration: 0.2, delay: 0.05 }}
+  className="bg-card border border-border rounded-lg p-5 mb-6"
+>
+  {/* Header with on-track badge */}
+  <div className="flex items-center justify-between mb-3">
+    <h3 className="text-base font-semibold tracking-tight">Needs Attention</h3>
+    <span className="bg-success/10 text-success text-xs font-medium px-2 py-0.5 rounded-md">
+      12 of 15 clients on track
+    </span>
   </div>
-  <div className="flex items-baseline gap-2">
-    <span className="text-3xl font-bold text-gray-900">17,908</span>
-    <span className="text-sm text-gray-500">cal</span>
+
+  {/* Priority client (high severity) */}
+  <div className="bg-destructive/5 border border-destructive/10 rounded-lg p-3 mb-3">
+    {/* Avatar + name + alert text */}
   </div>
-  <p className="text-xs text-success mt-2 flex items-center gap-1">
-    <ArrowUp className="w-3 h-3" />
-    12% from last week
-  </p>
-</div>
-```
 
-### 12.3 AI Insight Card
-
-```tsx
-<div className="bg-gradient-to-br from-accent/10 to-primary/10 border border-accent/20 rounded-xl p-4">
-  <div className="flex items-center gap-2 mb-3">
-    <div className="w-6 h-6 bg-white rounded-full flex items-center justify-center shadow-sm">
-      <Sparkles className="w-3.5 h-3.5 text-accent" />
+  {/* Compact list with dividers */}
+  <div className="divide-y divide-border">
+    <div className="py-2 flex items-center justify-between">
+      <span className="text-sm text-foreground">Client Name</span>
+      <span className="bg-warning/10 text-warning text-xs font-medium px-1.5 py-0.5 rounded-md">2</span>
+      <Link className="text-sm text-primary hover:text-primary/80">View</Link>
     </div>
-    <span className="text-sm font-medium text-gray-900">AI Summary</span>
   </div>
-  <p className="text-sm text-gray-700">
-    Sam has demonstrated excellent discipline by completing all workout sessions this week...
-  </p>
-</div>
+</motion.div>
 ```
 
 ### 12.3 Priority Recommendation Cards
 
 ```tsx
-// High priority (red accent)
-<div className="bg-white rounded-lg border-l-4 border-destructive p-4 shadow-sm">
-  <span className="text-xs font-semibold text-destructive uppercase tracking-wide">High Priority</span>
-  <p className="text-sm text-gray-700 mt-1">Address declining protein intake immediately.</p>
-</div>
+// High priority
+<Card variant="error" className="border-l-4 border-l-destructive">
+  <CardBody>
+    <span className="text-xs font-semibold text-destructive uppercase tracking-wide">High Priority</span>
+    <p className="text-sm text-muted-foreground mt-1">Address declining protein intake.</p>
+  </CardBody>
+</Card>
 
-// Medium priority (amber accent)
-<div className="bg-white rounded-lg border-l-4 border-warning p-4 shadow-sm">
-  <span className="text-xs font-semibold text-warning uppercase tracking-wide">Medium Priority</span>
-  <p className="text-sm text-gray-700 mt-1">Consider adjusting rest day nutrition.</p>
-</div>
-
-// Low priority (blue accent)
-<div className="bg-white rounded-lg border-l-4 border-primary p-4 shadow-sm">
-  <span className="text-xs font-semibold text-primary uppercase tracking-wide">Low Priority</span>
-  <p className="text-sm text-gray-700 mt-1">Monitor sleep quality over the next week.</p>
-</div>
+// Medium priority
+<Card variant="warning" className="border-l-4 border-l-warning">
+  <CardBody>
+    <span className="text-xs font-semibold text-warning uppercase tracking-wide">Medium Priority</span>
+    <p className="text-sm text-muted-foreground mt-1">Consider adjusting rest day nutrition.</p>
+  </CardBody>
+</Card>
 ```
 
 ### 12.4 Client List Item
 
 ```tsx
-<div className="flex items-center gap-4 p-4 bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow cursor-pointer">
+<Card variant="interactive" className="flex items-center gap-4 p-4">
   {/* Avatar */}
   <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
     <span className="text-sm font-medium text-primary">SK</span>
   </div>
-
   {/* Info */}
   <div className="flex-1 min-w-0">
-    <h4 className="text-sm font-medium text-gray-900">Sam Kalepa</h4>
-    <p className="text-xs text-gray-500 truncate">Last check-in: 2 days ago</p>
+    <h4 className="text-sm font-medium text-foreground">Sam Kalepa</h4>
+    <p className="text-xs text-muted-foreground truncate">Last check-in: 2 days ago</p>
   </div>
-
   {/* Status */}
-  <span className="bg-success/15 text-success text-xs font-medium px-2.5 py-0.5 rounded-full">
-    Active
-  </span>
-
+  <Badge variant="success">Active</Badge>
   {/* Arrow */}
-  <ChevronRight className="w-4 h-4 text-gray-400" />
-</div>
+  <ChevronRight className="w-4 h-4 text-muted-foreground" />
+</Card>
 ```
 
 ---
@@ -1136,31 +1001,29 @@ className="text-destructive"
 ## Quick Reference
 
 ### Do's
-- ✅ Use shadows instead of borders
-- ✅ Keep colour palette limited and consistent
-- ✅ Use generous whitespace
-- ✅ Make AI features feel special with violet accents
-- ✅ Apply transitions to all interactive elements
-- ✅ Use semantic colours for states (success/warning/error)
+
+- Use `border border-border` for all containers
+- Use design tokens (`text-foreground`, `bg-card`, `border-border`) — never hardcode colours
+- Use `/10` opacity for badge backgrounds, `/5` for card variant backgrounds
+- Use `rounded-lg` for cards, `rounded-md` for buttons/inputs/badges
+- Use `training/*` and `nutrition/*` tokens for domain-specific styling
+- Keep Framer Motion entries snappy: `y: 6–8`, `duration: 0.15–0.2`, `ease: "easeOut"`
+- Use `transition-colors duration-150` on all interactive elements
 
 ### Don'ts
-- ❌ Use harsh borders for containers
-- ❌ Use saturated colours for large areas
-- ❌ Cram too much into small spaces
-- ❌ Use different border-radius values randomly
-- ❌ Skip hover/focus states
-- ❌ Use plain text for empty states
+
+- Don't use shadows on cards or buttons — shadows are for floating layers only
+- Don't use `rounded-full` on badges — only on avatars
+- Don't use `rounded-xl` or `rounded-2xl` — not in our scale
+- Don't use gradients for any purpose
+- Don't hardcode `gray-*`, `bg-white`, or hex values — use tokens
+- Don't use `/15` opacity for badges — use `/10`
+- Don't use bouncy springs or large Y offsets in animations
+- Don't use `scale` hover effects on cards
+- Don't use glassmorphism or backdrop blur
 
 ---
 
 ## Implementation Notes
 
-When implementing this design system:
-
-1. **Start with tokens** — Add the colour definitions to tailwind.config.js first
-2. **Build base components** — Create Button, Card, Badge, Input components with these styles
-3. **Apply globally** — Update layout backgrounds and container styles
-4. **Page by page** — Apply to each page, starting with the most-used ones
-5. **Review consistency** — Check that spacing, colours, and shadows are uniform
-
-For Claude Code: Reference this document when building any new component or page. Use the exact class names and patterns specified here.
+For Claude Code: Reference this document when building any new component or page. Use the exact class names and patterns specified here. When in doubt, check the actual component source files — they are the ground truth.

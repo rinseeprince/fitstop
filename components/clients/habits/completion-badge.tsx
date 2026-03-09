@@ -8,15 +8,15 @@ type CompletionBadgeProps = {
 
 export const CompletionBadge = ({ completionRate }: CompletionBadgeProps) => {
   const getColor = () => {
-    if (completionRate >= 80) return "bg-success/15 text-success";
-    if (completionRate >= 60) return "bg-warning/15 text-warning";
-    return "bg-destructive/15 text-destructive";
+    if (completionRate >= 80) return "bg-success/10 text-success";
+    if (completionRate >= 60) return "bg-warning/10 text-warning";
+    return "bg-destructive/10 text-destructive";
   };
 
   return (
     <div
       className={cn(
-        "flex items-center justify-center px-2 py-0.5 rounded-full text-xs font-medium",
+        "flex items-center justify-center px-2 py-0.5 rounded-md text-xs font-medium",
         getColor()
       )}
     >

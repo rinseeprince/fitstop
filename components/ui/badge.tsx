@@ -5,21 +5,21 @@ import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from '@/lib/utils'
 
 const badgeVariants = cva(
-  'inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium whitespace-nowrap shrink-0 [&>svg]:size-3 [&>svg]:pointer-events-none transition-colors',
+  'inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium whitespace-nowrap shrink-0 [&>svg]:size-3 [&>svg]:pointer-events-none transition-colors',
   {
     variants: {
       variant: {
-        default: 'bg-primary/15 text-primary',
+        default: 'bg-primary/10 text-primary',
         secondary: 'bg-muted text-muted-foreground',
-        destructive: 'bg-destructive/15 text-destructive',
-        success: 'bg-success/15 text-success',
-        warning: 'bg-warning/15 text-warning',
-        error: 'bg-destructive/15 text-destructive',
-        info: 'bg-primary/15 text-primary',
+        destructive: 'bg-destructive/10 text-destructive',
+        success: 'bg-success/10 text-success',
+        warning: 'bg-warning/10 text-warning',
+        error: 'bg-destructive/10 text-destructive',
+        info: 'bg-primary/10 text-primary',
         neutral: 'bg-muted text-muted-foreground',
-        training: 'bg-secondary/15 text-secondary',
-        nutrition: 'bg-warning/15 text-warning',
-        ai: 'bg-accent/15 text-accent',
+        training: 'bg-training/10 text-training',
+        nutrition: 'bg-nutrition/10 text-nutrition',
+        ai: 'bg-primary/10 text-primary',
         outline: 'border border-border bg-transparent text-muted-foreground',
       },
     },

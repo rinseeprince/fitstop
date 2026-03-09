@@ -47,7 +47,7 @@ export function WellnessSection({
               className={cn(
                 "flex flex-col items-center gap-1 p-2 rounded-lg border-2 transition-all duration-200 hover:scale-105",
                 formData.mood === value
-                  ? "border-primary bg-primary/5 shadow-lg"
+                  ? "border-primary bg-primary/5"
                   : "border-border hover:border-primary/50"
               )}
             >

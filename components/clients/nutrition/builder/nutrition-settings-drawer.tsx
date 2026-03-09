@@ -45,9 +45,9 @@ export function NutritionSettingsDrawer({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className="!inset-y-auto !h-auto !right-4 !top-4 !bottom-4 max-h-[calc(100vh-2rem)] w-[420px] rounded-2xl border-0 shadow-[0_25px_50px_-12px_rgba(0,0,0,0.25),0_12px_24px_-8px_rgba(0,0,0,0.1),0_0_0_1px_rgba(0,0,0,0.05)] p-5 flex flex-col bg-gradient-to-b from-white to-gray-50/30"
+        className="!inset-y-auto !h-auto !right-4 !top-4 !bottom-4 max-h-[calc(100vh-2rem)] w-[420px] rounded-lg border-0 shadow-[0_25px_50px_-12px_rgba(0,0,0,0.25),0_12px_24px_-8px_rgba(0,0,0,0.1),0_0_0_1px_rgba(0,0,0,0.05)] p-5 flex flex-col bg-card"
       >
-        <SheetHeader className="pb-4 border-b border-gray-100 px-0">
+        <SheetHeader className="pb-4 border-b border-border px-0">
           <SheetTitle className="text-lg font-semibold">
             {builder.hasPlan ? "Regenerate Nutrition Plan" : "Generate Nutrition Plan"}
           </SheetTitle>
@@ -105,11 +105,11 @@ export function NutritionSettingsDrawer({
         </div>
 
         {/* Generate Button */}
-        <div className="pt-4 border-t border-gray-100 mt-4">
+        <div className="pt-4 border-t border-border mt-4">
           <Button
             onClick={() => builder.generatePlan(false)}
             disabled={builder.isGenerating}
-            className="w-full bg-gradient-to-r from-primary to-accent hover:from-primary/90 hover:to-accent/90 text-primary-foreground font-medium px-4 py-2.5 rounded-lg shadow-sm hover:shadow transition-all"
+            className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-medium px-4 py-2.5 rounded-lg transition-all"
           >
             <Sparkles className={`h-4 w-4 mr-2 ${builder.isGenerating ? "animate-pulse" : ""}`} />
             {builder.isGenerating
@@ -122,12 +122,12 @@ export function NutritionSettingsDrawer({
           </Button>
 
           {!builder.client.bmr && (
-            <div className="bg-primary/10 rounded-xl p-4 mt-4">
+            <div className="bg-primary/10 rounded-lg p-4 mt-4">
               <div className="flex items-start gap-3">
                 <AlertCircle className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
                 <div>
-                  <p className="text-sm font-medium text-gray-900">BMR not calculated</p>
-                  <p className="text-sm text-gray-600 mt-1">
+                  <p className="text-sm font-medium text-foreground">BMR not calculated</p>
+                  <p className="text-sm text-muted-foreground mt-1">
                     Calculate BMR first using the button in the Profile tab.
                   </p>
                 </div>

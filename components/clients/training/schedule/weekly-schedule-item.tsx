@@ -44,8 +44,8 @@ export const WeeklyScheduleItem = memo(function WeeklyScheduleItem({
             className={cn(
               "rounded-lg p-2 text-xs transition-all duration-150 cursor-default relative group",
               isActivity
-                ? "bg-white border border-primary/20"
-                : "bg-white border border-secondary/20"
+                ? "bg-card border border-primary/20"
+                : "bg-card border border-secondary/20"
             )}
           >
             {showDelete && (
@@ -64,7 +64,7 @@ export const WeeklyScheduleItem = memo(function WeeklyScheduleItem({
             )}
             <div className="flex items-start gap-1.5">
               {editMode && (
-                <GripVertical className="h-3 w-3 mt-0.5 shrink-0 text-gray-400" aria-label="Drag to reorder" />
+                <GripVertical className="h-3 w-3 mt-0.5 shrink-0 text-muted-foreground" aria-label="Drag to reorder" />
               )}
               {isActivity ? (
                 <Activity className="h-3 w-3 mt-0.5 shrink-0 text-primary" />
@@ -72,9 +72,9 @@ export const WeeklyScheduleItem = memo(function WeeklyScheduleItem({
                 <Dumbbell className="h-3 w-3 mt-0.5 shrink-0 text-secondary" />
               )}
               <div className="flex-1 min-w-0">
-                <p className="font-medium text-gray-800 truncate">{item.name}</p>
+                <p className="font-medium text-foreground truncate">{item.name}</p>
                 {!compact && item.focus && (
-                  <p className="text-gray-500 truncate text-[11px]">
+                  <p className="text-muted-foreground truncate text-[11px]">
                     {item.focus}
                   </p>
                 )}
@@ -83,7 +83,7 @@ export const WeeklyScheduleItem = memo(function WeeklyScheduleItem({
 
             <div className="flex items-center justify-between mt-1.5">
               {item.estimatedDurationMinutes && (
-                <span className="flex items-center gap-1 text-gray-500">
+                <span className="flex items-center gap-1 text-muted-foreground">
                   <Clock className="h-3 w-3" />
                   {item.estimatedDurationMinutes}m
                 </span>
@@ -101,7 +101,7 @@ export const WeeklyScheduleItem = memo(function WeeklyScheduleItem({
             </div>
           </div>
         </TooltipTrigger>
-        <TooltipContent side="bottom" className="max-w-xs bg-white rounded-lg shadow-lg p-4">
+        <TooltipContent side="bottom" className="max-w-xs bg-card rounded-lg shadow-md border border-border p-4">
           <ItemTooltipContent item={item} />
         </TooltipContent>
       </Tooltip>
@@ -116,23 +116,23 @@ function ItemTooltipContent({ item }: { item: TrainingSession }) {
   return (
     <div className="space-y-2">
       <div>
-        <p className="font-medium text-gray-900">{item.name}</p>
+        <p className="font-medium text-foreground">{item.name}</p>
         {item.focus && (
-          <p className="text-sm text-gray-500">{item.focus}</p>
+          <p className="text-sm text-muted-foreground">{item.focus}</p>
         )}
       </div>
 
       {isActivity && metadata && (
         <div className="space-y-2 text-sm">
           <div className="flex items-center gap-2">
-            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-secondary/15 text-secondary capitalize">
+            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-secondary/15 text-secondary capitalize">
               {metadata.intensityLevel}
             </span>
-            <span className="flex items-center gap-1 text-gray-600">
+            <span className="flex items-center gap-1 text-muted-foreground">
               <Flame className="h-3 w-3 text-warning" />
               {metadata.estimatedCalories} cal
             </span>
-            <span className="flex items-center gap-1 text-gray-600">
+            <span className="flex items-center gap-1 text-muted-foreground">
               <Clock className="h-3 w-3 text-primary" />
               {metadata.recoveryHours}h recovery
             </span>
@@ -140,14 +140,14 @@ function ItemTooltipContent({ item }: { item: TrainingSession }) {
           {metadata.muscleGroupsImpacted.length > 0 && (
             <div className="flex flex-wrap gap-1">
               {metadata.muscleGroupsImpacted.map((muscle) => (
-                <span key={muscle} className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-secondary/15 text-secondary">
+                <span key={muscle} className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-secondary/15 text-secondary">
                   {muscle}
                 </span>
               ))}
             </div>
           )}
           {metadata.recoveryImpact && (
-            <p className="text-xs text-gray-400">
+            <p className="text-xs text-muted-foreground">
               {metadata.recoveryImpact}
             </p>
           )}
@@ -157,12 +157,12 @@ function ItemTooltipContent({ item }: { item: TrainingSession }) {
       {!isActivity && (
         <div className="text-sm">
           {item.exercises.length > 0 && (
-            <p className="text-gray-500">
+            <p className="text-muted-foreground">
               {item.exercises.length} exercises
             </p>
           )}
           {item.notes && (
-            <p className="text-xs text-gray-400 mt-1">
+            <p className="text-xs text-muted-foreground mt-1">
               {item.notes}
             </p>
           )}
@@ -170,7 +170,7 @@ function ItemTooltipContent({ item }: { item: TrainingSession }) {
       )}
 
       {item.estimatedDurationMinutes && (
-        <p className="text-xs text-gray-400">
+        <p className="text-xs text-muted-foreground">
           ~{item.estimatedDurationMinutes} minutes
         </p>
       )}

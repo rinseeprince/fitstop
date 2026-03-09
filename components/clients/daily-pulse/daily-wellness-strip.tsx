@@ -166,7 +166,7 @@ export function DailyWellnessStrip({ clientId }: DailyWellnessStripProps) {
           {alerts.length > 0 && (
             <Popover>
               <PopoverTrigger asChild>
-                <button className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-semibold bg-warning/15 text-warning hover:bg-warning/20 rounded-full transition-colors">
+                <button className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-semibold bg-warning/10 text-warning hover:bg-warning/20 rounded-md transition-colors">
                   <AlertTriangle className="w-3 h-3" />
                   {alerts.length}
                 </button>
@@ -192,9 +192,9 @@ export function DailyWellnessStrip({ clientId }: DailyWellnessStripProps) {
                         }`}>
                           {alert.severity} priority
                         </p>
-                        <p className="text-sm text-gray-700">{alert.message}</p>
+                        <p className="text-sm text-foreground">{alert.message}</p>
                         {alert.affectedDays.length > 0 && (
-                          <p className="text-xs text-gray-500 mt-1">
+                          <p className="text-xs text-muted-foreground mt-1">
                             Affected days: {alert.affectedDays.map((day: string) => {
                               const date = new Date(day + 'T00:00:00')
                               return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })

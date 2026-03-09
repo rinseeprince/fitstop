@@ -27,7 +27,7 @@ function SegmentedControl({
   return (
     <div
       className={cn(
-        'bg-gray-100 p-1 rounded-lg inline-flex',
+        'bg-muted p-1 rounded-lg inline-flex',
         className,
       )}
     >
@@ -40,11 +40,11 @@ function SegmentedControl({
             type="button"
             onClick={() => onChange(option.value)}
             className={cn(
-              'flex items-center gap-2 font-medium rounded-md transition-all duration-150',
+              'flex items-center gap-2 font-medium rounded-md transition-colors duration-150',
               size === 'sm' ? 'px-3 py-1.5 text-xs' : 'px-4 py-2 text-sm',
               isActive
-                ? 'bg-white text-gray-900 shadow-sm'
-                : 'text-gray-500 hover:text-gray-700',
+                ? 'bg-card text-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground',
             )}
           >
             {option.icon && (

@@ -27,7 +27,7 @@ export function WeeklyNutritionView({ targets }: WeeklyNutritionViewProps) {
       <div className="grid grid-cols-7 gap-1.5 xl:gap-2 mb-2">
         {DAYS_OF_WEEK.map((day) => (
           <div key={day.value} className="text-center">
-            <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
               {day.label}
             </span>
           </div>
@@ -43,9 +43,9 @@ export function WeeklyNutritionView({ targets }: WeeklyNutritionViewProps) {
             return (
               <div
                 key={day.value}
-                className="min-h-[100px] bg-gray-50 border border-dashed border-gray-200 rounded-xl flex items-center justify-center"
+                className="min-h-[100px] bg-muted/50 border border-dashed border-border rounded-lg flex items-center justify-center"
               >
-                <span className="text-sm text-gray-400">No data</span>
+                <span className="text-sm text-muted-foreground">No data</span>
               </div>
             );
           }

@@ -80,7 +80,7 @@ export function WeeklyScheduleView({
 
       <DragOverlay dropAnimation={null}>
         {activeItem ? (
-          <div className="shadow-lg rounded-xl opacity-90 ring-2 ring-primary">
+          <div className="shadow-md rounded-lg opacity-90 ring-2 ring-primary">
             <WeeklyScheduleItem item={activeItem} editMode={false} compact={false} />
           </div>
         ) : null}
@@ -109,15 +109,15 @@ function StaticWeeklyView({ itemsByDay, unassignedItems }: StaticWeeklyViewProps
             <div
               key={day.value}
               className={cn(
-                "min-h-[100px] rounded-xl p-2 transition-all duration-150",
+                "min-h-[100px] rounded-lg p-2 transition-all duration-150",
                 hasItems
-                  ? "bg-white border border-gray-200 hover:shadow-md cursor-pointer"
-                  : "bg-gray-50 border border-dashed border-gray-200"
+                  ? "bg-card border border-border hover:border-primary/30 cursor-pointer"
+                  : "bg-muted/50 border border-dashed border-border"
               )}
             >
               {items.length === 0 ? (
                 <div className="h-full flex items-center justify-center">
-                  <span className="text-sm text-gray-400">Rest</span>
+                  <span className="text-sm text-muted-foreground">Rest</span>
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -133,7 +133,7 @@ function StaticWeeklyView({ itemsByDay, unassignedItems }: StaticWeeklyViewProps
 
       {unassignedItems.length > 0 && (
         <div className="space-y-2 mt-4">
-          <h4 className="text-sm font-medium text-gray-500">
+          <h4 className="text-sm font-medium text-muted-foreground">
             Unassigned Sessions
           </h4>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -165,21 +165,21 @@ function UnassignedSection({ items, editMode, onDeleteActivity }: UnassignedSect
 
   return (
     <div className="space-y-2 mt-4">
-      <h4 className="text-sm font-medium text-gray-500">
+      <h4 className="text-sm font-medium text-muted-foreground">
         Unassigned Sessions
       </h4>
       <div
         ref={setNodeRef}
         className={cn(
-          "min-h-[60px] rounded-xl p-3 transition-all duration-150",
-          items.length === 0 && "flex items-center justify-center bg-gray-50 border border-dashed border-gray-200",
-          items.length > 0 && "bg-white border border-gray-200",
+          "min-h-[60px] rounded-lg p-3 transition-all duration-150",
+          items.length === 0 && "flex items-center justify-center bg-muted/50 border border-dashed border-border",
+          items.length > 0 && "bg-card border border-border",
           isOver && editMode && "ring-2 ring-primary/50 bg-primary/5"
         )}
       >
         <SortableContext items={itemIds} strategy={verticalListSortingStrategy}>
           {items.length === 0 ? (
-            <span className="text-xs text-gray-400">
+            <span className="text-xs text-muted-foreground">
               Drag sessions here to unassign
             </span>
           ) : (

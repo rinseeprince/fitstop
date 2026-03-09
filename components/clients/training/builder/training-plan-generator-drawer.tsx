@@ -44,9 +44,9 @@ export function TrainingPlanGeneratorDrawer({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className="!inset-y-auto !h-auto !right-4 !top-4 !bottom-4 max-h-[calc(100vh-2rem)] w-[420px] rounded-2xl border-0 shadow-[0_25px_50px_-12px_rgba(0,0,0,0.25),0_12px_24px_-8px_rgba(0,0,0,0.1),0_0_0_1px_rgba(0,0,0,0.05)] p-5 flex flex-col bg-gradient-to-b from-white to-gray-50/30"
+        className="!inset-y-auto !h-auto !right-4 !top-4 !bottom-4 max-h-[calc(100vh-2rem)] w-[420px] rounded-lg border border-border shadow-md p-5 flex flex-col bg-card"
       >
-        <SheetHeader className="pb-4 border-b border-gray-100 px-0">
+        <SheetHeader className="pb-4 border-b border-border px-0">
           <SheetTitle className="text-lg font-semibold">
             Generate Training Plan
           </SheetTitle>

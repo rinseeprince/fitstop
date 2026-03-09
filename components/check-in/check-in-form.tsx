@@ -113,7 +113,7 @@ export const CheckInForm = ({
       />
 
       {/* Form Steps */}
-      <div className="glass-card p-6 md:p-8 min-h-[500px]">
+      <div className="bg-card border border-border p-6 md:p-8 min-h-[500px]">
         {currentStep === 1 && (
           <StepSubjective
             data={formData}
@@ -147,7 +147,7 @@ export const CheckInForm = ({
 
       {/* Error Message */}
       {error && (
-        <div className="glass-card p-4 border-destructive bg-destructive/10">
+        <div className="bg-destructive/5 border border-destructive/20 p-4">
           <p className="text-sm text-destructive text-center">{error}</p>
         </div>
       )}

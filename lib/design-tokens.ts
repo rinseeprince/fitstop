@@ -33,7 +33,7 @@ export const transitions = {
 
 export const typography = {
   // Font families
-  fontSans: '"Inter", "SF Pro Display", "Poppins", "Geist", system-ui, -apple-system, sans-serif',
+  fontSans: '"Plus Jakarta Sans", system-ui, -apple-system, sans-serif',
   fontMono: '"Geist Mono", "Geist Mono Fallback", monospace',
 
   // Font sizes

@@ -104,7 +104,7 @@ export const GoalProgressView = ({
       {hasBodyFatGoal && <BodyFatGoalCard bodyFatGoal={goalProgress.bodyFat!} />}
 
       {/* Summary Card */}
-      <Card className="p-4 bg-gradient-to-br from-primary/5 to-primary/10 border-primary/20">
+      <Card className="p-4 bg-primary/5 border border-primary/15">
         <div className="space-y-2">
           <h4 className="font-semibold flex items-center gap-2">
             <Target className="h-5 w-5 text-primary" />

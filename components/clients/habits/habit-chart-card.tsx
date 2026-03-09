@@ -65,13 +65,13 @@ export const HabitChartCard = ({
       }}
       className={cn(
         "transition-all duration-200 overflow-hidden",
-        isHighlighted && "ring-2 ring-primary shadow-lg"
+        isHighlighted && "ring-1 ring-primary"
       )}
     >
       <CardContent className="p-5">
         <div className="space-y-4">
           <div>
-            <h3 className="font-semibold text-gray-900">
+            <h3 className="font-semibold text-foreground">
               {habit.name}
               {habit.targetValue && (
                 <span className="text-sm font-normal text-muted-foreground ml-2">

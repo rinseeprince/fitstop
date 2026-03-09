@@ -99,11 +99,11 @@ export default function ContentLibraryPage() {
         return "bg-blue-500/10 text-blue-600";
       case "pdf":
       case "document":
-        return "bg-gray-500/10 text-gray-600";
+        return "bg-muted text-muted-foreground";
       case "image":
         return "bg-green-500/10 text-green-600";
       default:
-        return "bg-gray-500/10 text-gray-600";
+        return "bg-muted text-muted-foreground";
     }
   };
 
@@ -266,7 +266,7 @@ export default function ContentLibraryPage() {
       <Button
         variant="ghost"
         size="icon"
-        className="h-9 w-9 rounded-full transition-all hover:scale-110"
+        className="h-9 w-9 rounded-md transition-colors"
         onClick={() => setFolderDialogOpen(true)}
       >
         <FolderPlus className="h-4 w-4" />
@@ -275,7 +275,7 @@ export default function ContentLibraryPage() {
       <Button
         variant="ghost"
         size="icon"
-        className="h-9 w-9 rounded-full transition-all hover:scale-110"
+        className="h-9 w-9 rounded-md transition-colors"
         onClick={() => setUploadDialogOpen(true)}
       >
         <Plus className="h-4 w-4" />

@@ -26,7 +26,7 @@ export const SessionList = memo(function SessionList({
 }: SessionListProps) {
   if (sessions.length === 0) {
     return (
-      <div className="text-center py-8 text-sm text-slate-500">
+      <div className="text-center py-8 text-sm text-muted-foreground">
         Add your first training session above
       </div>
     );
@@ -37,11 +37,11 @@ export const SessionList = memo(function SessionList({
       {sessions.map((session) => (
         <div
           key={session.tempId}
-          className="border rounded-lg bg-white"
+          className="border rounded-lg bg-card"
         >
           {/* Session Header */}
-          <div className="flex items-center gap-2 p-3 bg-slate-50 border-b">
-            <GripVertical className="h-4 w-4 text-slate-400" />
+          <div className="flex items-center gap-2 p-3 bg-muted/50 border-b">
+            <GripVertical className="h-4 w-4 text-muted-foreground" />
             <Input
               value={session.name}
               onChange={(e) => onUpdateSession(session.tempId, { name: e.target.value })}
@@ -77,7 +77,7 @@ export const SessionList = memo(function SessionList({
                   min={1}
                   max={20}
                 />
-                <span className="text-slate-400">x</span>
+                <span className="text-muted-foreground">x</span>
                 <Input
                   value={exercise.repsTarget || ""}
                   onChange={(e) =>

@@ -35,17 +35,17 @@ export const DroppableDayCell = memo(function DroppableDayCell({
     <div
       ref={setNodeRef}
       className={cn(
-        "min-h-[100px] rounded-xl p-2 transition-all duration-150",
+        "min-h-[100px] rounded-lg p-2 transition-all duration-150",
         hasItems
-          ? "bg-white border border-gray-200"
-          : "bg-gray-50 border border-dashed border-gray-200",
+          ? "bg-card border border-border"
+          : "bg-muted/50 border border-dashed border-border",
         isOver && editMode && "ring-2 ring-primary/50 bg-primary/5"
       )}
     >
       <SortableContext items={itemIds} strategy={verticalListSortingStrategy}>
         {items.length === 0 ? (
           <div className="h-full flex items-center justify-center min-h-[100px]">
-            <span className="text-sm text-gray-400">Rest</span>
+            <span className="text-sm text-muted-foreground">Rest</span>
           </div>
         ) : (
           <div className="space-y-2">

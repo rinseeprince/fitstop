@@ -40,20 +40,20 @@ export function PlanDisplayHeader({
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
         <div>
           {/* Section title - Section 3.3 */}
-          <h3 className="text-lg font-semibold text-gray-900">{plan.name}</h3>
+          <h3 className="text-lg font-semibold text-foreground">{plan.name}</h3>
           {plan.description && (
-            <p className="text-sm text-gray-500 mt-1.5">{plan.description}</p>
+            <p className="text-sm text-muted-foreground mt-1.5">{plan.description}</p>
           )}
           {/* Badges - Section 8.3 */}
           <div className="flex flex-wrap gap-2 mt-4">
-            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary/15 text-primary">
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium bg-primary/10 text-primary">
               {splitLabel}
             </span>
-            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary/15 text-primary">
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium bg-primary/10 text-primary">
               {plan.frequencyPerWeek}x/week
             </span>
             {plan.programDurationWeeks && (
-              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground">
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium bg-muted text-muted-foreground">
                 {plan.programDurationWeeks} weeks
               </span>
             )}
@@ -64,7 +64,7 @@ export function PlanDisplayHeader({
             <Button
               size="sm"
               onClick={onRegenerate}
-              className="bg-gradient-to-r from-primary to-accent hover:from-primary/90 hover:to-accent/90"
+              className="bg-primary hover:bg-primary/90"
             >
               <Sparkles className="h-4 w-4 mr-1.5" />
               Regenerate Plan
@@ -95,7 +95,7 @@ export function PlanDisplayHeader({
           </Button>
         </div>
       </div>
-      <p className="text-sm text-gray-400 mt-4">
+      <p className="text-sm text-muted-foreground mt-4">
         Created on {format(new Date(plan.createdAt), "MMM d, yyyy")}
       </p>
     </div>

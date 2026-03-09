@@ -76,12 +76,12 @@ export function PersistentSidebar() {
   }
 
   return (
-    <aside className="hidden lg:flex w-20 flex-col border-r border-white/10 bg-gradient-to-b from-primary to-accent fixed inset-y-0 left-0 z-20">
-      <div className="flex h-[72px] items-center justify-center border-b border-white/10">
+    <aside className="hidden lg:flex w-20 flex-col border-r border-primary-foreground/10 bg-primary fixed inset-y-0 left-0 z-20">
+      <div className="flex h-[72px] items-center justify-center border-b border-primary-foreground/10">
         <motion.h1
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="text-lg font-bold text-white"
+          className="text-lg font-semibold text-primary-foreground"
         >
           CH
         </motion.h1>

@@ -11,7 +11,7 @@ export function AppLayout({ children, pageHeader, headerActions }: AppLayoutProp
   return (
     <div className="flex min-h-screen bg-background">
       {/* Main Content - sidebar is now in root layout */}
-      <div className="flex-1 flex flex-col bg-surface-muted lg:ml-20">
+      <div className="flex-1 flex flex-col bg-background lg:ml-20">
         {/* Header - sticky with solid background and border */}
         <header className="sticky top-0 z-10 bg-background border-b border-border">
           {pageHeader ? (

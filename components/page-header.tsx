@@ -25,7 +25,7 @@ export function PageHeader({
         </Link>
       )}
       <div className="flex-1 min-w-0">
-        <h1 className="text-xl font-semibold truncate">{title}</h1>
+        <h1 className="text-xl font-semibold tracking-tight truncate">{title}</h1>
         {description && (
           <p className="text-sm text-muted-foreground truncate">{description}</p>
         )}

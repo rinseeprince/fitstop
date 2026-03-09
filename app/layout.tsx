@@ -1,12 +1,12 @@
 import type React from "react"
 import type { Metadata } from "next"
-import { Inter } from "next/font/google"
+import { Plus_Jakarta_Sans } from "next/font/google"
 import "./globals.css"
 import { AuthProvider } from "@/contexts/auth-context"
 import { Toaster } from "@/components/ui/toaster"
 import { PersistentSidebar } from "@/components/persistent-sidebar"
 
-const inter = Inter({ subsets: ["latin"] })
+const plusJakarta = Plus_Jakarta_Sans({ subsets: ["latin"], weight: ["400", "500", "600", "700"] })
 
 export const metadata: Metadata = {
   title: "CoachHub - Client Management Platform",
@@ -38,7 +38,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={inter.className}>
+      <body className={plusJakarta.className}>
         <AuthProvider>
           <PersistentSidebar />
           {children}

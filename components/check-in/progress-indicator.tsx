@@ -31,7 +31,7 @@ export const ProgressIndicator = ({
                     step < currentStep
                       ? "bg-primary border-primary text-primary-foreground"
                       : step === currentStep
-                      ? "bg-primary border-primary text-primary-foreground shadow-lg shadow-primary/30"
+                      ? "bg-primary border-primary text-primary-foreground"
                       : "bg-background border-border text-muted-foreground"
                   }
                 `}

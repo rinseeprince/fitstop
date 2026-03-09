@@ -225,7 +225,7 @@ export default function InvitePage() {
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4 relative overflow-hidden">
       {/* Background decorations */}
-      <div className="absolute inset-0 gradient-subtle opacity-50" />
+      <div className="absolute inset-0 bg-muted opacity-50" />
       <motion.div
         className="absolute top-20 left-20 w-64 h-64 bg-primary/10 rounded-full blur-3xl"
         animate={{
@@ -363,7 +363,7 @@ export default function InvitePage() {
 
                 <Button
                   type="submit"
-                  className="w-full gradient-primary hover:opacity-90"
+                  className="w-full bg-primary hover:bg-primary/90"
                   disabled={isSubmitting}
                 >
                   {isSubmitting ? (

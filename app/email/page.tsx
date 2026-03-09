@@ -33,7 +33,7 @@ export default function EmailPage() {
               <div className="text-center">
                 <Users className="h-8 w-8 mx-auto mb-2 text-primary" />
                 <p className="text-sm text-muted-foreground">Total Subscribers</p>
-                <p className="text-2xl font-bold mt-1">156</p>
+                <p className="text-2xl font-semibold mt-1">156</p>
               </div>
             </CardContent>
           </Card>
@@ -42,7 +42,7 @@ export default function EmailPage() {
               <div className="text-center">
                 <Send className="h-8 w-8 mx-auto mb-2 text-success" />
                 <p className="text-sm text-muted-foreground">Sent This Month</p>
-                <p className="text-2xl font-bold mt-1">8</p>
+                <p className="text-2xl font-semibold mt-1">8</p>
               </div>
             </CardContent>
           </Card>
@@ -51,7 +51,7 @@ export default function EmailPage() {
               <div className="text-center">
                 <Eye className="h-8 w-8 mx-auto mb-2 text-accent" />
                 <p className="text-sm text-muted-foreground">Avg Open Rate</p>
-                <p className="text-2xl font-bold mt-1">68%</p>
+                <p className="text-2xl font-semibold mt-1">68%</p>
               </div>
             </CardContent>
           </Card>
@@ -60,7 +60,7 @@ export default function EmailPage() {
               <div className="text-center">
                 <Calendar className="h-8 w-8 mx-auto mb-2 text-warning" />
                 <p className="text-sm text-muted-foreground">Scheduled</p>
-                <p className="text-2xl font-bold mt-1">2</p>
+                <p className="text-2xl font-semibold mt-1">2</p>
               </div>
             </CardContent>
           </Card>

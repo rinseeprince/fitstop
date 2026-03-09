@@ -114,7 +114,7 @@ export default function ClientCheckInPage() {
   // Success state
   if (isSuccess) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
+      <div className="min-h-screen bg-background">
         <div className="container max-w-3xl mx-auto px-4 py-12">
           <FormSuccess
             clientName={contextData.clientInfo.name}
@@ -134,12 +134,12 @@ export default function ClientCheckInPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
+    <div className="min-h-screen bg-background">
       <div className="container max-w-3xl mx-auto px-4 py-12">
         <div className="space-y-8">
           {/* Header */}
           <div className="text-center">
-            <h1 className="text-3xl font-bold mb-2">Check-In</h1>
+            <h1 className="text-3xl font-semibold mb-2">Check-In</h1>
             <p className="text-muted-foreground">
               Hey {contextData.clientInfo.name}! Let's see how you're doing.
             </p>
@@ -153,7 +153,7 @@ export default function ClientCheckInPage() {
           />
 
           {/* Form Steps */}
-          <div className="glass-card p-6 md:p-8 min-h-[500px]">
+          <div className="bg-card border border-border p-6 md:p-8 min-h-[500px]">
             {currentStep === 1 && (
               <StepSubjective
                 data={formData}
@@ -189,7 +189,7 @@ export default function ClientCheckInPage() {
 
           {/* Error Message */}
           {error && (
-            <div className="glass-card p-4 border-destructive bg-destructive/10">
+            <div className="bg-destructive/5 border border-destructive/20 p-4">
               <p className="text-sm text-destructive text-center">{error}</p>
             </div>
           )}

@@ -36,9 +36,9 @@ export function HabitProgressCard({
 
   // Get completion badge color
   const getCompletionColor = (rate: number) => {
-    if (rate >= 80) return "text-emerald-600 bg-emerald-50";
-    if (rate >= 60) return "text-amber-600 bg-amber-50";
-    return "text-red-600 bg-red-50";
+    if (rate >= 80) return "text-success bg-success/10";
+    if (rate >= 60) return "text-warning bg-warning/10";
+    return "text-destructive bg-destructive/10";
   };
 
   return (
@@ -47,7 +47,7 @@ export function HabitProgressCard({
         <div className="space-y-4">
           {/* Header with habit name and target */}
           <div>
-            <h3 className="font-semibold text-base sm:text-lg text-gray-900">
+            <h3 className="font-semibold text-base sm:text-lg text-foreground">
               {habit.name}
             </h3>
             {habit.targetValue && (

@@ -46,7 +46,7 @@ export function NutritionTargetsDisplay({
     <div className="space-y-6">
       {/* Calorie Target */}
       <div className="text-center pb-6">
-        <div className="text-4xl font-bold text-primary">
+        <div className="text-4xl font-semibold text-primary">
           {client.calorieTarget.toLocaleString()}
         </div>
         <div className="text-sm text-muted-foreground mt-1">
@@ -123,22 +123,22 @@ export function NutritionTargetsDisplay({
 
       {/* Macro Summary */}
       <div className="grid grid-cols-3 gap-4 pt-6">
-        <div className="text-center bg-blue-50/50 rounded-xl p-4">
-          <div className="text-2xl font-bold text-blue-600">{proteinG}g</div>
-          <div className="text-xs text-gray-500 mt-1">Protein</div>
-          <div className="text-xs text-gray-400">
+        <div className="text-center bg-protein/10 rounded-lg p-4">
+          <div className="text-2xl font-semibold text-protein">{proteinG}g</div>
+          <div className="text-xs text-muted-foreground mt-1">Protein</div>
+          <div className="text-xs text-muted-foreground">
             {proteinCal} cal
           </div>
         </div>
-        <div className="text-center bg-green-50/50 rounded-xl p-4">
-          <div className="text-2xl font-bold text-green-600">{carbG}g</div>
-          <div className="text-xs text-gray-500 mt-1">Carbs</div>
-          <div className="text-xs text-gray-400">{carbCal} cal</div>
+        <div className="text-center bg-carbs/10 rounded-lg p-4">
+          <div className="text-2xl font-semibold text-carbs">{carbG}g</div>
+          <div className="text-xs text-muted-foreground mt-1">Carbs</div>
+          <div className="text-xs text-muted-foreground">{carbCal} cal</div>
         </div>
-        <div className="text-center bg-amber-50/50 rounded-xl p-4">
-          <div className="text-2xl font-bold text-amber-600">{fatG}g</div>
-          <div className="text-xs text-gray-500 mt-1">Fat</div>
-          <div className="text-xs text-gray-400">{fatCal} cal</div>
+        <div className="text-center bg-fat/10 rounded-lg p-4">
+          <div className="text-2xl font-semibold text-fat">{fatG}g</div>
+          <div className="text-xs text-muted-foreground mt-1">Fat</div>
+          <div className="text-xs text-muted-foreground">{fatCal} cal</div>
         </div>
       </div>
     </div>

@@ -103,7 +103,7 @@ export default function CheckInDetailPage() {
           Back
         </Button>
         <div>
-          <h1 className="text-2xl font-bold">Check-in Details</h1>
+          <h1 className="text-2xl font-semibold">Check-in Details</h1>
           <p className="text-muted-foreground flex items-center gap-2">
             <Calendar className="h-4 w-4" />
             {formattedDate}

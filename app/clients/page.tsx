@@ -132,10 +132,10 @@ export default function ClientsPage() {
         <OverdueBanner />
 
         {/* Search and Filters */}
-        <div className="bg-white rounded-xl shadow-sm p-4">
+        <div className="bg-card rounded-lg border border-border p-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
                 placeholder="Search clients..."
                 className="pl-10"
@@ -143,13 +143,13 @@ export default function ClientsPage() {
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
-            <div className="bg-gray-100 p-1 rounded-lg inline-flex">
+            <div className="bg-muted p-1 rounded-lg inline-flex">
               <button
                 onClick={() => setActiveFilter("all")}
                 className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${
                   activeFilter === "all"
-                    ? "bg-white text-gray-900 shadow-sm"
-                    : "text-gray-500 hover:text-gray-700"
+                    ? "bg-card text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
                 }`}
               >
                 All ({statusCounts.all})
@@ -158,8 +158,8 @@ export default function ClientsPage() {
                 onClick={() => setActiveFilter("active")}
                 className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${
                   activeFilter === "active"
-                    ? "bg-white text-gray-900 shadow-sm"
-                    : "text-gray-500 hover:text-gray-700"
+                    ? "bg-card text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
                 }`}
               >
                 Active ({statusCounts.active})
@@ -168,8 +168,8 @@ export default function ClientsPage() {
                 onClick={() => setActiveFilter("inactive")}
                 className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${
                   activeFilter === "inactive"
-                    ? "bg-white text-gray-900 shadow-sm"
-                    : "text-gray-500 hover:text-gray-700"
+                    ? "bg-card text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
                 }`}
               >
                 Inactive ({statusCounts.inactive})
@@ -180,24 +180,24 @@ export default function ClientsPage() {
 
         {/* Loading State */}
         {loading && (
-          <div className="bg-white rounded-xl shadow-sm p-6">
+          <div className="bg-card rounded-lg border border-border p-6">
             <div className="flex flex-col items-center justify-center py-12 space-y-3">
               <div className="w-5 h-5 border-2 border-muted border-t-primary rounded-full animate-spin" />
-              <p className="text-sm text-gray-500">Loading clients...</p>
+              <p className="text-sm text-muted-foreground">Loading clients...</p>
             </div>
           </div>
         )}
 
         {/* Error State */}
         {error && !loading && (
-          <div className="bg-white rounded-xl shadow-sm p-6">
+          <div className="bg-card rounded-lg border border-border p-6">
             <div className="flex flex-col items-center justify-center py-12 space-y-3">
               <div className="w-16 h-16 bg-destructive/10 rounded-full flex items-center justify-center">
                 <AlertCircle className="w-8 h-8 text-destructive" />
               </div>
               <div className="text-center space-y-1">
-                <p className="text-lg font-semibold text-gray-900">Failed to load clients</p>
-                <p className="text-sm text-gray-500">{error}</p>
+                <p className="text-lg font-semibold text-foreground">Failed to load clients</p>
+                <p className="text-sm text-muted-foreground">{error}</p>
               </div>
               <Button onClick={fetchClients}>Try Again</Button>
             </div>
@@ -206,17 +206,17 @@ export default function ClientsPage() {
 
         {/* Empty State */}
         {!loading && !error && filteredClients.length === 0 && (
-          <div className="bg-white rounded-xl shadow-sm p-6">
+          <div className="bg-card rounded-lg border border-border p-6">
             <div className="flex flex-col items-center justify-center py-16 px-8 text-center">
               <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-4">
                 <Users className="w-8 h-8 text-muted-foreground" />
               </div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">
+              <h3 className="text-lg font-semibold text-foreground mb-2">
                 {searchQuery || activeFilter !== "all"
                   ? "No clients found"
                   : "No clients yet"}
               </h3>
-              <p className="text-sm text-gray-500 mb-6 max-w-sm">
+              <p className="text-sm text-muted-foreground mb-6 max-w-sm">
                 {searchQuery || activeFilter !== "all"
                   ? "Try adjusting your search or filters"
                   : "Get started by adding your first client to manage their training and nutrition."}
@@ -252,7 +252,7 @@ export default function ClientsPage() {
                 <Link
                   key={client.id}
                   href={`/clients/${client.id}`}
-                  className="flex items-center gap-4 p-4 bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow cursor-pointer group"
+                  className="flex items-center gap-4 p-4 bg-card rounded-lg border border-border hover:border-primary/30 transition-colors cursor-pointer group"
                 >
                   {/* Avatar */}
                   <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
@@ -262,7 +262,7 @@ export default function ClientsPage() {
                   {/* Info */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <h4 className="text-sm font-medium text-gray-900">{client.name}</h4>
+                      <h4 className="text-sm font-medium text-foreground">{client.name}</h4>
                       {isOverdue && (
                         <Badge variant="destructive" className="text-xs">
                           <Clock className="w-3 h-3" />
@@ -270,7 +270,7 @@ export default function ClientsPage() {
                         </Badge>
                       )}
                     </div>
-                    <p className="text-xs text-gray-500 truncate">
+                    <p className="text-xs text-muted-foreground truncate">
                       Last check-in: {formatLastCheckIn(client.lastCheckInDate)}
                     </p>
                   </div>
@@ -281,7 +281,7 @@ export default function ClientsPage() {
                   </Badge>
 
                   {/* Arrow */}
-                  <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-gray-600 transition-colors" />
+                  <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors" />
                 </Link>
               );
             })}

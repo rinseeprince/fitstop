@@ -36,7 +36,7 @@ export function NeedsAttentionFeed() {
   // Helper functions for formatting
   const getShortAlertText = (alert: AttentionAlert): string => {
     const days = alert.affectedDays.length
-    
+
     switch (alert.type) {
       case "mood_drop":
         return "Mood drop"
@@ -61,10 +61,10 @@ export function NeedsAttentionFeed() {
 
   const getPriorityAlertText = (alert: AttentionAlert): string => {
     const days = alert.affectedDays.length
-    
+
     switch (alert.type) {
       case "mood_drop": {
-        const avg = alert.metricData.length > 0 
+        const avg = alert.metricData.length > 0
           ? (alert.metricData.reduce((sum, d) => sum + d.value, 0) / alert.metricData.length).toFixed(1)
           : "low"
         return `Mood dropped to avg ${avg} for ${days} days`
@@ -103,48 +103,48 @@ export function NeedsAttentionFeed() {
   const sortedClients = [...clients].sort((a, b) => {
     const aHighCount = a.alerts.filter(alert => alert.severity === "high").length
     const bHighCount = b.alerts.filter(alert => alert.severity === "high").length
-    
+
     if (aHighCount !== bHighCount) {
       return bHighCount - aHighCount
     }
-    
+
     if (a.alerts.length !== b.alerts.length) {
       return b.alerts.length - a.alerts.length
     }
-    
+
     return a.clientName.localeCompare(b.clientName)
   })
 
   // Identify priority client (top client if they have high severity)
-  const priorityClient = sortedClients[0]?.alerts.some(a => a.severity === "high") 
-    ? sortedClients[0] 
+  const priorityClient = sortedClients[0]?.alerts.some(a => a.severity === "high")
+    ? sortedClients[0]
     : null
-  
+
   // Remaining clients for compact list (excluding priority if shown)
-  const compactListClients = priorityClient 
-    ? sortedClients.slice(1) 
+  const compactListClients = priorityClient
+    ? sortedClients.slice(1)
     : sortedClients
-  
+
   // Limit compact list to 4 items
-  const visibleCompactClients = showAll 
-    ? compactListClients 
+  const visibleCompactClients = showAll
+    ? compactListClients
     : compactListClients.slice(0, 4)
-  
+
   const hiddenCount = compactListClients.length - 4
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 10 }}
+      initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3, delay: 0.05 }}
-      className="bg-white rounded-xl shadow-sm p-5 mb-6"
+      transition={{ duration: 0.2, delay: 0.05 }}
+      className="bg-card border border-border rounded-lg p-5 mb-6"
     >
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-base font-semibold text-gray-900">Needs Attention</h3>
+        <h3 className="text-base font-semibold tracking-tight">Needs Attention</h3>
         {/* Badge only when data is loaded */}
         {data && (
-          <span className="bg-success/15 text-success text-xs font-medium px-2.5 py-0.5 rounded-full">
+          <span className="bg-success/10 text-success text-xs font-medium px-2 py-0.5 rounded-md">
             {clientsOnTrack} of {totalClientCount} clients on track
           </span>
         )}
@@ -158,14 +158,14 @@ export function NeedsAttentionFeed() {
         /* Empty state content */
         <div className="flex items-center gap-2">
           <CheckCircle className="w-4 h-4 text-success" />
-          <span className="text-sm text-gray-500">All clients on track</span>
+          <span className="text-sm text-muted-foreground">All clients on track</span>
         </div>
       ) : (
         /* Populated content: priority client + compact list */
         <>
           {/* Priority client section */}
           {priorityClient && (
-            <div className="bg-destructive/5 rounded-lg p-3 mb-3">
+            <div className="bg-destructive/5 border border-destructive/10 rounded-lg p-3 mb-3">
               <div className="flex items-start gap-3">
                 {/* Avatar */}
                 <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
@@ -185,21 +185,21 @@ export function NeedsAttentionFeed() {
                 {/* Content */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between">
-                    <h4 className="text-sm font-medium text-gray-900">{priorityClient.clientName}</h4>
-                    <Link 
+                    <h4 className="text-sm font-medium text-foreground">{priorityClient.clientName}</h4>
+                    <Link
                       href={`/clients/${priorityClient.clientId}`}
                       className="text-sm text-primary hover:text-primary/80 font-medium"
                     >
                       View
                     </Link>
                   </div>
-                  <p className="text-xs text-gray-600 mt-1">
+                  <p className="text-xs text-muted-foreground mt-1">
                     {getPriorityAlertText(
                       priorityClient.alerts.find(a => a.severity === "high") || priorityClient.alerts[0]
                     )}
                   </p>
                   {priorityClient.alerts.length > 1 && (
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-xs text-muted-foreground mt-1">
                       +{priorityClient.alerts.length - 1} more alert{priorityClient.alerts.length > 2 ? 's' : ''}
                     </p>
                   )}
@@ -210,7 +210,7 @@ export function NeedsAttentionFeed() {
 
           {/* Compact list */}
           {visibleCompactClients.length > 0 && (
-            <div className="divide-y divide-gray-100">
+            <div className="divide-y divide-border">
               {visibleCompactClients.map(client => {
                 const highAlerts = client.alerts.filter(a => a.severity === "high").length
                 const hasOnlyMedium = highAlerts === 0 && client.alerts.some(a => a.severity === "medium")
@@ -219,22 +219,22 @@ export function NeedsAttentionFeed() {
                 return (
                   <div key={client.clientId} className="py-2 flex items-center justify-between">
                     <div className="flex items-center gap-2 flex-1 min-w-0">
-                      <span className="text-sm text-gray-900">{client.clientName}</span>
+                      <span className="text-sm text-foreground">{client.clientName}</span>
                       {client.alerts.length > 0 && (
                         <span className={`${
-                          hasOnlyMedium 
-                            ? "bg-warning/15 text-warning" 
-                            : "bg-destructive/15 text-destructive"
-                        } text-xs font-medium px-1.5 py-0.5 rounded-full`}>
+                          hasOnlyMedium
+                            ? "bg-warning/10 text-warning"
+                            : "bg-destructive/10 text-destructive"
+                        } text-xs font-medium px-1.5 py-0.5 rounded-md`}>
                           {client.alerts.length}
                         </span>
                       )}
-                      <span className="text-xs text-gray-500 truncate">
+                      <span className="text-xs text-muted-foreground truncate">
                         {getShortAlertText(mostUrgentAlert)}
                         {client.alerts.length > 1 && ` +${client.alerts.length - 1}`}
                       </span>
                     </div>
-                    <Link 
+                    <Link
                       href={`/clients/${client.clientId}`}
                       className="text-sm text-primary hover:text-primary/80 flex-shrink-0"
                     >
@@ -250,7 +250,7 @@ export function NeedsAttentionFeed() {
           {hiddenCount > 0 && !showAll && (
             <button
               onClick={() => setShowAll(true)}
-              className="text-xs text-gray-500 hover:text-gray-700 mt-2"
+              className="text-xs text-muted-foreground hover:text-foreground mt-2"
             >
               and {hiddenCount} more
             </button>
@@ -259,7 +259,7 @@ export function NeedsAttentionFeed() {
           {showAll && compactListClients.length > 4 && (
             <button
               onClick={() => setShowAll(false)}
-              className="text-xs text-gray-500 hover:text-gray-700 mt-2"
+              className="text-xs text-muted-foreground hover:text-foreground mt-2"
             >
               Show less
             </button>

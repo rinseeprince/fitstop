@@ -190,13 +190,13 @@ export function CheckInScheduleCard({ client, onUpdate }: CheckInScheduleCardPro
                 <h4 className="font-medium mb-3">Adherence Stats</h4>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <p className="text-2xl font-bold text-primary">
+                    <p className="text-2xl font-semibold text-primary">
                       {Math.round(client.checkInAdherenceRate)}%
                     </p>
                     <p className="text-xs text-muted-foreground">Adherence Rate</p>
                   </div>
                   <div>
-                    <p className="text-2xl font-bold text-primary">
+                    <p className="text-2xl font-semibold text-primary">
                       {client.currentStreak || 0}
                     </p>
                     <p className="text-xs text-muted-foreground">Current Streak</p>

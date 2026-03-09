@@ -64,7 +64,7 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4 relative overflow-hidden">
       {/* Subtle background gradient */}
-      <div className="absolute inset-0 gradient-subtle opacity-50" />
+      <div className="absolute inset-0 bg-muted opacity-50" />
 
       {/* Animated background orbs */}
       <motion.div
@@ -99,14 +99,14 @@ export default function LoginPage() {
         transition={{ duration: 0.5 }}
         className="relative z-10 w-full max-w-md"
       >
-        <div className="glass-surface rounded-lg p-8 shadow-custom-lg">
+        <div className="bg-card border border-border rounded-lg p-8">
           {/* Branding */}
           <div className="text-center mb-8">
             <motion.h1
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.2 }}
-              className="text-3xl font-semibold mb-2 bg-gradient-to-r from-primary via-accent to-secondary bg-clip-text text-transparent"
+              className="text-3xl font-semibold mb-2 text-foreground"
             >
               CoachHub
             </motion.h1>
@@ -200,7 +200,7 @@ export default function LoginPage() {
 
             <Button
               type="submit"
-              className="w-full rounded-xs h-11 gradient-primary hover:opacity-90 transition-opacity"
+              className="w-full rounded-xs h-11 bg-primary hover:bg-primary/90 transition-colors"
               disabled={isSubmitting || googleLoading}
             >
               {isSubmitting ? (

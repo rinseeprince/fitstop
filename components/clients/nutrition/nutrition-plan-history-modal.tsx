@@ -50,11 +50,11 @@ export function NutritionPlanHistoryModal({
   const getReasonBadge = (reason?: string) => {
     switch (reason) {
       case "initial":
-        return <Badge className="bg-blue-50 text-blue-600">Initial Plan</Badge>;
+        return <Badge className="bg-primary/10 text-primary">Initial Plan</Badge>;
       case "regenerated":
-        return <Badge className="bg-green-50 text-green-600">Regenerated</Badge>;
+        return <Badge className="bg-success/10 text-success">Regenerated</Badge>;
       case "weight_change":
-        return <Badge className="bg-amber-50 text-amber-600">Weight Change</Badge>;
+        return <Badge className="bg-warning/10 text-warning">Weight Change</Badge>;
       case "custom_macros":
         return <Badge className="bg-violet-50 text-violet-600">Custom Macros</Badge>;
       default:
@@ -93,8 +93,8 @@ export function NutritionPlanHistoryModal({
               return (
                 <div
                   key={entry.id}
-                  className={`rounded-xl p-5 border ${
-                    isLatest ? "bg-primary/5 border-primary/20" : "bg-white border-gray-200"
+                  className={`rounded-lg p-5 border ${
+                    isLatest ? "bg-primary/5 border-primary/20" : "bg-card border-border"
                   }`}
                 >
                   <div className="flex items-start justify-between mb-3">
@@ -139,19 +139,19 @@ export function NutritionPlanHistoryModal({
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground mb-1">Protein</p>
-                      <p className="text-lg font-semibold text-primary">
+                      <p className="text-lg font-semibold text-protein">
                         {entry.proteinTargetG}g
                       </p>
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground mb-1">Carbs</p>
-                      <p className="text-lg font-semibold text-success">
+                      <p className="text-lg font-semibold text-carbs">
                         {entry.carbTargetG}g
                       </p>
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground mb-1">Fat</p>
-                      <p className="text-lg font-semibold text-warning">
+                      <p className="text-lg font-semibold text-fat">
                         {entry.fatTargetG}g
                       </p>
                     </div>

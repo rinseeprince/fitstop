@@ -13,14 +13,14 @@ export const ModeToggle = memo(function ModeToggle({ className }: ModeToggleProp
   const builder = useTrainingBuilderContext();
 
   return (
-    <div className={cn("bg-gray-100 p-1 rounded-lg inline-flex", className)}>
+    <div className={cn("bg-muted p-1 rounded-lg inline-flex", className)}>
       <button
         onClick={() => builder.setMode("ai")}
         className={cn(
           "flex-1 flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all duration-150",
           builder.mode === "ai"
-            ? "bg-white text-gray-900 shadow-sm"
-            : "text-gray-500 hover:text-gray-700"
+            ? "bg-card text-foreground shadow-sm"
+            : "text-muted-foreground hover:text-foreground"
         )}
       >
         <Sparkles className={cn("h-4 w-4", builder.mode === "ai" && "text-accent")} />
@@ -31,8 +31,8 @@ export const ModeToggle = memo(function ModeToggle({ className }: ModeToggleProp
         className={cn(
           "flex-1 flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all duration-150",
           builder.mode === "manual"
-            ? "bg-white text-gray-900 shadow-sm"
-            : "text-gray-500 hover:text-gray-700"
+            ? "bg-card text-foreground shadow-sm"
+            : "text-muted-foreground hover:text-foreground"
         )}
       >
         <Pencil className="h-4 w-4" />

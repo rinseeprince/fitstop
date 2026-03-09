@@ -95,8 +95,8 @@ export const DailyContextSummary = ({
   }, {} as Record<string, { name: string; completed: number; total: number; createdAt: string }>);
 
   return (
-    <div className="bg-gray-50 rounded-lg p-4 mb-6">
-      <h3 className="text-lg font-semibold text-gray-900 mb-4">
+    <div className="bg-muted/50 rounded-lg p-4 mb-6">
+      <h3 className="text-lg font-semibold text-foreground mb-4">
         Daily Tracking Summary ({logsCount} of {daysDiff} days logged)
       </h3>
       
@@ -109,8 +109,8 @@ export const DailyContextSummary = ({
       <div className="space-y-3 mt-4">
         {nutritionStats.daysLogged > 0 && (
           <div>
-            <h4 className="font-medium text-gray-700 mb-1">Nutrition</h4>
-            <div className="text-sm text-gray-600 space-y-1">
+            <h4 className="font-medium text-foreground mb-1">Nutrition</h4>
+            <div className="text-sm text-muted-foreground space-y-1">
               <div>
                 Avg {Math.round(nutritionStats.totalCalories / nutritionStats.daysLogged)} cal/day 
                 vs {Math.round(nutritionStats.totalTargets / nutritionStats.daysLogged)} avg target 
@@ -127,8 +127,8 @@ export const DailyContextSummary = ({
         
         {trainingStats.totalSessions > 0 && (
           <div>
-            <h4 className="font-medium text-gray-700 mb-1">Training</h4>
-            <div className="text-sm text-gray-600 space-y-1">
+            <h4 className="font-medium text-foreground mb-1">Training</h4>
+            <div className="text-sm text-muted-foreground space-y-1">
               <div>Completed {trainingStats.completedSessions}/{trainingStats.totalSessions} sessions</div>
               {trainingStats.totalActivities > 0 && (
                 <div>{trainingStats.completedActivities}/{trainingStats.totalActivities} planned activities completed</div>
@@ -142,8 +142,8 @@ export const DailyContextSummary = ({
         
         {Object.keys(habitStats).length > 0 && (
           <div>
-            <h4 className="font-medium text-gray-700 mb-1">Habits</h4>
-            <div className="text-sm text-gray-600 space-y-1">
+            <h4 className="font-medium text-foreground mb-1">Habits</h4>
+            <div className="text-sm text-muted-foreground space-y-1">
               {Object.values(habitStats).map((habit, idx) => (
                 <div key={idx}>
                   {habit.name}: {habit.completed}/{habit.total} days

@@ -133,7 +133,7 @@ export default function ClientProgressPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Progress</h1>
+        <h1 className="text-2xl font-semibold">Progress</h1>
         <Button onClick={() => router.push("/client/check-in")}>
           <ClipboardCheck className="mr-2 h-4 w-4" />
           New Check-in
@@ -277,7 +277,7 @@ function StatCard({ label, value, suffix, icon: Icon }: StatCardProps) {
           </div>
           <div>
             <p className="text-xs text-muted-foreground">{label}</p>
-            <p className="text-xl font-bold">
+            <p className="text-xl font-semibold">
               {value}
               <span className="ml-1 text-sm font-normal text-muted-foreground">
                 {suffix}
@@ -337,7 +337,7 @@ function CheckInCard({ checkIn }: { checkIn: CheckIn }) {
 
   return (
     <Card 
-      className="cursor-pointer hover:shadow-md transition-shadow"
+      className="cursor-pointer transition-colors hover:bg-muted/50"
       onClick={() => window.location.href = `/client/progress/check-in/${checkIn.id}`}
     >
       <CardContent className="py-4">

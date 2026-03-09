@@ -72,13 +72,13 @@ export function DayNavBar({ selectedDate, onSelectDate, dailyLogs, today }: DayN
               // Base state - empty circle
               !hasLog && !isSelected && !isFuture && "border-2 border-muted-foreground/20 hover:border-muted-foreground/40 hover:bg-muted/50",
               // Has log - filled circle
-              hasLog && !isSelected && "bg-green-100 text-green-700 border-2 border-green-200 hover:bg-green-200",
+              hasLog && !isSelected && "bg-success/10 text-success border-2 border-success/20 hover:bg-success/20",
               // Selected state - primary filled
               isSelected && "bg-primary text-primary-foreground border-2 border-primary hover:bg-primary/90",
               // Future date - disabled
               isFuture && "opacity-30 cursor-not-allowed border border-muted-foreground/10",
               // Today indicator - special ring
-              isToday && !isSelected && "ring-2 ring-primary ring-offset-1"
+              isToday && !isSelected && "ring-1 ring-primary ring-offset-1"
             )}
           >
             <span className="leading-none text-[10px]">

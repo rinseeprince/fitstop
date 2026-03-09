@@ -48,7 +48,7 @@ export const AIPromptPanel = memo(function AIPromptPanel({ clientWeightKg }: AIP
               key={suggestion}
               onClick={() => builder.setPrompt(builder.prompt + (builder.prompt ? " " : "") + suggestion)}
               className="w-full text-left text-xs p-2.5 rounded-lg bg-accent/5 hover:bg-accent/10
-                border border-accent/10 hover:border-accent/20 transition-colors text-gray-600"
+                border border-accent/10 hover:border-accent/20 transition-colors text-muted-foreground"
             >
               {suggestion}
             </button>
@@ -64,7 +64,7 @@ export const AIPromptPanel = memo(function AIPromptPanel({ clientWeightKg }: AIP
         clientWeightKg={clientWeightKg}
       />
 
-      <SameDayTrainingCheckbox className="bg-gray-50" />
+      <SameDayTrainingCheckbox className="bg-muted/50" />
 
       {/* Prompt Input with Send Button */}
       <div className="pb-1">
@@ -74,13 +74,13 @@ export const AIPromptPanel = memo(function AIPromptPanel({ clientWeightKg }: AIP
             value={builder.prompt}
             onChange={(e) => builder.setPrompt(e.target.value)}
             rows={3}
-            className="resize-none bg-white pr-14 pb-12 rounded-xl border-gray-200 focus:border-primary focus:ring-2 focus:ring-ring transition-all"
+            className="resize-none bg-card pr-14 pb-12 rounded-lg border-border focus:border-primary focus:ring-1 focus:ring-ring transition-all"
           />
           <Button
             onClick={builder.generate}
             disabled={builder.isGenerating || !builder.prompt.trim()}
             size="icon"
-            className="absolute right-3 bottom-3 h-9 w-9 rounded-full bg-gradient-to-r from-primary to-accent hover:from-primary/90 hover:to-accent/90 shadow-md hover:shadow-lg transition-all"
+            className="absolute right-3 bottom-3 h-9 w-9 rounded-md bg-primary hover:bg-primary/90 transition-colors"
           >
             {builder.isGenerating ? (
               <Loader2 className="h-4 w-4 animate-spin text-white" />

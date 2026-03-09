@@ -50,8 +50,8 @@ export const CheckInTimeline = ({
         return (
           <Card
             key={checkIn.id}
-            className={`p-4 cursor-pointer transition-all hover:shadow-md ${
-              isSelected ? "ring-2 ring-primary" : ""
+            className={`p-4 cursor-pointer transition-all hover:border-primary/30 ${
+              isSelected ? "ring-1 ring-primary" : ""
             }`}
             onClick={() => onSelectCheckIn?.(checkIn)}
           >
@@ -59,10 +59,10 @@ export const CheckInTimeline = ({
               <div className="flex items-start gap-3 flex-1">
                 <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
                   checkIn.status === "reviewed"
-                    ? "bg-success/15"
+                    ? "bg-success/10"
                     : checkIn.status === "ai_processed"
-                    ? "bg-primary/15"
-                    : "bg-warning/15"
+                    ? "bg-primary/10"
+                    : "bg-warning/10"
                 }`}>
                   <Icon className={`w-5 h-5 ${
                     checkIn.status === "reviewed"

@@ -144,13 +144,13 @@ export const getStatusColor = (
 ): string => {
   switch (status) {
     case "pending":
-      return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400";
+      return "bg-warning/10 text-warning";
     case "ai_processed":
-      return "bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400";
+      return "bg-primary/10 text-primary";
     case "reviewed":
-      return "bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400";
+      return "bg-success/10 text-success";
     default:
-      return "bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-400";
+      return "bg-muted text-foreground dark:bg-muted dark:text-muted-foreground";
   }
 };
 

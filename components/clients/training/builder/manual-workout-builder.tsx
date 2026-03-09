@@ -75,14 +75,14 @@ export const ManualWorkoutBuilder = memo(function ManualWorkoutBuilder({
   return (
     <div className="space-y-5">
       {/* Mode Toggle */}
-      <div className="flex p-1 bg-slate-100 rounded-lg">
+      <div className="flex p-1 bg-muted rounded-lg">
         <button
           onClick={() => builder.setManualMode("template")}
           className={cn(
             "flex-1 flex items-center justify-center gap-2 py-1.5 px-3 rounded text-sm font-medium transition-all",
             builder.manualMode === "template"
-              ? "bg-white text-slate-900 shadow-sm"
-              : "text-slate-600 hover:text-slate-900"
+              ? "bg-card text-foreground shadow-sm"
+              : "text-muted-foreground hover:text-foreground"
           )}
         >
           <LayoutTemplate className="h-4 w-4" />
@@ -93,8 +93,8 @@ export const ManualWorkoutBuilder = memo(function ManualWorkoutBuilder({
           className={cn(
             "flex-1 flex items-center justify-center gap-2 py-1.5 px-3 rounded text-sm font-medium transition-all",
             builder.manualMode === "scratch"
-              ? "bg-white text-slate-900 shadow-sm"
-              : "text-slate-600 hover:text-slate-900"
+              ? "bg-card text-foreground shadow-sm"
+              : "text-muted-foreground hover:text-foreground"
           )}
         >
           <PencilRuler className="h-4 w-4" />
@@ -150,7 +150,7 @@ export const ManualWorkoutBuilder = memo(function ManualWorkoutBuilder({
         <Button
           onClick={builder.saveManualPlan}
           disabled={builder.isSavingManual}
-          className="w-full bg-gradient-to-r from-indigo-600 to-sky-500 hover:from-indigo-700 hover:to-sky-600"
+          className="w-full bg-primary hover:bg-primary/90"
           size="lg"
         >
           {builder.isSavingManual ? (

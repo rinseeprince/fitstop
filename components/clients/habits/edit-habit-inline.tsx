@@ -59,7 +59,7 @@ export const EditHabitInline = ({
   };
 
   return (
-    <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg">
+    <div className="flex items-center gap-2 px-3 py-2 bg-muted/50 rounded-lg">
       <div className="flex-1 space-y-2">
         <Input
           value={name}

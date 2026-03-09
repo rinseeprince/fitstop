@@ -42,7 +42,7 @@ export const QuickSuggestions = memo(function QuickSuggestions({ selectedIds, on
 
   return (
     <div className="space-y-4">
-      <p className="text-sm font-medium text-gray-500">Quick suggestions</p>
+      <p className="text-sm font-medium text-muted-foreground">Quick suggestions</p>
       {categories.map((category) => {
         const config = categoryConfig[category];
         const Icon = config.icon;
@@ -62,10 +62,10 @@ export const QuickSuggestions = memo(function QuickSuggestions({ selectedIds, on
                     key={suggestion.id}
                     onClick={() => onToggle(suggestion.id, suggestion.prompt)}
                     className={cn(
-                      "px-3 py-1.5 text-sm rounded-full transition-colors duration-150",
+                      "px-3 py-1.5 text-sm rounded-md transition-colors duration-150",
                       isSelected
                         ? cn(config.selectedBg, "border", config.selectedBorder, config.selectedText, "font-medium")
-                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                        : "bg-muted text-foreground hover:bg-muted"
                     )}
                   >
                     {suggestion.label}

@@ -181,7 +181,7 @@ export default function CRMPage() {
         <Button
           variant="ghost"
           size="icon"
-          className="h-9 w-9 rounded-full transition-all hover:scale-110"
+          className="h-9 w-9 rounded-lg transition-all hover:scale-110"
         >
           <Plus className="h-4 w-4" />
           <span className="sr-only">Add New Lead</span>
@@ -265,7 +265,7 @@ export default function CRMPage() {
               <CardHeader>
                 <CardTitle className="flex items-center justify-between text-base">
                   <span>{column.title}</span>
-                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-muted text-xs font-medium">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-md bg-muted text-xs font-medium">
                     {column.leads.length}
                   </span>
                 </CardTitle>

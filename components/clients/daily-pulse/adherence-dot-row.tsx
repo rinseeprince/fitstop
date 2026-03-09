@@ -12,25 +12,25 @@ interface AdherenceDotRowProps {
 }
 
 const getDotColor = (type: "nutrition" | "training", log: DailyLog | undefined) => {
-  if (!log) return "bg-gray-300" // No log for this day
-  
+  if (!log) return "bg-muted" // No log for this day
+
   if (type === "nutrition") {
     const status = log.nutritionAdherence
-    if (!status || !log.caloriesConsumed) return "bg-gray-300"
-    
+    if (!status || !log.caloriesConsumed) return "bg-muted"
+
     switch (status) {
       case "hit":
-        return "bg-emerald-500"
+        return "bg-success"
       case "partial":
-        return "bg-amber-500"
+        return "bg-warning"
       case "missed":
-        return "bg-red-500"
+        return "bg-destructive"
       default:
-        return "bg-gray-300"
+        return "bg-muted"
     }
   } else {
     // Training
-    return log.trained ? "bg-emerald-500" : "bg-gray-300"
+    return log.trained ? "bg-success" : "bg-muted"
   }
 }
 
@@ -96,7 +96,7 @@ export function AdherenceDotRow({ logs, type, label, onDotClick, selectedDate }:
                 className={cn(
                   "w-2 h-2 rounded-full transition-all hover:scale-150",
                   color,
-                  date === selectedDate && "ring-2 ring-blue-500 ring-offset-1 scale-150"
+                  date === selectedDate && "ring-1 ring-primary ring-offset-1 scale-150"
                 )}
               />
               <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-popover border rounded text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-10">

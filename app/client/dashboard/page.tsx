@@ -88,7 +88,7 @@ export default function ClientDashboardPage() {
     <div className="space-y-6">
       {/* Welcome Section */}
       <div>
-        <h1 className="text-2xl font-bold">Welcome back, {firstName}!</h1>
+        <h1 className="text-2xl font-semibold">Welcome back, {firstName}!</h1>
         <p className="text-muted-foreground">
           Track your progress and stay connected with your coach.
         </p>
@@ -101,24 +101,24 @@ export default function ClientDashboardPage() {
       <div className="grid gap-4 sm:grid-cols-2">
         <Card>
           <CardContent className="flex items-center gap-4 py-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-orange-500/10">
-              <Flame className="h-6 w-6 text-orange-500" />
+            <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-warning/10">
+              <Flame className="h-6 w-6 text-warning" />
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Current Streak</p>
-              <p className="text-2xl font-bold">{currentStreak} weeks</p>
+              <p className="text-2xl font-semibold">{currentStreak} weeks</p>
             </div>
           </CardContent>
         </Card>
 
         <Card>
           <CardContent className="flex items-center gap-4 py-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-green-500/10">
-              <Target className="h-6 w-6 text-green-500" />
+            <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-success/10">
+              <Target className="h-6 w-6 text-success" />
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Adherence</p>
-              <p className="text-2xl font-bold">{Math.round(adherenceRate)}%</p>
+              <p className="text-2xl font-semibold">{Math.round(adherenceRate)}%</p>
             </div>
           </CardContent>
         </Card>
@@ -204,8 +204,8 @@ export default function ClientDashboardPage() {
           onClick={() => router.push("/client/nutrition")}
         >
           <CardHeader className="flex flex-row items-center gap-3 pb-2">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-orange-500/10">
-              <Utensils className="h-5 w-5 text-orange-600" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-warning/10">
+              <Utensils className="h-5 w-5 text-warning" />
             </div>
             <CardTitle className="text-base">Nutrition</CardTitle>
           </CardHeader>
@@ -240,8 +240,8 @@ export default function ClientDashboardPage() {
           onClick={() => router.push("/client/check-in")}
         >
           <CardHeader className="flex flex-row items-center gap-3 pb-2">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-500/10">
-              <ClipboardCheck className="h-5 w-5 text-green-600" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-success/10">
+              <ClipboardCheck className="h-5 w-5 text-success" />
             </div>
             <CardTitle className="text-base">Check-in</CardTitle>
           </CardHeader>
@@ -262,8 +262,8 @@ export default function ClientDashboardPage() {
           onClick={() => router.push("/client/progress")}
         >
           <CardHeader className="flex flex-row items-center gap-3 pb-2">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-500/10">
-              <TrendingUp className="h-5 w-5 text-blue-600" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+              <TrendingUp className="h-5 w-5 text-primary" />
             </div>
             <CardTitle className="text-base">Progress</CardTitle>
           </CardHeader>
@@ -284,8 +284,8 @@ export default function ClientDashboardPage() {
           onClick={() => router.push("/client/resources")}
         >
           <CardHeader className="flex flex-row items-center gap-3 pb-2">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-purple-500/10">
-              <BookOpen className="h-5 w-5 text-purple-600" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+              <BookOpen className="h-5 w-5 text-primary" />
             </div>
             <CardTitle className="text-base">Resources</CardTitle>
           </CardHeader>

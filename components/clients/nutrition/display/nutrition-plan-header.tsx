@@ -31,9 +31,9 @@ export function NutritionPlanHeader({
       {/* Title and History button */}
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-xl font-semibold text-gray-900">Nutrition Targets</h3>
+          <h3 className="text-xl font-semibold text-foreground">Nutrition Targets</h3>
           {client.nutritionPlanCreatedDate && (
-            <p className="text-sm text-gray-500 mt-0.5">
+            <p className="text-sm text-muted-foreground mt-0.5">
               Created on {format(new Date(client.nutritionPlanCreatedDate), "MMM d, yyyy")}
             </p>
           )}
@@ -43,20 +43,20 @@ export function NutritionPlanHeader({
             <Button
               size="sm"
               onClick={onRegenerate}
-              className="bg-gradient-to-r from-primary to-accent hover:from-primary/90 hover:to-accent/90"
+              className="bg-primary hover:bg-primary/90"
             >
               <Sparkles className="h-4 w-4 mr-1.5" />
               Regenerate Plan
             </Button>
           )}
-          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-50 text-green-600">
+          <span className="inline-flex items-center px-3 py-1 rounded-md text-xs font-medium bg-success/10 text-success">
             Plan active
           </span>
           <Button
             variant="ghost"
             size="sm"
             onClick={onShowHistory}
-            className="text-gray-600 hover:text-gray-900 hover:bg-gray-100 font-medium rounded-lg transition-all"
+            className="text-muted-foreground hover:text-foreground hover:bg-muted font-medium rounded-lg transition-all"
           >
             <History className="h-4 w-4 mr-2" />
             History
@@ -65,26 +65,26 @@ export function NutritionPlanHeader({
       </div>
 
       {/* Stats row */}
-      <div className="bg-warning/5 rounded-xl p-4">
+      <div className="bg-warning/5 rounded-lg p-4">
         <div className="flex flex-wrap items-center justify-between gap-6">
           <div>
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Weekly Total</p>
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">Weekly Total</p>
             <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-bold text-gray-900">{weeklyTotal.toLocaleString()}</span>
-              <span className="text-base text-gray-500">cal</span>
+              <span className="text-3xl font-semibold text-foreground">{weeklyTotal.toLocaleString()}</span>
+              <span className="text-base text-muted-foreground">cal</span>
             </div>
           </div>
 
           {weightRemaining && (
             <div className="text-right">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Progress</p>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">Progress</p>
               <div className="flex items-center gap-2">
                 {weightRemaining.isLoss ? (
-                  <TrendingDown className="w-5 h-5 text-green-500" />
+                  <TrendingDown className="w-5 h-5 text-success" />
                 ) : (
-                  <TrendingUp className="w-5 h-5 text-blue-500" />
+                  <TrendingUp className="w-5 h-5 text-primary" />
                 )}
-                <span className="text-xl font-semibold text-gray-900">
+                <span className="text-xl font-semibold text-foreground">
                   {weightRemaining.isLoss ? "-" : "+"}
                   {weightRemaining.value} {weightRemaining.unit} to go
                 </span>
@@ -93,13 +93,13 @@ export function NutritionPlanHeader({
           )}
 
           <div className="text-right">
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Schedule</p>
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">Schedule</p>
             <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-teal-50 text-teal-600">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium bg-training/10 text-training">
                 <Dumbbell className="h-3 w-3" />
                 {trainingDaysCount} training
               </span>
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium bg-muted text-muted-foreground">
                 <Moon className="h-3 w-3" />
                 {restDaysCount} rest
               </span>
@@ -110,9 +110,9 @@ export function NutritionPlanHeader({
 
       {/* Projected date */}
       {projectedDate && (
-        <div className="text-sm text-gray-500">
+        <div className="text-sm text-muted-foreground">
           Projected goal date:{" "}
-          <span className="font-medium text-gray-900">
+          <span className="font-medium text-foreground">
             {format(projectedDate, "MMM d, yyyy")}
           </span>
           {client.goalDeadline && new Date(client.goalDeadline) < projectedDate && (

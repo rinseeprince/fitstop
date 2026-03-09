@@ -103,9 +103,9 @@ export function TrainingSessionCard({
 
   return (
     <>
-      <Accordion type="single" collapsible className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+      <Accordion type="single" collapsible className="rounded-lg border border-border bg-card overflow-hidden">
         <AccordionItem value={session.id} className="border-0">
-          <AccordionTrigger className="px-5 hover:no-underline hover:bg-gray-50/50">
+          <AccordionTrigger className="px-5 hover:no-underline hover:bg-muted/30">
             <div className="flex flex-1 items-center justify-between pr-2">
               <div className="flex items-center gap-3">
                 {isEditing && editMode ? (
@@ -144,7 +144,7 @@ export function TrainingSessionCard({
                   </span>
                 )}
                 {session.focus && !isEditing && (
-                  <span className="text-sm text-gray-500">- {session.focus}</span>
+                  <span className="text-sm text-muted-foreground">- {session.focus}</span>
                 )}
               </div>
               <div className="flex items-center gap-2">

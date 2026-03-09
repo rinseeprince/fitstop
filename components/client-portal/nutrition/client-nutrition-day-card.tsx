@@ -50,8 +50,8 @@ export function ClientNutritionDayCard({ dayTarget }: ClientNutritionDayCardProp
                 className={cn(
                   "shrink-0",
                   dayTarget.isTrainingDay 
-                    ? "bg-primary text-primary-foreground" 
-                    : "bg-gray-100 text-gray-600"
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-muted-foreground"
                 )}
               >
                 {dayTarget.isTrainingDay ? (
@@ -69,12 +69,12 @@ export function ClientNutritionDayCard({ dayTarget }: ClientNutritionDayCardProp
             </div>
             
             <div className="mt-1 flex items-center gap-2">
-              <span className="text-2xl font-bold text-primary">
+              <span className="text-2xl font-semibold text-primary">
                 {dayTarget.calories.toLocaleString()}
               </span>
               <span className="text-sm text-muted-foreground">calories</span>
               {hasActivities && (
-                <div className="flex items-center gap-1 text-xs text-orange-600 bg-orange-50 px-2 py-0.5 rounded">
+                <div className="flex items-center gap-1 text-xs text-warning bg-warning/10 px-2 py-0.5 rounded">
                   <Flame className="h-3 w-3" />
                   +{totalActivityCalories}
                 </div>
@@ -83,15 +83,15 @@ export function ClientNutritionDayCard({ dayTarget }: ClientNutritionDayCardProp
             
             <div className="mt-2 flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
               <span className="flex items-center gap-1">
-                <Beef className="h-3.5 w-3.5 text-red-500" />
+                <Beef className="h-3.5 w-3.5 text-protein" />
                 {dayTarget.proteinG}g protein
               </span>
               <span className="flex items-center gap-1">
-                <Wheat className="h-3.5 w-3.5 text-amber-500" />
+                <Wheat className="h-3.5 w-3.5 text-carbs" />
                 {dayTarget.carbsG}g carbs
               </span>
               <span className="flex items-center gap-1">
-                <Droplets className="h-3.5 w-3.5 text-blue-500" />
+                <Droplets className="h-3.5 w-3.5 text-fat" />
                 {dayTarget.fatG}g fat
               </span>
             </div>
@@ -137,7 +137,7 @@ export function ClientNutritionDayCard({ dayTarget }: ClientNutritionDayCardProp
                       </div>
                     )}
                     {dayTarget.externalActivityCalories > 0 && (
-                      <div className="flex justify-between text-orange-600">
+                      <div className="flex justify-between text-warning">
                         <span>Other activities</span>
                         <span>+{dayTarget.externalActivityCalories}</span>
                       </div>
@@ -158,21 +158,21 @@ export function ClientNutritionDayCard({ dayTarget }: ClientNutritionDayCardProp
                 <div className="space-y-2">
                   <div className="flex items-center justify-between text-sm">
                     <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-full bg-red-500"></div>
+                      <div className="w-3 h-3 rounded-full bg-protein"></div>
                       <span>Protein</span>
                     </div>
                     <span>{dayTarget.proteinG}g ({dayTarget.proteinPercent}%)</span>
                   </div>
                   <div className="flex items-center justify-between text-sm">
                     <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-full bg-amber-500"></div>
+                      <div className="w-3 h-3 rounded-full bg-carbs"></div>
                       <span>Carbs</span>
                     </div>
                     <span>{dayTarget.carbsG}g ({dayTarget.carbsPercent}%)</span>
                   </div>
                   <div className="flex items-center justify-between text-sm">
                     <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-full bg-blue-500"></div>
+                      <div className="w-3 h-3 rounded-full bg-fat"></div>
                       <span>Fat</span>
                     </div>
                     <span>{dayTarget.fatG}g ({dayTarget.fatPercent}%)</span>
@@ -198,11 +198,11 @@ export function ClientNutritionDayCard({ dayTarget }: ClientNutritionDayCardProp
                     ))}
                     {dayTarget.externalActivities?.map((activity, idx) => (
                       <div key={`external-${idx}`} className="flex justify-between text-sm">
-                        <span className="flex items-center gap-1 text-orange-600">
+                        <span className="flex items-center gap-1 text-warning">
                           <Flame className="h-3 w-3" />
                           {activity.name}
                         </span>
-                        <span className="text-orange-600">+{activity.calories} cal</span>
+                        <span className="text-warning">+{activity.calories} cal</span>
                       </div>
                     ))}
                   </div>

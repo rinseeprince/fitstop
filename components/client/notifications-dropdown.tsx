@@ -53,11 +53,11 @@ export function ClientNotificationsDropdown() {
       case "content":
         return "bg-primary/15 text-primary";
       case "training":
-        return "bg-blue-500/15 text-blue-600";
+        return "bg-training/15 text-training";
       case "check-in":
         return "bg-warning/15 text-warning";
       case "message":
-        return "bg-green-500/15 text-green-600";
+        return "bg-success/15 text-success";
       default:
         return "bg-muted text-muted-foreground";
     }
@@ -147,7 +147,7 @@ export function ClientNotificationsDropdown() {
             {notifications.filter(n => n.type === "training").length > 0 && (
               <>
                 <DropdownMenuSeparator />
-                <div className="px-2 py-1.5 text-xs font-semibold text-blue-600 flex items-center gap-1">
+                <div className="px-2 py-1.5 text-xs font-semibold text-training flex items-center gap-1">
                   <Dumbbell className="h-3 w-3" />
                   Training Updates
                 </div>

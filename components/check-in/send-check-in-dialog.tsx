@@ -147,7 +147,7 @@ export const SendCheckInDialog = ({
                 )}
               </div>
 
-              <div className="glass-card p-4 space-y-2 text-sm">
+              <div className="bg-card border border-border p-4 space-y-2 text-sm">
                 <div className="flex items-start gap-2">
                   <div className="w-1.5 h-1.5 rounded-full bg-primary mt-1.5" />
                   <p className="text-muted-foreground">

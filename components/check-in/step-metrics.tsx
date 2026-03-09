@@ -88,7 +88,7 @@ export const StepMetrics = ({
             </div>
           </div>
           {previousData?.weight && (
-            <div className="flex items-center px-3 glass-card">
+            <div className="flex items-center px-3 bg-card border border-border">
               <span className="text-xs text-muted-foreground mr-2">
                 Last: {previousData.weight}
               </span>
@@ -116,7 +116,7 @@ export const StepMetrics = ({
             }
           />
           {previousData?.bodyFatPercentage && (
-            <div className="flex items-center px-3 glass-card">
+            <div className="flex items-center px-3 bg-card border border-border">
               <span className="text-xs text-muted-foreground mr-2">
                 Last: {previousData.bodyFatPercentage}%
               </span>
@@ -204,7 +204,7 @@ export const StepMetrics = ({
                     }
                   />
                   {prev && (
-                    <div className="flex items-center px-2 glass-card min-w-[80px]">
+                    <div className="flex items-center px-2 bg-card border border-border min-w-[80px]">
                       <span className="text-xs text-muted-foreground mr-1">
                         {prev}
                       </span>

@@ -20,19 +20,11 @@ interface MetricCardProps {
 export function MetricCard({ title, value, icon: Icon, trend, chart, delay = 0, href }: MetricCardProps) {
   const content = (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
+      initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ delay, duration: 0.3, ease: "easeOut" }}
-      whileHover={{ scale: 1.02, transition: { duration: 0.15 } }}
-      className={`group relative overflow-hidden rounded-lg glass-card shadow-custom-md p-6 transition-all duration-150 hover:shadow-custom-lg ${href ? "cursor-pointer" : ""}`}
+      transition={{ delay, duration: 0.2, ease: "easeOut" }}
+      className={`group relative overflow-hidden rounded-lg bg-card border border-border p-6 transition-colors duration-150 hover:border-primary/30 ${href ? "cursor-pointer" : ""}`}
     >
-      <motion.div
-        className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-150"
-        style={{
-          background: "radial-gradient(circle at top right, hsl(var(--primary) / 0.08), transparent 60%)",
-        }}
-      />
-
       <div className="relative flex items-start justify-between">
         <div className="flex-1">
           <p className="text-sm font-medium text-muted-foreground mb-3">{title}</p>
@@ -56,20 +48,16 @@ export function MetricCard({ title, value, icon: Icon, trend, chart, delay = 0, 
           </div>
         </div>
 
-        <motion.div
-          whileHover={{ scale: 1.1 }}
-          transition={{ duration: 0.15 }}
-          className="flex h-12 w-12 items-center justify-center rounded-xs bg-primary/10 text-primary transition-all duration-150 group-hover:bg-primary/20"
-        >
+        <div className="flex h-12 w-12 items-center justify-center rounded-md bg-primary/10 text-primary transition-colors duration-150 group-hover:bg-primary/15">
           <Icon className="h-5 w-5" />
-        </motion.div>
+        </div>
       </div>
 
       {chart && chart.length > 0 && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ delay: delay + 0.3, duration: 0.3 }}
+          transition={{ delay: delay + 0.3, duration: 0.2 }}
           className="mt-4"
         >
           <Sparkline data={chart} color="hsl(var(--primary))" />

@@ -36,7 +36,7 @@ export function ConversationList({ conversations, selectedId, onSelect }: Conver
               <p className="text-sm text-muted-foreground truncate">{conversation.lastMessage}</p>
             </div>
             {conversation.unread > 0 && (
-              <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-medium text-primary-foreground">
+              <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-primary text-xs font-medium text-primary-foreground">
                 {conversation.unread}
               </div>
             )}

@@ -55,8 +55,8 @@ export const DailyContextCharts = ({
     const date = payload[0].payload.date;
     
     return (
-      <div className="bg-white border rounded p-1 text-xs shadow">
-        <p className="text-gray-600">{date}</p>
+      <div className="bg-card border rounded p-1 text-xs shadow-md">
+        <p className="text-muted-foreground">{date}</p>
         <p className="font-medium">
           {value !== null ? value : "No data"}
         </p>
@@ -69,7 +69,7 @@ export const DailyContextCharts = ({
     
     return (
       <div key={metric} className="flex-1">
-        <div className="text-xs font-medium text-gray-600 mb-1">{label}</div>
+        <div className="text-xs font-medium text-muted-foreground mb-1">{label}</div>
         <div className="h-16">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={data} margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>

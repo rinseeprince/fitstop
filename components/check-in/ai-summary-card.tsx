@@ -23,17 +23,17 @@ const insightIcons = {
 // Semantic colours from design system (Tailwind v4 CSS variables with opacity)
 const insightColors = {
   strength: {
-    bg: "bg-success/15",
+    bg: "bg-success/10",
     text: "text-success",
     icon: "text-success",
   },
   concern: {
-    bg: "bg-warning/15",
+    bg: "bg-warning/10",
     text: "text-warning",
     icon: "text-warning",
   },
   trend: {
-    bg: "bg-primary/15",
+    bg: "bg-primary/10",
     text: "text-primary",
     icon: "text-primary",
   },
@@ -96,20 +96,20 @@ export const AISummaryCard = ({
   return (
     <div className="space-y-6">
       {/* AI Summary Card - Design System Section 12.3 */}
-      <div className="bg-gradient-to-br from-accent/10 to-primary/10 border border-accent/20 rounded-xl p-4">
+      <div className="bg-primary/5 border border-primary/15 rounded-lg p-4">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
-            <div className="w-6 h-6 bg-white rounded-full flex items-center justify-center shadow-sm">
-              <Sparkles className="w-3.5 h-3.5 text-accent" />
+            <div className="w-6 h-6 bg-card rounded-full flex items-center justify-center">
+              <Sparkles className="w-3.5 h-3.5 text-primary" />
             </div>
-            <span className="text-sm font-medium text-gray-900">AI Summary</span>
+            <span className="text-sm font-medium text-foreground">AI Summary</span>
           </div>
           <Button
             size="sm"
             variant="ghost"
             onClick={handleRegenerate}
             disabled={isRegenerating}
-            className="text-xs text-gray-600 hover:text-gray-900 hover:bg-white/50 h-8 px-2"
+            className="text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 h-8 px-2"
           >
             <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${isRegenerating ? "animate-spin" : ""}`} />
             Regenerate
@@ -122,7 +122,7 @@ export const AISummaryCard = ({
               value={editedSummary}
               onChange={(e) => setEditedSummary(e.target.value)}
               rows={4}
-              className="resize-none bg-white/80 border-gray-200 rounded-lg text-sm focus:border-primary focus:ring-2 focus:ring-ring"
+              className="resize-none bg-card border-border rounded-lg text-sm focus:border-primary focus:ring-2 focus:ring-ring"
             />
             <div className="flex gap-2">
               <Button
@@ -139,7 +139,7 @@ export const AISummaryCard = ({
                   setEditedSummary(summary);
                   setIsEditing(false);
                 }}
-                className="bg-white border-gray-200 text-gray-700 hover:bg-gray-50 text-xs px-3 py-1.5 rounded-md"
+                className="bg-card border-border text-foreground hover:bg-muted/50 text-xs px-3 py-1.5 rounded-md"
               >
                 Cancel
               </Button>
@@ -147,14 +147,14 @@ export const AISummaryCard = ({
           </div>
         ) : (
           <>
-            <p className="text-sm text-gray-700 leading-relaxed">
+            <p className="text-sm text-foreground leading-relaxed">
               {editedSummary || "No AI summary available yet."}
             </p>
             <Button
               size="sm"
               variant="ghost"
               onClick={() => setIsEditing(true)}
-              className="text-xs text-gray-500 hover:text-gray-700 hover:bg-white/50 mt-2 h-7 px-2"
+              className="text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 mt-2 h-7 px-2"
             >
               Edit Summary
             </Button>
@@ -165,7 +165,7 @@ export const AISummaryCard = ({
       {/* Key Insights - Semantic colours */}
       {insights.length > 0 && (
         <div className="space-y-3">
-          <h4 className="text-sm font-semibold text-gray-900">Key Insights</h4>
+          <h4 className="text-sm font-semibold text-foreground">Key Insights</h4>
           <div className="space-y-2">
             {insights.map((insight, index) => {
               const Icon = insightIcons[insight.type];
@@ -173,7 +173,7 @@ export const AISummaryCard = ({
               return (
                 <div
                   key={index}
-                  className={`flex items-start gap-3 p-3 rounded-xl ${colors.bg}`}
+                  className={`flex items-start gap-3 p-3 rounded-lg ${colors.bg}`}
                 >
                   <Icon className={`w-4 h-4 mt-0.5 flex-shrink-0 ${colors.icon}`} />
                   <p className={`text-sm ${colors.text}`}>{insight.text}</p>
@@ -187,19 +187,19 @@ export const AISummaryCard = ({
       {/* Recommendations - Priority Cards from Design System Section 12.3 */}
       {recommendations.length > 0 && (
         <div className="space-y-3">
-          <h4 className="text-sm font-semibold text-gray-900">Recommendations</h4>
+          <h4 className="text-sm font-semibold text-foreground">Recommendations</h4>
           <div className="space-y-2">
             {recommendations.map((rec, index) => {
               const colors = priorityColors[rec.priority];
               return (
                 <div
                   key={index}
-                  className={`bg-white rounded-lg border-l-4 ${colors.border} p-4 shadow-sm`}
+                  className={`bg-card rounded-lg border-l-4 ${colors.border} p-4`}
                 >
                   <span className={`text-xs font-semibold uppercase tracking-wide ${colors.label}`}>
                     {rec.priority} Priority
                   </span>
-                  <p className="text-sm text-gray-700 mt-1">{rec.text}</p>
+                  <p className="text-sm text-foreground mt-1">{rec.text}</p>
                 </div>
               );
             })}

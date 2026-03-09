@@ -102,7 +102,7 @@ export const AddClientDialog = ({ trigger, onClientAdded }: AddClientDialogProps
           <Button
             variant="ghost"
             size="icon"
-            className="h-9 w-9 rounded-full transition-all hover:scale-110"
+            className="h-9 w-9 rounded-lg transition-all hover:scale-110"
           >
             <UserPlus className="h-4 w-4" />
             <span className="sr-only">Add New Client</span>

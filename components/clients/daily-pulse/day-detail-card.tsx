@@ -41,7 +41,7 @@ export function DayDetailCard({ log, habits, onClose }: DayDetailCardProps) {
   }
 
   const getNutritionColor = (consumed?: number, target?: number) => {
-    if (!consumed || !target) return "text-gray-500"
+    if (!consumed || !target) return "text-muted-foreground"
     const diff = Math.abs(consumed - target)
     if (diff <= 50) return "text-success"
     if (diff <= 200) return "text-warning"
@@ -49,7 +49,7 @@ export function DayDetailCard({ log, habits, onClose }: DayDetailCardProps) {
   }
 
   const getMacroColor = (consumed?: number, target?: number) => {
-    if (!consumed || !target) return "text-gray-500"
+    if (!consumed || !target) return "text-muted-foreground"
     const percentage = (consumed / target) * 100
     if (percentage >= 90 && percentage <= 110) return "text-success"
     if (percentage >= 80 && percentage <= 120) return "text-warning"
@@ -65,20 +65,20 @@ export function DayDetailCard({ log, habits, onClose }: DayDetailCardProps) {
       className="absolute inset-0 flex items-center justify-center z-10 p-4 cursor-pointer"
       onClick={onClose}
     >
-      <Card className="relative w-full max-w-xl bg-white shadow-lg rounded-xl border cursor-auto" onClick={(e) => e.stopPropagation()}>
+      <Card className="relative w-full max-w-xl bg-card shadow-md rounded-lg border cursor-auto" onClick={(e) => e.stopPropagation()}>
         <button
           onClick={onClose}
-          className="absolute top-3 right-3 p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all"
+          className="absolute top-3 right-3 p-1 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-all"
         >
           <X className="w-4 h-4" />
         </button>
         <CardContent className="p-4 space-y-2">
-          <div className="flex items-center justify-between border-b border-gray-100 pb-2 pr-8">
-            <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-gray-400" />
+          <div className="flex items-center justify-between border-b border-border pb-2 pr-8">
+            <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-muted-foreground" />
               {formatDate(log.date)}
             </h3>
-            <span className="text-xs text-gray-400 flex items-center gap-1">
+            <span className="text-xs text-muted-foreground flex items-center gap-1">
               <Clock className="w-3 h-3" />
               {formatTimestamp(log.updatedAt)}
             </span>
@@ -86,38 +86,38 @@ export function DayDetailCard({ log, habits, onClose }: DayDetailCardProps) {
 
           {/* Wellness Section */}
           <div className="space-y-2 pt-2">
-            <h4 className="text-xs font-medium text-gray-400 uppercase tracking-wider flex items-center gap-2">
-              <Brain className="w-3.5 h-3.5 text-gray-400" />
+            <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+              <Brain className="w-3.5 h-3.5 text-muted-foreground" />
               Wellness
             </h4>
             <div className="flex items-center gap-2 text-sm">
-              <span className="text-gray-400 text-xs">Mood</span>
-              <span className="font-medium text-gray-900">{log.mood || "—"}/5</span>
-              <span className="text-gray-300">·</span>
-              <span className="text-gray-400 text-xs">Energy</span>
-              <span className="font-medium text-gray-900">{log.energy || "—"}/10</span>
-              <span className="text-gray-300">·</span>
-              <span className="text-gray-400 text-xs">Sleep</span>
-              <span className="font-medium text-gray-900">{log.sleep || "—"}/10</span>
-              <span className="text-gray-300">·</span>
-              <span className="text-gray-400 text-xs">Stress</span>
-              <span className="font-medium text-gray-900">{log.stress || "—"}/10</span>
+              <span className="text-muted-foreground text-xs">Mood</span>
+              <span className="font-medium text-foreground">{log.mood || "—"}/5</span>
+              <span className="text-muted-foreground">·</span>
+              <span className="text-muted-foreground text-xs">Energy</span>
+              <span className="font-medium text-foreground">{log.energy || "—"}/10</span>
+              <span className="text-muted-foreground">·</span>
+              <span className="text-muted-foreground text-xs">Sleep</span>
+              <span className="font-medium text-foreground">{log.sleep || "—"}/10</span>
+              <span className="text-muted-foreground">·</span>
+              <span className="text-muted-foreground text-xs">Stress</span>
+              <span className="font-medium text-foreground">{log.stress || "—"}/10</span>
             </div>
           </div>
 
           {/* Training Section */}
-          <div className="space-y-2 border-t border-gray-100 pt-2">
-            <h4 className="text-xs font-medium text-gray-400 uppercase tracking-wider flex items-center gap-2">
-              <Activity className="w-3.5 h-3.5 text-gray-400" />
+          <div className="space-y-2 border-t border-border pt-2">
+            <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+              <Activity className="w-3.5 h-3.5 text-muted-foreground" />
               Training
             </h4>
             <div className="space-y-1">
               {log.trainingData?.trainingSessionName && (
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-700">
+                  <span className="text-sm text-foreground">
                     {log.trainingData.trainingSessionName}
                     {log.trainingData.isAlternativeSession && (
-                      <span className="text-xs text-gray-500 ml-2">(swapped from scheduled)</span>
+                      <span className="text-xs text-muted-foreground ml-2">(swapped from scheduled)</span>
                     )}
                   </span>
                   <span className={`text-sm font-medium ${log.trainingData.sessionCompleted ? 'text-success' : 'text-destructive'}`}>
@@ -125,23 +125,23 @@ export function DayDetailCard({ log, habits, onClose }: DayDetailCardProps) {
                   </span>
                 </div>
               )}
-              
+
               {/* Planned Activities */}
               {log.trainingData?.activityStatuses && Object.entries(log.trainingData.activityStatuses).map(([id, activity]) => (
                 <div key={id} className="flex items-center justify-between pl-4">
-                  <span className="text-sm text-gray-700">{activity.activityName}</span>
+                  <span className="text-sm text-foreground">{activity.activityName}</span>
                   <span className={`text-sm ${activity.completed ? 'text-success' : 'text-destructive'}`}>
                     {activity.completed ? 'Completed' : 'Skipped'}
-                    {activity.completed && <span className="text-gray-500 ml-1">({activity.estimatedCalories} cal)</span>}
+                    {activity.completed && <span className="text-muted-foreground ml-1">({activity.estimatedCalories} cal)</span>}
                   </span>
                 </div>
               ))}
-              
+
               {/* Unplanned Activities */}
               {log.trainingData?.unplannedActivities && log.trainingData.unplannedActivities.map((activity, idx) => (
                 <div key={idx} className="flex items-center justify-between pl-4">
-                  <span className="text-sm text-gray-700 italic">{activity.activityName} (unplanned)</span>
-                  <span className="text-xs text-gray-500">
+                  <span className="text-sm text-foreground italic">{activity.activityName} (unplanned)</span>
+                  <span className="text-xs text-muted-foreground">
                     {activity.intensityLevel}, {activity.durationMinutes} min
                   </span>
                 </div>
@@ -150,15 +150,15 @@ export function DayDetailCard({ log, habits, onClose }: DayDetailCardProps) {
           </div>
 
           {/* Nutrition Section */}
-          <div className="space-y-2 border-t border-gray-100 pt-2">
-            <h4 className="text-xs font-medium text-gray-400 uppercase tracking-wider flex items-center gap-2">
-              <Apple className="w-3.5 h-3.5 text-gray-400" />
+          <div className="space-y-2 border-t border-border pt-2">
+            <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+              <Apple className="w-3.5 h-3.5 text-muted-foreground" />
               Nutrition
             </h4>
             {log.caloriesConsumed ? (
               <div className="space-y-1">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-700">Calories</span>
+                  <span className="text-sm text-foreground">Calories</span>
                   <span className={`text-sm font-medium ${getNutritionColor(log.caloriesConsumed, log.targetCalories)}`}>
                     {log.caloriesConsumed} cal / {log.targetCalories || "—"} cal
                     {log.calorieSurplusDeficit !== undefined && log.calorieSurplusDeficit !== 0 && (
@@ -171,19 +171,19 @@ export function DayDetailCard({ log, habits, onClose }: DayDetailCardProps) {
                 {(log.proteinG || log.carbsG || log.fatG) && (
                   <div className="space-y-1 pl-4">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs text-gray-500">Protein</span>
+                      <span className="text-xs text-muted-foreground">Protein</span>
                       <span className={`text-xs ${getMacroColor(log.proteinG, log.targetProteinG)}`}>
                         {log.proteinG}g / {log.targetProteinG || "—"}g
                       </span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-xs text-gray-500">Carbs</span>
+                      <span className="text-xs text-muted-foreground">Carbs</span>
                       <span className={`text-xs ${getMacroColor(log.carbsG, log.targetCarbsG)}`}>
                         {log.carbsG}g / {log.targetCarbsG || "—"}g
                       </span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-xs text-gray-500">Fat</span>
+                      <span className="text-xs text-muted-foreground">Fat</span>
                       <span className={`text-xs ${getMacroColor(log.fatG, log.targetFatG)}`}>
                         {log.fatG}g / {log.targetFatG || "—"}g
                       </span>
@@ -192,18 +192,18 @@ export function DayDetailCard({ log, habits, onClose }: DayDetailCardProps) {
                 )}
               </div>
             ) : (
-              <p className="text-sm text-gray-500">No nutrition data logged</p>
+              <p className="text-sm text-muted-foreground">No nutrition data logged</p>
             )}
           </div>
 
           {/* Habits Section */}
           {habits.length > 0 && (
-            <div className="space-y-2 border-t border-gray-100 pt-2">
-              <h4 className="text-xs font-medium text-gray-400 uppercase tracking-wider">Habits</h4>
+            <div className="space-y-2 border-t border-border pt-2">
+              <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Habits</h4>
               <div className="space-y-1">
                 {habits.map((habit, idx) => (
                   <div key={idx} className="flex items-center justify-between">
-                    <span className="text-sm text-gray-700">{habit.habitName}</span>
+                    <span className="text-sm text-foreground">{habit.habitName}</span>
                     <span className={`text-sm font-medium ${habit.completed ? 'text-success' : 'text-destructive'}`}>
                       {habit.completed === true 
                         ? 'Completed' 
@@ -219,12 +219,12 @@ export function DayDetailCard({ log, habits, onClose }: DayDetailCardProps) {
 
           {/* Notes Section */}
           {log.notes && (
-            <div className="space-y-2 border-t border-gray-100 pt-2">
-              <h4 className="text-xs font-medium text-gray-400 uppercase tracking-wider flex items-center gap-2">
-                <FileText className="w-3.5 h-3.5 text-gray-400" />
+            <div className="space-y-2 border-t border-border pt-2">
+              <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                <FileText className="w-3.5 h-3.5 text-muted-foreground" />
                 Notes
               </h4>
-              <p className="text-sm text-gray-500">{log.notes}</p>
+              <p className="text-sm text-muted-foreground">{log.notes}</p>
             </div>
           )}
         </CardContent>

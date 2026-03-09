@@ -177,14 +177,14 @@ export function InviteClientDialog({
             )}
 
             {state.invitation?.status === "sent" && !state.hasAccount && (
-              <div className="flex items-start gap-2 rounded-lg bg-blue-50 p-3 text-sm text-blue-700">
+              <div className="flex items-start gap-2 rounded-lg bg-primary/10 p-3 text-sm text-primary">
                 <Mail className="mt-0.5 h-4 w-4 flex-shrink-0" />
                 <div>
                   <p>
                     An invitation was sent on{" "}
                     {new Date(state.invitation.invitedAt!).toLocaleDateString()}.
                   </p>
-                  <p className="mt-1 text-blue-600">
+                  <p className="mt-1 text-primary">
                     You can resend the invitation if needed.
                   </p>
                 </div>
@@ -192,7 +192,7 @@ export function InviteClientDialog({
             )}
 
             {status === "expired" && (
-              <div className="flex items-start gap-2 rounded-lg bg-orange-50 p-3 text-sm text-orange-700">
+              <div className="flex items-start gap-2 rounded-lg bg-warning/10 p-3 text-sm text-warning">
                 <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
                 <p>
                   The previous invitation has expired. Send a new invitation for{" "}
@@ -202,7 +202,7 @@ export function InviteClientDialog({
             )}
 
             {status === "none" && (
-              <div className="flex items-start gap-2 rounded-lg bg-gray-50 p-3 text-sm text-gray-600">
+              <div className="flex items-start gap-2 rounded-lg bg-muted/50 p-3 text-sm text-muted-foreground">
                 <UserPlus className="mt-0.5 h-4 w-4 flex-shrink-0" />
                 <p>
                   {client.name} hasn&apos;t been invited yet. Send an invitation

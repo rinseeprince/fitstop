@@ -73,7 +73,7 @@ export function WellnessBarChart({
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-medium text-muted-foreground">{label}</h3>
             {currentValue !== undefined && (
-              <span className="text-lg font-bold">{currentValue}</span>
+              <span className="text-lg font-semibold">{currentValue}</span>
             )}
           </div>
           

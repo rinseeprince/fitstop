@@ -6,10 +6,10 @@ import { useState } from "react"
 import { Button } from "./ui/button"
 
 const actions = [
-  { icon: UserPlus, label: "Add Client", color: "from-primary to-accent" },
-  { icon: Send, label: "Send Check-In", color: "from-secondary to-primary" },
-  { icon: FileText, label: "Create Program", color: "from-accent to-secondary" },
-  { icon: Calendar, label: "Schedule Call", color: "from-success to-primary" },
+  { icon: UserPlus, label: "Add Client", color: "bg-primary" },
+  { icon: Send, label: "Send Check-In", color: "bg-primary" },
+  { icon: FileText, label: "Create Program", color: "bg-primary" },
+  { icon: Calendar, label: "Schedule Call", color: "bg-success" },
 ]
 
 export function FloatingActionButton() {
@@ -35,12 +35,12 @@ export function FloatingActionButton() {
               >
                 <Button
                   variant="outline"
-                  className="group h-12 rounded-lg glass-card shadow-custom-md hover:shadow-custom-lg transition-all duration-150 hover:scale-105 whitespace-nowrap"
+                  className="group h-12 rounded-lg bg-card border border-border transition-all duration-150 hover:scale-105 whitespace-nowrap"
                 >
                   <motion.div
                     whileHover={{ scale: 1.1 }}
                     transition={{ duration: 0.15 }}
-                    className={`flex h-9 w-9 items-center justify-center rounded-xs bg-gradient-to-br ${action.color} text-white mr-3`}
+                    className={`flex h-9 w-9 items-center justify-center rounded-xs ${action.color} text-white mr-3`}
                   >
                     <action.icon className="h-4 w-4" />
                   </motion.div>
@@ -56,7 +56,7 @@ export function FloatingActionButton() {
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.95 }}
         onClick={() => setIsOpen(!isOpen)}
-        className="relative flex h-14 w-14 items-center justify-center rounded-lg gradient-primary text-white shadow-custom-lg"
+        className="relative flex h-14 w-14 items-center justify-center rounded-lg bg-primary text-primary-foreground"
       >
         <AnimatePresence mode="wait">
           <motion.div

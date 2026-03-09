@@ -11,7 +11,7 @@ type UnitToggleProps = {
 
 export function UnitToggle({ value, onChange, disabled }: UnitToggleProps) {
   return (
-    <div className="bg-gray-100 p-1 rounded-lg flex">
+    <div className="bg-muted p-1 rounded-lg flex">
       <button
         type="button"
         onClick={() => onChange("metric")}
@@ -19,8 +19,8 @@ export function UnitToggle({ value, onChange, disabled }: UnitToggleProps) {
         className={cn(
           "flex-1 flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all duration-150",
           value === "metric"
-            ? "bg-white text-gray-900 shadow-sm"
-            : "text-gray-500 hover:text-gray-700"
+            ? "bg-card text-foreground"
+            : "text-muted-foreground"
         )}
       >
         Metric (kg)
@@ -32,8 +32,8 @@ export function UnitToggle({ value, onChange, disabled }: UnitToggleProps) {
         className={cn(
           "flex-1 flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all duration-150",
           value === "imperial"
-            ? "bg-white text-gray-900 shadow-sm"
-            : "text-gray-500 hover:text-gray-700"
+            ? "bg-card text-foreground"
+            : "text-muted-foreground"
         )}
       >
         Imperial (lbs)

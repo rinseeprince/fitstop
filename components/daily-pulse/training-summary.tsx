@@ -45,7 +45,7 @@ export function TrainingSummary({
       {sessionCompleted && currentTrainingSession && (
         <div className="text-sm flex items-center gap-2">
           {currentTrainingSession.name}
-          <Check className="h-4 w-4 text-green-600" />
+          <Check className="h-4 w-4 text-success" />
         </div>
       )}
       {plannedActivities
@@ -53,7 +53,7 @@ export function TrainingSummary({
         .map(activity => (
           <div key={activity.sessionId} className="text-sm flex items-center gap-2">
             {activity.activityName}
-            <Check className="h-4 w-4 text-green-600" />
+            <Check className="h-4 w-4 text-success" />
           </div>
         ))}
     </div>

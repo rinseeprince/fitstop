@@ -96,7 +96,7 @@ export const StepSubjective = ({ data, onChange, dailyLogs = [] }: StepSubjectiv
                 transition-all duration-200 hover:scale-105
                 ${
                   data.mood === value
-                    ? "border-primary bg-primary/5 shadow-lg"
+                    ? "border-primary bg-primary/5"
                     : "border-border hover:border-primary/50"
                 }
               `}

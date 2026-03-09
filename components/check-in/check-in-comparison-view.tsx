@@ -19,7 +19,7 @@ const TrendIcon = ({ trend }: { trend?: "up" | "down" | "stable" }) => {
   } else if (trend === "down") {
     return <ArrowDown className="h-4 w-4 text-success" />;
   } else {
-    return <Minus className="h-4 w-4 text-gray-500" />;
+    return <Minus className="h-4 w-4 text-muted-foreground" />;
   }
 };
 

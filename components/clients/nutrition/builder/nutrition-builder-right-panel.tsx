@@ -25,7 +25,7 @@ export const NutritionBuilderRightPanel = memo(function NutritionBuilderRightPan
   // Loading state for training plan
   if (builder.isLoadingTrainingPlan) {
     return (
-      <div className="flex items-center justify-center h-full bg-gray-50 rounded-xl">
+      <div className="flex items-center justify-center h-full bg-muted/50 rounded-lg">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     );
@@ -38,14 +38,14 @@ export const NutritionBuilderRightPanel = memo(function NutritionBuilderRightPan
         <div className="w-16 h-16 rounded-full bg-warning/15 flex items-center justify-center mb-4">
           <Apple className="h-8 w-8 text-warning" />
         </div>
-        <h3 className="text-lg font-semibold text-gray-900 mb-2">No nutrition plan yet</h3>
-        <p className="text-sm text-gray-500 max-w-sm mb-6">
+        <h3 className="text-lg font-semibold text-foreground mb-2">No nutrition plan yet</h3>
+        <p className="text-sm text-muted-foreground max-w-sm mb-6">
           Generate a customized nutrition plan based on your client&apos;s goals, activity level, and training schedule.
         </p>
         {onOpenSettings && (
           <Button
             onClick={onOpenSettings}
-            className="bg-gradient-to-r from-primary to-accent hover:from-primary/90 hover:to-accent/90"
+            className="bg-primary hover:bg-primary/90"
           >
             <Sparkles className="h-4 w-4 mr-2" />
             Generate Plan
@@ -79,15 +79,15 @@ export const NutritionBuilderRightPanel = memo(function NutritionBuilderRightPan
 
       {/* View Toggle - Segmented Control */}
       <div className="flex items-center justify-between mt-6 mb-4">
-        <span className="text-sm font-medium text-gray-500">View</span>
-        <div className="bg-gray-100 p-1 rounded-lg inline-flex">
+        <span className="text-sm font-medium text-muted-foreground">View</span>
+        <div className="bg-muted p-1 rounded-lg inline-flex">
           <button
             onClick={() => setViewMode("week")}
             className={cn(
               "px-4 py-2 text-sm font-medium rounded-md flex items-center gap-2 transition-all",
               viewMode === "week"
-                ? "bg-white text-gray-900 shadow-sm"
-                : "text-gray-500 hover:text-gray-700"
+                ? "bg-card text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
             )}
           >
             <CalendarDays className="h-4 w-4" />
@@ -98,8 +98,8 @@ export const NutritionBuilderRightPanel = memo(function NutritionBuilderRightPan
             className={cn(
               "px-4 py-2 text-sm font-medium rounded-md flex items-center gap-2 transition-all",
               viewMode === "list"
-                ? "bg-white text-gray-900 shadow-sm"
-                : "text-gray-500 hover:text-gray-700"
+                ? "bg-card text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
             )}
           >
             <LayoutList className="h-4 w-4" />
@@ -147,24 +147,24 @@ type CustomMacrosDisplayProps = {
 
 function CustomMacrosDisplay({ calories, protein, carbs, fat }: CustomMacrosDisplayProps) {
   return (
-    <div className="bg-warning/5 rounded-xl p-8 text-center">
-      <div className="text-4xl font-bold text-warning">{calories.toLocaleString()}</div>
-      <div className="text-sm text-gray-500 mt-2">calories per day (custom macros)</div>
+    <div className="bg-warning/5 rounded-lg p-8 text-center">
+      <div className="text-4xl font-semibold text-warning">{calories.toLocaleString()}</div>
+      <div className="text-sm text-muted-foreground mt-2">calories per day (custom macros)</div>
       <div className="grid grid-cols-3 gap-4 mt-6 pt-6">
-        <div className="text-center bg-blue-50/50 rounded-xl p-4">
-          <div className="text-2xl font-bold text-blue-600">{protein}g</div>
-          <div className="text-xs text-gray-500 mt-1">Protein</div>
+        <div className="text-center bg-protein/10 rounded-lg p-4">
+          <div className="text-2xl font-semibold text-protein">{protein}g</div>
+          <div className="text-xs text-muted-foreground mt-1">Protein</div>
         </div>
-        <div className="text-center bg-green-50/50 rounded-xl p-4">
-          <div className="text-2xl font-bold text-green-600">{carbs}g</div>
-          <div className="text-xs text-gray-500 mt-1">Carbs</div>
+        <div className="text-center bg-carbs/10 rounded-lg p-4">
+          <div className="text-2xl font-semibold text-carbs">{carbs}g</div>
+          <div className="text-xs text-muted-foreground mt-1">Carbs</div>
         </div>
-        <div className="text-center bg-amber-50/50 rounded-xl p-4">
-          <div className="text-2xl font-bold text-amber-600">{fat}g</div>
-          <div className="text-xs text-gray-500 mt-1">Fat</div>
+        <div className="text-center bg-fat/10 rounded-lg p-4">
+          <div className="text-2xl font-semibold text-fat">{fat}g</div>
+          <div className="text-xs text-muted-foreground mt-1">Fat</div>
         </div>
       </div>
-      <p className="text-xs text-amber-600 mt-4 font-medium">Custom macros active - same targets each day</p>
+      <p className="text-xs text-fat mt-4 font-medium">Custom macros active - same targets each day</p>
     </div>
   );
 }

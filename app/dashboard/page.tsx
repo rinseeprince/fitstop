@@ -62,7 +62,7 @@ export default function DashboardPage() {
       <div className="space-y-6 max-w-7xl mx-auto">
         {/* Needs Attention Feed - at the top */}
         <NeedsAttentionFeed />
-        
+
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
           <MetricCard
             title="Active Clients"
@@ -70,7 +70,7 @@ export default function DashboardPage() {
             icon={Users}
             trend={{ value: "+3 this month", positive: true }}
             chart={[12, 15, 18, 20, 22, 24]}
-            delay={0.1}
+            delay={0.05}
           />
           <MetricCard
             title="Unreviewed Check-ins"
@@ -81,11 +81,11 @@ export default function DashboardPage() {
               positive: unreviewedCount === 0,
             }}
             chart={[2, 3, 1, 2, 4, unreviewedCount]}
-            delay={0.2}
+            delay={0.1}
             href="/check-ins/review"
           />
-          <MetricCard title="Unread Messages" value={7} icon={MessageSquare} chart={[12, 10, 8, 9, 8, 7]} delay={0.3} />
-          <MetricCard title="Upcoming Calls" value={5} icon={PhoneCall} chart={[3, 4, 6, 5, 4, 5]} delay={0.4} />
+          <MetricCard title="Unread Messages" value={7} icon={MessageSquare} chart={[12, 10, 8, 9, 8, 7]} delay={0.15} />
+          <MetricCard title="Upcoming Calls" value={5} icon={PhoneCall} chart={[3, 4, 6, 5, 4, 5]} delay={0.2} />
         </div>
 
         <CoachTipCard />
@@ -93,22 +93,18 @@ export default function DashboardPage() {
         <div className="grid gap-6 lg:grid-cols-2">
           {/* Recent Check-ins */}
           <motion.div
-            initial={{ opacity: 0, y: 10 }}
+            initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.4, duration: 0.3 }}
-            className="rounded-lg glass-card shadow-custom-md p-6"
+            transition={{ delay: 0.2, duration: 0.2 }}
+            className="rounded-lg bg-card border border-border p-6"
           >
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-lg font-semibold">Recent Check-ins</h2>
-              <motion.div
-                whileHover={{ scale: 1.1 }}
-                transition={{ duration: 0.15 }}
-                className="flex h-9 w-9 items-center justify-center rounded-xs bg-success/10"
-              >
+              <h2 className="text-lg font-semibold tracking-tight">Recent Check-ins</h2>
+              <div className="flex h-9 w-9 items-center justify-center rounded-md bg-success/10">
                 <TrendingUp className="h-4 w-4 text-success" />
-              </motion.div>
+              </div>
             </div>
-            <div className="space-y-4">
+            <div className="space-y-1">
               {isLoading ? (
                 <div className="flex items-center justify-center py-8">
                   <div className="w-6 h-6 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
@@ -128,29 +124,19 @@ export default function DashboardPage() {
 
                   return (
                     <Link key={checkIn.id} href={`/clients/${checkIn.clientId}`}>
-                      <motion.div
-                        initial={{ opacity: 0, y: 5 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.5 + i * 0.05, duration: 0.2 }}
-                        whileHover={{ scale: 1.01, transition: { duration: 0.15 } }}
-                        className="group flex items-center justify-between rounded-lg p-3 transition-all duration-150 hover:bg-muted/50 cursor-pointer"
-                      >
+                      <div className="group flex items-center justify-between rounded-md p-3 transition-colors duration-150 hover:bg-muted/50 cursor-pointer">
                         <div className="flex items-center gap-3">
-                          <motion.div
-                            whileHover={{ scale: 1.05 }}
-                            transition={{ duration: 0.15 }}
-                            className="flex h-10 w-10 items-center justify-center rounded-xs bg-primary/10 text-primary text-sm font-medium"
-                          >
+                          <div className="flex h-10 w-10 items-center justify-center rounded-md bg-primary/10 text-primary text-sm font-medium">
                             {checkIn.clientAvatar ? (
                               <img
                                 src={checkIn.clientAvatar}
                                 alt={checkIn.clientName}
-                                className="h-full w-full rounded-xs object-cover"
+                                className="h-full w-full rounded-md object-cover"
                               />
                             ) : (
                               initials
                             )}
-                          </motion.div>
+                          </div>
                           <div>
                             <p className="font-medium text-sm">{checkIn.clientName}</p>
                             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -168,7 +154,7 @@ export default function DashboardPage() {
                                 : "bg-warning"
                           }`}
                         />
-                      </motion.div>
+                      </div>
                     </Link>
                   )
                 })
@@ -178,43 +164,31 @@ export default function DashboardPage() {
 
           {/* Upcoming Calls */}
           <motion.div
-            initial={{ opacity: 0, y: 10 }}
+            initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.45, duration: 0.3 }}
-            className="rounded-lg glass-card shadow-custom-md p-6"
+            transition={{ delay: 0.25, duration: 0.2 }}
+            className="rounded-lg bg-card border border-border p-6"
           >
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-lg font-semibold">Upcoming Calls</h2>
-              <motion.div
-                whileHover={{ scale: 1.1 }}
-                transition={{ duration: 0.15 }}
-                className="flex h-9 w-9 items-center justify-center rounded-xs bg-primary/10"
-              >
+              <h2 className="text-lg font-semibold tracking-tight">Upcoming Calls</h2>
+              <div className="flex h-9 w-9 items-center justify-center rounded-md bg-primary/10">
                 <PhoneCall className="h-4 w-4 text-primary" />
-              </motion.div>
+              </div>
             </div>
-            <div className="space-y-4">
+            <div className="space-y-1">
               {[
                 { name: "Lisa Anderson", time: "Today at 2:00 PM", type: "Initial Consultation", avatar: "LA" },
                 { name: "Tom Martinez", time: "Today at 4:30 PM", type: "Progress Review", avatar: "TM" },
                 { name: "Anna Taylor", time: "Tomorrow at 10:00 AM", type: "Program Planning", avatar: "AT" },
                 { name: "David Brown", time: "Tomorrow at 3:00 PM", type: "Check-in Call", avatar: "DB" },
               ].map((call, i) => (
-                <motion.div
+                <div
                   key={i}
-                  initial={{ opacity: 0, y: 5 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.5 + i * 0.05, duration: 0.2 }}
-                  whileHover={{ scale: 1.01, transition: { duration: 0.15 } }}
-                  className="group flex items-start gap-3 rounded-lg p-3 transition-all duration-150 hover:bg-muted/50"
+                  className="group flex items-start gap-3 rounded-md p-3 transition-colors duration-150 hover:bg-muted/50"
                 >
-                  <motion.div
-                    whileHover={{ scale: 1.05 }}
-                    transition={{ duration: 0.15 }}
-                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xs bg-secondary/10 text-secondary text-sm font-medium"
-                  >
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground text-sm font-medium">
                     {call.avatar}
-                  </motion.div>
+                  </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-sm">{call.name}</p>
                     <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5">
@@ -223,7 +197,7 @@ export default function DashboardPage() {
                     </div>
                     <p className="text-xs text-primary font-medium mt-1">{call.type}</p>
                   </div>
-                </motion.div>
+                </div>
               ))}
             </div>
           </motion.div>

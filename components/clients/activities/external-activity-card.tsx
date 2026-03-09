@@ -90,7 +90,7 @@ export function ExternalActivityCard({
       <Card className="p-4 bg-muted/30 border-dashed">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="p-2 rounded-full bg-primary/10">
+            <div className="p-2 rounded-lg bg-primary/10">
               <Activity className="h-4 w-4 text-primary" />
             </div>
             <div>

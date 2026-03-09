@@ -8,17 +8,15 @@ import { cn } from '@/lib/utils'
 import { Sparkline } from './chart'
 
 const statCardVariants = cva(
-  'group relative overflow-hidden rounded-lg border transition-all duration-150 hover:shadow-custom-lg',
+  'group relative overflow-hidden rounded-lg border transition-colors duration-150',
   {
     variants: {
       variant: {
-        default: 'bg-card shadow-custom-md',
-        glass: 'glass-card shadow-custom-md',
-        'glass-heavy': 'glass-heavy shadow-custom-lg',
+        default: 'bg-card border-border',
       },
     },
     defaultVariants: {
-      variant: 'glass',
+      variant: 'default',
     },
   }
 )
@@ -58,7 +56,7 @@ function StatCardV2({
             {label}
           </span>
           {Icon && (
-            <div className="flex h-9 w-9 items-center justify-center rounded-xs bg-primary/10 text-primary transition-all duration-150 group-hover:bg-primary/20">
+            <div className="flex h-9 w-9 items-center justify-center rounded-md bg-primary/10 text-primary transition-colors duration-150 group-hover:bg-primary/15">
               <Icon className="h-4 w-4" />
             </div>
           )}

@@ -114,7 +114,7 @@ export default function ClientTrainingPage() {
   if (!plan) {
     return (
       <div className="space-y-6">
-        <h1 className="text-2xl font-bold">Training Plan</h1>
+        <h1 className="text-2xl font-semibold">Training Plan</h1>
         <Card>
           <CardContent className="py-12 text-center">
             <Dumbbell className="mx-auto h-12 w-12 text-muted-foreground/50" />
@@ -138,7 +138,7 @@ export default function ClientTrainingPage() {
     <div className="space-y-6">
       {/* Plan Header */}
       <div>
-        <h1 className="text-2xl font-bold">{plan.name}</h1>
+        <h1 className="text-2xl font-semibold">{plan.name}</h1>
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <Badge variant="secondary">
             <Calendar className="mr-1 h-3 w-3" />

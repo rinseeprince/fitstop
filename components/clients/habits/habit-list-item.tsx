@@ -60,8 +60,8 @@ export const HabitListItem = ({
         "group relative px-3 py-2.5 rounded-lg cursor-pointer transition-all duration-150",
         !habit.isActive && "opacity-60",
         isSelected
-          ? "bg-primary/10 shadow-sm"
-          : "hover:bg-gray-50"
+          ? "bg-primary/10"
+          : "hover:bg-muted/50"
       )}
       onClick={onClick}
     >
@@ -75,7 +75,7 @@ export const HabitListItem = ({
             {habit.name}
           </p>
           {!habit.isActive && (
-            <span className="text-xs text-muted-foreground bg-gray-100 px-1.5 py-0.5 rounded">
+            <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
               Inactive
             </span>
           )}
@@ -135,7 +135,7 @@ export const HabitListItem = ({
         <div className="mt-1">
           {/* Type indicator - only show for numeric habits */}
           {!habit.isBoolean && habit.targetValue && habit.targetUnit && (
-            <p className="text-xs text-gray-400">
+            <p className="text-xs text-muted-foreground">
               {habit.targetValue} {habit.targetUnit}
             </p>
           )}

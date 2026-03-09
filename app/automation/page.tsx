@@ -80,7 +80,7 @@ export default function AutomationPage() {
         <Button
           variant="ghost"
           size="icon"
-          className="h-9 w-9 rounded-full transition-all hover:scale-110"
+          className="h-9 w-9 rounded-lg transition-all hover:scale-110"
         >
           <Plus className="h-4 w-4" />
           <span className="sr-only">Create Automation</span>
@@ -159,7 +159,7 @@ export default function AutomationPage() {
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">Total Automations</p>
-                  <p className="text-2xl font-bold">{rules.length}</p>
+                  <p className="text-2xl font-semibold">{rules.length}</p>
                 </div>
               </div>
             </CardContent>
@@ -172,7 +172,7 @@ export default function AutomationPage() {
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">Active Rules</p>
-                  <p className="text-2xl font-bold">{rules.filter((r) => r.isActive).length}</p>
+                  <p className="text-2xl font-semibold">{rules.filter((r) => r.isActive).length}</p>
                 </div>
               </div>
             </CardContent>
@@ -185,7 +185,7 @@ export default function AutomationPage() {
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">Runs This Month</p>
-                  <p className="text-2xl font-bold">247</p>
+                  <p className="text-2xl font-semibold">247</p>
                 </div>
               </div>
             </CardContent>

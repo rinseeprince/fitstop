@@ -130,11 +130,11 @@ export const ExternalActivitiesCheckin = ({
   const getIntensityColor = (intensity: string) => {
     switch (intensity) {
       case "low":
-        return "bg-success/15 text-success";
+        return "bg-success/10 text-success";
       case "moderate":
-        return "bg-warning/15 text-warning";
+        return "bg-warning/10 text-warning";
       case "vigorous":
-        return "bg-destructive/15 text-destructive";
+        return "bg-destructive/10 text-destructive";
       default:
         return "bg-muted text-muted-foreground";
     }
@@ -151,7 +151,7 @@ export const ExternalActivitiesCheckin = ({
             <Activity className="h-5 w-5 text-muted-foreground" />
             <span className="font-medium">Other Activities</span>
             {activities.length > 0 && (
-              <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+              <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-md">
                 {activities.length}
               </span>
             )}

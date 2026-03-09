@@ -48,14 +48,14 @@ const getTrendDisplay = (trend: TrendDirection, metricId: string) => {
   }
 
   if (isStress) {
-    return { color: trend === "down" ? "text-emerald-500" : "text-rose-500", isPositive: trend === "down" };
+    return { color: trend === "down" ? "text-success" : "text-destructive", isPositive: trend === "down" };
   }
 
   if (isBodyMetric) {
-    return { color: trend === "down" ? "text-emerald-500" : "text-rose-500", isPositive: trend === "down" };
+    return { color: trend === "down" ? "text-success" : "text-destructive", isPositive: trend === "down" };
   }
 
-  return { color: trend === "up" ? "text-emerald-500" : "text-rose-500", isPositive: trend === "up" };
+  return { color: trend === "up" ? "text-success" : "text-destructive", isPositive: trend === "up" };
 };
 
 export const MetricChartCard = ({
@@ -79,7 +79,7 @@ export const MetricChartCard = ({
       ref={onRef}
       className={cn(
         "transition-all duration-200 overflow-hidden",
-        isHighlighted && "ring-2 ring-primary shadow-lg"
+        isHighlighted && "ring-1 ring-primary"
       )}
     >
       <CardContent className="p-5">

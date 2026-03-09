@@ -8,7 +8,7 @@ export const DayHeadersGrid = memo(function DayHeadersGrid() {
     <div className="grid grid-cols-7 gap-3 mb-2">
       {DAYS_OF_WEEK.map((day) => (
         <div key={day.value} className="text-center">
-          <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">
+          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
             {day.label}
           </span>
         </div>

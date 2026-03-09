@@ -167,7 +167,7 @@ export const StepPhotos = ({ data, onChange }: StepPhotosProps) => {
         })}
       </div>
 
-      <div className="glass-card p-4 space-y-2">
+      <div className="bg-card border border-border p-4 space-y-2">
         <div className="flex items-start gap-2">
           <ImageIcon className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
           <div className="text-sm text-muted-foreground">

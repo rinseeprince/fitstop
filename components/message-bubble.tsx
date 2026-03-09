@@ -24,7 +24,7 @@ export function MessageBubble({ message, isCoach }: MessageBubbleProps) {
       <div>
         <div
           className={cn(
-            "rounded-2xl px-4 py-2",
+            "rounded-lg px-4 py-2",
             isCoach ? "bg-primary text-primary-foreground rounded-br-sm" : "bg-muted rounded-bl-sm",
           )}
         >

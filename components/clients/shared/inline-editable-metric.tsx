@@ -160,7 +160,7 @@ export function InlineEditableMetric({
         <div className="flex items-center gap-2 group">
           <button
             onClick={handleEdit}
-            className="text-2xl font-bold hover:text-primary transition-colors flex items-center gap-2"
+            className="text-2xl font-semibold hover:text-primary transition-colors flex items-center gap-2"
           >
             {displayValue}
             {unit && <span className="text-muted-foreground">{unit}</span>}

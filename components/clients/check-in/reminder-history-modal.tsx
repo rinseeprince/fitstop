@@ -77,7 +77,7 @@ export function ReminderHistoryModal({
           <div className="space-y-4">
             {[1, 2, 3].map((i) => (
               <div key={i} className="flex gap-4 p-4 border rounded-lg">
-                <Skeleton className="h-12 w-12 rounded-full" />
+                <Skeleton className="h-12 w-12 rounded-lg" />
                 <div className="flex-1 space-y-2">
                   <Skeleton className="h-4 w-3/4" />
                   <Skeleton className="h-3 w-1/2" />
@@ -87,7 +87,7 @@ export function ReminderHistoryModal({
           </div>
         ) : total === 0 ? (
           <div className="text-center py-12">
-            <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
+            <div className="w-16 h-16 bg-muted rounded-lg flex items-center justify-center mx-auto mb-4">
               <Send className="h-8 w-8 text-muted-foreground" />
             </div>
             <p className="font-medium text-muted-foreground">No reminders sent yet</p>
@@ -119,7 +119,7 @@ export function ReminderHistoryModal({
                 key={reminder.id}
                 className="flex items-start gap-4 p-4 border rounded-lg hover:bg-muted/50 transition-colors"
               >
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
                   {getReminderIcon(reminder)}
                 </div>
 

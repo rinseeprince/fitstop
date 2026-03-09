@@ -29,7 +29,7 @@ export function TrainingPlanCard({ client, onUpdate }: TrainingPlanCardProps) {
 
   if (isLoading) {
     return (
-      <div className="bg-white rounded-xl shadow-sm p-5">
+      <div className="bg-card rounded-lg border border-border p-5">
         <div className="flex items-center justify-center py-12">
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
         </div>
