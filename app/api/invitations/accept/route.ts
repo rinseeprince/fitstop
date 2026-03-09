@@ -55,7 +55,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<AcceptInv
 
       // Verify a pending invitation exists for this client
       const { data: invitation } = await supabaseAdmin
-        .from("invitations")
+        .from("client_invitations")
         .select("id, email")
         .eq("client_id", clientId)
         .eq("status", "pending")

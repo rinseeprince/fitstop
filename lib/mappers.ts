@@ -1,4 +1,5 @@
 import type { CheckIn, Client, AIInsight, AIRecommendation } from "@/types/check-in";
+import type { ClientIntake } from "@/types/client-intake";
 import type { CheckInRow, ClientRow } from "./database-helpers";
 
 /**
@@ -109,3 +110,98 @@ export function mapClientRow(row: ClientRow): Client {
 
 // Legacy alias for backward compatibility
 export const mapCheckInFromDatabase = mapCheckInRow;
+
+/**
+ * Map a database client_intake row to a ClientIntake type
+ */
+export function mapClientIntakeRow(row: {
+  id: string;
+  client_id: string;
+  status: string;
+  date_of_birth: string | null;
+  gender: string | null;
+  height: number | null;
+  height_unit: string | null;
+  current_weight: number | null;
+  weight_unit: string | null;
+  body_fat_percentage: number | null;
+  work_activity_level: string | null;
+  primary_goal: string | null;
+  goal_details: string | null;
+  target_weight: number | null;
+  goal_deadline: string | null;
+  goal_description: string | null;
+  motivation: string | null;
+  training_experience_level: string | null;
+  training_time_preference: string | null;
+  training_location: string | null;
+  available_equipment: string[] | null;
+  days_per_week: number | null;
+  session_duration_minutes: number | null;
+  dietary_requirements: string[] | null;
+  cooking_frequency: string | null;
+  nutrition_notes: string | null;
+  food_allergies: string | null;
+  diet_description: string | null;
+  has_tracked_macros_before: boolean | null;
+  meals_per_day: number | null;
+  biggest_nutrition_challenge: string | null;
+  injuries_or_limitations: string | null;
+  medical_notes: string | null;
+  previous_coaching_experience: boolean | null;
+  previous_coaching_details: string | null;
+  anything_else: string | null;
+  reviewed_at: string | null;
+  reviewed_by: string | null;
+  coach_review_notes: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}): ClientIntake {
+  return {
+    id: row.id,
+    clientId: row.client_id,
+    status: row.status as ClientIntake["status"],
+    dateOfBirth: row.date_of_birth ?? undefined,
+    gender: row.gender ?? undefined,
+    height: row.height ?? undefined,
+    heightUnit: row.height_unit ?? undefined,
+    currentWeight: row.current_weight ?? undefined,
+    weightUnit: row.weight_unit ?? undefined,
+    bodyFatPercentage: row.body_fat_percentage ?? undefined,
+    workActivityLevel: (row.work_activity_level ?? undefined) as ClientIntake["workActivityLevel"],
+    primaryGoal: (row.primary_goal ?? undefined) as ClientIntake["primaryGoal"],
+    goalDetails: row.goal_details ?? undefined,
+    targetWeight: row.target_weight ?? undefined,
+    goalDeadline: row.goal_deadline ?? undefined,
+    goalDescription: row.goal_description ?? undefined,
+    motivation: row.motivation ?? undefined,
+    trainingExperienceLevel: (row.training_experience_level ?? undefined) as ClientIntake["trainingExperienceLevel"],
+    trainingTimePreference: (row.training_time_preference ?? undefined) as ClientIntake["trainingTimePreference"],
+    trainingLocation: (row.training_location ?? undefined) as ClientIntake["trainingLocation"],
+    availableEquipment: row.available_equipment ?? undefined,
+    daysPerWeek: row.days_per_week ?? undefined,
+    sessionDurationMinutes: row.session_duration_minutes ?? undefined,
+    dietaryRequirements: row.dietary_requirements ?? undefined,
+    cookingFrequency: (row.cooking_frequency ?? undefined) as ClientIntake["cookingFrequency"],
+    nutritionNotes: row.nutrition_notes ?? undefined,
+    foodAllergies: row.food_allergies ?? undefined,
+    dietDescription: row.diet_description ?? undefined,
+    hasTrackedMacrosBefore: row.has_tracked_macros_before ?? undefined,
+    mealsPerDay: row.meals_per_day ?? undefined,
+    biggestNutritionChallenge: row.biggest_nutrition_challenge ?? undefined,
+    injuriesOrLimitations: row.injuries_or_limitations ?? undefined,
+    medicalNotes: row.medical_notes ?? undefined,
+    previousCoachingExperience: row.previous_coaching_experience ?? undefined,
+    previousCoachingDetails: row.previous_coaching_details ?? undefined,
+    anythingElse: row.anything_else ?? undefined,
+    reviewedAt: row.reviewed_at ?? undefined,
+    reviewedBy: row.reviewed_by ?? undefined,
+    coachReviewNotes: row.coach_review_notes ?? undefined,
+    startedAt: row.started_at ?? undefined,
+    completedAt: row.completed_at ?? undefined,
+    createdAt: row.created_at ?? new Date().toISOString(),
+    updatedAt: row.updated_at ?? new Date().toISOString(),
+  };
+}
