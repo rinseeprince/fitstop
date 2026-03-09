@@ -17,21 +17,25 @@ export async function validateCSRFToken(request: NextRequest): Promise<boolean> 
     const referer = headersList.get("referer");
     const host = headersList.get("host");
 
-    // If we have an origin header, verify it matches our host
+    // Build expected origin from protocol + host for exact match
+    const proto = headersList.get("x-forwarded-proto") || "https";
+    const expectedOrigin = `${proto}://${host}`;
+
+    // If we have an origin header, verify exact match (protocol + host)
     if (origin) {
-      const originUrl = new URL(origin);
-      if (originUrl.host !== host) {
-        console.warn(`CSRF: Origin ${originUrl.host} doesn't match host ${host}`);
+      if (origin !== expectedOrigin) {
+        console.warn(`CSRF: Origin ${origin} doesn't match expected ${expectedOrigin}`);
         return false;
       }
       return true;
     }
 
-    // Fallback to referer check
+    // Fallback to referer check (protocol + host must match)
     if (referer) {
       const refererUrl = new URL(referer);
-      if (refererUrl.host !== host) {
-        console.warn(`CSRF: Referer ${refererUrl.host} doesn't match host ${host}`);
+      const refererOrigin = refererUrl.origin;
+      if (refererOrigin !== expectedOrigin) {
+        console.warn(`CSRF: Referer origin ${refererOrigin} doesn't match expected ${expectedOrigin}`);
         return false;
       }
       return true;

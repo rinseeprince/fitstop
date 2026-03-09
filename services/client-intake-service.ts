@@ -121,11 +121,11 @@ export async function saveIntakeStep(
   step: number,
   data: Record<string, unknown>
 ): Promise<ClientIntake> {
-  if (step < 1 || step > 5) {
-    throw new IntakeValidationError("Invalid step number. Must be 1-5.");
+  if (!Number.isInteger(step) || step < 1 || step > 5) {
+    throw new IntakeValidationError("Invalid step number.");
   }
 
-  // Validate data against the step schema
+  // Validate data against the step schema (bounds verified above)
   const schema = intakeStepSchemas[step - 1];
   const result = schema.safeParse(data);
   if (!result.success) {

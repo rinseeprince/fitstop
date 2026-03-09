@@ -182,7 +182,7 @@ export const intakeStep3Schema = z.object({
     .max(7, "Maximum 7 days per week"),
   trainingTimePreference: trainingTimePreferenceSchema,
   trainingLocation: trainingLocationSchema,
-  availableEquipment: z.array(z.string().max(100)).max(20).optional(),
+  availableEquipment: z.array(z.string().min(1).max(100)).max(20).optional(),
   sessionDurationMinutes: optionalInt(
     z
       .number()
@@ -197,7 +197,7 @@ export const intakeStep3Schema = z.object({
 // -------------------------------------------------------
 
 export const intakeStep4Schema = z.object({
-  dietaryRequirements: z.array(z.string().max(100)).max(20).optional(),
+  dietaryRequirements: z.array(z.string().min(1).max(100)).max(20).optional(),
   foodAllergies: optionalString(300),
   dietDescription: optionalString(500),
   cookingFrequency: cookingFrequencySchema.optional(),

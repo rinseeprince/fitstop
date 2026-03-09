@@ -18,7 +18,7 @@ export const ProgressIndicator = ({
     <div className="w-full py-6">
       <div className="flex items-center justify-between">
         {Array.from({ length: totalSteps }, (_, i) => i + 1).map((step, index) => (
-          <div key={step} className="flex items-center flex-1">
+          <div key={step} className={`flex items-center ${index < totalSteps - 1 ? "flex-1" : ""}`}>
             {/* Step Circle */}
             <div className="flex flex-col items-center">
               <motion.div
