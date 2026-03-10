@@ -19,30 +19,29 @@ export async function POST(
   try {
     const coachId = await getAuthenticatedCoachId();
     if (!coachId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
 
     const { id: clientId } = await params;
-    const client = await getClientById(clientId);
+    const client = await getClientById(clientId, true);
     if (!client) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
+      return NextResponse.json({ success: false, error: "Client not found" }, { status: 404 });
     }
     if (client.coachId !== coachId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
     }
 
     const body = await request.json();
     const validation = activateClientSchema.safeParse(body);
     if (!validation.success) {
       return NextResponse.json(
-        { error: "Invalid input", details: validation.error.errors },
+        { success: false, error: "Invalid input", details: validation.error.errors },
         { status: 400 }
       );
     }
 
     // Update onboarding_status to active
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const db = supabaseAdmin as any;
+    const db = supabaseAdmin as { from: (table: string) => ReturnType<typeof supabaseAdmin.from> };
     const updateData: Record<string, unknown> = {
       onboarding_status: "active",
       updated_at: new Date().toISOString(),
@@ -60,9 +59,6 @@ export async function POST(
 
     if (error) throw new Error(`Failed to activate client: ${error.message}`);
 
-    // TODO: Send welcome notification/email to client
-    // if (validation.data.welcomeMessage) { ... }
-
     return NextResponse.json({
       success: true,
       data: { activated: true },
@@ -70,7 +66,7 @@ export async function POST(
   } catch (error) {
     console.error("Error activating client:", error);
     return NextResponse.json(
-      { error: "Failed to activate client" },
+      { success: false, error: "Failed to activate client" },
       { status: 500 }
     );
   }

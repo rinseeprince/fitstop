@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useMemo, useState } from "react";
+import useSWR from "swr";
 import { AppLayout } from "@/components/app-layout";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
@@ -8,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { AddClientDialog } from "@/components/add-client-dialog";
 import { OverdueBanner } from "@/components/clients/check-in/overdue-banner";
+import { PendingIntakeBanner } from "@/components/coach/pending-intake-banner";
 import { Search, AlertCircle, Clock, ChevronRight, Users } from "lucide-react";
 import Link from "next/link";
 import type { ClientWithCheckInInfo } from "@/services/client-service";
@@ -15,51 +17,29 @@ import { useOverdueClients } from "@/hooks/use-check-in-data";
 
 type ClientStatus = "active" | "inactive";
 
+const fetcher = async (url: string) => { const r = await fetch(url); return r.json() };
+
 export default function ClientsPage() {
-  const [clients, setClients] = useState<ClientWithCheckInInfo[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data, error, isLoading, mutate } = useSWR<{ clients: ClientWithCheckInInfo[] }>(
+    "/api/clients",
+    fetcher,
+    { revalidateOnFocus: false }
+  );
+  const clients = data?.clients ?? [];
+
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState<"all" | ClientStatus>("all");
   const { clients: overdueClients } = useOverdueClients();
 
-  // Helper to check if a client is overdue
   const isClientOverdue = (clientId: string) => {
     return overdueClients.some((c) => c.id === clientId);
   };
 
-  // Helper to get days overdue for a client
   const getClientDaysOverdue = (clientId: string) => {
     const overdueClient = overdueClients.find((c) => c.id === clientId);
     return overdueClient?.daysOverdue || 0;
   };
 
-  const fetchClients = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const response = await fetch("/api/clients");
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch clients");
-      }
-
-      const data = await response.json();
-      setClients(data.clients || []);
-    } catch (err) {
-      console.error("Error fetching clients:", err);
-      setError(err instanceof Error ? err.message : "Failed to load clients");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchClients();
-  }, []);
-
-  // Format last check-in date
   const formatLastCheckIn = (date?: string): string => {
     if (!date) return "Never";
 
@@ -79,16 +59,13 @@ export default function ClientsPage() {
     return months === 1 ? "1 month ago" : `${months} months ago`;
   };
 
-  // Derive status from active field and last check-in
   const getClientStatus = (client: ClientWithCheckInInfo): ClientStatus => {
     return client.active ? "active" : "inactive";
   };
 
-  // Filter and search clients
   const filteredClients = useMemo(() => {
     let result = [...clients];
 
-    // Apply status filter
     if (activeFilter !== "all") {
       result = result.filter((client) => {
         const status = getClientStatus(client);
@@ -96,7 +73,6 @@ export default function ClientsPage() {
       });
     }
 
-    // Apply search filter
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
       result = result.filter(
@@ -109,7 +85,6 @@ export default function ClientsPage() {
     return result;
   }, [clients, activeFilter, searchQuery]);
 
-  // Count clients by status
   const statusCounts = useMemo(() => {
     return {
       all: clients.length,
@@ -126,8 +101,11 @@ export default function ClientsPage() {
   );
 
   return (
-    <AppLayout pageHeader={pageHeader} headerActions={<AddClientDialog onClientAdded={fetchClients} />}>
+    <AppLayout pageHeader={pageHeader} headerActions={<AddClientDialog onClientAdded={() => mutate()} />}>
       <div className="space-y-6">
+        {/* Pending Onboarding Banner */}
+        <PendingIntakeBanner />
+
         {/* Overdue Banner */}
         <OverdueBanner />
 
@@ -179,7 +157,7 @@ export default function ClientsPage() {
         </div>
 
         {/* Loading State */}
-        {loading && (
+        {isLoading && (
           <div className="bg-card rounded-lg border border-border p-6">
             <div className="flex flex-col items-center justify-center py-12 space-y-3">
               <div className="w-5 h-5 border-2 border-muted border-t-primary rounded-full animate-spin" />
@@ -189,7 +167,7 @@ export default function ClientsPage() {
         )}
 
         {/* Error State */}
-        {error && !loading && (
+        {error && !isLoading && (
           <div className="bg-card rounded-lg border border-border p-6">
             <div className="flex flex-col items-center justify-center py-12 space-y-3">
               <div className="w-16 h-16 bg-destructive/10 rounded-full flex items-center justify-center">
@@ -197,15 +175,15 @@ export default function ClientsPage() {
               </div>
               <div className="text-center space-y-1">
                 <p className="text-lg font-semibold text-foreground">Failed to load clients</p>
-                <p className="text-sm text-muted-foreground">{error}</p>
+                <p className="text-sm text-muted-foreground">Please try again</p>
               </div>
-              <Button onClick={fetchClients}>Try Again</Button>
+              <Button onClick={() => mutate()}>Try Again</Button>
             </div>
           </div>
         )}
 
         {/* Empty State */}
-        {!loading && !error && filteredClients.length === 0 && (
+        {!isLoading && !error && filteredClients.length === 0 && (
           <div className="bg-card rounded-lg border border-border p-6">
             <div className="flex flex-col items-center justify-center py-16 px-8 text-center">
               <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-4">
@@ -223,7 +201,7 @@ export default function ClientsPage() {
               </p>
               {!searchQuery && activeFilter === "all" && (
                 <AddClientDialog
-                  onClientAdded={fetchClients}
+                  onClientAdded={() => mutate()}
                   trigger={
                     <Button>
                       Add Your First Client
@@ -236,7 +214,7 @@ export default function ClientsPage() {
         )}
 
         {/* Client List */}
-        {!loading && !error && filteredClients.length > 0 && (
+        {!isLoading && !error && filteredClients.length > 0 && (
           <div className="space-y-3">
             {filteredClients.map((client) => {
               const initials = client.name

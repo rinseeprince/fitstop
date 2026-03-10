@@ -3,6 +3,7 @@ import type { Client, ClientCheckInConfig, ReminderPreferences } from "@/types/c
 import type { CreateClientInput, UpdateClientInput, UpdateCheckInConfigInput } from "@/lib/validations/client";
 import type { ClientRow } from "@/lib/database-helpers";
 import { mapClientRow } from "@/lib/mappers";
+import { createIntake } from "@/services/client-intake-service";
 
 // Extended client type with check-in info
 export type ClientWithCheckInInfo = Client & {
@@ -29,26 +30,34 @@ export const createClient = async (
   coachId: string,
   clientData: CreateClientInput
 ): Promise<Client> => {
-  const { data, error} = await supabaseAdmin
+  const isIntakeMode = clientData.setupMode === "intake";
+
+  const baseInsert = {
+    coach_id: coachId,
+    name: clientData.name,
+    email: clientData.email,
+    notes: clientData.notes ?? null,
+    height: clientData.height ?? null,
+    height_unit: clientData.heightUnit ?? (isIntakeMode ? null : "in"),
+    gender: clientData.gender ?? null,
+    goal_weight: clientData.goalWeight ?? null,
+    goal_body_fat_percentage: clientData.goalBodyFatPercentage ?? null,
+    weight_unit: clientData.weightUnit ?? (isIntakeMode ? null : "lbs"),
+    current_weight: clientData.currentWeight ?? null,
+    current_body_fat_percentage: clientData.currentBodyFatPercentage ?? null,
+    starting_weight: clientData.currentWeight ?? null,
+    starting_body_fat_percentage: clientData.currentBodyFatPercentage ?? null,
+    active: true,
+  };
+
+  // onboarding_status is not in generated types yet, so spread it in
+  const insertData = isIntakeMode
+    ? { ...baseInsert, onboarding_status: "pending_intake" as const }
+    : baseInsert;
+
+  const { data, error } = await (supabaseAdmin as { from: (table: string) => ReturnType<typeof supabaseAdmin.from> })
     .from("clients")
-    .insert({
-      coach_id: coachId,
-      name: clientData.name,
-      email: clientData.email,
-      notes: clientData.notes || null,
-      height: clientData.height || null,
-      height_unit: clientData.heightUnit || "in",
-      gender: clientData.gender || null,
-      goal_weight: clientData.goalWeight || null,
-      goal_body_fat_percentage: clientData.goalBodyFatPercentage || null,
-      weight_unit: clientData.weightUnit || "lbs",
-      current_weight: clientData.currentWeight || null,
-      current_body_fat_percentage: clientData.currentBodyFatPercentage || null,
-      // Auto-populate starting values from initial current values
-      starting_weight: clientData.currentWeight || null,
-      starting_body_fat_percentage: clientData.currentBodyFatPercentage || null,
-      active: true,
-    })
+    .insert(insertData)
     .select()
     .single();
 
@@ -56,10 +65,18 @@ export const createClient = async (
     if (error.code === "23505") {
       throw new Error("A client with this email already exists");
     }
-    throw new Error(`Failed to create client: ${error.message}`);
+    console.error("Failed to create client:", error);
+    throw new Error("Failed to create client");
   }
 
-  return mapClientRow(data);
+  const client = mapClientRow(data);
+
+  // Create intake record for questionnaire flow
+  if (isIntakeMode) {
+    await createIntake(client.id);
+  }
+
+  return client;
 };
 
 // Get all clients for a coach with last check-in info
@@ -80,41 +97,53 @@ export const getClientsForCoach = async (
     .order("created_at", { ascending: false });
 
   if (clientsError) {
-    throw new Error(`Failed to fetch clients: ${clientsError.message}`);
+    console.error("Failed to fetch clients:", clientsError);
+    throw new Error("Failed to fetch clients");
   }
 
   if (!clients || clients.length === 0) {
     return [];
   }
 
+  type ClientWithCheckIns = ClientRow & { check_ins: { created_at: string }[] };
+
   // Transform clients with check-in info
-  return clients.map((client: any) => {
+  return (clients as ClientWithCheckIns[]).map((client) => {
     // Get the most recent check-in date
     const checkIns = client.check_ins || [];
-    const sortedCheckIns = checkIns.sort((a: any, b: any) =>
+    const sortedCheckIns = checkIns.sort((a: { created_at: string }, b: { created_at: string }) =>
       new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
     const lastCheckInDate = sortedCheckIns[0]?.created_at;
 
     return {
       ...mapClientRow(client),
-      lastCheckInDate: lastCheckInDate || undefined,
-      engagement: calculateEngagement(lastCheckInDate || null),
+      lastCheckInDate: lastCheckInDate ?? undefined,
+      engagement: calculateEngagement(lastCheckInDate ?? null),
     };
   });
 };
 
 // Get a single client by ID
-export const getClientById = async (clientId: string): Promise<Client | null> => {
-  const { data, error } = await supabaseAdmin
+export const getClientById = async (clientId: string, includeInactive = false): Promise<Client | null> => {
+  let query = supabaseAdmin
     .from("clients")
     .select("*")
-    .eq("id", clientId)
-    .single();
+    .eq("id", clientId);
 
-  if (error || !data) {
-    return null;
+  if (!includeInactive) {
+    query = query.eq("active", true);
   }
+
+  const { data, error } = await query.single();
+
+  if (error) {
+    if (error.code === "PGRST116") return null;
+    console.error("Failed to fetch client:", error);
+    throw new Error("Failed to fetch client");
+  }
+
+  if (!data) return null;
 
   return mapClientRow(data);
 };
@@ -124,22 +153,22 @@ export const updateClient = async (
   clientId: string,
   clientData: UpdateClientInput
 ): Promise<Client> => {
-  const updateData: any = {
+  const updateData: Record<string, unknown> = {
     updated_at: new Date().toISOString(),
   };
 
   if (clientData.name !== undefined) updateData.name = clientData.name;
   if (clientData.email !== undefined) updateData.email = clientData.email;
-  if (clientData.notes !== undefined) updateData.notes = clientData.notes || null;
+  if (clientData.notes !== undefined) updateData.notes = clientData.notes ?? null;
   if (clientData.active !== undefined) updateData.active = clientData.active;
-  if (clientData.height !== undefined) updateData.height = clientData.height || null;
+  if (clientData.height !== undefined) updateData.height = clientData.height ?? null;
   if (clientData.heightUnit !== undefined) updateData.height_unit = clientData.heightUnit;
-  if (clientData.gender !== undefined) updateData.gender = clientData.gender || null;
-  if (clientData.goalWeight !== undefined) updateData.goal_weight = clientData.goalWeight || null;
-  if (clientData.goalBodyFatPercentage !== undefined) updateData.goal_body_fat_percentage = clientData.goalBodyFatPercentage || null;
+  if (clientData.gender !== undefined) updateData.gender = clientData.gender ?? null;
+  if (clientData.goalWeight !== undefined) updateData.goal_weight = clientData.goalWeight ?? null;
+  if (clientData.goalBodyFatPercentage !== undefined) updateData.goal_body_fat_percentage = clientData.goalBodyFatPercentage ?? null;
   if (clientData.weightUnit !== undefined) updateData.weight_unit = clientData.weightUnit;
-  if (clientData.currentWeight !== undefined) updateData.current_weight = clientData.currentWeight || null;
-  if (clientData.currentBodyFatPercentage !== undefined) updateData.current_body_fat_percentage = clientData.currentBodyFatPercentage || null;
+  if (clientData.currentWeight !== undefined) updateData.current_weight = clientData.currentWeight ?? null;
+  if (clientData.currentBodyFatPercentage !== undefined) updateData.current_body_fat_percentage = clientData.currentBodyFatPercentage ?? null;
 
   const { data, error } = await supabaseAdmin
     .from("clients")
@@ -152,7 +181,8 @@ export const updateClient = async (
     if (error.code === "23505") {
       throw new Error("A client with this email already exists");
     }
-    throw new Error(`Failed to update client: ${error.message}`);
+    console.error("Failed to update client:", error);
+    throw new Error("Failed to update client");
   }
 
   return mapClientRow(data);
@@ -169,7 +199,8 @@ export const deleteClient = async (clientId: string): Promise<void> => {
     .eq("id", clientId);
 
   if (error) {
-    throw new Error(`Failed to delete client: ${error.message}`);
+    console.error("Failed to delete client:", error);
+    throw new Error("Failed to delete client");
   }
 };
 
@@ -181,7 +212,8 @@ export const permanentlyDeleteClient = async (clientId: string): Promise<void> =
     .eq("id", clientId);
 
   if (error) {
-    throw new Error(`Failed to permanently delete client: ${error.message}`);
+    console.error("Failed to permanently delete client:", error);
+    throw new Error("Failed to permanently delete client");
   }
 };
 
@@ -190,10 +222,10 @@ export const updateClientCheckInConfig = async (
   clientId: string,
   config: UpdateCheckInConfigInput
 ): Promise<Client> => {
-  const updateData: any = {
+  const updateData: Record<string, unknown> = {
     check_in_frequency: config.checkInFrequency,
-    check_in_frequency_days: config.checkInFrequencyDays || null,
-    expected_check_in_day: config.expectedCheckInDay || null,
+    check_in_frequency_days: config.checkInFrequencyDays ?? null,
+    expected_check_in_day: config.expectedCheckInDay ?? null,
     reminder_preferences: config.reminderPreferences,
     updated_at: new Date().toISOString(),
   };
@@ -206,7 +238,8 @@ export const updateClientCheckInConfig = async (
     .single();
 
   if (error) {
-    throw new Error(`Failed to update check-in config: ${error.message}`);
+    console.error("Failed to update check-in config:", error);
+    throw new Error("Failed to update check-in config");
   }
 
   return mapClientRow(data);

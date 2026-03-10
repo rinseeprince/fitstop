@@ -3,7 +3,7 @@ import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { getClientById } from "@/services/client-service";
 import { apiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
-import { syncMetricsToClient } from "@/services/client-intake-service";
+import { syncMetricsToClient } from "@/services/intake-review-service";
 
 export async function POST(
   request: NextRequest,

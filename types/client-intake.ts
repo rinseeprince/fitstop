@@ -57,11 +57,11 @@ export type ClientIntake = {
 
   // Step 1: Body & lifestyle
   dateOfBirth?: string;
-  gender?: string;
+  gender?: "male" | "female" | "other" | "prefer_not_to_say";
   height?: number;
-  heightUnit?: string;
+  heightUnit?: "in" | "cm";
   currentWeight?: number;
-  weightUnit?: string;
+  weightUnit?: "lbs" | "kg";
   bodyFatPercentage?: number;
   workActivityLevel?: WorkActivityLevel;
 
@@ -124,6 +124,17 @@ export type ClientIntakeInput = Omit<
   | "createdAt"
   | "updatedAt"
 >;
+
+// Summary type for the pending intakes banner
+export type PendingIntakeSummary = {
+  id: string;
+  clientId: string;
+  clientName: string;
+  clientEmail: string;
+  status: IntakeStatus;
+  invitedAt: string;
+  completedAt?: string;
+};
 
 // Database row shape (until types/database.ts is regenerated)
 export type ClientIntakeRow = {

@@ -1,5 +1,5 @@
 import type { CheckIn, Client, AIInsight, AIRecommendation, ReminderPreferences } from "@/types/check-in";
-import type { ClientIntake, ClientIntakeRow } from "@/types/client-intake";
+import type { ClientIntake, ClientIntakeRow, OnboardingStatus } from "@/types/client-intake";
 import type { CheckInRow, ClientRow } from "./database-helpers";
 
 /**
@@ -105,6 +105,7 @@ export function mapClientRow(row: ClientRow): Client {
     customCalories: row.custom_calories ?? undefined,
     bmrManualOverride: row.bmr_manual_override ?? undefined,
     tdeeManualOverride: row.tdee_manual_override ?? undefined,
+    onboardingStatus: ((row as Record<string, unknown>).onboarding_status ?? undefined) as OnboardingStatus | undefined,
   };
 }
 
@@ -120,11 +121,11 @@ export function mapClientIntakeRow(row: ClientIntakeRow): ClientIntake {
     clientId: row.client_id,
     status: row.status as ClientIntake["status"],
     dateOfBirth: row.date_of_birth ?? undefined,
-    gender: row.gender ?? undefined,
+    gender: (row.gender ?? undefined) as ClientIntake["gender"],
     height: row.height ?? undefined,
-    heightUnit: row.height_unit ?? undefined,
+    heightUnit: (row.height_unit ?? undefined) as ClientIntake["heightUnit"],
     currentWeight: row.current_weight ?? undefined,
-    weightUnit: row.weight_unit ?? undefined,
+    weightUnit: (row.weight_unit ?? undefined) as ClientIntake["weightUnit"],
     bodyFatPercentage: row.body_fat_percentage ?? undefined,
     workActivityLevel: (row.work_activity_level ?? undefined) as ClientIntake["workActivityLevel"],
     primaryGoal: (row.primary_goal ?? undefined) as ClientIntake["primaryGoal"],

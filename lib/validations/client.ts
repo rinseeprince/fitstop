@@ -28,6 +28,9 @@ export const createClientSchema = z.object({
   // Initial current metrics
   currentWeight: z.number().positive("Current weight must be positive").optional(),
   currentBodyFatPercentage: z.number().min(0).max(100, "Body fat must be between 0 and 100").optional(),
+
+  // Onboarding mode
+  setupMode: z.enum(["intake", "manual"]).optional(),
 });
 
 // Schema for updating an existing client

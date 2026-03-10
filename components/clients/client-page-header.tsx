@@ -3,9 +3,11 @@
 import Link from "next/link"
 import { ArrowLeft, MessageSquare, UserPlus } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { SendCheckInDialog } from "@/components/check-in/send-check-in-dialog"
 import { InviteClientDialog } from "@/components/clients/invite-client-dialog"
 import { cn } from "@/lib/utils"
+import type { OnboardingStatus } from "@/types/client-intake"
 
 const TABS = [
   { value: "overview", label: "Overview" },
@@ -23,6 +25,7 @@ interface ClientPageHeaderProps {
     id: string
     name: string
     email: string
+    onboardingStatus?: OnboardingStatus
   }
   activeTab: ClientTab
   onTabChange: (tab: ClientTab) => void
@@ -56,8 +59,22 @@ export function ClientPageHeader({
         {getInitials(client.name)}
       </div>
 
-      {/* Name */}
+      {/* Name + onboarding badge */}
       <h1 className="text-lg font-semibold">{client.name}</h1>
+      {client.onboardingStatus === "pending_intake" && (
+        <Badge variant="warning">Awaiting Intake</Badge>
+      )}
+      {client.onboardingStatus === "intake_completed" && (
+        <Link href={`/clients/${client.id}/intake-review`}>
+          <Badge variant="default" className="cursor-pointer">Intake Ready for Review</Badge>
+        </Link>
+      )}
+      {client.onboardingStatus === "setup_in_progress" && (
+        <Badge variant="default">Setting Up Plans</Badge>
+      )}
+      {client.onboardingStatus === "paused" && (
+        <Badge variant="secondary">Paused</Badge>
+      )}
 
       {/* Tabs - inline */}
       <div className="flex gap-1 ml-4">

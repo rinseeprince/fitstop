@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { UserPlus, Loader2 } from "lucide-react";
+import { UserPlus, ClipboardList, PenLine } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -12,34 +12,22 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { createClientSchema, type CreateClientInput } from "@/lib/validations/client";
+import { AddClientIntakeForm } from "@/components/clients/add-client-intake-form";
+import { AddClientManualForm } from "@/components/clients/add-client-manual-form";
 
 type AddClientDialogProps = {
   trigger?: React.ReactNode;
   onClientAdded?: () => void;
 };
 
+type SetupMode = "intake" | "manual" | null;
+
 export const AddClientDialog = ({ trigger, onClientAdded }: AddClientDialogProps) => {
   const [open, setOpen] = useState(false);
+  const [setupMode, setSetupMode] = useState<SetupMode>(null);
   const { toast } = useToast();
 
   const form = useForm<CreateClientInput>({
@@ -55,10 +43,11 @@ export const AddClientDialog = ({ trigger, onClientAdded }: AddClientDialogProps
 
   const onSubmit = async (data: CreateClientInput) => {
     try {
+      const payload = { ...data, setupMode: setupMode ?? undefined };
       const response = await fetch("/api/clients", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+        body: JSON.stringify(payload),
       });
 
       const result = await response.json();
@@ -67,16 +56,16 @@ export const AddClientDialog = ({ trigger, onClientAdded }: AddClientDialogProps
         throw new Error(result.error || "Failed to create client");
       }
 
-      toast({
-        title: "Client added",
-        description: `${data.name} has been added to your client list.`,
-      });
+      const message = setupMode === "intake"
+        ? `${data.name} has been added. An intake questionnaire will be sent.`
+        : `${data.name} has been added to your client list.`;
 
-      // Reset form and close dialog
+      toast({ title: "Client added", description: message });
+
       form.reset();
+      setSetupMode(null);
       setOpen(false);
 
-      // Notify parent to refresh client list
       onClientAdded?.();
     } catch (error) {
       toast({
@@ -90,8 +79,8 @@ export const AddClientDialog = ({ trigger, onClientAdded }: AddClientDialogProps
   const handleOpenChange = (newOpen: boolean) => {
     setOpen(newOpen);
     if (!newOpen) {
-      // Reset form when closing
       form.reset();
+      setSetupMode(null);
     }
   };
 
@@ -113,327 +102,65 @@ export const AddClientDialog = ({ trigger, onClientAdded }: AddClientDialogProps
         <DialogHeader>
           <DialogTitle>Add New Client</DialogTitle>
           <DialogDescription>
-            Add a new client to your roster. They&apos;ll be able to receive check-in links.
+            {setupMode === null
+              ? "Choose how you want to set up this client."
+              : setupMode === "intake"
+                ? "Enter basic details. The client will complete an intake questionnaire."
+                : "Add a new client to your roster with full details."}
           </DialogDescription>
         </DialogHeader>
 
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            <FormField
-              control={form.control}
-              name="name"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Name *</FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="John Doe"
-                      {...field}
-                      className="rounded-xs"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+        {/* Setup mode selection */}
+        {setupMode === null && (
+          <div className="grid gap-3">
+            <button
+              type="button"
+              onClick={() => setSetupMode("intake")}
+              className="flex items-start gap-3 p-4 rounded-lg border border-border hover:border-primary/30 transition-colors text-left"
+            >
+              <div className="w-9 h-9 rounded-md bg-primary/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+                <ClipboardList className="w-4 h-4 text-primary" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-foreground">Send intake questionnaire</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Client fills out goals, training, nutrition, and medical history
+                </p>
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => setSetupMode("manual")}
+              className="flex items-start gap-3 p-4 rounded-lg border border-border hover:border-primary/30 transition-colors text-left"
+            >
+              <div className="w-9 h-9 rounded-md bg-muted flex items-center justify-center flex-shrink-0 mt-0.5">
+                <PenLine className="w-4 h-4 text-muted-foreground" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-foreground">Set up manually</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Enter all client details yourself
+                </p>
+              </div>
+            </button>
+          </div>
+        )}
 
-            <FormField
-              control={form.control}
-              name="email"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Email *</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="email"
-                      placeholder="john@example.com"
-                      {...field}
-                      className="rounded-xs"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+        {setupMode === "intake" && (
+          <AddClientIntakeForm
+            form={form}
+            onSubmit={onSubmit}
+            onBack={() => setSetupMode(null)}
+          />
+        )}
 
-            <FormField
-              control={form.control}
-              name="notes"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Notes</FormLabel>
-                  <FormControl>
-                    <Textarea
-                      placeholder="Add any notes about this client..."
-                      rows={3}
-                      {...field}
-                      className="rounded-xs resize-none"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {/* Static Profile Fields */}
-            <div className="grid gap-4 sm:grid-cols-2">
-              <FormField
-                control={form.control}
-                name="height"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Height</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="number"
-                        step="0.1"
-                        placeholder="70"
-                        {...field}
-                        value={field.value ?? ""}
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          field.onChange(value === "" ? undefined : parseFloat(value));
-                        }}
-                        className="rounded-xs"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="heightUnit"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Height Unit</FormLabel>
-                    <Select
-                      onValueChange={field.onChange}
-                      defaultValue={field.value}
-                    >
-                      <FormControl>
-                        <SelectTrigger className="rounded-xs">
-                          <SelectValue placeholder="Select unit" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="in">in</SelectItem>
-                        <SelectItem value="cm">cm</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            <FormField
-              control={form.control}
-              name="gender"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Gender</FormLabel>
-                  <Select
-                    onValueChange={field.onChange}
-                    defaultValue={field.value}
-                  >
-                    <FormControl>
-                      <SelectTrigger className="rounded-xs">
-                        <SelectValue placeholder="Select gender" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value="male">Male</SelectItem>
-                      <SelectItem value="female">Female</SelectItem>
-                      <SelectItem value="other">Other</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="dateOfBirth"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Date of Birth</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="date"
-                      {...field}
-                      value={field.value ?? ""}
-                      className="rounded-xs"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {/* Current Metrics */}
-            <div className="grid gap-4 sm:grid-cols-2">
-              <FormField
-                control={form.control}
-                name="currentWeight"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Current Weight</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="number"
-                        step="0.1"
-                        placeholder="180"
-                        {...field}
-                        value={field.value ?? ""}
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          field.onChange(value === "" ? undefined : parseFloat(value));
-                        }}
-                        className="rounded-xs"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="currentBodyFatPercentage"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Current Body Fat %</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="number"
-                        step="0.1"
-                        placeholder="20"
-                        {...field}
-                        value={field.value ?? ""}
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          field.onChange(value === "" ? undefined : parseFloat(value));
-                        }}
-                        className="rounded-xs"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            {/* Goal Metrics */}
-            <div className="grid gap-4 sm:grid-cols-3">
-              <FormField
-                control={form.control}
-                name="goalWeight"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Goal Weight</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="number"
-                        step="0.1"
-                        placeholder="150"
-                        {...field}
-                        value={field.value ?? ""}
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          field.onChange(value === "" ? undefined : parseFloat(value));
-                        }}
-                        className="rounded-xs"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="goalBodyFatPercentage"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Goal Body Fat %</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="number"
-                        step="0.1"
-                        placeholder="15"
-                        {...field}
-                        value={field.value ?? ""}
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          field.onChange(value === "" ? undefined : parseFloat(value));
-                        }}
-                        className="rounded-xs"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="weightUnit"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Weight Unit</FormLabel>
-                    <Select
-                      onValueChange={field.onChange}
-                      defaultValue={field.value}
-                    >
-                      <FormControl>
-                        <SelectTrigger className="rounded-xs">
-                          <SelectValue placeholder="Select unit" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="lbs">lbs</SelectItem>
-                        <SelectItem value="kg">kg</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            <div className="flex gap-2 pt-2">
-              <Button
-                type="button"
-                variant="outline"
-                className="flex-1"
-                onClick={() => setOpen(false)}
-                disabled={form.formState.isSubmitting}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                className="flex-1"
-                disabled={form.formState.isSubmitting}
-              >
-                {form.formState.isSubmitting ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Adding...
-                  </>
-                ) : (
-                  <>
-                    <UserPlus className="w-4 h-4 mr-2" />
-                    Add Client
-                  </>
-                )}
-              </Button>
-            </div>
-          </form>
-        </Form>
+        {setupMode === "manual" && (
+          <AddClientManualForm
+            form={form}
+            onSubmit={onSubmit}
+            onBack={() => setSetupMode(null)}
+          />
+        )}
       </DialogContent>
     </Dialog>
   );

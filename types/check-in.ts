@@ -1,4 +1,5 @@
 import type { DailyLog } from "./daily-log";
+import type { OnboardingStatus } from "./client-intake";
 
 // Check-in status types
 export type CheckInStatus = "pending" | "ai_processed" | "reviewed";
@@ -354,6 +355,9 @@ export type Client = {
   // Manual BMR/TDEE overrides
   bmrManualOverride?: boolean;
   tdeeManualOverride?: boolean;
+
+  // Onboarding
+  onboardingStatus?: OnboardingStatus;
 };
 
 // Client info for check-in page

@@ -1,15 +1,18 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useMemo } from "react"
+import useSWR from "swr"
 import { AppLayout } from "@/components/app-layout"
 import { PageHeader } from "@/components/page-header"
 import { MetricCard } from "@/components/metric-card"
 import { CoachTipCard } from "@/components/coach-tip-card"
 import { FloatingActionButton } from "@/components/floating-action-button"
 import { NeedsAttentionFeed } from "@/components/dashboard/needs-attention-feed"
+import { PendingIntakeBanner } from "@/components/coach/pending-intake-banner"
 import { Users, MessageSquare, PhoneCall, Clock, TrendingUp, AlertCircle } from "lucide-react"
 import { motion } from "framer-motion"
 import { formatRelativeTime } from "@/lib/check-in-utils"
+import type { CheckInStatus } from "@/types/check-in"
 import Link from "next/link"
 
 type RecentCheckIn = {
@@ -17,38 +20,23 @@ type RecentCheckIn = {
   clientId: string
   clientName: string
   clientAvatar: string | null
-  status: string
+  status: CheckInStatus
   createdAt: string
 }
 
+const fetcher = async (url: string) => { const r = await fetch(url); return r.json() }
+
 export default function DashboardPage() {
-  const [recentCheckIns, setRecentCheckIns] = useState<RecentCheckIn[]>([])
-  const [unreviewedCount, setUnreviewedCount] = useState(0)
-  const [isLoading, setIsLoading] = useState(true)
-
-  useEffect(() => {
-    const fetchRecentCheckIns = async () => {
-      try {
-        const response = await fetch("/api/check-ins/recent")
-        if (response.ok) {
-          const data = await response.json()
-          setRecentCheckIns(data.checkIns || [])
-
-          // Count unreviewed (ai_processed status)
-          const unreviewed = (data.checkIns || []).filter(
-            (ci: RecentCheckIn) => ci.status === "ai_processed"
-          ).length
-          setUnreviewedCount(unreviewed)
-        }
-      } catch (error) {
-        console.error("Error fetching recent check-ins:", error)
-      } finally {
-        setIsLoading(false)
-      }
-    }
-
-    fetchRecentCheckIns()
-  }, [])
+  const { data, isLoading } = useSWR<{ checkIns: RecentCheckIn[] }>(
+    "/api/check-ins/recent",
+    fetcher,
+    { revalidateOnFocus: false }
+  )
+  const recentCheckIns = data?.checkIns ?? []
+  const unreviewedCount = useMemo(
+    () => recentCheckIns.filter((ci) => ci.status === "ai_processed").length,
+    [recentCheckIns]
+  )
 
   const pageHeader = (
     <PageHeader
@@ -60,7 +48,10 @@ export default function DashboardPage() {
   return (
     <AppLayout pageHeader={pageHeader}>
       <div className="space-y-6 max-w-7xl mx-auto">
-        {/* Needs Attention Feed - at the top */}
+        {/* Pending Onboarding Banner */}
+        <PendingIntakeBanner />
+
+        {/* Needs Attention Feed */}
         <NeedsAttentionFeed />
 
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
