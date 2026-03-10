@@ -1,3 +1,4 @@
+import { describe, it, expect } from 'vitest'
 import { sanitizeForAIPrompt } from '@/utils/ai-prompt-sanitizer';
 
 describe('sanitizeForAIPrompt', () => {

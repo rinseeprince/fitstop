@@ -1,3 +1,4 @@
+import crypto from 'node:crypto'
 import { Resend } from 'resend'
 import { render } from '@react-email/render'
 import InvitationEmail from '@/emails/invitation-email'
@@ -64,7 +65,7 @@ The CoachHub Team`,
       }
     }
 
-    console.log(`Invitation email sent successfully to ${clientEmail}`)
+    console.log("Invitation email sent successfully")
     return { success: true }
   } catch (error) {
     console.error('Error in sendInvitationEmail:', error)
@@ -121,7 +122,7 @@ The CoachHub Team`,
       }
     }
 
-    console.log(`Activation email sent successfully to ${clientEmail}`)
+    console.log("Activation email sent successfully")
     return { success: true }
   } catch (error) {
     console.error('Error in sendActivationEmail:', error)
@@ -136,14 +137,5 @@ The CoachHub Team`,
  * Generate a secure random token for invitations
  */
 export function generateInviteToken(): string {
-  // Use crypto for secure random token generation
-  if (typeof globalThis.crypto !== 'undefined' && globalThis.crypto.getRandomValues) {
-    const array = new Uint8Array(32)
-    globalThis.crypto.getRandomValues(array)
-    return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('')
-  }
-  
-  // Fallback for Node.js environment
-  const nodeCrypto = require('crypto')
-  return nodeCrypto.randomBytes(32).toString('hex')
+  return crypto.randomBytes(32).toString('hex')
 }

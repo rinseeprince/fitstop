@@ -4,6 +4,7 @@ import { Plus_Jakarta_Sans } from "next/font/google"
 import "./globals.css"
 import { AuthProvider } from "@/contexts/auth-context"
 import { Toaster } from "@/components/ui/toaster"
+import { Toaster as SonnerToaster } from "sonner"
 import { PersistentSidebar } from "@/components/persistent-sidebar"
 
 const plusJakarta = Plus_Jakarta_Sans({ subsets: ["latin"], weight: ["400", "500", "600", "700"] })
@@ -43,6 +44,7 @@ export default function RootLayout({
           <PersistentSidebar />
           {children}
           <Toaster />
+          <SonnerToaster position="bottom-right" richColors />
         </AuthProvider>
       </body>
     </html>

@@ -4,8 +4,10 @@ import { getClientById } from "@/services/client-service";
 import { apiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { activateClientSchema } from "@/lib/validations/client-intake";
-import { supabaseAdmin } from "@/services/supabase-admin";
+import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { sendActivationEmail } from "@/services/email-service";
+import type { OnboardingStatus } from "@/types/client-intake";
+import type { DayOfWeek } from "@/types/check-in";
 
 export async function POST(
   request: NextRequest,
@@ -36,60 +38,73 @@ export async function POST(
     const validation = activateClientSchema.safeParse(body);
     if (!validation.success) {
       return NextResponse.json(
-        { success: false, error: "Invalid input", details: validation.error.errors },
+        { success: false, error: "Invalid input" },
         { status: 400 }
       );
     }
 
     // Update onboarding_status to active
-    const db = supabaseAdmin as { from: (table: string) => ReturnType<typeof supabaseAdmin.from> };
-    const updateData: Record<string, unknown> = {
+    const supabase = await createServerSupabaseClient();
+    const updateData: {
+      onboarding_status: OnboardingStatus;
+      updated_at: string;
+      expected_check_in_day?: DayOfWeek;
+      welcome_message?: string;
+    } = {
       onboarding_status: "active",
       updated_at: new Date().toISOString(),
     };
 
-    // Store check-in day preference if provided
     if (validation.data.firstCheckInDay) {
       updateData.expected_check_in_day = validation.data.firstCheckInDay;
     }
 
-    // Store welcome message if provided
     if (validation.data.welcomeMessage) {
       updateData.welcome_message = validation.data.welcomeMessage;
     }
 
-    const { error } = await db
+    const { error } = await supabase
       .from("clients")
       .update(updateData)
       .eq("id", clientId);
 
-    if (error) throw new Error(`Failed to activate client: ${error.message}`);
+    if (error) {
+      console.error("Supabase update error:", error.message);
+      throw new Error("Failed to activate client");
+    }
 
     // Send activation email (fire-and-forget)
-    try {
-      const { data: clientRow } = await supabaseAdmin
-        .from("clients")
-        .select(`coach:coach_id (name)`)
-        .eq("id", clientId)
-        .single();
-
-      const coachName = (clientRow as { coach?: { name?: string } })?.coach?.name || "Your Coach";
-      sendActivationEmail(client.email, client.name, coachName).catch((emailError) => {
-        console.error("Failed to send activation email:", emailError);
-      });
-    } catch (emailError) {
-      console.error("Error fetching coach for activation email:", emailError);
-    }
+    fireAndForgetActivationEmail(supabase, clientId, client.email, client.name);
 
     return NextResponse.json({
       success: true,
       data: { activated: true },
     });
   } catch (error) {
-    console.error("Error activating client:", error);
+    console.error("Error activating client:", error instanceof Error ? error.message : "Unknown error");
     return NextResponse.json(
       { success: false, error: "Failed to activate client" },
       { status: 500 }
     );
   }
+}
+
+function fireAndForgetActivationEmail(
+  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>,
+  clientId: string,
+  clientEmail: string,
+  clientName: string
+) {
+  (async () => {
+    const { data: clientRow } = await supabase
+      .from("clients")
+      .select(`coach:coach_id (name)`)
+      .eq("id", clientId)
+      .single();
+
+    const coachName = (clientRow as { coach?: { name?: string } } | null)?.coach?.name || "Your Coach";
+    await sendActivationEmail(clientEmail, clientName, coachName);
+  })().catch((err: unknown) => {
+    console.error("Failed to send activation email:", err instanceof Error ? err.message : "Unknown error");
+  });
 }

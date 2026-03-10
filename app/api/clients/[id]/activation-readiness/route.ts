@@ -41,7 +41,7 @@ export async function GET(
       },
     });
   } catch (error) {
-    console.error("Error checking activation readiness:", error);
+    console.error("Error checking activation readiness:", error instanceof Error ? error.message : "Unknown error");
     return NextResponse.json(
       { success: false, error: "Failed to check activation readiness" },
       { status: 500 }
