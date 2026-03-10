@@ -5,6 +5,7 @@ import { apiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { activateClientSchema } from "@/lib/validations/client-intake";
 import { supabaseAdmin } from "@/services/supabase-admin";
+import { sendActivationEmail } from "@/services/email-service";
 
 export async function POST(
   request: NextRequest,
@@ -52,12 +53,33 @@ export async function POST(
       updateData.expected_check_in_day = validation.data.firstCheckInDay;
     }
 
+    // Store welcome message if provided
+    if (validation.data.welcomeMessage) {
+      updateData.welcome_message = validation.data.welcomeMessage;
+    }
+
     const { error } = await db
       .from("clients")
       .update(updateData)
       .eq("id", clientId);
 
     if (error) throw new Error(`Failed to activate client: ${error.message}`);
+
+    // Send activation email (fire-and-forget)
+    try {
+      const { data: clientRow } = await supabaseAdmin
+        .from("clients")
+        .select(`coach:coach_id (name)`)
+        .eq("id", clientId)
+        .single();
+
+      const coachName = (clientRow as { coach?: { name?: string } })?.coach?.name || "Your Coach";
+      sendActivationEmail(client.email, client.name, coachName).catch((emailError) => {
+        console.error("Failed to send activation email:", emailError);
+      });
+    } catch (emailError) {
+      console.error("Error fetching coach for activation email:", emailError);
+    }
 
     return NextResponse.json({
       success: true,

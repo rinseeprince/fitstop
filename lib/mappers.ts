@@ -105,6 +105,7 @@ export function mapClientRow(row: ClientRow): Client {
     customCalories: row.custom_calories ?? undefined,
     bmrManualOverride: row.bmr_manual_override ?? undefined,
     tdeeManualOverride: row.tdee_manual_override ?? undefined,
+    welcomeMessage: (row as Record<string, unknown>).welcome_message as string | undefined ?? undefined,
     onboardingStatus: ((row as Record<string, unknown>).onboarding_status ?? undefined) as OnboardingStatus | undefined,
   };
 }

@@ -66,6 +66,7 @@ export default function ClientProfilePage() {
       client={client}
       activeTab={activeTab}
       onTabChange={setActiveTab}
+      onClientUpdated={() => mutateClient()}
     />
   ) : null;
 

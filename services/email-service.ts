@@ -1,6 +1,7 @@
 import { Resend } from 'resend'
 import { render } from '@react-email/render'
 import InvitationEmail from '@/emails/invitation-email'
+import ActivationEmail from '@/emails/activation-email'
 
 // Initialize Resend client
 const resend = new Resend(process.env.RESEND_API_KEY)
@@ -67,6 +68,63 @@ The CoachHub Team`,
     return { success: true }
   } catch (error) {
     console.error('Error in sendInvitationEmail:', error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error occurred',
+    }
+  }
+}
+
+/**
+ * Send an activation email to a client when their coach activates them
+ */
+export async function sendActivationEmail(
+  clientEmail: string,
+  clientName: string,
+  coachName: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    if (!process.env.RESEND_API_KEY) {
+      throw new Error('RESEND_API_KEY environment variable is not set')
+    }
+
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+
+    const emailHtml = await render(
+      ActivationEmail({
+        coachName,
+        clientName,
+        appUrl,
+      })
+    )
+
+    const { error } = await resend.emails.send({
+      from: `${FROM_NAME} <${FROM_EMAIL}>`,
+      to: clientEmail,
+      subject: `${coachName} has set up your plan on CoachHub`,
+      html: emailHtml,
+      text: `Hi ${clientName},
+
+${coachName} has finished setting up your personalised plan on CoachHub. Everything is ready for you to get started.
+
+Open CoachHub to view your plan: ${appUrl}
+
+Best regards,
+The CoachHub Team`,
+    })
+
+    if (error) {
+      console.error('Failed to send activation email:', error)
+      return {
+        success: false,
+        error: `Failed to send email: ${error.message}`,
+      }
+    }
+
+    console.log(`Activation email sent successfully to ${clientEmail}`)
+    return { success: true }
+  } catch (error) {
+    console.error('Error in sendActivationEmail:', error)
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error occurred',

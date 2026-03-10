@@ -331,6 +331,9 @@ export type Client = {
   dietType?: DietType;
   goalDeadline?: string; // ISO date string
 
+  // Activation
+  welcomeMessage?: string;
+
   // Nutrition plan metadata
   nutritionPlanCreatedDate?: string; // ISO timestamp
   nutritionPlanBaseWeightKg?: number; // Weight (in kg) when plan was created
