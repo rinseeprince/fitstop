@@ -1,12 +1,10 @@
 "use client"
 
 import Link from "next/link"
-import { ArrowLeft, MessageSquare, Rocket, UserPlus } from "lucide-react"
+import { ArrowLeft, UserPlus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { SendCheckInDialog } from "@/components/check-in/send-check-in-dialog"
 import { InviteClientDialog } from "@/components/clients/invite-client-dialog"
-import { ClientActivationDialog } from "@/components/coach/client-activation-dialog"
 import { cn } from "@/lib/utils"
 import type { OnboardingStatus } from "@/types/client-intake"
 
@@ -30,7 +28,6 @@ interface ClientPageHeaderProps {
   }
   activeTab: ClientTab
   onTabChange: (tab: ClientTab) => void
-  onClientUpdated?: () => void
 }
 
 function getInitials(name: string): string {
@@ -45,7 +42,6 @@ export function ClientPageHeader({
   client,
   activeTab,
   onTabChange,
-  onClientUpdated,
 }: ClientPageHeaderProps) {
   return (
     <div className="flex items-center gap-4 px-6 lg:px-8 h-[72px]">
@@ -102,37 +98,12 @@ export function ClientPageHeader({
 
       {/* Action buttons */}
       <div className="flex items-center gap-2 pr-20">
-        {client.onboardingStatus === "setup_in_progress" && (
-          <ClientActivationDialog
-            client={client}
-            onActivated={onClientUpdated}
-            trigger={
-              <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white">
-                <Rocket className="h-4 w-4 mr-2" />
-                Activate Client
-              </Button>
-            }
-          />
-        )}
-
         <InviteClientDialog
           client={client}
           trigger={
             <Button variant="outline" size="sm">
               <UserPlus className="h-4 w-4 mr-2" />
               Invite
-            </Button>
-          }
-        />
-
-        <SendCheckInDialog
-          clientId={client.id}
-          clientName={client.name}
-          clientEmail={client.email}
-          trigger={
-            <Button size="sm">
-              <MessageSquare className="h-4 w-4 mr-2" />
-              Send Check-In
             </Button>
           }
         />

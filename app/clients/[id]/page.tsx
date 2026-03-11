@@ -16,6 +16,7 @@ import { ClientOverviewTab } from "@/components/clients/client-overview-tab"
 import { MetricSaveDialog } from "@/components/clients/check-in/metric-save-dialog"
 import { HabitsTabContent } from "@/components/clients/habits/habits-tab-content"
 import { useCheckInData, useClient } from "@/hooks/use-check-in-data"
+import type { CheckIn } from "@/types/check-in"
 import { useClientMetrics } from "@/hooks/use-client-metrics"
 import { Loader2, AlertCircle } from "lucide-react"
 
@@ -42,7 +43,7 @@ export default function ClientProfilePage() {
     handleResetToAuto,
   } = useClientMetrics({ clientId, onSuccess: mutateClient })
 
-  const handleSelectCheckIn = (checkIn: any) => {
+  const handleSelectCheckIn = (checkIn: CheckIn) => {
     setSelectedCheckInId(checkIn.id)
   }
 
@@ -66,7 +67,6 @@ export default function ClientProfilePage() {
       client={client}
       activeTab={activeTab}
       onTabChange={setActiveTab}
-      onClientUpdated={() => mutateClient()}
     />
   ) : null;
 
@@ -117,6 +117,8 @@ export default function ClientProfilePage() {
               onMetricSave={handleMetricSave}
               onResetToAuto={handleResetToAuto}
               onSelectCheckIn={handleSelectCheckIn}
+              onClientUpdated={() => mutateClient()}
+              onTabChange={setActiveTab}
             />
           </TabsContent>
 

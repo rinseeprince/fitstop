@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
-import { apiRateLimit } from "@/lib/rate-limit";
+import { coachApiRateLimit } from "@/lib/rate-limit";
 import { getHabitLogs } from "@/services/daily-habits-service";
 import { getClientById } from "@/services/client-service";
 
@@ -16,7 +16,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const rateLimitResult = await apiRateLimit(request);
+  const rateLimitResult = await coachApiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
 
   try {
@@ -53,7 +53,7 @@ export async function GET(
       data: logs,
     });
   } catch (error) {
-    console.error("Error fetching habit logs:", error);
+    console.error("Error fetching habit logs:", error instanceof Error ? error.message : "Unknown error");
     return NextResponse.json(
       {
         success: false,

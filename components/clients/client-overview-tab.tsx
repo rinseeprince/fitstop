@@ -9,6 +9,8 @@ import { CheckInScheduleCard } from "@/components/clients/check-in/check-in-sche
 import { InlineEditableMetric } from "@/components/clients/shared/inline-editable-metric"
 import { Phone, Mail, Loader2, Calculator } from "lucide-react"
 import { DailyWellnessStrip } from "@/components/clients/daily-pulse/daily-wellness-strip"
+import { ClientActivationBanner } from "@/components/clients/client-activation-banner"
+import type { ClientTab } from "@/components/clients/client-page-header"
 import type { Client, CheckIn } from "@/types/check-in"
 
 interface ClientOverviewTabProps {
@@ -19,6 +21,8 @@ interface ClientOverviewTabProps {
   onMetricSave: (field: string, value: number, metricName: string, needsConfirmation: boolean) => Promise<void>
   onResetToAuto: (field: "bmr" | "tdee") => Promise<void>
   onSelectCheckIn: (checkIn: CheckIn) => void
+  onClientUpdated?: () => void
+  onTabChange?: (tab: ClientTab) => void
 }
 
 export function ClientOverviewTab({
@@ -29,9 +33,20 @@ export function ClientOverviewTab({
   onMetricSave,
   onResetToAuto,
   onSelectCheckIn,
+  onClientUpdated,
+  onTabChange,
 }: ClientOverviewTabProps) {
   return (
     <div className="space-y-6">
+      {/* Activation Banner */}
+      {client.onboardingStatus === "setup_in_progress" && (
+        <ClientActivationBanner
+          client={client}
+          onActivated={onClientUpdated}
+          onTabChange={onTabChange}
+        />
+      )}
+
       {/* Contact Info & Metrics */}
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>

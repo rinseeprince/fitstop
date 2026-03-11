@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useMemo } from "react"
+import useSWR from "swr"
 import { AnimatePresence, motion } from "framer-motion"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -13,65 +14,37 @@ import { detectAlerts } from "@/lib/daily-wellness-alerts"
 import type { WellnessAlert } from "@/types/attention-feed"
 import { AlertTriangle } from "lucide-react"
 import type { DailyLog } from "@/types/daily-log"
+import type { HabitLogWithDetails } from "@/types/daily-habit"
+import { swrFetcher } from "@/lib/swr-fetcher"
 
 interface DailyWellnessStripProps {
   clientId: string
 }
 
 export function DailyWellnessStrip({ clientId }: DailyWellnessStripProps) {
-  const [logs, setLogs] = useState<DailyLog[]>([])
-  const [isLoading, setIsLoading] = useState(true)
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
-  const [allHabitLogs, setAllHabitLogs] = useState<any[]>([])
-  const [alerts, setAlerts] = useState<WellnessAlert[]>([])
-  
-  // Fetch daily logs and habit logs
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const startDate = getDateDaysAgo(28)
-        const endDate = new Date().toISOString().split('T')[0]
-        
-        // Fetch both daily logs and habit logs in parallel
-        const [dailyLogsResponse, habitLogsResponse] = await Promise.all([
-          fetch(
-            `/api/clients/${clientId}/daily-logs?startDate=${startDate}&endDate=${endDate}`,
-            { cache: 'no-store' }
-          ),
-          fetch(
-            `/api/clients/${clientId}/habits/logs?startDate=${startDate}&endDate=${endDate}`,
-            { cache: 'no-store' }
-          )
-        ])
-        
-        if (!dailyLogsResponse.ok) {
-          console.error('Failed to fetch daily logs')
-        } else {
-          const dailyData = await dailyLogsResponse.json()
-          const fetchedLogs = dailyData.data || []
-          setLogs(fetchedLogs)
-          
-          // Detect alerts from the fetched logs
-          const detectedAlerts = detectAlerts(fetchedLogs)
-          setAlerts(detectedAlerts)
-        }
-        
-        if (!habitLogsResponse.ok) {
-          console.error('Failed to fetch habit logs')
-        } else {
-          const habitData = await habitLogsResponse.json()
-          setAllHabitLogs(habitData.data || [])
-        }
-      } catch (error) {
-        console.error('Error fetching data:', error)
-      } finally {
-        setIsLoading(false)
-      }
-    }
-    
-    fetchData()
-  }, [clientId])
-  
+
+  const startDate = getDateDaysAgo(28)
+  const endDate = new Date().toISOString().split('T')[0]
+
+  const { data: dailyData, isLoading: dailyLoading } = useSWR<{ data: DailyLog[] }>(
+    `/api/clients/${clientId}/daily-logs?startDate=${startDate}&endDate=${endDate}`,
+    swrFetcher,
+    { revalidateOnFocus: false, dedupingInterval: 5000 }
+  )
+
+  const { data: habitData, isLoading: habitLoading } = useSWR<{ data: HabitLogWithDetails[] }>(
+    `/api/clients/${clientId}/habits/logs?startDate=${startDate}&endDate=${endDate}`,
+    swrFetcher,
+    { revalidateOnFocus: false, dedupingInterval: 5000 }
+  )
+
+  const logs = dailyData?.data || []
+  const allHabitLogs = habitData?.data || []
+  const isLoading = dailyLoading || habitLoading
+
+  const alerts = useMemo(() => detectAlerts(logs), [logs])
+
   // Conditional returns must come after all hooks
   if (isLoading) {
     return (
@@ -82,7 +55,7 @@ export function DailyWellnessStrip({ clientId }: DailyWellnessStripProps) {
       </Card>
     )
   }
-  
+
   if (logs.length === 0) {
     return (
       <Card>
@@ -92,7 +65,7 @@ export function DailyWellnessStrip({ clientId }: DailyWellnessStripProps) {
       </Card>
     )
   }
-  
+
   // Handle date clicks
   const handleDateClick = (dateStr: string) => {
     if (selectedDate === dateStr) {
@@ -101,42 +74,42 @@ export function DailyWellnessStrip({ clientId }: DailyWellnessStripProps) {
       setSelectedDate(dateStr)
     }
   }
-  
+
   // Prepare data for charts
   const prepareChartData = (metric: "mood" | "energy" | "sleep" | "stress") => {
     const today = new Date()
     const data = []
-    
+
     for (let i = 27; i >= 0; i--) {
       const date = new Date(today)
       date.setDate(date.getDate() - i)
       const dateStr = date.toISOString().split('T')[0]
       const log = logs.find(l => l.date === dateStr)
-      
+
       data.push({
         date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
         dateStr: dateStr,
         value: log ? log[metric] ?? null : null
       })
     }
-    
+
     return data
   }
-  
+
   // Get current values (most recent log)
   const sortedLogs = [...logs].sort((a, b) => b.date.localeCompare(a.date))
   const mostRecentLog = sortedLogs[0]
-  
+
   const currentValues = {
     mood: mostRecentLog?.mood,
     energy: mostRecentLog?.energy,
     sleep: mostRecentLog?.sleep,
     stress: mostRecentLog?.stress
   }
-  
+
   // Get the selected log and habit data
   const selectedLog = selectedDate ? logs.find(l => l.date === selectedDate) : null
-  const selectedHabits = selectedDate 
+  const selectedHabits = selectedDate
     ? allHabitLogs
         .filter(log => {
           // Only show habits that were created on or before the selected date
@@ -157,7 +130,7 @@ export function DailyWellnessStrip({ clientId }: DailyWellnessStripProps) {
           isBoolean: log.isBoolean
         }))
     : []
-  
+
   return (
     <Card className="relative">
       <CardHeader>
@@ -179,11 +152,11 @@ export function DailyWellnessStrip({ clientId }: DailyWellnessStripProps) {
                   </div>
                   <div className="space-y-2">
                     {alerts.map((alert, index) => (
-                      <div 
-                        key={index} 
+                      <div
+                        key={index}
                         className={`p-2 rounded-lg border-l-4 ${
-                          alert.severity === 'high' 
-                            ? 'border-destructive bg-destructive/5' 
+                          alert.severity === 'high'
+                            ? 'border-destructive bg-destructive/5'
                             : 'border-warning bg-warning/5'
                         }`}
                       >
@@ -246,7 +219,7 @@ export function DailyWellnessStrip({ clientId }: DailyWellnessStripProps) {
               selectedDate={selectedDate}
             />
           </div>
-          
+
         {/* Adherence Dot Rows */}
         <div className="space-y-4 pt-4 border-t">
           <AdherenceDotRow
@@ -265,7 +238,7 @@ export function DailyWellnessStrip({ clientId }: DailyWellnessStripProps) {
           />
         </div>
       </CardContent>
-      
+
       {/* Overlay Backdrop and Day Detail */}
       <AnimatePresence>
         {selectedLog && (
@@ -279,7 +252,7 @@ export function DailyWellnessStrip({ clientId }: DailyWellnessStripProps) {
               className="absolute inset-0 bg-black/5 rounded-lg z-[5] cursor-pointer"
               onClick={() => setSelectedDate(null)}
             />
-            
+
             {/* Day Detail Overlay */}
             <DayDetailCard
               log={selectedLog}

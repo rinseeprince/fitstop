@@ -24,12 +24,12 @@ type RecentCheckIn = {
   createdAt: string
 }
 
-const fetcher = async (url: string) => { const r = await fetch(url); return r.json() }
+import { swrFetcher } from "@/lib/swr-fetcher"
 
 export default function DashboardPage() {
   const { data, isLoading } = useSWR<{ checkIns: RecentCheckIn[] }>(
     "/api/check-ins/recent",
-    fetcher,
+    swrFetcher,
     { revalidateOnFocus: false }
   )
   const recentCheckIns = data?.checkIns ?? []

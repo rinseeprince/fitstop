@@ -8,12 +8,12 @@ import { ClipboardCheck, ChevronRight, Bell, UserPlus } from "lucide-react"
 import Link from "next/link"
 import type { PendingIntakeSummary } from "@/types/client-intake"
 
-const fetcher = async (url: string) => { const r = await fetch(url); return r.json() }
+import { swrFetcher } from "@/lib/swr-fetcher"
 
 export function PendingIntakeBanner() {
   const { data, isLoading } = useSWR<{ success: boolean; data: PendingIntakeSummary[] }>(
     "/api/coach/pending-intakes",
-    fetcher,
+    swrFetcher,
     {
       revalidateOnFocus: false,
       errorRetryCount: 3,

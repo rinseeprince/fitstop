@@ -15,14 +15,22 @@ import Link from "next/link";
 import type { ClientWithCheckInInfo } from "@/services/client-service";
 import { useOverdueClients } from "@/hooks/use-check-in-data";
 
-type ClientStatus = "active" | "inactive";
+type ClientStatus = "invited" | "awaiting_review" | "awaiting_activation" | "active" | "inactive";
 
-const fetcher = async (url: string) => { const r = await fetch(url); return r.json() };
+const statusConfig: Record<ClientStatus, { label: string; variant: "warning" | "default" | "success" | "secondary" }> = {
+  invited: { label: "Invited", variant: "warning" },
+  awaiting_review: { label: "Intake Review", variant: "default" },
+  awaiting_activation: { label: "Awaiting Activation", variant: "warning" },
+  active: { label: "Active", variant: "success" },
+  inactive: { label: "Inactive", variant: "secondary" },
+};
+
+import { swrFetcher } from "@/lib/swr-fetcher";
 
 export default function ClientsPage() {
   const { data, error, isLoading, mutate } = useSWR<{ clients: ClientWithCheckInInfo[] }>(
     "/api/clients",
-    fetcher,
+    swrFetcher,
     { revalidateOnFocus: false }
   );
   const clients = data?.clients ?? [];
@@ -60,7 +68,13 @@ export default function ClientsPage() {
   };
 
   const getClientStatus = (client: ClientWithCheckInInfo): ClientStatus => {
-    return client.active ? "active" : "inactive";
+    if (!client.active) return "inactive";
+    switch (client.onboardingStatus) {
+      case "pending_intake": return "invited";
+      case "intake_completed": return "awaiting_review";
+      case "setup_in_progress": return "awaiting_activation";
+      default: return "active";
+    }
   };
 
   const filteredClients = useMemo(() => {
@@ -88,7 +102,7 @@ export default function ClientsPage() {
   const statusCounts = useMemo(() => {
     return {
       all: clients.length,
-      active: clients.filter((c) => c.active).length,
+      active: clients.filter((c) => getClientStatus(c) === "active").length,
       inactive: clients.filter((c) => !c.active).length,
     };
   }, [clients]);
@@ -254,8 +268,8 @@ export default function ClientsPage() {
                   </div>
 
                   {/* Status Badge */}
-                  <Badge variant={status === "active" ? "success" : "secondary"}>
-                    {status === "active" ? "Active" : "Inactive"}
+                  <Badge variant={statusConfig[status].variant}>
+                    {statusConfig[status].label}
                   </Badge>
 
                   {/* Arrow */}

@@ -1,14 +1,16 @@
 import useSWR from "swr";
 import type {
   CheckIn,
+  CheckInStatus,
   GetCheckInsResponse,
   Client,
   GetOverdueClientsResponse,
   GetClientsDueSoonResponse,
   GetClientRemindersResponse,
 } from "@/types/check-in";
+import { swrFetcher } from "@/lib/swr-fetcher";
 
-const fetcher = (url: string) => fetch(url).then((res) => res.json());
+const fetcher = swrFetcher;
 
 // Hook to fetch check-ins for a client
 export const useCheckInData = (
@@ -16,7 +18,7 @@ export const useCheckInData = (
   options?: {
     limit?: number;
     offset?: number;
-    status?: string;
+    status?: CheckInStatus;
     includeDailyLogCounts?: boolean;
   }
 ) => {

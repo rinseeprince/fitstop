@@ -10,7 +10,7 @@ import { ArrowLeft } from "lucide-react"
 import Link from "next/link"
 import type { ClientIntake } from "@/types/client-intake"
 
-const fetcher = async (url: string) => { const r = await fetch(url); return r.json() }
+import { swrFetcher } from "@/lib/swr-fetcher"
 
 export default function IntakeReviewRoute({
   params,
@@ -20,7 +20,7 @@ export default function IntakeReviewRoute({
   const { id: clientId } = use(params)
   const { data, isLoading, error } = useSWR<{ success: boolean; data: ClientIntake }>(
     `/api/clients/${clientId}/intake`,
-    fetcher,
+    swrFetcher,
     { revalidateOnFocus: false }
   )
 
