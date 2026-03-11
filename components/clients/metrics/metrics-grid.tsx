@@ -1,6 +1,5 @@
 "use client";
 
-import { useRef, useEffect } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { MetricChartCard } from "./metric-chart-card";
 import type { MetricData, DateRangeFilter } from "./hooks/use-metrics-data";
@@ -10,6 +9,7 @@ type MetricsGridProps = {
   dateRange: DateRangeFilter;
   onDateRangeChange: (range: DateRangeFilter) => void;
   selectedMetricId: string | null;
+  onClearSelection: () => void;
 };
 
 const DATE_RANGE_OPTIONS: { value: DateRangeFilter; label: string }[] = [
@@ -24,30 +24,36 @@ export const MetricsGrid = ({
   dateRange,
   onDateRangeChange,
   selectedMetricId,
+  onClearSelection,
 }: MetricsGridProps) => {
-  const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const selectedMetric = selectedMetricId
+    ? metrics.find((m) => m.id === selectedMetricId)
+    : null;
 
-  useEffect(() => {
-    if (selectedMetricId) {
-      const cardEl = cardRefs.current.get(selectedMetricId);
-      if (cardEl) {
-        cardEl.scrollIntoView({ behavior: "smooth", block: "center" });
-      }
-    }
-  }, [selectedMetricId]);
-
-  const setCardRef = (id: string) => (el: HTMLDivElement | null) => {
-    if (el) {
-      cardRefs.current.set(id, el);
-    } else {
-      cardRefs.current.delete(id);
-    }
-  };
+  if (selectedMetric) {
+    return (
+      <div className="flex-1 h-full">
+        <MetricChartCard
+          key={selectedMetric.id}
+          id={selectedMetric.id}
+          name={selectedMetric.name}
+          currentValue={selectedMetric.currentValue}
+          unit={selectedMetric.unit}
+          percentChange={selectedMetric.percentChange}
+          trend={selectedMetric.trend}
+          chartData={selectedMetric.chartData}
+          expanded
+          dateRange={dateRange}
+          onDateRangeChange={onDateRangeChange}
+          onBack={onClearSelection}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="flex-1 space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Metrics</h2>
+      <div className="flex items-center justify-end">
         <Select value={dateRange} onValueChange={(v) => onDateRangeChange(v as DateRangeFilter)}>
           <SelectTrigger className="w-[140px]">
             <SelectValue />
@@ -74,8 +80,6 @@ export const MetricsGrid = ({
               percentChange={metric.percentChange}
               trend={metric.trend}
               chartData={metric.chartData}
-              isHighlighted={metric.id === selectedMetricId}
-              onRef={setCardRef(metric.id)}
             />
           ))}
         </div>

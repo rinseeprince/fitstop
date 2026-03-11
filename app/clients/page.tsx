@@ -36,7 +36,7 @@ export default function ClientsPage() {
   const clients = data?.clients ?? [];
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeFilter, setActiveFilter] = useState<"all" | ClientStatus>("all");
+  const [activeFilter, setActiveFilter] = useState<"all" | "onboarding" | ClientStatus>("all");
   const { clients: overdueClients } = useOverdueClients();
 
   const isClientOverdue = (clientId: string) => {
@@ -80,7 +80,12 @@ export default function ClientsPage() {
   const filteredClients = useMemo(() => {
     let result = [...clients];
 
-    if (activeFilter !== "all") {
+    if (activeFilter === "onboarding") {
+      result = result.filter((client) => {
+        const status = getClientStatus(client);
+        return status === "invited" || status === "awaiting_review" || status === "awaiting_activation";
+      });
+    } else if (activeFilter !== "all") {
       result = result.filter((client) => {
         const status = getClientStatus(client);
         return status === activeFilter;
@@ -103,6 +108,10 @@ export default function ClientsPage() {
     return {
       all: clients.length,
       active: clients.filter((c) => getClientStatus(c) === "active").length,
+      onboarding: clients.filter((c) => {
+        const s = getClientStatus(c);
+        return s === "invited" || s === "awaiting_review" || s === "awaiting_activation";
+      }).length,
       inactive: clients.filter((c) => !c.active).length,
     };
   }, [clients]);
@@ -155,6 +164,16 @@ export default function ClientsPage() {
                 }`}
               >
                 Active ({statusCounts.active})
+              </button>
+              <button
+                onClick={() => setActiveFilter("onboarding")}
+                className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${
+                  activeFilter === "onboarding"
+                    ? "bg-card text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Onboarding ({statusCounts.onboarding})
               </button>
               <button
                 onClick={() => setActiveFilter("inactive")}

@@ -68,7 +68,7 @@ export const MetricsTabContent = ({
   }
 
   return (
-    <div className="flex gap-6">
+    <div className="flex gap-6 items-start">
       <MetricsSidebar
         bodyMetrics={bodyMetrics}
         wellnessMetrics={wellnessMetrics}
@@ -84,6 +84,7 @@ export const MetricsTabContent = ({
         dateRange={dateRange}
         onDateRangeChange={setDateRange}
         selectedMetricId={selectedMetricId}
+        onClearSelection={() => setSelectedMetricId(null)}
       />
     </div>
   );

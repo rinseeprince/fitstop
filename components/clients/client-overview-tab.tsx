@@ -1,15 +1,18 @@
 "use client"
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { useState } from "react"
+import { Card, CardBody, CardHeader, CardTitle, CardAction } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { CheckInTimeline } from "@/components/check-in/check-in-timeline"
 import { ProgressCharts } from "@/components/check-in/progress-charts"
 import { PhotoComparison } from "@/components/check-in/photo-comparison"
-import { CheckInScheduleCard } from "@/components/clients/check-in/check-in-schedule-card"
-import { InlineEditableMetric } from "@/components/clients/shared/inline-editable-metric"
-import { Phone, Mail, Loader2, Calculator } from "lucide-react"
+import { CheckInScheduleSection } from "@/components/clients/check-in/check-in-schedule-card"
+import { ReminderHistoryModal } from "@/components/clients/check-in/reminder-history-modal"
+import { Loader2, Calculator, Bell, Edit2 } from "lucide-react"
 import { DailyWellnessStrip } from "@/components/clients/daily-pulse/daily-wellness-strip"
 import { ClientActivationBanner } from "@/components/clients/client-activation-banner"
+import { cn } from "@/lib/utils"
 import type { ClientTab } from "@/components/clients/client-page-header"
 import type { Client, CheckIn } from "@/types/check-in"
 
@@ -18,8 +21,6 @@ interface ClientOverviewTabProps {
   checkIns: CheckIn[]
   isCalculatingBMR: boolean
   onCalculateBMR: () => void
-  onMetricSave: (field: string, value: number, metricName: string, needsConfirmation: boolean) => Promise<void>
-  onResetToAuto: (field: "bmr" | "tdee") => Promise<void>
   onSelectCheckIn: (checkIn: CheckIn) => void
   onClientUpdated?: () => void
   onTabChange?: (tab: ClientTab) => void
@@ -30,12 +31,39 @@ export function ClientOverviewTab({
   checkIns,
   isCalculatingBMR,
   onCalculateBMR,
-  onMetricSave,
-  onResetToAuto,
   onSelectCheckIn,
   onClientUpdated,
   onTabChange,
 }: ClientOverviewTabProps) {
+  const [isEditingSchedule, setIsEditingSchedule] = useState(false)
+  const [showReminderHistory, setShowReminderHistory] = useState(false)
+
+  const currentWeight = client.currentWeight || checkIns[0]?.weight
+  const currentBf = client.currentBodyFatPercentage || checkIns[0]?.bodyFatPercentage
+  const weightUnit = client.weightUnit || "lbs"
+  const weightDelta = currentWeight && client.goalWeight
+    ? currentWeight - client.goalWeight
+    : null
+  const bfDelta = currentBf && client.goalBodyFatPercentage
+    ? currentBf - client.goalBodyFatPercentage
+    : null
+
+  const getFrequencyLabel = () => {
+    switch (client.checkInFrequency) {
+      case "weekly": return "Weekly"
+      case "biweekly": return "Bi-weekly"
+      case "monthly": return "Monthly"
+      case "custom": return `Every ${client.checkInFrequencyDays} days`
+      case "none": return "No schedule"
+      default: return "Weekly"
+    }
+  }
+
+  const getDayLabel = (day: string | null | undefined) => {
+    if (!day) return "Any day"
+    return day.charAt(0).toUpperCase() + day.slice(1)
+  }
+
   return (
     <div className="space-y-6">
       {/* Activation Banner */}
@@ -47,193 +75,198 @@ export function ClientOverviewTab({
         />
       )}
 
-      {/* Contact Info & Metrics */}
+      {/* Client Info & Metrics */}
       <div className="grid gap-6 lg:grid-cols-2">
+        {/* Card 1: Client & Schedule */}
         <Card>
           <CardHeader>
-            <CardTitle>Contact Information</CardTitle>
+            <CardTitle>Client & Schedule</CardTitle>
+            <CardAction>
+              {!isEditingSchedule && (
+                <Button variant="ghost" size="sm" onClick={() => setIsEditingSchedule(true)}>
+                  <Edit2 className="h-4 w-4" />
+                </Button>
+              )}
+            </CardAction>
           </CardHeader>
-          <CardContent>
-            <div className="grid gap-4">
-              <div className="flex items-center gap-3">
-                <Mail className="h-5 w-5 text-muted-foreground" />
-                <div>
-                  <p className="text-sm text-muted-foreground">Email</p>
-                  <p className="font-medium">{client.email}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <Phone className="h-5 w-5 text-muted-foreground" />
-                <div>
-                  <p className="text-sm text-muted-foreground">Phone</p>
-                  <p className="font-medium text-muted-foreground">Not provided</p>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+          <CardBody>
+            {/* Contact info — compact */}
+            <p className="text-sm text-muted-foreground">{client.email}</p>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-            <CardTitle>Current Metrics</CardTitle>
-            {(!client.bmr || !client.tdee) && client.currentWeight && client.height && client.gender && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={onCalculateBMR}
-                disabled={isCalculatingBMR}
-              >
-                {isCalculatingBMR ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Calculating...
-                  </>
-                ) : (
-                  <>
-                    <Calculator className="h-4 w-4 mr-2" />
-                    Calculate BMR
-                  </>
-                )}
-              </Button>
-            )}
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-4">
-              {/* Weight Row */}
-              <div className="flex items-center justify-between">
-                <InlineEditableMetric
-                  label="Current Weight"
-                  value={client.currentWeight || checkIns[0]?.weight}
-                  unit={client.weightUnit || "lbs"}
-                  placeholder="Not recorded"
-                  onSave={(value) => onMetricSave("currentWeight", value, "current weight", true)}
-                  min={44}
-                  max={550}
-                  step={0.1}
+            {isEditingSchedule ? (
+              <div className="mt-4">
+                <CheckInScheduleSection
+                  client={client}
+                  onUpdate={() => {
+                    setIsEditingSchedule(false)
+                    window.location.reload()
+                  }}
+                  onCancel={() => setIsEditingSchedule(false)}
                 />
-                <div className="text-right">
-                  <InlineEditableMetric
-                    label="Goal Weight"
-                    value={client.goalWeight}
-                    unit={client.weightUnit || "lbs"}
-                    placeholder="Not set"
-                    onSave={(value) => onMetricSave("goalWeight", value, "goal weight", false)}
-                    min={44}
-                    max={550}
-                    step={0.1}
-                  />
-                </div>
               </div>
-
-              {/* Body Fat Row */}
-              <div className="flex items-center justify-between pt-3 border-t">
-                <InlineEditableMetric
-                  label="Current Body Fat %"
-                  value={client.currentBodyFatPercentage || checkIns[0]?.bodyFatPercentage}
-                  unit="%"
-                  placeholder="Not recorded"
-                  onSave={(value) => onMetricSave("currentBodyFatPercentage", value, "current body fat", true)}
-                  min={3}
-                  max={60}
-                  step={0.1}
-                />
-                <div className="text-right">
-                  <InlineEditableMetric
-                    label="Goal Body Fat %"
-                    value={client.goalBodyFatPercentage}
-                    unit="%"
-                    placeholder="Not set"
-                    onSave={(value) => onMetricSave("goalBodyFatPercentage", value, "goal body fat", false)}
-                    min={3}
-                    max={60}
-                    step={0.1}
-                  />
-                </div>
-              </div>
-
-              {/* Progress to Goal */}
-              {client.goalWeight && (client.currentWeight || checkIns[0]?.weight) && (
-                <div className="flex items-center justify-between pt-3 border-t">
+            ) : (
+              <>
+                {/* Schedule + Adherence — 2x2 grid */}
+                <div className="grid grid-cols-2 gap-4 mt-4">
                   <div>
-                    <p className="text-sm text-muted-foreground">To Goal Weight</p>
-                    <p className={`text-2xl font-bold ${
-                      ((client.currentWeight || checkIns[0]?.weight || 0) - client.goalWeight) > 0
-                        ? "text-warning"
-                        : "text-success"
-                    }`}>
-                      {Math.abs((client.currentWeight || checkIns[0]?.weight || 0) - client.goalWeight).toFixed(1)} {client.weightUnit || "lbs"}
-                    </p>
+                    <p className="text-xs font-medium text-muted-foreground mb-1">Frequency</p>
+                    <p className="text-sm font-semibold">{getFrequencyLabel()}</p>
                   </div>
-                  {client.goalBodyFatPercentage && (client.currentBodyFatPercentage || checkIns[0]?.bodyFatPercentage) && (
-                    <div className="text-right">
-                      <p className="text-sm text-muted-foreground">To Goal Body Fat</p>
-                      <p className={`text-2xl font-bold ${
-                        ((client.currentBodyFatPercentage || checkIns[0]?.bodyFatPercentage || 0) - client.goalBodyFatPercentage) > 0
-                          ? "text-warning"
-                          : "text-success"
-                      }`}>
-                        {Math.abs((client.currentBodyFatPercentage || checkIns[0]?.bodyFatPercentage || 0) - client.goalBodyFatPercentage).toFixed(1)}%
-                      </p>
-                    </div>
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground mb-1">Expected Day</p>
+                    <p className="text-sm font-semibold">{getDayLabel(client.expectedCheckInDay)}</p>
+                  </div>
+                  {client.checkInAdherenceRate !== undefined && (
+                    <>
+                      <div>
+                        <p className="text-xs font-medium text-muted-foreground mb-1">Adherence</p>
+                        <p className="text-sm font-semibold text-primary">{Math.round(client.checkInAdherenceRate)}%</p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium text-muted-foreground mb-1">Streak</p>
+                        <p className="text-sm font-semibold text-primary">{client.currentStreak || 0}</p>
+                      </div>
+                    </>
                   )}
                 </div>
-              )}
 
-              {/* BMR, TDEE & Physical Stats */}
-              <div className="grid grid-cols-2 gap-4 pt-3 border-t">
-                <InlineEditableMetric
-                  label="BMR (Basal Metabolic Rate)"
-                  value={client.bmr}
-                  unit="cal/day"
-                  placeholder="Not calculated"
-                  isManual={client.bmrManualOverride}
-                  onSave={(value) => onMetricSave("bmr", value, "BMR", false)}
-                  onResetToAuto={() => onResetToAuto("bmr")}
-                  min={800}
-                  max={5000}
-                  step={1}
-                  formatDisplay={(v) => Math.round(v).toString()}
-                />
-                <InlineEditableMetric
-                  label="TDEE (Sedentary)"
-                  value={client.tdee}
-                  unit="cal/day"
-                  placeholder="Not calculated"
-                  isManual={client.tdeeManualOverride}
-                  onSave={(value) => onMetricSave("tdee", value, "TDEE", false)}
-                  onResetToAuto={() => onResetToAuto("tdee")}
-                  min={1000}
-                  max={8000}
-                  step={1}
-                  formatDisplay={(v) => Math.round(v).toString()}
-                />
+                {/* Reminder status — condensed single line */}
+                <div className="flex items-center gap-2 mt-3 text-xs text-muted-foreground">
+                  <Bell className="h-3 w-3" />
+                  <span>Reminders {client.reminderPreferences?.enabled ? "on" : "off"}</span>
+                  {client.reminderPreferences?.autoSend && (
+                    <Badge variant="secondary">Auto</Badge>
+                  )}
+                  <button
+                    onClick={() => setShowReminderHistory(true)}
+                    className="ml-auto text-xs text-primary hover:underline"
+                  >
+                    History
+                  </button>
+                </div>
+              </>
+            )}
+          </CardBody>
+        </Card>
+
+        {/* Card 2: Body Metrics (read-only) */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Body Metrics</CardTitle>
+            {(!client.bmr || !client.tdee) && client.currentWeight && client.height && client.gender && (
+              <CardAction>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onCalculateBMR}
+                  disabled={isCalculatingBMR}
+                >
+                  {isCalculatingBMR ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Calculating...
+                    </>
+                  ) : (
+                    <>
+                      <Calculator className="h-4 w-4 mr-2" />
+                      Calculate BMR
+                    </>
+                  )}
+                </Button>
+              </CardAction>
+            )}
+          </CardHeader>
+          <CardBody>
+            {/* Composition metrics — 2-col grid */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-sm text-muted-foreground">Current Weight</p>
+                <p className="text-2xl font-semibold">
+                  {currentWeight ? `${currentWeight.toFixed(1)}` : "Not recorded"}
+                  {currentWeight && <span className="text-muted-foreground"> {weightUnit}</span>}
+                </p>
+                {weightDelta !== null && (
+                  <p className={cn("text-xs font-medium mt-0.5", weightDelta > 0 ? "text-warning" : "text-success")}>
+                    {Math.abs(weightDelta).toFixed(1)} {weightUnit} to goal
+                  </p>
+                )}
               </div>
-              <div className="grid grid-cols-2 gap-4 pt-3 border-t">
-                <div>
-                  <p className="text-sm text-muted-foreground">Height</p>
-                  <p className="text-lg font-bold">
-                    {client.height
-                      ? `${client.height} ${client.heightUnit || "in"}`
-                      : "Not set"}
+              <div>
+                <p className="text-sm text-muted-foreground">Goal Weight</p>
+                <p className="text-2xl font-semibold">
+                  {client.goalWeight ? `${client.goalWeight.toFixed(1)}` : "Not set"}
+                  {client.goalWeight && <span className="text-muted-foreground"> {weightUnit}</span>}
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Current Body Fat</p>
+                <p className="text-2xl font-semibold">
+                  {currentBf ? `${currentBf.toFixed(1)}` : "Not recorded"}
+                  {currentBf && <span className="text-muted-foreground"> %</span>}
+                </p>
+                {bfDelta !== null && (
+                  <p className={cn("text-xs font-medium mt-0.5", bfDelta > 0 ? "text-warning" : "text-success")}>
+                    {Math.abs(bfDelta).toFixed(1)}% to goal
                   </p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Gender</p>
-                  <p className="text-lg font-bold capitalize">
-                    {client.gender || "Not set"}
-                  </p>
-                </div>
+                )}
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Goal Body Fat</p>
+                <p className="text-2xl font-semibold">
+                  {client.goalBodyFatPercentage ? `${client.goalBodyFatPercentage.toFixed(1)}` : "Not set"}
+                  {client.goalBodyFatPercentage && <span className="text-muted-foreground"> %</span>}
+                </p>
               </div>
             </div>
-          </CardContent>
+
+            {/* Single divider */}
+            <div className="border-b border-border my-4" />
+
+            {/* Derived stats — 2x2 grid */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-sm text-muted-foreground">BMR</p>
+                <p className="text-2xl font-semibold">
+                  {client.bmr ? Math.round(client.bmr) : "Not calculated"}
+                  {client.bmr && <span className="text-muted-foreground"> cal/day</span>}
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">TDEE (Sedentary)</p>
+                <p className="text-2xl font-semibold">
+                  {client.tdee ? Math.round(client.tdee) : "Not calculated"}
+                  {client.tdee && <span className="text-muted-foreground"> cal/day</span>}
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Height</p>
+                <p className="text-lg font-semibold">
+                  {client.height
+                    ? `${client.height} ${client.heightUnit || "in"}`
+                    : "Not set"}
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Gender</p>
+                <p className="text-lg font-semibold capitalize">
+                  {client.gender || "Not set"}
+                </p>
+              </div>
+            </div>
+          </CardBody>
         </Card>
       </div>
 
+      {/* Reminder History Modal */}
+      <ReminderHistoryModal
+        clientId={client.id}
+        clientName={client.name}
+        open={showReminderHistory}
+        onClose={() => setShowReminderHistory(false)}
+      />
+
       {/* Daily Wellness Strip */}
       <DailyWellnessStrip clientId={client.id} />
-
-      {/* Check-In Schedule */}
-      <CheckInScheduleCard client={client} onUpdate={() => window.location.reload()} />
 
       {/* Progress Charts */}
       <div>

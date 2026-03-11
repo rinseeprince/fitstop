@@ -114,8 +114,6 @@ export default function ClientProfilePage() {
               checkIns={checkIns}
               isCalculatingBMR={isCalculatingBMR}
               onCalculateBMR={handleCalculateBMR}
-              onMetricSave={handleMetricSave}
-              onResetToAuto={handleResetToAuto}
               onSelectCheckIn={handleSelectCheckIn}
               onClientUpdated={() => mutateClient()}
               onTabChange={setActiveTab}

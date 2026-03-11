@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, Settings2, Plus } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { HabitChartCard } from "./habit-chart-card";
 import { useHabitLogs, type DateRangeFilter } from "@/hooks/use-habit-logs";
 import type { DailyHabit } from "@/types/daily-habit";
@@ -15,6 +17,7 @@ type HabitsGridProps = {
   habits: HabitWithStats[];
   clientId: string;
   selectedHabitId: string | null;
+  onOpenManageDrawer?: () => void;
 };
 
 const DATE_RANGE_OPTIONS: { value: DateRangeFilter; label: string }[] = [
@@ -24,7 +27,7 @@ const DATE_RANGE_OPTIONS: { value: DateRangeFilter; label: string }[] = [
   { value: "all", label: "All time" },
 ];
 
-export const HabitsGrid = ({ habits, clientId, selectedHabitId }: HabitsGridProps) => {
+export const HabitsGrid = ({ habits, clientId, selectedHabitId, onOpenManageDrawer }: HabitsGridProps) => {
   const [dateRange, setDateRange] = useState<DateRangeFilter>("30d");
   const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   
@@ -33,7 +36,6 @@ export const HabitsGrid = ({ habits, clientId, selectedHabitId }: HabitsGridProp
     isLoading,
     error,
     getHabitChartData,
-    calculateAverageValue,
     calculateCompletionRate,
   } = useHabitLogs(clientId, dateRange);
   
@@ -57,11 +59,17 @@ export const HabitsGrid = ({ habits, clientId, selectedHabitId }: HabitsGridProp
   if (habits.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center">
-        <div className="text-center space-y-2">
+        <div className="text-center space-y-3">
           <p className="text-muted-foreground">No habits to display</p>
           <p className="text-sm text-muted-foreground">
-            Create a habit using the sidebar to get started
+            Add habits to start tracking
           </p>
+          {onOpenManageDrawer && (
+            <Button onClick={onOpenManageDrawer} variant="outline" size="sm">
+              <Plus className="h-4 w-4 mr-2" />
+              Add Habit
+            </Button>
+          )}
         </div>
       </div>
     );
@@ -71,22 +79,30 @@ export const HabitsGrid = ({ habits, clientId, selectedHabitId }: HabitsGridProp
     <div className="flex-1 space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">Habit Analytics</h2>
-        
-        <div className="bg-muted p-1 rounded-lg inline-flex">
-          {DATE_RANGE_OPTIONS.map((option) => (
-            <button
-              key={option.value}
-              onClick={() => setDateRange(option.value)}
-              className={cn(
-                "px-4 py-2 text-sm font-medium rounded-md transition-all",
-                dateRange === option.value
-                  ? "bg-card text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              {option.label}
-            </button>
-          ))}
+
+        <div className="flex items-center gap-3">
+          <div className="bg-muted p-1 rounded-lg inline-flex">
+            {DATE_RANGE_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                onClick={() => setDateRange(option.value)}
+                className={cn(
+                  "px-4 py-2 text-sm font-medium rounded-md transition-all",
+                  dateRange === option.value
+                    ? "bg-card text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+          {onOpenManageDrawer && (
+            <Button onClick={onOpenManageDrawer} variant="outline" size="sm">
+              <Settings2 className="h-4 w-4 mr-2" />
+              Manage Habits
+            </Button>
+          )}
         </div>
       </div>
       
@@ -106,7 +122,6 @@ export const HabitsGrid = ({ habits, clientId, selectedHabitId }: HabitsGridProp
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {habits.map((habit) => {
             const chartPoints = getHabitChartData(habit.id);
-            const averageValue = calculateAverageValue(habit.id);
             const completionRate7d = calculateCompletionRate(habit.id, 7);
             const completionRate30d = calculateCompletionRate(habit.id, 30);
             
@@ -115,7 +130,6 @@ export const HabitsGrid = ({ habits, clientId, selectedHabitId }: HabitsGridProp
                 key={habit.id}
                 habit={habit}
                 chartData={chartPoints}
-                averageValue={averageValue}
                 completionRate7d={completionRate7d}
                 completionRate30d={completionRate30d}
                 isHighlighted={habit.id === selectedHabitId}
@@ -128,7 +142,3 @@ export const HabitsGrid = ({ habits, clientId, selectedHabitId }: HabitsGridProp
     </div>
   );
 };
-
-function cn(...classes: (string | boolean | undefined)[]) {
-  return classes.filter(Boolean).join(" ");
-}

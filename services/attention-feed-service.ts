@@ -58,6 +58,8 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
     .from("clients")
     .select("id, name, avatar_url")
     .eq("coach_id", coachId)
+    .eq("active", true)
+    .eq("onboarding_status", "active")
 
   if (clientsError || !clients) {
     console.error("Error fetching clients:", clientsError)

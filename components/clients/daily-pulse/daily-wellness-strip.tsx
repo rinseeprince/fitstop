@@ -58,11 +58,15 @@ export function DailyWellnessStrip({ clientId }: DailyWellnessStripProps) {
 
   if (logs.length === 0) {
     return (
-      <Card>
-        <CardContent className="p-6">
-          <p className="text-sm text-muted-foreground">No daily check-in data yet</p>
-        </CardContent>
-      </Card>
+      <div>
+        <h3 className="text-lg font-semibold mb-4">Daily Wellness</h3>
+        <Card className="p-8 text-center">
+          <p className="text-muted-foreground">No daily check-in data yet</p>
+          <p className="text-sm text-muted-foreground mt-1">
+            Daily wellness data will appear here when submitted
+          </p>
+        </Card>
+      </div>
     )
   }
 

@@ -2,9 +2,19 @@
 
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { Card, CardContent } from "@/components/ui/card";
-import { ArrowDown, ArrowUp } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import { ArrowDown, ArrowUp, ArrowLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { TrendDirection } from "@/types/check-in";
+import type { DateRangeFilter } from "./hooks/use-metrics-data";
+
+const DATE_RANGE_OPTIONS: { value: DateRangeFilter; label: string }[] = [
+  { value: "7d", label: "Last 7 days" },
+  { value: "30d", label: "Last 30 days" },
+  { value: "90d", label: "Last 90 days" },
+  { value: "all", label: "All time" },
+];
 
 type MetricChartCardProps = {
   id: string;
@@ -15,6 +25,10 @@ type MetricChartCardProps = {
   trend: TrendDirection;
   chartData: Array<{ date: string; value: number }>;
   isHighlighted?: boolean;
+  expanded?: boolean;
+  dateRange?: DateRangeFilter;
+  onDateRangeChange?: (range: DateRangeFilter) => void;
+  onBack?: () => void;
   onRef?: (el: HTMLDivElement | null) => void;
 };
 
@@ -67,6 +81,10 @@ export const MetricChartCard = ({
   trend,
   chartData,
   isHighlighted,
+  expanded,
+  dateRange,
+  onDateRangeChange,
+  onBack,
   onRef,
 }: MetricChartCardProps) => {
   const hasData = chartData.length > 0;
@@ -84,8 +102,38 @@ export const MetricChartCard = ({
     >
       <CardContent className="p-5">
         <div className="space-y-3">
-          {/* Header */}
-          <h3 className="text-sm font-medium text-muted-foreground">{name}</h3>
+          {/* Header with back button and date range for expanded view */}
+          {expanded && onBack ? (
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={onBack}
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                </Button>
+                <h3 className="text-sm font-medium text-muted-foreground">{name}</h3>
+              </div>
+              {dateRange && onDateRangeChange && (
+                <Select value={dateRange} onValueChange={(v) => onDateRangeChange(v as DateRangeFilter)}>
+                  <SelectTrigger className="w-[140px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DATE_RANGE_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+          ) : (
+            <h3 className="text-sm font-medium text-muted-foreground">{name}</h3>
+          )}
 
           {/* Value and Trend */}
           <div className="flex items-baseline gap-2">
@@ -107,9 +155,9 @@ export const MetricChartCard = ({
 
           {/* Chart */}
           {hasData ? (
-            <div className="h-[140px] w-full -mx-2">
+            <div className={cn("w-full -mx-2", expanded ? "h-[400px]" : "h-[140px]")}>
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData} margin={{ top: 10, right: 10, bottom: 0, left: 10 }}>
+                <AreaChart data={chartData} margin={{ top: 10, right: 10, bottom: 0, left: expanded ? 0 : 10 }}>
                   <defs>
                     <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor={colors.fill} stopOpacity={0.3} />
@@ -124,7 +172,14 @@ export const MetricChartCard = ({
                     interval="preserveStartEnd"
                     dy={8}
                   />
-                  <YAxis hide domain={["dataMin - 5", "dataMax + 5"]} />
+                  <YAxis
+                    hide={!expanded}
+                    domain={["dataMin - 5", "dataMax + 5"]}
+                    tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                    tickLine={false}
+                    axisLine={false}
+                    width={40}
+                  />
                   <Tooltip
                     contentStyle={{
                       backgroundColor: "hsl(var(--popover))",
@@ -142,14 +197,14 @@ export const MetricChartCard = ({
                     stroke={colors.stroke}
                     strokeWidth={2.5}
                     fill={`url(#${gradientId})`}
-                    dot={false}
+                    dot={expanded}
                     activeDot={{ r: 5, fill: colors.stroke, strokeWidth: 2, stroke: "#fff" }}
                   />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
           ) : (
-            <div className="h-[140px] flex items-center justify-center">
+            <div className={cn("flex items-center justify-center", expanded ? "h-[400px]" : "h-[140px]")}>
               <p className="text-sm text-muted-foreground">No data available</p>
             </div>
           )}

@@ -17,7 +17,6 @@ interface ChartDataPoint {
 type HabitChartCardProps = {
   habit: DailyHabit & { stats?: HabitStats };
   chartData: ChartDataPoint[];
-  averageValue: number | null;
   completionRate7d: number;
   completionRate30d: number;
   isHighlighted?: boolean;
@@ -36,7 +35,6 @@ const getBarColor = (completed: boolean) => {
 export const HabitChartCard = ({
   habit,
   chartData,
-  averageValue,
   completionRate7d,
   completionRate30d,
   isHighlighted,
@@ -70,18 +68,30 @@ export const HabitChartCard = ({
     >
       <CardContent className="p-5">
         <div className="space-y-4">
-          <div>
-            <h3 className="font-semibold text-foreground">
-              {habit.name}
-              {habit.targetValue && (
-                <span className="text-sm font-normal text-muted-foreground ml-2">
-                  Target: {habit.targetValue} {habit.targetUnit || ""}
-                </span>
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <h3 className="font-semibold text-foreground">
+                {habit.name}
+                {habit.targetValue && (
+                  <span className="text-sm font-normal text-muted-foreground ml-2">
+                    Target: {habit.targetValue} {habit.targetUnit || ""}
+                  </span>
+                )}
+              </h3>
+              {habit.description && (
+                <p className="text-sm text-muted-foreground mt-1">{habit.description}</p>
               )}
-            </h3>
-            {habit.description && (
-              <p className="text-sm text-muted-foreground mt-1">{habit.description}</p>
-            )}
+            </div>
+            <span
+              className={cn(
+                "shrink-0 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
+                habit.isActive
+                  ? "bg-emerald-100 text-emerald-700"
+                  : "bg-amber-100 text-amber-700"
+              )}
+            >
+              {habit.isActive ? "Active" : "Inactive"}
+            </span>
           </div>
           
           <div className="grid grid-cols-2 gap-4">

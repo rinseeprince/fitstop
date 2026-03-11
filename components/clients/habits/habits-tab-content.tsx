@@ -3,8 +3,9 @@
 import { useState } from "react";
 import { Loader2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
-import { HabitsSidebar } from "./habits-sidebar";
 import { HabitsGrid } from "./habits-grid";
+import { HabitEmptyState } from "./habit-empty-state";
+import { HabitsManageDrawer } from "./habits-manage-drawer";
 import { useClientHabits } from "@/hooks/use-client-habits";
 import type { Client } from "@/types/check-in";
 
@@ -16,7 +17,7 @@ type HabitsTabContentProps = {
 export const HabitsTabContent = ({ client, onUpdate }: HabitsTabContentProps) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedHabitId, setSelectedHabitId] = useState<string | null>(null);
-  const [showInactive, setShowInactive] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   const {
     habits,
@@ -27,7 +28,7 @@ export const HabitsTabContent = ({ client, onUpdate }: HabitsTabContentProps) =>
     deleteHabit,
     reactivateHabit,
     reorderHabits,
-  } = useClientHabits(client.id, showInactive);
+  } = useClientHabits(client.id, true);
 
   // Filter habits based on search query
   const filteredHabits = searchQuery
@@ -64,9 +65,43 @@ export const HabitsTabContent = ({ client, onUpdate }: HabitsTabContentProps) =>
     );
   }
 
+  if (habits.length === 0) {
+    return (
+      <>
+        <Card>
+          <CardContent className="pt-6">
+            <HabitEmptyState onAddHabit={() => setDrawerOpen(true)} />
+          </CardContent>
+        </Card>
+        <HabitsManageDrawer
+          open={drawerOpen}
+          onOpenChange={setDrawerOpen}
+          habits={filteredHabits}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          selectedHabitId={selectedHabitId}
+          onSelectHabit={setSelectedHabitId}
+          onCreateHabit={createHabit}
+          onUpdateHabit={updateHabit}
+          onDeleteHabit={deleteHabit}
+          onReactivateHabit={reactivateHabit}
+          onReorderHabits={reorderHabits}
+        />
+      </>
+    );
+  }
+
   return (
-    <div className="flex gap-6">
-      <HabitsSidebar
+    <>
+      <HabitsGrid
+        habits={filteredHabits}
+        clientId={client.id}
+        selectedHabitId={selectedHabitId}
+        onOpenManageDrawer={() => setDrawerOpen(true)}
+      />
+      <HabitsManageDrawer
+        open={drawerOpen}
+        onOpenChange={setDrawerOpen}
         habits={filteredHabits}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
@@ -77,15 +112,7 @@ export const HabitsTabContent = ({ client, onUpdate }: HabitsTabContentProps) =>
         onDeleteHabit={deleteHabit}
         onReactivateHabit={reactivateHabit}
         onReorderHabits={reorderHabits}
-        showInactive={showInactive}
-        onToggleShowInactive={setShowInactive}
       />
-      
-      <HabitsGrid
-        habits={filteredHabits}
-        clientId={client.id}
-        selectedHabitId={selectedHabitId}
-      />
-    </div>
+    </>
   );
 };

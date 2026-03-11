@@ -1,13 +1,17 @@
 "use client";
 
 import { useState } from "react";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Search, Plus } from "lucide-react";
 import { HabitListItem } from "./habit-list-item";
 import { AddHabitDialog } from "./add-habit-dialog";
-import { HabitEmptyState } from "./habit-empty-state";
 import type { DailyHabit, DailyHabitInput } from "@/types/daily-habit";
 import type { HabitStats } from "@/services/daily-habits-stats";
 
@@ -15,7 +19,9 @@ interface HabitWithStats extends DailyHabit {
   stats?: HabitStats;
 }
 
-type HabitsSidebarProps = {
+type HabitsManageDrawerProps = {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   habits: HabitWithStats[];
   searchQuery: string;
   onSearchChange: (query: string) => void;
@@ -26,11 +32,11 @@ type HabitsSidebarProps = {
   onDeleteHabit: (habitId: string) => Promise<void>;
   onReactivateHabit?: (habitId: string) => Promise<DailyHabit | undefined>;
   onReorderHabits: (habitIds: string[]) => Promise<void>;
-  showInactive?: boolean;
-  onToggleShowInactive?: (value: boolean) => void;
 };
 
-export const HabitsSidebar = ({
+export function HabitsManageDrawer({
+  open,
+  onOpenChange,
   habits,
   searchQuery,
   onSearchChange,
@@ -41,9 +47,7 @@ export const HabitsSidebar = ({
   onDeleteHabit,
   onReactivateHabit,
   onReorderHabits,
-  showInactive = false,
-  onToggleShowInactive,
-}: HabitsSidebarProps) => {
+}: HabitsManageDrawerProps) {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [editingHabitId, setEditingHabitId] = useState<string | null>(null);
 
@@ -74,10 +78,18 @@ export const HabitsSidebar = ({
   };
 
   return (
-    <div className="w-[320px] flex flex-col rounded-lg bg-card shadow-sm border">
-      {/* Only show header with search and add button when habits exist */}
-      {habits.length > 0 && (
-        <div className="p-4 border-b space-y-3">
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent
+        side="right"
+        className="!inset-y-auto !h-auto !right-4 !top-4 !bottom-4 max-h-[calc(100vh-2rem)] w-[420px] rounded-lg border border-border shadow-md p-5 flex flex-col bg-card"
+      >
+        <SheetHeader className="pb-4 border-b border-border px-0">
+          <SheetTitle className="text-lg font-semibold">
+            Manage Habits
+          </SheetTitle>
+        </SheetHeader>
+
+        <div className="pt-5 flex-1 overflow-y-auto px-0.5 space-y-4">
           {/* Search */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -89,32 +101,6 @@ export const HabitsSidebar = ({
             />
           </div>
 
-          {/* Active/All Toggle */}
-          {onToggleShowInactive && (
-            <div className="bg-muted p-1 rounded-lg inline-flex w-full">
-              <button
-                onClick={() => onToggleShowInactive(false)}
-                className={`flex-1 px-3 py-1.5 text-sm font-medium rounded-md transition-all ${
-                  !showInactive
-                    ? "bg-card text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                Active
-              </button>
-              <button
-                onClick={() => onToggleShowInactive(true)}
-                className={`flex-1 px-3 py-1.5 text-sm font-medium rounded-md transition-all ${
-                  showInactive
-                    ? "bg-card text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                All
-              </button>
-            </div>
-          )}
-
           {/* Add Habit Button */}
           <Button
             onClick={() => setIsAddDialogOpen(true)}
@@ -124,14 +110,14 @@ export const HabitsSidebar = ({
             <Plus className="h-4 w-4 mr-2" />
             Add Habit
           </Button>
-        </div>
-      )}
 
-      {/* Habits List */}
-      <ScrollArea className="flex-1 max-h-[500px]">
-        <div className="p-2">
+          {/* Habits List */}
           {habits.length === 0 ? (
-            <HabitEmptyState onAddHabit={() => setIsAddDialogOpen(true)} />
+            <div className="text-center py-8">
+              <p className="text-sm text-muted-foreground">
+                {searchQuery ? "No habits match your search" : "No habits yet. Add one above to get started."}
+              </p>
+            </div>
           ) : (
             <div className="space-y-1">
               {habits.map((habit, index) => (
@@ -141,7 +127,7 @@ export const HabitsSidebar = ({
                   isSelected={habit.id === selectedHabitId}
                   isEditing={habit.id === editingHabitId}
                   canMoveUp={habit.isActive && index > 0}
-                  canMoveDown={habit.isActive && index < habits.filter(h => h.isActive).length - 1}
+                  canMoveDown={habit.isActive && index < habits.length - 1}
                   onClick={() => onSelectHabit(habit.id)}
                   onEdit={() => setEditingHabitId(habit.id)}
                   onCancelEdit={() => setEditingHabitId(null)}
@@ -158,17 +144,17 @@ export const HabitsSidebar = ({
             </div>
           )}
         </div>
-      </ScrollArea>
 
-      {/* Add Habit Dialog */}
-      <AddHabitDialog
-        open={isAddDialogOpen}
-        onOpenChange={setIsAddDialogOpen}
-        onSubmit={async (data) => {
-          await onCreateHabit(data);
-          setIsAddDialogOpen(false);
-        }}
-      />
-    </div>
+        {/* Add Habit Dialog */}
+        <AddHabitDialog
+          open={isAddDialogOpen}
+          onOpenChange={setIsAddDialogOpen}
+          onSubmit={async (data) => {
+            await onCreateHabit(data);
+            setIsAddDialogOpen(false);
+          }}
+        />
+      </SheetContent>
+    </Sheet>
   );
-};
+}

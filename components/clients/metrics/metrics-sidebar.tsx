@@ -15,7 +15,7 @@ type MetricsSidebarProps = {
   category: MetricCategory;
   onCategoryChange: (category: MetricCategory) => void;
   selectedMetricId: string | null;
-  onSelectMetric: (id: string) => void;
+  onSelectMetric: (id: string | null) => void;
 };
 
 export const MetricsSidebar = ({
@@ -73,7 +73,7 @@ export const MetricsSidebar = ({
                     unit={metric.unit}
                     lastUpdated={metric.lastUpdated}
                     isSelected={metric.id === selectedMetricId}
-                    onClick={() => onSelectMetric(metric.id)}
+                    onClick={() => onSelectMetric(metric.id === selectedMetricId ? null : metric.id)}
                   />
                 ))
               ) : (
@@ -98,7 +98,7 @@ export const MetricsSidebar = ({
                     unit={metric.unit}
                     lastUpdated={metric.lastUpdated}
                     isSelected={metric.id === selectedMetricId}
-                    onClick={() => onSelectMetric(metric.id)}
+                    onClick={() => onSelectMetric(metric.id === selectedMetricId ? null : metric.id)}
                   />
                 ))
               ) : (
