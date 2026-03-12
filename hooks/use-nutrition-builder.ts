@@ -3,9 +3,17 @@
 import { useState, useEffect, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useNutritionPlan } from "@/hooks/use-nutrition-plan";
-import type { Client, ActivityLevel, DietType } from "@/types/check-in";
+import type { Client, ActivityLevel, DietType, DayCalorieOverrides } from "@/types/check-in";
 import { validateClientForNutrition } from "@/lib/validations/nutrition";
-import { weightToKg, getActivityMultiplier } from "@/utils/nutrition-helpers";
+import {
+  weightToKg,
+  getActivityMultiplier,
+  validateWeeklyBudget,
+  initializeDayOverridesFromTargets,
+  calculateDailyMacros,
+  type WeeklyBudgetValidation,
+  type DayOfWeek,
+} from "@/utils/nutrition-helpers";
 import { CUSTOM_MACRO_CALORIE_TOLERANCE } from "@/lib/constants";
 import { addDays } from "date-fns";
 
@@ -83,6 +91,16 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
     [client.id, onUpdate, toast]
   );
 
+  // Calorie skewing state
+  const [customDayDistribution, setCustomDayDistribution] = useState(
+    client.customDayDistribution ?? false
+  );
+  const [dayCalorieOverrides, setDayCalorieOverrides] = useState<DayCalorieOverrides | null>(
+    client.dayCalorieOverrides ?? null
+  );
+  const [skewMacroMode, setSkewMacroMode] = useState<"proportional" | "custom">("proportional");
+  const [isSavingSkew, setIsSavingSkew] = useState(false);
+
   // Loading states
   const [isGenerating, setIsGenerating] = useState(false);
   const [warnings, setWarnings] = useState<string[]>([]);
@@ -111,6 +129,83 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
     setSettings((prev) => ({ ...prev, ...newSettings }));
     setSettingsChanged(true);
   }, []);
+
+  // Calorie skewing handlers
+  const handleToggleCustomDistribution = useCallback(
+    async (enabled: boolean) => {
+      if (enabled && nutritionPlan.weeklyTargets) {
+        const overrides = initializeDayOverridesFromTargets(nutritionPlan.weeklyTargets);
+        setDayCalorieOverrides(overrides);
+        setCustomDayDistribution(true);
+      } else {
+        setCustomDayDistribution(false);
+        setDayCalorieOverrides(null);
+      }
+    },
+    [nutritionPlan.weeklyTargets]
+  );
+
+  const handleDayOverrideChange = useCallback(
+    (day: DayOfWeek, field: keyof DayCalorieOverrides[DayOfWeek], value: number) => {
+      setDayCalorieOverrides((prev) => {
+        if (!prev) return prev;
+        const dayData = { ...prev[day], [field]: value };
+
+        // In proportional mode, recalculate macros when calories change
+        if (field === "calories" && skewMacroMode === "proportional") {
+          const isTrainingDay = nutritionPlan.weeklyTargets?.find((t) => t.day === day)?.isTrainingDay ?? false;
+          const proteinG = client.proteinTargetG || prev[day].protein_g;
+          const macros = calculateDailyMacros(value, proteinG, isTrainingDay, settings.dietType);
+          dayData.protein_g = macros.proteinG;
+          dayData.carbs_g = macros.carbsG;
+          dayData.fat_g = macros.fatG;
+        }
+
+        return { ...prev, [day]: dayData };
+      });
+    },
+    [skewMacroMode, nutritionPlan.weeklyTargets, client.proteinTargetG, settings.dietType]
+  );
+
+  const handleSaveCustomDistribution = useCallback(async () => {
+    setIsSavingSkew(true);
+    try {
+      const res = await fetch(`/api/clients/${client.id}/nutrition`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customDayDistribution,
+          dayCalorieOverrides,
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to save");
+      onUpdate?.();
+      toast({ title: "Custom day distribution saved" });
+    } catch {
+      toast({
+        title: "Error",
+        description: "Failed to save custom day distribution",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSavingSkew(false);
+    }
+  }, [client.id, customDayDistribution, dayCalorieOverrides, onUpdate, toast]);
+
+  const handleResetToDefault = useCallback(() => {
+    if (nutritionPlan.weeklyTargets) {
+      const overrides = initializeDayOverridesFromTargets(nutritionPlan.weeklyTargets);
+      setDayCalorieOverrides(overrides);
+    }
+  }, [nutritionPlan.weeklyTargets]);
+
+  // Budget validation
+  const baselineCalories = client.baselineCalories || client.calorieTarget || 0;
+  const weeklyBaselineTarget = baselineCalories * 7;
+  const budgetValidation: WeeklyBudgetValidation | null =
+    dayCalorieOverrides
+      ? validateWeeklyBudget(dayCalorieOverrides, weeklyBaselineTarget)
+      : null;
 
   // Generate nutrition plan
   const generatePlan = useCallback(
@@ -157,6 +252,8 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
             description: `${data.plan.calorieTarget} cal/day with ${data.plan.proteinTargetG}g protein`,
           });
           setSettingsChanged(false);
+          setCustomDayDistribution(false);
+          setDayCalorieOverrides(null);
           onUpdate?.();
           return true;
         } else {
@@ -225,6 +322,18 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
     includeActivityBurn,
     isSavingBurnToggle,
     handleToggleActivityBurn,
+
+    // Calorie skewing
+    customDayDistribution,
+    dayCalorieOverrides,
+    skewMacroMode,
+    setSkewMacroMode,
+    isSavingSkew,
+    budgetValidation,
+    handleToggleCustomDistribution,
+    handleDayOverrideChange,
+    handleSaveCustomDistribution,
+    handleResetToDefault,
 
     // Loading states
     isGenerating,

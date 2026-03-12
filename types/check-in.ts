@@ -359,6 +359,10 @@ export type Client = {
   customFatG?: number;
   customCalories?: number;
 
+  // Custom day distribution (calorie skewing)
+  customDayDistribution?: boolean;
+  dayCalorieOverrides?: DayCalorieOverrides;
+
   // Manual BMR/TDEE overrides
   bmrManualOverride?: boolean;
   tdeeManualOverride?: boolean;
@@ -368,6 +372,16 @@ export type Client = {
   walkthroughCompletedAt?: string;
   startDate?: string;
 };
+
+// Calorie skewing types
+export type DayCalorieOverride = {
+  calories: number;
+  protein_g: number;
+  carbs_g: number;
+  fat_g: number;
+};
+
+export type DayCalorieOverrides = Record<DayOfWeek, DayCalorieOverride>;
 
 // Client info for check-in page
 export type CheckInClientInfo = {

@@ -11,6 +11,7 @@ import { useNutritionBuilderContext } from "@/contexts/nutrition-builder-context
 import { NutritionSettingsForm } from "./nutrition-settings-form";
 import { NutritionCustomMacrosSection } from "./nutrition-custom-macros-section";
 import { NutritionTrainingCaloriesDisplay } from "./nutrition-training-calories-display";
+import { CalorieSkewingSection } from "./calorie-skewing-section";
 import { NutritionRegenerationBanner } from "../nutrition-regeneration-banner";
 import { UnitToggle } from "../../shared/unit-toggle";
 import { Button } from "@/components/ui/button";
@@ -102,14 +103,43 @@ export function NutritionSettingsDrawer({
             onToggleActivityBurn={builder.handleToggleActivityBurn}
             isSavingToggle={builder.isSavingBurnToggle}
           />
+
+          {/* Calorie Skewing */}
+          <CalorieSkewingSection
+            enabled={builder.customDayDistribution}
+            onToggle={builder.handleToggleCustomDistribution}
+            dayOverrides={builder.dayCalorieOverrides}
+            onDayChange={builder.handleDayOverrideChange}
+            weeklyTargets={builder.weeklyTargets}
+            budgetValidation={builder.budgetValidation}
+            macroMode={builder.skewMacroMode}
+            onMacroModeChange={builder.setSkewMacroMode}
+            onReset={builder.handleResetToDefault}
+            onSave={builder.handleSaveCustomDistribution}
+            isSaving={builder.isSavingSkew}
+            hasPlan={builder.hasPlan}
+          />
         </div>
 
         {/* Generate Button */}
         <div className="pt-4 border-t border-border mt-4">
+          {builder.customDayDistribution && (
+            <div className="flex items-start gap-2 p-3 bg-amber-50 rounded-lg mb-3">
+              <AlertCircle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
+              <p className="text-xs text-foreground">
+                Regenerating will reset custom day distribution. You can re-enable it after.
+              </p>
+            </div>
+          )}
           <Button
             onClick={() => builder.generatePlan(false)}
-            disabled={builder.isGenerating}
+            disabled={builder.isGenerating || (builder.customDayDistribution && !builder.budgetValidation?.isValid)}
             className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-medium px-4 py-2.5 rounded-lg transition-all"
+            title={
+              builder.customDayDistribution && !builder.budgetValidation?.isValid
+                ? "Save your custom day distribution first, or adjust calories to match the weekly budget"
+                : undefined
+            }
           >
             <Sparkles className={`h-4 w-4 mr-2 ${builder.isGenerating ? "animate-pulse" : ""}`} />
             {builder.isGenerating

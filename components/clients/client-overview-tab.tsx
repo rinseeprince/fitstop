@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Card, CardBody, CardHeader, CardTitle, CardAction } from "@/components/ui/card"
+import { Card, CardBody, CardFooter, CardHeader, CardTitle, CardAction } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { CheckInTimeline } from "@/components/check-in/check-in-timeline"
@@ -78,7 +78,7 @@ export function ClientOverviewTab({
       {/* Client Info & Metrics */}
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Card 1: Client & Schedule */}
-        <Card>
+        <Card className="flex flex-col">
           <CardHeader>
             <CardTitle>Client & Schedule</CardTitle>
             <CardAction>
@@ -89,12 +89,9 @@ export function ClientOverviewTab({
               )}
             </CardAction>
           </CardHeader>
-          <CardBody>
-            {/* Contact info — compact */}
-            <p className="text-sm text-muted-foreground">{client.email}</p>
-
+          <CardBody className="flex-1">
             {isEditingSchedule ? (
-              <div className="mt-4">
+              <div>
                 <CheckInScheduleSection
                   client={client}
                   onUpdate={() => {
@@ -107,46 +104,54 @@ export function ClientOverviewTab({
             ) : (
               <>
                 {/* Schedule + Adherence — 2x2 grid */}
-                <div className="grid grid-cols-2 gap-4 mt-4">
+                <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <p className="text-xs font-medium text-muted-foreground mb-1">Frequency</p>
-                    <p className="text-sm font-semibold">{getFrequencyLabel()}</p>
+                    <p className="text-sm text-muted-foreground">Frequency</p>
+                    <p className="text-lg font-semibold">{getFrequencyLabel()}</p>
                   </div>
                   <div>
-                    <p className="text-xs font-medium text-muted-foreground mb-1">Expected Day</p>
-                    <p className="text-sm font-semibold">{getDayLabel(client.expectedCheckInDay)}</p>
+                    <p className="text-sm text-muted-foreground">Expected Day</p>
+                    <p className="text-lg font-semibold">{getDayLabel(client.expectedCheckInDay)}</p>
                   </div>
                   {client.checkInAdherenceRate !== undefined && (
                     <>
                       <div>
-                        <p className="text-xs font-medium text-muted-foreground mb-1">Adherence</p>
-                        <p className="text-sm font-semibold text-primary">{Math.round(client.checkInAdherenceRate)}%</p>
+                        <p className="text-sm text-muted-foreground">Adherence</p>
+                        <p className="text-lg font-semibold text-primary">{Math.round(client.checkInAdherenceRate)}%</p>
                       </div>
                       <div>
-                        <p className="text-xs font-medium text-muted-foreground mb-1">Streak</p>
-                        <p className="text-sm font-semibold text-primary">{client.currentStreak || 0}</p>
+                        <p className="text-sm text-muted-foreground">Streak</p>
+                        <p className="text-lg font-semibold text-primary">{client.currentStreak || 0}</p>
                       </div>
                     </>
                   )}
                 </div>
 
-                {/* Reminder status — condensed single line */}
-                <div className="flex items-center gap-2 mt-3 text-xs text-muted-foreground">
-                  <Bell className="h-3 w-3" />
-                  <span>Reminders {client.reminderPreferences?.enabled ? "on" : "off"}</span>
-                  {client.reminderPreferences?.autoSend && (
-                    <Badge variant="secondary">Auto</Badge>
-                  )}
-                  <button
-                    onClick={() => setShowReminderHistory(true)}
-                    className="ml-auto text-xs text-primary hover:underline"
-                  >
-                    History
-                  </button>
+                <div className="border-b border-border my-4" />
+
+                {/* Contact — matches BMR/TDEE formatting */}
+                <div>
+                  <p className="text-sm text-muted-foreground">Email</p>
+                  <p className="text-lg font-semibold">{client.email}</p>
                 </div>
               </>
             )}
           </CardBody>
+          {!isEditingSchedule && (
+            <CardFooter>
+              <Bell className="h-3 w-3 text-muted-foreground" />
+              <span className="text-xs text-muted-foreground ml-2">Reminders {client.reminderPreferences?.enabled ? "on" : "off"}</span>
+              {client.reminderPreferences?.autoSend && (
+                <Badge variant="secondary">Auto</Badge>
+              )}
+              <button
+                onClick={() => setShowReminderHistory(true)}
+                className="ml-auto text-xs text-primary hover:underline"
+              >
+                History
+              </button>
+            </CardFooter>
+          )}
         </Card>
 
         {/* Card 2: Body Metrics (read-only) */}
@@ -181,38 +186,28 @@ export function ClientOverviewTab({
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <p className="text-sm text-muted-foreground">Current Weight</p>
-                <p className="text-2xl font-semibold">
+                <p className="text-lg font-semibold">
                   {currentWeight ? `${currentWeight.toFixed(1)}` : "Not recorded"}
                   {currentWeight && <span className="text-muted-foreground"> {weightUnit}</span>}
                 </p>
-                {weightDelta !== null && (
-                  <p className={cn("text-xs font-medium mt-0.5", weightDelta > 0 ? "text-warning" : "text-success")}>
-                    {Math.abs(weightDelta).toFixed(1)} {weightUnit} to goal
-                  </p>
-                )}
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Goal Weight</p>
-                <p className="text-2xl font-semibold">
+                <p className="text-lg font-semibold">
                   {client.goalWeight ? `${client.goalWeight.toFixed(1)}` : "Not set"}
                   {client.goalWeight && <span className="text-muted-foreground"> {weightUnit}</span>}
                 </p>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Current Body Fat</p>
-                <p className="text-2xl font-semibold">
+                <p className="text-lg font-semibold">
                   {currentBf ? `${currentBf.toFixed(1)}` : "Not recorded"}
                   {currentBf && <span className="text-muted-foreground"> %</span>}
                 </p>
-                {bfDelta !== null && (
-                  <p className={cn("text-xs font-medium mt-0.5", bfDelta > 0 ? "text-warning" : "text-success")}>
-                    {Math.abs(bfDelta).toFixed(1)}% to goal
-                  </p>
-                )}
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Goal Body Fat</p>
-                <p className="text-2xl font-semibold">
+                <p className="text-lg font-semibold">
                   {client.goalBodyFatPercentage ? `${client.goalBodyFatPercentage.toFixed(1)}` : "Not set"}
                   {client.goalBodyFatPercentage && <span className="text-muted-foreground"> %</span>}
                 </p>
@@ -226,14 +221,14 @@ export function ClientOverviewTab({
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <p className="text-sm text-muted-foreground">BMR</p>
-                <p className="text-2xl font-semibold">
+                <p className="text-lg font-semibold">
                   {client.bmr ? Math.round(client.bmr) : "Not calculated"}
                   {client.bmr && <span className="text-muted-foreground"> cal/day</span>}
                 </p>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">TDEE (Sedentary)</p>
-                <p className="text-2xl font-semibold">
+                <p className="text-lg font-semibold">
                   {client.tdee ? Math.round(client.tdee) : "Not calculated"}
                   {client.tdee && <span className="text-muted-foreground"> cal/day</span>}
                 </p>

@@ -13,6 +13,8 @@ import {
   kgToLbs,
   getWeeklyNutritionTargets,
   getTrainingDays,
+  applyDayOverrides,
+  calculateDailyMacros,
 } from "@/utils/nutrition-helpers";
 import {
   calculateDailyTrainingCalories,
@@ -80,15 +82,38 @@ export function useNutritionPlan({ client, onUpdate }: UseNutritionPlanProps) {
         )
       : null;
 
-  // When activity burn is excluded, flatten calories to baseline but keep training day flags
+  // Apply custom day distribution overrides (replaces baseline per day, training still additive)
+  if (weeklyTargets && client.customDayDistribution && client.dayCalorieOverrides) {
+    weeklyTargets = applyDayOverrides(weeklyTargets, client.dayCalorieOverrides, client.dietType || "balanced");
+  }
+
+  // When activity burn is excluded, flatten calories to baseline and recalculate macros
   if (weeklyTargets && !client.includeActivityBurn) {
-    weeklyTargets = weeklyTargets.map((day) => ({
-      ...day,
-      calories: day.baselineCalories,
-      trainingSessionCalories: 0,
-      externalActivityCalories: 0,
-      totalCaloriesWithActivities: day.baselineCalories,
-    }));
+    weeklyTargets = weeklyTargets.map((day) => {
+      const macros = calculateDailyMacros(
+        day.baselineCalories,
+        day.proteinG,
+        false,
+        client.dietType || "balanced"
+      );
+      const totalCal = macros.proteinG * 4 + macros.carbsG * 4 + macros.fatG * 9;
+      const proteinPercent = totalCal > 0 ? Math.round((macros.proteinG * 4 / totalCal) * 100) : 0;
+      const carbsPercent = totalCal > 0 ? Math.round((macros.carbsG * 4 / totalCal) * 100) : 0;
+
+      return {
+        ...day,
+        calories: day.baselineCalories,
+        trainingSessionCalories: 0,
+        externalActivityCalories: 0,
+        totalCaloriesWithActivities: day.baselineCalories,
+        proteinG: macros.proteinG,
+        carbsG: macros.carbsG,
+        fatG: macros.fatG,
+        proteinPercent,
+        carbsPercent,
+        fatPercent: 100 - proteinPercent - carbsPercent,
+      };
+    });
   }
 
   const weeklyTotal = weeklyTargets

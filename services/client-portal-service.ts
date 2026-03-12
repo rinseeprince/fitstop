@@ -1,9 +1,11 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
-import type { Client, CheckIn, DietType } from "@/types/check-in";
-import type { TrainingPlan, TrainingSession, TrainingExercise } from "@/types/training";
+import type { Client, CheckIn, DietType, DayCalorieOverrides, UnitPreference } from "@/types/check-in";
+import type { TrainingPlan, TrainingSession, TrainingExercise, SessionType } from "@/types/training";
+import type { ActivityMetadata } from "@/types/external-activity";
+import type { TrainingSessionRow, TrainingExerciseRow, ClientSessionCompletionRow } from "@/lib/database-helpers";
 import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
-import { getWeeklyNutritionTargets } from "@/utils/nutrition-helpers";
+import { getWeeklyNutritionTargets, applyDayOverrides, calculateDailyMacros } from "@/utils/nutrition-helpers";
 import { mapClientRow, mapCheckInRow } from "@/lib/mappers";
 
 // Create authenticated Supabase client for server-side client portal access
@@ -43,10 +45,11 @@ export type NutritionTargets = {
   customProteinG?: number;
   customCarbG?: number;
   customFatG?: number;
-  dietType?: string;
-  unitPreference?: string;
+  dietType?: DietType;
+  unitPreference?: UnitPreference;
   baselineCalories?: number;
   includeActivityBurn: boolean;
+  customDayDistribution?: boolean;
   dailyTargets?: DailyNutritionTargets[];
 };
 
@@ -125,6 +128,7 @@ export async function getClientForCurrentUser(): Promise<Client | null> {
     .from("clients")
     .select("*")
     .eq("user_id", user.id)
+    .eq("is_active", true)
     .single();
 
   if (error || !data) return null;
@@ -137,6 +141,19 @@ export async function getClientTrainingPlan(
   clientId: string
 ): Promise<TrainingPlan | null> {
   const supabase = await createPortalClient();
+
+  // Verify the authenticated user owns this client record
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  const { data: clientRecord } = await supabase
+    .from("clients")
+    .select("id")
+    .eq("id", clientId)
+    .eq("user_id", user.id)
+    .single();
+
+  if (!clientRecord) return null;
 
   const { data: planData, error: planError } = await supabase
     .from("training_plans")
@@ -156,34 +173,36 @@ export async function getClientTrainingPlan(
 
   if (planError || !planData) return null;
 
+  type SessionRowWithExercises = TrainingSessionRow & { training_exercises: TrainingExerciseRow[] };
+
   // Sort sessions by order_index
-  const sessionList = (planData.training_sessions || []).sort((a: any, b: any) => 
-    a.order_index - b.order_index
+  const sessionList = ((planData.training_sessions || []) as SessionRowWithExercises[]).sort(
+    (a, b) => a.order_index - b.order_index
   );
 
   // Map sessions and exercises to the expected format
-  const sessions: TrainingSession[] = sessionList.map((session: any) => {
+  const sessions: TrainingSession[] = sessionList.map((session) => {
     // Sort exercises by order_index within each session
-    const exerciseList = (session.training_exercises || []).sort((a: any, b: any) => 
-      a.order_index - b.order_index
+    const exerciseList = (session.training_exercises || []).sort(
+      (a, b) => a.order_index - b.order_index
     );
 
-    const exercises: TrainingExercise[] = exerciseList.map((ex: any) => ({
+    const exercises: TrainingExercise[] = exerciseList.map((ex) => ({
       id: ex.id,
       sessionId: ex.session_id,
       name: ex.name,
       orderIndex: ex.order_index,
       sets: ex.sets,
-      repsMin: ex.reps_min,
-      repsMax: ex.reps_max,
-      repsTarget: ex.reps_target,
-      rpeTarget: ex.rpe_target,
-      percentage1rm: ex.percentage_1rm,
-      tempo: ex.tempo,
-      restSeconds: ex.rest_seconds,
-      notes: ex.notes,
-      supersetGroup: ex.superset_group,
-      isWarmup: ex.is_warmup,
+      repsMin: ex.reps_min ?? undefined,
+      repsMax: ex.reps_max ?? undefined,
+      repsTarget: ex.reps_target ?? undefined,
+      rpeTarget: ex.rpe_target ?? undefined,
+      percentage1rm: ex.percentage_1rm ?? undefined,
+      tempo: ex.tempo ?? undefined,
+      restSeconds: ex.rest_seconds ?? undefined,
+      notes: ex.notes ?? undefined,
+      supersetGroup: ex.superset_group ?? undefined,
+      isWarmup: ex.is_warmup || false,
       createdAt: ex.created_at,
       updatedAt: ex.updated_at,
     }));
@@ -192,15 +211,15 @@ export async function getClientTrainingPlan(
       id: session.id,
       planId: session.plan_id,
       name: session.name,
-      dayOfWeek: session.day_of_week,
+      dayOfWeek: session.day_of_week ?? undefined,
       orderIndex: session.order_index,
-      focus: session.focus,
-      notes: session.notes,
-      estimatedDurationMinutes: session.estimated_duration_minutes,
-      sessionType: session.session_type || "training",
-      activityMetadata: session.activity_metadata,
-      estimatedCalories: session.estimated_calories,
-      caloriesCalculatedAt: session.calories_calculated_at,
+      focus: session.focus ?? undefined,
+      notes: session.notes ?? undefined,
+      estimatedDurationMinutes: session.estimated_duration_minutes ?? undefined,
+      sessionType: (session.session_type || "training") as SessionType,
+      activityMetadata: (session.activity_metadata as ActivityMetadata) ?? undefined,
+      estimatedCalories: session.estimated_calories ?? undefined,
+      caloriesCalculatedAt: session.calories_calculated_at ?? undefined,
       exercises,
       createdAt: session.created_at,
       updatedAt: session.updated_at,
@@ -284,7 +303,8 @@ export async function getClientNutritionTargets(
     .select(
       `calorie_target, protein_target_g, carb_target_g, fat_target_g,
        custom_macros_enabled, custom_calories, custom_protein_g, custom_carb_g, custom_fat_g,
-       diet_type, unit_preference, baseline_calories, include_activity_burn`
+       diet_type, unit_preference, baseline_calories, include_activity_burn,
+       custom_day_distribution, day_calorie_overrides`
     )
     .eq("id", clientId)
     .single();
@@ -307,15 +327,43 @@ export async function getClientNutritionTargets(
       data.diet_type as DietType
     );
 
-    // When activity burn is excluded, flatten calories to baseline but keep training day flags
+    // Apply custom day distribution overrides (replaces baseline per day, training still additive)
+    if (data.custom_day_distribution && data.day_calorie_overrides) {
+      dailyTargets = applyDayOverrides(
+        dailyTargets,
+        data.day_calorie_overrides as DayCalorieOverrides,
+        data.diet_type as DietType
+      );
+    }
+
+    // When activity burn is excluded, flatten calories to baseline and recalculate macros
     if (!includeActivityBurn) {
-      dailyTargets = dailyTargets.map((day) => ({
-        ...day,
-        calories: day.baselineCalories,
-        trainingSessionCalories: 0,
-        externalActivityCalories: 0,
-        totalCaloriesWithActivities: day.baselineCalories,
-      }));
+      const dietType = (data.diet_type as DietType) || "balanced";
+      dailyTargets = dailyTargets.map((day) => {
+        const macros = calculateDailyMacros(
+          day.baselineCalories,
+          day.proteinG,
+          false,
+          dietType
+        );
+        const totalCal = macros.proteinG * 4 + macros.carbsG * 4 + macros.fatG * 9;
+        const proteinPercent = totalCal > 0 ? Math.round((macros.proteinG * 4 / totalCal) * 100) : 0;
+        const carbsPercent = totalCal > 0 ? Math.round((macros.carbsG * 4 / totalCal) * 100) : 0;
+
+        return {
+          ...day,
+          calories: day.baselineCalories,
+          trainingSessionCalories: 0,
+          externalActivityCalories: 0,
+          totalCaloriesWithActivities: day.baselineCalories,
+          proteinG: macros.proteinG,
+          carbsG: macros.carbsG,
+          fatG: macros.fatG,
+          proteinPercent,
+          carbsPercent,
+          fatPercent: 100 - proteinPercent - carbsPercent,
+        };
+      });
     }
   }
 
@@ -333,6 +381,7 @@ export async function getClientNutritionTargets(
     unitPreference: data.unit_preference,
     baselineCalories: data.baseline_calories,
     includeActivityBurn,
+    customDayDistribution: data.custom_day_distribution ?? false,
     dailyTargets,
   };
 }
@@ -483,13 +532,13 @@ export async function getWeeklyCompletions(
 
   if (error || !data) return [];
 
-  return data.map((row: any) => ({
+  return data.map((row: ClientSessionCompletionRow) => ({
     id: row.id,
     clientId: row.client_id,
     trainingSessionId: row.training_session_id,
     completedAt: row.completed_at,
-    completionQuality: row.completion_quality,
-    notes: row.notes,
+    completionQuality: (row.completion_quality ?? "full") as SessionCompletion["completionQuality"],
+    notes: row.notes ?? undefined,
     weekStartDate: row.week_start_date,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

@@ -127,6 +127,8 @@ export async function POST(
             custom_carb_g: body.customCarbG,
             custom_fat_g: body.customFatG,
             custom_calories: body.customCalories,
+            custom_day_distribution: false,
+            day_calorie_overrides: null,
             tdee: tdee, // Set TDEE when nutrition settings are configured
             baseline_calories: body.customCalories, // Custom calories = baseline
             calorie_target: body.customCalories,
@@ -140,7 +142,8 @@ export async function POST(
             ),
           }
         )
-        .eq("id", clientId);
+        .eq("id", clientId)
+        .eq("coach_id", coachId);
 
       if (updateError) throw updateError;
 
@@ -174,7 +177,7 @@ export async function POST(
         .insert(customHistoryData);
 
       if (historyError) {
-        console.error("Error saving custom macros nutrition plan history:", historyError);
+        console.error("Error saving custom macros nutrition plan history:", historyError.message);
       }
 
       return NextResponse.json(
@@ -231,6 +234,8 @@ export async function POST(
           diet_type: body.dietType,
           goal_deadline: body.goalDeadline || null,
           custom_macros_enabled: false,
+          custom_day_distribution: false,
+          day_calorie_overrides: null,
           tdee: plan.tdee, // Save calculated TDEE (BMR x activity multiplier)
           baseline_calories: plan.baselineCalories, // Save baseline (TDEE - deficit)
           calorie_target: plan.calorieTarget, // Backward compat (same as baseline)
@@ -241,7 +246,8 @@ export async function POST(
           nutrition_plan_base_weight_kg: currentWeightKg,
         }
       )
-      .eq("id", clientId);
+      .eq("id", clientId)
+      .eq("coach_id", coachId);
 
     if (updateError) throw updateError;
 
@@ -272,7 +278,7 @@ export async function POST(
       .insert(historyData);
 
     if (historyError) {
-      console.error("Error saving nutrition plan history:", historyError);
+      console.error("Error saving nutrition plan history:", historyError.message);
     }
 
     return NextResponse.json(
@@ -294,7 +300,7 @@ export async function POST(
       { status: 200 }
     );
   } catch (error) {
-    console.error("Error generating nutrition plan:", error);
+    console.error("Error generating nutrition plan:", error instanceof Error ? error.message : "Unknown error");
     return NextResponse.json(
       { error: "Failed to generate nutrition plan" },
       { status: 500 }
@@ -355,17 +361,24 @@ export async function PATCH(
     if (validationResult.data.includeActivityBurn !== undefined) {
       updates.include_activity_burn = validationResult.data.includeActivityBurn;
     }
+    if (validationResult.data.customDayDistribution !== undefined) {
+      updates.custom_day_distribution = validationResult.data.customDayDistribution;
+    }
+    if (validationResult.data.dayCalorieOverrides !== undefined) {
+      updates.day_calorie_overrides = validationResult.data.dayCalorieOverrides;
+    }
 
     const { error } = await supabaseAdmin
       .from("clients")
       .update(updates)
-      .eq("id", clientId);
+      .eq("id", clientId)
+      .eq("coach_id", coachId);
 
     if (error) throw error;
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {
-    console.error("Error updating nutrition settings:", error);
+    console.error("Error updating nutrition settings:", error instanceof Error ? error.message : "Unknown error");
     return NextResponse.json(
       { error: "Failed to update nutrition settings" },
       { status: 500 }

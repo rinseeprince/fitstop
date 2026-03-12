@@ -1,4 +1,5 @@
-import type { UnitPreference, ActivityLevel, TrainingVolume, DietType } from "@/types/check-in";
+import type { UnitPreference, ActivityLevel, TrainingVolume, DietType, DayCalorieOverride, DayCalorieOverrides } from "@/types/check-in";
+import { WEEKLY_BUDGET_ROUNDING_TOLERANCE } from "@/lib/constants";
 import type { TrainingPlan, TrainingSession } from "@/types/training";
 import type { ActivityMetadata } from "@/types/external-activity";
 import { getTrainingCaloriesByDay, getTrainingSessionCaloriesByDay, getTrainingSessionsSummary } from "@/utils/training-calorie-helpers";
@@ -157,34 +158,16 @@ function getDietTypeSplit(dietType: DietType): { carb: number; fat: number } {
 export function calculateDailyMacros(
   dayCalories: number,
   proteinG: number,
-  isTrainingDay: boolean,
+  _isTrainingDay: boolean,
   dietType: DietType = "balanced"
 ): { proteinG: number; carbsG: number; fatG: number } {
   const proteinCal = proteinG * 4;
   const remainingCal = dayCalories - proteinCal;
 
-  // Get base split from diet type
+  // Always use the base diet type ratios — extra training calories already
+  // increase absolute macro grams proportionally without shifting the split.
   const baseSplit = getDietTypeSplit(dietType);
-
-  // Apply training day adjustment:
-  // - Training days: shift 10% more toward carbs (capped by diet type)
-  // - Rest days: shift 10% more toward fat (capped by diet type)
-  // - Keto stays very low carb regardless
-  let carbRatio: number;
-
-  if (dietType === "keto") {
-    // Keto: minimal adjustment to preserve ketosis
-    carbRatio = isTrainingDay ? 0.12 : 0.08;
-  } else if (dietType === "low_carb") {
-    // Low carb: small adjustment
-    carbRatio = isTrainingDay ? 0.30 : 0.20;
-  } else if (dietType === "high_carb") {
-    // High carb: already high, small boost on training
-    carbRatio = isTrainingDay ? 0.70 : 0.60;
-  } else {
-    // Balanced/custom: moderate swing
-    carbRatio = isTrainingDay ? 0.55 : 0.45;
-  }
+  const carbRatio = baseSplit.carb;
 
   const carbCal = remainingCal * carbRatio;
   const fatCal = remainingCal * (1 - carbRatio);
@@ -435,4 +418,107 @@ export function getWeightChange(
     unit,
     isLoss: changeKg < 0,
   };
+}
+
+/**
+ * Calorie skewing: validate that custom day baselines sum to the weekly baseline budget
+ */
+export type WeeklyBudgetValidation = {
+  isValid: boolean;
+  totalCalories: number;
+  weeklyTarget: number;
+  difference: number;
+  percentOfTarget: number;
+};
+
+export function validateWeeklyBudget(
+  dayOverrides: DayCalorieOverrides,
+  weeklyBaselineTarget: number
+): WeeklyBudgetValidation {
+  const totalCalories = DAYS_OF_WEEK.reduce(
+    (sum, day) => sum + (dayOverrides[day]?.calories || 0),
+    0
+  );
+  const difference = totalCalories - weeklyBaselineTarget;
+  const percentOfTarget =
+    weeklyBaselineTarget > 0
+      ? Math.round((totalCalories / weeklyBaselineTarget) * 100)
+      : 0;
+  return {
+    isValid: Math.abs(difference) <= WEEKLY_BUDGET_ROUNDING_TOLERANCE,
+    totalCalories,
+    weeklyTarget: weeklyBaselineTarget,
+    difference,
+    percentOfTarget,
+  };
+}
+
+/**
+ * Initialize per-day calorie overrides from current computed targets (baseline portion only)
+ */
+export function initializeDayOverridesFromTargets(
+  targets: DailyNutritionTargets[]
+): DayCalorieOverrides {
+  const overrides = {} as DayCalorieOverrides;
+  for (const t of targets) {
+    // Use baselineCalories (not total calories) since training is additive
+    const baselineMacros = calculateDailyMacros(
+      t.baselineCalories,
+      t.proteinG,
+      t.isTrainingDay,
+      "balanced"
+    );
+    overrides[t.day] = {
+      calories: t.baselineCalories,
+      protein_g: baselineMacros.proteinG,
+      carbs_g: baselineMacros.carbsG,
+      fat_g: baselineMacros.fatG,
+    };
+  }
+  return overrides;
+}
+
+/**
+ * Apply per-day baseline overrides to computed weekly targets.
+ * Replaces baselineCalories per day and recalculates total (baseline + training + activities).
+ */
+export function applyDayOverrides(
+  targets: DailyNutritionTargets[],
+  overrides: DayCalorieOverrides,
+  dietType: DietType = "balanced"
+): DailyNutritionTargets[] {
+  return targets.map((day) => {
+    const override = overrides[day.day];
+    if (!override) return day;
+
+    const customBaseline = override.calories;
+    const dayCalories =
+      customBaseline + day.trainingSessionCalories + day.externalActivityCalories;
+
+    // Recalculate macros for the TOTAL day calories (baseline + training burn)
+    const macros = calculateDailyMacros(dayCalories, override.protein_g, day.isTrainingDay, dietType);
+
+    const totalCal = macros.proteinG * 4 + macros.carbsG * 4 + macros.fatG * 9;
+    const proteinPercent =
+      totalCal > 0
+        ? Math.round((macros.proteinG * 4 / totalCal) * 100)
+        : 0;
+    const carbsPercent =
+      totalCal > 0
+        ? Math.round((macros.carbsG * 4 / totalCal) * 100)
+        : 0;
+
+    return {
+      ...day,
+      baselineCalories: customBaseline,
+      calories: dayCalories,
+      proteinG: macros.proteinG,
+      carbsG: macros.carbsG,
+      fatG: macros.fatG,
+      proteinPercent,
+      carbsPercent,
+      fatPercent: 100 - proteinPercent - carbsPercent,
+      totalCaloriesWithActivities: dayCalories,
+    };
+  });
 }

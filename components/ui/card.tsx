@@ -41,7 +41,7 @@ function CardHeader({ className, ...props }: React.ComponentProps<'div'>) {
     <div
       data-slot="card-header"
       className={cn(
-        'px-5 py-4 border-b border-border flex items-center justify-between',
+        'px-5 py-4 border-b border-border flex items-center justify-between min-h-[64px]',
         className,
       )}
       {...props}
@@ -104,7 +104,7 @@ function CardFooter({ className, ...props }: React.ComponentProps<'div'>) {
     <div
       data-slot="card-footer"
       className={cn(
-        'px-5 py-4 border-t border-border bg-muted/50 rounded-b-lg flex items-center',
+        'px-5 py-4 rounded-b-lg flex items-center',
         className,
       )}
       {...props}

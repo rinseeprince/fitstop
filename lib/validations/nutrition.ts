@@ -21,11 +21,34 @@ export const dietTypeSchema = z.enum([
 
 export const unitPreferenceSchema = z.enum(["metric", "imperial"]);
 
+const dayCalorieOverrideSchema = z.object({
+  calories: z.number().positive(),
+  protein_g: z.number().nonnegative(),
+  carbs_g: z.number().nonnegative(),
+  fat_g: z.number().nonnegative(),
+});
+
+const dayCalorieOverridesSchema = z.object({
+  monday: dayCalorieOverrideSchema,
+  tuesday: dayCalorieOverrideSchema,
+  wednesday: dayCalorieOverrideSchema,
+  thursday: dayCalorieOverrideSchema,
+  friday: dayCalorieOverrideSchema,
+  saturday: dayCalorieOverrideSchema,
+  sunday: dayCalorieOverrideSchema,
+});
+
 export const nutritionSettingsPatchSchema = z.object({
   unitPreference: unitPreferenceSchema.optional(),
   includeActivityBurn: z.boolean().optional(),
+  customDayDistribution: z.boolean().optional(),
+  dayCalorieOverrides: dayCalorieOverridesSchema.optional(),
 }).refine(
-  (data) => data.unitPreference !== undefined || data.includeActivityBurn !== undefined,
+  (data) =>
+    data.unitPreference !== undefined ||
+    data.includeActivityBurn !== undefined ||
+    data.customDayDistribution !== undefined ||
+    data.dayCalorieOverrides !== undefined,
   { message: "No valid updates provided" }
 );
 

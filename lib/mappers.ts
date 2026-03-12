@@ -1,4 +1,4 @@
-import type { CheckIn, Client, AIInsight, AIRecommendation, ReminderPreferences } from "@/types/check-in";
+import type { CheckIn, Client, AIInsight, AIRecommendation, ReminderPreferences, DayCalorieOverrides } from "@/types/check-in";
 import type { ClientIntake, ClientIntakeRow, OnboardingStatus } from "@/types/client-intake";
 import type { CheckInRow, ClientRow } from "./database-helpers";
 
@@ -105,6 +105,8 @@ export function mapClientRow(row: ClientRow): Client {
     customCarbG: row.custom_carb_g ?? undefined,
     customFatG: row.custom_fat_g ?? undefined,
     customCalories: row.custom_calories ?? undefined,
+    customDayDistribution: row.custom_day_distribution ?? false,
+    dayCalorieOverrides: (row.day_calorie_overrides ?? undefined) as DayCalorieOverrides | undefined,
     bmrManualOverride: row.bmr_manual_override ?? undefined,
     tdeeManualOverride: row.tdee_manual_override ?? undefined,
     welcomeMessage: row.welcome_message ?? undefined,

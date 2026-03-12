@@ -607,8 +607,10 @@ export type Database = {
           custom_calories: number | null
           custom_carb_g: number | null
           custom_fat_g: number | null
+          custom_day_distribution: boolean | null
           custom_macros_enabled: boolean | null
           custom_protein_g: number | null
+          day_calorie_overrides: Json | null
           date_of_birth: string | null
           diet_type: string | null
           email: string
@@ -667,8 +669,10 @@ export type Database = {
           custom_calories?: number | null
           custom_carb_g?: number | null
           custom_fat_g?: number | null
+          custom_day_distribution?: boolean | null
           custom_macros_enabled?: boolean | null
           custom_protein_g?: number | null
+          day_calorie_overrides?: Json | null
           date_of_birth?: string | null
           diet_type?: string | null
           email: string
@@ -727,8 +731,10 @@ export type Database = {
           custom_calories?: number | null
           custom_carb_g?: number | null
           custom_fat_g?: number | null
+          custom_day_distribution?: boolean | null
           custom_macros_enabled?: boolean | null
           custom_protein_g?: number | null
+          day_calorie_overrides?: Json | null
           date_of_birth?: string | null
           diet_type?: string | null
           email?: string
