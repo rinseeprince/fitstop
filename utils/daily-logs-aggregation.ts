@@ -123,6 +123,50 @@ export function aggregateDailyLogs(logs: DailyLog[]) {
   };
 }
 
+export type MetricAverages = {
+  mood: number;
+  energy: number;
+  sleep: number;
+  stress: number;
+};
+
+/**
+ * Calculate metric averages from daily logs for check-in pre-fill
+ */
+export function calculateMetricAverages(dailyLogs: DailyLog[]): MetricAverages {
+  const validLogs = dailyLogs.filter(log =>
+    log.mood !== undefined ||
+    log.energy !== undefined ||
+    log.sleep !== undefined ||
+    log.stress !== undefined
+  );
+
+  if (validLogs.length === 0) {
+    return { mood: 3, energy: 5, sleep: 5, stress: 5 };
+  }
+
+  const sums = validLogs.reduce((acc, log) => ({
+    mood: acc.mood + (log.mood ?? 0),
+    energy: acc.energy + (log.energy ?? 0),
+    sleep: acc.sleep + (log.sleep ?? 0),
+    stress: acc.stress + (log.stress ?? 0),
+    moodCount: acc.moodCount + (log.mood !== undefined ? 1 : 0),
+    energyCount: acc.energyCount + (log.energy !== undefined ? 1 : 0),
+    sleepCount: acc.sleepCount + (log.sleep !== undefined ? 1 : 0),
+    stressCount: acc.stressCount + (log.stress !== undefined ? 1 : 0),
+  }), {
+    mood: 0, energy: 0, sleep: 0, stress: 0,
+    moodCount: 0, energyCount: 0, sleepCount: 0, stressCount: 0
+  });
+
+  return {
+    mood: sums.moodCount > 0 ? Math.round(sums.mood / sums.moodCount) : 3,
+    energy: sums.energyCount > 0 ? Math.round(sums.energy / sums.energyCount) : 5,
+    sleep: sums.sleepCount > 0 ? Math.round(sums.sleep / sums.sleepCount) : 5,
+    stress: sums.stressCount > 0 ? Math.round(sums.stress / sums.stressCount) : 5,
+  };
+}
+
 /**
  * Sanitizes reps value - returns undefined for invalid values
  */

@@ -8,11 +8,12 @@ interface DayNavBarProps {
   onSelectDate: (date: string) => void;
   dailyLogs: Pick<DailyLog, "date" | "id">[];
   today: string;
+  disableBefore?: string; // YYYY-MM-DD — days before this date are greyed out
 }
 
 const DAY_ABBREVIATIONS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-export function DayNavBar({ selectedDate, onSelectDate, dailyLogs, today }: DayNavBarProps) {
+export function DayNavBar({ selectedDate, onSelectDate, dailyLogs, today, disableBefore }: DayNavBarProps) {
   // Get the week containing the selected date
   const getWeekDays = (dateString: string): string[] => {
     const date = new Date(dateString + 'T00:00:00');
@@ -46,8 +47,10 @@ export function DayNavBar({ selectedDate, onSelectDate, dailyLogs, today }: DayN
     };
   };
 
-  const isFutureDate = (dateString: string): boolean => {
-    return dateString > today;
+  const isDisabledDate = (dateString: string): boolean => {
+    if (dateString > today) return true;
+    if (disableBefore && dateString < disableBefore) return true;
+    return false;
   };
 
   return (
@@ -57,12 +60,12 @@ export function DayNavBar({ selectedDate, onSelectDate, dailyLogs, today }: DayN
         const hasLog = datesWithLogs.has(date);
         const isToday = date === today;
         const isSelected = date === selectedDate;
-        const isFuture = isFutureDate(date);
+        const isDisabled = isDisabledDate(date);
 
         return (
           <button
             key={date}
-            disabled={isFuture}
+            disabled={isDisabled}
             onClick={() => onSelectDate(date)}
             className={cn(
               "flex flex-col items-center justify-center",
@@ -70,15 +73,15 @@ export function DayNavBar({ selectedDate, onSelectDate, dailyLogs, today }: DayN
               "transition-all duration-200",
               "text-xs font-medium",
               // Base state - empty circle
-              !hasLog && !isSelected && !isFuture && "border-2 border-muted-foreground/20 hover:border-muted-foreground/40 hover:bg-muted/50",
+              !hasLog && !isSelected && !isDisabled && "border-2 border-muted-foreground/20 hover:border-muted-foreground/40 hover:bg-muted/50",
               // Has log - filled circle
-              hasLog && !isSelected && "bg-success/10 text-success border-2 border-success/20 hover:bg-success/20",
+              hasLog && !isSelected && !isDisabled && "bg-success/10 text-success border-2 border-success/20 hover:bg-success/20",
               // Selected state - primary filled
-              isSelected && "bg-primary text-primary-foreground border-2 border-primary hover:bg-primary/90",
-              // Future date - disabled
-              isFuture && "opacity-30 cursor-not-allowed border border-muted-foreground/10",
+              isSelected && !isDisabled && "bg-primary text-primary-foreground border-2 border-primary hover:bg-primary/90",
+              // Disabled date (future or pre-activation)
+              isDisabled && "opacity-30 cursor-not-allowed border border-muted-foreground/10",
               // Today indicator - special ring
-              isToday && !isSelected && "ring-1 ring-primary ring-offset-1"
+              isToday && !isSelected && !isDisabled && "ring-1 ring-primary ring-offset-1"
             )}
           >
             <span className="leading-none text-[10px]">

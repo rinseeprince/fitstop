@@ -41,6 +41,8 @@ export function mapCheckInRow(row: CheckInRow): CheckIn {
     coachResponse: row.coach_response ?? undefined,
     coachReviewedAt: row.coach_reviewed_at ?? undefined,
     responseSentAt: row.response_sent_at ?? undefined,
+    periodStart: row.period_start ?? undefined,
+    periodEnd: row.period_end ?? undefined,
     createdAt: row.created_at ?? new Date().toISOString(),
     updatedAt: row.updated_at ?? new Date().toISOString(),
   };
@@ -105,8 +107,10 @@ export function mapClientRow(row: ClientRow): Client {
     customCalories: row.custom_calories ?? undefined,
     bmrManualOverride: row.bmr_manual_override ?? undefined,
     tdeeManualOverride: row.tdee_manual_override ?? undefined,
-    welcomeMessage: (row as Record<string, unknown>).welcome_message as string | undefined ?? undefined,
-    onboardingStatus: ((row as Record<string, unknown>).onboarding_status ?? undefined) as OnboardingStatus | undefined,
+    welcomeMessage: row.welcome_message ?? undefined,
+    onboardingStatus: (row.onboarding_status ?? undefined) as OnboardingStatus | undefined,
+    walkthroughCompletedAt: row.walkthrough_completed_at ?? undefined,
+    startDate: row.start_date ?? undefined,
   };
 }
 

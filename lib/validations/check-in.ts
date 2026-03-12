@@ -132,7 +132,20 @@ export const submitCheckInSchema = z.object({
   token: z.string().min(1),
 });
 
-export const clientSubmitCheckInSchema = submitCheckInSchema.omit({ token: true });
+export const clientSubmitCheckInSchema = submitCheckInSchema
+  .omit({ token: true })
+  .refine(
+    (data) => {
+      const meaningfulFields = [
+        data.mood, data.energy, data.sleep, data.stress,
+        data.weight, data.notes,
+        data.sessionCompletions, data.exerciseHighlights,
+        data.externalActivities, data.nutritionAdherence,
+      ];
+      return meaningfulFields.some((field) => field !== undefined);
+    },
+    { message: "Check-in must include at least one data field" }
+  );
 
 export type SubmitCheckInInput = z.infer<typeof submitCheckInSchema>;
 export type ClientSubmitCheckInInput = z.infer<typeof clientSubmitCheckInSchema>;
@@ -140,3 +153,8 @@ export type SessionCompletionInput = z.infer<typeof sessionCompletionSchema>;
 export type ExerciseHighlightInput = z.infer<typeof exerciseHighlightSchema>;
 export type ExternalActivityInput = z.infer<typeof externalActivitySchema>;
 export type NutritionAdherenceInput = z.infer<typeof nutritionAdherenceSchema>;
+
+// AI summary request validation
+export const aiSummaryRequestSchema = z.object({
+  focus: z.enum(["positive", "detailed", "concise"]).optional(),
+});

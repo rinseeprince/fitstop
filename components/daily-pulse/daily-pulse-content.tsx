@@ -40,6 +40,7 @@ interface DailyPulseContentProps {
   isSaving: boolean;
   isExpanded: boolean;
   hasLoggedToday: boolean;
+  isDateDisabled?: boolean;
   showNotes: boolean;
   isSessionOrphaned: boolean;
   selectedDate: string;
@@ -84,7 +85,7 @@ interface DailyPulseContentProps {
 }
 
 export function DailyPulseContent({
-  isLoading, isSaving, isExpanded, hasLoggedToday, showNotes, isSessionOrphaned, selectedDate, todayLog, nutritionTarget,
+  isLoading, isSaving, isExpanded, hasLoggedToday, isDateDisabled, showNotes, isSessionOrphaned, selectedDate, todayLog, nutritionTarget,
   sessionCompleted, currentTrainingSession, originalScheduledSessionId, selectedAlternativeSession,
   activityStatuses, unplannedActivities, allTrainingSessions, plannedActivities,
   formData, nutritionData, habits, habitLogs, onHabitLogsUpdate,
@@ -98,9 +99,9 @@ export function DailyPulseContent({
     if (todayLog?.targetCalories && !isExpanded) {
       return {
         adjustedCalories: todayLog.targetCalories,
-        adjustedProteinG: todayLog.targetProteinG || 0,
-        adjustedCarbsG: todayLog.targetCarbsG || 0,
-        adjustedFatG: todayLog.targetFatG || 0,
+        adjustedProteinG: todayLog.targetProteinG ?? 0,
+        adjustedCarbsG: todayLog.targetCarbsG ?? 0,
+        adjustedFatG: todayLog.targetFatG ?? 0,
       };
     }
     // Otherwise return null to let NutritionSection calculate
@@ -115,6 +116,14 @@ export function DailyPulseContent({
         <Skeleton className="h-6 w-full" />
         <Skeleton className="h-4 w-24" />
         <Skeleton className="h-6 w-3/4" />
+      </div>
+    );
+  }
+
+  if (isDateDisabled) {
+    return (
+      <div className="py-4 text-center text-sm text-muted-foreground">
+        Logging starts on your program start date.
       </div>
     );
   }

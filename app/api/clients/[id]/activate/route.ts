@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { getClientById } from "@/services/client-service";
-import { apiRateLimit } from "@/lib/rate-limit";
+import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { activateClientSchema } from "@/lib/validations/client-intake";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
@@ -13,7 +13,7 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const rateLimitResult = await apiRateLimit(request);
+  const rateLimitResult = await coachApiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
 
   const csrfError = await requireCSRFProtection(request);
@@ -50,6 +50,7 @@ export async function POST(
       updated_at: string;
       expected_check_in_day?: DayOfWeek;
       welcome_message?: string;
+      start_date?: string;
     } = {
       onboarding_status: "active",
       updated_at: new Date().toISOString(),
@@ -61,6 +62,10 @@ export async function POST(
 
     if (validation.data.welcomeMessage) {
       updateData.welcome_message = validation.data.welcomeMessage;
+    }
+
+    if (validation.data.startDate) {
+      updateData.start_date = validation.data.startDate;
     }
 
     const { error } = await supabase
@@ -102,7 +107,7 @@ function fireAndForgetActivationEmail(
       .eq("id", clientId)
       .single();
 
-    const coachName = (clientRow as { coach?: { name?: string } } | null)?.coach?.name || "Your Coach";
+    const coachName = (clientRow as { coach?: { name?: string } } | null)?.coach?.name ?? "Your Coach";
     await sendActivationEmail(clientEmail, clientName, coachName);
   })().catch((err: unknown) => {
     console.error("Failed to send activation email:", err instanceof Error ? err.message : "Unknown error");

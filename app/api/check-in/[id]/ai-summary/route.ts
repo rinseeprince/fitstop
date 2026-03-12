@@ -7,10 +7,12 @@ import { getClientById } from "@/services/client-service";
 import { generateCheckInSummary, regenerateAISummary } from "@/services/ai-service";
 import { getDailyLogs } from "@/services/daily-logs-service";
 import { getHabitLogs } from "@/services/daily-habits-service";
+import { calculateCheckInPeriod } from "@/lib/date-utils";
 import type { GenerateAISummaryResponse } from "@/types/check-in";
 import { rateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { requireCoachOwnsCheckIn } from "@/lib/require-coach-auth";
+import { aiSummaryRequestSchema } from "@/lib/validations/check-in";
 
 export async function POST(
   request: NextRequest,
@@ -35,11 +37,18 @@ export async function POST(
     const currentCheckIn = auth.checkIn;
 
     const body = await request.json();
-    const focus = body.focus as "positive" | "detailed" | "concise" | undefined;
+    const parsed = aiSummaryRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { success: false, error: "Invalid request data" },
+        { status: 400 }
+      );
+    }
+    const { focus } = parsed.data;
 
     // Get client name for AI prompt
     const client = await getClientById(currentCheckIn.clientId);
-    const clientName = client?.name || "Client";
+    const clientName = client?.name ?? "Client";
 
     // Get previous check-ins for context
     const { checkIns } = await getClientCheckIns(currentCheckIn.clientId, {
@@ -47,20 +56,26 @@ export async function POST(
     });
     const previousCheckIns = checkIns.filter((ci) => ci.id !== checkInId);
 
-    // Calculate date range for daily tracking context
-    const endDate = new Date(currentCheckIn.createdAt);
+    // Calculate date range using fixed 7-day period based on expectedCheckInDay
     let startDate: Date;
-    
-    if (previousCheckIns.length > 0) {
-      // Start from day after the most recent previous check-in
-      startDate = new Date(previousCheckIns[0].createdAt);
-      startDate.setDate(startDate.getDate() + 1);
+    let endDate: Date;
+
+    if (currentCheckIn.periodStart && currentCheckIn.periodEnd) {
+      startDate = new Date(currentCheckIn.periodStart + "T00:00:00");
+      endDate = new Date(currentCheckIn.periodEnd + "T00:00:00");
+    } else if (client?.expectedCheckInDay) {
+      const { periodStart, periodEnd } = calculateCheckInPeriod(
+        new Date(currentCheckIn.createdAt),
+        client.expectedCheckInDay
+      );
+      startDate = new Date(periodStart + "T00:00:00");
+      endDate = new Date(periodEnd + "T00:00:00");
     } else {
-      // No previous check-in, look back 7 days
+      endDate = new Date(currentCheckIn.createdAt);
       startDate = new Date(endDate);
       startDate.setDate(startDate.getDate() - 6);
     }
-    
+
     const startDateStr = startDate.toISOString().split('T')[0];
     const endDateStr = endDate.toISOString().split('T')[0];
     
@@ -73,7 +88,7 @@ export async function POST(
       ]);
     } catch (error) {
       // If daily tracking fetch fails, continue without it
-      console.error('Error fetching daily tracking data:', error);
+      console.error('Error fetching daily tracking data:', error instanceof Error ? error.message : 'Unknown error');
       dailyLogs = undefined;
       habitLogs = undefined;
     }
@@ -116,11 +131,11 @@ export async function POST(
 
     return NextResponse.json(response, { status: 200 });
   } catch (error) {
-    console.error("Error generating AI summary:", error);
+    console.error("Error generating AI summary:", error instanceof Error ? error.message : "Unknown error");
     return NextResponse.json(
       {
         success: false,
-        errorMessage: "Failed to generate AI summary",
+        error: "Failed to generate AI summary",
       },
       { status: 500 }
     );

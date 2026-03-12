@@ -1,6 +1,10 @@
 /**
  * Check-In Tracking Service
  * Handles calculations for check-in schedules, overdue detection, and client adherence
+ *
+ * supabaseAdmin required throughout: this service is called from unauthenticated
+ * token-based check-in routes (no session for RLS) and coach routes querying
+ * across multiple clients
  */
 
 import { supabaseAdmin } from "./supabase-admin";
@@ -10,10 +14,13 @@ import {
   differenceInDays,
   getNextDayOfWeek,
   parseISODate,
+  calculateCheckInPeriod,
+  formatDateISO,
 } from "@/lib/date-utils";
 import type {
   Client,
   CheckInFrequency,
+  DayOfWeek,
   OverdueSeverity,
   OverdueClient,
   ClientDueSoon,
@@ -31,7 +38,7 @@ export function getFrequencyInDays(
     weekly: 7,
     biweekly: 14,
     monthly: 30,
-    custom: customDays || 7,
+    custom: customDays ?? 7,
     none: 0,
   };
 
@@ -43,7 +50,7 @@ export function getFrequencyInDays(
  * Returns null if client has no check-in schedule (frequency = 'none')
  */
 export function calculateNextExpectedCheckIn(client: Client | ClientWithCheckInInfo): Date | null {
-  const frequency = client.checkInFrequency || "weekly";
+  const frequency = client.checkInFrequency ?? "weekly";
 
   // If client has no check-in schedule, return null
   if (frequency === "none") {
@@ -173,7 +180,7 @@ export async function getCheckInCount(clientId: string): Promise<number> {
     throw new Error(`Failed to get check-in count: ${error.message}`);
   }
 
-  return count || 0;
+  return count ?? 0;
 }
 
 /**
@@ -189,7 +196,7 @@ export async function calculateCheckInAdherence(clientId: string): Promise<numbe
 
   const accountAge = differenceInDays(new Date(), parseISODate(client.createdAt));
   const frequencyDays = getFrequencyInDays(
-    client.checkInFrequency || "weekly",
+    client.checkInFrequency ?? "weekly",
     client.checkInFrequencyDays
   );
 
@@ -229,14 +236,14 @@ export async function calculateCurrentStreak(clientId: string): Promise<number> 
     .from("check_ins")
     .select("created_at")
     .eq("client_id", clientId)
-    .order("created_at", { ascending: false }) as { data: { created_at: string }[] | null; error: any };
+    .order("created_at", { ascending: false });
 
   if (error || !checkIns || checkIns.length === 0) {
     return 0;
   }
 
   const frequencyDays = getFrequencyInDays(
-    client.checkInFrequency || "weekly",
+    client.checkInFrequency ?? "weekly",
     client.checkInFrequencyDays
   );
 
@@ -248,7 +255,7 @@ export async function calculateCurrentStreak(clientId: string): Promise<number> 
   let expectedDate = new Date();
 
   for (const checkIn of checkIns) {
-    const checkInDate = parseISODate(checkIn.created_at);
+    const checkInDate = parseISODate(checkIn.created_at!);
     const daysDifference = differenceInDays(expectedDate, checkInDate);
 
     // If check-in is within acceptable range (on time or up to 2 days late)
@@ -278,14 +285,14 @@ export async function calculateLongestStreak(clientId: string): Promise<number> 
     .from("check_ins")
     .select("created_at")
     .eq("client_id", clientId)
-    .order("created_at", { ascending: true }) as { data: { created_at: string }[] | null; error: any };
+    .order("created_at", { ascending: true });
 
   if (error || !checkIns || checkIns.length === 0) {
     return 0;
   }
 
   const frequencyDays = getFrequencyInDays(
-    client.checkInFrequency || "weekly",
+    client.checkInFrequency ?? "weekly",
     client.checkInFrequencyDays
   );
 
@@ -295,10 +302,10 @@ export async function calculateLongestStreak(clientId: string): Promise<number> 
 
   let longestStreak = 0;
   let currentStreak = 1;
-  let previousDate = parseISODate(checkIns[0].created_at);
+  let previousDate = parseISODate(checkIns[0].created_at!);
 
   for (let i = 1; i < checkIns.length; i++) {
-    const currentDate = parseISODate(checkIns[i].created_at);
+    const currentDate = parseISODate(checkIns[i].created_at!);
     const daysDifference = differenceInDays(currentDate, previousDate);
 
     if (daysDifference <= frequencyDays + 2) {
@@ -332,7 +339,7 @@ export async function updateClientAdherenceStats(clientId: string): Promise<void
 
   const accountAge = differenceInDays(new Date(), parseISODate(client.createdAt));
   const frequencyDays = getFrequencyInDays(
-    client.checkInFrequency || "weekly",
+    client.checkInFrequency ?? "weekly",
     client.checkInFrequencyDays
   );
   const expectedCount = frequencyDays > 0 ? Math.floor(accountAge / frequencyDays) : 0;
@@ -344,7 +351,7 @@ export async function updateClientAdherenceStats(clientId: string): Promise<void
       total_check_ins_completed: actualCount,
       check_in_adherence_rate: adherenceRate,
       current_streak: currentStreak,
-      longest_streak: Math.max(longestStreak, client.longestStreak || 0),
+      longest_streak: Math.max(longestStreak, client.longestStreak ?? 0),
       updated_at: new Date().toISOString(),
     })
     .eq("id", clientId);
@@ -367,10 +374,82 @@ export async function getClientAdherenceStats(
   }
 
   return {
-    totalCheckInsExpected: client.totalCheckInsExpected || 0,
-    totalCheckInsCompleted: client.totalCheckInsCompleted || 0,
-    checkInAdherenceRate: client.checkInAdherenceRate || 0,
-    currentStreak: client.currentStreak || 0,
-    longestStreak: client.longestStreak || 0,
+    totalCheckInsExpected: client.totalCheckInsExpected ?? 0,
+    totalCheckInsCompleted: client.totalCheckInsCompleted ?? 0,
+    checkInAdherenceRate: client.checkInAdherenceRate ?? 0,
+    currentStreak: client.currentStreak ?? 0,
+    longestStreak: client.longestStreak ?? 0,
   };
+}
+
+export type MissedCheckInPeriod = {
+  periodStart: string;
+  periodEnd: string;
+};
+
+/**
+ * Get list of missed check-in periods for a client.
+ * A period is "missed" if no check-in exists for it and the grace window has passed
+ * (i.e., the next period's end date has arrived).
+ *
+ * Computed at query time — no cron job needed.
+ */
+export async function getMissedCheckInPeriods(
+  clientId: string,
+  expectedCheckInDay: DayOfWeek,
+  since: Date
+): Promise<MissedCheckInPeriod[]> {
+  // Get all check-in dates for this client since the given date
+  const { data: checkIns, error } = await supabaseAdmin
+    .from("check_ins")
+    .select("created_at, period_start")
+    .eq("client_id", clientId)
+    .gte("created_at", since.toISOString())
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    throw new Error(`Failed to fetch check-ins: ${error.message}`);
+  }
+
+  // Build a set of covered period_start dates from existing check-ins
+  const coveredPeriods = new Set<string>();
+  for (const ci of checkIns || []) {
+    if (ci.period_start) {
+      coveredPeriods.add(ci.period_start);
+    } else {
+      // For legacy check-ins without stored period, compute it
+      const { periodStart } = calculateCheckInPeriod(
+        new Date(ci.created_at!),
+        expectedCheckInDay
+      );
+      coveredPeriods.add(periodStart);
+    }
+  }
+
+  // Walk through every expected period from `since` until today
+  const today = new Date();
+  const missed: MissedCheckInPeriod[] = [];
+
+  // Start from the first period that includes `since`
+  let { periodStart, periodEnd } = calculateCheckInPeriod(since, expectedCheckInDay);
+  let cursor = new Date(periodEnd + "T00:00:00");
+
+  while (cursor <= today) {
+    // Grace window: the period is only "missed" once the next period's end has arrived
+    const nextPeriodEnd = new Date(cursor);
+    nextPeriodEnd.setDate(nextPeriodEnd.getDate() + 7);
+
+    if (nextPeriodEnd <= today && !coveredPeriods.has(periodStart)) {
+      missed.push({ periodStart, periodEnd });
+    }
+
+    // Advance to next period
+    cursor.setDate(cursor.getDate() + 7);
+    const nextPeriod = calculateCheckInPeriod(cursor, expectedCheckInDay);
+    periodStart = nextPeriod.periodStart;
+    periodEnd = nextPeriod.periodEnd;
+    cursor = new Date(periodEnd + "T00:00:00");
+  }
+
+  return missed;
 }

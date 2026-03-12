@@ -325,6 +325,8 @@ export type Database = {
           notes: string | null
           nutrition_days_on_target: number | null
           nutrition_notes: string | null
+          period_end: string | null
+          period_start: string | null
           photo_back: string | null
           photo_front: string | null
           photo_side: string | null
@@ -363,6 +365,8 @@ export type Database = {
           notes?: string | null
           nutrition_days_on_target?: number | null
           nutrition_notes?: string | null
+          period_end?: string | null
+          period_start?: string | null
           photo_back?: string | null
           photo_front?: string | null
           photo_side?: string | null
@@ -401,6 +405,8 @@ export type Database = {
           notes?: string | null
           nutrition_days_on_target?: number | null
           nutrition_notes?: string | null
+          period_end?: string | null
+          period_start?: string | null
           photo_back?: string | null
           photo_front?: string | null
           photo_side?: string | null
@@ -636,7 +642,11 @@ export type Database = {
           updated_at: string | null
           user_id: string | null
           weight_unit: string | null
+          welcome_message: string | null
           work_activity_level: string | null
+          onboarding_status: string | null
+          walkthrough_completed_at: string | null
+          start_date: string | null
         }
         Insert: {
           active?: boolean | null
@@ -692,7 +702,11 @@ export type Database = {
           updated_at?: string | null
           user_id?: string | null
           weight_unit?: string | null
+          welcome_message?: string | null
           work_activity_level?: string | null
+          onboarding_status?: string | null
+          walkthrough_completed_at?: string | null
+          start_date?: string | null
         }
         Update: {
           active?: boolean | null
@@ -748,7 +762,11 @@ export type Database = {
           updated_at?: string | null
           user_id?: string | null
           weight_unit?: string | null
+          welcome_message?: string | null
           work_activity_level?: string | null
+          onboarding_status?: string | null
+          walkthrough_completed_at?: string | null
+          start_date?: string | null
         }
         Relationships: [
           {

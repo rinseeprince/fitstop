@@ -31,14 +31,9 @@ export function CheckInScheduleSection({ client, onUpdate, onCancel }: CheckInSc
   const [isSaving, setIsSaving] = useState(false);
   const { toast } = useToast();
 
-  const [frequency, setFrequency] = useState<CheckInFrequency>(
-    client.checkInFrequency || "weekly"
-  );
-  const [customDays, setCustomDays] = useState(
-    client.checkInFrequencyDays?.toString() || "7"
-  );
-  const [expectedDay, setExpectedDay] = useState<DayOfWeek | "null">(
-    client.expectedCheckInDay || "null"
+  const [frequency] = useState<CheckInFrequency>("weekly");
+  const [expectedDay, setExpectedDay] = useState<DayOfWeek>(
+    client.expectedCheckInDay || "monday"
   );
   const [reminderEnabled, setReminderEnabled] = useState(
     client.reminderPreferences?.enabled ?? true
@@ -57,9 +52,8 @@ export function CheckInScheduleSection({ client, onUpdate, onCancel }: CheckInSc
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          checkInFrequency: frequency,
-          checkInFrequencyDays: frequency === "custom" ? parseInt(customDays) : undefined,
-          expectedCheckInDay: expectedDay === "null" ? null : expectedDay,
+          checkInFrequency: "weekly",
+          expectedCheckInDay: expectedDay,
           reminderPreferences: {
             enabled: reminderEnabled,
             autoSend: autoSend,
@@ -95,41 +89,23 @@ export function CheckInScheduleSection({ client, onUpdate, onCancel }: CheckInSc
     <div className="space-y-4">
       <div>
         <Label>Frequency</Label>
-        <Select value={frequency} onValueChange={(v) => setFrequency(v as CheckInFrequency)}>
+        <Select value="weekly" disabled>
           <SelectTrigger>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="weekly">Weekly</SelectItem>
-            <SelectItem value="biweekly">Bi-weekly</SelectItem>
-            <SelectItem value="monthly">Monthly</SelectItem>
-            <SelectItem value="custom">Custom</SelectItem>
-            <SelectItem value="none">No schedule</SelectItem>
           </SelectContent>
         </Select>
       </div>
 
-      {frequency === "custom" && (
-        <div>
-          <Label>Every X days</Label>
-          <Input
-            type="number"
-            min="1"
-            max="365"
-            value={customDays}
-            onChange={(e) => setCustomDays(e.target.value)}
-          />
-        </div>
-      )}
-
       <div>
-        <Label>Expected Day (Optional)</Label>
-        <Select value={expectedDay} onValueChange={(v) => setExpectedDay(v as DayOfWeek | "null")}>
+        <Label>Check-In Day</Label>
+        <Select value={expectedDay} onValueChange={(v) => setExpectedDay(v as DayOfWeek)}>
           <SelectTrigger>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="null">Any day</SelectItem>
             <SelectItem value="monday">Monday</SelectItem>
             <SelectItem value="tuesday">Tuesday</SelectItem>
             <SelectItem value="wednesday">Wednesday</SelectItem>

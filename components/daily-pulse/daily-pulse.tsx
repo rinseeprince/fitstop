@@ -25,10 +25,34 @@ import {
 } from "./utils/daily-pulse-event-handlers";
 import type { UnplannedActivity } from "./daily-pulse-content";
 
-export function DailyPulse() {
+interface DailyPulseProps {
+  startDate?: string;
+}
+
+export function DailyPulse({ startDate }: DailyPulseProps = {}) {
   const [selectedDate, setSelectedDate] = useState(getTodayDateString());
   const [debouncedSelectedDate, setDebouncedSelectedDate] = useState(getTodayDateString());
   const today = getTodayDateString();
+
+  // Grey out days before client activation, but only during their first week
+  const disableBefore = (() => {
+    if (!startDate) return undefined;
+    const createdDate = startDate.split("T")[0]; // YYYY-MM-DD
+    // Check if createdDate is in the same week as today (Mon-Sun)
+    const todayDate = new Date(today + "T00:00:00");
+    const todayDay = todayDate.getDay();
+    const mondayOffset = todayDay === 0 ? -6 : 1 - todayDay;
+    const weekStart = new Date(todayDate);
+    weekStart.setDate(todayDate.getDate() + mondayOffset);
+    const weekStartStr = weekStart.toISOString().split("T")[0];
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 6);
+    const weekEndStr = weekEnd.toISOString().split("T")[0];
+    if (createdDate >= weekStartStr && createdDate <= weekEndStr) {
+      return createdDate;
+    }
+    return undefined;
+  })();
   
   const { 
     todayLog, 
@@ -185,8 +209,10 @@ export function DailyPulse() {
   const handleRemoveUnplannedActivity = createRemoveHandler(unplannedActivities, setUnplannedActivities);
   const handleActivityToggle = createToggleHandler(plannedActivities, activityStatuses, setActivityStatuses);
 
-  const hasLoggedToday = !!todayLog && (todayLog.mood !== null || todayLog.energy !== null || 
+  const hasLoggedToday = !!todayLog && (todayLog.mood !== null || todayLog.energy !== null ||
     todayLog.sleep !== null || todayLog.stress !== null || todayLog.trained !== null);
+
+  const isDateDisabled = selectedDate > today || (!!disableBefore && selectedDate < disableBefore);
 
   return (
     <Card>
@@ -208,6 +234,7 @@ export function DailyPulse() {
           onSelectDate={handleDateSelect}
           dailyLogs={weeklyLogs}
           today={today}
+          disableBefore={disableBefore}
         />
         
         <DailyPulseContent
@@ -215,6 +242,7 @@ export function DailyPulse() {
           isSaving={isSaving}
           isExpanded={isExpanded}
           hasLoggedToday={hasLoggedToday}
+          isDateDisabled={isDateDisabled}
           showNotes={showNotes}
           todayLog={todayLog}
           nutritionTarget={nutritionTarget}

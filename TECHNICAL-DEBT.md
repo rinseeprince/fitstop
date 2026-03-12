@@ -1,0 +1,164 @@
+# Technical Debt Tracker
+
+## Authentication & Authorization
+
+Reviewed: 2026-03-12
+
+### P0 - Security
+
+| # | Issue | File(s) | Details | Status |
+|---|-------|---------|---------|--------|
+| 1 | Middleware uses `getSession()` instead of `getUser()` | `middleware.ts:49,90` | `getSession()` reads the JWT from cookies without server-side validation. Supabase docs recommend `getUser()` for security-sensitive route protection as it validates the token server-side. A tampered/expired JWT could pass middleware checks. Violates §1, §9. | Open |
+| 2 | Dangerous default role fallback | `middleware.ts:106` | `const role = profile?.role \|\| "trainer"` - if profile fetch fails (DB error, network issue), user silently gets trainer-level access. Should deny access instead. Violates §3, §9. | Open |
+| 3 | No `requireClientAuth` guard | `lib/require-coach-auth.ts` | Coach routes have a shared `requireCoachAuth()` guard but no equivalent exists for client routes. Each client route implements its own auth check, risking inconsistency. Violates §2 "No duplicate logic". | Open |
+| 4 | Auth callback route missing rate limiting | `app/auth/callback/route.ts` | The OAuth callback endpoint has no rate limiting. All other auth-related routes are properly rate-limited. Violates §9 "Rate limiting: MANDATORY". | Open |
+| 5 | Invitation token endpoint uses wrong rate limit tier | `app/api/invitations/[token]/route.ts` | Uses `apiRateLimit` (60/min) instead of `authRateLimit` (5/15min). This is a public endpoint that reveals invitation details and could be used for token enumeration. | Open |
+| 6 | Inconsistent password minimum length | `app/reset-password/page.tsx:35`, `lib/validations/auth.ts:30` | Signup and invite signup require 8-char minimum. Password reset allows 6-char minimum. Users can downgrade password strength via the reset flow. | Open |
+| 7 | No email verification enforcement | `contexts/auth-context.tsx` | Users can sign up and immediately access the app without verifying their email. Supabase supports email verification but it's not gated in the auth flow. | Open |
+| 8 | No account-level lockout after failed login attempts | `lib/rate-limit.ts` | Rate limiting protects at the IP level (via `authRateLimit`), but there's no per-account lockout. An attacker distributing attempts across IPs could still brute-force a specific account's password. | Open |
+
+---
+
+### P1 - File Size Violations
+
+| # | File | Lines | Limit | Over By | Status |
+|---|------|-------|-------|---------|--------|
+| 1 | `contexts/auth-context.tsx` | 512 | 300 | 212 (71%) | Open |
+
+**Suggested splits:**
+
+1. **`contexts/auth-context.tsx`** - Extract profile fetching/creation (`fetchProfile`, `createProfile`, `fetchOrCreateCoachProfile`) into `services/auth-profile-service.ts`. Extract session sync logic (visibility change handler, storage change handler) into a `hooks/use-session-sync.ts` hook.
+
+---
+
+### P2 - Code Quality
+
+| # | Issue | File(s) | Details | Status |
+|---|-------|---------|---------|--------|
+| 1 | Duplicate Supabase server client factories | `lib/auth-helpers.ts:5-28`, `lib/supabase-server.ts:8-29` | `createSupabaseServerClient()` and `createServerSupabaseClient()` are nearly identical functions with confusingly similar names. Consolidate into one. Violates §2 "No duplicate logic". | Open |
+| 2 | `CoachRow` type defined locally | `contexts/auth-context.tsx:37-45` | Should be imported from shared types. Comment says "profiles table not in generated types yet" - indicates database types are stale. Violates §5, §6. | Open |
+| 3 | Pervasive type assertions | `contexts/auth-context.tsx:92,114-116,125,149,174` | Multiple `as unknown as` and `as Record<string, unknown>` casts because `profiles` and `coaches` tables aren't in the generated `Database` type. Fix by regenerating Supabase types. Violates §5. | Open |
+| 4 | `ClientRow` type defined locally | `app/api/invitations/send/route.ts:9-15` | Same issue as #2 - inline type instead of shared from `/types`. | Open |
+| 5 | Deprecated `acceptInvitation` still called | `app/auth/callback/route.ts:59`, `services/invitation-service.ts:364` | Marked `@deprecated` in favor of `acceptInvitationByToken`, but the callback route still uses it. Violates §1. | Open |
+| 6 | Legacy clientId-based acceptance still maintained | `app/api/invitations/accept/route.ts:42-81` | The deprecated code path adds ~40 lines of complexity. If `acceptInvitation` (#5) is migrated, this entire branch can be removed. | Open |
+| 7 | `invitation-service.ts` imports browser client | `services/invitation-service.ts:1` | `getInvitationForClient()` uses the browser Supabase client. If called server-side, this will fail or bypass proper auth. Should use admin or server client. Violates §1. | Open |
+| 8 | Login fetches profile twice | `contexts/auth-context.tsx:384-388` | `login()` calls `initializeUserData()` (which fetches profile) then immediately calls `fetchProfile()` again to return the role. Violates §2 "don't fetch the same endpoint twice". | Open |
+| 9 | `error: any` in auth pages | `app/forgot-password/page.tsx:31`, `app/reset-password/page.tsx:55` | Both use `catch (error: any)` while login and signup correctly use `catch (error: unknown)` with `instanceof Error` checks. Violates §5. | Open |
+| 10 | Forgot-password and reset-password skip Zod validation | `app/forgot-password/page.tsx`, `app/reset-password/page.tsx` | Both use raw `useState` with manual validation, while login/signup use `react-hook-form` + `zodResolver`. Violates §11, §3. | Open |
+| 11 | Manual cookie parsing in browser client | `services/supabase-client.ts:21-63` | `createBrowserClient` handles cookies automatically by default. The manual `document.cookie` parsing is unnecessary and a potential source of bugs. Violates §1. | Open |
+| 12 | Duplicated auth page layout/background | `app/login/page.tsx`, `app/signup/page.tsx`, `app/forgot-password/page.tsx`, `app/reset-password/page.tsx`, `app/invite/[token]/page.tsx` | All 5 auth pages duplicate the same animated orb background, card wrapper, and Framer Motion pattern. Extract to a shared `AuthLayout` component. | Open |
+| 13 | Magic link onboarding check uses unset metadata | `app/auth/callback/route.ts:67` | `!user.user_metadata?.password_set` - this metadata field is never set anywhere in the codebase, so `needsOnboarding` is always `true` for clients via this path. Dead code that silently misdirects users. | Open |
+
+---
+
+### P3 - Cleanup
+
+| # | Issue | File(s) | Details | Status |
+|---|-------|---------|---------|--------|
+| 1 | ~25 console.log debug statements | `contexts/auth-context.tsx` | Left over from debugging. Should be removed. Violates §12 commit-ready checklist. | Open |
+| 2 | Stale closure in visibility change handler | `contexts/auth-context.tsx:319-322` | `handleVisibilityChange` captures `session` from the initial render closure. On subsequent tab focuses, it compares against the stale initial session, not the current state. Should use a ref. | Open |
+
+---
+
+## Client Onboarding Flow
+
+Reviewed: 2026-03-12
+
+### P1 - File Size Violations
+
+These files exceed the limits defined in CONVENTIONS.md Section 4 and should be split.
+
+| # | File | Lines | Limit | Over By | Status |
+|---|------|-------|-------|---------|--------|
+| 1 | `services/check-in-tracking-service.ts` | 455 | 300 | 155 (51%) | Open |
+| 2 | `app/client/dashboard/page.tsx` | 366 | 250 | 116 (46%) | Open |
+| 3 | `components/check-in/check-in-detail-modal.tsx` | 352 | 250 | 102 (41%) | Open |
+| 4 | `app/api/client/check-ins/route.ts` | 292 | 250 | 42 (17%) | Open |
+| 5 | `app/client/check-in/page.tsx` | 290 | 250 | 40 (16%) | Open |
+| 6 | `components/daily-pulse/daily-pulse.tsx` | 277 | 250 | 27 (11%) | Open |
+| 7 | `components/client/walkthrough/guided-walkthrough.tsx` | 266 | 250 | 16 (6%) | Open |
+| 8 | `lib/date-utils.ts` | 221 | 150 | 71 (47%) | Open |
+| 9 | `utils/daily-logs-aggregation.ts` | 185 | 150 | 35 (23%) | Open |
+
+**Suggested splits:**
+
+1. **`check-in-tracking-service.ts`** - Split into `check-in-overdue-service.ts` (overdue/due-soon detection) and `check-in-adherence-service.ts` (streak calculations, adherence stats). Currently mixes unrelated concerns: overdue severity, upcoming detection, streak counting, and adherence statistics.
+
+2. **`dashboard/page.tsx`** - Extract a `useDashboardData()` hook to handle the 6-endpoint `Promise.all` fetch and associated state management. The page component should only own layout and rendering.
+
+3. **`check-in-detail-modal.tsx`** - Extract tab content panels (daily context summary, AI summary card, photo viewer) into sub-components. The modal currently manages multiple data fetches and complex state for unrelated tabs.
+
+4. **`check-ins/route.ts`** - Extract photo upload handling and AI summary triggering into the check-in service layer. The POST handler has too many inline responsibilities.
+
+5. **`check-in/page.tsx`** - Extract step navigation logic and `canProceed()` validation into a `useCheckInSteps()` hook.
+
+6. **`daily-pulse.tsx`** - Split into `DailyPulseContainer` (hooks, state, handlers) and `DailyPulseView` (JSX rendering).
+
+7. **`guided-walkthrough.tsx`** - Extract individual step content renderers into a `walkthrough-steps.tsx` sub-component.
+
+8. **`date-utils.ts`** - Move check-in-specific functions (`calculateCheckInPeriod`, `getCheckInStatus`, `getNextPeriodEnd`) to a new `lib/check-in-date-utils.ts`.
+
+9. **`daily-logs-aggregation.ts`** - Split metric averaging into a separate `utils/metric-averages.ts`.
+
+---
+
+### P2 - Code Quality
+
+| # | Issue | File(s) | Details | Status |
+|---|-------|---------|---------|--------|
+| 1 | Duplicate constant | `lib/date-utils.ts` | `DAY_MAP` defined twice (lines 50-58 and 129-137). Extract to a single module-level constant. | Open |
+| 2 | Hardcoded magic numbers | `services/check-in-tracking-service.ts` | `-3` days upcoming threshold, `frequencyDays + 2` tolerance (lines 262, 311), `7` days grace window (line 440). Extract to named constants. | Open |
+| 3 | Hardcoded magic numbers | `components/check-in/daily-logs-summary.tsx` | Wellness thresholds (mood 3/4, stress 3/6, energy/sleep 5/7) and score divisors (2.5, 2, 3.5, 2.5). Extract to `lib/constants.ts`. | Open |
+| 4 | Hardcoded magic numbers | `components/check-in/step-subjective.tsx` | Minimum logs threshold `3` (line 29), default metric values of `5`. | Open |
+| 5 | Hardcoded magic numbers | `services/client-check-in-service.ts` | `6` days offset (line 66), `1.2` TDEE sedentary multiplier (line 146). | Open |
+| 6 | Hardcoded magic numbers | `components/clients/check-in/check-in-schedule-card.tsx` | `"24"` default hours, `168` max hours. | Open |
+| 7 | Unsafe type casts | `lib/mappers.ts` | Lines 37-38 cast raw DB JSON to `AIInsight[]` and `AIRecommendation[]` without runtime validation. Add Zod schemas or type guards. | Open |
+| 8 | Empty catch blocks | `components/client/walkthrough/guided-walkthrough.tsx` | Line 76: catch block with only a comment, no logging. Should at minimum `console.warn`. | Open |
+| 9 | Empty catch blocks | `components/coach/client-activation-dialog.tsx` | Lines 87, 111: errors are logged but not surfaced to the user via toast. | Open |
+| 10 | Incomplete error handling | `app/client/dashboard/page.tsx` | `Promise.all` fetches 6 endpoints but failure in one leaves all state undefined. Should handle per-endpoint failures independently. | Open |
+| 11 | Unmemoized handler factories | `components/daily-pulse/daily-pulse.tsx` | Lines 208-210: `createAddHandler`, `createRemoveHandler`, `createToggleHandler` recreated every render. Wrap in `useCallback`. | Open |
+
+---
+
+## Daily Pulse Feature
+
+Reviewed: 2026-03-12
+
+### P1 - Bugs
+
+| # | Issue | File(s) | Details | Status |
+|---|-------|---------|---------|--------|
+| 1 | Wrong date for unplanned activities | `components/daily-pulse/utils/daily-pulse-handlers.ts:84` | `saveUnplannedActivities` hardcodes `new Date().toISOString().split('T')[0]` instead of using the selected date. Saving unplanned activities on a past date incorrectly logs them for today. Fix: pass `selectedDate` as a parameter. | Open |
+
+---
+
+### P2 - Code Quality
+
+| # | Issue | File(s) | Details | Status |
+|---|-------|---------|---------|--------|
+| 1 | Duplicate type: `HabitLogWithDetails` | `daily-pulse-content.tsx`, `habits-section.tsx`, `use-daily-pulse.ts`, `use-daily-pulse-state.ts`, `daily-pulse-logged-view.tsx` | Defined independently in 5 files. Canonical export exists in `types/daily-habit.ts`. All other files should import from there. | Open |
+| 2 | Duplicate type: `TodaysActivity` | `daily-pulse-content.tsx`, `training-summary.tsx`, `daily-logs-service.ts`, `use-daily-pulse.ts` | Defined in 4 files. Extract to `types/daily-log.ts` and import everywhere. | Open |
+| 3 | Duplicate type: `UnplannedActivity` | `daily-pulse-content.tsx`, `training-summary.tsx`, `nutrition-tracking-helpers.ts`, `add-activity-form.tsx` | Defined in 4 files. Extract to `types/daily-log.ts` and import everywhere. | Open |
+| 4 | Silent error swallowing | `components/daily-pulse/utils/daily-pulse-handlers.ts:55-57, 90-92` | `handleSessionCompletion` and `saveUnplannedActivities` catch errors with only `console.error`. No user-facing toast. Violates CONVENTIONS "Never swallow errors silently". | Open |
+| 5 | Duplicated row-to-model mapping | `services/daily-logs-service.ts:159-183, 203-227, 267-291` | Identical snake_case-to-camelCase mapping repeated 3 times. Extract a `mapRowToDailyLog(row: DailyLogRow): DailyLog` helper. | Open |
+| 6 | Inconsistent date string handling | `components/daily-pulse/habits-section.tsx:83`, `components/daily-pulse/daily-pulse.tsx:40` | Uses `.split('T')[0]` instead of existing `getDateString()` from `lib/date-helpers.ts`. | Open |
+| 7 | Undocumented eslint-disable | `hooks/use-training-restoration.ts:92` | Suppresses `react-hooks/exhaustive-deps` without a "why" comment. CONVENTIONS require commenting the why (Section 3, line 82-83). Audit deps and add rationale or fix. | Open |
+
+---
+
+### P3 - Test Coverage
+
+| # | Issue | File(s) | Details | Status |
+|---|-------|---------|---------|--------|
+| 1 | No tests for daily pulse hooks | `hooks/use-daily-pulse.ts`, `hooks/use-daily-pulse-state.ts`, `hooks/use-training-restoration.ts` | 3 hooks with ~500 lines of logic and zero test coverage. CONVENTIONS require 70% minimum (Section 12). | Open |
+| 2 | No tests for handler utilities | `components/daily-pulse/utils/daily-pulse-handlers.ts`, `daily-pulse-event-handlers.ts`, `nutrition-change-handlers.ts` | Pure functions with no tests. These are easily testable without component mocking. | Open |
+
+---
+
+## Client Onboarding Flow (previous section)
+
+### P3 - Test Maintenance
+
+| # | Issue | File | Details | Status |
+|---|-------|------|---------|--------|
+| 1 | File size violation | `__tests__/helpers/mock-data-builders.ts` | 418 lines (67% over 250-line limit). Split into `mock-client-builders.ts`, `mock-check-in-builders.ts`, `mock-training-builders.ts`. | Open |

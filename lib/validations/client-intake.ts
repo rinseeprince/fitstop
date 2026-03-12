@@ -48,6 +48,7 @@ const VALID_DAYS = [
 export const activateClientSchema = z.object({
   welcomeMessage: optionalString(1000),
   firstCheckInDay: z.enum(VALID_DAYS).optional(),
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 });
 
 export const intakeActionSchema = z.object({

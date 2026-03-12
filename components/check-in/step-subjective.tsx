@@ -5,7 +5,8 @@ import { Smile, Frown, Meh, SmilePlus, Heart } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Textarea } from "@/components/ui/textarea";
-import { DailyLogsSummary, calculateMetricAverages } from "./daily-logs-summary";
+import { DailyLogsSummary } from "./daily-logs-summary";
+import { calculateMetricAverages } from "@/utils/daily-logs-aggregation";
 import type { SubjectiveMetrics } from "@/types/check-in";
 import type { DailyLog } from "@/types/daily-log";
 
@@ -58,7 +59,7 @@ export const StepSubjective = ({ data, onChange, dailyLogs = [] }: StepSubjectiv
         
         {/* Reflection Text Area */}
         <div className="space-y-3">
-          <Label htmlFor="reflection">Anything worth noting about how you felt this week?</Label>
+          <Label htmlFor="reflection" className="text-muted-foreground">Anything worth noting about how you felt this week?</Label>
           <Textarea
             id="reflection"
             placeholder="Any highlights, challenges, or patterns you noticed? How did you feel overall?"
@@ -117,11 +118,11 @@ export const StepSubjective = ({ data, onChange, dailyLogs = [] }: StepSubjectiv
         <div className="flex items-center justify-between">
           <Label>Energy Level</Label>
           <span className="text-sm font-semibold text-primary">
-            {data.energy || 5}/10
+            {data.energy ?? 5}/10
           </span>
         </div>
         <Slider
-          value={[data.energy || 5]}
+          value={[data.energy ?? 5]}
           onValueChange={(value) => onChange({ ...data, energy: value[0] })}
           min={1}
           max={10}
@@ -139,11 +140,11 @@ export const StepSubjective = ({ data, onChange, dailyLogs = [] }: StepSubjectiv
         <div className="flex items-center justify-between">
           <Label>Sleep Quality</Label>
           <span className="text-sm font-semibold text-primary">
-            {data.sleep || 5}/10
+            {data.sleep ?? 5}/10
           </span>
         </div>
         <Slider
-          value={[data.sleep || 5]}
+          value={[data.sleep ?? 5]}
           onValueChange={(value) => onChange({ ...data, sleep: value[0] })}
           min={1}
           max={10}
@@ -161,11 +162,11 @@ export const StepSubjective = ({ data, onChange, dailyLogs = [] }: StepSubjectiv
         <div className="flex items-center justify-between">
           <Label>Stress Level</Label>
           <span className="text-sm font-semibold text-primary">
-            {data.stress || 5}/10
+            {data.stress ?? 5}/10
           </span>
         </div>
         <Slider
-          value={[data.stress || 5]}
+          value={[data.stress ?? 5]}
           onValueChange={(value) => onChange({ ...data, stress: value[0] })}
           min={1}
           max={10}

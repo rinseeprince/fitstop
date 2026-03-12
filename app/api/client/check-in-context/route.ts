@@ -5,46 +5,20 @@ import {
   getCheckInNutritionContext,
 } from "@/services/check-in-context-service";
 import { getClientById } from "@/services/client-service";
-import { getFrequencyInDays } from "@/services/check-in-tracking-service";
-import { getPreviousCheckIn } from "@/services/check-in-service";
 import { getDailyLogs } from "@/services/daily-logs-service";
 import { supabaseAdmin } from "@/services/supabase-admin";
+import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { clientApiRateLimit } from "@/lib/rate-limit";
-import { getDateDaysAgo, getTodayDateString } from "@/lib/date-helpers";
+import { calculateCheckInPeriod, getCheckInStatus, formatDateISO } from "@/lib/date-utils";
+import type { CheckInGateStatus } from "@/lib/date-utils";
 import type { ValidateCheckInTokenResponse } from "@/types/check-in";
 
 /**
  * GET /api/client/check-in-context
- * 
+ *
  * Retrieves the check-in context for an authenticated client, including
- * client information, training context, and nutrition context needed 
- * for the check-in form.
- * 
- * @param request - The Next.js request object
- * @returns Promise<NextResponse> - JSON response with client context data
- * 
- * @example
- * ```typescript
- * // Response format
- * {
- *   success: true,
- *   data: {
- *     clientInfo: {
- *       id: "client-123",
- *       name: "John Doe",
- *       email: "john@example.com",
- *       coachName: "Jane Coach",
- *       checkInFrequencyDays: 7
- *     },
- *     trainingContext: { ... },
- *     nutritionContext: { ... }
- *   }
- * }
- * ```
- * 
- * @throws {401} Unauthorized - Client not authenticated
- * @throws {404} Client not found
- * @throws {500} Server error during context retrieval
+ * client information, training context, and nutrition context needed
+ * for the check-in form. Enforces check-in schedule gating.
  */
 export async function GET(request: NextRequest) {
   const rateLimitResult = await clientApiRateLimit(request);
@@ -70,8 +44,78 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Fetch coach info, context, and check-in data in parallel
-    const [coachResult, trainingContext, nutritionContext, lastCheckIn] = await Promise.all([
+    // --- Access gating based on check-in schedule ---
+    const expectedDay = client.expectedCheckInDay;
+    let checkInGateStatus: CheckInGateStatus = "available";
+
+    if (expectedDay) {
+      // Get the most recent check-in date for gating (uses server client with RLS)
+      const supabase = await createServerSupabaseClient();
+      const { data: lastCheckIn } = await supabase
+        .from("check_ins")
+        .select("created_at")
+        .eq("client_id", client.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const lastCheckInDate = lastCheckIn?.created_at
+        ? new Date(lastCheckIn.created_at).toISOString().split("T")[0]
+        : null;
+
+      const today = new Date();
+      const { status, periodStart, periodEnd, nextDueDate } = getCheckInStatus(
+        expectedDay,
+        lastCheckInDate,
+        today
+      );
+      checkInGateStatus = status;
+
+      if (status === "not_due") {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "not_due",
+            message: `Your next check-in is due on ${nextDueDate}. Check back then!`,
+            nextDueDate,
+          },
+          { status: 403 }
+        );
+      }
+
+      if (status === "completed") {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "completed",
+            message: "You've already completed your check-in for this week. Great job!",
+            nextDueDate,
+          },
+          { status: 403 }
+        );
+      }
+    }
+
+    // --- Calculate period using fixed 7-day window ---
+    const today = new Date();
+    let periodStart: string;
+    let periodEnd: string;
+
+    if (expectedDay) {
+      const period = calculateCheckInPeriod(today, expectedDay);
+      periodStart = period.periodStart;
+      periodEnd = period.periodEnd;
+    } else {
+      // Fallback for clients without an expected day: use last 7 days
+      const startDate = new Date(today);
+      startDate.setDate(startDate.getDate() - 6);
+      periodStart = formatDateISO(startDate);
+      periodEnd = formatDateISO(today);
+    }
+
+    // Fetch coach info, context in parallel
+    // supabaseAdmin required: no client-facing SELECT RLS policy exists on coaches table
+    const [coachResult, trainingContext, nutritionContext] = await Promise.all([
       supabaseAdmin
         .from("coaches")
         .select("name")
@@ -79,58 +123,34 @@ export async function GET(request: NextRequest) {
         .single(),
       getCheckInTrainingContext(client.id),
       getCheckInNutritionContext(client.id),
-      // Get the most recent check-in to determine the period
-      supabaseAdmin
-        .from("check_ins")
-        .select("created_at")
-        .eq("client_id", client.id)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle(),
     ]);
 
     const coach = coachResult.data;
 
-    // Determine the check-in period
-    let startDate: string;
-    let lastCheckInDate: string | undefined;
-    
-    if (lastCheckIn.data && lastCheckIn.data.created_at) {
-      // Use the date of the last check-in as the start date
-      const lastCheckInDateObj = new Date(lastCheckIn.data.created_at);
-      lastCheckInDateObj.setDate(lastCheckInDateObj.getDate() + 1); // Start from the day after last check-in
-      startDate = lastCheckInDateObj.toISOString().split('T')[0];
-      lastCheckInDate = new Date(lastCheckIn.data.created_at).toISOString().split('T')[0];
-    } else {
-      // No previous check-in, use last 7 days
-      startDate = getDateDaysAgo(7);
-    }
-    
-    const endDate = getTodayDateString();
+    // Fetch daily logs for the calculated period
+    const dailyLogs = await getDailyLogs(client.id, periodStart, periodEnd);
 
-    // Fetch daily logs for the period
-    const dailyLogs = await getDailyLogs(client.id, startDate, endDate);
-
-    const response: Omit<ValidateCheckInTokenResponse, "valid"> = {
+    const response: Omit<ValidateCheckInTokenResponse, "valid"> & {
+      periodStart: string;
+      periodEnd: string;
+    } = {
       clientInfo: {
         id: client.id,
         name: client.name,
         email: client.email,
-        coachName: coach?.name || "Your Coach",
-        checkInFrequencyDays: getFrequencyInDays(
-          client.checkInFrequency || "weekly",
-          client.checkInFrequencyDays
-        ),
-        lastCheckInDate,
+        coachName: coach?.name ?? "Your Coach",
+        checkInFrequencyDays: 7,
       },
       trainingContext,
       nutritionContext,
       dailyLogs,
+      periodStart,
+      periodEnd,
     };
 
-    return NextResponse.json({ success: true, data: response });
+    return NextResponse.json({ success: true, data: { ...response, checkInStatus: checkInGateStatus } });
   } catch (error) {
-    console.error("Error fetching check-in context:", error);
+    console.error("Error fetching check-in context:", error instanceof Error ? error.message : "Unknown error");
     return NextResponse.json(
       {
         success: false,

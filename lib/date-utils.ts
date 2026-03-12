@@ -125,3 +125,97 @@ export function endOfDay(date: Date): Date {
   result.setHours(23, 59, 59, 999);
   return result;
 }
+
+const DAY_MAP: Record<DayOfWeek, number> = {
+  sunday: 0,
+  monday: 1,
+  tuesday: 2,
+  wednesday: 3,
+  thursday: 4,
+  friday: 5,
+  saturday: 6,
+};
+
+/**
+ * Calculate the fixed 7-day check-in period based on the client's expected check-in day.
+ *
+ * The period ends on the most recent occurrence of `expectedCheckInDay` on or before `checkInDate`,
+ * and starts 6 days before that (7-day inclusive window).
+ *
+ * Example: expectedCheckInDay = "sunday", checkInDate = Wed March 11
+ *   → Most recent Sunday on or before March 11 = March 8
+ *   → periodEnd = "2026-03-08", periodStart = "2026-03-02"
+ */
+export function calculateCheckInPeriod(
+  checkInDate: Date,
+  expectedCheckInDay: DayOfWeek
+): { periodStart: string; periodEnd: string } {
+  const targetDayNum = DAY_MAP[expectedCheckInDay];
+  const currentDayNum = checkInDate.getDay();
+
+  // Days to go back to reach the most recent target day on or before checkInDate
+  let daysBack = currentDayNum - targetDayNum;
+  if (daysBack < 0) daysBack += 7;
+
+  const periodEndDate = new Date(checkInDate);
+  periodEndDate.setDate(periodEndDate.getDate() - daysBack);
+
+  const periodStartDate = new Date(periodEndDate);
+  periodStartDate.setDate(periodStartDate.getDate() - 6);
+
+  return {
+    periodStart: formatDateISO(periodStartDate),
+    periodEnd: formatDateISO(periodEndDate),
+  };
+}
+
+export type CheckInGateStatus = "available" | "completed" | "not_due" | "overdue";
+
+/**
+ * Determine the check-in gate status for a client.
+ *
+ * - 'completed'  — a check-in already exists for the current period
+ * - 'not_due'    — today is before the expected check-in day for this period
+ * - 'available'  — it's the due day (or within grace window) and no check-in yet
+ * - 'overdue'    — past the due day, grace window still open, no check-in yet
+ */
+export function getCheckInStatus(
+  expectedCheckInDay: DayOfWeek,
+  lastCheckInDate: string | null,
+  today: Date
+): { status: CheckInGateStatus; periodStart: string; periodEnd: string; nextDueDate: string } {
+  const { periodStart, periodEnd } = calculateCheckInPeriod(today, expectedCheckInDay);
+
+  // Check if the last check-in falls within or after this period
+  if (lastCheckInDate && lastCheckInDate >= periodStart) {
+    return { status: "completed", periodStart, periodEnd, nextDueDate: getNextPeriodEnd(periodEnd) };
+  }
+
+  const todayStr = formatDateISO(today);
+
+  // Brand-new client with no prior check-ins: their first check-in isn't due until
+  // the next occurrence of their expected day, not the current/past one.
+  if (!lastCheckInDate && todayStr >= periodEnd) {
+    const nextDueDate = getNextPeriodEnd(periodEnd);
+    return { status: "not_due", periodStart, periodEnd, nextDueDate };
+  }
+
+  if (todayStr < periodEnd) {
+    // Today is before the expected check-in day
+    return { status: "not_due", periodStart, periodEnd, nextDueDate: periodEnd };
+  }
+
+  if (todayStr === periodEnd) {
+    return { status: "available", periodStart, periodEnd, nextDueDate: periodEnd };
+  }
+
+  // Past the due day — still within grace window (until day before next periodEnd)
+  return { status: "overdue", periodStart, periodEnd, nextDueDate: periodEnd };
+}
+
+/** Advance a periodEnd date string by 7 days */
+function getNextPeriodEnd(periodEnd: string): string {
+  const d = new Date(periodEnd + "T00:00:00");
+  d.setDate(d.getDate() + 7);
+  return formatDateISO(d);
+}

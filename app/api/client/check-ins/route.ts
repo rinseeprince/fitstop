@@ -4,11 +4,13 @@ import { getClientById, updateClient } from "@/services/client-service";
 import { uploadProgressPhotoFromBase64 } from "@/services/storage-service";
 import { submitCheckIn, getClientCheckIns } from "@/services/check-in-service";
 import { triggerAISummaryGeneration, updateClientMetricsFromCheckIn } from "@/services/client-check-in-service";
-import { updateClientAdherenceStats, getFrequencyInDays } from "@/services/check-in-tracking-service";
+import { updateClientAdherenceStats } from "@/services/check-in-tracking-service";
 import { updateClientBMR } from "@/services/bmr-service";
 import { clientApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { clientSubmitCheckInSchema } from "@/lib/validations/check-in";
+import { calculateCheckInPeriod, formatDateISO } from "@/lib/date-utils";
+import { supabaseAdmin } from "@/services/supabase-admin";
 import type { SubmitCheckInResponse, CheckInFormData } from "@/types/check-in";
 
 /**
@@ -80,7 +82,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error("Error fetching check-ins:", error);
+    console.error("Error fetching check-ins:", error instanceof Error ? error.message : "Unknown error");
     return NextResponse.json(
       {
         success: false,
@@ -165,14 +167,8 @@ export async function POST(request: NextRequest) {
         success: false,
         errorMessage: "Invalid input data",
       };
-      console.error("Validation errors:", validationResult.error.format());
-      return NextResponse.json(
-        {
-          ...response,
-          validationErrors: validationResult.error.format(),
-        },
-        { status: 400 }
-      );
+      console.error("Check-in validation failed");
+      return NextResponse.json(response, { status: 400 });
     }
 
     const body = validationResult.data;
@@ -211,84 +207,86 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    try {
-      // Submit the comprehensive check-in
-      const checkInId = await submitCheckIn(clientId, {
-        // Subjective metrics
-        mood: body.mood,
-        energy: body.energy,
-        sleep: body.sleep,
-        stress: body.stress,
-        notes: body.notes,
-        
-        // Body metrics
-        weight: body.weight,
-        weightUnit: body.weightUnit || "lbs",
-        bodyFatPercentage: body.bodyFatPercentage,
-        waist: body.waist,
-        hips: body.hips,
-        chest: body.chest,
-        arms: body.arms,
-        thighs: body.thighs,
-        measurementUnit: body.measurementUnit || "in",
-        
-        // Progress photos
-        ...photoUrls,
-        
-        // Training metrics
-        workoutsCompleted: body.workoutsCompleted,
-        adherencePercentage: body.adherencePercentage,
-        prs: body.prs,
-        challenges: body.challenges,
-        
-        // Enhanced tracking
-        sessionCompletions: body.sessionCompletions || [],
-        exerciseHighlights: body.exerciseHighlights || [],
-        externalActivities: body.externalActivities || [],
-        nutritionAdherence: body.nutritionAdherence,
+    // Submit the comprehensive check-in
+    const checkInId = await submitCheckIn(clientId, {
+      // Subjective metrics
+      mood: body.mood,
+      energy: body.energy,
+      sleep: body.sleep,
+      stress: body.stress,
+      notes: body.notes,
+
+      // Body metrics
+      weight: body.weight,
+      weightUnit: body.weightUnit ?? "lbs",
+      bodyFatPercentage: body.bodyFatPercentage,
+      waist: body.waist,
+      hips: body.hips,
+      chest: body.chest,
+      arms: body.arms,
+      thighs: body.thighs,
+      measurementUnit: body.measurementUnit ?? "in",
+
+      // Progress photos
+      ...photoUrls,
+
+      // Training metrics
+      workoutsCompleted: body.workoutsCompleted,
+      adherencePercentage: body.adherencePercentage,
+      prs: body.prs,
+      challenges: body.challenges,
+
+      // Enhanced tracking
+      sessionCompletions: body.sessionCompletions ?? [],
+      exerciseHighlights: body.exerciseHighlights ?? [],
+      externalActivities: body.externalActivities ?? [],
+      nutritionAdherence: body.nutritionAdherence,
+    });
+
+    // Store check-in period based on client's expectedCheckInDay
+    const client = await getClientById(clientId);
+    if (client?.expectedCheckInDay) {
+      const { periodStart, periodEnd } = calculateCheckInPeriod(
+        new Date(),
+        client.expectedCheckInDay
+      );
+      // TODO: Replace with server client once a scoped UPDATE RLS policy exists for check_ins
+      await supabaseAdmin
+        .from("check_ins")
+        .update({ period_start: periodStart, period_end: periodEnd })
+        .eq("id", checkInId);
+    }
+
+    // Update client metadata
+    if (client) {
+      // Update client's current weight, body fat, BMR, and TDEE from check-in data
+      await updateClientMetricsFromCheckIn(client, body);
+
+      // Update adherence stats
+      await updateClientAdherenceStats(clientId);
+    }
+
+    // Generate AI summary asynchronously (don't wait for it)
+    triggerAISummaryGeneration(checkInId, clientId, client?.name ?? "Client")
+      .catch((error) => {
+        console.error("Failed to generate AI summary:", error instanceof Error ? error.message : "Unknown error");
       });
 
-      // Update client metadata
-      const client = await getClientById(clientId);
-      if (client) {
-        // Update client's current weight, body fat, BMR, and TDEE from check-in data
-        await updateClientMetricsFromCheckIn(client, body);
+    const response: SubmitCheckInResponse = {
+      success: true,
+      checkInId,
+    };
 
-        // Update adherence stats
-        await updateClientAdherenceStats(clientId);
-      }
-
-      // Generate AI summary asynchronously (don't wait for it)
-      triggerAISummaryGeneration(checkInId, clientId, client?.name || "Client")
-        .catch((error) => {
-          console.error("Failed to generate AI summary:", error);
-        });
-
-      const response: SubmitCheckInResponse = {
-        success: true,
-        checkInId,
-      };
-
-      return NextResponse.json(response, { status: 201 });
-    } catch (error) {
-      console.error("Error submitting check-in:", error);
-
-      const response: SubmitCheckInResponse = {
-        success: false,
-        errorMessage: "Failed to submit check-in",
-      };
-
-      return NextResponse.json(response, { status: 500 });
-    }
+    return NextResponse.json(response, { status: 201 });
   } catch (error) {
-    console.error("Error processing check-in submission:", error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: "Failed to submit check-in",
-      },
-      { status: 500 }
-    );
+    console.error("Error submitting check-in:", error instanceof Error ? error.message : "Unknown error");
+
+    const response: SubmitCheckInResponse = {
+      success: false,
+      errorMessage: "Failed to submit check-in",
+    };
+
+    return NextResponse.json(response, { status: 500 });
   }
 }
 

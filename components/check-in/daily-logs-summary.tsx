@@ -2,18 +2,12 @@
 
 import { useMemo } from "react";
 import type { DailyLog } from "@/types/daily-log";
+import type { MetricAverages } from "@/utils/daily-logs-aggregation";
 
 type DailyLogsSummaryProps = {
   dailyLogs: DailyLog[];
   startDate?: string;
   endDate?: string;
-};
-
-type MetricAverages = {
-  mood: number;
-  energy: number;
-  sleep: number;
-  stress: number;
 };
 
 const getMetricColor = (metric: "mood" | "energy" | "sleep" | "stress", value: number) => {
@@ -54,10 +48,10 @@ export const DailyLogsSummary = ({ dailyLogs }: DailyLogsSummaryProps) => {
     }
     
     const sums = validLogs.reduce((acc, log) => ({
-      mood: acc.mood + (log.mood || 0),
-      energy: acc.energy + (log.energy || 0),
-      sleep: acc.sleep + (log.sleep || 0),
-      stress: acc.stress + (log.stress || 0),
+      mood: acc.mood + (log.mood ?? 0),
+      energy: acc.energy + (log.energy ?? 0),
+      sleep: acc.sleep + (log.sleep ?? 0),
+      stress: acc.stress + (log.stress ?? 0),
       moodCount: acc.moodCount + (log.mood !== undefined ? 1 : 0),
       energyCount: acc.energyCount + (log.energy !== undefined ? 1 : 0),
       sleepCount: acc.sleepCount + (log.sleep !== undefined ? 1 : 0),
@@ -66,7 +60,7 @@ export const DailyLogsSummary = ({ dailyLogs }: DailyLogsSummaryProps) => {
       mood: 0, energy: 0, sleep: 0, stress: 0,
       moodCount: 0, energyCount: 0, sleepCount: 0, stressCount: 0
     });
-    
+
     return {
       mood: sums.moodCount > 0 ? Number((sums.mood / sums.moodCount).toFixed(1)) : 0,
       energy: sums.energyCount > 0 ? Number((sums.energy / sums.energyCount).toFixed(1)) : 0,
@@ -86,11 +80,11 @@ export const DailyLogsSummary = ({ dailyLogs }: DailyLogsSummaryProps) => {
       {/* Trend Visualization */}
       <div className="space-y-4">
         <h4 className="text-sm font-medium text-muted-foreground">Week at a Glance</h4>
-        
+
         {/* Day indicators with color coding */}
         <div className="grid grid-cols-7 gap-2">
           {sortedLogs.map((log) => {
-            const avgScore = ((log.mood || 0) + ((log.energy || 0) / 2) + ((log.sleep || 0) / 2) - ((log.stress || 0) / 2)) / 2.5;
+            const avgScore = ((log.mood ?? 0) + ((log.energy ?? 0) / 2) + ((log.sleep ?? 0) / 2) - ((log.stress ?? 0) / 2)) / 2.5;
             const colorClass = avgScore >= 3.5 ? "bg-success" : avgScore >= 2.5 ? "bg-warning" : "bg-destructive";
             
             return (
@@ -105,6 +99,13 @@ export const DailyLogsSummary = ({ dailyLogs }: DailyLogsSummaryProps) => {
               </div>
             );
           })}
+        </div>
+
+        {/* Legend */}
+        <div className="flex items-center justify-center gap-4 text-xs text-muted-foreground">
+          <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-full bg-success opacity-80" />Great</span>
+          <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-full bg-warning opacity-80" />Okay</span>
+          <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-full bg-destructive opacity-80" />Tough</span>
         </div>
       </div>
       
@@ -154,38 +155,4 @@ export const DailyLogsSummary = ({ dailyLogs }: DailyLogsSummaryProps) => {
       </div>
     </div>
   );
-};
-
-export const calculateMetricAverages = (dailyLogs: DailyLog[]): MetricAverages => {
-  const validLogs = dailyLogs.filter(log => 
-    log.mood !== undefined || 
-    log.energy !== undefined || 
-    log.sleep !== undefined || 
-    log.stress !== undefined
-  );
-  
-  if (validLogs.length === 0) {
-    return { mood: 3, energy: 5, sleep: 5, stress: 5 };
-  }
-  
-  const sums = validLogs.reduce((acc, log) => ({
-    mood: acc.mood + (log.mood || 0),
-    energy: acc.energy + (log.energy || 0),
-    sleep: acc.sleep + (log.sleep || 0),
-    stress: acc.stress + (log.stress || 0),
-    moodCount: acc.moodCount + (log.mood !== undefined ? 1 : 0),
-    energyCount: acc.energyCount + (log.energy !== undefined ? 1 : 0),
-    sleepCount: acc.sleepCount + (log.sleep !== undefined ? 1 : 0),
-    stressCount: acc.stressCount + (log.stress !== undefined ? 1 : 0),
-  }), {
-    mood: 0, energy: 0, sleep: 0, stress: 0,
-    moodCount: 0, energyCount: 0, sleepCount: 0, stressCount: 0
-  });
-  
-  return {
-    mood: sums.moodCount > 0 ? Math.round(sums.mood / sums.moodCount) : 3,
-    energy: sums.energyCount > 0 ? Math.round(sums.energy / sums.energyCount) : 5,
-    sleep: sums.sleepCount > 0 ? Math.round(sums.sleep / sums.sleepCount) : 5,
-    stress: sums.stressCount > 0 ? Math.round(sums.stress / sums.stressCount) : 5,
-  };
 };

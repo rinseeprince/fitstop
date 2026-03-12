@@ -11,6 +11,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import {
@@ -28,6 +29,7 @@ import {
   AlertTriangle,
   Rocket,
 } from "lucide-react"
+import type { DayOfWeek } from "@/types/check-in"
 
 interface ClientActivationDialogProps {
   client: {
@@ -62,11 +64,13 @@ export function ClientActivationDialog({
   const [submitting, setSubmitting] = useState(false)
   const [readiness, setReadiness] = useState<Readiness | null>(null)
   const [welcomeMessage, setWelcomeMessage] = useState("")
-  const [firstCheckInDay, setFirstCheckInDay] = useState<string>("monday")
+  const [firstCheckInDay, setFirstCheckInDay] = useState<DayOfWeek>("monday")
+  const [startDate, setStartDate] = useState<string>("")
 
   useEffect(() => {
     if (open) {
       setWelcomeMessage(getDefaultMessage(client.name))
+      setStartDate(new Date().toISOString().split("T")[0])
       setReadiness(null)
       fetchReadiness()
     }
@@ -93,7 +97,7 @@ export function ClientActivationDialog({
       const response = await fetch(`/api/clients/${client.id}/activate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ welcomeMessage, firstCheckInDay }),
+        body: JSON.stringify({ welcomeMessage, firstCheckInDay, startDate: startDate || undefined }),
       })
       const data = await response.json()
 
@@ -162,10 +166,22 @@ export function ClientActivationDialog({
               />
             </div>
 
+            {/* Program start date */}
+            <div className="space-y-2">
+              <Label htmlFor="start-date">Program start date</Label>
+              <Input
+                id="start-date"
+                type="date"
+                className="rounded-xs"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+              />
+            </div>
+
             {/* First check-in day */}
             <div className="space-y-2">
               <Label htmlFor="checkin-day">First check-in day</Label>
-              <Select value={firstCheckInDay} onValueChange={setFirstCheckInDay}>
+              <Select value={firstCheckInDay} onValueChange={(v) => setFirstCheckInDay(v as DayOfWeek)}>
                 <SelectTrigger id="checkin-day" className="rounded-xs">
                   <SelectValue />
                 </SelectTrigger>

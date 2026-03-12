@@ -227,6 +227,10 @@ export type CheckIn = {
   coachReviewedAt?: string;
   responseSentAt?: string;
 
+  // Check-in period (fixed 7-day window based on expectedCheckInDay)
+  periodStart?: string;
+  periodEnd?: string;
+
   // Timestamps
   createdAt: string;
   updatedAt: string;
@@ -361,6 +365,8 @@ export type Client = {
 
   // Onboarding
   onboardingStatus?: OnboardingStatus;
+  walkthroughCompletedAt?: string;
+  startDate?: string;
 };
 
 // Client info for check-in page

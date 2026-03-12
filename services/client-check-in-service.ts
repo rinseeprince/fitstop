@@ -4,17 +4,18 @@
  */
 
 import { generateCheckInSummary } from "@/services/ai-service";
-import { 
+import {
   getCheckInWithDetails,
   updateCheckInAISummary,
   getClientCheckIns
 } from "@/services/check-in-service";
-import { updateClient } from "@/services/client-service";
+import { getClientById, updateClient } from "@/services/client-service";
 import { updateClientBMR } from "@/services/bmr-service";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { getDailyLogs } from "@/services/daily-logs-service";
 import { getHabitLogs } from "@/services/daily-habits-service";
-import type { SubmitCheckInRequest, CheckInFormData } from "@/types/check-in";
+import { calculateCheckInPeriod } from "@/lib/date-utils";
+import type { SubmitCheckInRequest, CheckInFormData, Client } from "@/types/check-in";
 
 /**
  * Triggers AI summary generation for a completed check-in
@@ -42,20 +43,29 @@ export async function triggerAISummaryGeneration(
     const { checkIns } = await getClientCheckIns(clientId, { limit: 5 });
     const previousCheckIns = checkIns.filter((ci) => ci.id !== checkInId);
 
-    // Calculate date range for daily tracking context
-    const endDate = new Date(currentCheckIn.createdAt);
+    // Calculate date range using fixed 7-day period based on expectedCheckInDay
+    const client = await getClientById(clientId);
     let startDate: Date;
-    
-    if (previousCheckIns.length > 0) {
-      // Start from day after the most recent previous check-in
-      startDate = new Date(previousCheckIns[0].createdAt);
-      startDate.setDate(startDate.getDate() + 1);
+    let endDate: Date;
+
+    if (currentCheckIn.periodStart && currentCheckIn.periodEnd) {
+      // Use stored period from check-in record
+      startDate = new Date(currentCheckIn.periodStart + "T00:00:00");
+      endDate = new Date(currentCheckIn.periodEnd + "T00:00:00");
+    } else if (client?.expectedCheckInDay) {
+      const { periodStart, periodEnd } = calculateCheckInPeriod(
+        new Date(currentCheckIn.createdAt),
+        client.expectedCheckInDay
+      );
+      startDate = new Date(periodStart + "T00:00:00");
+      endDate = new Date(periodEnd + "T00:00:00");
     } else {
-      // No previous check-in, look back 7 days
+      // Fallback: 7 days ending on check-in date
+      endDate = new Date(currentCheckIn.createdAt);
       startDate = new Date(endDate);
       startDate.setDate(startDate.getDate() - 6);
     }
-    
+
     const startDateStr = startDate.toISOString().split('T')[0];
     const endDateStr = endDate.toISOString().split('T')[0];
     
@@ -68,7 +78,7 @@ export async function triggerAISummaryGeneration(
       ]);
     } catch (error) {
       // If daily tracking fetch fails, continue without it
-      console.error('Error fetching daily tracking data:', error);
+      console.error('Error fetching daily tracking data:', error instanceof Error ? error.message : 'Unknown error');
       dailyLogs = undefined;
       habitLogs = undefined;
     }
@@ -93,7 +103,7 @@ export async function triggerAISummaryGeneration(
       aiSummary.responseDraft
     );
   } catch (error) {
-    console.error(`Error in AI summary generation for check-in ${checkInId}:`, error);
+    console.error(`Error in AI summary generation for check-in ${checkInId}:`, error instanceof Error ? error.message : "Unknown error");
     throw error;
   }
 }
@@ -108,11 +118,11 @@ export async function triggerAISummaryGeneration(
  * @throws Error if metrics update fails
  */
 export async function updateClientMetricsFromCheckIn(
-  client: any,
+  client: Client,
   checkInData: SubmitCheckInRequest | CheckInFormData
 ): Promise<void> {
   try {
-    const updates: any = {};
+    const updates: Partial<{ currentWeight: number; currentBodyFatPercentage: number }> = {};
 
     // Update current weight if provided in check-in
     if (checkInData.weight !== undefined) {
@@ -135,7 +145,7 @@ export async function updateClientMetricsFromCheckIn(
         // Calculate TDEE (sedentary = BMR × 1.2)
         const tdee = Math.round(bmr * 1.2);
 
-        // Update BMR and TDEE directly in database
+        // TODO: Replace with server client once service layer auth pattern is established
         const { error: updateError } = await supabaseAdmin
           .from("clients")
           .update({ bmr, tdee })
@@ -147,7 +157,7 @@ export async function updateClientMetricsFromCheckIn(
       }
     }
   } catch (error) {
-    console.error("Error updating client metrics from check-in:", error);
+    console.error("Error updating client metrics from check-in:", error instanceof Error ? error.message : "Unknown error");
     throw error;
   }
 }

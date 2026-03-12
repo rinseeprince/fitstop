@@ -99,6 +99,10 @@ export function createMockClientDatabaseRow(options: MockClientOptions = {}): Cl
     bmr_manual_override: null,
     tdee_manual_override: null,
     user_id: null,
+    welcome_message: null,
+    onboarding_status: null,
+    walkthrough_completed_at: null,
+    start_date: null,
     created_at: client.createdAt,
     updated_at: client.updatedAt,
   }
@@ -161,6 +165,8 @@ export function createMockCheckInRow(options: MockCheckInOptions = {}): CheckInR
     coach_response: null,
     coach_reviewed_at: null,
     response_sent_at: null,
+    period_start: null,
+    period_end: null,
     created_at: options.createdAt ?? now,
     updated_at: options.updatedAt ?? now,
   }

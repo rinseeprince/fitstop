@@ -113,41 +113,27 @@ export const CheckInDetailModal = ({
     const fetchDailyContext = async () => {
       setDailyContextLoading(true);
       try {
-        // Calculate date range based on check-in logic
         const currentCheckIn = data.checkIn;
-        const endDate = new Date(currentCheckIn.createdAt);
-        
-        // Get previous check-in to determine start date
         let startDate: Date;
-        const prevCheckInResponse = await fetch(
-          `/api/check-in/${checkInId}/previous`,
-          { cache: 'no-store' }
-        );
-        
-        if (prevCheckInResponse.ok) {
-          const prevData = await prevCheckInResponse.json();
-          if (prevData.previousCheckIn) {
-            // Start from day after previous check-in
-            startDate = new Date(prevData.previousCheckIn.createdAt);
-            startDate.setDate(startDate.getDate() + 1);
-          } else {
-            // No previous check-in, look back 7 days
-            startDate = new Date(endDate);
-            startDate.setDate(startDate.getDate() - 6);
-          }
+        let endDate: Date;
+
+        // Use stored period from check-in if available, otherwise fallback to 7 days
+        if (currentCheckIn.periodStart && currentCheckIn.periodEnd) {
+          startDate = new Date(currentCheckIn.periodStart + "T00:00:00");
+          endDate = new Date(currentCheckIn.periodEnd + "T00:00:00");
         } else {
-          // Default to 7 days back
+          endDate = new Date(currentCheckIn.createdAt);
           startDate = new Date(endDate);
           startDate.setDate(startDate.getDate() - 6);
         }
-        
+
         // Store the calculated dates for use in the component
         setContextStartDate(startDate);
         setContextEndDate(endDate);
-        
+
         const startDateStr = startDate.toISOString().split('T')[0];
         const endDateStr = endDate.toISOString().split('T')[0];
-        
+
         // Fetch both daily logs and habit logs in parallel
         const [logsResponse, habitsResponse] = await Promise.all([
           fetch(
@@ -159,19 +145,18 @@ export const CheckInDetailModal = ({
             { cache: 'no-store' }
           ),
         ]);
-        
+
         if (logsResponse.ok) {
           const logsData = await logsResponse.json();
           setDailyLogs(logsData.data || []);
         }
-        
+
         if (habitsResponse.ok) {
           const habitsData = await habitsResponse.json();
           setHabitLogs(habitsData.data || []);
         }
       } catch (error) {
         console.error('Error fetching daily context:', error);
-        // Don't fail the modal, just hide the daily context section
       } finally {
         setDailyContextLoading(false);
       }

@@ -39,6 +39,11 @@ export function useClientCheckIn() {
         const result = await response.json();
 
         if (!response.ok || !result.success) {
+          // Surface specific gating error codes so the page can show friendly messages
+          if (result.error === "not_due" || result.error === "completed") {
+            setContextError(result.error);
+            return;
+          }
           throw new Error(result.error || "Failed to fetch check-in context");
         }
 

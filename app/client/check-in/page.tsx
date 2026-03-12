@@ -16,6 +16,7 @@ import { useClientCheckIn } from "@/hooks/use-client-check-in";
 import type { CheckInFormData } from "@/types/check-in";
 import { toast } from "sonner";
 import { aggregateDailyLogs } from "@/utils/daily-logs-aggregation";
+import { CalendarCheck, Clock } from "lucide-react";
 
 const stepLabels = ["Feeling", "Metrics", "Photos", "Training"];
 
@@ -93,7 +94,47 @@ export default function ClientCheckInPage() {
     );
   }
 
-  // Error state
+  // Check-in gating: not due yet
+  if (contextError === "not_due") {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <Card className="w-full max-w-md text-center">
+          <CardContent className="py-12 space-y-4">
+            <Clock className="h-12 w-12 text-muted-foreground mx-auto" />
+            <h2 className="text-xl font-semibold">Not due yet</h2>
+            <p className="text-muted-foreground">
+              Your next check-in opens on your scheduled day. Check back then!
+            </p>
+            <Button variant="outline" onClick={() => router.push("/client/dashboard")}>
+              Back to Dashboard
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Check-in gating: already completed
+  if (contextError === "completed") {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <Card className="w-full max-w-md text-center">
+          <CardContent className="py-12 space-y-4">
+            <CalendarCheck className="h-12 w-12 text-success mx-auto" />
+            <h2 className="text-xl font-semibold">Already completed</h2>
+            <p className="text-muted-foreground">
+              You've already submitted your check-in for this week. Great job!
+            </p>
+            <Button variant="outline" onClick={() => router.push("/client/dashboard")}>
+              Back to Dashboard
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Generic error state
   if (contextError || !contextData) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">

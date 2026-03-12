@@ -7,6 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DailyPulse } from "@/components/daily-pulse/daily-pulse";
+import { GuidedWalkthrough } from "@/components/client/walkthrough/guided-walkthrough";
+import { ClientWaitingState } from "@/components/client/walkthrough/client-waiting-state";
 import {
   Dumbbell,
   ClipboardCheck,
@@ -19,7 +21,10 @@ import {
   BookOpen,
 } from "lucide-react";
 import type { TrainingPlan } from "@/types/training";
+import type { Client } from "@/types/check-in";
 import type { NutritionTargets, ProgressData } from "@/services/client-portal-service";
+import type { CheckInGateStatus } from "@/lib/date-utils";
+import type { DailyHabit } from "@/types/daily-habit";
 
 export default function ClientDashboardPage() {
   const router = useRouter();
@@ -27,6 +32,10 @@ export default function ClientDashboardPage() {
   const [plan, setPlan] = useState<TrainingPlan | null>(null);
   const [nutrition, setNutrition] = useState<NutritionTargets | null>(null);
   const [progress, setProgress] = useState<ProgressData | null>(null);
+  const [checkInStatus, setCheckInStatus] = useState<{ status: CheckInGateStatus; nextDueDate?: string } | null>(null);
+  const [clientProfile, setClientProfile] = useState<Client | null>(null);
+  const [habits, setHabits] = useState<DailyHabit[]>([]);
+  const [showWalkthrough, setShowWalkthrough] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const firstName =
@@ -35,10 +44,13 @@ export default function ClientDashboardPage() {
   useEffect(() => {
     async function fetchData() {
       try {
-        const [planRes, nutritionRes, progressRes] = await Promise.all([
+        const [planRes, nutritionRes, progressRes, checkInContextRes, meRes, habitsRes] = await Promise.all([
           fetch("/api/client/training"),
           fetch("/api/client/nutrition"),
           fetch("/api/client/progress?days=30"),
+          fetch("/api/client/check-in-context"),
+          fetch("/api/client/me"),
+          fetch("/api/client/habits"),
         ]);
 
         if (planRes.ok) {
@@ -53,6 +65,23 @@ export default function ClientDashboardPage() {
           const data = await progressRes.json();
           setProgress(data.data);
         }
+        if (meRes.ok) {
+          const data = await meRes.json();
+          if (data.data) setClientProfile(data.data);
+        }
+        if (habitsRes.ok) {
+          const data = await habitsRes.json();
+          if (data.data) setHabits(data.data);
+        }
+        // Determine check-in status from context response
+        const checkInData = await checkInContextRes.json();
+        if (checkInContextRes.ok && checkInData.success) {
+          setCheckInStatus({ status: checkInData.data?.checkInStatus ?? "available" });
+        } else if (checkInData.error === "not_due") {
+          setCheckInStatus({ status: "not_due", nextDueDate: checkInData.nextDueDate });
+        } else if (checkInData.error === "completed") {
+          setCheckInStatus({ status: "completed", nextDueDate: checkInData.nextDueDate });
+        }
       } catch (error) {
         console.error("Error fetching dashboard data:", error);
       } finally {
@@ -61,7 +90,14 @@ export default function ClientDashboardPage() {
     }
 
     fetchData();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Show walkthrough after data loads for active clients who haven't seen it
+  useEffect(() => {
+    if (!loading && clientProfile?.onboardingStatus === "active" && !clientProfile.walkthroughCompletedAt) {
+      setShowWalkthrough(true);
+    }
+  }, [loading, clientProfile]);
 
   if (loading) {
     return (
@@ -79,13 +115,30 @@ export default function ClientDashboardPage() {
     );
   }
 
+  // Client not yet activated by coach
+  if (clientProfile && clientProfile.onboardingStatus !== "active") {
+    return <ClientWaitingState />;
+  }
+
   const hasActivePlan = plan !== null;
   const hasNutrition = nutrition?.calorieTarget || nutrition?.customCalories;
-  const currentStreak = progress?.currentStreak || 0;
-  const adherenceRate = progress?.adherenceRate || 0;
+  const currentStreak = progress?.currentStreak ?? 0;
+  const adherenceRate = progress?.adherenceRate ?? 0;
 
   return (
     <div className="space-y-6">
+      {/* Guided Walkthrough Overlay */}
+      {showWalkthrough && (
+        <GuidedWalkthrough
+          coachName={user?.user_metadata?.coach_name}
+          welcomeMessage={clientProfile?.welcomeMessage}
+          nutrition={nutrition}
+          plan={plan}
+          habits={habits}
+          onComplete={() => setShowWalkthrough(false)}
+        />
+      )}
+
       {/* Welcome Section */}
       <div>
         <h1 className="text-2xl font-semibold">Welcome back, {firstName}!</h1>
@@ -95,7 +148,7 @@ export default function ClientDashboardPage() {
       </div>
 
       {/* Daily Pulse */}
-      <DailyPulse />
+      <DailyPulse startDate={clientProfile?.startDate} />
 
       {/* Quick Stats */}
       <div className="grid gap-4 sm:grid-cols-2">
@@ -219,7 +272,7 @@ export default function ClientDashboardPage() {
                   calories
                 </p>
                 <p className="text-sm text-muted-foreground">
-                  {nutrition.proteinTargetG || nutrition.customProteinG}g protein
+                  {nutrition.proteinTargetG ?? nutrition.customProteinG}g protein
                 </p>
               </div>
             ) : (
@@ -246,11 +299,19 @@ export default function ClientDashboardPage() {
             <CardTitle className="text-base">Check-in</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-sm text-muted-foreground">
-              Submit your weekly check-in to keep your coach updated
-            </p>
+            {checkInStatus?.status === "completed" ? (
+              <p className="text-sm text-success font-medium">Completed this week</p>
+            ) : checkInStatus?.status === "not_due" ? (
+              <p className="text-sm text-muted-foreground">
+                Due on {checkInStatus.nextDueDate}
+              </p>
+            ) : checkInStatus?.status === "overdue" ? (
+              <p className="text-sm text-warning font-medium">Overdue — submit now</p>
+            ) : (
+              <p className="text-sm text-primary font-medium">Due today</p>
+            )}
             <div className="mt-3 flex items-center text-sm text-primary">
-              Start check-in
+              {checkInStatus?.status === "completed" ? "View check-in" : "Start check-in"}
               <ArrowRight className="ml-1 h-4 w-4" />
             </div>
           </CardContent>
@@ -269,7 +330,7 @@ export default function ClientDashboardPage() {
           </CardHeader>
           <CardContent>
             <p className="text-sm text-muted-foreground">
-              {progress?.checkInCount || 0} check-ins recorded
+              {progress?.checkInCount ?? 0} check-ins recorded
             </p>
             <div className="mt-3 flex items-center text-sm text-primary">
               View progress
