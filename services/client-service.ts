@@ -4,6 +4,7 @@ import type { CreateClientInput, UpdateClientInput, UpdateCheckInConfigInput } f
 import type { ClientRow } from "@/lib/database-helpers";
 import { mapClientRow } from "@/lib/mappers";
 import { createIntake } from "@/services/client-intake-service";
+import { sendInvitation } from "@/services/invitation-service";
 
 // Extended client type with check-in info
 export type ClientWithCheckInInfo = Client & {
@@ -29,7 +30,7 @@ const calculateEngagement = (lastCheckInDate: string | null): "high" | "medium" 
 export const createClient = async (
   coachId: string,
   clientData: CreateClientInput
-): Promise<Client> => {
+): Promise<Client & { inviteSent?: boolean }> => {
   const isIntakeMode = clientData.setupMode === "intake";
 
   const baseInsert = {
@@ -53,7 +54,7 @@ export const createClient = async (
   // onboarding_status is not in generated types yet, so spread it in
   const insertData = isIntakeMode
     ? { ...baseInsert, onboarding_status: "pending_intake" as const }
-    : baseInsert;
+    : { ...baseInsert, onboarding_status: "setup_in_progress" as const };
 
   const { data, error } = await (supabaseAdmin as { from: (table: string) => ReturnType<typeof supabaseAdmin.from> })
     .from("clients")
@@ -74,6 +75,10 @@ export const createClient = async (
   // Create intake record for questionnaire flow
   if (isIntakeMode) {
     await createIntake(client.id);
+
+    // Auto-send invite email (non-blocking — client is already created)
+    const inviteResult = await sendInvitation(client.id);
+    return { ...client, inviteSent: inviteResult.success };
   }
 
   return client;

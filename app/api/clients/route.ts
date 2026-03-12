@@ -63,8 +63,9 @@ export async function POST(request: NextRequest) {
     }
 
     const client = await createClient(coachId, validationResult.data);
+    const { inviteSent, ...clientData } = client;
 
-    return NextResponse.json({ client }, { status: 201 });
+    return NextResponse.json({ client: clientData, inviteSent }, { status: 201 });
   } catch (error) {
     console.error("Error creating client:", error);
 

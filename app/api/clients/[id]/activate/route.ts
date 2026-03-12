@@ -6,6 +6,7 @@ import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { activateClientSchema } from "@/lib/validations/client-intake";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { sendActivationEmail } from "@/services/email-service";
+import { sendInvitation } from "@/services/invitation-service";
 import type { OnboardingStatus } from "@/types/client-intake";
 import type { DayOfWeek } from "@/types/check-in";
 
@@ -81,6 +82,9 @@ export async function POST(
     // Send activation email (fire-and-forget)
     fireAndForgetActivationEmail(supabase, clientId, client.email, client.name);
 
+    // For manual-path clients without an account, auto-send invite (fire-and-forget)
+    fireAndForgetInviteIfNeeded(supabase, clientId);
+
     return NextResponse.json({
       success: true,
       data: { activated: true },
@@ -111,5 +115,28 @@ function fireAndForgetActivationEmail(
     await sendActivationEmail(clientEmail, clientName, coachName);
   })().catch((err: unknown) => {
     console.error("Failed to send activation email:", err instanceof Error ? err.message : "Unknown error");
+  });
+}
+
+function fireAndForgetInviteIfNeeded(
+  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>,
+  clientId: string
+) {
+  (async () => {
+    // Check if client already has an auth account
+    const { data } = await supabase
+      .from("clients")
+      .select("user_id")
+      .eq("id", clientId)
+      .single();
+
+    if (data && !(data as { user_id: string | null }).user_id) {
+      const result = await sendInvitation(clientId);
+      if (!result.success) {
+        console.warn("Auto-invite failed at activation — coach can resend from profile:", result.error);
+      }
+    }
+  })().catch((err: unknown) => {
+    console.error("Failed to auto-send invite at activation:", err instanceof Error ? err.message : "Unknown error");
   });
 }

@@ -50,17 +50,23 @@ export const AddClientDialog = ({ trigger, onClientAdded }: AddClientDialogProps
         body: JSON.stringify(payload),
       });
 
-      const result = await response.json();
+      const result: { client?: unknown; inviteSent?: boolean; error?: string } = await response.json();
 
       if (!response.ok) {
         throw new Error(result.error || "Failed to create client");
       }
 
       const message = setupMode === "intake"
-        ? `${data.name} has been added. An intake questionnaire will be sent.`
+        ? result.inviteSent
+          ? `Intake questionnaire sent to ${data.email}.`
+          : `${data.name} added but invite email failed — send manually from their profile.`
         : `${data.name} has been added to your client list.`;
 
-      toast({ title: "Client added", description: message });
+      toast({
+        title: "Client added",
+        description: message,
+        variant: setupMode === "intake" && !result.inviteSent ? "destructive" : undefined,
+      });
 
       form.reset();
       setSetupMode(null);

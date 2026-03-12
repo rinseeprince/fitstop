@@ -92,12 +92,19 @@ export default function ClientDashboardPage() {
     fetchData();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Show walkthrough after data loads for active clients who haven't seen it
+  // Redirect pending_intake clients to onboarding, show walkthrough for new active clients
   useEffect(() => {
-    if (!loading && clientProfile?.onboardingStatus === "active" && !clientProfile.walkthroughCompletedAt) {
+    if (loading || !clientProfile) return;
+
+    if (clientProfile.onboardingStatus === "pending_intake") {
+      router.push("/client/onboarding");
+      return;
+    }
+
+    if (clientProfile.onboardingStatus === "active" && !clientProfile.walkthroughCompletedAt) {
       setShowWalkthrough(true);
     }
-  }, [loading, clientProfile]);
+  }, [loading, clientProfile, router]);
 
   if (loading) {
     return (
@@ -115,9 +122,14 @@ export default function ClientDashboardPage() {
     );
   }
 
-  // Client not yet activated by coach
+  // Client still needs to complete intake — show nothing while redirect fires
+  if (clientProfile && clientProfile.onboardingStatus === "pending_intake") {
+    return null;
+  }
+
+  // Client not yet activated by coach — show waiting state
   if (clientProfile && clientProfile.onboardingStatus !== "active") {
-    return <ClientWaitingState />;
+    return <ClientWaitingState onboardingStatus={clientProfile.onboardingStatus} />;
   }
 
   const hasActivePlan = plan !== null;

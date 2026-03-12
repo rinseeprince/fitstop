@@ -163,7 +163,7 @@ export default function InvitePage() {
 
       toast.success("Account created successfully! Welcome to CoachHub.")
       
-      // Redirect to client dashboard via normal auth flow
+      // Redirect to client dashboard (smart router handles onboarding vs walkthrough)
       router.push("/client/dashboard")
 
     } catch (error) {
@@ -194,6 +194,7 @@ export default function InvitePage() {
 
   // Error state
   if (error) {
+    const isExpired = error.toLowerCase().includes("expired")
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
         <motion.div
@@ -205,8 +206,14 @@ export default function InvitePage() {
             <CardContent className="pt-6">
               <div className="text-center">
                 <AlertTriangle className="h-12 w-12 text-destructive mx-auto mb-4" />
-                <h2 className="text-xl font-semibold mb-2">Invalid Invitation</h2>
-                <p className="text-muted-foreground mb-4">{error}</p>
+                <h2 className="text-xl font-semibold mb-2">
+                  {isExpired ? "Invitation Expired" : "Invalid Invitation"}
+                </h2>
+                <p className="text-muted-foreground mb-4">
+                  {isExpired
+                    ? "This invitation has expired. Please ask your coach to send a new one."
+                    : error}
+                </p>
                 <Button
                   onClick={() => router.push("/")}
                   variant="outline"
@@ -380,6 +387,16 @@ export default function InvitePage() {
 
             <p className="text-center text-xs text-muted-foreground mt-6">
               By creating an account, you agree to track your fitness progress with {invitation?.coachName}.
+            </p>
+
+            <p className="text-center text-sm text-muted-foreground mt-3">
+              Already have an account?{" "}
+              <a
+                href={`/login?redirectTo=/client/dashboard`}
+                className="text-primary hover:underline font-medium"
+              >
+                Sign in
+              </a>
             </p>
           </CardContent>
         </Card>
