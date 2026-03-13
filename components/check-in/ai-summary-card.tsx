@@ -99,20 +99,17 @@ export const AISummaryCard = ({
       <div className="bg-primary/5 border border-primary/15 rounded-lg p-4">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
-            <div className="w-6 h-6 bg-card rounded-full flex items-center justify-center">
-              <Sparkles className="w-3.5 h-3.5 text-primary" />
-            </div>
-            <span className="text-sm font-medium text-foreground">AI Summary</span>
+            <Sparkles className="w-3.5 h-3.5 text-primary" />
+            <span className="text-sm font-medium text-foreground">Summary</span>
           </div>
           <Button
             size="sm"
             variant="ghost"
             onClick={handleRegenerate}
             disabled={isRegenerating}
-            className="text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 h-8 px-2"
+            className="text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 h-8 w-8 p-0"
           >
-            <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${isRegenerating ? "animate-spin" : ""}`} />
-            Regenerate
+            <RefreshCw className={`w-3.5 h-3.5 ${isRegenerating ? "animate-spin" : ""}`} />
           </Button>
         </div>
 
@@ -136,7 +133,7 @@ export const AISummaryCard = ({
         ) : (
           <>
             <p className="text-sm text-foreground leading-relaxed">
-              {editedSummary || "No AI summary available yet."}
+              {editedSummary || "No summary available yet."}
             </p>
             <Button size="sm" variant="ghost" onClick={() => setIsEditing(true)} className="text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 mt-2 h-7 px-2">
               Edit Summary

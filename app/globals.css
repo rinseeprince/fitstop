@@ -225,4 +225,8 @@
   .animate-pulse-ring {
     animation: pulse-ring 1s ease-out;
   }
+
+  .font-mono-display {
+    font-family: var(--font-mono-display), ui-monospace, monospace;
+  }
 }
