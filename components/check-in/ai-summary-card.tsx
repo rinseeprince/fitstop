@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { Sparkles, AlertCircle, TrendingUp, CheckCircle2, RefreshCw } from "lucide-react";
+import { Sparkles, AlertCircle, TrendingUp, CheckCircle2, RefreshCw, Lightbulb, Target } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import type { AIInsight, AIRecommendation, EnhancedAIData } from "@/types/check-in";
 import {
+  CollapsibleSection,
   NutritionInsightSection,
   NotesIntelligenceSection,
   TrainingInsightSection,
@@ -154,9 +155,8 @@ export const AISummaryCard = ({
 
       {/* Key Insights (always shown) */}
       {legacyInsights.length > 0 && (
-        <div className="space-y-3">
-          <h4 className="text-sm font-semibold text-foreground">Key Insights</h4>
-          <div className="space-y-2">
+        <CollapsibleSection icon={Lightbulb} title="Key Insights" iconColor="text-primary">
+          <div className="space-y-2 pl-7">
             {legacyInsights.map((insight, index) => {
               const Icon = insightIcons[insight.type];
               const colors = insightColors[insight.type];
@@ -168,14 +168,13 @@ export const AISummaryCard = ({
               );
             })}
           </div>
-        </div>
+        </CollapsibleSection>
       )}
 
       {/* Recommendations */}
       {recommendations.length > 0 && (
-        <div className="space-y-3">
-          <h4 className="text-sm font-semibold text-foreground">Recommendations</h4>
-          <div className="space-y-2">
+        <CollapsibleSection icon={Target} title="Recommendations" iconColor="text-foreground">
+          <div className="space-y-2 pl-7">
             {recommendations.map((rec, index) => {
               const colors = priorityColors[rec.priority];
               return (
@@ -188,7 +187,7 @@ export const AISummaryCard = ({
               );
             })}
           </div>
-        </div>
+        </CollapsibleSection>
       )}
     </div>
   );

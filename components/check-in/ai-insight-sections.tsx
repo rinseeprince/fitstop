@@ -10,8 +10,10 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronUp,
+  ChevronRight,
 } from "lucide-react";
 import { useState } from "react";
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import type {
   AINutritionInsight,
   AINotesIntelligence,
@@ -20,16 +22,25 @@ import type {
   AICoachAction,
 } from "@/types/check-in";
 
-function SectionHeader({ icon: Icon, title, iconColor }: {
+export function CollapsibleSection({ icon: Icon, title, iconColor, defaultOpen = true, children }: {
   icon: React.ElementType;
   title: string;
   iconColor: string;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
 }) {
+  const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="flex items-center gap-2 mb-2">
-      <Icon className={`w-4 h-4 ${iconColor}`} />
-      <h4 className="text-sm font-semibold text-foreground">{title}</h4>
-    </div>
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <CollapsibleTrigger className="flex items-center gap-2 w-full group cursor-pointer">
+        <ChevronRight className={`w-3.5 h-3.5 text-muted-foreground transition-transform duration-200 ${open ? "rotate-90" : ""}`} />
+        <Icon className={`w-4 h-4 ${iconColor}`} />
+        <h4 className="text-sm font-semibold text-foreground">{title}</h4>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="mt-2">
+        {children}
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 
@@ -40,16 +51,15 @@ function InsightParagraph({ text }: { text: string }) {
 
 export function NutritionInsightSection({ data }: { data: AINutritionInsight }) {
   return (
-    <div className="space-y-2">
-      <SectionHeader icon={Utensils} title="Nutrition" iconColor="text-success" />
-      <div className="space-y-1.5">
+    <CollapsibleSection icon={Utensils} title="Nutrition" iconColor="text-success">
+      <div className="space-y-1.5 pl-7">
         <InsightParagraph text={data.weeklyAdherence} />
         <InsightParagraph text={data.caloriePattern} />
         {data.keyObservation && (
           <p className="text-sm text-foreground font-medium">{data.keyObservation}</p>
         )}
       </div>
-    </div>
+    </CollapsibleSection>
   );
 }
 
@@ -60,9 +70,8 @@ export function NotesIntelligenceSection({ data }: { data: AINotesIntelligence }
   const hasConcerns = data.concerns.length > 0;
 
   return (
-    <div className="space-y-3">
-      <SectionHeader icon={FileText} title="Client Notes Intelligence" iconColor="text-primary" />
-
+    <CollapsibleSection icon={FileText} title="Client Notes Intelligence" iconColor="text-primary">
+      <div className="space-y-3 pl-7">
       {hasNotes && (
         <div className="bg-muted/30 rounded-lg p-3 space-y-2">
           <div className="flex items-center justify-between">
@@ -117,37 +126,36 @@ export function NotesIntelligenceSection({ data }: { data: AINotesIntelligence }
           ))}
         </div>
       )}
-    </div>
+      </div>
+    </CollapsibleSection>
   );
 }
 
 export function TrainingInsightSection({ data }: { data: AITrainingInsight }) {
   return (
-    <div className="space-y-2">
-      <SectionHeader icon={Dumbbell} title="Training" iconColor="text-primary" />
-      <div className="space-y-1.5">
+    <CollapsibleSection icon={Dumbbell} title="Training" iconColor="text-primary">
+      <div className="space-y-1.5 pl-7">
         <InsightParagraph text={data.completionSummary} />
         <InsightParagraph text={data.keyObservation} />
         {data.progressNote && (
           <p className="text-sm text-success">{data.progressNote}</p>
         )}
       </div>
-    </div>
+    </CollapsibleSection>
   );
 }
 
 export function WellnessInsightSection({ data }: { data: AIWellnessInsight }) {
   return (
-    <div className="space-y-2">
-      <SectionHeader icon={Heart} title="Wellness" iconColor="text-destructive" />
-      <div className="space-y-1.5">
+    <CollapsibleSection icon={Heart} title="Wellness" iconColor="text-destructive">
+      <div className="space-y-1.5 pl-7">
         <InsightParagraph text={data.pattern} />
         <InsightParagraph text={data.averages} />
         {data.concern && (
           <p className="text-sm text-warning">{data.concern}</p>
         )}
       </div>
-    </div>
+    </CollapsibleSection>
   );
 }
 
@@ -165,9 +173,8 @@ const urgencyLabels = {
 
 export function CoachActionsSection({ data }: { data: AICoachAction[] }) {
   return (
-    <div className="space-y-3">
-      <SectionHeader icon={ListChecks} title="Recommended Coach Actions" iconColor="text-foreground" />
-      <div className="space-y-2">
+    <CollapsibleSection icon={ListChecks} title="Recommended Coach Actions" iconColor="text-foreground">
+      <div className="space-y-2 pl-7">
         {data.map((action, i) => {
           const colors = urgencyColors[action.urgency];
           return (
@@ -183,19 +190,18 @@ export function CoachActionsSection({ data }: { data: AICoachAction[] }) {
           );
         })}
       </div>
-    </div>
+    </CollapsibleSection>
   );
 }
 
 export function ClientHighlightsSection({ data }: { data: string[] }) {
   return (
-    <div className="space-y-2">
-      <SectionHeader icon={Star} title="Share with Client" iconColor="text-warning" />
-      <div className="bg-success/5 border border-success/15 rounded-lg p-3 space-y-1.5">
+    <CollapsibleSection icon={Star} title="Share with Client" iconColor="text-warning">
+      <div className="bg-success/5 border border-success/15 rounded-lg p-3 space-y-1.5 ml-7">
         {data.map((highlight, i) => (
           <p key={i} className="text-sm text-success">{highlight}</p>
         ))}
       </div>
-    </div>
+    </CollapsibleSection>
   );
 }
