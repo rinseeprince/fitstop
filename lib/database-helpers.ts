@@ -15,6 +15,9 @@ export type ContentAssignmentRow = Database["public"]["Tables"]["content_assignm
 export type CoachRow = Database["public"]["Tables"]["coaches"]["Row"];
 export type ProfileRow = Database["public"]["Tables"]["profiles"]["Row"];
 export type ClientSessionCompletionRow = Database["public"]["Tables"]["client_session_completions"]["Row"];
+export type CheckInSessionCompletionRow = Database["public"]["Tables"]["check_in_session_completions"]["Row"];
+export type CheckInExerciseHighlightRow = Database["public"]["Tables"]["check_in_exercise_highlights"]["Row"];
+export type CheckInExternalActivityRow = Database["public"]["Tables"]["check_in_external_activities"]["Row"];
 
 // Additional helper types for insert/update operations
 export type CheckInInsert = Database["public"]["Tables"]["check_ins"]["Insert"];

@@ -1,0 +1,1071 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CoachHub - Check-In Review Redesign</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f8f7f4;
+    --surface: #ffffff;
+    --surface-alt: #f2f1ed;
+    --border: #e8e6e1;
+    --text-primary: #1a1a18;
+    --text-secondary: #6b6960;
+    --text-tertiary: #9c9a91;
+    --accent-green: #22a06b;
+    --accent-green-bg: #e6f5ee;
+    --accent-amber: #e2960b;
+    --accent-amber-bg: #fef3d6;
+    --accent-red: #e34935;
+    --accent-red-bg: #fde8e5;
+    --accent-blue: #2b7de9;
+    --accent-blue-bg: #e5f0fd;
+    --accent-purple: #7c5cbf;
+    --accent-purple-bg: #f0ebf8;
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 14px;
+    --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
+    --shadow-md: 0 2px 8px rgba(0,0,0,0.06);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'DM Sans', -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text-primary);
+    line-height: 1.5;
+    padding: 24px;
+  }
+
+  .review-container {
+    max-width: 1280px;
+    margin: 0 auto;
+  }
+
+  /* Header */
+  .review-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 24px;
+  }
+
+  .review-header h1 {
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: -0.3px;
+  }
+
+  .review-header .meta {
+    font-size: 13px;
+    color: var(--text-tertiary);
+    margin-top: 2px;
+  }
+
+  .tabs {
+    display: flex;
+    gap: 4px;
+    background: var(--surface-alt);
+    border-radius: var(--radius-md);
+    padding: 3px;
+  }
+
+  .tab {
+    padding: 6px 14px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    border-radius: 7px;
+    cursor: pointer;
+    transition: all 0.15s;
+    border: none;
+    background: none;
+    font-family: inherit;
+  }
+
+  .tab.active {
+    background: var(--surface);
+    color: var(--text-primary);
+    box-shadow: var(--shadow-sm);
+  }
+
+  /* KPI Ribbon */
+  .kpi-ribbon {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+
+  .kpi-card {
+    background: var(--surface);
+    border-radius: var(--radius-md);
+    padding: 16px;
+    border: 1px solid var(--border);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .kpi-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+  }
+
+  .kpi-card.green::before { background: var(--accent-green); }
+  .kpi-card.amber::before { background: var(--accent-amber); }
+  .kpi-card.blue::before { background: var(--accent-blue); }
+  .kpi-card.purple::before { background: var(--accent-purple); }
+
+  .kpi-label {
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-tertiary);
+    margin-bottom: 6px;
+  }
+
+  .kpi-value {
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    font-family: 'JetBrains Mono', monospace;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+  }
+
+  .kpi-delta {
+    font-size: 12px;
+    font-weight: 500;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-family: 'DM Sans', sans-serif;
+  }
+
+  .kpi-delta.positive { background: var(--accent-green-bg); color: var(--accent-green); }
+  .kpi-delta.negative { background: var(--accent-red-bg); color: var(--accent-red); }
+  .kpi-delta.neutral { background: var(--surface-alt); color: var(--text-secondary); }
+
+  .kpi-sub {
+    font-size: 12px;
+    color: var(--text-tertiary);
+    margin-top: 4px;
+    font-family: 'DM Sans', sans-serif;
+  }
+
+  /* Main two-column layout */
+  .main-grid {
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    gap: 20px;
+    align-items: start;
+  }
+
+  /* Section cards */
+  .section-card {
+    background: var(--surface);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border);
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+
+  .section-title {
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--text-secondary);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .section-title .icon {
+    width: 18px;
+    height: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+  }
+
+  /* Wellness Grid */
+  .wellness-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+  }
+
+  .wellness-metric {
+    text-align: center;
+  }
+
+  .wellness-metric .avg-value {
+    font-size: 24px;
+    font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+    letter-spacing: -0.5px;
+  }
+
+  .wellness-metric .avg-label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+  }
+
+  .wellness-metric .avg-scale {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* Mini bar chart */
+  .mini-bars {
+    display: flex;
+    gap: 3px;
+    justify-content: center;
+    align-items: flex-end;
+    height: 32px;
+    margin-top: 10px;
+  }
+
+  .mini-bar {
+    width: 8px;
+    border-radius: 2px;
+    transition: all 0.2s;
+    position: relative;
+  }
+
+  .mini-bar:hover {
+    opacity: 0.8;
+    transform: scaleY(1.05);
+    transform-origin: bottom;
+  }
+
+  .mini-bar.green { background: var(--accent-green); }
+  .mini-bar.amber { background: var(--accent-amber); }
+  .mini-bar.red { background: var(--accent-red); }
+
+  .day-labels {
+    display: flex;
+    gap: 3px;
+    justify-content: center;
+    margin-top: 4px;
+  }
+
+  .day-label {
+    width: 8px;
+    text-align: center;
+    font-size: 8px;
+    color: var(--text-tertiary);
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* Nutrition section */
+  .nutrition-overview {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+
+  .calorie-summary {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .calorie-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+
+  .calorie-actual {
+    font-size: 28px;
+    font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+    letter-spacing: -1px;
+  }
+
+  .calorie-target {
+    font-size: 13px;
+    color: var(--text-tertiary);
+  }
+
+  .calorie-bar-track {
+    height: 8px;
+    background: var(--surface-alt);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .calorie-bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    background: var(--accent-green);
+    transition: width 0.6s ease;
+  }
+
+  .adherence-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: var(--accent-green-bg);
+    color: var(--accent-green);
+    width: fit-content;
+  }
+
+  .macros-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .macro-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .macro-label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    width: 56px;
+    flex-shrink: 0;
+  }
+
+  .macro-bar-track {
+    flex: 1;
+    height: 6px;
+    background: var(--surface-alt);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .macro-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.5s ease;
+  }
+
+  .macro-bar-fill.protein { background: var(--accent-blue); }
+  .macro-bar-fill.carbs { background: var(--accent-amber); }
+  .macro-bar-fill.fats { background: var(--accent-purple); }
+
+  .macro-values {
+    font-size: 12px;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--text-secondary);
+    width: 80px;
+    text-align: right;
+    flex-shrink: 0;
+  }
+
+  /* Training section */
+  .training-sessions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .training-session {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    background: var(--surface-alt);
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+  }
+
+  .session-day {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-tertiary);
+    font-family: 'JetBrains Mono', monospace;
+    width: 32px;
+    flex-shrink: 0;
+    text-transform: uppercase;
+  }
+
+  .session-name {
+    flex: 1;
+    font-weight: 500;
+  }
+
+  .session-check {
+    color: var(--accent-green);
+    font-size: 14px;
+  }
+
+  .pr-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 4px;
+    background: var(--accent-amber-bg);
+    color: var(--accent-amber);
+  }
+
+  .pr-highlight {
+    margin-top: 12px;
+    padding: 12px 14px;
+    background: linear-gradient(135deg, #fef9ed 0%, #fef3d6 100%);
+    border-radius: var(--radius-sm);
+    border-left: 3px solid var(--accent-amber);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .pr-highlight .trophy { font-size: 18px; }
+
+  .pr-highlight .details {
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  .pr-highlight .details span {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
+    color: var(--accent-amber);
+  }
+
+  /* Client notes */
+  .client-notes {
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--text-primary);
+    position: relative;
+    padding-left: 14px;
+    border-left: 2px solid var(--border);
+  }
+
+  .notes-label {
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--text-tertiary);
+    margin-bottom: 4px;
+  }
+
+  .wins-label, .challenges-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-top: 12px;
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .wins-label::before { content: ''; }
+  .challenges-label::before { content: ''; }
+
+  .note-text {
+    font-size: 14px;
+    color: var(--text-primary);
+    line-height: 1.55;
+  }
+
+  /* Right column - AI Analysis */
+  .ai-panel {
+    position: sticky;
+    top: 24px;
+  }
+
+  .ai-summary-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 20px;
+    margin-bottom: 12px;
+  }
+
+  .ai-summary-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+
+  .ai-summary-header h3 {
+    font-size: 14px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .ai-summary-header h3::before {
+    content: '✦';
+    color: var(--accent-purple);
+  }
+
+  .regenerate-btn {
+    font-size: 12px;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    border: none;
+    background: none;
+    font-family: inherit;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+    transition: all 0.15s;
+  }
+
+  .regenerate-btn:hover {
+    background: var(--surface-alt);
+    color: var(--text-secondary);
+  }
+
+  .ai-summary-text {
+    font-size: 14px;
+    line-height: 1.65;
+    color: var(--text-secondary);
+  }
+
+  .ai-sections {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .ai-section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+  }
+
+  .ai-section-header {
+    padding: 12px 16px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: background 0.15s;
+    border: none;
+    background: none;
+    width: 100%;
+    text-align: left;
+    font-family: inherit;
+    color: var(--text-primary);
+  }
+
+  .ai-section-header:hover {
+    background: var(--surface-alt);
+  }
+
+  .ai-section-header .chevron {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--text-tertiary);
+    transition: transform 0.2s;
+  }
+
+  .ai-section-header .section-icon {
+    font-size: 15px;
+  }
+
+  /* Coach response */
+  .coach-response {
+    margin-top: 20px;
+  }
+
+  .coach-response label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    color: var(--text-secondary);
+  }
+
+  .coach-response textarea {
+    width: 100%;
+    min-height: 100px;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    resize: vertical;
+    color: var(--text-primary);
+    background: var(--surface);
+    transition: border-color 0.15s;
+  }
+
+  .coach-response textarea:focus {
+    outline: none;
+    border-color: var(--accent-blue);
+  }
+
+  .coach-response textarea::placeholder {
+    color: var(--text-tertiary);
+  }
+
+  .response-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 10px;
+  }
+
+  .btn {
+    padding: 8px 16px;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.15s;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-primary);
+  }
+
+  .btn:hover { background: var(--surface-alt); }
+
+  .btn-primary {
+    background: var(--text-primary);
+    color: var(--surface);
+    border-color: var(--text-primary);
+  }
+
+  .btn-primary:hover {
+    opacity: 0.9;
+  }
+
+  /* Comparison annotation */
+  .vs-last-week {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    font-style: italic;
+  }
+
+  /* Badge for logged days */
+  .logged-badge {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--accent-green);
+    background: var(--accent-green-bg);
+    padding: 2px 8px;
+    border-radius: 10px;
+  }
+
+  /* Animation */
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .section-card, .kpi-card, .ai-summary-card, .ai-section {
+    animation: fadeUp 0.35s ease both;
+  }
+
+  .kpi-card:nth-child(1) { animation-delay: 0.03s; }
+  .kpi-card:nth-child(2) { animation-delay: 0.06s; }
+  .kpi-card:nth-child(3) { animation-delay: 0.09s; }
+  .kpi-card:nth-child(4) { animation-delay: 0.12s; }
+  .kpi-card:nth-child(5) { animation-delay: 0.15s; }
+
+  /* Design label */
+  .design-label {
+    position: fixed;
+    bottom: 16px;
+    left: 16px;
+    font-size: 10px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-tertiary);
+    background: var(--surface);
+    padding: 6px 12px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+  }
+</style>
+</head>
+<body>
+
+<div class="review-container">
+
+  <!-- Header -->
+  <div class="review-header">
+    <div>
+      <h1>Sam Kalepa - Check-In Review</h1>
+      <div class="meta">Week of Mar 7 - 13, 2026 · Submitted Mar 13 · <span class="logged-badge">7/7 days logged</span></div>
+    </div>
+    <div class="tabs">
+      <button class="tab active">Current Check-In</button>
+      <button class="tab">Comparison & Trends</button>
+      <button class="tab">Goal Progress</button>
+    </div>
+  </div>
+
+  <!-- KPI Ribbon -->
+  <div class="kpi-ribbon">
+    <div class="kpi-card green">
+      <div class="kpi-label">Weight</div>
+      <div class="kpi-value">90<span style="font-size: 14px; color: var(--text-tertiary); font-weight: 400;">kg</span></div>
+      <div class="kpi-sub"><span class="kpi-delta neutral">-0.2 kg</span> vs last week</div>
+    </div>
+    <div class="kpi-card green">
+      <div class="kpi-label">Body Fat</div>
+      <div class="kpi-value">9.5<span style="font-size: 14px; color: var(--text-tertiary); font-weight: 400;">%</span></div>
+      <div class="kpi-sub"><span class="kpi-delta positive">-0.3%</span> vs last week</div>
+    </div>
+    <div class="kpi-card green">
+      <div class="kpi-label">Calories</div>
+      <div class="kpi-value" style="font-size: 18px;">28,872<span style="font-size: 12px; color: var(--text-tertiary); font-weight: 400;">/ 28,875</span></div>
+      <div class="kpi-sub"><span class="kpi-delta positive">100% HIT</span> 7/7 on target</div>
+    </div>
+    <div class="kpi-card green">
+      <div class="kpi-label">Training</div>
+      <div class="kpi-value">5/5</div>
+      <div class="kpi-sub"><span class="kpi-delta positive">100%</span> adherence</div>
+    </div>
+    <div class="kpi-card blue">
+      <div class="kpi-label">Avg Mood</div>
+      <div class="kpi-value">4.3<span style="font-size: 14px; color: var(--text-tertiary); font-weight: 400;">/5</span></div>
+      <div class="kpi-sub"><span class="kpi-delta positive">+0.2</span> vs last week</div>
+    </div>
+  </div>
+
+  <!-- Two-column layout -->
+  <div class="main-grid">
+
+    <!-- LEFT: Data -->
+    <div class="data-column">
+
+      <!-- Wellness -->
+      <div class="section-card">
+        <div class="section-title"><span class="icon">♡</span> Wellness</div>
+        <div class="wellness-grid">
+
+          <div class="wellness-metric">
+            <div class="avg-label">Mood</div>
+            <div class="avg-value">4.3</div>
+            <div class="avg-scale">/ 5</div>
+            <div class="mini-bars">
+              <div class="mini-bar red" style="height: 30%;"></div>
+              <div class="mini-bar green" style="height: 85%;"></div>
+              <div class="mini-bar green" style="height: 90%;"></div>
+              <div class="mini-bar green" style="height: 95%;"></div>
+              <div class="mini-bar green" style="height: 85%;"></div>
+              <div class="mini-bar green" style="height: 90%;"></div>
+              <div class="mini-bar green" style="height: 80%;"></div>
+            </div>
+            <div class="day-labels">
+              <div class="day-label">M</div>
+              <div class="day-label">T</div>
+              <div class="day-label">W</div>
+              <div class="day-label">T</div>
+              <div class="day-label">F</div>
+              <div class="day-label">S</div>
+              <div class="day-label">S</div>
+            </div>
+          </div>
+
+          <div class="wellness-metric">
+            <div class="avg-label">Energy</div>
+            <div class="avg-value">7.9</div>
+            <div class="avg-scale">/ 10</div>
+            <div class="mini-bars">
+              <div class="mini-bar green" style="height: 55%;"></div>
+              <div class="mini-bar green" style="height: 75%;"></div>
+              <div class="mini-bar green" style="height: 80%;"></div>
+              <div class="mini-bar green" style="height: 85%;"></div>
+              <div class="mini-bar green" style="height: 90%;"></div>
+              <div class="mini-bar green" style="height: 80%;"></div>
+              <div class="mini-bar green" style="height: 85%;"></div>
+            </div>
+            <div class="day-labels">
+              <div class="day-label">M</div>
+              <div class="day-label">T</div>
+              <div class="day-label">W</div>
+              <div class="day-label">T</div>
+              <div class="day-label">F</div>
+              <div class="day-label">S</div>
+              <div class="day-label">S</div>
+            </div>
+          </div>
+
+          <div class="wellness-metric">
+            <div class="avg-label">Sleep</div>
+            <div class="avg-value">7.6</div>
+            <div class="avg-scale">/ 10</div>
+            <div class="mini-bars">
+              <div class="mini-bar amber" style="height: 50%;"></div>
+              <div class="mini-bar green" style="height: 80%;"></div>
+              <div class="mini-bar green" style="height: 85%;"></div>
+              <div class="mini-bar green" style="height: 75%;"></div>
+              <div class="mini-bar green" style="height: 90%;"></div>
+              <div class="mini-bar green" style="height: 80%;"></div>
+              <div class="mini-bar green" style="height: 75%;"></div>
+            </div>
+            <div class="day-labels">
+              <div class="day-label">M</div>
+              <div class="day-label">T</div>
+              <div class="day-label">W</div>
+              <div class="day-label">T</div>
+              <div class="day-label">F</div>
+              <div class="day-label">S</div>
+              <div class="day-label">S</div>
+            </div>
+          </div>
+
+          <div class="wellness-metric">
+            <div class="avg-label">Stress</div>
+            <div class="avg-value">4.3</div>
+            <div class="avg-scale">/ 10</div>
+            <div class="mini-bars">
+              <div class="mini-bar red" style="height: 70%;"></div>
+              <div class="mini-bar green" style="height: 30%;"></div>
+              <div class="mini-bar green" style="height: 35%;"></div>
+              <div class="mini-bar amber" style="height: 50%;"></div>
+              <div class="mini-bar amber" style="height: 45%;"></div>
+              <div class="mini-bar green" style="height: 30%;"></div>
+              <div class="mini-bar amber" style="height: 55%;"></div>
+            </div>
+            <div class="day-labels">
+              <div class="day-label">M</div>
+              <div class="day-label">T</div>
+              <div class="day-label">W</div>
+              <div class="day-label">T</div>
+              <div class="day-label">F</div>
+              <div class="day-label">S</div>
+              <div class="day-label">S</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Nutrition -->
+      <div class="section-card">
+        <div class="section-title"><span class="icon">🍽</span> Nutrition</div>
+        <div class="nutrition-overview">
+          <div class="calorie-summary">
+            <div class="calorie-header">
+              <div>
+                <div class="calorie-actual">28,872</div>
+                <div class="calorie-target">of 28,875 kcal target</div>
+              </div>
+              <div class="adherence-badge">✓ HIT · 7/7</div>
+            </div>
+            <div class="calorie-bar-track">
+              <div class="calorie-bar-fill" style="width: 100%;"></div>
+            </div>
+            <div class="vs-last-week">Avg 4,125 kcal / day</div>
+          </div>
+          <div class="macros-grid">
+            <div style="font-size: 12px; font-weight: 500; color: var(--text-tertiary); margin-bottom: 2px;">Daily avg macros</div>
+            <div class="macro-row">
+              <div class="macro-label">Protein</div>
+              <div class="macro-bar-track"><div class="macro-bar-fill protein" style="width: 95%;"></div></div>
+              <div class="macro-values">215g / 220g</div>
+            </div>
+            <div class="macro-row">
+              <div class="macro-label">Carbs</div>
+              <div class="macro-bar-track"><div class="macro-bar-fill carbs" style="width: 88%;"></div></div>
+              <div class="macro-values">420g / 475g</div>
+            </div>
+            <div class="macro-row">
+              <div class="macro-label">Fats</div>
+              <div class="macro-bar-track"><div class="macro-bar-fill fats" style="width: 92%;"></div></div>
+              <div class="macro-values">102g / 110g</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Training -->
+      <div class="section-card">
+        <div class="section-title"><span class="icon">💪</span> Training</div>
+        <div class="training-sessions">
+          <div class="training-session">
+            <div class="session-day">Mon</div>
+            <div class="session-name">Upper Body Push</div>
+            <div class="session-check">✓</div>
+          </div>
+          <div class="training-session">
+            <div class="session-day">Tue</div>
+            <div class="session-name">Lower Body</div>
+            <div class="session-check">✓</div>
+          </div>
+          <div class="training-session">
+            <div class="session-day">Wed</div>
+            <div class="session-name">BJJ</div>
+            <div class="session-check">✓</div>
+          </div>
+          <div class="training-session">
+            <div class="session-day">Thu</div>
+            <div class="session-name">Upper Body Pull</div>
+            <div class="pr-badge">🏆 PR</div>
+            <div class="session-check">✓</div>
+          </div>
+          <div class="training-session">
+            <div class="session-day">Fri</div>
+            <div class="session-name">BJJ</div>
+            <div class="session-check">✓</div>
+          </div>
+        </div>
+        <div class="pr-highlight">
+          <div class="trophy">🏆</div>
+          <div class="details">Bent Over Rows — <span>100kg x 8 reps</span> (Personal Record)</div>
+        </div>
+      </div>
+
+      <!-- Client Notes -->
+      <div class="section-card">
+        <div class="section-title"><span class="icon">💬</span> Client Notes</div>
+        <div style="display: flex; flex-direction: column; gap: 12px;">
+          <div>
+            <div class="notes-label">Reflection</div>
+            <div class="client-notes">
+              Monday was a tough day, but once I got into the swing of things, I had a great week.
+            </div>
+          </div>
+          <div>
+            <div class="wins-label">Wins</div>
+            <div class="note-text">Planned all my meals out to ensure consistency</div>
+          </div>
+          <div>
+            <div class="challenges-label">Challenges</div>
+            <div class="note-text">I was very tired on Monday which made it a challenge to stick to my goals</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Habits -->
+      <div class="section-card">
+        <div class="section-title"><span class="icon">🔁</span> Habits</div>
+        <div style="display: flex; gap: 24px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 13px; font-weight: 500;">Drink Water</span>
+            <span style="font-size: 12px; font-family: 'JetBrains Mono', monospace; color: var(--accent-green); font-weight: 600;">7/7</span>
+            <span style="font-size: 14px; display: flex; gap: 2px; letter-spacing: 1px;">🟢🟢🟢🟢🟢🟢🟢</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 13px; font-weight: 500;">Take Creatine</span>
+            <span style="font-size: 12px; font-family: 'JetBrains Mono', monospace; color: var(--accent-green); font-weight: 600;">7/7</span>
+            <span style="font-size: 14px; display: flex; gap: 2px; letter-spacing: 1px;">🟢🟢🟢🟢🟢🟢🟢</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- RIGHT: AI Analysis -->
+    <div class="ai-panel">
+
+      <div class="ai-summary-card">
+        <div class="ai-summary-header">
+          <h3>AI Summary</h3>
+          <button class="regenerate-btn">↻ Regenerate</button>
+        </div>
+        <div class="ai-summary-text">
+          Sam had an excellent week, hitting both nutritional and training targets. Despite a challenging start on Monday, mood and energy improved as the week progressed. His PR in Bent Over Rows at 100kg x 8 highlights significant strength progress.
+        </div>
+      </div>
+
+      <div class="ai-sections">
+        <div class="ai-section">
+          <button class="ai-section-header">
+            <span class="section-icon">🍽</span> Nutrition
+            <span class="chevron">▸</span>
+          </button>
+        </div>
+        <div class="ai-section">
+          <button class="ai-section-header">
+            <span class="section-icon">📋</span> Client Notes Intelligence
+            <span class="chevron">▸</span>
+          </button>
+        </div>
+        <div class="ai-section">
+          <button class="ai-section-header">
+            <span class="section-icon">💪</span> Training
+            <span class="chevron">▸</span>
+          </button>
+        </div>
+        <div class="ai-section">
+          <button class="ai-section-header">
+            <span class="section-icon">♡</span> Wellness
+            <span class="chevron">▸</span>
+          </button>
+        </div>
+        <div class="ai-section">
+          <button class="ai-section-header">
+            <span class="section-icon">⚡</span> Recommended Coach Actions
+            <span class="chevron">▸</span>
+          </button>
+        </div>
+        <div class="ai-section">
+          <button class="ai-section-header">
+            <span class="section-icon">⭐</span> Share with Client
+            <span class="chevron">▸</span>
+          </button>
+        </div>
+        <div class="ai-section">
+          <button class="ai-section-header">
+            <span class="section-icon">💡</span> Key Insights
+            <span class="chevron">▸</span>
+          </button>
+        </div>
+        <div class="ai-section">
+          <button class="ai-section-header">
+            <span class="section-icon">🎯</span> Recommendations
+            <span class="chevron">▸</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Coach response -->
+      <div class="coach-response">
+        <label>Your Response</label>
+        <textarea placeholder="Write your feedback to Sam Kalepa..."></textarea>
+        <div class="response-actions">
+          <button class="btn">Save Draft</button>
+          <button class="btn btn-primary">Send to Client</button>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+</div>
+
+<div class="design-label">CoachHub · Check-In Review Redesign</div>
+
+</body>
+</html>

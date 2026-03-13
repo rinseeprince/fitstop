@@ -3,14 +3,11 @@
 import { CheckCircle2, Clock, Sparkles } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
-import type { CheckIn } from "@/types/check-in";
+import type { CheckIn, CheckInWithDailyLogCounts } from "@/types/check-in";
 import { formatCheckInDate, formatRelativeTime, getStatusColor, getStatusLabel } from "@/lib/check-in-utils";
 
-// Extended CheckIn type with daily log count fields
-interface CheckInWithLogCounts extends CheckIn {
-  dailyLogsCount?: number;
-  expectedDays?: number;
-}
+// Use shared type, but keep optional fields for backward compat when counts aren't requested
+type CheckInWithLogCounts = CheckIn & Partial<Pick<CheckInWithDailyLogCounts, "dailyLogsCount" | "expectedDays">>;
 
 type CheckInTimelineProps = {
   checkIns: CheckInWithLogCounts[];

@@ -31,7 +31,7 @@ function isEnhancedData(data: AIInsight[] | EnhancedAIData | undefined): data is
 function getLegacyInsights(data: AIInsight[] | EnhancedAIData | undefined): AIInsight[] {
   if (!data) return [];
   if (Array.isArray(data)) return data;
-  return (data as EnhancedAIData).insights || [];
+  return (data as EnhancedAIData).insights ?? [];
 }
 
 const insightIcons = {
@@ -87,7 +87,7 @@ export const AISummaryCard = ({
         }
       }
     } catch (error) {
-      console.error("Failed to regenerate:", error);
+      console.error("Failed to regenerate:", error instanceof Error ? error.message : "Unknown error");
     } finally {
       setIsRegenerating(false);
     }

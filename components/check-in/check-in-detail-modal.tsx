@@ -75,7 +75,7 @@ export const CheckInDetailModal = ({
           setData(result);
         }
       } catch (error) {
-        console.error("Error fetching check-in:", error);
+        console.error("Error fetching check-in:", error instanceof Error ? error.message : "Unknown error");
       } finally {
         setIsLoading(false);
       }
@@ -90,7 +90,7 @@ export const CheckInDetailModal = ({
           setComparisonData(result);
         }
       } catch (error) {
-        console.error("Error fetching comparison:", error);
+        console.error("Error fetching comparison:", error instanceof Error ? error.message : "Unknown error");
       } finally {
         setIsLoadingComparison(false);
       }
@@ -156,7 +156,7 @@ export const CheckInDetailModal = ({
           setHabitLogs(habitsData.data || []);
         }
       } catch (error) {
-        console.error('Error fetching daily context:', error);
+        console.error('Error fetching daily context:', error instanceof Error ? error.message : "Unknown error");
       } finally {
         setDailyContextLoading(false);
       }

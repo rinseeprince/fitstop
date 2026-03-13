@@ -773,6 +773,12 @@ export type UpdateClientMetricsRequest = {
   saveOption?: MetricSaveOption;
 };
 
+// Check-in enriched with daily log counts for timeline display
+export type CheckInWithDailyLogCounts = CheckIn & {
+  dailyLogsCount: number;
+  expectedDays: number;
+};
+
 // Check-in with all related details for AI processing
 export type CheckInWithDetails = CheckIn & {
   sessionCompletions?: CheckInSessionCompletion[];

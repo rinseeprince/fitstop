@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getClientCheckIns } from "@/services/check-in-service";
 import { parsePaginationParams } from "@/lib/api-utils";
-import type { GetCheckInsResponse } from "@/types/check-in";
+import type { CheckInStatus, GetCheckInsResponse } from "@/types/check-in";
 import { apiRateLimit } from "@/lib/rate-limit";
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 
@@ -48,7 +48,7 @@ export async function GET(
     const result = await getClientCheckIns(clientId, {
       limit,
       offset,
-      status,
+      status: status as CheckInStatus | undefined,
       includeDailyLogCounts,
     });
 

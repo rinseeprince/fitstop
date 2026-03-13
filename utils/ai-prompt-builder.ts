@@ -97,7 +97,7 @@ export function buildCheckInAnalysisPrompt(
     prompt += `- Weekly target: ${weeklySummary.totalTargetCalories} cal\n`;
     if (weeklySummary.totalCaloriesConsumed != null) {
       prompt += `- Weekly consumed: ${weeklySummary.totalCaloriesConsumed} cal\n`;
-      prompt += `- Weekly adherence: ${weeklySummary.weeklyAdherence ?? "unknown"} (${weeklySummary.adherencePercentage?.toFixed(1) ?? "?"}%)\n`;
+      prompt += `- Weekly adherence: ${sanitizeForAIPrompt(weeklySummary.weeklyAdherence ?? "unknown")} (${weeklySummary.adherencePercentage?.toFixed(1) ?? "?"}%)\n`;
     }
     prompt += `- Days on target: ${weeklySummary.daysOnTarget}, over: ${weeklySummary.daysOver}, under: ${weeklySummary.daysUnder}\n`;
     prompt += `- Days logged: ${weeklySummary.daysLogged}/${weeklySummary.daysInWeek}\n`;

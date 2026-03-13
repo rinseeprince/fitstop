@@ -14,7 +14,9 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Populate rawNotes from daily logs into the parsed AI response
+// Populate rawNotes from daily logs into the parsed AI response.
+// Trust boundary: rawNotes are rendered in JSX (React escapes HTML) — safe for display.
+// Do NOT re-interpolate rawNotes into AI prompts without sanitizeForAIPrompt().
 function attachRawNotes(summary: AICheckInSummary, dailyLogs?: DailyLog[]): AICheckInSummary {
   if (!summary.notesIntelligence || !dailyLogs) return summary;
   const rawNotes = dailyLogs
@@ -69,7 +71,7 @@ export const generateCheckInSummary = async (
     const parsed = parseAIResponse(responseText);
     return attachRawNotes(parsed, dailyLogs);
   } catch (error) {
-    console.error("Error generating AI summary:", error);
+    console.error("Error generating AI summary:", error instanceof Error ? error.message : "Unknown error");
     throw new Error("Failed to generate AI summary");
   }
 };
@@ -85,33 +87,38 @@ export const regenerateAISummary = async (
   endDate?: Date,
   weeklySummary?: WeeklyNutritionSummary | null
 ): Promise<AICheckInSummary> => {
-  const focusInstructions = {
-    positive: "Focus on positive aspects and wins. Be extra encouraging.",
-    detailed: "Provide very detailed analysis with specific metrics and comparisons.",
-    concise: "Keep analysis brief and to the point. Highlight only key items.",
-  };
+  try {
+    const focusInstructions = {
+      positive: "Focus on positive aspects and wins. Be extra encouraging.",
+      detailed: "Provide very detailed analysis with specific metrics and comparisons.",
+      concise: "Keep analysis brief and to the point. Highlight only key items.",
+    };
 
-  const instruction = focus ? focusInstructions[focus] : "";
-  const prompt = buildCheckInAnalysisPrompt(
-    checkIn, previousCheckIns, clientName,
-    dailyLogs, habitLogs, startDate, endDate, weeklySummary
-  );
-  const modifiedPrompt = instruction ? `${instruction}\n\n${prompt}` : prompt;
+    const instruction = focus ? focusInstructions[focus] : "";
+    const prompt = buildCheckInAnalysisPrompt(
+      checkIn, previousCheckIns, clientName,
+      dailyLogs, habitLogs, startDate, endDate, weeklySummary
+    );
+    const modifiedPrompt = instruction ? `${instruction}\n\n${prompt}` : prompt;
 
-  const completion = await openai.chat.completions.create({
-    model: "gpt-4o",
-    messages: [
-      {
-        role: "system",
-        content: instruction ? `${AI_SYSTEM_PROMPT}\n\n${instruction}` : AI_SYSTEM_PROMPT,
-      },
-      { role: "user", content: modifiedPrompt },
-    ],
-    temperature: 0.7,
-    max_tokens: 2000,
-  });
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "system",
+          content: instruction ? `${AI_SYSTEM_PROMPT}\n\n${instruction}` : AI_SYSTEM_PROMPT,
+        },
+        { role: "user", content: modifiedPrompt },
+      ],
+      temperature: 0.7,
+      max_tokens: 2000,
+    });
 
-  const responseText = completion.choices[0]?.message?.content || "";
-  const parsed = parseAIResponse(responseText);
-  return attachRawNotes(parsed, dailyLogs);
+    const responseText = completion.choices[0]?.message?.content || "";
+    const parsed = parseAIResponse(responseText);
+    return attachRawNotes(parsed, dailyLogs);
+  } catch (error) {
+    console.error("Error regenerating AI summary:", error instanceof Error ? error.message : "Unknown error");
+    throw new Error("Failed to regenerate AI summary");
+  }
 };

@@ -1,224 +1,35 @@
 import { supabaseAdmin } from "./supabase-admin";
-import type { Database } from "@/types/database";
 import type {
   CheckIn,
   CheckInFormData,
-  CheckInToken,
-  CheckInClientInfo,
-  CheckInSessionCompletion,
-  CheckInExerciseHighlight,
-  CheckInExternalActivity,
-  CheckInWithDetails,
+  CheckInStatus,
+  CheckInWithDailyLogCounts,
   AICheckInSummary,
 } from "@/types/check-in";
 import { mapCheckInRow } from "@/lib/mappers";
+import {
+  insertSessionCompletions,
+  insertExerciseHighlights,
+  insertExternalActivities,
+} from "./check-in-details-service";
 
-// Generate a unique token for check-in link (256 bits of entropy, URL-safe)
-export const generateCheckInToken = (): string => {
-  const bytes = new Uint8Array(32);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
-};
+// Re-export split modules so existing imports continue to work
+export {
+  generateCheckInToken,
+  createCheckInToken,
+  validateCheckInToken,
+  claimTokenForProcessing,
+  updateTokenWithCheckInId,
+  releaseToken,
+  markTokenAsUsed,
+} from "./check-in-token-service";
 
-// Create a check-in token for a client
-export const createCheckInToken = async (
-  clientId: string
-): Promise<{ token: string; expiresAt: string }> => {
-  const token = generateCheckInToken();
-  const expiresAt = new Date();
-  expiresAt.setDate(expiresAt.getDate() + 7); // Expires in 7 days
-
-  const { data, error } = await supabaseAdmin
-    .from("check_in_tokens")
-    .insert({
-      client_id: clientId,
-      token,
-      expires_at: expiresAt.toISOString(),
-    })
-    .select()
-    .single();
-
-  if (error) {
-    throw new Error(`Failed to create check-in token: ${error.message}`);
-  }
-
-  return {
-    token: data.token,
-    expiresAt: data.expires_at,
-  };
-};
-
-// Validate a check-in token
-export const validateCheckInToken = async (
-  token: string
-): Promise<{ valid: boolean; clientId?: string; tokenId?: string }> => {
-  const { data, error } = await supabaseAdmin
-    .from("check_in_tokens")
-    .select("*")
-    .eq("token", token)
-    .single();
-
-  if (error || !data) {
-    return { valid: false };
-  }
-
-  // Check if token is expired
-  const now = new Date();
-  const expiresAt = new Date(data.expires_at);
-  if (now > expiresAt) {
-    return { valid: false };
-  }
-
-  // Check if token was already used
-  if (data.used_at) {
-    return { valid: false };
-  }
-
-  return {
-    valid: true,
-    clientId: data.client_id,
-    tokenId: data.id,
-  };
-};
-
-/**
- * Atomically claim a token for processing to prevent race conditions.
- * Uses a conditional update to ensure only one request can claim the token.
- * @returns true if token was claimed, false if already claimed by another request
- */
-export const claimTokenForProcessing = async (
-  tokenId: string
-): Promise<boolean> => {
-  // Only claim if used_at is null (not already used)
-  const { data, error } = await supabaseAdmin
-    .from("check_in_tokens")
-    .update({
-      used_at: new Date().toISOString(),
-    })
-    .eq("id", tokenId)
-    .is("used_at", null)
-    .select("id");
-
-  if (error) {
-    throw new Error(`Failed to claim token: ${error.message}`);
-  }
-
-  // If data is empty, token was already claimed by another request
-  return data && data.length > 0;
-};
-
-/**
- * Update a claimed token with the check-in ID after successful submission.
- */
-export const updateTokenWithCheckInId = async (
-  tokenId: string,
-  checkInId: string
-): Promise<void> => {
-  const { error } = await supabaseAdmin
-    .from("check_in_tokens")
-    .update({
-      check_in_id: checkInId,
-    })
-    .eq("id", tokenId);
-
-  if (error) {
-    throw new Error(`Failed to update token with check-in ID: ${error.message}`);
-  }
-};
-
-/**
- * Release a claimed token if check-in submission fails.
- * This allows the user to retry.
- */
-export const releaseToken = async (tokenId: string): Promise<void> => {
-  const { error } = await supabaseAdmin
-    .from("check_in_tokens")
-    .update({
-      used_at: null,
-      check_in_id: null,
-    })
-    .eq("id", tokenId);
-
-  if (error) {
-    console.error(`Failed to release token: ${error.message}`);
-    // Don't throw - this is a cleanup operation
-  }
-};
-
-// Mark token as used (kept for backward compatibility)
-export const markTokenAsUsed = async (
-  tokenId: string,
-  checkInId: string
-): Promise<void> => {
-  const { error } = await supabaseAdmin
-    .from("check_in_tokens")
-    .update({
-      used_at: new Date().toISOString(),
-      check_in_id: checkInId,
-    })
-    .eq("id", tokenId);
-
-  if (error) {
-    throw new Error(`Failed to mark token as used: ${error.message}`);
-  }
-};
-
-// Get session completions for a check-in
-export const getCheckInSessionCompletions = async (
-  checkInId: string
-): Promise<any[]> => {
-  const { data, error } = await supabaseAdmin
-    .from("check_in_session_completions")
-    .select(`
-      *,
-      training_sessions!inner(name, session_order)
-    `)
-    .eq("check_in_id", checkInId)
-    .order("created_at", { ascending: true });
-
-  if (error) {
-    console.error("Error fetching session completions:", error);
-    return [];
-  }
-
-  return data || [];
-};
-
-// Get exercise highlights for a check-in
-export const getCheckInExerciseHighlights = async (
-  checkInId: string
-): Promise<any[]> => {
-  const { data, error } = await supabaseAdmin
-    .from("check_in_exercise_highlights")
-    .select("*")
-    .eq("check_in_id", checkInId)
-    .order("created_at", { ascending: true });
-
-  if (error) {
-    console.error("Error fetching exercise highlights:", error);
-    return [];
-  }
-
-  return data || [];
-};
-
-// Get external activities for a check-in
-export const getCheckInExternalActivities = async (
-  checkInId: string
-): Promise<any[]> => {
-  const { data, error } = await supabaseAdmin
-    .from("check_in_external_activities")
-    .select("*")
-    .eq("check_in_id", checkInId)
-    .order("created_at", { ascending: true });
-
-  if (error) {
-    console.error("Error fetching external activities:", error);
-    return [];
-  }
-
-  return data || [];
-};
+export {
+  getCheckInSessionCompletions,
+  getCheckInExerciseHighlights,
+  getCheckInExternalActivities,
+  getCheckInWithDetails,
+} from "./check-in-details-service";
 
 // Submit a check-in
 export const submitCheckIn = async (
@@ -290,7 +101,7 @@ export const submitCheckIn = async (
     }
   } catch (relatedDataError) {
     // Log the error but don't fail the check-in submission
-    console.error("Error inserting related check-in data:", relatedDataError);
+    console.error("Error inserting related check-in data:", relatedDataError instanceof Error ? relatedDataError.message : "Unknown error");
   }
 
   return checkInId;
@@ -319,10 +130,10 @@ export const getClientCheckIns = async (
   options?: {
     limit?: number;
     offset?: number;
-    status?: string;
+    status?: CheckInStatus;
     includeDailyLogCounts?: boolean;
   }
-): Promise<{ checkIns: CheckIn[]; total: number }> => {
+): Promise<{ checkIns: (CheckIn | CheckInWithDailyLogCounts)[]; total: number }> => {
   let query = supabaseAdmin
     .from("check_ins")
     .select("*", { count: "exact" })
@@ -348,57 +159,64 @@ export const getClientCheckIns = async (
   }
 
   const checkIns = (data || []).map(mapCheckInRow);
-  
+
   // If daily log counts are requested, fetch them for each check-in period
   if (options?.includeDailyLogCounts && checkIns.length > 0) {
-    // Calculate daily log counts for each check-in period
-    for (let i = 0; i < checkIns.length; i++) {
-      const currentCheckIn = checkIns[i];
-      const previousCheckIn = i < checkIns.length - 1 ? checkIns[i + 1] : null;
-      
-      // For each check-in, we count logs from the PREVIOUS check-in to this one
-      // The endDate is the current check-in date
-      const endDate = new Date(currentCheckIn.createdAt);
-      // The startDate is either the previous check-in date (exclusive) or 7 days before
-      let startDate: Date;
-      
-      if (previousCheckIn) {
-        // Start from the day AFTER the previous check-in
-        startDate = new Date(previousCheckIn.createdAt);
-        startDate.setDate(startDate.getDate() + 1);
-      } else {
-        // For the oldest check-in, look back 7 days
-        startDate = new Date(endDate);
-        startDate.setDate(startDate.getDate() - 6); // 7 days total including end date
-      }
-      
-      const startDateStr = startDate.toISOString().split('T')[0];
-      const endDateStr = endDate.toISOString().split('T')[0];
-      
-      // Fetch daily log count for this period
-      const { count: dailyLogsCount } = await supabaseAdmin
-        .from("daily_logs")
-        .select("*", { count: "exact", head: true })
-        .eq("client_id", clientId)
-        .gte("date", startDateStr)
-        .lte("date", endDateStr);
-      
-      // Add the count to the check-in object
-      (checkIns[i] as any).dailyLogsCount = dailyLogsCount || 0;
-      
-      // Calculate the expected days (inclusive of both start and end)
-      const daysDiff = Math.floor(
-        (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
-      ) + 1; // +1 to make it inclusive
-      (checkIns[i] as any).expectedDays = Math.max(daysDiff, 1);
-    }
+    const enriched: CheckInWithDailyLogCounts[] = await enrichWithDailyLogCounts(checkIns, clientId);
+    return { checkIns: enriched, total: count || 0 };
   }
-  
+
   return {
     checkIns,
     total: count || 0,
   };
 };
+
+// Enrich check-ins with daily log counts for each check-in period
+async function enrichWithDailyLogCounts(
+  checkIns: CheckIn[],
+  clientId: string
+): Promise<CheckInWithDailyLogCounts[]> {
+  const results: CheckInWithDailyLogCounts[] = [];
+
+  for (let i = 0; i < checkIns.length; i++) {
+    const currentCheckIn = checkIns[i];
+    const previousCheckIn = i < checkIns.length - 1 ? checkIns[i + 1] : null;
+
+    const endDate = new Date(currentCheckIn.createdAt);
+    let startDate: Date;
+
+    if (previousCheckIn) {
+      startDate = new Date(previousCheckIn.createdAt);
+      startDate.setDate(startDate.getDate() + 1);
+    } else {
+      startDate = new Date(endDate);
+      startDate.setDate(startDate.getDate() - 6);
+    }
+
+    const startDateStr = startDate.toISOString().split('T')[0];
+    const endDateStr = endDate.toISOString().split('T')[0];
+
+    const { count: dailyLogsCount } = await supabaseAdmin
+      .from("daily_logs")
+      .select("*", { count: "exact", head: true })
+      .eq("client_id", clientId)
+      .gte("date", startDateStr)
+      .lte("date", endDateStr);
+
+    const daysDiff = Math.floor(
+      (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
+    ) + 1;
+
+    results.push({
+      ...currentCheckIn,
+      dailyLogsCount: dailyLogsCount || 0,
+      expectedDays: Math.max(daysDiff, 1),
+    });
+  }
+
+  return results;
+}
 
 // Get the first (oldest) check-in for a client
 export const getFirstCheckIn = async (
@@ -422,7 +240,7 @@ export const getFirstCheckIn = async (
 // Update check-in status
 export const updateCheckInStatus = async (
   checkInId: string,
-  status: "pending" | "ai_processed" | "reviewed"
+  status: CheckInStatus
 ): Promise<void> => {
   const { error } = await supabaseAdmin
     .from("check_ins")
@@ -522,168 +340,4 @@ export const getPreviousCheckIn = async (
   }
 
   return mapCheckInRow(data);
-};
-
-
-// Insert session completions for a check-in
-const insertSessionCompletions = async (
-  checkInId: string,
-  completions: CheckInSessionCompletion[]
-): Promise<void> => {
-  const rows = completions.map((c) => ({
-    check_in_id: checkInId,
-    training_session_id: c.trainingSessionId,
-    completed: c.completed,
-    completion_quality: c.completionQuality || null,
-    notes: c.notes || null,
-  }));
-
-  const { error } = await supabaseAdmin
-    .from("check_in_session_completions")
-    .insert(rows);
-
-  if (error) {
-    throw new Error(`Failed to insert session completions: ${error.message}`);
-  }
-};
-
-// Insert exercise highlights for a check-in
-const insertExerciseHighlights = async (
-  checkInId: string,
-  highlights: CheckInExerciseHighlight[]
-): Promise<void> => {
-  const rows = highlights.map((h) => ({
-    check_in_id: checkInId,
-    exercise_id: h.exerciseId || null,
-    exercise_name: h.exerciseName,
-    highlight_type: h.highlightType,
-    details: h.details || null,
-    weight_value: h.weightValue || null,
-    weight_unit: h.weightUnit || null,
-    reps: h.reps || null,
-  }));
-
-  const { error } = await supabaseAdmin
-    .from("check_in_exercise_highlights")
-    .insert(rows);
-
-  if (error) {
-    throw new Error(`Failed to insert exercise highlights: ${error.message}`);
-  }
-};
-
-// Insert external activities for a check-in
-const insertExternalActivities = async (
-  checkInId: string,
-  activities: CheckInExternalActivity[]
-): Promise<void> => {
-  const rows = activities.map((a) => ({
-    check_in_id: checkInId,
-    activity_name: a.activityName,
-    intensity_level: a.intensityLevel,
-    duration_minutes: a.durationMinutes,
-    estimated_calories: a.estimatedCalories || null,
-    day_performed: a.dayPerformed || null,
-    notes: a.notes || null,
-  }));
-
-  const { error } = await supabaseAdmin
-    .from("check_in_external_activities")
-    .insert(rows);
-
-  if (error) {
-    throw new Error(`Failed to insert external activities: ${error.message}`);
-  }
-};
-
-// Get check-in with all related details
-export const getCheckInWithDetails = async (
-  checkInId: string
-): Promise<CheckInWithDetails | null> => {
-  const checkIn = await getCheckInById(checkInId);
-  if (!checkIn) return null;
-
-  const [sessionCompletions, exerciseHighlights, externalActivities] =
-    await Promise.all([
-      getSessionCompletions(checkInId),
-      getExerciseHighlights(checkInId),
-      getExternalActivities(checkInId),
-    ]);
-
-  return {
-    ...checkIn,
-    sessionCompletions,
-    exerciseHighlights,
-    externalActivities,
-  };
-};
-
-// Get session completions for a check-in
-const getSessionCompletions = async (
-  checkInId: string
-): Promise<CheckInSessionCompletion[]> => {
-  const { data, error } = await supabaseAdmin
-    .from("check_in_session_completions")
-    .select("*, training_sessions(name, day_of_week)")
-    .eq("check_in_id", checkInId);
-
-  if (error) return [];
-
-  return (data || []).map((row: any) => ({
-    id: row.id,
-    checkInId: row.check_in_id,
-    trainingSessionId: row.training_session_id,
-    sessionName: row.training_sessions?.name || "Unknown Session",
-    dayOfWeek: row.training_sessions?.day_of_week,
-    completed: row.completed,
-    completionQuality: row.completion_quality,
-    notes: row.notes,
-  }));
-};
-
-// Get exercise highlights for a check-in
-const getExerciseHighlights = async (
-  checkInId: string
-): Promise<CheckInExerciseHighlight[]> => {
-  const { data, error } = await supabaseAdmin
-    .from("check_in_exercise_highlights")
-    .select("*")
-    .eq("check_in_id", checkInId);
-
-  if (error) return [];
-
-  return (data || []).map((row: any) => ({
-    id: row.id,
-    checkInId: row.check_in_id,
-    exerciseId: row.exercise_id,
-    exerciseName: row.exercise_name,
-    highlightType: row.highlight_type,
-    details: row.details,
-    weightValue: row.weight_value ? parseFloat(row.weight_value) : undefined,
-    weightUnit: row.weight_unit,
-    reps: row.reps,
-  }));
-};
-
-// Get external activities for a check-in
-const getExternalActivities = async (
-  checkInId: string
-): Promise<CheckInExternalActivity[]> => {
-  const { data, error } = await supabaseAdmin
-    .from("check_in_external_activities")
-    .select("*")
-    .eq("check_in_id", checkInId);
-
-  if (error) return [];
-
-  return (data || []).map((row: any) => ({
-    id: row.id,
-    checkInId: row.check_in_id,
-    activityName: row.activity_name,
-    intensityLevel: row.intensity_level,
-    durationMinutes: row.duration_minutes,
-    estimatedCalories: row.estimated_calories,
-    dayPerformed: row.day_performed,
-    notes: row.notes,
-  }));
 };
