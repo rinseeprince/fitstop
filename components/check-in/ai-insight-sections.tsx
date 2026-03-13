@@ -22,7 +22,7 @@ import type {
   AICoachAction,
 } from "@/types/check-in";
 
-export function CollapsibleSection({ icon: Icon, title, iconColor, defaultOpen = true, children }: {
+export function CollapsibleSection({ icon: Icon, title, iconColor, defaultOpen = false, children }: {
   icon: React.ElementType;
   title: string;
   iconColor: string;
