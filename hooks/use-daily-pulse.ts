@@ -6,12 +6,8 @@ import type { TrainingPlan, TrainingSession } from "@/types/training";
 import type { DailyLog } from "@/types/daily-log";
 import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
 import type { DailyHabit, DailyHabitLog } from "@/types/daily-habit";
-
-type TodaysActivity = {
-  sessionId: string;
-  activityName: string;
-  estimatedCalories: number;
-};
+import type { WeeklyNutritionSummary } from "@/types/weekly-nutrition";
+import type { TodaysActivity } from "@/types/daily-pulse";
 
 type HabitLogWithDetails = DailyHabitLog & {
   habitName: string;
@@ -30,6 +26,7 @@ interface UseDailyPulseReturn {
   habits: DailyHabit[];
   habitLogs: HabitLogWithDetails[];
   weeklyLogs: Pick<DailyLog, "date" | "id">[];
+  weeklyNutritionSummary: WeeklyNutritionSummary | null;
   isLoading: boolean;
   isSaving: boolean;
   saveLog: (data: {
@@ -60,6 +57,7 @@ export function useDailyPulse(selectedDate: string): UseDailyPulseReturn {
   const [habits, setHabits] = useState<DailyHabit[]>([]);
   const [habitLogs, setHabitLogs] = useState<HabitLogWithDetails[]>([]);
   const [weeklyLogs, setWeeklyLogs] = useState<Pick<DailyLog, "date" | "id">[]>([]);
+  const [weeklyNutritionSummary, setWeeklyNutritionSummary] = useState<WeeklyNutritionSummary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -89,7 +87,7 @@ export function useDailyPulse(selectedDate: string): UseDailyPulseReturn {
       try {
         const dateParam = `?date=${selectedDate}`;
         
-        const [logRes, streakRes, nutritionRes, trainingRes, habitsRes, habitLogsRes] = await Promise.all([
+        const [logRes, streakRes, nutritionRes, trainingRes, habitsRes, habitLogsRes, weeklyNutritionRes] = await Promise.all([
           fetchWithRetry(`/api/client/daily-logs/today${dateParam}`, { 
             cache: 'no-store',
             signal: controller.signal 
@@ -110,9 +108,13 @@ export function useDailyPulse(selectedDate: string): UseDailyPulseReturn {
             cache: 'no-store',
             signal: controller.signal 
           }),
-          fetchWithRetry(`/api/client/habits/logs/today${dateParam}`, { 
+          fetchWithRetry(`/api/client/habits/logs/today${dateParam}`, {
             cache: 'no-store',
-            signal: controller.signal 
+            signal: controller.signal
+          }),
+          fetchWithRetry("/api/client/weekly-nutrition?latest=true", {
+            cache: 'no-store',
+            signal: controller.signal
           }),
         ]);
 
@@ -134,7 +136,7 @@ export function useDailyPulse(selectedDate: string): UseDailyPulseReturn {
 
         if (streakRes.ok) {
           const streakData = await streakRes.json();
-          setStreak(streakData.data?.currentStreak || 0);
+          setStreak(streakData.data?.currentStreak ?? 0);
         }
 
         let nutritionData: { data?: { nutritionTarget?: DailyNutritionTargets; trainingSession?: { sessionId: string }; plannedActivities?: TodaysActivity[] } } | null = null;
@@ -175,7 +177,12 @@ export function useDailyPulse(selectedDate: string): UseDailyPulseReturn {
           const habitLogsData = await habitLogsRes.json();
           setHabitLogs(habitLogsData.data || []);
         }
-        
+
+        if (weeklyNutritionRes.ok) {
+          const weeklyNutritionData = await weeklyNutritionRes.json();
+          setWeeklyNutritionSummary(weeklyNutritionData.data || null);
+        }
+
         // Successfully fetched data
         setIsLoading(false);
 
@@ -293,6 +300,7 @@ export function useDailyPulse(selectedDate: string): UseDailyPulseReturn {
     habits,
     habitLogs,
     weeklyLogs,
+    weeklyNutritionSummary,
     isLoading,
     isSaving,
     saveLog,

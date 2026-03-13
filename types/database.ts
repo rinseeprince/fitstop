@@ -1382,48 +1382,84 @@ export type Database = {
       }
       nutrition_weekly_summaries: {
         Row: {
+          adherence_percentage: number | null
+          calorie_difference: number | null
           client_id: string
           completion_percentage: number | null
           created_at: string
           days_completed: number | null
+          days_logged: number | null
+          days_on_target: number | null
+          days_over: number | null
+          days_under: number | null
           id: string
           rest_days_per_week: number | null
+          total_calories_consumed: number | null
+          total_carbs_consumed_g: number | null
           total_days: number | null
+          total_fat_consumed_g: number | null
+          total_protein_consumed_g: number | null
           training_days_per_week: number | null
           updated_at: string
+          week_end_date: string | null
           week_start_date: string
+          weekly_adherence: string | null
           weekly_calorie_target: number
           weekly_carbs_target_g: number | null
           weekly_fat_target_g: number | null
           weekly_protein_target_g: number | null
         }
         Insert: {
+          adherence_percentage?: number | null
+          calorie_difference?: number | null
           client_id: string
           completion_percentage?: number | null
           created_at?: string
           days_completed?: number | null
+          days_logged?: number | null
+          days_on_target?: number | null
+          days_over?: number | null
+          days_under?: number | null
           id?: string
           rest_days_per_week?: number | null
+          total_calories_consumed?: number | null
+          total_carbs_consumed_g?: number | null
           total_days?: number | null
+          total_fat_consumed_g?: number | null
+          total_protein_consumed_g?: number | null
           training_days_per_week?: number | null
           updated_at?: string
+          week_end_date?: string | null
           week_start_date: string
+          weekly_adherence?: string | null
           weekly_calorie_target: number
           weekly_carbs_target_g?: number | null
           weekly_fat_target_g?: number | null
           weekly_protein_target_g?: number | null
         }
         Update: {
+          adherence_percentage?: number | null
+          calorie_difference?: number | null
           client_id?: string
           completion_percentage?: number | null
           created_at?: string
           days_completed?: number | null
+          days_logged?: number | null
+          days_on_target?: number | null
+          days_over?: number | null
+          days_under?: number | null
           id?: string
           rest_days_per_week?: number | null
+          total_calories_consumed?: number | null
+          total_carbs_consumed_g?: number | null
           total_days?: number | null
+          total_fat_consumed_g?: number | null
+          total_protein_consumed_g?: number | null
           training_days_per_week?: number | null
           updated_at?: string
+          week_end_date?: string | null
           week_start_date?: string
+          weekly_adherence?: string | null
           weekly_calorie_target?: number
           weekly_carbs_target_g?: number | null
           weekly_fat_target_g?: number | null

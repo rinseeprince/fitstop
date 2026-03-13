@@ -162,3 +162,9 @@ Reviewed: 2026-03-12
 | # | Issue | File | Details | Status |
 |---|-------|------|---------|--------|
 | 1 | File size violation | `__tests__/helpers/mock-data-builders.ts` | 418 lines (67% over 250-line limit). Split into `mock-client-builders.ts`, `mock-check-in-builders.ts`, `mock-training-builders.ts`. | Open |
+
+---
+
+## Known RLS Gaps (Tech Debt)
+
+- **`daily_logs`** - No RLS enabled. This is a core table used by many services and routes. Adding RLS requires auditing every code path that reads/writes daily_logs to ensure the correct client (supabaseAdmin vs server client) is used. Do not add RLS to this table without a dedicated session to test all dependent flows.

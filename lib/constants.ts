@@ -15,6 +15,11 @@ export const WEEKLY_BUDGET_ROUNDING_TOLERANCE = 10; // Max cal difference for ca
 export const NUTRITION_ADHERENCE_HIT_THRESHOLD = 50; // Within 50 calories = "hit"
 export const NUTRITION_ADHERENCE_PARTIAL_THRESHOLD = 200; // Within 200 calories = "partial"
 
+// Weekly nutrition adherence thresholds (per day, scaled by days_in_week)
+// 7-day week: hit <= 350 cal, partial <= 1001 cal, missed > 1001 cal
+export const WEEKLY_NUTRITION_HIT_PER_DAY = 50;
+export const WEEKLY_NUTRITION_PARTIAL_PER_DAY = 143;
+
 // Date limits
 export const MAX_DATE_LOOKBACK_DAYS = 30;
 

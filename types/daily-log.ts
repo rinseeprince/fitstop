@@ -1,5 +1,7 @@
 // Daily log types for wellness and nutrition tracking
 
+import type { IntensityLevel } from "./external-activity";
+
 export type NutritionAdherenceStatus = "hit" | "partial" | "missed";
 
 // Full daily log record from database
@@ -30,7 +32,7 @@ export type DailyLog = {
     }>;
     unplannedActivities: Array<{
       activityName: string;
-      intensityLevel: string;
+      intensityLevel: IntensityLevel;
       durationMinutes: number;
     }>;
   } | null;
@@ -78,7 +80,7 @@ export type DailyLogInput = {
     }>;
     unplannedActivities: Array<{
       activityName: string;
-      intensityLevel: string;
+      intensityLevel: IntensityLevel;
       durationMinutes: number;
     }>;
   } | null;

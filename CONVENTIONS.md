@@ -167,6 +167,20 @@ Coach-side components in `components/clients/`. Client-side in `components/daily
 
 ## 8. Database
 
+### Database Access
+- Use `createServerSupabaseClient()` (session-scoped, respects RLS) for all
+  database operations in authenticated routes by default.
+- Use `supabaseAdmin` (bypasses RLS) ONLY when:
+  1. The table is not in `types/database.ts` (e.g. client_intake)
+  2. The operation is called from an unauthenticated context (e.g. token-based
+     check-in submission)
+  3. The operation queries across multiple clients (e.g. coach aggregation
+     queries where RLS would block cross-client reads)
+  4. The operation is a system-level write (e.g. background upserts not tied
+     to a user session)
+- When supabaseAdmin is required, add a comment above the usage explaining
+  which exception applies.
+
 ### General
 - Migrations: Version controlled, never edit directly
 - Relations: Foreign keys with ON DELETE CASCADE/SET NULL

@@ -7,25 +7,17 @@ import { Edit } from "lucide-react";
 import { TrainingSection } from "./training-section";
 import { WellnessSection } from "./wellness-section";
 import { NutritionSection } from "./nutrition-section";
+import { WeeklyNutritionProgress } from "./weekly-nutrition-progress";
 import { HabitsSection } from "./habits-section";
 import { DailyPulseLoggedView } from "./daily-pulse-logged-view";
 import type { DailyLog } from "@/types/daily-log";
 import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
 import type { TrainingSession } from "@/types/training";
 import type { DailyHabit, DailyHabitLog } from "@/types/daily-habit";
+import type { WeeklyNutritionSummary } from "@/types/weekly-nutrition";
 
-// Types moved from types.ts
-export type UnplannedActivity = {
-  activityName: string;
-  intensityLevel: "low" | "moderate" | "vigorous";
-  durationMinutes: number;
-};
-
-export type TodaysActivity = {
-  sessionId: string;
-  activityName: string;
-  estimatedCalories: number;
-};
+import type { UnplannedActivity, TodaysActivity } from "@/types/daily-pulse";
+export type { UnplannedActivity, TodaysActivity };
 
 type HabitLogWithDetails = DailyHabitLog & {
   habitName: string;
@@ -65,6 +57,7 @@ interface DailyPulseContentProps {
   };
   habits: DailyHabit[];
   habitLogs: HabitLogWithDetails[];
+  weeklyNutritionSummary?: WeeklyNutritionSummary | null;
   onHabitLogsUpdate: (logs: HabitLogWithDetails[]) => void;
   // Handlers
   handleEdit: () => void;
@@ -88,7 +81,7 @@ export function DailyPulseContent({
   isLoading, isSaving, isExpanded, hasLoggedToday, isDateDisabled, showNotes, isSessionOrphaned, selectedDate, todayLog, nutritionTarget,
   sessionCompleted, currentTrainingSession, originalScheduledSessionId, selectedAlternativeSession,
   activityStatuses, unplannedActivities, allTrainingSessions, plannedActivities,
-  formData, nutritionData, habits, habitLogs, onHabitLogsUpdate,
+  formData, nutritionData, habits, habitLogs, weeklyNutritionSummary, onHabitLogsUpdate,
   handleEdit, handleSave, setShowNotes, setFormData, setSessionCompleted,
   handleAlternativeSessionSelect, handleActivityToggle, handleAddUnplannedActivity,
   handleRemoveUnplannedActivity, setNutritionData,
@@ -138,6 +131,8 @@ export function DailyPulseContent({
             Expand
           </Button>
         </div>
+
+        <WeeklyNutritionProgress summary={weeklyNutritionSummary} />
 
         {habits.length > 0 && (
           <>
@@ -216,7 +211,9 @@ export function DailyPulseContent({
       />
 
       <Separator />
-      
+
+      <WeeklyNutritionProgress summary={weeklyNutritionSummary} />
+
       <NutritionSection
         isExpanded={true}
         hasLoggedToday={hasLoggedToday}

@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Utensils, Flame, Beef, Wheat, Droplets } from "lucide-react";
 import type { NutritionTargets } from "@/services/client-portal-service";
 import { VerticalNutritionView } from "@/components/client-portal/nutrition/vertical-nutrition-view";
+import { WeeklyNutritionProgress } from "@/components/daily-pulse/weekly-nutrition-progress";
 
 export default function ClientNutritionPage() {
   const [targets, setTargets] = useState<NutritionTargets | null>(null);
@@ -94,6 +95,8 @@ export default function ClientNutritionPage() {
           </Badge>
         )}
       </div>
+
+      <WeeklyNutritionProgress />
 
       {hasDailyTargets ? (
         <div className="space-y-4">

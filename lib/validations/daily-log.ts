@@ -65,7 +65,7 @@ export const dailyLogSchema = z.object({
     })),
     unplannedActivities: z.array(z.object({
       activityName: z.string(),
-      intensityLevel: z.string(),
+      intensityLevel: z.enum(["low", "moderate", "vigorous"]),
       durationMinutes: z.number().int().min(1)
     }))
   }).nullable().optional(),

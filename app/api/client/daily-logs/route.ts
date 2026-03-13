@@ -6,7 +6,9 @@ import { dailyLogSchema } from "@/lib/validations/daily-log";
 import { upsertDailyLog, getDailyLogs, getTodaysNutritionTarget, getTodaysPlannedActivities } from "@/services/daily-logs-service";
 import { getClientTrainingPlan } from "@/services/client-portal-service";
 import { calculateUnplannedActivityCalories, calculateAdjustedDayTarget, calculateAdjustedMacros } from "@/utils/nutrition-tracking-helpers";
-import { getTodayDateString, getDateDaysAgo } from "@/lib/date-helpers";
+import { getTodayDateString, getDateDaysAgo, getWeekStart } from "@/lib/date-helpers";
+import { upsertWeeklySummary } from "@/services/weekly-nutrition-service";
+import type { IntensityLevel } from "@/types/external-activity";
 
 export async function POST(request: NextRequest) {
   const rateLimitResult = await clientApiRateLimit(request);
@@ -41,12 +43,9 @@ export async function POST(request: NextRequest) {
     const validationResult = dailyLogSchema.safeParse(normalizedBody);
 
     if (!validationResult.success) {
+      console.error("Daily log validation failed:", validationResult.error.format());
       return NextResponse.json(
-        { 
-          success: false, 
-          error: "Invalid input data",
-          validationErrors: validationResult.error.format()
-        },
+        { success: false, error: "Invalid input data" },
         { status: 400 }
       );
     }
@@ -87,7 +86,7 @@ export async function POST(request: NextRequest) {
       const unplannedActivityCals = trainingData.unplannedActivities.reduce((sum, activity) =>
         sum + calculateUnplannedActivityCalories({
           activityName: activity.activityName,
-          intensityLevel: activity.intensityLevel as "low" | "moderate" | "vigorous",
+          intensityLevel: activity.intensityLevel as IntensityLevel,
           durationMinutes: activity.durationMinutes
         }), 0
       );
@@ -122,6 +121,11 @@ export async function POST(request: NextRequest) {
     };
     
     const dailyLog = await upsertDailyLog(clientId, dataWithTargets);
+
+    // Recalculate weekly summary (fire-and-forget, non-blocking)
+    upsertWeeklySummary(clientId, getWeekStart(data.date)).catch((err) =>
+      console.error("Weekly summary recalculation failed:", err instanceof Error ? err.message : "Unknown error")
+    );
 
     return NextResponse.json({
       success: true,

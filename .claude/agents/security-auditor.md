@@ -82,12 +82,13 @@ Three distinct clients with different privilege levels:
 
 2. **Server client** (`lib/supabase-server.ts` and `lib/auth-helpers.ts`) — anon key, runs on the server with user's cookies, respects RLS. This is the default for authenticated data access.
 
-3. **Admin client** (`services/supabase-admin.ts`) — **service role key, bypasses all RLS**. Exported as `supabaseAdmin`. Only legitimate uses:
-   - Token validation/claiming for check-in flows (unauthenticated users)
-   - Invitation acceptance flows (users without accounts yet)
-   - Operations that genuinely cannot go through RLS
+3. **Admin client** (`services/supabase-admin.ts`) — **service role key, bypasses all RLS**. Exported as `supabaseAdmin`. Legitimate uses are defined in the **Database Access** section of `CONVENTIONS.md`:
+   1. The table is not in `types/database.ts` (e.g. `client_intake`)
+   2. The operation is called from an unauthenticated context (e.g. token-based check-in submission)
+   3. The operation queries across multiple clients (e.g. coach aggregation queries where RLS would block cross-client reads)
+   4. The operation is a system-level write (e.g. background upserts not tied to a user session)
 
-**Flag any use of `supabaseAdmin` that could be replaced by a server client with the user's session.**
+**Flag any use of `supabaseAdmin` that does not match one of these four exceptions.** When an exception does apply, verify a comment above the usage explains which one.
 
 ### Input Validation
 
@@ -137,7 +138,7 @@ When invoked, scan the files or directories the user specifies (or scan all `app
 4. **Hardcoded secrets** — API keys, passwords, or tokens in source code instead of environment variables.
 
 ### High Severity
-5. **Unnecessary service role usage** — Using `supabaseAdmin` (from `services/supabase-admin.ts`) when the operation runs in an authenticated context where the server client would work with RLS.
+5. **Unnecessary service role usage** — Using `supabaseAdmin` (from `services/supabase-admin.ts`) without matching one of the four legitimate exceptions listed in the **Database Access** section of `CONVENTIONS.md`. Also flag any `supabaseAdmin` usage that is missing the required explanatory comment.
 6. **Missing input validation** — A handler that reads `request.json()` but never runs Zod `.safeParse()` or `.parse()` on the body.
 7. **Missing authorization (ownership) check** — A handler that authenticates the user but doesn't verify they own the resource they're accessing (e.g., coach accessing another coach's client).
 8. **Unsanitized AI input** — User-generated content passed to AI prompts without going through `sanitizeForAIPrompt()` from `utils/ai-prompt-sanitizer.ts`.

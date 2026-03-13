@@ -3,7 +3,11 @@
 import type { DailyLog } from "@/types/daily-log";
 import type { HabitLogWithDetails } from "@/types/daily-habit";
 import { DailyContextCharts } from "./daily-context-charts";
-import { NUTRITION_ADHERENCE_HIT_THRESHOLD, NUTRITION_ADHERENCE_PARTIAL_THRESHOLD } from "@/lib/constants";
+import {
+  NUTRITION_ADHERENCE_HIT_THRESHOLD,
+  WEEKLY_NUTRITION_HIT_PER_DAY,
+  WEEKLY_NUTRITION_PARTIAL_PER_DAY,
+} from "@/lib/constants";
 
 interface DailyContextSummaryProps {
   dailyLogs: DailyLog[];
@@ -26,27 +30,41 @@ export const DailyContextSummary = ({
     return null; // Don't show section if no logs
   }
 
-  // Nutrition calculations
+  // Nutrition calculations - weekly totals and per-day breakdown
   const nutritionStats = dailyLogs.reduce((acc, log) => {
     if (log.caloriesConsumed !== undefined && log.targetCalories) {
       acc.totalCalories += log.caloriesConsumed;
       acc.totalTargets += log.targetCalories;
       acc.daysLogged++;
-      
-      const diff = Math.abs(log.caloriesConsumed - log.targetCalories);
-      if (diff <= NUTRITION_ADHERENCE_HIT_THRESHOLD) acc.hitDays++;
-      else if (diff <= NUTRITION_ADHERENCE_PARTIAL_THRESHOLD) acc.partialDays++;
-      else acc.missedDays++;
+
+      const diff = log.caloriesConsumed - log.targetCalories;
+      if (Math.abs(diff) <= NUTRITION_ADHERENCE_HIT_THRESHOLD) acc.daysOnTarget++;
+      else if (diff > 0) acc.daysOver++;
+      else acc.daysUnder++;
     }
     return acc;
   }, {
     totalCalories: 0,
     totalTargets: 0,
     daysLogged: 0,
-    hitDays: 0,
-    partialDays: 0,
-    missedDays: 0,
+    daysOnTarget: 0,
+    daysOver: 0,
+    daysUnder: 0,
   });
+
+  // Weekly adherence judgment (scaled thresholds for the period)
+  const weeklyCalorieDiff = nutritionStats.totalCalories - nutritionStats.totalTargets;
+  const absWeeklyDiff = Math.abs(weeklyCalorieDiff);
+  const hitThreshold = WEEKLY_NUTRITION_HIT_PER_DAY * daysDiff;
+  const partialThreshold = WEEKLY_NUTRITION_PARTIAL_PER_DAY * daysDiff;
+  const weeklyAdherence = nutritionStats.daysLogged === 0
+    ? null
+    : absWeeklyDiff <= hitThreshold ? "hit"
+    : absWeeklyDiff <= partialThreshold ? "partial"
+    : "missed";
+  const adherencePct = nutritionStats.totalTargets > 0
+    ? Math.round((nutritionStats.totalCalories / nutritionStats.totalTargets) * 100)
+    : null;
 
   // Training calculations
   const trainingStats = dailyLogs.reduce((acc, log) => {
@@ -111,15 +129,23 @@ export const DailyContextSummary = ({
           <div>
             <h4 className="font-medium text-foreground mb-1">Nutrition</h4>
             <div className="text-sm text-muted-foreground space-y-1">
-              <div>
-                Avg {Math.round(nutritionStats.totalCalories / nutritionStats.daysLogged)} cal/day 
-                vs {Math.round(nutritionStats.totalTargets / nutritionStats.daysLogged)} avg target 
-                ({nutritionStats.daysLogged} of {daysDiff} days logged)
+              <div className="font-medium text-foreground">
+                Weekly calories: {nutritionStats.totalCalories.toLocaleString()} / {nutritionStats.totalTargets.toLocaleString()}
+                {adherencePct !== null && ` (${adherencePct}%)`}
+                {weeklyAdherence && (
+                  <span className={`ml-1 uppercase text-xs font-semibold ${
+                    weeklyAdherence === "hit" ? "text-success" :
+                    weeklyAdherence === "partial" ? "text-warning" :
+                    "text-destructive"
+                  }`}>
+                    {weeklyAdherence}
+                  </span>
+                )}
               </div>
               <div>
-                Within target {nutritionStats.hitDays}/{nutritionStats.daysLogged} days, 
-                partial {nutritionStats.partialDays}/{nutritionStats.daysLogged}, 
-                missed {nutritionStats.missedDays}/{nutritionStats.daysLogged}
+                {nutritionStats.daysOnTarget} of {nutritionStats.daysLogged} days on target
+                {nutritionStats.daysOver > 0 && ` | ${nutritionStats.daysOver} day${nutritionStats.daysOver !== 1 ? "s" : ""} over`}
+                {nutritionStats.daysUnder > 0 && ` | ${nutritionStats.daysUnder} day${nutritionStats.daysUnder !== 1 ? "s" : ""} under`}
               </div>
             </div>
           </div>

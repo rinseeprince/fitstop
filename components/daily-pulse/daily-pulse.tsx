@@ -64,7 +64,8 @@ export function DailyPulse({ startDate }: DailyPulseProps = {}) {
     habits,
     habitLogs: initialHabitLogs,
     weeklyLogs,
-    isLoading, 
+    weeklyNutritionSummary,
+    isLoading,
     isSaving, 
     saveLog,
     updateWeeklyLogs
@@ -171,10 +172,10 @@ export function DailyPulse({ startDate }: DailyPulseProps = {}) {
       trained: sessionCompleted,
       trainingSessionId,
       trainingData,
-      caloriesConsumed: nutritionData.caloriesConsumed || undefined,
-      proteinG: nutritionData.proteinG || undefined,
-      carbsG: nutritionData.carbsG || undefined,
-      fatG: nutritionData.fatG || undefined,
+      caloriesConsumed: nutritionData.caloriesConsumed ?? undefined,
+      proteinG: nutritionData.proteinG ?? undefined,
+      carbsG: nutritionData.carbsG ?? undefined,
+      fatG: nutritionData.fatG ?? undefined,
     });
     await handleSessionCompletion(sessionCompleted, trainingSessionId, todayLog?.trainingSessionId, wasCompletedPreviously, setWasCompletedPreviously);
     await saveUnplannedActivities(unplannedActivities);
@@ -258,6 +259,7 @@ export function DailyPulse({ startDate }: DailyPulseProps = {}) {
           nutritionData={nutritionData}
           habits={habits}
           habitLogs={habitLogs}
+          weeklyNutritionSummary={weeklyNutritionSummary}
           onHabitLogsUpdate={setHabitLogs}
           handleEdit={handleEdit}
           handleSave={handleSave}
