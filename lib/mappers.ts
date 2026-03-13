@@ -1,4 +1,4 @@
-import type { CheckIn, Client, AIInsight, AIRecommendation, ReminderPreferences, DayCalorieOverrides } from "@/types/check-in";
+import type { CheckIn, Client, AIInsight, AIRecommendation, EnhancedAIData, ReminderPreferences, DayCalorieOverrides } from "@/types/check-in";
 import type { ClientIntake, ClientIntakeRow, OnboardingStatus } from "@/types/client-intake";
 import type { CheckInRow, ClientRow } from "./database-helpers";
 
@@ -34,7 +34,7 @@ export function mapCheckInRow(row: CheckInRow): CheckIn {
     nutritionDaysOnTarget: row.nutrition_days_on_target ?? undefined,
     nutritionNotes: row.nutrition_notes ?? undefined,
     aiSummary: row.ai_summary ?? undefined,
-    aiInsights: (row.ai_insights ?? undefined) as AIInsight[] | undefined,
+    aiInsights: (row.ai_insights ?? undefined) as AIInsight[] | EnhancedAIData | undefined,
     aiRecommendations: (row.ai_recommendations ?? undefined) as AIRecommendation[] | undefined,
     aiResponseDraft: row.ai_response_draft ?? undefined,
     aiProcessedAt: row.ai_processed_at ?? undefined,

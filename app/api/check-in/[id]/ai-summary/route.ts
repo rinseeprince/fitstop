@@ -7,6 +7,7 @@ import { getClientById } from "@/services/client-service";
 import { generateCheckInSummary, regenerateAISummary } from "@/services/ai-service";
 import { getDailyLogs } from "@/services/daily-logs-service";
 import { getHabitLogs } from "@/services/daily-habits-service";
+import { getWeeklySummaries } from "@/services/weekly-nutrition-service";
 import { calculateCheckInPeriod } from "@/lib/date-utils";
 import type { GenerateAISummaryResponse } from "@/types/check-in";
 import { rateLimit } from "@/lib/rate-limit";
@@ -78,19 +79,24 @@ export async function POST(
 
     const startDateStr = startDate.toISOString().split('T')[0];
     const endDateStr = endDate.toISOString().split('T')[0];
-    
-    // Fetch daily tracking context for the period
-    let dailyLogs, habitLogs;
+
+    // Fetch daily tracking context and weekly nutrition summary for the period
+    let dailyLogs, habitLogs, weeklySummary;
     try {
-      [dailyLogs, habitLogs] = await Promise.all([
+      const [logs, habits, summaries] = await Promise.all([
         getDailyLogs(currentCheckIn.clientId, startDateStr, endDateStr),
         getHabitLogs(currentCheckIn.clientId, startDateStr, endDateStr),
+        getWeeklySummaries(currentCheckIn.clientId, startDateStr, endDateStr),
       ]);
+      dailyLogs = logs;
+      habitLogs = habits;
+      weeklySummary = summaries[0] ?? null;
     } catch (error) {
       // If daily tracking fetch fails, continue without it
       console.error('Error fetching daily tracking data:', error instanceof Error ? error.message : 'Unknown error');
       dailyLogs = undefined;
       habitLogs = undefined;
+      weeklySummary = null;
     }
 
     // Generate or regenerate AI summary
@@ -103,7 +109,8 @@ export async function POST(
           dailyLogs,
           habitLogs,
           startDate,
-          endDate
+          endDate,
+          weeklySummary
         )
       : await generateCheckInSummary(
           currentCheckIn,
@@ -112,17 +119,12 @@ export async function POST(
           dailyLogs,
           habitLogs,
           startDate,
-          endDate
+          endDate,
+          weeklySummary
         );
 
-    // Update check-in with new AI summary
-    await updateCheckInAISummary(
-      checkInId,
-      aiSummary.summary,
-      aiSummary.insights,
-      aiSummary.recommendations,
-      aiSummary.responseDraft
-    );
+    // Update check-in with new AI summary (v2 format)
+    await updateCheckInAISummary(checkInId, aiSummary);
 
     const response: GenerateAISummaryResponse = {
       success: true,

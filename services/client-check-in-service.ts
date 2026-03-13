@@ -14,6 +14,7 @@ import { updateClientBMR } from "@/services/bmr-service";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { getDailyLogs } from "@/services/daily-logs-service";
 import { getHabitLogs } from "@/services/daily-habits-service";
+import { getWeeklySummaries } from "@/services/weekly-nutrition-service";
 import { calculateCheckInPeriod } from "@/lib/date-utils";
 import type { SubmitCheckInRequest, CheckInFormData, Client } from "@/types/check-in";
 
@@ -69,18 +70,23 @@ export async function triggerAISummaryGeneration(
     const startDateStr = startDate.toISOString().split('T')[0];
     const endDateStr = endDate.toISOString().split('T')[0];
     
-    // Fetch daily tracking context for the period
-    let dailyLogs, habitLogs;
+    // Fetch daily tracking context and weekly nutrition summary for the period
+    let dailyLogs, habitLogs, weeklySummary;
     try {
-      [dailyLogs, habitLogs] = await Promise.all([
+      const [logs, habits, summaries] = await Promise.all([
         getDailyLogs(clientId, startDateStr, endDateStr),
         getHabitLogs(clientId, startDateStr, endDateStr),
+        getWeeklySummaries(clientId, startDateStr, endDateStr),
       ]);
+      dailyLogs = logs;
+      habitLogs = habits;
+      weeklySummary = summaries[0] ?? null;
     } catch (error) {
       // If daily tracking fetch fails, continue without it
       console.error('Error fetching daily tracking data:', error instanceof Error ? error.message : 'Unknown error');
       dailyLogs = undefined;
       habitLogs = undefined;
+      weeklySummary = null;
     }
 
     // Generate AI summary with enhanced data including daily tracking
@@ -91,17 +97,12 @@ export async function triggerAISummaryGeneration(
       dailyLogs,
       habitLogs,
       startDate,
-      endDate
+      endDate,
+      weeklySummary
     );
 
-    // Update check-in with AI summary for coach review
-    await updateCheckInAISummary(
-      checkInId,
-      aiSummary.summary,
-      aiSummary.insights,
-      aiSummary.recommendations,
-      aiSummary.responseDraft
-    );
+    // Update check-in with AI summary (v2 format)
+    await updateCheckInAISummary(checkInId, aiSummary);
   } catch (error) {
     console.error(`Error in AI summary generation for check-in ${checkInId}:`, error instanceof Error ? error.message : "Unknown error");
     throw error;

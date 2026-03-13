@@ -167,12 +167,63 @@ export type AIRecommendation = {
   text: string;
 };
 
+// Enhanced AI insight sections
+export type AINutritionInsight = {
+  weeklyAdherence: string;
+  caloriePattern: string;
+  keyObservation: string;
+};
+
+export type AINotesIntelligence = {
+  themes: string[];
+  concerns: string[];
+  positives: string[];
+  rawNotes: { date: string; note: string }[];
+};
+
+export type AITrainingInsight = {
+  completionSummary: string;
+  keyObservation: string;
+  progressNote: string;
+};
+
+export type AIWellnessInsight = {
+  pattern: string;
+  averages: string;
+  concern?: string;
+};
+
+export type AICoachAction = {
+  action: string;
+  urgency: "now" | "next_check_in" | "monitor";
+  context: string;
+};
+
+// Enhanced AI data stored in ai_insights JSONB (v2 format)
+export type EnhancedAIData = {
+  _version: 2;
+  insights: AIInsight[];
+  nutritionInsight?: AINutritionInsight;
+  notesIntelligence?: AINotesIntelligence;
+  trainingInsight?: AITrainingInsight;
+  wellnessInsight?: AIWellnessInsight;
+  coachActions?: AICoachAction[];
+  clientHighlights?: string[];
+};
+
 // AI summary data structure
 export type AICheckInSummary = {
   summary: string;
   insights: AIInsight[];
   recommendations: AIRecommendation[];
   responseDraft: string;
+  // Enhanced fields (optional for backward compat with old check-ins)
+  nutritionInsight?: AINutritionInsight;
+  notesIntelligence?: AINotesIntelligence;
+  trainingInsight?: AITrainingInsight;
+  wellnessInsight?: AIWellnessInsight;
+  coachActions?: AICoachAction[];
+  clientHighlights?: string[];
 };
 
 // Complete check-in record (database row)
@@ -217,7 +268,7 @@ export type CheckIn = {
 
   // AI fields
   aiSummary?: string;
-  aiInsights?: AIInsight[];
+  aiInsights?: AIInsight[] | EnhancedAIData;
   aiRecommendations?: AIRecommendation[];
   aiResponseDraft?: string;
   aiProcessedAt?: string;

@@ -417,10 +417,12 @@ describe('Check-in Service', () => {
 
       await updateCheckInAISummary(
         'check-in-123',
-        'Great progress!',
-        [{ type: 'positive', text: 'Good sleep' }],
-        [{ text: 'Keep it up' }],
-        'Draft response'
+        {
+          summary: 'Great progress!',
+          insights: [{ type: 'strength', text: 'Good sleep' }],
+          recommendations: [{ priority: 'high', text: 'Keep it up' }],
+          responseDraft: 'Draft response',
+        }
       )
 
       expect(mockQuery.update).toHaveBeenCalled()

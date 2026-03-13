@@ -26,7 +26,12 @@ vi.mock('./daily-habits-service', () => ({
   getHabitLogs: vi.fn(),
 }))
 
+vi.mock('./weekly-nutrition-service', () => ({
+  getWeeklySummaries: vi.fn(),
+}))
+
 vi.mock('./client-service', () => ({
+  getClientById: vi.fn(),
   updateClient: vi.fn(),
 }))
 
@@ -44,10 +49,14 @@ import {
 } from './check-in-service'
 import { getDailyLogs } from './daily-logs-service'
 import { getHabitLogs } from './daily-habits-service'
+import { getWeeklySummaries } from './weekly-nutrition-service'
+import { getClientById } from './client-service'
 
 describe('Client Check-in Service', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    // Default mock for getClientById - returns null (no expected check-in day)
+    vi.mocked(getClientById).mockResolvedValue(null)
   })
 
   describe('triggerAISummaryGeneration', () => {
@@ -88,6 +97,7 @@ describe('Client Check-in Service', () => {
       vi.mocked(updateCheckInAISummary).mockResolvedValue(undefined)
       vi.mocked(getDailyLogs).mockResolvedValue([])
       vi.mocked(getHabitLogs).mockResolvedValue([])
+      vi.mocked(getWeeklySummaries).mockResolvedValue([])
 
       // Act
       await triggerAISummaryGeneration(mockCheckInId, mockClientId, mockClientName)
@@ -102,14 +112,12 @@ describe('Client Check-in Service', () => {
         [],
         [],
         expect.any(Date),
-        expect.any(Date)
+        expect.any(Date),
+        null
       )
       expect(updateCheckInAISummary).toHaveBeenCalledWith(
         mockCheckInId,
-        mockAISummary.summary,
-        mockAISummary.insights,
-        mockAISummary.recommendations,
-        mockAISummary.responseDraft
+        mockAISummary
       )
     })
 
@@ -132,14 +140,15 @@ describe('Client Check-in Service', () => {
       // Arrange
       const allCheckIns = [mockCurrentCheckIn, ...mockPreviousCheckIns]
       vi.mocked(getCheckInWithDetails).mockResolvedValue(mockCurrentCheckIn as any)
-      vi.mocked(getClientCheckIns).mockResolvedValue({ 
-        checkIns: allCheckIns, 
-        total: 3 
+      vi.mocked(getClientCheckIns).mockResolvedValue({
+        checkIns: allCheckIns,
+        total: 3
       } as any)
       vi.mocked(generateCheckInSummary).mockResolvedValue(mockAISummary as any)
       vi.mocked(updateCheckInAISummary).mockResolvedValue(undefined)
       vi.mocked(getDailyLogs).mockResolvedValue([])
       vi.mocked(getHabitLogs).mockResolvedValue([])
+      vi.mocked(getWeeklySummaries).mockResolvedValue([])
 
       // Act
       await triggerAISummaryGeneration(mockCheckInId, mockClientId, mockClientName)
@@ -152,7 +161,8 @@ describe('Client Check-in Service', () => {
         [],
         [],
         expect.any(Date),
-        expect.any(Date)
+        expect.any(Date),
+        null
       )
     })
 
@@ -160,12 +170,13 @@ describe('Client Check-in Service', () => {
       // Arrange
       const mockError = new Error('AI service unavailable')
       vi.mocked(getCheckInWithDetails).mockResolvedValue(mockCurrentCheckIn as any)
-      vi.mocked(getClientCheckIns).mockResolvedValue({ 
-        checkIns: [mockCurrentCheckIn], 
-        total: 1 
+      vi.mocked(getClientCheckIns).mockResolvedValue({
+        checkIns: [mockCurrentCheckIn],
+        total: 1
       } as any)
       vi.mocked(getDailyLogs).mockResolvedValue([])
       vi.mocked(getHabitLogs).mockResolvedValue([])
+      vi.mocked(getWeeklySummaries).mockResolvedValue([])
       vi.mocked(generateCheckInSummary).mockRejectedValue(mockError)
 
       // Act & Assert
@@ -194,14 +205,15 @@ describe('Client Check-in Service', () => {
     it('should work with no previous check-ins', async () => {
       // Arrange
       vi.mocked(getCheckInWithDetails).mockResolvedValue(mockCurrentCheckIn as any)
-      vi.mocked(getClientCheckIns).mockResolvedValue({ 
+      vi.mocked(getClientCheckIns).mockResolvedValue({
         checkIns: [mockCurrentCheckIn], // Only current check-in
-        total: 1 
+        total: 1
       } as any)
       vi.mocked(generateCheckInSummary).mockResolvedValue(mockAISummary as any)
       vi.mocked(updateCheckInAISummary).mockResolvedValue(undefined)
       vi.mocked(getDailyLogs).mockResolvedValue([])
       vi.mocked(getHabitLogs).mockResolvedValue([])
+      vi.mocked(getWeeklySummaries).mockResolvedValue([])
 
       // Act
       await triggerAISummaryGeneration(mockCheckInId, mockClientId, mockClientName)
@@ -214,7 +226,8 @@ describe('Client Check-in Service', () => {
         [],
         [],
         expect.any(Date),
-        expect.any(Date)
+        expect.any(Date),
+        null
       )
     })
   })

@@ -9,6 +9,7 @@ import type {
   CheckInExerciseHighlight,
   CheckInExternalActivity,
   CheckInWithDetails,
+  AICheckInSummary,
 } from "@/types/check-in";
 import { mapCheckInRow } from "@/lib/mappers";
 
@@ -433,21 +434,29 @@ export const updateCheckInStatus = async (
   }
 };
 
-// Update check-in with AI summary
+// Update check-in with AI summary (v2 format stores enhanced data in ai_insights JSONB)
 export const updateCheckInAISummary = async (
   checkInId: string,
-  aiSummary: string,
-  aiInsights: any,
-  aiRecommendations: any,
-  aiResponseDraft: string
+  summary: AICheckInSummary
 ): Promise<void> => {
+  const enhancedInsights = {
+    _version: 2 as const,
+    insights: summary.insights,
+    nutritionInsight: summary.nutritionInsight,
+    notesIntelligence: summary.notesIntelligence,
+    trainingInsight: summary.trainingInsight,
+    wellnessInsight: summary.wellnessInsight,
+    coachActions: summary.coachActions,
+    clientHighlights: summary.clientHighlights,
+  };
+
   const { error } = await supabaseAdmin
     .from("check_ins")
     .update({
-      ai_summary: aiSummary,
-      ai_insights: aiInsights,
-      ai_recommendations: aiRecommendations,
-      ai_response_draft: aiResponseDraft,
+      ai_summary: summary.summary,
+      ai_insights: enhancedInsights,
+      ai_recommendations: summary.recommendations,
+      ai_response_draft: summary.responseDraft,
       ai_processed_at: new Date().toISOString(),
       status: "ai_processed",
     })

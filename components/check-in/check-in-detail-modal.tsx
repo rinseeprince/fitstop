@@ -287,7 +287,7 @@ export const CheckInDetailModal = ({
                       <AISummaryCard
                         checkInId={checkInId}
                         summary={data.checkIn.aiSummary}
-                        insights={data.checkIn.aiInsights}
+                        aiInsights={data.checkIn.aiInsights}
                         recommendations={data.checkIn.aiRecommendations}
                         onUpdate={handleResponseSent}
                       />

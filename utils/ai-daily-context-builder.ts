@@ -70,9 +70,14 @@ export function buildDailyContextForAI(
     const dayHabits = habitLogs.filter(h => h.date === log.date);
     if (dayHabits.length > 0) {
       const habitStatus = dayHabits.map(h => `${sanitizeForAIPrompt(h.habitName)} ${h.completed ? '✓' : '✗'}`);
-      context += `Habits: ${habitStatus.join(', ')}`;
+      context += `Habits: ${habitStatus.join(', ')}. `;
     }
-    
+
+    // Daily notes
+    if (log.notes) {
+      context += `Notes: "${sanitizeForAIPrompt(log.notes, 300)}"`;
+    }
+
     context += '\n';
   });
 
@@ -149,6 +154,19 @@ export function buildDailyContextForAI(
     context += habitSummaries.join(', ') + '\n';
   }
   
+  // Daily notes summary for AI notes intelligence
+  const logsWithNotes = sortedLogs.filter(l => l.notes);
+  if (logsWithNotes.length > 0) {
+    context += '\nDAILY NOTES:\n';
+    logsWithNotes.forEach(log => {
+      const date = new Date(log.date);
+      const dateStr = date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+      context += `- ${dateStr}: "${sanitizeForAIPrompt(log.notes!, 300)}"\n`;
+    });
+  } else {
+    context += '\nDAILY NOTES: No notes logged this week.\n';
+  }
+
   // Energy/mood correlation notes
   const lowEnergyDays = sortedLogs.filter(l => l.energy !== undefined && l.energy < 5);
   if (lowEnergyDays.length > 0) {
