@@ -1,3 +1,5 @@
+**This file is mandatory reading.** Claude Code must read this file in full before planning or implementing any code changes. Do not skip sections. Do not assume patterns - follow what is documented here.
+
 # CoachHub Development Conventions
 
 ## 1. Engineering Philosophy
@@ -117,23 +119,41 @@ When files exceed limits, extract:
 ## 5. Code Style
 - Use Tailwind for styling
 - Lucide icons only
-- Inter font family
+- Plus Jakarta Sans font family
 - Async/await over promises
 - Named exports over default
 - No `as any` type casts - use proper types from `types/database.ts`. If extending an existing type, create a local interface.
+- Use `lib/design-tokens.ts` for type-safe spacing, border radius, shadows, and typography constants
 
 ## 6. File Structure
 ```
+/app           - Next.js App Router pages and API routes
 /components    - React components
   /daily-pulse - Client-side Daily Pulse components
   /clients     - Coach-side components (daily-pulse/, habits/, etc.)
-/services      - Business logic
-/api           - API routes
-/utils         - Helper functions
+  /ui          - Shadcn/Radix base components
+/services      - Business logic and data operations
+/utils         - Helper functions (AI, nutrition, training calculations)
 /hooks         - Custom React hooks
 /types         - TypeScript definitions
 /lib           - Constants, helpers, utilities
+  /validations - Zod schemas (auth, check-in, client, nutrition, training, etc.)
+  /constants   - Constant definitions (e.g. days.ts)
+/contexts      - React context providers (auth, nutrition-builder, training-builder)
+/emails        - React Email templates (Resend)
+/supabase      - Database migrations and config
+/docs          - Architecture documentation
+/scripts       - Utility scripts
+/styles        - Global styles
 ```
+
+Key lib files:
+- `lib/rate-limit.ts` - Rate limiting tiers (Upstash Redis + in-memory fallback)
+- `lib/csrf-protection.ts` - CSRF origin/referer validation
+- `lib/error-handler.ts` - Sentry error capture wrapper
+- `lib/swr-fetcher.ts` - SWR fetcher with error handling
+- `lib/design-tokens.ts` - Type-safe design system constants
+- `lib/auth-helpers.ts` - `getAuthenticatedCoachId()`, `getAuthenticatedClientId()`
 
 Coach-side components in `components/clients/`. Client-side in `components/daily-pulse/` or `components/`. Never mix them.
 
@@ -206,8 +226,10 @@ Coach-side components in `components/clients/`. Client-side in `components/daily
 
 ## 9. Security
 - Auth: Check on every protected route/component
+- Middleware auth: Uses `getUser()` which validates JWT server-side, NOT `getSession()` (which only reads the cookie without verification, making it susceptible to tampered tokens)
 - Input sanitization: All user inputs (especially coach bios, session notes)
 - Rate limiting: **MANDATORY** - Every API route must include rate limiting as the first check
+- CSRF protection: **MANDATORY** - All mutating API routes (POST/PUT/PATCH/DELETE) must call `requireCSRFProtection(request)` from `lib/csrf-protection.ts` as the second check after rate limiting
 - Sensitive data: Never log passwords, tokens, payment info
 - File uploads: Validate type, size, scan (profile pics, workout plans)
 
@@ -220,7 +242,7 @@ Coach-side components in `components/clients/`. Client-side in `components/daily
 - `coachApiRateLimit`: Coach-side client routes (30 requests per 10 seconds, allows burst traffic)
 - `clientApiRateLimit`: Client portal routes (30 requests per 10 seconds, allows burst traffic)
 - `checkInRateLimit`: Public check-in endpoints (30 requests per minute)
-- Custom limits: AI/expensive operations (10 requests per minute or stricter)
+- `aiRateLimit`: AI-powered endpoints using OpenAI (10 requests per minute) - prevents cost abuse
 
 #### Required Pattern:
 ```typescript
@@ -239,7 +261,7 @@ export async function GET(request: NextRequest) {
 - **coachApiRateLimit**: `/api/clients/*` (coach viewing/managing client data)
 - **clientApiRateLimit**: `/api/client/*` (client portal endpoints)
 - **checkInRateLimit**: Public check-in submission endpoints
-- **Custom strict limits**: AI endpoints, file processing, expensive computations
+- **aiRateLimit**: AI-powered endpoints (check-in summaries, training generation, activity analysis)
 - **apiRateLimit**: All other routes (default choice)
 
 ## 10. API Design
@@ -258,15 +280,32 @@ export async function GET(request: NextRequest) {
 - Never show raw database errors to users (e.g. "duplicate key value violates unique constraint").
 - Catch known error patterns and return friendly messages (e.g. "A habit with this name already exists").
 
-## 11. Error Handling
+## 11. AI Services
+
+### Model Selection
+- **`gpt-4o`**: Check-in AI summaries (`services/ai-service.ts`) - higher quality reasoning for nuanced client feedback
+- **`gpt-4o-mini`**: Training plans, activity analysis, calorie calculations (`services/training-ai-service.ts`, `services/activity-ai-service.ts`, `services/training-calorie-service.ts`) - cost-efficient for structured/formulaic tasks
+
+### Timeout Budgets
+All OpenAI calls must specify an explicit timeout:
+- 25s for check-in summaries
+- 15s for activity analysis
+- 45s for training plan generation
+
+### Rate Limiting
+All AI endpoints must use `aiRateLimit` (10 req/min) to prevent cost abuse from repeated requests.
+
+## 12. Error Handling
 - All API routes: try-catch with proper error codes
 - User-facing errors: Toast notifications with plain language
-- Log all errors with context (user ID, action, timestamp)
-- Validation: Zod schemas for all inputs/API payloads
+- Server-side errors: Use `captureApiError(error, context)` from `lib/error-handler.ts` to log and send to Sentry
+- Client-side errors: Wrap error-prone UI sections with `<ErrorBoundary>` from `components/ui/error-boundary.tsx`
+- Sentry config: `sentry.client.config.ts` (10% traces, replay with `maskAllText`/`blockAllMedia`) and `sentry.server.config.ts` (10% traces)
+- Validation: Zod schemas in `lib/validations/` for all inputs/API payloads. Use `optionalString()`, `optionalNumber()` helpers for null/empty coercion. Use `.refine()` for cross-field validation.
 - Database operations: Transaction rollbacks on failure
 - No empty catch blocks - always log the error or surface it to the user
 
-## 12. Testing
+## 13. Testing
 - Unit tests: All service functions and utilities
 - Integration tests: Critical flows (booking, payments, auth)
 - API tests: All endpoints with success/error cases
@@ -276,37 +315,55 @@ export async function GET(request: NextRequest) {
 ### Commit-ready checklist
 Before saying "ready to commit", ALL of these must pass:
 1. `npx tsc --noEmit` - no TypeScript errors
-2. `npx vitest run` - all tests pass
-3. `grep -rn "console.log" [changed files]` - no debug artifacts
+2. `npx eslint .` - no lint errors (catches floating promises, console.log, type issues)
+3. `npx vitest run` - all tests pass
 4. `grep -rn "as any" [changed files]` - no type escapes
 5. `grep -rn "TODO\|FIXME\|HACK\|DEBUG" [changed files]` - no leftover markers
 
-## 13. Performance
+## 14. Performance
 - Database queries: Indexes on foreign keys, frequently queried fields
 - API responses: <200ms target, pagination for lists >20 items
 - Images: Optimize/compress before upload, use WebP
 - Caching: Redis for session data, frequently accessed coach profiles
 - Lazy loading: Components below fold, infinite scroll for feeds
 
-## 14. Documentation
+## 15. Documentation
 - API endpoints: Request/response examples, error codes
 - Complex functions: JSDoc with params, returns, examples
 - Setup: .env.example with all required variables documented
 - Database schema: ER diagram, migration strategy
 - README: Local setup in <5 steps
 
-## 15. References
+## 16. References
 - **Daily Pulse README**: Full architectural documentation for the Daily Pulse feature, including JSONB conventions, data flow, component structure, and rules that must not be violated. Claude Code should read this before modifying any Daily Pulse related code.
-- **DESIGN-SYSTEM.md**: Visual patterns, colour tokens, spacing, component styling conventions.
+- **DESIGNSYSTEM.md**: Visual patterns, colour tokens, spacing, component styling conventions.
 
-## 16. Logging
+## 17. Logging
 - Info: User actions (login, booking, payment)
 - Warn: Recoverable errors (rate limit hit, validation fail)
-- Error: System failures with stack traces
-- Format: Structured JSON for log aggregation
+- Error: System failures with stack traces - use `captureApiError()` for Sentry reporting
+- Current approach: `console.error/warn` + Sentry capture (no structured JSON logging yet)
 - Never log: Passwords, tokens, full credit cards
 
-## 17. Configuration
+## 18. ESLint Configuration
+Uses flat config (`eslint.config.mjs`) with TypeScript ESLint type-checked rules.
+
+### Error-level rules (must fix)
+- `no-floating-promises` - unhandled async calls cause silent failures
+- `no-misused-promises` - async functions in non-async contexts (allows async onClick)
+- `await-thenable` - awaiting non-Promise values
+- `require-await` - async functions that don't await
+
+### Warn-level rules
+- `no-explicit-any` - use proper types instead
+- `no-unused-vars` - ignores `_`-prefixed variables
+- `no-console` - allows `console.warn`, `console.error`, `console.info`, `console.debug`
+
+### File-specific overrides
+- Components, pages, hooks, contexts: `no-floating-promises` downgraded to warn (useEffect fire-and-forget pattern is intentional when try/catch is inside)
+- Test files: `no-explicit-any` and `no-console` disabled
+
+## 19. Configuration
 - .env files: .env.local (dev), .env.production
 - Required vars: Document in .env.example with descriptions
 - Feature flags: For gradual rollouts
