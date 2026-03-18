@@ -5,6 +5,7 @@ import { Loader2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { MetricsSidebar } from "./metrics-sidebar";
 import { MetricsGrid } from "./metrics-grid";
+import { BodyMetricsHistoryTable } from "./body-metrics-history-table";
 import { useMetricsData, type DateRangeFilter, type MetricCategory } from "./hooks/use-metrics-data";
 import type { CheckIn, Client } from "@/types/check-in";
 
@@ -68,23 +69,32 @@ export const MetricsTabContent = ({
   }
 
   return (
-    <div className="flex gap-6 items-start">
-      <MetricsSidebar
-        bodyMetrics={bodyMetrics}
-        wellnessMetrics={wellnessMetrics}
-        searchQuery={searchQuery}
-        onSearchChange={setSearchQuery}
-        category={category}
-        onCategoryChange={setCategory}
-        selectedMetricId={selectedMetricId}
-        onSelectMetric={setSelectedMetricId}
-      />
-      <MetricsGrid
-        metrics={filteredDisplayedMetrics}
-        dateRange={dateRange}
-        onDateRangeChange={setDateRange}
-        selectedMetricId={selectedMetricId}
-        onClearSelection={() => setSelectedMetricId(null)}
+    <div className="space-y-6">
+      <div className="flex gap-6 items-start">
+        <MetricsSidebar
+          bodyMetrics={bodyMetrics}
+          wellnessMetrics={wellnessMetrics}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          category={category}
+          onCategoryChange={setCategory}
+          selectedMetricId={selectedMetricId}
+          onSelectMetric={setSelectedMetricId}
+        />
+        <MetricsGrid
+          metrics={filteredDisplayedMetrics}
+          dateRange={dateRange}
+          onDateRangeChange={setDateRange}
+          selectedMetricId={selectedMetricId}
+          onClearSelection={() => setSelectedMetricId(null)}
+        />
+      </div>
+      <BodyMetricsHistoryTable
+        clientId={client.id}
+        goalWeight={client.goalWeight ?? null}
+        goalBodyFat={client.goalBodyFatPercentage ?? null}
+        startingWeight={client.startingWeight ?? null}
+        weightUnit={client.weightUnit ?? "lbs"}
       />
     </div>
   );

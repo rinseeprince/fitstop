@@ -16,6 +16,7 @@ import {
   Tooltip,
   ResponsiveContainer,
   Cell,
+  ReferenceLine,
 } from "recharts";
 
 const DEFAULT_COLOR = "#8b5cf6";
@@ -46,6 +47,8 @@ type HistoryChartDialogProps = {
   data: Array<{ date: string; value: number }>;
   dataKey: string;
   color?: string;
+  referenceValue?: number | null;
+  referenceLabel?: string;
 };
 
 function hexToRgba(hex: string, alpha: number): string {
@@ -64,10 +67,14 @@ function LineChart({
   data,
   dataKey,
   color,
+  referenceValue,
+  referenceLabel,
 }: {
   data: Array<{ date: string; value: number }>;
   dataKey: string;
   color: string;
+  referenceValue?: number | null;
+  referenceLabel?: string;
 }) {
   const gradientId = `history-gradient-${dataKey}`;
 
@@ -108,6 +115,20 @@ function LineChart({
           dot={false}
           activeDot={{ r: 5, fill: color, strokeWidth: 2, stroke: "#fff" }}
         />
+        {referenceValue != null && (
+          <ReferenceLine
+            y={referenceValue}
+            stroke="hsl(var(--muted-foreground))"
+            strokeDasharray="6 4"
+            strokeWidth={1.5}
+            label={{
+              value: referenceLabel || `Goal: ${referenceValue}`,
+              position: "insideTopRight",
+              fill: "hsl(var(--muted-foreground))",
+              fontSize: 11,
+            }}
+          />
+        )}
       </AreaChart>
     </ResponsiveContainer>
   );
@@ -203,6 +224,8 @@ export function HistoryChartDialog({
   data,
   dataKey,
   color = DEFAULT_COLOR,
+  referenceValue,
+  referenceLabel,
 }: HistoryChartDialogProps) {
   return (
     <Dialog open={open} onOpenChange={(isOpen) => { if (!isOpen) onClose(); }}>
@@ -217,7 +240,13 @@ export function HistoryChartDialog({
         ) : (
           <div className="h-[300px]">
             {chartType === "line" && (
-              <LineChart data={data} dataKey={dataKey} color={color} />
+              <LineChart
+                data={data}
+                dataKey={dataKey}
+                color={color}
+                referenceValue={referenceValue}
+                referenceLabel={referenceLabel}
+              />
             )}
             {chartType === "bar" && (
               <BarChartSimple data={data} color={color} />

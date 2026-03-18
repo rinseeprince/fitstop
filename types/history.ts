@@ -20,3 +20,18 @@ export type WellnessHistoryRow = {
   stress: number | null;  // 1-10
   notes: string | null;
 };
+
+export type BodyMetricsHistoryRow = {
+  created_at: string;
+  period_start: string | null;
+  period_end: string | null;
+  weight: number | null;
+  weight_unit: string | null;
+  body_fat_percentage: number | null;
+  waist: number | null;
+  hips: number | null;
+  chest: number | null;
+  arms: number | null;
+  thighs: number | null;
+  measurement_unit: string | null;
+};
