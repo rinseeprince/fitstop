@@ -182,7 +182,8 @@ export async function PUT(
     const { error: updateError } = await supabaseAdmin
       .from("clients")
       .update(updates)
-      .eq("id", clientId);
+      .eq("id", clientId)
+      .eq("coach_id", coachId);
 
     if (updateError) {
       console.error("Error updating client:", updateError);
@@ -197,6 +198,7 @@ export async function PUT(
       .from("clients")
       .select("*")
       .eq("id", clientId)
+      .eq("coach_id", coachId)
       .single();
 
     return NextResponse.json({
