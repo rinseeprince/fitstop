@@ -15,6 +15,7 @@ import { ClientPageHeader, type ClientTab } from "@/components/clients/client-pa
 import { ClientOverviewTab } from "@/components/clients/client-overview-tab"
 import { MetricSaveDialog } from "@/components/clients/check-in/metric-save-dialog"
 import { HabitsTabContent } from "@/components/clients/habits/habits-tab-content"
+import { NutritionHistoryTable } from "@/components/clients/nutrition/nutrition-history-table"
 import { useCheckInData, useClient } from "@/hooks/use-check-in-data"
 import type { CheckIn } from "@/types/check-in"
 import { useClientMetrics } from "@/hooks/use-client-metrics"
@@ -151,6 +152,7 @@ export default function ClientProfilePage() {
               client={client}
               onUpdate={() => mutateClient()}
             />
+            <NutritionHistoryTable clientId={client.id} />
           </TabsContent>
 
           {/* Daily Habits Tab */}
