@@ -22,12 +22,9 @@ export async function GET(request: NextRequest) {
     const latest = searchParams.get("latest") === "true";
 
     if (latest) {
-      // Read existing summary first; only calculate if none exists yet
-      let summary = await getLatestWeeklySummary(clientId);
-      if (!summary) {
-        const currentWeekStart = getWeekStart(getTodayDateString());
-        summary = await upsertWeeklySummary(clientId, currentWeekStart);
-      }
+      // Always recalculate the current week so plan changes are reflected immediately
+      const currentWeekStart = getWeekStart(getTodayDateString());
+      const summary = await upsertWeeklySummary(clientId, currentWeekStart);
       return NextResponse.json(
         { success: true, data: summary },
         { headers: { "Cache-Control": "no-store" } }

@@ -12,6 +12,7 @@ type NutritionPlanHeaderProps = {
   trainingDaysCount: number;
   restDaysCount: number;
   projectedDate: Date | null;
+  planCreatedDate?: string;
   onShowHistory: () => void;
   onRegenerate?: () => void;
 };
@@ -23,6 +24,7 @@ export function NutritionPlanHeader({
   trainingDaysCount,
   restDaysCount,
   projectedDate,
+  planCreatedDate,
   onShowHistory,
   onRegenerate,
 }: NutritionPlanHeaderProps) {
@@ -32,9 +34,9 @@ export function NutritionPlanHeader({
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-xl font-semibold text-foreground">Nutrition Targets</h3>
-          {client.nutritionPlanCreatedDate && (
+          {planCreatedDate && (
             <p className="text-sm text-muted-foreground mt-0.5">
-              Created on {format(new Date(client.nutritionPlanCreatedDate), "MMM d, yyyy")}
+              Created on {format(new Date(planCreatedDate), "MMM d, yyyy")}
             </p>
           )}
         </div>

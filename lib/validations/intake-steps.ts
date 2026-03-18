@@ -136,6 +136,7 @@ export const intakeStep2Schema = z
   .object({
     primaryGoal: primaryGoalSchema,
     targetWeight: optionalNumber(z.number().positive().min(30).max(300)),
+    goalBodyFatPercentage: optionalNumber(z.number().min(3, "Body fat must be at least 3%").max(60, "Body fat must be under 60%")),
     goalDeadline: optionalString(50).refine(
       (val) => {
         if (!val) return true;
@@ -230,6 +231,7 @@ export const intakeStep5Schema = z.object({
 const intakeStep2BaseSchema = z.object({
   primaryGoal: primaryGoalSchema,
   targetWeight: optionalNumber(z.number().positive().min(30).max(300)),
+  goalBodyFatPercentage: optionalNumber(z.number().min(3, "Body fat must be at least 3%").max(60, "Body fat must be under 60%")),
   goalDeadline: optionalString(50),
   goalDescription: optionalString(500),
   motivation: optionalString(500),

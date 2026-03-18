@@ -28,7 +28,7 @@ const dayCalorieOverrideSchema = z.object({
   fat_g: z.number().nonnegative(),
 });
 
-const dayCalorieOverridesSchema = z.object({
+export const dayCalorieOverridesSchema = z.object({
   monday: dayCalorieOverrideSchema,
   tuesday: dayCalorieOverrideSchema,
   wednesday: dayCalorieOverrideSchema,
@@ -41,14 +41,10 @@ const dayCalorieOverridesSchema = z.object({
 export const nutritionSettingsPatchSchema = z.object({
   unitPreference: unitPreferenceSchema.optional(),
   includeActivityBurn: z.boolean().optional(),
-  customDayDistribution: z.boolean().optional(),
-  dayCalorieOverrides: dayCalorieOverridesSchema.optional(),
 }).refine(
   (data) =>
     data.unitPreference !== undefined ||
-    data.includeActivityBurn !== undefined ||
-    data.customDayDistribution !== undefined ||
-    data.dayCalorieOverrides !== undefined,
+    data.includeActivityBurn !== undefined,
   { message: "No valid updates provided" }
 );
 

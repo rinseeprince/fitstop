@@ -15,6 +15,12 @@ import { PROTEIN_TARGETS } from "@/utils/nutrition-helpers";
 
 type NutritionSettingsFormProps = {
   client: Client;
+  initialSettings?: {
+    workActivityLevel?: ActivityLevel;
+    proteinTargetGPerKg?: number;
+    dietType?: DietType;
+    goalDeadline?: string;
+  };
   onSettingsChange: (settings: {
     workActivityLevel: ActivityLevel;
     proteinTargetGPerKg: number;
@@ -25,21 +31,22 @@ type NutritionSettingsFormProps = {
 
 export function NutritionSettingsForm({
   client,
+  initialSettings,
   onSettingsChange,
 }: NutritionSettingsFormProps) {
   const unitPreference = client.unitPreference || "imperial";
 
   const [workActivityLevel, setWorkActivityLevel] = useState<ActivityLevel>(
-    client.workActivityLevel || "sedentary"
+    initialSettings?.workActivityLevel || "sedentary"
   );
   const [proteinTargetGPerKg, setProteinTargetGPerKg] = useState<number>(
-    client.proteinTargetGPerKg || PROTEIN_TARGETS.high.gPerKg
+    initialSettings?.proteinTargetGPerKg || PROTEIN_TARGETS.high.gPerKg
   );
   const [dietType, setDietType] = useState<DietType>(
-    client.dietType || "balanced"
+    initialSettings?.dietType || "balanced"
   );
   const [goalDeadline, setGoalDeadline] = useState<string>(
-    client.goalDeadline || ""
+    initialSettings?.goalDeadline || client.goalDeadline || ""
   );
 
   const handleChange = (

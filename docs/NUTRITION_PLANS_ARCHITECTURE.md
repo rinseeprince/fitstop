@@ -48,8 +48,8 @@ Nutrition plan data currently lives as ~15 flat fields on the `clients` table. D
 
 ### Advanced Features That Must Be Preserved
 - **Custom macros override**: Coach manually sets P/C/F/cal, bypassing calculations
-- **Custom day distribution (calorie skewing)**: Coach distributes baseline unevenly across Mon-Sun, stored as `day_calorie_overrides` JSONB
-- **Activity burn toggle** (`include_activity_burn`): Whether training calories are additive to baseline
+- **Custom day distribution (calorie skewing)**: Coach distributes baseline unevenly across Mon-Sun. Under new architecture, this is just the 7 `nutrition_plan_daily_targets` rows having different calorie values — saving creates a new plan version
+- **Activity burn toggle** (`include_activity_burn`): Whether training calories are additive to baseline. Stays on `clients` table — it's a mutable display preference, not part of the immutable plan
 - **Weight change detection**: >=3kg change from `nutrition_plan_base_weight_kg` triggers regeneration banner
 - **Training plan integration**: Training session calories are additive per-day from the active training plan
 
@@ -80,7 +80,10 @@ CREATE TABLE nutrition_plans (
   diet_type TEXT NOT NULL DEFAULT 'balanced',
   goal_weight_kg NUMERIC,
   goal_deadline DATE,
-  include_activity_burn BOOLEAN NOT NULL DEFAULT true,
+  -- NOTE: include_activity_burn stays on the clients table (not here).
+  -- It's a mutable display preference that controls whether training
+  -- session calories are added on top of the baseline at query time.
+  -- Toggling it doesn't change the plan — it changes how the plan is read.
 
   -- Calculated baseline (rest day, before training additions)
   baseline_calories INTEGER NOT NULL,
@@ -100,10 +103,6 @@ CREATE TABLE nutrition_plans (
   custom_carb_g NUMERIC,
   custom_fat_g NUMERIC,
 
-  -- Custom day distribution (calorie skewing)
-  custom_day_distribution BOOLEAN NOT NULL DEFAULT false,
-  day_calorie_overrides JSONB,
-
   -- Metadata
   regeneration_reason TEXT,     -- 'initial' | 'regenerated' | 'weight_change' | 'custom_macros'
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -120,7 +119,9 @@ CREATE INDEX idx_nutrition_plans_client_date
 
 ### `nutrition_plan_daily_targets` table
 
-Stores the **fully computed** per-day targets at plan creation time. This is the key missing piece — a historical snapshot of what the plan prescribed for each day, including training day adjustments, custom day distribution, and activity burns.
+Stores the **coach-prescribed baseline targets** per day at plan creation time. This is the key missing piece — a historical snapshot of what the coach prescribed for each day. Training session calories are NOT stored here; they are fetched live from the `training_sessions` table and added on top when `include_activity_burn` is enabled.
+
+Calorie skewing (custom day distribution) is handled naturally by the 7 rows: the coach sets different `calories` values per day, and saving creates a new plan version. There is no separate skewing toggle or JSONB override — the rows ARE the distribution.
 
 ```sql
 CREATE TABLE nutrition_plan_daily_targets (
@@ -128,21 +129,86 @@ CREATE TABLE nutrition_plan_daily_targets (
   nutrition_plan_id UUID NOT NULL REFERENCES nutrition_plans(id) ON DELETE CASCADE,
   day_of_week TEXT NOT NULL,            -- 'monday' .. 'sunday'
 
-  -- Computed targets for this day (final, after all adjustments)
+  -- Coach-prescribed baseline targets for this day
   calories INTEGER NOT NULL,
-  baseline_calories INTEGER NOT NULL,   -- before training additions
   protein_g NUMERIC NOT NULL,
   carb_g NUMERIC NOT NULL,
   fat_g NUMERIC NOT NULL,
 
-  -- Training context (frozen at plan creation)
+  -- Training context (snapshot at plan creation, used for UI labeling)
   is_training_day BOOLEAN NOT NULL DEFAULT false,
-  training_session_calories INTEGER DEFAULT 0,
-  external_activity_calories INTEGER DEFAULT 0,
 
   UNIQUE(nutrition_plan_id, day_of_week)
 );
 ```
+
+---
+
+## Training Plan Changes
+
+Training session calories are **always fetched live** from the `training_sessions` table — they are not frozen into `nutrition_plan_daily_targets`. This is a deliberate design choice.
+
+**How it works today:** `getTodaysNutritionTarget()` in `services/daily-logs-service.ts` dynamically fetches the active training plan, sums session calories for the target day, and adds them to the baseline. There is no trigger or recalculation mechanism when a coach edits a training plan — it's unnecessary because targets are never stored. The next fetch just picks up the new state.
+
+**How it works under this architecture:** The same dynamic fetch continues. `nutrition_plan_daily_targets.calories` stores only the coach-prescribed baseline. When `include_activity_burn` is enabled on the plan, training session calories from `training_sessions.estimated_calories` are fetched and added on top at query time.
+
+**Why not freeze training calories?** If the coach moves a heavy leg day from Monday to Wednesday, or updates exercises that change the calorie estimate, those changes should be reflected immediately in the client's daily targets. Freezing would require the coach to manually regenerate the nutrition plan after every training plan edit, or building a coupling mechanism between the two — both add complexity without clear benefit.
+
+**What `is_training_day` is for:** This boolean is a snapshot of whether training was scheduled on that day *when the plan was created*. It's used for UI labeling (e.g., showing a dumbbell icon next to training days in the skewing UI) but does not affect calorie calculations. If the training plan changes after the nutrition plan is created, this label may become stale — that's acceptable since it's cosmetic only.
+
+---
+
+## Row-Level Security
+
+Both new tables follow the established pattern from `nutrition_weekly_summaries` (migration 043): dual SELECT policies for coaches and clients, no INSERT/UPDATE/DELETE policies since all writes go through `supabaseAdmin` (service role bypass).
+
+```sql
+-- nutrition_plans
+ALTER TABLE nutrition_plans ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "coaches_view_client_nutrition_plans" ON nutrition_plans
+  FOR SELECT USING (
+    client_id IN (
+      SELECT id FROM clients
+      WHERE coach_id IN (SELECT id FROM coaches WHERE user_id = auth.uid())
+    )
+  );
+
+CREATE POLICY "clients_view_own_nutrition_plans" ON nutrition_plans
+  FOR SELECT USING (
+    client_id IN (
+      SELECT id FROM clients WHERE user_id = auth.uid()
+    )
+  );
+
+-- nutrition_plan_daily_targets
+ALTER TABLE nutrition_plan_daily_targets ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "coaches_view_client_daily_targets" ON nutrition_plan_daily_targets
+  FOR SELECT USING (
+    nutrition_plan_id IN (
+      SELECT id FROM nutrition_plans
+      WHERE client_id IN (
+        SELECT id FROM clients
+        WHERE coach_id IN (SELECT id FROM coaches WHERE user_id = auth.uid())
+      )
+    )
+  );
+
+CREATE POLICY "clients_view_own_daily_targets" ON nutrition_plan_daily_targets
+  FOR SELECT USING (
+    nutrition_plan_id IN (
+      SELECT id FROM nutrition_plans
+      WHERE client_id IN (
+        SELECT id FROM clients WHERE user_id = auth.uid()
+      )
+    )
+  );
+
+-- Writes go through supabaseAdmin (system-level upserts), so no INSERT/UPDATE policies needed.
+```
+
+> **Note:** The existing `nutrition_daily_goals` table has no RLS policies — this is a pre-existing security gap. If this new architecture replaces that table, it should be deprecated alongside `nutrition_plan_history` in Phase 3.
 
 ---
 
@@ -322,9 +388,11 @@ The redesigned coach review modal (stashed components) will need the following c
 | Immutable once archived | Historical accuracy — always answer "what was the plan on date X?" |
 | `effective_from` / `effective_until` date range | Date-based lookups without scanning all plans |
 | Unique active constraint | Prevents accidentally having two active plans |
-| Store computed daily targets (not just baseline) | Avoids recalculating from training plan state that may have since changed |
+| Store coach-prescribed daily targets | Historical snapshot of what the coach set for each day; training burn is additive at query time |
+| Training calories fetched live, not frozen | Coach edits to training plan (swapping days, changing exercises) are reflected immediately — no staleness, no coupling between training and nutrition plan tables |
+| Calorie skewing creates a new plan version | No separate JSONB blob or toggle — the 7 daily target rows ARE the distribution. Changing them is changing the plan. |
 | Keep `daily_logs.target_calories` | Captures real-time adjustments (actual training completed, alternative sessions) — different from the planned target |
-| `nutrition_plan_daily_targets` stores 7 rows per plan | Simple, queryable, covers custom day distribution and training day adjustments |
+| `nutrition_plan_daily_targets` stores 7 rows per plan | Simple, queryable, covers custom day distribution naturally |
 | Phase approach to migration | No big-bang rewrite; backward compat maintained throughout |
 
 ---

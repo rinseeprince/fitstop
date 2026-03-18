@@ -8,12 +8,20 @@ import {
   WEEKLY_NUTRITION_PARTIAL_PER_DAY,
 } from "@/lib/constants";
 
+type FullWeekTarget = {
+  calories: number;
+  proteinG: number;
+  carbsG: number;
+  fatG: number;
+};
+
 type KPIRibbonProps = {
   checkIn: CheckIn;
   dailyLogs: DailyLog[];
   comparisonData: GetCheckInComparisonResponse | null;
   contextStartDate: Date;
   contextEndDate: Date;
+  fullWeekTarget?: FullWeekTarget | null;
 };
 
 type KPICardData = {
@@ -42,6 +50,7 @@ export const KPIRibbon = ({
   comparisonData,
   contextStartDate,
   contextEndDate,
+  fullWeekTarget,
 }: KPIRibbonProps) => {
   const changes = comparisonData?.comparison?.changes;
   const daysDiff = Math.floor((contextEndDate.getTime() - contextStartDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
@@ -59,7 +68,9 @@ export const KPIRibbon = ({
     { total: 0, target: 0, daysLogged: 0 }
   );
 
-  const weeklyDiff = Math.abs(calStats.total - calStats.target);
+  // Use full-week target (logged + plan-based unlogged) when available
+  const effectiveTarget = fullWeekTarget ? fullWeekTarget.calories : calStats.target;
+  const weeklyDiff = Math.abs(calStats.total - effectiveTarget);
   const hitThreshold = WEEKLY_NUTRITION_HIT_PER_DAY * daysDiff;
   const partialThreshold = WEEKLY_NUTRITION_PARTIAL_PER_DAY * daysDiff;
   const adherenceLabel =
@@ -110,7 +121,7 @@ export const KPIRibbon = ({
     {
       label: "Calories",
       value: calStats.daysLogged > 0 ? calStats.total.toLocaleString() : "--",
-      unit: calStats.daysLogged > 0 ? `/ ${calStats.target.toLocaleString()}` : undefined,
+      unit: calStats.daysLogged > 0 ? `/ ${effectiveTarget.toLocaleString()}` : undefined,
       delta: adherenceLabel ? {
         text: `${adherenceLabel}`,
         type: adherenceLabel === "HIT" ? "positive" : adherenceLabel === "PARTIAL" ? "neutral" : "negative",

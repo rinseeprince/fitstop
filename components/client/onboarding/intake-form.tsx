@@ -24,7 +24,7 @@ const stepLabels = ["About You", "Goals", "Lifestyle", "Nutrition", "History"]
 // Fields belonging to each step for extraction
 const stepFields = {
   1: ["dateOfBirth", "gender", "height", "currentWeight", "bodyFatPercentage"],
-  2: ["primaryGoal", "targetWeight", "goalDeadline", "goalDescription", "motivation"],
+  2: ["primaryGoal", "targetWeight", "goalBodyFatPercentage", "goalDeadline", "goalDescription", "motivation"],
   3: ["workActivityLevel", "daysPerWeek", "trainingTimePreference", "trainingLocation", "availableEquipment", "sessionDurationMinutes"],
   4: ["dietaryRequirements", "foodAllergies", "dietDescription", "cookingFrequency", "hasTrackedMacrosBefore", "mealsPerDay", "biggestNutritionChallenge"],
   5: ["injuriesOrLimitations", "trainingExperienceLevel", "previousCoachingExperience", "previousCoachingDetails", "anythingElse"],

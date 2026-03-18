@@ -5,7 +5,7 @@ import type { DailyLog } from "@/types/daily-log";
 import type { WeeklyNutritionSummary, WeeklyAdherenceStatus } from "@/types/weekly-nutrition";
 import type { Database } from "@/types/database";
 import { getWeekStart, getWeekEnd, getWeekDays } from "@/lib/date-helpers";
-import { getTodaysNutritionTarget } from "@/services/daily-logs-service";
+import { getPlanTargetForDate } from "@/services/daily-logs-service";
 import {
   WEEKLY_NUTRITION_HIT_PER_DAY,
   WEEKLY_NUTRITION_PARTIAL_PER_DAY,
@@ -217,9 +217,9 @@ export async function upsertWeeklySummary(
   let fullWeekCarbs = logs.reduce((sum, l) => sum + (l.targetCarbsG ?? 0), 0);
   let fullWeekFat = logs.reduce((sum, l) => sum + (l.targetFatG ?? 0), 0);
 
-  // Fill in unlogged days with current nutrition plan targets
+  // Fill in unlogged days with the plan that was active on each specific date
   const planTargets = await Promise.all(
-    unloggedDays.map((d) => getTodaysNutritionTarget(clientId, d))
+    unloggedDays.map((d) => getPlanTargetForDate(clientId, d))
   );
   for (const pt of planTargets) {
     if (!pt) continue;
@@ -364,8 +364,9 @@ export async function backfillWeeklySummariesForClient(
 
   const existingWeeks = new Set((existing || []).map((r) => r.week_start_date));
 
-  // Backfill missing weeks
-  const missing = [...weekStarts].filter((ws) => !existingWeeks.has(ws));
+  // Backfill missing weeks (cap at 12 to bound parallel DB operations)
+  const MAX_BACKFILL_WEEKS = 12;
+  const missing = [...weekStarts].filter((ws) => !existingWeeks.has(ws)).slice(0, MAX_BACKFILL_WEEKS);
   await Promise.all(
     missing.map((weekStart) =>
       upsertWeeklySummary(clientId, weekStart).catch((err) => {

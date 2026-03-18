@@ -5,7 +5,8 @@ import type { TrainingPlan, TrainingSession, TrainingExercise, SessionType } fro
 import type { ActivityMetadata } from "@/types/external-activity";
 import type { TrainingSessionRow, TrainingExerciseRow, ClientSessionCompletionRow } from "@/lib/database-helpers";
 import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
-import { getWeeklyNutritionTargets, applyDayOverrides, calculateDailyMacros } from "@/utils/nutrition-helpers";
+import { getWeeklyNutritionTargets, applyDayOverrides, calculateDailyMacros, DAYS_OF_WEEK } from "@/utils/nutrition-helpers";
+import type { DayOfWeek } from "@/utils/nutrition-helpers";
 import { mapClientRow, mapCheckInRow } from "@/lib/mappers";
 
 // Create authenticated Supabase client for server-side client portal access
@@ -128,7 +129,7 @@ export async function getClientForCurrentUser(): Promise<Client | null> {
     .from("clients")
     .select("*")
     .eq("user_id", user.id)
-    .eq("is_active", true)
+    .eq("active", true)
     .single();
 
   if (error || !data) return null;
@@ -298,90 +299,142 @@ export async function getClientNutritionTargets(
 ): Promise<NutritionTargets | null> {
   const supabase = await createPortalClient();
 
-  const { data, error } = await supabase
+  // Read include_activity_burn and unit_preference from clients (display prefs stay on clients)
+  const { data: clientData, error: clientError } = await supabase
     .from("clients")
-    .select(
-      `calorie_target, protein_target_g, carb_target_g, fat_target_g,
-       custom_macros_enabled, custom_calories, custom_protein_g, custom_carb_g, custom_fat_g,
-       diet_type, unit_preference, baseline_calories, include_activity_burn,
-       custom_day_distribution, day_calorie_overrides`
-    )
+    .select("include_activity_burn, unit_preference")
     .eq("id", clientId)
     .single();
 
-  if (error || !data) return null;
+  if (clientError || !clientData) return null;
 
-  const includeActivityBurn = data.include_activity_burn ?? true;
+  const includeActivityBurn = clientData.include_activity_burn ?? true;
 
-  // Always fetch the real training plan so isTrainingDay flags are preserved
+  // Read active nutrition plan from new tables
+  const { data: plan, error: planError } = await supabase
+    .from("nutrition_plans")
+    .select("*")
+    .eq("client_id", clientId)
+    .eq("status", "active")
+    .order("effective_from", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (planError || !plan) return null;
+
+  // Fetch daily targets for this plan
+  const { data: dailyTargetRows, error: dtError } = await supabase
+    .from("nutrition_plan_daily_targets")
+    .select("*")
+    .eq("nutrition_plan_id", plan.id);
+
+  if (dtError) return null;
+
+  // Fetch the real training plan for live training calorie additions
   const trainingPlan = await getClientTrainingPlan(clientId);
 
-  // Calculate daily targets if we have baseline calories and protein target
-  let dailyTargets: DailyNutritionTargets[] | undefined = undefined;
+  // Build DailyNutritionTargets from the stored daily targets + live training data
+  const { getTrainingSessionCaloriesByDay, getTrainingSessionsSummary } = await import("@/utils/training-calorie-helpers");
+  const { getExternalActivitiesForDay, calculateExternalActivityCalories, getExternalActivitiesSummary } = await import("@/utils/nutrition-helpers");
 
-  if (data.baseline_calories && data.protein_target_g && data.diet_type) {
-    dailyTargets = getWeeklyNutritionTargets(
-      data.baseline_calories,
-      data.protein_target_g,
-      trainingPlan,
-      data.diet_type as DietType
-    );
+  const trainingSessionCaloriesByDay = getTrainingSessionCaloriesByDay(trainingPlan);
 
-    // Apply custom day distribution overrides (replaces baseline per day, training still additive)
-    if (data.custom_day_distribution && data.day_calorie_overrides) {
-      dailyTargets = applyDayOverrides(
-        dailyTargets,
-        data.day_calorie_overrides as DayCalorieOverrides,
-        data.diet_type as DietType
+  // Index stored targets by day
+  const targetsByDay = new Map(
+    (dailyTargetRows || []).map((dt) => [dt.day_of_week, dt])
+  );
+
+  let dailyTargets: DailyNutritionTargets[] = DAYS_OF_WEEK.map((day) => {
+    const stored = targetsByDay.get(day);
+    const baselineCalories = stored?.calories ?? plan.baseline_calories;
+    const proteinG = stored?.protein_g ?? plan.protein_target_g;
+    const carbG = stored?.carb_g ?? plan.carb_target_g;
+    const fatG = stored?.fat_g ?? plan.fat_target_g;
+    const isTrainingDay = stored?.is_training_day ?? false;
+
+    // Live training session calories
+    const trainingSessionCalories = trainingSessionCaloriesByDay[day] || 0;
+    const trainingSessions = getTrainingSessionsSummary(trainingPlan, day);
+
+    // Live external activity calories
+    const dayActivities = getExternalActivitiesForDay(trainingPlan, day);
+    const externalActivityCalories = calculateExternalActivityCalories(dayActivities);
+    const externalActivities = getExternalActivitiesSummary(dayActivities);
+
+    // Total = stored baseline + live training + live external activities
+    const totalActivityCalories = trainingSessionCalories + externalActivityCalories;
+    const dayCalories = baselineCalories + totalActivityCalories;
+
+    const totalCal = proteinG * 4 + carbG * 4 + fatG * 9;
+    const proteinPercent = totalCal > 0 ? Math.round((proteinG * 4 / totalCal) * 100) : 0;
+    const carbsPercent = totalCal > 0 ? Math.round((carbG * 4 / totalCal) * 100) : 0;
+
+    return {
+      day,
+      dayLabel: day.charAt(0).toUpperCase() + day.slice(1),
+      isTrainingDay,
+      calories: dayCalories,
+      baselineCalories,
+      proteinG,
+      carbsG: carbG,
+      fatG,
+      proteinPercent,
+      carbsPercent,
+      fatPercent: 100 - proteinPercent - carbsPercent,
+      trainingSessionCalories,
+      trainingSessions,
+      externalActivityCalories,
+      externalActivities,
+      totalCaloriesWithActivities: dayCalories,
+      includeActivityBurn,
+    };
+  });
+
+  // When activity burn is excluded, flatten calories to baseline
+  if (!includeActivityBurn) {
+    const dietType = (plan.diet_type as DietType) || "balanced";
+    dailyTargets = dailyTargets.map((day) => {
+      const macros = calculateDailyMacros(
+        day.baselineCalories,
+        day.proteinG,
+        false,
+        dietType
       );
-    }
+      const totalCal = macros.proteinG * 4 + macros.carbsG * 4 + macros.fatG * 9;
+      const proteinPercent = totalCal > 0 ? Math.round((macros.proteinG * 4 / totalCal) * 100) : 0;
+      const carbsPercent = totalCal > 0 ? Math.round((macros.carbsG * 4 / totalCal) * 100) : 0;
 
-    // When activity burn is excluded, flatten calories to baseline and recalculate macros
-    if (!includeActivityBurn) {
-      const dietType = (data.diet_type as DietType) || "balanced";
-      dailyTargets = dailyTargets.map((day) => {
-        const macros = calculateDailyMacros(
-          day.baselineCalories,
-          day.proteinG,
-          false,
-          dietType
-        );
-        const totalCal = macros.proteinG * 4 + macros.carbsG * 4 + macros.fatG * 9;
-        const proteinPercent = totalCal > 0 ? Math.round((macros.proteinG * 4 / totalCal) * 100) : 0;
-        const carbsPercent = totalCal > 0 ? Math.round((macros.carbsG * 4 / totalCal) * 100) : 0;
-
-        return {
-          ...day,
-          calories: day.baselineCalories,
-          trainingSessionCalories: 0,
-          externalActivityCalories: 0,
-          totalCaloriesWithActivities: day.baselineCalories,
-          proteinG: macros.proteinG,
-          carbsG: macros.carbsG,
-          fatG: macros.fatG,
-          proteinPercent,
-          carbsPercent,
-          fatPercent: 100 - proteinPercent - carbsPercent,
-        };
-      });
-    }
+      return {
+        ...day,
+        calories: day.baselineCalories,
+        trainingSessionCalories: 0,
+        externalActivityCalories: 0,
+        totalCaloriesWithActivities: day.baselineCalories,
+        proteinG: macros.proteinG,
+        carbsG: macros.carbsG,
+        fatG: macros.fatG,
+        proteinPercent,
+        carbsPercent,
+        fatPercent: 100 - proteinPercent - carbsPercent,
+      };
+    });
   }
 
   return {
-    calorieTarget: data.calorie_target,
-    proteinTargetG: data.protein_target_g,
-    carbTargetG: data.carb_target_g,
-    fatTargetG: data.fat_target_g,
-    customMacrosEnabled: data.custom_macros_enabled,
-    customCalories: data.custom_calories,
-    customProteinG: data.custom_protein_g,
-    customCarbG: data.custom_carb_g,
-    customFatG: data.custom_fat_g,
-    dietType: data.diet_type,
-    unitPreference: data.unit_preference,
-    baselineCalories: data.baseline_calories,
+    calorieTarget: plan.custom_macros_enabled && plan.custom_calories ? plan.custom_calories : plan.baseline_calories,
+    proteinTargetG: plan.protein_target_g,
+    carbTargetG: plan.carb_target_g,
+    fatTargetG: plan.fat_target_g,
+    customMacrosEnabled: plan.custom_macros_enabled,
+    customCalories: plan.custom_calories,
+    customProteinG: plan.custom_protein_g,
+    customCarbG: plan.custom_carb_g,
+    customFatG: plan.custom_fat_g,
+    dietType: plan.diet_type,
+    unitPreference: clientData.unit_preference,
+    baselineCalories: plan.baseline_calories,
     includeActivityBurn,
-    customDayDistribution: data.custom_day_distribution ?? false,
+    customDayDistribution: false, // No longer needed — daily targets rows ARE the distribution
     dailyTargets,
   };
 }

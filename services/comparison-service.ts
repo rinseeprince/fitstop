@@ -1,5 +1,6 @@
 import { getCheckInById, getPreviousCheckIn, getClientCheckIns, getFirstCheckIn } from "./check-in-service";
 import { getClientById } from "./client-service";
+import { supabaseAdmin } from "./supabase-admin";
 import { prepareChartData } from "@/lib/check-in-utils";
 import { calculateMetricChange, calculateDaysBetween, calculateGoalProgress } from "@/utils/comparison-utils";
 import type {
@@ -30,10 +31,24 @@ export const getCheckInComparison = async (
     checkInId
   );
 
-  // Fetch all check-ins for chart data (last 10) and first check-in for starting values
-  const [{ checkIns }, firstCheckIn] = await Promise.all([
+  // Fetch all check-ins for chart data (last 10), first check-in for starting values,
+  // active nutrition plan for base weight and created date, and goal_deadline from clients table
+  const [{ checkIns }, firstCheckIn, { data: activePlan }, { data: clientRow }] = await Promise.all([
     getClientCheckIns(currentCheckIn.clientId, { limit: 10 }),
     getFirstCheckIn(currentCheckIn.clientId),
+    supabaseAdmin
+      .from("nutrition_plans")
+      .select("base_weight_kg, created_at, goal_deadline")
+      .eq("client_id", currentCheckIn.clientId)
+      .eq("status", "active")
+      .order("effective_from", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabaseAdmin
+      .from("clients")
+      .select("goal_deadline")
+      .eq("id", currentCheckIn.clientId)
+      .single(),
   ]);
 
   // Calculate time between check-ins
@@ -50,13 +65,13 @@ export const getCheckInComparison = async (
       name: client.name,
       goalWeight: client.goalWeight,
       goalBodyFatPercentage: client.goalBodyFatPercentage,
-      goalDeadline: client.goalDeadline,
+      goalDeadline: activePlan?.goal_deadline ?? clientRow?.goal_deadline ?? undefined,
       currentWeight: client.currentWeight,
       currentBodyFatPercentage: client.currentBodyFatPercentage,
       weightUnit: client.weightUnit,
       unitPreference: client.unitPreference,
-      nutritionPlanBaseWeightKg: client.nutritionPlanBaseWeightKg,
-      nutritionPlanCreatedDate: client.nutritionPlanCreatedDate,
+      nutritionPlanBaseWeightKg: activePlan?.base_weight_kg ?? undefined,
+      nutritionPlanCreatedDate: activePlan?.created_at ?? undefined,
     },
     changes: {
       weight: calculateMetricChange(
@@ -215,15 +230,16 @@ export const getCheckInComparison = async (
   }
 
   // Deadline progress
-  if (client.goalDeadline) {
-    const deadline = new Date(client.goalDeadline);
+  const goalDeadline = activePlan?.goal_deadline ?? clientRow?.goal_deadline;
+  if (goalDeadline) {
+    const deadline = new Date(goalDeadline);
     const now = new Date();
     const daysRemaining = Math.ceil(
       (deadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
     );
 
     goalProgress.deadline = {
-      date: client.goalDeadline,
+      date: goalDeadline,
       daysRemaining,
       isPastDeadline: daysRemaining < 0,
     };

@@ -80,6 +80,7 @@ const FIELD_NAME_MAP: Record<string, string> = {
   current_body_fat_percentage: "body fat",
   goal_weight: "goal weight",
   goal_deadline: "goal deadline",
+  goal_body_fat_percentage: "goal body fat",
   work_activity_level: "activity level",
   height_unit: "height unit",
   weight_unit: "weight unit",
@@ -100,7 +101,7 @@ export async function syncMetricsToClient(
   const { data: client, error: clientError } = await db
     .from(clientsTable)
     .select(
-      "current_weight, height, gender, date_of_birth, current_body_fat_percentage, goal_weight, goal_deadline, work_activity_level, height_unit, weight_unit, unit_preference"
+      "current_weight, height, gender, date_of_birth, current_body_fat_percentage, goal_weight, goal_body_fat_percentage, goal_deadline, work_activity_level, height_unit, weight_unit, unit_preference"
     )
     .eq("id", clientId)
     .single();
@@ -137,6 +138,9 @@ export async function syncMetricsToClient(
   }
   if (client.goal_deadline == null && intake.goalDeadline != null) {
     updates.goal_deadline = intake.goalDeadline;
+  }
+  if (client.goal_body_fat_percentage == null && intake.goalBodyFatPercentage != null) {
+    updates.goal_body_fat_percentage = intake.goalBodyFatPercentage;
   }
   if (client.work_activity_level == null && intake.workActivityLevel != null) {
     updates.work_activity_level = intake.workActivityLevel;

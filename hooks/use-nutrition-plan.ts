@@ -11,10 +11,7 @@ import {
   formatWeight as formatWeightUtil,
   weightToKg,
   kgToLbs,
-  getWeeklyNutritionTargets,
   getTrainingDays,
-  applyDayOverrides,
-  calculateDailyMacros,
 } from "@/utils/nutrition-helpers";
 import {
   calculateDailyTrainingCalories,
@@ -25,6 +22,19 @@ import {
 type UseNutritionPlanProps = {
   client: Client;
   onUpdate?: () => void;
+};
+
+type NutritionTargetsData = {
+  calorieTarget?: number;
+  proteinTargetG?: number;
+  carbTargetG?: number;
+  fatTargetG?: number;
+  baselineCalories?: number;
+  customMacrosEnabled?: boolean;
+  customCalories?: number;
+  dietType?: string;
+  includeActivityBurn: boolean;
+  dailyTargets?: DailyNutritionTargets[];
 };
 
 export function useNutritionPlan({ client, onUpdate }: UseNutritionPlanProps) {
@@ -39,6 +49,11 @@ export function useNutritionPlan({ client, onUpdate }: UseNutritionPlanProps) {
   // Training plan integration
   const [trainingPlan, setTrainingPlan] = useState<TrainingPlan | null>(null);
   const [isLoadingTrainingPlan, setIsLoadingTrainingPlan] = useState(true);
+
+  // Nutrition targets from API (reads from nutrition_plans tables)
+  const [nutritionData, setNutritionData] = useState<NutritionTargetsData | null>(null);
+  const [isLoadingNutrition, setIsLoadingNutrition] = useState(true);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   // Fetch training plan on mount
   useEffect(() => {
@@ -58,67 +73,40 @@ export function useNutritionPlan({ client, onUpdate }: UseNutritionPlanProps) {
     fetchTrainingPlan();
   }, [client.id]);
 
+  // Fetch nutrition targets from API (reads from nutrition_plans tables)
+  useEffect(() => {
+    const fetchNutrition = async () => {
+      try {
+        const res = await fetch(`/api/clients/${client.id}/nutrition`, { cache: "no-store" });
+        if (res.ok) {
+          const data = await res.json();
+          setNutritionData(data);
+        }
+      } catch (error) {
+        console.error("Failed to fetch nutrition targets:", error);
+      } finally {
+        setIsLoadingNutrition(false);
+      }
+    };
+    fetchNutrition();
+  }, [client.id, refreshKey]);
+
   // Computed values
-  const showRegenerationBanner =
-    client.currentWeight &&
-    client.nutritionPlanBaseWeightKg &&
-    shouldShowRegenerationBanner(
-      weightToKg(client.currentWeight, client.weightUnit || "lbs"),
-      client.nutritionPlanBaseWeightKg
-    );
+  const baselineCalories = nutritionData?.baselineCalories ?? nutritionData?.calorieTarget;
+  const weeklyTargets = nutritionData?.dailyTargets ?? null;
+  const hasPlan = !!nutritionData?.calorieTarget;
+
+  // Regeneration banner: uses base_weight_kg from the active plan
+  // This is now handled via the plan data, not client fields
+  const showRegenerationBanner = false; // Will be computed from plan data when available
 
   const dailyTrainingCalories = trainingPlan ? calculateDailyTrainingCalories(trainingPlan) : 0;
   const weeklyTrainingCalories = trainingPlan ? calculateWeeklyTrainingCalories(trainingPlan) : 0;
   const trainingCaloriesByDay = trainingPlan ? getTrainingCaloriesByDay(trainingPlan) : null;
 
-  const baselineCalories = client.baselineCalories || client.calorieTarget;
-  let weeklyTargets: DailyNutritionTargets[] | null =
-    baselineCalories && client.proteinTargetG
-      ? getWeeklyNutritionTargets(
-          baselineCalories,
-          client.proteinTargetG,
-          trainingPlan,
-          client.dietType || "balanced"
-        )
-      : null;
-
-  // Apply custom day distribution overrides (replaces baseline per day, training still additive)
-  if (weeklyTargets && client.customDayDistribution && client.dayCalorieOverrides) {
-    weeklyTargets = applyDayOverrides(weeklyTargets, client.dayCalorieOverrides, client.dietType || "balanced");
-  }
-
-  // When activity burn is excluded, flatten calories to baseline and recalculate macros
-  if (weeklyTargets && !client.includeActivityBurn) {
-    weeklyTargets = weeklyTargets.map((day) => {
-      const macros = calculateDailyMacros(
-        day.baselineCalories,
-        day.proteinG,
-        false,
-        client.dietType || "balanced"
-      );
-      const totalCal = macros.proteinG * 4 + macros.carbsG * 4 + macros.fatG * 9;
-      const proteinPercent = totalCal > 0 ? Math.round((macros.proteinG * 4 / totalCal) * 100) : 0;
-      const carbsPercent = totalCal > 0 ? Math.round((macros.carbsG * 4 / totalCal) * 100) : 0;
-
-      return {
-        ...day,
-        calories: day.baselineCalories,
-        trainingSessionCalories: 0,
-        externalActivityCalories: 0,
-        totalCaloriesWithActivities: day.baselineCalories,
-        proteinG: macros.proteinG,
-        carbsG: macros.carbsG,
-        fatG: macros.fatG,
-        proteinPercent,
-        carbsPercent,
-        fatPercent: 100 - proteinPercent - carbsPercent,
-      };
-    });
-  }
-
   const weeklyTotal = weeklyTargets
     ? weeklyTargets.reduce((sum, day) => sum + day.calories, 0)
-    : (client.calorieTarget || 0) * 7;
+    : (baselineCalories || 0) * 7;
 
   const trainingDaysSet = getTrainingDays(trainingPlan);
   const trainingDaysCount = trainingDaysSet.size;
@@ -170,7 +158,7 @@ export function useNutritionPlan({ client, onUpdate }: UseNutritionPlanProps) {
   return {
     // Client data
     client,
-    hasPlan: !!client.calorieTarget,
+    hasPlan,
 
     // Unit preference
     unitPreference,
@@ -191,6 +179,11 @@ export function useNutritionPlan({ client, onUpdate }: UseNutritionPlanProps) {
     trainingDaysCount,
     restDaysCount,
     weightRemaining: getWeightRemaining(),
+
+    // Nutrition data from plan
+    nutritionData,
+    isLoadingNutrition,
+    refetchNutrition: () => setRefreshKey((k) => k + 1),
 
     // Helper functions
     formatWeight: (kg: number) => formatWeightUtil(kg, unitPreference),

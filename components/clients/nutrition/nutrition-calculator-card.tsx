@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import type { Client, ActivityLevel, DietType } from "@/types/check-in";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,15 +9,8 @@ import { useToast } from "@/hooks/use-toast";
 import { NutritionTargetsDisplay } from "./display/nutrition-targets-display";
 import { NutritionSettingsForm } from "./builder/nutrition-settings-form";
 import { NutritionWarnings } from "./nutrition-warnings";
-import { AlertCircle, RefreshCw, Settings2 } from "lucide-react";
-import {
-  shouldShowRegenerationBanner,
-  getWeightChange,
-  formatWeight,
-  weightToKg,
-} from "@/utils/nutrition-helpers";
+import { RefreshCw, Settings2 } from "lucide-react";
 import { validateClientForNutrition } from "@/lib/validations/nutrition";
-import { format } from "date-fns";
 
 type NutritionCalculatorCardProps = {
   client: Client;
@@ -31,23 +24,15 @@ export function NutritionCalculatorCard({
   const { toast } = useToast();
   const [isGenerating, setIsGenerating] = useState(false);
   const [warnings, setWarnings] = useState<string[]>([]);
-  const [showSettings, setShowSettings] = useState(!client.calorieTarget);
+  const [showSettings, setShowSettings] = useState(true);
+  const [hasPlan, setHasPlan] = useState(false);
 
   const [settings, setSettings] = useState({
-    workActivityLevel: client.workActivityLevel || ("sedentary" as ActivityLevel),
-    proteinTargetGPerKg: client.proteinTargetGPerKg || 2.0,
-    dietType: client.dietType || ("balanced" as DietType),
+    workActivityLevel: "sedentary" as ActivityLevel,
+    proteinTargetGPerKg: 2.0,
+    dietType: "balanced" as DietType,
     goalDeadline: client.goalDeadline || "",
   });
-
-  // Check if regeneration banner should show
-  const showBanner =
-    client.currentWeight &&
-    client.nutritionPlanBaseWeightKg &&
-    shouldShowRegenerationBanner(
-      weightToKg(client.currentWeight, client.weightUnit || "lbs"),
-      client.nutritionPlanBaseWeightKg
-    );
 
   const handleGenerate = async () => {
     // Validate client has required data
@@ -107,7 +92,7 @@ export function NutritionCalculatorCard({
         <div className="flex items-center justify-between">
           <CardTitle>Nutrition Calculator</CardTitle>
           <div className="flex items-center gap-2">
-            {client.calorieTarget && (
+            {hasPlan && (
               <Badge variant="outline">
                 Plan active
               </Badge>
@@ -117,77 +102,12 @@ export function NutritionCalculatorCard({
       </CardHeader>
 
       <CardContent className="space-y-6">
-        {/* Regeneration Banner */}
-        {showBanner && client.currentWeight && client.nutritionPlanBaseWeightKg && (
-          <div className="bg-warning/15 border border-warning/30 rounded-xs p-4">
-            <div className="flex items-start gap-3">
-              <AlertCircle className="h-5 w-5 text-warning mt-0.5 flex-shrink-0" />
-              <div className="flex-1 space-y-2">
-                <p className="text-sm font-medium text-foreground">
-                  Client weight has changed significantly
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  Weight changed by{" "}
-                  {(() => {
-                    const change = getWeightChange(
-                      weightToKg(client.currentWeight, client.weightUnit || "lbs"),
-                      client.nutritionPlanBaseWeightKg,
-                      unitPreference
-                    );
-                    return `${change.isLoss ? "-" : "+"}${change.value} ${change.unit}`;
-                  })()}{" "}
-                  since plan was created (
-                  {formatWeight(
-                    client.nutritionPlanBaseWeightKg,
-                    unitPreference
-                  )}{" "}
-                  →{" "}
-                  {formatWeight(
-                    weightToKg(client.currentWeight, client.weightUnit || "lbs"),
-                    unitPreference
-                  )}
-                  )
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Plan Status */}
-        {client.nutritionPlanCreatedDate && (
-          <div className="flex items-center justify-between text-sm text-muted-foreground border-b pb-4">
-            <div>
-              Plan created on{" "}
-              <span className="font-medium">
-                {format(new Date(client.nutritionPlanCreatedDate), "MMM d, yyyy")}
-              </span>{" "}
-              at{" "}
-              <span className="font-medium">
-                {formatWeight(
-                  client.nutritionPlanBaseWeightKg || 0,
-                  unitPreference
-                )}
-              </span>
-            </div>
-            {client.currentWeight && (
-              <div>
-                Current:{" "}
-                <span className="font-medium">
-                  {formatWeight(
-                    weightToKg(client.currentWeight, client.weightUnit || "lbs"),
-                    unitPreference
-                  )}
-                </span>
-              </div>
-            )}
-          </div>
-        )}
 
         {/* Warnings */}
         {warnings.length > 0 && <NutritionWarnings warnings={warnings} />}
 
         {/* Targets Display */}
-        <NutritionTargetsDisplay client={client} />
+        <NutritionTargetsDisplay unitPreference={unitPreference} />
 
         {/* Settings Section */}
         <div className="space-y-4">
@@ -196,7 +116,7 @@ export function NutritionCalculatorCard({
               <Settings2 className="h-4 w-4" />
               Plan Settings
             </h3>
-            {client.calorieTarget && (
+            {hasPlan && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -226,7 +146,7 @@ export function NutritionCalculatorCard({
                   <RefreshCw
                     className={`h-4 w-4 mr-2 ${isGenerating ? "animate-spin" : ""}`}
                   />
-                  {client.calorieTarget
+                  {hasPlan
                     ? "Regenerate Nutrition Plan"
                     : "Generate Nutrition Plan"}
                 </Button>

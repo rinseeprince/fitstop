@@ -53,20 +53,23 @@ export async function GET(request: NextRequest) {
       const supabase = await createServerSupabaseClient();
       const { data: lastCheckIn } = await supabase
         .from("check_ins")
-        .select("created_at")
+        .select("period_end, created_at")
         .eq("client_id", client.id)
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
 
-      const lastCheckInDate = lastCheckIn?.created_at
-        ? new Date(lastCheckIn.created_at).toISOString().split("T")[0]
-        : null;
+      // Use period_end (the period the check-in covers) instead of created_at
+      // (when it was submitted). Fallback to created_at for pre-migration rows.
+      const lastCheckInPeriodEnd = lastCheckIn?.period_end
+        ?? (lastCheckIn?.created_at
+          ? new Date(lastCheckIn.created_at).toISOString().split("T")[0]
+          : null);
 
       const today = new Date();
       const { status, periodStart, periodEnd, nextDueDate } = getCheckInStatus(
         expectedDay,
-        lastCheckInDate,
+        lastCheckInPeriodEnd,
         today
       );
       checkInGateStatus = status;

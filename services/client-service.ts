@@ -95,10 +95,12 @@ export const getClientsForCoach = async (
     .select(`
       *,
       check_ins!client_id (
-        created_at
+        created_at,
+        period_end
       )
     `)
     .eq("coach_id", coachId)
+    .eq("active", true)
     .order("created_at", { ascending: false });
 
   if (clientsError) {
@@ -110,20 +112,22 @@ export const getClientsForCoach = async (
     return [];
   }
 
-  type ClientWithCheckIns = ClientRow & { check_ins: { created_at: string }[] };
+  type ClientWithCheckIns = ClientRow & { check_ins: { created_at: string; period_end: string | null }[] };
 
   // Transform clients with check-in info
   return (clients as ClientWithCheckIns[]).map((client) => {
     // Get the most recent check-in date
     const checkIns = client.check_ins || [];
-    const sortedCheckIns = checkIns.sort((a: { created_at: string }, b: { created_at: string }) =>
+    const sortedCheckIns = checkIns.sort((a, b) =>
       new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
     const lastCheckInDate = sortedCheckIns[0]?.created_at;
+    const lastCheckInPeriodEnd = sortedCheckIns[0]?.period_end ?? undefined;
 
     return {
       ...mapClientRow(client),
       lastCheckInDate: lastCheckInDate ?? undefined,
+      lastCheckInPeriodEnd,
       engagement: calculateEngagement(lastCheckInDate ?? null),
     };
   });

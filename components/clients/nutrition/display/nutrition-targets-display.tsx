@@ -1,14 +1,26 @@
-import type { Client } from "@/types/check-in";
+import type { UnitPreference } from "@/types/check-in";
 import { getProteinTargetLabel } from "@/utils/nutrition-helpers";
 
 type NutritionTargetsDisplayProps = {
-  client: Client;
+  calorieTarget?: number;
+  proteinTargetG?: number;
+  carbTargetG?: number;
+  fatTargetG?: number;
+  customMacrosEnabled?: boolean;
+  proteinTargetGPerKg?: number;
+  unitPreference?: UnitPreference;
 };
 
 export function NutritionTargetsDisplay({
-  client,
+  calorieTarget,
+  proteinTargetG,
+  carbTargetG,
+  fatTargetG,
+  customMacrosEnabled,
+  proteinTargetGPerKg,
+  unitPreference = "imperial",
 }: NutritionTargetsDisplayProps) {
-  if (!client.calorieTarget) {
+  if (!calorieTarget) {
     return (
       <div className="text-center py-8 text-muted-foreground">
         <p>No nutrition plan generated yet</p>
@@ -19,16 +31,9 @@ export function NutritionTargetsDisplay({
     );
   }
 
-  // Use custom macros if enabled, otherwise use calculated
-  const proteinG = client.customMacrosEnabled
-    ? client.customProteinG!
-    : client.proteinTargetG!;
-  const carbG = client.customMacrosEnabled
-    ? client.customCarbG!
-    : client.carbTargetG!;
-  const fatG = client.customMacrosEnabled
-    ? client.customFatG!
-    : client.fatTargetG!;
+  const proteinG = proteinTargetG || 0;
+  const carbG = carbTargetG || 0;
+  const fatG = fatTargetG || 0;
 
   // Calculate percentages
   const proteinCal = proteinG * 4;
@@ -36,23 +41,21 @@ export function NutritionTargetsDisplay({
   const fatCal = fatG * 9;
   const totalCal = proteinCal + carbCal + fatCal;
 
-  const proteinPct = Math.round((proteinCal / totalCal) * 100);
-  const carbPct = Math.round((carbCal / totalCal) * 100);
-  const fatPct = Math.round((fatCal / totalCal) * 100);
-
-  const unitPreference = client.unitPreference || "imperial";
+  const proteinPct = totalCal > 0 ? Math.round((proteinCal / totalCal) * 100) : 0;
+  const carbPct = totalCal > 0 ? Math.round((carbCal / totalCal) * 100) : 0;
+  const fatPct = totalCal > 0 ? Math.round((fatCal / totalCal) * 100) : 0;
 
   return (
     <div className="space-y-6">
       {/* Calorie Target */}
       <div className="text-center pb-6">
         <div className="text-4xl font-semibold text-primary">
-          {client.calorieTarget.toLocaleString()}
+          {calorieTarget.toLocaleString()}
         </div>
         <div className="text-sm text-muted-foreground mt-1">
           calories per day
         </div>
-        {client.customMacrosEnabled && (
+        {customMacrosEnabled && (
           <div className="text-xs text-warning mt-2">Custom macros active</div>
         )}
       </div>
@@ -64,10 +67,10 @@ export function NutritionTargetsDisplay({
           <div className="flex justify-between items-baseline mb-2">
             <div>
               <span className="font-semibold text-lg">Protein</span>
-              {!client.customMacrosEnabled && client.proteinTargetGPerKg && (
+              {!customMacrosEnabled && proteinTargetGPerKg && (
                 <span className="text-xs text-muted-foreground ml-2">
                   {getProteinTargetLabel(
-                    client.proteinTargetGPerKg,
+                    proteinTargetGPerKg,
                     unitPreference
                   )}
                 </span>

@@ -350,6 +350,7 @@ export type Client = {
   // Goal fields (manually set by coach)
   goalWeight?: number;
   goalBodyFatPercentage?: number;
+  goalDeadline?: string;
   weightUnit?: "lbs" | "kg";
 
   // Starting metrics (original intake values for goal tracking)
@@ -378,41 +379,12 @@ export type Client = {
   currentStreak?: number;
   longestStreak?: number;
 
-  // Nutrition fields
+  // Display preferences (remain on clients table)
   unitPreference?: UnitPreference;
-  workActivityLevel?: ActivityLevel;
-  trainingVolumeHours?: TrainingVolume;
-  proteinTargetGPerKg?: number; // 1.0-3.0 g/kg
-  dietType?: DietType;
-  goalDeadline?: string; // ISO date string
+  includeActivityBurn: boolean;
 
   // Activation
   welcomeMessage?: string;
-
-  // Nutrition plan metadata
-  nutritionPlanCreatedDate?: string; // ISO timestamp
-  nutritionPlanBaseWeightKg?: number; // Weight (in kg) when plan was created
-
-  // Locked nutrition targets (from calculation)
-  baselineCalories?: number; // Rest day calories (TDEE - deficit)
-  calorieTarget?: number;
-  proteinTargetG?: number;
-  carbTargetG?: number;
-  fatTargetG?: number;
-
-  // Activity burn toggle
-  includeActivityBurn: boolean;
-
-  // Custom macro overrides
-  customMacrosEnabled?: boolean;
-  customProteinG?: number;
-  customCarbG?: number;
-  customFatG?: number;
-  customCalories?: number;
-
-  // Custom day distribution (calorie skewing)
-  customDayDistribution?: boolean;
-  dayCalorieOverrides?: DayCalorieOverrides;
 
   // Manual BMR/TDEE overrides
   bmrManualOverride?: boolean;
@@ -550,6 +522,7 @@ export type CheckInReminder = {
 // Extended client types for tracking
 export type ClientWithCheckInInfo = Client & {
   lastCheckInDate?: string;
+  lastCheckInPeriodEnd?: string;
   engagement?: "high" | "medium" | "low";
 };
 

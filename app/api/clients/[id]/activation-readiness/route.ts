@@ -3,6 +3,7 @@ import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { getClientById } from "@/services/client-service";
 import { getActiveTrainingPlan } from "@/services/training-service";
 import { getClientHabits } from "@/services/daily-habits-service";
+import { supabaseAdmin } from "@/services/supabase-admin";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 
 export async function GET(
@@ -27,16 +28,23 @@ export async function GET(
       return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
     }
 
-    const [trainingPlan, habits] = await Promise.all([
+    const [trainingPlan, habits, { data: activePlan }] = await Promise.all([
       getActiveTrainingPlan(clientId),
       getClientHabits(clientId),
+      supabaseAdmin
+        .from("nutrition_plans")
+        .select("id")
+        .eq("client_id", clientId)
+        .eq("status", "active")
+        .limit(1)
+        .maybeSingle(),
     ]);
 
     return NextResponse.json({
       success: true,
       data: {
         hasTrainingPlan: trainingPlan !== null,
-        hasNutritionPlan: !!client.nutritionPlanCreatedDate,
+        hasNutritionPlan: activePlan !== null,
         hasHabits: habits.length > 0,
       },
     });

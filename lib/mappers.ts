@@ -1,4 +1,4 @@
-import type { CheckIn, Client, AIInsight, AIRecommendation, EnhancedAIData, ReminderPreferences, DayCalorieOverrides } from "@/types/check-in";
+import type { CheckIn, Client, AIInsight, AIRecommendation, EnhancedAIData, ReminderPreferences } from "@/types/check-in";
 import type { ClientIntake, ClientIntakeRow, OnboardingStatus } from "@/types/client-intake";
 import type { CheckInRow, ClientRow } from "./database-helpers";
 
@@ -83,30 +83,11 @@ export function mapClientRow(row: ClientRow): Client {
     checkInAdherenceRate: row.check_in_adherence_rate ?? undefined,
     currentStreak: row.current_streak ?? undefined,
     longestStreak: row.longest_streak ?? undefined,
-    // Nutrition fields
+    // Display preferences
     unitPreference: (row.unit_preference ?? "imperial") as "metric" | "imperial",
-    workActivityLevel: (row.work_activity_level ?? undefined) as "sedentary" | "lightly_active" | "moderately_active" | "very_active" | "extremely_active" | undefined,
-    trainingVolumeHours: (row.training_volume_hours ?? undefined) as "0-1" | "2-3" | "4-5" | "6-7" | "8+" | undefined,
-    proteinTargetGPerKg: row.protein_target_g_per_kg ?? undefined,
-    dietType: (row.diet_type ?? undefined) as "balanced" | "high_carb" | "low_carb" | "keto" | "custom" | undefined,
-    goalDeadline: row.goal_deadline ?? undefined,
-    nutritionPlanCreatedDate: row.nutrition_plan_created_date ?? undefined,
-    nutritionPlanBaseWeightKg: row.nutrition_plan_base_weight_kg ?? undefined,
-    baselineCalories: row.baseline_calories ?? undefined,
+    includeActivityBurn: row.include_activity_burn ?? true,
     startingWeight: row.starting_weight ?? undefined,
     startingBodyFatPercentage: row.starting_body_fat_percentage ?? undefined,
-    calorieTarget: row.calorie_target ?? undefined,
-    proteinTargetG: row.protein_target_g ?? undefined,
-    carbTargetG: row.carb_target_g ?? undefined,
-    fatTargetG: row.fat_target_g ?? undefined,
-    includeActivityBurn: row.include_activity_burn ?? true,
-    customMacrosEnabled: row.custom_macros_enabled ?? false,
-    customProteinG: row.custom_protein_g ?? undefined,
-    customCarbG: row.custom_carb_g ?? undefined,
-    customFatG: row.custom_fat_g ?? undefined,
-    customCalories: row.custom_calories ?? undefined,
-    customDayDistribution: row.custom_day_distribution ?? false,
-    dayCalorieOverrides: (row.day_calorie_overrides ?? undefined) as DayCalorieOverrides | undefined,
     bmrManualOverride: row.bmr_manual_override ?? undefined,
     tdeeManualOverride: row.tdee_manual_override ?? undefined,
     welcomeMessage: row.welcome_message ?? undefined,
@@ -138,6 +119,7 @@ export function mapClientIntakeRow(row: ClientIntakeRow): ClientIntake {
     primaryGoal: (row.primary_goal ?? undefined) as ClientIntake["primaryGoal"],
     goalDetails: row.goal_details ?? undefined,
     targetWeight: row.target_weight ?? undefined,
+    goalBodyFatPercentage: row.goal_body_fat_percentage ?? undefined,
     goalDeadline: row.goal_deadline ?? undefined,
     goalDescription: row.goal_description ?? undefined,
     motivation: row.motivation ?? undefined,

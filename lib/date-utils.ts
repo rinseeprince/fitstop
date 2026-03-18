@@ -181,13 +181,13 @@ export type CheckInGateStatus = "available" | "completed" | "not_due" | "overdue
  */
 export function getCheckInStatus(
   expectedCheckInDay: DayOfWeek,
-  lastCheckInDate: string | null,
+  lastCheckInPeriodEnd: string | null,
   today: Date
 ): { status: CheckInGateStatus; periodStart: string; periodEnd: string; nextDueDate: string } {
   const { periodStart, periodEnd } = calculateCheckInPeriod(today, expectedCheckInDay);
 
-  // Check if the last check-in falls within or after this period
-  if (lastCheckInDate && lastCheckInDate >= periodStart) {
+  // Check if the last check-in covers this exact period
+  if (lastCheckInPeriodEnd && lastCheckInPeriodEnd === periodEnd) {
     return { status: "completed", periodStart, periodEnd, nextDueDate: getNextPeriodEnd(periodEnd) };
   }
 
@@ -195,7 +195,7 @@ export function getCheckInStatus(
 
   // Brand-new client with no prior check-ins: their first check-in isn't due until
   // the next occurrence of their expected day, not the current/past one.
-  if (!lastCheckInDate && todayStr >= periodEnd) {
+  if (!lastCheckInPeriodEnd && todayStr >= periodEnd) {
     const nextDueDate = getNextPeriodEnd(periodEnd);
     return { status: "not_due", periodStart, periodEnd, nextDueDate };
   }

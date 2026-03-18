@@ -24,6 +24,13 @@ import type { CheckIn, GetCheckInComparisonResponse } from "@/types/check-in";
 import type { DailyLog } from "@/types/daily-log";
 import type { HabitLogWithDetails } from "@/types/daily-habit";
 
+type FullWeekTarget = {
+  calories: number;
+  proteinG: number;
+  carbsG: number;
+  fatG: number;
+};
+
 type CheckInDetailModalProps = {
   checkInId: string | null;
   clientId: string;
@@ -62,6 +69,7 @@ export const CheckInDetailModal = ({
   const [dailyContextLoading, setDailyContextLoading] = useState(false);
   const [contextStartDate, setContextStartDate] = useState<Date | null>(null);
   const [contextEndDate, setContextEndDate] = useState<Date | null>(null);
+  const [fullWeekTarget, setFullWeekTarget] = useState<FullWeekTarget | null>(null);
 
   useEffect(() => {
     if (!checkInId) {
@@ -111,6 +119,7 @@ export const CheckInDetailModal = ({
       setHabitLogs([]);
       setContextStartDate(null);
       setContextEndDate(null);
+      setFullWeekTarget(null);
       return;
     }
 
@@ -150,14 +159,64 @@ export const CheckInDetailModal = ({
           ),
         ]);
 
+        let fetchedLogs: DailyLog[] = [];
         if (logsResponse.ok) {
           const logsData = await logsResponse.json();
-          setDailyLogs(logsData.data || []);
+          fetchedLogs = logsData.data || [];
+          setDailyLogs(fetchedLogs);
         }
 
         if (habitsResponse.ok) {
           const habitsData = await habitsResponse.json();
           setHabitLogs(habitsData.data || []);
+        }
+
+        // Compute full-week target: logged days use daily_log.target_calories,
+        // unlogged days use getPlanTargetForDate() via the API
+        try {
+          const loggedDates = new Set(fetchedLogs.map((l: DailyLog) => l.date));
+          // Generate all dates in the range
+          const allDates: string[] = [];
+          const cursor = new Date(startDate);
+          while (cursor <= endDate) {
+            allDates.push(cursor.toISOString().split("T")[0]);
+            cursor.setDate(cursor.getDate() + 1);
+          }
+          const unloggedDates = allDates.filter((d) => !loggedDates.has(d));
+
+          // Sum targets from logged days
+          let totalCal = fetchedLogs.reduce((sum: number, l: DailyLog) => sum + (l.targetCalories ?? 0), 0);
+          let totalProtein = fetchedLogs.reduce((sum: number, l: DailyLog) => sum + (l.targetProteinG ?? 0), 0);
+          let totalCarbs = fetchedLogs.reduce((sum: number, l: DailyLog) => sum + (l.targetCarbsG ?? 0), 0);
+          let totalFat = fetchedLogs.reduce((sum: number, l: DailyLog) => sum + (l.targetFatG ?? 0), 0);
+
+          // Fetch plan targets for unlogged days
+          if (unloggedDates.length > 0) {
+            const planTargetResponse = await fetch(
+              `/api/clients/${clientId}/nutrition/plan-targets?dates=${unloggedDates.join(",")}`,
+              { cache: "no-store" }
+            );
+            if (planTargetResponse.ok) {
+              const planTargetData = await planTargetResponse.json();
+              const targets = planTargetData.targets || [];
+              for (const pt of targets) {
+                totalCal += pt.calories ?? 0;
+                totalProtein += pt.proteinG ?? 0;
+                totalCarbs += pt.carbsG ?? 0;
+                totalFat += pt.fatG ?? 0;
+              }
+            }
+          }
+
+          setFullWeekTarget({
+            calories: totalCal,
+            proteinG: totalProtein,
+            carbsG: totalCarbs,
+            fatG: totalFat,
+          });
+        } catch {
+          // Non-fatal: fall back to logged-days-only targets
+          setFullWeekTarget(null);
         }
       } catch (error) {
         console.error('Error fetching daily context:', error instanceof Error ? error.message : "Unknown error");
@@ -316,6 +375,7 @@ export const CheckInDetailModal = ({
                       comparisonData={comparisonData}
                       contextStartDate={contextStartDate}
                       contextEndDate={contextEndDate}
+                      fullWeekTarget={fullWeekTarget}
                     />
                   )}
 
@@ -334,6 +394,7 @@ export const CheckInDetailModal = ({
                             dailyLogs={dailyLogs}
                             contextStartDate={contextStartDate}
                             contextEndDate={contextEndDate}
+                            fullWeekTarget={fullWeekTarget}
                           />
                           <TrainingSection
                             dailyLogs={dailyLogs}

@@ -591,11 +591,8 @@ export type Database = {
         Row: {
           active: boolean | null
           avatar_url: string | null
-          baseline_calories: number | null
           bmr: number | null
           bmr_manual_override: boolean | null
-          calorie_target: number | null
-          carb_target_g: number | null
           check_in_adherence_rate: number | null
           check_in_frequency: string | null
           check_in_frequency_days: number | null
@@ -604,18 +601,9 @@ export type Database = {
           current_body_fat_percentage: number | null
           current_streak: number | null
           current_weight: number | null
-          custom_calories: number | null
-          custom_carb_g: number | null
-          custom_fat_g: number | null
-          custom_day_distribution: boolean | null
-          custom_macros_enabled: boolean | null
-          custom_protein_g: number | null
-          day_calorie_overrides: Json | null
           date_of_birth: string | null
-          diet_type: string | null
           email: string
           expected_check_in_day: string | null
-          fat_target_g: number | null
           gender: string | null
           goal_body_fat_percentage: number | null
           goal_deadline: string | null
@@ -628,10 +616,6 @@ export type Database = {
           longest_streak: number | null
           name: string
           notes: string | null
-          nutrition_plan_base_weight_kg: number | null
-          nutrition_plan_created_date: string | null
-          protein_target_g: number | null
-          protein_target_g_per_kg: number | null
           reminder_preferences: Json | null
           starting_body_fat_percentage: number | null
           starting_weight: number | null
@@ -639,13 +623,11 @@ export type Database = {
           tdee_manual_override: boolean | null
           total_check_ins_completed: number | null
           total_check_ins_expected: number | null
-          training_volume_hours: string | null
           unit_preference: string | null
           updated_at: string | null
           user_id: string | null
           weight_unit: string | null
           welcome_message: string | null
-          work_activity_level: string | null
           onboarding_status: string | null
           walkthrough_completed_at: string | null
           start_date: string | null
@@ -653,11 +635,8 @@ export type Database = {
         Insert: {
           active?: boolean | null
           avatar_url?: string | null
-          baseline_calories?: number | null
           bmr?: number | null
           bmr_manual_override?: boolean | null
-          calorie_target?: number | null
-          carb_target_g?: number | null
           check_in_adherence_rate?: number | null
           check_in_frequency?: string | null
           check_in_frequency_days?: number | null
@@ -666,18 +645,9 @@ export type Database = {
           current_body_fat_percentage?: number | null
           current_streak?: number | null
           current_weight?: number | null
-          custom_calories?: number | null
-          custom_carb_g?: number | null
-          custom_fat_g?: number | null
-          custom_day_distribution?: boolean | null
-          custom_macros_enabled?: boolean | null
-          custom_protein_g?: number | null
-          day_calorie_overrides?: Json | null
           date_of_birth?: string | null
-          diet_type?: string | null
           email: string
           expected_check_in_day?: string | null
-          fat_target_g?: number | null
           gender?: string | null
           goal_body_fat_percentage?: number | null
           goal_deadline?: string | null
@@ -690,10 +660,6 @@ export type Database = {
           longest_streak?: number | null
           name: string
           notes?: string | null
-          nutrition_plan_base_weight_kg?: number | null
-          nutrition_plan_created_date?: string | null
-          protein_target_g?: number | null
-          protein_target_g_per_kg?: number | null
           reminder_preferences?: Json | null
           starting_body_fat_percentage?: number | null
           starting_weight?: number | null
@@ -701,13 +667,11 @@ export type Database = {
           tdee_manual_override?: boolean | null
           total_check_ins_completed?: number | null
           total_check_ins_expected?: number | null
-          training_volume_hours?: string | null
           unit_preference?: string | null
           updated_at?: string | null
           user_id?: string | null
           weight_unit?: string | null
           welcome_message?: string | null
-          work_activity_level?: string | null
           onboarding_status?: string | null
           walkthrough_completed_at?: string | null
           start_date?: string | null
@@ -715,11 +679,8 @@ export type Database = {
         Update: {
           active?: boolean | null
           avatar_url?: string | null
-          baseline_calories?: number | null
           bmr?: number | null
           bmr_manual_override?: boolean | null
-          calorie_target?: number | null
-          carb_target_g?: number | null
           check_in_adherence_rate?: number | null
           check_in_frequency?: string | null
           check_in_frequency_days?: number | null
@@ -728,18 +689,9 @@ export type Database = {
           current_body_fat_percentage?: number | null
           current_streak?: number | null
           current_weight?: number | null
-          custom_calories?: number | null
-          custom_carb_g?: number | null
-          custom_fat_g?: number | null
-          custom_day_distribution?: boolean | null
-          custom_macros_enabled?: boolean | null
-          custom_protein_g?: number | null
-          day_calorie_overrides?: Json | null
           date_of_birth?: string | null
-          diet_type?: string | null
           email?: string
           expected_check_in_day?: string | null
-          fat_target_g?: number | null
           gender?: string | null
           goal_body_fat_percentage?: number | null
           goal_deadline?: string | null
@@ -752,10 +704,6 @@ export type Database = {
           longest_streak?: number | null
           name?: string
           notes?: string | null
-          nutrition_plan_base_weight_kg?: number | null
-          nutrition_plan_created_date?: string | null
-          protein_target_g?: number | null
-          protein_target_g_per_kg?: number | null
           reminder_preferences?: Json | null
           starting_body_fat_percentage?: number | null
           starting_weight?: number | null
@@ -763,13 +711,11 @@ export type Database = {
           tdee_manual_override?: boolean | null
           total_check_ins_completed?: number | null
           total_check_ins_expected?: number | null
-          training_volume_hours?: string | null
           unit_preference?: string | null
           updated_at?: string | null
           user_id?: string | null
           weight_unit?: string | null
           welcome_message?: string | null
-          work_activity_level?: string | null
           onboarding_status?: string | null
           walkthrough_completed_at?: string | null
           start_date?: string | null
@@ -1234,146 +1180,149 @@ export type Database = {
           }
         ]
       }
-      nutrition_daily_goals: {
+      nutrition_plan_daily_targets: {
         Row: {
-          actual_calories: number | null
-          calorie_target: number
-          carbs_g: number | null
-          client_id: string
-          completed_at: string | null
-          completion_quality: string | null
-          created_at: string
-          day_of_week: string
-          fat_g: number | null
           id: string
-          is_completed: boolean | null
-          is_training_day: boolean | null
-          notes: string | null
-          protein_g: number | null
-          training_calorie_adjustment: number | null
-          updated_at: string
-          week_start_date: string
+          nutrition_plan_id: string
+          day_of_week: string
+          calories: number
+          protein_g: number
+          carb_g: number
+          fat_g: number
+          is_training_day: boolean
         }
         Insert: {
-          actual_calories?: number | null
-          calorie_target: number
-          carbs_g?: number | null
-          client_id: string
-          completed_at?: string | null
-          completion_quality?: string | null
-          created_at?: string
-          day_of_week: string
-          fat_g?: number | null
           id?: string
-          is_completed?: boolean | null
-          is_training_day?: boolean | null
-          notes?: string | null
-          protein_g?: number | null
-          training_calorie_adjustment?: number | null
-          updated_at?: string
-          week_start_date: string
+          nutrition_plan_id: string
+          day_of_week: string
+          calories: number
+          protein_g: number
+          carb_g: number
+          fat_g: number
+          is_training_day?: boolean
         }
         Update: {
-          actual_calories?: number | null
-          calorie_target?: number
-          carbs_g?: number | null
-          client_id?: string
-          completed_at?: string | null
-          completion_quality?: string | null
-          created_at?: string
-          day_of_week?: string
-          fat_g?: number | null
           id?: string
-          is_completed?: boolean | null
-          is_training_day?: boolean | null
-          notes?: string | null
-          protein_g?: number | null
-          training_calorie_adjustment?: number | null
-          updated_at?: string
-          week_start_date?: string
+          nutrition_plan_id?: string
+          day_of_week?: string
+          calories?: number
+          protein_g?: number
+          carb_g?: number
+          fat_g?: number
+          is_training_day?: boolean
         }
         Relationships: [
           {
-            foreignKeyName: "nutrition_daily_goals_client_id_fkey"
-            columns: ["client_id"]
+            foreignKeyName: "nutrition_plan_daily_targets_nutrition_plan_id_fkey"
+            columns: ["nutrition_plan_id"]
             isOneToOne: false
-            referencedRelation: "clients"
+            referencedRelation: "nutrition_plans"
             referencedColumns: ["id"]
           },
         ]
       }
-      nutrition_plan_history: {
+      nutrition_plans: {
         Row: {
+          id: string
+          client_id: string
+          coach_id: string
+          name: string | null
+          status: string
+          effective_from: string
+          effective_until: string | null
+          work_activity_level: string
+          training_volume_hours: string
+          protein_target_g_per_kg: number
+          diet_type: string
+          goal_weight_kg: number | null
+          goal_deadline: string | null
+          baseline_calories: number
+          protein_target_g: number
+          carb_target_g: number
+          fat_target_g: number
           base_weight_kg: number
           bmr: number | null
-          calorie_target: number
-          carb_target_g: number
-          client_id: string
-          created_at: string
-          created_by_coach_id: string | null
-          diet_type: string
-          fat_target_g: number
-          goal_deadline: string | null
-          goal_weight_kg: number | null
-          id: string
-          protein_target_g: number
-          protein_target_g_per_kg: number
-          regeneration_reason: string | null
           tdee: number | null
-          training_volume_hours: string
-          work_activity_level: string
+          custom_macros_enabled: boolean
+          custom_calories: number | null
+          custom_protein_g: number | null
+          custom_carb_g: number | null
+          custom_fat_g: number | null
+          regeneration_reason: string | null
+          created_at: string
+          updated_at: string
         }
         Insert: {
+          id?: string
+          client_id: string
+          coach_id: string
+          name?: string | null
+          status?: string
+          effective_from: string
+          effective_until?: string | null
+          work_activity_level: string
+          training_volume_hours: string
+          protein_target_g_per_kg?: number
+          diet_type?: string
+          goal_weight_kg?: number | null
+          goal_deadline?: string | null
+          baseline_calories: number
+          protein_target_g: number
+          carb_target_g: number
+          fat_target_g: number
           base_weight_kg: number
           bmr?: number | null
-          calorie_target: number
-          carb_target_g: number
-          client_id: string
-          created_at?: string
-          created_by_coach_id?: string | null
-          diet_type: string
-          fat_target_g: number
-          goal_deadline?: string | null
-          goal_weight_kg?: number | null
-          id?: string
-          protein_target_g: number
-          protein_target_g_per_kg: number
-          regeneration_reason?: string | null
           tdee?: number | null
-          training_volume_hours: string
-          work_activity_level: string
+          custom_macros_enabled?: boolean
+          custom_calories?: number | null
+          custom_protein_g?: number | null
+          custom_carb_g?: number | null
+          custom_fat_g?: number | null
+          regeneration_reason?: string | null
+          created_at?: string
+          updated_at?: string
         }
         Update: {
+          id?: string
+          client_id?: string
+          coach_id?: string
+          name?: string | null
+          status?: string
+          effective_from?: string
+          effective_until?: string | null
+          work_activity_level?: string
+          training_volume_hours?: string
+          protein_target_g_per_kg?: number
+          diet_type?: string
+          goal_weight_kg?: number | null
+          goal_deadline?: string | null
+          baseline_calories?: number
+          protein_target_g?: number
+          carb_target_g?: number
+          fat_target_g?: number
           base_weight_kg?: number
           bmr?: number | null
-          calorie_target?: number
-          carb_target_g?: number
-          client_id?: string
-          created_at?: string
-          created_by_coach_id?: string | null
-          diet_type?: string
-          fat_target_g?: number
-          goal_deadline?: string | null
-          goal_weight_kg?: number | null
-          id?: string
-          protein_target_g?: number
-          protein_target_g_per_kg?: number
-          regeneration_reason?: string | null
           tdee?: number | null
-          training_volume_hours?: string
-          work_activity_level?: string
+          custom_macros_enabled?: boolean
+          custom_calories?: number | null
+          custom_protein_g?: number | null
+          custom_carb_g?: number | null
+          custom_fat_g?: number | null
+          regeneration_reason?: string | null
+          created_at?: string
+          updated_at?: string
         }
         Relationships: [
           {
-            foreignKeyName: "nutrition_plan_history_client_id_fkey"
+            foreignKeyName: "nutrition_plans_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "clients"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "nutrition_plan_history_created_by_coach_id_fkey"
-            columns: ["created_by_coach_id"]
+            foreignKeyName: "nutrition_plans_coach_id_fkey"
+            columns: ["coach_id"]
             isOneToOne: false
             referencedRelation: "coaches"
             referencedColumns: ["id"]

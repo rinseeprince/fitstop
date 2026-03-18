@@ -82,6 +82,22 @@ export function IntakeStep2({ data, onChange, errors }: IntakeStep2Props) {
         </div>
       )}
 
+      {/* Goal Body Fat % (optional) */}
+      <div className="space-y-2">
+        <Label>Goal body fat %? (optional)</Label>
+        <Input
+          type="number"
+          placeholder="e.g. 12"
+          value={data.goalBodyFatPercentage || ""}
+          onChange={(e) => onChange({ goalBodyFatPercentage: parseFloat(e.target.value) || undefined })}
+          className="min-h-[44px]"
+          step="0.1"
+          min="3"
+          max="60"
+        />
+        {errors.goalBodyFatPercentage && <p className="text-sm text-destructive">{errors.goalBodyFatPercentage}</p>}
+      </div>
+
       {/* Goal Deadline */}
       <div className="space-y-2">
         <Label>Any target date in mind? (optional)</Label>

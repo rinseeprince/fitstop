@@ -2,6 +2,9 @@ import { supabaseAdmin } from "./supabase-admin";
 import type { DailyLog, DailyLogInput, NutritionAdherenceStatus } from "@/types/daily-log";
 import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
 import { getClientNutritionTargets, getClientTrainingPlan } from "./client-portal-service";
+import { getActiveTrainingPlan } from "./training-service";
+import { getTrainingSessionCaloriesByDay } from "@/utils/training-calorie-helpers";
+import { getExternalActivitiesForDay, calculateExternalActivityCalories } from "@/utils/nutrition-helpers";
 import type { Database } from "@/types/database";
 import { getTodayDateString, getDateString, getDateDaysAgo } from "@/lib/date-helpers";
 import { NUTRITION_ADHERENCE_HIT_THRESHOLD, NUTRITION_ADHERENCE_PARTIAL_THRESHOLD } from "@/lib/constants";
@@ -361,5 +364,78 @@ export const getTodaysNutritionTarget = async (clientId: string, date?: string):
   return {
     ...todayTarget,
     includeActivityBurn: nutritionTargets.includeActivityBurn,
+  };
+};
+
+/**
+ * Find the plan that was active on a specific date and return its daily target.
+ * Uses effective_from/effective_until range query for historical accuracy.
+ */
+export type PlanDayTarget = {
+  calories: number;
+  proteinG: number;
+  carbsG: number;
+  fatG: number;
+  isTrainingDay: boolean;
+};
+
+export const getPlanTargetForDate = async (
+  clientId: string,
+  date: string
+): Promise<PlanDayTarget | null> => {
+  // Find the plan that was active on the given date
+  const { data: plan, error: planError } = await supabaseAdmin
+    .from("nutrition_plans")
+    .select("id")
+    .eq("client_id", clientId)
+    .lte("effective_from", date)
+    .or(`effective_until.gte.${date},effective_until.is.null`)
+    .order("effective_from", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (planError || !plan) return null;
+
+  const targetDate = new Date(date + "T00:00:00");
+  const dayOfWeek = getDayOfWeekLowercase(targetDate);
+
+  const { data: dailyTarget, error: dtError } = await supabaseAdmin
+    .from("nutrition_plan_daily_targets")
+    .select("calories, protein_g, carb_g, fat_g, is_training_day")
+    .eq("nutrition_plan_id", plan.id)
+    .eq("day_of_week", dayOfWeek)
+    .maybeSingle();
+
+  if (dtError || !dailyTarget) return null;
+
+  let calories = dailyTarget.calories;
+
+  // Add live training + external activity calories when include_activity_burn is on
+  const { data: clientRow } = await supabaseAdmin
+    .from("clients")
+    .select("include_activity_burn")
+    .eq("id", clientId)
+    .single();
+
+  if (clientRow?.include_activity_burn !== false) {
+    const trainingPlan = await getActiveTrainingPlan(clientId);
+    if (trainingPlan) {
+      const trainingCalsByDay = getTrainingSessionCaloriesByDay(trainingPlan);
+      const trainingCals = trainingCalsByDay[dayOfWeek] || 0;
+
+      const dayActivities = getExternalActivitiesForDay(trainingPlan, dayOfWeek as any);
+      const externalCals = calculateExternalActivityCalories(dayActivities);
+
+      calories += trainingCals + externalCals;
+    }
+  }
+
+  return {
+    calories,
+    proteinG: dailyTarget.protein_g,
+    carbsG: dailyTarget.carb_g,
+    fatG: dailyTarget.fat_g,
+    isTrainingDay: dailyTarget.is_training_day,
   };
 };

@@ -116,12 +116,12 @@ export const NutritionBuilderRightPanel = memo(function NutritionBuilderRightPan
           ) : (
             <NutritionDayAccordion targets={builder.weeklyTargets} />
           )
-        ) : builder.client.customMacrosEnabled ? (
+        ) : builder.nutritionData?.customMacrosEnabled ? (
           <CustomMacrosDisplay
-            calories={builder.client.calorieTarget || 0}
-            protein={builder.client.customProteinG || builder.client.proteinTargetG || 0}
-            carbs={builder.client.customCarbG || builder.client.carbTargetG || 0}
-            fat={builder.client.customFatG || builder.client.fatTargetG || 0}
+            calories={builder.nutritionData?.calorieTarget || 0}
+            protein={builder.nutritionData?.proteinTargetG || 0}
+            carbs={builder.nutritionData?.carbTargetG || 0}
+            fat={builder.nutritionData?.fatTargetG || 0}
           />
         ) : null}
 

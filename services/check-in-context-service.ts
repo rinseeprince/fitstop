@@ -53,24 +53,19 @@ export const getCheckInTrainingContext = async (
 export const getCheckInNutritionContext = async (
   clientId: string
 ): Promise<CheckInNutritionContext> => {
-  // Get client with nutrition data
-  const { data, error } = await supabaseAdmin
-    .from("clients")
-    .select(
-      "calorie_target, protein_target_g, carb_target_g, fat_target_g, diet_type"
-    )
-    .eq("id", clientId)
-    .single();
+  // TODO: nutrition_plans has client RLS SELECT policies — could use a server
+  // client here instead of supabaseAdmin. Keeping admin for now to avoid
+  // refactoring the function signature across all callers.
+  const { data: nutritionPlan, error } = await supabaseAdmin
+    .from("nutrition_plans")
+    .select("baseline_calories, protein_target_g, carb_target_g, fat_target_g, diet_type")
+    .eq("client_id", clientId)
+    .eq("status", "active")
+    .order("effective_from", { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
-  const client = data as {
-    calorie_target: number | null;
-    protein_target_g: number | null;
-    carb_target_g: number | null;
-    fat_target_g: number | null;
-    diet_type: string | null;
-  } | null;
-
-  if (error || !client || !client.calorie_target) {
+  if (error || !nutritionPlan || !nutritionPlan.baseline_calories) {
     return { hasNutritionPlan: false };
   }
 
@@ -78,10 +73,10 @@ export const getCheckInNutritionContext = async (
   const plan = await getActiveTrainingPlan(clientId);
 
   // Calculate weekly targets
-  const dietType = (client.diet_type || "balanced") as "balanced" | "high_carb" | "low_carb" | "keto" | "custom";
+  const dietType = (nutritionPlan.diet_type || "balanced") as "balanced" | "high_carb" | "low_carb" | "keto" | "custom";
   const weeklyTargets = getWeeklyNutritionTargets(
-    client.calorie_target,
-    client.protein_target_g || 150,
+    nutritionPlan.baseline_calories,
+    nutritionPlan.protein_target_g || 150,
     plan,
     dietType
   );

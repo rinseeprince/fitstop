@@ -1,58 +1,61 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import type { NutritionPlanHistory } from "@/types/check-in";
-import { apiRateLimit } from "@/lib/rate-limit";
+import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 
 export async function GET(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
-  const rateLimitResult = await apiRateLimit(request);
+  const rateLimitResult = await coachApiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
 
   try {
     const { id: clientId } = await context.params;
 
-    // Verify coach owns this client
     const auth = await requireCoachOwnsClient(clientId);
     if (!auth.authorized) return auth.response;
 
-    // Fetch nutrition plan history for this client, ordered by creation date (newest first)
-    const { data: historyData, error: historyError } = await supabaseAdmin
-      .from("nutrition_plan_history")
+    // Read plan history from nutrition_plans table (replaces nutrition_plan_history)
+    const { data: plans, error } = await supabaseAdmin
+      .from("nutrition_plans")
       .select("*")
       .eq("client_id", clientId)
       .order("created_at", { ascending: false });
 
-    if (historyError) {
-      console.error("Error fetching nutrition history:", historyError);
+    if (error) {
+      console.error("Error fetching nutrition history:", error.message);
       return NextResponse.json(
         { success: false, error: "Failed to fetch nutrition history" },
         { status: 500 }
       );
     }
 
-    // Map database rows to NutritionPlanHistory type
-    const history: NutritionPlanHistory[] = (historyData || []).map((row: any) => ({
+    const history: NutritionPlanHistory[] = (plans || []).map((row) => ({
       id: row.id,
       clientId: row.client_id,
       createdAt: row.created_at,
       baseWeightKg: row.base_weight_kg,
-      goalWeightKg: row.goal_weight_kg,
-      bmr: row.bmr,
-      tdee: row.tdee,
-      workActivityLevel: row.work_activity_level,
-      trainingVolumeHours: row.training_volume_hours,
+      goalWeightKg: row.goal_weight_kg ?? undefined,
+      bmr: row.bmr ?? undefined,
+      tdee: row.tdee ?? undefined,
+      workActivityLevel: row.work_activity_level as any,
+      trainingVolumeHours: row.training_volume_hours as any,
       proteinTargetGPerKg: row.protein_target_g_per_kg,
-      dietType: row.diet_type,
-      goalDeadline: row.goal_deadline,
-      calorieTarget: row.calorie_target,
+      dietType: row.diet_type as any,
+      goalDeadline: row.goal_deadline ?? undefined,
+      calorieTarget: row.baseline_calories,
       proteinTargetG: row.protein_target_g,
       carbTargetG: row.carb_target_g,
       fatTargetG: row.fat_target_g,
-      createdByCoachId: row.created_by_coach_id,
-      regenerationReason: row.regeneration_reason,
+      createdByCoachId: row.coach_id,
+      regenerationReason: row.regeneration_reason ?? undefined,
+      // Additional fields from nutrition_plans
+      status: row.status,
+      effectiveFrom: row.effective_from,
+      effectiveUntil: row.effective_until ?? undefined,
+      name: row.name ?? undefined,
     }));
 
     return NextResponse.json({
@@ -60,7 +63,7 @@ export async function GET(
       history,
     });
   } catch (error) {
-    console.error("Error in nutrition history route:", error);
+    console.error("Error in nutrition history route:", error instanceof Error ? error.message : "Unknown error");
     return NextResponse.json(
       { success: false, error: "Internal server error" },
       { status: 500 }

@@ -139,6 +139,11 @@ export function IntakeReviewPage({ intake, clientId }: IntakeReviewPageProps) {
                   Target: {intake.targetWeight} {intake.weightUnit ?? "kg"}
                 </span>
               )}
+              {intake.goalBodyFatPercentage != null && (
+                <span className="text-sm text-muted-foreground">
+                  Goal BF: {intake.goalBodyFatPercentage}%
+                </span>
+              )}
               {intake.goalDeadline && (
                 <span className="text-sm text-muted-foreground">
                   by {new Date(intake.goalDeadline).toLocaleDateString()}

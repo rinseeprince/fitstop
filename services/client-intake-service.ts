@@ -23,6 +23,7 @@ const FIELD_MAP = {
   primaryGoal: "primary_goal",
   goalDetails: "goal_details",
   targetWeight: "target_weight",
+  goalBodyFatPercentage: "goal_body_fat_percentage",
   goalDeadline: "goal_deadline",
   goalDescription: "goal_description",
   motivation: "motivation",

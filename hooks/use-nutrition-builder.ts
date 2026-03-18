@@ -40,21 +40,21 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
   const { toast } = useToast();
   const nutritionPlan = useNutritionPlan({ client, onUpdate });
 
-  // Settings state
+  // Settings state — defaults from active plan will be loaded via nutritionData
   const [settings, setSettings] = useState<NutritionSettings>({
-    workActivityLevel: client.workActivityLevel || "sedentary",
-    proteinTargetGPerKg: client.proteinTargetGPerKg || 2.0,
-    dietType: client.dietType || "balanced",
-    goalDeadline: client.goalDeadline || "",
+    workActivityLevel: "sedentary",
+    proteinTargetGPerKg: 2.0,
+    dietType: "balanced",
+    goalDeadline: "",
   });
   const [settingsChanged, setSettingsChanged] = useState(false);
 
   // Custom macros state
   const [customMacros, setCustomMacros] = useState<CustomMacros>({
-    protein: client.customProteinG || 0,
-    carbs: client.customCarbG || 0,
-    fat: client.customFatG || 0,
-    calories: client.customCalories || 0,
+    protein: 0,
+    carbs: 0,
+    fat: 0,
+    calories: 0,
   });
   const [customMacrosValidationError, setCustomMacrosValidationError] = useState<string | null>(
     null
@@ -92,12 +92,8 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
   );
 
   // Calorie skewing state
-  const [customDayDistribution, setCustomDayDistribution] = useState(
-    client.customDayDistribution ?? false
-  );
-  const [dayCalorieOverrides, setDayCalorieOverrides] = useState<DayCalorieOverrides | null>(
-    client.dayCalorieOverrides ?? null
-  );
+  const [customDayDistribution, setCustomDayDistribution] = useState(false);
+  const [dayCalorieOverrides, setDayCalorieOverrides] = useState<DayCalorieOverrides | null>(null);
   const [skewMacroMode, setSkewMacroMode] = useState<"proportional" | "custom">("proportional");
   const [isSavingSkew, setIsSavingSkew] = useState(false);
 
@@ -154,7 +150,7 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
         // In proportional mode, recalculate macros when calories change
         if (field === "calories" && skewMacroMode === "proportional") {
           const isTrainingDay = nutritionPlan.weeklyTargets?.find((t) => t.day === day)?.isTrainingDay ?? false;
-          const proteinG = client.proteinTargetG || prev[day].protein_g;
+          const proteinG = prev[day].protein_g;
           const macros = calculateDailyMacros(value, proteinG, isTrainingDay, settings.dietType);
           dayData.protein_g = macros.proteinG;
           dayData.carbs_g = macros.carbsG;
@@ -164,17 +160,19 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
         return { ...prev, [day]: dayData };
       });
     },
-    [skewMacroMode, nutritionPlan.weeklyTargets, client.proteinTargetG, settings.dietType]
+    [skewMacroMode, nutritionPlan.weeklyTargets, settings.dietType]
   );
 
   const handleSaveCustomDistribution = useCallback(async () => {
     setIsSavingSkew(true);
     try {
-      const res = await fetch(`/api/clients/${client.id}/nutrition`, {
-        method: "PATCH",
+      // Save custom day distribution as a new plan version via the
+      // dedicated skewing endpoint. This archives the current active plan
+      // and creates a new nutrition_plans row + 7 daily target rows.
+      const res = await fetch(`/api/clients/${client.id}/nutrition/skew`, {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          customDayDistribution,
           dayCalorieOverrides,
         }),
       });
@@ -190,7 +188,7 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
     } finally {
       setIsSavingSkew(false);
     }
-  }, [client.id, customDayDistribution, dayCalorieOverrides, onUpdate, toast]);
+  }, [client.id, dayCalorieOverrides, onUpdate, toast]);
 
   const handleResetToDefault = useCallback(() => {
     if (nutritionPlan.weeklyTargets) {
@@ -200,8 +198,8 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
   }, [nutritionPlan.weeklyTargets]);
 
   // Budget validation
-  const baselineCalories = client.baselineCalories || client.calorieTarget || 0;
-  const weeklyBaselineTarget = baselineCalories * 7;
+  const planBaseline = nutritionPlan.nutritionData?.baselineCalories ?? nutritionPlan.nutritionData?.calorieTarget ?? 0;
+  const weeklyBaselineTarget = planBaseline * 7;
   const budgetValidation: WeeklyBudgetValidation | null =
     dayCalorieOverrides
       ? validateWeeklyBudget(dayCalorieOverrides, weeklyBaselineTarget)
@@ -255,6 +253,7 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
           setCustomDayDistribution(false);
           setDayCalorieOverrides(null);
           onUpdate?.();
+          nutritionPlan.refetchNutrition();
           return true;
         } else {
           throw new Error(data.error || "Failed to generate plan");
@@ -278,14 +277,11 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
   const CALORIES_PER_KG = 7700;
 
   const getProjectedDate = useCallback(() => {
-    const baseline = client.baselineCalories || client.calorieTarget;
+    const nd = nutritionPlan.nutritionData;
+    const baseline = nd?.baselineCalories ?? nd?.calorieTarget;
     if (!client.goalWeight || !client.currentWeight || !baseline) return null;
 
-    const tdee =
-      client.tdee ||
-      (client.bmr && client.workActivityLevel
-        ? Math.round(client.bmr * getActivityMultiplier(client.workActivityLevel))
-        : null);
+    const tdee = client.tdee || (client.bmr ? Math.round(client.bmr * getActivityMultiplier(settings.workActivityLevel)) : null);
     if (!tdee) return null;
 
     const currentWeightKg = weightToKg(client.currentWeight, client.weightUnit || "lbs");
@@ -300,7 +296,7 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
 
     const weeksNeeded = weightToLoseKg / weeklyWeightChangeKg;
     return addDays(new Date(), Math.round(weeksNeeded * 7));
-  }, [client]);
+  }, [client, nutritionPlan.nutritionData, settings.workActivityLevel]);
 
   return {
     // Spread base nutrition plan state

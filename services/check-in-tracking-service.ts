@@ -46,31 +46,48 @@ export function getFrequencyInDays(
 }
 
 /**
- * Calculate when the next check-in is expected for a client
+ * Calculate when the next check-in is expected for a client.
+ * Uses period-based calculation so the expected date always reflects
+ * the current period, not the first missed one.
  * Returns null if client has no check-in schedule (frequency = 'none')
  */
 export function calculateNextExpectedCheckIn(client: Client | ClientWithCheckInInfo): Date | null {
   const frequency = client.checkInFrequency ?? "weekly";
 
-  // If client has no check-in schedule, return null
   if (frequency === "none") {
     return null;
   }
 
-  // Determine the base date (last check-in or creation date)
+  if (client.expectedCheckInDay) {
+    const today = new Date();
+    const { periodEnd } = calculateCheckInPeriod(today, client.expectedCheckInDay);
+
+    // Use period_end from the last check-in (accurate) with fallback to created_at
+    const lastPeriodEnd = ("lastCheckInPeriodEnd" in client && client.lastCheckInPeriodEnd)
+      ? client.lastCheckInPeriodEnd
+      : undefined;
+
+    if (lastPeriodEnd === periodEnd) {
+      // Already checked in for current period — next expected is next week
+      const nextEnd = new Date(periodEnd + "T00:00:00");
+      nextEnd.setDate(nextEnd.getDate() + 7);
+      return nextEnd;
+    }
+
+    // Not checked in for current period — current period end is the expected date
+    return new Date(periodEnd + "T00:00:00");
+  }
+
+  // Fallback for clients without expectedCheckInDay: loop forward from last check-in
   const lastCheckInDate = ("lastCheckInDate" in client && client.lastCheckInDate)
     ? parseISODate(client.lastCheckInDate)
     : parseISODate(client.createdAt);
 
-  // Get frequency in days
   const frequencyDays = getFrequencyInDays(frequency, client.checkInFrequencyDays);
-
-  // Calculate the next expected date by adding frequency days
-  const nextDate = addDays(lastCheckInDate, frequencyDays);
-
-  // If a specific day of week is expected, adjust to that day
-  if (client.expectedCheckInDay) {
-    return getNextDayOfWeek(nextDate, client.expectedCheckInDay);
+  let nextDate = addDays(lastCheckInDate, frequencyDays);
+  const today = new Date();
+  while (nextDate < today) {
+    nextDate = addDays(nextDate, frequencyDays);
   }
 
   return nextDate;

@@ -28,19 +28,17 @@ export function NutritionSettingsDrawer({
 }: NutritionSettingsDrawerProps) {
   const builder = useNutritionBuilderContext();
   const wasGenerating = useRef(false);
-  const previousPlanCreatedDate = useRef(builder.client.nutritionPlanCreatedDate);
+  const previousHasPlan = useRef(builder.hasPlan);
 
   // Auto-close drawer on successful generation
   useEffect(() => {
     if (wasGenerating.current && !builder.isGenerating && builder.hasPlan) {
-      // Only close if plan was created/changed
-      if (builder.client.nutritionPlanCreatedDate !== previousPlanCreatedDate.current) {
-        onOpenChange(false);
-      }
+      // Close if plan was just created or regenerated
+      onOpenChange(false);
     }
     wasGenerating.current = builder.isGenerating;
-    previousPlanCreatedDate.current = builder.client.nutritionPlanCreatedDate;
-  }, [builder.isGenerating, builder.hasPlan, builder.client.nutritionPlanCreatedDate, onOpenChange]);
+    previousHasPlan.current = builder.hasPlan;
+  }, [builder.isGenerating, builder.hasPlan, onOpenChange]);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -63,12 +61,11 @@ export function NutritionSettingsDrawer({
           />
 
           {/* Regeneration Banner */}
-          {builder.client.currentWeight && builder.client.nutritionPlanBaseWeightKg && (
+          {builder.showRegenerationBanner && builder.client.currentWeight && (
             <NutritionRegenerationBanner
               currentWeight={builder.client.currentWeight}
               weightUnit={builder.client.weightUnit || "lbs"}
-              nutritionPlanBaseWeightKg={builder.client.nutritionPlanBaseWeightKg}
-              nutritionPlanCreatedDate={builder.client.nutritionPlanCreatedDate}
+              nutritionPlanBaseWeightKg={0}
               unitPreference={builder.unitPreference}
               onRegenerate={() => builder.generatePlan(false)}
               showRegenerateButton={false}

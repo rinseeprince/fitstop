@@ -69,6 +69,7 @@ export type ClientIntake = {
   primaryGoal?: PrimaryGoal;
   goalDetails?: string;
   targetWeight?: number;
+  goalBodyFatPercentage?: number;
   goalDeadline?: string;
   goalDescription?: string;
   motivation?: string;
@@ -152,6 +153,7 @@ export type ClientIntakeRow = {
   primary_goal: string | null;
   goal_details: string | null;
   target_weight: number | null;
+  goal_body_fat_percentage: number | null;
   goal_deadline: string | null;
   goal_description: string | null;
   motivation: string | null;

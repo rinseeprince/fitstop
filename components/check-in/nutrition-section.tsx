@@ -8,16 +8,25 @@ import {
   WEEKLY_NUTRITION_PARTIAL_PER_DAY,
 } from "@/lib/constants";
 
+type FullWeekTarget = {
+  calories: number;
+  proteinG: number;
+  carbsG: number;
+  fatG: number;
+};
+
 type NutritionSectionProps = {
   dailyLogs: DailyLog[];
   contextStartDate: Date;
   contextEndDate: Date;
+  fullWeekTarget?: FullWeekTarget | null;
 };
 
 export const NutritionSection = ({
   dailyLogs,
   contextStartDate,
   contextEndDate,
+  fullWeekTarget,
 }: NutritionSectionProps) => {
   const daysDiff = Math.floor(
     (contextEndDate.getTime() - contextStartDate.getTime()) / (1000 * 60 * 60 * 24)
@@ -48,14 +57,20 @@ export const NutritionSection = ({
 
   if (stats.daysLogged === 0) return null;
 
-  const weeklyDiff = Math.abs(stats.totalCals - stats.targetCals);
+  // Use full-week target (logged + plan-based unlogged) when available
+  const effectiveTargetCals = fullWeekTarget ? fullWeekTarget.calories : stats.targetCals;
+  const effectiveTargetProtein = fullWeekTarget ? fullWeekTarget.proteinG : stats.targetProtein;
+  const effectiveTargetCarbs = fullWeekTarget ? fullWeekTarget.carbsG : stats.targetCarbs;
+  const effectiveTargetFat = fullWeekTarget ? fullWeekTarget.fatG : stats.targetFat;
+
+  const weeklyDiff = Math.abs(stats.totalCals - effectiveTargetCals);
   const hitThreshold = WEEKLY_NUTRITION_HIT_PER_DAY * daysDiff;
   const partialThreshold = WEEKLY_NUTRITION_PARTIAL_PER_DAY * daysDiff;
   const adherence =
     weeklyDiff <= hitThreshold ? "HIT" :
     weeklyDiff <= partialThreshold ? "PARTIAL" : "MISSED";
 
-  const fillPct = Math.min((stats.totalCals / stats.targetCals) * 100, 100);
+  const fillPct = effectiveTargetCals > 0 ? Math.min((stats.totalCals / effectiveTargetCals) * 100, 100) : 0;
   const dailyAvgCal = Math.round(stats.totalCals / daysDiff);
 
   // Weekly avg macros (divided by full period, not just logged days)
@@ -63,10 +78,10 @@ export const NutritionSection = ({
   const avgCarbs = stats.carbsDays > 0 ? Math.round(stats.carbs / daysDiff) : 0;
   const avgFat = stats.fatDays > 0 ? Math.round(stats.fat / daysDiff) : 0;
 
-  // Weekly avg targets
-  const avgTargetProtein = stats.proteinDays > 0 ? Math.round(stats.targetProtein / daysDiff) : 0;
-  const avgTargetCarbs = stats.carbsDays > 0 ? Math.round(stats.targetCarbs / daysDiff) : 0;
-  const avgTargetFat = stats.fatDays > 0 ? Math.round(stats.targetFat / daysDiff) : 0;
+  // Weekly avg targets — use full-week values divided by period length
+  const avgTargetProtein = effectiveTargetProtein > 0 ? Math.round(effectiveTargetProtein / daysDiff) : 0;
+  const avgTargetCarbs = effectiveTargetCarbs > 0 ? Math.round(effectiveTargetCarbs / daysDiff) : 0;
+  const avgTargetFat = effectiveTargetFat > 0 ? Math.round(effectiveTargetFat / daysDiff) : 0;
 
   const macros = [
     { label: "Protein", actual: avgProtein, target: avgTargetProtein, colorClass: "bg-protein" },
@@ -94,7 +109,7 @@ export const NutritionSection = ({
                 {stats.totalCals.toLocaleString()}
               </div>
               <div className="text-xs text-muted-foreground">
-                of {stats.targetCals.toLocaleString()} kcal target
+                of {effectiveTargetCals.toLocaleString()} kcal target
               </div>
             </div>
             <span
