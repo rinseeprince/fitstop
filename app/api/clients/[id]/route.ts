@@ -101,8 +101,9 @@ export async function PATCH(
     // Validate request body
     const validationResult = updateClientSchema.safeParse(body);
     if (!validationResult.success) {
+      console.error("Validation error:", validationResult.error.errors);
       return NextResponse.json(
-        { error: "Invalid input", details: validationResult.error.errors },
+        { error: "Invalid input" },
         { status: 400 }
       );
     }

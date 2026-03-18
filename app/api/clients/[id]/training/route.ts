@@ -71,7 +71,7 @@ export async function POST(
     if (!validation.success) {
       console.error("Training plan validation errors:", validation.error.errors);
       return NextResponse.json(
-        { error: "Invalid input", details: validation.error.errors },
+        { error: "Invalid input" },
         { status: 400 }
       );
     }

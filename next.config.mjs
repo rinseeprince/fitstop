@@ -34,6 +34,20 @@ const nextConfig = {
             key: 'Strict-Transport-Security',
             value: 'max-age=63072000; includeSubDomains; preload',
           },
+          {
+            key: 'Content-Security-Policy',
+            // unsafe-eval and unsafe-inline for scripts should be tightened
+            // for production using nonces (see TECHNICAL-DEBT.md)
+            value: [
+              "default-src 'self'",
+              "script-src 'self' 'unsafe-eval' 'unsafe-inline'",
+              "style-src 'self' 'unsafe-inline'",
+              "img-src 'self' blob: data: https://*.supabase.co",
+              "font-src 'self'",
+              "connect-src 'self' https://*.supabase.co https://api.openai.com https://*.sentry.io https://*.ingest.de.sentry.io",
+              "frame-ancestors 'none'",
+            ].join('; '),
+          },
         ],
       },
     ];

@@ -214,3 +214,37 @@ Reviewed: 2026-03-18
 |---|-------|---------|---------|--------|
 | 1 | AI produces poor day ordering for splits | `services/training-ai-service.ts` | The model doesn't produce sensible day ordering. E.g. push/pull/legs should alternate properly, not stack similar muscle groups on consecutive days. Options: (a) Add explicit day ordering rules to the prompt. (b) Let the AI generate sessions unordered, then apply ordering logic in application code based on the split type. (c) Let coaches drag to reorder days after generation. | Open |
 | 2 | RPE and rest periods still lack variation | `services/training-ai-service.ts` | Despite adding prescriptive rest/RPE rules to the prompt, verify the model is actually producing varied rest periods (2-3min for compounds, 60-90s for isolation) and meaningful RPE targets rather than blanket values across all exercises. May need stronger prompt constraints or post-processing validation. | Open |
+
+---
+
+## Production Readiness Audit - Medium Priority
+
+Reviewed: 2026-03-18
+
+### M - Performance & Data Integrity
+
+| # | Issue | File(s) | Details | Status |
+|---|-------|---------|---------|--------|
+| 1 | N+1 query on habit stats | `hooks/use-client-habits.ts:42-81` | Fetches stats per-habit via individual API calls (`Promise.all` of N fetches). 20 habits = 20 HTTP requests. Fix: add batch endpoint `/api/clients/{id}/habits/stats-batch`. | Open |
+| 2 | N+1 query on daily log count enrichment | `services/check-in-service.ts:176-210` | `enrichWithDailyLogCounts()` runs one DB query per check-in period. Fix: single query with date range aggregation or GROUP BY. | Open |
+| 3 | Missing indexes on frequently-queried foreign keys | `check_in_session_completions`, `check_in_exercise_highlights`, `check_in_external_activities`, `client_intake`, `nutrition_plan_daily_targets` | FK columns used in WHERE clauses and JOINs lack composite indexes. Add `(client_id, created_at DESC)` composite on daily_logs and similar patterns on detail tables. | Open |
+| 4 | Unbounded client list query | `app/api/clients/route.ts` | Lists all clients for coach with no LIMIT. Fine for <100 clients, problematic at scale. Add LIMIT + pagination. | Open |
+| 5 | Daily logs need pagination for large date ranges | `app/api/client/daily-logs/route.ts`, `app/api/clients/[id]/daily-logs/route.ts` | Date range parameters have no pagination. Large historical queries could return thousands of rows. Add cursor-based or offset pagination for requests spanning large date ranges. | Open |
+| 6 | Auth failures not logged for audit trail | `lib/auth-helpers.ts` | `getAuthenticatedCoachId()` and `getAuthenticatedClientId()` return null on auth failure without logging the attempt. Add structured logging with timestamp, route, and IP (not PII) for security auditing. | Open |
+| 7 | Inconsistent error logging patterns | Various API routes | Some routes log raw `error` objects (`console.error("Error:", error)`) which could include stack traces and query details in Sentry. Standardize to `error instanceof Error ? error.message : "Unknown error"` pattern. | Open |
+
+---
+
+## Production Readiness Audit - Low Priority
+
+Reviewed: 2026-03-18
+
+### L - Nice to Have
+
+| # | Issue | File(s) | Details | Status |
+|---|-------|---------|---------|--------|
+| 1 | No realtime updates for coach dashboard | N/A | Coach dashboard relies on SWR polling (30s interval). New check-ins from clients don't appear in real time. Consider Supabase realtime subscriptions for check-in notifications. | Open |
+| 2 | Polling-based content notifications | `hooks/use-new-content-notifications.ts` | Uses localStorage + polling every 30s to detect new content. Not event-driven. Consider push notifications or realtime subscriptions. | Open |
+| 3 | Some complex pages lack error boundaries | `components/check-in/check-in-form.tsx`, nutrition builder, training builder | High-complexity pages with multiple form steps are not wrapped in `<ErrorBoundary>`. A JS error in one section crashes the entire page. | Open |
+| 4 | Check-in submission doesn't invalidate SWR caches | `app/api/check-in/submit/[token]/route.ts` | After client submits check-in, coach-side SWR caches for `/api/check-ins/unreviewed` stay stale until next polling interval (30s+). | Open |
+| 5 | CSP script-src uses unsafe-eval and unsafe-inline | `next.config.mjs` | Current Content-Security-Policy allows `unsafe-eval` and `unsafe-inline` for scripts due to Next.js requirements. Tighten for production using nonce-based CSP (requires Next.js config changes). | Open |

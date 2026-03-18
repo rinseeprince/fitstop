@@ -100,6 +100,19 @@
 - No `onDataChange` useEffect patterns - these cause infinite loops.
 - Child components are controlled/presentational.
 
+### Dialog/modal structure
+All dialogs follow this pattern:
+- `<Dialog open={open} onOpenChange={onOpenChange}>` controlled by parent
+- `DialogContent` > `DialogHeader` > body > `DialogFooter`
+- Submit buttons show `<Loader2 className="h-4 w-4 animate-spin" />` during loading
+- Close via `onOpenChange(false)`, not separate close state
+- Forms use React Hook Form with `zodResolver(schema)` and `defaultValues`
+
+### Toast notifications
+- Success: `toast({ title: "Action successful" })`
+- Error: `toast({ title: "Error", description: "What went wrong", variant: "destructive" })`
+- Import via `const { toast } = useToast()`
+
 ### Writing style
 - Never use em dashes in code comments, UI copy, or documentation. Use hyphens or "to" instead.
 
@@ -161,7 +174,7 @@ Coach-side components in `components/clients/`. Client-side in `components/daily
 
 ### Client-side (Daily Pulse)
 - Use `fetch` with `{ cache: 'no-store' }` for all API calls
-- All GET API routes return `Cache-Control: no-store` headers
+- Client-facing GET API routes should return `Cache-Control: no-store` headers
 - Single `Promise.all` for initial data load - components never fetch their own data
 - `fetchWithRetry` helper for handling 429 rate limit errors
 - AbortController to cancel previous requests on date changes
@@ -206,6 +219,11 @@ Coach-side components in `components/clients/`. Client-side in `components/daily
 - Relations: Foreign keys with ON DELETE CASCADE/SET NULL
 - Indexes: On foreign keys, search fields, sort columns
 - Timestamps: created_at, updated_at on all tables
+
+### Query result methods
+- `.single()` - Use when expecting exactly one row. Errors if zero or multiple rows returned.
+- `.maybeSingle()` - Use when expecting zero or one row. Returns `null` if no row found, no error.
+- No suffix - Returns an array of rows.
 
 ### Soft deletes
 - User-created data uses soft delete (`is_active = false`), never hard delete
@@ -269,7 +287,16 @@ export async function GET(request: NextRequest) {
 - Status codes: 200 (success), 201 (created), 400 (validation), 401 (auth), 404 (not found), 500 (server)
 - Response format: { success: bool, data: {}, error?: string }
 - Timestamps: ISO 8601 format
-- Versioning: /api/v1 for future-proofing
+- No version prefix in routes (use `/api/*` directly)
+
+### API Route Middleware Ordering
+Every API handler must follow this exact sequence:
+1. Rate limiting (`apiRateLimit`, `coachApiRateLimit`, etc.)
+2. CSRF protection (`requireCSRFProtection`) - mutating methods only
+3. Authentication (`getAuthenticatedCoachId()` or `getAuthenticatedClientId()`)
+4. Authorization (ownership check - verify coach owns the client)
+5. Input validation (`schema.safeParse(body)`)
+6. Business logic (wrapped in try/catch)
 
 ### API changes cascade
 - If you change an API response shape, check every file that consumes that endpoint.
@@ -324,7 +351,7 @@ Before saying "ready to commit", ALL of these must pass:
 - Database queries: Indexes on foreign keys, frequently queried fields
 - API responses: <200ms target, pagination for lists >20 items
 - Images: Optimize/compress before upload, use WebP
-- Caching: Redis for session data, frequently accessed coach profiles
+- Caching: Redis (Upstash) for rate limiting
 - Lazy loading: Components below fold, infinite scroll for feeds
 
 ## 15. Documentation
@@ -337,6 +364,7 @@ Before saying "ready to commit", ALL of these must pass:
 ## 16. References
 - **Daily Pulse README**: Full architectural documentation for the Daily Pulse feature, including JSONB conventions, data flow, component structure, and rules that must not be violated. Claude Code should read this before modifying any Daily Pulse related code.
 - **DESIGNSYSTEM.md**: Visual patterns, colour tokens, spacing, component styling conventions.
+- **TECHNICAL-DEBT.md**: Known gaps between conventions and current implementation.
 
 ## 17. Logging
 - Info: User actions (login, booking, payment)
@@ -366,5 +394,4 @@ Uses flat config (`eslint.config.mjs`) with TypeScript ESLint type-checked rules
 ## 19. Configuration
 - .env files: .env.local (dev), .env.production
 - Required vars: Document in .env.example with descriptions
-- Feature flags: For gradual rollouts
 - Secrets: Never in code, use vault/secrets manager for prod

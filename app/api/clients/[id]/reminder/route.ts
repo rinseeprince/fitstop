@@ -4,7 +4,8 @@ import { getClientById } from "@/services/client-service";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { apiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
-import type { SendReminderRequest, SendReminderResponse } from "@/types/check-in";
+import type { SendReminderResponse } from "@/types/check-in";
+import { sendReminderSchema } from "@/lib/validations/client";
 
 /**
  * POST /api/clients/[id]/reminder
@@ -45,12 +46,20 @@ export async function POST(
       );
     }
 
-    // Parse request body
-    const body: SendReminderRequest = await request.json();
-    const reminderType = body.reminderType || "overdue";
+    // Parse and validate request body
+    const body = await request.json();
+    const parsed = sendReminderSchema.safeParse(body);
+    if (!parsed.success) {
+      console.error("Send reminder validation error:", parsed.error.flatten());
+      return NextResponse.json(
+        { error: "Invalid input" },
+        { status: 400 }
+      );
+    }
+    const { reminderType } = parsed.data;
 
     // Send the reminder (manual send)
-    const result = await sendCheckInReminder(clientId, reminderType, true);
+    const result = await sendCheckInReminder(clientId, reminderType as import("@/types/check-in").ReminderType, true);
 
     if (!result.success) {
       return NextResponse.json(

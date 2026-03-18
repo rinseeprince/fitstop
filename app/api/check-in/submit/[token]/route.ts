@@ -127,7 +127,6 @@ export async function POST(
       return NextResponse.json(
         {
           ...response,
-          validationErrors: validationResult.error.format(),
         },
         { status: 400 }
       );

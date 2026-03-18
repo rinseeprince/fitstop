@@ -89,8 +89,9 @@ export async function POST(request: NextRequest) {
     const rawBody = await request.json();
     const parseResult = createContentItemSchema.safeParse(rawBody);
     if (!parseResult.success) {
+      console.error("Validation error:", parseResult.error.format());
       return NextResponse.json(
-        { success: false, error: "Invalid input", details: parseResult.error.format() },
+        { success: false, error: "Invalid input" },
         { status: 400 }
       );
     }

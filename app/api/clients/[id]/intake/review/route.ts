@@ -34,8 +34,9 @@ export async function POST(
     const body = await request.json();
     const validation = reviewIntakeSchema.safeParse(body);
     if (!validation.success) {
+      console.error("Validation error:", validation.error.errors);
       return NextResponse.json(
-        { error: "Invalid input", details: validation.error.errors },
+        { error: "Invalid input" },
         { status: 400 }
       );
     }

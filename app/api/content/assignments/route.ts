@@ -3,6 +3,7 @@ import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { assignContentToClient } from "@/services/content-service";
 import { apiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
+import { createAssignmentSchema } from "@/lib/validations/content";
 
 export async function POST(request: NextRequest) {
   const rateLimitResult = await apiRateLimit(request);
@@ -37,17 +38,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Parse request body
+    // Parse and validate request body
     const body = await request.json();
-    const { contentId, clientId } = body;
-
-    // Validate required fields
-    if (!contentId || !clientId) {
+    const parsed = createAssignmentSchema.safeParse(body);
+    if (!parsed.success) {
+      console.error("Create assignment validation error:", parsed.error.flatten());
       return NextResponse.json(
-        { success: false, error: "Content ID and client ID are required" },
+        { error: "Invalid input" },
         { status: 400 }
       );
     }
+    const { contentId, clientId } = parsed.data;
 
     // Verify the content belongs to this coach
     const { data: content, error: contentError } = await supabase

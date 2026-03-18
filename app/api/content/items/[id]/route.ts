@@ -3,6 +3,7 @@ import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { getContentById, updateContentItem, deleteContentItem } from "@/services/content-service";
 import { apiRateLimit } from "@/lib/rate-limit";
+import { updateContentItemSchema } from "@/lib/validations/content";
 
 export async function GET(
   request: NextRequest,
@@ -108,18 +109,23 @@ export async function PATCH(
       );
     }
 
-    // Parse request body and allowlist permitted fields only
+    // Parse and validate request body
     const body = await request.json();
-    const allowedUpdate: Partial<import("@/types/content").UpdateContentItemInput> = {};
-    if (body.title !== undefined) allowedUpdate.title = body.title;
-    if (body.description !== undefined) allowedUpdate.description = body.description;
-    if (body.folderId !== undefined) allowedUpdate.folderId = body.folderId;
-    if (body.isLibrary !== undefined) allowedUpdate.isLibrary = body.isLibrary;
-    if (body.sortOrder !== undefined) allowedUpdate.sortOrder = body.sortOrder;
-    if (body.metadata !== undefined) allowedUpdate.metadata = body.metadata;
+    const parsed = updateContentItemSchema.safeParse(body);
+    if (!parsed.success) {
+      console.error("Update content item validation error:", parsed.error.flatten());
+      return NextResponse.json(
+        { error: "Invalid input" },
+        { status: 400 }
+      );
+    }
 
-    // Update content item (storagePath, thumbnailUrl, coachId excluded)
-    const updatedItem = await updateContentItem(id, allowedUpdate);
+    // Update content item (storagePath, thumbnailUrl, coachId excluded by schema)
+    const { folderId, ...rest } = parsed.data;
+    const updatedItem = await updateContentItem(id, {
+      ...rest,
+      ...(folderId !== undefined && { folderId: folderId ?? undefined }),
+    });
 
     return NextResponse.json({
       success: true,

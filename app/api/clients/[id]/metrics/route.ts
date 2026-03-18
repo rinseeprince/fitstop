@@ -29,8 +29,9 @@ export async function PUT(
     const rawBody = await request.json();
     const parseResult = updateClientMetricsSchema.safeParse(rawBody);
     if (!parseResult.success) {
+      console.error("Validation error:", parseResult.error.format());
       return NextResponse.json(
-        { error: "Invalid input", details: parseResult.error.format() },
+        { error: "Invalid input" },
         { status: 400 }
       );
     }

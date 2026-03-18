@@ -10,7 +10,7 @@ import { getHabitLogs } from "@/services/daily-habits-service";
 import { getWeeklySummaries } from "@/services/weekly-nutrition-service";
 import { calculateCheckInPeriod } from "@/lib/date-utils";
 import type { GenerateAISummaryResponse } from "@/types/check-in";
-import { rateLimit } from "@/lib/rate-limit";
+import { aiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { requireCoachOwnsCheckIn } from "@/lib/require-coach-auth";
 import { aiSummaryRequestSchema } from "@/lib/validations/check-in";
@@ -19,13 +19,6 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  // Custom stricter rate limit for AI operations (10 requests per minute)
-  const rateLimitResult = await rateLimit(request, {
-    windowMs: 60 * 1000, // 1 minute
-    maxRequests: 10, // 10 requests per minute
-  });
-  if (rateLimitResult) return rateLimitResult;
-
   const csrfError = await requireCSRFProtection(request);
   if (csrfError) return csrfError;
 
@@ -35,6 +28,10 @@ export async function POST(
     // Verify coach owns this check-in's client
     const auth = await requireCoachOwnsCheckIn(checkInId);
     if (!auth.authorized) return auth.response;
+
+    // Rate limit by coach account to prevent cost abuse across IPs
+    const rateLimitResult = await aiRateLimit(request, auth.coachId);
+    if (rateLimitResult) return rateLimitResult;
     const currentCheckIn = auth.checkIn;
 
     const body = await request.json();

@@ -23,7 +23,7 @@ export const dayOfWeekSchema = z.enum([
 ]);
 
 export const exerciseSchema = z.object({
-  name: z.string().min(1, "Exercise name is required"),
+  name: z.string().min(1, "Exercise name is required").max(200),
   sets: z.number().int().min(1, "At least 1 set required").max(20, "Maximum 20 sets"),
   repsMin: z.number().int().min(1).max(100).optional().nullable(),
   repsMax: z.number().int().min(1).max(100).optional().nullable(),
@@ -50,10 +50,10 @@ export const sessionSchema = z.object({
 export const activityAnalysisSchema = z.object({
   estimatedCalories: z.number(),
   metValue: z.number(),
-  recoveryImpact: z.string(),
+  recoveryImpact: z.string().max(500),
   recoveryHours: z.number(),
-  muscleGroupsImpacted: z.array(z.string()),
-  trainingRecommendations: z.array(z.string()),
+  muscleGroupsImpacted: z.array(z.string().max(100)),
+  trainingRecommendations: z.array(z.string().max(500)),
 });
 
 // Pre-generation activity schema

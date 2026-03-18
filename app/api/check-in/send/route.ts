@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createCheckInToken } from "@/services/check-in-service";
-import type { CreateCheckInTokenRequest, CreateCheckInTokenResponse } from "@/types/check-in";
+import type { CreateCheckInTokenResponse } from "@/types/check-in";
 import { apiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
+import { sendCheckInSchema } from "@/lib/validations/check-in";
 
 export async function POST(request: NextRequest) {
   const rateLimitResult = await apiRateLimit(request);
@@ -13,15 +14,16 @@ export async function POST(request: NextRequest) {
   if (csrfError) return csrfError;
 
   try {
-    const body: CreateCheckInTokenRequest = await request.json();
-    const { clientId } = body;
-
-    if (!clientId) {
+    const body = await request.json();
+    const parsed = sendCheckInSchema.safeParse(body);
+    if (!parsed.success) {
+      console.error("Send check-in validation error:", parsed.error.flatten());
       return NextResponse.json(
-        { error: "Client ID is required" },
+        { error: "Invalid input" },
         { status: 400 }
       );
     }
+    const { clientId } = parsed.data;
 
     // Verify coach owns this client
     const auth = await requireCoachOwnsClient(clientId);

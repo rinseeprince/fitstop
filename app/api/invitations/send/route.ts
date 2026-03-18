@@ -36,8 +36,9 @@ export async function POST(request: NextRequest) {
     const result = sendInvitationSchema.safeParse(body)
 
     if (!result.success) {
+      console.error("Validation error:", result.error.errors);
       return NextResponse.json(
-        { success: false, error: result.error.errors[0].message },
+        { success: false, error: "Invalid input" },
         { status: 400 }
       )
     }

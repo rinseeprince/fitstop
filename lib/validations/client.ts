@@ -81,6 +81,10 @@ export const updateCheckInConfigSchema = z.object({
   }),
 });
 
+export const sendReminderSchema = z.object({
+  reminderType: z.enum(["overdue", "checkin", "general"]).default("overdue"),
+});
+
 // Type exports
 export type CreateClientInput = z.infer<typeof createClientSchema>;
 export type UpdateClientInput = z.infer<typeof updateClientSchema>;

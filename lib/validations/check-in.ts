@@ -129,7 +129,7 @@ export const submitCheckInSchema = z.object({
   nutritionAdherence: nutritionAdherenceSchema.optional().nullable().transform((v) => v ?? undefined),
 
   // Token (required for submission)
-  token: z.string().min(1),
+  token: z.string().min(1).max(500),
 });
 
 export const clientSubmitCheckInSchema = submitCheckInSchema
@@ -157,4 +157,12 @@ export type NutritionAdherenceInput = z.infer<typeof nutritionAdherenceSchema>;
 // AI summary request validation
 export const aiSummaryRequestSchema = z.object({
   focus: z.enum(["positive", "detailed", "concise"]).optional(),
+});
+
+export const reviewCheckInSchema = z.object({
+  coachResponse: z.string().min(1, "Coach response is required").max(10000),
+});
+
+export const sendCheckInSchema = z.object({
+  clientId: z.string().uuid("Invalid client ID"),
 });

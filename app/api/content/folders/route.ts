@@ -3,6 +3,7 @@ import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { createContentFolder, getCoachFolders } from "@/services/content-service";
 import { apiRateLimit } from "@/lib/rate-limit";
+import { createFolderSchema } from "@/lib/validations/content";
 
 export async function GET(request: NextRequest) {
   const rateLimitResult = await apiRateLimit(request);
@@ -84,23 +85,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Parse request body
+    // Parse and validate request body
     const body = await request.json();
-    const { name, parentFolderId } = body;
-
-    // Validate required fields
-    if (!name || !name.trim()) {
+    const parsed = createFolderSchema.safeParse(body);
+    if (!parsed.success) {
+      console.error("Create folder validation error:", parsed.error.flatten());
       return NextResponse.json(
-        { success: false, error: "Folder name is required" },
+        { error: "Invalid input" },
         { status: 400 }
       );
     }
+    const { name, parentFolderId } = parsed.data;
 
     // Check for duplicate folder names at the same level
     const existingFolders = await getCoachFolders(coach.id);
     const duplicateExists = existingFolders.some(
       folder => 
-        folder.name.toLowerCase() === name.trim().toLowerCase() &&
+        folder.name.toLowerCase() === name.toLowerCase() &&
         folder.parentFolderId === (parentFolderId || null)
     );
 
@@ -114,7 +115,7 @@ export async function POST(request: NextRequest) {
     // Create folder
     const folder = await createContentFolder({
       coachId: coach.id,
-      name: name.trim(),
+      name,
       parentFolderId: parentFolderId || undefined,
     });
 

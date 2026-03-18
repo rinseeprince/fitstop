@@ -3,6 +3,7 @@ import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { updateContentFolder, deleteContentFolder, getCoachFolders } from "@/services/content-service";
 import { apiRateLimit } from "@/lib/rate-limit";
+import { updateFolderSchema } from "@/lib/validations/content";
 
 export async function PATCH(
   request: NextRequest,
@@ -52,17 +53,17 @@ export async function PATCH(
       );
     }
 
-    // Parse request body
+    // Parse and validate request body
     const body = await request.json();
-    const { name, parentFolderId } = body;
-
-    // Validate name if provided
-    if (name !== undefined && (!name || !name.trim())) {
+    const parsed = updateFolderSchema.safeParse(body);
+    if (!parsed.success) {
+      console.error("Update folder validation error:", parsed.error.flatten());
       return NextResponse.json(
-        { success: false, error: "Folder name cannot be empty" },
+        { error: "Invalid input" },
         { status: 400 }
       );
     }
+    const { name, parentFolderId } = parsed.data;
 
     // Check for duplicate names if name is being changed
     if (name && name.trim().toLowerCase() !== existingFolder.name.toLowerCase()) {
@@ -92,7 +93,7 @@ export async function PATCH(
     // Update folder
     const updatedFolder = await updateContentFolder(id, {
       name: name?.trim(),
-      parentFolderId: parentFolderId === "" ? undefined : parentFolderId,
+      parentFolderId: parentFolderId === "" ? undefined : parentFolderId ?? undefined,
     });
 
     return NextResponse.json({

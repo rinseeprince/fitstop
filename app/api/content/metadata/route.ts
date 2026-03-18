@@ -4,6 +4,7 @@ import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { fetchVideoMetadata, fetchLinkMetadata } from "@/services/content-service";
 import { apiRateLimit } from "@/lib/rate-limit";
 import { validateExternalUrl } from "@/lib/url-safety";
+import { fetchMetadataSchema } from "@/lib/validations/content";
 
 export async function POST(request: NextRequest) {
   const rateLimitResult = await apiRateLimit(request);
@@ -38,14 +39,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { url } = await request.json();
-
-    if (!url) {
+    const body = await request.json();
+    const parsed = fetchMetadataSchema.safeParse(body);
+    if (!parsed.success) {
+      console.error("Fetch metadata validation error:", parsed.error.flatten());
       return NextResponse.json(
-        { success: false, error: "URL is required" },
+        { error: "Invalid input" },
         { status: 400 }
       );
     }
+    const { url } = parsed.data;
 
     // Validate URL format and block internal/private URLs (SSRF protection)
     const urlError = validateExternalUrl(url);

@@ -6,9 +6,10 @@ import {
 } from "@/services/check-in-service";
 import { getClientById } from "@/services/client-service";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
-import type { ReviewCheckInRequest, ReviewCheckInResponse } from "@/types/check-in";
+import type { ReviewCheckInResponse } from "@/types/check-in";
 import { apiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
+import { reviewCheckInSchema } from "@/lib/validations/check-in";
 
 /**
  * Verifies coach owns the client associated with a check-in
@@ -71,15 +72,16 @@ export async function POST(
       return authResult.response;
     }
 
-    const body: ReviewCheckInRequest = await request.json();
-    const { coachResponse } = body;
-
-    if (!coachResponse) {
+    const body = await request.json();
+    const parsed = reviewCheckInSchema.safeParse(body);
+    if (!parsed.success) {
+      console.error("Review check-in validation error:", parsed.error.flatten());
       return NextResponse.json(
-        { success: false, errorMessage: "Coach response is required" },
+        { error: "Invalid input" },
         { status: 400 }
       );
     }
+    const { coachResponse } = parsed.data;
 
     // Update check-in with coach response
     await updateCheckInResponse(checkInId, coachResponse);

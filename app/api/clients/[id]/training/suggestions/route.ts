@@ -16,14 +16,15 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const rateLimitResult = await aiRateLimit(request);
-  if (rateLimitResult) return rateLimitResult;
-
   const csrfError = await requireCSRFProtection(request);
   if (csrfError) return csrfError;
 
   try {
     const coachId = await getAuthenticatedCoachId();
+
+    // Rate limit by coach account to prevent cost abuse across IPs
+    const rateLimitResult = await aiRateLimit(request, coachId ?? undefined);
+    if (rateLimitResult) return rateLimitResult;
     if (!coachId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

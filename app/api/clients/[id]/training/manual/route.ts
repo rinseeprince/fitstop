@@ -66,8 +66,9 @@ export async function POST(
     const validation = manualPlanSchema.safeParse(body);
 
     if (!validation.success) {
+      console.error("Validation error:", validation.error.errors);
       return NextResponse.json(
-        { error: "Invalid input", details: validation.error.errors },
+        { error: "Invalid input" },
         { status: 400 }
       );
     }

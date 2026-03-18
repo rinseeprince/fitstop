@@ -4,11 +4,6 @@ import { upsertWeeklySummary } from "@/services/weekly-nutrition-service";
 import { getWeekStart, getTodayDateString } from "@/lib/date-helpers";
 import type { DietType } from "@/types/check-in";
 import type { TrainingPlan } from "@/types/training";
-import type { Database } from "@/types/database";
-
-type NutritionPlanInsert = Database["public"]["Tables"]["nutrition_plans"]["Insert"];
-type DailyTargetInsert = Database["public"]["Tables"]["nutrition_plan_daily_targets"]["Insert"];
-
 export type CreateNutritionPlanParams = {
   clientId: string;
   coachId: string;
@@ -36,79 +31,16 @@ export type CreateNutritionPlanParams = {
 
 /**
  * Create a new nutrition plan: archive any current active plan, insert a new
- * active plan with 7 daily target rows. Returns the new plan ID or null on error.
+ * active plan with 7 daily target rows in a single database transaction.
+ * Returns the new plan ID or null on error.
  */
 export async function createNutritionPlan(params: CreateNutritionPlanParams): Promise<string | null> {
-  const today = new Date().toISOString().split("T")[0];
-  const yesterdayDate = new Date(today + "T00:00:00");
-  yesterdayDate.setDate(yesterdayDate.getDate() - 1);
-  const yesterday = yesterdayDate.toISOString().split("T")[0];
-
-  // 1. Archive current active plan (if any)
-  // Set effective_until to yesterday to avoid date overlap with the new plan
-  await supabaseAdmin
-    .from("nutrition_plans")
-    .update({
-      status: "archived",
-      effective_until: yesterday,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("client_id", params.clientId)
-    .eq("status", "active");
-
-  // 2. Insert new active plan
-  const planInsert: NutritionPlanInsert = {
-    client_id: params.clientId,
-    coach_id: params.coachId,
-    status: "active",
-    effective_from: today,
-    work_activity_level: params.workActivityLevel,
-    training_volume_hours: params.trainingVolumeHours,
-    protein_target_g_per_kg: params.proteinTargetGPerKg,
-    diet_type: params.dietType,
-    goal_weight_kg: params.goalWeightKg,
-    goal_deadline: params.goalDeadline,
-    baseline_calories: params.baselineCalories,
-    protein_target_g: params.proteinTargetG,
-    carb_target_g: params.carbTargetG,
-    fat_target_g: params.fatTargetG,
-    base_weight_kg: params.baseWeightKg,
-    bmr: params.bmr,
-    tdee: params.tdee,
-    custom_macros_enabled: params.customMacrosEnabled,
-    custom_calories: params.customCalories,
-    custom_protein_g: params.customProteinG,
-    custom_carb_g: params.customCarbG,
-    custom_fat_g: params.customFatG,
-    regeneration_reason: params.regenerationReason,
-  };
-
-  const { data: newPlan, error: insertError } = await supabaseAdmin
-    .from("nutrition_plans")
-    .insert(planInsert)
-    .select("id")
-    .single();
-
-  if (insertError || !newPlan) {
-    console.error("Error inserting nutrition plan:", insertError?.message);
-    return null;
-  }
-
-  // Denormalize TDEE to client profile for overview display
-  if (params.tdee != null) {
-    await supabaseAdmin
-      .from("clients")
-      .update({ tdee: params.tdee })
-      .eq("id", params.clientId);
-  }
-
-  // 3. Compute and insert 7 daily target rows
-  const dailyTargets: DailyTargetInsert[] = [];
+  // Compute daily target rows before calling the atomic RPC
+  const dailyTargets: { day_of_week: string; calories: number; protein_g: number; carb_g: number; fat_g: number; is_training_day: boolean }[] = [];
 
   if (params.customMacrosEnabled && params.customCalories != null) {
     for (const day of DAYS_OF_WEEK) {
       dailyTargets.push({
-        nutrition_plan_id: newPlan.id,
         day_of_week: day,
         calories: params.customCalories,
         protein_g: params.customProteinG ?? params.proteinTargetG,
@@ -129,7 +61,6 @@ export async function createNutritionPlan(params: CreateNutritionPlanParams): Pr
       );
 
       dailyTargets.push({
-        nutrition_plan_id: newPlan.id,
         day_of_week: day,
         calories: params.baselineCalories,
         protein_g: baselineMacros.proteinG,
@@ -140,12 +71,45 @@ export async function createNutritionPlan(params: CreateNutritionPlanParams): Pr
     }
   }
 
-  const { error: targetsError } = await supabaseAdmin
-    .from("nutrition_plan_daily_targets")
-    .insert(dailyTargets);
+  // Single transactional RPC: archive old plan + insert new plan + insert daily targets
+  // RPC function defined in migration 048 - type will be generated after migration runs
+  const { data: newPlanId, error: rpcError } = await supabaseAdmin
+    .rpc("create_nutrition_plan_atomic" as never, {
+      p_client_id: params.clientId,
+      p_coach_id: params.coachId,
+      p_work_activity_level: params.workActivityLevel,
+      p_training_volume_hours: params.trainingVolumeHours,
+      p_protein_target_g_per_kg: params.proteinTargetGPerKg,
+      p_diet_type: params.dietType,
+      p_goal_weight_kg: params.goalWeightKg,
+      p_goal_deadline: params.goalDeadline,
+      p_baseline_calories: params.baselineCalories,
+      p_protein_target_g: params.proteinTargetG,
+      p_carb_target_g: params.carbTargetG,
+      p_fat_target_g: params.fatTargetG,
+      p_base_weight_kg: params.baseWeightKg,
+      p_bmr: params.bmr,
+      p_tdee: params.tdee,
+      p_custom_macros_enabled: params.customMacrosEnabled,
+      p_custom_calories: params.customCalories,
+      p_custom_protein_g: params.customProteinG,
+      p_custom_carb_g: params.customCarbG,
+      p_custom_fat_g: params.customFatG,
+      p_regeneration_reason: params.regenerationReason,
+      p_daily_targets: dailyTargets,
+    } as never) as unknown as { data: string | null; error: { message: string } | null };
 
-  if (targetsError) {
-    console.error("Error inserting daily targets:", targetsError.message);
+  if (rpcError || !newPlanId) {
+    console.error("Error creating nutrition plan:", rpcError?.message);
+    return null;
+  }
+
+  // Denormalize TDEE to client profile for overview display (non-transactional, safe to fail)
+  if (params.tdee != null) {
+    await supabaseAdmin
+      .from("clients")
+      .update({ tdee: params.tdee })
+      .eq("id", params.clientId);
   }
 
   // Recalculate current week's summary with new plan targets (fire-and-forget)
@@ -153,5 +117,5 @@ export async function createNutritionPlan(params: CreateNutritionPlanParams): Pr
     console.error("Weekly summary recalculation failed:", err instanceof Error ? err.message : "Unknown error")
   );
 
-  return newPlan.id;
+  return newPlanId;
 }

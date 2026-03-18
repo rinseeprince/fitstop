@@ -11,14 +11,15 @@ import { analyzeActivitySchema } from "@/lib/validations/external-activity";
 
 // POST - Analyze activity and estimate calories
 export async function POST(request: NextRequest) {
-  const rateLimitResult = await aiRateLimit(request);
-  if (rateLimitResult) return rateLimitResult;
-
   const csrfError = await requireCSRFProtection(request);
   if (csrfError) return csrfError;
 
   try {
     const coachId = await getAuthenticatedCoachId();
+
+    // Rate limit by coach account to prevent cost abuse across IPs
+    const rateLimitResult = await aiRateLimit(request, coachId ?? undefined);
+    if (rateLimitResult) return rateLimitResult;
     if (!coachId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -27,8 +28,9 @@ export async function POST(request: NextRequest) {
     const validation = analyzeActivitySchema.safeParse(body);
 
     if (!validation.success) {
+      console.error("Validation error:", validation.error.errors);
       return NextResponse.json(
-        { error: "Invalid input", details: validation.error.errors },
+        { error: "Invalid input" },
         { status: 400 }
       );
     }

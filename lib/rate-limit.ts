@@ -164,8 +164,22 @@ export async function rateLimit(
 
     return null;
   } catch (error) {
-    console.error("Rate limiting error:", error);
-    // If there's an error with rate limiting, allow the request through
+    // Redis failed — fall back to in-memory limiter instead of allowing unthrottled access
+    console.error("Rate limiting error, falling back to in-memory:", error instanceof Error ? error.message : "Unknown error");
+    const fallbackResult = inMemoryRateLimit(clientId, config.maxRequests, config.windowMs);
+    if (!fallbackResult.success) {
+      return NextResponse.json(
+        {
+          error: "Too many requests",
+          message: "Rate limit exceeded. Please try again later.",
+          retryAfter: fallbackResult.retryAfter,
+        },
+        {
+          status: 429,
+          headers: { "Retry-After": fallbackResult.retryAfter.toString() },
+        }
+      );
+    }
     return null;
   }
 }
@@ -224,11 +238,53 @@ export async function coachApiRateLimit(request: NextRequest): Promise<NextRespo
 
 /**
  * Strict rate limit for AI-powered endpoints (OpenAI calls)
- * Prevents cost abuse from repeated AI requests
+ * Prevents cost abuse from repeated AI requests.
+ * When userId is provided, rate limits by account instead of IP to prevent
+ * attackers from rotating IPs to bypass limits.
  */
-export async function aiRateLimit(request: NextRequest): Promise<NextResponse | null> {
-  return rateLimit(request, {
-    windowMs: 60 * 1000, // 1 minute
-    maxRequests: 10, // 10 requests per minute
+export async function aiRateLimit(request: NextRequest, userId?: string): Promise<NextResponse | null> {
+  const config: RateLimitConfig = { windowMs: 60 * 1000, maxRequests: 10 };
+  const redisClient = getRedisClient();
+
+  // Key on account when available, fall back to IP
+  const rateLimitKey = userId ? `ai:${userId}` : getClientIdentifier(request);
+
+  if (!redisClient) {
+    const result = inMemoryRateLimit(rateLimitKey, config.maxRequests, config.windowMs);
+    if (!result.success) {
+      return NextResponse.json(
+        { error: "Too many requests", message: "Rate limit exceeded. Please try again later.", retryAfter: result.retryAfter },
+        { status: 429, headers: { "Retry-After": result.retryAfter.toString() } }
+      );
+    }
+    return null;
+  }
+
+  const ratelimit = new Ratelimit({
+    redis: redisClient,
+    limiter: Ratelimit.slidingWindow(config.maxRequests, `${config.windowMs} ms`),
+    analytics: true,
   });
+
+  try {
+    const { success, limit, remaining, reset } = await ratelimit.limit(rateLimitKey);
+    if (!success) {
+      const retryAfter = Math.ceil((reset - Date.now()) / 1000);
+      return NextResponse.json(
+        { error: "Too many requests", message: "Rate limit exceeded. Please try again later.", retryAfter },
+        { status: 429, headers: { "Retry-After": retryAfter.toString(), "X-RateLimit-Limit": limit.toString(), "X-RateLimit-Remaining": remaining.toString(), "X-RateLimit-Reset": reset.toString() } }
+      );
+    }
+    return null;
+  } catch (error) {
+    console.error("AI rate limiting error, falling back to in-memory:", error instanceof Error ? error.message : "Unknown error");
+    const fallbackResult = inMemoryRateLimit(rateLimitKey, config.maxRequests, config.windowMs);
+    if (!fallbackResult.success) {
+      return NextResponse.json(
+        { error: "Too many requests", message: "Rate limit exceeded. Please try again later.", retryAfter: fallbackResult.retryAfter },
+        { status: 429, headers: { "Retry-After": fallbackResult.retryAfter.toString() } }
+      );
+    }
+    return null;
+  }
 }

@@ -77,8 +77,9 @@ export async function POST(request: NextRequest) {
     const validationResult = markCompleteSchema.safeParse(body);
 
     if (!validationResult.success) {
+      console.error("Validation error:", validationResult.error.errors);
       return NextResponse.json(
-        { success: false, error: "Invalid input", details: validationResult.error.errors },
+        { success: false, error: "Invalid input" },
         { status: 400 }
       );
     }

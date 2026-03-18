@@ -51,11 +51,11 @@ export async function PUT(
     const validationResult = reorderSchema.safeParse(body);
 
     if (!validationResult.success) {
+      console.error("Validation error:", validationResult.error.format());
       return NextResponse.json(
         {
           success: false,
           error: "Invalid input data",
-          validationErrors: validationResult.error.format()
         },
         { status: 400 }
       );
