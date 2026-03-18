@@ -9,12 +9,12 @@ Reviewed: 2026-03-12
 | # | Issue | File(s) | Details | Status |
 |---|-------|---------|---------|--------|
 | 1 | Middleware uses `getSession()` instead of `getUser()` | `middleware.ts:49,90` | `getSession()` reads the JWT from cookies without server-side validation. Supabase docs recommend `getUser()` for security-sensitive route protection as it validates the token server-side. A tampered/expired JWT could pass middleware checks. Violates §1, §9. | Done |
-| 2 | Dangerous default role fallback | `middleware.ts:106` | `const role = profile?.role \|\| "trainer"` - if profile fetch fails (DB error, network issue), user silently gets trainer-level access. Should deny access instead. Violates §3, §9. | Open |
+| 2 | Dangerous default role fallback | `middleware.ts:106` | `const role = profile?.role \|\| "trainer"` - if profile fetch fails (DB error, network issue), user silently gets trainer-level access. Should deny access instead. Violates §3, §9. | Done |
 | 3 | No `requireClientAuth` guard | `lib/require-coach-auth.ts` | Coach routes have a shared `requireCoachAuth()` guard but no equivalent exists for client routes. Each client route implements its own auth check, risking inconsistency. Violates §2 "No duplicate logic". | Open |
 | 4 | Auth callback route missing rate limiting | `app/auth/callback/route.ts` | The OAuth callback endpoint has no rate limiting. All other auth-related routes are properly rate-limited. Violates §9 "Rate limiting: MANDATORY". | Open |
-| 5 | Invitation token endpoint uses wrong rate limit tier | `app/api/invitations/[token]/route.ts` | Uses `apiRateLimit` (60/min) instead of `authRateLimit` (5/15min). This is a public endpoint that reveals invitation details and could be used for token enumeration. | Open |
-| 6 | Inconsistent password minimum length | `app/reset-password/page.tsx:35`, `lib/validations/auth.ts:30` | Signup and invite signup require 8-char minimum. Password reset allows 6-char minimum. Users can downgrade password strength via the reset flow. | Open |
-| 7 | No email verification enforcement | `contexts/auth-context.tsx` | Users can sign up and immediately access the app without verifying their email. Supabase supports email verification but it's not gated in the auth flow. | Open |
+| 5 | Invitation token endpoint uses wrong rate limit tier | `app/api/invitations/[token]/route.ts` | Uses `apiRateLimit` (60/min) instead of `authRateLimit` (5/15min). This is a public endpoint that reveals invitation details and could be used for token enumeration. | Done |
+| 6 | Inconsistent password minimum length | `app/reset-password/page.tsx:35`, `lib/validations/auth.ts:30` | Signup and invite signup require 8-char minimum. Password reset allows 6-char minimum. Users can downgrade password strength via the reset flow. | Done |
+| 7 | No email verification enforcement | `contexts/auth-context.tsx` | Users can sign up and immediately access the app without verifying their email. Supabase supports email verification but it's not gated in the auth flow. **Blocked** until production domain is live (Supabase email verification requires verified sender domain). | Open |
 | 8 | No account-level lockout after failed login attempts | `lib/rate-limit.ts` | Rate limiting protects at the IP level (via `authRateLimit`), but there's no per-account lockout. An attacker distributing attempts across IPs could still brute-force a specific account's password. | Open |
 
 ---
@@ -167,7 +167,8 @@ Reviewed: 2026-03-12
 
 ## Known RLS Gaps (Tech Debt)
 
-- **`daily_logs`** - No RLS enabled. This is a core table used by many services and routes. Adding RLS requires auditing every code path that reads/writes daily_logs to ensure the correct client (supabaseAdmin vs server client) is used. Do not add RLS to this table without a dedicated session to test all dependent flows.
+- **`daily_logs`** - Done. RLS enabled in migration 051. All 8 code paths confirmed to use supabaseAdmin (bypasses RLS). Policies added for defense-in-depth.
+- **`check_ins`** - Done. RLS enabled in migration 050. Policies already existed from migrations 005 + 026 but `ENABLE ROW LEVEL SECURITY` was never executed.
 
 ---
 
@@ -179,10 +180,17 @@ Reviewed: 2026-03-18
 
 | # | Issue | File(s) | Details | Status |
 |---|-------|---------|---------|--------|
-| 1 | Add per-coach daily AI call quota | `services/ai-service.ts`, `services/training-ai-service.ts`, `services/activity-ai-service.ts` | Track AI usage per coach in the database and enforce daily/monthly limits to cap OpenAI costs. Currently rate limiting is IP-based and per-minute only, which prevents burst abuse but not sustained cost accumulation over a billing period. | Open |
+| 1 | Add per-coach daily AI call quota | `services/ai-service.ts`, `services/training-ai-service.ts`, `services/activity-ai-service.ts` | Track AI usage per coach in the database and enforce daily/monthly limits to cap OpenAI costs. Currently rate limiting is IP-based and per-minute only, which prevents burst abuse but not sustained cost accumulation over a billing period. **Deferred to post-launch** - needs usage data to calibrate limits. | Open |
 | 2 | Transaction wrapping for check-in submission | `app/api/check-in/submit/[token]/route.ts` | Token claiming + check-in creation + token update are separate queries, not wrapped in a Postgres transaction. If check-in creation fails after token claim, the token is consumed without a check-in being created. Add compensation logic to release the token on failure, or wrap in a Supabase RPC function for atomicity. | Open |
 | 3 | Add structured logging | All API routes, services | All logging is `console.error`/`console.log` with unstructured messages. Adopt JSON-format structured logging with request IDs for better debugging and log aggregation in production. Currently relies on Sentry for error tracking but has no request tracing for non-error debugging. | Open |
 | 4 | Monitor RLS query performance | `supabase/migrations/015_*.sql`, `supabase/migrations/044_*.sql` | Nested subquery RLS policies on `training_exercises` and `nutrition_plan_daily_targets` join through multiple tables (exercises -> sessions -> plans -> clients -> user_id). May degrade at scale. Set up query profiling to monitor these policies and consider denormalizing if latency increases. | Open |
+
+### P1 - Observability & Error Handling
+
+| # | Issue | File(s) | Details | Status |
+|---|-------|---------|---------|--------|
+| 1 | Background task errors not reported to Sentry | `app/api/check-in/submit/[token]/route.ts:244-251` | `markReminderAsResponded()` and `triggerAISummaryGeneration()` fire-and-forget with only `console.error` in `.catch()`. Failures are invisible in monitoring. Add `captureApiError()` calls in the catch handlers. | Open |
+| 2 | No retry logic on OpenAI calls | `services/ai-service.ts:60-76` | Transient failures (timeouts, rate limits) cause permanent failure for check-in summaries. Add exponential backoff retry (2-3 attempts) for transient errors. | Open |
 
 ---
 

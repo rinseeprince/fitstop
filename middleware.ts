@@ -103,7 +103,16 @@ export async function middleware(request: NextRequest) {
     .eq("user_id", user.id)
     .single()
 
-  const role = profile?.role || "trainer" // Default to trainer for backwards compatibility
+  // If profile lookup failed or role is missing, deny access rather than
+  // defaulting to an elevated role. A DB outage should not grant trainer access.
+  if (!profile?.role) {
+    console.error("Profile lookup failed for authenticated user:", user.id)
+    const errorUrl = new URL("/login", request.url)
+    errorUrl.searchParams.set("error", "profile_unavailable")
+    return NextResponse.redirect(errorUrl)
+  }
+
+  const role = profile.role
   const isClient = role === "client"
   const isTrainer = role === "trainer"
 
