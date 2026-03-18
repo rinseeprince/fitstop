@@ -279,10 +279,10 @@ describe('attention-triggers', () => {
       global.Date = class extends originalDate {
         constructor(...args: any[]) {
           if (args.length === 0) {
-            // @ts-ignore
+            // @ts-expect-error -- testing with invalid input
             super(mockToday.toISOString())
           } else {
-            // @ts-ignore
+            // @ts-expect-error -- testing with invalid input
             super(...args)
           }
         }

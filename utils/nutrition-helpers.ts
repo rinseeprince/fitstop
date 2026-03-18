@@ -1,8 +1,7 @@
-import type { UnitPreference, ActivityLevel, TrainingVolume, DietType, DayCalorieOverride, DayCalorieOverrides } from "@/types/check-in";
+import type { UnitPreference, ActivityLevel, TrainingVolume, DietType, DayCalorieOverrides } from "@/types/check-in";
 import { WEEKLY_BUDGET_ROUNDING_TOLERANCE } from "@/lib/constants";
 import type { TrainingPlan, TrainingSession } from "@/types/training";
-import type { ActivityMetadata } from "@/types/external-activity";
-import { getTrainingCaloriesByDay, getTrainingSessionCaloriesByDay, getTrainingSessionsSummary } from "@/utils/training-calorie-helpers";
+import { getTrainingSessionCaloriesByDay, getTrainingSessionsSummary } from "@/utils/training-calorie-helpers";
 
 /**
  * Days of the week constant
@@ -125,7 +124,7 @@ export function getTrainingDays(plan: TrainingPlan | null): Set<string> {
  */
 export function calculateCalorieDistribution(
   dailyCalorieTarget: number,
-  trainingDaysCount: number
+  _trainingDaysCount: number
 ): { trainingDayCalories: number; restDayCalories: number } {
   // Now just returns the same calories for both - actual training calories
   // are added per-day in getWeeklyNutritionTargets

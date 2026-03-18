@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useMemo } from "react";
 import useSWR from "swr";
 import type { HabitLogWithDetails } from "@/types/daily-habit";
 

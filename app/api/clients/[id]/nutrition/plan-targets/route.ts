@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { getClientById } from "@/services/client-service";
-import { getPlanTargetForDate } from "@/services/daily-logs-service";
+import { getPlanTargetForDate } from "@/services/daily-context-service";
 
 const MAX_DATES = 31;
 const DATE_FORMAT = /^\d{4}-\d{2}-\d{2}$/;

@@ -105,7 +105,7 @@ export default function DashboardPage() {
                   No recent check-ins
                 </div>
               ) : (
-                recentCheckIns.slice(0, 5).map((checkIn, i) => {
+                recentCheckIns.slice(0, 5).map((checkIn, _i) => {
                   const initials = checkIn.clientName
                     .split(" ")
                     .map((n) => n[0])

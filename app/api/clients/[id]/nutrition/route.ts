@@ -11,163 +11,12 @@ import {
   nutritionSettingsPatchSchema,
   validateClientForNutrition,
 } from "@/lib/validations/nutrition";
-import { weightToKg, calculateDailyMacros, DAYS_OF_WEEK, getTrainingDays, getExternalActivitiesForDay, calculateExternalActivityCalories, getExternalActivitiesSummary } from "@/utils/nutrition-helpers";
-import { getTrainingSessionCaloriesByDay, getTrainingSessionsSummary } from "@/utils/training-calorie-helpers";
+import { weightToKg } from "@/utils/nutrition-helpers";
+import { buildDailyTargetsFromPlan } from "@/utils/build-daily-targets";
+import { createNutritionPlan } from "@/services/nutrition-plan-service";
 import type { ClientUpdate } from "@/lib/database-helpers";
 import { CUSTOM_MACRO_CALORIE_TOLERANCE } from "@/lib/constants";
 import type { GenerateNutritionPlanRequest, DietType } from "@/types/check-in";
-import type { TrainingPlan } from "@/types/training";
-import type { Database } from "@/types/database";
-import { upsertWeeklySummary } from "@/services/weekly-nutrition-service";
-import { getWeekStart, getTodayDateString } from "@/lib/date-helpers";
-
-type NutritionPlanInsert = Database["public"]["Tables"]["nutrition_plans"]["Insert"];
-type DailyTargetInsert = Database["public"]["Tables"]["nutrition_plan_daily_targets"]["Insert"];
-
-/**
- * Create a new nutrition plan: archive any current active plan, insert a new
- * active plan with 7 daily target rows. Returns the new plan ID or null on error.
- */
-async function createNutritionPlan(params: {
-  clientId: string;
-  coachId: string;
-  workActivityLevel: string;
-  trainingVolumeHours: string;
-  proteinTargetGPerKg: number;
-  dietType: DietType;
-  goalWeightKg: number | null;
-  goalDeadline: string | null;
-  baselineCalories: number;
-  proteinTargetG: number;
-  carbTargetG: number;
-  fatTargetG: number;
-  baseWeightKg: number;
-  bmr: number | null;
-  tdee: number | null;
-  customMacrosEnabled: boolean;
-  customCalories: number | null;
-  customProteinG: number | null;
-  customCarbG: number | null;
-  customFatG: number | null;
-  regenerationReason: string;
-  trainingPlan: TrainingPlan | null;
-}): Promise<string | null> {
-  const today = new Date().toISOString().split("T")[0];
-  const yesterdayDate = new Date(today + "T00:00:00");
-  yesterdayDate.setDate(yesterdayDate.getDate() - 1);
-  const yesterday = yesterdayDate.toISOString().split("T")[0];
-
-  // 1. Archive current active plan (if any)
-  // Set effective_until to yesterday to avoid date overlap with the new plan
-  await supabaseAdmin
-    .from("nutrition_plans")
-    .update({
-      status: "archived",
-      effective_until: yesterday,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("client_id", params.clientId)
-    .eq("status", "active");
-
-  // 2. Insert new active plan
-  const planInsert: NutritionPlanInsert = {
-    client_id: params.clientId,
-    coach_id: params.coachId,
-    status: "active",
-    effective_from: today,
-    work_activity_level: params.workActivityLevel,
-    training_volume_hours: params.trainingVolumeHours,
-    protein_target_g_per_kg: params.proteinTargetGPerKg,
-    diet_type: params.dietType,
-    goal_weight_kg: params.goalWeightKg,
-    goal_deadline: params.goalDeadline,
-    baseline_calories: params.baselineCalories,
-    protein_target_g: params.proteinTargetG,
-    carb_target_g: params.carbTargetG,
-    fat_target_g: params.fatTargetG,
-    base_weight_kg: params.baseWeightKg,
-    bmr: params.bmr,
-    tdee: params.tdee,
-    custom_macros_enabled: params.customMacrosEnabled,
-    custom_calories: params.customCalories,
-    custom_protein_g: params.customProteinG,
-    custom_carb_g: params.customCarbG,
-    custom_fat_g: params.customFatG,
-    regeneration_reason: params.regenerationReason,
-  };
-
-  const { data: newPlan, error: insertError } = await supabaseAdmin
-    .from("nutrition_plans")
-    .insert(planInsert)
-    .select("id")
-    .single();
-
-  if (insertError || !newPlan) {
-    console.error("Error inserting nutrition plan:", insertError?.message);
-    return null;
-  }
-
-  // Denormalize TDEE to client profile for overview display
-  if (params.tdee != null) {
-    await supabaseAdmin
-      .from("clients")
-      .update({ tdee: params.tdee })
-      .eq("id", params.clientId);
-  }
-
-  // 3. Compute and insert 7 daily target rows
-  const dailyTargets: DailyTargetInsert[] = [];
-
-  if (params.customMacrosEnabled && params.customCalories != null) {
-    for (const day of DAYS_OF_WEEK) {
-      dailyTargets.push({
-        nutrition_plan_id: newPlan.id,
-        day_of_week: day,
-        calories: params.customCalories,
-        protein_g: params.customProteinG ?? params.proteinTargetG,
-        carb_g: params.customCarbG ?? params.carbTargetG,
-        fat_g: params.customFatG ?? params.fatTargetG,
-        is_training_day: false,
-      });
-    }
-  } else {
-    const trainingDays = getTrainingDays(params.trainingPlan);
-
-    for (const day of DAYS_OF_WEEK) {
-      const baselineMacros = calculateDailyMacros(
-        params.baselineCalories,
-        params.proteinTargetG,
-        trainingDays.has(day),
-        params.dietType
-      );
-
-      dailyTargets.push({
-        nutrition_plan_id: newPlan.id,
-        day_of_week: day,
-        calories: params.baselineCalories,
-        protein_g: baselineMacros.proteinG,
-        carb_g: baselineMacros.carbsG,
-        fat_g: baselineMacros.fatG,
-        is_training_day: trainingDays.has(day),
-      });
-    }
-  }
-
-  const { error: targetsError } = await supabaseAdmin
-    .from("nutrition_plan_daily_targets")
-    .insert(dailyTargets);
-
-  if (targetsError) {
-    console.error("Error inserting daily targets:", targetsError.message);
-  }
-
-  // Recalculate current week's summary with new plan targets (fire-and-forget)
-  upsertWeeklySummary(params.clientId, getWeekStart(getTodayDateString())).catch((err) =>
-    console.error("Weekly summary recalculation failed:", err instanceof Error ? err.message : "Unknown error")
-  );
-
-  return newPlan.id;
-}
 
 /**
  * GET: Return the active nutrition plan + daily targets for the coach view.
@@ -219,77 +68,15 @@ export async function GET(
 
     // Fetch training plan for live calorie enrichment
     const trainingPlan = await getActiveTrainingPlan(clientId);
-    const trainingSessionCaloriesByDay = getTrainingSessionCaloriesByDay(trainingPlan);
+    const dietType = (plan.diet_type as DietType) || "balanced";
 
-    const targetsByDay = new Map(
-      (dailyTargetRows || []).map((dt) => [dt.day_of_week, dt])
+    const dailyTargets = buildDailyTargetsFromPlan(
+      plan,
+      dailyTargetRows,
+      trainingPlan,
+      includeActivityBurn,
+      dietType
     );
-
-    let dailyTargets = DAYS_OF_WEEK.map((day) => {
-      const stored = targetsByDay.get(day);
-      const baselineCalories = stored?.calories ?? plan.baseline_calories;
-      const proteinG = stored?.protein_g ?? plan.protein_target_g;
-      const carbG = stored?.carb_g ?? plan.carb_target_g;
-      const fatG = stored?.fat_g ?? plan.fat_target_g;
-      const isTrainingDay = stored?.is_training_day ?? false;
-
-      const trainingSessionCalories = trainingSessionCaloriesByDay[day] || 0;
-      const trainingSessions = getTrainingSessionsSummary(trainingPlan, day);
-      const dayActivities = getExternalActivitiesForDay(trainingPlan, day);
-      const externalActivityCalories = calculateExternalActivityCalories(dayActivities);
-      const externalActivities = getExternalActivitiesSummary(dayActivities);
-
-      const totalActivityCalories = trainingSessionCalories + externalActivityCalories;
-      const dayCalories = baselineCalories + totalActivityCalories;
-
-      const totalCal = proteinG * 4 + carbG * 4 + fatG * 9;
-      const proteinPercent = totalCal > 0 ? Math.round((proteinG * 4 / totalCal) * 100) : 0;
-      const carbsPercent = totalCal > 0 ? Math.round((carbG * 4 / totalCal) * 100) : 0;
-
-      return {
-        day,
-        dayLabel: day.charAt(0).toUpperCase() + day.slice(1),
-        isTrainingDay,
-        calories: dayCalories,
-        baselineCalories,
-        proteinG,
-        carbsG: carbG,
-        fatG,
-        proteinPercent,
-        carbsPercent,
-        fatPercent: 100 - proteinPercent - carbsPercent,
-        trainingSessionCalories,
-        trainingSessions,
-        externalActivityCalories,
-        externalActivities,
-        totalCaloriesWithActivities: dayCalories,
-        includeActivityBurn,
-      };
-    });
-
-    // When activity burn is excluded, flatten to baseline
-    if (!includeActivityBurn) {
-      const dietType = (plan.diet_type as DietType) || "balanced";
-      dailyTargets = dailyTargets.map((day) => {
-        const macros = calculateDailyMacros(day.baselineCalories, day.proteinG, false, dietType);
-        const totalCal = macros.proteinG * 4 + macros.carbsG * 4 + macros.fatG * 9;
-        const proteinPercent = totalCal > 0 ? Math.round((macros.proteinG * 4 / totalCal) * 100) : 0;
-        const carbsPercent = totalCal > 0 ? Math.round((macros.carbsG * 4 / totalCal) * 100) : 0;
-        return {
-          ...day,
-          calories: day.baselineCalories,
-          trainingSessionCalories: 0,
-          externalActivityCalories: 0,
-          totalCaloriesWithActivities: day.baselineCalories,
-          proteinG: macros.proteinG,
-          carbsG: macros.carbsG,
-          fatG: macros.fatG,
-          proteinPercent,
-          carbsPercent,
-          fatPercent: 100 - proteinPercent - carbsPercent,
-        };
-      });
-    }
 
     return NextResponse.json({
       calorieTarget: plan.custom_macros_enabled && plan.custom_calories ? plan.custom_calories : plan.baseline_calories,
@@ -326,19 +113,19 @@ export async function POST(
     const coachId = await getAuthenticatedCoachId();
 
     if (!coachId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
 
     const { id: clientId } = await params;
     const client = await getClientById(clientId);
 
     if (!client) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
+      return NextResponse.json({ success: false, error: "Client not found" }, { status: 404 });
     }
 
     if (client.coachId !== coachId) {
       return NextResponse.json(
-        { error: "Forbidden: You don't have access to this client" },
+        { success: false, error: "Forbidden: You don't have access to this client" },
         { status: 403 }
       );
     }
@@ -348,7 +135,7 @@ export async function POST(
 
     if (!validationResult.success) {
       return NextResponse.json(
-        { error: "Invalid input" },
+        { success: false, error: "Invalid input" },
         { status: 400 }
       );
     }
@@ -356,7 +143,7 @@ export async function POST(
     const clientValidation = validateClientForNutrition(client);
     if (!clientValidation.valid) {
       return NextResponse.json(
-        { error: "Client missing required data for nutrition calculation" },
+        { success: false, error: "Client missing required data for nutrition calculation" },
         { status: 400 }
       );
     }
@@ -365,7 +152,7 @@ export async function POST(
     if (body.customMacrosEnabled) {
       if (!body.customProteinG || !body.customCarbG || !body.customFatG || !body.customCalories) {
         return NextResponse.json(
-          { error: "Custom macros enabled but values not provided" },
+          { success: false, error: "Custom macros enabled but values not provided" },
           { status: 400 }
         );
       }
@@ -376,7 +163,7 @@ export async function POST(
 
       if (difference > CUSTOM_MACRO_CALORIE_TOLERANCE) {
         return NextResponse.json(
-          { error: `Custom calories must be within ±50 calories of macro totals (calculated: ${calculatedCalories} cal)` },
+          { success: false, error: `Custom calories must be within ±50 calories of macro totals (calculated: ${calculatedCalories} cal)` },
           { status: 400 }
         );
       }
@@ -506,7 +293,7 @@ export async function POST(
   } catch (error) {
     console.error("Error generating nutrition plan:", error instanceof Error ? error.message : "Unknown error");
     return NextResponse.json(
-      { error: "Failed to generate nutrition plan" },
+      { success: false, error: "Failed to generate nutrition plan" },
       { status: 500 }
     );
   }
@@ -526,19 +313,19 @@ export async function PATCH(
     const coachId = await getAuthenticatedCoachId();
 
     if (!coachId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
 
     const { id: clientId } = await params;
     const client = await getClientById(clientId);
 
     if (!client) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
+      return NextResponse.json({ success: false, error: "Client not found" }, { status: 404 });
     }
 
     if (client.coachId !== coachId) {
       return NextResponse.json(
-        { error: "Forbidden: You don't have access to this client" },
+        { success: false, error: "Forbidden: You don't have access to this client" },
         { status: 403 }
       );
     }
@@ -548,7 +335,7 @@ export async function PATCH(
 
     if (!validationResult.success) {
       return NextResponse.json(
-        { error: "Invalid input" },
+        { success: false, error: "Invalid input" },
         { status: 400 }
       );
     }
@@ -569,14 +356,14 @@ export async function PATCH(
         .eq("id", clientId)
         .eq("coach_id", coachId);
 
-      if (error) throw error;
+      if (error) throw new Error("Failed to update settings");
     }
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {
     console.error("Error updating nutrition settings:", error instanceof Error ? error.message : "Unknown error");
     return NextResponse.json(
-      { error: "Failed to update nutrition settings" },
+      { success: false, error: "Failed to update nutrition settings" },
       { status: 500 }
     );
   }

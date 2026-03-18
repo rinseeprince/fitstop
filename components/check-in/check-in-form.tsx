@@ -11,7 +11,6 @@ import { StepTraining } from "./step-training";
 import { FormSuccess } from "./form-success";
 import { useCheckInForm } from "@/hooks/use-check-in-form";
 import type {
-  CheckInFormData,
   CheckInClientInfo,
   CheckInTrainingContext,
   CheckInNutritionContext,

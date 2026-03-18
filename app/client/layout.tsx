@@ -12,7 +12,7 @@ export default function ClientLayout({
 }: {
   children: React.ReactNode
 }) {
-  const { user, loading, isClient, logout } = useAuth()
+  const { user, loading, isClient: _isClient, logout } = useAuth()
   const router = useRouter()
 
   useEffect(() => {

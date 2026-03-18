@@ -1,5 +1,5 @@
 import { format, formatDistanceToNow } from "date-fns";
-import type { CheckIn, ProgressComparison, ProgressChartData, ChartDataPoint } from "@/types/check-in";
+import type { CheckIn, ProgressComparison, ProgressChartData } from "@/types/check-in";
 
 // Format check-in date
 export const formatCheckInDate = (dateString: string): string => {

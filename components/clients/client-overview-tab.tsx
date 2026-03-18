@@ -12,7 +12,6 @@ import { ReminderHistoryModal } from "@/components/clients/check-in/reminder-his
 import { Loader2, Calculator, Bell, Edit2 } from "lucide-react"
 import { DailyWellnessStrip } from "@/components/clients/daily-pulse/daily-wellness-strip"
 import { ClientActivationBanner } from "@/components/clients/client-activation-banner"
-import { cn } from "@/lib/utils"
 import type { ClientTab } from "@/components/clients/client-page-header"
 import type { Client, CheckIn } from "@/types/check-in"
 
@@ -41,10 +40,10 @@ export function ClientOverviewTab({
   const currentWeight = client.currentWeight || checkIns[0]?.weight
   const currentBf = client.currentBodyFatPercentage || checkIns[0]?.bodyFatPercentage
   const weightUnit = client.weightUnit || "lbs"
-  const weightDelta = currentWeight && client.goalWeight
+  const _weightDelta = currentWeight && client.goalWeight
     ? currentWeight - client.goalWeight
     : null
-  const bfDelta = currentBf && client.goalBodyFatPercentage
+  const _bfDelta = currentBf && client.goalBodyFatPercentage
     ? currentBf - client.goalBodyFatPercentage
     : null
 

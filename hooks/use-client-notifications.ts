@@ -27,7 +27,7 @@ export function useClientNotifications(): ClientNotifications {
   const [notifications, setNotifications] = useState<ClientNotification[]>([]);
   const [lastSeenTimestamp, setLastSeenTimestamp] = useState<string>("");
   const [lastRefresh, setLastRefresh] = useState<number>(0);
-  const [checkInStatus, setCheckInStatus] = useState<any>(null);
+  const [_checkInStatus, setCheckInStatus] = useState<any>(null);
 
   const STORAGE_KEY = "client_last_seen_notifications";
   const CACHE_DURATION = 30 * 1000; // 30 seconds

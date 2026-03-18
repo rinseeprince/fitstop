@@ -221,3 +221,14 @@ export async function coachApiRateLimit(request: NextRequest): Promise<NextRespo
     maxRequests: 30, // 30 requests per 10 seconds
   });
 }
+
+/**
+ * Strict rate limit for AI-powered endpoints (OpenAI calls)
+ * Prevents cost abuse from repeated AI requests
+ */
+export async function aiRateLimit(request: NextRequest): Promise<NextResponse | null> {
+  return rateLimit(request, {
+    windowMs: 60 * 1000, // 1 minute
+    maxRequests: 10, // 10 requests per minute
+  });
+}

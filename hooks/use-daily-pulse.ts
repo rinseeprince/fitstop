@@ -267,7 +267,7 @@ export function useDailyPulse(selectedDate: string): UseDailyPulseReturn {
         const streakData = await streakRes.json();
         setStreak(streakData.data?.currentStreak || 0);
       }
-    } catch (error) {
+    } catch (_error) {
       toast({
         title: "Error",
         description: "Failed to save daily log",

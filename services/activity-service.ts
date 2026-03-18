@@ -8,9 +8,6 @@ import type {
   TrainingSessionUpdateData,
 } from "@/types/external-activity";
 
-// Type for Supabase query builder that bypasses strict typing for new columns
-type SupabaseQueryBuilder = ReturnType<typeof supabaseAdmin.from>;
-
 // Map database row to ActivitySuggestion
 const mapActivitySuggestionRow = (row: ActivitySuggestionRow): ActivitySuggestion => ({
   id: row.id,
@@ -93,7 +90,7 @@ export const incrementActivityPopularity = async (
   );
 
   // Silently fail if RPC doesn't exist - popularity tracking is non-critical
-  if (error) console.log("Popularity tracking skipped:", error.message);
+  if (error) console.warn("Popularity tracking skipped:", error.message);
 };
 
 // Type for insert/update operations on training_sessions with new columns

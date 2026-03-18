@@ -1,5 +1,4 @@
 import type { DailyLog } from "@/types/daily-log"
-import type { AlertSeverity } from "@/types/attention-feed"
 import type { TriggerResult } from "./attention-triggers"
 import {
   MOOD_ENERGY_DROP_THRESHOLD,
@@ -35,7 +34,7 @@ export function evaluateMoodEnergyDrop(
     const baselineLogs = sortedLogs.slice(baselineStart, i)
     const baselineValues = baselineLogs
       .map(log => log[metric])
-      .filter(val => val !== undefined && val !== null) as number[]
+      .filter(val => val !== undefined && val !== null)
     
     if (baselineValues.length < Math.min(3, MOOD_ENERGY_ROLLING_DAYS)) {
       continue // Not enough data for baseline

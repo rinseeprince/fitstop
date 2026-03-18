@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedClientId } from "@/lib/auth-helpers";
-import { getClientTrainingPlan } from "@/services/client-portal-service";
+import { getClientTrainingPlan } from "@/services/client-portal-training";
 import { clientApiRateLimit } from "@/lib/rate-limit";
 
 // GET /api/client/training - Get client's active training plan

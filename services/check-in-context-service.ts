@@ -5,6 +5,7 @@ import type {
   CheckInTrainingContext,
   CheckInNutritionContext,
   DayOfWeek,
+  DietType,
 } from "@/types/check-in";
 
 /**
@@ -73,7 +74,7 @@ export const getCheckInNutritionContext = async (
   const plan = await getActiveTrainingPlan(clientId);
 
   // Calculate weekly targets
-  const dietType = (nutritionPlan.diet_type || "balanced") as "balanced" | "high_carb" | "low_carb" | "keto" | "custom";
+  const dietType = (nutritionPlan.diet_type || "balanced") as DietType;
   const weeklyTargets = getWeeklyNutritionTargets(
     nutritionPlan.baseline_calories,
     nutritionPlan.protein_target_g || 150,

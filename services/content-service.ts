@@ -400,7 +400,7 @@ export const uploadContentFile = async (
   coachId: string,
   contentId: string
 ): Promise<string> => {
-  const fileExt = file.name.split(".").pop();
+  const _fileExt = file.name.split(".").pop();
   const fileName = `${coachId}/${contentId}/${Date.now()}-${file.name}`;
 
   const { data, error } = await supabaseAdmin.storage
@@ -518,7 +518,7 @@ const isAllowedDomain = (url: string): boolean => {
     return ALLOWED_METADATA_DOMAINS.some(domain => 
       hostname === domain || hostname.endsWith('.' + domain)
     );
-  } catch (error) {
+  } catch (_error) {
     return false;
   }
 };

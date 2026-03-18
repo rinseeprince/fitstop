@@ -51,8 +51,8 @@ export const CheckInResponseEditor = ({
     }
   };
 
-  const characterCount = response.length;
-  const wordCount = response.trim().split(/\s+/).filter(Boolean).length;
+  const _characterCount = response.length;
+  const _wordCount = response.trim().split(/\s+/).filter(Boolean).length;
 
   return (
     <div className="border border-border rounded-lg overflow-hidden">

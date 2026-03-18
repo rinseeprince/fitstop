@@ -13,6 +13,7 @@ export const swrFetcher = async (url: string) => {
     error.status = response.status;
     try {
       error.info = await response.json();
+    // eslint-disable-next-line no-empty
     } catch {}
     throw error;
   }

@@ -1,5 +1,5 @@
 import type { DailyLog } from "@/types/daily-log"
-import type { AlertType, AlertSeverity, WellnessAlert } from "@/types/attention-feed"
+import type { WellnessAlert } from "@/types/attention-feed"
 import {
   evaluateMoodEnergyDrop,
   evaluateLoggingGap,

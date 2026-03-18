@@ -55,8 +55,8 @@ export async function sendCheckInReminder(
     }
 
     // Generate new check-in token
-    const { token, expiresAt } = await createCheckInToken(clientId);
-    const checkInLink = generateCheckInLink(token);
+    const { token, expiresAt: _expiresAt } = await createCheckInToken(clientId);
+    const _checkInLink = generateCheckInLink(token);
 
     // TODO: Integration point for email/SMS service
     // For now, we just create the token and track the reminder

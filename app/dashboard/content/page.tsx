@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/app-layout";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -23,8 +23,6 @@ import {
   List,
   Search,
   Filter,
-  Upload,
-  Link,
   FileText,
   Image,
   Video,

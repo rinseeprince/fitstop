@@ -38,10 +38,10 @@ export default function ClientProfilePage() {
     pendingMetricUpdate,
     isSavingMetric,
     handleCalculateBMR,
-    handleMetricSave,
+    handleMetricSave: _handleMetricSave,
     saveMetric,
-    handleResetToAuto,
-  } = useClientMetrics({ clientId, onSuccess: mutateClient })
+    handleResetToAuto: _handleResetToAuto,
+  } = useClientMetrics({ clientId, onSuccess: () => void mutateClient() })
 
   const handleSelectCheckIn = (checkIn: CheckIn) => {
     setSelectedCheckInId(checkIn.id)

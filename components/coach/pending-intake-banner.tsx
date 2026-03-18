@@ -4,7 +4,7 @@ import useSWR from "swr"
 import { motion } from "framer-motion"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { ClipboardCheck, ChevronRight, Bell, UserPlus } from "lucide-react"
+import { ChevronRight, Bell, UserPlus } from "lucide-react"
 import Link from "next/link"
 import type { PendingIntakeSummary } from "@/types/client-intake"
 

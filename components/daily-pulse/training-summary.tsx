@@ -4,12 +4,6 @@ import { Badge } from "@/components/ui/badge";
 import { Flame, Check } from "lucide-react";
 import type { TrainingSession } from "@/types/training";
 
-type UnplannedActivity = {
-  activityName: string;
-  intensityLevel: "low" | "moderate" | "vigorous";
-  durationMinutes: number;
-};
-
 type TodaysActivity = {
   sessionId: string;
   activityName: string;

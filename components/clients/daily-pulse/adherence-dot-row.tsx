@@ -1,7 +1,7 @@
 "use client"
 
 import { cn } from "@/lib/utils"
-import type { DailyLog, NutritionAdherenceStatus } from "@/types/daily-log"
+import type { DailyLog } from "@/types/daily-log"
 
 interface AdherenceDotRowProps {
   logs: DailyLog[]

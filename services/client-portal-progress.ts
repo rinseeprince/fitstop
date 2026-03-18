@@ -1,0 +1,179 @@
+import { createPortalClient } from "./client-portal-service";
+
+// Progress data for charts
+export type ProgressDataPoint = {
+  date: string;
+  weight?: number;
+  bodyFatPercentage?: number;
+  waist?: number;
+  hips?: number;
+  chest?: number;
+  arms?: number;
+  thighs?: number;
+  mood?: number;
+  energy?: number;
+  sleep?: number;
+  stress?: number;
+};
+
+export type ProgressData = {
+  weightHistory: ProgressDataPoint[];
+  bodyFatHistory: ProgressDataPoint[];
+  bodyMeasurements: {
+    waistHistory: ProgressDataPoint[];
+    hipsHistory: ProgressDataPoint[];
+    chestHistory: ProgressDataPoint[];
+    armsHistory: ProgressDataPoint[];
+    thighsHistory: ProgressDataPoint[];
+  };
+  wellnessMetrics: {
+    moodHistory: ProgressDataPoint[];
+    energyHistory: ProgressDataPoint[];
+    sleepHistory: ProgressDataPoint[];
+    stressHistory: ProgressDataPoint[];
+  };
+  checkInCount: number;
+  currentStreak: number;
+  adherenceRate: number;
+  client: {
+    goalWeight?: number;
+    goalBodyFatPercentage?: number;
+    startingWeight?: number;
+    startingBodyFatPercentage?: number;
+    currentWeight?: number;
+    currentBodyFatPercentage?: number;
+    weightUnit?: "lbs" | "kg";
+    measurementUnit?: "in" | "cm";
+  };
+};
+
+// Get progress data for charts
+export async function getClientProgressData(
+  clientId: string,
+  days: number = 90
+): Promise<ProgressData> {
+  const supabase = await createPortalClient();
+
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - days);
+
+  const { data: checkIns } = await supabase
+    .from("check_ins")
+    .select(`
+      created_at,
+      weight,
+      body_fat_percentage,
+      waist,
+      hips,
+      chest,
+      arms,
+      thighs,
+      mood,
+      energy,
+      sleep,
+      stress
+    `)
+    .eq("client_id", clientId)
+    .gte("created_at", startDate.toISOString())
+    .order("created_at", { ascending: true });
+
+  const { data: clientData } = await supabase
+    .from("clients")
+    .select(`
+      current_streak,
+      check_in_adherence_rate,
+      goal_weight,
+      goal_body_fat_percentage,
+      starting_weight,
+      starting_body_fat_percentage,
+      current_weight,
+      current_body_fat_percentage,
+      weight_unit,
+      measurement_unit
+    `)
+    .eq("id", clientId)
+    .single();
+
+  const weightHistory: ProgressDataPoint[] = [];
+  const bodyFatHistory: ProgressDataPoint[] = [];
+  const waistHistory: ProgressDataPoint[] = [];
+  const hipsHistory: ProgressDataPoint[] = [];
+  const chestHistory: ProgressDataPoint[] = [];
+  const armsHistory: ProgressDataPoint[] = [];
+  const thighsHistory: ProgressDataPoint[] = [];
+  const moodHistory: ProgressDataPoint[] = [];
+  const energyHistory: ProgressDataPoint[] = [];
+  const sleepHistory: ProgressDataPoint[] = [];
+  const stressHistory: ProgressDataPoint[] = [];
+
+  if (checkIns) {
+    for (const checkIn of checkIns) {
+      const date = checkIn.created_at.split("T")[0];
+
+      if (checkIn.weight) {
+        weightHistory.push({ date, weight: checkIn.weight });
+      }
+      if (checkIn.body_fat_percentage) {
+        bodyFatHistory.push({ date, bodyFatPercentage: checkIn.body_fat_percentage });
+      }
+      if (checkIn.waist) {
+        waistHistory.push({ date, waist: checkIn.waist });
+      }
+      if (checkIn.hips) {
+        hipsHistory.push({ date, hips: checkIn.hips });
+      }
+      if (checkIn.chest) {
+        chestHistory.push({ date, chest: checkIn.chest });
+      }
+      if (checkIn.arms) {
+        armsHistory.push({ date, arms: checkIn.arms });
+      }
+      if (checkIn.thighs) {
+        thighsHistory.push({ date, thighs: checkIn.thighs });
+      }
+      if (checkIn.mood) {
+        moodHistory.push({ date, mood: checkIn.mood });
+      }
+      if (checkIn.energy) {
+        energyHistory.push({ date, energy: checkIn.energy });
+      }
+      if (checkIn.sleep) {
+        sleepHistory.push({ date, sleep: checkIn.sleep });
+      }
+      if (checkIn.stress) {
+        stressHistory.push({ date, stress: checkIn.stress });
+      }
+    }
+  }
+
+  return {
+    weightHistory,
+    bodyFatHistory,
+    bodyMeasurements: {
+      waistHistory,
+      hipsHistory,
+      chestHistory,
+      armsHistory,
+      thighsHistory,
+    },
+    wellnessMetrics: {
+      moodHistory,
+      energyHistory,
+      sleepHistory,
+      stressHistory,
+    },
+    checkInCount: checkIns?.length ?? 0,
+    currentStreak: clientData?.current_streak ?? 0,
+    adherenceRate: clientData?.check_in_adherence_rate ?? 0,
+    client: {
+      goalWeight: clientData?.goal_weight,
+      goalBodyFatPercentage: clientData?.goal_body_fat_percentage,
+      startingWeight: clientData?.starting_weight,
+      startingBodyFatPercentage: clientData?.starting_body_fat_percentage,
+      currentWeight: clientData?.current_weight,
+      currentBodyFatPercentage: clientData?.current_body_fat_percentage,
+      weightUnit: clientData?.weight_unit,
+      measurementUnit: clientData?.measurement_unit,
+    },
+  };
+}

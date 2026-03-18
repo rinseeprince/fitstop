@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback } from "react";
 import { useDropzone } from "react-dropzone";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,7 +29,6 @@ import {
   Link,
   FileText,
   Image,
-  Video,
   ExternalLink,
   X,
   AlertCircle,
@@ -214,9 +213,9 @@ export function ContentUploadDialog({
         } else {
           throw new Error("Upload failed");
         }
-      } catch (error) {
-        setFiles((prev) => 
-          prev.map((f, index) => 
+      } catch (_error) {
+        setFiles((prev) =>
+          prev.map((f, index) =>
             index === i ? { ...f, status: "error", error: "Upload failed" } : f
           )
         );
@@ -227,28 +226,24 @@ export function ContentUploadDialog({
   };
 
   const uploadUrl = async () => {
-    try {
-      const response = await fetch("/api/content/items", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title,
-          description,
-          type: detectUrlType(url),
-          url,
-          folderId: selectedFolder,
-          isLibrary,
-          metadata: urlMetadata,
-        }),
-      });
+    const response = await fetch("/api/content/items", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title,
+        description,
+        type: detectUrlType(url),
+        url,
+        folderId: selectedFolder,
+        isLibrary,
+        metadata: urlMetadata,
+      }),
+    });
 
-      if (response.ok) {
-        return await response.json();
-      } else {
-        throw new Error("Failed to create content");
-      }
-    } catch (error) {
-      throw error;
+    if (response.ok) {
+      return await response.json();
+    } else {
+      throw new Error("Failed to create content");
     }
   };
 

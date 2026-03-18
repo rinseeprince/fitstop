@@ -6,7 +6,6 @@ import type {
 import type { TrainingPlan } from "@/types/training";
 import {
   getActivityMultiplier,
-  getTrainingCalories,
 } from "@/utils/nutrition-helpers";
 
 export type NutritionPlan = {

@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { format } from "date-fns";
-import type { ProgressData } from "@/services/client-portal-service";
+import type { ProgressData } from "@/services/client-portal-progress";
 import type { TrendDirection } from "@/types/check-in";
 
 export type ClientMetricData = {

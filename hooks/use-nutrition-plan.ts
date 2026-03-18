@@ -2,11 +2,10 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
-import type { Client, UnitPreference } from "@/types/check-in";
+import type { Client, UnitPreference, DietType } from "@/types/check-in";
 import type { TrainingPlan } from "@/types/training";
 import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
 import {
-  shouldShowRegenerationBanner,
   getWeightChange as getWeightChangeUtil,
   formatWeight as formatWeightUtil,
   weightToKg,
@@ -32,7 +31,7 @@ type NutritionTargetsData = {
   baselineCalories?: number;
   customMacrosEnabled?: boolean;
   customCalories?: number;
-  dietType?: string;
+  dietType?: DietType;
   includeActivityBurn: boolean;
   dailyTargets?: DailyNutritionTargets[];
 };
@@ -126,7 +125,7 @@ export function useNutritionPlan({ client, onUpdate }: UseNutritionPlanProps) {
 
         if (!res.ok) throw new Error("Failed to update unit preference");
         onUpdate?.();
-      } catch (error) {
+      } catch (_error) {
         toast({
           title: "Error",
           description: "Failed to update unit preference",

@@ -25,13 +25,13 @@ type AISummaryCardProps = {
 
 // Detect whether stored ai_insights is v2 enhanced format or legacy array
 function isEnhancedData(data: AIInsight[] | EnhancedAIData | undefined): data is EnhancedAIData {
-  return !!data && !Array.isArray(data) && (data as EnhancedAIData)._version === 2;
+  return !!data && !Array.isArray(data) && (data)._version === 2;
 }
 
 function getLegacyInsights(data: AIInsight[] | EnhancedAIData | undefined): AIInsight[] {
   if (!data) return [];
   if (Array.isArray(data)) return data;
-  return (data as EnhancedAIData).insights ?? [];
+  return (data).insights ?? [];
 }
 
 const insightIcons = {

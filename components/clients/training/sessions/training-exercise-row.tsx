@@ -76,7 +76,7 @@ export const TrainingExerciseRow = memo(function TrainingExerciseRow({
       toast({ title: "Exercise updated" });
       setIsEditing(false);
       onUpdate();
-    } catch (error) {
+    } catch (_error) {
       toast({
         title: "Error",
         description: "Failed to update exercise",
@@ -99,7 +99,7 @@ export const TrainingExerciseRow = memo(function TrainingExerciseRow({
 
       toast({ title: "Exercise deleted" });
       onUpdate();
-    } catch (error) {
+    } catch (_error) {
       toast({
         title: "Error",
         description: "Failed to delete exercise",

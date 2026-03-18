@@ -25,7 +25,7 @@ export function NutritionCalculatorCard({
   const [isGenerating, setIsGenerating] = useState(false);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [showSettings, setShowSettings] = useState(true);
-  const [hasPlan, setHasPlan] = useState(false);
+  const [hasPlan, _setHasPlan] = useState(false);
 
   const [settings, setSettings] = useState({
     workActivityLevel: "sedentary" as ActivityLevel,

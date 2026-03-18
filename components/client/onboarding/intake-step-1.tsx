@@ -66,11 +66,13 @@ export function IntakeStep1({ data, onChange, errors }: IntakeStep1Props) {
 
   const toggleHeightUnit = (unit: typeof VALID_HEIGHT_UNITS[number]) => {
     setHeightUnit(unit)
+    // eslint-disable-next-line no-empty
     try { localStorage.setItem("intake-height-unit", unit) } catch {}
   }
 
   const toggleWeightUnit = (unit: typeof VALID_WEIGHT_UNITS[number]) => {
     setWeightUnit(unit)
+    // eslint-disable-next-line no-empty
     try { localStorage.setItem("intake-weight-unit", unit) } catch {}
   }
 

@@ -55,7 +55,7 @@ export function ExternalActivityCard({
 
       toast({ title: "Activity removed" });
       onUpdate();
-    } catch (error) {
+    } catch (_error) {
       toast({
         title: "Error",
         description: "Failed to delete activity",

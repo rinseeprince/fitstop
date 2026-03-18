@@ -89,7 +89,7 @@ export function NutritionTrainingCaloriesDisplay({
               <div className="mt-4 pt-4">
                 <div className="flex flex-wrap gap-1.5">
                   {days.map((day) => {
-                    const cals = caloriesByDay[day as keyof typeof caloriesByDay] || 0;
+                    const cals = caloriesByDay[day] || 0;
                     const shortDay = day.slice(0, 2).toUpperCase();
                     return (
                       <div

@@ -9,15 +9,13 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   TrendingUp,
-  TrendingDown,
-  Minus,
   Calendar,
   ClipboardCheck,
   Flame,
   MessageSquare,
 } from "lucide-react";
 import type { CheckIn } from "@/types/check-in";
-import type { ProgressData } from "@/services/client-portal-service";
+import type { ProgressData } from "@/services/client-portal-progress";
 import type { DailyHabit, DailyHabitLog } from "@/types/daily-habit";
 import { GoalsSection } from "@/components/client/progress/goals-section";
 import { DateRangeSelector } from "@/components/client/progress/date-range-selector";
@@ -128,7 +126,7 @@ export default function ClientProgressPage() {
   const weightHistory = progressData?.weightHistory || [];
   const firstWeight = weightHistory[0]?.weight;
   const lastWeight = weightHistory[weightHistory.length - 1]?.weight;
-  const weightChange = firstWeight && lastWeight ? lastWeight - firstWeight : null;
+  const _weightChange = firstWeight && lastWeight ? lastWeight - firstWeight : null;
 
   return (
     <div className="space-y-6">
@@ -287,28 +285,6 @@ function StatCard({ label, value, suffix, icon: Icon }: StatCardProps) {
         </div>
       </CardContent>
     </Card>
-  );
-}
-
-function WeightChangeBadge({ change }: { change: number }) {
-  const isGain = change > 0;
-  const isLoss = change < 0;
-
-  return (
-    <Badge
-      variant={isLoss ? "default" : isGain ? "secondary" : "outline"}
-      className="flex items-center gap-1"
-    >
-      {isGain ? (
-        <TrendingUp className="h-3 w-3" />
-      ) : isLoss ? (
-        <TrendingDown className="h-3 w-3" />
-      ) : (
-        <Minus className="h-3 w-3" />
-      )}
-      {isGain ? "+" : ""}
-      {change.toFixed(1)} lbs
-    </Badge>
   );
 }
 

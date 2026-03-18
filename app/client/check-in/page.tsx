@@ -13,7 +13,6 @@ import { StepTraining } from "@/components/check-in/step-training";
 import { FormSuccess } from "@/components/check-in/form-success";
 import { useCheckInForm } from "@/hooks/use-check-in-form";
 import { useClientCheckIn } from "@/hooks/use-client-check-in";
-import type { CheckInFormData } from "@/types/check-in";
 import { toast } from "sonner";
 import { aggregateDailyLogs } from "@/utils/daily-logs-aggregation";
 import { CalendarCheck, Clock } from "lucide-react";
@@ -45,7 +44,7 @@ export default function ClientCheckInPage() {
 
     try {
       // If we have daily logs, aggregate and populate the nutrition data
-      let enrichedFormData = { ...formData };
+      const enrichedFormData = { ...formData };
       
       if (contextData?.dailyLogs && contextData.dailyLogs.length > 0) {
         const aggregated = aggregateDailyLogs(contextData.dailyLogs);

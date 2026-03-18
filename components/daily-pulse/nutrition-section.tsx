@@ -18,7 +18,7 @@ import { MacroInputs } from "./macro-inputs";
 import { NutritionSectionCompact } from "./nutrition-section-compact";
 import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
 import type { TrainingSession } from "@/types/training";
-import type { UnplannedActivity, TodaysActivity } from "./daily-pulse-content";
+import type { TodaysActivity } from "./daily-pulse-content";
 
 interface NutritionSectionProps {
   isExpanded: boolean;
@@ -28,7 +28,6 @@ interface NutritionSectionProps {
   currentTrainingSession: TrainingSession | null;
   activityStatuses: Record<string, { completed: boolean; activityName: string; estimatedCalories: number }>;
   plannedActivities: TodaysActivity[];
-  unplannedActivities: UnplannedActivity[];
   caloriesConsumed: number | null;
   proteinG: number | null;
   carbsG: number | null;
@@ -55,7 +54,6 @@ export function NutritionSection({
   currentTrainingSession,
   activityStatuses,
   plannedActivities,
-  unplannedActivities,
   caloriesConsumed,
   proteinG,
   carbsG,

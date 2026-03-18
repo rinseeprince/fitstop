@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { getClientById } from "@/services/client-service";
-import { getWeeklySummaries, getLatestWeeklySummary, backfillWeeklySummariesForClient, upsertWeeklySummary } from "@/services/weekly-nutrition-service";
+import { getWeeklySummaries, getLatestWeeklySummary, upsertWeeklySummary } from "@/services/weekly-nutrition-service";
+import { backfillWeeklySummariesForClient } from "@/services/weekly-nutrition-backfill-service";
 import { getWeekStart, getTodayDateString, getDateDaysAgo } from "@/lib/date-helpers";
 
 export async function GET(

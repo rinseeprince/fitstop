@@ -29,8 +29,6 @@ function getDayAbbrev(dateStr: string): string {
 export const TrainingSection = ({
   dailyLogs,
   checkIn,
-  contextStartDate,
-  contextEndDate,
 }: TrainingSectionProps) => {
   // Build session rows from daily logs
   const sessions: SessionRow[] = dailyLogs

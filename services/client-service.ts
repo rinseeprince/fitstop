@@ -1,5 +1,5 @@
 import { supabaseAdmin } from "./supabase-admin";
-import type { Client, ClientCheckInConfig, ReminderPreferences } from "@/types/check-in";
+import type { Client } from "@/types/check-in";
 import type { CreateClientInput, UpdateClientInput, UpdateCheckInConfigInput } from "@/lib/validations/client";
 import type { ClientRow } from "@/lib/database-helpers";
 import { mapClientRow } from "@/lib/mappers";

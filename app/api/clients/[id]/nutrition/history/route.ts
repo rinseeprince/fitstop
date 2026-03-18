@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/services/supabase-admin";
-import type { NutritionPlanHistory } from "@/types/check-in";
+import type { NutritionPlanHistory, ActivityLevel, TrainingVolume, DietType } from "@/types/check-in";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 
@@ -22,7 +22,8 @@ export async function GET(
       .from("nutrition_plans")
       .select("*")
       .eq("client_id", clientId)
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false })
+      .limit(100);
 
     if (error) {
       console.error("Error fetching nutrition history:", error.message);
@@ -40,10 +41,10 @@ export async function GET(
       goalWeightKg: row.goal_weight_kg ?? undefined,
       bmr: row.bmr ?? undefined,
       tdee: row.tdee ?? undefined,
-      workActivityLevel: row.work_activity_level as any,
-      trainingVolumeHours: row.training_volume_hours as any,
+      workActivityLevel: row.work_activity_level as ActivityLevel,
+      trainingVolumeHours: row.training_volume_hours as TrainingVolume,
       proteinTargetGPerKg: row.protein_target_g_per_kg,
-      dietType: row.diet_type as any,
+      dietType: row.diet_type as DietType,
       goalDeadline: row.goal_deadline ?? undefined,
       calorieTarget: row.baseline_calories,
       proteinTargetG: row.protein_target_g,

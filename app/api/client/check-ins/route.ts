@@ -1,17 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedClientId } from "@/lib/auth-helpers";
-import { getClientById, updateClient } from "@/services/client-service";
+import { getClientById } from "@/services/client-service";
 import { uploadProgressPhotoFromBase64 } from "@/services/storage-service";
 import { submitCheckIn, getClientCheckIns } from "@/services/check-in-service";
 import { triggerAISummaryGeneration, updateClientMetricsFromCheckIn } from "@/services/client-check-in-service";
-import { updateClientAdherenceStats } from "@/services/check-in-tracking-service";
-import { updateClientBMR } from "@/services/bmr-service";
+import { updateClientAdherenceStats } from "@/services/check-in-adherence-service";
 import { clientApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { clientSubmitCheckInSchema } from "@/lib/validations/check-in";
-import { calculateCheckInPeriod, formatDateISO } from "@/lib/date-utils";
+import { calculateCheckInPeriod } from "@/lib/date-utils";
 import { supabaseAdmin } from "@/services/supabase-admin";
-import type { SubmitCheckInResponse, CheckInFormData } from "@/types/check-in";
+import type { SubmitCheckInResponse } from "@/types/check-in";
 
 /**
  * GET /api/client/check-ins
@@ -178,7 +177,7 @@ export async function POST(request: NextRequest) {
     const clientId = authenticatedClientId;
 
     // Handle photo uploads if provided
-    let photoUrls = {
+    const photoUrls = {
       photoFront: body.photoFront,
       photoSide: body.photoSide,
       photoBack: body.photoBack,

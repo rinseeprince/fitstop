@@ -36,7 +36,7 @@ const photoSlots: PhotoSlot[] = [
 ];
 
 export const StepPhotos = ({ data, onChange }: StepPhotosProps) => {
-  const { uploadPhoto, isUploading, uploadProgress, errors } = usePhotoUpload();
+  const { uploadPhoto, isUploading: _isUploading, uploadProgress, errors } = usePhotoUpload();
   const fileInputRefs = useRef<{ [key: string]: HTMLInputElement | null }>({});
 
   const handleFileSelect = async (

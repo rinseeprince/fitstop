@@ -23,7 +23,6 @@ import {
   handleRemoveUnplannedActivity as createRemoveHandler,
   handleActivityToggle as createToggleHandler,
 } from "./utils/daily-pulse-event-handlers";
-import type { UnplannedActivity } from "./daily-pulse-content";
 
 interface DailyPulseProps {
   startDate?: string;

@@ -141,7 +141,7 @@ export function HabitsSection({ habits, habitLogs, onHabitLogsUpdate, selectedDa
         isBoolean: habit.isBoolean,
       };
       updateLogs(habitId, finalLog);
-    } catch (error) {
+    } catch (_error) {
       handleSaveError(habitId, existingLog);
     } finally {
       setSavingHabits(prev => {

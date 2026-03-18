@@ -36,7 +36,7 @@ export function TrainingSessionCard({
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [editedName, setEditedName] = useState(session.name);
-  const [editedFocus, setEditedFocus] = useState(session.focus || "");
+  const [editedFocus, _setEditedFocus] = useState(session.focus || "");
   const [showAddExercise, setShowAddExercise] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -61,7 +61,7 @@ export function TrainingSessionCard({
       toast({ title: "Session updated" });
       setIsEditing(false);
       onUpdate();
-    } catch (error) {
+    } catch (_error) {
       toast({
         title: "Error",
         description: "Failed to update session",
@@ -84,7 +84,7 @@ export function TrainingSessionCard({
 
       toast({ title: "Session deleted" });
       onUpdate();
-    } catch (error) {
+    } catch (_error) {
       toast({
         title: "Error",
         description: "Failed to delete session",

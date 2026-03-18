@@ -91,7 +91,7 @@ export function AddSessionDialog({
       setFormData({ name: "", dayOfWeek: "", focus: "", notes: "", estimatedDurationMinutes: "" });
       onOpenChange(false);
       onSuccess();
-    } catch (error) {
+    } catch (_error) {
       toast({
         title: "Error",
         description: "Failed to add session",

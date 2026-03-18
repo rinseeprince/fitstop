@@ -18,7 +18,7 @@ vi.mock('@/services/check-in-tracking-service', () => ({
 }))
 
 vi.mock('@/lib/rate-limit', async (importOriginal) => {
-  const actual = await importOriginal() as Record<string, unknown>
+  const actual = await importOriginal()
   return {
     ...actual,
     apiRateLimit: vi.fn(),

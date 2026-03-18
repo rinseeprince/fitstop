@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DailyPulse } from "@/components/daily-pulse/daily-pulse";
 import { GuidedWalkthrough } from "@/components/client/walkthrough/guided-walkthrough";
@@ -15,14 +14,14 @@ import {
   TrendingUp,
   Utensils,
   Flame,
-  Scale,
   Target,
   ArrowRight,
   BookOpen,
 } from "lucide-react";
 import type { TrainingPlan } from "@/types/training";
 import type { Client } from "@/types/check-in";
-import type { NutritionTargets, ProgressData } from "@/services/client-portal-service";
+import type { NutritionTargets } from "@/services/client-portal-service";
+import type { ProgressData } from "@/services/client-portal-progress";
 import type { CheckInGateStatus } from "@/lib/date-utils";
 import type { DailyHabit } from "@/types/daily-habit";
 
@@ -90,7 +89,7 @@ export default function ClientDashboardPage() {
     }
 
     fetchData();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);  
 
   // Redirect pending_intake clients to onboarding, show walkthrough for new active clients
   useEffect(() => {

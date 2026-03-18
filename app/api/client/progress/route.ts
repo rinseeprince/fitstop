@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedClientId } from "@/lib/auth-helpers";
-import { getClientProgressData } from "@/services/client-portal-service";
+import { getClientProgressData } from "@/services/client-portal-progress";
 import { clientApiRateLimit } from "@/lib/rate-limit";
 
 // GET /api/client/progress - Get client's progress data for charts

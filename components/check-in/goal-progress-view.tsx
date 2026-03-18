@@ -24,13 +24,13 @@ export const GoalProgressView = ({
 }: GoalProgressViewProps) => {
   const { toast } = useToast();
   const router = useRouter();
-  const [isRegenerating, setIsRegenerating] = useState(false);
+  const [_isRegenerating, setIsRegenerating] = useState(false);
 
   const hasWeightGoal = goalProgress.weight !== undefined;
   const hasBodyFatGoal = goalProgress.bodyFat !== undefined;
   const hasDeadline = goalProgress.deadline !== undefined;
 
-  const handleRegenerateNutrition = async () => {
+  const handleRegenerateNutrition = () => {
     setIsRegenerating(true);
     try {
       // Navigate to the client page where they can regenerate
@@ -39,7 +39,7 @@ export const GoalProgressView = ({
         title: "Navigate to Client Profile",
         description: "Opening client profile to regenerate nutrition plan",
       });
-    } catch (error) {
+    } catch (_error) {
       toast({
         title: "Error",
         description: "Failed to navigate to client profile",

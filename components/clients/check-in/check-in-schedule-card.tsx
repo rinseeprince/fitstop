@@ -31,7 +31,7 @@ export function CheckInScheduleSection({ client, onUpdate, onCancel }: CheckInSc
   const [isSaving, setIsSaving] = useState(false);
   const { toast } = useToast();
 
-  const [frequency] = useState<CheckInFrequency>("weekly");
+  const [_frequency] = useState<CheckInFrequency>("weekly");
   const [expectedDay, setExpectedDay] = useState<DayOfWeek>(
     client.expectedCheckInDay || "monday"
   );

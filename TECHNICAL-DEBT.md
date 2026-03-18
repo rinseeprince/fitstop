@@ -8,7 +8,7 @@ Reviewed: 2026-03-12
 
 | # | Issue | File(s) | Details | Status |
 |---|-------|---------|---------|--------|
-| 1 | Middleware uses `getSession()` instead of `getUser()` | `middleware.ts:49,90` | `getSession()` reads the JWT from cookies without server-side validation. Supabase docs recommend `getUser()` for security-sensitive route protection as it validates the token server-side. A tampered/expired JWT could pass middleware checks. Violates §1, §9. | Open |
+| 1 | Middleware uses `getSession()` instead of `getUser()` | `middleware.ts:49,90` | `getSession()` reads the JWT from cookies without server-side validation. Supabase docs recommend `getUser()` for security-sensitive route protection as it validates the token server-side. A tampered/expired JWT could pass middleware checks. Violates §1, §9. | Done |
 | 2 | Dangerous default role fallback | `middleware.ts:106` | `const role = profile?.role \|\| "trainer"` - if profile fetch fails (DB error, network issue), user silently gets trainer-level access. Should deny access instead. Violates §3, §9. | Open |
 | 3 | No `requireClientAuth` guard | `lib/require-coach-auth.ts` | Coach routes have a shared `requireCoachAuth()` guard but no equivalent exists for client routes. Each client route implements its own auth check, risking inconsistency. Violates §2 "No duplicate logic". | Open |
 | 4 | Auth callback route missing rate limiting | `app/auth/callback/route.ts` | The OAuth callback endpoint has no rate limiting. All other auth-related routes are properly rate-limited. Violates §9 "Rate limiting: MANDATORY". | Open |
@@ -168,3 +168,49 @@ Reviewed: 2026-03-12
 ## Known RLS Gaps (Tech Debt)
 
 - **`daily_logs`** - No RLS enabled. This is a core table used by many services and routes. Adding RLS requires auditing every code path that reads/writes daily_logs to ensure the correct client (supabaseAdmin vs server client) is used. Do not add RLS to this table without a dedicated session to test all dependent flows.
+
+---
+
+## Production Readiness
+
+Reviewed: 2026-03-18
+
+### P1 - Infrastructure
+
+| # | Issue | File(s) | Details | Status |
+|---|-------|---------|---------|--------|
+| 1 | Add per-coach daily AI call quota | `services/ai-service.ts`, `services/training-ai-service.ts`, `services/activity-ai-service.ts` | Track AI usage per coach in the database and enforce daily/monthly limits to cap OpenAI costs. Currently rate limiting is IP-based and per-minute only, which prevents burst abuse but not sustained cost accumulation over a billing period. | Open |
+| 2 | Transaction wrapping for check-in submission | `app/api/check-in/submit/[token]/route.ts` | Token claiming + check-in creation + token update are separate queries, not wrapped in a Postgres transaction. If check-in creation fails after token claim, the token is consumed without a check-in being created. Add compensation logic to release the token on failure, or wrap in a Supabase RPC function for atomicity. | Open |
+| 3 | Add structured logging | All API routes, services | All logging is `console.error`/`console.log` with unstructured messages. Adopt JSON-format structured logging with request IDs for better debugging and log aggregation in production. Currently relies on Sentry for error tracking but has no request tracing for non-error debugging. | Open |
+| 4 | Monitor RLS query performance | `supabase/migrations/015_*.sql`, `supabase/migrations/044_*.sql` | Nested subquery RLS policies on `training_exercises` and `nutrition_plan_daily_targets` join through multiple tables (exercises -> sessions -> plans -> clients -> user_id). May degrade at scale. Set up query profiling to monitor these policies and consider denormalizing if latency increases. | Open |
+
+---
+
+### P2 - Cleanup
+
+| # | Issue | File(s) | Details | Status |
+|---|-------|---------|---------|--------|
+| 1 | Rate limiting uses IP only | `lib/rate-limit.ts:97-101` | `getClientIdentifier()` extracts IP from `x-forwarded-for` header. Does not incorporate authenticated user ID, so a single user behind a shared IP (office, VPN) shares quota with all other users on that IP, and an attacker can bypass limits by rotating IPs. Add authenticated user ID to the rate limit key when a session is available. | Open |
+| 2 | In-memory rate limit fallback is per-process | `lib/rate-limit.ts:44-79` | When Redis is unavailable, rate limiting falls back to an in-memory `Map`. In multi-instance deployments (e.g., multiple Vercel serverless functions), each instance tracks limits independently, making the effective limit N times higher. Consider making Redis required in production. | Open |
+| 3 | `check_in_tokens.client_id` column type mismatch | `supabase/migrations/002_create_check_in_tokens_table.sql` | `client_id` is defined as `TEXT` while all other ID columns in the schema use `UUID`. Type inconsistency, not a security issue, but may cause subtle query performance differences and prevents foreign key enforcement. | Open |
+
+---
+
+## Training Plan AI Generation
+
+Reviewed: 2026-03-18
+
+### P1 - Performance
+
+| # | Issue | File(s) | Details | Status |
+|---|-------|---------|---------|--------|
+| 1 | `generateTrainingPlanAI` takes ~60s even with gpt-4o-mini | `services/training-ai-service.ts` | The full plan generation call takes ~60s despite switching from gpt-4o to gpt-4o-mini and stripping coaching notes from the output. Investigate: (a) Log input/output token counts to see how large the prompt is. (b) Could the plan be generated in stages (structure first, then exercises per session) with parallel calls? (c) Could we stream the response so the UI renders progressively? (d) Test if a simpler response format (JSON array vs nested object) reduces latency. | Open |
+
+---
+
+### P2 - Output Quality
+
+| # | Issue | File(s) | Details | Status |
+|---|-------|---------|---------|--------|
+| 1 | AI produces poor day ordering for splits | `services/training-ai-service.ts` | The model doesn't produce sensible day ordering. E.g. push/pull/legs should alternate properly, not stack similar muscle groups on consecutive days. Options: (a) Add explicit day ordering rules to the prompt. (b) Let the AI generate sessions unordered, then apply ordering logic in application code based on the split type. (c) Let coaches drag to reorder days after generation. | Open |
+| 2 | RPE and rest periods still lack variation | `services/training-ai-service.ts` | Despite adding prescriptive rest/RPE rules to the prompt, verify the model is actually producing varied rest periods (2-3min for compounds, 60-90s for isolation) and meaningful RPE targets rather than blanket values across all exercises. May need stronger prompt constraints or post-processing validation. | Open |

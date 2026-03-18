@@ -19,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { AlertCircle, X } from "lucide-react";
+import { AlertCircle } from "lucide-react";
 import type { ContentFolder } from "@/types/content";
 
 interface FolderDialogProps {
@@ -112,7 +112,7 @@ export function FolderDialog({
       
       onSuccess?.();
       onOpenChange(false);
-    } catch (error) {
+    } catch (_error) {
       setError(isEditing ? "Failed to update folder" : "Failed to create folder");
     } finally {
       setLoading(false);

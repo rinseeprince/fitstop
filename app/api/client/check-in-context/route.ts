@@ -67,7 +67,7 @@ export async function GET(request: NextRequest) {
           : null);
 
       const today = new Date();
-      const { status, periodStart, periodEnd, nextDueDate } = getCheckInStatus(
+      const { status, periodStart: _periodStart, periodEnd: _periodEnd, nextDueDate } = getCheckInStatus(
         expectedDay,
         lastCheckInPeriodEnd,
         today

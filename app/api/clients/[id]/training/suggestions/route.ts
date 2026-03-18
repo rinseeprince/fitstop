@@ -3,7 +3,7 @@ import OpenAI from "openai";
 import { getClientById } from "@/services/client-service";
 import { getClientCheckIns } from "@/services/check-in-service";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
-import { apiRateLimit } from "@/lib/rate-limit";
+import { aiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { weightToKg } from "@/utils/nutrition-helpers";
 
@@ -16,7 +16,7 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const rateLimitResult = await apiRateLimit(request);
+  const rateLimitResult = await aiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
 
   const csrfError = await requireCSRFProtection(request);
@@ -90,7 +90,7 @@ Keep each suggestion under 80 characters. Be specific and actionable.`,
       ],
       temperature: 0.8,
       max_tokens: 500,
-    });
+    }, { timeout: 15000 });
 
     const content = response.choices[0]?.message?.content || "";
 

@@ -1,10 +1,6 @@
 import { supabaseAdmin } from "./supabase-admin";
 import type { DailyLog, DailyLogInput, NutritionAdherenceStatus } from "@/types/daily-log";
-import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
-import { getClientNutritionTargets, getClientTrainingPlan } from "./client-portal-service";
-import { getActiveTrainingPlan } from "./training-service";
-import { getTrainingSessionCaloriesByDay } from "@/utils/training-calorie-helpers";
-import { getExternalActivitiesForDay, calculateExternalActivityCalories } from "@/utils/nutrition-helpers";
+import type { DayOfWeek } from "@/types/check-in";
 import type { Database } from "@/types/database";
 import { getTodayDateString, getDateString, getDateDaysAgo } from "@/lib/date-helpers";
 import { NUTRITION_ADHERENCE_HIT_THRESHOLD, NUTRITION_ADHERENCE_PARTIAL_THRESHOLD } from "@/lib/constants";
@@ -21,18 +17,6 @@ type DailyLogInputWithTargets = DailyLogInput & {
 type StreakResult = {
   currentStreak: number;
   longestStreak: number;
-};
-
-type TodaysTrainingSession = {
-  sessionId: string;
-  sessionName: string;
-  estimatedCalories: number;
-} | null;
-
-type TodaysActivity = {
-  sessionId: string;
-  activityName: string;
-  estimatedCalories: number;
 };
 
 export const calculateNutritionAdherence = (
@@ -69,7 +53,7 @@ export const calculateStreakFromLogs = (
   let currentStreak = 0;
   let longestStreak = 0;
   let tempStreak = 0;
-  let checkDate = new Date(today);
+  const checkDate = new Date(today);
   let isCalculatingCurrent = true;
   
   const todayDate = getDateString(checkDate);
@@ -105,8 +89,8 @@ export const calculateStreakFromLogs = (
 };
 
 
-export const getDayOfWeekLowercase = (date: Date): string => {
-  const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+export const getDayOfWeekLowercase = (date: Date): DayOfWeek => {
+  const days: DayOfWeek[] = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
   return days[date.getDay()];
 };
 
@@ -133,7 +117,7 @@ export const upsertDailyLog = async (
     notes: data.notes,
     trained: data.trained,
     training_session_id: data.trainingSessionId,
-    training_data: data.trainingData || null,
+    training_data: data.trainingData ?? null,
     calories_consumed: data.caloriesConsumed,
     protein_g: data.proteinG,
     carbs_g: data.carbsG,
@@ -179,7 +163,7 @@ export const upsertDailyLog = async (
     targetProteinG: result.target_protein_g ?? undefined,
     targetCarbsG: result.target_carbs_g ?? undefined,
     targetFatG: result.target_fat_g ?? undefined,
-    nutritionAdherence: result.nutrition_adherence as NutritionAdherenceStatus ?? undefined,
+    nutritionAdherence: (result.nutrition_adherence as NutritionAdherenceStatus | null) ?? undefined,
     calorieSurplusDeficit: result.calorie_surplus_deficit ?? undefined,
     createdAt: result.created_at,
     updatedAt: result.updated_at,
@@ -287,7 +271,7 @@ export const getTodayLog = async (clientId: string, date?: string): Promise<Dail
     targetProteinG: data.target_protein_g ?? undefined,
     targetCarbsG: data.target_carbs_g ?? undefined,
     targetFatG: data.target_fat_g ?? undefined,
-    nutritionAdherence: data.nutrition_adherence as NutritionAdherenceStatus ?? undefined,
+    nutritionAdherence: (data.nutrition_adherence as NutritionAdherenceStatus | null) ?? undefined,
     calorieSurplusDeficit: data.calorie_surplus_deficit ?? undefined,
     createdAt: data.created_at,
     updatedAt: data.updated_at,
@@ -303,139 +287,3 @@ export const calculateStreaks = async (clientId: string): Promise<StreakResult> 
   return calculateStreakFromLogs(logs);
 };
 
-export const getTodaysTrainingSession = async (clientId: string, date?: string): Promise<TodaysTrainingSession> => {
-  const targetDate = date ? new Date(date + 'T00:00:00') : new Date();
-  const todayDayOfWeek = getDayOfWeekLowercase(targetDate);
-  
-  const trainingPlan = await getClientTrainingPlan(clientId);
-  
-  if (!trainingPlan) return null;
-  
-  const session = trainingPlan.sessions.find(
-    (session) =>
-      session.dayOfWeek?.toLowerCase() === todayDayOfWeek &&
-      session.sessionType === "training"
-  );
-  
-  if (!session) return null;
-  
-  return {
-    sessionId: session.id,
-    sessionName: session.name,
-    estimatedCalories: session.estimatedCalories || 0,
-  };
-};
-
-export const getTodaysPlannedActivities = async (clientId: string, date?: string): Promise<TodaysActivity[]> => {
-  const targetDate = date ? new Date(date + 'T00:00:00') : new Date();
-  const todayDayOfWeek = getDayOfWeekLowercase(targetDate);
-  
-  const trainingPlan = await getClientTrainingPlan(clientId);
-  
-  if (!trainingPlan) return [];
-  
-  const activities = trainingPlan.sessions.filter(
-    (session) =>
-      session.dayOfWeek?.toLowerCase() === todayDayOfWeek &&
-      session.sessionType === "external_activity"
-  );
-  
-  return activities.map((activity) => ({
-    sessionId: activity.id,
-    activityName: activity.name,
-    estimatedCalories: activity.activityMetadata?.estimatedCalories || 0,
-  }));
-};
-
-export const getTodaysNutritionTarget = async (clientId: string, date?: string): Promise<DailyNutritionTargets | null> => {
-  const nutritionTargets = await getClientNutritionTargets(clientId);
-
-  if (!nutritionTargets?.dailyTargets) return null;
-
-  const targetDate = date ? new Date(date + 'T00:00:00') : new Date();
-  const todayDayOfWeek = getDayOfWeekLowercase(targetDate);
-
-  const todayTarget = nutritionTargets.dailyTargets.find(
-    (target) => target.day === todayDayOfWeek
-  );
-
-  if (!todayTarget) return null;
-
-  return {
-    ...todayTarget,
-    includeActivityBurn: nutritionTargets.includeActivityBurn,
-  };
-};
-
-/**
- * Find the plan that was active on a specific date and return its daily target.
- * Uses effective_from/effective_until range query for historical accuracy.
- */
-export type PlanDayTarget = {
-  calories: number;
-  proteinG: number;
-  carbsG: number;
-  fatG: number;
-  isTrainingDay: boolean;
-};
-
-export const getPlanTargetForDate = async (
-  clientId: string,
-  date: string
-): Promise<PlanDayTarget | null> => {
-  // Find the plan that was active on the given date
-  const { data: plan, error: planError } = await supabaseAdmin
-    .from("nutrition_plans")
-    .select("id")
-    .eq("client_id", clientId)
-    .lte("effective_from", date)
-    .or(`effective_until.gte.${date},effective_until.is.null`)
-    .order("effective_from", { ascending: false })
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (planError || !plan) return null;
-
-  const targetDate = new Date(date + "T00:00:00");
-  const dayOfWeek = getDayOfWeekLowercase(targetDate);
-
-  const { data: dailyTarget, error: dtError } = await supabaseAdmin
-    .from("nutrition_plan_daily_targets")
-    .select("calories, protein_g, carb_g, fat_g, is_training_day")
-    .eq("nutrition_plan_id", plan.id)
-    .eq("day_of_week", dayOfWeek)
-    .maybeSingle();
-
-  if (dtError || !dailyTarget) return null;
-
-  let calories = dailyTarget.calories;
-
-  // Add live training + external activity calories when include_activity_burn is on
-  const { data: clientRow } = await supabaseAdmin
-    .from("clients")
-    .select("include_activity_burn")
-    .eq("id", clientId)
-    .single();
-
-  if (clientRow?.include_activity_burn !== false) {
-    const trainingPlan = await getActiveTrainingPlan(clientId);
-    if (trainingPlan) {
-      const trainingCalsByDay = getTrainingSessionCaloriesByDay(trainingPlan);
-      const trainingCals = trainingCalsByDay[dayOfWeek] || 0;
-
-      const dayActivities = getExternalActivitiesForDay(trainingPlan, dayOfWeek as any);
-      const externalCals = calculateExternalActivityCalories(dayActivities);
-
-      calories += trainingCals + externalCals;
-    }
-  }
-
-  return {
-    calories,
-    proteinG: dailyTarget.protein_g,
-    carbsG: dailyTarget.carb_g,
-    fatG: dailyTarget.fat_g,
-    isTrainingDay: dailyTarget.is_training_day,
-  };
-};

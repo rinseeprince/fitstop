@@ -1,7 +1,6 @@
 "use client";
 
 import { memo } from "react";
-import { Badge } from "@/components/ui/badge";
 import {
   Tooltip,
   TooltipContent,

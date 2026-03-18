@@ -53,7 +53,7 @@ export function SidebarNav() {
 
     fetchUnreviewedCount()
     // Refresh every minute
-    const interval = setInterval(fetchUnreviewedCount, 60000)
+    const interval = setInterval(() => void fetchUnreviewedCount(), 60000)
     return () => clearInterval(interval)
   }, [isTrainer])
 

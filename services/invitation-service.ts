@@ -1,6 +1,5 @@
 import { supabase } from "@/services/supabase-client"
 import { supabaseAdmin } from "@/services/supabase-admin"
-import type { Database } from "@/types/database"
 import { sendInvitationEmail, generateInviteToken } from "@/services/email-service"
 import type {
   ClientInvitation,
@@ -14,7 +13,7 @@ const INVITATION_EXPIRY_DAYS = 7
 // Type cast for tables not yet in generated types
 const invitationsTable = "client_invitations"
 const clientsTable = "clients"
-const coachesTable = "coaches"
+const _coachesTable = "coaches"
 
 /**
  * Get invitation status for a client
@@ -201,7 +200,7 @@ export async function sendInvitation(
     // Create or update invitation record
     if (existingInvitation) {
       // Update existing invitation with new token
-      const { data: updatedInvitation, error: updateError } = await supabaseAdmin
+      const { data: _updatedInvitation, error: updateError } = await supabaseAdmin
         .from(invitationsTable)
         .update(invitationData)
         .eq("client_id", clientId)
@@ -217,7 +216,7 @@ export async function sendInvitation(
       }
     } else {
       // Create new invitation
-      const { data: newInvitation, error: createError } = await supabaseAdmin
+      const { data: _newInvitation, error: createError } = await supabaseAdmin
         .from(invitationsTable)
         .insert(invitationData)
         .select()
@@ -346,7 +345,7 @@ export async function acceptInvitationByToken(
       }
     }
 
-    console.log(`Successfully accepted invitation for client ${invitation.client_id} and user ${userId}`)
+    console.warn("Successfully accepted invitation")
     return { success: true }
   } catch (error) {
     console.error("Error in acceptInvitationByToken:", error)

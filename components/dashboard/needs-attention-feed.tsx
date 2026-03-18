@@ -5,7 +5,7 @@ import Link from "next/link"
 import { motion } from "framer-motion"
 import { CheckCircle } from "lucide-react"
 import useSWR from "swr"
-import type { AttentionFeedResponse, ClientWithAlerts, AttentionAlert } from "@/types/attention-feed"
+import type { AttentionFeedResponse, AttentionAlert } from "@/types/attention-feed"
 
 const fetcher = async (url: string) => {
   const response = await fetch(url, { cache: "no-store" })
@@ -46,12 +46,14 @@ export function NeedsAttentionFeed() {
         return `High stress (${days} days)`
       case "nutrition_missed":
         return `Nutrition missed (${days} days)`
-      case "training_missed":
+      case "training_missed": {
         const match = alert.message.match(/(\d+)\s+.*sessions/)
         return `${match ? match[1] : days} sessions missed`
-      case "habit_dropoff":
+      }
+      case "habit_dropoff": {
         const habitMatch = alert.message.match(/(\d+)\s+of.*?(\d+)\s+days/)
         return habitMatch ? `Low habits (${habitMatch[1]}/${habitMatch[2]} days)` : "Low habits"
+      }
       case "activity_cal_mismatch":
         return "Overeating on rest days"
       default:
@@ -79,10 +81,11 @@ export function NeedsAttentionFeed() {
         return `Stress at 8+ for ${days} days`
       case "nutrition_missed":
         return `Nutrition targets missed for ${days} days`
-      case "training_missed":
+      case "training_missed": {
         const match = alert.message.match(/(\d+)\s+training sessions/)
         const count = match ? match[1] : days
         return `Missed ${count} sessions this week`
+      }
       case "habit_dropoff":
         return alert.message
       case "activity_cal_mismatch":

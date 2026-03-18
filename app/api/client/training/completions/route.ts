@@ -5,7 +5,7 @@ import {
   markSessionComplete,
   removeSessionCompletion,
   getCurrentWeekStart,
-} from "@/services/client-portal-service";
+} from "@/services/client-portal-training";
 import { clientApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { z } from "zod";

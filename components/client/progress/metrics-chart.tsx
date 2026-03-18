@@ -37,7 +37,7 @@ export function MetricsChart({ title, data, metricKey, unit, icon: Icon, domain 
   const previousValue = data.length > 1 ? data[data.length - 2]?.[metricKey] : null;
   
   const change = currentValue && previousValue ? currentValue - previousValue : null;
-  const trend = change === null ? "stable" : change > 0.1 ? "up" : change < -0.1 ? "down" : "stable";
+  const _trend = change === null ? "stable" : change > 0.1 ? "up" : change < -0.1 ? "down" : "stable";
 
   // Calculate chart visualization
   const chartData = data.slice(-14); // Last 14 points

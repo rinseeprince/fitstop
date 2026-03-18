@@ -2,7 +2,6 @@
 
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts"
 import { Card, CardContent } from "@/components/ui/card"
-import { cn } from "@/lib/utils"
 import { getBarColor, type WellnessMetric } from "@/utils/wellness-color-thresholds"
 
 interface WellnessBarChartProps {

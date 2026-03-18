@@ -92,7 +92,7 @@ export function AddExerciseDialog({
       });
       onOpenChange(false);
       onSuccess();
-    } catch (error) {
+    } catch (_error) {
       toast({
         title: "Error",
         description: "Failed to add exercise",

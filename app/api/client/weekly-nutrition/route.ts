@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedClientId } from "@/lib/auth-helpers";
 import { clientApiRateLimit } from "@/lib/rate-limit";
-import { getWeeklySummaries, getLatestWeeklySummary, backfillWeeklySummariesForClient, upsertWeeklySummary } from "@/services/weekly-nutrition-service";
+import { getWeeklySummaries, upsertWeeklySummary } from "@/services/weekly-nutrition-service";
+import { backfillWeeklySummariesForClient } from "@/services/weekly-nutrition-backfill-service";
 import { getWeekStart, getTodayDateString, getDateDaysAgo } from "@/lib/date-helpers";
 
 export async function GET(request: NextRequest) {

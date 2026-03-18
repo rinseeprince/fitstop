@@ -8,10 +8,12 @@ import {
   getDailyLogs,
   getTodayLog,
   calculateStreaks,
+} from './daily-logs-service';
+import {
   getTodaysTrainingSession,
   getTodaysPlannedActivities,
   getTodaysNutritionTarget,
-} from './daily-logs-service';
+} from './daily-context-service';
 import type { DailyLog } from '@/types/daily-log';
 
 vi.mock('./supabase-admin', () => ({
@@ -22,11 +24,15 @@ vi.mock('./supabase-admin', () => ({
 
 vi.mock('./client-portal-service', () => ({
   getClientNutritionTargets: vi.fn(),
+}));
+
+vi.mock('./client-portal-training', () => ({
   getClientTrainingPlan: vi.fn(),
 }));
 
 import { supabaseAdmin } from './supabase-admin';
-import { getClientNutritionTargets, getClientTrainingPlan } from './client-portal-service';
+import { getClientNutritionTargets } from './client-portal-service';
+import { getClientTrainingPlan } from './client-portal-training';
 
 function createMockQuery(result: { data: unknown; error: unknown }) {
   const mockQuery = {

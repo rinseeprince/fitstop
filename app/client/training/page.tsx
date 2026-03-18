@@ -2,14 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { useAuth } from "@/contexts/auth-context";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ClientSessionCard } from "@/components/client-portal/training/client-session-card";
 import { WeeklyCompletionProgress } from "@/components/client-portal/training/weekly-completion-progress";
 import { Calendar, Dumbbell } from "lucide-react";
 import type { TrainingPlan } from "@/types/training";
-import type { SessionCompletion } from "@/services/client-portal-service";
+import type { SessionCompletion } from "@/services/client-portal-training";
 
 // Get current week start (Monday)
 function getCurrentWeekStart(): string {
@@ -21,7 +21,7 @@ function getCurrentWeekStart(): string {
 }
 
 export default function ClientTrainingPage() {
-  const { user } = useAuth();
+  const { user: _user } = useAuth();
   const [plan, setPlan] = useState<TrainingPlan | null>(null);
   const [completions, setCompletions] = useState<SessionCompletion[]>([]);
   const [loading, setLoading] = useState(true);

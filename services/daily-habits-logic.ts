@@ -20,7 +20,7 @@ export const calculateCurrentStreak = (logs: DailyHabitLog[], today: Date = new 
   const sortedLogs = [...logs].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   
   let streak = 0;
-  let checkDate = new Date(today);
+  const checkDate = new Date(today);
   
   const todayDate = getDateString(checkDate);
   const hasCompletedLogToday = sortedLogs.some(log => log.date === todayDate && log.completed);

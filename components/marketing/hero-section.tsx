@@ -74,7 +74,7 @@ export function HeroSection() {
             transition={{ duration: 0.5, delay: 0.4 }}
             className="mt-12 flex flex-wrap items-center justify-center gap-x-6 gap-y-3"
           >
-            {BENEFITS.map((benefit, i) => (
+            {BENEFITS.map((benefit, _i) => (
               <div
                 key={benefit}
                 className="flex items-center gap-2 text-sm text-muted-foreground"

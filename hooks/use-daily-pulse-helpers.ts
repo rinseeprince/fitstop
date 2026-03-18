@@ -30,7 +30,7 @@ export const fetchWeeklyLogs = async (dateString: string): Promise<Array<{ date:
       return data.data || [];
     }
     return [];
-  } catch (error) {
+  } catch (_error) {
     // Silently fail for weekly logs - non-critical
     return [];
   }

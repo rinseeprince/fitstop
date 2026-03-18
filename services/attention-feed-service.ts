@@ -31,9 +31,6 @@ type ClientInfo = Pick<ClientRow, 'id' | 'name' | 'avatar_url'>
 type DailyLogRow = Database["public"]["Tables"]["daily_logs"]["Row"]
 type DailyHabitRow = Database["public"]["Tables"]["daily_habits"]["Row"]
 type DailyHabitLogRow = Database["public"]["Tables"]["daily_habit_logs"]["Row"]
-type TrainingPlanRow = Database["public"]["Tables"]["training_plans"]["Row"]
-type TrainingSessionRow = Database["public"]["Tables"]["training_sessions"]["Row"]
-
 // Type for the training plan query result with nested sessions
 interface TrainingPlanWithSessions {
   id: string
@@ -249,7 +246,7 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
   // Evaluate triggers for each client
   const clientsWithAlerts: ClientWithAlerts[] = []
 
-  for (const [clientId, data] of clientDataMap) {
+  for (const [_clientId, data] of clientDataMap) {
     const alerts: AttentionAlert[] = []
 
     // Skip clients with no logs

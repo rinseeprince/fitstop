@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { X, ChevronLeft, ChevronRight } from "lucide-react";
 import {
   Dialog,
@@ -20,16 +19,7 @@ import { NutritionSection } from "./nutrition-section";
 import { TrainingSection } from "./training-section";
 import { ClientNotesSection } from "./client-notes-section";
 import { HabitsSection } from "./habits-section";
-import type { CheckIn, GetCheckInComparisonResponse } from "@/types/check-in";
-import type { DailyLog } from "@/types/daily-log";
-import type { HabitLogWithDetails } from "@/types/daily-habit";
-
-type FullWeekTarget = {
-  calories: number;
-  proteinG: number;
-  carbsG: number;
-  fatG: number;
-};
+import { useCheckInDetailData, formatDateRange, formatSubmittedDate } from "@/hooks/use-check-in-detail-data";
 
 type CheckInDetailModalProps = {
   checkInId: string | null;
@@ -41,16 +31,6 @@ type CheckInDetailModalProps = {
   canNavigateNext?: boolean;
 };
 
-type CheckInWithClient = {
-  checkIn: CheckIn;
-  client: {
-    id: string;
-    name: string;
-    email?: string;
-    avatar_url?: string;
-  } | null;
-};
-
 export const CheckInDetailModal = ({
   checkInId,
   clientId,
@@ -60,218 +40,26 @@ export const CheckInDetailModal = ({
   canNavigatePrev = false,
   canNavigateNext = false,
 }: CheckInDetailModalProps) => {
-  const [data, setData] = useState<CheckInWithClient | null>(null);
-  const [comparisonData, setComparisonData] = useState<GetCheckInComparisonResponse | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isLoadingComparison, setIsLoadingComparison] = useState(false);
-  const [dailyLogs, setDailyLogs] = useState<DailyLog[]>([]);
-  const [habitLogs, setHabitLogs] = useState<HabitLogWithDetails[]>([]);
-  const [dailyContextLoading, setDailyContextLoading] = useState(false);
-  const [contextStartDate, setContextStartDate] = useState<Date | null>(null);
-  const [contextEndDate, setContextEndDate] = useState<Date | null>(null);
-  const [fullWeekTarget, setFullWeekTarget] = useState<FullWeekTarget | null>(null);
-
-  useEffect(() => {
-    if (!checkInId) {
-      setData(null);
-      setComparisonData(null);
-      return;
-    }
-
-    const fetchCheckIn = async () => {
-      setIsLoading(true);
-      try {
-        const response = await fetch(`/api/check-in/${checkInId}`);
-        if (response.ok) {
-          const result = await response.json();
-          setData(result);
-        }
-      } catch (error) {
-        console.error("Error fetching check-in:", error instanceof Error ? error.message : "Unknown error");
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    const fetchComparison = async () => {
-      setIsLoadingComparison(true);
-      try {
-        const response = await fetch(`/api/check-in/${checkInId}/comparison`);
-        if (response.ok) {
-          const result = await response.json();
-          setComparisonData(result);
-        }
-      } catch (error) {
-        console.error("Error fetching comparison:", error instanceof Error ? error.message : "Unknown error");
-      } finally {
-        setIsLoadingComparison(false);
-      }
-    };
-
-    fetchCheckIn();
-    fetchComparison();
-  }, [checkInId]);
-
-  // Fetch daily context when check-in data is available
-  useEffect(() => {
-    if (!data?.checkIn || !clientId) {
-      setDailyLogs([]);
-      setHabitLogs([]);
-      setContextStartDate(null);
-      setContextEndDate(null);
-      setFullWeekTarget(null);
-      return;
-    }
-
-    const fetchDailyContext = async () => {
-      setDailyContextLoading(true);
-      try {
-        const currentCheckIn = data.checkIn;
-        let startDate: Date;
-        let endDate: Date;
-
-        // Use stored period from check-in if available, otherwise fallback to 7 days
-        if (currentCheckIn.periodStart && currentCheckIn.periodEnd) {
-          startDate = new Date(currentCheckIn.periodStart + "T00:00:00");
-          endDate = new Date(currentCheckIn.periodEnd + "T00:00:00");
-        } else {
-          endDate = new Date(currentCheckIn.createdAt);
-          startDate = new Date(endDate);
-          startDate.setDate(startDate.getDate() - 6);
-        }
-
-        // Store the calculated dates for use in the component
-        setContextStartDate(startDate);
-        setContextEndDate(endDate);
-
-        const startDateStr = startDate.toISOString().split('T')[0];
-        const endDateStr = endDate.toISOString().split('T')[0];
-
-        // Fetch both daily logs and habit logs in parallel
-        const [logsResponse, habitsResponse] = await Promise.all([
-          fetch(
-            `/api/clients/${clientId}/daily-logs?startDate=${startDateStr}&endDate=${endDateStr}`,
-            { cache: 'no-store' }
-          ),
-          fetch(
-            `/api/clients/${clientId}/habits/logs?startDate=${startDateStr}&endDate=${endDateStr}`,
-            { cache: 'no-store' }
-          ),
-        ]);
-
-        let fetchedLogs: DailyLog[] = [];
-        if (logsResponse.ok) {
-          const logsData = await logsResponse.json();
-          fetchedLogs = logsData.data || [];
-          setDailyLogs(fetchedLogs);
-        }
-
-        if (habitsResponse.ok) {
-          const habitsData = await habitsResponse.json();
-          setHabitLogs(habitsData.data || []);
-        }
-
-        // Compute full-week target: logged days use daily_log.target_calories,
-        // unlogged days use getPlanTargetForDate() via the API
-        try {
-          const loggedDates = new Set(fetchedLogs.map((l: DailyLog) => l.date));
-          // Generate all dates in the range
-          const allDates: string[] = [];
-          const cursor = new Date(startDate);
-          while (cursor <= endDate) {
-            allDates.push(cursor.toISOString().split("T")[0]);
-            cursor.setDate(cursor.getDate() + 1);
-          }
-          const unloggedDates = allDates.filter((d) => !loggedDates.has(d));
-
-          // Sum targets from logged days
-          let totalCal = fetchedLogs.reduce((sum: number, l: DailyLog) => sum + (l.targetCalories ?? 0), 0);
-          let totalProtein = fetchedLogs.reduce((sum: number, l: DailyLog) => sum + (l.targetProteinG ?? 0), 0);
-          let totalCarbs = fetchedLogs.reduce((sum: number, l: DailyLog) => sum + (l.targetCarbsG ?? 0), 0);
-          let totalFat = fetchedLogs.reduce((sum: number, l: DailyLog) => sum + (l.targetFatG ?? 0), 0);
-
-          // Fetch plan targets for unlogged days
-          if (unloggedDates.length > 0) {
-            const planTargetResponse = await fetch(
-              `/api/clients/${clientId}/nutrition/plan-targets?dates=${unloggedDates.join(",")}`,
-              { cache: "no-store" }
-            );
-            if (planTargetResponse.ok) {
-              const planTargetData = await planTargetResponse.json();
-              const targets = planTargetData.targets || [];
-              for (const pt of targets) {
-                totalCal += pt.calories ?? 0;
-                totalProtein += pt.proteinG ?? 0;
-                totalCarbs += pt.carbsG ?? 0;
-                totalFat += pt.fatG ?? 0;
-              }
-            }
-          }
-
-          setFullWeekTarget({
-            calories: totalCal,
-            proteinG: totalProtein,
-            carbsG: totalCarbs,
-            fatG: totalFat,
-          });
-        } catch {
-          // Non-fatal: fall back to logged-days-only targets
-          setFullWeekTarget(null);
-        }
-      } catch (error) {
-        console.error('Error fetching daily context:', error instanceof Error ? error.message : "Unknown error");
-      } finally {
-        setDailyContextLoading(false);
-      }
-    };
-
-    fetchDailyContext();
-  }, [data?.checkIn?.id, checkInId, clientId]);
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (!checkInId) return;
-
-      if (e.key === "Escape") {
-        onClose();
-      } else if (e.key === "ArrowLeft" && canNavigatePrev && onNavigate) {
-        onNavigate("prev");
-      } else if (e.key === "ArrowRight" && canNavigateNext && onNavigate) {
-        onNavigate("next");
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [checkInId, canNavigatePrev, canNavigateNext, onNavigate, onClose]);
-
-  const handleResponseSent = () => {
-    // Refresh data after response sent
-    if (checkInId) {
-      fetch(`/api/check-in/${checkInId}`)
-        .then((res) => res.json())
-        .then((result) => setData(result));
-    }
-  };
-
-  const formatDateRange = (start: Date, end: Date) => {
-    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    const sameMonth = start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear();
-    if (sameMonth) {
-      return `Week of ${months[start.getMonth()]} ${start.getDate()} \u2013 ${end.getDate()}, ${end.getFullYear()}`;
-    }
-    const sameYear = start.getFullYear() === end.getFullYear();
-    if (sameYear) {
-      return `Week of ${months[start.getMonth()]} ${start.getDate()} \u2013 ${months[end.getMonth()]} ${end.getDate()}, ${end.getFullYear()}`;
-    }
-    return `Week of ${months[start.getMonth()]} ${start.getDate()}, ${start.getFullYear()} \u2013 ${months[end.getMonth()]} ${end.getDate()}, ${end.getFullYear()}`;
-  };
-
-  const formatSubmittedDate = (dateStr: string) => {
-    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    const d = new Date(dateStr);
-    return `Submitted ${months[d.getMonth()]} ${d.getDate()}`;
-  };
+  const {
+    data,
+    comparisonData,
+    isLoading,
+    isLoadingComparison,
+    dailyLogs,
+    habitLogs,
+    dailyContextLoading,
+    contextStartDate,
+    contextEndDate,
+    fullWeekTarget,
+    handleResponseSent,
+  } = useCheckInDetailData({
+    checkInId,
+    clientId,
+    onClose,
+    onNavigate,
+    canNavigatePrev,
+    canNavigateNext,
+  });
 
   if (!checkInId) return null;
 
@@ -367,7 +155,6 @@ export const CheckInDetailModal = ({
             <div className="px-6 pt-0 pb-5">
 
                 <TabsContent value="current" className="space-y-5">
-                  {/* KPI Ribbon */}
                   {contextStartDate && contextEndDate && (
                     <KPIRibbon
                       checkIn={data.checkIn}
@@ -379,9 +166,7 @@ export const CheckInDetailModal = ({
                     />
                   )}
 
-                  {/* Two-column layout: Data | AI */}
                   <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-5 items-start">
-                    {/* Left: Data sections */}
                     <div className="space-y-4">
                       {contextStartDate && contextEndDate && (
                         <>
@@ -414,7 +199,6 @@ export const CheckInDetailModal = ({
                       <ClientNotesSection checkIn={data.checkIn} />
                     </div>
 
-                    {/* Right: AI Analysis + Coach Response */}
                     <div className="lg:sticky lg:top-0 space-y-5">
                       <div>
                         <AISummaryCard

@@ -5,19 +5,12 @@ import {
   claimTokenForProcessing,
   updateTokenWithCheckInId,
   releaseToken,
-  getPreviousCheckIn,
-  getCheckInWithDetails,
 } from "@/services/check-in-service";
-import { getClientById, updateClient } from "@/services/client-service";
+import { getClientById } from "@/services/client-service";
 import { uploadProgressPhotoFromBase64 } from "@/services/storage-service";
-import { generateCheckInSummary } from "@/services/ai-service";
-import { updateCheckInAISummary, getClientCheckIns } from "@/services/check-in-service";
 import { markReminderAsResponded } from "@/services/reminder-service";
-import {
-  updateClientAdherenceStats,
-  getFrequencyInDays,
-} from "@/services/check-in-tracking-service";
-import { updateClientBMR } from "@/services/bmr-service";
+import { updateClientAdherenceStats } from "@/services/check-in-adherence-service";
+import { getFrequencyInDays } from "@/services/check-in-tracking-service";
 import {
   getCheckInTrainingContext,
   getCheckInNutritionContext,
@@ -29,7 +22,6 @@ import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { submitCheckInSchema } from "@/lib/validations/check-in";
 import type {
   ValidateCheckInTokenResponse,
-  SubmitCheckInRequest,
   SubmitCheckInResponse,
 } from "@/types/check-in";
 
@@ -156,7 +148,7 @@ export async function POST(
     const clientId = validation.clientId;
 
     // Handle photo uploads if provided
-    let photoUrls = {
+    const photoUrls = {
       photoFront: body.photoFront,
       photoSide: body.photoSide,
       photoBack: body.photoBack,

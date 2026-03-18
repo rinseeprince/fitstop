@@ -107,7 +107,6 @@ export default function MessagesPage() {
   const handleSendMessage = () => {
     if (!messageText.trim()) return
     // In a real app, this would send the message to the backend
-    console.log("Sending message:", messageText)
     setMessageText("")
   }
 

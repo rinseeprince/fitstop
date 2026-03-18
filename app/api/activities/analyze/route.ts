@@ -5,13 +5,13 @@ import {
   analyzeUnknownActivityAI,
 } from "@/services/activity-ai-service";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
-import { apiRateLimit } from "@/lib/rate-limit";
+import { aiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { analyzeActivitySchema } from "@/lib/validations/external-activity";
 
 // POST - Analyze activity and estimate calories
 export async function POST(request: NextRequest) {
-  const rateLimitResult = await apiRateLimit(request);
+  const rateLimitResult = await aiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
 
   const csrfError = await requireCSRFProtection(request);

@@ -3,8 +3,9 @@ import { getAuthenticatedClientId } from "@/lib/auth-helpers";
 import { clientApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { dailyLogSchema } from "@/lib/validations/daily-log";
-import { upsertDailyLog, getDailyLogs, getTodaysNutritionTarget, getTodaysPlannedActivities } from "@/services/daily-logs-service";
-import { getClientTrainingPlan } from "@/services/client-portal-service";
+import { upsertDailyLog, getDailyLogs } from "@/services/daily-logs-service";
+import { getTodaysNutritionTarget, getTodaysPlannedActivities } from "@/services/daily-context-service";
+import { getClientTrainingPlan } from "@/services/client-portal-training";
 import { calculateUnplannedActivityCalories, calculateAdjustedDayTarget, calculateAdjustedMacros } from "@/utils/nutrition-tracking-helpers";
 import { getTodayDateString, getDateDaysAgo, getWeekStart } from "@/lib/date-helpers";
 import { upsertWeeklySummary } from "@/services/weekly-nutrition-service";
@@ -83,7 +84,7 @@ export async function POST(request: NextRequest) {
         : 0;
 
       // Calculate unplanned activity calories
-      const unplannedActivityCals = trainingData.unplannedActivities.reduce((sum, activity) =>
+      const _unplannedActivityCals = trainingData.unplannedActivities.reduce((sum, activity) =>
         sum + calculateUnplannedActivityCalories({
           activityName: activity.activityName,
           intensityLevel: activity.intensityLevel as IntensityLevel,

@@ -33,10 +33,10 @@ export function ClientSessionCard({
   const [isOpen, setIsOpen] = useState(false);
   const [isToggling, setIsToggling] = useState(false);
 
-  const handleToggle = async () => {
+  const handleToggle = () => {
     setIsToggling(true);
     try {
-      await onToggleComplete(!isCompleted);
+      onToggleComplete(!isCompleted);
     } finally {
       setIsToggling(false);
     }

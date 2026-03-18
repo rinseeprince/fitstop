@@ -46,14 +46,14 @@ export async function middleware(request: NextRequest) {
       }
     )
 
-    const { data: { session } } = await supabase.auth.getSession()
+    const { data: { user } } = await supabase.auth.getUser()
 
-    if (session) {
+    if (user) {
       // User is logged in, redirect to appropriate dashboard
       const { data: profile } = await supabase
         .from("profiles")
         .select("role")
-        .eq("user_id", session.user.id)
+        .eq("user_id", user.id)
         .single()
 
       const redirectTo = profile?.role === "client" ? "/client/dashboard" : "/dashboard"
@@ -84,13 +84,13 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  // Check if user is authenticated
+  // Check if user is authenticated (getUser() validates JWT server-side, unlike getSession())
   const {
-    data: { session },
-  } = await supabase.auth.getSession()
+    data: { user },
+  } = await supabase.auth.getUser()
 
-  // If no session and trying to access protected route, redirect to login
-  if (!session) {
+  // If no user and trying to access protected route, redirect to login
+  if (!user) {
     const redirectUrl = new URL("/login", request.url)
     redirectUrl.searchParams.set("redirectTo", pathname)
     return NextResponse.redirect(redirectUrl)
@@ -100,7 +100,7 @@ export async function middleware(request: NextRequest) {
   const { data: profile } = await supabase
     .from("profiles")
     .select("role")
-    .eq("user_id", session.user.id)
+    .eq("user_id", user.id)
     .single()
 
   const role = profile?.role || "trainer" // Default to trainer for backwards compatibility

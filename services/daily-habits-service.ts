@@ -1,9 +1,8 @@
 import { supabaseAdmin } from "./supabase-admin";
-import type { DailyHabit, DailyHabitInput, DailyHabitLog, DailyHabitLogInput } from "@/types/daily-habit";
+import type { DailyHabit, DailyHabitInput, DailyHabitLog } from "@/types/daily-habit";
 import type { Database } from "@/types/database";
-import { getTodayDateString, getDateDaysAgo } from "@/lib/date-helpers";
-import { calculateCompletionRate, calculateCurrentStreak, mapArrayIndexToSortOrder } from "./daily-habits-logic";
-import { getHabitStats, type HabitStats } from "./daily-habits-stats";
+import { getTodayDateString } from "@/lib/date-helpers";
+import { mapArrayIndexToSortOrder } from "./daily-habits-logic";
 
 type DailyHabitRow = Database["public"]["Tables"]["daily_habits"]["Row"];
 type DailyHabitLogRow = Database["public"]["Tables"]["daily_habit_logs"]["Row"];

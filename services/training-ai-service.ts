@@ -7,9 +7,10 @@ const openai = new OpenAI({
 
 const TRAINING_PLAN_SYSTEM_PROMPT = `You are an expert strength and conditioning coach creating personalized training programs.
 
-Your task is to generate detailed, science-based training plans tailored to the client's goals, current fitness level, and constraints.
+Your task is to generate science-based training plans tailored to the client's goals, current fitness level, and constraints.
 
 IMPORTANT: Always respond with valid JSON only - no markdown, no code blocks, just the raw JSON object.
+Do NOT include coaching notes, form cues, or descriptions - this tool is for professional coaches who write their own cues.
 
 The JSON must follow this exact structure:
 {
@@ -23,7 +24,6 @@ The JSON must follow this exact structure:
       "name": "Session Name (e.g., 'Push Day A', 'Upper Body')",
       "dayOfWeek": "monday" | "tuesday" | etc. (optional),
       "focus": "Primary muscle groups or movement patterns",
-      "notes": "Session-level coaching notes (optional)",
       "estimatedDurationMinutes": 45-90,
       "exercises": [
         {
@@ -32,11 +32,9 @@ The JSON must follow this exact structure:
           "repsMin": 6 (optional),
           "repsMax": 12 (optional),
           "repsTarget": "8-12" or "AMRAP" (alternative to min/max, optional),
-          "rpeTarget": 7-9 (optional),
+          "rpeTarget": 7-9,
           "percentage1rm": null (use for strength-focused exercises, optional),
-          "tempo": "3-1-2-0" (optional),
-          "restSeconds": 90-180,
-          "notes": "Form cues, variations, or progressions (optional)",
+          "restSeconds": 60-180,
           "supersetGroup": "A" (for pairing exercises, optional),
           "isWarmup": false
         }
@@ -45,17 +43,20 @@ The JSON must follow this exact structure:
   ]
 }
 
+## Rest & RPE Rules (MANDATORY for every non-warmup exercise)
+ALWAYS set rpeTarget and restSeconds based on exercise type:
+- Heavy compounds (squat, deadlift, bench press, overhead press): restSeconds 150-180, rpeTarget 7-9
+- Moderate compounds (rows, lunges, RDLs, pull-ups, dips): restSeconds 90-120, rpeTarget 7-8
+- Isolation/accessories (curls, laterals, flyes, extensions): restSeconds 60-90, rpeTarget 7-8
+- Warm-up exercises (isWarmup: true): restSeconds 30-60, omit rpeTarget
+
 Guidelines for creating effective programs:
 1. Consider the client's stated goals, current metrics, and recovery capacity
 2. Adjust volume and intensity based on check-in data (sleep, stress, energy levels)
 3. Include appropriate warm-up exercises marked with "isWarmup": true
 4. Use progressive overload principles
 5. Balance pushing and pulling movements
-6. Include practical notes for form cues and exercise substitutions
-7. If the coach requests a framework/template, provide structure with flexibility
-8. If the coach requests detailed programming, include specific sets/reps/RPE
-9. Rest periods: 60-90s for hypertrophy, 2-3min for strength, 30-60s for conditioning
-10. Consider training age and experience level when selecting exercises
+6. Consider training age and experience level when selecting exercises
 
 ## External Activities (RECOVERY CONSIDERATIONS)
 When external activities are provided, you MUST:
@@ -78,7 +79,7 @@ export const generateTrainingPlanAI = async (
   const prompt = buildTrainingPlanPrompt(input);
 
   const completion = await openai.chat.completions.create({
-    model: "gpt-4o",
+    model: "gpt-4o-mini",
     messages: [
       { role: "system", content: TRAINING_PLAN_SYSTEM_PROMPT },
       { role: "user", content: prompt },
@@ -86,7 +87,7 @@ export const generateTrainingPlanAI = async (
     temperature: 0.7,
     max_tokens: 4000,
     response_format: { type: "json_object" },
-  });
+  }, { timeout: 45000 });
 
   const rawResponse = completion.choices[0]?.message?.content || "";
 
@@ -130,7 +131,7 @@ export const generateTrainingPlanAI = async (
   } catch (error) {
     console.error("Failed to parse AI response:", error);
     console.error("Raw response:", rawResponse);
-    throw new Error("Failed to parse AI-generated training plan");
+    throw new Error("Failed to parse AI-generated training plan", { cause: error });
   }
 };
 
@@ -294,6 +295,7 @@ export const calculateCheckInAverages = (
 const REFRESH_EXERCISES_SYSTEM_PROMPT = `You are an expert strength and conditioning coach. Your task is to generate NEW exercises for an existing training program structure.
 
 IMPORTANT: Always respond with valid JSON only - no markdown, no code blocks, just the raw JSON object.
+Do NOT include coaching notes or form cues - this tool is for professional coaches who write their own cues.
 
 You will be given the current session structure. You must:
 1. KEEP the exact same session names, days, and focus areas
@@ -314,11 +316,9 @@ The JSON must follow this exact structure:
           "repsMin": 6 (optional),
           "repsMax": 12 (optional),
           "repsTarget": "8-12" or "AMRAP" (alternative to min/max, optional),
-          "rpeTarget": 7-9 (optional),
+          "rpeTarget": 7-9,
           "percentage1rm": null (optional),
-          "tempo": "3-1-2-0" (optional),
-          "restSeconds": 90-180,
-          "notes": "Form cues, variations, or progressions (optional)",
+          "restSeconds": 60-180,
           "supersetGroup": "A" (for pairing exercises, optional),
           "isWarmup": false
         }
@@ -327,12 +327,18 @@ The JSON must follow this exact structure:
   ]
 }
 
+## Rest & RPE Rules (MANDATORY for every non-warmup exercise)
+ALWAYS set rpeTarget and restSeconds based on exercise type:
+- Heavy compounds (squat, deadlift, bench press, overhead press): restSeconds 150-180, rpeTarget 7-9
+- Moderate compounds (rows, lunges, RDLs, pull-ups, dips): restSeconds 90-120, rpeTarget 7-8
+- Isolation/accessories (curls, laterals, flyes, extensions): restSeconds 60-90, rpeTarget 7-8
+- Warm-up exercises (isWarmup: true): restSeconds 30-60, omit rpeTarget
+
 Guidelines:
 1. Generate variety - if the current exercise is bench press, suggest incline dumbbell press, etc.
 2. Match the movement patterns and muscle groups of the session's focus
 3. Maintain similar training stimulus (strength, hypertrophy, power)
-4. Include practical notes for form cues
-5. Keep warm-up exercises relevant to the main work`;
+4. Keep warm-up exercises relevant to the main work`;
 
 // Input type for refreshing exercises
 type RefreshExercisesInput = {
@@ -403,7 +409,7 @@ export const regenerateExercisesAI = async (
   prompt += `## Task:\nGenerate NEW exercises for each session above. The exercises should be different from typical choices to provide variety, but still match the session's focus and goals. Generate approximately the same number of exercises as currently in each session. Include 1-2 warm-up exercises per session.`;
 
   const completion = await openai.chat.completions.create({
-    model: "gpt-4o",
+    model: "gpt-4o-mini",
     messages: [
       { role: "system", content: REFRESH_EXERCISES_SYSTEM_PROMPT },
       { role: "user", content: prompt },
@@ -411,7 +417,7 @@ export const regenerateExercisesAI = async (
     temperature: 0.8, // Higher temperature for more variety
     max_tokens: 4000,
     response_format: { type: "json_object" },
-  });
+  }, { timeout: 45000 });
 
   const rawResponse = completion.choices[0]?.message?.content || "";
 
@@ -438,6 +444,6 @@ export const regenerateExercisesAI = async (
   } catch (error) {
     console.error("Failed to parse AI refresh exercises response:", error);
     console.error("Raw response:", rawResponse);
-    throw new Error("Failed to parse AI-generated exercises");
+    throw new Error("Failed to parse AI-generated exercises", { cause: error });
   }
 };

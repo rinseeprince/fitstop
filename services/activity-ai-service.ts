@@ -190,7 +190,7 @@ Provide MET value, muscle groups, recovery impact, and training recommendations.
     temperature: 0.3,
     max_tokens: 500,
     response_format: { type: "json_object" },
-  });
+  }, { timeout: 15000 });
 
   const rawResponse = completion.choices[0]?.message?.content || "";
 

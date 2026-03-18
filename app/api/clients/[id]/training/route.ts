@@ -17,7 +17,7 @@ import { apiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { generateTrainingPlanSchema } from "@/lib/validations/training";
 import { weightToKg } from "@/utils/nutrition-helpers";
-import type { ExternalActivityContext, PreGenerationActivity } from "@/types/training";
+import type { ExternalActivityContext } from "@/types/training";
 import type { ActivityMetadata, MuscleGroup, IntensityLevel } from "@/types/external-activity";
 
 // Helper function for default recovery hours based on intensity

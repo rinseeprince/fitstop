@@ -16,6 +16,7 @@ export function sanitizeForAIPrompt(input: string, maxLength = 2000): string {
   }
 
   // Remove null bytes and non-printable characters (except newlines, tabs, and spaces)
+  // eslint-disable-next-line no-control-regex
   let sanitized = input.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "");
 
   // Normalize Unicode to prevent confusable character attacks

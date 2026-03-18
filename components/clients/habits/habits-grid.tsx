@@ -32,7 +32,7 @@ export const HabitsGrid = ({ habits, clientId, selectedHabitId, onOpenManageDraw
   const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   
   const {
-    chartData,
+    chartData: _chartData,
     isLoading,
     error,
     getHabitChartData,

@@ -56,28 +56,30 @@ export function PreGenerationActivityForm({
       return;
     }
 
-    const timer = setTimeout(async () => {
+    const timer = setTimeout(() => {
       setIsAnalyzing(true);
-      try {
-        const res = await fetch("/api/activities/analyze", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            activityName,
-            intensityLevel,
-            durationMinutes,
-            clientWeightKg,
-          }),
-        });
-        const data = await res.json();
-        if (data.success) {
-          setAnalysis(data.analysis);
+      void (async () => {
+        try {
+          const res = await fetch("/api/activities/analyze", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              activityName,
+              intensityLevel,
+              durationMinutes,
+              clientWeightKg,
+            }),
+          });
+          const data = await res.json();
+          if (data.success) {
+            setAnalysis(data.analysis);
+          }
+        } catch (error) {
+          console.error("Failed to analyze activity:", error);
+        } finally {
+          setIsAnalyzing(false);
         }
-      } catch (error) {
-        console.error("Failed to analyze activity:", error);
-      } finally {
-        setIsAnalyzing(false);
-      }
+      })();
     }, 500);
 
     return () => clearTimeout(timer);

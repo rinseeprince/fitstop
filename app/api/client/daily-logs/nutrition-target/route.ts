@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedClientId } from "@/lib/auth-helpers";
 import { clientApiRateLimit } from "@/lib/rate-limit";
-import { 
-  getTodaysNutritionTarget, 
-  getTodaysTrainingSession, 
-  getTodaysPlannedActivities 
-} from "@/services/daily-logs-service";
+import {
+  getTodaysNutritionTarget,
+  getTodaysTrainingSession,
+  getTodaysPlannedActivities
+} from "@/services/daily-context-service";
 import { validateDateParameter } from "@/lib/validation-helpers";
 
 export async function GET(request: NextRequest) {

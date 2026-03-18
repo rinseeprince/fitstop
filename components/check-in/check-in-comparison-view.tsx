@@ -3,24 +3,11 @@
 import { Card } from "@/components/ui/card";
 import { ProgressCharts } from "./progress-charts";
 import type { CheckInComparison, ProgressChartData, MetricChange } from "@/types/check-in";
-import { ArrowUp, ArrowDown, Minus, TrendingUp, TrendingDown } from "lucide-react";
+import { Minus, TrendingUp, TrendingDown } from "lucide-react";
 
 type CheckInComparisonViewProps = {
   comparison: CheckInComparison;
   chartData: ProgressChartData;
-};
-
-// Helper to render trend icon
-const TrendIcon = ({ trend }: { trend?: "up" | "down" | "stable" }) => {
-  if (!trend) return null;
-
-  if (trend === "up") {
-    return <ArrowUp className="h-4 w-4 text-destructive" />;
-  } else if (trend === "down") {
-    return <ArrowDown className="h-4 w-4 text-success" />;
-  } else {
-    return <Minus className="h-4 w-4 text-muted-foreground" />;
-  }
 };
 
 // Helper to format change value
@@ -105,7 +92,7 @@ const MetricRow = ({
 
 export const CheckInComparisonView = ({
   comparison,
-  chartData,
+  chartData: _chartData,
 }: CheckInComparisonViewProps) => {
   const { current, previous, changes, timeBetweenCheckIns } = comparison;
 

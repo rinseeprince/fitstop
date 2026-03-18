@@ -62,27 +62,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   /** Fetch user profile from database */
   const fetchProfile = async (userId: string): Promise<Profile | null> => {
     try {
-      console.log('[Auth] fetchProfile starting for user:', userId)
-      
       // Add timeout to prevent hanging
       const fetchPromise = supabase
         .from("profiles")
         .select("*")
         .eq("user_id", userId)
         .single()
-        
-      const timeoutPromise = new Promise((_, reject) => 
+
+      const timeoutPromise = new Promise((_, reject) =>
         setTimeout(() => reject(new Error('fetchProfile timeout')), 5000)
       )
-      
-      const { data, error } = await Promise.race([fetchPromise, timeoutPromise]) as Awaited<typeof fetchPromise>
 
-      console.log('[Auth] fetchProfile result:', { data: !!data, error })
+      const { data, error } = await Promise.race([fetchPromise, timeoutPromise]) as Awaited<typeof fetchPromise>
 
       if (error) {
         // PGRST116 = no rows returned
         if (error.code === "PGRST116") {
-          console.log('[Auth] No profile found (PGRST116)')
           return null
         }
         console.error("Error fetching profile:", error)
@@ -97,7 +92,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         createdAt: row.created_at,
         updatedAt: row.updated_at,
       }
-      console.log('[Auth] fetchProfile success:', profile)
       return profile
     } catch (error) {
       console.error('[Auth] fetchProfile failed:', error)
@@ -191,28 +185,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   /** Initialize user data based on role */
   const initializeUserData = async (authUser: User) => {
-    console.log('[Auth] initializeUserData called for user:', authUser.id)
-    
     // Prevent concurrent initialization
     if (initializingRef.current) {
-      console.log('[Auth] initializeUserData already in progress, skipping')
       return
     }
     initializingRef.current = true
 
     try {
-      console.log('[Auth] Starting profile fetch for user:', authUser.id)
-      
       // Fetch profile - trigger should have created it
       let userProfile: Profile | null = await fetchProfile(authUser.id)
-      
+
       if (!userProfile) {
-        console.log('[Auth] No profile found - trying to create profile')
         // Fallback: try to create if not found
         try {
           const defaultRole: UserRole = "trainer"
           userProfile = await createProfile(authUser.id, defaultRole)
-          console.log('[Auth] Created fallback profile:', userProfile)
         } catch (createError) {
           console.error("Could not fetch or create profile:", createError)
           // Sign out to allow clean re-login instead of leaving app in broken state
@@ -221,23 +208,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      console.log('[Auth] Setting profile:', userProfile)
       setProfile(userProfile)
 
       // Only fetch/create coach profile for trainers
       if (userProfile.role === "trainer") {
-        console.log('[Auth] Fetching coach profile for trainer')
         await fetchOrCreateCoachProfile(authUser)
       } else {
-        console.log('[Auth] Not a trainer, clearing coach')
         setCoach(null)
       }
-      
-      console.log('[Auth] initializeUserData complete')
     } catch (error) {
       console.error('[Auth] Error in initializeUserData:', error)
     } finally {
-      console.log('[Auth] Clearing initializingRef flag')
       initializingRef.current = false
     }
   }
@@ -246,24 +227,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const initSession = async () => {
       try {
-        console.log('[Auth] Initializing session...')
-        
         // Add timeout to getSession to prevent hanging
         const getSessionPromise = supabase.auth.getSession()
-        const timeoutPromise = new Promise((_, reject) => 
+        const timeoutPromise = new Promise((_, reject) =>
           setTimeout(() => reject(new Error('getSession timeout')), 5000)
         )
-        
+
         const { data: { session } } = await Promise.race([getSessionPromise, timeoutPromise]) as Awaited<typeof getSessionPromise>
-        console.log('[Auth] Got session:', session ? 'has session' : 'no session')
         setSession(session)
         setUser(session?.user ?? null)
 
         if (session?.user) {
-          console.log('[Auth] Initializing user data for user:', session.user.id)
           try {
             await initializeUserData(session.user)
-            console.log('[Auth] User data initialization complete')
           } catch (initError) {
             console.error('[Auth] Error initializing user data:', initError)
             // Continue anyway to set loading to false
@@ -272,7 +248,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch (error) {
         console.error("Error initializing session:", error)
       } finally {
-        console.log('[Auth] Setting loading to false')
         setLoading(false)
         initialLoadCompleteRef.current = true
       }
@@ -283,22 +258,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('[Auth] State change:', event, session ? 'has session' : 'no session')
-      
       // Don't process auth changes while still initializing or before initial load is complete
       if (initializingRef.current || !initialLoadCompleteRef.current) {
-        console.log('[Auth] Skipping state change during initialization or before initial load complete')
         return
       }
-      
+
       setSession(session)
       setUser(session?.user ?? null)
 
       if (session?.user) {
         try {
-          console.log('[Auth] Auth state change - initializing user data for:', session.user.id)
           await initializeUserData(session.user)
-          console.log('[Auth] Auth state change - user data initialization complete')
         } catch (error) {
           console.error("Error initializing user data on auth change:", error)
         }
@@ -317,13 +287,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // Only trigger update if session state actually changed
           const freshSessionExists = !!freshSession
           const currentSessionExists = !!session
-          
-          if (freshSessionExists !== currentSessionExists || 
+
+          if (freshSessionExists !== currentSessionExists ||
               (freshSession?.access_token !== session?.access_token)) {
-            console.log('Session state changed on tab focus, refreshing...')
             setSession(freshSession)
             setUser(freshSession?.user ?? null)
-            
+
             if (freshSession?.user) {
               await initializeUserData(freshSession.user)
             } else {
@@ -341,12 +310,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const handleStorageChange = async (e: StorageEvent) => {
       // Listen for Supabase auth events in localStorage (fallback sync mechanism)
       if (e.key?.includes('supabase') && e.key.includes('auth')) {
-        console.log('Detected auth storage change, refreshing session...')
         try {
           const { data: { session } } = await supabase.auth.getSession()
           setSession(session)
           setUser(session?.user ?? null)
-          
+
           if (session?.user) {
             await initializeUserData(session.user)
           } else {
@@ -359,13 +327,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    document.addEventListener('visibilitychange', handleVisibilityChange)
-    window.addEventListener('storage', handleStorageChange)
+    const onVisibilityChange = () => void handleVisibilityChange()
+    const onStorageChange = (e: StorageEvent) => void handleStorageChange(e)
+
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    window.addEventListener('storage', onStorageChange)
 
     return () => {
       subscription.unsubscribe()
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
-      window.removeEventListener('storage', handleStorageChange)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      window.removeEventListener('storage', onStorageChange)
     }
   }, [])
 

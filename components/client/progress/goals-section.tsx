@@ -2,7 +2,7 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Target, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { Target, TrendingUp, TrendingDown } from "lucide-react";
 
 interface GoalsSectionProps {
   client: {

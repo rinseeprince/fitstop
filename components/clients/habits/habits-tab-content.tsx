@@ -14,7 +14,7 @@ type HabitsTabContentProps = {
   onUpdate?: () => void;
 };
 
-export const HabitsTabContent = ({ client, onUpdate }: HabitsTabContentProps) => {
+export const HabitsTabContent = ({ client }: HabitsTabContentProps) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedHabitId, setSelectedHabitId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);

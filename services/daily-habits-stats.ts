@@ -1,5 +1,4 @@
 import { supabaseAdmin } from "./supabase-admin";
-import type { DailyHabitLog } from "@/types/daily-habit";
 import type { Database } from "@/types/database";
 import { getTodayDateString, getDateDaysAgo } from "@/lib/date-helpers";
 import { calculateCompletionRate, calculateCurrentStreak } from "./daily-habits-logic";

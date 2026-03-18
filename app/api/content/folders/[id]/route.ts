@@ -161,7 +161,7 @@ export async function DELETE(
     }
 
     // Check if folder has subfolders or content
-    const hasSubfolders = folders.some(f => f.parentFolderId === id);
+    const _hasSubfolders = folders.some(f => f.parentFolderId === id);
     
     // Get content count in folder (this would require additional service method)
     // For now, we'll allow deletion and let the database cascade handle it

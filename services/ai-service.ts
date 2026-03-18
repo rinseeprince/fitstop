@@ -65,14 +65,14 @@ export const generateCheckInSummary = async (
       ],
       temperature: 0.7,
       max_tokens: 2000,
-    });
+    }, { timeout: 25000 });
 
     const responseText = completion.choices[0]?.message?.content || "";
     const parsed = parseAIResponse(responseText);
     return attachRawNotes(parsed, dailyLogs);
   } catch (error) {
     console.error("Error generating AI summary:", error instanceof Error ? error.message : "Unknown error");
-    throw new Error("Failed to generate AI summary");
+    throw new Error("Failed to generate AI summary", { cause: error });
   }
 };
 
@@ -112,13 +112,13 @@ export const regenerateAISummary = async (
       ],
       temperature: 0.7,
       max_tokens: 2000,
-    });
+    }, { timeout: 25000 });
 
     const responseText = completion.choices[0]?.message?.content || "";
     const parsed = parseAIResponse(responseText);
     return attachRawNotes(parsed, dailyLogs);
   } catch (error) {
     console.error("Error regenerating AI summary:", error instanceof Error ? error.message : "Unknown error");
-    throw new Error("Failed to regenerate AI summary");
+    throw new Error("Failed to regenerate AI summary", { cause: error });
   }
 };

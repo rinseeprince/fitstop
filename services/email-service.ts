@@ -65,7 +65,7 @@ The CoachHub Team`,
       }
     }
 
-    console.log("Invitation email sent successfully")
+    console.warn("Invitation email sent successfully")
     return { success: true }
   } catch (error) {
     console.error('Error in sendInvitationEmail:', error)
@@ -122,7 +122,7 @@ The CoachHub Team`,
       }
     }
 
-    console.log("Activation email sent successfully")
+    console.warn("Activation email sent successfully")
     return { success: true }
   } catch (error) {
     console.error('Error in sendActivationEmail:', error)

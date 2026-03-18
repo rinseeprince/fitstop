@@ -29,7 +29,7 @@ export function useNewContentNotifications(): NewContentNotifications {
     checkForNewContent();
     
     // Set up periodic check for new content (every 30 seconds)
-    const interval = setInterval(checkForNewContent, 30000);
+    const interval = setInterval(() => void checkForNewContent(), 30000);
     
     return () => clearInterval(interval);
   }, [user]);

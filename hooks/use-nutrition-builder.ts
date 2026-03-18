@@ -128,7 +128,7 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
 
   // Calorie skewing handlers
   const handleToggleCustomDistribution = useCallback(
-    async (enabled: boolean) => {
+    (enabled: boolean) => {
       if (enabled && nutritionPlan.weeklyTargets) {
         const overrides = initializeDayOverridesFromTargets(nutritionPlan.weeklyTargets);
         setDayCalorieOverrides(overrides);

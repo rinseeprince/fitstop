@@ -7,7 +7,6 @@ import type {
   CheckInComparison,
   GoalProgress,
   GetCheckInComparisonResponse,
-  CheckIn,
 } from "@/types/check-in";
 
 export const getCheckInComparison = async (

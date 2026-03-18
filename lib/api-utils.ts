@@ -68,5 +68,6 @@ export function isValidUUID(value: string): boolean {
  * Sanitize a string for safe use in responses (strip control characters)
  */
 export function sanitizeString(value: string): string {
+  // eslint-disable-next-line no-control-regex
   return value.replace(/[\x00-\x1F\x7F]/g, '');
 }
