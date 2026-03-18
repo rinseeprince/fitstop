@@ -13,6 +13,7 @@ const TABS = [
   { value: "metrics", label: "Metrics" },
   { value: "training", label: "Training Plan" },
   { value: "nutrition", label: "Nutrition" },
+  { value: "wellness", label: "Wellness" },
   { value: "daily-habits", label: "Daily Habits" },
   { value: "notes", label: "Notes & Messages" },
 ] as const

@@ -11,3 +11,12 @@ export type NutritionHistoryRow = {
   calorie_surplus_deficit: number | null;
   nutrition_adherence: "hit" | "partial" | "missed" | null;
 };
+
+export type WellnessHistoryRow = {
+  date: string;
+  mood: number | null;    // 1-5
+  energy: number | null;  // 1-10
+  sleep: number | null;   // 1-10
+  stress: number | null;  // 1-10
+  notes: string | null;
+};
