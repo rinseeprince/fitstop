@@ -35,3 +35,27 @@ export type BodyMetricsHistoryRow = {
   thighs: number | null;
   measurement_unit: string | null;
 };
+
+export type HabitMeta = {
+  id: string;
+  name: string;
+  is_boolean: boolean;
+  target_value: number | null;
+  target_unit: string | null;
+};
+
+export type HabitsHistoryRow = {
+  date: string;
+  habits: Record<string, { completed: boolean; value: number | null; notes: string | null }>;
+  total_completed: number;
+  total_habits: number;
+  [habitId: string]: unknown;
+};
+
+export type TrainingHistoryRow = {
+  date: string;
+  session_name: string;
+  is_alternative: boolean;
+  completion_quality: "full" | "partial" | "skipped" | null;
+  notes: string | null;
+};
