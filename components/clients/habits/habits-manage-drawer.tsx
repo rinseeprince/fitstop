@@ -23,10 +23,6 @@ type HabitsManageDrawerProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   habits: HabitWithStats[];
-  searchQuery: string;
-  onSearchChange: (query: string) => void;
-  selectedHabitId: string | null;
-  onSelectHabit: (id: string) => void;
   onCreateHabit: (data: DailyHabitInput) => Promise<DailyHabit | undefined>;
   onUpdateHabit: (habitId: string, data: Partial<DailyHabitInput>) => Promise<DailyHabit | undefined>;
   onDeleteHabit: (habitId: string) => Promise<void>;
@@ -38,10 +34,6 @@ export function HabitsManageDrawer({
   open,
   onOpenChange,
   habits,
-  searchQuery,
-  onSearchChange,
-  selectedHabitId,
-  onSelectHabit,
   onCreateHabit,
   onUpdateHabit,
   onDeleteHabit,
@@ -50,12 +42,19 @@ export function HabitsManageDrawer({
 }: HabitsManageDrawerProps) {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [editingHabitId, setEditingHabitId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const filteredHabits = searchQuery
+    ? habits.filter((h) =>
+        h.name.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : habits;
 
   const handleMoveUp = async (habitId: string) => {
-    const currentIndex = habits.findIndex((h) => h.id === habitId);
+    const currentIndex = filteredHabits.findIndex((h) => h.id === habitId);
     if (currentIndex <= 0) return;
 
-    const newOrder = [...habits];
+    const newOrder = [...filteredHabits];
     [newOrder[currentIndex - 1], newOrder[currentIndex]] = [
       newOrder[currentIndex],
       newOrder[currentIndex - 1],
@@ -65,10 +64,10 @@ export function HabitsManageDrawer({
   };
 
   const handleMoveDown = async (habitId: string) => {
-    const currentIndex = habits.findIndex((h) => h.id === habitId);
-    if (currentIndex === -1 || currentIndex >= habits.length - 1) return;
+    const currentIndex = filteredHabits.findIndex((h) => h.id === habitId);
+    if (currentIndex === -1 || currentIndex >= filteredHabits.length - 1) return;
 
-    const newOrder = [...habits];
+    const newOrder = [...filteredHabits];
     [newOrder[currentIndex], newOrder[currentIndex + 1]] = [
       newOrder[currentIndex + 1],
       newOrder[currentIndex],
@@ -96,7 +95,7 @@ export function HabitsManageDrawer({
             <Input
               placeholder="Search habits..."
               value={searchQuery}
-              onChange={(e) => onSearchChange(e.target.value)}
+              onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-9"
             />
           </div>
@@ -112,7 +111,7 @@ export function HabitsManageDrawer({
           </Button>
 
           {/* Habits List */}
-          {habits.length === 0 ? (
+          {filteredHabits.length === 0 ? (
             <div className="text-center py-8">
               <p className="text-sm text-muted-foreground">
                 {searchQuery ? "No habits match your search" : "No habits yet. Add one above to get started."}
@@ -120,15 +119,15 @@ export function HabitsManageDrawer({
             </div>
           ) : (
             <div className="space-y-1">
-              {habits.map((habit, index) => (
+              {filteredHabits.map((habit, index) => (
                 <HabitListItem
                   key={habit.id}
                   habit={habit}
-                  isSelected={habit.id === selectedHabitId}
+                  isSelected={false}
                   isEditing={habit.id === editingHabitId}
                   canMoveUp={habit.isActive && index > 0}
-                  canMoveDown={habit.isActive && index < habits.length - 1}
-                  onClick={() => onSelectHabit(habit.id)}
+                  canMoveDown={habit.isActive && index < filteredHabits.length - 1}
+                  onClick={() => undefined}
                   onEdit={() => setEditingHabitId(habit.id)}
                   onCancelEdit={() => setEditingHabitId(null)}
                   onSaveEdit={async (data) => {

@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, Settings2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
-import { HabitsGrid } from "./habits-grid";
+import { Button } from "@/components/ui/button";
 import { HabitEmptyState } from "./habit-empty-state";
 import { HabitsManageDrawer } from "./habits-manage-drawer";
 import { useClientHabits } from "@/hooks/use-client-habits";
@@ -15,8 +15,6 @@ type HabitsTabContentProps = {
 };
 
 export const HabitsTabContent = ({ client }: HabitsTabContentProps) => {
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedHabitId, setSelectedHabitId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const {
@@ -29,13 +27,6 @@ export const HabitsTabContent = ({ client }: HabitsTabContentProps) => {
     reactivateHabit,
     reorderHabits,
   } = useClientHabits(client.id, true);
-
-  // Filter habits based on search query
-  const filteredHabits = searchQuery
-    ? habits.filter((h) =>
-        h.name.toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    : habits;
 
   if (isLoading) {
     return (
@@ -76,11 +67,7 @@ export const HabitsTabContent = ({ client }: HabitsTabContentProps) => {
         <HabitsManageDrawer
           open={drawerOpen}
           onOpenChange={setDrawerOpen}
-          habits={filteredHabits}
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
-          selectedHabitId={selectedHabitId}
-          onSelectHabit={setSelectedHabitId}
+          habits={habits}
           onCreateHabit={createHabit}
           onUpdateHabit={updateHabit}
           onDeleteHabit={deleteHabit}
@@ -93,20 +80,16 @@ export const HabitsTabContent = ({ client }: HabitsTabContentProps) => {
 
   return (
     <>
-      <HabitsGrid
-        habits={filteredHabits}
-        clientId={client.id}
-        selectedHabitId={selectedHabitId}
-        onOpenManageDrawer={() => setDrawerOpen(true)}
-      />
+      <div className="flex items-center justify-end">
+        <Button onClick={() => setDrawerOpen(true)} variant="outline" size="sm">
+          <Settings2 className="h-4 w-4 mr-2" />
+          Manage Habits
+        </Button>
+      </div>
       <HabitsManageDrawer
         open={drawerOpen}
         onOpenChange={setDrawerOpen}
-        habits={filteredHabits}
-        searchQuery={searchQuery}
-        onSearchChange={setSearchQuery}
-        selectedHabitId={selectedHabitId}
-        onSelectHabit={setSelectedHabitId}
+        habits={habits}
         onCreateHabit={createHabit}
         onUpdateHabit={updateHabit}
         onDeleteHabit={deleteHabit}

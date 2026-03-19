@@ -1,15 +1,24 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo } from "react";
 import useSWR from "swr";
-import { Check, X } from "lucide-react";
+import { Check, X, ChevronLeft, ChevronRight } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
-import { HistoryTable, type ColumnDef } from "@/components/clients/history-table/history-table";
-import { HistoryChartDialog } from "@/components/clients/history-table/history-chart-dialog";
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from "@/components/ui/table";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import type { HabitMeta, HabitsHistoryRow } from "@/types/history";
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 14;
 
 type HabitsHistoryResponse = {
   habits: HabitMeta[];
@@ -17,42 +26,14 @@ type HabitsHistoryResponse = {
   total: number;
 };
 
-function formatDate(dateStr: string) {
+function formatDateHeader(dateStr: string) {
   const date = new Date(dateStr + "T00:00:00");
-  return date.toLocaleDateString("en-AU", { day: "numeric", month: "short" });
-}
-
-function formatDay(dateStr: string) {
-  const date = new Date(dateStr + "T00:00:00");
-  return date.toLocaleDateString("en-AU", { weekday: "long" });
-}
-
-function renderDash() {
-  return <span className="text-muted-foreground">-</span>;
-}
-
-function renderBooleanHabit(completed: boolean) {
-  return completed ? (
-    <Check className="h-4 w-4 text-green-500" />
-  ) : (
-    <X className="h-4 w-4 text-red-500" />
-  );
-}
-
-function renderValueHabit(value: number | null, target: number | null, unit: string | null) {
-  if (value === null) return renderDash();
-  const label = target ? `${value} / ${target}` : `${value}`;
-  const suffix = unit ? ` ${unit}` : "";
-
-  let colorClass = "text-muted-foreground";
-  if (target && target > 0) {
-    const pct = (value / target) * 100;
-    if (pct >= 100) colorClass = "text-green-600";
-    else if (pct >= 50) colorClass = "text-amber-600";
-    else colorClass = "text-red-600";
-  }
-
-  return <span className={colorClass}>{label}{suffix}</span>;
+  const day = date.toLocaleDateString("en-AU", { weekday: "short" });
+  const dateLabel = date.toLocaleDateString("en-AU", {
+    day: "numeric",
+    month: "short",
+  });
+  return { day, dateLabel };
 }
 
 type Props = {
@@ -61,7 +42,6 @@ type Props = {
 
 export function HabitsHistoryTable({ clientId }: Props) {
   const [page, setPage] = useState(0);
-  const [chartColumn, setChartColumn] = useState<string | null>(null);
 
   const url = `/api/clients/${clientId}/history/habits?limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}`;
   const { data, isLoading } = useSWR<HabitsHistoryResponse>(url, swrFetcher, {
@@ -69,120 +49,144 @@ export function HabitsHistoryTable({ clientId }: Props) {
     dedupingInterval: 5000,
   });
 
-  const habits = useMemo(() => data?.habits || [], [data?.habits]);
+  const habits = useMemo(
+    () => (data?.habits || []).filter((h) => h.is_active),
+    [data?.habits]
+  );
   const rows = useMemo(() => data?.rows || [], [data?.rows]);
   const total = data?.total || 0;
+  const totalPages = Math.ceil(total / PAGE_SIZE);
 
-  const handleColumnClick = useCallback((key: string) => {
-    setChartColumn(key);
-  }, []);
+  // API returns newest-first; display oldest-left, newest-right
+  const displayRows = useMemo(() => [...rows].reverse(), [rows]);
 
-  const chartTitle = useMemo(() => {
-    if (chartColumn === "completion_rate") return "Daily Completion Rate";
-    const habit = habits.find((h) => h.id === chartColumn);
-    return habit ? `${habit.name} - Completion` : "";
-  }, [chartColumn, habits]);
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent className="pt-6">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="min-w-[140px]">Habit</TableHead>
+                {Array.from({ length: PAGE_SIZE }).map((_, i) => (
+                  <TableHead key={i} className="text-center">
+                    <Skeleton className="h-8 w-12 mx-auto" />
+                  </TableHead>
+                ))}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {Array.from({ length: 4 }).map((_, i) => (
+                <TableRow key={i}>
+                  <TableCell>
+                    <Skeleton className="h-4 w-24" />
+                  </TableCell>
+                  {Array.from({ length: PAGE_SIZE }).map((_, j) => (
+                    <TableCell key={j} className="text-center">
+                      <Skeleton className="h-4 w-4 mx-auto" />
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    );
+  }
 
-  const chartData = useMemo(() => {
-    if (!chartColumn || rows.length === 0) return [];
-
-    if (chartColumn === "completion_rate") {
-      return [...rows].reverse().map((row) => ({
-        date: formatDate(row.date),
-        value: row.total_habits > 0
-          ? Math.round((row.total_completed / row.total_habits) * 100)
-          : 0,
-      }));
-    }
-
-    // Per-habit chart: show 1 for completed, 0 for not
-    return [...rows].reverse().map((row) => {
-      const entry = (row as Record<string, unknown>)[chartColumn] as
-        { completed: boolean } | undefined;
-      return {
-        date: formatDate(row.date),
-        value: entry?.completed ? 1 : 0,
-      };
-    });
-  }, [chartColumn, rows]);
-
-  const columns: ColumnDef<HabitsHistoryRow>[] = useMemo(() => {
-    const cols: ColumnDef<HabitsHistoryRow>[] = [
-      {
-        key: "date",
-        label: "Date",
-        render: (_v, row) => formatDate(row.date),
-      },
-      {
-        key: "day",
-        label: "Day",
-        render: (_v, row) => formatDay(row.date),
-      },
-    ];
-
-    // Dynamic habit columns - use first arg (row[col.key]) which the service
-    // copies to top-level properties, avoiding nested row.habits[id] lookup
-    for (const habit of habits) {
-      cols.push({
-        key: habit.id,
-        label: habit.name,
-        chartType: "bar" as const,
-        render: (v) => {
-          const entry = v as { completed: boolean; value: number | null; notes: string | null } | undefined;
-          if (!entry) return renderDash();
-          // Value-based rendering only when a numeric value is actually recorded
-          if (!habit.is_boolean && entry.value !== null) {
-            return renderValueHabit(entry.value, habit.target_value, habit.target_unit);
-          }
-          // Default: show completed status (handles boolean habits and
-          // value-based habits where the daily pulse only saves completed)
-          return renderBooleanHabit(entry.completed);
-        },
-      });
-    }
-
-    // Completion rate column
-    cols.push({
-      key: "completion_rate",
-      label: "Completion",
-      chartType: "bar" as const,
-      render: (_v, row) => {
-        if (row.total_habits === 0) return renderDash();
-        const pct = Math.round((row.total_completed / row.total_habits) * 100);
-        let colorClass = "text-red-600";
-        if (pct >= 80) colorClass = "text-green-600";
-        else if (pct >= 50) colorClass = "text-amber-600";
-        return <span className={`font-medium ${colorClass}`}>{pct}%</span>;
-      },
-    });
-
-    return cols;
-  }, [habits]);
+  if (habits.length === 0 || displayRows.length === 0) {
+    return (
+      <Card>
+        <CardContent className="pt-6">
+          <div className="h-24 flex items-center justify-center text-muted-foreground">
+            No habits logged yet
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card>
       <CardContent className="pt-6">
-        <HistoryTable<HabitsHistoryRow>
-          columns={columns}
-          data={rows}
-          total={total}
-          page={page}
-          onPageChange={setPage}
-          isLoading={isLoading}
-          emptyMessage="No habits logged yet"
-          onColumnClick={handleColumnClick}
-        />
-      </CardContent>
+        <div className="space-y-4">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="min-w-[140px]">Habit</TableHead>
+                {displayRows.map((row) => {
+                  const { day, dateLabel } = formatDateHeader(row.date);
+                  return (
+                    <TableHead key={row.date} className="text-center min-w-[60px]">
+                      <div className="text-xs text-muted-foreground">{day}</div>
+                      <div>{dateLabel}</div>
+                    </TableHead>
+                  );
+                })}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {habits.map((habit) => (
+                <TableRow key={habit.id}>
+                  <TableCell className="font-medium">{habit.name}</TableCell>
+                  {displayRows.map((row) => {
+                    const entry = row.habits[habit.id];
+                    const existedOnDate = habit.created_at <= row.date;
+                    return (
+                      <TableCell key={row.date} className="text-center">
+                        <div className="flex items-center justify-center">
+                          {entry?.completed ? (
+                            <Check className="h-4 w-4 text-green-500" />
+                          ) : existedOnDate ? (
+                            <X className="h-4 w-4 text-red-500" />
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
+                        </div>
+                      </TableCell>
+                    );
+                  })}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
 
-      <HistoryChartDialog
-        open={chartColumn !== null}
-        onClose={() => setChartColumn(null)}
-        title={chartTitle}
-        chartType="bar"
-        data={chartData}
-        dataKey="value"
-        color="#22c55e"
-      />
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-4">
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={page >= totalPages - 1}
+                onClick={() => setPage(page + 1)}
+                className={cn(
+                  "gap-1",
+                  page >= totalPages - 1 && "pointer-events-none opacity-50"
+                )}
+              >
+                <ChevronLeft className="h-4 w-4" />
+                <span className="hidden sm:inline">Older</span>
+              </Button>
+              <span className="text-sm text-muted-foreground">
+                Page {page + 1} of {totalPages}
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={page === 0}
+                onClick={() => setPage(page - 1)}
+                className={cn(
+                  "gap-1",
+                  page === 0 && "pointer-events-none opacity-50"
+                )}
+              >
+                <span className="hidden sm:inline">Newer</span>
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
+        </div>
+      </CardContent>
     </Card>
   );
 }
