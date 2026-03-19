@@ -130,8 +130,13 @@ export function HabitsHistoryTable({ clientId }: Props) {
         render: (v) => {
           const entry = v as { completed: boolean; value: number | null; notes: string | null } | undefined;
           if (!entry) return renderDash();
-          if (habit.is_boolean) return renderBooleanHabit(entry.completed);
-          return renderValueHabit(entry.value, habit.target_value, habit.target_unit);
+          // Value-based rendering only when a numeric value is actually recorded
+          if (!habit.is_boolean && entry.value !== null) {
+            return renderValueHabit(entry.value, habit.target_value, habit.target_unit);
+          }
+          // Default: show completed status (handles boolean habits and
+          // value-based habits where the daily pulse only saves completed)
+          return renderBooleanHabit(entry.completed);
         },
       });
     }

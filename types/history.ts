@@ -42,6 +42,8 @@ export type HabitMeta = {
   is_boolean: boolean;
   target_value: number | null;
   target_unit: string | null;
+  is_active: boolean;
+  created_at: string;
 };
 
 export type HabitsHistoryRow = {
