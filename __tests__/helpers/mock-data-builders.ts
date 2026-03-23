@@ -234,6 +234,7 @@ export function createMockTrainingPlanRow(options: MockTrainingPlanOptions = {})
     created_at: options.createdAt ?? now,
     updated_at: options.updatedAt ?? now,
     deleted_at: null,
+    phase_id: null,
   }
 }
 

@@ -12,31 +12,6 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "13.0.5"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       activity_suggestions: {
@@ -80,6 +55,56 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      body_metrics: {
+        Row: {
+          bmr: number | null
+          body_fat_percentage: number | null
+          client_id: string
+          created_at: string
+          id: string
+          recorded_at: string
+          source: string
+          source_id: string | null
+          tdee: number | null
+          weight: number | null
+          weight_unit: string | null
+        }
+        Insert: {
+          bmr?: number | null
+          body_fat_percentage?: number | null
+          client_id: string
+          created_at?: string
+          id?: string
+          recorded_at?: string
+          source: string
+          source_id?: string | null
+          tdee?: number | null
+          weight?: number | null
+          weight_unit?: string | null
+        }
+        Update: {
+          bmr?: number | null
+          body_fat_percentage?: number | null
+          client_id?: string
+          created_at?: string
+          id?: string
+          recorded_at?: string
+          source?: string
+          source_id?: string | null
+          tdee?: number | null
+          weight?: number | null
+          weight_unit?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "body_metrics_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       check_in_exercise_highlights: {
         Row: {
@@ -459,6 +484,59 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "check_ins_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      client_goals: {
+        Row: {
+          client_id: string
+          created_at: string
+          effective_from: string
+          goal_body_fat_percentage: number | null
+          goal_deadline: string | null
+          goal_weight: number | null
+          id: string
+          notes: string | null
+          primary_goal: string | null
+          set_by: string
+          superseded_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          effective_from?: string
+          goal_body_fat_percentage?: number | null
+          goal_deadline?: string | null
+          goal_weight?: number | null
+          id?: string
+          notes?: string | null
+          primary_goal?: string | null
+          set_by?: string
+          superseded_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          effective_from?: string
+          goal_body_fat_percentage?: number | null
+          goal_deadline?: string | null
+          goal_weight?: number | null
+          id?: string
+          notes?: string | null
+          primary_goal?: string | null
+          set_by?: string
+          superseded_at?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_goals_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "clients"
@@ -1110,6 +1188,13 @@ export type Database = {
             referencedRelation: "daily_habits"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "daily_habit_logs_phase_id_fkey"
+            columns: ["phase_id"]
+            isOneToOne: false
+            referencedRelation: "phases"
+            referencedColumns: ["id"]
+          },
         ]
       }
       daily_habits: {
@@ -1122,6 +1207,7 @@ export type Database = {
           is_active: boolean
           is_boolean: boolean
           name: string
+          phase_id: string | null
           sort_order: number
           target_unit: string | null
           target_value: number | null
@@ -1136,6 +1222,7 @@ export type Database = {
           is_active?: boolean
           is_boolean?: boolean
           name: string
+          phase_id?: string | null
           sort_order?: number
           target_unit?: string | null
           target_value?: number | null
@@ -1150,6 +1237,7 @@ export type Database = {
           is_active?: boolean
           is_boolean?: boolean
           name?: string
+          phase_id?: string | null
           sort_order?: number
           target_unit?: string | null
           target_value?: number | null
@@ -1168,6 +1256,13 @@ export type Database = {
             columns: ["coach_id"]
             isOneToOne: false
             referencedRelation: "coaches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "daily_habits_phase_id_fkey"
+            columns: ["phase_id"]
+            isOneToOne: false
+            referencedRelation: "phases"
             referencedColumns: ["id"]
           },
         ]
@@ -1206,6 +1301,13 @@ export type Database = {
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "daily_logs_phase_id_fkey"
+            columns: ["phase_id"]
+            isOneToOne: false
+            referencedRelation: "phases"
             referencedColumns: ["id"]
           },
         ]
@@ -1282,7 +1384,7 @@ export type Database = {
           fat_g: number | null
           id: string
           nutrition_adherence: string | null
-          phase_id: string | null
+          nutrition_plan_id: string | null
           protein_g: number | null
           target_calories: number | null
           target_carbs_g: number | null
@@ -1301,7 +1403,7 @@ export type Database = {
           fat_g?: number | null
           id?: string
           nutrition_adherence?: string | null
-          phase_id?: string | null
+          nutrition_plan_id?: string | null
           protein_g?: number | null
           target_calories?: number | null
           target_carbs_g?: number | null
@@ -1320,7 +1422,7 @@ export type Database = {
           fat_g?: number | null
           id?: string
           nutrition_adherence?: string | null
-          phase_id?: string | null
+          nutrition_plan_id?: string | null
           protein_g?: number | null
           target_calories?: number | null
           target_carbs_g?: number | null
@@ -1348,6 +1450,13 @@ export type Database = {
             columns: ["daily_log_id"]
             isOneToOne: true
             referencedRelation: "daily_logs_full"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "nutrition_logs_nutrition_plan_id_fkey"
+            columns: ["nutrition_plan_id"]
+            isOneToOne: false
+            referencedRelation: "nutrition_plans"
             referencedColumns: ["id"]
           },
         ]
@@ -1415,6 +1524,7 @@ export type Database = {
           goal_weight_kg: number | null
           id: string
           name: string | null
+          phase_id: string | null
           protein_target_g: number
           protein_target_g_per_kg: number
           regeneration_reason: string | null
@@ -1445,6 +1555,7 @@ export type Database = {
           goal_weight_kg?: number | null
           id?: string
           name?: string | null
+          phase_id?: string | null
           protein_target_g: number
           protein_target_g_per_kg?: number
           regeneration_reason?: string | null
@@ -1475,6 +1586,7 @@ export type Database = {
           goal_weight_kg?: number | null
           id?: string
           name?: string | null
+          phase_id?: string | null
           protein_target_g?: number
           protein_target_g_per_kg?: number
           regeneration_reason?: string | null
@@ -1497,6 +1609,13 @@ export type Database = {
             columns: ["coach_id"]
             isOneToOne: false
             referencedRelation: "coaches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "nutrition_plans_phase_id_fkey"
+            columns: ["phase_id"]
+            isOneToOne: false
+            referencedRelation: "phases"
             referencedColumns: ["id"]
           },
         ]
@@ -1596,6 +1715,72 @@ export type Database = {
           },
         ]
       }
+      phases: {
+        Row: {
+          client_id: string
+          created_at: string
+          description: string | null
+          duration_weeks: number | null
+          end_date: string | null
+          id: string
+          name: string
+          objectives: string | null
+          order_index: number
+          phase_goals_snapshot: Json | null
+          roadmap_id: string
+          start_date: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          description?: string | null
+          duration_weeks?: number | null
+          end_date?: string | null
+          id?: string
+          name: string
+          objectives?: string | null
+          order_index?: number
+          phase_goals_snapshot?: Json | null
+          roadmap_id: string
+          start_date?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          description?: string | null
+          duration_weeks?: number | null
+          end_date?: string | null
+          id?: string
+          name?: string
+          objectives?: string | null
+          order_index?: number
+          phase_goals_snapshot?: Json | null
+          roadmap_id?: string
+          start_date?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "phases_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "phases_roadmap_id_fkey"
+            columns: ["roadmap_id"]
+            isOneToOne: false
+            referencedRelation: "roadmaps"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           created_at: string
@@ -1619,6 +1804,60 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      roadmaps: {
+        Row: {
+          client_id: string
+          coach_id: string
+          created_at: string
+          id: string
+          long_term_goal: string | null
+          name: string
+          started_at: string | null
+          status: string
+          target_end_date: string | null
+          updated_at: string
+        }
+        Insert: {
+          client_id: string
+          coach_id: string
+          created_at?: string
+          id?: string
+          long_term_goal?: string | null
+          name?: string
+          started_at?: string | null
+          status?: string
+          target_end_date?: string | null
+          updated_at?: string
+        }
+        Update: {
+          client_id?: string
+          coach_id?: string
+          created_at?: string
+          id?: string
+          long_term_goal?: string | null
+          name?: string
+          started_at?: string | null
+          status?: string
+          target_end_date?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "roadmaps_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "roadmaps_coach_id_fkey"
+            columns: ["coach_id"]
+            isOneToOne: false
+            referencedRelation: "coaches"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       session_logs: {
         Row: {
@@ -1752,9 +1991,9 @@ export type Database = {
           daily_log_id: string
           date: string
           id: string
-          phase_id: string | null
           trained: boolean | null
           training_data: Json | null
+          training_plan_id: string | null
           training_session_id: string | null
           updated_at: string
         }
@@ -1764,9 +2003,9 @@ export type Database = {
           daily_log_id: string
           date: string
           id?: string
-          phase_id?: string | null
           trained?: boolean | null
           training_data?: Json | null
+          training_plan_id?: string | null
           training_session_id?: string | null
           updated_at?: string
         }
@@ -1776,9 +2015,9 @@ export type Database = {
           daily_log_id?: string
           date?: string
           id?: string
-          phase_id?: string | null
           trained?: boolean | null
           training_data?: Json | null
+          training_plan_id?: string | null
           training_session_id?: string | null
           updated_at?: string
         }
@@ -1802,6 +2041,13 @@ export type Database = {
             columns: ["daily_log_id"]
             isOneToOne: true
             referencedRelation: "daily_logs_full"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "training_logs_training_plan_id_fkey"
+            columns: ["training_plan_id"]
+            isOneToOne: false
+            referencedRelation: "training_plans"
             referencedColumns: ["id"]
           },
         ]
@@ -1890,6 +2136,7 @@ export type Database = {
           frequency_per_week: number
           id: string
           name: string
+          phase_id: string | null
           program_duration_weeks: number | null
           recent_adherence_percentage: number | null
           split_type: string
@@ -1915,6 +2162,7 @@ export type Database = {
           frequency_per_week: number
           id?: string
           name?: string
+          phase_id?: string | null
           program_duration_weeks?: number | null
           recent_adherence_percentage?: number | null
           split_type: string
@@ -1940,6 +2188,7 @@ export type Database = {
           frequency_per_week?: number
           id?: string
           name?: string
+          phase_id?: string | null
           program_duration_weeks?: number | null
           recent_adherence_percentage?: number | null
           split_type?: string
@@ -1959,6 +2208,13 @@ export type Database = {
             columns: ["coach_id"]
             isOneToOne: false
             referencedRelation: "coaches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "training_plans_phase_id_fkey"
+            columns: ["phase_id"]
+            isOneToOne: false
+            referencedRelation: "phases"
             referencedColumns: ["id"]
           },
         ]
@@ -2034,7 +2290,6 @@ export type Database = {
           energy: number | null
           id: string
           mood: number | null
-          phase_id: string | null
           sleep: number | null
           stress: number | null
           updated_at: string
@@ -2047,7 +2302,6 @@ export type Database = {
           energy?: number | null
           id?: string
           mood?: number | null
-          phase_id?: string | null
           sleep?: number | null
           stress?: number | null
           updated_at?: string
@@ -2060,7 +2314,6 @@ export type Database = {
           energy?: number | null
           id?: string
           mood?: number | null
-          phase_id?: string | null
           sleep?: number | null
           stress?: number | null
           updated_at?: string
@@ -2126,6 +2379,13 @@ export type Database = {
             referencedRelation: "clients"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "daily_logs_phase_id_fkey"
+            columns: ["phase_id"]
+            isOneToOne: false
+            referencedRelation: "phases"
+            referencedColumns: ["id"]
+          },
         ]
       }
     }
@@ -2175,17 +2435,31 @@ export type Database = {
         Args: { client_uuid: string }
         Returns: undefined
       }
-      upsert_daily_log_atomic: {
-        Args: {
-          p_client_id: string
-          p_date: string
-          p_notes: string
-          p_nutrition: Json
-          p_training: Json
-          p_wellness: Json
-        }
-        Returns: string
-      }
+      upsert_daily_log_atomic:
+        | {
+            Args: {
+              p_client_id: string
+              p_date: string
+              p_notes: string
+              p_nutrition: Json
+              p_training: Json
+              p_wellness: Json
+            }
+            Returns: string
+          }
+        | {
+            Args: {
+              p_client_id: string
+              p_date: string
+              p_notes: string
+              p_nutrition: Json
+              p_nutrition_plan_id?: string
+              p_training: Json
+              p_training_plan_id?: string
+              p_wellness: Json
+            }
+            Returns: string
+          }
     }
     Enums: {
       content_type: "video_link" | "hyperlink" | "pdf" | "image" | "document"
@@ -2314,9 +2588,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {
       content_type: ["video_link", "hyperlink", "pdf", "image", "document"],
