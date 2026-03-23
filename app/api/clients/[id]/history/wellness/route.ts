@@ -38,13 +38,14 @@ export async function GET(
     const { limit, offset } = pagination;
 
     // Uses supabaseAdmin: coach querying client data (RLS exception 3)
+    // Direct query on wellness_logs - no join needed
     const { data, error, count } = await supabaseAdmin
-      .from("daily_logs")
+      .from("wellness_logs" as never)
       .select(WELLNESS_COLUMNS, { count: "exact" })
-      .eq("client_id", clientId)
-      .or("mood.not.is.null,energy.not.is.null,sleep.not.is.null,stress.not.is.null")
-      .order("date", { ascending: false })
-      .range(offset, offset + limit - 1);
+      .eq("client_id" as never, clientId as never)
+      .or("mood.not.is.null,energy.not.is.null,sleep.not.is.null,stress.not.is.null" as never)
+      .order("date" as never, { ascending: false })
+      .range(offset, offset + limit - 1) as unknown as { data: unknown[] | null; error: { message: string } | null; count: number | null };
 
     if (error) {
       console.error("Error fetching wellness history:", error);

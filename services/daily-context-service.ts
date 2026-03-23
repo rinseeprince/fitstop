@@ -85,6 +85,7 @@ export const getTodaysNutritionTarget = async (clientId: string, date?: string):
 
   return {
     ...todayTarget,
+    planId: nutritionTargets.planId,
     includeActivityBurn: nutritionTargets.includeActivityBurn,
   };
 };

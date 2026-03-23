@@ -34,6 +34,7 @@ export async function createPortalClient() {
 
 // Nutrition targets type
 export type NutritionTargets = {
+  planId?: string;
   calorieTarget?: number;
   proteinTargetG?: number;
   carbTargetG?: number;
@@ -161,6 +162,7 @@ export async function getClientNutritionTargets(
   );
 
   return {
+    planId: plan.id,
     calorieTarget: plan.custom_macros_enabled && plan.custom_calories ? plan.custom_calories : plan.baseline_calories,
     proteinTargetG: plan.protein_target_g,
     carbTargetG: plan.carb_target_g,

@@ -19,6 +19,7 @@ import type { DailyLog } from '@/types/daily-log';
 vi.mock('./supabase-admin', () => ({
   supabaseAdmin: {
     from: vi.fn(),
+    rpc: vi.fn(),
   },
 }));
 
@@ -173,20 +174,38 @@ describe('Daily Logs Service - Database Functions', () => {
   });
 
   describe('upsertDailyLog', () => {
-    it('upserts log with calculated adherence and surplus/deficit', async () => {
-      const mockResult = {
+    it('upserts log via RPC and returns full row from view', async () => {
+      const mockViewRow = {
         id: 'log-123',
         client_id: 'client-456',
         date: '2024-01-15',
+        notes: null,
+        phase_id: null,
+        mood: 4,
+        energy: null,
+        sleep: null,
+        stress: null,
         calories_consumed: 2000,
+        protein_g: null,
+        carbs_g: null,
+        fat_g: null,
         target_calories: 2100,
+        target_protein_g: null,
+        target_carbs_g: null,
+        target_fat_g: null,
         nutrition_adherence: 'partial',
         calorie_surplus_deficit: -100,
+        trained: null,
+        training_session_id: null,
+        training_data: null,
         created_at: '2024-01-15T10:00:00Z',
         updated_at: '2024-01-15T10:00:00Z',
       };
 
-      const mockQuery = createMockQuery({ data: mockResult, error: null });
+      // Mock RPC call
+      vi.mocked(supabaseAdmin.rpc).mockResolvedValue({ data: 'log-123', error: null } as any);
+      // Mock view fetch after RPC
+      const mockQuery = createMockQuery({ data: mockViewRow, error: null });
       vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any);
 
       const input = {
@@ -197,24 +216,23 @@ describe('Daily Logs Service - Database Functions', () => {
       } as any;
 
       const result = await upsertDailyLog('client-456', input);
-      
+
       expect(result.id).toBe('log-123');
       expect(result.calorieSurplusDeficit).toBe(-100);
-      expect(mockQuery.upsert).toHaveBeenCalledWith(
+      expect(supabaseAdmin.rpc).toHaveBeenCalledWith(
+        'upsert_daily_log_atomic',
         expect.objectContaining({
-          nutrition_adherence: 'partial',
-          calorie_surplus_deficit: -100,
-        }),
-        { onConflict: 'client_id,date' }
+          p_client_id: 'client-456',
+          p_date: '2024-01-15',
+        })
       );
     });
 
-    it('throws error on database failure', async () => {
-      const mockQuery = createMockQuery({
+    it('throws error on RPC failure', async () => {
+      vi.mocked(supabaseAdmin.rpc).mockResolvedValue({
         data: null,
         error: { message: 'Database error' },
-      });
-      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any);
+      } as any);
 
       await expect(
         upsertDailyLog('client-456', { date: '2024-01-15' })

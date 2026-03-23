@@ -1,6 +1,6 @@
 import type { TrainingPlan, TrainingSession, TrainingExercise, SessionType } from "@/types/training";
 import type { ActivityMetadata } from "@/types/external-activity";
-import type { TrainingSessionRow, TrainingExerciseRow, ClientSessionCompletionRow } from "@/lib/database-helpers";
+import type { TrainingSessionRow, TrainingExerciseRow, SessionLogRow } from "@/lib/database-helpers";
 import { createPortalClient } from "./client-portal-service";
 
 // Session completion type
@@ -55,17 +55,17 @@ export async function getClientTrainingPlan(
 
   type SessionRowWithExercises = TrainingSessionRow & { training_exercises: TrainingExerciseRow[] };
 
-  // Sort sessions by order_index
-  const sessionList = ((planData.training_sessions || []) as SessionRowWithExercises[]).sort(
-    (a, b) => a.order_index - b.order_index
-  );
+  // Filter to active sessions and sort by order_index
+  const sessionList = ((planData.training_sessions || []) as SessionRowWithExercises[])
+    .filter((s) => (s as unknown as { is_active: boolean }).is_active !== false)
+    .sort((a, b) => a.order_index - b.order_index);
 
   // Map sessions and exercises to the expected format
   const sessions: TrainingSession[] = sessionList.map((session) => {
-    // Sort exercises by order_index within each session
-    const exerciseList = (session.training_exercises || []).sort(
-      (a, b) => a.order_index - b.order_index
-    );
+    // Filter to active exercises and sort by order_index within each session
+    const exerciseList = (session.training_exercises || [])
+      .filter((e) => (e as unknown as { is_active: boolean }).is_active !== false)
+      .sort((a, b) => a.order_index - b.order_index);
 
     const exercises: TrainingExercise[] = exerciseList.map((ex) => ({
       id: ex.id,
@@ -142,17 +142,17 @@ export async function getWeeklyCompletions(
   const supabase = await createPortalClient();
 
   const { data, error } = await supabase
-    .from("client_session_completions")
+    .from("session_logs")
     .select("*")
     .eq("client_id", clientId)
     .eq("week_start_date", weekStartDate);
 
   if (error || !data) return [];
 
-  return data.map((row: ClientSessionCompletionRow) => ({
+  return data.map((row: SessionLogRow) => ({
     id: row.id,
     clientId: row.client_id,
-    trainingSessionId: row.training_session_id,
+    trainingSessionId: row.training_session_id ?? "",
     completedAt: row.completed_at,
     completionQuality: (row.completion_quality ?? "full") as SessionCompletion["completionQuality"],
     notes: row.notes ?? undefined,
@@ -172,21 +172,33 @@ export async function markSessionComplete(
 ): Promise<SessionCompletion | null> {
   const supabase = await createPortalClient();
 
+  // Build snapshot from the training session for history preservation
+  let snapshot: Record<string, unknown> | null = null;
+  const { data: sessionData } = await supabase
+    .from("training_sessions")
+    .select("name, day_of_week, focus, session_type, estimated_duration_minutes")
+    .eq("id", trainingSessionId)
+    .single();
+  if (sessionData) {
+    snapshot = sessionData;
+  }
+
+  // prescribed_session_snapshot not yet in generated types
+  const upsertPayload = {
+    client_id: clientId,
+    training_session_id: trainingSessionId,
+    week_start_date: weekStartDate,
+    completion_quality: quality,
+    notes,
+    completed_at: new Date().toISOString(),
+    ...(snapshot ? { prescribed_session_snapshot: snapshot } : {}),
+  };
+
   const { data, error } = await supabase
-    .from("client_session_completions")
-    .upsert(
-      {
-        client_id: clientId,
-        training_session_id: trainingSessionId,
-        week_start_date: weekStartDate,
-        completion_quality: quality,
-        notes,
-        completed_at: new Date().toISOString(),
-      },
-      {
-        onConflict: "client_id,training_session_id,week_start_date",
-      }
-    )
+    .from("session_logs")
+    .upsert(upsertPayload as never, {
+      onConflict: "client_id,training_session_id,week_start_date",
+    })
     .select()
     .single();
 
@@ -214,7 +226,7 @@ export async function removeSessionCompletion(
   const supabase = await createPortalClient();
 
   const { error } = await supabase
-    .from("client_session_completions")
+    .from("session_logs")
     .delete()
     .eq("client_id", clientId)
     .eq("training_session_id", trainingSessionId)

@@ -117,11 +117,12 @@ export const addExternalActivity = async (
   },
   activityMetadata: ActivityMetadata
 ): Promise<TrainingSession> => {
-  // Get max order index
+  // Get max order index from active sessions
   const { data: existingSessions } = await supabaseAdmin
     .from("training_sessions")
     .select("order_index")
     .eq("plan_id", planId)
+    .eq("is_active", true)
     .order("order_index", { ascending: false })
     .limit(1);
 
@@ -191,16 +192,12 @@ export const updateExternalActivity = async (
   return mapExternalActivityRow(data);
 };
 
-// Delete external activity
+// Soft-delete external activity
 export const deleteExternalActivity = async (activityId: string): Promise<void> => {
-  // Use type assertion for delete with session_type filter
-  const { error } = await (supabaseAdmin.from("training_sessions") as unknown as {
-    delete: () => {
-      eq: (col: string, val: string) => {
-        eq: (col: string, val: string) => Promise<{ error: Error | null }>
-      }
-    };
-  }).delete().eq("id", activityId).eq("session_type", "external_activity");
+  const { error } = await supabaseAdmin
+    .from("training_sessions")
+    .update({ is_active: false, updated_at: new Date().toISOString() })
+    .eq("id", activityId);
 
   if (error) throw new Error(`Failed to delete activity: ${error.message}`);
 };

@@ -3,8 +3,7 @@ import type { ClientIntake, ClientIntakeRow } from "@/types/client-intake";
 import { mapClientIntakeRow } from "@/lib/mappers";
 import { getIntake } from "@/services/client-intake-service";
 
-const db = supabaseAdmin as { from: (table: string) => ReturnType<typeof supabaseAdmin.from> };
-const clientsTable = "clients" as const;
+const db = supabaseAdmin;
 
 /**
  * Save coach review notes without changing the intake status
@@ -18,7 +17,7 @@ export async function saveCoachNotes(
     .update({
       coach_review_notes: notes,
       updated_at: new Date().toISOString(),
-    })
+    } as never)
     .eq("client_id", clientId)
     .in("status", ["completed", "reviewed"]);
 
@@ -49,7 +48,7 @@ export async function reviewIntake(
 
   const { data, error } = await db
     .from("client_intake")
-    .update(updateData)
+    .update(updateData as never)
     .eq("client_id", clientId)
     .eq("status", "completed")
     .select()
@@ -62,14 +61,14 @@ export async function reviewIntake(
 
   // Update client onboarding status
   await db
-    .from(clientsTable)
+    .from("clients")
     .update({
       onboarding_status: "setup_in_progress",
       updated_at: new Date().toISOString(),
-    })
+    } as never)
     .eq("id", clientId);
 
-  return mapClientIntakeRow(data as ClientIntakeRow);
+  return mapClientIntakeRow(data as unknown as ClientIntakeRow);
 }
 
 const FIELD_NAME_MAP: Record<string, string> = {
@@ -99,7 +98,7 @@ export async function syncMetricsToClient(
   if (!intake) throw new Error("No intake found for this client");
 
   const { data: client, error: clientError } = await db
-    .from(clientsTable)
+    .from("clients")
     .select(
       "current_weight, height, gender, date_of_birth, current_body_fat_percentage, goal_weight, goal_body_fat_percentage, goal_deadline, work_activity_level, height_unit, weight_unit, unit_preference"
     )
@@ -164,8 +163,8 @@ export async function syncMetricsToClient(
 
   if (Object.keys(updates).length > 1) {
     const { error } = await supabaseAdmin
-      .from(clientsTable)
-      .update(updates)
+      .from("clients")
+      .update(updates as never)
       .eq("id", clientId);
 
     if (error) {

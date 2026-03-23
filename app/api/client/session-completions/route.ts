@@ -56,23 +56,29 @@ export async function POST(request: NextRequest) {
     const weekStartDate = getWeekStartDate();
     const completedAt = getTodayDateString();
 
-    // Upsert the session completion record
+    // Build snapshot from the training session for history preservation
+    const { data: sessionData } = await supabaseAdmin
+      .from("training_sessions")
+      .select("name, day_of_week, focus, session_type, estimated_duration_minutes")
+      .eq("id", data.trainingSessionId)
+      .single();
+
+    // Upsert the session completion record (prescribed_session_snapshot not yet in generated types)
+    const upsertPayload = {
+      client_id: clientId,
+      training_session_id: data.trainingSessionId,
+      week_start_date: weekStartDate,
+      completed_at: completedAt,
+      completion_quality: data.completionQuality,
+      notes: data.notes,
+      updated_at: new Date().toISOString(),
+      ...(sessionData ? { prescribed_session_snapshot: sessionData } : {}),
+    };
     const { data: result, error } = await supabaseAdmin
-      .from("client_session_completions")
-      .upsert(
-        {
-          client_id: clientId,
-          training_session_id: data.trainingSessionId,
-          week_start_date: weekStartDate,
-          completed_at: completedAt,
-          completion_quality: data.completionQuality,
-          notes: data.notes,
-          updated_at: new Date().toISOString(),
-        },
-        {
-          onConflict: "client_id,training_session_id,week_start_date",
-        }
-      )
+      .from("session_logs")
+      .upsert(upsertPayload as never, {
+        onConflict: "client_id,training_session_id,week_start_date",
+      })
       .select()
       .single();
 
@@ -128,7 +134,7 @@ export async function DELETE(request: NextRequest) {
 
     // Delete the session completion record
     const { error } = await supabaseAdmin
-      .from("client_session_completions")
+      .from("session_logs")
       .delete()
       .eq("client_id", clientId)
       .eq("training_session_id", trainingSessionId)

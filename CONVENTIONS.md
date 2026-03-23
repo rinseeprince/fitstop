@@ -204,12 +204,11 @@ Coach-side components in `components/clients/`. Client-side in `components/daily
 - Use `createServerSupabaseClient()` (session-scoped, respects RLS) for all
   database operations in authenticated routes by default.
 - Use `supabaseAdmin` (bypasses RLS) ONLY when:
-  1. The table is not in `types/database.ts` (e.g. client_intake)
-  2. The operation is called from an unauthenticated context (e.g. token-based
+  1. The operation is called from an unauthenticated context (e.g. token-based
      check-in submission)
-  3. The operation queries across multiple clients (e.g. coach aggregation
+  2. The operation queries across multiple clients (e.g. coach aggregation
      queries where RLS would block cross-client reads)
-  4. The operation is a system-level write (e.g. background upserts not tied
+  3. The operation is a system-level write (e.g. background upserts not tied
      to a user session)
 - When supabaseAdmin is required, add a comment above the usage explaining
   which exception applies.
@@ -227,7 +226,8 @@ Coach-side components in `components/clients/`. Client-side in `components/daily
 
 ### Soft deletes
 - User-created data uses soft delete (`is_active = false`), never hard delete
-- Always filter by `is_active = true` in default queries
+- Training sessions and exercises use `is_active` for soft deletes. Always filter by `.eq("is_active", true)` in read queries
+- Daily habits use `is_active` for soft deletes
 - Unique constraints must account for inactive rows (check for inactive before inserting, reactivate if found)
 - Provide UI for viewing and reactivating inactive items where appropriate
 
@@ -237,10 +237,37 @@ Coach-side components in `components/clients/`. Client-side in `components/daily
 - If renaming a column, everything that queries it breaks
 - JSONB columns: Supabase handles serialization automatically - never use `JSON.stringify()` on JSONB
 
+### Daily logs architecture (spine + child tables)
+Daily tracking data is split into a spine table and domain-specific child tables:
+```
+daily_logs (spine)         -- id, client_id, date, notes, phase_id
+  ├── wellness_logs        -- mood, energy, sleep, stress (1:1 via daily_log_id FK)
+  ├── nutrition_logs       -- consumed, targets, adherence (1:1 via daily_log_id FK)
+  ├── training_logs        -- trained, training_session_id, training_data JSONB (1:1 via daily_log_id FK)
+  ├── daily_habit_logs     -- per-habit completion (1:many, FK to daily_habits)
+  └── daily_external_activities -- ad-hoc activities (1:many)
+```
+- **Writes** go through the `upsert_daily_log_atomic()` RPC function which upserts spine + child tables in a single transaction
+- **Domain-specific reads** query child tables directly (e.g. wellness history queries `wellness_logs`, not the view)
+- **Cross-domain reads** use the `daily_logs_full` view (e.g. attention feed, AI summary generation)
+- Each child table has `client_id` and `date` columns for direct querying without joining the spine
+- Each child table has `phase_id UUID` (nullable) for future phase/roadmap linking
+- The `DailyLog` TypeScript type remains flat. The split is DB + service layer only. Hooks, components, and utils are unaffected
+
+### Training completion hierarchy
+```
+training_logs        -- did the client train today? (1:1 per day, child of daily_logs)
+  └── session_logs   -- per-session-per-week completion details (renamed from client_session_completions)
+        └── exercise_logs  -- per-exercise performance (renamed from client_exercise_completions)
+```
+- `session_logs.training_session_id` is SET NULL on delete (nullable). When a training plan is replaced, old completion records are preserved via `prescribed_session_snapshot` JSONB
+- `exercise_logs.training_exercise_id` is SET NULL on delete (nullable). History preserved via `prescribed_exercise_snapshot` JSONB
+- Snapshots are written at completion time and backfilled for existing data
+
 ### JSONB conventions
 - See Daily Pulse README for `training_data` and `activityStatuses` shape documentation
 - `activityStatuses` is `Record<string, { completed, activityName, estimatedCalories }>` - always read `.completed` field, never use the object as a truthy check
-- `training_data` JSONB is the single source of truth for training restore - never cross-reference other tables
+- `training_data` JSONB on `training_logs` is a **UI restore cache** for the Daily Pulse. It preserves the exact training state at save time so the UI can restore without cross-referencing. The **source of truth** for training completion is `session_logs` + `exercise_logs`
 
 ## 9. Security
 - Auth: Check on every protected route/component

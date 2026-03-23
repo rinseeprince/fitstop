@@ -56,9 +56,9 @@ export const createClient = async (
     ? { ...baseInsert, onboarding_status: "pending_intake" as const }
     : { ...baseInsert, onboarding_status: "setup_in_progress" as const };
 
-  const { data, error } = await (supabaseAdmin as { from: (table: string) => ReturnType<typeof supabaseAdmin.from> })
+  const { data, error } = await supabaseAdmin
     .from("clients")
-    .insert(insertData)
+    .insert(insertData as never)
     .select()
     .single();
 

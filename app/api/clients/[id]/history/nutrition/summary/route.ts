@@ -22,12 +22,13 @@ export async function GET(
     const sinceDate = sevenDaysAgo.toISOString().split("T")[0];
 
     // Uses supabaseAdmin: coach querying client data (RLS exception 3)
+    // Direct query on nutrition_logs
     const { data, error } = await supabaseAdmin
-      .from("daily_logs")
+      .from("nutrition_logs" as never)
       .select("calories_consumed, protein_g, carbs_g, fat_g")
-      .eq("client_id", clientId)
-      .not("calories_consumed", "is", null)
-      .gte("date", sinceDate);
+      .eq("client_id" as never, clientId as never)
+      .not("calories_consumed" as never, "is", null)
+      .gte("date" as never, sinceDate as never) as unknown as { data: Array<{ calories_consumed: number | null; protein_g: number | null; carbs_g: number | null; fat_g: number | null }> | null; error: { message: string } | null };
 
     if (error) {
       console.error("Error fetching nutrition summary:", error);

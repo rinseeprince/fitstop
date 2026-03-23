@@ -84,7 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return null
       }
 
-      const row = data as unknown as ProfileRow
+      const row = data as ProfileRow
       const profile = {
         id: row.id,
         userId: row.user_id,
@@ -104,10 +104,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     userId: string,
     userRole: UserRole
   ): Promise<Profile> => {
-    // Type assertion needed as profiles table not in generated types yet
-    const { data, error } = await (supabase
-      .from("profiles") as ReturnType<typeof supabase.from>)
-      .insert({ user_id: userId, role: userRole } as Record<string, unknown>)
+    const { data, error } = await supabase
+      .from("profiles")
+      .insert({ user_id: userId, role: userRole })
       .select()
       .single()
 
@@ -116,7 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw error
     }
 
-    const row = data as unknown as ProfileRow
+    const row = data as ProfileRow
     return {
       id: row.id,
       userId: row.user_id,
@@ -139,16 +138,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   /** Fetch or create coach profile for trainers */
   const fetchOrCreateCoachProfile = async (authUser: User) => {
-    // Type assertions needed as coaches table not in generated types yet
-    const coachesTable = supabase.from("coaches") as ReturnType<typeof supabase.from>
-
-    const { data: coachData, error: fetchError } = await coachesTable
+    const { data: coachData, error: fetchError } = await supabase
+      .from("coaches")
       .select("*")
       .eq("user_id", authUser.id)
       .single()
 
     if (coachData) {
-      setCoach(toCoach(coachData as unknown as CoachRow))
+      setCoach(toCoach(coachData as CoachRow))
       return
     }
 
@@ -159,13 +156,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         authUser.user_metadata?.full_name ||
         "Coach"
 
-      const { data: newCoachData, error: createError } = await coachesTable
+      const { data: newCoachData, error: createError } = await supabase
+        .from("coaches")
         .insert({
           user_id: authUser.id,
           name: coachName,
           email: authUser.email ?? "",
           avatar_url: authUser.user_metadata?.avatar_url || null,
-        } as Record<string, unknown>)
+        })
         .select()
         .single()
 
@@ -175,7 +173,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       if (newCoachData) {
-        setCoach(toCoach(newCoachData as unknown as CoachRow))
+        setCoach(toCoach(newCoachData as CoachRow))
       }
     } else if (fetchError) {
       console.error("Error fetching coach profile:", fetchError)

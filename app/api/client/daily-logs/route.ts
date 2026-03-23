@@ -115,10 +115,12 @@ export async function POST(request: NextRequest) {
       };
     }
     
-    // Add adjusted targets to the validated data
+    // Add adjusted targets and active plan IDs to the validated data
     const dataWithTargets = {
       ...data,
       ...adjustedTargets,
+      nutritionPlanId: nutritionTarget?.planId,
+      trainingPlanId: trainingPlan?.id,
     };
     
     const dailyLog = await upsertDailyLog(clientId, dataWithTargets);

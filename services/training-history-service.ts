@@ -43,7 +43,7 @@ function deriveDateFromWeekDay(weekStart: string, dayOfWeek: string | null): str
 
 /**
  * Fetches training history combining daily_logs (primary) with
- * client_session_completions (enrichment + orphaned fallback).
+ * session_logs (enrichment + orphaned fallback).
  *
  * Uses supabaseAdmin: coach querying client data (RLS exception 3)
  */
@@ -53,14 +53,18 @@ export async function getTrainingHistory(
 ): Promise<{ rows: TrainingHistoryRow[]; total: number }> {
   const { limit, offset } = options;
 
-  // Query A: Primary source - daily_logs where trained = true
+  // Query A: Primary source - training_logs where trained = true
+  // Uses daily_logs_full view to also get notes from spine
   const { data: dailyLogs, error: logsError } = await supabaseAdmin
-    .from("daily_logs")
+    .from("daily_logs_full" as never)
     .select("date, training_data, training_session_id, notes")
-    .eq("client_id", clientId)
-    .eq("trained", true)
-    .not("training_data", "is", null)
-    .order("date", { ascending: false });
+    .eq("client_id" as never, clientId as never)
+    .eq("trained" as never, true as never)
+    .not("training_data" as never, "is", null)
+    .order("date" as never, { ascending: false }) as unknown as {
+      data: Array<{ date: string; training_data: unknown; training_session_id: string | null; notes: string | null }> | null;
+      error: { message: string } | null;
+    };
 
   if (logsError) {
     throw new Error(`Failed to fetch training logs: ${logsError.message}`);
@@ -68,7 +72,7 @@ export async function getTrainingHistory(
 
   // Query B: All completions for this client
   const { data: completions, error: compError } = await supabaseAdmin
-    .from("client_session_completions")
+    .from("session_logs")
     .select("training_session_id, week_start_date, completion_quality, notes")
     .eq("client_id", clientId);
 
@@ -127,11 +131,12 @@ export async function getTrainingHistory(
 
   if (orphanedCompletions.length > 0) {
     // Query C: Get training session details for orphaned completions
-    const orphanedSessionIds = [...new Set(orphanedCompletions.map((c) => c.training_session_id))];
+    const orphanedSessionIds = [...new Set(orphanedCompletions.map((c) => c.training_session_id).filter((id): id is string => id != null))];
     const { data: sessions, error: sessError } = await supabaseAdmin
       .from("training_sessions")
       .select("id, name, day_of_week")
-      .in("id", orphanedSessionIds);
+      .in("id", orphanedSessionIds)
+      .eq("is_active", true);
 
     if (sessError) {
       throw new Error(`Failed to fetch training sessions: ${sessError.message}`);
@@ -143,7 +148,7 @@ export async function getTrainingHistory(
     }
 
     orphanedRows = orphanedCompletions.map((c) => {
-      const session = sessionMap.get(c.training_session_id);
+      const session = c.training_session_id ? sessionMap.get(c.training_session_id) : undefined;
       return {
         date: deriveDateFromWeekDay(c.week_start_date, session?.day_of_week ?? null),
         session_name: session?.name || "Unknown Session",

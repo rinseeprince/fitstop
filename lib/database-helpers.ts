@@ -14,7 +14,9 @@ export type ContentItemRow = Database["public"]["Tables"]["content_items"]["Row"
 export type ContentAssignmentRow = Database["public"]["Tables"]["content_assignments"]["Row"];
 export type CoachRow = Database["public"]["Tables"]["coaches"]["Row"];
 export type ProfileRow = Database["public"]["Tables"]["profiles"]["Row"];
-export type ClientSessionCompletionRow = Database["public"]["Tables"]["client_session_completions"]["Row"];
+export type SessionLogRow = Database["public"]["Tables"]["session_logs"]["Row"];
+/** @deprecated Use SessionLogRow */
+export type ClientSessionCompletionRow = SessionLogRow;
 export type CheckInSessionCompletionRow = Database["public"]["Tables"]["check_in_session_completions"]["Row"];
 export type CheckInExerciseHighlightRow = Database["public"]["Tables"]["check_in_exercise_highlights"]["Row"];
 export type CheckInExternalActivityRow = Database["public"]["Tables"]["check_in_external_activities"]["Row"];

@@ -28,7 +28,16 @@ import {
 
 type ClientRow = Database["public"]["Tables"]["clients"]["Row"]
 type ClientInfo = Pick<ClientRow, 'id' | 'name' | 'avatar_url'>
-type DailyLogRow = Database["public"]["Tables"]["daily_logs"]["Row"]
+// View row shape - daily_logs_full joins spine + wellness + nutrition + training
+type DailyLogRow = {
+  id: string; client_id: string; date: string; notes: string | null;
+  created_at: string; updated_at: string;
+  mood: number | null; energy: number | null; sleep: number | null; stress: number | null;
+  calories_consumed: number | null; protein_g: number | null; carbs_g: number | null; fat_g: number | null;
+  target_calories: number | null; target_protein_g: number | null; target_carbs_g: number | null; target_fat_g: number | null;
+  nutrition_adherence: string | null; calorie_surplus_deficit: number | null;
+  trained: boolean | null; training_session_id: string | null; training_data: unknown;
+}
 type DailyHabitRow = Database["public"]["Tables"]["daily_habits"]["Row"]
 type DailyHabitLogRow = Database["public"]["Tables"]["daily_habit_logs"]["Row"]
 // Type for the training plan query result with nested sessions
@@ -73,13 +82,14 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
   const clientIds = clients.map(c => c.id)
 
   // 2. Batch query all daily logs for all clients (28-day window)
+  // Uses daily_logs_full view (cross-domain: needs wellness + nutrition + training)
   const { data: allLogs, error: logsError } = await supabaseAdmin
-    .from("daily_logs")
+    .from("daily_logs_full" as never)
     .select("*")
-    .in("client_id", clientIds)
-    .gte("date", startDate)
-    .lte("date", endDate)
-    .order("date", { ascending: true })
+    .in("client_id" as never, clientIds as never)
+    .gte("date" as never, startDate as never)
+    .lte("date" as never, endDate as never)
+    .order("date" as never, { ascending: true }) as unknown as { data: DailyLogRow[] | null; error: { message: string } | null }
 
   if (logsError) {
     console.error("Error fetching daily logs:", logsError)

@@ -87,6 +87,7 @@ export function createMockClientDatabaseRow(options: MockClientOptions = {}): Cl
     onboarding_status: null,
     walkthrough_completed_at: null,
     start_date: null,
+    work_activity_level: null,
     created_at: client.createdAt,
     updated_at: client.updatedAt,
   }
@@ -151,6 +152,9 @@ export function createMockCheckInRow(options: MockCheckInOptions = {}): CheckInR
     response_sent_at: null,
     period_start: null,
     period_end: null,
+    daily_logs_start_date: null,
+    daily_logs_end_date: null,
+    uses_daily_logs: false,
     created_at: options.createdAt ?? now,
     updated_at: options.updatedAt ?? now,
   }
@@ -264,6 +268,7 @@ export function createMockTrainingSessionRow(options: MockTrainingSessionOptions
     activity_metadata: null,
     estimated_calories: null,
     calories_calculated_at: null,
+    is_active: true,
     created_at: options.createdAt ?? now,
     updated_at: options.updatedAt ?? now,
   }
@@ -304,6 +309,7 @@ export function createMockTrainingExerciseRow(options: MockTrainingExerciseOptio
     notes: null,
     superset_group: null,
     is_warmup: false,
+    is_active: true,
     created_at: options.createdAt ?? now,
     updated_at: options.updatedAt ?? now,
   }

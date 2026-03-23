@@ -215,6 +215,7 @@ export const getActiveTrainingPlan = async (clientId: string): Promise<TrainingP
     .from("training_sessions")
     .select("*")
     .eq("plan_id", planData.id)
+    .eq("is_active", true)
     .order("order_index", { ascending: true });
 
   if (sessionError) throw new Error(`Failed to fetch sessions: ${sessionError.message}`);
@@ -230,6 +231,7 @@ export const getActiveTrainingPlan = async (clientId: string): Promise<TrainingP
     .from("training_exercises")
     .select("*")
     .in("session_id", sessionIds)
+    .eq("is_active", true)
     .order("order_index", { ascending: true });
 
   if (exerciseError) throw new Error(`Failed to fetch exercises: ${exerciseError.message}`);
@@ -268,6 +270,7 @@ export const getTrainingPlanById = async (planId: string): Promise<TrainingPlan 
     .from("training_sessions")
     .select("*")
     .eq("plan_id", planId)
+    .eq("is_active", true)
     .order("order_index", { ascending: true });
 
   const sessionList = sessionRows || [];
@@ -281,6 +284,7 @@ export const getTrainingPlanById = async (planId: string): Promise<TrainingPlan 
     .from("training_exercises")
     .select("*")
     .in("session_id", sessionIds)
+    .eq("is_active", true)
     .order("order_index", { ascending: true });
 
   // Group exercises by session_id
@@ -337,35 +341,6 @@ export const archiveTrainingPlan = async (planId: string): Promise<void> => {
   if (error) throw new Error(`Failed to archive plan: ${error.message}`);
 };
 
-// Clean up orphaned session completions when a plan is replaced
-export const cleanupOrphanedSessionCompletions = async (clientId: string, oldPlanId: string): Promise<void> => {
-  // Get all session IDs from the old plan
-  const { data: oldSessions, error: fetchError } = await supabaseAdmin
-    .from("training_sessions")
-    .select("id")
-    .eq("plan_id", oldPlanId);
-    
-  if (fetchError) {
-    console.error("Error fetching old sessions:", fetchError);
-    return; // Don't fail the whole operation
-  }
-  
-  if (!oldSessions || oldSessions.length === 0) return;
-  
-  const oldSessionIds = oldSessions.map(s => s.id);
-  
-  // Delete completions for these sessions
-  const { error: deleteError } = await supabaseAdmin
-    .from("client_session_completions")
-    .delete()
-    .eq("client_id", clientId)
-    .in("training_session_id", oldSessionIds);
-    
-  if (deleteError) {
-    console.error("Error cleaning up orphaned completions:", deleteError);
-    // Don't throw - this is cleanup, shouldn't fail the main operation
-  }
-};
 
 // Update session
 export const updateSession = async (
@@ -395,6 +370,7 @@ export const updateSession = async (
     .from("training_exercises")
     .select("*")
     .eq("session_id", sessionId)
+    .eq("is_active", true)
     .order("order_index", { ascending: true });
 
   return mapSessionRow(data, (exercises || []).map(mapExerciseRow));
@@ -405,11 +381,12 @@ export const addSession = async (
   planId: string,
   session: AddSessionRequest
 ): Promise<TrainingSession> => {
-  // Get max order index
+  // Get max order index from active sessions
   const { data: existingSessions } = await supabaseAdmin
     .from("training_sessions")
     .select("order_index")
     .eq("plan_id", planId)
+    .eq("is_active", true)
     .order("order_index", { ascending: false })
     .limit(1);
 
@@ -436,11 +413,20 @@ export const addSession = async (
   return mapSessionRow(data, []);
 };
 
-// Delete session
+// Soft-delete session (and its exercises)
 export const deleteSession = async (sessionId: string): Promise<void> => {
-  const { error } = await supabaseAdmin.from("training_sessions").delete().eq("id", sessionId);
+  const { error } = await supabaseAdmin
+    .from("training_sessions")
+    .update({ is_active: false, updated_at: new Date().toISOString() })
+    .eq("id", sessionId);
 
   if (error) throw new Error(`Failed to delete session: ${error.message}`);
+
+  // Also soft-delete child exercises
+  await supabaseAdmin
+    .from("training_exercises")
+    .update({ is_active: false, updated_at: new Date().toISOString() })
+    .eq("session_id", sessionId);
 };
 
 // Update exercise
@@ -480,11 +466,12 @@ export const addExercise = async (
   sessionId: string,
   exercise: AddExerciseRequest
 ): Promise<TrainingExercise> => {
-  // Get max order index
+  // Get max order index from active exercises
   const { data: existingExercises } = await supabaseAdmin
     .from("training_exercises")
     .select("order_index")
     .eq("session_id", sessionId)
+    .eq("is_active", true)
     .order("order_index", { ascending: false })
     .limit(1);
 
@@ -518,9 +505,12 @@ export const addExercise = async (
   return mapExerciseRow(data);
 };
 
-// Delete exercise
+// Soft-delete exercise
 export const deleteExercise = async (exerciseId: string): Promise<void> => {
-  const { error } = await supabaseAdmin.from("training_exercises").delete().eq("id", exerciseId);
+  const { error } = await supabaseAdmin
+    .from("training_exercises")
+    .update({ is_active: false, updated_at: new Date().toISOString() })
+    .eq("id", exerciseId);
 
   if (error) throw new Error(`Failed to delete exercise: ${error.message}`);
 };
@@ -530,13 +520,14 @@ export const replaceSessionExercises = async (
   sessionId: string,
   exercises: AddExerciseRequest[]
 ): Promise<TrainingExercise[]> => {
-  // Delete existing exercises
-  const { error: deleteError } = await supabaseAdmin
+  // Soft-delete existing exercises
+  const { error: deactivateError } = await supabaseAdmin
     .from("training_exercises")
-    .delete()
-    .eq("session_id", sessionId);
+    .update({ is_active: false, updated_at: new Date().toISOString() })
+    .eq("session_id", sessionId)
+    .eq("is_active", true);
 
-  if (deleteError) throw new Error(`Failed to delete existing exercises: ${deleteError.message}`);
+  if (deactivateError) throw new Error(`Failed to deactivate existing exercises: ${deactivateError.message}`);
 
   // Insert new exercises
   const newExercises: TrainingExercise[] = [];
@@ -683,6 +674,7 @@ export const getSessionWithExercises = async (
     .from("training_sessions")
     .select("*")
     .eq("id", sessionId)
+    .eq("is_active", true)
     .single();
 
   if (sessionError || !sessionRow) return null;
@@ -691,6 +683,7 @@ export const getSessionWithExercises = async (
     .from("training_exercises")
     .select("*")
     .eq("session_id", sessionId)
+    .eq("is_active", true)
     .order("order_index", { ascending: true });
 
   return mapSessionRow(

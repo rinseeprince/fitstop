@@ -22,12 +22,13 @@ export async function GET(
     const sinceDate = sevenDaysAgo.toISOString().split("T")[0];
 
     // Uses supabaseAdmin: coach querying client data (RLS exception 3)
+    // Direct query on wellness_logs
     const { data, error } = await supabaseAdmin
-      .from("daily_logs")
+      .from("wellness_logs" as never)
       .select("mood, energy, sleep, stress")
-      .eq("client_id", clientId)
-      .or("mood.not.is.null,energy.not.is.null,sleep.not.is.null,stress.not.is.null")
-      .gte("date", sinceDate);
+      .eq("client_id" as never, clientId as never)
+      .or("mood.not.is.null,energy.not.is.null,sleep.not.is.null,stress.not.is.null" as never)
+      .gte("date" as never, sinceDate as never) as unknown as { data: Array<{ mood: number | null; energy: number | null; sleep: number | null; stress: number | null }> | null; error: { message: string } | null };
 
     if (error) {
       console.error("Error fetching wellness summary:", error);

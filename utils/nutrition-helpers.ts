@@ -22,6 +22,7 @@ export type DayOfWeek = (typeof DAYS_OF_WEEK)[number];
  * Daily nutrition targets for a specific day
  */
 export type DailyNutritionTargets = {
+  planId?: string;
   day: DayOfWeek;
   dayLabel: string;
   isTrainingDay: boolean;

@@ -174,18 +174,24 @@ export async function upsertWeeklySummary(
   const endMs = new Date(effectiveEnd + "T00:00:00").getTime();
   const daysInWeek = Math.round((endMs - startMs) / (1000 * 60 * 60 * 24)) + 1;
 
-  // Fetch daily logs for the effective date range
+  // Direct query on nutrition_logs - only needs nutrition columns
+  type NutritionRow = {
+    id: string; client_id: string; date: string;
+    calories_consumed: number | null; protein_g: number | null; carbs_g: number | null; fat_g: number | null;
+    target_calories: number | null; target_protein_g: number | null; target_carbs_g: number | null; target_fat_g: number | null;
+    created_at: string; updated_at: string;
+  };
   const { data: rows, error: fetchError } = await supabaseAdmin
-    .from("daily_logs")
-    .select("*")
-    .eq("client_id", clientId)
-    .gte("date", effectiveStart)
-    .lte("date", effectiveEnd)
-    .order("date", { ascending: true });
+    .from("nutrition_logs" as never)
+    .select("id, client_id, date, calories_consumed, protein_g, carbs_g, fat_g, target_calories, target_protein_g, target_carbs_g, target_fat_g, created_at, updated_at")
+    .eq("client_id" as never, clientId as never)
+    .gte("date" as never, effectiveStart as never)
+    .lte("date" as never, effectiveEnd as never)
+    .order("date" as never, { ascending: true }) as unknown as { data: NutritionRow[] | null; error: { message: string } | null };
 
   if (fetchError) {
-    console.error("Failed to fetch daily logs for weekly summary:", fetchError.message);
-    throw new Error("Failed to fetch daily logs for weekly summary");
+    console.error("Failed to fetch nutrition logs for weekly summary:", fetchError.message);
+    throw new Error("Failed to fetch nutrition logs for weekly summary");
   }
 
   const logs: DailyLog[] = (rows || []).map((r) => ({

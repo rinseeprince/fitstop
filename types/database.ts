@@ -12,6 +12,31 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "13.0.5"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       activity_suggestions: {
@@ -317,6 +342,8 @@ export type Database = {
           coach_response: string | null
           coach_reviewed_at: string | null
           created_at: string | null
+          daily_logs_end_date: string | null
+          daily_logs_start_date: string | null
           energy: number | null
           hips: number | null
           id: string
@@ -337,6 +364,7 @@ export type Database = {
           stress: number | null
           thighs: number | null
           updated_at: string | null
+          uses_daily_logs: boolean
           waist: number | null
           weight: number | null
           weight_unit: string | null
@@ -357,6 +385,8 @@ export type Database = {
           coach_response?: string | null
           coach_reviewed_at?: string | null
           created_at?: string | null
+          daily_logs_end_date?: string | null
+          daily_logs_start_date?: string | null
           energy?: number | null
           hips?: number | null
           id?: string
@@ -377,6 +407,7 @@ export type Database = {
           stress?: number | null
           thighs?: number | null
           updated_at?: string | null
+          uses_daily_logs?: boolean
           waist?: number | null
           weight?: number | null
           weight_unit?: string | null
@@ -397,6 +428,8 @@ export type Database = {
           coach_response?: string | null
           coach_reviewed_at?: string | null
           created_at?: string | null
+          daily_logs_end_date?: string | null
+          daily_logs_start_date?: string | null
           energy?: number | null
           hips?: number | null
           id?: string
@@ -417,6 +450,7 @@ export type Database = {
           stress?: number | null
           thighs?: number | null
           updated_at?: string | null
+          uses_daily_logs?: boolean
           waist?: number | null
           weight?: number | null
           weight_unit?: string | null
@@ -432,59 +466,158 @@ export type Database = {
           },
         ]
       }
-      client_exercise_completions: {
+      client_intake: {
         Row: {
-          actual_reps: string | null
-          actual_sets: number | null
-          actual_weight: number | null
-          completed: boolean | null
-          created_at: string
+          anything_else: string | null
+          available_equipment: string[] | null
+          biggest_nutrition_challenge: string | null
+          body_fat_percentage: number | null
+          client_id: string
+          coach_review_notes: string | null
+          completed_at: string | null
+          cooking_frequency: string | null
+          created_at: string | null
+          current_weight: number | null
+          date_of_birth: string | null
+          days_per_week: number | null
+          diet_description: string | null
+          dietary_requirements: string[] | null
+          food_allergies: string | null
+          gender: string | null
+          goal_body_fat_percentage: number | null
+          goal_deadline: string | null
+          goal_description: string | null
+          goal_details: string | null
+          has_tracked_macros_before: boolean | null
+          height: number | null
+          height_unit: string | null
           id: string
-          notes: string | null
-          session_completion_id: string
-          training_exercise_id: string
-          updated_at: string
+          injuries_or_limitations: string | null
+          meals_per_day: number | null
+          medical_notes: string | null
+          motivation: string | null
+          nutrition_notes: string | null
+          previous_coaching_details: string | null
+          previous_coaching_experience: boolean | null
+          primary_goal: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          session_duration_minutes: number | null
+          started_at: string | null
+          status: string
+          target_weight: number | null
+          training_experience_level: string | null
+          training_location: string | null
+          training_time_preference: string | null
+          updated_at: string | null
           weight_unit: string | null
+          work_activity_level: string | null
         }
         Insert: {
-          actual_reps?: string | null
-          actual_sets?: number | null
-          actual_weight?: number | null
-          completed?: boolean | null
-          created_at?: string
+          anything_else?: string | null
+          available_equipment?: string[] | null
+          biggest_nutrition_challenge?: string | null
+          body_fat_percentage?: number | null
+          client_id: string
+          coach_review_notes?: string | null
+          completed_at?: string | null
+          cooking_frequency?: string | null
+          created_at?: string | null
+          current_weight?: number | null
+          date_of_birth?: string | null
+          days_per_week?: number | null
+          diet_description?: string | null
+          dietary_requirements?: string[] | null
+          food_allergies?: string | null
+          gender?: string | null
+          goal_body_fat_percentage?: number | null
+          goal_deadline?: string | null
+          goal_description?: string | null
+          goal_details?: string | null
+          has_tracked_macros_before?: boolean | null
+          height?: number | null
+          height_unit?: string | null
           id?: string
-          notes?: string | null
-          session_completion_id: string
-          training_exercise_id: string
-          updated_at?: string
+          injuries_or_limitations?: string | null
+          meals_per_day?: number | null
+          medical_notes?: string | null
+          motivation?: string | null
+          nutrition_notes?: string | null
+          previous_coaching_details?: string | null
+          previous_coaching_experience?: boolean | null
+          primary_goal?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          session_duration_minutes?: number | null
+          started_at?: string | null
+          status?: string
+          target_weight?: number | null
+          training_experience_level?: string | null
+          training_location?: string | null
+          training_time_preference?: string | null
+          updated_at?: string | null
           weight_unit?: string | null
+          work_activity_level?: string | null
         }
         Update: {
-          actual_reps?: string | null
-          actual_sets?: number | null
-          actual_weight?: number | null
-          completed?: boolean | null
-          created_at?: string
+          anything_else?: string | null
+          available_equipment?: string[] | null
+          biggest_nutrition_challenge?: string | null
+          body_fat_percentage?: number | null
+          client_id?: string
+          coach_review_notes?: string | null
+          completed_at?: string | null
+          cooking_frequency?: string | null
+          created_at?: string | null
+          current_weight?: number | null
+          date_of_birth?: string | null
+          days_per_week?: number | null
+          diet_description?: string | null
+          dietary_requirements?: string[] | null
+          food_allergies?: string | null
+          gender?: string | null
+          goal_body_fat_percentage?: number | null
+          goal_deadline?: string | null
+          goal_description?: string | null
+          goal_details?: string | null
+          has_tracked_macros_before?: boolean | null
+          height?: number | null
+          height_unit?: string | null
           id?: string
-          notes?: string | null
-          session_completion_id?: string
-          training_exercise_id?: string
-          updated_at?: string
+          injuries_or_limitations?: string | null
+          meals_per_day?: number | null
+          medical_notes?: string | null
+          motivation?: string | null
+          nutrition_notes?: string | null
+          previous_coaching_details?: string | null
+          previous_coaching_experience?: boolean | null
+          primary_goal?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          session_duration_minutes?: number | null
+          started_at?: string | null
+          status?: string
+          target_weight?: number | null
+          training_experience_level?: string | null
+          training_location?: string | null
+          training_time_preference?: string | null
+          updated_at?: string | null
           weight_unit?: string | null
+          work_activity_level?: string | null
         }
         Relationships: [
           {
-            foreignKeyName: "client_exercise_completions_session_completion_id_fkey"
-            columns: ["session_completion_id"]
+            foreignKeyName: "client_intake_client_id_fkey"
+            columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "client_session_completions"
+            referencedRelation: "clients"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "client_exercise_completions_training_exercise_id_fkey"
-            columns: ["training_exercise_id"]
+            foreignKeyName: "client_intake_reviewed_by_fkey"
+            columns: ["reviewed_by"]
             isOneToOne: false
-            referencedRelation: "training_exercises"
+            referencedRelation: "coaches"
             referencedColumns: ["id"]
           },
         ]
@@ -536,57 +669,6 @@ export type Database = {
           },
         ]
       }
-      client_session_completions: {
-        Row: {
-          client_id: string
-          completed_at: string
-          completion_quality: string | null
-          created_at: string
-          id: string
-          notes: string | null
-          training_session_id: string
-          updated_at: string
-          week_start_date: string
-        }
-        Insert: {
-          client_id: string
-          completed_at?: string
-          completion_quality?: string | null
-          created_at?: string
-          id?: string
-          notes?: string | null
-          training_session_id: string
-          updated_at?: string
-          week_start_date: string
-        }
-        Update: {
-          client_id?: string
-          completed_at?: string
-          completion_quality?: string | null
-          created_at?: string
-          id?: string
-          notes?: string | null
-          training_session_id?: string
-          updated_at?: string
-          week_start_date?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "client_session_completions_client_id_fkey"
-            columns: ["client_id"]
-            isOneToOne: false
-            referencedRelation: "clients"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "client_session_completions_training_session_id_fkey"
-            columns: ["training_session_id"]
-            isOneToOne: false
-            referencedRelation: "training_sessions"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       clients: {
         Row: {
           active: boolean | null
@@ -616,7 +698,9 @@ export type Database = {
           longest_streak: number | null
           name: string
           notes: string | null
+          onboarding_status: string | null
           reminder_preferences: Json | null
+          start_date: string | null
           starting_body_fat_percentage: number | null
           starting_weight: number | null
           tdee: number | null
@@ -626,11 +710,10 @@ export type Database = {
           unit_preference: string | null
           updated_at: string | null
           user_id: string | null
+          walkthrough_completed_at: string | null
           weight_unit: string | null
           welcome_message: string | null
-          onboarding_status: string | null
-          walkthrough_completed_at: string | null
-          start_date: string | null
+          work_activity_level: string | null
         }
         Insert: {
           active?: boolean | null
@@ -660,7 +743,9 @@ export type Database = {
           longest_streak?: number | null
           name: string
           notes?: string | null
+          onboarding_status?: string | null
           reminder_preferences?: Json | null
+          start_date?: string | null
           starting_body_fat_percentage?: number | null
           starting_weight?: number | null
           tdee?: number | null
@@ -670,11 +755,10 @@ export type Database = {
           unit_preference?: string | null
           updated_at?: string | null
           user_id?: string | null
+          walkthrough_completed_at?: string | null
           weight_unit?: string | null
           welcome_message?: string | null
-          onboarding_status?: string | null
-          walkthrough_completed_at?: string | null
-          start_date?: string | null
+          work_activity_level?: string | null
         }
         Update: {
           active?: boolean | null
@@ -704,7 +788,9 @@ export type Database = {
           longest_streak?: number | null
           name?: string
           notes?: string | null
+          onboarding_status?: string | null
           reminder_preferences?: Json | null
+          start_date?: string | null
           starting_body_fat_percentage?: number | null
           starting_weight?: number | null
           tdee?: number | null
@@ -714,11 +800,10 @@ export type Database = {
           unit_preference?: string | null
           updated_at?: string | null
           user_id?: string | null
+          walkthrough_completed_at?: string | null
           weight_unit?: string | null
           welcome_message?: string | null
-          onboarding_status?: string | null
-          walkthrough_completed_at?: string | null
-          start_date?: string | null
+          work_activity_level?: string | null
         }
         Relationships: [
           {
@@ -970,7 +1055,7 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "clients"
             referencedColumns: ["id"]
-          }
+          },
         ]
       }
       daily_habit_logs: {
@@ -982,6 +1067,7 @@ export type Database = {
           date: string
           id: string
           notes: string | null
+          phase_id: string | null
           updated_at: string
           value: number | null
         }
@@ -993,6 +1079,7 @@ export type Database = {
           date: string
           id?: string
           notes?: string | null
+          phase_id?: string | null
           updated_at?: string
           value?: number | null
         }
@@ -1004,6 +1091,7 @@ export type Database = {
           date?: string
           id?: string
           notes?: string | null
+          phase_id?: string | null
           updated_at?: string
           value?: number | null
         }
@@ -1021,7 +1109,7 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "daily_habits"
             referencedColumns: ["id"]
-          }
+          },
         ]
       }
       daily_habits: {
@@ -1081,86 +1169,35 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "coaches"
             referencedColumns: ["id"]
-          }
+          },
         ]
       }
       daily_logs: {
         Row: {
-          calorie_surplus_deficit: number | null
-          calories_consumed: number | null
-          carbs_g: number | null
           client_id: string
-          completed_activity_ids: Json | null
           created_at: string
           date: string
-          energy: number | null
-          fat_g: number | null
           id: string
-          mood: number | null
           notes: string | null
-          nutrition_adherence: string | null
-          protein_g: number | null
-          sleep: number | null
-          stress: number | null
-          target_calories: number | null
-          target_carbs_g: number | null
-          target_fat_g: number | null
-          target_protein_g: number | null
-          trained: boolean | null
-          training_data: Json | null
-          training_session_id: string | null
+          phase_id: string | null
           updated_at: string
         }
         Insert: {
-          calorie_surplus_deficit?: number | null
-          calories_consumed?: number | null
-          carbs_g?: number | null
           client_id: string
-          completed_activity_ids?: Json | null
           created_at?: string
           date: string
-          energy?: number | null
-          fat_g?: number | null
           id?: string
-          mood?: number | null
           notes?: string | null
-          nutrition_adherence?: string | null
-          protein_g?: number | null
-          sleep?: number | null
-          stress?: number | null
-          target_calories?: number | null
-          target_carbs_g?: number | null
-          target_fat_g?: number | null
-          target_protein_g?: number | null
-          trained?: boolean | null
-          training_data?: Json | null
-          training_session_id?: string | null
+          phase_id?: string | null
           updated_at?: string
         }
         Update: {
-          calorie_surplus_deficit?: number | null
-          completed_activity_ids?: Json | null
-          training_data?: Json | null
-          calories_consumed?: number | null
-          carbs_g?: number | null
           client_id?: string
           created_at?: string
           date?: string
-          energy?: number | null
-          fat_g?: number | null
           id?: string
-          mood?: number | null
           notes?: string | null
-          nutrition_adherence?: string | null
-          protein_g?: number | null
-          sleep?: number | null
-          stress?: number | null
-          target_calories?: number | null
-          target_carbs_g?: number | null
-          target_fat_g?: number | null
-          target_protein_g?: number | null
-          trained?: boolean | null
-          training_session_id?: string | null
+          phase_id?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -1171,45 +1208,180 @@ export type Database = {
             referencedRelation: "clients"
             referencedColumns: ["id"]
           },
+        ]
+      }
+      exercise_logs: {
+        Row: {
+          actual_reps: string | null
+          actual_sets: number | null
+          actual_weight: number | null
+          completed: boolean | null
+          created_at: string
+          id: string
+          notes: string | null
+          prescribed_exercise_snapshot: Json | null
+          session_log_id: string
+          training_exercise_id: string | null
+          updated_at: string
+          weight_unit: string | null
+        }
+        Insert: {
+          actual_reps?: string | null
+          actual_sets?: number | null
+          actual_weight?: number | null
+          completed?: boolean | null
+          created_at?: string
+          id?: string
+          notes?: string | null
+          prescribed_exercise_snapshot?: Json | null
+          session_log_id: string
+          training_exercise_id?: string | null
+          updated_at?: string
+          weight_unit?: string | null
+        }
+        Update: {
+          actual_reps?: string | null
+          actual_sets?: number | null
+          actual_weight?: number | null
+          completed?: boolean | null
+          created_at?: string
+          id?: string
+          notes?: string | null
+          prescribed_exercise_snapshot?: Json | null
+          session_log_id?: string
+          training_exercise_id?: string | null
+          updated_at?: string
+          weight_unit?: string | null
+        }
+        Relationships: [
           {
-            foreignKeyName: "daily_logs_training_session_id_fkey"
-            columns: ["training_session_id"]
+            foreignKeyName: "exercise_logs_session_log_id_fkey"
+            columns: ["session_log_id"]
             isOneToOne: false
-            referencedRelation: "training_sessions"
+            referencedRelation: "session_logs"
             referencedColumns: ["id"]
-          }
+          },
+          {
+            foreignKeyName: "exercise_logs_training_exercise_id_fkey"
+            columns: ["training_exercise_id"]
+            isOneToOne: false
+            referencedRelation: "training_exercises"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      nutrition_logs: {
+        Row: {
+          calorie_surplus_deficit: number | null
+          calories_consumed: number | null
+          carbs_g: number | null
+          client_id: string
+          created_at: string
+          daily_log_id: string
+          date: string
+          fat_g: number | null
+          id: string
+          nutrition_adherence: string | null
+          phase_id: string | null
+          protein_g: number | null
+          target_calories: number | null
+          target_carbs_g: number | null
+          target_fat_g: number | null
+          target_protein_g: number | null
+          updated_at: string
+        }
+        Insert: {
+          calorie_surplus_deficit?: number | null
+          calories_consumed?: number | null
+          carbs_g?: number | null
+          client_id: string
+          created_at?: string
+          daily_log_id: string
+          date: string
+          fat_g?: number | null
+          id?: string
+          nutrition_adherence?: string | null
+          phase_id?: string | null
+          protein_g?: number | null
+          target_calories?: number | null
+          target_carbs_g?: number | null
+          target_fat_g?: number | null
+          target_protein_g?: number | null
+          updated_at?: string
+        }
+        Update: {
+          calorie_surplus_deficit?: number | null
+          calories_consumed?: number | null
+          carbs_g?: number | null
+          client_id?: string
+          created_at?: string
+          daily_log_id?: string
+          date?: string
+          fat_g?: number | null
+          id?: string
+          nutrition_adherence?: string | null
+          phase_id?: string | null
+          protein_g?: number | null
+          target_calories?: number | null
+          target_carbs_g?: number | null
+          target_fat_g?: number | null
+          target_protein_g?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "nutrition_logs_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "nutrition_logs_daily_log_id_fkey"
+            columns: ["daily_log_id"]
+            isOneToOne: true
+            referencedRelation: "daily_logs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "nutrition_logs_daily_log_id_fkey"
+            columns: ["daily_log_id"]
+            isOneToOne: true
+            referencedRelation: "daily_logs_full"
+            referencedColumns: ["id"]
+          },
         ]
       }
       nutrition_plan_daily_targets: {
         Row: {
-          id: string
-          nutrition_plan_id: string
-          day_of_week: string
           calories: number
-          protein_g: number
           carb_g: number
+          day_of_week: string
           fat_g: number
+          id: string
           is_training_day: boolean
+          nutrition_plan_id: string
+          protein_g: number
         }
         Insert: {
-          id?: string
-          nutrition_plan_id: string
-          day_of_week: string
           calories: number
-          protein_g: number
           carb_g: number
+          day_of_week: string
           fat_g: number
+          id?: string
           is_training_day?: boolean
+          nutrition_plan_id: string
+          protein_g: number
         }
         Update: {
-          id?: string
-          nutrition_plan_id?: string
-          day_of_week?: string
           calories?: number
-          protein_g?: number
           carb_g?: number
+          day_of_week?: string
           fat_g?: number
+          id?: string
           is_training_day?: boolean
+          nutrition_plan_id?: string
+          protein_g?: number
         }
         Relationships: [
           {
@@ -1223,94 +1395,94 @@ export type Database = {
       }
       nutrition_plans: {
         Row: {
-          id: string
+          base_weight_kg: number
+          baseline_calories: number
+          bmr: number | null
+          carb_target_g: number
           client_id: string
           coach_id: string
-          name: string | null
-          status: string
-          effective_from: string
-          effective_until: string | null
-          work_activity_level: string
-          training_volume_hours: string
-          protein_target_g_per_kg: number
-          diet_type: string
-          goal_weight_kg: number | null
-          goal_deadline: string | null
-          baseline_calories: number
-          protein_target_g: number
-          carb_target_g: number
-          fat_target_g: number
-          base_weight_kg: number
-          bmr: number | null
-          tdee: number | null
-          custom_macros_enabled: boolean
+          created_at: string
           custom_calories: number | null
-          custom_protein_g: number | null
           custom_carb_g: number | null
           custom_fat_g: number | null
+          custom_macros_enabled: boolean
+          custom_protein_g: number | null
+          diet_type: string
+          effective_from: string
+          effective_until: string | null
+          fat_target_g: number
+          goal_deadline: string | null
+          goal_weight_kg: number | null
+          id: string
+          name: string | null
+          protein_target_g: number
+          protein_target_g_per_kg: number
           regeneration_reason: string | null
-          created_at: string
+          status: string
+          tdee: number | null
+          training_volume_hours: string
           updated_at: string
+          work_activity_level: string
         }
         Insert: {
-          id?: string
+          base_weight_kg: number
+          baseline_calories: number
+          bmr?: number | null
+          carb_target_g: number
           client_id: string
           coach_id: string
-          name?: string | null
-          status?: string
+          created_at?: string
+          custom_calories?: number | null
+          custom_carb_g?: number | null
+          custom_fat_g?: number | null
+          custom_macros_enabled?: boolean
+          custom_protein_g?: number | null
+          diet_type?: string
           effective_from: string
           effective_until?: string | null
-          work_activity_level: string
-          training_volume_hours: string
-          protein_target_g_per_kg?: number
-          diet_type?: string
-          goal_weight_kg?: number | null
-          goal_deadline?: string | null
-          baseline_calories: number
-          protein_target_g: number
-          carb_target_g: number
           fat_target_g: number
-          base_weight_kg: number
-          bmr?: number | null
-          tdee?: number | null
-          custom_macros_enabled?: boolean
-          custom_calories?: number | null
-          custom_protein_g?: number | null
-          custom_carb_g?: number | null
-          custom_fat_g?: number | null
+          goal_deadline?: string | null
+          goal_weight_kg?: number | null
+          id?: string
+          name?: string | null
+          protein_target_g: number
+          protein_target_g_per_kg?: number
           regeneration_reason?: string | null
-          created_at?: string
+          status?: string
+          tdee?: number | null
+          training_volume_hours: string
           updated_at?: string
+          work_activity_level: string
         }
         Update: {
-          id?: string
+          base_weight_kg?: number
+          baseline_calories?: number
+          bmr?: number | null
+          carb_target_g?: number
           client_id?: string
           coach_id?: string
-          name?: string | null
-          status?: string
-          effective_from?: string
-          effective_until?: string | null
-          work_activity_level?: string
-          training_volume_hours?: string
-          protein_target_g_per_kg?: number
-          diet_type?: string
-          goal_weight_kg?: number | null
-          goal_deadline?: string | null
-          baseline_calories?: number
-          protein_target_g?: number
-          carb_target_g?: number
-          fat_target_g?: number
-          base_weight_kg?: number
-          bmr?: number | null
-          tdee?: number | null
-          custom_macros_enabled?: boolean
+          created_at?: string
           custom_calories?: number | null
-          custom_protein_g?: number | null
           custom_carb_g?: number | null
           custom_fat_g?: number | null
+          custom_macros_enabled?: boolean
+          custom_protein_g?: number | null
+          diet_type?: string
+          effective_from?: string
+          effective_until?: string | null
+          fat_target_g?: number
+          goal_deadline?: string | null
+          goal_weight_kg?: number | null
+          id?: string
+          name?: string | null
+          protein_target_g?: number
+          protein_target_g_per_kg?: number
           regeneration_reason?: string | null
-          created_at?: string
+          status?: string
+          tdee?: number | null
+          training_volume_hours?: string
           updated_at?: string
+          work_activity_level?: string
         }
         Relationships: [
           {
@@ -1448,10 +1620,65 @@ export type Database = {
         }
         Relationships: []
       }
+      session_logs: {
+        Row: {
+          client_id: string
+          completed_at: string
+          completion_quality: string | null
+          created_at: string
+          id: string
+          notes: string | null
+          prescribed_session_snapshot: Json | null
+          training_session_id: string | null
+          updated_at: string
+          week_start_date: string
+        }
+        Insert: {
+          client_id: string
+          completed_at?: string
+          completion_quality?: string | null
+          created_at?: string
+          id?: string
+          notes?: string | null
+          prescribed_session_snapshot?: Json | null
+          training_session_id?: string | null
+          updated_at?: string
+          week_start_date: string
+        }
+        Update: {
+          client_id?: string
+          completed_at?: string
+          completion_quality?: string | null
+          created_at?: string
+          id?: string
+          notes?: string | null
+          prescribed_session_snapshot?: Json | null
+          training_session_id?: string | null
+          updated_at?: string
+          week_start_date?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "session_logs_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "session_logs_training_session_id_fkey"
+            columns: ["training_session_id"]
+            isOneToOne: false
+            referencedRelation: "training_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       training_exercises: {
         Row: {
           created_at: string
           id: string
+          is_active: boolean
           is_warmup: boolean | null
           name: string
           notes: string | null
@@ -1471,6 +1698,7 @@ export type Database = {
         Insert: {
           created_at?: string
           id?: string
+          is_active?: boolean
           is_warmup?: boolean | null
           name: string
           notes?: string | null
@@ -1490,6 +1718,7 @@ export type Database = {
         Update: {
           created_at?: string
           id?: string
+          is_active?: boolean
           is_warmup?: boolean | null
           name?: string
           notes?: string | null
@@ -1512,6 +1741,67 @@ export type Database = {
             columns: ["session_id"]
             isOneToOne: false
             referencedRelation: "training_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      training_logs: {
+        Row: {
+          client_id: string
+          created_at: string
+          daily_log_id: string
+          date: string
+          id: string
+          phase_id: string | null
+          trained: boolean | null
+          training_data: Json | null
+          training_session_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          daily_log_id: string
+          date: string
+          id?: string
+          phase_id?: string | null
+          trained?: boolean | null
+          training_data?: Json | null
+          training_session_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          daily_log_id?: string
+          date?: string
+          id?: string
+          phase_id?: string | null
+          trained?: boolean | null
+          training_data?: Json | null
+          training_session_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "training_logs_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "training_logs_daily_log_id_fkey"
+            columns: ["daily_log_id"]
+            isOneToOne: true
+            referencedRelation: "daily_logs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "training_logs_daily_log_id_fkey"
+            columns: ["daily_log_id"]
+            isOneToOne: true
+            referencedRelation: "daily_logs_full"
             referencedColumns: ["id"]
           },
         ]
@@ -1683,6 +1973,7 @@ export type Database = {
           estimated_duration_minutes: number | null
           focus: string | null
           id: string
+          is_active: boolean
           name: string
           notes: string | null
           order_index: number
@@ -1699,6 +1990,7 @@ export type Database = {
           estimated_duration_minutes?: number | null
           focus?: string | null
           id?: string
+          is_active?: boolean
           name: string
           notes?: string | null
           order_index?: number
@@ -1715,6 +2007,7 @@ export type Database = {
           estimated_duration_minutes?: number | null
           focus?: string | null
           id?: string
+          is_active?: boolean
           name?: string
           notes?: string | null
           order_index?: number
@@ -1732,9 +2025,109 @@ export type Database = {
           },
         ]
       }
+      wellness_logs: {
+        Row: {
+          client_id: string
+          created_at: string
+          daily_log_id: string
+          date: string
+          energy: number | null
+          id: string
+          mood: number | null
+          phase_id: string | null
+          sleep: number | null
+          stress: number | null
+          updated_at: string
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          daily_log_id: string
+          date: string
+          energy?: number | null
+          id?: string
+          mood?: number | null
+          phase_id?: string | null
+          sleep?: number | null
+          stress?: number | null
+          updated_at?: string
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          daily_log_id?: string
+          date?: string
+          energy?: number | null
+          id?: string
+          mood?: number | null
+          phase_id?: string | null
+          sleep?: number | null
+          stress?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "wellness_logs_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "wellness_logs_daily_log_id_fkey"
+            columns: ["daily_log_id"]
+            isOneToOne: true
+            referencedRelation: "daily_logs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "wellness_logs_daily_log_id_fkey"
+            columns: ["daily_log_id"]
+            isOneToOne: true
+            referencedRelation: "daily_logs_full"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
-      [_ in never]: never
+      daily_logs_full: {
+        Row: {
+          calorie_surplus_deficit: number | null
+          calories_consumed: number | null
+          carbs_g: number | null
+          client_id: string | null
+          created_at: string | null
+          date: string | null
+          energy: number | null
+          fat_g: number | null
+          id: string | null
+          mood: number | null
+          notes: string | null
+          nutrition_adherence: string | null
+          phase_id: string | null
+          protein_g: number | null
+          sleep: number | null
+          stress: number | null
+          target_calories: number | null
+          target_carbs_g: number | null
+          target_fat_g: number | null
+          target_protein_g: number | null
+          trained: boolean | null
+          training_data: Json | null
+          training_session_id: string | null
+          updated_at: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_logs_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
       calculate_age: { Args: { date_of_birth: string }; Returns: number }
@@ -1747,6 +2140,33 @@ export type Database = {
         }[]
       }
       clean_expired_tokens: { Args: never; Returns: undefined }
+      create_nutrition_plan_atomic: {
+        Args: {
+          p_base_weight_kg: number
+          p_baseline_calories: number
+          p_bmr: number
+          p_carb_target_g: number
+          p_client_id: string
+          p_coach_id: string
+          p_custom_calories: number
+          p_custom_carb_g: number
+          p_custom_fat_g: number
+          p_custom_macros_enabled: boolean
+          p_custom_protein_g: number
+          p_daily_targets: Json
+          p_diet_type: string
+          p_fat_target_g: number
+          p_goal_deadline: string
+          p_goal_weight_kg: number
+          p_protein_target_g: number
+          p_protein_target_g_per_kg: number
+          p_regeneration_reason: string
+          p_tdee: number
+          p_training_volume_hours: string
+          p_work_activity_level: string
+        }
+        Returns: string
+      }
       generate_weekly_nutrition_goals: {
         Args: { p_client_id: string; p_week_start_date: string }
         Returns: undefined
@@ -1754,6 +2174,17 @@ export type Database = {
       update_client_adherence_stats: {
         Args: { client_uuid: string }
         Returns: undefined
+      }
+      upsert_daily_log_atomic: {
+        Args: {
+          p_client_id: string
+          p_date: string
+          p_notes: string
+          p_nutrition: Json
+          p_training: Json
+          p_wellness: Json
+        }
+        Returns: string
       }
     }
     Enums: {
@@ -1883,6 +2314,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {
       content_type: ["video_link", "hyperlink", "pdf", "image", "document"],

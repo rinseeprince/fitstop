@@ -256,3 +256,39 @@ Reviewed: 2026-03-18
 | 3 | Some complex pages lack error boundaries | `components/check-in/check-in-form.tsx`, nutrition builder, training builder | High-complexity pages with multiple form steps are not wrapped in `<ErrorBoundary>`. A JS error in one section crashes the entire page. | Open |
 | 4 | Check-in submission doesn't invalidate SWR caches | `app/api/check-in/submit/[token]/route.ts` | After client submits check-in, coach-side SWR caches for `/api/check-ins/unreviewed` stay stale until next polling interval (30s+). | Open |
 | 5 | CSP script-src uses unsafe-eval and unsafe-inline | `next.config.mjs` | Current Content-Security-Policy allows `unsafe-eval` and `unsafe-inline` for scripts due to Next.js requirements. Tighten for production using nonce-based CSP (requires Next.js config changes). | Open |
+
+---
+
+## Schema Readiness - Planned Work
+
+Reviewed: 2026-03-22
+
+### Client Metrics Log Extraction
+
+| # | Issue | File(s) | Details | Status |
+|---|-------|---------|---------|--------|
+| 1 | No body metrics history table | `clients` table | Create `client_metrics_log` table (client_id, date, source, weight, body_fat, bmr, tdee, measurements). Write to it from check-ins, intake sync, manual updates. Keep `current_*` columns on `clients` as denormalized cache. Currently biometrics are overwritten on the clients table with no history outside of check-in snapshots. | Open |
+
+### Coach Exercise Library
+
+| # | Issue | File(s) | Details | Status |
+|---|-------|---------|---------|--------|
+| 1 | No canonical exercise reference | `training_exercises.name` | Create `coach_exercises` table (coach_id, name, category, muscle_groups, equipment, notes, video_url). Add nullable `coach_exercise_id` FK to `training_exercises`. Currently exercises are free-text with no canonical reference, blocking cross-client analytics, templates, and progressive overload tracking. | Open |
+
+### Type Safety Gaps from Schema Split
+
+| # | Issue | File(s) | Details | Status |
+|---|-------|---------|---------|--------|
+| 1 | `as never` casts on view/new table queries | `services/daily-logs-service.ts`, `services/attention-feed-service.ts`, `services/training-history-service.ts`, `services/weekly-nutrition-service.ts`, `app/api/client/session-completions/route.ts`, wellness/nutrition history routes and summary routes | 8 locations use `as never` casts bypassing type safety on `.from()`, `.update()`, or `.upsert()` calls for the `daily_logs_full` view and new child tables. These should be replaced with proper type definitions once the generated types stabilize. | Open |
+
+### Check-in Training Completion Duplication
+
+| # | Issue | File(s) | Details | Status |
+|---|-------|---------|---------|--------|
+| 1 | Parallel entry for training completions | `check_in_session_completions`, `session_logs` | `check_in_session_completions` should pre-populate from `session_logs` for the check-in period instead of being a parallel entry system. Currently clients can enter conflicting completion data between the daily flow and the check-in form. | Open |
+
+### Documentation Updates Needed
+
+| # | Issue | File(s) | Details | Status |
+|---|-------|---------|---------|--------|
+| 1 | CONVENTIONS.md daily_logs conventions outdated | `CONVENTIONS.md` Section 8 | The Daily Pulse / daily_logs conventions need rewriting to reflect the spine + child table architecture (`daily_logs` spine, `wellness_logs`, `nutrition_logs`, `training_logs`). `training_data` JSONB convention should state it is a UI restore cache in `training_logs`, not the source of truth. Source of truth is `session_logs` + `exercise_logs`. | Open |

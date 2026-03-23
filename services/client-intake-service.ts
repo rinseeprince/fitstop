@@ -3,13 +3,9 @@ import type { ClientIntake, ClientIntakeRow, ClientIntakeInput, IntakeStatus, Pe
 import { mapClientIntakeRow } from "@/lib/mappers";
 import { intakeStepSchemas, intakeFullSchema } from "@/lib/validations/client-intake";
 
-// Table not yet in generated types — use untyped .from() calls.
-// supabaseAdmin is required here because client_intake is not in the
-// generated Database type, so a typed server client cannot query it.
-// Auth and ownership are enforced at the API route layer; RLS on
-// client_intake provides additional defense-in-depth at the DB level.
-const db = supabaseAdmin as { from: (table: string) => ReturnType<typeof supabaseAdmin.from> };
-const clientsTable = "clients" as const;
+// supabaseAdmin required: client_intake operations are system-level writes
+// from unauthenticated contexts (intake form via token). Auth enforced at API layer.
+const db = supabaseAdmin;
 
 // Explicit allowlist of camelCase → snake_case field mappings.
 // Prevents arbitrary column names from being written to the DB.
@@ -159,7 +155,7 @@ export async function saveIntakeStep(
   // Only allow saving on pending or in_progress intakes
   const { data: updated, error } = await db
     .from("client_intake")
-    .update(updateData)
+    .update(updateData as never)
     .eq("client_id", clientId)
     .in("status", ["pending", "in_progress"])
     .select()
@@ -174,7 +170,7 @@ export async function saveIntakeStep(
     console.error("Failed to save intake step:", error);
     throw new Error("Failed to save step");
   }
-  return mapClientIntakeRow(updated as ClientIntakeRow);
+  return mapClientIntakeRow(updated as unknown as ClientIntakeRow);
 }
 
 /**
@@ -235,7 +231,7 @@ export async function submitIntake(
       status: "completed",
       completed_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
-    })
+    } as never)
     .eq("client_id", clientId)
     .eq("status", "in_progress")
     .select()
@@ -248,14 +244,14 @@ export async function submitIntake(
 
   // Update client onboarding status
   await db
-    .from(clientsTable)
+    .from("clients")
     .update({
       onboarding_status: "intake_completed",
       updated_at: new Date().toISOString(),
-    })
+    } as never)
     .eq("id", clientId);
 
-  return mapClientIntakeRow(updated as ClientIntakeRow);
+  return mapClientIntakeRow(updated as unknown as ClientIntakeRow);
 }
 
 /**
