@@ -25,6 +25,7 @@ Create the following Supabase migrations in order. Follow existing migration pat
 
 Migration 060_create_client_goals.sql:
 - Create client_goals table with: id (UUID PK), client_id (UUID NOT NULL FK to clients ON DELETE CASCADE), goal_weight (NUMERIC), goal_body_fat_percentage (NUMERIC), goal_deadline (DATE), primary_goal (TEXT), set_by (TEXT NOT NULL DEFAULT 'coach'), notes (TEXT), effective_from (TIMESTAMPTZ NOT NULL DEFAULT NOW()), superseded_at (TIMESTAMPTZ nullable), created_at, updated_at
+- Add updated_at trigger: CREATE TRIGGER update_client_goals_updated_at BEFORE UPDATE ON client_goals FOR EACH ROW EXECUTE FUNCTION update_updated_at_column(); (function already exists from migration 004)
 - Unique partial index on (client_id) WHERE superseded_at IS NULL
 - Index on (client_id, effective_from DESC)
 - Enable RLS
@@ -44,12 +45,14 @@ Migration 062_create_roadmaps_and_phases.sql:
 - Unique partial index on (client_id) WHERE status = 'active' (only one active roadmap per client)
 - Index on (client_id, created_at DESC)
 - Enable RLS
+- Add updated_at trigger: CREATE TRIGGER update_roadmaps_updated_at BEFORE UPDATE ON roadmaps FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
-- Create phases table with: id (UUID PK), roadmap_id (UUID NOT NULL FK to roadmaps ON DELETE RESTRICT), client_id (UUID NOT NULL FK to clients ON DELETE CASCADE), name (TEXT NOT NULL), description (TEXT), objectives (TEXT), order_index (INTEGER NOT NULL DEFAULT 0), status (TEXT NOT NULL DEFAULT 'planned' CHECK IN ('planned', 'active', 'completed', 'skipped')), start_date (DATE), end_date (DATE), duration_weeks (INTEGER), phase_goals_snapshot (JSONB), created_at, updated_at
+- Create phases table with: id (UUID PK), roadmap_id (UUID NOT NULL FK to roadmaps ON DELETE RESTRICT -- RESTRICT chosen over CASCADE to enforce "never hard-delete roadmaps" rule. Roadmaps must be archived. deleteRoadmap service handles phase cleanup manually with guards.), client_id (UUID NOT NULL FK to clients ON DELETE CASCADE), name (TEXT NOT NULL), description (TEXT), objectives (TEXT), order_index (INTEGER NOT NULL DEFAULT 0), status (TEXT NOT NULL DEFAULT 'planned' CHECK IN ('planned', 'active', 'completed', 'skipped')), start_date (DATE), end_date (DATE), duration_weeks (INTEGER), phase_goals_snapshot (JSONB), created_at, updated_at
 - Unique partial index on (roadmap_id) WHERE status = 'active' (only one active phase per roadmap)
 - Index on (roadmap_id, order_index)
 - Index on (client_id, start_date DESC)
 - Enable RLS
+- Add updated_at trigger: CREATE TRIGGER update_phases_updated_at BEFORE UPDATE ON phases FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 Migration 063_add_phase_id_to_plans.sql:
 - ALTER TABLE training_plans ADD COLUMN IF NOT EXISTS phase_id UUID REFERENCES phases(id) ON DELETE SET NULL
@@ -125,7 +128,7 @@ Create three new service files. Before writing each one, read 2-3 existing servi
    - getGoalsHistory(clientId): Returns all client_goals rows ordered by effective_from DESC.
 
 3. services/roadmap-service.ts (max 300 lines):
-   - createRoadmap(clientId, coachId, data: { name, longTermGoal?, startedAt?, targetEndDate? }): Inserts roadmap row. Validates no active roadmap exists for client first.
+   - createRoadmap(clientId, coachId, data: { name, longTermGoal?, startedAt?, targetEndDate? }): Inserts roadmap row. Validates no active roadmap exists for client first. In the catch block, handle Postgres unique violation (error.code === '23505') and return a friendly error: "This client already has an active roadmap." This catches the race condition where two concurrent requests both pass the application-level check.
    - getActiveRoadmap(clientId): Returns active roadmap with its phases ordered by order_index.
    - getRoadmap(roadmapId): Returns roadmap by ID with phases.
    - updateRoadmap(roadmapId, data: { name?, longTermGoal?, startedAt?, targetEndDate? }): Partial update of roadmap fields.
@@ -134,7 +137,7 @@ Create three new service files. Before writing each one, read 2-3 existing servi
 
 4. services/phase-service.ts (max 300 lines):
    - createPhase(roadmapId, data: { name, description?, objectives?, startDate?, endDate?, durationWeeks?, orderIndex? }): Inserts phase. Gets roadmap to set client_id. Optionally snapshots current goals into phase_goals_snapshot by calling getCurrentGoals.
-   - activatePhase(phaseId): Sets phase status = 'active'. Ensures only one active phase per roadmap (deactivate others first by setting them to 'completed' or keeping them as 'planned').
+   - activatePhase(phaseId): Sets phase status = 'active'. Guard: rejects if another phase in the same roadmap is already active. Error: "Another phase is currently active. Complete it first using the phase transition flow." This prevents bypassing the transition review drawer (Prompt 2G). The only paths to activation are: (1) no phase is currently active, or (2) the transition_phase_atomic RPC completed the previous phase and activated this one atomically.
    - completePhase(phaseId): Sets status = 'completed', sets end_date = NOW() if not already set.
    - getActivePhase(clientId): Returns the active phase for the client (via active roadmap).
    - updatePhase(phaseId, data: { name?, description?, objectives?, startDate?, endDate?, durationWeeks?, orderIndex? }): Partial update of phase fields. Does not allow status changes (use activatePhase/completePhase for that).
@@ -438,7 +441,7 @@ When a coach creates a training plan, nutrition plan, or habits, the system must
 
 Modify these files:
 
-1. app/api/clients/[id]/training/route.ts - In the POST handler, after auth, call getActiveRoadmap(clientId). If an active roadmap exists, require phaseId in the request body. Validate that phaseId belongs to this client's roadmap and has status 'planned' or 'active' (reject 'completed' or 'skipped'). Return 400 if phaseId is missing or invalid. Pass phaseId to createTrainingPlan(). If no active roadmap exists, proceed as before with phase_id = NULL.
+1. app/api/clients/[id]/training/route.ts - In the POST handler, after auth, call getActiveRoadmap(clientId). If an active roadmap exists, require phaseId in the request body. If phaseId is missing, return 400 with message: "This client has an active roadmap. Please select a phase for this plan." Validate that phaseId belongs to this client's roadmap and has status 'planned' or 'active' (reject 'completed' or 'skipped'). Pass phaseId to createTrainingPlan(). If no active roadmap exists, proceed as before with phase_id = NULL.
 
 2. app/api/clients/[id]/nutrition/route.ts - Same pattern.
 
@@ -451,7 +454,8 @@ Modify these files:
 6. lib/validations/training.ts, nutrition.ts, daily-habit.ts - Add phaseId: z.string().uuid().optional() to schemas.
 
 Tests for all 3 plan creation routes (training, nutrition, habits):
-- Test: "returns 400 when client has active roadmap but phaseId missing from body"
+- Test: "returns 400 when client has active roadmap but phaseId missing from body" - verify error message says "Please select a phase for this plan"
+- Test: "returns 400 when client has roadmap with no phases and phaseId missing" - same error (roadmap exists = phaseId required, no exceptions)
 - Test: "returns 400 when phaseId doesn't belong to the client's roadmap"
 - Test: "accepts request when client has no roadmap and phaseId is omitted" (backward compat)
 - Test: "accepts valid phaseId for a planned phase"
@@ -487,7 +491,8 @@ Step 1: Create components/clients/phase-selector.tsx (max 150 lines)
 - Reusable dropdown that fetches phases from /api/clients/${clientId}/roadmap/phases
 - Shows phases with status 'planned' or 'active', with status badge next to name
 - Returns selected phaseId via onChange callback
-- Renders nothing if client has no active roadmap (fetch returns 404)
+- If client has no active roadmap (fetch returns 404): renders nothing, plan creation proceeds without phase
+- If client has a roadmap but no selectable phases (empty list): show inline message "No phases available. Add a phase to your roadmap first." and disable the submit/generate button in the parent form
 - Uses SWR for data fetching (coach-side component)
 
 Step 2: Add PhaseSelector to training builder
@@ -514,6 +519,7 @@ After changes:
 - `npm run build` passes
 - Phase selector appears in training/nutrition/habits builders when client has a roadmap
 - Phase selector hidden when client has no roadmap
+- Phase selector shows "No phases available" message and disables submit when roadmap exists but has no phases
 
 ---
 
@@ -773,7 +779,7 @@ getPhaseReviewData(phaseId):
   3. Get body metrics at phase start: getBodyMetricsHistory(clientId, { from: phase.start_date, limit: 1, requireFields: ['weight'] })
   4. Get current body metrics: getLatestBodyMetrics(clientId, { requireFields: ['weight'] })
   5. Calculate adherence for the phase date range (start_date to end_date or NOW()):
-     - Training: count session_logs WHERE client_id AND date BETWEEN start AND end. Prescribed = frequency_per_week * ceil(days_in_range / 7). Show as "23/28 (82%)". If no training plan linked, show completed count only with no percentage.
+     - Training: count session_logs WHERE client_id AND date BETWEEN start AND end. Prescribed = Math.round(days_in_range / 7 * frequency_per_week). Show as "23/28 (82%)". If no training plan linked, show completed count only with no percentage.
      - Nutrition: AVG(nutrition_adherence) from nutrition_logs for the period
      - Habits: count daily_habit_logs WHERE completed=true / (active_habits_count * days_in_range)
   6. Get current goals via getCurrentGoals(clientId)
@@ -903,6 +909,7 @@ After both sessions are complete, do a manual smoke test:
 5. **Activation:** Create a new client, complete intake, verify the activation banner shows roadmap as recommended.
 6. **Phase transition (activate_next):** Complete a phase via the review drawer. Verify coach reflection is stored, plans are archived/kept based on selection, next phase activates. Check client app shows the completion card with coach's note. Dismiss it and verify it doesn't reappear.
 7. **Phase transition (archive_roadmap):** Complete the final phase with nextAction='archive_roadmap'. Verify remaining planned phases are set to 'skipped', roadmap status is 'archived'. This tests the RPC branching logic that unit tests can't cover.
+8. **Client deletion with roadmap:** Delete a client that has an active roadmap with phases. Verify no FK error (phases.client_id CASCADE and roadmaps.client_id CASCADE should both fire, and phases.roadmap_id RESTRICT should not block since phases are deleted by their own CASCADE in the same transaction).
 
 ---
 
