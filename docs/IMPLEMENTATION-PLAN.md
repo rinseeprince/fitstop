@@ -124,15 +124,21 @@ Create three new service files. Before writing each one, read 2-3 existing servi
    - updateGoals(clientId, goals: { goalWeight?, goalBodyFatPercentage?, goalDeadline?, primaryGoal? }, setBy: string): Supersedes the current row (UPDATE SET superseded_at = NOW() WHERE client_id = ? AND superseded_at IS NULL), then inserts a new row with merged fields (carry forward unchanged fields from the superseded row). Also dual-writes to clients table for backward compat (goal_weight, goal_body_fat_percentage, goal_deadline).
    - getGoalsHistory(clientId): Returns all client_goals rows ordered by effective_from DESC.
 
-3. services/roadmap-service.ts (max 300 lines - if it exceeds, split phase functions into services/phase-service.ts):
+3. services/roadmap-service.ts (max 300 lines):
    - createRoadmap(clientId, coachId, data: { name, longTermGoal?, startedAt?, targetEndDate? }): Inserts roadmap row. Validates no active roadmap exists for client first.
    - getActiveRoadmap(clientId): Returns active roadmap with its phases ordered by order_index.
    - getRoadmap(roadmapId): Returns roadmap by ID with phases.
+   - updateRoadmap(roadmapId, data: { name?, longTermGoal?, startedAt?, targetEndDate? }): Partial update of roadmap fields.
    - archiveRoadmap(roadmapId): Sets status = 'archived'. Does NOT delete phases.
+   - deleteRoadmap(roadmapId): Hard deletes the roadmap and all its phases. Guard: only allowed if ALL phases have status = 'planned' (none were ever activated/completed). If any phase has status 'active', 'completed', or 'skipped', throw error: "This roadmap has phases that were started or completed. Archive it instead of deleting." Must delete phases first (due to ON DELETE RESTRICT), then delete roadmap.
+
+4. services/phase-service.ts (max 300 lines):
    - createPhase(roadmapId, data: { name, description?, objectives?, startDate?, endDate?, durationWeeks?, orderIndex? }): Inserts phase. Gets roadmap to set client_id. Optionally snapshots current goals into phase_goals_snapshot by calling getCurrentGoals.
    - activatePhase(phaseId): Sets phase status = 'active'. Ensures only one active phase per roadmap (deactivate others first by setting them to 'completed' or keeping them as 'planned').
    - completePhase(phaseId): Sets status = 'completed', sets end_date = NOW() if not already set.
    - getActivePhase(clientId): Returns the active phase for the client (via active roadmap).
+   - updatePhase(phaseId, data: { name?, description?, objectives?, startDate?, endDate?, durationWeeks?, orderIndex? }): Partial update of phase fields. Does not allow status changes (use activatePhase/completePhase for that).
+   - deletePhase(phaseId): Hard deletes the phase. Guard: only allowed if status = 'planned' (never activated). If status is 'active', 'completed', or 'skipped', throw error: "This phase has been started or completed and cannot be deleted." Before deleting, unlink any plans: UPDATE training_plans/nutrition_plans SET phase_id = NULL WHERE phase_id = phaseId, UPDATE daily_habits SET phase_id = NULL WHERE phase_id = phaseId.
 
 Each service must use proper error handling (try/catch, meaningful error messages). Use the mapper pattern from existing services for converting DB rows to domain types.
 
@@ -152,14 +158,24 @@ services/client-goals-service.test.ts:
 - Test updateGoals: mock the supersede UPDATE, the INSERT of new row, and the clients table dual-write. Verify superseded_at is set on old row. Verify new row merges old + new fields (e.g. changing only goalWeight carries forward existing goalDeadline). Test first-ever goal set (no existing row to supersede).
 - Test getGoalsHistory: mock query returning multiple rows. Verify ordered by effective_from DESC.
 
-services/roadmap-service.test.ts (or split if service was split):
+services/roadmap-service.test.ts:
 - Test createRoadmap: mock insert. Verify error thrown if active roadmap already exists. Verify successful creation returns mapped Roadmap.
 - Test getActiveRoadmap: mock query with .eq('status', 'active'). Test returns roadmap with phases. Test returns null when no active roadmap.
+- Test updateRoadmap: mock update, verify partial fields are applied (e.g. only name changes, other fields untouched)
 - Test archiveRoadmap: mock update to set status='archived'. Verify phases are NOT deleted.
+- Test deleteRoadmap: mock phase query returning all 'planned' phases, verify phases deleted first then roadmap deleted
+- Test deleteRoadmap: mock phase query returning one 'completed' phase, verify error thrown with "Archive it instead" message
+- Test deleteRoadmap: mock phase query returning one 'active' phase, verify error thrown
+
+services/phase-service.test.ts:
 - Test createPhase: mock roadmap lookup + phase insert. Verify client_id is set from roadmap. Verify phase_goals_snapshot is populated from getCurrentGoals if goals exist.
 - Test activatePhase: mock phase lookup + update. Verify only one active phase per roadmap constraint.
 - Test completePhase: mock update. Verify end_date set to current date if not already set.
 - Test getActivePhase: mock query joining through active roadmap. Test returns null when no active phase.
+- Test updatePhase: mock update, verify partial fields applied, verify status field is not changeable via this function
+- Test deletePhase: mock phase with status 'planned', verify plans unlinked (phase_id set to NULL on training_plans, nutrition_plans, daily_habits) then phase deleted
+- Test deletePhase: mock phase with status 'active', verify error thrown with message about archiving
+- Test deletePhase: mock phase with status 'completed', verify error thrown
 
 Add mock data builders to __tests__/helpers/mock-data-builders.ts:
 - createMockClientGoalsRow(overrides?)
@@ -336,6 +352,8 @@ Routes to create:
 1. app/api/clients/[id]/roadmap/route.ts
    - GET: Returns active roadmap with phases for the client. 404 if no active roadmap.
    - POST: Creates a new roadmap. Body: { name, longTermGoal?, startedAt?, targetEndDate? }. Returns 201 with created roadmap.
+   - PUT: Updates roadmap fields. Body is partial: { name?, longTermGoal?, startedAt?, targetEndDate? }. Calls updateRoadmap(). Returns 200 with updated roadmap.
+   - DELETE: Deletes roadmap. Calls deleteRoadmap(). Returns 200 on success. Returns 400 with guard error message if any phase was activated/completed.
 
 2. app/api/clients/[id]/roadmap/phases/route.ts
    - GET: Returns all phases for the active roadmap, ordered by order_index.
@@ -343,7 +361,8 @@ Routes to create:
 
 3. app/api/clients/[id]/roadmap/phases/[phaseId]/route.ts
    - GET: Returns phase detail with linked plans (training_plans, nutrition_plans, daily_habits where phase_id matches).
-   - PUT: Updates phase fields (name, description, objectives, dates, status). Body is partial.
+   - PUT: Updates phase fields (name, description, objectives, dates). Body is partial. Does not accept status changes (use activate/complete endpoints).
+   - DELETE: Deletes phase. Calls deletePhase(). Returns 200 on success. Returns 400 with guard error message if phase was activated/completed.
 
 4. app/api/clients/[id]/roadmap/phases/[phaseId]/activate/route.ts
    - POST: Activates the phase. Calls activatePhase(). Returns updated phase.
@@ -370,6 +389,11 @@ app/api/clients/[id]/roadmap/route.test.ts:
 - Test POST: "creates roadmap successfully" - mock createRoadmap, verify 201
 - Test POST: "returns 400 with invalid body" - send empty body, verify validation error
 - Test POST: "requires CSRF token on POST"
+- Test PUT: "updates roadmap with partial fields" - mock updateRoadmap, verify 200
+- Test PUT: "requires CSRF token on PUT"
+- Test DELETE: "deletes roadmap when all phases are planned" - mock deleteRoadmap succeeding, verify 200
+- Test DELETE: "returns 400 when phases were activated" - mock deleteRoadmap throwing guard error, verify 400 with error message
+- Test DELETE: "requires CSRF token on DELETE"
 
 app/api/clients/[id]/goals/route.test.ts:
 - Test GET: "returns current goals"
@@ -377,6 +401,14 @@ app/api/clients/[id]/goals/route.test.ts:
 - Test GET: "returns empty when no goals set"
 - Test PUT: "updates goals and returns new version"
 - Test PUT: "validates input - rejects negative weight"
+
+app/api/clients/[id]/roadmap/phases/[phaseId]/route.test.ts:
+- Test GET: "returns phase detail with linked plans"
+- Test PUT: "updates phase with partial fields" - verify 200
+- Test PUT: "rejects status changes in PUT body" - verify status field ignored or 400
+- Test DELETE: "deletes planned phase successfully" - mock deletePhase succeeding, verify 200
+- Test DELETE: "returns 400 when phase is active" - mock deletePhase throwing guard error, verify 400 with error message
+- Test DELETE: "returns 400 when phase is completed" - same pattern
 
 app/api/client/phase/route.test.ts:
 - Test GET: "returns active phase for authenticated client"
