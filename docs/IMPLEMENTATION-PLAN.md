@@ -45,7 +45,7 @@ Migration 062_create_roadmaps_and_phases.sql:
 - Index on (client_id, created_at DESC)
 - Enable RLS
 
-- Create phases table with: id (UUID PK), roadmap_id (UUID NOT NULL FK to roadmaps ON DELETE SET NULL), client_id (UUID NOT NULL FK to clients ON DELETE CASCADE), name (TEXT NOT NULL), description (TEXT), objectives (TEXT), order_index (INTEGER NOT NULL DEFAULT 0), status (TEXT NOT NULL DEFAULT 'planned' CHECK IN ('planned', 'active', 'completed', 'skipped')), start_date (DATE), end_date (DATE), duration_weeks (INTEGER), phase_goals_snapshot (JSONB), created_at, updated_at
+- Create phases table with: id (UUID PK), roadmap_id (UUID NOT NULL FK to roadmaps ON DELETE RESTRICT), client_id (UUID NOT NULL FK to clients ON DELETE CASCADE), name (TEXT NOT NULL), description (TEXT), objectives (TEXT), order_index (INTEGER NOT NULL DEFAULT 0), status (TEXT NOT NULL DEFAULT 'planned' CHECK IN ('planned', 'active', 'completed', 'skipped')), start_date (DATE), end_date (DATE), duration_weeks (INTEGER), phase_goals_snapshot (JSONB), created_at, updated_at
 - Unique partial index on (roadmap_id) WHERE status = 'active' (only one active phase per roadmap)
 - Index on (roadmap_id, order_index)
 - Index on (client_id, start_date DESC)
@@ -114,9 +114,10 @@ Read docs/IMPLEMENTATION-PLAN.md, CONVENTIONS.md (especially sections 2, 3, 8, 9
 Create three new service files. Before writing each one, read 2-3 existing service files to match patterns exactly (check services/client-service.ts, services/nutrition-plan-service.ts, services/training-service.ts for style). Use createServerSupabaseClient() by default per conventions. Use supabaseAdmin only where justified with a comment.
 
 1. services/body-metrics-service.ts (max 300 lines):
+   - Define a shared BodyMetricsQueryOpts interface: { requireFields?: ('weight' | 'body_fat_percentage' | 'bmr' | 'tdee')[], limit?: number, from?: string, to?: string }. The requireFields filter uses AND logic: requireFields: ['weight', 'tdee'] adds WHERE weight IS NOT NULL AND tdee IS NOT NULL to the query.
    - recordBodyMetrics({ clientId, weight?, weightUnit?, bodyFatPercentage?, bmr?, tdee?, source, sourceId? }): Inserts a row into body_metrics. Also updates the denormalized cache on clients table (current_weight, current_body_fat_percentage, bmr, tdee) if the respective fields are provided.
-   - getLatestBodyMetrics(clientId): Returns the most recent body_metrics row for the client. Query body_metrics WHERE client_id = ? ORDER BY recorded_at DESC LIMIT 1.
-   - getBodyMetricsHistory(clientId, opts?: { limit?, from?, to? }): Returns body_metrics rows with optional date filtering and pagination.
+   - getLatestBodyMetrics(clientId, opts?: BodyMetricsQueryOpts): Returns the most recent body_metrics row matching the filters. Effectively getBodyMetricsHistory with limit: 1, ORDER BY recorded_at DESC. Callers needing weight use requireFields: ['weight'] to skip TDEE-only rows.
+   - getBodyMetricsHistory(clientId, opts?: BodyMetricsQueryOpts): Returns body_metrics rows with optional date filtering, pagination, and field requirements.
 
 2. services/client-goals-service.ts (max 300 lines):
    - getCurrentGoals(clientId): Returns the current (non-superseded) client_goals row. Query WHERE client_id = ? AND superseded_at IS NULL using .maybeSingle().
@@ -140,7 +141,11 @@ Now write unit tests for ALL three services. Follow the existing test patterns i
 services/body-metrics-service.test.ts:
 - Test recordBodyMetrics: mock supabaseAdmin.from().insert() for body_metrics and .update() for clients cache. Verify both calls are made with correct data. Test with partial data (only weight, no body fat). Test error handling when insert fails.
 - Test getLatestBodyMetrics: mock query chain with .select().eq().order().limit().maybeSingle(). Test returns mapped BodyMetricsEvent. Test returns null when no data.
+- Test getLatestBodyMetrics with requireFields: ['weight'] skips TDEE-only rows
+- Test getLatestBodyMetrics with requireFields: ['weight', 'tdee'] uses AND logic (row must have both non-null)
 - Test getBodyMetricsHistory: mock query chain. Test with no options (returns all). Test with limit option. Test with from/to date range. Test empty result returns empty array.
+- Test getBodyMetricsHistory with requireFields filters correctly
+- Test both methods return null/empty when no rows match the requireFields filter
 
 services/client-goals-service.test.ts:
 - Test getCurrentGoals: mock query with .eq('superseded_at', null). Test returns mapped ClientGoals. Test returns null for client with no goals.
@@ -392,35 +397,34 @@ After creating all routes and tests:
 
 ---
 
-### Prompt 2C: Plan Linking + Tests
+### Prompt 2C: Plan Linking - API Layer (Mandatory Phase Selection) + Tests
 
 ```
 Read CONVENTIONS.md. Read the existing plan creation flows before modifying.
 
-When a coach creates a training plan, nutrition plan, or habits while a phase is active, the plan should automatically link to that phase.
+When a coach creates a training plan, nutrition plan, or habits, the system must check if the client has an active roadmap. If yes, the coach MUST select a phase - the request must include phaseId. If no roadmap exists, phaseId is omitted and phase_id = NULL (backward compatible).
 
 Modify these files:
 
-1. app/api/clients/[id]/training/route.ts - In the POST handler, after getting the client, call getActivePhase(clientId). If an active phase exists, pass phase.id to the training plan creation. Modify services/training-service.ts createTrainingPlan() to accept an optional phaseId param and include it in the INSERT.
+1. app/api/clients/[id]/training/route.ts - In the POST handler, after auth, call getActiveRoadmap(clientId). If an active roadmap exists, require phaseId in the request body. Validate that phaseId belongs to this client's roadmap and has status 'planned' or 'active' (reject 'completed' or 'skipped'). Return 400 if phaseId is missing or invalid. Pass phaseId to createTrainingPlan(). If no active roadmap exists, proceed as before with phase_id = NULL.
 
-2. app/api/clients/[id]/nutrition/route.ts - Same pattern. Call getActivePhase(clientId). Pass phaseId to createNutritionPlan(). Modify services/nutrition-plan-service.ts to accept and store phaseId.
+2. app/api/clients/[id]/nutrition/route.ts - Same pattern.
 
-3. For daily habits - find where habits are created (search for the habits creation endpoint). Add the same pattern: get active phase, pass phaseId.
+3. app/api/clients/[id]/habits/route.ts - Same pattern.
 
-Important: phaseId is always optional/nullable. If no active phase exists, plans create exactly as before with phase_id = NULL. This preserves backward compatibility for clients without roadmaps.
+4. services/training-service.ts - createTrainingPlan() accepts optional phaseId param, includes in INSERT.
 
-Now add tests for the plan linking:
+5. services/nutrition-plan-service.ts - createNutritionPlan() accepts optional phaseId, includes in INSERT.
 
-Update or create tests for training plan creation:
-- Mock getActivePhase from roadmap-service
-- Test: "sets phase_id when active phase exists" - mock getActivePhase returning a phase, verify createTrainingPlan is called with phaseId
-- Test: "creates plan without phase_id when no active phase" - mock getActivePhase returning null, verify plan created with phase_id = null/undefined
+6. lib/validations/training.ts, nutrition.ts, daily-habit.ts - Add phaseId: z.string().uuid().optional() to schemas.
 
-Update or create tests for nutrition plan creation:
-- Same two tests as above
-
-Update or create tests for habit creation:
-- Same two tests as above
+Tests for all 3 plan creation routes (training, nutrition, habits):
+- Test: "returns 400 when client has active roadmap but phaseId missing from body"
+- Test: "returns 400 when phaseId doesn't belong to the client's roadmap"
+- Test: "accepts request when client has no roadmap and phaseId is omitted" (backward compat)
+- Test: "accepts valid phaseId for a planned phase"
+- Test: "accepts valid phaseId for an active phase"
+- Test: "rejects phaseId for a completed or skipped phase"
 
 After changes:
 - npx tsc --noEmit
@@ -429,8 +433,55 @@ After changes:
 
 **Verify 2C:**
 - `npx tsc --noEmit` passes
-- `npx vitest run` - all tests pass
+- `npx vitest run` - all tests pass including mandatory selection cases
 - Plans created without a roadmap still work (phase_id = NULL)
+- Plans rejected when roadmap exists but phaseId missing (400)
+
+---
+
+### Prompt 2C-b: Plan Linking - UI Layer (Phase Selector in Builder Flows)
+
+```
+Read CONVENTIONS.md. Read the existing builder flows before modifying:
+- components/clients/training/builder/ai-prompt-panel.tsx
+- components/clients/nutrition/builder/nutrition-settings-form.tsx
+- components/clients/habits/add-habit-dialog.tsx
+- hooks/use-training-plan.ts, hooks/use-nutrition-builder.ts, hooks/use-client-habits.ts
+- contexts/training-builder-context.tsx, contexts/nutrition-builder-context.tsx
+
+Create a shared phase selector component and integrate it into all three plan creation flows.
+
+Step 1: Create components/clients/phase-selector.tsx (max 150 lines)
+- Reusable dropdown that fetches phases from /api/clients/${clientId}/roadmap/phases
+- Shows phases with status 'planned' or 'active', with status badge next to name
+- Returns selected phaseId via onChange callback
+- Renders nothing if client has no active roadmap (fetch returns 404)
+- Uses SWR for data fetching (coach-side component)
+
+Step 2: Add PhaseSelector to training builder
+- components/clients/training/builder/ai-prompt-panel.tsx: Add <PhaseSelector> above the generate button
+- contexts/training-builder-context.tsx: Add phaseId to context state
+- hooks/use-training-plan.ts: Include phaseId in POST body (line ~80-84)
+
+Step 3: Add PhaseSelector to nutrition builder
+- components/clients/nutrition/builder/nutrition-settings-form.tsx: Add <PhaseSelector> in form fields
+- contexts/nutrition-builder-context.tsx: Add phaseId to context state
+- hooks/use-nutrition-builder.ts: Include phaseId in POST body (line ~238-242)
+
+Step 4: Add PhaseSelector to habits
+- components/clients/habits/add-habit-dialog.tsx: Add <PhaseSelector> in dialog form
+- hooks/use-client-habits.ts: Include phaseId in POST body (line ~89-95)
+
+After changes:
+- npx tsc --noEmit
+- npm run build
+```
+
+**Verify 2C-b:**
+- `npx tsc --noEmit` passes
+- `npm run build` passes
+- Phase selector appears in training/nutrition/habits builders when client has a roadmap
+- Phase selector hidden when client has no roadmap
 
 ---
 
@@ -597,6 +648,218 @@ Fix any issues found. Then commit with message:
 
 ---
 
+### Prompt 2G: Phase Transition Flow + Minimal Client Completion
+
+```
+Read CONVENTIONS.md and docs/ARCHITECTURE.md.
+
+The phase lifecycle is incomplete - completing a phase currently just sets status='completed' with no transition logic. Build the full phase transition flow for coaches and a minimal client-side completion surface for end-to-end testing.
+
+Before writing, read:
+- services/roadmap-service.ts (existing completePhase, activatePhase)
+- services/body-metrics-service.ts (getBodyMetricsHistory, getLatestBodyMetrics)
+- services/client-goals-service.ts (getCurrentGoals)
+- components/clients/roadmap/phase-card.tsx (where "Complete" button lives)
+- supabase/migrations/057_upsert_daily_log_atomic.sql (for RPC transaction pattern)
+- An existing drawer component for pattern reference
+
+Step 0: Create migration 066_phase_transition_support.sql
+
+- ALTER TABLE phases ADD COLUMN coach_reflection TEXT;
+- ALTER TABLE phases ADD COLUMN phase_summary JSONB;
+- ALTER TABLE phases ADD COLUMN completion_seen BOOLEAN NOT NULL DEFAULT false;
+- CREATE INDEX idx_session_logs_client_date ON session_logs(client_id, date DESC);
+  (session_logs is missing a (client_id, date) composite index - nutrition_logs and daily_habit_logs already have one)
+
+- Create the transition_phase_atomic RPC. This follows the same SECURITY DEFINER + supabaseAdmin pattern as upsert_daily_log_atomic (migration 057). The RPC handles all writes atomically; the service layer handles reads (getPhaseReviewData) separately before calling it.
+
+  CREATE OR REPLACE FUNCTION transition_phase_atomic(
+    p_phase_id UUID,
+    p_coach_reflection TEXT,
+    p_phase_summary JSONB,
+    p_next_action TEXT,         -- 'activate_next' | 'archive_roadmap'
+    p_archive_training BOOLEAN,
+    p_archive_nutrition BOOLEAN,
+    p_archive_habits BOOLEAN
+  ) RETURNS UUID LANGUAGE plpgsql SECURITY DEFINER AS $$
+  DECLARE
+    v_roadmap_id UUID;
+    v_next_phase_id UUID;
+  BEGIN
+    -- 1. Complete the phase
+    UPDATE phases SET status = 'completed', end_date = COALESCE(end_date, CURRENT_DATE),
+      coach_reflection = p_coach_reflection, phase_summary = p_phase_summary, updated_at = NOW()
+    WHERE id = p_phase_id RETURNING roadmap_id INTO v_roadmap_id;
+
+    -- 2. Archive plans if requested
+    IF p_archive_training THEN
+      UPDATE training_plans SET status = 'archived', updated_at = NOW()
+        WHERE phase_id = p_phase_id AND status = 'active';
+    END IF;
+    IF p_archive_nutrition THEN
+      UPDATE nutrition_plans SET status = 'archived', updated_at = NOW()
+        WHERE phase_id = p_phase_id AND status = 'active';
+    END IF;
+    IF p_archive_habits THEN
+      UPDATE daily_habits SET is_active = false, updated_at = NOW()
+        WHERE phase_id = p_phase_id AND is_active = true;
+    END IF;
+
+    -- 3. Handle next action
+    IF p_next_action = 'activate_next' THEN
+      SELECT id INTO v_next_phase_id FROM phases
+        WHERE roadmap_id = v_roadmap_id AND status = 'planned'
+        ORDER BY order_index ASC LIMIT 1;
+      IF v_next_phase_id IS NOT NULL THEN
+        UPDATE phases SET status = 'active', updated_at = NOW() WHERE id = v_next_phase_id;
+      END IF;
+    ELSIF p_next_action = 'archive_roadmap' THEN
+      UPDATE phases SET status = 'skipped', updated_at = NOW()
+        WHERE roadmap_id = v_roadmap_id AND status = 'planned';
+      UPDATE roadmaps SET status = 'archived', updated_at = NOW() WHERE id = v_roadmap_id;
+    END IF;
+
+    -- 4. Write nextPhaseId into the summary JSONB (the RPC knows it, the caller doesn't)
+    IF v_next_phase_id IS NOT NULL THEN
+      UPDATE phases SET phase_summary = jsonb_set(phase_summary, '{nextPhaseId}', to_jsonb(v_next_phase_id::TEXT))
+        WHERE id = p_phase_id;
+    END IF;
+
+    RETURN COALESCE(v_next_phase_id, p_phase_id);
+  END; $$;
+
+After creating the migration, run: supabase db reset
+Then regenerate types: supabase gen types typescript --local > types/database.ts
+
+Step 1: Add getPhaseReviewData() to services/roadmap-service.ts (or phase-service.ts if split)
+
+Pure-read function that calculates review stats. Called by the API GET handler (to populate the drawer) and by transitionPhase (to snapshot the data before the atomic write).
+
+getPhaseReviewData(phaseId):
+  1. Get the phase with its phase_goals_snapshot, start_date, client_id
+  2. Get the linked training plan to read frequency_per_week: query training_plans WHERE phase_id = phaseId AND status IN ('active', 'archived')
+  3. Get body metrics at phase start: getBodyMetricsHistory(clientId, { from: phase.start_date, limit: 1, requireFields: ['weight'] })
+  4. Get current body metrics: getLatestBodyMetrics(clientId, { requireFields: ['weight'] })
+  5. Calculate adherence for the phase date range (start_date to end_date or NOW()):
+     - Training: count session_logs WHERE client_id AND date BETWEEN start AND end. Prescribed = frequency_per_week * ceil(days_in_range / 7). Show as "23/28 (82%)". If no training plan linked, show completed count only with no percentage.
+     - Nutrition: AVG(nutrition_adherence) from nutrition_logs for the period
+     - Habits: count daily_habit_logs WHERE completed=true / (active_habits_count * days_in_range)
+  6. Get current goals via getCurrentGoals(clientId)
+  7. Return: { phase, goalsAtStart (from snapshot), goalsNow, metricsAtStart, metricsNow, adherence: { training: { completed, prescribed, percentage }, nutrition: { averageAdherence }, habits: { completionRate } } }
+
+Note: The three adherence queries scan the phase date range. Indexes exist on (client_id, date) for all three tables (nutrition_logs, daily_habit_logs existing; session_logs added in migration 066). For long phases this may be slow - acceptable for v1, monitor drawer load time.
+
+Step 2: Add transitionPhase() to services/roadmap-service.ts
+
+transitionPhase(phaseId, options: {
+  coachReflection?: string,
+  nextAction: 'activate_next' | 'archive_roadmap',
+  planHandling: { trainingPlan: 'keep' | 'archive', nutritionPlan: 'keep' | 'archive', habits: 'keep' | 'archive' }
+}):
+  1. Call getPhaseReviewData(phaseId) to compute the snapshot
+  2. Build phase_summary JSONB from the review data: { completedAt, coachReflection, metricsSnapshot: { startWeight, endWeight, startBodyFat, endBodyFat }, adherence: { training, nutrition, habits } }. Do NOT include nextPhaseId - the RPC fills this in atomically after determining v_next_phase_id.
+  3. Call transition_phase_atomic RPC via supabaseAdmin (follows upsert_daily_log_atomic pattern from migration 057). Comment: // Uses supabaseAdmin: system-level atomic write (RLS exception 3)
+  4. The RPC atomically: completes phase, stores summary + reflection, archives plans, activates next or archives roadmap, and writes nextPhaseId into the summary JSONB. Full rollback on any failure.
+  5. Return the completed phase with summary data
+
+Step 3: Create API endpoint app/api/clients/[id]/roadmap/phases/[phaseId]/transition/route.ts
+
+GET handler (review data for the drawer):
+  - coachApiRateLimit, auth, ownership check
+  - Call getPhaseReviewData(phaseId)
+  - Return 200 with review data
+
+POST handler (execute transition):
+  - coachApiRateLimit, requireCSRFProtection, auth, ownership check
+  - Validate body with Zod: { coachReflection?: string, nextAction: 'activate_next' | 'archive_roadmap', planHandling: { trainingPlan: 'keep' | 'archive', nutritionPlan: 'keep' | 'archive', habits: 'keep' | 'archive' } }
+  - Call transitionPhase(phaseId, body)
+  - Return 200 with completed phase + summary
+
+Step 4: Create API endpoint app/api/client/phase-completion/route.ts
+
+GET handler (client-side):
+  - clientApiRateLimit, getAuthenticatedClientId
+  - Query: SELECT id, name, coach_reflection, phase_summary FROM phases WHERE client_id = ? AND status = 'completed' AND phase_summary IS NOT NULL AND completion_seen = false ORDER BY end_date DESC LIMIT 1
+  - Return phase name, coach reflection, metrics snapshot from phase_summary, next phase name (look up nextPhaseId from summary)
+  - Return 404 if no unseen completion
+
+POST handler (mark as seen):
+  - clientApiRateLimit, requireCSRFProtection, getAuthenticatedClientId
+  - Validate body: { phaseId: z.string().uuid() }
+  - UPDATE phases SET completion_seen = true WHERE id = phaseId AND client_id = clientId
+  - Return 200
+
+Step 5: Create components/clients/roadmap/phase-review-drawer.tsx (max 250 lines)
+
+Drawer that opens when coach clicks "Complete Phase" on a phase-card:
+  - Fetches review data from GET /transition endpoint on open
+  - Shows loading skeleton while fetching
+  - Progress section: side-by-side cards showing start vs current metrics (weight, body fat). Green/red trend arrows.
+  - Adherence section: three stat cards for the phase period. Training shows "23/28 sessions (82%)" format. If no training plan was linked, show "12 sessions completed" without percentage. Nutrition shows average adherence %. Habits shows completion rate %.
+  - Coach reflection: textarea with placeholder "What went well? What should [client name] focus on next?"
+  - Transition section: radio group for next action (activate next phase / archive roadmap). Show next phase name if one exists. Disable "activate next" if no planned phases remain.
+  - Plan handling: three toggle rows (training plan, nutrition plan, habits) with keep/archive options
+  - Submit button: "Complete Phase" with Loader2 spinner. POSTs to /transition endpoint.
+  - On success: toast, SWR mutate to refresh roadmap data, close drawer
+
+If this component exceeds 250 lines, extract the progress/adherence cards into a sub-component: components/clients/roadmap/phase-review-stats.tsx
+
+Step 6: Create components/daily-pulse/phase-completion-card.tsx (max 150 lines)
+
+Minimal card shown at the top of the Daily Pulse when a phase completion is pending:
+  - Fetch from GET /api/client/phase-completion
+  - If 404 (no pending completion), render nothing
+  - Card with: phase name, "Phase completed!" heading, coach's note (if any), metrics summary (weight change, training adherence from snapshot), next phase preview ("Up next: [name]")
+  - "Got it" dismiss button that POSTs to /api/client/phase-completion with { phaseId } to mark as seen
+  - No trophy, no confetti, no full-screen overlay - just a clean info card
+  - Integrate into the Daily Pulse layout (read daily-pulse-content.tsx to find where to place it - should appear above the daily sections)
+
+Step 7: Update components/clients/roadmap/phase-card.tsx
+
+Change the "Complete" button to open the phase-review-drawer instead of directly calling completePhase. Pass phase data as props.
+
+Step 8: Write tests
+
+services/roadmap-service.test.ts (add to existing):
+- Test getPhaseReviewData: returns metrics comparison and adherence stats with correct percentages
+- Test getPhaseReviewData: handles phase with no body metrics gracefully (null metricsAtStart)
+- Test getPhaseReviewData: handles phase with no linked training plan (shows count only, no percentage)
+- Test getPhaseReviewData: handles phase with no nutrition logs (null adherence)
+- Test transitionPhase: calls getPhaseReviewData to build snapshot, then calls RPC with correct params
+- Test transitionPhase: passes archive flags correctly based on planHandling options
+- Test transitionPhase: stores coach reflection in phase_summary
+
+app/api/clients/[id]/roadmap/phases/[phaseId]/transition/route.test.ts:
+- Test GET: returns review data with metrics comparison and adherence
+- Test GET: returns 401 when not authenticated
+- Test POST: successful transition returns completed phase with summary
+- Test POST: returns 400 with invalid nextAction value
+- Test POST: requires CSRF token
+- Test POST: returns 400 with missing planHandling
+
+app/api/client/phase-completion/route.test.ts:
+- Test GET: returns pending completion with coach reflection and metrics snapshot
+- Test GET: returns 404 when no unseen completion exists
+- Test GET: returns 404 after completion is marked as seen
+- Test POST: marks completion as seen, subsequent GET returns 404
+- Test POST: returns 401 when not authenticated
+
+After all changes:
+- npx tsc --noEmit
+- npm run build
+- npx vitest run
+```
+
+**Verify 2G:**
+- `npx tsc --noEmit` passes
+- `npm run build` passes
+- `npx vitest run` - all tests pass
+- Phase review drawer shows real adherence data
+- Client completion card appears and dismisses correctly
+- Full lifecycle testable: create roadmap -> add phases -> activate -> complete with transition -> next phase activates
+
+---
+
 ## Post-Implementation Verification
 
 After both sessions are complete, do a manual smoke test:
@@ -606,6 +869,8 @@ After both sessions are complete, do a manual smoke test:
 3. **Goal history:** Update a client's goals via the metrics page. Check /api/clients/[id]/goals?history=true to verify both old and new goal records exist.
 4. **Body metrics history:** Submit a check-in with new weight. Check /api/clients/[id]/body-metrics to verify the event was recorded with source='check_in'.
 5. **Activation:** Create a new client, complete intake, verify the activation banner shows roadmap as recommended.
+6. **Phase transition (activate_next):** Complete a phase via the review drawer. Verify coach reflection is stored, plans are archived/kept based on selection, next phase activates. Check client app shows the completion card with coach's note. Dismiss it and verify it doesn't reappear.
+7. **Phase transition (archive_roadmap):** Complete the final phase with nextAction='archive_roadmap'. Verify remaining planned phases are set to 'skipped', roadmap status is 'archived'. This tests the RPC branching logic that unit tests can't cover.
 
 ---
 
@@ -623,6 +888,9 @@ After both sessions are complete, do a manual smoke test:
 | Client phase API | app/api/client/phase/route.test.ts | GET auth, 404 |
 | Plan linking | Training/nutrition route tests | phase_id set when active, null when no phase |
 | Activation | activation-readiness/route.test.ts | All 5 flags, roadmap recommended not required |
+| Phase transition | roadmap-service.test.ts (additions) | transitionPhase atomic flow, plan archival, next phase activation, coach reflection |
+| Transition API | transition/route.test.ts | POST transition, GET review data, auth, validation |
+| Client completion | phase-completion/route.test.ts | GET pending, POST mark seen, 404 when none |
 
 ---
 
