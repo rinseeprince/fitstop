@@ -215,9 +215,9 @@ Coach-side components in `components/clients/`. Client-side in `components/daily
 
 ### General
 - Migrations: Version controlled, never edit directly
-- Relations: Foreign keys with ON DELETE CASCADE/SET NULL
+- Relations: Foreign keys with ON DELETE CASCADE, SET NULL, or RESTRICT. Use RESTRICT on parent tables that must not be hard-deleted (e.g. roadmaps - forces archival instead).
 - Indexes: On foreign keys, search fields, sort columns
-- Timestamps: created_at, updated_at on all tables
+- Timestamps: created_at, updated_at on all tables. Exception: immutable event tables (e.g. body_metrics) intentionally skip updated_at - add a comment explaining why.
 
 ### Query result methods
 - `.single()` - Use when expecting exactly one row. Errors if zero or multiple rows returned.
@@ -225,9 +225,9 @@ Coach-side components in `components/clients/`. Client-side in `components/daily
 - No suffix - Returns an array of rows.
 
 ### Soft deletes
-- User-created data uses soft delete (`is_active = false`), never hard delete
-- Training sessions and exercises use `is_active` for soft deletes. Always filter by `.eq("is_active", true)` in read queries
-- Daily habits use `is_active` for soft deletes
+- User-created data uses soft delete, never hard delete
+- **is_active pattern**: Training sessions, exercises, and daily habits use `is_active = false`. Always filter by `.eq("is_active", true)` in read queries
+- **Status-based lifecycle**: Entities with richer states (e.g. roadmaps: 'active'/'archived'/'draft', phases: 'planned'/'active'/'completed'/'skipped') use a status column instead of is_active. Never hard-delete these - they contain historical data (e.g. phase_goals_snapshot)
 - Unique constraints must account for inactive rows (check for inactive before inserting, reactivate if found)
 - Provide UI for viewing and reactivating inactive items where appropriate
 
@@ -237,37 +237,8 @@ Coach-side components in `components/clients/`. Client-side in `components/daily
 - If renaming a column, everything that queries it breaks
 - JSONB columns: Supabase handles serialization automatically - never use `JSON.stringify()` on JSONB
 
-### Daily logs architecture (spine + child tables)
-Daily tracking data is split into a spine table and domain-specific child tables:
-```
-daily_logs (spine)         -- id, client_id, date, notes, phase_id
-  ├── wellness_logs        -- mood, energy, sleep, stress (1:1 via daily_log_id FK)
-  ├── nutrition_logs       -- consumed, targets, adherence (1:1 via daily_log_id FK)
-  ├── training_logs        -- trained, training_session_id, training_data JSONB (1:1 via daily_log_id FK)
-  ├── daily_habit_logs     -- per-habit completion (1:many, FK to daily_habits)
-  └── daily_external_activities -- ad-hoc activities (1:many)
-```
-- **Writes** go through the `upsert_daily_log_atomic()` RPC function which upserts spine + child tables in a single transaction
-- **Domain-specific reads** query child tables directly (e.g. wellness history queries `wellness_logs`, not the view)
-- **Cross-domain reads** use the `daily_logs_full` view (e.g. attention feed, AI summary generation)
-- Each child table has `client_id` and `date` columns for direct querying without joining the spine
-- Each child table has `phase_id UUID` (nullable) for future phase/roadmap linking
-- The `DailyLog` TypeScript type remains flat. The split is DB + service layer only. Hooks, components, and utils are unaffected
-
-### Training completion hierarchy
-```
-training_logs        -- did the client train today? (1:1 per day, child of daily_logs)
-  └── session_logs   -- per-session-per-week completion details (renamed from client_session_completions)
-        └── exercise_logs  -- per-exercise performance (renamed from client_exercise_completions)
-```
-- `session_logs.training_session_id` is SET NULL on delete (nullable). When a training plan is replaced, old completion records are preserved via `prescribed_session_snapshot` JSONB
-- `exercise_logs.training_exercise_id` is SET NULL on delete (nullable). History preserved via `prescribed_exercise_snapshot` JSONB
-- Snapshots are written at completion time and backfilled for existing data
-
-### JSONB conventions
-- See Daily Pulse README for `training_data` and `activityStatuses` shape documentation
-- `activityStatuses` is `Record<string, { completed, activityName, estimatedCalories }>` - always read `.completed` field, never use the object as a truthy check
-- `training_data` JSONB on `training_logs` is a **UI restore cache** for the Daily Pulse. It preserves the exact training state at save time so the UI can restore without cross-referencing. The **source of truth** for training completion is `session_logs` + `exercise_logs`
+### Schema architecture
+Schema diagrams, table hierarchies, and JSONB conventions are documented in **docs/ARCHITECTURE.md**. That file evolves with migrations. These coding rules stay stable.
 
 ## 9. Security
 - Auth: Check on every protected route/component
@@ -389,7 +360,8 @@ Before saying "ready to commit", ALL of these must pass:
 - README: Local setup in <5 steps
 
 ## 16. References
-- **Daily Pulse README**: Full architectural documentation for the Daily Pulse feature, including JSONB conventions, data flow, component structure, and rules that must not be violated. Claude Code should read this before modifying any Daily Pulse related code.
+- **docs/ARCHITECTURE.md**: Database schema diagrams, table hierarchies, JSONB conventions. Evolves with migrations - update when shipping schema changes.
+- **Daily Pulse README**: Full architectural documentation for the Daily Pulse feature, including data flow, component structure, and rules that must not be violated. Claude Code should read this before modifying any Daily Pulse related code.
 - **DESIGNSYSTEM.md**: Visual patterns, colour tokens, spacing, component styling conventions.
 - **TECHNICAL-DEBT.md**: Known gaps between conventions and current implementation.
 

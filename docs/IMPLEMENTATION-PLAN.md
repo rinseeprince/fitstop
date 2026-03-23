@@ -19,7 +19,7 @@ Before starting either session, make sure:
 ### Prompt 1A: Migrations
 
 ```
-Read docs/IMPLEMENTATION-PLAN.md and CONVENTIONS.md before starting.
+Read docs/IMPLEMENTATION-PLAN.md, CONVENTIONS.md, and docs/ARCHITECTURE.md before starting.
 
 Create the following Supabase migrations in order. Follow existing migration patterns in supabase/migrations/ for style. All new tables need created_at and updated_at columns. Use gen_random_uuid() for primary keys.
 
@@ -109,7 +109,7 @@ Keep both files under their size limits (types: no limit specified, database-hel
 ### Prompt 1C: New Services + Unit Tests
 
 ```
-Read docs/IMPLEMENTATION-PLAN.md and CONVENTIONS.md (especially sections 2, 3, 8, 9, 10).
+Read docs/IMPLEMENTATION-PLAN.md, CONVENTIONS.md (especially sections 2, 3, 8, 9, 10), and docs/ARCHITECTURE.md.
 
 Create three new service files. Before writing each one, read 2-3 existing service files to match patterns exactly (check services/client-service.ts, services/nutrition-plan-service.ts, services/training-service.ts for style). Use createServerSupabaseClient() by default per conventions. Use supabaseAdmin only where justified with a comment.
 
@@ -263,7 +263,7 @@ Then commit with a message like:
 ### Prompt 2A: Switch Reads + Tests
 
 ```
-Read docs/IMPLEMENTATION-PLAN.md and CONVENTIONS.md.
+Read docs/IMPLEMENTATION-PLAN.md, CONVENTIONS.md, and docs/ARCHITECTURE.md.
 
 We completed Session 1 (migrations, new services, dual-writes). Now switch reads from clients.* event fields to the new services. The clients table keeps current_weight, current_body_fat_percentage, bmr, tdee as denormalized cache for list views - don't remove those fields.
 
@@ -312,7 +312,7 @@ After all changes:
 ### Prompt 2B: New API Routes + Route Tests
 
 ```
-Read docs/IMPLEMENTATION-PLAN.md and CONVENTIONS.md (especially sections 9 and 10 for security and API design).
+Read docs/IMPLEMENTATION-PLAN.md, CONVENTIONS.md (especially sections 9 and 10 for security and API design), and docs/ARCHITECTURE.md.
 
 Create new API routes. Before writing, read an existing route like app/api/clients/[id]/training/route.ts to match the exact pattern for: rate limiting, CSRF, auth, ownership check, validation, error handling, response format.
 
@@ -551,15 +551,11 @@ After all changes:
 ### Prompt 2F: Update CONVENTIONS.md + Final Verification
 
 ```
-Read CONVENTIONS.md fully.
+Read CONVENTIONS.md and docs/ARCHITECTURE.md fully.
 
-Update CONVENTIONS.md with the following changes:
+Update docs/ARCHITECTURE.md to add the new roadmap/phase schema documentation:
 
-1. In section 8 "Daily logs architecture", update line 254 to reflect reality:
-   Change: "Each child table has `phase_id UUID` (nullable) for future phase/roadmap linking"
-   To: "Phase is derived via logs -> plan -> phase path (migration 059 removed redundant phase_id from child tables). daily_logs spine retains phase_id for direct phase context."
-
-2. Add a new subsection under section 8 called "Roadmap/Phase architecture":
+1. Add a new section "Roadmap/Phase Architecture":
    Document the hierarchy:
    ```
    roadmaps              -- long-term goal container, one active per client
@@ -573,8 +569,6 @@ Update CONVENTIONS.md with the following changes:
    - client_goals table tracks versioned goals with effective_from/superseded_at pattern
    - body_metrics table tracks every metric measurement as an immutable event with source provenance
    - clients table retains current_weight, current_body_fat_percentage, bmr, tdee as denormalized cache
-
-3. Add to section 8 "Soft deletes": "Roadmaps use status ('active'/'archived'/'draft') instead of is_active. Phases use status ('planned'/'active'/'completed'/'skipped'). Never hard-delete roadmaps or phases - they contain historical phase_goals_snapshot data."
 
 Now run the FULL commit-ready checklist from CONVENTIONS.md section 13:
 1. npx tsc --noEmit - no TypeScript errors

@@ -291,4 +291,4 @@ Reviewed: 2026-03-22
 
 | # | Issue | File(s) | Details | Status |
 |---|-------|---------|---------|--------|
-| 1 | CONVENTIONS.md daily_logs conventions outdated | `CONVENTIONS.md` Section 8 | The Daily Pulse / daily_logs conventions need rewriting to reflect the spine + child table architecture (`daily_logs` spine, `wellness_logs`, `nutrition_logs`, `training_logs`). `training_data` JSONB convention should state it is a UI restore cache in `training_logs`, not the source of truth. Source of truth is `session_logs` + `exercise_logs`. | Open |
+| 1 | ~~CONVENTIONS.md daily_logs conventions outdated~~ | `docs/ARCHITECTURE.md` | Schema diagrams moved to `docs/ARCHITECTURE.md` with corrections applied (phase_id linkage, spine + child table architecture, training_data as UI restore cache). | Resolved |
