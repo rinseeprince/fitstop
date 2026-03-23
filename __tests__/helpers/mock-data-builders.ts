@@ -6,6 +6,7 @@
 import { generateUUID, generateISODate } from './test-utils'
 import type { Client } from '@/types/check-in'
 import type { CheckInRow, CheckInTokenRow, ClientRow, TrainingPlanRow, TrainingSessionRow, TrainingExerciseRow } from '@/lib/database-helpers'
+import type { BodyMetricsEventRow, ClientGoalRow, RoadmapRow, PhaseRow } from '@/types/roadmap'
 
 // =============================================================================
 // Client Builders
@@ -405,5 +406,155 @@ export function createMockExternalActivity(options: {
     estimatedCalories: options.estimatedCalories ?? 300,
     dayPerformed: options.dayPerformed ?? 'monday',
     notes: options.notes,
+  }
+}
+
+// =============================================================================
+// Client Goals Builders
+// =============================================================================
+
+export interface MockClientGoalsRowOptions {
+  id?: string
+  clientId?: string
+  goalWeight?: number | null
+  goalBodyFatPercentage?: number | null
+  goalDeadline?: string | null
+  primaryGoal?: string | null
+  setBy?: string
+  notes?: string | null
+  effectiveFrom?: string
+  supersededAt?: string | null
+  createdAt?: string
+  updatedAt?: string
+}
+
+export function createMockClientGoalsRow(options: MockClientGoalsRowOptions = {}): ClientGoalRow {
+  const now = generateISODate()
+
+  return {
+    id: options.id ?? generateUUID(),
+    client_id: options.clientId ?? generateUUID(),
+    goal_weight: options.goalWeight ?? 170,
+    goal_body_fat_percentage: options.goalBodyFatPercentage ?? null,
+    goal_deadline: options.goalDeadline ?? null,
+    primary_goal: options.primaryGoal ?? 'weight_loss',
+    set_by: options.setBy ?? generateUUID(),
+    notes: options.notes ?? null,
+    effective_from: options.effectiveFrom ?? now,
+    superseded_at: options.supersededAt ?? null,
+    created_at: options.createdAt ?? now,
+    updated_at: options.updatedAt ?? now,
+  }
+}
+
+// =============================================================================
+// Body Metrics Builders
+// =============================================================================
+
+export interface MockBodyMetricsRowOptions {
+  id?: string
+  clientId?: string
+  weight?: number | null
+  weightUnit?: string | null
+  bodyFatPercentage?: number | null
+  bmr?: number | null
+  tdee?: number | null
+  source?: string
+  sourceId?: string | null
+  recordedAt?: string
+  createdAt?: string
+}
+
+export function createMockBodyMetricsRow(options: MockBodyMetricsRowOptions = {}): BodyMetricsEventRow {
+  const now = generateISODate()
+
+  return {
+    id: options.id ?? generateUUID(),
+    client_id: options.clientId ?? generateUUID(),
+    weight: options.weight ?? 180,
+    weight_unit: options.weightUnit ?? 'lbs',
+    body_fat_percentage: options.bodyFatPercentage ?? null,
+    bmr: options.bmr ?? null,
+    tdee: options.tdee ?? null,
+    source: options.source ?? 'check_in',
+    source_id: options.sourceId ?? null,
+    recorded_at: options.recordedAt ?? now,
+    created_at: options.createdAt ?? now,
+  }
+}
+
+// =============================================================================
+// Roadmap Builders
+// =============================================================================
+
+export interface MockRoadmapRowOptions {
+  id?: string
+  clientId?: string
+  coachId?: string
+  name?: string
+  longTermGoal?: string | null
+  status?: string
+  startedAt?: string | null
+  targetEndDate?: string | null
+  createdAt?: string
+  updatedAt?: string
+}
+
+export function createMockRoadmapRow(options: MockRoadmapRowOptions = {}): RoadmapRow {
+  const now = generateISODate()
+
+  return {
+    id: options.id ?? generateUUID(),
+    client_id: options.clientId ?? generateUUID(),
+    coach_id: options.coachId ?? generateUUID(),
+    name: options.name ?? 'Test Roadmap',
+    long_term_goal: options.longTermGoal ?? null,
+    status: options.status ?? 'active',
+    started_at: options.startedAt ?? now,
+    target_end_date: options.targetEndDate ?? null,
+    created_at: options.createdAt ?? now,
+    updated_at: options.updatedAt ?? now,
+  }
+}
+
+// =============================================================================
+// Phase Builders
+// =============================================================================
+
+export interface MockPhaseRowOptions {
+  id?: string
+  roadmapId?: string
+  clientId?: string
+  name?: string
+  description?: string | null
+  objectives?: string | null
+  orderIndex?: number
+  status?: string
+  startDate?: string | null
+  endDate?: string | null
+  durationWeeks?: number | null
+  phaseGoalsSnapshot?: Record<string, unknown> | null
+  createdAt?: string
+  updatedAt?: string
+}
+
+export function createMockPhaseRow(options: MockPhaseRowOptions = {}): PhaseRow {
+  const now = generateISODate()
+
+  return {
+    id: options.id ?? generateUUID(),
+    roadmap_id: options.roadmapId ?? generateUUID(),
+    client_id: options.clientId ?? generateUUID(),
+    name: options.name ?? 'Phase 1',
+    description: options.description ?? null,
+    objectives: options.objectives ?? null,
+    order_index: options.orderIndex ?? 0,
+    status: options.status ?? 'planned',
+    start_date: options.startDate ?? null,
+    end_date: options.endDate ?? null,
+    duration_weeks: options.durationWeeks ?? null,
+    phase_goals_snapshot: options.phaseGoalsSnapshot ?? null,
+    created_at: options.createdAt ?? now,
+    updated_at: options.updatedAt ?? now,
   }
 }
