@@ -17,6 +17,8 @@ import { createNutritionPlan } from "@/services/nutrition-plan-service";
 import type { ClientUpdate } from "@/lib/database-helpers";
 import { CUSTOM_MACRO_CALORIE_TOLERANCE } from "@/lib/constants";
 import type { GenerateNutritionPlanRequest, DietType } from "@/types/check-in";
+import { getLatestBodyMetrics } from "@/services/body-metrics-service";
+import { getCurrentGoals } from "@/services/client-goals-service";
 
 /**
  * GET: Return the active nutrition plan + daily targets for the coach view.
@@ -148,6 +150,18 @@ export async function POST(
       );
     }
 
+    // Prefer new services, fall back to client.* for pre-migration clients
+    const [latestMetrics, currentGoals] = await Promise.all([
+      getLatestBodyMetrics(clientId),
+      getCurrentGoals(clientId),
+    ]);
+
+    const currentWeight = latestMetrics?.weight ?? client.currentWeight;
+    const weightUnit = (latestMetrics?.weightUnit ?? client.weightUnit ?? "lbs") as "lbs" | "kg";
+    const bmr = latestMetrics?.bmr ?? client.bmr;
+    const tdeeValue = latestMetrics?.tdee ?? client.tdee;
+    const goalWeight = currentGoals?.goalWeight ?? client.goalWeight;
+
     // Handle custom macros
     if (body.customMacrosEnabled) {
       if (!body.customProteinG || !body.customCarbG || !body.customFatG || !body.customCalories) {
@@ -168,9 +182,9 @@ export async function POST(
         );
       }
 
-      const tdee = client.bmr
-        ? calculateTDEE(client.bmr, body.workActivityLevel)
-        : client.tdee;
+      const tdee = bmr
+        ? calculateTDEE(bmr, body.workActivityLevel)
+        : tdeeValue;
 
       const trainingPlan = await getActiveTrainingPlan(clientId);
       await createNutritionPlan({
@@ -180,16 +194,16 @@ export async function POST(
         trainingVolumeHours: body.trainingVolumeHours || "2-3",
         proteinTargetGPerKg: body.proteinTargetGPerKg,
         dietType: body.dietType,
-        goalWeightKg: client.goalWeight
-          ? weightToKg(client.goalWeight, client.weightUnit || "lbs")
+        goalWeightKg: goalWeight
+          ? weightToKg(goalWeight, weightUnit)
           : null,
         goalDeadline: body.goalDeadline || null,
         baselineCalories: body.customCalories,
         proteinTargetG: body.customProteinG,
         carbTargetG: body.customCarbG,
         fatTargetG: body.customFatG,
-        baseWeightKg: weightToKg(client.currentWeight!, client.weightUnit || "lbs"),
-        bmr: client.bmr ?? null,
+        baseWeightKg: weightToKg(currentWeight!, weightUnit),
+        bmr: bmr ?? null,
         tdee: tdee ?? null,
         customMacrosEnabled: true,
         customCalories: body.customCalories,
@@ -208,7 +222,7 @@ export async function POST(
             proteinTargetG: body.customProteinG,
             carbTargetG: body.customCarbG,
             fatTargetG: body.customFatG,
-            adjustedTdee: tdee ?? client.tdee!,
+            adjustedTdee: tdee ?? tdeeValue!,
             weeklyWeightChangeKg: 0,
             warnings: [],
           },
@@ -218,9 +232,9 @@ export async function POST(
     }
 
     // Generate calculated nutrition plan
-    const currentWeightKg = weightToKg(client.currentWeight!, client.weightUnit || "lbs");
-    const goalWeightKg = client.goalWeight
-      ? weightToKg(client.goalWeight, client.weightUnit || "lbs")
+    const currentWeightKg = weightToKg(currentWeight!, weightUnit);
+    const goalWeightKg = goalWeight
+      ? weightToKg(goalWeight, weightUnit)
       : undefined;
 
     const trainingPlan = await getActiveTrainingPlan(clientId);
@@ -228,7 +242,7 @@ export async function POST(
     const plan = generateNutritionPlan({
       currentWeightKg,
       goalWeightKg,
-      bmr: client.bmr!,
+      bmr: bmr!,
       gender: client.gender as "male" | "female" | "other",
       workActivityLevel: body.workActivityLevel,
       trainingVolumeHours: body.trainingVolumeHours,
@@ -236,7 +250,7 @@ export async function POST(
       proteinTargetGPerKg: body.proteinTargetGPerKg,
       dietType: body.dietType,
       goalDeadline: body.goalDeadline,
-      weightUnit: client.weightUnit || "lbs",
+      weightUnit: weightUnit,
     });
 
     // Check if client already has an active plan (for regeneration_reason)
@@ -261,7 +275,7 @@ export async function POST(
       carbTargetG: plan.carbTargetG,
       fatTargetG: plan.fatTargetG,
       baseWeightKg: currentWeightKg,
-      bmr: client.bmr ?? null,
+      bmr: bmr ?? null,
       tdee: plan.tdee,
       customMacrosEnabled: false,
       customCalories: null,

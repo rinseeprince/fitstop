@@ -17,6 +17,7 @@ export interface BodyMetricsQueryOpts {
   limit?: number;
   from?: string;
   to?: string;
+  ascending?: boolean;
 }
 
 function mapBodyMetricsRow(row: BodyMetricsEventRow): BodyMetricsEvent {
@@ -113,7 +114,7 @@ export const getBodyMetricsHistory = async (
     query = query.lte("recorded_at", opts.to);
   }
 
-  query = query.order("recorded_at", { ascending: false });
+  query = query.order("recorded_at", { ascending: opts?.ascending ?? false });
 
   if (opts?.limit) {
     query = query.limit(opts.limit);

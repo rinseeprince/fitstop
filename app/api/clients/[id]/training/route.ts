@@ -18,6 +18,8 @@ import { generateTrainingPlanSchema } from "@/lib/validations/training";
 import { weightToKg } from "@/utils/nutrition-helpers";
 import type { ExternalActivityContext } from "@/types/training";
 import type { ActivityMetadata, MuscleGroup, IntensityLevel } from "@/types/external-activity";
+import { getLatestBodyMetrics } from "@/services/body-metrics-service";
+import { getCurrentGoals } from "@/services/client-goals-service";
 
 // Helper function for default recovery hours based on intensity
 function getDefaultRecoveryHours(intensity: IntensityLevel): number {
@@ -75,12 +77,26 @@ export async function POST(
       );
     }
 
+    // Prefer new services, fall back to client.* for pre-migration clients
+    const [latestMetrics, currentGoals] = await Promise.all([
+      getLatestBodyMetrics(clientId),
+      getCurrentGoals(clientId),
+    ]);
+
+    const currentWeight = latestMetrics?.weight ?? client.currentWeight;
+    const weightUnit = (latestMetrics?.weightUnit ?? client.weightUnit ?? "lbs") as "lbs" | "kg";
+    const bodyFatPercentage = latestMetrics?.bodyFatPercentage ?? client.currentBodyFatPercentage;
+    const goalWeight = currentGoals?.goalWeight ?? client.goalWeight;
+    const goalBodyFatPercentage = currentGoals?.goalBodyFatPercentage ?? client.goalBodyFatPercentage;
+    const clientTdee = latestMetrics?.tdee ?? client.tdee;
+    const clientBmr = latestMetrics?.bmr ?? client.bmr;
+
     // Gather client metrics
-    const currentWeightKg = client.currentWeight
-      ? weightToKg(client.currentWeight, client.weightUnit || "lbs")
+    const currentWeightKg = currentWeight
+      ? weightToKg(currentWeight, weightUnit)
       : undefined;
-    const goalWeightKg = client.goalWeight
-      ? weightToKg(client.goalWeight, client.weightUnit || "lbs")
+    const goalWeightKg = goalWeight
+      ? weightToKg(goalWeight, weightUnit)
       : undefined;
 
     // Get recent check-ins for context
@@ -112,10 +128,10 @@ export async function POST(
         name: client.name,
         currentWeightKg,
         goalWeightKg,
-        bodyFatPercentage: client.currentBodyFatPercentage,
-        goalBodyFatPercentage: client.goalBodyFatPercentage,
-        tdee: client.tdee,
-        bmr: client.bmr,
+        bodyFatPercentage,
+        goalBodyFatPercentage,
+        tdee: clientTdee,
+        bmr: clientBmr,
         gender: client.gender,
       },
       checkInData,
@@ -132,9 +148,9 @@ export async function POST(
       rawResponse,
       {
         weightKg: currentWeightKg,
-        bodyFatPercentage: client.currentBodyFatPercentage,
+        bodyFatPercentage,
         goalWeightKg,
-        tdee: client.tdee,
+        tdee: clientTdee,
       },
       checkInData
     );

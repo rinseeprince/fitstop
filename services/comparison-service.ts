@@ -3,6 +3,8 @@ import { getClientById } from "./client-service";
 import { supabaseAdmin } from "./supabase-admin";
 import { prepareChartData } from "@/lib/check-in-utils";
 import { calculateMetricChange, calculateDaysBetween, calculateGoalProgress } from "@/utils/comparison-utils";
+import { getBodyMetricsHistory } from "./body-metrics-service";
+import { getCurrentGoals } from "./client-goals-service";
 import type {
   CheckInComparison,
   GoalProgress,
@@ -31,8 +33,9 @@ export const getCheckInComparison = async (
   );
 
   // Fetch all check-ins for chart data (last 10), first check-in for starting values,
-  // active nutrition plan for base weight and created date, and goal_deadline from clients table
-  const [{ checkIns }, firstCheckIn, { data: activePlan }, { data: clientRow }] = await Promise.all([
+  // active nutrition plan for base weight and created date, goal_deadline from clients table,
+  // earliest body_metrics for starting values, and current goals from client_goals
+  const [{ checkIns }, firstCheckIn, { data: activePlan }, { data: clientRow }, earliestMetrics, currentGoals] = await Promise.all([
     getClientCheckIns(currentCheckIn.clientId, { limit: 10 }),
     getFirstCheckIn(currentCheckIn.clientId),
     supabaseAdmin
@@ -48,7 +51,15 @@ export const getCheckInComparison = async (
       .select("goal_deadline")
       .eq("id", currentCheckIn.clientId)
       .single(),
+    getBodyMetricsHistory(currentCheckIn.clientId, { limit: 1, ascending: true }),
+    getCurrentGoals(currentCheckIn.clientId),
   ]);
+
+  // Prefer new services, fall back to client.* for pre-migration clients
+  const goalWeight = currentGoals?.goalWeight ?? client.goalWeight;
+  const goalBodyFatPercentage = currentGoals?.goalBodyFatPercentage ?? client.goalBodyFatPercentage;
+  const earliestWeight = earliestMetrics[0]?.weight ?? client.startingWeight;
+  const earliestBodyFat = earliestMetrics[0]?.bodyFatPercentage ?? client.startingBodyFatPercentage;
 
   // Calculate time between check-ins
   const timeBetweenCheckIns = previousCheckIn
@@ -62,8 +73,8 @@ export const getCheckInComparison = async (
     client: {
       id: client.id,
       name: client.name,
-      goalWeight: client.goalWeight,
-      goalBodyFatPercentage: client.goalBodyFatPercentage,
+      goalWeight,
+      goalBodyFatPercentage,
       goalDeadline: activePlan?.goal_deadline ?? clientRow?.goal_deadline ?? undefined,
       currentWeight: client.currentWeight,
       currentBodyFatPercentage: client.currentBodyFatPercentage,
@@ -162,23 +173,23 @@ export const getCheckInComparison = async (
   const goalProgress: GoalProgress = {};
 
   // Weight goal progress
-  if (currentCheckIn.weight && client.goalWeight) {
-    // Priority: 1) client's starting weight, 2) first check-in, 3) oldest in recent set, 4) current
-    const startingWeight = client.startingWeight
+  if (currentCheckIn.weight && goalWeight) {
+    // Priority: 1) earliest body_metrics / client starting weight, 2) first check-in, 3) oldest in recent set, 4) current
+    const startingWeight = earliestWeight
       ?? firstCheckIn?.weight
       ?? (weightCheckIns.length > 0 ? weightCheckIns[weightCheckIns.length - 1].weight : undefined)
       ?? currentCheckIn.weight;
 
     const progress = calculateGoalProgress(
       currentCheckIn.weight,
-      client.goalWeight,
+      goalWeight,
       startingWeight,
       avgWeeklyWeightChange
     );
 
     goalProgress.weight = {
       current: currentCheckIn.weight,
-      goal: client.goalWeight,
+      goal: goalWeight,
       startingWeight,
       remaining: progress.remaining,
       percentComplete: progress.percentComplete,
@@ -202,24 +213,24 @@ export const getCheckInComparison = async (
   // Body fat goal progress
   if (
     currentCheckIn.bodyFatPercentage !== undefined &&
-    client.goalBodyFatPercentage !== undefined
+    goalBodyFatPercentage !== undefined
   ) {
-    // Priority: 1) client's starting body fat, 2) first check-in, 3) oldest in recent set, 4) current
-    const startingBodyFat = client.startingBodyFatPercentage
+    // Priority: 1) earliest body_metrics / client starting body fat, 2) first check-in, 3) oldest in recent set, 4) current
+    const startingBodyFat = earliestBodyFat
       ?? firstCheckIn?.bodyFatPercentage
       ?? (bodyFatCheckIns.length > 0 ? bodyFatCheckIns[bodyFatCheckIns.length - 1].bodyFatPercentage : undefined)
       ?? currentCheckIn.bodyFatPercentage;
 
     const progress = calculateGoalProgress(
       currentCheckIn.bodyFatPercentage,
-      client.goalBodyFatPercentage,
+      goalBodyFatPercentage,
       startingBodyFat,
       avgBodyFatChange
     );
 
     goalProgress.bodyFat = {
       current: currentCheckIn.bodyFatPercentage,
-      goal: client.goalBodyFatPercentage,
+      goal: goalBodyFatPercentage,
       startingBodyFat,
       remaining: progress.remaining,
       percentComplete: progress.percentComplete,
