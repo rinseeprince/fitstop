@@ -19,6 +19,8 @@ export function useTrainingPlan({ clientId, onUpdate }: UseTrainingPlanProps) {
   const [prompt, setPrompt] = useState("");
   const [preGenerationActivities, setPreGenerationActivities] = useState<PreGenerationActivity[]>([]);
   const [allowSameDayTraining, setAllowSameDayTraining] = useState(false);
+  const [phaseId, setPhaseId] = useState<string | undefined>(undefined);
+  const [phaseBlocked, setPhaseBlocked] = useState(false);
 
   const fetchPlan = useCallback(async () => {
     setLoadError(null);
@@ -81,6 +83,7 @@ export function useTrainingPlan({ clientId, onUpdate }: UseTrainingPlanProps) {
           coachPrompt: prompt,
           preGenerationActivities: validActivities.length > 0 ? validActivities : undefined,
           allowSameDayTraining,
+          phaseId: phaseId || undefined,
         }),
       });
 
@@ -102,6 +105,7 @@ export function useTrainingPlan({ clientId, onUpdate }: UseTrainingPlanProps) {
         setPrompt("");
         setPreGenerationActivities([]);
         setAllowSameDayTraining(false);
+        setPhaseId(undefined);
         toast({ title: "Training plan generated", description: data.plan.name });
         onUpdate?.();
         return true;
@@ -132,6 +136,7 @@ export function useTrainingPlan({ clientId, onUpdate }: UseTrainingPlanProps) {
   const externalActivities = plan?.sessions.filter((s) => s.sessionType === "external_activity") ?? [];
 
   return {
+    clientId,
     plan,
     isLoading,
     isGenerating,
@@ -142,6 +147,10 @@ export function useTrainingPlan({ clientId, onUpdate }: UseTrainingPlanProps) {
     setPreGenerationActivities,
     allowSameDayTraining,
     setAllowSameDayTraining,
+    phaseId,
+    setPhaseId,
+    phaseBlocked,
+    setPhaseBlocked,
     generate,
     addPreGenActivity,
     removePreGenActivity,

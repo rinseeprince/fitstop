@@ -149,7 +149,7 @@ export const ManualWorkoutBuilder = memo(function ManualWorkoutBuilder({
       {builder.manualSessions.length > 0 && (
         <Button
           onClick={builder.saveManualPlan}
-          disabled={builder.isSavingManual}
+          disabled={builder.isSavingManual || builder.phaseBlocked}
           className="w-full bg-primary hover:bg-primary/90"
           size="lg"
         >

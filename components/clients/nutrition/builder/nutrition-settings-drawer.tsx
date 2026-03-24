@@ -15,6 +15,7 @@ import { CalorieSkewingSection } from "./calorie-skewing-section";
 import { NutritionRegenerationBanner } from "../nutrition-regeneration-banner";
 import { UnitToggle } from "../../shared/unit-toggle";
 import { Button } from "@/components/ui/button";
+import { PhaseSelector } from "../../shared/phase-selector";
 import { Sparkles, AlertCircle } from "lucide-react";
 
 type NutritionSettingsDrawerProps = {
@@ -78,6 +79,14 @@ export function NutritionSettingsDrawer({
             onSettingsChange={builder.handleSettingsChange}
           />
 
+          {/* Phase Selector */}
+          <PhaseSelector
+            clientId={builder.client.id}
+            value={builder.phaseId}
+            onChange={builder.setPhaseId}
+            onBlockSubmit={builder.setPhaseBlocked}
+          />
+
           {/* Custom Macros Section */}
           <NutritionCustomMacrosSection
             customMacros={builder.customMacros}
@@ -130,7 +139,7 @@ export function NutritionSettingsDrawer({
           )}
           <Button
             onClick={() => builder.generatePlan(false)}
-            disabled={builder.isGenerating || (builder.customDayDistribution && !builder.budgetValidation?.isValid)}
+            disabled={builder.isGenerating || builder.phaseBlocked || (builder.customDayDistribution && !builder.budgetValidation?.isValid)}
             className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-medium px-4 py-2.5 rounded-lg transition-all"
             title={
               builder.customDayDistribution && !builder.budgetValidation?.isValid

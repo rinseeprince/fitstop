@@ -111,6 +111,7 @@ export const createHabit = async (
         target_unit: data.targetUnit,
         is_boolean: data.isBoolean,
         sort_order: nextSortOrder,
+        phase_id: data.phaseId || null,
         updated_at: new Date().toISOString(),
       })
       .eq("id", existingHabit.id)
@@ -159,6 +160,7 @@ export const createHabit = async (
     target_unit: data.targetUnit,
     is_boolean: data.isBoolean,
     sort_order: nextSortOrder,
+    phase_id: data.phaseId || null,
     updated_at: new Date().toISOString(),
   };
 

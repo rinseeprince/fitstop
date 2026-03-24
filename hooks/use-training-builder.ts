@@ -225,6 +225,7 @@ export function useTrainingBuilder({ clientId, onUpdate }: UseTrainingBuilderPro
           splitType: selectedTemplate?.splitType || "custom",
           frequencyPerWeek: manualSessions.length,
           sessions: manualSessions,
+          phaseId: trainingPlan.phaseId || undefined,
         }),
       });
 
@@ -242,6 +243,7 @@ export function useTrainingBuilder({ clientId, onUpdate }: UseTrainingBuilderPro
       if (data.success) {
         setManualSessions([]);
         setSelectedTemplate(null);
+        trainingPlan.setPhaseId(undefined);
         toast({ title: "Plan created", description: "Manual training plan saved" });
         trainingPlan.fetchPlan();
         onUpdate?.();

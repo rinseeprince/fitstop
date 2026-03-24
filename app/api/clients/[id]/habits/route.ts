@@ -5,6 +5,7 @@ import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { dailyHabitSchema } from "@/lib/validations/daily-habit";
 import { getClientHabits, createHabit } from "@/services/daily-habits-service";
 import { getClientById } from "@/services/client-service";
+import { requirePhaseSelection } from "@/lib/require-phase-selection";
 
 async function verifyClientOwnership(
   clientId: string,
@@ -113,7 +114,14 @@ export async function POST(
       );
     }
 
-    const habit = await createHabit(coachId, clientId, validationResult.data);
+    // Enforce phase selection when client has an active roadmap
+    const phaseCheck = await requirePhaseSelection(clientId, validationResult.data.phaseId);
+    if (!phaseCheck.ok) return phaseCheck.response;
+
+    const habit = await createHabit(coachId, clientId, {
+      ...validationResult.data,
+      phaseId: phaseCheck.phaseId,
+    });
 
     return NextResponse.json({
       success: true,

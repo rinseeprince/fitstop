@@ -28,6 +28,7 @@ export type CreateNutritionPlanParams = {
   customFatG: number | null;
   regenerationReason: string;
   trainingPlan: TrainingPlan | null;
+  phaseId?: string;
 };
 
 /**
@@ -98,6 +99,7 @@ export async function createNutritionPlan(params: CreateNutritionPlanParams): Pr
       p_custom_fat_g: params.customFatG,
       p_regeneration_reason: params.regenerationReason,
       p_daily_targets: dailyTargets,
+      p_phase_id: params.phaseId || null,
     } as never) as unknown as { data: string | null; error: { message: string } | null };
 
   if (rpcError || !newPlanId) {

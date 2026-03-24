@@ -23,6 +23,7 @@ export type DailyHabitInput = {
   targetValue?: number;
   targetUnit?: string;
   isBoolean: boolean;
+  phaseId?: string;
 };
 
 // Full daily habit log record from database

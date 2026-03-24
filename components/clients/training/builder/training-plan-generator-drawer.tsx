@@ -11,6 +11,7 @@ import { useTrainingBuilderContext } from "@/contexts/training-builder-context";
 import { AIPromptPanel } from "./ai-prompt-panel";
 import { ManualWorkoutBuilder } from "./manual-workout-builder";
 import { ModeToggle } from "./mode-toggle";
+import { PhaseSelector } from "../../shared/phase-selector";
 
 type TrainingPlanGeneratorDrawerProps = {
   open: boolean;
@@ -54,6 +55,14 @@ export function TrainingPlanGeneratorDrawer({
 
         <div className="pt-5 flex-1 overflow-y-auto px-0.5">
           <ModeToggle className="w-full mb-5" />
+
+          {/* Phase Selector — shared across AI and Manual modes */}
+          <PhaseSelector
+            clientId={builder.clientId}
+            value={builder.phaseId}
+            onChange={builder.setPhaseId}
+            onBlockSubmit={builder.setPhaseBlocked}
+          />
 
           {/* Content */}
           <div>

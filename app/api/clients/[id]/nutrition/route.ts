@@ -19,6 +19,7 @@ import { CUSTOM_MACRO_CALORIE_TOLERANCE } from "@/lib/constants";
 import type { GenerateNutritionPlanRequest, DietType } from "@/types/check-in";
 import { getLatestBodyMetrics } from "@/services/body-metrics-service";
 import { getCurrentGoals } from "@/services/client-goals-service";
+import { requirePhaseSelection } from "@/lib/require-phase-selection";
 
 /**
  * GET: Return the active nutrition plan + daily targets for the coach view.
@@ -142,6 +143,10 @@ export async function POST(
       );
     }
 
+    // Enforce phase selection when client has an active roadmap
+    const phaseCheck = await requirePhaseSelection(clientId, validationResult.data.phaseId);
+    if (!phaseCheck.ok) return phaseCheck.response;
+
     const clientValidation = validateClientForNutrition(client);
     if (!clientValidation.valid) {
       return NextResponse.json(
@@ -212,6 +217,7 @@ export async function POST(
         customFatG: body.customFatG,
         regenerationReason: "custom_macros",
         trainingPlan,
+        phaseId: phaseCheck.phaseId,
       });
 
       return NextResponse.json(
@@ -284,6 +290,7 @@ export async function POST(
       customFatG: null,
       regenerationReason: existingPlan ? "regenerated" : "initial",
       trainingPlan,
+      phaseId: phaseCheck.phaseId,
     });
 
     return NextResponse.json(

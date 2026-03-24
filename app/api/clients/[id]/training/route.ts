@@ -20,6 +20,7 @@ import type { ExternalActivityContext } from "@/types/training";
 import type { ActivityMetadata, MuscleGroup, IntensityLevel } from "@/types/external-activity";
 import { getLatestBodyMetrics } from "@/services/body-metrics-service";
 import { getCurrentGoals } from "@/services/client-goals-service";
+import { requirePhaseSelection } from "@/lib/require-phase-selection";
 
 // Helper function for default recovery hours based on intensity
 function getDefaultRecoveryHours(intensity: IntensityLevel): number {
@@ -76,6 +77,10 @@ export async function POST(
         { status: 400 }
       );
     }
+
+    // Enforce phase selection when client has an active roadmap
+    const phaseCheck = await requirePhaseSelection(clientId, validation.data.phaseId);
+    if (!phaseCheck.ok) return phaseCheck.response;
 
     // Prefer new services, fall back to client.* for pre-migration clients
     const [latestMetrics, currentGoals] = await Promise.all([
@@ -152,7 +157,8 @@ export async function POST(
         goalWeightKg,
         tdee: clientTdee,
       },
-      checkInData
+      checkInData,
+      phaseCheck.phaseId
     );
 
     // Save pre-generation activities as external activities in the plan

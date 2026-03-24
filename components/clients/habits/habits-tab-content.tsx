@@ -65,6 +65,7 @@ export const HabitsTabContent = ({ client }: HabitsTabContentProps) => {
           </CardContent>
         </Card>
         <HabitsManageDrawer
+          clientId={client.id}
           open={drawerOpen}
           onOpenChange={setDrawerOpen}
           habits={habits}
@@ -87,6 +88,7 @@ export const HabitsTabContent = ({ client }: HabitsTabContentProps) => {
         </Button>
       </div>
       <HabitsManageDrawer
+        clientId={client.id}
         open={drawerOpen}
         onOpenChange={setDrawerOpen}
         habits={habits}

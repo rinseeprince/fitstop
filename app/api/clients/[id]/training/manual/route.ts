@@ -6,6 +6,7 @@ import { apiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { z } from "zod";
 import type { TrainingSplitType, AIGeneratedPlan, AIGeneratedSession, AIGeneratedExercise } from "@/types/training";
+import { requirePhaseSelection } from "@/lib/require-phase-selection";
 
 const manualExerciseSchema = z.object({
   name: z.string().min(1),
@@ -29,6 +30,7 @@ const manualPlanSchema = z.object({
   splitType: z.enum(["push_pull_legs", "upper_lower", "full_body", "bro_split", "push_pull", "custom"]).default("custom"),
   frequencyPerWeek: z.number().min(1).max(7),
   sessions: z.array(manualSessionSchema).min(1),
+  phaseId: z.string().uuid().optional(),
 });
 
 // POST - Create manual training plan
@@ -73,6 +75,10 @@ export async function POST(
       );
     }
 
+    // Enforce phase selection when client has an active roadmap
+    const phaseCheck = await requirePhaseSelection(clientId, validation.data.phaseId);
+    if (!phaseCheck.ok) return phaseCheck.response;
+
     const { name, splitType, frequencyPerWeek, sessions } = validation.data;
 
     // Archive existing active plan if any
@@ -112,7 +118,8 @@ export async function POST(
       "Manual creation",
       JSON.stringify({ manual: true }),
       {}, // No client metrics snapshot for manual plans
-      undefined // No check-in data
+      undefined, // No check-in data
+      phaseCheck.phaseId
     );
 
     return NextResponse.json({

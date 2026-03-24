@@ -14,14 +14,17 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import type { DailyHabitInput } from "@/types/daily-habit";
+import { PhaseSelector } from "../shared/phase-selector";
 
 type AddHabitDialogProps = {
+  clientId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSubmit: (data: DailyHabitInput) => Promise<void>;
 };
 
 export const AddHabitDialog = ({
+  clientId,
   open,
   onOpenChange,
   onSubmit,
@@ -32,6 +35,8 @@ export const AddHabitDialog = ({
   const [targetValue, setTargetValue] = useState("");
   const [targetUnit, setTargetUnit] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [phaseId, setPhaseId] = useState<string | undefined>(undefined);
+  const [phaseBlocked, setPhaseBlocked] = useState(false);
 
   const handleSubmit = async () => {
     if (!name.trim()) return;
@@ -44,6 +49,7 @@ export const AddHabitDialog = ({
         isBoolean: !isNumeric,
         targetValue: isNumeric && targetValue ? parseFloat(targetValue) : undefined,
         targetUnit: isNumeric && targetUnit.trim() ? targetUnit.trim() : undefined,
+        phaseId: phaseId || undefined,
       };
 
       await onSubmit(data);
@@ -54,6 +60,7 @@ export const AddHabitDialog = ({
       setIsNumeric(false);
       setTargetValue("");
       setTargetUnit("");
+      setPhaseId(undefined);
     } finally {
       setIsSubmitting(false);
     }
@@ -124,6 +131,14 @@ export const AddHabitDialog = ({
               </div>
             </div>
           )}
+
+          {/* Phase Selector */}
+          <PhaseSelector
+            clientId={clientId}
+            value={phaseId}
+            onChange={setPhaseId}
+            onBlockSubmit={setPhaseBlocked}
+          />
         </div>
 
         <DialogFooter>
@@ -136,7 +151,7 @@ export const AddHabitDialog = ({
           </Button>
           <Button
             onClick={handleSubmit}
-            disabled={!name.trim() || isSubmitting}
+            disabled={!name.trim() || isSubmitting || phaseBlocked}
           >
             Add Habit
           </Button>

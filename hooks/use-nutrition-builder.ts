@@ -97,6 +97,10 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
   const [skewMacroMode, setSkewMacroMode] = useState<"proportional" | "custom">("proportional");
   const [isSavingSkew, setIsSavingSkew] = useState(false);
 
+  // Phase selection
+  const [phaseId, setPhaseId] = useState<string | undefined>(undefined);
+  const [phaseBlocked, setPhaseBlocked] = useState(false);
+
   // Loading states
   const [isGenerating, setIsGenerating] = useState(false);
   const [warnings, setWarnings] = useState<string[]>([]);
@@ -225,6 +229,7 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
           proteinTargetGPerKg: settings.proteinTargetGPerKg,
           dietType: settings.dietType,
           goalDeadline: settings.goalDeadline || undefined,
+          phaseId: phaseId || undefined,
         };
 
         if (useCustomMacros) {
@@ -252,6 +257,7 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
           setSettingsChanged(false);
           setCustomDayDistribution(false);
           setDayCalorieOverrides(null);
+          setPhaseId(undefined);
           onUpdate?.();
           nutritionPlan.refetchNutrition();
           return true;
@@ -330,6 +336,12 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
     handleDayOverrideChange,
     handleSaveCustomDistribution,
     handleResetToDefault,
+
+    // Phase selection
+    phaseId,
+    setPhaseId,
+    phaseBlocked,
+    setPhaseBlocked,
 
     // Loading states
     isGenerating,

@@ -102,7 +102,8 @@ export const createTrainingPlan = async (
     avgSleep?: number;
     avgStress?: number;
     adherencePercentage?: number;
-  }
+  },
+  phaseId?: string
 ): Promise<TrainingPlan> => {
   // Insert the plan
   const { data: planRow, error: planError } = await supabaseAdmin
@@ -122,6 +123,7 @@ export const createTrainingPlan = async (
       client_body_fat_percentage: clientMetrics.bodyFatPercentage || null,
       client_goal_weight_kg: clientMetrics.goalWeightKg || null,
       client_tdee: clientMetrics.tdee || null,
+      phase_id: phaseId || null,
       avg_mood: checkInData?.avgMood || null,
       avg_energy: checkInData?.avgEnergy || null,
       avg_sleep: checkInData?.avgSleep || null,

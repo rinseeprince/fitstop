@@ -62,6 +62,7 @@ export const nutritionPlanSchema = z.object({
   customCarbG: z.number().positive().optional(),
   customFatG: z.number().positive().optional(),
   customCalories: z.number().positive().optional(),
+  phaseId: z.string().uuid().optional(),
 }).refine(
   (data) => {
     // If custom macros are enabled, validate that custom calories match macro totals

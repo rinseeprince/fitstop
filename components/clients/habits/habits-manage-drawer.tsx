@@ -20,6 +20,7 @@ interface HabitWithStats extends DailyHabit {
 }
 
 type HabitsManageDrawerProps = {
+  clientId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   habits: HabitWithStats[];
@@ -31,6 +32,7 @@ type HabitsManageDrawerProps = {
 };
 
 export function HabitsManageDrawer({
+  clientId,
   open,
   onOpenChange,
   habits,
@@ -146,6 +148,7 @@ export function HabitsManageDrawer({
 
         {/* Add Habit Dialog */}
         <AddHabitDialog
+          clientId={clientId}
           open={isAddDialogOpen}
           onOpenChange={setIsAddDialogOpen}
           onSubmit={async (data) => {

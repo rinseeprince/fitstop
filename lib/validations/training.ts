@@ -74,6 +74,7 @@ export const generateTrainingPlanSchema = z.object({
     .max(2000, "Prompt is too long (maximum 2000 characters)"),
   preGenerationActivities: z.array(preGenerationActivitySchema).optional(),
   allowSameDayTraining: z.boolean().optional().default(false),
+  phaseId: z.string().uuid().optional(),
 });
 
 export const updateTrainingPlanSchema = z.object({
