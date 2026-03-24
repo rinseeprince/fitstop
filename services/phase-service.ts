@@ -72,17 +72,25 @@ export const createPhase = async (
   return mapPhaseRow(row as unknown as PhaseRow);
 };
 
-export const activatePhase = async (phaseId: string): Promise<Phase> => {
-  // Fetch phase to get roadmap_id
+export const activatePhase = async (
+  phaseId: string,
+  clientId: string
+): Promise<Phase> => {
+  // Fetch phase, scoped to clientId to prevent cross-client access
   const { data: phase, error: phaseError } = await supabaseAdmin
     .from("phases")
     .select("*")
     .eq("id", phaseId)
-    .single();
+    .eq("client_id", clientId)
+    .maybeSingle();
 
   if (phaseError) {
     console.error("Failed to fetch phase:", phaseError);
     throw new Error(`Failed to fetch phase: ${phaseError.message}`);
+  }
+
+  if (!phase) {
+    throw new Error("Phase not found");
   }
 
   // Check no other active phase in this roadmap
@@ -123,17 +131,25 @@ export const activatePhase = async (phaseId: string): Promise<Phase> => {
   return mapPhaseRow(row as unknown as PhaseRow);
 };
 
-export const completePhase = async (phaseId: string): Promise<Phase> => {
-  // Fetch phase to check end_date
+export const completePhase = async (
+  phaseId: string,
+  clientId: string
+): Promise<Phase> => {
+  // Fetch phase, scoped to clientId to prevent cross-client access
   const { data: phase, error: phaseError } = await supabaseAdmin
     .from("phases")
     .select("*")
     .eq("id", phaseId)
-    .single();
+    .eq("client_id", clientId)
+    .maybeSingle();
 
   if (phaseError) {
     console.error("Failed to fetch phase:", phaseError);
     throw new Error(`Failed to fetch phase: ${phaseError.message}`);
+  }
+
+  if (!phase) {
+    throw new Error("Phase not found");
   }
 
   const now = new Date().toISOString();
@@ -193,6 +209,7 @@ export const getActivePhase = async (
 
 export const updatePhase = async (
   phaseId: string,
+  clientId: string,
   data: {
     name?: string;
     description?: string;
@@ -215,32 +232,46 @@ export const updatePhase = async (
     updateData.duration_weeks = data.durationWeeks;
   if (data.orderIndex !== undefined) updateData.order_index = data.orderIndex;
 
+  // Scope to clientId to prevent cross-client access
   const { data: row, error } = await supabaseAdmin
     .from("phases")
     .update(updateData)
     .eq("id", phaseId)
+    .eq("client_id", clientId)
     .select()
-    .single();
+    .maybeSingle();
 
   if (error) {
     console.error("Failed to update phase:", error);
     throw new Error(`Failed to update phase: ${error.message}`);
   }
 
+  if (!row) {
+    throw new Error("Phase not found");
+  }
+
   return mapPhaseRow(row as unknown as PhaseRow);
 };
 
-export const deletePhase = async (phaseId: string): Promise<void> => {
-  // Fetch phase to check status
+export const deletePhase = async (
+  phaseId: string,
+  clientId: string
+): Promise<void> => {
+  // Fetch phase, scoped to clientId to prevent cross-client access
   const { data: phase, error: phaseError } = await supabaseAdmin
     .from("phases")
     .select("*")
     .eq("id", phaseId)
-    .single();
+    .eq("client_id", clientId)
+    .maybeSingle();
 
   if (phaseError) {
     console.error("Failed to fetch phase:", phaseError);
     throw new Error(`Failed to fetch phase: ${phaseError.message}`);
+  }
+
+  if (!phase) {
+    throw new Error("Phase not found");
   }
 
   if (phase.status !== "planned") {

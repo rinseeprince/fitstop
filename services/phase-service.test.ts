@@ -161,9 +161,18 @@ describe('Phase Service', () => {
         return updateQuery as never;
       });
 
-      const result = await activatePhase('phase-1');
+      const result = await activatePhase('phase-1', 'client-1');
 
       expect(result.status).toBe('active');
+    });
+
+    it('throws "Phase not found" when client_id does not match (IDOR)', async () => {
+      const fetchQuery = createMockQuery({ data: null, error: null });
+      vi.mocked(supabaseAdmin.from).mockReturnValue(fetchQuery as never);
+
+      await expect(
+        activatePhase('phase-1', 'wrong-client')
+      ).rejects.toThrow('Phase not found');
     });
 
     it('throws error when another phase is already active', async () => {
@@ -186,13 +195,22 @@ describe('Phase Service', () => {
         return activeCheckQuery as never;
       });
 
-      await expect(activatePhase('phase-2')).rejects.toThrow(
+      await expect(activatePhase('phase-2', 'client-1')).rejects.toThrow(
         'Another phase is currently active'
       );
     });
   });
 
   describe('completePhase', () => {
+    it('throws "Phase not found" when client_id does not match (IDOR)', async () => {
+      const fetchQuery = createMockQuery({ data: null, error: null });
+      vi.mocked(supabaseAdmin.from).mockReturnValue(fetchQuery as never);
+
+      await expect(
+        completePhase('phase-1', 'wrong-client')
+      ).rejects.toThrow('Phase not found');
+    });
+
     it('sets end_date when not already set', async () => {
       const mockPhase = createMockPhaseRow({
         id: 'phase-1',
@@ -217,7 +235,7 @@ describe('Phase Service', () => {
         return updateQuery as never;
       });
 
-      const result = await completePhase('phase-1');
+      const result = await completePhase('phase-1', 'client-1');
 
       expect(result.status).toBe('completed');
       // Verify end_date was set (since original was null)
@@ -252,7 +270,7 @@ describe('Phase Service', () => {
         return updateQuery as never;
       });
 
-      await completePhase('phase-1');
+      await completePhase('phase-1', 'client-1');
 
       const updateCallArgs = updateQuery.update.mock.calls[0][0];
       expect(updateCallArgs.end_date).toBe(existingEndDate);
@@ -304,7 +322,7 @@ describe('Phase Service', () => {
       const mockQuery = createMockQuery({ data: mockPhase, error: null });
       vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as never);
 
-      const result = await updatePhase('phase-1', {
+      const result = await updatePhase('phase-1', 'client-1', {
         name: 'Updated Phase',
         description: 'New description',
       });
@@ -313,13 +331,22 @@ describe('Phase Service', () => {
       expect(mockQuery.update).toHaveBeenCalled();
     });
 
+    it('throws "Phase not found" when client_id does not match (IDOR)', async () => {
+      const mockQuery = createMockQuery({ data: null, error: null });
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as never);
+
+      await expect(
+        updatePhase('phase-1', 'wrong-client', { name: 'Hacked' })
+      ).rejects.toThrow('Phase not found');
+    });
+
     it('does not allow status changes via updatePhase', async () => {
       const mockPhase = createMockPhaseRow({ id: 'phase-1' });
       const mockQuery = createMockQuery({ data: mockPhase, error: null });
       vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as never);
 
       // Pass status-like data but it should be ignored
-      await updatePhase('phase-1', { name: 'Updated' });
+      await updatePhase('phase-1', 'client-1', { name: 'Updated' });
 
       const updateCallArgs = mockQuery.update.mock.calls[0][0];
       expect(updateCallArgs.status).toBeUndefined();
@@ -348,7 +375,7 @@ describe('Phase Service', () => {
         return unlinkQuery as never;
       });
 
-      await deletePhase('phase-1');
+      await deletePhase('phase-1', 'client-1');
 
       // Verify unlinking happened for all three tables
       expect(supabaseAdmin.from).toHaveBeenCalledWith('training_plans');
@@ -356,6 +383,15 @@ describe('Phase Service', () => {
       expect(supabaseAdmin.from).toHaveBeenCalledWith('daily_habits');
       // Verify phase was deleted
       expect(deleteQuery.delete).toHaveBeenCalled();
+    });
+
+    it('throws "Phase not found" when client_id does not match (IDOR)', async () => {
+      const fetchQuery = createMockQuery({ data: null, error: null });
+      vi.mocked(supabaseAdmin.from).mockReturnValue(fetchQuery as never);
+
+      await expect(
+        deletePhase('phase-1', 'wrong-client')
+      ).rejects.toThrow('Phase not found');
     });
 
     it('throws error for active phase', async () => {
@@ -366,7 +402,7 @@ describe('Phase Service', () => {
       const fetchQuery = createMockQuery({ data: mockPhase, error: null });
       vi.mocked(supabaseAdmin.from).mockReturnValue(fetchQuery as never);
 
-      await expect(deletePhase('phase-1')).rejects.toThrow(
+      await expect(deletePhase('phase-1', 'client-1')).rejects.toThrow(
         'This phase has been started or completed and cannot be deleted.'
       );
     });
@@ -379,7 +415,7 @@ describe('Phase Service', () => {
       const fetchQuery = createMockQuery({ data: mockPhase, error: null });
       vi.mocked(supabaseAdmin.from).mockReturnValue(fetchQuery as never);
 
-      await expect(deletePhase('phase-1')).rejects.toThrow(
+      await expect(deletePhase('phase-1', 'client-1')).rejects.toThrow(
         'This phase has been started or completed and cannot be deleted.'
       );
     });
