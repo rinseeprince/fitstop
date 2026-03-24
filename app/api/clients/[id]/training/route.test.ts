@@ -63,6 +63,20 @@ vi.mock('@/services/client-goals-service', () => ({
   getCurrentGoals: vi.fn(),
 }))
 
+vi.mock('@/services/supabase-admin', () => ({
+  supabaseAdmin: {
+    from: vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            maybeSingle: vi.fn().mockResolvedValue({ data: null }),
+          }),
+        }),
+      }),
+    }),
+  },
+}))
+
 import { getClientById } from '@/services/client-service'
 import { generateTrainingPlanAI } from '@/services/training-ai-service'
 import { createTrainingPlan, getActiveTrainingPlan } from '@/services/training-service'

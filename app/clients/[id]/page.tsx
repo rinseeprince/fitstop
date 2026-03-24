@@ -15,6 +15,7 @@ import { ClientPageHeader, type ClientTab } from "@/components/clients/client-pa
 import { ClientOverviewTab } from "@/components/clients/client-overview-tab"
 import { MetricSaveDialog } from "@/components/clients/check-in/metric-save-dialog"
 import { HabitsTabContent } from "@/components/clients/habits/habits-tab-content"
+import { RoadmapTabContent } from "@/components/clients/roadmap/roadmap-tab-content"
 import { NutritionHistoryTable } from "@/components/clients/nutrition/nutrition-history-table"
 import { WellnessTabContent } from "@/components/clients/wellness/wellness-tab-content"
 import { TrainingHistoryTable } from "@/components/clients/training/training-history-table"
@@ -122,6 +123,11 @@ export default function ClientProfilePage() {
               onClientUpdated={() => mutateClient()}
               onTabChange={setActiveTab}
             />
+          </TabsContent>
+
+          {/* Roadmap Tab */}
+          <TabsContent value="roadmap" className="space-y-6 mt-0">
+            <RoadmapTabContent client={client} />
           </TabsContent>
 
           {/* Check-In Detail Modal */}
