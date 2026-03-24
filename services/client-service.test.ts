@@ -7,7 +7,25 @@ vi.mock('./supabase-admin', () => ({
   },
 }))
 
+vi.mock('./body-metrics-service', () => ({
+  recordBodyMetrics: vi.fn().mockResolvedValue({}),
+}))
+
+vi.mock('./client-goals-service', () => ({
+  updateGoals: vi.fn().mockResolvedValue({}),
+}))
+
+vi.mock('./client-intake-service', () => ({
+  createIntake: vi.fn().mockResolvedValue(undefined),
+}))
+
+vi.mock('./invitation-service', () => ({
+  sendInvitation: vi.fn().mockResolvedValue({ success: true }),
+}))
+
 import { supabaseAdmin } from './supabase-admin'
+import { recordBodyMetrics } from './body-metrics-service'
+import { updateGoals } from './client-goals-service'
 import {
   createClient,
   getClientsForCoach,
@@ -184,6 +202,65 @@ describe('Client Service', () => {
       expect(insertCall.starting_weight).toBe(180)
       expect(insertCall.current_body_fat_percentage).toBe(15)
       expect(insertCall.starting_body_fat_percentage).toBe(15)
+    })
+
+    it('dual-writes body metrics when currentWeight provided', async () => {
+      const mockClientRow = createMockClientRow()
+      const mockQuery = createMockQuery({ data: mockClientRow, error: null })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+
+      await createClient('coach-456', {
+        name: 'Test Client',
+        email: 'test@example.com',
+        currentWeight: 180,
+        weightUnit: 'lbs',
+        heightUnit: 'in',
+      } as any)
+
+      expect(recordBodyMetrics).toHaveBeenCalledWith(
+        expect.objectContaining({
+          clientId: 'client-123',
+          weight: 180,
+          source: 'intake_sync',
+        })
+      )
+    })
+
+    it('dual-writes goals when goalWeight provided', async () => {
+      const mockClientRow = createMockClientRow()
+      const mockQuery = createMockQuery({ data: mockClientRow, error: null })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+
+      await createClient('coach-456', {
+        name: 'Test Client',
+        email: 'test@example.com',
+        goalWeight: 170,
+        weightUnit: 'lbs',
+        heightUnit: 'in',
+      } as any)
+
+      expect(updateGoals).toHaveBeenCalledWith(
+        'client-123',
+        expect.objectContaining({ goalWeight: 170 }),
+        'coach-456'
+      )
+    })
+
+    it('does not fail if dual-write throws', async () => {
+      const mockClientRow = createMockClientRow()
+      const mockQuery = createMockQuery({ data: mockClientRow, error: null })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+      vi.mocked(recordBodyMetrics).mockRejectedValueOnce(new Error('fail'))
+
+      await expect(
+        createClient('coach-456', {
+          name: 'Test Client',
+          email: 'test@example.com',
+          currentWeight: 180,
+          weightUnit: 'lbs',
+          heightUnit: 'in',
+        } as any)
+      ).resolves.toBeDefined()
     })
   })
 
@@ -399,6 +476,36 @@ describe('Client Service', () => {
 
       const updateCall = mockQuery.update.mock.calls[0][0]
       expect(updateCall.notes).toBeNull()
+    })
+
+    it('dual-writes body metrics when currentWeight updated', async () => {
+      const mockClientRow = createMockClientRow({ current_weight: 175 })
+      const mockQuery = createMockQuery({ data: mockClientRow, error: null })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+
+      await updateClient('client-123', { currentWeight: 175 })
+
+      expect(recordBodyMetrics).toHaveBeenCalledWith(
+        expect.objectContaining({
+          clientId: 'client-123',
+          weight: 175,
+          source: 'metrics_api',
+        })
+      )
+    })
+
+    it('dual-writes goals when goalWeight updated', async () => {
+      const mockClientRow = createMockClientRow({ goal_weight: 165 })
+      const mockQuery = createMockQuery({ data: mockClientRow, error: null })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+
+      await updateClient('client-123', { goalWeight: 165 }, 'coach-456')
+
+      expect(updateGoals).toHaveBeenCalledWith(
+        'client-123',
+        expect.objectContaining({ goalWeight: 165 }),
+        'coach-456'
+      )
     })
   })
 

@@ -5,6 +5,8 @@ import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { apiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { updateClientMetricsSchema } from "@/lib/validations/client-metrics";
+import { recordBodyMetrics } from "@/services/body-metrics-service";
+import { updateGoals } from "@/services/client-goals-service";
 
 export async function PUT(
   request: NextRequest,
@@ -191,6 +193,35 @@ export async function PUT(
         { error: "Failed to update metrics" },
         { status: 500 }
       );
+    }
+
+    // Dual-write body metrics (non-blocking)
+    if (body.currentWeight !== undefined || body.currentBodyFatPercentage !== undefined ||
+        body.bmr !== undefined || body.tdee !== undefined) {
+      try {
+        await recordBodyMetrics({
+          clientId,
+          weight: body.currentWeight,
+          bodyFatPercentage: body.currentBodyFatPercentage,
+          bmr: updates.bmr ?? undefined,
+          tdee: updates.tdee ?? undefined,
+          source: "metrics_api",
+        });
+      } catch (dualWriteError) {
+        console.error("Dual-write to body_metrics failed:", dualWriteError instanceof Error ? dualWriteError.message : "Unknown error");
+      }
+    }
+
+    // Dual-write goals (non-blocking)
+    if (body.goalWeight !== undefined || body.goalBodyFatPercentage !== undefined) {
+      try {
+        await updateGoals(clientId, {
+          goalWeight: body.goalWeight,
+          goalBodyFatPercentage: body.goalBodyFatPercentage,
+        }, coachId);
+      } catch (dualWriteError) {
+        console.error("Dual-write to client_goals failed:", dualWriteError instanceof Error ? dualWriteError.message : "Unknown error");
+      }
     }
 
     // Get updated client data

@@ -229,7 +229,7 @@ export async function POST(
     try {
       // Update client's current weight and body fat from check-in, then calculate BMR
       if (client) {
-        await updateClientMetricsFromCheckIn(client, body);
+        await updateClientMetricsFromCheckIn(client, body, checkInId);
       }
 
       // Update client adherence stats

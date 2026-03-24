@@ -11,6 +11,7 @@ import {
 } from "@/services/check-in-service";
 import { getClientById, updateClient } from "@/services/client-service";
 import { updateClientBMR } from "@/services/bmr-service";
+import { recordBodyMetrics } from "@/services/body-metrics-service";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { getDailyLogs } from "@/services/daily-logs-service";
 import { getHabitLogs } from "@/services/daily-habits-service";
@@ -120,7 +121,8 @@ export async function triggerAISummaryGeneration(
  */
 export async function updateClientMetricsFromCheckIn(
   client: Client,
-  checkInData: SubmitCheckInRequest | CheckInFormData
+  checkInData: SubmitCheckInRequest | CheckInFormData,
+  checkInId?: string
 ): Promise<void> {
   try {
     const updates: Partial<{ currentWeight: number; currentBodyFatPercentage: number }> = {};
@@ -142,9 +144,10 @@ export async function updateClientMetricsFromCheckIn(
 
       // Calculate and update BMR if we have all required data
       const bmr = updateClientBMR(updatedClient);
+      let tdee: number | undefined;
       if (bmr !== null) {
         // Calculate TDEE (sedentary = BMR × 1.2)
-        const tdee = Math.round(bmr * 1.2);
+        tdee = Math.round(bmr * 1.2);
 
         // TODO: Replace with server client once service layer auth pattern is established
         const { error: updateError } = await supabaseAdmin
@@ -155,6 +158,21 @@ export async function updateClientMetricsFromCheckIn(
         if (updateError) {
           console.error("Error updating BMR/TDEE:", updateError);
         }
+      }
+
+      // Dual-write to body_metrics (non-blocking)
+      try {
+        await recordBodyMetrics({
+          clientId: client.id,
+          weight: checkInData.weight,
+          bodyFatPercentage: checkInData.bodyFatPercentage,
+          bmr: bmr ?? undefined,
+          tdee,
+          source: "check_in",
+          sourceId: checkInId,
+        });
+      } catch (dualWriteError) {
+        console.error("Dual-write to body_metrics failed:", dualWriteError instanceof Error ? dualWriteError.message : "Unknown error");
       }
     }
   } catch (error) {

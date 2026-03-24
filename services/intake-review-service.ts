@@ -2,6 +2,8 @@ import { supabaseAdmin } from "@/services/supabase-admin";
 import type { ClientIntake, ClientIntakeRow } from "@/types/client-intake";
 import { mapClientIntakeRow } from "@/lib/mappers";
 import { getIntake } from "@/services/client-intake-service";
+import { recordBodyMetrics } from "@/services/body-metrics-service";
+import { updateGoals } from "@/services/client-goals-service";
 
 const db = supabaseAdmin;
 
@@ -170,6 +172,34 @@ export async function syncMetricsToClient(
     if (error) {
       console.error("Failed to sync metrics:", error);
       throw new Error("Failed to sync metrics");
+    }
+  }
+
+  // Dual-write body metrics (non-blocking)
+  if (updates.current_weight !== undefined || updates.current_body_fat_percentage !== undefined) {
+    try {
+      await recordBodyMetrics({
+        clientId,
+        weight: updates.current_weight as number | undefined,
+        bodyFatPercentage: updates.current_body_fat_percentage as number | undefined,
+        weightUnit: updates.weight_unit as string | undefined,
+        source: "intake_sync",
+      });
+    } catch (dualWriteError) {
+      console.error("Dual-write to body_metrics failed:", dualWriteError instanceof Error ? dualWriteError.message : "Unknown error");
+    }
+  }
+
+  // Dual-write goals (non-blocking)
+  if (updates.goal_weight !== undefined || updates.goal_body_fat_percentage !== undefined || updates.goal_deadline !== undefined) {
+    try {
+      await updateGoals(clientId, {
+        goalWeight: updates.goal_weight as number | undefined,
+        goalBodyFatPercentage: updates.goal_body_fat_percentage as number | undefined,
+        goalDeadline: updates.goal_deadline as string | undefined,
+      }, "intake");
+    } catch (dualWriteError) {
+      console.error("Dual-write to client_goals failed:", dualWriteError instanceof Error ? dualWriteError.message : "Unknown error");
     }
   }
 

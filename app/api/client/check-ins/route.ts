@@ -259,7 +259,7 @@ export async function POST(request: NextRequest) {
     // Update client metadata
     if (client) {
       // Update client's current weight, body fat, BMR, and TDEE from check-in data
-      await updateClientMetricsFromCheckIn(client, body);
+      await updateClientMetricsFromCheckIn(client, body, checkInId);
 
       // Update adherence stats
       await updateClientAdherenceStats(clientId);

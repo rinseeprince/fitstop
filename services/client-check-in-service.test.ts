@@ -39,7 +39,11 @@ vi.mock('./bmr-service', () => ({
   updateClientBMR: vi.fn(),
 }))
 
-import { triggerAISummaryGeneration } from './client-check-in-service'
+vi.mock('./body-metrics-service', () => ({
+  recordBodyMetrics: vi.fn().mockResolvedValue({}),
+}))
+
+import { triggerAISummaryGeneration, updateClientMetricsFromCheckIn } from './client-check-in-service'
 
 import { generateCheckInSummary } from './ai-service'
 import { 
@@ -50,7 +54,10 @@ import {
 import { getDailyLogs } from './daily-logs-service'
 import { getHabitLogs } from './daily-habits-service'
 import { getWeeklySummaries } from './weekly-nutrition-service'
-import { getClientById } from './client-service'
+import { getClientById, updateClient } from './client-service'
+import { updateClientBMR } from './bmr-service'
+import { supabaseAdmin } from './supabase-admin'
+import { recordBodyMetrics } from './body-metrics-service'
 
 describe('Client Check-in Service', () => {
   beforeEach(() => {
@@ -229,6 +236,53 @@ describe('Client Check-in Service', () => {
         expect.any(Date),
         null
       )
+    })
+  })
+
+  describe('updateClientMetricsFromCheckIn', () => {
+    const mockClient = {
+      id: 'client-456',
+      name: 'Test Client',
+      height: 72,
+      heightUnit: 'in',
+      gender: 'male',
+      dateOfBirth: '1990-01-01',
+      currentWeight: 180,
+      weightUnit: 'lbs',
+    } as any
+
+    it('calls recordBodyMetrics after updating client metrics from check-in', async () => {
+      vi.mocked(updateClient).mockResolvedValue({ ...mockClient, currentWeight: 175 })
+      vi.mocked(updateClientBMR).mockReturnValue(1800)
+
+      const mockQuery = {
+        update: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockResolvedValue({ error: null }),
+      }
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+
+      await updateClientMetricsFromCheckIn(mockClient, { weight: 175, bodyFatPercentage: 14 } as any, 'check-in-999')
+
+      expect(recordBodyMetrics).toHaveBeenCalledWith({
+        clientId: 'client-456',
+        weight: 175,
+        bodyFatPercentage: 14,
+        bmr: 1800,
+        tdee: 2160,
+        source: 'check_in',
+        sourceId: 'check-in-999',
+      })
+    })
+
+    it('still updates clients table even if recordBodyMetrics fails', async () => {
+      vi.mocked(updateClient).mockResolvedValue({ ...mockClient, currentWeight: 175 })
+      vi.mocked(updateClientBMR).mockReturnValue(null)
+      vi.mocked(recordBodyMetrics).mockRejectedValueOnce(new Error('DB down'))
+
+      // Should not throw despite dual-write failure
+      await expect(
+        updateClientMetricsFromCheckIn(mockClient, { weight: 175 } as any)
+      ).resolves.not.toThrow()
     })
   })
 })

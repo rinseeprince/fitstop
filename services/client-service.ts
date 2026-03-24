@@ -5,6 +5,8 @@ import type { ClientRow } from "@/lib/database-helpers";
 import { mapClientRow } from "@/lib/mappers";
 import { createIntake } from "@/services/client-intake-service";
 import { sendInvitation } from "@/services/invitation-service";
+import { recordBodyMetrics } from "@/services/body-metrics-service";
+import { updateGoals } from "@/services/client-goals-service";
 
 // Extended client type with check-in info
 export type ClientWithCheckInInfo = Client & {
@@ -71,6 +73,32 @@ export const createClient = async (
   }
 
   const client = mapClientRow(data);
+
+  // Dual-write body metrics for new client (non-blocking)
+  if (clientData.currentWeight !== undefined || clientData.currentBodyFatPercentage !== undefined) {
+    try {
+      await recordBodyMetrics({
+        clientId: client.id,
+        weight: clientData.currentWeight,
+        bodyFatPercentage: clientData.currentBodyFatPercentage,
+        source: "intake_sync",
+      });
+    } catch (dualWriteError) {
+      console.error("Dual-write to body_metrics failed:", dualWriteError instanceof Error ? dualWriteError.message : "Unknown error");
+    }
+  }
+
+  // Dual-write goals for new client (non-blocking)
+  if (clientData.goalWeight !== undefined || clientData.goalBodyFatPercentage !== undefined) {
+    try {
+      await updateGoals(client.id, {
+        goalWeight: clientData.goalWeight,
+        goalBodyFatPercentage: clientData.goalBodyFatPercentage,
+      }, coachId);
+    } catch (dualWriteError) {
+      console.error("Dual-write to client_goals failed:", dualWriteError instanceof Error ? dualWriteError.message : "Unknown error");
+    }
+  }
 
   // Create intake record for questionnaire flow
   if (isIntakeMode) {
@@ -160,7 +188,8 @@ export const getClientById = async (clientId: string, includeInactive = false): 
 // Update a client
 export const updateClient = async (
   clientId: string,
-  clientData: UpdateClientInput
+  clientData: UpdateClientInput,
+  coachId?: string
 ): Promise<Client> => {
   const updateData: Record<string, unknown> = {
     updated_at: new Date().toISOString(),
@@ -194,7 +223,35 @@ export const updateClient = async (
     throw new Error("Failed to update client");
   }
 
-  return mapClientRow(data);
+  const client = mapClientRow(data);
+
+  // Dual-write body metrics (non-blocking)
+  if (clientData.currentWeight !== undefined || clientData.currentBodyFatPercentage !== undefined) {
+    try {
+      await recordBodyMetrics({
+        clientId,
+        weight: clientData.currentWeight,
+        bodyFatPercentage: clientData.currentBodyFatPercentage,
+        source: "metrics_api",
+      });
+    } catch (dualWriteError) {
+      console.error("Dual-write to body_metrics failed:", dualWriteError instanceof Error ? dualWriteError.message : "Unknown error");
+    }
+  }
+
+  // Dual-write goals (non-blocking)
+  if (clientData.goalWeight !== undefined || clientData.goalBodyFatPercentage !== undefined) {
+    try {
+      await updateGoals(clientId, {
+        goalWeight: clientData.goalWeight,
+        goalBodyFatPercentage: clientData.goalBodyFatPercentage,
+      }, coachId ?? "coach");
+    } catch (dualWriteError) {
+      console.error("Dual-write to client_goals failed:", dualWriteError instanceof Error ? dualWriteError.message : "Unknown error");
+    }
+  }
+
+  return client;
 };
 
 // Delete a client (soft delete - set active to false)

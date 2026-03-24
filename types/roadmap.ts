@@ -5,7 +5,7 @@ export type RoadmapStatus = "active" | "archived" | "draft";
 export type PhaseStatus = "planned" | "active" | "completed" | "skipped";
 
 // Body metrics source
-export type BodyMetricsSource = "check_in" | "metrics_api" | "intake_sync";
+export type BodyMetricsSource = "check_in" | "metrics_api" | "intake_sync" | "nutrition_plan";
 
 // Roadmap record (matches database schema)
 export type Roadmap = {

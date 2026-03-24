@@ -4,6 +4,7 @@ import { upsertWeeklySummary } from "@/services/weekly-nutrition-service";
 import { getWeekStart, getTodayDateString } from "@/lib/date-helpers";
 import type { DietType } from "@/types/check-in";
 import type { TrainingPlan } from "@/types/training";
+import { recordBodyMetrics } from "@/services/body-metrics-service";
 export type CreateNutritionPlanParams = {
   clientId: string;
   coachId: string;
@@ -110,6 +111,21 @@ export async function createNutritionPlan(params: CreateNutritionPlanParams): Pr
       .from("clients")
       .update({ tdee: params.tdee })
       .eq("id", params.clientId);
+  }
+
+  // Dual-write TDEE to body_metrics (non-blocking)
+  if (params.tdee != null) {
+    try {
+      await recordBodyMetrics({
+        clientId: params.clientId,
+        tdee: params.tdee,
+        bmr: params.bmr ?? undefined,
+        source: "nutrition_plan",
+        sourceId: newPlanId,
+      });
+    } catch (dualWriteError) {
+      console.error("Dual-write to body_metrics failed:", dualWriteError instanceof Error ? dualWriteError.message : "Unknown error");
+    }
   }
 
   // Recalculate current week's summary with new plan targets (fire-and-forget)

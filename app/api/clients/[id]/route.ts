@@ -108,7 +108,7 @@ export async function PATCH(
       );
     }
 
-    const client = await updateClient(id, validationResult.data);
+    const client = await updateClient(id, validationResult.data, coachId);
 
     return NextResponse.json({ client });
   } catch (error) {
