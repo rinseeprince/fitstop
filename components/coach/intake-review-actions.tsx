@@ -4,7 +4,7 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
 import { useRouter } from "next/navigation"
-import { Check, ArrowRight, RefreshCw } from "lucide-react"
+import { Check, ArrowRight, RefreshCw, Map } from "lucide-react"
 import { useSWRConfig } from "swr"
 import type { IntakeStatus } from "@/types/client-intake"
 
@@ -102,6 +102,16 @@ export function IntakeReviewActions({ clientId, intakeStatus }: IntakeReviewActi
         onClick={() => router.push(`/clients/${clientId}?tab=training`)}
       >
         Go to Training Builder
+        <ArrowRight className="w-3 h-3" />
+      </Button>
+
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => router.push(`/clients/${clientId}?tab=roadmap`)}
+      >
+        <Map className="w-4 h-4" />
+        Build Roadmap
         <ArrowRight className="w-3 h-3" />
       </Button>
 

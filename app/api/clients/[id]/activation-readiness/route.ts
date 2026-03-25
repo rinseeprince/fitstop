@@ -3,8 +3,19 @@ import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { getClientById } from "@/services/client-service";
 import { getActiveTrainingPlan } from "@/services/training-service";
 import { getClientHabits } from "@/services/daily-habits-service";
+import { getActiveRoadmap } from "@/services/roadmap-service";
+import { getActivePhase } from "@/services/phase-service";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { coachApiRateLimit } from "@/lib/rate-limit";
+
+async function safeQuery<T>(fn: () => Promise<T>): Promise<T | null> {
+  try {
+    return await fn();
+  } catch (error) {
+    console.error("Activation readiness query failed:", error instanceof Error ? error.message : "Unknown error");
+    return null;
+  }
+}
 
 export async function GET(
   request: NextRequest,
@@ -28,24 +39,34 @@ export async function GET(
       return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
     }
 
-    const [trainingPlan, habits, { data: activePlan }] = await Promise.all([
-      getActiveTrainingPlan(clientId),
-      getClientHabits(clientId),
-      supabaseAdmin
-        .from("nutrition_plans")
-        .select("id")
-        .eq("client_id", clientId)
-        .eq("status", "active")
-        .limit(1)
-        .maybeSingle(),
+    const [trainingPlan, habits, nutritionPlan, roadmap, activePhase] = await Promise.all([
+      safeQuery(() => getActiveTrainingPlan(clientId)),
+      safeQuery(() => getClientHabits(clientId)),
+      safeQuery(async () => {
+        const { data } = await supabaseAdmin
+          .from("nutrition_plans")
+          .select("id")
+          .eq("client_id", clientId)
+          .eq("status", "active")
+          .limit(1)
+          .maybeSingle();
+        return data;
+      }),
+      safeQuery(() => getActiveRoadmap(clientId)),
+      safeQuery(() => getActivePhase(clientId)),
     ]);
 
     return NextResponse.json({
       success: true,
       data: {
         hasTrainingPlan: trainingPlan !== null,
-        hasNutritionPlan: activePlan !== null,
-        hasHabits: habits.length > 0,
+        hasNutritionPlan: nutritionPlan !== null,
+        hasHabits: Array.isArray(habits) && habits.length > 0,
+        hasRoadmap: roadmap !== null,
+        hasActivePhase: activePhase !== null,
+        activePhaseName: activePhase?.name ?? null,
+        activePhaseStartDate: activePhase?.startDate ?? null,
+        roadmapRecommended: true,
       },
     });
   } catch (error) {

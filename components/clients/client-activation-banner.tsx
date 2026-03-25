@@ -14,6 +14,9 @@ type Readiness = {
   hasTrainingPlan: boolean
   hasNutritionPlan: boolean
   hasHabits: boolean
+  hasRoadmap: boolean
+  hasActivePhase: boolean
+  roadmapRecommended: boolean
 }
 
 interface ClientActivationBannerProps {
@@ -27,10 +30,15 @@ interface ClientActivationBannerProps {
   onTabChange?: (tab: ClientTab) => void
 }
 
-const CHECKLIST_ITEMS: { key: keyof Readiness; label: string; tab: ClientTab }[] = [
+const REQUIRED_ITEMS: { key: keyof Readiness; label: string; tab: ClientTab }[] = [
   { key: "hasTrainingPlan", label: "Training plan", tab: "training" },
   { key: "hasNutritionPlan", label: "Nutrition plan", tab: "nutrition" },
   { key: "hasHabits", label: "Daily habits", tab: "daily-habits" },
+]
+
+const RECOMMENDED_ITEMS: { key: keyof Readiness; label: string }[] = [
+  { key: "hasRoadmap", label: "Roadmap" },
+  { key: "hasActivePhase", label: "Active phase" },
 ]
 
 export function ClientActivationBanner({ client, onActivated, onTabChange }: ClientActivationBannerProps) {
@@ -45,8 +53,8 @@ export function ClientActivationBanner({ client, onActivated, onTabChange }: Cli
   if (isLoading || !data?.data || client.onboardingStatus !== "setup_in_progress") return null
 
   const readiness = data.data
-  const readyCount = CHECKLIST_ITEMS.filter((item) => readiness[item.key]).length
-  const hasMissing = readyCount < CHECKLIST_ITEMS.length
+  const readyCount = REQUIRED_ITEMS.filter((item) => readiness[item.key]).length
+  const hasMissing = readyCount < REQUIRED_ITEMS.length
 
   return (
     <motion.div
@@ -59,7 +67,7 @@ export function ClientActivationBanner({ client, onActivated, onTabChange }: Cli
         <div className="flex items-center gap-2">
           <Rocket className="w-4 h-4 text-green-600" />
           <h3 className="text-base font-semibold tracking-tight">
-            Ready to Activate ({readyCount} of {CHECKLIST_ITEMS.length} plans ready)
+            Ready to Activate ({readyCount} of {REQUIRED_ITEMS.length} plans ready)
           </h3>
         </div>
 
@@ -76,7 +84,7 @@ export function ClientActivationBanner({ client, onActivated, onTabChange }: Cli
       </div>
 
       <div className="rounded-lg border p-4 space-y-2">
-        {CHECKLIST_ITEMS.map((item) => {
+        {REQUIRED_ITEMS.map((item) => {
           const checked = readiness[item.key]
           return (
             <button
@@ -96,7 +104,37 @@ export function ClientActivationBanner({ client, onActivated, onTabChange }: Cli
             </button>
           )
         })}
+
+        {readiness.roadmapRecommended && (
+          <>
+            <p className="text-xs text-muted-foreground pt-2">Recommended</p>
+            {RECOMMENDED_ITEMS.map((item) => {
+              const checked = readiness[item.key]
+              return (
+                <div key={item.key} className="flex items-center gap-2 text-sm">
+                  {checked ? (
+                    <CheckCircle2 className="h-4 w-4 text-green-600 flex-shrink-0" />
+                  ) : (
+                    <XCircle className="h-4 w-4 text-amber-500 flex-shrink-0" />
+                  )}
+                  <span>{item.label}</span>
+                </div>
+              )
+            })}
+          </>
+        )}
       </div>
+
+      {!readiness.hasRoadmap && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="mt-3"
+          onClick={() => onTabChange?.("roadmap")}
+        >
+          Build Roadmap
+        </Button>
+      )}
 
       {hasMissing && (
         <div className="flex items-start gap-2 rounded-lg bg-amber-50 dark:bg-amber-950/30 p-3 text-sm text-amber-700 dark:text-amber-400 mt-3">

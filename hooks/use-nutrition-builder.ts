@@ -275,7 +275,7 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
         setIsGenerating(false);
       }
     },
-    [client, settings, customMacros, onUpdate, toast]
+    [client, settings, customMacros, phaseId, onUpdate, toast]
   );
 
   // Calculate projected goal date

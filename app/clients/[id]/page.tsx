@@ -1,7 +1,7 @@
 "use client"
 
-import { useState } from "react"
-import { useParams } from "next/navigation"
+import { useState, useCallback } from "react"
+import { useParams, useSearchParams, useRouter } from "next/navigation"
 import Link from "next/link"
 import { AppLayout } from "@/components/app-layout"
 import { Button } from "@/components/ui/button"
@@ -25,16 +25,28 @@ import type { CheckIn } from "@/types/check-in"
 import { useClientMetrics } from "@/hooks/use-client-metrics"
 import { Loader2, AlertCircle } from "lucide-react"
 
+const VALID_TABS = new Set<ClientTab>(["overview", "roadmap", "metrics", "training", "nutrition", "wellness", "daily-habits", "notes"])
+
 export default function ClientProfilePage() {
   const params = useParams()
   const clientId = params.id as string
+  const searchParams = useSearchParams()
+  const router = useRouter()
+
+  const tabParam = searchParams.get("tab")
+  const initialTab: ClientTab = tabParam && VALID_TABS.has(tabParam as ClientTab) ? (tabParam as ClientTab) : "overview"
 
   const { client, isLoading: clientLoading, isError: clientError, mutate: mutateClient } = useClient(clientId)
   const { checkIns, isLoading: checkInsLoading } = useCheckInData(clientId, {
     includeDailyLogCounts: true
   })
   const [selectedCheckInId, setSelectedCheckInId] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<ClientTab>("overview")
+  const [activeTab, setActiveTab] = useState<ClientTab>(initialTab)
+
+  const handleTabChange = useCallback((tab: ClientTab) => {
+    setActiveTab(tab)
+    router.replace(`/clients/${clientId}?tab=${tab}`, { scroll: false })
+  }, [clientId, router])
 
   const {
     isCalculatingBMR,
@@ -71,7 +83,7 @@ export default function ClientProfilePage() {
     <ClientPageHeader
       client={client}
       activeTab={activeTab}
-      onTabChange={setActiveTab}
+      onTabChange={handleTabChange}
     />
   ) : null;
 
@@ -111,7 +123,7 @@ export default function ClientProfilePage() {
 
       {/* Client Content */}
       {!clientLoading && !clientError && client && (
-        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as ClientTab)} className="space-y-6">
+        <Tabs value={activeTab} onValueChange={(value) => handleTabChange(value as ClientTab)} className="space-y-6">
           {/* Overview Tab */}
           <TabsContent value="overview" className="mt-0">
             <ClientOverviewTab
@@ -121,7 +133,7 @@ export default function ClientProfilePage() {
               onCalculateBMR={handleCalculateBMR}
               onSelectCheckIn={handleSelectCheckIn}
               onClientUpdated={() => mutateClient()}
-              onTabChange={setActiveTab}
+              onTabChange={handleTabChange}
             />
           </TabsContent>
 

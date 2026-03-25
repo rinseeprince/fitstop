@@ -192,7 +192,7 @@ export async function POST(
         : tdeeValue;
 
       const trainingPlan = await getActiveTrainingPlan(clientId);
-      await createNutritionPlan({
+      const newPlanId = await createNutritionPlan({
         clientId,
         coachId,
         workActivityLevel: body.workActivityLevel,
@@ -219,6 +219,13 @@ export async function POST(
         trainingPlan,
         phaseId: phaseCheck.phaseId,
       });
+
+      if (!newPlanId) {
+        return NextResponse.json(
+          { success: false, error: "Failed to create nutrition plan" },
+          { status: 500 }
+        );
+      }
 
       return NextResponse.json(
         {
@@ -267,7 +274,7 @@ export async function POST(
       .eq("status", "active")
       .maybeSingle();
 
-    await createNutritionPlan({
+    const newPlanId = await createNutritionPlan({
       clientId,
       coachId,
       workActivityLevel: body.workActivityLevel,
@@ -292,6 +299,13 @@ export async function POST(
       trainingPlan,
       phaseId: phaseCheck.phaseId,
     });
+
+    if (!newPlanId) {
+      return NextResponse.json(
+        { success: false, error: "Failed to create nutrition plan" },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json(
       {
