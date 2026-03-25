@@ -534,6 +534,9 @@ export interface MockPhaseRowOptions {
   endDate?: string | null
   durationWeeks?: number | null
   phaseGoalsSnapshot?: Record<string, unknown> | null
+  coachReflection?: string | null
+  phaseSummary?: Record<string, unknown> | null
+  completionSeen?: boolean
   createdAt?: string
   updatedAt?: string
 }
@@ -554,6 +557,9 @@ export function createMockPhaseRow(options: MockPhaseRowOptions = {}): PhaseRow 
     end_date: options.endDate ?? null,
     duration_weeks: options.durationWeeks ?? null,
     phase_goals_snapshot: options.phaseGoalsSnapshot ?? null,
+    coach_reflection: options.coachReflection ?? null,
+    phase_summary: options.phaseSummary ?? null,
+    completion_seen: options.completionSeen ?? false,
     created_at: options.createdAt ?? now,
     updated_at: options.updatedAt ?? now,
   }

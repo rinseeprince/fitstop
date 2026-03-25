@@ -292,3 +292,32 @@ Reviewed: 2026-03-22
 | # | Issue | File(s) | Details | Status |
 |---|-------|---------|---------|--------|
 | 1 | ~~CONVENTIONS.md daily_logs conventions outdated~~ | `docs/ARCHITECTURE.md` | Schema diagrams moved to `docs/ARCHITECTURE.md` with corrections applied (phase_id linkage, spine + child table architecture, training_data as UI restore cache). | Resolved |
+
+---
+
+## Pre-existing Test Failures
+
+Reviewed: 2026-03-25
+
+23 tests across 6 files are failing. These are not regressions — they represent tests written against planned behavior that was never implemented, assertion mismatches after refactors, or incorrect assumptions about implementation details.
+
+### Unimplemented Behavior (8 failures)
+
+| # | Issue | File(s) | Details | Status |
+|---|-------|---------|---------|--------|
+| 1 | Tests expect sanitization logic that was never implemented | `ai-prompt-sanitizer.test.ts` | 8 tests expect `sanitizeForAIPrompt` to strip "Disregard", "Override", whitespace-prefixed injection patterns, and truncate at 500 chars. The implementation performs none of this. Tests were written for planned behavior. | Open |
+
+### Stale Assertions After Refactors (12 failures)
+
+| # | Issue | File(s) | Details | Status |
+|---|-------|---------|---------|--------|
+| 1 | Error message format mismatch | `client-service.test.ts` | 7 failures. Tests expect `"Failed to X: <db error>"` format but service throws `"Failed to X"` without appending the DB error. Tests also expect `getClientById` to return `null` for not-found but it throws, and expect `null` for empty string notes but service sends empty string. | Open |
+| 2 | Color value assertions outdated | `check-in-utils.test.ts` | 4 failures. `getStatusColor` tests expect raw color names (`"yellow"`, `"blue"`, `"green"`, `"gray"`) but implementation returns semantic Tailwind classes (`"bg-warning/10 text-warning"`, etc.). Tests weren't updated after design token migration. | Open |
+| 3 | Button variant class outdated | `button.test.tsx` | 1 failure. Expects `bg-white` class on secondary variant but component uses `bg-secondary`. Test wasn't updated after button styling change. | Open |
+
+### Incorrect Assumptions (3 failures)
+
+| # | Issue | File(s) | Details | Status |
+|---|-------|---------|---------|--------|
+| 1 | Fallback mode assumption wrong | `rate-limit.test.ts` | 2 failures. Tests expect unlimited requests in fallback mode but in-memory rate limiter actually enforces limits. Tests assume fallback = no limit; implementation says fallback = still rate limited. | Open |
+| 2 | Error exposure assumption wrong | `notifications/route.test.ts` | 1 failure. Expects raw DB error message in 500 response but route returns generic `"Failed to fetch notifications"`. Test expectation conflicts with the convention of not exposing internal errors to users. | Open |

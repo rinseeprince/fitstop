@@ -118,7 +118,6 @@ export function DailyPulseLoggedView({
         currentTrainingSession={currentTrainingSession}
         activityStatuses={activityStatuses}
         plannedActivities={plannedActivities}
-        unplannedActivities={unplannedActivities}
         caloriesConsumed={nutritionData.caloriesConsumed}
         proteinG={nutritionData.proteinG}
         carbsG={nutritionData.carbsG}

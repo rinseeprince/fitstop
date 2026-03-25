@@ -582,110 +582,6 @@ After all components:
 
 ---
 
-### Prompt 2E: Update Activation Flow + Tests
-
-```
-Read CONVENTIONS.md. Read these files before modifying:
-- components/clients/client-activation-banner.tsx
-- components/coach/client-activation-dialog.tsx
-- app/api/clients/[id]/activation-readiness/route.ts
-- components/coach/intake-review-page.tsx
-
-Modify the activation flow to support roadmaps:
-
-1. app/api/clients/[id]/activation-readiness/route.ts
-   - Add two new checks: hasRoadmap (query roadmaps WHERE client_id AND status = 'active'), hasActivePhase (query phases WHERE client_id AND status = 'active')
-   - Keep existing checks (hasTrainingPlan, hasNutritionPlan, hasHabits)
-   - Return all 5 readiness flags in the response
-   - Roadmap and phase are NOT required - they're recommended. The coach can still activate without them (backward compat). Add a field like roadmapRecommended: true to signal the UI.
-
-2. components/clients/client-activation-banner.tsx
-   - Add roadmap and phase status to the checklist display
-   - Show them as recommended (yellow) not required (red) if missing
-   - Add a button "Build Roadmap" that switches to the roadmap tab (use the onTabChange callback)
-
-3. components/coach/client-activation-dialog.tsx
-   - If an active phase exists, auto-populate the start date from phase.start_date
-   - Show the active phase name in the dialog summary
-   - No blocking changes - activation still works without a roadmap
-
-4. components/coach/intake-review-page.tsx
-   - Add a "Build Roadmap" button alongside the existing "Go to Training Builder" and "Go to Nutrition Builder" buttons
-   - This button navigates to the client page with ?tab=roadmap (or calls onTabChange if available)
-
-Now write tests for the activation readiness endpoint:
-
-Create or update app/api/clients/[id]/activation-readiness/route.test.ts:
-- Mock supabase queries for roadmaps, phases, training_plans, nutrition_plans, daily_habits
-- Test: "returns all readiness flags including roadmap" - mock all queries, verify response includes hasRoadmap, hasActivePhase, hasTrainingPlan, hasNutritionPlan, hasHabits
-- Test: "returns hasRoadmap=false when no roadmap" - mock empty roadmap query
-- Test: "returns hasActivePhase=false when roadmap exists but no active phase"
-- Test: "returns all true when fully set up" - mock everything present
-- Test: "client can still activate without roadmap" - verify roadmapRecommended flag is true but no blocking error
-
-After all changes:
-- npx tsc --noEmit
-- npm run build
-- npx vitest run
-```
-
-**Verify 2E:**
-- `npx tsc --noEmit` passes
-- `npm run build` passes
-- `npx vitest run` - activation tests pass
-- Existing activation still works (no roadmap required)
-
----
-
-### Prompt 2F: Update CONVENTIONS.md + Final Verification
-
-```
-Read CONVENTIONS.md and docs/ARCHITECTURE.md fully.
-
-Update docs/ARCHITECTURE.md to add the new roadmap/phase schema documentation:
-
-1. Add a new section "Roadmap/Phase Architecture":
-   Document the hierarchy:
-   ```
-   roadmaps              -- long-term goal container, one active per client
-     └── phases           -- time-bound strategy blocks (planned/active/completed/skipped)
-           ├── training_plans  -- linked via phase_id (nullable, backward compat)
-           ├── nutrition_plans -- linked via phase_id (nullable, backward compat)
-           └── daily_habits    -- linked via phase_id (nullable, backward compat)
-   ```
-   - Roadmaps are opt-in. Clients without roadmaps work exactly as before (plans link to client_id directly)
-   - phase_goals_snapshot JSONB on phases captures goal state at phase start
-   - client_goals table tracks versioned goals with effective_from/superseded_at pattern
-   - body_metrics table tracks every metric measurement as an immutable event with source provenance
-   - clients table retains current_weight, current_body_fat_percentage, bmr, tdee as denormalized cache
-
-Now run the FULL commit-ready checklist from CONVENTIONS.md section 13:
-1. npx tsc --noEmit - no TypeScript errors
-2. npx eslint . - no lint errors
-3. npx vitest run - all tests pass
-4. grep -rn "as any" on all new/modified files - no type escapes
-5. grep -rn "console.log" on all new/modified files - should only be console.error/warn
-6. grep -rn "TODO\|FIXME\|HACK\|DEBUG" on all new/modified files - no leftover markers
-
-Fix any issues found. Then commit with message:
-"feat: roadmap tab UI, API routes, plan linking, read migration, activation flow
-
-- New API routes: roadmap, phases, goals, body-metrics, client phase
-- Switch metric/goal reads from clients table to body_metrics + client_goals
-- Auto-link new plans to active phase
-- Roadmap tab with timeline, phase cards, create/add dialogs
-- Updated activation flow with roadmap readiness checks
-- Full test coverage for routes, services, and activation
-- Updated CONVENTIONS.md with roadmap architecture docs"
-```
-
-**Verify 2F:**
-- All 6 checklist items pass
-- Build succeeds
-- All tests pass
-
----
-
 ### Prompt 2G: Phase Transition Flow + Minimal Client Completion
 
 ```
@@ -895,6 +791,110 @@ After all changes:
 - Phase review drawer shows real adherence data
 - Client completion card appears and dismisses correctly
 - Full lifecycle testable: create roadmap -> add phases -> activate -> complete with transition -> next phase activates
+
+---
+
+### Prompt 2E: Update Activation Flow + Tests
+
+```
+Read CONVENTIONS.md. Read these files before modifying:
+- components/clients/client-activation-banner.tsx
+- components/coach/client-activation-dialog.tsx
+- app/api/clients/[id]/activation-readiness/route.ts
+- components/coach/intake-review-page.tsx
+
+Modify the activation flow to support roadmaps:
+
+1. app/api/clients/[id]/activation-readiness/route.ts
+   - Add two new checks: hasRoadmap (query roadmaps WHERE client_id AND status = 'active'), hasActivePhase (query phases WHERE client_id AND status = 'active')
+   - Keep existing checks (hasTrainingPlan, hasNutritionPlan, hasHabits)
+   - Return all 5 readiness flags in the response
+   - Roadmap and phase are NOT required - they're recommended. The coach can still activate without them (backward compat). Add a field like roadmapRecommended: true to signal the UI.
+
+2. components/clients/client-activation-banner.tsx
+   - Add roadmap and phase status to the checklist display
+   - Show them as recommended (yellow) not required (red) if missing
+   - Add a button "Build Roadmap" that switches to the roadmap tab (use the onTabChange callback)
+
+3. components/coach/client-activation-dialog.tsx
+   - If an active phase exists, auto-populate the start date from phase.start_date
+   - Show the active phase name in the dialog summary
+   - No blocking changes - activation still works without a roadmap
+
+4. components/coach/intake-review-page.tsx
+   - Add a "Build Roadmap" button alongside the existing "Go to Training Builder" and "Go to Nutrition Builder" buttons
+   - This button navigates to the client page with ?tab=roadmap (or calls onTabChange if available)
+
+Now write tests for the activation readiness endpoint:
+
+Create or update app/api/clients/[id]/activation-readiness/route.test.ts:
+- Mock supabase queries for roadmaps, phases, training_plans, nutrition_plans, daily_habits
+- Test: "returns all readiness flags including roadmap" - mock all queries, verify response includes hasRoadmap, hasActivePhase, hasTrainingPlan, hasNutritionPlan, hasHabits
+- Test: "returns hasRoadmap=false when no roadmap" - mock empty roadmap query
+- Test: "returns hasActivePhase=false when roadmap exists but no active phase"
+- Test: "returns all true when fully set up" - mock everything present
+- Test: "client can still activate without roadmap" - verify roadmapRecommended flag is true but no blocking error
+
+After all changes:
+- npx tsc --noEmit
+- npm run build
+- npx vitest run
+```
+
+**Verify 2E:**
+- `npx tsc --noEmit` passes
+- `npm run build` passes
+- `npx vitest run` - activation tests pass
+- Existing activation still works (no roadmap required)
+
+---
+
+### Prompt 2F: Update CONVENTIONS.md + Final Verification
+
+```
+Read CONVENTIONS.md and docs/ARCHITECTURE.md fully.
+
+Update docs/ARCHITECTURE.md to add the new roadmap/phase schema documentation:
+
+1. Add a new section "Roadmap/Phase Architecture":
+   Document the hierarchy:
+   ```
+   roadmaps              -- long-term goal container, one active per client
+     └── phases           -- time-bound strategy blocks (planned/active/completed/skipped)
+           ├── training_plans  -- linked via phase_id (nullable, backward compat)
+           ├── nutrition_plans -- linked via phase_id (nullable, backward compat)
+           └── daily_habits    -- linked via phase_id (nullable, backward compat)
+   ```
+   - Roadmaps are opt-in. Clients without roadmaps work exactly as before (plans link to client_id directly)
+   - phase_goals_snapshot JSONB on phases captures goal state at phase start
+   - client_goals table tracks versioned goals with effective_from/superseded_at pattern
+   - body_metrics table tracks every metric measurement as an immutable event with source provenance
+   - clients table retains current_weight, current_body_fat_percentage, bmr, tdee as denormalized cache
+
+Now run the FULL commit-ready checklist from CONVENTIONS.md section 13:
+1. npx tsc --noEmit - no TypeScript errors
+2. npx eslint . - no lint errors
+3. npx vitest run - all tests pass
+4. grep -rn "as any" on all new/modified files - no type escapes
+5. grep -rn "console.log" on all new/modified files - should only be console.error/warn
+6. grep -rn "TODO\|FIXME\|HACK\|DEBUG" on all new/modified files - no leftover markers
+
+Fix any issues found. Then commit with message:
+"feat: roadmap tab UI, API routes, plan linking, read migration, activation flow
+
+- New API routes: roadmap, phases, goals, body-metrics, client phase
+- Switch metric/goal reads from clients table to body_metrics + client_goals
+- Auto-link new plans to active phase
+- Roadmap tab with timeline, phase cards, create/add dialogs
+- Updated activation flow with roadmap readiness checks
+- Full test coverage for routes, services, and activation
+- Updated CONVENTIONS.md with roadmap architecture docs"
+```
+
+**Verify 2F:**
+- All 6 checklist items pass
+- Build succeeds
+- All tests pass
 
 ---
 

@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Loader2, Calendar, ChevronDown, ChevronUp } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { PhaseReviewDrawer } from "./phase-review-drawer";
 import type { Phase, PhaseStatus } from "@/types/roadmap";
 
 const statusBadgeVariant: Record<
@@ -34,6 +35,7 @@ export const PhaseCard = ({
   const { toast } = useToast();
   const [expanded, setExpanded] = useState(false);
   const [isActivating, setIsActivating] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
 
   const handleActivate = async () => {
     setIsActivating(true);
@@ -118,6 +120,16 @@ export const PhaseCard = ({
               )}
             </Button>
           )}
+
+          {phase.status === "active" && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setReviewOpen(true)}
+            >
+              Complete Phase
+            </Button>
+          )}
         </div>
 
         {expanded && (
@@ -156,6 +168,14 @@ export const PhaseCard = ({
           </div>
         )}
       </CardContent>
+
+      <PhaseReviewDrawer
+        open={reviewOpen}
+        onOpenChange={setReviewOpen}
+        phase={phase}
+        clientId={clientId}
+        onTransitionComplete={onUpdate}
+      />
     </Card>
   );
 };

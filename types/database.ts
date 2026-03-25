@@ -1718,6 +1718,8 @@ export type Database = {
       phases: {
         Row: {
           client_id: string
+          coach_reflection: string | null
+          completion_seen: boolean
           created_at: string
           description: string | null
           duration_weeks: number | null
@@ -1727,6 +1729,7 @@ export type Database = {
           objectives: string | null
           order_index: number
           phase_goals_snapshot: Json | null
+          phase_summary: Json | null
           roadmap_id: string
           start_date: string | null
           status: string
@@ -1734,6 +1737,8 @@ export type Database = {
         }
         Insert: {
           client_id: string
+          coach_reflection?: string | null
+          completion_seen?: boolean
           created_at?: string
           description?: string | null
           duration_weeks?: number | null
@@ -1743,6 +1748,7 @@ export type Database = {
           objectives?: string | null
           order_index?: number
           phase_goals_snapshot?: Json | null
+          phase_summary?: Json | null
           roadmap_id: string
           start_date?: string | null
           status?: string
@@ -1750,6 +1756,8 @@ export type Database = {
         }
         Update: {
           client_id?: string
+          coach_reflection?: string | null
+          completion_seen?: boolean
           created_at?: string
           description?: string | null
           duration_weeks?: number | null
@@ -1759,6 +1767,7 @@ export type Database = {
           objectives?: string | null
           order_index?: number
           phase_goals_snapshot?: Json | null
+          phase_summary?: Json | null
           roadmap_id?: string
           start_date?: string | null
           status?: string
@@ -2430,6 +2439,18 @@ export type Database = {
       generate_weekly_nutrition_goals: {
         Args: { p_client_id: string; p_week_start_date: string }
         Returns: undefined
+      }
+      transition_phase_atomic: {
+        Args: {
+          p_archive_habits: boolean
+          p_archive_nutrition: boolean
+          p_archive_training: boolean
+          p_coach_reflection: string
+          p_next_action: string
+          p_phase_id: string
+          p_phase_summary: Json
+        }
+        Returns: string
       }
       update_client_adherence_stats: {
         Args: { client_uuid: string }

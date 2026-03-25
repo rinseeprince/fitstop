@@ -38,6 +38,9 @@ export type Phase = {
   endDate?: string;
   durationWeeks?: number;
   phaseGoalsSnapshot?: Record<string, unknown> | null;
+  coachReflection?: string;
+  phaseSummary?: Record<string, unknown> | null;
+  completionSeen?: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -115,6 +118,9 @@ export type PhaseRow = {
   end_date: string | null;
   duration_weeks: number | null;
   phase_goals_snapshot: Record<string, unknown> | null;
+  coach_reflection: string | null;
+  phase_summary: Record<string, unknown> | null;
+  completion_seen: boolean;
   created_at: string;
   updated_at: string;
 };
@@ -146,4 +152,32 @@ export type BodyMetricsEventRow = {
   source_id: string | null;
   recorded_at: string;
   created_at: string;
+};
+
+// Phase review data returned by getPhaseReviewData for the coach transition drawer
+export type PhaseReviewData = {
+  phase: Phase;
+  trainingAdherence: {
+    completed: number;
+    prescribed: number;
+    percentage: number | null;
+  } | null;
+  nutritionAdherence: {
+    averageScore: number;
+    logsCount: number;
+  } | null;
+  habitCompletion: {
+    completed: number;
+    total: number;
+    percentage: number;
+  } | null;
+  bodyMetrics: {
+    start: { weight?: number; bodyFatPercentage?: number } | null;
+    current: { weight?: number; bodyFatPercentage?: number } | null;
+  };
+  goalsAtStart: Record<string, unknown> | null;
+  goalsNow: Record<string, unknown> | null;
+  durationDays: number;
+  hasNextPhase: boolean;
+  nextPhaseName: string | null;
 };

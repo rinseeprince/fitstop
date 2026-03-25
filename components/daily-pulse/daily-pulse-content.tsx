@@ -10,6 +10,7 @@ import { NutritionSection } from "./nutrition-section";
 import { WeeklyNutritionProgress } from "./weekly-nutrition-progress";
 import { HabitsSection } from "./habits-section";
 import { DailyPulseLoggedView } from "./daily-pulse-logged-view";
+import { PhaseCompletionCard } from "./phase-completion-card";
 import type { DailyLog } from "@/types/daily-log";
 import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
 import type { TrainingSession } from "@/types/training";
@@ -124,6 +125,7 @@ export function DailyPulseContent({
   if (!hasLoggedToday && !isExpanded) {
     return (
       <div className="space-y-3">
+        <PhaseCompletionCard />
         <div className="flex items-center justify-between text-sm">
           <span className="text-muted-foreground">Log today's wellness, training & nutrition</span>
           <Button variant="ghost" size="sm" onClick={handleEdit}>
@@ -151,7 +153,9 @@ export function DailyPulseContent({
 
   if (hasLoggedToday && !isExpanded) {
     return (
-      <DailyPulseLoggedView
+      <>
+        <PhaseCompletionCard />
+        <DailyPulseLoggedView
         todayLog={todayLog!}
         nutritionTarget={nutritionTarget}
         sessionCompleted={sessionCompleted}
@@ -177,11 +181,13 @@ export function DailyPulseContent({
         setNutritionData={setNutritionData}
         onHabitLogsUpdate={onHabitLogsUpdate}
       />
+      </>
     );
   }
 
   return (
     <div className="space-y-6">
+      <PhaseCompletionCard />
       <WellnessSection
         formData={formData}
         setFormData={setFormData}
@@ -222,7 +228,6 @@ export function DailyPulseContent({
         currentTrainingSession={currentTrainingSession}
         activityStatuses={activityStatuses}
         plannedActivities={plannedActivities}
-        unplannedActivities={unplannedActivities}
         caloriesConsumed={nutritionData.caloriesConsumed}
         proteinG={nutritionData.proteinG}
         carbsG={nutritionData.carbsG}
