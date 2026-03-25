@@ -17,14 +17,10 @@ vi.mock('@/services/check-in-tracking-service', () => ({
   isClientOverdue: vi.fn(),
 }))
 
-vi.mock('@/lib/rate-limit', async (importOriginal) => {
-  const actual = await importOriginal()
-  return {
-    ...actual,
-    apiRateLimit: vi.fn(),
-    clientApiRateLimit: vi.fn(),
-  }
-})
+vi.mock('@/lib/rate-limit', () => ({
+  apiRateLimit: vi.fn(),
+  clientApiRateLimit: vi.fn(),
+}))
 
 import { getAuthenticatedClientId } from '@/lib/auth-helpers'
 import { getClientById } from '@/services/client-service'

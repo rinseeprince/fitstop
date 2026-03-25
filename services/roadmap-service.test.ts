@@ -123,7 +123,6 @@ describe('Roadmap Service', () => {
       const roadmapQuery = createMockQuery({ data: mockRoadmap, error: null });
       const phasesQuery = createMockQuery({ data: mockPhases, error: null });
 
-      let callCount = 0;
       vi.mocked(supabaseAdmin.from).mockImplementation((table: string) => {
         if (table === 'roadmaps') return roadmapQuery as never;
         if (table === 'phases') return phasesQuery as never;

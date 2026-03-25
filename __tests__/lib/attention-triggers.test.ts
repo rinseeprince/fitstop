@@ -279,10 +279,9 @@ describe('attention-triggers', () => {
       global.Date = class extends originalDate {
         constructor(...args: any[]) {
           if (args.length === 0) {
-            // @ts-expect-error -- testing with invalid input
             super(mockToday.toISOString())
           } else {
-            // @ts-expect-error -- testing with invalid input
+            // @ts-expect-error -- spread args for Date subclass in test
             super(...args)
           }
         }

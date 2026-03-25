@@ -1,6 +1,3 @@
-// TODO: Add POST /reorder endpoint for bulk phase reordering
-// (see app/api/clients/[id]/training/[planId]/sessions/reorder/route.ts)
-
 import { NextRequest, NextResponse } from "next/server";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";

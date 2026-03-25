@@ -4,7 +4,7 @@ import { supabaseAdmin } from "./supabase-admin";
 import { mapPhaseRow } from "./roadmap-service";
 import { getBodyMetricsHistory, getLatestBodyMetrics } from "./body-metrics-service";
 import { getCurrentGoals } from "./client-goals-service";
-import type { Phase, PhaseRow, PhaseReviewData } from "@/types/roadmap";
+import type { PhaseRow, PhaseReviewData } from "@/types/roadmap";
 
 const ADHERENCE_SCORES: Record<string, number> = {
   hit: 1.0,
@@ -131,7 +131,7 @@ export const getPhaseReviewData = async (
   let trainingAdherence: PhaseReviewData["trainingAdherence"] = null;
   const sessionsCompleted = sessionLogsResult?.count ?? 0;
   const frequencyPerWeek =
-    trainingPlanResult?.data?.frequency_per_week as number | undefined;
+    trainingPlanResult?.data?.frequency_per_week;
   if (sessionsCompleted > 0 || frequencyPerWeek) {
     const prescribed = frequencyPerWeek
       ? Math.round((daysInRange / 7) * frequencyPerWeek)

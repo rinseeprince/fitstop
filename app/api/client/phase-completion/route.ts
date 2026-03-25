@@ -61,8 +61,9 @@ export async function GET(request: NextRequest) {
     }
 
     // Look up next phase name from summary if available
-    const summary = phase.phase_summary as Record<string, unknown> | null;
-    const nextPhaseId = summary?.nextPhaseId as string | undefined;
+    const summary = phase.phase_summary;
+    const rawNextPhaseId = summary?.nextPhaseId;
+    const nextPhaseId = typeof rawNextPhaseId === "string" ? rawNextPhaseId : undefined;
     let nextPhaseName: string | null = null;
 
     if (nextPhaseId) {
