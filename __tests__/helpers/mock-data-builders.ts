@@ -534,6 +534,8 @@ export interface MockPhaseRowOptions {
   endDate?: string | null
   durationWeeks?: number | null
   phaseGoalsSnapshot?: Record<string, unknown> | null
+  phaseGoalWeight?: number | null
+  phaseGoalBodyFatPercentage?: number | null
   coachReflection?: string | null
   phaseSummary?: Record<string, unknown> | null
   completionSeen?: boolean
@@ -557,6 +559,8 @@ export function createMockPhaseRow(options: MockPhaseRowOptions = {}): PhaseRow 
     end_date: options.endDate ?? null,
     duration_weeks: options.durationWeeks ?? null,
     phase_goals_snapshot: options.phaseGoalsSnapshot ?? null,
+    phase_goal_weight: options.phaseGoalWeight ?? null,
+    phase_goal_body_fat_percentage: options.phaseGoalBodyFatPercentage ?? null,
     coach_reflection: options.coachReflection ?? null,
     phase_summary: options.phaseSummary ?? null,
     completion_seen: options.completionSeen ?? false,

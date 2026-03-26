@@ -32,6 +32,8 @@ export const createPhaseSchema = z.object({
   endDate: z.string().regex(dateRegex, dateMessage).optional(),
   durationWeeks: z.number().int().min(1).max(104).optional(),
   orderIndex: z.number().int().min(0).optional(),
+  phaseGoalWeight: z.number().min(20).max(700).nullable().optional(),
+  phaseGoalBodyFatPercentage: z.number().min(3).max(60).nullable().optional(),
 });
 
 /**

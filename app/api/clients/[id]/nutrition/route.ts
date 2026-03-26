@@ -167,6 +167,20 @@ export async function POST(
     const tdeeValue = latestMetrics?.tdee ?? client.tdee;
     const goalWeight = currentGoals?.goalWeight ?? client.goalWeight;
 
+    // Phase goal overrides: use phase-specific goal if set, otherwise fall back to client goal
+    const effectiveGoalWeightKg =
+      phaseCheck.phaseGoalWeight != null
+        ? phaseCheck.phaseGoalWeight // Already in kg, no conversion needed
+        : goalWeight
+          ? weightToKg(goalWeight, weightUnit)
+          : null;
+    const effectiveGoalDeadline =
+      phaseCheck.phaseGoalWeight != null
+        ? phaseCheck.phaseEndDate ?? null
+        : body.goalDeadline || null;
+    const goalSource: "phase" | "client" =
+      phaseCheck.phaseGoalWeight != null ? "phase" : "client";
+
     // Handle custom macros
     if (body.customMacrosEnabled) {
       if (!body.customProteinG || !body.customCarbG || !body.customFatG || !body.customCalories) {
@@ -199,10 +213,8 @@ export async function POST(
         trainingVolumeHours: body.trainingVolumeHours || "2-3",
         proteinTargetGPerKg: body.proteinTargetGPerKg,
         dietType: body.dietType,
-        goalWeightKg: goalWeight
-          ? weightToKg(goalWeight, weightUnit)
-          : null,
-        goalDeadline: body.goalDeadline || null,
+        goalWeightKg: effectiveGoalWeightKg,
+        goalDeadline: effectiveGoalDeadline,
         baselineCalories: body.customCalories,
         proteinTargetG: body.customProteinG,
         carbTargetG: body.customCarbG,
@@ -230,6 +242,7 @@ export async function POST(
       return NextResponse.json(
         {
           success: true,
+          goalSource,
           plan: {
             calorieTarget: body.customCalories,
             proteinTargetG: body.customProteinG,
@@ -246,15 +259,12 @@ export async function POST(
 
     // Generate calculated nutrition plan
     const currentWeightKg = weightToKg(currentWeight!, weightUnit);
-    const goalWeightKg = goalWeight
-      ? weightToKg(goalWeight, weightUnit)
-      : undefined;
 
     const trainingPlan = await getActiveTrainingPlan(clientId);
 
     const plan = generateNutritionPlan({
       currentWeightKg,
-      goalWeightKg,
+      goalWeightKg: effectiveGoalWeightKg ?? undefined,
       bmr: bmr!,
       gender: client.gender as "male" | "female" | "other",
       workActivityLevel: body.workActivityLevel,
@@ -262,7 +272,7 @@ export async function POST(
       trainingPlan,
       proteinTargetGPerKg: body.proteinTargetGPerKg,
       dietType: body.dietType,
-      goalDeadline: body.goalDeadline,
+      goalDeadline: effectiveGoalDeadline ?? undefined,
       weightUnit: weightUnit,
     });
 
@@ -281,8 +291,8 @@ export async function POST(
       trainingVolumeHours: body.trainingVolumeHours || "2-3",
       proteinTargetGPerKg: body.proteinTargetGPerKg,
       dietType: body.dietType,
-      goalWeightKg: goalWeightKg ?? null,
-      goalDeadline: body.goalDeadline || null,
+      goalWeightKg: effectiveGoalWeightKg,
+      goalDeadline: effectiveGoalDeadline,
       baselineCalories: plan.baselineCalories,
       proteinTargetG: plan.proteinTargetG,
       carbTargetG: plan.carbTargetG,
@@ -310,6 +320,7 @@ export async function POST(
     return NextResponse.json(
       {
         success: true,
+        goalSource,
         plan: {
           baselineCalories: plan.baselineCalories,
           tdee: plan.tdee,

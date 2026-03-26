@@ -15,6 +15,8 @@ export const createPhase = async (
     endDate?: string;
     durationWeeks?: number;
     orderIndex?: number;
+    phaseGoalWeight?: number | null;
+    phaseGoalBodyFatPercentage?: number | null;
   }
 ): Promise<Phase> => {
   // Get roadmap to set client_id
@@ -60,6 +62,8 @@ export const createPhase = async (
       end_date: data.endDate ?? null,
       duration_weeks: data.durationWeeks ?? null,
       phase_goals_snapshot: goalsSnapshot as unknown as undefined,
+      phase_goal_weight: data.phaseGoalWeight ?? null,
+      phase_goal_body_fat_percentage: data.phaseGoalBodyFatPercentage ?? null,
     })
     .select()
     .single();
@@ -218,8 +222,28 @@ export const updatePhase = async (
     endDate?: string;
     durationWeeks?: number;
     orderIndex?: number;
+    phaseGoalWeight?: number | null;
+    phaseGoalBodyFatPercentage?: number | null;
   }
 ): Promise<Phase> => {
+  // Phase goals can only be edited while phase is in planned status
+  const hasGoalEdits =
+    data.phaseGoalWeight !== undefined ||
+    data.phaseGoalBodyFatPercentage !== undefined;
+  if (hasGoalEdits) {
+    const { data: phase } = await supabaseAdmin
+      .from("phases")
+      .select("status")
+      .eq("id", phaseId)
+      .eq("client_id", clientId)
+      .single();
+    if (phase?.status !== "planned") {
+      throw new Error(
+        "Phase goals can only be edited while the phase is in planned status"
+      );
+    }
+  }
+
   const updateData: Record<string, unknown> = {
     updated_at: new Date().toISOString(),
   };
@@ -231,6 +255,10 @@ export const updatePhase = async (
   if (data.durationWeeks !== undefined)
     updateData.duration_weeks = data.durationWeeks;
   if (data.orderIndex !== undefined) updateData.order_index = data.orderIndex;
+  if (data.phaseGoalWeight !== undefined)
+    updateData.phase_goal_weight = data.phaseGoalWeight;
+  if (data.phaseGoalBodyFatPercentage !== undefined)
+    updateData.phase_goal_body_fat_percentage = data.phaseGoalBodyFatPercentage;
 
   // Scope to clientId to prevent cross-client access
   const { data: row, error } = await supabaseAdmin

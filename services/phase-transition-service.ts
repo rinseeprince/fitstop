@@ -204,6 +204,13 @@ export const getPhaseReviewData = async (
           primaryGoal: goalsNow.primaryGoal,
         }
       : null,
+    phaseGoals:
+      phase.phaseGoalWeight != null || phase.phaseGoalBodyFatPercentage != null
+        ? {
+            goalWeight: phase.phaseGoalWeight ?? null,
+            goalBodyFatPercentage: phase.phaseGoalBodyFatPercentage ?? null,
+          }
+        : null,
     durationDays: daysInRange,
     hasNextPhase: !!nextPhaseData,
     nextPhaseName: nextPhaseData?.name ?? null,
@@ -241,6 +248,7 @@ export const transitionPhase = async (
       nutrition: reviewData.nutritionAdherence,
       habits: reviewData.habitCompletion,
     },
+    phaseGoals: reviewData.phaseGoals ?? null,
   };
 
   // Uses supabaseAdmin: system-level atomic write (RLS exception 3)

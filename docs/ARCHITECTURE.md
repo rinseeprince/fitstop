@@ -11,7 +11,7 @@ CoachHub is a fitness coaching platform built with Next.js 14 (App Router). It c
 - **Coaches** (role: `trainer`) - manage clients, create training/nutrition plans, review check-ins, monitor wellness alerts. Dashboard at `/dashboard`.
 - **Clients** (role: `client`) - track daily health metrics via Daily Pulse, log workouts, manage nutrition, complete weekly check-ins. Dashboard at `/client/dashboard`.
 
-**Tech stack:** Next.js 14, Supabase (PostgreSQL + RLS + Auth), SWR (coach-side), Upstash Redis (rate limiting), Anthropic Claude API (AI summaries), Vitest, Tailwind CSS, shadcn/ui, Lucide icons, Framer Motion.
+**Tech stack:** Next.js 14, Supabase (PostgreSQL + RLS + Auth), SWR (coach-side), Upstash Redis (rate limiting), OpenAI GPT-4o / GPT-4o-mini (AI summaries, training generation), Vitest, Tailwind CSS, shadcn/ui, Lucide icons, Framer Motion.
 
 ---
 
@@ -75,6 +75,8 @@ roadmaps              -- long-term goal container, one active per client
 - Unique index enforces one active phase per roadmap
 - `order_index` controls display order within a roadmap
 - `phase_goals_snapshot` JSONB captures the client's goal state at phase creation time
+- `phase_goal_weight` (NUMERIC, nullable) - phase-specific goal weight in kg. NULL = fall back to client's overall goal
+- `phase_goal_body_fat_percentage` (NUMERIC, nullable) - phase-specific goal body fat %. NULL = fall back to client's overall goal
 - `coach_reflection` (text) and `phase_summary` (JSONB) are written during phase transitions
 - `completion_seen` (boolean) tracks whether the client has dismissed the completion card
 

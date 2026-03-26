@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
 import { getActiveRoadmap } from "@/services/roadmap-service";
 
-type PhaseCheckOk = { ok: true; phaseId: string | undefined };
+type PhaseCheckOk = {
+  ok: true;
+  phaseId: string | undefined;
+  phaseGoalWeight?: number | null;
+  phaseGoalBodyFatPercentage?: number | null;
+  phaseEndDate?: string | null;
+};
 type PhaseCheckFail = { ok: false; response: NextResponse };
 type PhaseCheckResult = PhaseCheckOk | PhaseCheckFail;
 
@@ -19,7 +25,13 @@ export async function requirePhaseSelection(
 ): Promise<PhaseCheckResult> {
   const roadmap = await getActiveRoadmap(clientId);
   if (!roadmap) {
-    return { ok: true, phaseId: undefined };
+    return {
+      ok: true,
+      phaseId: undefined,
+      phaseGoalWeight: undefined,
+      phaseGoalBodyFatPercentage: undefined,
+      phaseEndDate: undefined,
+    };
   }
 
   const selectable = roadmap.phases.filter(
@@ -64,5 +76,12 @@ export async function requirePhaseSelection(
     };
   }
 
-  return { ok: true, phaseId };
+  const matchedPhase = selectable.find((p) => p.id === phaseId)!;
+  return {
+    ok: true,
+    phaseId,
+    phaseGoalWeight: matchedPhase.phaseGoalWeight ?? null,
+    phaseGoalBodyFatPercentage: matchedPhase.phaseGoalBodyFatPercentage ?? null,
+    phaseEndDate: matchedPhase.endDate ?? null,
+  };
 }

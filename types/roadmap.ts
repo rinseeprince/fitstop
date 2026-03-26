@@ -38,6 +38,8 @@ export type Phase = {
   endDate?: string;
   durationWeeks?: number;
   phaseGoalsSnapshot?: Record<string, unknown> | null;
+  phaseGoalWeight?: number | null;
+  phaseGoalBodyFatPercentage?: number | null;
   coachReflection?: string;
   phaseSummary?: Record<string, unknown> | null;
   completionSeen?: boolean;
@@ -118,6 +120,8 @@ export type PhaseRow = {
   end_date: string | null;
   duration_weeks: number | null;
   phase_goals_snapshot: Record<string, unknown> | null;
+  phase_goal_weight: number | null;
+  phase_goal_body_fat_percentage: number | null;
   coach_reflection: string | null;
   phase_summary: Record<string, unknown> | null;
   completion_seen: boolean;
@@ -177,6 +181,10 @@ export type PhaseReviewData = {
   };
   goalsAtStart: Record<string, unknown> | null;
   goalsNow: Record<string, unknown> | null;
+  phaseGoals: {
+    goalWeight: number | null;
+    goalBodyFatPercentage: number | null;
+  } | null;
   durationDays: number;
   hasNextPhase: boolean;
   nextPhaseName: string | null;

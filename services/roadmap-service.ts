@@ -39,6 +39,8 @@ export function mapPhaseRow(row: PhaseRow): Phase {
     endDate: row.end_date ?? undefined,
     durationWeeks: row.duration_weeks ?? undefined,
     phaseGoalsSnapshot: row.phase_goals_snapshot,
+    phaseGoalWeight: row.phase_goal_weight ?? null,
+    phaseGoalBodyFatPercentage: row.phase_goal_body_fat_percentage ?? null,
     coachReflection: row.coach_reflection ?? undefined,
     phaseSummary: row.phase_summary,
     completionSeen: row.completion_seen ?? false,
