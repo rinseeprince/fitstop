@@ -87,11 +87,9 @@ export function NutritionPlanHistory({ clientId }: NutritionPlanHistoryProps) {
     );
   }
 
-  const firstKey = groups[0].phaseId ?? "pre-roadmap";
-
   return (
     <div className="bg-card rounded-lg border border-border p-5">
-    <Accordion type="multiple" defaultValue={[firstKey]}>
+    <Accordion type="multiple" defaultValue={[]}>
       {groups.map((group) => {
         const key = group.phaseId ?? "pre-roadmap";
         return (
