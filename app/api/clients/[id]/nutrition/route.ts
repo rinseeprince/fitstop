@@ -147,6 +147,14 @@ export async function POST(
     const phaseCheck = await requirePhaseSelection(clientId, validationResult.data.phaseId);
     if (!phaseCheck.ok) return phaseCheck.response;
 
+    // Nutrition plans can only be created for the active phase
+    if (phaseCheck.phaseId && phaseCheck.phaseStatus !== "active") {
+      return NextResponse.json(
+        { success: false, error: "Nutrition plans can only be created for the active phase" },
+        { status: 400 }
+      );
+    }
+
     const clientValidation = validateClientForNutrition(client);
     if (!clientValidation.valid) {
       return NextResponse.json(
@@ -230,6 +238,8 @@ export async function POST(
         regenerationReason: "custom_macros",
         trainingPlan,
         phaseId: phaseCheck.phaseId,
+        coachNotes: validationResult.data.coachNotes,
+        goalSource,
       });
 
       if (!newPlanId) {
@@ -308,6 +318,8 @@ export async function POST(
       regenerationReason: existingPlan ? "regenerated" : "initial",
       trainingPlan,
       phaseId: phaseCheck.phaseId,
+      coachNotes: validationResult.data.coachNotes,
+      goalSource,
     });
 
     if (!newPlanId) {

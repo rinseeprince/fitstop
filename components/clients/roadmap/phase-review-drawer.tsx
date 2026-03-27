@@ -26,6 +26,7 @@ type PhaseReviewDrawerProps = {
   onOpenChange: (open: boolean) => void;
   phase: Phase;
   clientId: string;
+  weightUnit: "lbs" | "kg";
   onTransitionComplete: () => void;
 };
 
@@ -34,6 +35,7 @@ export function PhaseReviewDrawer({
   onOpenChange,
   phase,
   clientId,
+  weightUnit,
   onTransitionComplete,
 }: PhaseReviewDrawerProps) {
   const { toast } = useToast();
@@ -123,7 +125,7 @@ export function PhaseReviewDrawer({
             </div>
           ) : (
             <>
-              {reviewData && <PhaseReviewStats data={reviewData} />}
+              {reviewData && <PhaseReviewStats data={reviewData} weightUnit={weightUnit} />}
 
               {/* Coach reflection */}
               <div className="space-y-2">

@@ -1,21 +1,27 @@
 "use client";
 
-import { TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { TrendingUp, TrendingDown, Minus, Target } from "lucide-react";
+import { weightFromKg } from "@/utils/nutrition-helpers";
 import type { PhaseReviewData } from "@/types/roadmap";
 
 type PhaseReviewStatsProps = {
   data: PhaseReviewData;
+  weightUnit: "lbs" | "kg";
 };
 
-export function PhaseReviewStats({ data }: PhaseReviewStatsProps) {
+export function PhaseReviewStats({ data, weightUnit }: PhaseReviewStatsProps) {
   const startWeight = data.bodyMetrics.start?.weight;
   const currentWeight = data.bodyMetrics.current?.weight;
-  const weightDelta =
+  const weightDeltaKg =
     startWeight && currentWeight ? currentWeight - startWeight : null;
+  const weightDelta =
+    weightDeltaKg != null ? weightFromKg(Math.abs(weightDeltaKg), weightUnit) * Math.sign(weightDeltaKg) : null;
 
   const startBf = data.bodyMetrics.start?.bodyFatPercentage;
   const currentBf = data.bodyMetrics.current?.bodyFatPercentage;
   const bfDelta = startBf && currentBf ? currentBf - startBf : null;
+
+  const displayWeight = (w: number) => weightFromKg(w, weightUnit).toFixed(1);
 
   return (
     <div className="space-y-4">
@@ -25,15 +31,53 @@ export function PhaseReviewStats({ data }: PhaseReviewStatsProps) {
         phase
       </p>
 
+      {/* Phase Goal Progress */}
+      {data.phaseGoals && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-1.5">
+            <Target className="h-3.5 w-3.5 text-muted-foreground" />
+            <p className="text-xs font-medium text-muted-foreground">Phase Goal Progress</p>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            {data.phaseGoals.goalWeight != null && (
+              <MetricCard
+                label="Goal Weight"
+                startValue={`${displayWeight(data.phaseGoals.goalWeight)} ${weightUnit}`}
+                endValue={currentWeight ? `${displayWeight(currentWeight)} ${weightUnit}` : "-"}
+                delta={
+                  currentWeight != null
+                    ? weightFromKg(Math.abs(currentWeight - data.phaseGoals.goalWeight), weightUnit) * Math.sign(currentWeight - data.phaseGoals.goalWeight)
+                    : null
+                }
+                unit={weightUnit}
+              />
+            )}
+            {data.phaseGoals.goalBodyFatPercentage != null && (
+              <MetricCard
+                label="Goal Body Fat"
+                startValue={`${data.phaseGoals.goalBodyFatPercentage}%`}
+                endValue={currentBf ? `${currentBf}%` : "-"}
+                delta={
+                  currentBf != null
+                    ? currentBf - data.phaseGoals.goalBodyFatPercentage
+                    : null
+                }
+                unit="%"
+              />
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Body metrics comparison */}
       {(startWeight || currentWeight) && (
         <div className="grid grid-cols-2 gap-3">
           <MetricCard
             label="Weight"
-            startValue={startWeight ? `${startWeight} kg` : "-"}
-            endValue={currentWeight ? `${currentWeight} kg` : "-"}
+            startValue={startWeight ? `${displayWeight(startWeight)} ${weightUnit}` : "-"}
+            endValue={currentWeight ? `${displayWeight(currentWeight)} ${weightUnit}` : "-"}
             delta={weightDelta}
-            unit="kg"
+            unit={weightUnit}
           />
           {(startBf || currentBf) && (
             <MetricCard

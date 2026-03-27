@@ -351,6 +351,65 @@ describe('Phase Service', () => {
       const updateCallArgs = mockQuery.update.mock.calls[0][0];
       expect(updateCallArgs.status).toBeUndefined();
     });
+
+    it('allows goal edits when phase status is planned', async () => {
+      const statusQuery = createMockQuery({ data: { status: 'planned' }, error: null });
+      const updateResult = createMockPhaseRow({
+        id: 'phase-1',
+        phaseGoalWeight: 75,
+        phaseGoalBodyFatPercentage: 15,
+      });
+      const updateQuery = createMockQuery({ data: updateResult, error: null });
+      vi.mocked(supabaseAdmin.from)
+        .mockReturnValueOnce(statusQuery as never)
+        .mockReturnValueOnce(updateQuery as never);
+
+      const result = await updatePhase('phase-1', 'client-1', {
+        phaseGoalWeight: 75,
+        phaseGoalBodyFatPercentage: 15,
+      });
+
+      expect(result.phaseGoalWeight).toBe(75);
+      expect(result.phaseGoalBodyFatPercentage).toBe(15);
+    });
+
+    it('throws when editing goals on an active phase', async () => {
+      const statusQuery = createMockQuery({ data: { status: 'active' }, error: null });
+      vi.mocked(supabaseAdmin.from).mockReturnValueOnce(statusQuery as never);
+
+      await expect(
+        updatePhase('phase-1', 'client-1', { phaseGoalWeight: 75 })
+      ).rejects.toThrow('Phase goals can only be edited while the phase is in planned status');
+    });
+
+    it('throws when editing goals on a completed phase', async () => {
+      const statusQuery = createMockQuery({ data: { status: 'completed' }, error: null });
+      vi.mocked(supabaseAdmin.from).mockReturnValueOnce(statusQuery as never);
+
+      await expect(
+        updatePhase('phase-1', 'client-1', { phaseGoalBodyFatPercentage: 12 })
+      ).rejects.toThrow('Phase goals can only be edited while the phase is in planned status');
+    });
+
+    it('allows non-goal field updates on active phases (guard only applies to goal fields)', async () => {
+      const mockPhaseRenamed = createMockPhaseRow({ id: 'phase-1', name: 'Renamed' });
+      const mockQueryRenamed = createMockQuery({ data: mockPhaseRenamed, error: null });
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQueryRenamed as never);
+
+      const result = await updatePhase('phase-1', 'client-1', { name: 'Renamed' });
+
+      expect(result.name).toBe('Renamed');
+      expect(supabaseAdmin.from).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects entire mixed payload (goal + non-goal fields) on active phase', async () => {
+      const statusQuery = createMockQuery({ data: { status: 'active' }, error: null });
+      vi.mocked(supabaseAdmin.from).mockReturnValueOnce(statusQuery as never);
+
+      await expect(
+        updatePhase('phase-1', 'client-1', { name: 'Updated', phaseGoalWeight: 75 })
+      ).rejects.toThrow('Phase goals can only be edited while the phase is in planned status');
+    });
   });
 
   describe('deletePhase', () => {

@@ -80,6 +80,18 @@ roadmaps              -- long-term goal container, one active per client
 - `coach_reflection` (text) and `phase_summary` (JSONB) are written during phase transitions
 - `completion_seen` (boolean) tracks whether the client has dismissed the completion card
 
+### Phase goal overrides
+
+Phases can have optional goal overrides (`phase_goal_weight`, `phase_goal_body_fat_percentage`) that replace the client's overall goal for nutrition plan calculation. When NULL, the system falls back to the client's `client_goals` record.
+
+**Resolution flow** in `app/api/clients/[id]/nutrition/route.ts`:
+1. `requirePhaseSelection()` returns the matched phase's goal data alongside `phaseId`
+2. If `phaseGoalWeight` is set, it's used directly as `effectiveGoalWeightKg` (already in kg, no conversion) and `phaseEndDate` becomes the goal deadline
+3. If NULL/undefined, falls back to `currentGoals.goalWeight` with `weightToKg()` conversion and `body.goalDeadline`
+4. Response includes `goalSource: "phase" | "client"` so the UI knows which source was used
+
+**Status guard**: Phase goals can only be edited while `status = 'planned'`. The guard in `updatePhase()` rejects the entire request (including non-goal fields in the same payload) if goal fields are present and the phase is not planned.
+
 ### Phase selection enforcement
 
 `requirePhaseSelection(clientId, phaseId)` in `lib/require-phase-selection.ts`:
@@ -87,6 +99,7 @@ roadmaps              -- long-term goal container, one active per client
 - Roadmap exists but no phaseId provided: returns 400
 - Roadmap exists but zero selectable phases: returns 400
 - phaseId not in selectable (planned/active) list: returns 400
+- On success: returns `phaseId`, `phaseGoalWeight`, `phaseGoalBodyFatPercentage`, `phaseEndDate` from the matched phase
 
 Called by plan creation routes (training, nutrition, habits) before the service layer.
 
@@ -143,7 +156,7 @@ When a coach completes a phase, the transition follows this sequence:
 - **Nutrition adherence**: averaged nutrition_adherence scores from nutrition_logs (hit=1.0, partial=0.5, missed=0.0)
 - **Habit completion**: daily_habit_logs completed percentage vs total expected
 - **Body metrics delta**: weight/body_fat at phase start vs current (from body_metrics table)
-- **Goals comparison**: phase_goals_snapshot vs current client_goals
+- **Goals comparison**: phase_goals_snapshot vs current client_goals, plus phase-level goal overrides (`phaseGoals`)
 
 ### 2. Atomic RPC
 
@@ -409,6 +422,10 @@ Written to `phases.phase_summary` during phase transition. Captures completion m
     "training": 0.85,
     "nutrition": 0.72,
     "habits": 0.90
+  },
+  "phaseGoals": {
+    "goalWeight": 75,
+    "goalBodyFatPercentage": 15
   }
 }
 ```

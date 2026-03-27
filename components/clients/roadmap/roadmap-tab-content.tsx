@@ -33,9 +33,6 @@ export const RoadmapTabContent = ({ client }: RoadmapTabContentProps) => {
     { revalidateOnFocus: false }
   );
 
-  const is404 =
-    error && "status" in error && (error as { status: number }).status === 404;
-
   if (isLoading) {
     return (
       <Card>
@@ -49,7 +46,7 @@ export const RoadmapTabContent = ({ client }: RoadmapTabContentProps) => {
     );
   }
 
-  if (error && !is404) {
+  if (error) {
     return (
       <Card>
         <CardContent className="pt-6">
@@ -65,7 +62,7 @@ export const RoadmapTabContent = ({ client }: RoadmapTabContentProps) => {
   }
 
   // No roadmap exists
-  if (is404 || !data?.data) {
+  if (!data?.data) {
     return (
       <>
         <Card>
@@ -94,6 +91,7 @@ export const RoadmapTabContent = ({ client }: RoadmapTabContentProps) => {
   const roadmap = data.data;
   const phases = roadmap.phases ?? [];
   const hasActivePhase = phases.some((p) => p.status === "active");
+  const weightUnit = client.weightUnit || "lbs";
 
   return (
     <>
@@ -162,6 +160,7 @@ export const RoadmapTabContent = ({ client }: RoadmapTabContentProps) => {
                 phase={phase}
                 clientId={client.id}
                 hasActivePhase={hasActivePhase}
+                weightUnit={weightUnit}
                 onUpdate={() => mutate()}
               />
             ))}
@@ -171,6 +170,7 @@ export const RoadmapTabContent = ({ client }: RoadmapTabContentProps) => {
 
       <AddPhaseDialog
         clientId={client.id}
+        weightUnit={weightUnit}
         open={addPhaseOpen}
         onOpenChange={setAddPhaseOpen}
         onSuccess={() => mutate()}

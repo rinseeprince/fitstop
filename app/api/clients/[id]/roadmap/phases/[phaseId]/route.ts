@@ -127,6 +127,12 @@ export async function PUT(
         { status: 404 }
       );
     }
+    if (message === "Phase goals can only be edited while the phase is in planned status") {
+      return NextResponse.json(
+        { success: false, error: message },
+        { status: 400 }
+      );
+    }
     console.error("Error updating phase:", error);
     return NextResponse.json(
       { error: "Failed to update phase" },

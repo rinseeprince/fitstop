@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getActiveRoadmap } from "@/services/roadmap-service";
+import type { PhaseStatus } from "@/types/roadmap";
 
 type PhaseCheckOk = {
   ok: true;
@@ -7,6 +8,7 @@ type PhaseCheckOk = {
   phaseGoalWeight?: number | null;
   phaseGoalBodyFatPercentage?: number | null;
   phaseEndDate?: string | null;
+  phaseStatus?: PhaseStatus;
 };
 type PhaseCheckFail = { ok: false; response: NextResponse };
 type PhaseCheckResult = PhaseCheckOk | PhaseCheckFail;
@@ -31,6 +33,7 @@ export async function requirePhaseSelection(
       phaseGoalWeight: undefined,
       phaseGoalBodyFatPercentage: undefined,
       phaseEndDate: undefined,
+      phaseStatus: undefined,
     };
   }
 
@@ -83,5 +86,6 @@ export async function requirePhaseSelection(
     phaseGoalWeight: matchedPhase.phaseGoalWeight ?? null,
     phaseGoalBodyFatPercentage: matchedPhase.phaseGoalBodyFatPercentage ?? null,
     phaseEndDate: matchedPhase.endDate ?? null,
+    phaseStatus: matchedPhase.status,
   };
 }

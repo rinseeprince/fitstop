@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Loader2, CheckCircle2, ArrowRight } from "lucide-react";
 import { swrFetcher } from "@/lib/swr-fetcher";
+import { weightFromKg } from "@/utils/nutrition-helpers";
 
 type PhaseCompletionResponse = {
   success: boolean;
@@ -23,8 +24,13 @@ type PhaseCompletionResponse = {
         nutrition?: { averageScore: number } | null;
         habits?: { percentage: number } | null;
       };
+      phaseGoals?: {
+        goalWeight: number | null;
+        goalBodyFatPercentage: number | null;
+      } | null;
     } | null;
     endDate: string | null;
+    weightUnit: "lbs" | "kg";
     nextPhaseName: string | null;
   };
 };
@@ -41,14 +47,16 @@ export function PhaseCompletionCard() {
   // Render nothing if no pending completion or error/loading
   if (error || !data?.success || !data?.data) return null;
 
-  const { phaseId, phaseName, coachReflection, phaseSummary, nextPhaseName } =
+  const { phaseId, phaseName, coachReflection, phaseSummary, weightUnit, nextPhaseName } =
     data.data;
+  const unit = weightUnit || "lbs";
   const adherence = phaseSummary?.adherence;
   const metrics = phaseSummary?.metricsSnapshot;
   const weightChange =
     metrics?.startWeight && metrics?.endWeight
       ? metrics.endWeight - metrics.startWeight
       : null;
+  const phaseGoals = phaseSummary?.phaseGoals;
 
   const handleDismiss = async () => {
     setIsDismissing(true);
@@ -98,8 +106,13 @@ export function PhaseCompletionCard() {
           )}
           {weightChange !== null && (
             <span>
-              Weight: {weightChange > 0 ? "+" : ""}
-              {weightChange.toFixed(1)} kg
+              Weight: {weightChange > 0 ? "+" : weightChange < 0 ? "-" : ""}
+              {weightFromKg(Math.abs(weightChange), unit).toFixed(1)} {unit}
+            </span>
+          )}
+          {phaseGoals?.goalWeight != null && metrics?.endWeight != null && (
+            <span>
+              Goal: {weightFromKg(phaseGoals.goalWeight, unit).toFixed(1)} {unit} | Actual: {weightFromKg(metrics.endWeight, unit).toFixed(1)} {unit}
             </span>
           )}
         </div>

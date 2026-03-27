@@ -60,6 +60,14 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Fetch client's weight unit for display
+    const { data: clientRow } = await supabaseAdmin
+      .from("clients")
+      .select("weight_unit")
+      .eq("id", clientId)
+      .single();
+    const weightUnit = (clientRow?.weight_unit as "lbs" | "kg") || "lbs";
+
     // Look up next phase name from summary if available
     const summary = phase.phase_summary;
     const rawNextPhaseId = summary?.nextPhaseId;
@@ -84,6 +92,7 @@ export async function GET(request: NextRequest) {
           coachReflection: phase.coach_reflection,
           phaseSummary: summary,
           endDate: phase.end_date,
+          weightUnit,
           nextPhaseName,
         },
       },

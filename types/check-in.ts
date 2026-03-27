@@ -617,6 +617,8 @@ export type NutritionPlanHistory = {
   // Metadata
   createdByCoachId?: string;
   regenerationReason?: string;
+  coachNotes?: string | null;
+  goalSource?: "phase" | "client" | null;
 };
 
 // Nutrition calculation request/response types
@@ -631,6 +633,7 @@ export type GenerateNutritionPlanRequest = {
   customCarbG?: number;
   customFatG?: number;
   customCalories?: number;
+  coachNotes?: string;
 };
 
 export type GenerateNutritionPlanResponse = {

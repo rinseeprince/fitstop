@@ -4,9 +4,11 @@ import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Loader2, Calendar, ChevronDown, ChevronUp } from "lucide-react";
+import { Loader2, Calendar, ChevronDown, ChevronUp, Pencil } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { PhaseReviewDrawer } from "./phase-review-drawer";
+import { EditPhaseDialog } from "./edit-phase-dialog";
+import { weightFromKg } from "@/utils/nutrition-helpers";
 import type { Phase, PhaseStatus } from "@/types/roadmap";
 
 const statusBadgeVariant: Record<
@@ -23,6 +25,7 @@ type PhaseCardProps = {
   phase: Phase;
   clientId: string;
   hasActivePhase: boolean;
+  weightUnit: "lbs" | "kg";
   onUpdate: () => void;
 };
 
@@ -30,12 +33,14 @@ export const PhaseCard = ({
   phase,
   clientId,
   hasActivePhase,
+  weightUnit,
   onUpdate,
 }: PhaseCardProps) => {
   const { toast } = useToast();
   const [expanded, setExpanded] = useState(false);
   const [isActivating, setIsActivating] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
 
   const handleActivate = async () => {
     setIsActivating(true);
@@ -101,35 +106,48 @@ export const PhaseCard = ({
             )}
           </div>
 
-          {showActivate && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleActivate}
-              disabled={activateDisabled}
-              title={
-                hasActivePhase
-                  ? "Complete the current active phase first"
-                  : "Activate this phase"
-              }
-            >
-              {isActivating ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                "Activate"
-              )}
-            </Button>
-          )}
+          <div className="flex items-center gap-2">
+            {(phase.status === "planned" || phase.status === "active") && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setEditOpen(true)}
+                title="Edit phase"
+              >
+                <Pencil className="h-4 w-4" />
+              </Button>
+            )}
 
-          {phase.status === "active" && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setReviewOpen(true)}
-            >
-              Complete Phase
-            </Button>
-          )}
+            {showActivate && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleActivate}
+                disabled={activateDisabled}
+                title={
+                  hasActivePhase
+                    ? "Complete the current active phase first"
+                    : "Activate this phase"
+                }
+              >
+                {isActivating ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  "Activate"
+                )}
+              </Button>
+            )}
+
+            {phase.status === "active" && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setReviewOpen(true)}
+              >
+                Complete Phase
+              </Button>
+            )}
+          </div>
         </div>
 
         {expanded && (
@@ -160,7 +178,19 @@ export const PhaseCard = ({
                 {phase.durationWeeks !== 1 ? "s" : ""}
               </p>
             )}
-            {!phase.description && !phase.objectives && !phase.durationWeeks && (
+            {(phase.phaseGoalWeight != null || phase.phaseGoalBodyFatPercentage != null) && (
+              <div className="flex gap-3 text-xs text-muted-foreground">
+                {phase.phaseGoalWeight != null && (
+                  <span>
+                    Goal Weight: {weightFromKg(phase.phaseGoalWeight, weightUnit).toFixed(1)} {weightUnit}
+                  </span>
+                )}
+                {phase.phaseGoalBodyFatPercentage != null && (
+                  <span>Goal Body Fat: {phase.phaseGoalBodyFatPercentage}%</span>
+                )}
+              </div>
+            )}
+            {!phase.description && !phase.objectives && !phase.durationWeeks && phase.phaseGoalWeight == null && phase.phaseGoalBodyFatPercentage == null && (
               <p className="text-sm text-muted-foreground">
                 No additional details.
               </p>
@@ -174,7 +204,17 @@ export const PhaseCard = ({
         onOpenChange={setReviewOpen}
         phase={phase}
         clientId={clientId}
+        weightUnit={weightUnit}
         onTransitionComplete={onUpdate}
+      />
+
+      <EditPhaseDialog
+        phase={phase}
+        clientId={clientId}
+        weightUnit={weightUnit}
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        onSuccess={onUpdate}
       />
     </Card>
   );

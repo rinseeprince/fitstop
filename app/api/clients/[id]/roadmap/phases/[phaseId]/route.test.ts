@@ -63,6 +63,11 @@ const mockPhaseRow = {
   end_date: "2024-02-01",
   duration_weeks: 4,
   phase_goals_snapshot: null,
+  phase_goal_weight: null,
+  phase_goal_body_fat_percentage: null,
+  coach_reflection: null,
+  phase_summary: null,
+  completion_seen: false,
   created_at: "2024-01-01T00:00:00Z",
   updated_at: "2024-01-01T00:00:00Z",
 };
@@ -80,6 +85,10 @@ const mockPhase = {
   endDate: "2024-02-01",
   durationWeeks: 4,
   phaseGoalsSnapshot: null,
+  phaseGoalWeight: null,
+  phaseGoalBodyFatPercentage: null,
+  phaseSummary: null,
+  completionSeen: false,
   createdAt: "2024-01-01T00:00:00Z",
   updatedAt: "2024-01-01T00:00:00Z",
 };
@@ -221,6 +230,62 @@ describe("/api/clients/[id]/roadmap/phases/[phaseId]", () => {
       // Status field should be stripped by Zod, update proceeds with name only
       expect(response.status).toBe(200);
       expect(updatePhase).toHaveBeenCalledWith("phase-1", "client-1", { name: "Test" });
+    });
+
+    it("updates phase goal fields on a planned phase", async () => {
+      vi.mocked(updatePhase).mockResolvedValue({
+        ...mockPhase,
+        phaseGoalWeight: 75,
+        phaseGoalBodyFatPercentage: 15,
+      });
+
+      const response = await PUT(
+        createMockRequest("PUT", { phaseGoalWeight: 75, phaseGoalBodyFatPercentage: 15 }),
+        mockParams
+      );
+      const data = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(data.success).toBe(true);
+      expect(data.data.phaseGoalWeight).toBe(75);
+      expect(data.data.phaseGoalBodyFatPercentage).toBe(15);
+      expect(updatePhase).toHaveBeenCalledWith("phase-1", "client-1", {
+        phaseGoalWeight: 75,
+        phaseGoalBodyFatPercentage: 15,
+      });
+    });
+
+    it("returns 400 when updating goal on active phase (status guard)", async () => {
+      vi.mocked(updatePhase).mockRejectedValue(
+        new Error("Phase goals can only be edited while the phase is in planned status")
+      );
+
+      const response = await PUT(
+        createMockRequest("PUT", { phaseGoalWeight: 75 }),
+        mockParams
+      );
+      const data = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(data.success).toBe(false);
+      expect(data.error).toBe("Phase goals can only be edited while the phase is in planned status");
+    });
+
+    it("clears goal override with null on a planned phase", async () => {
+      vi.mocked(updatePhase).mockResolvedValue({
+        ...mockPhase,
+        phaseGoalWeight: null,
+      });
+
+      const response = await PUT(
+        createMockRequest("PUT", { phaseGoalWeight: null }),
+        mockParams
+      );
+      const data = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(data.success).toBe(true);
+      expect(updatePhase).toHaveBeenCalledWith("phase-1", "client-1", { phaseGoalWeight: null });
     });
   });
 

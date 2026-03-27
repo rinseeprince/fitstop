@@ -84,14 +84,15 @@ describe("/api/clients/[id]/roadmap", () => {
       expect(data.data.phases).toEqual([]);
     });
 
-    it("returns 404 when no active roadmap", async () => {
+    it("returns 200 with null data when no active roadmap", async () => {
       vi.mocked(getActiveRoadmap).mockResolvedValue(null);
 
       const response = await GET(createMockRequest("GET"), mockParams);
       const data = await response.json();
 
-      expect(response.status).toBe(404);
-      expect(data.success).toBe(false);
+      expect(response.status).toBe(200);
+      expect(data.success).toBe(true);
+      expect(data.data).toBeNull();
     });
 
     it("returns 401 when not authenticated", async () => {

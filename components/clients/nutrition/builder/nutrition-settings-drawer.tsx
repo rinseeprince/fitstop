@@ -82,6 +82,7 @@ export function NutritionSettingsDrawer({
           {/* Phase Selector */}
           <PhaseSelector
             clientId={builder.client.id}
+            weightUnit={builder.client.weightUnit || "lbs"}
             value={builder.phaseId}
             onChange={builder.setPhaseId}
             onBlockSubmit={builder.setPhaseBlocked}

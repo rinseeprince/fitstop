@@ -14,9 +14,11 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { AlertCircle } from "lucide-react";
+import { weightFromKg } from "@/utils/nutrition-helpers";
 
 type PhaseSelectorProps = {
   clientId: string;
+  weightUnit?: "lbs" | "kg";
   value?: string;
   onChange: (phaseId: string | undefined) => void;
   onBlockSubmit?: (blocked: boolean) => void;
@@ -29,6 +31,7 @@ type PhasesResponse = {
 
 export function PhaseSelector({
   clientId,
+  weightUnit = "lbs",
   value,
   onChange,
   onBlockSubmit,
@@ -39,12 +42,11 @@ export function PhaseSelector({
     { revalidateOnFocus: false }
   );
 
-  const is404 = error && "status" in error && (error as { status: number }).status === 404;
-  const hasRoadmap = !is404 && !isLoading && data?.success;
-  const selectablePhases =
-    data?.data?.filter(
-      (p) => p.status === "planned" || p.status === "active"
-    ) ?? [];
+  const allPhases = data?.data ?? [];
+  const hasRoadmap = !isLoading && !error && data?.success && allPhases.length > 0;
+  const selectablePhases = allPhases.filter(
+    (p) => p.status === "planned" || p.status === "active"
+  );
   const noSelectablePhases = hasRoadmap && selectablePhases.length === 0;
   const hasPhases = hasRoadmap && selectablePhases.length > 0;
 
@@ -62,7 +64,7 @@ export function PhaseSelector({
   }, [hasRoadmap, noSelectablePhases]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // No roadmap or still loading — render nothing
-  if (isLoading || is404 || !hasRoadmap) {
+  if (isLoading || error || !hasRoadmap) {
     return null;
   }
 
@@ -80,6 +82,10 @@ export function PhaseSelector({
 
   // Roadmap with selectable phases — show dropdown
   if (hasPhases) {
+    const selectedPhase = value
+      ? selectablePhases.find((p) => p.id === value)
+      : undefined;
+
     return (
       <div className="space-y-1.5">
         <Label htmlFor="phase-selector" className="text-sm font-medium text-foreground">
@@ -115,6 +121,13 @@ export function PhaseSelector({
             ))}
           </SelectContent>
         </Select>
+        {selectedPhase && (
+          <p className="text-xs text-muted-foreground">
+            {selectedPhase.phaseGoalWeight != null
+              ? `Phase goal: ${weightFromKg(selectedPhase.phaseGoalWeight, weightUnit).toFixed(1)} ${weightUnit}${selectedPhase.endDate ? ` by ${selectedPhase.endDate}` : ""}`
+              : "Using client\u2019s overall goal"}
+          </p>
+        )}
       </div>
     );
   }

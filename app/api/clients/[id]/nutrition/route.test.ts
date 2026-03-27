@@ -71,12 +71,17 @@ vi.mock('@/services/client-goals-service', () => ({
   getCurrentGoals: vi.fn(),
 }))
 
+vi.mock('@/lib/require-phase-selection', () => ({
+  requirePhaseSelection: vi.fn(),
+}))
+
 import { getClientById } from '@/services/client-service'
 import { generateNutritionPlan, calculateTDEE } from '@/services/nutrition-service'
 import { createNutritionPlan } from '@/services/nutrition-plan-service'
 import { getLatestBodyMetrics } from '@/services/body-metrics-service'
 import { getCurrentGoals } from '@/services/client-goals-service'
 import { weightToKg } from '@/utils/nutrition-helpers'
+import { requirePhaseSelection } from '@/lib/require-phase-selection'
 import { POST } from './route'
 
 const mockClient = {
@@ -124,6 +129,14 @@ describe('Nutrition Route POST - read-switch behavior', () => {
       warnings: [],
     } as never)
     vi.mocked(calculateTDEE).mockReturnValue(2400)
+    vi.mocked(requirePhaseSelection).mockResolvedValue({
+      ok: true as const,
+      phaseId: undefined,
+      phaseGoalWeight: undefined,
+      phaseGoalBodyFatPercentage: undefined,
+      phaseEndDate: undefined,
+      phaseStatus: undefined,
+    })
   })
 
   it('uses body_metrics values when available', async () => {
@@ -209,5 +222,261 @@ describe('Nutrition Route POST - read-switch behavior', () => {
       (call) => call[0] === 170
     )
     expect(goalWeightKgCall).toBeTruthy()
+  })
+})
+
+describe('Nutrition Route POST - phase goal resolution', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(getClientById).mockResolvedValue(mockClient as never)
+    vi.mocked(generateNutritionPlan).mockReturnValue({
+      baselineCalories: 2000,
+      tdee: 2400,
+      calorieTarget: 1800,
+      proteinTargetG: 160,
+      carbTargetG: 200,
+      fatTargetG: 60,
+      adjustedTdee: 2400,
+      weeklyWeightChangeKg: -0.5,
+      requiredDailyDeficit: 500,
+      warnings: [],
+    } as never)
+    vi.mocked(calculateTDEE).mockReturnValue(2400)
+  })
+
+  it('uses phase goal weight when phaseGoalWeight is set (goalSource: phase)', async () => {
+    vi.mocked(requirePhaseSelection).mockResolvedValue({
+      ok: true as const,
+      phaseId: 'phase-1',
+      phaseGoalWeight: 70,
+      phaseGoalBodyFatPercentage: 12,
+      phaseEndDate: '2024-06-01',
+      phaseStatus: 'active' as const,
+    })
+    vi.mocked(getLatestBodyMetrics).mockResolvedValue({
+      id: 'bm-1',
+      clientId: 'client-1',
+      weight: 175,
+      weightUnit: 'lbs',
+      bmr: 1750,
+      tdee: 2200,
+      source: 'check_in',
+      recordedAt: '2024-01-15T00:00:00Z',
+      createdAt: '2024-01-15T00:00:00Z',
+    })
+    vi.mocked(getCurrentGoals).mockResolvedValue({
+      id: 'goal-1',
+      clientId: 'client-1',
+      goalWeight: 165,
+      setBy: 'coach',
+      effectiveFrom: '2024-01-01T00:00:00Z',
+      createdAt: '2024-01-01T00:00:00Z',
+      updatedAt: '2024-01-01T00:00:00Z',
+    })
+
+    const request = makeRequest(mockBody)
+    const response = await POST(request, { params: Promise.resolve({ id: 'client-1' }) })
+    const data = await response.json()
+
+    // Phase goal (70 kg) used directly, not client goal (165 lbs)
+    expect(generateNutritionPlan).toHaveBeenCalledWith(
+      expect.objectContaining({ goalWeightKg: 70 })
+    )
+    expect(createNutritionPlan).toHaveBeenCalledWith(
+      expect.objectContaining({ goalWeightKg: 70, goalDeadline: '2024-06-01' })
+    )
+    expect(data.goalSource).toBe('phase')
+  })
+
+  it('falls back to client goal when phaseGoalWeight is null (goalSource: client)', async () => {
+    vi.mocked(requirePhaseSelection).mockResolvedValue({
+      ok: true as const,
+      phaseId: 'phase-1',
+      phaseGoalWeight: null,
+      phaseGoalBodyFatPercentage: null,
+      phaseEndDate: '2024-06-01',
+      phaseStatus: 'active' as const,
+    })
+    vi.mocked(getLatestBodyMetrics).mockResolvedValue({
+      id: 'bm-1',
+      clientId: 'client-1',
+      weight: 175,
+      weightUnit: 'lbs',
+      bmr: 1750,
+      tdee: 2200,
+      source: 'check_in',
+      recordedAt: '2024-01-15T00:00:00Z',
+      createdAt: '2024-01-15T00:00:00Z',
+    })
+    vi.mocked(getCurrentGoals).mockResolvedValue({
+      id: 'goal-1',
+      clientId: 'client-1',
+      goalWeight: 165,
+      setBy: 'coach',
+      effectiveFrom: '2024-01-01T00:00:00Z',
+      createdAt: '2024-01-01T00:00:00Z',
+      updatedAt: '2024-01-01T00:00:00Z',
+    })
+
+    const request = makeRequest({ ...mockBody, goalDeadline: '2024-12-01' })
+    const response = await POST(request, { params: Promise.resolve({ id: 'client-1' }) })
+    const data = await response.json()
+
+    // Client goal weight (165 lbs) converted via weightToKg
+    expect(weightToKg).toHaveBeenCalledWith(165, 'lbs')
+    // Body deadline used, not phase endDate
+    expect(createNutritionPlan).toHaveBeenCalledWith(
+      expect.objectContaining({ goalDeadline: '2024-12-01' })
+    )
+    expect(data.goalSource).toBe('client')
+  })
+
+  it('falls back to client goal when no roadmap (phaseGoalWeight undefined)', async () => {
+    vi.mocked(requirePhaseSelection).mockResolvedValue({
+      ok: true as const,
+      phaseId: undefined,
+      phaseGoalWeight: undefined,
+      phaseGoalBodyFatPercentage: undefined,
+      phaseEndDate: undefined,
+      phaseStatus: undefined,
+    })
+    vi.mocked(getLatestBodyMetrics).mockResolvedValue({
+      id: 'bm-1',
+      clientId: 'client-1',
+      weight: 175,
+      weightUnit: 'lbs',
+      bmr: 1750,
+      tdee: 2200,
+      source: 'check_in',
+      recordedAt: '2024-01-15T00:00:00Z',
+      createdAt: '2024-01-15T00:00:00Z',
+    })
+    vi.mocked(getCurrentGoals).mockResolvedValue({
+      id: 'goal-1',
+      clientId: 'client-1',
+      goalWeight: 165,
+      setBy: 'coach',
+      effectiveFrom: '2024-01-01T00:00:00Z',
+      createdAt: '2024-01-01T00:00:00Z',
+      updatedAt: '2024-01-01T00:00:00Z',
+    })
+
+    const request = makeRequest(mockBody)
+    const response = await POST(request, { params: Promise.resolve({ id: 'client-1' }) })
+    const data = await response.json()
+
+    // Client goal weight (165 lbs) converted via weightToKg
+    expect(weightToKg).toHaveBeenCalledWith(165, 'lbs')
+    expect(data.goalSource).toBe('client')
+  })
+})
+
+describe('Nutrition Route POST - active phase guard', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(getClientById).mockResolvedValue(mockClient as never)
+    vi.mocked(generateNutritionPlan).mockReturnValue({
+      baselineCalories: 2000,
+      tdee: 2400,
+      calorieTarget: 1800,
+      proteinTargetG: 160,
+      carbTargetG: 200,
+      fatTargetG: 60,
+      adjustedTdee: 2400,
+      weeklyWeightChangeKg: -0.5,
+      requiredDailyDeficit: 500,
+      warnings: [],
+    } as never)
+    vi.mocked(calculateTDEE).mockReturnValue(2400)
+  })
+
+  it('returns 400 when phase is planned (not active)', async () => {
+    vi.mocked(requirePhaseSelection).mockResolvedValue({
+      ok: true as const,
+      phaseId: 'phase-1',
+      phaseGoalWeight: 70,
+      phaseGoalBodyFatPercentage: null,
+      phaseEndDate: '2024-06-01',
+      phaseStatus: 'planned' as const,
+    })
+
+    const request = makeRequest(mockBody)
+    const response = await POST(request, { params: Promise.resolve({ id: 'client-1' }) })
+    const data = await response.json()
+
+    expect(response.status).toBe(400)
+    expect(data.error).toBe('Nutrition plans can only be created for the active phase')
+  })
+
+  it('succeeds when phase is active', async () => {
+    vi.mocked(requirePhaseSelection).mockResolvedValue({
+      ok: true as const,
+      phaseId: 'phase-1',
+      phaseGoalWeight: 70,
+      phaseGoalBodyFatPercentage: null,
+      phaseEndDate: '2024-06-01',
+      phaseStatus: 'active' as const,
+    })
+    vi.mocked(getLatestBodyMetrics).mockResolvedValue({
+      id: 'bm-1',
+      clientId: 'client-1',
+      weight: 175,
+      weightUnit: 'lbs',
+      bmr: 1750,
+      tdee: 2200,
+      source: 'check_in',
+      recordedAt: '2024-01-15T00:00:00Z',
+      createdAt: '2024-01-15T00:00:00Z',
+    })
+    vi.mocked(getCurrentGoals).mockResolvedValue({
+      id: 'goal-1',
+      clientId: 'client-1',
+      goalWeight: 165,
+      setBy: 'coach',
+      effectiveFrom: '2024-01-01T00:00:00Z',
+      createdAt: '2024-01-01T00:00:00Z',
+      updatedAt: '2024-01-01T00:00:00Z',
+    })
+
+    const request = makeRequest(mockBody)
+    const response = await POST(request, { params: Promise.resolve({ id: 'client-1' }) })
+
+    expect(response.status).toBe(200)
+  })
+
+  it('succeeds when no roadmap (phaseId undefined, phaseStatus undefined)', async () => {
+    vi.mocked(requirePhaseSelection).mockResolvedValue({
+      ok: true as const,
+      phaseId: undefined,
+      phaseGoalWeight: undefined,
+      phaseGoalBodyFatPercentage: undefined,
+      phaseEndDate: undefined,
+      phaseStatus: undefined,
+    })
+    vi.mocked(getLatestBodyMetrics).mockResolvedValue({
+      id: 'bm-1',
+      clientId: 'client-1',
+      weight: 175,
+      weightUnit: 'lbs',
+      bmr: 1750,
+      tdee: 2200,
+      source: 'check_in',
+      recordedAt: '2024-01-15T00:00:00Z',
+      createdAt: '2024-01-15T00:00:00Z',
+    })
+    vi.mocked(getCurrentGoals).mockResolvedValue({
+      id: 'goal-1',
+      clientId: 'client-1',
+      goalWeight: 165,
+      setBy: 'coach',
+      effectiveFrom: '2024-01-01T00:00:00Z',
+      createdAt: '2024-01-01T00:00:00Z',
+      updatedAt: '2024-01-01T00:00:00Z',
+    })
+
+    const request = makeRequest(mockBody)
+    const response = await POST(request, { params: Promise.resolve({ id: 'client-1' }) })
+
+    expect(response.status).toBe(200)
   })
 })

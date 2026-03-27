@@ -39,6 +39,7 @@ export function TrainingPlanBuilder({
             open={drawerOpen}
             onOpenChange={setDrawerOpen}
             clientWeightKg={clientWeightKg}
+            weightUnit={client.weightUnit || "lbs"}
           />
         </div>
       </TrainingBuilderProvider>

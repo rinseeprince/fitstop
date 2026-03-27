@@ -20,15 +20,9 @@ export async function GET(
     if (!auth.authorized) return auth.response;
 
     const roadmap = await getActiveRoadmap(clientId);
-    if (!roadmap) {
-      return NextResponse.json(
-        { success: false, error: "No active roadmap found" },
-        { status: 404 }
-      );
-    }
 
     return NextResponse.json(
-      { success: true, data: roadmap.phases },
+      { success: true, data: roadmap?.phases ?? [] },
       { status: 200 }
     );
   } catch (error) {

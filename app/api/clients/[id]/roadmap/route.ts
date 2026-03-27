@@ -28,14 +28,7 @@ export async function GET(
 
     const roadmap = await getActiveRoadmap(clientId);
 
-    if (!roadmap) {
-      return NextResponse.json(
-        { success: false, error: "No active roadmap found" },
-        { status: 404 }
-      );
-    }
-
-    return NextResponse.json({ success: true, data: roadmap }, { status: 200 });
+    return NextResponse.json({ success: true, data: roadmap ?? null }, { status: 200 });
   } catch (error) {
     console.error("Error fetching roadmap:", error);
     return NextResponse.json(

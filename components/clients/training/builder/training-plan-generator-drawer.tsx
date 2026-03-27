@@ -17,12 +17,14 @@ type TrainingPlanGeneratorDrawerProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   clientWeightKg: number;
+  weightUnit?: "lbs" | "kg";
 };
 
 export function TrainingPlanGeneratorDrawer({
   open,
   onOpenChange,
   clientWeightKg,
+  weightUnit = "lbs",
 }: TrainingPlanGeneratorDrawerProps) {
   const builder = useTrainingBuilderContext();
   const wasGenerating = useRef(false);
@@ -59,6 +61,7 @@ export function TrainingPlanGeneratorDrawer({
           {/* Phase Selector — shared across AI and Manual modes */}
           <PhaseSelector
             clientId={builder.clientId}
+            weightUnit={weightUnit}
             value={builder.phaseId}
             onChange={builder.setPhaseId}
             onBlockSubmit={builder.setPhaseBlocked}
