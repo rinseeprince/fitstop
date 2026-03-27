@@ -6,6 +6,7 @@ import { NutritionBuilderProvider, useNutritionBuilderContext } from "@/contexts
 import { NutritionBuilderRightPanel } from "./nutrition-builder-right-panel";
 import { NutritionSettingsDrawer } from "./nutrition-settings-drawer";
 import { NutritionHistoryTable } from "../nutrition-history-table";
+import { NutritionPlanHistory } from "../nutrition-plan-history";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -58,14 +59,14 @@ export function NutritionPlanBuilder({ client, onUpdate }: NutritionPlanBuilderP
         ) : (
           <div className="space-y-6">
             <NoPlanAlert />
-            <div className="bg-card rounded-lg border border-border p-5 min-h-[600px]">
+            <div className="bg-card rounded-lg border border-border p-5">
               <ErrorBoundary>
                 <NutritionBuilderRightPanel
                   onOpenSettings={() => setDrawerOpen(true)}
                 />
               </ErrorBoundary>
             </div>
-            <p className="text-sm text-muted-foreground">Plan history coming soon</p>
+            <NutritionPlanHistory clientId={client.id} />
           </div>
         )}
 

@@ -57,7 +57,7 @@ export const NutritionBuilderRightPanel = memo(function NutritionBuilderRightPan
 
   // Plan exists - show content
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col">
       {/* Warnings */}
       {builder.warnings.length > 0 && (
         <div className="mb-4">
@@ -96,7 +96,7 @@ export const NutritionBuilderRightPanel = memo(function NutritionBuilderRightPan
       )}
 
       {/* Day cards - always week view */}
-      <div className="flex-1 overflow-y-auto mt-6">
+      <div className="mt-6">
         {builder.weeklyTargets ? (
           <WeeklyNutritionView targets={builder.weeklyTargets} />
         ) : builder.nutritionData?.customMacrosEnabled ? (

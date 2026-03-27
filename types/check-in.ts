@@ -589,37 +589,6 @@ export type GetClientRemindersResponse = {
   total: number;
 };
 
-// Nutrition plan history record
-export type NutritionPlanHistory = {
-  id: string;
-  clientId: string;
-  createdAt: string;
-
-  // Snapshot of client metrics
-  baseWeightKg: number;
-  goalWeightKg?: number;
-  bmr?: number;
-  tdee?: number;
-
-  // Settings used
-  workActivityLevel: ActivityLevel;
-  trainingVolumeHours: TrainingVolume;
-  proteinTargetGPerKg: number;
-  dietType: DietType;
-  goalDeadline?: string;
-
-  // Calculated targets
-  calorieTarget: number;
-  proteinTargetG: number;
-  carbTargetG: number;
-  fatTargetG: number;
-
-  // Metadata
-  createdByCoachId?: string;
-  regenerationReason?: string;
-  coachNotes?: string | null;
-  goalSource?: "phase" | "client" | null;
-};
 
 // Nutrition calculation request/response types
 export type GenerateNutritionPlanRequest = {
