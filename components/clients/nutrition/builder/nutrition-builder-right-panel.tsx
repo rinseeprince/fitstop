@@ -1,15 +1,14 @@
 "use client";
 
-import { useState, memo } from "react";
+import { memo } from "react";
 import { useNutritionBuilderContext } from "@/contexts/nutrition-builder-context";
 import { NutritionPlanHeader } from "../display/nutrition-plan-header";
 import { WeeklyNutritionView } from "../display/weekly-nutrition-view";
-import { NutritionDayAccordion } from "../display/nutrition-day-accordion";
-import { NutritionPlanHistoryModal } from "../nutrition-plan-history-modal";
 import { NutritionWarnings } from "../nutrition-warnings";
 import { Button } from "@/components/ui/button";
-import { CalendarDays, LayoutList, Apple, Loader2, Sparkles } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Apple, Loader2, Sparkles } from "lucide-react";
+import { format } from "date-fns";
+import { weightFromKg } from "@/utils/nutrition-helpers";
 
 type NutritionBuilderRightPanelProps = {
   onOpenSettings?: () => void;
@@ -19,8 +18,6 @@ export const NutritionBuilderRightPanel = memo(function NutritionBuilderRightPan
   onOpenSettings,
 }: NutritionBuilderRightPanelProps) {
   const builder = useNutritionBuilderContext();
-  const [viewMode, setViewMode] = useState<"week" | "list">("week");
-  const [showHistoryModal, setShowHistoryModal] = useState(false);
 
   // Loading state for training plan
   if (builder.isLoadingTrainingPlan) {
@@ -55,6 +52,9 @@ export const NutritionBuilderRightPanel = memo(function NutritionBuilderRightPan
     );
   }
 
+  // Phase goal progress
+  const phaseGoalProgress = getPhaseGoalProgress(builder);
+
   // Plan exists - show content
   return (
     <div className="flex flex-col h-full">
@@ -67,55 +67,38 @@ export const NutritionBuilderRightPanel = memo(function NutritionBuilderRightPan
 
       {/* Header */}
       <NutritionPlanHeader
-        client={builder.client}
         weeklyTotal={builder.weeklyTotal}
-        weightRemaining={builder.weightRemaining}
-        trainingDaysCount={builder.trainingDaysCount}
-        restDaysCount={builder.restDaysCount}
-        projectedDate={builder.projectedDate}
-        onShowHistory={() => setShowHistoryModal(true)}
+        activePhase={builder.activePhase}
         onRegenerate={onOpenSettings}
       />
 
-      {/* View Toggle - Segmented Control */}
-      <div className="flex items-center justify-between mt-6 mb-4">
-        <span className="text-sm font-medium text-muted-foreground">View</span>
-        <div className="bg-muted p-1 rounded-lg inline-flex">
-          <button
-            onClick={() => setViewMode("week")}
-            className={cn(
-              "px-4 py-2 text-sm font-medium rounded-md flex items-center gap-2 transition-all",
-              viewMode === "week"
-                ? "bg-card text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            <CalendarDays className="h-4 w-4" />
-            Week
-          </button>
-          <button
-            onClick={() => setViewMode("list")}
-            className={cn(
-              "px-4 py-2 text-sm font-medium rounded-md flex items-center gap-2 transition-all",
-              viewMode === "list"
-                ? "bg-card text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            <LayoutList className="h-4 w-4" />
-            List
-          </button>
+      {/* Metrics row */}
+      <div className="flex items-center gap-6 mt-4">
+        <div>
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">Weekly Total</p>
+          <p className="text-2xl font-semibold text-foreground">{builder.weeklyTotal.toLocaleString()} cal</p>
         </div>
+        {phaseGoalProgress && (
+          <div>
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">Phase Goal</p>
+            <p className="text-2xl font-semibold text-foreground">{phaseGoalProgress}</p>
+          </div>
+        )}
       </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto space-y-8">
+      {/* Roadmap goal line */}
+      {builder.roadmapGoal?.longTermGoal && (
+        <p className="text-sm text-muted-foreground mt-2">
+          Roadmap goal: {builder.roadmapGoal.longTermGoal}
+          {builder.roadmapGoal.targetEndDate &&
+            ` by ${format(new Date(builder.roadmapGoal.targetEndDate), "MMM yyyy")}`}
+        </p>
+      )}
+
+      {/* Day cards - always week view */}
+      <div className="flex-1 overflow-y-auto mt-6">
         {builder.weeklyTargets ? (
-          viewMode === "week" ? (
-            <WeeklyNutritionView targets={builder.weeklyTargets} />
-          ) : (
-            <NutritionDayAccordion targets={builder.weeklyTargets} />
-          )
+          <WeeklyNutritionView targets={builder.weeklyTargets} />
         ) : builder.nutritionData?.customMacrosEnabled ? (
           <CustomMacrosDisplay
             calories={builder.nutritionData?.calorieTarget || 0}
@@ -124,19 +107,31 @@ export const NutritionBuilderRightPanel = memo(function NutritionBuilderRightPan
             fat={builder.nutritionData?.fatTargetG || 0}
           />
         ) : null}
-
       </div>
-
-      {/* History Modal */}
-      <NutritionPlanHistoryModal
-        clientId={builder.client.id}
-        unitPreference={builder.unitPreference}
-        open={showHistoryModal}
-        onOpenChange={setShowHistoryModal}
-      />
     </div>
   );
 });
+
+function getPhaseGoalProgress(builder: ReturnType<typeof useNutritionBuilderContext>): string | null {
+  const { activePhase, client, unitPreference } = builder;
+
+  if (activePhase?.phaseGoalWeight != null && client.currentWeight) {
+    const currentKg = builder.weightToKg(client.currentWeight);
+    const diffKg = Math.abs(currentKg - activePhase.phaseGoalWeight);
+    const unit = unitPreference === "imperial" ? "lbs" : "kg";
+    const value = unitPreference === "imperial"
+      ? weightFromKg(diffKg, "lbs").toFixed(1)
+      : diffKg.toFixed(1);
+    return `${value} ${unit} to go`;
+  }
+
+  if (builder.weightRemaining) {
+    const wr = builder.weightRemaining;
+    return `${wr.isLoss ? "-" : "+"}${wr.value} ${wr.unit} to go`;
+  }
+
+  return null;
+}
 
 type CustomMacrosDisplayProps = {
   calories: number;

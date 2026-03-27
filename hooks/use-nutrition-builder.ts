@@ -1,9 +1,12 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import useSWR from "swr";
+import { swrFetcher } from "@/lib/swr-fetcher";
 import { useToast } from "@/hooks/use-toast";
 import { useNutritionPlan } from "@/hooks/use-nutrition-plan";
 import type { Client, ActivityLevel, DietType, DayCalorieOverrides } from "@/types/check-in";
+import type { Phase, Roadmap } from "@/types/roadmap";
 import { validateClientForNutrition } from "@/lib/validations/nutrition";
 import {
   weightToKg,
@@ -39,6 +42,28 @@ export type CustomMacros = {
 export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderProps) {
   const { toast } = useToast();
   const nutritionPlan = useNutritionPlan({ client, onUpdate });
+
+  // Roadmap + phases data (shared with PhaseSelector via phases prop)
+  const { data: phasesData } = useSWR<{ success: true; data: Phase[] }>(
+    client.id ? `/api/clients/${client.id}/roadmap/phases` : null,
+    swrFetcher,
+    { revalidateOnFocus: false }
+  );
+  const { data: roadmapData } = useSWR<{ success: true; data: (Roadmap & { phases: Phase[] }) | null }>(
+    client.id ? `/api/clients/${client.id}/roadmap` : null,
+    swrFetcher,
+    { revalidateOnFocus: false }
+  );
+
+  const phases = phasesData?.data ?? [];
+  const activePhase = phases.find((p) => p.status === "active") ?? null;
+  const roadmapGoal = roadmapData?.data
+    ? {
+        name: roadmapData.data.name,
+        longTermGoal: roadmapData.data.longTermGoal,
+        targetEndDate: roadmapData.data.targetEndDate,
+      }
+    : null;
 
   // Settings state — defaults from active plan will be loaded via nutritionData
   const [settings, setSettings] = useState<NutritionSettings>({
@@ -100,6 +125,9 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
   // Phase selection
   const [phaseId, setPhaseId] = useState<string | undefined>(undefined);
   const [phaseBlocked, setPhaseBlocked] = useState(false);
+
+  // Coach notes
+  const [coachNotes, setCoachNotes] = useState("");
 
   // Loading states
   const [isGenerating, setIsGenerating] = useState(false);
@@ -230,6 +258,7 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
           dietType: settings.dietType,
           goalDeadline: settings.goalDeadline || undefined,
           phaseId: phaseId || undefined,
+          ...(coachNotes.trim() ? { coachNotes: coachNotes.trim() } : {}),
         };
 
         if (useCustomMacros) {
@@ -258,6 +287,7 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
           setCustomDayDistribution(false);
           setDayCalorieOverrides(null);
           setPhaseId(undefined);
+          setCoachNotes("");
           onUpdate?.();
           nutritionPlan.refetchNutrition();
           return true;
@@ -275,7 +305,7 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
         setIsGenerating(false);
       }
     },
-    [client, settings, customMacros, phaseId, onUpdate, toast]
+    [client, settings, customMacros, phaseId, coachNotes, onUpdate, toast]
   );
 
   // Calculate projected goal date
@@ -337,11 +367,16 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
     handleSaveCustomDistribution,
     handleResetToDefault,
 
-    // Phase selection
+    // Phase / roadmap
+    phases,
+    activePhase,
+    roadmapGoal,
     phaseId,
     setPhaseId,
     phaseBlocked,
     setPhaseBlocked,
+    coachNotes,
+    setCoachNotes,
 
     // Loading states
     isGenerating,

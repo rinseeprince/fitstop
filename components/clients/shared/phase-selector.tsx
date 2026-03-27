@@ -13,6 +13,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { AlertCircle } from "lucide-react";
 import { weightFromKg } from "@/utils/nutrition-helpers";
 
@@ -22,6 +27,8 @@ type PhaseSelectorProps = {
   value?: string;
   onChange: (phaseId: string | undefined) => void;
   onBlockSubmit?: (blocked: boolean) => void;
+  phases?: Phase[];
+  activeOnly?: boolean;
 };
 
 type PhasesResponse = {
@@ -35,15 +42,20 @@ export function PhaseSelector({
   value,
   onChange,
   onBlockSubmit,
+  phases: externalPhases,
+  activeOnly = false,
 }: PhaseSelectorProps) {
   const { data, error, isLoading } = useSWR<PhasesResponse>(
-    clientId ? `/api/clients/${clientId}/roadmap/phases` : null,
+    externalPhases ? null : (clientId ? `/api/clients/${clientId}/roadmap/phases` : null),
     swrFetcher,
     { revalidateOnFocus: false }
   );
 
-  const allPhases = data?.data ?? [];
-  const hasRoadmap = !isLoading && !error && data?.success && allPhases.length > 0;
+  const allPhases = externalPhases ?? data?.data ?? [];
+  const hasExternalData = !!externalPhases;
+  const hasRoadmap = hasExternalData
+    ? allPhases.length > 0
+    : !isLoading && !error && data?.success && allPhases.length > 0;
   const selectablePhases = allPhases.filter(
     (p) => p.status === "planned" || p.status === "active"
   );
@@ -64,7 +76,10 @@ export function PhaseSelector({
   }, [hasRoadmap, noSelectablePhases]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // No roadmap or still loading — render nothing
-  if (isLoading || error || !hasRoadmap) {
+  if (!hasExternalData && (isLoading || error)) {
+    return null;
+  }
+  if (!hasRoadmap) {
     return null;
   }
 
@@ -102,23 +117,53 @@ export function PhaseSelector({
             <SelectValue placeholder="Select a phase…" />
           </SelectTrigger>
           <SelectContent className="bg-card rounded-lg shadow-lg border border-border p-1">
-            {selectablePhases.map((phase) => (
-              <SelectItem
-                key={phase.id}
-                value={phase.id}
-                className="rounded-lg cursor-pointer focus:bg-muted"
-              >
-                <span className="flex items-center gap-2">
-                  {phase.name}
-                  <Badge
-                    variant={phase.status === "active" ? "default" : "secondary"}
-                    className="text-[10px] px-1.5 py-0"
-                  >
-                    {phase.status}
-                  </Badge>
-                </span>
-              </SelectItem>
-            ))}
+            {selectablePhases.map((phase) => {
+              const isDisabled = activeOnly && phase.status !== "active";
+
+              if (isDisabled) {
+                return (
+                  <Tooltip key={phase.id}>
+                    <TooltipTrigger asChild>
+                      <div>
+                        <SelectItem
+                          value={phase.id}
+                          disabled
+                          className="rounded-lg opacity-50"
+                        >
+                          <span className="flex items-center gap-2">
+                            {phase.name}
+                            <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                              {phase.status}
+                            </Badge>
+                          </span>
+                        </SelectItem>
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      Nutrition plans can only be created for the active phase
+                    </TooltipContent>
+                  </Tooltip>
+                );
+              }
+
+              return (
+                <SelectItem
+                  key={phase.id}
+                  value={phase.id}
+                  className="rounded-lg cursor-pointer focus:bg-muted"
+                >
+                  <span className="flex items-center gap-2">
+                    {phase.name}
+                    <Badge
+                      variant={phase.status === "active" ? "default" : "secondary"}
+                      className="text-[10px] px-1.5 py-0"
+                    >
+                      {phase.status}
+                    </Badge>
+                  </span>
+                </SelectItem>
+              );
+            })}
           </SelectContent>
         </Select>
         {selectedPhase && (

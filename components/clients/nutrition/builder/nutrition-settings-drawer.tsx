@@ -15,6 +15,8 @@ import { CalorieSkewingSection } from "./calorie-skewing-section";
 import { NutritionRegenerationBanner } from "../nutrition-regeneration-banner";
 import { UnitToggle } from "../../shared/unit-toggle";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { PhaseSelector } from "../../shared/phase-selector";
 import { Sparkles, AlertCircle } from "lucide-react";
 
@@ -86,6 +88,8 @@ export function NutritionSettingsDrawer({
             value={builder.phaseId}
             onChange={builder.setPhaseId}
             onBlockSubmit={builder.setPhaseBlocked}
+            phases={builder.phases}
+            activeOnly
           />
 
           {/* Custom Macros Section */}
@@ -126,6 +130,24 @@ export function NutritionSettingsDrawer({
             isSaving={builder.isSavingSkew}
             hasPlan={builder.hasPlan}
           />
+        </div>
+
+        {/* Coach Notes */}
+        <div className="pt-4 border-t border-border mt-4 space-y-1.5">
+          <Label htmlFor="coach-notes" className="text-sm font-medium text-foreground">
+            Notes (optional)
+          </Label>
+          <Textarea
+            id="coach-notes"
+            placeholder="Why are you adjusting this plan?"
+            value={builder.coachNotes}
+            onChange={(e) => builder.setCoachNotes(e.target.value.slice(0, 500))}
+            className="resize-none"
+            rows={3}
+          />
+          <p className="text-xs text-muted-foreground text-right">
+            {builder.coachNotes.length}/500
+          </p>
         </div>
 
         {/* Generate Button */}
