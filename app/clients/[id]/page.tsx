@@ -3,7 +3,7 @@
 import { useState, useCallback } from "react"
 import { useParams, useSearchParams, useRouter } from "next/navigation"
 import Link from "next/link"
-import { AppLayout } from "@/components/app-layout"
+import { ClientDetailLayout } from "@/components/clients/client-detail-layout"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent } from "@/components/ui/tabs"
@@ -11,7 +11,6 @@ import { CheckInDetailModal } from "@/components/check-in/check-in-detail-modal"
 import { NutritionCalculatorCardEnhanced } from "@/components/clients/nutrition/nutrition-calculator-card-enhanced"
 import { TrainingPlanCard } from "@/components/clients/training/training-plan-card"
 import { MetricsTabContent } from "@/components/clients/metrics/metrics-tab-content"
-import { ClientPageHeader, type ClientTab } from "@/components/clients/client-page-header"
 import { ClientOverviewTab } from "@/components/clients/client-overview-tab"
 import { MetricSaveDialog } from "@/components/clients/check-in/metric-save-dialog"
 import { HabitsTabContent } from "@/components/clients/habits/habits-tab-content"
@@ -22,7 +21,8 @@ import { HabitsHistoryTable } from "@/components/clients/habits/habits-history-t
 import { useCheckInData, useClient } from "@/hooks/use-check-in-data"
 import type { CheckIn } from "@/types/check-in"
 import { useClientMetrics } from "@/hooks/use-client-metrics"
-import { Loader2, AlertCircle } from "lucide-react"
+import { type ClientTab } from "@/lib/client-tabs"
+import { AlertCircle } from "lucide-react"
 
 const VALID_TABS = new Set<ClientTab>(["overview", "roadmap", "metrics", "training", "nutrition", "wellness", "daily-habits", "notes"])
 
@@ -77,31 +77,16 @@ export default function ClientProfilePage() {
     ? checkIns.findIndex((ci) => ci.id === selectedCheckInId)
     : -1
 
-  // Build the page header component
-  const pageHeader = client ? (
-    <ClientPageHeader
-      client={client}
-      activeTab={activeTab}
-      onTabChange={handleTabChange}
-    />
-  ) : null;
+  const displayClient = client ?? { id: clientId, name: "", email: "" as string }
 
   return (
-    <AppLayout pageHeader={pageHeader}>
-      {/* Loading State */}
-      {clientLoading && (
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex flex-col items-center justify-center py-12 space-y-3">
-              <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-              <p className="text-sm text-muted-foreground">Loading client...</p>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Error State */}
-      {clientError && !clientLoading && (
+    <ClientDetailLayout
+      client={displayClient}
+      activeTab={activeTab}
+      onTabChange={handleTabChange}
+      isLoading={clientLoading}
+    >
+      {clientError && !clientLoading ? (
         <Card>
           <CardContent className="pt-6">
             <div className="flex flex-col items-center justify-center py-12 space-y-3">
@@ -118,110 +103,109 @@ export default function ClientProfilePage() {
             </div>
           </CardContent>
         </Card>
-      )}
+      ) : client ? (
+        <>
+          <Tabs value={activeTab} onValueChange={(value) => handleTabChange(value as ClientTab)} className="space-y-6">
+            {/* Overview Tab */}
+            <TabsContent value="overview" className="mt-0">
+              <ClientOverviewTab
+                client={client}
+                checkIns={checkIns}
+                isCalculatingBMR={isCalculatingBMR}
+                onCalculateBMR={handleCalculateBMR}
+                onSelectCheckIn={handleSelectCheckIn}
+                onClientUpdated={() => mutateClient()}
+                onTabChange={handleTabChange}
+              />
+            </TabsContent>
 
-      {/* Client Content */}
-      {!clientLoading && !clientError && client && (
-        <Tabs value={activeTab} onValueChange={(value) => handleTabChange(value as ClientTab)} className="space-y-6">
-          {/* Overview Tab */}
-          <TabsContent value="overview" className="mt-0">
-            <ClientOverviewTab
-              client={client}
-              checkIns={checkIns}
-              isCalculatingBMR={isCalculatingBMR}
-              onCalculateBMR={handleCalculateBMR}
-              onSelectCheckIn={handleSelectCheckIn}
-              onClientUpdated={() => mutateClient()}
-              onTabChange={handleTabChange}
+            {/* Roadmap Tab */}
+            <TabsContent value="roadmap" className="space-y-6 mt-0">
+              <RoadmapTabContent client={client} />
+            </TabsContent>
+
+            {/* Check-In Detail Modal */}
+            <CheckInDetailModal
+              checkInId={selectedCheckInId}
+              clientId={clientId}
+              clientName={client.name}
+              onClose={() => setSelectedCheckInId(null)}
+              onNavigate={handleNavigate}
+              canNavigatePrev={selectedIndex > 0}
+              canNavigateNext={selectedIndex < checkIns.length - 1 && selectedIndex !== -1}
             />
-          </TabsContent>
 
-          {/* Roadmap Tab */}
-          <TabsContent value="roadmap" className="space-y-6 mt-0">
-            <RoadmapTabContent client={client} />
-          </TabsContent>
+            {/* Metrics Tab */}
+            <TabsContent value="metrics" className="space-y-6 mt-0">
+              <MetricsTabContent
+                checkIns={checkIns}
+                client={client}
+                isLoading={checkInsLoading}
+              />
+            </TabsContent>
 
-          {/* Check-In Detail Modal */}
-          <CheckInDetailModal
-            checkInId={selectedCheckInId}
-            clientId={clientId}
-            clientName={client.name}
-            onClose={() => setSelectedCheckInId(null)}
-            onNavigate={handleNavigate}
-            canNavigatePrev={selectedIndex > 0}
-            canNavigateNext={selectedIndex < checkIns.length - 1 && selectedIndex !== -1}
-          />
+            {/* Training Plan Tab */}
+            <TabsContent value="training" className="space-y-6 mt-0">
+              <TrainingPlanCard client={client} onUpdate={() => mutateClient()} />
+              <TrainingHistoryTable clientId={client.id} />
+            </TabsContent>
 
-          {/* Metrics Tab */}
-          <TabsContent value="metrics" className="space-y-6 mt-0">
-            <MetricsTabContent
-              checkIns={checkIns}
-              client={client}
-              isLoading={checkInsLoading}
+            {/* Nutrition Tab */}
+            <TabsContent value="nutrition" className="space-y-6 mt-0">
+              <NutritionCalculatorCardEnhanced
+                client={client}
+                onUpdate={() => mutateClient()}
+              />
+            </TabsContent>
+
+            {/* Wellness Tab */}
+            <TabsContent value="wellness" className="space-y-6 mt-0">
+              <WellnessTabContent client={client} />
+            </TabsContent>
+
+            {/* Daily Habits Tab */}
+            <TabsContent value="daily-habits" className="space-y-6 mt-0">
+              <HabitsTabContent
+                client={client}
+                onUpdate={() => mutateClient()}
+              />
+              <HabitsHistoryTable clientId={client.id} />
+            </TabsContent>
+
+            {/* Notes Tab */}
+            <TabsContent value="notes" className="space-y-6 mt-0">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Coach Notes</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {client.notes ? (
+                    <div className="p-4 rounded-lg border">
+                      <p className="whitespace-pre-wrap">{client.notes}</p>
+                    </div>
+                  ) : (
+                    <div className="text-center py-12 text-muted-foreground">
+                      <p>No notes added yet</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Tabs>
+
+          {/* Metric Save Dialog */}
+          {pendingMetricUpdate && (
+            <MetricSaveDialog
+              open={saveDialogOpen}
+              onOpenChange={setSaveDialogOpen}
+              metricName={pendingMetricUpdate.metricName}
+              onSaveAsCheckIn={() => saveMetric(pendingMetricUpdate.field, pendingMetricUpdate.value, "check-in")}
+              onUpdateOnly={() => saveMetric(pendingMetricUpdate.field, pendingMetricUpdate.value, "update-only")}
+              isLoading={isSavingMetric}
             />
-          </TabsContent>
-
-          {/* Training Plan Tab */}
-          <TabsContent value="training" className="space-y-6 mt-0">
-            <TrainingPlanCard client={client} onUpdate={() => mutateClient()} />
-            <TrainingHistoryTable clientId={client.id} />
-          </TabsContent>
-
-          {/* Nutrition Tab */}
-          <TabsContent value="nutrition" className="space-y-6 mt-0">
-            <NutritionCalculatorCardEnhanced
-              client={client}
-              onUpdate={() => mutateClient()}
-            />
-          </TabsContent>
-
-          {/* Wellness Tab */}
-          <TabsContent value="wellness" className="space-y-6 mt-0">
-            <WellnessTabContent client={client} />
-          </TabsContent>
-
-          {/* Daily Habits Tab */}
-          <TabsContent value="daily-habits" className="space-y-6 mt-0">
-            <HabitsTabContent
-              client={client}
-              onUpdate={() => mutateClient()}
-            />
-            <HabitsHistoryTable clientId={client.id} />
-          </TabsContent>
-
-          {/* Notes Tab */}
-          <TabsContent value="notes" className="space-y-6 mt-0">
-            <Card>
-              <CardHeader>
-                <CardTitle>Coach Notes</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {client.notes ? (
-                  <div className="p-4 rounded-lg border">
-                    <p className="whitespace-pre-wrap">{client.notes}</p>
-                  </div>
-                ) : (
-                  <div className="text-center py-12 text-muted-foreground">
-                    <p>No notes added yet</p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
-      )}
-
-      {/* Metric Save Dialog */}
-      {pendingMetricUpdate && (
-        <MetricSaveDialog
-          open={saveDialogOpen}
-          onOpenChange={setSaveDialogOpen}
-          metricName={pendingMetricUpdate.metricName}
-          onSaveAsCheckIn={() => saveMetric(pendingMetricUpdate.field, pendingMetricUpdate.value, "check-in")}
-          onUpdateOnly={() => saveMetric(pendingMetricUpdate.field, pendingMetricUpdate.value, "update-only")}
-          isLoading={isSavingMetric}
-        />
-      )}
-    </AppLayout>
+          )}
+        </>
+      ) : null}
+    </ClientDetailLayout>
   )
 }

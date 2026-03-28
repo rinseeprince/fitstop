@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import type { Client, ActivityLevel, DietType } from "@/types/check-in";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -10,7 +9,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Input } from "@/components/ui/input";
 import { PROTEIN_TARGETS } from "@/utils/nutrition-helpers";
 
 type NutritionSettingsFormProps = {
@@ -29,6 +27,15 @@ type NutritionSettingsFormProps = {
   }) => void;
 };
 
+const selectTriggerClass =
+  "bg-white border border-[rgba(13,148,136,0.08)] rounded-[6px] text-[13px] font-medium text-[#0c1a1e] focus:border-[rgba(13,148,136,0.25)] focus:shadow-[0_0_0_3px_rgba(13,148,136,0.06)] focus:ring-0 transition-all hover:border-[rgba(13,148,136,0.25)] [&>svg]:text-[#93b0b4] [&>svg]:hover:text-[#0d9488] [&>svg]:transition-colors";
+
+const selectContentClass =
+  "bg-white rounded-[6px] shadow-lg border border-[rgba(13,148,136,0.08)] p-1";
+
+const selectItemClass =
+  "rounded-[6px] cursor-pointer text-[13px] text-[#0c1a1e] focus:bg-[rgba(13,148,136,0.05)]";
+
 export function NutritionSettingsForm({
   client,
   initialSettings,
@@ -45,10 +52,6 @@ export function NutritionSettingsForm({
   const [dietType, setDietType] = useState<DietType>(
     initialSettings?.dietType || "balanced"
   );
-  const [goalDeadline, setGoalDeadline] = useState<string>(
-    initialSettings?.goalDeadline || client.goalDeadline || ""
-  );
-
   const handleChange = (
     field: string,
     value: ActivityLevel | number | DietType | string
@@ -63,9 +66,6 @@ export function NutritionSettingsForm({
       case "dietType":
         setDietType(value as DietType);
         break;
-      case "goalDeadline":
-        setGoalDeadline(value as string);
-        break;
     }
 
     // Notify parent of changes
@@ -79,7 +79,6 @@ export function NutritionSettingsForm({
           ? (value as number)
           : proteinTargetGPerKg,
       dietType: field === "dietType" ? (value as DietType) : dietType,
-      goalDeadline: field === "goalDeadline" ? (value as string) : goalDeadline,
     });
   };
 
@@ -87,124 +86,107 @@ export function NutritionSettingsForm({
     <div className="space-y-4">
       {/* Work Activity Level */}
       <div className="space-y-1.5">
-        <Label htmlFor="activity-level" className="text-sm font-medium text-foreground">
+        <label className="text-[10.5px] uppercase tracking-[0.07em] font-semibold text-[#93b0b4]">
           Work Activity Level
-        </Label>
+        </label>
         <Select
           value={workActivityLevel}
           onValueChange={(value) =>
             handleChange("workActivityLevel", value as ActivityLevel)
           }
         >
-          <SelectTrigger id="activity-level" className="bg-card border-border rounded-lg focus:border-primary focus:ring-1 focus:ring-ring">
+          <SelectTrigger id="activity-level" className={selectTriggerClass}>
             <SelectValue />
           </SelectTrigger>
-          <SelectContent className="bg-card rounded-lg shadow-lg border border-border p-1">
-            <SelectItem value="sedentary" className="rounded-lg cursor-pointer focus:bg-muted">Sedentary (desk job)</SelectItem>
-            <SelectItem value="lightly_active" className="rounded-lg cursor-pointer focus:bg-muted">
+          <SelectContent className={selectContentClass}>
+            <SelectItem value="sedentary" className={selectItemClass}>Sedentary (desk job)</SelectItem>
+            <SelectItem value="lightly_active" className={selectItemClass}>
               Lightly Active (light movement)
             </SelectItem>
-            <SelectItem value="moderately_active" className="rounded-lg cursor-pointer focus:bg-muted">
+            <SelectItem value="moderately_active" className={selectItemClass}>
               Moderately Active (on feet most of day)
             </SelectItem>
-            <SelectItem value="very_active" className="rounded-lg cursor-pointer focus:bg-muted">
+            <SelectItem value="very_active" className={selectItemClass}>
               Very Active (physical job)
             </SelectItem>
-            <SelectItem value="extremely_active" className="rounded-lg cursor-pointer focus:bg-muted">
+            <SelectItem value="extremely_active" className={selectItemClass}>
               Extremely Active (athlete/heavy labor)
             </SelectItem>
           </SelectContent>
         </Select>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-[11px] text-[#93b0b4] leading-[1.4]">
           Daily work activity level (multiplier: 1.2x to 1.9x)
         </p>
       </div>
 
       {/* Protein Target */}
       <div className="space-y-1.5">
-        <Label htmlFor="protein-target" className="text-sm font-medium text-foreground">
+        <label className="text-[10.5px] uppercase tracking-[0.07em] font-semibold text-[#93b0b4]">
           Protein Target
-        </Label>
+        </label>
         <Select
           value={proteinTargetGPerKg.toString()}
           onValueChange={(value) =>
             handleChange("proteinTargetGPerKg", parseFloat(value))
           }
         >
-          <SelectTrigger id="protein-target" className="bg-card border-border rounded-lg focus:border-primary focus:ring-1 focus:ring-ring">
+          <SelectTrigger id="protein-target" className={selectTriggerClass}>
             <SelectValue />
           </SelectTrigger>
-          <SelectContent className="bg-card rounded-lg shadow-lg border border-border p-1">
-            <SelectItem value={PROTEIN_TARGETS.minimum.gPerKg.toString()} className="rounded-lg cursor-pointer focus:bg-muted">
+          <SelectContent className={selectContentClass}>
+            <SelectItem value={PROTEIN_TARGETS.minimum.gPerKg.toString()} className={selectItemClass}>
               {unitPreference === "metric"
                 ? `${PROTEIN_TARGETS.minimum.gPerKg}g per kg - Minimum`
                 : `${PROTEIN_TARGETS.minimum.gPerLb.toFixed(2)}g per lb - Minimum`}
             </SelectItem>
-            <SelectItem value={PROTEIN_TARGETS.moderate.gPerKg.toString()} className="rounded-lg cursor-pointer focus:bg-muted">
+            <SelectItem value={PROTEIN_TARGETS.moderate.gPerKg.toString()} className={selectItemClass}>
               {unitPreference === "metric"
                 ? `${PROTEIN_TARGETS.moderate.gPerKg}g per kg - Moderate`
                 : `${PROTEIN_TARGETS.moderate.gPerLb.toFixed(2)}g per lb - Moderate`}
             </SelectItem>
-            <SelectItem value={PROTEIN_TARGETS.high.gPerKg.toString()} className="rounded-lg cursor-pointer focus:bg-muted">
+            <SelectItem value={PROTEIN_TARGETS.high.gPerKg.toString()} className={selectItemClass}>
               {unitPreference === "metric"
                 ? `${PROTEIN_TARGETS.high.gPerKg}g per kg - High`
                 : `${PROTEIN_TARGETS.high.gPerLb.toFixed(2)}g per lb - High`}
             </SelectItem>
-            <SelectItem value={PROTEIN_TARGETS.veryHigh.gPerKg.toString()} className="rounded-lg cursor-pointer focus:bg-muted">
+            <SelectItem value={PROTEIN_TARGETS.veryHigh.gPerKg.toString()} className={selectItemClass}>
               {unitPreference === "metric"
                 ? `${PROTEIN_TARGETS.veryHigh.gPerKg}g per kg - Very High`
                 : `${PROTEIN_TARGETS.veryHigh.gPerLb.toFixed(2)}g per lb - Very High`}
             </SelectItem>
           </SelectContent>
         </Select>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-[11px] text-[#93b0b4] leading-[1.4]">
           Protein per {unitPreference === "metric" ? "kg" : "lb"} of body weight
         </p>
       </div>
 
       {/* Diet Type */}
       <div className="space-y-1.5">
-        <Label htmlFor="diet-type" className="text-sm font-medium text-foreground">
+        <label className="text-[10.5px] uppercase tracking-[0.07em] font-semibold text-[#93b0b4]">
           Diet Type
-        </Label>
+        </label>
         <Select
           value={dietType}
           onValueChange={(value) => handleChange("dietType", value as DietType)}
         >
-          <SelectTrigger id="diet-type" className="bg-card border-border rounded-lg focus:border-primary focus:ring-1 focus:ring-ring">
+          <SelectTrigger id="diet-type" className={selectTriggerClass}>
             <SelectValue />
           </SelectTrigger>
-          <SelectContent className="bg-card rounded-lg shadow-lg border border-border p-1">
-            <SelectItem value="balanced" className="rounded-lg cursor-pointer focus:bg-muted">Balanced (50/50 carbs/fat)</SelectItem>
-            <SelectItem value="high_carb" className="rounded-lg cursor-pointer focus:bg-muted">
+          <SelectContent className={selectContentClass}>
+            <SelectItem value="balanced" className={selectItemClass}>Balanced (50/50 carbs/fat)</SelectItem>
+            <SelectItem value="high_carb" className={selectItemClass}>
               High Carb (65/35 carbs/fat)
             </SelectItem>
-            <SelectItem value="low_carb" className="rounded-lg cursor-pointer focus:bg-muted">Low Carb (25/75 carbs/fat)</SelectItem>
-            <SelectItem value="keto" className="rounded-lg cursor-pointer focus:bg-muted">Keto (10/90 carbs/fat)</SelectItem>
+            <SelectItem value="low_carb" className={selectItemClass}>Low Carb (25/75 carbs/fat)</SelectItem>
+            <SelectItem value="keto" className={selectItemClass}>Keto (10/90 carbs/fat)</SelectItem>
           </SelectContent>
         </Select>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-[11px] text-[#93b0b4] leading-[1.4]">
           Carb/fat split for remaining calories after protein
         </p>
       </div>
 
-      {/* Goal Deadline */}
-      <div className="space-y-1.5">
-        <Label htmlFor="goal-deadline" className="text-sm font-medium text-foreground">
-          Goal Deadline (Optional)
-        </Label>
-        <Input
-          id="goal-deadline"
-          type="date"
-          value={goalDeadline}
-          onChange={(e) => handleChange("goalDeadline", e.target.value)}
-          min={new Date().toISOString().split("T")[0]}
-          className="w-full px-3.5 py-2.5 bg-card border border-border rounded-lg text-sm focus:border-primary focus:ring-1 focus:ring-ring focus:outline-none transition-all"
-        />
-        <p className="text-xs text-muted-foreground">
-          Target date to reach goal weight (affects calorie deficit/surplus)
-        </p>
-      </div>
     </div>
   );
 }

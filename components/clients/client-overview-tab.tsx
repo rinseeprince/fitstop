@@ -12,7 +12,7 @@ import { ReminderHistoryModal } from "@/components/clients/check-in/reminder-his
 import { Loader2, Calculator, Bell, Edit2 } from "lucide-react"
 import { DailyWellnessStrip } from "@/components/clients/daily-pulse/daily-wellness-strip"
 import { ClientActivationBanner } from "@/components/clients/client-activation-banner"
-import type { ClientTab } from "@/components/clients/client-page-header"
+import type { ClientTab } from "@/lib/client-tabs"
 import type { Client, CheckIn } from "@/types/check-in"
 
 interface ClientOverviewTabProps {

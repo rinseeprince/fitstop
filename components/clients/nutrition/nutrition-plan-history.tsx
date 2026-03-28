@@ -90,29 +90,32 @@ export function NutritionPlanHistory({ clientId }: NutritionPlanHistoryProps) {
   const totalRevisions = allPlans.length;
 
   return (
-    <div className="bg-white rounded-[6px]">
-      {/* Clickable header */}
+    <div>
+      {/* Section header row */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between px-5 py-4 hover:bg-[#f0f5f4]/50 transition-colors rounded-[6px]"
+        className="w-full flex items-center gap-3 group"
       >
+        <span className="text-[10.5px] uppercase tracking-[0.07em] font-semibold text-[#93b0b4] whitespace-nowrap">
+          Plan History
+        </span>
+        <div className="flex-1 h-px bg-[rgba(13,148,136,0.08)]" />
         <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold text-[#0c1a1e]">Plan History</span>
-          <span className="text-xs bg-[#e6edec] text-[#93b0b4] px-2 py-0.5 rounded-[6px] font-medium">
+          <span className="text-[11px] bg-[rgba(13,148,136,0.05)] text-[#93b0b4] px-2 py-0.5 rounded-[6px] font-medium">
             {totalRevisions}
           </span>
+          <ChevronDown
+            className={cn(
+              "h-3.5 w-3.5 text-[#93b0b4] transition-transform duration-200",
+              isOpen && "rotate-180"
+            )}
+          />
         </div>
-        <ChevronDown
-          className={cn(
-            "h-4 w-4 text-[#93b0b4] transition-transform duration-200",
-            isOpen && "rotate-180"
-          )}
-        />
       </button>
 
-      {/* Collapsible body */}
+      {/* Collapsible table card */}
       {isOpen && (
-        <div className="border-t border-[rgba(13,148,136,0.05)]">
+        <div className="bg-white rounded-[6px] mt-4">
           <Table>
             <TableHeader>
               <TableRow>

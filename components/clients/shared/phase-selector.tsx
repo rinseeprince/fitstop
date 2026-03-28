@@ -4,7 +4,6 @@ import { useEffect } from "react";
 import useSWR from "swr";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import type { Phase } from "@/types/roadmap";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -103,20 +102,20 @@ export function PhaseSelector({
 
     return (
       <div className="space-y-1.5">
-        <Label htmlFor="phase-selector" className="text-sm font-medium text-foreground">
+        <label className="text-[10.5px] uppercase tracking-[0.07em] font-semibold text-[#93b0b4]">
           Roadmap Phase
-        </Label>
+        </label>
         <Select
           value={value ?? ""}
           onValueChange={(v) => onChange(v || undefined)}
         >
           <SelectTrigger
             id="phase-selector"
-            className="bg-card border-border rounded-lg focus:border-primary focus:ring-1 focus:ring-ring"
+            className="bg-white border border-[rgba(13,148,136,0.08)] rounded-[6px] text-[13px] font-medium text-[#0c1a1e] focus:border-[rgba(13,148,136,0.25)] focus:shadow-[0_0_0_3px_rgba(13,148,136,0.06)] focus:ring-0 transition-all hover:border-[rgba(13,148,136,0.25)] [&>svg]:text-[#93b0b4] [&>svg]:hover:text-[#0d9488] [&>svg]:transition-colors"
           >
-            <SelectValue placeholder="Select a phase…" />
+            <SelectValue placeholder="Select a phase..." />
           </SelectTrigger>
-          <SelectContent className="bg-card rounded-lg shadow-lg border border-border p-1">
+          <SelectContent className="bg-white rounded-[6px] shadow-lg border border-[rgba(13,148,136,0.08)] p-1">
             {selectablePhases.map((phase) => {
               const isDisabled = activeOnly && phase.status !== "active";
 
@@ -128,7 +127,7 @@ export function PhaseSelector({
                         <SelectItem
                           value={phase.id}
                           disabled
-                          className="rounded-lg opacity-50"
+                          className="rounded-[6px] opacity-50"
                         >
                           <span className="flex items-center gap-2">
                             {phase.name}
@@ -150,7 +149,7 @@ export function PhaseSelector({
                 <SelectItem
                   key={phase.id}
                   value={phase.id}
-                  className="rounded-lg cursor-pointer focus:bg-muted"
+                  className="rounded-[6px] cursor-pointer text-[13px] text-[#0c1a1e] focus:bg-[rgba(13,148,136,0.05)]"
                 >
                   <span className="flex items-center gap-2">
                     {phase.name}
@@ -167,7 +166,7 @@ export function PhaseSelector({
           </SelectContent>
         </Select>
         {selectedPhase && (
-          <p className="text-xs text-muted-foreground">
+          <p className="text-[11px] text-[#93b0b4] leading-[1.4]">
             {selectedPhase.phaseGoalWeight != null
               ? `Phase goal: ${weightFromKg(selectedPhase.phaseGoalWeight, weightUnit).toFixed(1)} ${weightUnit}${selectedPhase.endDate ? ` by ${selectedPhase.endDate}` : ""}`
               : "Using client\u2019s overall goal"}

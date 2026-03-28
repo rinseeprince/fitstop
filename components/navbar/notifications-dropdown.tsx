@@ -15,7 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { useOverdueClients, useClientsDueSoon } from "@/hooks/use-check-in-data";
 import { formatDistanceToNow } from "date-fns";
 
-export function NotificationsDropdown() {
+export function NotificationsDropdown({ compact = false }: { compact?: boolean } = {}) {
   const { clients: overdueClients, total: overdueTotal } = useOverdueClients();
   const { clients: dueSoonClients, total: dueSoonTotal } = useClientsDueSoon();
   const [open, setOpen] = useState(false);
@@ -29,9 +29,9 @@ export function NotificationsDropdown() {
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
         <button className="relative text-[#93b0b4] hover:text-[#5a7d82] transition-colors p-1">
-          <Bell className="h-[18px] w-[18px]" />
+          <Bell className={compact ? "h-[15px] w-[15px]" : "h-[18px] w-[18px]"} />
           {totalNotifications > 0 && (
-            <span className="absolute -top-1 -right-1 h-[16px] min-w-[16px] flex items-center justify-center rounded-full bg-[#0d9488] text-white text-[10px] font-semibold px-1">
+            <span className={`absolute flex items-center justify-center rounded-full bg-[#0d9488] text-white font-semibold px-1 ${compact ? "-top-0.5 -right-0.5 h-[14px] min-w-[14px] text-[9px]" : "-top-1 -right-1 h-[16px] min-w-[16px] text-[10px]"}`}>
               {totalNotifications > 9 ? "9+" : totalNotifications}
             </span>
           )}

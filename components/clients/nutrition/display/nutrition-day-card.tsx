@@ -35,15 +35,15 @@ export const NutritionDayCard = memo(function NutritionDayCard({ dayTarget, inde
           <div>
             {/* Day + badge row */}
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-medium text-[#93b0b4] uppercase">
+              <span className="text-[11px] font-medium text-[#93b0b4] uppercase">
                 {dayTarget.dayLabel.slice(0, 3)}
               </span>
               {isTraining ? (
-                <span className="inline-flex items-center px-1.5 py-0.5 rounded-[4px] text-[9px] xl:text-[10px] font-semibold bg-[#0d9488] text-white uppercase">
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded-[4px] text-[9px] font-semibold bg-[#0d9488] text-white uppercase">
                   Train
                 </span>
               ) : (
-                <span className="inline-flex items-center px-1.5 py-0.5 rounded-[4px] text-[9px] xl:text-[10px] font-medium bg-[#e6edec] text-[#93b0b4] uppercase">
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded-[4px] text-[9px] font-medium bg-[#e6edec] text-[#93b0b4] uppercase">
                   Rest
                 </span>
               )}
@@ -51,12 +51,12 @@ export const NutritionDayCard = memo(function NutritionDayCard({ dayTarget, inde
 
             {/* Calorie number */}
             <p className={cn(
-              "text-[26px] font-bold leading-tight",
+              "text-[24px] font-bold leading-tight",
               isTraining ? "text-[#0c1a1e]" : "text-[#93b0b4]"
             )}>
               {dayTarget.calories.toLocaleString()}
             </p>
-            <p className="text-xs text-[#93b0b4]">kcal</p>
+            <p className="text-[10px] text-[#93b0b4]">kcal</p>
           </div>
 
           {/* Bottom section */}
@@ -73,7 +73,7 @@ export const NutritionDayCard = memo(function NutritionDayCard({ dayTarget, inde
 
             {/* Macro values */}
             <p className={cn(
-              "text-[11px] font-mono-display mt-1.5 flex gap-1.5",
+              "text-[10px] font-mono-display mt-1.5 flex gap-1.5",
               !isTraining && "opacity-70"
             )}>
               <span className="text-protein">{dayTarget.proteinG}p</span>
@@ -83,12 +83,12 @@ export const NutritionDayCard = memo(function NutritionDayCard({ dayTarget, inde
 
             {/* Surplus / dash slot */}
             {isTraining && surplusCalories > 0 ? (
-              <p className="text-xs text-surplus font-medium mt-1.5 flex items-center gap-0.5">
+              <p className="text-[10px] text-surplus font-medium mt-1.5 flex items-center gap-0.5">
                 <span className="text-[8px] leading-none">&#9650;</span>
                 +{surplusCalories}
               </p>
             ) : (
-              <p className="text-xs text-[#93b0b4] mt-1.5">&mdash;</p>
+              <p className="text-[10px] text-[#93b0b4] mt-1.5">&mdash;</p>
             )}
           </div>
         </div>

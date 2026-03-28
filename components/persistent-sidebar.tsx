@@ -1,6 +1,7 @@
 "use client"
 
 import { SidebarNav } from "./sidebar-nav"
+import { CollapsedIconStrip } from "./collapsed-icon-strip"
 import { User, LogOut, ChevronDown } from "lucide-react"
 import { motion } from "framer-motion"
 import { useAuth } from "@/contexts/auth-context"
@@ -56,6 +57,14 @@ export function PersistentSidebar() {
   // Extra safety: only show for confirmed trainers
   if (!loading && role !== "trainer") {
     return null
+  }
+
+  // On client detail pages, render the collapsed 52px icon strip instead of the full sidebar.
+  // NOTE: This regex assumes tab routing uses query params (?tab=nutrition), not nested
+  // routes like /clients/[id]/nutrition. Update if routing strategy changes.
+  const isClientDetailPage = /^\/clients\/[^/]+$/.test(pathname || "")
+  if (isClientDetailPage) {
+    return <CollapsedIconStrip />
   }
 
   const handleLogout = async () => {

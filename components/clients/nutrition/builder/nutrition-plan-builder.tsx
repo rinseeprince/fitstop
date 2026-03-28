@@ -43,7 +43,6 @@ export function NutritionPlanBuilder({ client, onUpdate }: NutritionPlanBuilderP
 
         {subtab === "data" ? (
           <div className="space-y-4">
-            <PhaseProgressLine />
             <NutritionHistoryTable clientId={client.id} />
           </div>
         ) : (
@@ -79,7 +78,7 @@ function TopContentBar({
   const builder = useNutritionBuilderContext();
   const { activePhase } = builder;
 
-  const showPhaseInfo = subtab === "plans" && activePhase && builder.hasPlan;
+  const showPhaseInfo = activePhase && builder.hasPlan;
 
   const phaseGoalProgress = showPhaseInfo ? getPhaseGoalProgress(builder) : null;
   const goalWeightDisplay = showPhaseInfo ? getGoalWeightDisplay(builder) : null;
@@ -153,47 +152,10 @@ function TopContentBar({
   );
 }
 
-function PhaseProgressLine() {
-  const builder = useNutritionBuilderContext();
-  const { activePhase, weightRemaining, unitPreference } = builder;
-
-  if (activePhase?.phaseGoalWeight != null && builder.client.currentWeight) {
-    const currentKg = builder.weightToKg(builder.client.currentWeight);
-    const diffKg = Math.abs(currentKg - activePhase.phaseGoalWeight);
-    const unit = unitPreference === "imperial" ? "lbs" : "kg";
-    const value = unitPreference === "imperial"
-      ? weightFromKg(diffKg, "lbs").toFixed(1)
-      : diffKg.toFixed(1);
-
-    return (
-      <div className="flex items-center gap-2">
-        <span className="text-sm font-semibold text-[#0c1a1e]">{activePhase.name}</span>
-        <span className="text-sm text-[#93b0b4]">&mdash;</span>
-        <span className="text-xs font-medium text-amber-500 bg-amber-50 px-2 py-0.5 rounded-[6px]">
-          {value} {unit} to phase goal
-        </span>
-      </div>
-    );
-  }
-
-  if (weightRemaining) {
-    return (
-      <div className="flex items-center gap-2">
-        <span className="text-xs font-medium text-amber-500 bg-amber-50 px-2 py-0.5 rounded-[6px]">
-          {weightRemaining.isLoss ? "-" : "+"}
-          {weightRemaining.value} {weightRemaining.unit} to goal
-        </span>
-      </div>
-    );
-  }
-
-  return null;
-}
-
 function NoPlanAlert() {
   const builder = useNutritionBuilderContext();
 
-  if (!builder.activePhase || builder.hasPlan) return null;
+  if (!builder.activePhase || builder.hasPlan || builder.isLoadingNutrition) return null;
 
   return (
     <div className="flex items-start gap-2 p-3 bg-amber-50 dark:bg-amber-950/30 rounded-[6px]">

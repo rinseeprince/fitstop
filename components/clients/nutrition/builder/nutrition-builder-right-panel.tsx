@@ -16,8 +16,8 @@ export const NutritionBuilderRightPanel = memo(function NutritionBuilderRightPan
 }: NutritionBuilderRightPanelProps) {
   const builder = useNutritionBuilderContext();
 
-  // Loading state for training plan
-  if (builder.isLoadingTrainingPlan) {
+  // Loading state for training plan or nutrition data
+  if (builder.isLoadingTrainingPlan || builder.isLoadingNutrition) {
     return (
       <div className="flex items-center justify-center h-full bg-white/50 rounded-[6px]">
         <Loader2 className="h-8 w-8 animate-spin text-[#93b0b4]" />
@@ -70,54 +70,54 @@ export const NutritionBuilderRightPanel = memo(function NutritionBuilderRightPan
         <NutritionWarnings warnings={builder.warnings} />
       )}
 
-      {/* Weekly overview strip */}
-      <div className="grid grid-cols-4 gap-3">
-        {/* Dark card: Weekly total */}
-        <div className="bg-[#0f2027] text-white rounded-[6px] p-4 flex flex-col">
-          <p className="text-[11px] uppercase tracking-[0.06em] text-[#93b0b4] font-medium">Weekly Total</p>
-          <p className="text-[30px] font-bold leading-tight mt-1">
+      {/* Weekly overview strip - unified dark card */}
+      <div className="bg-[#0f2027] rounded-[6px] p-5 grid grid-cols-[1fr_1fr_1fr_1fr]">
+        {/* Weekly total */}
+        <div className="flex flex-col pr-5 border-r border-[rgba(255,255,255,0.08)]">
+          <p className="text-[10px] uppercase tracking-[0.06em] text-[rgba(255,255,255,0.35)] font-medium">Weekly Total</p>
+          <p className="text-[32px] font-bold leading-tight mt-1 text-white">
             {builder.weeklyTotal.toLocaleString()}
           </p>
-          <p className="text-xs text-[#93b0b4]">kcal</p>
-          <p className="text-xs text-[#93b0b4] font-mono-display mt-auto pt-2">
+          <p className="text-[11px] text-[rgba(255,255,255,0.35)]">kcal</p>
+          <p className="text-[11px] text-[rgba(255,255,255,0.35)] font-mono-display mt-auto pt-2">
             {avgCalories.toLocaleString()}/day &middot; {trainingCount}T {restCount}R
           </p>
         </div>
 
-        {/* Protein card */}
-        <div className="bg-white rounded-[6px] p-4">
+        {/* Protein */}
+        <div className="flex flex-col pl-5 pr-5 border-r border-[rgba(255,255,255,0.06)]">
           <div className="flex items-center gap-2 mb-1">
-            <span className="w-[3px] h-[14px] rounded-full bg-protein" />
-            <p className="text-[11px] uppercase tracking-[0.06em] text-[#93b0b4] font-medium">Protein</p>
+            <span className="w-[3px] h-[12px] rounded-[1px] bg-[#2d8fb5]" />
+            <p className="text-[10px] uppercase tracking-[0.06em] text-[rgba(255,255,255,0.4)] font-medium">Protein</p>
           </div>
-          <p className="text-2xl font-bold text-[#0c1a1e]">
-            {totalProtein.toLocaleString()}<span className="text-base font-medium text-[#93b0b4]">g</span>
+          <p className="text-[22px] font-bold text-white mt-1">
+            {totalProtein.toLocaleString()}<span className="text-[13px] font-medium text-[rgba(255,255,255,0.25)] ml-0.5">g</span>
           </p>
-          <p className="text-xs text-[#93b0b4] font-mono-display mt-1">{avgProtein}g/day avg</p>
+          <p className="text-[11px] text-[rgba(255,255,255,0.3)] font-mono-display mt-1">{avgProtein}g/day</p>
         </div>
 
-        {/* Carbs card */}
-        <div className="bg-white rounded-[6px] p-4">
+        {/* Carbs */}
+        <div className="flex flex-col pl-5 pr-5 border-r border-[rgba(255,255,255,0.06)]">
           <div className="flex items-center gap-2 mb-1">
-            <span className="w-[3px] h-[14px] rounded-full bg-carbs" />
-            <p className="text-[11px] uppercase tracking-[0.06em] text-[#93b0b4] font-medium">Carbs</p>
+            <span className="w-[3px] h-[12px] rounded-[1px] bg-[#c8923a]" />
+            <p className="text-[10px] uppercase tracking-[0.06em] text-[rgba(255,255,255,0.4)] font-medium">Carbs</p>
           </div>
-          <p className="text-2xl font-bold text-[#0c1a1e]">
-            {totalCarbs.toLocaleString()}<span className="text-base font-medium text-[#93b0b4]">g</span>
+          <p className="text-[22px] font-bold text-white mt-1">
+            {totalCarbs.toLocaleString()}<span className="text-[13px] font-medium text-[rgba(255,255,255,0.25)] ml-0.5">g</span>
           </p>
-          <p className="text-xs text-[#93b0b4] font-mono-display mt-1">{avgCarbs}g/day avg</p>
+          <p className="text-[11px] text-[rgba(255,255,255,0.3)] font-mono-display mt-1">{avgCarbs}g/day</p>
         </div>
 
-        {/* Fat card */}
-        <div className="bg-white rounded-[6px] p-4">
+        {/* Fat */}
+        <div className="flex flex-col pl-5">
           <div className="flex items-center gap-2 mb-1">
-            <span className="w-[3px] h-[14px] rounded-full bg-fat" />
-            <p className="text-[11px] uppercase tracking-[0.06em] text-[#93b0b4] font-medium">Fat</p>
+            <span className="w-[3px] h-[12px] rounded-[1px] bg-[#c06060]" />
+            <p className="text-[10px] uppercase tracking-[0.06em] text-[rgba(255,255,255,0.4)] font-medium">Fat</p>
           </div>
-          <p className="text-2xl font-bold text-[#0c1a1e]">
-            {totalFat.toLocaleString()}<span className="text-base font-medium text-[#93b0b4]">g</span>
+          <p className="text-[22px] font-bold text-white mt-1">
+            {totalFat.toLocaleString()}<span className="text-[13px] font-medium text-[rgba(255,255,255,0.25)] ml-0.5">g</span>
           </p>
-          <p className="text-xs text-[#93b0b4] font-mono-display mt-1">{avgFat}g/day avg</p>
+          <p className="text-[11px] text-[rgba(255,255,255,0.3)] font-mono-display mt-1">{avgFat}g/day</p>
         </div>
       </div>
 

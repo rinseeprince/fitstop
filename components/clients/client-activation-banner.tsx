@@ -5,7 +5,7 @@ import { motion } from "framer-motion"
 import { Button } from "@/components/ui/button"
 import { ClientActivationDialog } from "@/components/coach/client-activation-dialog"
 import { CheckCircle2, XCircle, AlertTriangle, Rocket } from "lucide-react"
-import type { ClientTab } from "@/components/clients/client-page-header"
+import type { ClientTab } from "@/lib/client-tabs"
 import type { OnboardingStatus } from "@/types/client-intake"
 
 import { swrFetcher } from "@/lib/swr-fetcher"

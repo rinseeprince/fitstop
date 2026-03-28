@@ -4,20 +4,9 @@ import { useEffect, useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { Home, Users, Library, KanbanSquare, MessageSquare, Zap, Mail, Settings } from "lucide-react"
 import { motion } from "framer-motion"
 import { useAuth } from "@/contexts/auth-context"
-
-const navigation = [
-  { name: "Dashboard", href: "/dashboard", icon: Home },
-  { name: "Clients", href: "/clients", icon: Users, showBadge: true },
-  { name: "Content", href: "/dashboard/content", icon: Library },
-  { name: "CRM", href: "/crm", icon: KanbanSquare },
-  { name: "Messages", href: "/messages", icon: MessageSquare },
-  { name: "Automation", href: "/automation", icon: Zap },
-  { name: "Email Marketing", href: "/email", icon: Mail },
-  { name: "Settings", href: "/settings", icon: Settings },
-]
+import { navigation } from "@/lib/navigation"
 
 export function SidebarNav() {
   const pathname = usePathname()

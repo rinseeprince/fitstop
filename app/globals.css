@@ -247,4 +247,32 @@
   .animate-card-in {
     animation: cardIn 0.3s ease-out both;
   }
+
+  @keyframes drawerSlideIn {
+    from {
+      transform: translateX(100%);
+    }
+    to {
+      transform: translateX(0);
+    }
+  }
+
+  @keyframes drawerFadeUp {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .animate-drawer-slide-in {
+    animation: drawerSlideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .animate-drawer-fade-up {
+    animation: drawerFadeUp 0.35s ease both;
+  }
 }

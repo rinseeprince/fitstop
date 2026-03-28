@@ -111,10 +111,10 @@ export function NutritionTrainingCaloriesDisplay({
 
       <div className="flex items-center justify-between px-1">
         <div className="space-y-0.5">
-          <Label className="text-sm font-medium text-foreground">
+          <Label className="text-[12.5px] font-semibold text-[#0c1a1e]">
             Add activity burn to calorie targets
           </Label>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-[11px] text-[#93b0b4] leading-[1.4]">
             When on, estimated calories burned from training are added to daily targets
           </p>
         </div>
@@ -122,6 +122,7 @@ export function NutritionTrainingCaloriesDisplay({
           checked={includeActivityBurn}
           onCheckedChange={onToggleActivityBurn}
           disabled={isSavingToggle}
+          className="h-[22px] w-[40px] rounded-[11px] data-[state=checked]:bg-[#0d9488] data-[state=unchecked]:bg-[rgba(13,148,136,0.12)] [&>[data-slot=switch-thumb]]:h-4 [&>[data-slot=switch-thumb]]:w-4 [&>[data-slot=switch-thumb]]:shadow-[0_1px_3px_rgba(0,0,0,0.12)] [&>[data-slot=switch-thumb]]:data-[state=checked]:translate-x-[18px]"
         />
       </div>
     </div>
