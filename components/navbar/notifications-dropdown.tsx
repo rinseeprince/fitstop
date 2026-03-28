@@ -3,7 +3,6 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Bell, Clock, AlertCircle, CheckCircle } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,17 +28,14 @@ export function NotificationsDropdown() {
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="relative">
-          <Bell className="h-5 w-5" />
+        <button className="relative text-[#93b0b4] hover:text-[#5a7d82] transition-colors p-1">
+          <Bell className="h-[18px] w-[18px]" />
           {totalNotifications > 0 && (
-            <Badge
-              variant="destructive"
-              className="absolute -top-1 -right-1 h-5 w-5 flex items-center justify-center p-0 text-xs"
-            >
+            <span className="absolute -top-1 -right-1 h-[16px] min-w-[16px] flex items-center justify-center rounded-full bg-[#0d9488] text-white text-[10px] font-semibold px-1">
               {totalNotifications > 9 ? "9+" : totalNotifications}
-            </Badge>
+            </span>
           )}
-        </Button>
+        </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-80">
         <DropdownMenuLabel className="flex items-center justify-between">

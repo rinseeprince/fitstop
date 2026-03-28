@@ -11,6 +11,7 @@ import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { weightFromKg } from "@/utils/nutrition-helpers";
+import { format } from "date-fns";
 import type { Client } from "@/types/check-in";
 
 type NutritionPlanBuilderProps = {
@@ -33,39 +34,26 @@ export function NutritionPlanBuilder({ client, onUpdate }: NutritionPlanBuilderP
   return (
     <ErrorBoundary>
       <NutritionBuilderProvider client={client} onUpdate={onUpdate}>
-        {/* Sub-tab switcher */}
-        <div className="bg-muted p-1 rounded-lg inline-flex mb-4">
-          {(["data", "plans"] as const).map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setSubtab(tab)}
-              className={cn(
-                "px-4 py-2 text-sm font-medium rounded-md transition-all",
-                subtab === tab
-                  ? "bg-card text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              {tab === "data" ? "Data" : "Plans"}
-            </button>
-          ))}
-        </div>
+        {/* Top content bar */}
+        <TopContentBar
+          subtab={subtab}
+          setSubtab={setSubtab}
+          onOpenSettings={() => setDrawerOpen(true)}
+        />
 
         {subtab === "data" ? (
-          <div className="space-y-6">
+          <div className="space-y-4">
             <PhaseProgressLine />
             <NutritionHistoryTable clientId={client.id} />
           </div>
         ) : (
-          <div className="space-y-6">
+          <div className="space-y-4">
             <NoPlanAlert />
-            <div className="bg-card rounded-lg border border-border p-5">
-              <ErrorBoundary>
-                <NutritionBuilderRightPanel
-                  onOpenSettings={() => setDrawerOpen(true)}
-                />
-              </ErrorBoundary>
-            </div>
+            <ErrorBoundary>
+              <NutritionBuilderRightPanel
+                onOpenSettings={() => setDrawerOpen(true)}
+              />
+            </ErrorBoundary>
             <NutritionPlanHistory clientId={client.id} />
           </div>
         )}
@@ -76,6 +64,92 @@ export function NutritionPlanBuilder({ client, onUpdate }: NutritionPlanBuilderP
         />
       </NutritionBuilderProvider>
     </ErrorBoundary>
+  );
+}
+
+function TopContentBar({
+  subtab,
+  setSubtab,
+  onOpenSettings,
+}: {
+  subtab: "data" | "plans";
+  setSubtab: (tab: "data" | "plans") => void;
+  onOpenSettings: () => void;
+}) {
+  const builder = useNutritionBuilderContext();
+  const { activePhase } = builder;
+
+  const showPhaseInfo = subtab === "plans" && activePhase && builder.hasPlan;
+
+  const phaseGoalProgress = showPhaseInfo ? getPhaseGoalProgress(builder) : null;
+  const goalWeightDisplay = showPhaseInfo ? getGoalWeightDisplay(builder) : null;
+
+  const phaseDateRange = activePhase
+    ? [
+        activePhase.startDate ? format(new Date(activePhase.startDate), "MMM d") : null,
+        activePhase.endDate ? format(new Date(activePhase.endDate), "MMM d") : null,
+      ]
+        .filter(Boolean)
+        .join(" \u2013 ")
+    : null;
+
+  return (
+    <div className="flex items-center gap-4 mb-5">
+      {/* Segmented control */}
+      <div className="bg-[rgba(13,148,136,0.05)] rounded-[6px] p-[2px] inline-flex">
+        {(["data", "plans"] as const).map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setSubtab(tab)}
+            className={cn(
+              "px-4 py-1.5 text-[12.5px] font-medium rounded-[4px] transition-all",
+              subtab === tab
+                ? "bg-white text-[#0c1a1e] shadow-[0_1px_3px_rgba(0,0,0,0.05)]"
+                : "text-[#5a7d82] hover:text-[#0c1a1e]"
+            )}
+          >
+            {tab === "data" ? "Data" : "Plans"}
+          </button>
+        ))}
+      </div>
+
+      {showPhaseInfo && (
+        <>
+          {/* Vertical divider */}
+          <div className="w-px h-6 bg-[rgba(13,148,136,0.08)]" />
+
+          {/* Phase info */}
+          <div className="flex items-center gap-3">
+            <span className="text-[13px] font-semibold text-[#0c1a1e]">{activePhase.name}</span>
+            {phaseDateRange && (
+              <span className="text-[12px] text-[#93b0b4]">{phaseDateRange}</span>
+            )}
+            {goalWeightDisplay && (
+              <span className="text-[12px] text-[#5a7d82]">{goalWeightDisplay}</span>
+            )}
+            {phaseGoalProgress && (
+              <span className="text-[10.5px] font-semibold text-[#d97706] bg-[rgba(245,158,11,0.07)] px-1.5 py-0.5 rounded-[3px]">
+                {phaseGoalProgress}
+              </span>
+            )}
+          </div>
+
+          {/* Right side */}
+          <div className="ml-auto flex items-center gap-3">
+            <span className="flex items-center gap-1.5 text-xs font-medium text-[#0d9488]">
+              <span className="w-[5px] h-[5px] rounded-full bg-[#0d9488]" />
+              Active
+            </span>
+            <button
+              onClick={onOpenSettings}
+              className="inline-flex items-center px-3 py-1.5 text-[12.5px] font-medium text-[#5a7d82] bg-white border border-[rgba(13,148,136,0.08)] rounded-[6px] hover:bg-[#f0f5f4] transition-colors"
+            >
+              Regenerate
+            </button>
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -92,20 +166,24 @@ function PhaseProgressLine() {
       : diffKg.toFixed(1);
 
     return (
-      <p className="text-sm text-muted-foreground">
-        <span className="font-medium text-foreground">{activePhase.name}</span>
-        {" — "}
-        {value} {unit} to phase goal
-      </p>
+      <div className="flex items-center gap-2">
+        <span className="text-sm font-semibold text-[#0c1a1e]">{activePhase.name}</span>
+        <span className="text-sm text-[#93b0b4]">&mdash;</span>
+        <span className="text-xs font-medium text-amber-500 bg-amber-50 px-2 py-0.5 rounded-[6px]">
+          {value} {unit} to phase goal
+        </span>
+      </div>
     );
   }
 
   if (weightRemaining) {
     return (
-      <p className="text-sm text-muted-foreground">
-        {weightRemaining.isLoss ? "-" : "+"}
-        {weightRemaining.value} {weightRemaining.unit} to goal
-      </p>
+      <div className="flex items-center gap-2">
+        <span className="text-xs font-medium text-amber-500 bg-amber-50 px-2 py-0.5 rounded-[6px]">
+          {weightRemaining.isLoss ? "-" : "+"}
+          {weightRemaining.value} {weightRemaining.unit} to goal
+        </span>
+      </div>
     );
   }
 
@@ -118,11 +196,50 @@ function NoPlanAlert() {
   if (!builder.activePhase || builder.hasPlan) return null;
 
   return (
-    <div className="flex items-start gap-2 p-3 bg-amber-50 dark:bg-amber-950/30 rounded-lg">
+    <div className="flex items-start gap-2 p-3 bg-amber-50 dark:bg-amber-950/30 rounded-[6px]">
       <AlertCircle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
       <p className="text-sm text-foreground">
         No nutrition plan for this phase — generate one with the Regenerate Plan button.
       </p>
     </div>
   );
+}
+
+function getPhaseGoalProgress(builder: ReturnType<typeof useNutritionBuilderContext>): string | null {
+  const { activePhase, client, unitPreference } = builder;
+
+  if (activePhase?.phaseGoalWeight != null && client.currentWeight) {
+    const currentKg = builder.weightToKg(client.currentWeight);
+    const diffKg = Math.abs(currentKg - activePhase.phaseGoalWeight);
+    const unit = unitPreference === "imperial" ? "lbs" : "kg";
+    const value = unitPreference === "imperial"
+      ? weightFromKg(diffKg, "lbs").toFixed(1)
+      : diffKg.toFixed(1);
+    return `${value} ${unit} to go`;
+  }
+
+  if (builder.weightRemaining) {
+    const wr = builder.weightRemaining;
+    return `${wr.isLoss ? "-" : "+"}${wr.value} ${wr.unit} to go`;
+  }
+
+  return null;
+}
+
+function getGoalWeightDisplay(builder: ReturnType<typeof useNutritionBuilderContext>): string | null {
+  const { activePhase, client, unitPreference } = builder;
+
+  if (activePhase?.phaseGoalWeight != null && client.currentWeight) {
+    const currentKg = builder.weightToKg(client.currentWeight);
+    const unit = unitPreference === "imperial" ? "lbs" : "kg";
+    const currentVal = unitPreference === "imperial"
+      ? weightFromKg(currentKg, "lbs").toFixed(1)
+      : currentKg.toFixed(1);
+    const goalVal = unitPreference === "imperial"
+      ? weightFromKg(activePhase.phaseGoalWeight, "lbs").toFixed(1)
+      : activePhase.phaseGoalWeight.toFixed(1);
+    return `${currentVal} \u2192 ${goalVal} ${unit}`;
+  }
+
+  return null;
 }

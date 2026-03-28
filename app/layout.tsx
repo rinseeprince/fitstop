@@ -1,13 +1,13 @@
 import type React from "react"
 import type { Metadata } from "next"
-import { Plus_Jakarta_Sans, JetBrains_Mono } from "next/font/google"
+import { Instrument_Sans, JetBrains_Mono } from "next/font/google"
 import "./globals.css"
 import { AuthProvider } from "@/contexts/auth-context"
 import { Toaster } from "@/components/ui/toaster"
 import { Toaster as SonnerToaster } from "sonner"
 import { PersistentSidebar } from "@/components/persistent-sidebar"
 
-const plusJakarta = Plus_Jakarta_Sans({ subsets: ["latin"], weight: ["400", "500", "600", "700"] })
+const instrumentSans = Instrument_Sans({ subsets: ["latin"], weight: ["400", "500", "600", "700"] })
 const jetbrainsMono = JetBrains_Mono({ subsets: ["latin"], weight: ["400", "500", "600", "700"], variable: "--font-mono-display" })
 
 export const metadata: Metadata = {
@@ -40,7 +40,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${plusJakarta.className} ${jetbrainsMono.variable}`}>
+      <body className={`${instrumentSans.className} ${jetbrainsMono.variable}`}>
         <AuthProvider>
           <PersistentSidebar />
           {children}

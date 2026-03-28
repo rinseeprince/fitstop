@@ -18,41 +18,26 @@ type WeeklyNutritionViewProps = {
 };
 
 export function WeeklyNutritionView({ targets }: WeeklyNutritionViewProps) {
-  // Create a map for quick lookup
   const targetsByDay = new Map(targets.map((t) => [t.day, t]));
 
   return (
-    <div className="space-y-2">
-      {/* Day Headers */}
-      <div className="grid grid-cols-7 gap-1.5 xl:gap-2 mb-2">
-        {DAYS_OF_WEEK.map((day) => (
-          <div key={day.value} className="text-center">
-            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-              {day.label}
-            </span>
-          </div>
-        ))}
-      </div>
+    <div className="grid grid-cols-7 gap-2">
+      {DAYS_OF_WEEK.map((day, index) => {
+        const dayTarget = targetsByDay.get(day.value);
 
-      {/* Day Cards */}
-      <div className="grid grid-cols-7 gap-1.5 xl:gap-2">
-        {DAYS_OF_WEEK.map((day) => {
-          const dayTarget = targetsByDay.get(day.value);
+        if (!dayTarget) {
+          return (
+            <div
+              key={day.value}
+              className="min-h-[170px] border border-dashed border-[rgba(13,148,136,0.08)] rounded-[6px] flex items-center justify-center"
+            >
+              <span className="text-sm text-[#93b0b4]">No data</span>
+            </div>
+          );
+        }
 
-          if (!dayTarget) {
-            return (
-              <div
-                key={day.value}
-                className="min-h-[100px] bg-muted/50 border border-dashed border-border rounded-lg flex items-center justify-center"
-              >
-                <span className="text-sm text-muted-foreground">No data</span>
-              </div>
-            );
-          }
-
-          return <NutritionDayCard key={day.value} dayTarget={dayTarget} />;
-        })}
-      </div>
+        return <NutritionDayCard key={day.value} dayTarget={dayTarget} index={index} />;
+      })}
     </div>
   );
 }

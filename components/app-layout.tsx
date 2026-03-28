@@ -13,14 +13,16 @@ export function AppLayout({ children, pageHeader, headerActions }: AppLayoutProp
       {/* Main Content - sidebar is now in root layout */}
       <div className="flex-1 flex flex-col bg-background lg:ml-20">
         {/* Header - sticky with solid background and border */}
-        <header className="sticky top-0 z-10 bg-background border-b border-border">
+        <header className="sticky top-0 z-10 bg-white">
           {pageHeader ? (
             <div className="relative">
-              {/* Actions/Notifications in top-right corner */}
-              <div className="absolute top-4 right-6 flex items-center gap-2 z-10">
-                {headerActions}
-                <NotificationsDropdown />
-              </div>
+              {/* Actions/Notifications overlay (for pages that pass headerActions) */}
+              {headerActions && (
+                <div className="absolute top-4 right-6 flex items-center gap-3 z-10">
+                  {headerActions}
+                  <NotificationsDropdown />
+                </div>
+              )}
               {/* Page-specific header content */}
               {pageHeader}
             </div>
@@ -33,7 +35,7 @@ export function AppLayout({ children, pageHeader, headerActions }: AppLayoutProp
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 overflow-y-auto p-6 lg:p-8">{children}</main>
+        <main className="flex-1 overflow-y-auto px-6 lg:px-8 pt-4 pb-6 lg:pb-8 bg-[#f4f7f6]">{children}</main>
       </div>
     </div>
   )

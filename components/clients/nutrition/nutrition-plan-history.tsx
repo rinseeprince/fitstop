@@ -1,14 +1,8 @@
 "use client";
 
-import { Fragment } from "react";
+import { Fragment, useState } from "react";
 import useSWR from "swr";
 import { swrFetcher } from "@/lib/swr-fetcher";
-import {
-  Accordion,
-  AccordionItem,
-  AccordionTrigger,
-  AccordionContent,
-} from "@/components/ui/accordion";
 import {
   Table,
   TableHeader,
@@ -17,11 +11,10 @@ import {
   TableHead,
   TableCell,
 } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useNutritionBuilderContext } from "@/contexts/nutrition-builder-context";
+import { History, ChevronDown } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { format } from "date-fns";
-import { History, Check, X } from "lucide-react";
 
 type PlanHistoryPlan = {
   id: string;
@@ -57,19 +50,17 @@ type NutritionPlanHistoryProps = {
 };
 
 export function NutritionPlanHistory({ clientId }: NutritionPlanHistoryProps) {
+  const [isOpen, setIsOpen] = useState(false);
   const { data, isLoading } = useSWR<HistoryResponse>(
     `/api/clients/${clientId}/nutrition/history`,
     swrFetcher,
     { revalidateOnFocus: false }
   );
-  const builder = useNutritionBuilderContext();
 
   if (isLoading) {
     return (
       <div className="space-y-3">
-        <Skeleton className="h-14 w-full rounded-md" />
-        <Skeleton className="h-14 w-full rounded-md" />
-        <Skeleton className="h-14 w-full rounded-md" />
+        <Skeleton className="h-14 w-full rounded-[6px]" />
       </div>
     );
   }
@@ -78,171 +69,119 @@ export function NutritionPlanHistory({ clientId }: NutritionPlanHistoryProps) {
 
   if (groups.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 text-center">
-        <div className="w-12 h-12 bg-muted rounded-full flex items-center justify-center mb-3">
-          <History className="h-6 w-6 text-muted-foreground" />
+      <div className="flex flex-col items-center justify-center py-12 text-center bg-white rounded-[6px]">
+        <div className="w-12 h-12 bg-[#f0f5f4] rounded-full flex items-center justify-center mb-3">
+          <History className="h-6 w-6 text-[#93b0b4]" />
         </div>
-        <p className="text-sm text-muted-foreground">No nutrition plan history yet</p>
+        <p className="text-sm text-[#93b0b4]">No nutrition plan history yet</p>
       </div>
     );
   }
 
-  return (
-    <div className="bg-card rounded-lg border border-border p-5">
-    <Accordion type="multiple" defaultValue={[]}>
-      {groups.map((group) => {
-        const key = group.phaseId ?? "pre-roadmap";
-        return (
-          <AccordionItem key={key} value={key}>
-            <AccordionTrigger className="hover:no-underline">
-              <PhaseGroupHeader group={group} formatWeight={builder.formatWeight} />
-            </AccordionTrigger>
-            <AccordionContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Label</TableHead>
-                    <TableHead>Calories</TableHead>
-                    <TableHead>Protein (g)</TableHead>
-                    <TableHead>Carbs (g)</TableHead>
-                    <TableHead>Fat (g)</TableHead>
-                    <TableHead>Goal Source</TableHead>
-                    <TableHead>Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {group.plans.map((plan, index) => {
-                    const label = index === 0 ? "Initial" : `Revision ${index}`;
-                    return (
-                      <Fragment key={plan.id}>
-                        <TableRow>
-                          <TableCell className="text-muted-foreground">
-                            {format(new Date(plan.createdAt), "MMM d, yyyy")}
-                          </TableCell>
-                          <TableCell>{label}</TableCell>
-                          <TableCell>{plan.baselineCalories.toLocaleString()}</TableCell>
-                          <TableCell>{Math.round(plan.proteinTargetG)}</TableCell>
-                          <TableCell>{Math.round(plan.carbTargetG)}</TableCell>
-                          <TableCell>{Math.round(plan.fatTargetG)}</TableCell>
-                          <TableCell>
-                            {plan.goalSource === "phase" && (
-                              <Badge variant="outline" className="text-xs">Phase</Badge>
-                            )}
-                            {plan.goalSource === "client" && (
-                              <Badge variant="outline" className="text-xs">Client</Badge>
-                            )}
-                            {!plan.goalSource && (
-                              <span className="text-muted-foreground">-</span>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            {plan.status === "active" ? (
-                              <Badge variant="success" className="text-xs">Active</Badge>
-                            ) : (
-                              <span className="text-muted-foreground">Archived</span>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                        {plan.coachNotes && (
-                          <TableRow>
-                            <TableCell colSpan={8} className="pt-0">
-                              <p className="border-l-2 border-muted-foreground/30 pl-3 text-sm italic text-muted-foreground">
-                                {plan.coachNotes}
-                              </p>
-                            </TableCell>
-                          </TableRow>
-                        )}
-                      </Fragment>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </AccordionContent>
-          </AccordionItem>
-        );
-      })}
-    </Accordion>
-    </div>
+  // Flatten all plans from all groups into a single array with derived labels
+  const allPlans = groups.flatMap((group) =>
+    group.plans.map((plan, index) => ({
+      ...plan,
+      label: index === 0 ? "Initial" : `Revision ${index}`,
+      source: plan.goalSource === "phase" ? "Phase" : plan.goalSource === "client" ? "Client" : null,
+    }))
   );
-}
 
-function PhaseGroupHeader({
-  group,
-  formatWeight,
-}: {
-  group: PlanHistoryGroup;
-  formatWeight: (kg: number) => string;
-}) {
-  const name = group.phaseId ? group.phaseName ?? "Phase" : "Pre-roadmap";
-
-  const dateRange = group.startDate
-    ? `${format(new Date(group.startDate), "MMM d")} – ${
-        group.endDate
-          ? format(new Date(group.endDate), "MMM d, yyyy")
-          : group.phaseStatus === "active"
-            ? "ongoing"
-            : ""
-      }`
-    : null;
-
-  const showWeight = group.phaseId != null && group.startWeight != null;
+  const totalRevisions = allPlans.length;
 
   return (
-    <div className="flex-1 text-left">
-      <div className="flex items-center gap-2">
-        <span className="text-base font-semibold text-foreground">{name}</span>
-        {dateRange && (
-          <span className="text-sm text-muted-foreground">{dateRange}</span>
-        )}
-        {group.phaseStatus === "active" && (
-          <Badge variant="success" className="text-xs">Active</Badge>
-        )}
-      </div>
+    <div className="bg-white rounded-[6px]">
+      {/* Clickable header */}
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between px-5 py-4 hover:bg-[#f0f5f4]/50 transition-colors rounded-[6px]"
+      >
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-semibold text-[#0c1a1e]">Plan History</span>
+          <span className="text-xs bg-[#e6edec] text-[#93b0b4] px-2 py-0.5 rounded-[6px] font-medium">
+            {totalRevisions}
+          </span>
+        </div>
+        <ChevronDown
+          className={cn(
+            "h-4 w-4 text-[#93b0b4] transition-transform duration-200",
+            isOpen && "rotate-180"
+          )}
+        />
+      </button>
 
-      {showWeight && (
-        <WeightContextLine group={group} formatWeight={formatWeight} />
+      {/* Collapsible body */}
+      {isOpen && (
+        <div className="border-t border-[rgba(13,148,136,0.05)]">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="text-[11px] uppercase tracking-[0.06em] text-[#93b0b4] font-medium">Date</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-[0.06em] text-[#93b0b4] font-medium">Label</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-[0.06em] text-[#93b0b4] font-medium">Calories</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-[0.06em] text-[#93b0b4] font-medium">Protein</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-[0.06em] text-[#93b0b4] font-medium">Carbs</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-[0.06em] text-[#93b0b4] font-medium">Fat</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-[0.06em] text-[#93b0b4] font-medium">Source</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-[0.06em] text-[#93b0b4] font-medium">Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {allPlans.map((plan) => (
+                <Fragment key={plan.id}>
+                  <TableRow>
+                    <TableCell className="text-sm text-[#93b0b4]">
+                      {format(new Date(plan.createdAt), "MMM d, yyyy")}
+                    </TableCell>
+                    <TableCell className="text-sm font-medium text-[#0c1a1e]">
+                      {plan.label}
+                    </TableCell>
+                    <TableCell className="text-sm font-mono-display text-[#0c1a1e]">
+                      {plan.baselineCalories.toLocaleString()}
+                    </TableCell>
+                    <TableCell className="text-sm font-mono-display text-protein">
+                      {Math.round(plan.proteinTargetG)}g
+                    </TableCell>
+                    <TableCell className="text-sm font-mono-display text-carbs">
+                      {Math.round(plan.carbTargetG)}g
+                    </TableCell>
+                    <TableCell className="text-sm font-mono-display text-fat">
+                      {Math.round(plan.fatTargetG)}g
+                    </TableCell>
+                    <TableCell>
+                      {plan.source ? (
+                        <span className="text-xs text-[#93b0b4]">{plan.source}</span>
+                      ) : (
+                        <span className="text-[#93b0b4]">&mdash;</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {plan.status === "active" ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-[6px] text-xs font-medium bg-[#e6f5f3] text-[#0d9488]">
+                          Active
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-[6px] text-xs font-medium bg-[#e6edec] text-[#93b0b4]">
+                          Archived
+                        </span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                  {plan.coachNotes && (
+                    <TableRow>
+                      <TableCell colSpan={8} className="pt-0">
+                        <p className="border-l-2 border-[#93b0b4]/30 pl-3 text-sm italic text-[#93b0b4]">
+                          {plan.coachNotes}
+                        </p>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </Fragment>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       )}
     </div>
-  );
-}
-
-function WeightContextLine({
-  group,
-  formatWeight,
-}: {
-  group: PlanHistoryGroup;
-  formatWeight: (kg: number) => string;
-}) {
-  const parts: string[] = [];
-  if (group.startWeight != null) parts.push(formatWeight(group.startWeight));
-  if (group.phaseGoalWeight != null) parts.push(`Goal: ${formatWeight(group.phaseGoalWeight)}`);
-  if (group.endWeight != null) {
-    const label = group.phaseStatus === "completed" ? "Actual" : "Current";
-    parts.push(`${label}: ${formatWeight(group.endWeight)}`);
-  }
-  let indicator: React.ReactNode = null;
-  if (
-    group.phaseStatus === "completed" &&
-    group.phaseGoalWeight != null &&
-    group.endWeight != null &&
-    group.startWeight != null
-  ) {
-    const isDeficit = group.phaseGoalWeight < group.startWeight;
-    const hit = isDeficit
-      ? group.endWeight <= group.phaseGoalWeight
-      : group.endWeight >= group.phaseGoalWeight;
-    indicator = hit ? (
-      <Check className="h-3.5 w-3.5 text-success inline ml-1" />
-    ) : (
-      <X className="h-3.5 w-3.5 text-destructive inline ml-1" />
-    );
-  }
-
-  return (
-    <p className="text-sm text-muted-foreground mt-0.5">
-      {parts.join(" → ")}
-      {indicator}
-    </p>
   );
 }

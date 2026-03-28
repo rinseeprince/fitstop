@@ -13,8 +13,8 @@
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0.004 260);
 
-  /* Brand — monochrome + one strong accent blue */
-  --primary: oklch(0.45 0.18 255);
+  /* Brand — teal accent */
+  --primary: oklch(0.585 0.1 180);
   --primary-foreground: oklch(0.99 0 0);
   --secondary: oklch(0.965 0.002 260);
   --secondary-foreground: oklch(0.25 0.004 260);
@@ -32,10 +32,10 @@
   --muted-foreground: oklch(0.556 0.01 260);
   --border: oklch(0.915 0.004 260);
   --input: oklch(0.915 0.004 260);
-  --ring: oklch(0.45 0.18 255);
+  --ring: oklch(0.585 0.1 180);
 
   /* Chart Colors */
-  --chart-1: oklch(0.45 0.18 255);
+  --chart-1: oklch(0.585 0.1 180);
   --chart-2: oklch(0.55 0.15 155);
   --chart-3: oklch(0.7 0.15 75);
   --chart-4: oklch(0.55 0.12 180);
@@ -48,12 +48,12 @@
   /* Sidebar */
   --sidebar: oklch(1 0 0);
   --sidebar-foreground: oklch(0.145 0.004 260);
-  --sidebar-primary: oklch(0.45 0.18 255);
+  --sidebar-primary: oklch(0.585 0.1 180);
   --sidebar-primary-foreground: oklch(0.99 0 0);
   --sidebar-accent: oklch(0.965 0.002 260);
   --sidebar-accent-foreground: oklch(0.145 0.004 260);
   --sidebar-border: oklch(0.915 0.004 260);
-  --sidebar-ring: oklch(0.45 0.18 255);
+  --sidebar-ring: oklch(0.585 0.1 180);
 
   /* Shadows — barely-there */
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
@@ -65,10 +65,11 @@
   --nutrition: oklch(0.6 0.14 55);
   --error: oklch(0.55 0.2 25);
 
-  /* Macro Nutrient Colors */
-  --protein: oklch(0.55 0.18 255);
-  --carbs: oklch(0.6 0.14 55);
-  --fat: oklch(0.55 0.15 25);
+  /* Macro Nutrient Colors — Teal Summit muted palette */
+  --protein: oklch(0.611 0.105 228.5);  /* #2d8fb5 cyan-blue */
+  --carbs: oklch(0.696 0.122 76.2);     /* #c8923a warm honey */
+  --fat: oklch(0.604 0.123 21.4);       /* #c06060 dusty rose */
+  --surplus: oklch(0.723 0.219 149.58);
 }
 
 .dark {
@@ -123,14 +124,15 @@
   --nutrition: oklch(0.65 0.14 55);
   --error: oklch(0.55 0.18 25);
 
-  /* Macro Nutrient Colors */
-  --protein: oklch(0.6 0.18 255);
-  --carbs: oklch(0.65 0.14 55);
-  --fat: oklch(0.6 0.15 25);
+  /* Macro Nutrient Colors — Teal Summit muted palette (dark mode) */
+  --protein: oklch(0.67 0.1 228.5);
+  --carbs: oklch(0.75 0.11 76.2);
+  --fat: oklch(0.66 0.11 21.4);
+  --surplus: oklch(0.75 0.2 149.58);
 }
 
 @theme inline {
-  --font-sans: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+  --font-sans: "Instrument Sans", system-ui, -apple-system, sans-serif;
   --font-mono: "Geist Mono", "Geist Mono Fallback";
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -164,6 +166,7 @@
   --color-protein: var(--protein);
   --color-carbs: var(--carbs);
   --color-fat: var(--fat);
+  --color-surplus: var(--surplus);
   --color-surface-muted: var(--muted);
   --color-surface-subtle: var(--background);
   --radius-xs: var(--radius-xs);
@@ -183,7 +186,7 @@
 
 @layer base {
   /*
-   * Typography Scale (Plus Jakarta Sans)
+   * Typography Scale (Instrument Sans)
    * ─────────────────────────────────────
    * Display : text-4xl  font-bold     tracking-tight  — hero numbers only
    * H1      : text-3xl  font-semibold tracking-tight  — page titles
@@ -228,5 +231,20 @@
 
   .font-mono-display {
     font-family: var(--font-mono-display), ui-monospace, monospace;
+  }
+
+  @keyframes cardIn {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .animate-card-in {
+    animation: cardIn 0.3s ease-out both;
   }
 }
