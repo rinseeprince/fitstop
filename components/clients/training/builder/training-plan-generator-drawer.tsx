@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useMemo } from "react";
 import {
   Sheet,
   SheetContent,
@@ -8,10 +8,9 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { useTrainingBuilderContext } from "@/contexts/training-builder-context";
-import { AIPromptPanel } from "./ai-prompt-panel";
-import { ManualWorkoutBuilder } from "./manual-workout-builder";
-import { ModeToggle } from "./mode-toggle";
-import { PhaseSelector } from "../../shared/phase-selector";
+import { TrainingDrawerHeader } from "./drawer-header";
+import { TrainingDrawerFormBody } from "./drawer-form-body";
+import { TrainingDrawerFooter } from "./drawer-footer";
 
 type TrainingPlanGeneratorDrawerProps = {
   open: boolean;
@@ -32,9 +31,7 @@ export function TrainingPlanGeneratorDrawer({
 
   // Auto-close drawer on successful generation
   useEffect(() => {
-    // Close when generation completes and we have a new/updated plan
     if (wasGenerating.current && !builder.isGenerating && builder.plan) {
-      // Only close if plan was created/changed (new plan ID or updated)
       if (builder.plan.id !== previousPlanId.current || previousPlanId.current === undefined) {
         onOpenChange(false);
       }
@@ -43,39 +40,59 @@ export function TrainingPlanGeneratorDrawer({
     previousPlanId.current = builder.plan?.id;
   }, [builder.isGenerating, builder.plan, onOpenChange]);
 
+  const title = builder.plan ? "Regenerate Training Plan" : "Generate Training Plan";
+
+  // Preview bar: show active plan data when available, fall back to selector values
+  const previewStats = useMemo(() => {
+    const plan = builder.plan;
+    const sessions = builder.trainingSessions;
+    if (plan && sessions.length > 0) {
+      const totalMin = sessions.reduce(
+        (sum, s) => sum + (s.estimatedDurationMinutes ?? 0),
+        0
+      );
+      const totalExercises = sessions.reduce(
+        (sum, s) => sum + s.exercises.length,
+        0
+      );
+      return {
+        sessions: plan.frequencyPerWeek,
+        totalMinutes: totalMin,
+        exercises: totalExercises,
+      };
+    }
+    return {
+      sessions: builder.sessionsPerWeek,
+      totalMinutes: builder.totalMinutesPerWeek,
+      exercises: builder.estimatedExercises,
+    };
+  }, [builder.plan, builder.trainingSessions, builder.sessionsPerWeek, builder.totalMinutesPerWeek, builder.estimatedExercises]);
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className="!inset-y-auto !h-auto !right-4 !top-4 !bottom-4 max-h-[calc(100vh-2rem)] w-[420px] rounded-lg border border-border shadow-md p-5 flex flex-col bg-card"
+        overlayClassName="bg-[rgba(15,32,39,0.35)] backdrop-blur-[2px]"
+        className="w-[420px] bg-[#f4f7f6] border-0 p-0 gap-0 flex flex-col inset-y-0 right-0 h-full data-[state=open]:animate-none data-[state=closed]:animate-none data-[state=open]:slide-in-from-right-0 [&>[data-slot=sheet-close]]:hidden animate-drawer-slide-in data-[state=closed]:slide-out-to-right data-[state=closed]:duration-300"
       >
-        <SheetHeader className="pb-4 border-b border-border px-0">
-          <SheetTitle className="text-lg font-semibold">
-            Generate Training Plan
-          </SheetTitle>
+        {/* Visually hidden title for accessibility */}
+        <SheetHeader className="sr-only">
+          <SheetTitle>{title}</SheetTitle>
         </SheetHeader>
 
-        <div className="pt-5 flex-1 overflow-y-auto px-0.5">
-          <ModeToggle className="w-full mb-5" />
+        <TrainingDrawerHeader
+          title={title}
+          sessionsPerWeek={previewStats.sessions}
+          totalMinutes={previewStats.totalMinutes}
+          estimatedExercises={previewStats.exercises}
+        />
 
-          {/* Phase Selector — shared across AI and Manual modes */}
-          <PhaseSelector
-            clientId={builder.clientId}
-            weightUnit={weightUnit}
-            value={builder.phaseId}
-            onChange={builder.setPhaseId}
-            onBlockSubmit={builder.setPhaseBlocked}
-          />
+        <TrainingDrawerFormBody
+          clientWeightKg={clientWeightKg}
+          weightUnit={weightUnit}
+        />
 
-          {/* Content */}
-          <div>
-            {builder.mode === "ai" ? (
-              <AIPromptPanel clientWeightKg={clientWeightKg} />
-            ) : (
-              <ManualWorkoutBuilder clientWeightKg={clientWeightKg} />
-            )}
-          </div>
-        </div>
+        <TrainingDrawerFooter />
       </SheetContent>
     </Sheet>
   );

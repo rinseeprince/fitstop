@@ -3,7 +3,6 @@
 import { memo, useId } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useTrainingBuilderContext } from "@/contexts/training-builder-context";
-import { cn } from "@/lib/utils";
 
 type SameDayTrainingCheckboxProps = {
   className?: string;
@@ -20,7 +19,7 @@ export const SameDayTrainingCheckbox = memo(function SameDayTrainingCheckbox({
   }
 
   return (
-    <div className={cn("flex items-start space-x-3 p-3 bg-muted/50 rounded-lg", className)}>
+    <div className={`flex items-start space-x-3 p-3 bg-[rgba(13,148,136,0.04)] rounded-[6px] ${className ?? ""}`}>
       <Checkbox
         id={id}
         checked={builder.allowSameDayTraining}
@@ -29,11 +28,11 @@ export const SameDayTrainingCheckbox = memo(function SameDayTrainingCheckbox({
       <div className="grid gap-1.5 leading-none">
         <label
           htmlFor={id}
-          className="text-sm font-medium cursor-pointer"
+          className="text-[13px] font-medium text-[#0c1a1e] cursor-pointer"
         >
           Client can train on activity days
         </label>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-[12px] text-[#93b0b4]">
           Enable for athletes or clients comfortable with multiple sessions per day
         </p>
       </div>

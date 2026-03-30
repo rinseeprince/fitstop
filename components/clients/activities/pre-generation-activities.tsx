@@ -10,7 +10,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { PreGenerationActivityItem } from "./pre-generation-activity-item";
 import { PreGenerationActivityForm } from "./pre-generation-activity-form";
-import { Plus, ChevronDown, ChevronRight, Activity } from "lucide-react";
+import { Plus, ChevronRight, Activity } from "lucide-react";
 import type { PreGenerationActivity } from "@/types/training";
 
 type PreGenerationActivitiesProps = {
@@ -40,38 +40,36 @@ export function PreGenerationActivities({
   };
 
   return (
-    <div className="border rounded-lg border-dashed border-muted-foreground/30 bg-muted/20">
+    <div className="border border-dashed border-[rgba(13,148,136,0.12)] bg-[rgba(13,148,136,0.02)] rounded-[6px]">
       <Collapsible open={isOpen} onOpenChange={setIsOpen}>
         <CollapsibleTrigger asChild>
           <Button
             variant="ghost"
-            className="w-full flex items-center justify-between p-4 h-auto"
+            className="w-full flex items-center justify-between p-4 h-auto hover:bg-[rgba(13,148,136,0.03)]"
           >
             <div className="flex items-center gap-2">
-              {isOpen ? (
-                <ChevronDown className="h-4 w-4" />
-              ) : (
-                <ChevronRight className="h-4 w-4" />
-              )}
-              <Activity className="h-4 w-4" />
-              <span className="font-medium">External Activities</span>
+              <ChevronRight
+                className={`h-4 w-4 text-[#93b0b4] transition-transform duration-200 ${isOpen ? "rotate-90" : ""}`}
+              />
+              <Activity className="h-4 w-4 text-[#93b0b4]" strokeWidth={1.5} />
+              <span className="text-[13px] font-medium text-[#93b0b4]">External Activities</span>
               {activities.length > 0 && (
-                <Badge variant="secondary" className="ml-2">
-                  {activities.length} {activities.length === 1 ? "activity" : "activities"}
+                <Badge variant="secondary" className="ml-1 bg-[rgba(13,148,136,0.05)] text-[#0d9488] border-0 text-[11px]">
+                  {activities.length}
                 </Badge>
               )}
             </div>
             {activities.length > 0 && totalCalories > 0 && (
-              <Badge variant="outline" className="text-warning">
-                +{totalCalories} cal/week
+              <Badge variant="outline" className="border-[rgba(13,148,136,0.08)] text-[#c8923a] text-[11px]">
+                +{totalCalories} cal/wk
               </Badge>
             )}
           </Button>
         </CollapsibleTrigger>
 
         <CollapsibleContent className="px-4 pb-4 space-y-3">
-          <p className="text-sm text-muted-foreground">
-            Add any recurring activities (sports, classes, etc.) so the AI can schedule workouts around them.
+          <p className="text-[12px] text-[#93b0b4] leading-[1.4]">
+            Add any recurring activities (swimming, cycling, BJJ, etc.) so the AI can schedule workouts around them.
           </p>
 
           {activities.length > 0 && (
@@ -96,7 +94,7 @@ export function PreGenerationActivities({
             <Button
               variant="outline"
               size="sm"
-              className="w-full"
+              className="w-full border-[rgba(13,148,136,0.08)] text-[#5a7d82] hover:bg-[rgba(13,148,136,0.03)] hover:border-[rgba(13,148,136,0.2)] rounded-[6px]"
               onClick={() => setShowAddForm(true)}
             >
               <Plus className="h-4 w-4 mr-2" />

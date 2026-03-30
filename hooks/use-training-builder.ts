@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useTrainingPlan } from "@/hooks/use-training-plan";
 import {
@@ -51,6 +51,22 @@ export function useTrainingBuilder({ clientId, onUpdate }: UseTrainingBuilderPro
   // ═══════════════════════════════════════════════════════════════════════════
   const [mode, setMode] = useState<BuilderMode>("ai");
   const [manualMode, setManualMode] = useState<ManualCreationMode>("template");
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // SESSION PARAMETERS (UI-only, drives preview bar)
+  // TODO: Include in generate() POST body when API supports session params
+  // ═══════════════════════════════════════════════════════════════════════════
+  const [sessionsPerWeek, setSessionsPerWeek] = useState(3);
+  const [sessionDuration, setSessionDuration] = useState(45);
+
+  const totalMinutesPerWeek = useMemo(
+    () => sessionsPerWeek * sessionDuration,
+    [sessionsPerWeek, sessionDuration]
+  );
+  const estimatedExercises = useMemo(
+    () => Math.round(sessionDuration / 7.5),
+    [sessionDuration]
+  );
 
   // ═══════════════════════════════════════════════════════════════════════════
   // AI SUGGESTIONS STATE
@@ -322,6 +338,8 @@ export function useTrainingBuilder({ clientId, onUpdate }: UseTrainingBuilderPro
     setAiSuggestions([]);
     setManualSessions([]);
     setSelectedTemplate(null);
+    setSessionsPerWeek(3);
+    setSessionDuration(45);
     trainingPlan.setPrompt("");
     trainingPlan.setPreGenerationActivities([]);
   }, [trainingPlan]);
@@ -335,6 +353,14 @@ export function useTrainingBuilder({ clientId, onUpdate }: UseTrainingBuilderPro
     setMode,
     manualMode,
     setManualMode,
+
+    // Session parameters (UI-only, drives preview bar)
+    sessionsPerWeek,
+    setSessionsPerWeek,
+    sessionDuration,
+    setSessionDuration,
+    totalMinutesPerWeek,
+    estimatedExercises,
 
     // AI suggestions
     selectedSuggestionIds,

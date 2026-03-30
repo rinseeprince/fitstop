@@ -132,7 +132,7 @@
   ## 5. Code Style
   - Use Tailwind for styling
   - Lucide icons only
-  - Plus Jakarta Sans font family
+  - Instrument Sans (UI text) + JetBrains Mono (numerical data) - see DESIGNSYSTEM.md for full typography spec
   - Async/await over promises
   - Named exports over default
   - No `as any` type casts - use proper types from `types/database.ts`. If extending an existing type, create a local interface.
@@ -362,7 +362,7 @@
   ## 16. References
   - **docs/ARCHITECTURE.md**: Database schema diagrams, table hierarchies, JSONB conventions. Evolves with migrations - update when shipping schema changes.
   - **Daily Pulse README**: Full architectural documentation for the Daily Pulse feature, including data flow, component structure, and rules that must not be violated. Claude Code should read this before modifying any Daily Pulse related code.
-  - **DESIGNSYSTEM.md**: Visual patterns, colour tokens, spacing, component styling conventions.
+  - **DESIGNSYSTEM.md**: Visual patterns, colour tokens, spacing, component styling conventions. This is the authoritative source for all visual tokens and takes precedence over any inline references in other sections.
   - **TECHNICAL-DEBT.md**: Known gaps between conventions and current implementation.
 
   ## 17. Logging
