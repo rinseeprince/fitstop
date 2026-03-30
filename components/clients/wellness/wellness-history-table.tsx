@@ -110,11 +110,6 @@ export function WellnessHistoryTable({ clientId }: Props) {
     { key: "energy", label: "Energy", render: (_v, row) => renderMetricCell("energy", row.energy, 10) },
     { key: "sleep", label: "Sleep", render: (_v, row) => renderMetricCell("sleep", row.sleep, 10) },
     { key: "stress", label: "Stress", render: (_v, row) => renderMetricCell("stress", row.stress, 10) },
-    { key: "notes", label: "Notes", render: (_v, row) => {
-      if (!row.notes) return <span className="text-[#93b0b4] italic">-</span>;
-      const text = row.notes.length > 50 ? row.notes.slice(0, 47) + "..." : row.notes;
-      return <span className="text-[12.5px] text-[#5a7d82]" title={row.notes.length > 50 ? row.notes : undefined}>{text}</span>;
-    }},
   ], []);
 
   return (

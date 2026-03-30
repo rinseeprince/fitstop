@@ -18,7 +18,6 @@ export type WellnessHistoryRow = {
   energy: number | null;  // 1-10
   sleep: number | null;   // 1-10
   stress: number | null;  // 1-10
-  notes: string | null;
 };
 
 export type BodyMetricsHistoryRow = {
@@ -60,4 +59,39 @@ export type TrainingHistoryRow = {
   is_alternative: boolean;
   completion_quality: "full" | "partial" | "skipped" | null;
   notes: string | null;
+};
+
+// Weekly habits tracker types
+
+export type WeeklyHabitDayStatus = 'completed' | 'missed' | 'pending' | 'future' | 'not-tracked';
+
+export type WeeklyHabitDay = {
+  date: string;
+  completed: boolean;
+  value: number | null;
+  status: WeeklyHabitDayStatus;
+};
+
+export type WeeklyHabitRow = {
+  habitId: string;
+  habitName: string;
+  isBoolean: boolean;
+  targetValue: number | null;
+  targetUnit: string | null;
+  days: WeeklyHabitDay[];
+  weeklyRate: number;
+};
+
+export type WeekSummary = {
+  todayCompleted: number;
+  todayTotal: number;
+  weeklyRate: number;
+  activeCount: number;
+  allHabitsStreak: number;
+};
+
+export type WeeklyHabitsResponse = {
+  habits: WeeklyHabitRow[];
+  summary: WeekSummary;
+  weekDays: string[];
 };

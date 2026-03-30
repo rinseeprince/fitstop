@@ -130,3 +130,24 @@ export const getTrainingWeekEnd = (
   start.setDate(start.getDate() + 6);
   return getDateString(start);
 };
+
+/**
+ * Returns an array of 7 dates for the training week containing the given date.
+ * Uses getTrainingWeekStart to determine the first day based on the client's check-in day.
+ * @param {string} dateString - Date in YYYY-MM-DD format
+ * @param {string | null} checkInDay - Client's check-in day (e.g. "wednesday"). Defaults to Monday start.
+ * @returns {string[]} Array of 7 dates in YYYY-MM-DD format
+ */
+export const getTrainingWeekDays = (
+  dateString: string,
+  checkInDay?: string | null
+): string[] => {
+  const start = getTrainingWeekStart(dateString, checkInDay);
+  const days: string[] = [];
+  for (let i = 0; i < 7; i++) {
+    const date = new Date(start + 'T00:00:00');
+    date.setDate(date.getDate() + i);
+    days.push(getDateString(date));
+  }
+  return days;
+};

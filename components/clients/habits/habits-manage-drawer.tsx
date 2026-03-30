@@ -4,14 +4,15 @@ import { useState } from "react";
 import {
   Sheet,
   SheetContent,
+  SheetClose,
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, Plus } from "lucide-react";
+import { Search, Plus, ListChecks, X } from "lucide-react";
 import { HabitListItem } from "./habit-list-item";
-import { AddHabitDialog } from "./add-habit-dialog";
+import { AddHabitInlineForm } from "./add-habit-inline-form";
 import type { DailyHabit, DailyHabitInput } from "@/types/daily-habit";
 import type { HabitStats } from "@/services/daily-habits-stats";
 
@@ -42,7 +43,7 @@ export function HabitsManageDrawer({
   onReactivateHabit,
   onReorderHabits,
 }: HabitsManageDrawerProps) {
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [showAddForm, setShowAddForm] = useState(false);
   const [editingHabitId, setEditingHabitId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -53,28 +54,18 @@ export function HabitsManageDrawer({
     : habits;
 
   const handleMoveUp = async (habitId: string) => {
-    const currentIndex = filteredHabits.findIndex((h) => h.id === habitId);
-    if (currentIndex <= 0) return;
-
+    const idx = filteredHabits.findIndex((h) => h.id === habitId);
+    if (idx <= 0) return;
     const newOrder = [...filteredHabits];
-    [newOrder[currentIndex - 1], newOrder[currentIndex]] = [
-      newOrder[currentIndex],
-      newOrder[currentIndex - 1],
-    ];
-
+    [newOrder[idx - 1], newOrder[idx]] = [newOrder[idx], newOrder[idx - 1]];
     await onReorderHabits(newOrder.map((h) => h.id));
   };
 
   const handleMoveDown = async (habitId: string) => {
-    const currentIndex = filteredHabits.findIndex((h) => h.id === habitId);
-    if (currentIndex === -1 || currentIndex >= filteredHabits.length - 1) return;
-
+    const idx = filteredHabits.findIndex((h) => h.id === habitId);
+    if (idx === -1 || idx >= filteredHabits.length - 1) return;
     const newOrder = [...filteredHabits];
-    [newOrder[currentIndex], newOrder[currentIndex + 1]] = [
-      newOrder[currentIndex + 1],
-      newOrder[currentIndex],
-    ];
-
+    [newOrder[idx], newOrder[idx + 1]] = [newOrder[idx + 1], newOrder[idx]];
     await onReorderHabits(newOrder.map((h) => h.id));
   };
 
@@ -82,41 +73,74 @@ export function HabitsManageDrawer({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className="!inset-y-auto !h-auto !right-4 !top-4 !bottom-4 max-h-[calc(100vh-2rem)] w-[420px] rounded-lg border border-border shadow-md p-5 flex flex-col bg-card"
+        overlayClassName="bg-[rgba(15,32,39,0.35)] backdrop-blur-[2px]"
+        className="w-[420px] bg-[#f4f7f6] border-0 p-0 gap-0 flex flex-col inset-y-0 right-0 h-full [&>[data-slot=sheet-close]]:hidden animate-drawer-slide-in data-[state=closed]:slide-out-to-right data-[state=closed]:duration-300"
       >
-        <SheetHeader className="pb-4 border-b border-border px-0">
-          <SheetTitle className="text-lg font-semibold">
-            Manage Habits
-          </SheetTitle>
+        {/* Visually hidden title for accessibility */}
+        <SheetHeader className="sr-only">
+          <SheetTitle>Manage Habits</SheetTitle>
         </SheetHeader>
 
-        <div className="pt-5 flex-1 overflow-y-auto px-0.5 space-y-4">
+        {/* Dark header */}
+        <div className="bg-[#0f2027] px-6 pt-5 pb-5 flex-shrink-0">
+          <div className="flex items-start gap-3">
+            <div className="w-[28px] h-[28px] rounded-[6px] bg-[rgba(13,148,136,0.15)] flex items-center justify-center flex-shrink-0">
+              <ListChecks className="w-[15px] h-[15px] text-[#0d9488]" strokeWidth={1.5} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h2 className="text-[16px] font-bold text-white leading-tight">
+                Manage Habits
+              </h2>
+              <p className="text-[12px] text-[rgba(255,255,255,0.4)] mt-1 leading-[1.4]">
+                Add, edit, and reorder your client&apos;s daily habits.
+              </p>
+            </div>
+            <SheetClose className="w-[32px] h-[32px] rounded-[6px] bg-[rgba(255,255,255,0.06)] flex items-center justify-center flex-shrink-0 hover:bg-[rgba(255,255,255,0.1)] transition-colors">
+              <X className="w-4 h-4 text-[rgba(255,255,255,0.5)]" strokeWidth={1.5} />
+              <span className="sr-only">Close</span>
+            </SheetClose>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto px-5 pt-5 pb-20 space-y-3">
           {/* Search */}
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#93b0b4]" />
             <Input
               placeholder="Search habits..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9"
+              className="pl-9 bg-[#f4f7f6] border-[rgba(13,148,136,0.08)] focus-visible:ring-[#0d9488] text-[13px]"
             />
           </div>
 
-          {/* Add Habit Button */}
-          <Button
-            onClick={() => setIsAddDialogOpen(true)}
-            className="w-full"
-            size="sm"
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            Add Habit
-          </Button>
+          {/* Add button / inline form */}
+          {showAddForm ? (
+            <AddHabitInlineForm
+              clientId={clientId}
+              onSubmit={async (data) => {
+                await onCreateHabit(data);
+                setShowAddForm(false);
+              }}
+              onCancel={() => setShowAddForm(false)}
+            />
+          ) : (
+            <Button
+              onClick={() => setShowAddForm(true)}
+              className="w-full bg-[#0d9488] hover:bg-[#0f766e] text-white text-[12px] font-medium"
+              size="sm"
+            >
+              <Plus className="h-3.5 w-3.5 mr-1.5" strokeWidth={2} />
+              Add Habit
+            </Button>
+          )}
 
-          {/* Habits List */}
+          {/* Habit list */}
           {filteredHabits.length === 0 ? (
             <div className="text-center py-8">
-              <p className="text-sm text-muted-foreground">
-                {searchQuery ? "No habits match your search" : "No habits yet. Add one above to get started."}
+              <p className="text-[13px] text-[#93b0b4]">
+                {searchQuery ? "No habits match your search" : "No habits yet. Add one above."}
               </p>
             </div>
           ) : (
@@ -145,18 +169,8 @@ export function HabitsManageDrawer({
             </div>
           )}
         </div>
-
-        {/* Add Habit Dialog */}
-        <AddHabitDialog
-          clientId={clientId}
-          open={isAddDialogOpen}
-          onOpenChange={setIsAddDialogOpen}
-          onSubmit={async (data) => {
-            await onCreateHabit(data);
-            setIsAddDialogOpen(false);
-          }}
-        />
       </SheetContent>
     </Sheet>
   );
 }
+

@@ -16,7 +16,6 @@ import { MetricSaveDialog } from "@/components/clients/check-in/metric-save-dial
 import { HabitsTabContent } from "@/components/clients/habits/habits-tab-content"
 import { RoadmapTabContent } from "@/components/clients/roadmap/roadmap-tab-content"
 import { WellnessTabContent } from "@/components/clients/wellness/wellness-tab-content"
-import { HabitsHistoryTable } from "@/components/clients/habits/habits-history-table"
 import { useCheckInData, useClient } from "@/hooks/use-check-in-data"
 import type { CheckIn } from "@/types/check-in"
 import { useClientMetrics } from "@/hooks/use-client-metrics"
@@ -167,7 +166,6 @@ export default function ClientProfilePage() {
                 client={client}
                 onUpdate={() => mutateClient()}
               />
-              <HabitsHistoryTable clientId={client.id} />
             </TabsContent>
 
             {/* Notes Tab */}

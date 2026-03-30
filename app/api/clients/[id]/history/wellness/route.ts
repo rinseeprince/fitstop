@@ -9,8 +9,7 @@ const WELLNESS_COLUMNS = `
   mood,
   energy,
   sleep,
-  stress,
-  notes
+  stress
 `.replace(/\s+/g, " ").trim();
 
 export async function GET(

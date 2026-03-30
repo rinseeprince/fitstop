@@ -1,7 +1,6 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { CompletionBadge } from "./completion-badge";
 import { EditHabitInline } from "./edit-habit-inline";
 import { HabitActions } from "./habit-actions";
 import { Button } from "@/components/ui/button";
@@ -81,10 +80,6 @@ export const HabitListItem = ({
           )}
         </div>
         <div className="flex items-center gap-2">
-          {/* Completion Badge */}
-          {habit.stats && (
-            <CompletionBadge completionRate={habit.stats.completionRate} />
-          )}
           {/* Actions - visible on hover */}
           {habit.isActive ? (
             <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-150">
