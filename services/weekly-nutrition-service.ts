@@ -28,9 +28,10 @@ export function calculateWeeklySummaryFromLogs(
   logs: DailyLog[],
   weekStartDate: string,
   daysInWeek = 7,
-  fullWeekTargets?: FullWeekTargets
+  fullWeekTargets?: FullWeekTargets,
+  weekEndDateOverride?: string
 ): Omit<WeeklyNutritionSummary, "id" | "clientId" | "createdAt" | "updatedAt"> {
-  const weekEndDate = getWeekEnd(weekStartDate);
+  const weekEndDate = weekEndDateOverride ?? getWeekEnd(weekStartDate);
 
   let totalCaloriesConsumed = 0;
   let totalTargetCalories = 0;
@@ -309,6 +310,71 @@ export async function getWeeklySummaries(
   }
 
   return (data || []).map(mapRowToSummary);
+}
+
+/**
+ * Computes a nutrition summary for an arbitrary date range by querying
+ * nutrition_logs directly, bypassing the Mon-Sun pre-aggregated
+ * nutrition_weekly_summaries table. Used by the check-in AI summary
+ * pipeline so the period aligns to the client's check-in day.
+ */
+export async function getNutritionSummaryForPeriod(
+  clientId: string,
+  startDate: string,
+  endDate: string
+): Promise<WeeklyNutritionSummary | null> {
+  type NutritionRow = {
+    id: string; client_id: string; date: string;
+    calories_consumed: number | null; protein_g: number | null; carbs_g: number | null; fat_g: number | null;
+    target_calories: number | null; target_protein_g: number | null; target_carbs_g: number | null; target_fat_g: number | null;
+    created_at: string; updated_at: string;
+  };
+
+  const { data: rows, error } = await supabaseAdmin
+    .from("nutrition_logs" as never)
+    .select("id, client_id, date, calories_consumed, protein_g, carbs_g, fat_g, target_calories, target_protein_g, target_carbs_g, target_fat_g, created_at, updated_at")
+    .eq("client_id" as never, clientId as never)
+    .gte("date" as never, startDate as never)
+    .lte("date" as never, endDate as never)
+    .order("date" as never, { ascending: true }) as unknown as { data: NutritionRow[] | null; error: { message: string } | null };
+
+  if (error) {
+    console.error("Failed to fetch nutrition logs for period summary:", error.message);
+    throw new Error("Failed to fetch nutrition logs for period summary");
+  }
+
+  if (!rows || rows.length === 0) return null;
+
+  const logs: DailyLog[] = rows.map((r) => ({
+    id: r.id,
+    clientId: r.client_id,
+    date: r.date,
+    caloriesConsumed: r.calories_consumed ?? undefined,
+    proteinG: r.protein_g ?? undefined,
+    carbsG: r.carbs_g ?? undefined,
+    fatG: r.fat_g ?? undefined,
+    targetCalories: r.target_calories ?? undefined,
+    targetProteinG: r.target_protein_g ?? undefined,
+    targetCarbsG: r.target_carbs_g ?? undefined,
+    targetFatG: r.target_fat_g ?? undefined,
+    nutritionAdherence: undefined,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  }));
+
+  const startMs = new Date(startDate + "T00:00:00").getTime();
+  const endMs = new Date(endDate + "T00:00:00").getTime();
+  const daysInPeriod = Math.round((endMs - startMs) / (1000 * 60 * 60 * 24)) + 1;
+
+  const summary = calculateWeeklySummaryFromLogs(logs, startDate, daysInPeriod, undefined, endDate);
+
+  return {
+    ...summary,
+    id: "",
+    clientId,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
 }
 
 /**

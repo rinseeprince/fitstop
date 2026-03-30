@@ -7,7 +7,7 @@ import { getClientById } from "@/services/client-service";
 import { generateCheckInSummary, regenerateAISummary } from "@/services/ai-service";
 import { getDailyLogs } from "@/services/daily-logs-service";
 import { getHabitLogs } from "@/services/daily-habits-service";
-import { getWeeklySummaries } from "@/services/weekly-nutrition-service";
+import { getNutritionSummaryForPeriod } from "@/services/weekly-nutrition-service";
 import { calculateCheckInPeriod } from "@/lib/date-utils";
 import type { GenerateAISummaryResponse } from "@/types/check-in";
 import { aiRateLimit } from "@/lib/rate-limit";
@@ -80,14 +80,14 @@ export async function POST(
     // Fetch daily tracking context and weekly nutrition summary for the period
     let dailyLogs, habitLogs, weeklySummary;
     try {
-      const [logs, habits, summaries] = await Promise.all([
+      const [logs, habits, periodSummary] = await Promise.all([
         getDailyLogs(currentCheckIn.clientId, startDateStr, endDateStr),
         getHabitLogs(currentCheckIn.clientId, startDateStr, endDateStr),
-        getWeeklySummaries(currentCheckIn.clientId, startDateStr, endDateStr),
+        getNutritionSummaryForPeriod(currentCheckIn.clientId, startDateStr, endDateStr),
       ]);
       dailyLogs = logs;
       habitLogs = habits;
-      weeklySummary = summaries[0] ?? null;
+      weeklySummary = periodSummary;
     } catch (error) {
       // If daily tracking fetch fails, continue without it
       console.error('Error fetching daily tracking data:', error instanceof Error ? error.message : 'Unknown error');

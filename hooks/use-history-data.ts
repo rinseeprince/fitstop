@@ -4,6 +4,7 @@ import { swrFetcher } from "@/lib/swr-fetcher";
 type HistoryResponse<T> = {
   rows: T[];
   total: number;
+  [key: string]: unknown;
 };
 
 export function useHistoryData<T>(
@@ -27,6 +28,7 @@ export function useHistoryData<T>(
   return {
     rows: data?.rows || [],
     total: data?.total || 0,
+    extra: data || {},
     isLoading,
     isError: error,
     mutate,

@@ -15,7 +15,7 @@ import { recordBodyMetrics } from "@/services/body-metrics-service";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { getDailyLogs } from "@/services/daily-logs-service";
 import { getHabitLogs } from "@/services/daily-habits-service";
-import { getWeeklySummaries } from "@/services/weekly-nutrition-service";
+import { getNutritionSummaryForPeriod } from "@/services/weekly-nutrition-service";
 import { calculateCheckInPeriod } from "@/lib/date-utils";
 import type { SubmitCheckInRequest, CheckInFormData, Client } from "@/types/check-in";
 
@@ -74,14 +74,14 @@ export async function triggerAISummaryGeneration(
     // Fetch daily tracking context and weekly nutrition summary for the period
     let dailyLogs, habitLogs, weeklySummary;
     try {
-      const [logs, habits, summaries] = await Promise.all([
+      const [logs, habits, periodSummary] = await Promise.all([
         getDailyLogs(clientId, startDateStr, endDateStr),
         getHabitLogs(clientId, startDateStr, endDateStr),
-        getWeeklySummaries(clientId, startDateStr, endDateStr),
+        getNutritionSummaryForPeriod(clientId, startDateStr, endDateStr),
       ]);
       dailyLogs = logs;
       habitLogs = habits;
-      weeklySummary = summaries[0] ?? null;
+      weeklySummary = periodSummary;
     } catch (error) {
       // If daily tracking fetch fails, continue without it
       console.error('Error fetching daily tracking data:', error instanceof Error ? error.message : 'Unknown error');

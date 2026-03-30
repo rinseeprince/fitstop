@@ -13,6 +13,8 @@ import { Info } from "lucide-react";
 import { useHistoryData } from "@/hooks/use-history-data";
 import { useTrainingBuilderContext } from "@/contexts/training-builder-context";
 import { SPLIT_TYPE_LABELS } from "@/lib/training-constants";
+import { getTodayDateString, getDateDaysFrom } from "@/lib/date-helpers";
+import { countPlannedSessions } from "@/utils/training-week-helpers";
 import type { TrainingHistoryRow } from "@/types/history";
 
 function formatDate(dateStr: string) {
@@ -70,14 +72,15 @@ type Props = {
 
 export function TrainingHistoryTable({ clientId }: Props) {
   const builder = useTrainingBuilderContext();
-  const { plan } = builder;
+  const { plan, activePhase } = builder;
   const [page, setPage] = useState(0);
   const [chartColumn, setChartColumn] = useState<string | null>(null);
 
-  const { rows, total, isLoading } = useHistoryData<TrainingHistoryRow>(
+  const { rows, total, extra, isLoading } = useHistoryData<TrainingHistoryRow>(
     `/api/clients/${clientId}/history/training`,
     page
   );
+  const trainingWeekStart = (extra as { trainingWeekStart?: string }).trainingWeekStart;
 
   const handleColumnClick = useCallback((key: string) => {
     setChartColumn(key);
@@ -96,9 +99,20 @@ export function TrainingHistoryTable({ clientId }: Props) {
   // Compute summary stats from available rows
   const summaryStats = useMemo(() => {
     const completed = rows.filter((r) => r.completion_quality === "full").length;
-    const missed = rows.filter((r) => r.completion_quality === "skipped").length;
-    const totalRows = rows.length;
-    const adherencePct = totalRows > 0 ? Math.round((completed / totalRows) * 100) : 0;
+
+    // Planned sessions this week: count sessions whose dayOfWeek falls between
+    // max(weekStart, planStartDate) and today. Handles partial weeks correctly.
+    let totalPlanned = total;
+    if (plan && trainingWeekStart) {
+      const planStart = activePhase?.startDate || plan.createdAt.split("T")[0];
+      const rangeStart = planStart > trainingWeekStart ? planStart : trainingWeekStart;
+      const today = getTodayDateString();
+      const weekEnd = getDateDaysFrom(new Date(trainingWeekStart + "T00:00:00"), 6);
+      const rangeEnd = today < weekEnd ? today : weekEnd;
+      totalPlanned = countPlannedSessions(plan.sessions, rangeStart, rangeEnd);
+    }
+
+    const adherencePct = totalPlanned > 0 ? Math.round((completed / totalPlanned) * 100) : 0;
 
     // Current streak: count consecutive completed from most recent
     let streak = 0;
@@ -110,8 +124,11 @@ export function TrainingHistoryTable({ clientId }: Props) {
       }
     }
 
-    return { completed, missed, totalRows, adherencePct, streak, totalPlanned: total };
-  }, [rows, total]);
+    // Missed = planned sessions that weren't completed (includes unlogged days)
+    const missed = Math.max(0, totalPlanned - completed);
+
+    return { completed, missed, adherencePct, streak, totalPlanned };
+  }, [rows, total, plan, activePhase, trainingWeekStart]);
 
   const columns: ColumnDef<TrainingHistoryRow>[] = useMemo(
     () => [
@@ -235,7 +252,7 @@ export function TrainingHistoryTable({ clientId }: Props) {
                 </span>
               </p>
               <p className="text-[11px] text-[rgba(255,255,255,0.3)] font-mono-display mt-1">
-                {summaryStats.completed}/{summaryStats.totalRows} sessions
+                {summaryStats.completed}/{summaryStats.totalPlanned} sessions
               </p>
             </>
           )}

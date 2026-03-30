@@ -1,6 +1,6 @@
 import { supabaseAdmin } from "./supabase-admin";
 import type { TrainingHistoryRow } from "@/types/history";
-import { getTrainingWeekStart } from "@/lib/date-helpers";
+import { getTrainingWeekStart, getTodayDateString } from "@/lib/date-helpers";
 
 type TrainingData = {
   trainingSessionName?: string;
@@ -39,7 +39,7 @@ export async function getTrainingHistory(
   clientId: string,
   options: { limit: number; offset: number },
   checkInDay?: string | null
-): Promise<{ rows: TrainingHistoryRow[]; total: number }> {
+): Promise<{ rows: TrainingHistoryRow[]; total: number; trainingWeekStart: string }> {
   const { limit, offset } = options;
 
   // Query A: Primary source - training_logs where trained = true
@@ -175,8 +175,11 @@ export async function getTrainingHistory(
     (a, b) => b.date.localeCompare(a.date)
   );
 
+  const trainingWeekStart = getTrainingWeekStart(getTodayDateString(), checkInDay);
+
   return {
     rows: allRows.slice(offset, offset + limit),
     total: allRows.length,
+    trainingWeekStart,
   };
 }
