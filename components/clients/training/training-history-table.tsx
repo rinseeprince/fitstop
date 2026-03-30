@@ -1,10 +1,18 @@
 "use client";
 
 import { useState, useMemo, useCallback } from "react";
-import { Card, CardContent } from "@/components/ui/card";
 import { HistoryTable, type ColumnDef } from "@/components/clients/history-table/history-table";
 import { HistoryChartDialog } from "@/components/clients/history-table/history-chart-dialog";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { Info } from "lucide-react";
 import { useHistoryData } from "@/hooks/use-history-data";
+import { useTrainingBuilderContext } from "@/contexts/training-builder-context";
+import { SPLIT_TYPE_LABELS } from "@/lib/training-constants";
 import type { TrainingHistoryRow } from "@/types/history";
 
 function formatDate(dateStr: string) {
@@ -18,32 +26,32 @@ function formatDay(dateStr: string) {
 }
 
 function renderDash() {
-  return <span className="text-muted-foreground">-</span>;
+  return <span className="text-[#93b0b4]">—</span>;
 }
 
 function renderStatus(quality: TrainingHistoryRow["completion_quality"]) {
   switch (quality) {
     case "full":
       return (
-        <span className="text-xs font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
+        <span className="inline-flex items-center px-2 py-0.5 rounded-[6px] text-xs font-medium bg-[rgba(13,148,136,0.08)] text-[#0d9488]">
           Completed
         </span>
       );
     case "partial":
       return (
-        <span className="text-xs font-medium text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">
+        <span className="inline-flex items-center px-2 py-0.5 rounded-[6px] text-xs font-medium bg-amber-50 text-amber-600">
           Partial
         </span>
       );
     case "skipped":
       return (
-        <span className="text-xs font-medium text-red-600 bg-red-50 px-2 py-0.5 rounded-full">
-          Skipped
+        <span className="inline-flex items-center px-2 py-0.5 rounded-[6px] text-xs font-medium bg-[rgba(192,96,96,0.08)] text-[#c06060]">
+          Missed
         </span>
       );
     default:
       return (
-        <span className="text-xs font-medium text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
+        <span className="inline-flex items-center px-2 py-0.5 rounded-[6px] text-xs font-medium bg-[#e6edec] text-[#93b0b4]">
           Logged
         </span>
       );
@@ -61,6 +69,8 @@ type Props = {
 };
 
 export function TrainingHistoryTable({ clientId }: Props) {
+  const builder = useTrainingBuilderContext();
+  const { plan } = builder;
   const [page, setPage] = useState(0);
   const [chartColumn, setChartColumn] = useState<string | null>(null);
 
@@ -83,56 +93,201 @@ export function TrainingHistoryTable({ clientId }: Props) {
     }));
   }, [chartColumn, rows]);
 
-  const columns: ColumnDef<TrainingHistoryRow>[] = useMemo(() => [
-    {
-      key: "date",
-      label: "Date",
-      render: (_v, row) => formatDate(row.date),
-    },
-    {
-      key: "day",
-      label: "Day",
-      render: (_v, row) => formatDay(row.date),
-    },
-    {
-      key: "session_name",
-      label: "Session",
-      render: (_v, row) => row.session_name || renderDash(),
-    },
-    {
-      key: "is_alternative",
-      label: "Alt?",
-      render: (_v, row) =>
-        row.is_alternative ? (
-          <span className="text-xs font-medium text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">
-            Alt
+  // Compute summary stats from available rows
+  const summaryStats = useMemo(() => {
+    const completed = rows.filter((r) => r.completion_quality === "full").length;
+    const missed = rows.filter((r) => r.completion_quality === "skipped").length;
+    const totalRows = rows.length;
+    const adherencePct = totalRows > 0 ? Math.round((completed / totalRows) * 100) : 0;
+
+    // Current streak: count consecutive completed from most recent
+    let streak = 0;
+    for (const row of rows) {
+      if (row.completion_quality === "full") {
+        streak++;
+      } else {
+        break;
+      }
+    }
+
+    return { completed, missed, totalRows, adherencePct, streak, totalPlanned: total };
+  }, [rows, total]);
+
+  const columns: ColumnDef<TrainingHistoryRow>[] = useMemo(
+    () => [
+      {
+        key: "date",
+        label: "Date",
+        render: (_v, row) => (
+          <span className="font-mono-display text-[#93b0b4]">
+            {formatDate(row.date)}
           </span>
-        ) : (
-          renderDash()
         ),
-    },
-    {
-      key: "completion_quality",
-      label: "Status",
-      chartType: "bar" as const,
-      render: (_v, row) => renderStatus(row.completion_quality),
-    },
-    {
-      key: "notes",
-      label: "Notes",
-      render: (_v, row) => {
-        if (!row.notes) return renderDash();
-        const truncated = row.notes.length > 50
-          ? row.notes.slice(0, 50) + "..."
-          : row.notes;
-        return <span className="text-sm text-muted-foreground">{truncated}</span>;
       },
-    },
-  ], []);
+      {
+        key: "day",
+        label: "Day",
+        render: (_v, row) => (
+          <span className="text-[#0c1a1e] font-medium">{formatDay(row.date)}</span>
+        ),
+      },
+      {
+        key: "session_name",
+        label: "Session",
+        render: (_v, row) =>
+          row.session_name ? (
+            <span className="text-[#0c1a1e]">{row.session_name}</span>
+          ) : (
+            renderDash()
+          ),
+      },
+      {
+        key: "completion_quality",
+        label: "Status",
+        chartType: "bar" as const,
+        render: (_v, row) => renderStatus(row.completion_quality),
+      },
+      {
+        key: "notes",
+        label: "Notes",
+        render: (_v, row) => {
+          if (!row.notes) return renderDash();
+          const truncated =
+            row.notes.length > 50 ? row.notes.slice(0, 50) + "..." : row.notes;
+          return <span className="text-sm text-[#93b0b4]">{truncated}</span>;
+        },
+      },
+    ],
+    []
+  );
 
   return (
-    <Card>
-      <CardContent className="pt-6">
+    <div className="flex flex-col gap-4">
+      {/* Dark summary strip */}
+      <div className="bg-[#0f2027] rounded-[6px] p-5">
+        {/* Program info row */}
+        {plan && (
+          <div className="flex items-center justify-between mb-3 pb-3 border-b border-[rgba(255,255,255,0.06)]">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[12px] font-medium text-[rgba(255,255,255,0.5)]">
+                {plan.name}
+              </span>
+              {plan.description && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Info className="h-3 w-3 text-[rgba(255,255,255,0.3)] cursor-help" />
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="max-w-xs">
+                    <p className="text-sm">{plan.description}</p>
+                  </TooltipContent>
+                </Tooltip>
+              )}
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="bg-[rgba(255,255,255,0.12)] text-[rgba(255,255,255,0.4)] text-[10px] px-1.5 py-0.5 rounded-[3px] font-medium">
+                {SPLIT_TYPE_LABELS[plan.splitType] || plan.splitType}
+              </span>
+              <span className="bg-[rgba(255,255,255,0.12)] text-[rgba(255,255,255,0.4)] text-[10px] px-1.5 py-0.5 rounded-[3px] font-medium">
+                {plan.frequencyPerWeek}x/week
+              </span>
+              {plan.programDurationWeeks && (
+                <span className="bg-[rgba(255,255,255,0.12)] text-[rgba(255,255,255,0.4)] text-[10px] px-1.5 py-0.5 rounded-[3px] font-medium">
+                  {plan.programDurationWeeks} weeks
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+        {/* Stat columns */}
+        <div className="grid grid-cols-[1fr_1fr_1fr_1fr]">
+        {/* SESSIONS COMPLETED */}
+        <div className="flex flex-col pr-5 border-r border-[rgba(255,255,255,0.08)]">
+          <p className="text-[10px] uppercase tracking-[0.06em] text-[rgba(255,255,255,0.35)] font-medium">
+            Sessions Completed
+          </p>
+          {isLoading ? (
+            <Skeleton className="h-8 w-20 mt-1 bg-white/10" />
+          ) : (
+            <>
+              <p className="text-[32px] font-bold leading-tight mt-1 text-white">
+                {summaryStats.completed}
+              </p>
+              <p className="text-[11px] text-[rgba(255,255,255,0.35)]">
+                of {summaryStats.totalPlanned} planned
+              </p>
+            </>
+          )}
+        </div>
+
+        {/* ADHERENCE */}
+        <div className="flex flex-col pl-5 pr-5 border-r border-[rgba(255,255,255,0.06)]">
+          <p className="text-[10px] uppercase tracking-[0.06em] text-[rgba(255,255,255,0.35)] font-medium">
+            Adherence
+          </p>
+          {isLoading ? (
+            <Skeleton className="h-7 w-16 mt-1 bg-white/10" />
+          ) : (
+            <>
+              <p className="text-[22px] font-bold text-white mt-1">
+                {summaryStats.adherencePct}
+                <span className="text-[13px] font-medium text-[rgba(255,255,255,0.25)] ml-0.5">
+                  %
+                </span>
+              </p>
+              <p className="text-[11px] text-[rgba(255,255,255,0.3)] font-mono-display mt-1">
+                {summaryStats.completed}/{summaryStats.totalRows} sessions
+              </p>
+            </>
+          )}
+        </div>
+
+        {/* CURRENT STREAK */}
+        <div className="flex flex-col pl-5 pr-5 border-r border-[rgba(255,255,255,0.06)]">
+          <p className="text-[10px] uppercase tracking-[0.06em] text-[rgba(255,255,255,0.35)] font-medium">
+            Current Streak
+          </p>
+          {isLoading ? (
+            <Skeleton className="h-7 w-16 mt-1 bg-white/10" />
+          ) : (
+            <>
+              <p className="text-[22px] font-bold text-white mt-1">
+                {summaryStats.streak}
+                <span className="text-[13px] font-medium text-[rgba(255,255,255,0.25)] ml-0.5">
+                  days
+                </span>
+              </p>
+            </>
+          )}
+        </div>
+
+        {/* MISSED THIS WEEK */}
+        <div className="flex flex-col pl-5">
+          <p className="text-[10px] uppercase tracking-[0.06em] text-[rgba(255,255,255,0.35)] font-medium">
+            Missed This Week
+          </p>
+          {isLoading ? (
+            <Skeleton className="h-7 w-16 mt-1 bg-white/10" />
+          ) : (
+            <>
+              <p className="text-[22px] font-bold text-white mt-1">
+                {summaryStats.missed}
+              </p>
+            </>
+          )}
+        </div>
+        </div>
+      </div>
+
+      {/* Section header: TRAINING LOG */}
+      <div className="flex items-center gap-3 mt-2">
+        <span className="text-[10.5px] uppercase tracking-[0.07em] text-[#93b0b4] font-semibold whitespace-nowrap">
+          Training Log
+        </span>
+        <div className="flex-1 h-px bg-[rgba(13,148,136,0.08)]" />
+      </div>
+
+      {/* Table card */}
+      <div className="bg-white rounded-[6px] p-5">
         <HistoryTable<TrainingHistoryRow>
           columns={columns}
           data={rows}
@@ -143,7 +298,7 @@ export function TrainingHistoryTable({ clientId }: Props) {
           emptyMessage="No training sessions logged yet"
           onColumnClick={handleColumnClick}
         />
-      </CardContent>
+      </div>
 
       <HistoryChartDialog
         open={chartColumn !== null}
@@ -152,8 +307,8 @@ export function TrainingHistoryTable({ clientId }: Props) {
         chartType="bar"
         data={chartData}
         dataKey="value"
-        color="#22c55e"
+        color="#0d9488"
       />
-    </Card>
+    </div>
   );
 }

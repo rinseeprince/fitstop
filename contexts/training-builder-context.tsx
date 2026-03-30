@@ -1,9 +1,16 @@
 "use client";
 
-import { createContext, useContext, type ReactNode } from "react";
+import { createContext, useContext, useState, useMemo, type ReactNode } from "react";
+import useSWR from "swr";
+import { swrFetcher } from "@/lib/swr-fetcher";
 import { useTrainingBuilder } from "@/hooks/use-training-builder";
+import type { Phase } from "@/types/roadmap";
 
-type TrainingBuilderContextType = ReturnType<typeof useTrainingBuilder>;
+type TrainingBuilderContextType = ReturnType<typeof useTrainingBuilder> & {
+  editMode: boolean;
+  setEditMode: (v: boolean) => void;
+  activePhase: Phase | null;
+};
 
 const TrainingBuilderContext = createContext<TrainingBuilderContextType | null>(null);
 
@@ -19,9 +26,22 @@ export function TrainingBuilderProvider({
   onUpdate,
 }: TrainingBuilderProviderProps) {
   const builder = useTrainingBuilder({ clientId, onUpdate });
+  const [editMode, setEditMode] = useState(false);
+
+  // Fetch phases (same pattern as nutrition builder)
+  const { data: phasesData } = useSWR<{ success: true; data: Phase[] }>(
+    clientId ? `/api/clients/${clientId}/roadmap/phases` : null,
+    swrFetcher,
+    { revalidateOnFocus: false }
+  );
+
+  const activePhase = useMemo(
+    () => phasesData?.data?.find((p) => p.status === "active") ?? null,
+    [phasesData]
+  );
 
   return (
-    <TrainingBuilderContext.Provider value={builder}>
+    <TrainingBuilderContext.Provider value={{ ...builder, editMode, setEditMode, activePhase }}>
       {children}
     </TrainingBuilderContext.Provider>
   );

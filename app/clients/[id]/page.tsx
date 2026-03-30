@@ -16,7 +16,6 @@ import { MetricSaveDialog } from "@/components/clients/check-in/metric-save-dial
 import { HabitsTabContent } from "@/components/clients/habits/habits-tab-content"
 import { RoadmapTabContent } from "@/components/clients/roadmap/roadmap-tab-content"
 import { WellnessTabContent } from "@/components/clients/wellness/wellness-tab-content"
-import { TrainingHistoryTable } from "@/components/clients/training/training-history-table"
 import { HabitsHistoryTable } from "@/components/clients/habits/habits-history-table"
 import { useCheckInData, useClient } from "@/hooks/use-check-in-data"
 import type { CheckIn } from "@/types/check-in"
@@ -147,7 +146,6 @@ export default function ClientProfilePage() {
             {/* Training Plan Tab */}
             <TabsContent value="training" className="space-y-6 mt-0">
               <TrainingPlanCard client={client} onUpdate={() => mutateClient()} />
-              <TrainingHistoryTable clientId={client.id} />
             </TabsContent>
 
             {/* Nutrition Tab */}
