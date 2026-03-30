@@ -32,6 +32,7 @@ export type NutritionCalculationInput = {
   proteinTargetGPerKg: number;
   dietType: DietType;
   goalDeadline?: string;
+  startDate?: string;
   weightUnit: "lbs" | "kg";
 };
 
@@ -56,7 +57,8 @@ export function calculateBaselineCalories(
   currentWeightKg: number,
   goalWeightKg: number | undefined,
   goalDeadline: string | undefined,
-  gender: "male" | "female" | "other"
+  gender: "male" | "female" | "other",
+  calcStartDate?: string
 ): {
   baselineCalories: number;
   requiredDailyDeficit: number;
@@ -76,10 +78,14 @@ export function calculateBaselineCalories(
   }
 
   // Calculate time to goal
-  const today = new Date();
+  // When a phase starts in the future, count from phase start, not today.
+  // When a phase already started (or no phase), count from today.
+  const startDate = calcStartDate
+    ? new Date(Math.max(new Date(calcStartDate).getTime(), Date.now()))
+    : new Date();
   const deadline = new Date(goalDeadline);
   const daysToGoal = Math.ceil(
-    (deadline.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
+    (deadline.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
   );
 
   if (daysToGoal <= 0) {
@@ -292,7 +298,8 @@ export function generateNutritionPlan(
     input.currentWeightKg,
     input.goalWeightKg,
     input.goalDeadline,
-    input.gender
+    input.gender,
+    input.startDate
   );
 
   warnings.push(...baselineResult.warnings);

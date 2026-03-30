@@ -186,6 +186,10 @@ export async function POST(
       phaseCheck.phaseGoalWeight != null
         ? phaseCheck.phaseEndDate ?? null
         : body.goalDeadline || null;
+    const effectiveStartDate =
+      phaseCheck.phaseGoalWeight != null
+        ? phaseCheck.phaseStartDate ?? null
+        : null;
     const goalSource: "phase" | "client" =
       phaseCheck.phaseGoalWeight != null ? "phase" : "client";
 
@@ -283,6 +287,7 @@ export async function POST(
       proteinTargetGPerKg: body.proteinTargetGPerKg,
       dietType: body.dietType,
       goalDeadline: effectiveGoalDeadline ?? undefined,
+      startDate: effectiveStartDate ?? undefined,
       weightUnit: weightUnit,
     });
 

@@ -134,6 +134,7 @@ describe('Nutrition Route POST - read-switch behavior', () => {
       phaseId: undefined,
       phaseGoalWeight: undefined,
       phaseGoalBodyFatPercentage: undefined,
+      phaseStartDate: undefined,
       phaseEndDate: undefined,
       phaseStatus: undefined,
     })
@@ -250,6 +251,7 @@ describe('Nutrition Route POST - phase goal resolution', () => {
       phaseId: 'phase-1',
       phaseGoalWeight: 70,
       phaseGoalBodyFatPercentage: 12,
+      phaseStartDate: '2024-01-15',
       phaseEndDate: '2024-06-01',
       phaseStatus: 'active' as const,
     })
@@ -294,6 +296,7 @@ describe('Nutrition Route POST - phase goal resolution', () => {
       phaseId: 'phase-1',
       phaseGoalWeight: null,
       phaseGoalBodyFatPercentage: null,
+      phaseStartDate: '2024-01-15',
       phaseEndDate: '2024-06-01',
       phaseStatus: 'active' as const,
     })
@@ -337,6 +340,7 @@ describe('Nutrition Route POST - phase goal resolution', () => {
       phaseId: undefined,
       phaseGoalWeight: undefined,
       phaseGoalBodyFatPercentage: undefined,
+      phaseStartDate: undefined,
       phaseEndDate: undefined,
       phaseStatus: undefined,
     })
@@ -396,6 +400,7 @@ describe('Nutrition Route POST - active phase guard', () => {
       phaseId: 'phase-1',
       phaseGoalWeight: 70,
       phaseGoalBodyFatPercentage: null,
+      phaseStartDate: '2024-01-15',
       phaseEndDate: '2024-06-01',
       phaseStatus: 'planned' as const,
     })
@@ -414,6 +419,7 @@ describe('Nutrition Route POST - active phase guard', () => {
       phaseId: 'phase-1',
       phaseGoalWeight: 70,
       phaseGoalBodyFatPercentage: null,
+      phaseStartDate: '2024-01-15',
       phaseEndDate: '2024-06-01',
       phaseStatus: 'active' as const,
     })
@@ -450,6 +456,7 @@ describe('Nutrition Route POST - active phase guard', () => {
       phaseId: undefined,
       phaseGoalWeight: undefined,
       phaseGoalBodyFatPercentage: undefined,
+      phaseStartDate: undefined,
       phaseEndDate: undefined,
       phaseStatus: undefined,
     })

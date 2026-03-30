@@ -55,9 +55,12 @@ export function buildDailyTargetsFromPlan(
     const totalActivityCalories = trainingSessionCalories + externalActivityCalories;
     const dayCalories = baselineCalories + totalActivityCalories;
 
-    const totalCal = proteinG * 4 + carbG * 4 + fatG * 9;
-    const proteinPercent = totalCal > 0 ? Math.round((proteinG * 4 / totalCal) * 100) : 0;
-    const carbsPercent = totalCal > 0 ? Math.round((carbG * 4 / totalCal) * 100) : 0;
+    // Recalculate macros based on total day calories (baseline + training burn)
+    // so training days get proportionally more carbs/fat for the surplus
+    const macros = calculateDailyMacros(dayCalories, proteinG, isTrainingDay, dietType);
+    const totalCal = macros.proteinG * 4 + macros.carbsG * 4 + macros.fatG * 9;
+    const proteinPercent = totalCal > 0 ? Math.round((macros.proteinG * 4 / totalCal) * 100) : 0;
+    const carbsPercent = totalCal > 0 ? Math.round((macros.carbsG * 4 / totalCal) * 100) : 0;
 
     return {
       day,
@@ -65,9 +68,9 @@ export function buildDailyTargetsFromPlan(
       isTrainingDay,
       calories: dayCalories,
       baselineCalories,
-      proteinG,
-      carbsG: carbG,
-      fatG,
+      proteinG: macros.proteinG,
+      carbsG: macros.carbsG,
+      fatG: macros.fatG,
       proteinPercent,
       carbsPercent,
       fatPercent: 100 - proteinPercent - carbsPercent,

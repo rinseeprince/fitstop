@@ -299,7 +299,7 @@ Reviewed: 2026-03-22
 
 Reviewed: 2026-03-25
 
-23 tests across 6 files are failing. These are not regressions — they represent tests written against planned behavior that was never implemented, assertion mismatches after refactors, or incorrect assumptions about implementation details.
+24 tests across 7 files are failing. These are not regressions — they represent tests written against planned behavior that was never implemented, assertion mismatches after refactors, or incorrect assumptions about implementation details.
 
 ### Unimplemented Behavior (8 failures)
 
@@ -314,6 +314,7 @@ Reviewed: 2026-03-25
 | 1 | Error message format mismatch | `client-service.test.ts` | 7 failures. Tests expect `"Failed to X: <db error>"` format but service throws `"Failed to X"` without appending the DB error. Tests also expect `getClientById` to return `null` for not-found but it throws, and expect `null` for empty string notes but service sends empty string. | Open |
 | 2 | Color value assertions outdated | `check-in-utils.test.ts` | 4 failures. `getStatusColor` tests expect raw color names (`"yellow"`, `"blue"`, `"green"`, `"gray"`) but implementation returns semantic Tailwind classes (`"bg-warning/10 text-warning"`, etc.). Tests weren't updated after design token migration. | Open |
 | 3 | Button variant class outdated | `button.test.tsx` | 1 failure. Expects `bg-white` class on secondary variant but component uses `bg-secondary`. Test wasn't updated after button styling change. | Open |
+| 4 | Date-dependent test assertion | `attention-triggers.test.ts` | 1 failure. `evaluateTrainingMisses` test creates logs for today/yesterday and expects a trigger, but the function's week-window logic returns `null` depending on what day of the week the test runs. Test needs fixed date mocking. | Open |
 
 ### Incorrect Assumptions (3 failures)
 

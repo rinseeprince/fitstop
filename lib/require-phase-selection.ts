@@ -7,6 +7,7 @@ type PhaseCheckOk = {
   phaseId: string | undefined;
   phaseGoalWeight?: number | null;
   phaseGoalBodyFatPercentage?: number | null;
+  phaseStartDate?: string | null;
   phaseEndDate?: string | null;
   phaseStatus?: PhaseStatus;
 };
@@ -32,6 +33,7 @@ export async function requirePhaseSelection(
       phaseId: undefined,
       phaseGoalWeight: undefined,
       phaseGoalBodyFatPercentage: undefined,
+      phaseStartDate: undefined,
       phaseEndDate: undefined,
       phaseStatus: undefined,
     };
@@ -85,6 +87,7 @@ export async function requirePhaseSelection(
     phaseId,
     phaseGoalWeight: matchedPhase.phaseGoalWeight ?? null,
     phaseGoalBodyFatPercentage: matchedPhase.phaseGoalBodyFatPercentage ?? null,
+    phaseStartDate: matchedPhase.startDate ?? null,
     phaseEndDate: matchedPhase.endDate ?? null,
     phaseStatus: matchedPhase.status,
   };
