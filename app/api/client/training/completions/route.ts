@@ -1,19 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAuthenticatedClientId } from "@/lib/auth-helpers";
+import { getAuthenticatedClientWithCheckInDay } from "@/lib/auth-helpers";
 import {
   getWeeklyCompletions,
   markSessionComplete,
   removeSessionCompletion,
-  getCurrentWeekStart,
 } from "@/services/client-portal-training";
 import { clientApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
+import { getTodayDateString, getTrainingWeekStart } from "@/lib/date-helpers";
 import { z } from "zod";
 
-// Validation schema for marking session complete
+// Validation schema for marking session complete (weekStartDate removed, computed server-side)
 const markCompleteSchema = z.object({
   trainingSessionId: z.string().uuid(),
-  weekStartDate: z.string().optional(),
   quality: z.enum(["full", "partial", "skipped"]).optional().default("full"),
   notes: z.string().optional(),
 });
@@ -24,19 +23,17 @@ export async function GET(request: NextRequest) {
   if (rateLimitResult) return rateLimitResult;
 
   try {
-    const clientId = await getAuthenticatedClientId();
+    const auth = await getAuthenticatedClientWithCheckInDay();
 
-    if (!clientId) {
+    if (!auth) {
       return NextResponse.json(
         { success: false, error: "Unauthorized" },
         { status: 401 }
       );
     }
 
-    const { searchParams } = new URL(request.url);
-    const weekStartDate = searchParams.get("weekStartDate") || getCurrentWeekStart();
-
-    const completions = await getWeeklyCompletions(clientId, weekStartDate);
+    const weekStartDate = getTrainingWeekStart(getTodayDateString(), auth.checkInDay);
+    const completions = await getWeeklyCompletions(auth.clientId, weekStartDate);
 
     return NextResponse.json({
       success: true,
@@ -64,9 +61,9 @@ export async function POST(request: NextRequest) {
   if (csrfError) return csrfError;
 
   try {
-    const clientId = await getAuthenticatedClientId();
+    const auth = await getAuthenticatedClientWithCheckInDay();
 
-    if (!clientId) {
+    if (!auth) {
       return NextResponse.json(
         { success: false, error: "Unauthorized" },
         { status: 401 }
@@ -85,10 +82,10 @@ export async function POST(request: NextRequest) {
     }
 
     const { trainingSessionId, quality, notes } = validationResult.data;
-    const weekStartDate = validationResult.data.weekStartDate || getCurrentWeekStart();
+    const weekStartDate = getTrainingWeekStart(getTodayDateString(), auth.checkInDay);
 
     const completion = await markSessionComplete(
-      clientId,
+      auth.clientId,
       trainingSessionId,
       weekStartDate,
       quality,
@@ -127,9 +124,9 @@ export async function DELETE(request: NextRequest) {
   if (csrfError) return csrfError;
 
   try {
-    const clientId = await getAuthenticatedClientId();
+    const auth = await getAuthenticatedClientWithCheckInDay();
 
-    if (!clientId) {
+    if (!auth) {
       return NextResponse.json(
         { success: false, error: "Unauthorized" },
         { status: 401 }
@@ -138,7 +135,7 @@ export async function DELETE(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const trainingSessionId = searchParams.get("trainingSessionId");
-    const weekStartDate = searchParams.get("weekStartDate") || getCurrentWeekStart();
+    const weekStartDate = getTrainingWeekStart(getTodayDateString(), auth.checkInDay);
 
     if (!trainingSessionId) {
       return NextResponse.json(
@@ -147,7 +144,7 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    const success = await removeSessionCompletion(clientId, trainingSessionId, weekStartDate);
+    const success = await removeSessionCompletion(auth.clientId, trainingSessionId, weekStartDate);
 
     if (!success) {
       return NextResponse.json(

@@ -1,19 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAuthenticatedClientId } from "@/lib/auth-helpers";
+import { getAuthenticatedClientWithCheckInDay } from "@/lib/auth-helpers";
 import { clientApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { z } from "zod";
 import { supabaseAdmin } from "@/services/supabase-admin";
-import { getTodayDateString } from "@/lib/date-helpers";
-
-// Get the week start date (Monday) for a given date
-const getWeekStartDate = (date: Date = new Date()): string => {
-  const d = new Date(date);
-  const day = d.getDay();
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Adjust if Sunday
-  d.setDate(diff);
-  return d.toISOString().split('T')[0];
-};
+import { getTodayDateString, getTrainingWeekStart } from "@/lib/date-helpers";
 
 const sessionCompletionSchema = z.object({
   trainingSessionId: z.string().uuid(),
@@ -29,9 +20,9 @@ export async function POST(request: NextRequest) {
   if (csrfError) return csrfError;
 
   try {
-    const clientId = await getAuthenticatedClientId();
+    const auth = await getAuthenticatedClientWithCheckInDay();
 
-    if (!clientId) {
+    if (!auth) {
       return NextResponse.json(
         { success: false, error: "Unauthorized" },
         { status: 401 }
@@ -53,7 +44,7 @@ export async function POST(request: NextRequest) {
     }
 
     const data = validationResult.data;
-    const weekStartDate = getWeekStartDate();
+    const weekStartDate = getTrainingWeekStart(getTodayDateString(), auth.checkInDay);
     const completedAt = getTodayDateString();
 
     // Build snapshot from the training session for history preservation
@@ -65,7 +56,7 @@ export async function POST(request: NextRequest) {
 
     // Upsert the session completion record (prescribed_session_snapshot not yet in generated types)
     const upsertPayload = {
-      client_id: clientId,
+      client_id: auth.clientId,
       training_session_id: data.trainingSessionId,
       week_start_date: weekStartDate,
       completed_at: completedAt,
@@ -111,9 +102,9 @@ export async function DELETE(request: NextRequest) {
   if (csrfError) return csrfError;
 
   try {
-    const clientId = await getAuthenticatedClientId();
+    const auth = await getAuthenticatedClientWithCheckInDay();
 
-    if (!clientId) {
+    if (!auth) {
       return NextResponse.json(
         { success: false, error: "Unauthorized" },
         { status: 401 }
@@ -130,13 +121,13 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    const weekStartDate = getWeekStartDate();
+    const weekStartDate = getTrainingWeekStart(getTodayDateString(), auth.checkInDay);
 
     // Delete the session completion record
     const { error } = await supabaseAdmin
       .from("session_logs")
       .delete()
-      .eq("client_id", clientId)
+      .eq("client_id", auth.clientId)
       .eq("training_session_id", trainingSessionId)
       .eq("week_start_date", weekStartDate);
 

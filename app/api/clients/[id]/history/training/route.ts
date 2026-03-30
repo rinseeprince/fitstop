@@ -3,6 +3,7 @@ import { parsePaginationParams } from "@/lib/api-utils";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 import { getTrainingHistory } from "@/services/training-history-service";
+import { supabaseAdmin } from "@/services/supabase-admin";
 
 export async function GET(
   request: NextRequest,
@@ -27,7 +28,20 @@ export async function GET(
     }
 
     const { limit, offset } = pagination;
-    const result = await getTrainingHistory(clientId, { limit, offset });
+
+    // Fetch client's check-in day for correct training week boundaries
+    // Uses supabaseAdmin: coach querying client data (RLS exception 2)
+    const { data: clientRow } = await supabaseAdmin
+      .from("clients")
+      .select("expected_check_in_day")
+      .eq("id", clientId)
+      .single();
+
+    const result = await getTrainingHistory(
+      clientId,
+      { limit, offset },
+      clientRow?.expected_check_in_day
+    );
 
     return NextResponse.json(result, { status: 200 });
   } catch (error) {

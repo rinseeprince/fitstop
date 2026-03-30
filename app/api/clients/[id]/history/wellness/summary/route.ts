@@ -16,10 +16,14 @@ export async function GET(
     const auth = await requireCoachOwnsClient(clientId);
     if (!auth.authorized) return auth.response;
 
-    // Last 7 calendar days (today inclusive)
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
-    const sinceDate = sevenDaysAgo.toISOString().split("T")[0];
+    const { searchParams } = new URL(request.url);
+    const ALLOWED_DAYS = [7, 14, 28] as const;
+    const rawDays = Number(searchParams.get("days") || 7);
+    const days = ALLOWED_DAYS.includes(rawDays as 7 | 14 | 28) ? rawDays : 7;
+
+    const sinceDate = new Date();
+    sinceDate.setDate(sinceDate.getDate() - (days - 1));
+    const sinceDateStr = sinceDate.toISOString().split("T")[0];
 
     // Uses supabaseAdmin: coach querying client data (RLS exception 3)
     // Direct query on wellness_logs
@@ -28,7 +32,7 @@ export async function GET(
       .select("mood, energy, sleep, stress")
       .eq("client_id" as never, clientId as never)
       .or("mood.not.is.null,energy.not.is.null,sleep.not.is.null,stress.not.is.null" as never)
-      .gte("date" as never, sinceDate as never) as unknown as { data: Array<{ mood: number | null; energy: number | null; sleep: number | null; stress: number | null }> | null; error: { message: string } | null };
+      .gte("date" as never, sinceDateStr as never) as unknown as { data: Array<{ mood: number | null; energy: number | null; sleep: number | null; stress: number | null }> | null; error: { message: string } | null };
 
     if (error) {
       console.error("Error fetching wellness summary:", error);
@@ -54,6 +58,7 @@ export async function GET(
       avg_sleep: avgMetric("sleep"),
       avg_stress: avgMetric("stress"),
       days_logged: rows.length,
+      days_in_window: days,
     };
 
     return NextResponse.json(summary, { status: 200 });

@@ -28,6 +28,7 @@ import {
 
 type ClientRow = Database["public"]["Tables"]["clients"]["Row"]
 type ClientInfo = Pick<ClientRow, 'id' | 'name' | 'avatar_url'>
+type ClientInfoWithCheckIn = ClientInfo & Pick<ClientRow, 'expected_check_in_day'>
 // View row shape - daily_logs_full joins spine + wellness + nutrition + training
 type DailyLogRow = {
   id: string; client_id: string; date: string; notes: string | null;
@@ -62,7 +63,7 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
   // 1. Get all clients for this coach
   const { data: clients, error: clientsError } = await supabaseAdmin
     .from("clients")
-    .select("id, name, avatar_url")
+    .select("id, name, avatar_url, expected_check_in_day")
     .eq("coach_id", coachId)
     .eq("active", true)
     .eq("onboarding_status", "active")
@@ -146,6 +147,7 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
     habits: DailyHabit[]
     habitLogs: DailyHabitLog[]
     plannedSessionCount: number
+    checkInDay: string | null
   }>()
 
   // Initialize map with clients
@@ -155,7 +157,8 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
       logs: [],
       habits: [],
       habitLogs: [],
-      plannedSessionCount: 0
+      plannedSessionCount: 0,
+      checkInDay: (client as ClientInfoWithCheckIn).expected_check_in_day ?? null,
     })
   })
 
@@ -270,7 +273,7 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
       evaluateMoodEnergyDrop(data.logs, "energy"),
       evaluateLoggingGap(data.logs, dateRange),
       evaluateNutritionMisses(data.logs),
-      evaluateTrainingMisses(data.logs, data.plannedSessionCount),
+      evaluateTrainingMisses(data.logs, data.plannedSessionCount, undefined, data.checkInDay),
       evaluateHighStress(data.logs),
       evaluateHabitDropoff(data.habitLogs, data.habits),
       evaluateActivityCalMismatch(data.logs)

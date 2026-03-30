@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "./supabase-admin";
 import type { TrainingHistoryRow } from "@/types/history";
+import { getTrainingWeekStart } from "@/lib/date-helpers";
 
 type TrainingData = {
   trainingSessionName?: string;
@@ -7,38 +8,25 @@ type TrainingData = {
   isAlternativeSession?: boolean;
 };
 
-const DAY_OFFSETS: Record<string, number> = {
-  monday: 0,
-  tuesday: 1,
-  wednesday: 2,
-  thursday: 3,
-  friday: 4,
-  saturday: 5,
-  sunday: 6,
+const DAY_NUM: Record<string, number> = {
+  sunday: 0, monday: 1, tuesday: 2, wednesday: 3,
+  thursday: 4, friday: 5, saturday: 6,
 };
 
 /**
- * Compute the Monday (week start) for a given date string.
- */
-function getWeekStartDate(dateStr: string): string {
-  const date = new Date(dateStr + "T00:00:00Z");
-  const day = date.getUTCDay(); // 0=Sun, 1=Mon, ...
-  const diff = day === 0 ? 6 : day - 1; // days since Monday
-  const monday = new Date(date);
-  monday.setUTCDate(date.getUTCDate() - diff);
-  return monday.toISOString().split("T")[0];
-}
-
-/**
  * Derive a date from week_start_date + day_of_week offset.
+ * Computes offset dynamically based on whatever day weekStart falls on.
  * Used only for orphaned completions as a fallback.
  */
 function deriveDateFromWeekDay(weekStart: string, dayOfWeek: string | null): string {
   if (!dayOfWeek) return weekStart;
-  const offset = DAY_OFFSETS[dayOfWeek.toLowerCase()] ?? 0;
-  const date = new Date(weekStart + "T00:00:00Z");
-  date.setUTCDate(date.getUTCDate() + offset);
-  return date.toISOString().split("T")[0];
+  const weekStartDate = new Date(weekStart + "T00:00:00Z");
+  const weekStartDayNum = weekStartDate.getUTCDay();
+  const targetDayNum = DAY_NUM[dayOfWeek.toLowerCase()] ?? weekStartDayNum;
+  let offset = targetDayNum - weekStartDayNum;
+  if (offset < 0) offset += 7;
+  weekStartDate.setUTCDate(weekStartDate.getUTCDate() + offset);
+  return weekStartDate.toISOString().split("T")[0];
 }
 
 /**
@@ -49,7 +37,8 @@ function deriveDateFromWeekDay(weekStart: string, dayOfWeek: string | null): str
  */
 export async function getTrainingHistory(
   clientId: string,
-  options: { limit: number; offset: number }
+  options: { limit: number; offset: number },
+  checkInDay?: string | null
 ): Promise<{ rows: TrainingHistoryRow[]; total: number }> {
   const { limit, offset } = options;
 
@@ -93,6 +82,8 @@ export async function getTrainingHistory(
   // Build primary rows from daily_logs, tracking matched completions
   const matchedKeys = new Set<string>();
   const primaryRows: TrainingHistoryRow[] = [];
+  // Lookup for dedup: "sessionId_date" -> index in primaryRows
+  const primaryRowLookup = new Map<string, number>();
 
   for (const log of dailyLogs || []) {
     const td = log.training_data as TrainingData | null;
@@ -103,7 +94,7 @@ export async function getTrainingHistory(
     let completionQuality: TrainingHistoryRow["completion_quality"] = null;
 
     if (sessionId) {
-      const weekStart = getWeekStartDate(log.date);
+      const weekStart = getTrainingWeekStart(log.date, checkInDay);
       const key = `${sessionId}_${weekStart}`;
       const match = completionMap.get(key);
       if (match) {
@@ -119,6 +110,10 @@ export async function getTrainingHistory(
       completion_quality: completionQuality,
       notes: log.notes || null,
     });
+
+    if (sessionId) {
+      primaryRowLookup.set(`${sessionId}_${log.date}`, primaryRows.length - 1);
+    }
   }
 
   // Find orphaned completions (no matching daily_log entry)
@@ -127,7 +122,7 @@ export async function getTrainingHistory(
     return !matchedKeys.has(key);
   });
 
-  let orphanedRows: TrainingHistoryRow[] = [];
+  const orphanedRows: TrainingHistoryRow[] = [];
 
   if (orphanedCompletions.length > 0) {
     // Query C: Get training session details for orphaned completions
@@ -147,16 +142,32 @@ export async function getTrainingHistory(
       sessionMap.set(s.id, { name: s.name, day_of_week: s.day_of_week });
     }
 
-    orphanedRows = orphanedCompletions.map((c) => {
+    // Dedup: if an orphaned completion matches a primary row by sessionId+date,
+    // merge the completion data into the primary row instead of creating a duplicate.
+    // This handles cases where check-in day changed after session_logs were written.
+    for (const c of orphanedCompletions) {
       const session = c.training_session_id ? sessionMap.get(c.training_session_id) : undefined;
-      return {
-        date: deriveDateFromWeekDay(c.week_start_date, session?.day_of_week ?? null),
-        session_name: session?.name || "Unknown Session",
-        is_alternative: false,
-        completion_quality: (c.completion_quality as TrainingHistoryRow["completion_quality"]) ?? null,
-        notes: c.notes || null,
-      };
-    });
+      const derivedDate = deriveDateFromWeekDay(c.week_start_date, session?.day_of_week ?? null);
+      const quality = (c.completion_quality as TrainingHistoryRow["completion_quality"]) ?? null;
+
+      const primaryIdx = c.training_session_id
+        ? primaryRowLookup.get(`${c.training_session_id}_${derivedDate}`)
+        : undefined;
+
+      if (primaryIdx !== undefined) {
+        // Merge completion data into the existing primary row
+        if (quality) primaryRows[primaryIdx].completion_quality = quality;
+        if (c.notes) primaryRows[primaryIdx].notes = c.notes;
+      } else {
+        orphanedRows.push({
+          date: derivedDate,
+          session_name: session?.name || "Unknown Session",
+          is_alternative: false,
+          completion_quality: quality,
+          notes: c.notes || null,
+        });
+      }
+    }
   }
 
   // Combine, sort by date descending, paginate

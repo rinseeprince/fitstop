@@ -5,6 +5,7 @@ import {
   NUTRITION_MISSED_CONSECUTIVE_DAYS,
   TRAINING_MISSED_WEEKLY_THRESHOLD,
 } from "@/lib/constants"
+import { getDateString, getTrainingWeekStart } from "@/lib/date-helpers"
 
 /**
  * Evaluates if there's a gap in daily logging
@@ -104,20 +105,20 @@ export function evaluateNutritionMisses(logs: DailyLog[]): TriggerResult | null 
 }
 
 /**
- * Evaluates if training sessions have been missed this week
+ * Evaluates if training sessions have been missed this week.
+ * Week boundaries are based on the client's check-in day (defaults to Mon-Sun).
  */
 export function evaluateTrainingMisses(
   logs: DailyLog[],
   plannedSessionCount: number,
-  now: Date = new Date()
+  now: Date = new Date(),
+  checkInDay?: string | null
 ): TriggerResult | null {
-  // Get current week's logs (Monday to today)
+  // Get current week's logs based on client's check-in day
   const today = now
-  const startOfWeek = new Date(today)
-  const dayOfWeek = today.getDay()
-  const diff = dayOfWeek === 0 ? 6 : dayOfWeek - 1 // Monday is start
-  startOfWeek.setDate(today.getDate() - diff)
-  startOfWeek.setHours(0, 0, 0, 0)
+  const todayStr = getDateString(today)
+  const weekStartStr = getTrainingWeekStart(todayStr, checkInDay)
+  const startOfWeek = new Date(weekStartStr + 'T00:00:00')
   const weekLogs = logs.filter(log => {
     const logDate = new Date(log.date + 'T00:00:00')
     return logDate >= startOfWeek

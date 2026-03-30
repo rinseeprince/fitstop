@@ -2,12 +2,12 @@
 
 import { useState, useMemo } from "react";
 import useSWR from "swr";
-import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { HistoryTable, type ColumnDef } from "@/components/clients/history-table/history-table";
 import { useHistoryData } from "@/hooks/use-history-data";
 import { swrFetcher } from "@/lib/swr-fetcher";
-import { getBarColor, type WellnessMetric } from "@/utils/wellness-color-thresholds";
+import { cn } from "@/lib/utils";
+import type { WellnessMetric } from "@/utils/wellness-color-thresholds";
 import type { WellnessHistoryRow } from "@/types/history";
 
 type WellnessSummary = {
@@ -16,10 +16,11 @@ type WellnessSummary = {
   avg_sleep: number | null;
   avg_stress: number | null;
   days_logged: number;
+  days_in_window: number;
 };
 
-const SUMMARY_CARDS: {
-  key: keyof Omit<WellnessSummary, "days_logged">;
+const METRICS: {
+  key: keyof Pick<WellnessSummary, "avg_mood" | "avg_energy" | "avg_sleep" | "avg_stress">;
   label: string;
   metric: WellnessMetric;
   max: number;
@@ -29,6 +30,47 @@ const SUMMARY_CARDS: {
   { key: "avg_sleep", label: "Avg Sleep", metric: "sleep", max: 10 },
   { key: "avg_stress", label: "Avg Stress", metric: "stress", max: 10 },
 ];
+
+const PERIOD_OPTIONS = [7, 14, 28] as const;
+
+// Teal Summit wellness colors: teal (good), white (neutral), amber (concerning)
+function getWellnessColor(metric: WellnessMetric, value: number | null): string {
+  if (value == null) return "#fff";
+  switch (metric) {
+    case "mood":
+      if (value >= 4) return "#0d9488";
+      if (value === 3) return "#fff";
+      return "#d97706";
+    case "energy":
+      if (value >= 7) return "#0d9488";
+      if (value >= 5) return "#fff";
+      return "#d97706";
+    case "sleep":
+      if (value >= 7) return "#0d9488";
+      if (value === 6) return "#fff";
+      return "#d97706";
+    case "stress":
+      if (value <= 4) return "#0d9488";
+      if (value <= 6) return "#fff";
+      return "#d97706";
+    default:
+      return "#fff";
+  }
+}
+
+// On white table background, neutral maps to primary text instead of white
+function getTableColor(metric: WellnessMetric, value: number | null): string | undefined {
+  const color = getWellnessColor(metric, value);
+  if (color === "#fff") return undefined; // use default text color
+  return color;
+}
+
+function hasWarning(metric: WellnessMetric, value: number | null): boolean {
+  if (value == null) return false;
+  if (metric === "sleep") return value <= 5;
+  if (metric === "stress") return value >= 7;
+  return false;
+}
 
 function formatDate(dateStr: string) {
   const date = new Date(dateStr + "T00:00:00");
@@ -40,26 +82,11 @@ function formatDay(dateStr: string) {
   return date.toLocaleDateString("en-AU", { weekday: "long" });
 }
 
-function renderWellnessValue(metric: WellnessMetric, value: number | null) {
-  if (value == null) return <span className="text-muted-foreground">-</span>;
-  const color = getBarColor(metric, value);
-  // Green (good range) renders as default text; only amber/red get color
-  if (color === "#10b981") return <span className="font-medium">{value}</span>;
-  return <span style={{ color }} className="font-medium">{value}</span>;
-}
-
-function truncateNotes(notes: string | null) {
-  if (!notes) return <span className="text-muted-foreground">-</span>;
-  if (notes.length <= 50) return <span>{notes}</span>;
-  return <span title={notes}>{notes.slice(0, 47)}...</span>;
-}
-
-type Props = {
-  clientId: string;
-};
+type Props = { clientId: string };
 
 export function WellnessHistoryTable({ clientId }: Props) {
   const [page, setPage] = useState(0);
+  const [days, setDays] = useState<7 | 14 | 28>(7);
 
   const { rows, total, isLoading } = useHistoryData<WellnessHistoryRow>(
     `/api/clients/${clientId}/history/wellness`,
@@ -67,98 +94,138 @@ export function WellnessHistoryTable({ clientId }: Props) {
   );
 
   const { data: summary, isLoading: summaryLoading } = useSWR<WellnessSummary>(
-    `/api/clients/${clientId}/history/wellness/summary`,
+    `/api/clients/${clientId}/history/wellness/summary?days=${days}`,
     swrFetcher,
     { revalidateOnFocus: false, dedupingInterval: 5000 }
   );
 
   const columns: ColumnDef<WellnessHistoryRow>[] = useMemo(() => [
-    {
-      key: "date",
-      label: "Date",
-      render: (_v, row) => formatDate(row.date),
-    },
-    {
-      key: "day",
-      label: "Day",
-      render: (_v, row) => formatDay(row.date),
-    },
-    {
-      key: "mood",
-      label: "Mood (1-5)",
-      render: (_v, row) => renderWellnessValue("mood", row.mood),
-    },
-    {
-      key: "energy",
-      label: "Energy (1-10)",
-      render: (_v, row) => renderWellnessValue("energy", row.energy),
-    },
-    {
-      key: "sleep",
-      label: "Sleep (1-10)",
-      render: (_v, row) => renderWellnessValue("sleep", row.sleep),
-    },
-    {
-      key: "stress",
-      label: "Stress (1-10)",
-      render: (_v, row) => renderWellnessValue("stress", row.stress),
-    },
-    {
-      key: "notes",
-      label: "Notes",
-      render: (_v, row) => truncateNotes(row.notes),
-    },
+    { key: "date", label: "Date", render: (_v, row) => (
+      <span className="font-mono-display text-[#93b0b4]">{formatDate(row.date)}</span>
+    )},
+    { key: "day", label: "Day", render: (_v, row) => (
+      <span className="text-[#0c1a1e] font-medium">{formatDay(row.date)}</span>
+    )},
+    { key: "mood", label: "Mood", render: (_v, row) => renderMetricCell("mood", row.mood, 5) },
+    { key: "energy", label: "Energy", render: (_v, row) => renderMetricCell("energy", row.energy, 10) },
+    { key: "sleep", label: "Sleep", render: (_v, row) => renderMetricCell("sleep", row.sleep, 10) },
+    { key: "stress", label: "Stress", render: (_v, row) => renderMetricCell("stress", row.stress, 10) },
+    { key: "notes", label: "Notes", render: (_v, row) => {
+      if (!row.notes) return <span className="text-[#93b0b4] italic">-</span>;
+      const text = row.notes.length > 50 ? row.notes.slice(0, 47) + "..." : row.notes;
+      return <span className="text-[12.5px] text-[#5a7d82]" title={row.notes.length > 50 ? row.notes : undefined}>{text}</span>;
+    }},
   ], []);
 
   return (
-    <div className="space-y-6">
-      {/* 7-day average summary cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {SUMMARY_CARDS.map(({ key, label, metric, max }) => {
-          const avg = summary ? summary[key] : null;
-          const rawColor = avg != null ? getBarColor(metric, Math.round(avg)) : undefined;
-          // Green (good range) renders as default text; only amber/red get color
-          const color = rawColor === "#10b981" ? undefined : rawColor;
+    <div className="flex flex-col gap-4">
+      {/* Period selector */}
+      <div className="flex justify-end">
+        <div className="bg-[rgba(13,148,136,0.05)] rounded-[6px] p-[2px] inline-flex">
+          {PERIOD_OPTIONS.map((d) => (
+            <button
+              key={d}
+              onClick={() => setDays(d)}
+              className={cn(
+                "px-4 py-1.5 text-[12.5px] font-medium rounded-[4px] transition-all",
+                days === d
+                  ? "bg-white text-[#0c1a1e] shadow-[0_1px_3px_rgba(0,0,0,0.05)]"
+                  : "text-[#5a7d82] hover:text-[#0c1a1e]"
+              )}
+            >
+              {d} days
+            </button>
+          ))}
+        </div>
+      </div>
 
-          return (
-            <Card key={key}>
-              <CardContent className="p-4">
+      {/* Dark summary strip */}
+      <div className="bg-[#0f2027] rounded-[6px] p-5">
+        <div className="grid grid-cols-[1fr_1fr_1fr_1fr]">
+          {METRICS.map(({ key, label, metric, max }, idx) => {
+            const avg = summary ? summary[key] : null;
+            const color = avg != null ? getWellnessColor(metric, Math.round(avg)) : "#fff";
+            const warn = avg != null && hasWarning(metric, Math.round(avg));
+            const isLast = idx === METRICS.length - 1;
+            const isFirst = idx === 0;
+
+            return (
+              <div
+                key={key}
+                className={cn(
+                  "flex flex-col",
+                  isFirst ? "pr-5" : isLast ? "pl-5" : "pl-5 pr-5",
+                  !isLast && (isFirst
+                    ? "border-r border-[rgba(255,255,255,0.08)]"
+                    : "border-r border-[rgba(255,255,255,0.06)]")
+                )}
+              >
+                <div className="flex items-center gap-1.5">
+                  {warn && (
+                    <span className="w-[3px] h-[14px] rounded-[2px] bg-[#d97706]" />
+                  )}
+                  <p className="text-[10px] uppercase tracking-[0.06em] text-[rgba(255,255,255,0.35)] font-medium">
+                    {label}
+                  </p>
+                </div>
                 {summaryLoading ? (
-                  <div className="space-y-2">
-                    <Skeleton className="h-4 w-20" />
-                    <Skeleton className="h-6 w-16" />
-                    <Skeleton className="h-3 w-24" />
-                  </div>
+                  <Skeleton className="h-7 w-16 mt-1 bg-white/10" />
                 ) : (
                   <>
-                    <p className="text-sm text-muted-foreground">{label}</p>
-                    <p className="text-2xl font-semibold mt-1" style={color ? { color } : undefined}>
-                      {avg != null ? `${avg} / ${max}` : "-"}
+                    <p className="text-[22px] font-bold mt-1 font-mono-display tracking-[-0.03em]" style={{ color }}>
+                      {avg != null ? avg : "-"}
+                      <span className="text-[13px] font-medium text-[rgba(255,255,255,0.25)] ml-0.5">
+                        / {max}
+                      </span>
                     </p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {summary ? `${summary.days_logged}/7 days logged` : "-"}
+                    <p className="text-[11px] text-[rgba(255,255,255,0.3)] font-mono-display mt-1">
+                      {summary ? `${summary.days_logged}/${summary.days_in_window} days logged` : "-"}
                     </p>
                   </>
                 )}
-              </CardContent>
-            </Card>
-          );
-        })}
+              </div>
+            );
+          })}
+        </div>
       </div>
 
-      <Card>
-        <CardContent className="pt-6">
-          <HistoryTable<WellnessHistoryRow>
-            columns={columns}
-            data={rows}
-            total={total}
-            page={page}
-            onPageChange={setPage}
-            isLoading={isLoading}
-            emptyMessage="No wellness data logged yet"
-          />
-        </CardContent>
-      </Card>
+      {/* Section header */}
+      <div className="flex items-center gap-3 mt-2">
+        <span className="text-[10.5px] uppercase tracking-[0.07em] text-[#93b0b4] font-semibold whitespace-nowrap">
+          Wellness Log
+        </span>
+        <div className="flex-1 h-px bg-[rgba(13,148,136,0.08)]" />
+        <div className="flex items-center gap-2.5">
+          <span className="w-2 h-[3px] rounded-full bg-[#0d9488]" />
+          <span className="text-[10.5px] text-[#93b0b4] font-medium">Good</span>
+          <span className="w-2 h-[3px] rounded-full bg-[#d97706]" />
+          <span className="text-[10.5px] text-[#93b0b4] font-medium">Warning</span>
+        </div>
+      </div>
+
+      {/* Table card */}
+      <div className="bg-white rounded-[6px] p-5">
+        <HistoryTable<WellnessHistoryRow>
+          columns={columns}
+          data={rows}
+          total={total}
+          page={page}
+          onPageChange={setPage}
+          isLoading={isLoading}
+          emptyMessage="No wellness data logged yet"
+        />
+      </div>
     </div>
+  );
+}
+
+function renderMetricCell(metric: WellnessMetric, value: number | null, max: number) {
+  if (value == null) return <span className="text-[#93b0b4]">-</span>;
+  const color = getTableColor(metric, value);
+  return (
+    <span className="font-mono-display text-[13px] font-semibold" style={color ? { color } : undefined}>
+      {value}
+      <span className="font-normal text-[#93b0b4]"> / {max}</span>
+    </span>
   );
 }

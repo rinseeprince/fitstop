@@ -442,12 +442,13 @@ describe('attention-triggers', () => {
 
   describe('evaluateTrainingMisses', () => {
     it('should detect 2+ missed training sessions in current week', () => {
-      // Mock current date to a Wednesday
+      // Use a fixed Wednesday so both "today" and "yesterday" are in the same Mon-Sun week
+      const now = new Date('2026-04-01T12:00:00') // Wednesday
       const logs: DailyLog[] = [
         {
           id: '1',
           clientId: 'c1',
-          date: new Date().toISOString().split('T')[0], // Today
+          date: '2026-04-01', // Wednesday (today)
           trainingData: {
             sessionCompleted: false,
             trainingSessionId: 's1',
@@ -462,7 +463,7 @@ describe('attention-triggers', () => {
         {
           id: '2',
           clientId: 'c1',
-          date: new Date(Date.now() - 86400000).toISOString().split('T')[0], // Yesterday
+          date: '2026-03-31', // Tuesday (yesterday)
           trainingData: {
             sessionCompleted: false,
             trainingSessionId: 's2',
@@ -476,8 +477,8 @@ describe('attention-triggers', () => {
         }
       ]
 
-      const result = evaluateTrainingMisses(logs, 3) // 3 sessions planned per week
-      
+      const result = evaluateTrainingMisses(logs, 3, now) // 3 sessions planned per week
+
       expect(result).not.toBeNull()
       expect(result?.type).toBe('training_missed')
       expect(result?.severity).toBe('high')
@@ -485,11 +486,12 @@ describe('attention-triggers', () => {
     })
 
     it('should not trigger for 1 missed session', () => {
+      const now = new Date('2026-04-01T12:00:00') // Wednesday
       const logs: DailyLog[] = [
         {
           id: '1',
           clientId: 'c1',
-          date: new Date().toISOString().split('T')[0],
+          date: '2026-04-01',
           trainingData: {
             sessionCompleted: false,
             trainingSessionId: 's1',
@@ -503,16 +505,17 @@ describe('attention-triggers', () => {
         }
       ]
 
-      const result = evaluateTrainingMisses(logs, 3)
+      const result = evaluateTrainingMisses(logs, 3, now)
       expect(result).toBeNull()
     })
 
     it('should only count sessions with trainingSessionId set', () => {
+      const now = new Date('2026-04-01T12:00:00') // Wednesday
       const logs: DailyLog[] = [
         {
           id: '1',
           clientId: 'c1',
-          date: new Date().toISOString().split('T')[0],
+          date: '2026-04-01',
           trainingData: {
             sessionCompleted: false,
             trainingSessionId: null, // No session was scheduled
@@ -526,8 +529,58 @@ describe('attention-triggers', () => {
         }
       ]
 
-      const result = evaluateTrainingMisses(logs, 3)
+      const result = evaluateTrainingMisses(logs, 3, now)
       expect(result).toBeNull()
+    })
+
+    it('should use check-in day for week boundary when provided', () => {
+      // Wednesday check-in -> training week starts Thursday
+      // Set "now" to a Monday (2026-03-30)
+      const now = new Date('2026-03-30T12:00:00')
+      // Logs on Friday and Saturday (within Thu-Wed week starting 2026-03-26)
+      const logs: DailyLog[] = [
+        {
+          id: '1',
+          clientId: 'c1',
+          date: '2026-03-27', // Friday
+          trainingData: {
+            sessionCompleted: false,
+            trainingSessionId: 's1',
+            trainingSessionName: 'Session 1',
+            isAlternativeSession: false,
+            activityStatuses: {},
+            unplannedActivities: []
+          },
+          createdAt: '',
+          updatedAt: ''
+        },
+        {
+          id: '2',
+          clientId: 'c1',
+          date: '2026-03-28', // Saturday
+          trainingData: {
+            sessionCompleted: false,
+            trainingSessionId: 's2',
+            trainingSessionName: 'Session 2',
+            isAlternativeSession: false,
+            activityStatuses: {},
+            unplannedActivities: []
+          },
+          createdAt: '',
+          updatedAt: ''
+        }
+      ]
+
+      // With Wednesday checkInDay, these are in the current week (Thu Mar 26 - Wed Apr 1)
+      const result = evaluateTrainingMisses(logs, 3, now, 'wednesday')
+      expect(result).not.toBeNull()
+      expect(result?.type).toBe('training_missed')
+      expect(result?.affectedDays).toHaveLength(2)
+
+      // Without checkInDay (default Mon-Sun), week starts Mon Mar 30
+      // so those Fri/Sat logs are in the PREVIOUS week and not counted
+      const resultDefault = evaluateTrainingMisses(logs, 3, now)
+      expect(resultDefault).toBeNull()
     })
   })
 

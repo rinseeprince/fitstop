@@ -90,3 +90,43 @@ export const getWeekDays = (dateString: string): string[] => {
   }
   return days;
 };
+
+/**
+ * Day name to JS getDay() number mapping
+ */
+const DAY_NUM: Record<string, number> = {
+  sunday: 0, monday: 1, tuesday: 2, wednesday: 3,
+  thursday: 4, friday: 5, saturday: 6,
+};
+
+/**
+ * Returns the start of the training week containing dateString.
+ * Training week starts the day after the client's check-in day.
+ * Defaults to Monday when checkInDay is null/undefined (backward compatible).
+ */
+export const getTrainingWeekStart = (
+  dateString: string,
+  checkInDay?: string | null
+): string => {
+  const weekStartDayNum = checkInDay
+    ? (DAY_NUM[checkInDay.toLowerCase()] + 1) % 7
+    : 1; // Monday
+  const date = new Date(dateString + 'T00:00:00');
+  const current = date.getDay();
+  let diff = current - weekStartDayNum;
+  if (diff < 0) diff += 7;
+  date.setDate(date.getDate() - diff);
+  return getDateString(date);
+};
+
+/**
+ * Returns the end of the training week containing dateString (6 days after week start).
+ */
+export const getTrainingWeekEnd = (
+  dateString: string,
+  checkInDay?: string | null
+): string => {
+  const start = new Date(getTrainingWeekStart(dateString, checkInDay) + 'T00:00:00');
+  start.setDate(start.getDate() + 6);
+  return getDateString(start);
+};

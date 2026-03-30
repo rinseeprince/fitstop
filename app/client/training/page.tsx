@@ -11,30 +11,22 @@ import { Calendar, Dumbbell } from "lucide-react";
 import type { TrainingPlan } from "@/types/training";
 import type { SessionCompletion } from "@/services/client-portal-training";
 
-// Get current week start (Monday)
-function getCurrentWeekStart(): string {
-  const now = new Date();
-  const day = now.getDay();
-  const diff = now.getDate() - day + (day === 0 ? -6 : 1);
-  const monday = new Date(now.setDate(diff));
-  return monday.toISOString().split("T")[0];
-}
-
 export default function ClientTrainingPage() {
   const { user: _user } = useAuth();
   const [plan, setPlan] = useState<TrainingPlan | null>(null);
   const [completions, setCompletions] = useState<SessionCompletion[]>([]);
+  const [weekStartDate, setWeekStartDate] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  const weekStartDate = getCurrentWeekStart();
 
   useEffect(() => {
     async function fetchData() {
       try {
+        // Fetch completions without weekStartDate param; server computes it
+        // from the client's check-in day
         const [planRes, completionsRes] = await Promise.all([
           fetch("/api/client/training"),
-          fetch(`/api/client/training/completions?weekStartDate=${weekStartDate}`),
+          fetch("/api/client/training/completions"),
         ]);
 
         if (!planRes.ok) throw new Error("Failed to fetch training plan");
@@ -45,6 +37,7 @@ export default function ClientTrainingPage() {
 
         setPlan(planData.data);
         setCompletions(completionsData.data || []);
+        setWeekStartDate(completionsData.weekStartDate || "");
       } catch (err) {
         setError(err instanceof Error ? err.message : "Something went wrong");
       } finally {
@@ -53,17 +46,16 @@ export default function ClientTrainingPage() {
     }
 
     fetchData();
-  }, [weekStartDate]);
+  }, []);
 
   const handleToggleComplete = async (sessionId: string, isComplete: boolean) => {
     if (isComplete) {
-      // Mark complete
+      // Mark complete (server computes weekStartDate from check-in day)
       const res = await fetch("/api/client/training/completions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           trainingSessionId: sessionId,
-          weekStartDate,
           quality: "full",
         }),
       });
@@ -73,9 +65,9 @@ export default function ClientTrainingPage() {
         setCompletions((prev) => [...prev, data.data]);
       }
     } else {
-      // Remove completion
+      // Remove completion (server computes weekStartDate from check-in day)
       const res = await fetch(
-        `/api/client/training/completions?trainingSessionId=${sessionId}&weekStartDate=${weekStartDate}`,
+        `/api/client/training/completions?trainingSessionId=${sessionId}`,
         { method: "DELETE" }
       );
 
