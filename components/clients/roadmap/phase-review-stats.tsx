@@ -1,6 +1,12 @@
 "use client";
 
-import { TrendingUp, TrendingDown, Minus, Target } from "lucide-react";
+import {
+  TrendingUp,
+  TrendingDown,
+  Minus,
+  Target,
+  Calendar,
+} from "lucide-react";
 import { weightFromKg } from "@/utils/nutrition-helpers";
 import type { PhaseReviewData } from "@/types/roadmap";
 
@@ -15,7 +21,10 @@ export function PhaseReviewStats({ data, weightUnit }: PhaseReviewStatsProps) {
   const weightDeltaKg =
     startWeight && currentWeight ? currentWeight - startWeight : null;
   const weightDelta =
-    weightDeltaKg != null ? weightFromKg(Math.abs(weightDeltaKg), weightUnit) * Math.sign(weightDeltaKg) : null;
+    weightDeltaKg != null
+      ? weightFromKg(Math.abs(weightDeltaKg), weightUnit) *
+        Math.sign(weightDeltaKg)
+      : null;
 
   const startBf = data.bodyMetrics.start?.bodyFatPercentage;
   const currentBf = data.bodyMetrics.current?.bodyFatPercentage;
@@ -25,28 +34,41 @@ export function PhaseReviewStats({ data, weightUnit }: PhaseReviewStatsProps) {
 
   return (
     <div className="space-y-4">
-      {/* Duration */}
-      <p className="text-xs text-muted-foreground">
-        {data.durationDays} day{data.durationDays !== 1 ? "s" : ""} in this
-        phase
-      </p>
+      {/* Duration badge */}
+      <div className="inline-flex items-center gap-1.5 rounded-[6px] bg-[rgba(13,148,136,0.05)] px-2.5 py-1.5">
+        <Calendar className="h-3.5 w-3.5 text-[#5a7d82]" />
+        <span className="text-[12px] font-medium text-[#5a7d82]">
+          {data.durationDays} day{data.durationDays !== 1 ? "s" : ""} in this
+          phase
+        </span>
+      </div>
 
       {/* Phase Goal Progress */}
       {data.phaseGoals && (
         <div className="space-y-2">
           <div className="flex items-center gap-1.5">
-            <Target className="h-3.5 w-3.5 text-muted-foreground" />
-            <p className="text-xs font-medium text-muted-foreground">Phase Goal Progress</p>
+            <Target className="h-3.5 w-3.5 text-[#93b0b4]" />
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-[#93b0b4]">
+              Phase Goal Progress
+            </p>
           </div>
           <div className="grid grid-cols-2 gap-3">
             {data.phaseGoals.goalWeight != null && (
               <MetricCard
                 label="Goal Weight"
                 startValue={`${displayWeight(data.phaseGoals.goalWeight)} ${weightUnit}`}
-                endValue={currentWeight ? `${displayWeight(currentWeight)} ${weightUnit}` : "-"}
+                endValue={
+                  currentWeight
+                    ? `${displayWeight(currentWeight)} ${weightUnit}`
+                    : "-"
+                }
                 delta={
                   currentWeight != null
-                    ? weightFromKg(Math.abs(currentWeight - data.phaseGoals.goalWeight), weightUnit) * Math.sign(currentWeight - data.phaseGoals.goalWeight)
+                    ? weightFromKg(
+                        Math.abs(currentWeight - data.phaseGoals.goalWeight),
+                        weightUnit
+                      ) *
+                      Math.sign(currentWeight - data.phaseGoals.goalWeight)
                     : null
                 }
                 unit={weightUnit}
@@ -74,8 +96,16 @@ export function PhaseReviewStats({ data, weightUnit }: PhaseReviewStatsProps) {
         <div className="grid grid-cols-2 gap-3">
           <MetricCard
             label="Weight"
-            startValue={startWeight ? `${displayWeight(startWeight)} ${weightUnit}` : "-"}
-            endValue={currentWeight ? `${displayWeight(currentWeight)} ${weightUnit}` : "-"}
+            startValue={
+              startWeight
+                ? `${displayWeight(startWeight)} ${weightUnit}`
+                : "-"
+            }
+            endValue={
+              currentWeight
+                ? `${displayWeight(currentWeight)} ${weightUnit}`
+                : "-"
+            }
             delta={weightDelta}
             unit={weightUnit}
           />
@@ -92,7 +122,7 @@ export function PhaseReviewStats({ data, weightUnit }: PhaseReviewStatsProps) {
       )}
 
       {/* Adherence stats */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="flex rounded-[6px] border border-[rgba(13,148,136,0.08)]">
         {data.trainingAdherence && (
           <StatCard
             label="Training"
@@ -106,6 +136,7 @@ export function PhaseReviewStats({ data, weightUnit }: PhaseReviewStatsProps) {
                 ? `${data.trainingAdherence.completed}/${data.trainingAdherence.prescribed} sessions`
                 : `${data.trainingAdherence.completed} sessions`
             }
+            showBorder
           />
         )}
         {data.nutritionAdherence && (
@@ -113,6 +144,7 @@ export function PhaseReviewStats({ data, weightUnit }: PhaseReviewStatsProps) {
             label="Nutrition"
             value={`${data.nutritionAdherence.averageScore}%`}
             detail={`${data.nutritionAdherence.logsCount} days logged`}
+            showBorder
           />
         )}
         {data.habitCompletion && (
@@ -120,6 +152,7 @@ export function PhaseReviewStats({ data, weightUnit }: PhaseReviewStatsProps) {
             label="Habits"
             value={`${data.habitCompletion.percentage}%`}
             detail={`${data.habitCompletion.completed}/${data.habitCompletion.total}`}
+            showBorder={false}
           />
         )}
       </div>
@@ -141,30 +174,34 @@ function MetricCard({
   unit: string;
 }) {
   return (
-    <div className="rounded-md border p-3 space-y-1">
-      <p className="text-xs font-medium text-muted-foreground">{label}</p>
-      <div className="flex items-center justify-between text-sm">
-        <span>{startValue}</span>
-        <span className="text-muted-foreground">to</span>
-        <span className="font-medium">{endValue}</span>
+    <div className="rounded-[6px] border border-[rgba(13,148,136,0.08)] bg-white p-3 space-y-1">
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-[#93b0b4]">
+        {label}
+      </p>
+      <div className="flex items-center justify-between text-[13px]">
+        <span className="text-[#5a7d82]">{startValue}</span>
+        <span className="text-[#93b0b4]">→</span>
+        <span className="font-medium font-mono-display text-[#0c1a1e]">
+          {endValue}
+        </span>
       </div>
       {delta !== null && (
-        <div className="flex items-center gap-1 text-xs">
+        <div className="flex items-center gap-1 text-[11px]">
           {delta < 0 ? (
-            <TrendingDown className="h-3 w-3 text-green-600" />
+            <TrendingDown className="h-3 w-3 text-[#0d9488]" />
           ) : delta > 0 ? (
-            <TrendingUp className="h-3 w-3 text-red-600" />
+            <TrendingUp className="h-3 w-3 text-[#c06060]" />
           ) : (
-            <Minus className="h-3 w-3 text-muted-foreground" />
+            <Minus className="h-3 w-3 text-[#93b0b4]" />
           )}
           <span
-            className={
+            className={`font-mono-display ${
               delta < 0
-                ? "text-green-600"
+                ? "text-[#0d9488]"
                 : delta > 0
-                  ? "text-red-600"
-                  : "text-muted-foreground"
-            }
+                  ? "text-[#c06060]"
+                  : "text-[#93b0b4]"
+            }`}
           >
             {delta > 0 ? "+" : ""}
             {delta.toFixed(1)} {unit}
@@ -179,16 +216,26 @@ function StatCard({
   label,
   value,
   detail,
+  showBorder,
 }: {
   label: string;
   value: string;
   detail: string;
+  showBorder: boolean;
 }) {
   return (
-    <div className="rounded-md border p-3 text-center space-y-1">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="text-lg font-semibold">{value}</p>
-      <p className="text-xs text-muted-foreground">{detail}</p>
+    <div
+      className={`flex-1 px-3 py-3 text-center space-y-1 ${
+        showBorder ? "border-r border-[rgba(13,148,136,0.08)]" : ""
+      }`}
+    >
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-[#93b0b4]">
+        {label}
+      </p>
+      <p className="text-[22px] font-semibold font-mono-display text-[#0c1a1e]">
+        {value}
+      </p>
+      <p className="text-[12px] text-[#5a7d82]">{detail}</p>
     </div>
   );
 }

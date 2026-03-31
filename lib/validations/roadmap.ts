@@ -21,6 +21,13 @@ export const updateRoadmapSchema = createRoadmapSchema.partial().refine(
   { message: "At least one field must be provided" }
 );
 
+export const milestoneSchema = z.object({
+  id: z.string().uuid(),
+  text: z.string().min(1).max(500),
+  completed: z.boolean(),
+  completed_at: z.string().datetime().nullable(),
+});
+
 /**
  * Schema for creating a new phase
  */
@@ -34,6 +41,7 @@ export const createPhaseSchema = z.object({
   orderIndex: z.number().int().min(0).optional(),
   phaseGoalWeight: z.number().min(20).max(700).nullable().optional(),
   phaseGoalBodyFatPercentage: z.number().min(3).max(60).nullable().optional(),
+  milestones: z.array(milestoneSchema).max(20).optional(),
 });
 
 /**

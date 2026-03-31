@@ -6,7 +6,7 @@
 import { generateUUID, generateISODate } from './test-utils'
 import type { Client } from '@/types/check-in'
 import type { CheckInRow, CheckInTokenRow, ClientRow, TrainingPlanRow, TrainingSessionRow, TrainingExerciseRow } from '@/lib/database-helpers'
-import type { BodyMetricsEventRow, ClientGoalRow, RoadmapRow, PhaseRow } from '@/types/roadmap'
+import type { BodyMetricsEventRow, ClientGoalRow, Milestone, RoadmapRow, PhaseRow } from '@/types/roadmap'
 
 // =============================================================================
 // Client Builders
@@ -538,6 +538,7 @@ export interface MockPhaseRowOptions {
   phaseGoalBodyFatPercentage?: number | null
   coachReflection?: string | null
   phaseSummary?: Record<string, unknown> | null
+  milestones?: Milestone[]
   completionSeen?: boolean
   createdAt?: string
   updatedAt?: string
@@ -563,6 +564,7 @@ export function createMockPhaseRow(options: MockPhaseRowOptions = {}): PhaseRow 
     phase_goal_body_fat_percentage: options.phaseGoalBodyFatPercentage ?? null,
     coach_reflection: options.coachReflection ?? null,
     phase_summary: options.phaseSummary ?? null,
+    milestones: options.milestones ?? [],
     completion_seen: options.completionSeen ?? false,
     created_at: options.createdAt ?? now,
     updated_at: options.updatedAt ?? now,

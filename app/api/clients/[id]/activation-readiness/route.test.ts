@@ -84,6 +84,7 @@ const mockPhase = {
   startDate: "2024-02-01",
   endDate: "2024-03-01",
   orderIndex: 0,
+  milestones: [],
   createdAt: "2024-01-01T00:00:00Z",
   updatedAt: "2024-01-01T00:00:00Z",
 };

@@ -1,13 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Loader2, Calendar, ChevronDown, ChevronUp, Pencil } from "lucide-react";
+import { Loader2, Calendar, ChevronRight, Pencil } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { PhaseReviewDrawer } from "./phase-review-drawer";
 import { EditPhaseDialog } from "./edit-phase-dialog";
+import { PhaseExpandedContent } from "./phase-expanded-content";
 import { weightFromKg } from "@/utils/nutrition-helpers";
 import type { Phase, PhaseStatus } from "@/types/roadmap";
 
@@ -21,12 +21,21 @@ const statusBadgeVariant: Record<
   skipped: "neutral",
 };
 
+const statusBorderClass: Record<PhaseStatus, string> = {
+  active: "border border-[rgba(13,148,136,0.08)]",
+  completed: "border border-[rgba(13,148,136,0.08)]",
+  planned: "border border-dashed border-[rgba(13,148,136,0.10)] opacity-[0.85]",
+  skipped: "border border-[rgba(13,148,136,0.08)] opacity-60",
+};
+
 type PhaseCardProps = {
   phase: Phase;
   clientId: string;
   hasActivePhase: boolean;
   weightUnit: "lbs" | "kg";
   onUpdate: () => void;
+  defaultExpanded?: boolean;
+  index?: number;
 };
 
 export const PhaseCard = ({
@@ -35,9 +44,11 @@ export const PhaseCard = ({
   hasActivePhase,
   weightUnit,
   onUpdate,
+  defaultExpanded,
+  index = 0,
 }: PhaseCardProps) => {
   const { toast } = useToast();
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(defaultExpanded ?? false);
   const [isActivating, setIsActivating] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -72,50 +83,84 @@ export const PhaseCard = ({
   const showActivate = phase.status === "planned";
   const activateDisabled = hasActivePhase || isActivating;
 
-  return (
-    <Card>
-      <CardContent className="pt-4 pb-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setExpanded(!expanded)}
-                className="flex items-center gap-1 text-sm font-medium hover:underline"
-              >
-                {expanded ? (
-                  <ChevronUp className="h-4 w-4 shrink-0" />
-                ) : (
-                  <ChevronDown className="h-4 w-4 shrink-0" />
-                )}
-                {phase.name}
-              </button>
-              <Badge variant={statusBadgeVariant[phase.status]}>
-                {phase.status}
-              </Badge>
-            </div>
+  const msPerWeek = 7 * 24 * 60 * 60 * 1000;
+  const currentWeek =
+    phase.status === "active" && phase.startDate
+      ? Math.max(1, Math.ceil((Date.now() - new Date(phase.startDate).getTime()) / msPerWeek))
+      : null;
+  const totalWeeks =
+    phase.durationWeeks ??
+    (phase.startDate && phase.endDate
+      ? Math.ceil((new Date(phase.endDate).getTime() - new Date(phase.startDate).getTime()) / msPerWeek)
+      : null);
 
+  const goalParts: string[] = [];
+  if (phase.phaseGoalWeight != null)
+    goalParts.push(`${weightFromKg(phase.phaseGoalWeight, weightUnit).toFixed(1)}${weightUnit}`);
+  if (phase.phaseGoalBodyFatPercentage != null)
+    goalParts.push(`${phase.phaseGoalBodyFatPercentage}%`);
+
+  return (
+    <div
+      className={`bg-white rounded-[6px] ${statusBorderClass[phase.status]}`}
+      style={{
+        animation: "slideUp 0.35s ease forwards",
+        animationDelay: `${index * 0.04}s`,
+        opacity: 0,
+      }}
+    >
+      <div className="px-4 py-3">
+        {/* Header row */}
+        <div className="flex items-center gap-3">
+          {/* Left: chevron + name + badge */}
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="flex items-center gap-2 min-w-0 flex-1"
+          >
+            <ChevronRight
+              className={`h-4 w-4 shrink-0 text-[#5a7d82] transition-transform duration-200 ${expanded ? "rotate-90" : ""}`}
+            />
+            <span className="text-[14px] font-semibold text-[#0c1a1e] truncate">
+              {phase.name}
+            </span>
+            <Badge variant={statusBadgeVariant[phase.status]}>
+              {phase.status}
+            </Badge>
+          </button>
+
+          {/* Middle: goals + dates */}
+          <div className="hidden sm:flex items-center gap-3 shrink-0">
+            {goalParts.length > 0 && (
+              <span className="font-mono-display text-[12px] text-[#93b0b4]">
+                Goal: {goalParts.join(" / ")}
+              </span>
+            )}
             {(phase.startDate || phase.endDate) && (
-              <div className="flex items-center gap-1 mt-1 text-xs text-muted-foreground">
+              <span className="flex items-center gap-1 font-mono-display text-[12px] text-[#93b0b4]">
                 <Calendar className="h-3 w-3" />
-                <span>
-                  {phase.startDate && phase.startDate}
-                  {phase.startDate && phase.endDate && " → "}
-                  {phase.endDate && phase.endDate}
-                </span>
-              </div>
+                {phase.startDate ?? ""}
+                {phase.startDate && phase.endDate ? " → " : ""}
+                {phase.endDate ?? ""}
+              </span>
             )}
           </div>
 
-          <div className="flex items-center gap-2">
+          {/* Right: week badge + actions */}
+          <div className="flex items-center gap-2 shrink-0">
+            {currentWeek != null && totalWeeks != null && (
+              <span className="text-[11px] font-mono-display bg-[rgba(13,148,136,0.05)] text-[#0d9488] px-2 py-0.5 rounded-[6px] font-semibold">
+                {Math.min(currentWeek, totalWeeks)}/{totalWeeks} weeks
+              </span>
+            )}
+
             {(phase.status === "planned" || phase.status === "active") && (
-              <Button
-                variant="ghost"
-                size="sm"
+              <button
                 onClick={() => setEditOpen(true)}
+                className="p-1.5 rounded-[6px] text-[#93b0b4] hover:text-[#5a7d82] hover:bg-[rgba(13,148,136,0.05)] transition-colors"
                 title="Edit phase"
               >
                 <Pencil className="h-4 w-4" />
-              </Button>
+              </button>
             )}
 
             {showActivate && (
@@ -124,6 +169,7 @@ export const PhaseCard = ({
                 size="sm"
                 onClick={handleActivate}
                 disabled={activateDisabled}
+                className="bg-white border-[rgba(13,148,136,0.08)] text-[#5a7d82] hover:text-[#0d9488] hover:border-[#0d9488]"
                 title={
                   hasActivePhase
                     ? "Complete the current active phase first"
@@ -143,6 +189,7 @@ export const PhaseCard = ({
                 variant="outline"
                 size="sm"
                 onClick={() => setReviewOpen(true)}
+                className="bg-white border-[rgba(13,148,136,0.08)] text-[#5a7d82] hover:text-[#0d9488] hover:border-[#0d9488]"
               >
                 Complete Phase
               </Button>
@@ -150,54 +197,32 @@ export const PhaseCard = ({
           </div>
         </div>
 
-        {expanded && (
-          <div className="mt-3 pt-3 border-t space-y-2">
-            {phase.description && (
-              <div>
-                <p className="text-xs font-medium text-muted-foreground">
-                  Description
-                </p>
-                <p className="text-sm whitespace-pre-wrap">
-                  {phase.description}
-                </p>
-              </div>
+        {/* Completed phase meta */}
+        {phase.status === "completed" && (
+          <div className="flex items-center gap-3 mt-2">
+            {phase.milestones.length > 0 && (
+              <span className="text-[12px] font-semibold bg-[rgba(13,148,136,0.05)] text-[#0d9488] px-1.5 py-0.5 rounded-[6px]">
+                {phase.milestones.filter((m) => m.completed).length}/{phase.milestones.length} milestones
+              </span>
             )}
-            {phase.objectives && (
-              <div>
-                <p className="text-xs font-medium text-muted-foreground">
-                  Objectives
-                </p>
-                <p className="text-sm whitespace-pre-wrap">
-                  {phase.objectives}
-                </p>
-              </div>
-            )}
-            {phase.durationWeeks && (
-              <p className="text-xs text-muted-foreground">
-                Duration: {phase.durationWeeks} week
-                {phase.durationWeeks !== 1 ? "s" : ""}
-              </p>
-            )}
-            {(phase.phaseGoalWeight != null || phase.phaseGoalBodyFatPercentage != null) && (
-              <div className="flex gap-3 text-xs text-muted-foreground">
-                {phase.phaseGoalWeight != null && (
-                  <span>
-                    Goal Weight: {weightFromKg(phase.phaseGoalWeight, weightUnit).toFixed(1)} {weightUnit}
-                  </span>
-                )}
-                {phase.phaseGoalBodyFatPercentage != null && (
-                  <span>Goal Body Fat: {phase.phaseGoalBodyFatPercentage}%</span>
-                )}
-              </div>
-            )}
-            {!phase.description && !phase.objectives && !phase.durationWeeks && phase.phaseGoalWeight == null && phase.phaseGoalBodyFatPercentage == null && (
-              <p className="text-sm text-muted-foreground">
-                No additional details.
-              </p>
+            {phase.coachReflection && (
+              <span className="text-[#93b0b4] text-[12px] italic truncate">
+                {phase.coachReflection.length > 80 ? phase.coachReflection.slice(0, 80) + "..." : phase.coachReflection}
+              </span>
             )}
           </div>
         )}
-      </CardContent>
+
+        {/* Expanded content */}
+        {expanded && (
+          <PhaseExpandedContent
+            phase={phase}
+            clientId={clientId}
+            weightUnit={weightUnit}
+            onMutate={onUpdate}
+          />
+        )}
+      </div>
 
       <PhaseReviewDrawer
         open={reviewOpen}
@@ -216,6 +241,6 @@ export const PhaseCard = ({
         onOpenChange={setEditOpen}
         onSuccess={onUpdate}
       />
-    </Card>
+    </div>
   );
 };

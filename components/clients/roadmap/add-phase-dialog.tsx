@@ -15,6 +15,9 @@ import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { weightToKg } from "@/utils/nutrition-helpers";
+import { PhaseGoalFields } from "./phase-goal-fields";
+import { MilestoneInputList } from "./milestone-input-list";
+import type { Milestone } from "@/types/roadmap";
 
 type AddPhaseDialogProps = {
   clientId: string;
@@ -39,6 +42,7 @@ export const AddPhaseDialog = ({
   const [endDate, setEndDate] = useState("");
   const [phaseGoalWeight, setPhaseGoalWeight] = useState("");
   const [phaseGoalBodyFatPercentage, setPhaseGoalBodyFatPercentage] = useState("");
+  const [milestones, setMilestones] = useState<Milestone[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async () => {
@@ -46,7 +50,7 @@ export const AddPhaseDialog = ({
 
     setIsSubmitting(true);
     try {
-      const body: Record<string, string | number> = { name: name.trim() };
+      const body: Record<string, string | number | Milestone[]> = { name: name.trim() };
       if (description.trim()) body.description = description.trim();
       if (objectives.trim()) body.objectives = objectives.trim();
       if (startDate) body.startDate = startDate;
@@ -57,6 +61,7 @@ export const AddPhaseDialog = ({
       if (phaseGoalBodyFatPercentage.trim()) {
         body.phaseGoalBodyFatPercentage = parseFloat(phaseGoalBodyFatPercentage);
       }
+      if (milestones.length > 0) body.milestones = milestones;
 
       const res = await fetch(`/api/clients/${clientId}/roadmap/phases`, {
         method: "POST",
@@ -79,6 +84,7 @@ export const AddPhaseDialog = ({
       setEndDate("");
       setPhaseGoalWeight("");
       setPhaseGoalBodyFatPercentage("");
+      setMilestones([]);
 
       onSuccess();
       onOpenChange(false);
@@ -155,43 +161,15 @@ export const AddPhaseDialog = ({
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label className="text-sm font-medium">Phase Goals (optional)</Label>
-            <p className="text-xs text-muted-foreground">
-              Leave blank to use the client&apos;s overall goal
-            </p>
-            <div className="flex gap-3">
-              <div className="flex-1 space-y-1">
-                <Label htmlFor="phase-goal-weight" className="text-xs">
-                  Goal Weight ({weightUnit})
-                </Label>
-                <Input
-                  id="phase-goal-weight"
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  placeholder={weightUnit === "lbs" ? "e.g., 165" : "e.g., 75"}
-                  value={phaseGoalWeight}
-                  onChange={(e) => setPhaseGoalWeight(e.target.value)}
-                />
-              </div>
-              <div className="flex-1 space-y-1">
-                <Label htmlFor="phase-goal-bf" className="text-xs">
-                  Goal Body Fat (%)
-                </Label>
-                <Input
-                  id="phase-goal-bf"
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  max="60"
-                  placeholder="e.g., 15"
-                  value={phaseGoalBodyFatPercentage}
-                  onChange={(e) => setPhaseGoalBodyFatPercentage(e.target.value)}
-                />
-              </div>
-            </div>
-          </div>
+          <MilestoneInputList milestones={milestones} onChange={setMilestones} />
+
+          <PhaseGoalFields
+            weightUnit={weightUnit}
+            phaseGoalWeight={phaseGoalWeight}
+            onWeightChange={setPhaseGoalWeight}
+            phaseGoalBodyFatPercentage={phaseGoalBodyFatPercentage}
+            onBodyFatChange={setPhaseGoalBodyFatPercentage}
+          />
         </div>
 
         <DialogFooter>

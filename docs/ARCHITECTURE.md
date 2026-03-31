@@ -78,6 +78,7 @@ roadmaps              -- long-term goal container, one active per client
 - `phase_goal_weight` (NUMERIC, nullable) - phase-specific goal weight in kg. NULL = fall back to client's overall goal
 - `phase_goal_body_fat_percentage` (NUMERIC, nullable) - phase-specific goal body fat %. NULL = fall back to client's overall goal
 - `coach_reflection` (text) and `phase_summary` (JSONB) are written during phase transitions
+- `milestones` JSONB — array of milestone objects scoped to the phase (`{id, text, completed, completed_at}`)
 - `completion_seen` (boolean) tracks whether the client has dismissed the completion card
 
 ### Phase goal overrides

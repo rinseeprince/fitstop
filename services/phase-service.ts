@@ -3,7 +3,7 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { mapPhaseRow } from "./roadmap-service";
 import { getCurrentGoals } from "./client-goals-service";
-import type { Phase, PhaseRow } from "@/types/roadmap";
+import type { Phase, PhaseRow, Milestone } from "@/types/roadmap";
 
 export const createPhase = async (
   roadmapId: string,
@@ -17,6 +17,7 @@ export const createPhase = async (
     orderIndex?: number;
     phaseGoalWeight?: number | null;
     phaseGoalBodyFatPercentage?: number | null;
+    milestones?: Milestone[];
   }
 ): Promise<Phase> => {
   // Get roadmap to set client_id
@@ -64,6 +65,7 @@ export const createPhase = async (
       phase_goals_snapshot: goalsSnapshot as unknown as undefined,
       phase_goal_weight: data.phaseGoalWeight ?? null,
       phase_goal_body_fat_percentage: data.phaseGoalBodyFatPercentage ?? null,
+      milestones: data.milestones ?? [],
     })
     .select()
     .single();
@@ -224,6 +226,7 @@ export const updatePhase = async (
     orderIndex?: number;
     phaseGoalWeight?: number | null;
     phaseGoalBodyFatPercentage?: number | null;
+    milestones?: Milestone[];
   }
 ): Promise<Phase> => {
   // Phase goals can only be edited while phase is in planned status
@@ -259,6 +262,7 @@ export const updatePhase = async (
     updateData.phase_goal_weight = data.phaseGoalWeight;
   if (data.phaseGoalBodyFatPercentage !== undefined)
     updateData.phase_goal_body_fat_percentage = data.phaseGoalBodyFatPercentage;
+  if (data.milestones !== undefined) updateData.milestones = data.milestones;
 
   // Scope to clientId to prevent cross-client access
   const { data: row, error } = await supabaseAdmin

@@ -15,11 +15,12 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Loader2, TrendingUp, TrendingDown } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import { PhaseReviewStats } from "./phase-review-stats";
-import type { Phase, PhaseReviewData } from "@/types/roadmap";
+import { PhaseReviewMilestones } from "./phase-review-milestones";
+import type { Phase, PhaseReviewData, Milestone } from "@/types/roadmap";
 
 type PhaseReviewDrawerProps = {
   open: boolean;
@@ -46,6 +47,9 @@ export function PhaseReviewDrawer({
   const [archiveTraining, setArchiveTraining] = useState(true);
   const [archiveNutrition, setArchiveNutrition] = useState(true);
   const [archiveHabits, setArchiveHabits] = useState(false);
+  const [milestones, setMilestones] = useState<Milestone[]>(
+    phase.milestones ?? []
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const { data, isLoading } = useSWR<{
@@ -77,6 +81,7 @@ export function PhaseReviewDrawer({
               nutritionPlan: archiveNutrition ? "archive" : "keep",
               habits: archiveHabits ? "archive" : "keep",
             },
+            milestones: milestones.length > 0 ? milestones : undefined,
           }),
         }
       );
@@ -105,13 +110,13 @@ export function PhaseReviewDrawer({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className="!inset-y-auto !h-auto !right-4 !top-4 !bottom-4 max-h-[calc(100vh-2rem)] w-[420px] rounded-lg border border-border shadow-md p-5 flex flex-col bg-card"
+        className="!inset-y-auto !h-auto !right-4 !top-4 !bottom-4 max-h-[calc(100vh-2rem)] w-[420px] rounded-lg border border-[rgba(13,148,136,0.08)] shadow-md p-5 flex flex-col bg-white"
       >
-        <SheetHeader className="pb-3 border-b border-border px-0">
-          <SheetTitle className="text-lg font-semibold">
+        <SheetHeader className="pb-3 border-b border-[rgba(13,148,136,0.08)] px-0">
+          <SheetTitle className="text-lg font-semibold text-[#0c1a1e]">
             Complete Phase
           </SheetTitle>
-          <SheetDescription className="text-sm text-muted-foreground">
+          <SheetDescription className="text-[13px] text-[#93b0b4]">
             Review progress for &quot;{phase.name}&quot; before transitioning
           </SheetDescription>
         </SheetHeader>
@@ -125,23 +130,35 @@ export function PhaseReviewDrawer({
             </div>
           ) : (
             <>
-              {reviewData && <PhaseReviewStats data={reviewData} weightUnit={weightUnit} />}
+              {reviewData && (
+                <PhaseReviewStats data={reviewData} weightUnit={weightUnit} />
+              )}
+
+              <PhaseReviewMilestones
+                milestones={milestones}
+                onChange={setMilestones}
+              />
 
               {/* Coach reflection */}
               <div className="space-y-2">
-                <Label htmlFor="reflection">Coach Reflection</Label>
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-[#93b0b4]">
+                  Coach Reflection
+                </span>
                 <Textarea
                   id="reflection"
                   placeholder="What went well? What should this client focus on next?"
                   value={reflection}
                   onChange={(e) => setReflection(e.target.value)}
                   rows={3}
+                  className="border-[rgba(13,148,136,0.08)] focus-visible:ring-[#0d9488] text-[13px] text-[#0c1a1e] placeholder:text-[#93b0b4]"
                 />
               </div>
 
               {/* Next action */}
               <div className="space-y-2">
-                <Label>Next Step</Label>
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-[#93b0b4]">
+                  Next Step
+                </span>
                 <RadioGroup
                   value={nextAction}
                   onValueChange={(v) =>
@@ -156,11 +173,11 @@ export function PhaseReviewDrawer({
                     />
                     <Label
                       htmlFor="activate_next"
-                      className={
+                      className={`text-[13px] ${
                         !reviewData?.hasNextPhase
-                          ? "text-muted-foreground"
-                          : ""
-                      }
+                          ? "text-[#93b0b4]"
+                          : "text-[#0c1a1e]"
+                      }`}
                     >
                       Activate next phase
                       {reviewData?.nextPhaseName &&
@@ -172,31 +189,44 @@ export function PhaseReviewDrawer({
                       value="archive_roadmap"
                       id="archive_roadmap"
                     />
-                    <Label htmlFor="archive_roadmap">Archive roadmap</Label>
+                    <Label
+                      htmlFor="archive_roadmap"
+                      className="text-[13px] text-[#0c1a1e]"
+                    >
+                      Archive roadmap
+                    </Label>
                   </div>
                 </RadioGroup>
               </div>
 
               {/* Plan handling */}
               <div className="space-y-3">
-                <Label>Plan Handling</Label>
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-[#93b0b4]">
+                  Plan Handling
+                </span>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-sm">Archive training plan</span>
+                    <span className="text-[13px] text-[#0c1a1e]">
+                      Archive training plan
+                    </span>
                     <Switch
                       checked={archiveTraining}
                       onCheckedChange={setArchiveTraining}
                     />
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-sm">Archive nutrition plan</span>
+                    <span className="text-[13px] text-[#0c1a1e]">
+                      Archive nutrition plan
+                    </span>
                     <Switch
                       checked={archiveNutrition}
                       onCheckedChange={setArchiveNutrition}
                     />
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-sm">Deactivate habits</span>
+                    <span className="text-[13px] text-[#0c1a1e]">
+                      Deactivate habits
+                    </span>
                     <Switch
                       checked={archiveHabits}
                       onCheckedChange={setArchiveHabits}
@@ -209,7 +239,7 @@ export function PhaseReviewDrawer({
         </div>
 
         {/* Footer */}
-        <div className="pt-4 border-t border-border flex gap-2">
+        <div className="pt-4 border-t border-[rgba(13,148,136,0.08)] flex gap-2">
           <Button
             variant="ghost"
             className="flex-1"
@@ -219,7 +249,7 @@ export function PhaseReviewDrawer({
             Cancel
           </Button>
           <Button
-            className="flex-1"
+            className="flex-1 bg-[#0d9488] hover:bg-[#0d9488]/90 text-white"
             onClick={handleSubmit}
             disabled={isSubmitting || isLoading}
           >

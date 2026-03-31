@@ -4,7 +4,7 @@ import { supabaseAdmin } from "./supabase-admin";
 import { mapPhaseRow } from "./roadmap-service";
 import { getBodyMetricsHistory, getLatestBodyMetrics } from "./body-metrics-service";
 import { getCurrentGoals } from "./client-goals-service";
-import type { PhaseRow, PhaseReviewData } from "@/types/roadmap";
+import type { PhaseRow, PhaseReviewData, Milestone } from "@/types/roadmap";
 
 const ADHERENCE_SCORES: Record<string, number> = {
   hit: 1.0,
@@ -225,6 +225,7 @@ export type TransitionOptions = {
     nutritionPlan: "keep" | "archive";
     habits: "keep" | "archive";
   };
+  milestones?: Milestone[];
 };
 
 export const transitionPhase = async (
@@ -233,6 +234,14 @@ export const transitionPhase = async (
   options: TransitionOptions
 ): Promise<{ resultId: string; reviewData: PhaseReviewData }> => {
   const reviewData = await getPhaseReviewData(phaseId, clientId);
+
+  // Persist toggled milestones on the phase row before the atomic transition
+  if (options.milestones) {
+    await supabaseAdmin
+      .from("phases")
+      .update({ milestones: options.milestones } as never)
+      .eq("id", phaseId);
+  }
 
   // Build phase_summary snapshot (nextPhaseId is written by the RPC)
   const phaseSummary = {
@@ -249,6 +258,7 @@ export const transitionPhase = async (
       habits: reviewData.habitCompletion,
     },
     phaseGoals: reviewData.phaseGoals ?? null,
+    milestones: options.milestones ?? reviewData.phase.milestones ?? [],
   };
 
   // Uses supabaseAdmin: system-level atomic write (RLS exception 3)

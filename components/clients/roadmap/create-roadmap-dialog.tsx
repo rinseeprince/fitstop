@@ -87,43 +87,47 @@ export const CreateRoadmapDialog = ({
 
         <div className="space-y-4 py-4">
           <div className="space-y-2">
-            <Label htmlFor="roadmap-name">Name</Label>
+            <Label htmlFor="roadmap-name" className="text-[#5a7d82]">Name</Label>
             <Input
               id="roadmap-name"
               placeholder="e.g., 12-Week Body Recomp"
               value={name}
               onChange={(e) => setName(e.target.value)}
+              className="rounded-[6px] focus-visible:ring-[#0d9488]"
             />
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="roadmap-goal">Long-term Goal (optional)</Label>
+            <Label htmlFor="roadmap-goal" className="text-[#5a7d82]">Long-term Goal (optional)</Label>
             <Textarea
               id="roadmap-goal"
               placeholder="What is the overarching goal for this client?"
               value={longTermGoal}
               onChange={(e) => setLongTermGoal(e.target.value)}
               rows={3}
+              className="rounded-[6px] focus-visible:ring-[#0d9488]"
             />
           </div>
 
           <div className="flex gap-3">
             <div className="flex-1 space-y-2">
-              <Label htmlFor="roadmap-start">Start Date</Label>
+              <Label htmlFor="roadmap-start" className="text-[#5a7d82]">Start Date</Label>
               <Input
                 id="roadmap-start"
                 type="date"
                 value={startedAt}
                 onChange={(e) => setStartedAt(e.target.value)}
+                className="rounded-[6px] focus-visible:ring-[#0d9488]"
               />
             </div>
             <div className="flex-1 space-y-2">
-              <Label htmlFor="roadmap-end">Target End Date</Label>
+              <Label htmlFor="roadmap-end" className="text-[#5a7d82]">Target End Date</Label>
               <Input
                 id="roadmap-end"
                 type="date"
                 value={targetEndDate}
                 onChange={(e) => setTargetEndDate(e.target.value)}
+                className="rounded-[6px] focus-visible:ring-[#0d9488]"
               />
             </div>
           </div>

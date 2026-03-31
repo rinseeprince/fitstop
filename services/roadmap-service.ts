@@ -43,6 +43,7 @@ export function mapPhaseRow(row: PhaseRow): Phase {
     phaseGoalBodyFatPercentage: row.phase_goal_body_fat_percentage ?? null,
     coachReflection: row.coach_reflection ?? undefined,
     phaseSummary: row.phase_summary,
+    milestones: row.milestones ?? [],
     completionSeen: row.completion_seen ?? false,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

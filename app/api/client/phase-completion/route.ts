@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
     // but not yet in generated types - cast to access them
     const { data: phase, error } = (await supabaseAdmin
       .from("phases")
-      .select("id, name, coach_reflection, phase_summary, end_date")
+      .select("id, name, coach_reflection, phase_summary, end_date, milestones")
       .eq("client_id", clientId)
       .eq("status", "completed")
       .not("phase_summary", "is", null)
@@ -41,6 +41,7 @@ export async function GET(request: NextRequest) {
         coach_reflection: string | null;
         phase_summary: Record<string, unknown> | null;
         end_date: string | null;
+        milestones: Array<{ id: string; text: string; completed: boolean; completed_at: string | null }> | null;
       } | null;
       error: { message: string } | null;
     };
@@ -83,6 +84,12 @@ export async function GET(request: NextRequest) {
       nextPhaseName = nextPhase?.name ?? null;
     }
 
+    // Prefer frozen milestone snapshot from phase_summary; fall back to live column
+    const summaryMilestones = Array.isArray(summary?.milestones) ? summary.milestones : null;
+    const milestones = (summaryMilestones ?? phase.milestones ?? []) as Array<{
+      id: string; text: string; completed: boolean; completed_at: string | null;
+    }>;
+
     return NextResponse.json(
       {
         success: true,
@@ -94,6 +101,7 @@ export async function GET(request: NextRequest) {
           endDate: phase.end_date,
           weightUnit,
           nextPhaseName,
+          milestones,
         },
       },
       { status: 200 }

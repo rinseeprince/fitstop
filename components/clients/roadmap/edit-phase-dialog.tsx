@@ -15,7 +15,9 @@ import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { weightToKg, weightFromKg } from "@/utils/nutrition-helpers";
-import type { Phase } from "@/types/roadmap";
+import type { Phase, Milestone } from "@/types/roadmap";
+import { PhaseGoalFields } from "./phase-goal-fields";
+import { MilestoneInputList } from "./milestone-input-list";
 
 type EditPhaseDialogProps = {
   phase: Phase;
@@ -42,6 +44,7 @@ export const EditPhaseDialog = ({
   const [endDate, setEndDate] = useState("");
   const [phaseGoalWeight, setPhaseGoalWeight] = useState("");
   const [phaseGoalBodyFatPercentage, setPhaseGoalBodyFatPercentage] = useState("");
+  const [milestones, setMilestones] = useState<Milestone[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const goalsDisabled = phase.status !== "planned";
@@ -64,6 +67,7 @@ export const EditPhaseDialog = ({
         ? phase.phaseGoalBodyFatPercentage.toString()
         : ""
     );
+    setMilestones(phase.milestones ?? []);
   }, [phase.id, open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSubmit = async () => {
@@ -71,11 +75,13 @@ export const EditPhaseDialog = ({
 
     setIsSubmitting(true);
     try {
-      const body: Record<string, string | number | null> = { name: name.trim() };
+      const body: Record<string, string | number | null | Milestone[]> = { name: name.trim() };
       body.description = description.trim() || null;
       body.objectives = objectives.trim() || null;
       body.startDate = startDate || null;
       body.endDate = endDate || null;
+
+      body.milestones = milestones;
 
       if (!goalsDisabled) {
         body.phaseGoalWeight = phaseGoalWeight.trim()
@@ -176,51 +182,17 @@ export const EditPhaseDialog = ({
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label className="text-sm font-medium">Phase Goals (optional)</Label>
-            {goalsDisabled ? (
-              <p className="text-xs text-muted-foreground">
-                Goals cannot be changed after a phase has started
-              </p>
-            ) : (
-              <p className="text-xs text-muted-foreground">
-                Leave blank to use the client&apos;s overall goal
-              </p>
-            )}
-            <div className="flex gap-3">
-              <div className="flex-1 space-y-1">
-                <Label htmlFor="edit-phase-goal-weight" className="text-xs">
-                  Goal Weight ({weightUnit})
-                </Label>
-                <Input
-                  id="edit-phase-goal-weight"
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  placeholder={weightUnit === "lbs" ? "e.g., 165" : "e.g., 75"}
-                  value={phaseGoalWeight}
-                  onChange={(e) => setPhaseGoalWeight(e.target.value)}
-                  disabled={goalsDisabled}
-                />
-              </div>
-              <div className="flex-1 space-y-1">
-                <Label htmlFor="edit-phase-goal-bf" className="text-xs">
-                  Goal Body Fat (%)
-                </Label>
-                <Input
-                  id="edit-phase-goal-bf"
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  max="60"
-                  placeholder="e.g., 15"
-                  value={phaseGoalBodyFatPercentage}
-                  onChange={(e) => setPhaseGoalBodyFatPercentage(e.target.value)}
-                  disabled={goalsDisabled}
-                />
-              </div>
-            </div>
-          </div>
+          <MilestoneInputList milestones={milestones} onChange={setMilestones} />
+
+          <PhaseGoalFields
+            weightUnit={weightUnit}
+            phaseGoalWeight={phaseGoalWeight}
+            onWeightChange={setPhaseGoalWeight}
+            phaseGoalBodyFatPercentage={phaseGoalBodyFatPercentage}
+            onBodyFatChange={setPhaseGoalBodyFatPercentage}
+            disabled={goalsDisabled}
+            idPrefix="edit-phase"
+          />
         </div>
 
         <DialogFooter>

@@ -2,13 +2,15 @@
 
 import { useState } from "react";
 import useSWR from "swr";
-import { Loader2, Plus, Target, Calendar } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Plus, Target } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CreateRoadmapDialog } from "./create-roadmap-dialog";
 import { PhaseCard } from "./phase-card";
 import { AddPhaseDialog } from "./add-phase-dialog";
+import { RoadmapSummaryStrip } from "./roadmap-summary-strip";
+import { Skeleton } from "@/components/ui/skeleton";
 import { swrFetcher } from "@/lib/swr-fetcher";
+import { weightFromKg } from "@/utils/nutrition-helpers";
 import type { Client } from "@/types/check-in";
 import type { Roadmap, Phase } from "@/types/roadmap";
 
@@ -35,29 +37,24 @@ export const RoadmapTabContent = ({ client }: RoadmapTabContentProps) => {
 
   if (isLoading) {
     return (
-      <Card>
-        <CardContent className="pt-6">
-          <div className="flex flex-col items-center justify-center py-12 space-y-3">
-            <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">Loading roadmap...</p>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="space-y-3">
+        <Skeleton className="h-[72px] w-full rounded-[6px] bg-[rgba(13,148,136,0.04)]" />
+        <Skeleton className="h-[52px] w-full rounded-[6px] bg-[rgba(13,148,136,0.04)]" />
+        <Skeleton className="h-[52px] w-full rounded-[6px] bg-[rgba(13,148,136,0.04)]" />
+      </div>
     );
   }
 
   if (error) {
     return (
-      <Card>
-        <CardContent className="pt-6">
-          <div className="flex flex-col items-center justify-center py-12 space-y-3">
-            <p className="font-medium">Failed to load roadmap</p>
-            <p className="text-sm text-muted-foreground">
-              An error occurred while loading the roadmap.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="bg-white rounded-[6px] p-6">
+        <div className="flex flex-col items-center justify-center py-12 space-y-3">
+          <p className="font-medium text-[#0c1a1e]">Failed to load roadmap</p>
+          <p className="text-sm text-[#93b0b4]">
+            An error occurred while loading the roadmap.
+          </p>
+        </div>
+      </div>
     );
   }
 
@@ -65,19 +62,17 @@ export const RoadmapTabContent = ({ client }: RoadmapTabContentProps) => {
   if (!data?.data) {
     return (
       <>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex flex-col items-center justify-center py-12 space-y-3">
-              <Target className="w-12 h-12 text-muted-foreground" />
-              <p className="font-medium">No roadmap yet</p>
-              <p className="text-sm text-muted-foreground">
-                Create a roadmap to plan this client&apos;s training phases and
-                goals.
-              </p>
-              <Button onClick={() => setCreateOpen(true)}>Build Roadmap</Button>
-            </div>
-          </CardContent>
-        </Card>
+        <div className="bg-white rounded-[6px] p-6">
+          <div className="flex flex-col items-center justify-center py-12 space-y-3">
+            <Target className="h-8 w-8 text-[#93b0b4]" />
+            <p className="font-medium text-[#0c1a1e]">No roadmap yet</p>
+            <p className="text-sm text-[#93b0b4]">
+              Create a roadmap to plan this client&apos;s training phases and
+              goals.
+            </p>
+            <Button onClick={() => setCreateOpen(true)}>Build Roadmap</Button>
+          </div>
+        </div>
         <CreateRoadmapDialog
           clientId={client.id}
           open={createOpen}
@@ -93,68 +88,70 @@ export const RoadmapTabContent = ({ client }: RoadmapTabContentProps) => {
   const hasActivePhase = phases.some((p) => p.status === "active");
   const weightUnit = client.weightUnit || "lbs";
 
+  // Goal weight: prefer phase-level override from last non-skipped phase, fallback to client.goalWeight
+  const goalPhase = [...phases].reverse().find((p) => p.status !== "skipped");
+  const goalWeightDisplay =
+    goalPhase?.phaseGoalWeight != null
+      ? weightFromKg(goalPhase.phaseGoalWeight, weightUnit)
+      : (client.goalWeight ?? null);
+
   return (
     <>
-      {/* Roadmap Header */}
-      <Card>
-        <CardHeader>
-          <CardTitle>{roadmap.name}</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          {roadmap.longTermGoal && (
-            <p className="text-sm text-muted-foreground">
-              {roadmap.longTermGoal}
-            </p>
-          )}
-          {(roadmap.startedAt || roadmap.targetEndDate) && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Calendar className="h-4 w-4" />
-              <span>
-                {roadmap.startedAt && roadmap.startedAt}
-                {roadmap.startedAt && roadmap.targetEndDate && " → "}
-                {roadmap.targetEndDate && roadmap.targetEndDate}
-              </span>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {/* Summary strip */}
+      <RoadmapSummaryStrip
+        roadmapName={roadmap.name}
+        roadmapStatus={roadmap.status}
+        startedAt={roadmap.startedAt}
+        targetEndDate={roadmap.targetEndDate}
+        phases={phases}
+        startWeight={client.startingWeight ?? null}
+        currentWeight={client.currentWeight ?? null}
+        goalWeight={goalWeightDisplay}
+        weightUnit={weightUnit}
+      />
 
       {/* Phases */}
       {phases.length === 0 ? (
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex flex-col items-center justify-center py-8 space-y-3">
-              <p className="text-sm text-muted-foreground">
-                No phases added yet. Add your first phase to get started.
-              </p>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setAddPhaseOpen(true)}
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                Add Phase
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      ) : (
-        <>
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-medium text-muted-foreground">
-              Phases ({phases.length})
-            </h3>
+        <div className="bg-white rounded-[6px] p-6">
+          <div className="flex flex-col items-center justify-center py-8 space-y-3">
+            <Target className="h-6 w-6 text-[#93b0b4]" />
+            <p className="text-sm text-[#93b0b4]">
+              No phases added yet. Add your first phase to get started.
+            </p>
             <Button
               variant="outline"
               size="sm"
               onClick={() => setAddPhaseOpen(true)}
+              className="bg-white border-[rgba(13,148,136,0.08)] text-[#5a7d82] hover:text-[#0d9488] hover:border-[#0d9488]"
             >
               <Plus className="h-4 w-4 mr-2" />
               Add Phase
             </Button>
           </div>
-          <div className="space-y-3">
-            {phases.map((phase) => (
+        </div>
+      ) : (
+        <>
+          <div className="flex items-center justify-between mt-4">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] uppercase tracking-[0.06em] font-semibold text-[#93b0b4]">
+                Phases
+              </span>
+              <span className="text-[10px] font-semibold bg-[rgba(13,148,136,0.05)] text-[#0d9488] px-1.5 py-0.5 rounded-[6px]">
+                {phases.length}
+              </span>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setAddPhaseOpen(true)}
+              className="bg-white border-[rgba(13,148,136,0.08)] text-[#5a7d82] hover:text-[#0d9488] hover:border-[#0d9488]"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Add Phase
+            </Button>
+          </div>
+          <div className="space-y-2">
+            {phases.map((phase, index) => (
               <PhaseCard
                 key={phase.id}
                 phase={phase}
@@ -162,6 +159,8 @@ export const RoadmapTabContent = ({ client }: RoadmapTabContentProps) => {
                 hasActivePhase={hasActivePhase}
                 weightUnit={weightUnit}
                 onUpdate={() => mutate()}
+                defaultExpanded={phase.status === "active"}
+                index={index}
               />
             ))}
           </div>

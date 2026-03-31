@@ -7,6 +7,7 @@ import {
   getPhaseReviewData,
   transitionPhase,
 } from "@/services/phase-transition-service";
+import { milestoneSchema } from "@/lib/validations/roadmap";
 
 type RouteParams = { params: Promise<{ id: string; phaseId: string }> };
 
@@ -18,6 +19,7 @@ const transitionSchema = z.object({
     nutritionPlan: z.enum(["keep", "archive"]),
     habits: z.enum(["keep", "archive"]),
   }),
+  milestones: z.array(milestoneSchema).max(20).optional(),
 });
 
 export async function GET(request: NextRequest, { params }: RouteParams) {

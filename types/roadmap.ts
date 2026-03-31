@@ -4,6 +4,14 @@ export type RoadmapStatus = "active" | "archived" | "draft";
 // Phase status
 export type PhaseStatus = "planned" | "active" | "completed" | "skipped";
 
+// Milestone within a phase
+export type Milestone = {
+  id: string;
+  text: string;
+  completed: boolean;
+  completed_at: string | null;
+};
+
 // Body metrics source
 export type BodyMetricsSource = "check_in" | "metrics_api" | "intake_sync" | "nutrition_plan";
 
@@ -42,6 +50,7 @@ export type Phase = {
   phaseGoalBodyFatPercentage?: number | null;
   coachReflection?: string;
   phaseSummary?: Record<string, unknown> | null;
+  milestones: Milestone[];
   completionSeen?: boolean;
   createdAt: string;
   updatedAt: string;
@@ -124,6 +133,7 @@ export type PhaseRow = {
   phase_goal_body_fat_percentage: number | null;
   coach_reflection: string | null;
   phase_summary: Record<string, unknown> | null;
+  milestones: Milestone[];
   completion_seen: boolean;
   created_at: string;
   updated_at: string;
@@ -188,4 +198,15 @@ export type PhaseReviewData = {
   durationDays: number;
   hasNextPhase: boolean;
   nextPhaseName: string | null;
+};
+
+// Weekly check-in data row for the phase expanded view table
+export type PhaseWeeklyDataRow = {
+  weekNumber: number;
+  periodStart: string;
+  periodEnd: string;
+  checkInDate: string;
+  weight: number | null;
+  nutritionDaysOnTarget: number | null;
+  trainingSessions: number;
 };

@@ -102,7 +102,7 @@ export async function syncMetricsToClient(
   const { data: client, error: clientError } = await db
     .from("clients")
     .select(
-      "current_weight, height, gender, date_of_birth, current_body_fat_percentage, goal_weight, goal_body_fat_percentage, goal_deadline, work_activity_level, height_unit, weight_unit, unit_preference"
+      "current_weight, starting_weight, height, gender, date_of_birth, current_body_fat_percentage, starting_body_fat_percentage, goal_weight, goal_body_fat_percentage, goal_deadline, work_activity_level, height_unit, weight_unit, unit_preference"
     )
     .eq("id", clientId)
     .single();
@@ -119,6 +119,9 @@ export async function syncMetricsToClient(
   if (client.current_weight == null && intake.currentWeight != null) {
     updates.current_weight = intake.currentWeight;
   }
+  if (client.starting_weight == null && intake.currentWeight != null) {
+    updates.starting_weight = intake.currentWeight;
+  }
   if (client.height == null && intake.height != null) {
     updates.height = intake.height;
   }
@@ -133,6 +136,12 @@ export async function syncMetricsToClient(
     intake.bodyFatPercentage != null
   ) {
     updates.current_body_fat_percentage = intake.bodyFatPercentage;
+  }
+  if (
+    client.starting_body_fat_percentage == null &&
+    intake.bodyFatPercentage != null
+  ) {
+    updates.starting_body_fat_percentage = intake.bodyFatPercentage;
   }
   if (client.goal_weight == null && intake.targetWeight != null) {
     updates.goal_weight = intake.targetWeight;
