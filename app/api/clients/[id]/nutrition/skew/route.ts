@@ -8,8 +8,7 @@ import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { DAYS_OF_WEEK } from "@/utils/nutrition-helpers";
 import type { DayCalorieOverrides } from "@/types/check-in";
 import type { Database } from "@/types/database";
-import { upsertWeeklySummary } from "@/services/weekly-nutrition-service";
-import { getWeekStart, getTodayDateString } from "@/lib/date-helpers";
+import { getTodayDateString } from "@/lib/date-helpers";
 
 type DailyTargetInsert = Database["public"]["Tables"]["nutrition_plan_daily_targets"]["Insert"];
 
@@ -165,10 +164,6 @@ export async function POST(
       );
     }
 
-    // Recalculate current week's summary with new daily targets (fire-and-forget)
-    upsertWeeklySummary(clientId, getWeekStart(getTodayDateString())).catch((err) =>
-      console.error("Weekly summary recalculation failed:", err instanceof Error ? err.message : "Unknown error")
-    );
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {

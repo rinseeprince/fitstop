@@ -15,6 +15,7 @@ type NutritionSummary = {
   total_carbs: number;
   total_fat: number;
   days_logged: number;
+  days_in_week: number;
 };
 
 function formatDate(dateStr: string) {
@@ -170,7 +171,7 @@ export function NutritionHistoryTable({ clientId }: Props) {
               </p>
               <p className="text-[11px] text-[rgba(255,255,255,0.35)]">kcal</p>
               <p className="text-[11px] text-[rgba(255,255,255,0.35)] font-mono-display mt-auto pt-2">
-                {summary ? `${avgCalories.toLocaleString()}/day \u00b7 ${daysLogged}/7 logged` : "-"}
+                {summary ? `${avgCalories.toLocaleString()}/day \u00b7 ${daysLogged}/${summary.days_in_week} logged` : "-"}
               </p>
             </>
           )}

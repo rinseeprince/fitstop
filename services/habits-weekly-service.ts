@@ -12,6 +12,7 @@ type HabitRecord = {
   target_value: number | null;
   target_unit: string | null;
   created_at: string;
+  effective_date: string;
 };
 
 type LogRecord = {
@@ -38,7 +39,7 @@ export async function getWeeklyHabitsData(
   // Query 1: Active habits sorted by sort_order
   const { data: habitsData, error: habitsError } = await supabaseAdmin
     .from("daily_habits")
-    .select("id, name, is_boolean, target_value, target_unit, created_at")
+    .select("id, name, is_boolean, target_value, target_unit, created_at, effective_date")
     .eq("client_id", clientId)
     .eq("is_active", true)
     .order("sort_order", { ascending: true });
@@ -108,12 +109,12 @@ function buildLogMap(logs: LogRecord[]): Map<string, Map<string, LogRecord>> {
 
 function getDayStatus(
   date: string,
-  habitCreatedAt: string,
+  habitEffectiveDate: string,
   log: LogRecord | undefined,
   today: string
 ): WeeklyHabitDayStatus {
-  // Habit starts tracking the day after creation
-  if (habitCreatedAt.slice(0, 10) >= date) return "not-tracked";
+  // Habit starts tracking on its effective date (aligned to phase start)
+  if (habitEffectiveDate > date) return "not-tracked";
   // Future date
   if (date > today) return "future";
   // Has a completed log
@@ -136,7 +137,7 @@ function buildHabitRows(
 
     const days: WeeklyHabitDay[] = weekDays.map((date) => {
       const log = logMap.get(date)?.get(habit.id);
-      const status = getDayStatus(date, habit.created_at, log, today);
+      const status = getDayStatus(date, habit.effective_date, log, today);
 
       if (status !== "future" && status !== "not-tracked") {
         eligible++;
@@ -233,7 +234,7 @@ function calculateAllHabitsStreak(
 
   for (let i = 0; i < STREAK_LOOKBACK_DAYS; i++) {
     const dateStr = getDateString(checkDate);
-    const activeOnDate = habits.filter((h) => h.created_at.slice(0, 10) < dateStr);
+    const activeOnDate = habits.filter((h) => h.effective_date <= dateStr);
 
     if (activeOnDate.length === 0) break;
 

@@ -1203,6 +1203,7 @@ export type Database = {
           coach_id: string
           created_at: string
           description: string | null
+          effective_date: string
           id: string
           is_active: boolean
           is_boolean: boolean
@@ -1218,6 +1219,7 @@ export type Database = {
           coach_id: string
           created_at?: string
           description?: string | null
+          effective_date?: string
           id?: string
           is_active?: boolean
           is_boolean?: boolean
@@ -1233,6 +1235,7 @@ export type Database = {
           coach_id?: string
           created_at?: string
           description?: string | null
+          effective_date?: string
           id?: string
           is_active?: boolean
           is_boolean?: boolean

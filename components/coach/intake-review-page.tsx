@@ -1,82 +1,18 @@
 "use client"
 
 import { useState, useCallback } from "react"
-import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
 import { IntakeReviewActions } from "./intake-review-actions"
-import type { ClientIntake, PrimaryGoal, WorkActivityLevel, TrainingLocation, TrainingExperience, CookingFrequency } from "@/types/client-intake"
-
-const GOAL_LABELS: Record<PrimaryGoal, string> = {
-  lose_weight: "Lose Weight",
-  build_muscle: "Build Muscle",
-  recomposition: "Body Recomposition",
-  general_fitness: "General Fitness",
-  event_prep: "Event Preparation",
-  maintain: "Maintain",
-}
-
-const ACTIVITY_LABELS: Record<WorkActivityLevel, string> = {
-  sedentary: "Sedentary",
-  lightly_active: "Lightly Active",
-  moderately_active: "Moderately Active",
-  very_active: "Very Active",
-  extremely_active: "Extremely Active",
-}
-
-const LOCATION_LABELS: Record<TrainingLocation, string> = {
-  commercial_gym: "Commercial Gym",
-  home_gym: "Home Gym",
-  home_no_equipment: "Home (No Equipment)",
-  outdoor: "Outdoor",
-  mixed: "Mixed",
-}
-
-const EXPERIENCE_LABELS: Record<TrainingExperience, string> = {
-  complete_beginner: "Complete Beginner",
-  some_experience: "Some Experience",
-  intermediate: "Intermediate",
-  advanced: "Advanced",
-}
-
-const COOKING_LABELS: Record<CookingFrequency, string> = {
-  mostly_cook: "Mostly Cook",
-  mix_of_both: "Mix of Both",
-  mostly_eat_out: "Mostly Eat Out",
-  meal_prep: "Meal Prep",
-}
+import { IntakeContentSections } from "./intake-content-sections"
+import type { ClientIntake } from "@/types/client-intake"
 
 type IntakeReviewPageProps = {
   intake: ClientIntake
   clientId: string
+  clientName?: string
 }
 
-function QuoteBlock({ text }: { text: string }) {
-  return (
-    <div className="bg-muted/50 border-l-4 border-border rounded-r-md px-4 py-3">
-      <p className="text-sm text-foreground italic">{text}</p>
-    </div>
-  )
-}
-
-function MetricItem({ label, value }: { label: string; value: string | number | undefined }) {
-  if (value == null || value === "") return null
-  return (
-    <div>
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="text-sm font-medium text-foreground">{value}</p>
-    </div>
-  )
-}
-
-function SectionHeader({ title }: { title: string }) {
-  return <h3 className="text-base font-semibold tracking-tight text-foreground mb-3">{title}</h3>
-}
-
-function hasAnyValue(...values: (string | number | boolean | string[] | null | undefined)[]): boolean {
-  return values.some(v => v != null && v !== "" && !(Array.isArray(v) && v.length === 0))
-}
-
-export function IntakeReviewPage({ intake, clientId }: IntakeReviewPageProps) {
+export function IntakeReviewPage({ intake, clientId, clientName }: IntakeReviewPageProps) {
   const [notes, setNotes] = useState(intake.coachReviewNotes ?? "")
   const [saving, setSaving] = useState(false)
 
@@ -98,137 +34,13 @@ export function IntakeReviewPage({ intake, clientId }: IntakeReviewPageProps) {
 
   return (
     <div className="space-y-6">
-      {/* Row 1: About + Lifestyle & Training */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        <section className="bg-card border border-border rounded-lg p-5">
-          <SectionHeader title="About" />
-          <div className="grid grid-cols-2 gap-4">
-            <MetricItem label="Date of Birth" value={intake.dateOfBirth} />
-            <MetricItem label="Gender" value={intake.gender ? intake.gender.charAt(0).toUpperCase() + intake.gender.slice(1) : undefined} />
-            <MetricItem label="Height" value={intake.height ? `${intake.height} ${intake.heightUnit ?? "cm"}` : undefined} />
-            <MetricItem label="Current Weight" value={intake.currentWeight ? `${intake.currentWeight} ${intake.weightUnit ?? "kg"}` : undefined} />
-            <MetricItem label="Body Fat %" value={intake.bodyFatPercentage ? `${intake.bodyFatPercentage}%` : undefined} />
-            <MetricItem label="Activity Level" value={intake.workActivityLevel ? ACTIVITY_LABELS[intake.workActivityLevel] : undefined} />
-          </div>
-        </section>
-
-        <section className="bg-card border border-border rounded-lg p-5">
-          <SectionHeader title="Lifestyle & Training" />
-          <div className="grid grid-cols-2 gap-4">
-            <MetricItem label="Experience" value={intake.trainingExperienceLevel ? EXPERIENCE_LABELS[intake.trainingExperienceLevel] : undefined} />
-            <MetricItem label="Days per Week" value={intake.daysPerWeek} />
-            <MetricItem label="Session Duration" value={intake.sessionDurationMinutes ? `${intake.sessionDurationMinutes} min` : undefined} />
-            <MetricItem label="Preferred Time" value={intake.trainingTimePreference ? intake.trainingTimePreference.charAt(0).toUpperCase() + intake.trainingTimePreference.slice(1) : undefined} />
-            <MetricItem label="Location" value={intake.trainingLocation ? LOCATION_LABELS[intake.trainingLocation] : undefined} />
-            <MetricItem label="Equipment" value={intake.availableEquipment?.join(", ")} />
-          </div>
-        </section>
-      </div>
-
-      {/* Goals - full width for long text */}
-      {hasAnyValue(intake.primaryGoal, intake.targetWeight, intake.goalDeadline, intake.goalDescription, intake.motivation) && (
-        <section className="bg-card border border-border rounded-lg p-5">
-          <SectionHeader title="Goals" />
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              {intake.primaryGoal && (
-                <Badge>{GOAL_LABELS[intake.primaryGoal] ?? intake.primaryGoal}</Badge>
-              )}
-              {intake.targetWeight != null && (
-                <span className="text-sm text-muted-foreground">
-                  Target: {intake.targetWeight} {intake.weightUnit ?? "kg"}
-                </span>
-              )}
-              {intake.goalBodyFatPercentage != null && (
-                <span className="text-sm text-muted-foreground">
-                  Goal BF: {intake.goalBodyFatPercentage}%
-                </span>
-              )}
-              {intake.goalDeadline && (
-                <span className="text-sm text-muted-foreground">
-                  by {new Date(intake.goalDeadline).toLocaleDateString()}
-                </span>
-              )}
-            </div>
-            {intake.goalDescription && <QuoteBlock text={intake.goalDescription} />}
-            {intake.motivation && (
-              <div>
-                <p className="text-xs text-muted-foreground mb-1">Motivation</p>
-                <QuoteBlock text={intake.motivation} />
-              </div>
-            )}
-          </div>
-        </section>
-      )}
-
-      {/* Row 2: Nutrition + History & Medical */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        {hasAnyValue(intake.cookingFrequency, intake.mealsPerDay, intake.hasTrackedMacrosBefore, intake.dietaryRequirements, intake.foodAllergies, intake.dietDescription, intake.biggestNutritionChallenge) && (
-          <section className="bg-card border border-border rounded-lg p-5">
-            <SectionHeader title="Nutrition" />
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-4">
-                <MetricItem label="Cooking" value={intake.cookingFrequency ? COOKING_LABELS[intake.cookingFrequency] : undefined} />
-                <MetricItem label="Meals per Day" value={intake.mealsPerDay} />
-                <MetricItem label="Tracked Macros Before" value={intake.hasTrackedMacrosBefore != null ? (intake.hasTrackedMacrosBefore ? "Yes" : "No") : undefined} />
-                <MetricItem label="Dietary Requirements" value={intake.dietaryRequirements?.join(", ")} />
-                <MetricItem label="Food Allergies" value={intake.foodAllergies} />
-              </div>
-              {intake.dietDescription && (
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Current Diet</p>
-                  <QuoteBlock text={intake.dietDescription} />
-                </div>
-              )}
-              {intake.biggestNutritionChallenge && (
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Biggest Challenge</p>
-                  <QuoteBlock text={intake.biggestNutritionChallenge} />
-                </div>
-              )}
-            </div>
-          </section>
-        )}
-
-        {hasAnyValue(intake.injuriesOrLimitations, intake.medicalNotes, intake.previousCoachingExperience, intake.previousCoachingDetails, intake.anythingElse) && (
-          <section className="bg-card border border-border rounded-lg p-5">
-            <SectionHeader title="History & Medical" />
-            <div className="space-y-3">
-              {intake.injuriesOrLimitations && (
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Injuries or Limitations</p>
-                  <QuoteBlock text={intake.injuriesOrLimitations} />
-                </div>
-              )}
-              {intake.medicalNotes && (
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Medical Notes</p>
-                  <QuoteBlock text={intake.medicalNotes} />
-                </div>
-              )}
-              <MetricItem label="Previous Coaching" value={intake.previousCoachingExperience != null ? (intake.previousCoachingExperience ? "Yes" : "No") : undefined} />
-              {intake.previousCoachingDetails && (
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Previous Coaching Details</p>
-                  <QuoteBlock text={intake.previousCoachingDetails} />
-                </div>
-              )}
-              {intake.anythingElse && (
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Additional Notes</p>
-                  <QuoteBlock text={intake.anythingElse} />
-                </div>
-              )}
-            </div>
-          </section>
-        )}
-      </div>
+      <IntakeContentSections intake={intake} />
 
       {/* Coach Notes - full width */}
-      <section className="bg-card border border-border rounded-lg p-5">
+      <section className="bg-white rounded-[6px] p-5">
         <div className="flex items-center justify-between mb-3">
-          <SectionHeader title="Coach Notes" />
-          {saving && <span className="text-xs text-muted-foreground">Saving...</span>}
+          <h3 className="text-[13px] font-semibold tracking-tight text-[#0c1a1e]">Coach Notes</h3>
+          {saving && <span className="text-[11px] text-[#93b0b4]">Saving...</span>}
         </div>
         <Textarea
           placeholder="Add your private notes about this intake..."
@@ -238,12 +50,12 @@ export function IntakeReviewPage({ intake, clientId }: IntakeReviewPageProps) {
           onBlur={handleNotesBlur}
           className="resize-none"
         />
-        <p className="text-xs text-muted-foreground mt-1">Only visible to you. Saves automatically.</p>
+        <p className="text-[11px] text-[#93b0b4] mt-1">Only visible to you. Saves automatically.</p>
       </section>
 
       {/* Actions */}
-      <section className="bg-card border border-border rounded-lg p-5">
-        <IntakeReviewActions clientId={clientId} intakeStatus={intake.status} />
+      <section className="bg-white rounded-[6px] p-5">
+        <IntakeReviewActions clientId={clientId} intakeStatus={intake.status} intake={intake} clientName={clientName} />
       </section>
     </div>
   )

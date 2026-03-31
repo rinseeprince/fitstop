@@ -84,9 +84,9 @@ export function calculateBaselineCalories(
     ? new Date(Math.max(new Date(calcStartDate).getTime(), Date.now()))
     : new Date();
   const deadline = new Date(goalDeadline);
-  const daysToGoal = Math.ceil(
+  const daysToGoal = Math.round(
     (deadline.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
-  );
+  ) + 1;
 
   if (daysToGoal <= 0) {
     warnings.push("Goal deadline has passed. Using maintenance calories.");

@@ -16,17 +16,21 @@ interface HabitRowProps {
   habit: DailyHabit;
   log: HabitLogWithDetails | undefined;
   isSaving: boolean;
+  disabled?: boolean;
   onToggle: (checked: boolean) => void;
 }
 
-export function HabitRow({ 
-  habit, 
-  log, 
-  isSaving, 
+export function HabitRow({
+  habit,
+  log,
+  isSaving,
+  disabled,
   onToggle
 }: HabitRowProps) {
+  const isDisabled = isSaving || disabled;
+
   return (
-    <div className="flex items-center justify-between">
+    <div className={`flex items-center justify-between ${disabled ? 'opacity-40' : ''}`}>
       <div className="flex items-center gap-2">
         <Label htmlFor={`habit-${habit.id}`} className="text-sm font-normal">
           {habit.name}
@@ -42,7 +46,7 @@ export function HabitRow({
         id={`habit-${habit.id}`}
         checked={log?.completed || false}
         onCheckedChange={onToggle}
-        disabled={isSaving}
+        disabled={isDisabled}
       />
     </div>
   );

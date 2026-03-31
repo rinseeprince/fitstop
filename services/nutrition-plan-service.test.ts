@@ -13,12 +13,7 @@ vi.mock('@/utils/nutrition-helpers', () => ({
   getTrainingDays: vi.fn().mockReturnValue(new Set()),
 }))
 
-vi.mock('./weekly-nutrition-service', () => ({
-  upsertWeeklySummary: vi.fn().mockResolvedValue(undefined),
-}))
-
 vi.mock('@/lib/date-helpers', () => ({
-  getWeekStart: vi.fn().mockReturnValue('2024-01-15'),
   getTodayDateString: vi.fn().mockReturnValue('2024-01-17'),
 }))
 

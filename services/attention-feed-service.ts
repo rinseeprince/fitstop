@@ -213,6 +213,7 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
           isBoolean: habitRow.is_boolean,
           isActive: habitRow.is_active,
           sortOrder: habitRow.sort_order,
+          effectiveDate: habitRow.effective_date,
           createdAt: habitRow.created_at,
           updatedAt: habitRow.updated_at,
         }

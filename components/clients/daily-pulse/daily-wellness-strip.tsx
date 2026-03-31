@@ -114,10 +114,9 @@ export function DailyWellnessStrip({ clientId }: DailyWellnessStripProps) {
   const selectedHabits = selectedDate
     ? allHabitLogs
         .filter(log => {
-          // Only show habits that were created on or before the selected date
-          if (log.habitCreatedAt) {
-            const habitCreatedDate = new Date(log.habitCreatedAt).toISOString().split('T')[0];
-            if (habitCreatedDate > selectedDate) {
+          // Only show habits that are effective on or before the selected date
+          if (log.habitEffectiveDate) {
+            if (log.habitEffectiveDate > selectedDate) {
               return false;
             }
           }

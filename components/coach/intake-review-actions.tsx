@@ -4,24 +4,36 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
 import { useRouter } from "next/navigation"
-import { Check, ArrowRight, RefreshCw, Map } from "lucide-react"
+import { Check, ArrowRight, RefreshCw, Map, Pin } from "lucide-react"
 import { useSWRConfig } from "swr"
-import type { IntakeStatus } from "@/types/client-intake"
+import { useIntakePanel } from "@/contexts/intake-panel-context"
+import type { IntakeStatus, ClientIntake } from "@/types/client-intake"
 
 type IntakeReviewActionsProps = {
   clientId: string
   intakeStatus: IntakeStatus
+  /** When provided, enables "pin and navigate" behavior on builder buttons */
+  intake?: ClientIntake
+  clientName?: string
 }
 
-export function IntakeReviewActions({ clientId, intakeStatus }: IntakeReviewActionsProps) {
+export function IntakeReviewActions({ clientId, intakeStatus, intake, clientName }: IntakeReviewActionsProps) {
   const [syncing, setSyncing] = useState(false)
   const [marking, setMarking] = useState(false)
   const [synced, setSynced] = useState(false)
   const { toast } = useToast()
   const router = useRouter()
   const { mutate } = useSWRConfig()
+  const { openPanel, openMinimized, updateIntake, panel } = useIntakePanel()
 
   const isReviewed = intakeStatus === "reviewed"
+
+  const handlePinAndNavigate = (path: string) => {
+    if (intake && clientName) {
+      openMinimized(clientId, clientName, intake)
+    }
+    router.push(path)
+  }
 
   const handleSyncMetrics = async () => {
     setSyncing(true)
@@ -59,6 +71,10 @@ export function IntakeReviewActions({ clientId, intakeStatus }: IntakeReviewActi
       })
       if (!res.ok) throw new Error("Failed to mark as reviewed")
       toast({ title: "Intake reviewed", description: "This intake has been marked as reviewed." })
+      // Keep the pinned panel in sync if this client's intake is pinned
+      if (intake && panel?.clientId === clientId) {
+        updateIntake({ ...intake, status: "reviewed" })
+      }
       mutate(`/api/clients/${clientId}/intake`)
       mutate("/api/coach/pending-intakes")
     } catch (err) {
@@ -68,6 +84,9 @@ export function IntakeReviewActions({ clientId, intakeStatus }: IntakeReviewActi
       setMarking(false)
     }
   }
+
+  const isPinnable = intake && clientName
+  const isPinned = panel?.clientId === clientId
 
   return (
     <div className="flex flex-wrap items-center gap-3">
@@ -90,7 +109,10 @@ export function IntakeReviewActions({ clientId, intakeStatus }: IntakeReviewActi
       <Button
         variant="outline"
         size="sm"
-        onClick={() => router.push(`/clients/${clientId}?tab=nutrition`)}
+        onClick={() => isPinnable
+          ? handlePinAndNavigate(`/clients/${clientId}?tab=nutrition`)
+          : router.push(`/clients/${clientId}?tab=nutrition`)
+        }
       >
         Go to Nutrition Builder
         <ArrowRight className="w-3 h-3" />
@@ -99,7 +121,10 @@ export function IntakeReviewActions({ clientId, intakeStatus }: IntakeReviewActi
       <Button
         variant="outline"
         size="sm"
-        onClick={() => router.push(`/clients/${clientId}?tab=training`)}
+        onClick={() => isPinnable
+          ? handlePinAndNavigate(`/clients/${clientId}?tab=training`)
+          : router.push(`/clients/${clientId}?tab=training`)
+        }
       >
         Go to Training Builder
         <ArrowRight className="w-3 h-3" />
@@ -108,12 +133,26 @@ export function IntakeReviewActions({ clientId, intakeStatus }: IntakeReviewActi
       <Button
         variant="outline"
         size="sm"
-        onClick={() => router.push(`/clients/${clientId}?tab=roadmap`)}
+        onClick={() => isPinnable
+          ? handlePinAndNavigate(`/clients/${clientId}?tab=roadmap`)
+          : router.push(`/clients/${clientId}?tab=roadmap`)
+        }
       >
         <Map className="w-4 h-4" />
         Build Roadmap
         <ArrowRight className="w-3 h-3" />
       </Button>
+
+      {isPinnable && !isPinned && (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => openPanel(clientId, clientName, intake)}
+        >
+          <Pin className="w-4 h-4" />
+          Pin Intake
+        </Button>
+      )}
 
       {!isReviewed && (
         <Button

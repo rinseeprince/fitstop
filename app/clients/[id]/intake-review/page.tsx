@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { ArrowLeft } from "lucide-react"
 import Link from "next/link"
 import type { ClientIntake } from "@/types/client-intake"
+import { useClient } from "@/hooks/use-check-in-data"
 
 import { swrFetcher } from "@/lib/swr-fetcher"
 
@@ -23,6 +24,7 @@ export default function IntakeReviewRoute({
     swrFetcher,
     { revalidateOnFocus: false }
   )
+  const { client } = useClient(clientId)
 
   const intake = data?.data
 
@@ -64,7 +66,7 @@ export default function IntakeReviewRoute({
           </div>
         )}
 
-        {intake && <IntakeReviewPage intake={intake} clientId={clientId} />}
+        {intake && <IntakeReviewPage intake={intake} clientId={clientId} clientName={client?.name} />}
       </div>
     </AppLayout>
   )

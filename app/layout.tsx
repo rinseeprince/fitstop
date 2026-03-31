@@ -3,9 +3,11 @@ import type { Metadata } from "next"
 import { Instrument_Sans, JetBrains_Mono } from "next/font/google"
 import "./globals.css"
 import { AuthProvider } from "@/contexts/auth-context"
+import { IntakePanelProvider } from "@/contexts/intake-panel-context"
 import { Toaster } from "@/components/ui/toaster"
 import { Toaster as SonnerToaster } from "sonner"
 import { PersistentSidebar } from "@/components/persistent-sidebar"
+import { FloatingIntakePanel } from "@/components/coach/floating-intake-panel"
 
 const instrumentSans = Instrument_Sans({ subsets: ["latin"], weight: ["400", "500", "600", "700"] })
 const jetbrainsMono = JetBrains_Mono({ subsets: ["latin"], weight: ["400", "500", "600", "700"], variable: "--font-mono-display" })
@@ -42,10 +44,13 @@ export default function RootLayout({
     <html lang="en">
       <body className={`${instrumentSans.className} ${jetbrainsMono.variable}`}>
         <AuthProvider>
-          <PersistentSidebar />
-          {children}
-          <Toaster />
-          <SonnerToaster position="bottom-right" richColors />
+          <IntakePanelProvider>
+            <PersistentSidebar />
+            {children}
+            <FloatingIntakePanel />
+            <Toaster />
+            <SonnerToaster position="bottom-right" richColors />
+          </IntakePanelProvider>
         </AuthProvider>
       </body>
     </html>

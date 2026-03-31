@@ -20,7 +20,7 @@ export async function getHabitsHistory(
   // Query 1: Get all habits (active + inactive) for column definitions
   const { data: habitsData, error: habitsError } = await supabaseAdmin
     .from("daily_habits")
-    .select("id, name, is_boolean, target_value, target_unit, is_active, created_at")
+    .select("id, name, is_boolean, target_value, target_unit, is_active, created_at, effective_date")
     .eq("client_id", clientId)
     .order("sort_order", { ascending: true });
 
@@ -36,6 +36,7 @@ export async function getHabitsHistory(
     target_unit: h.target_unit,
     is_active: h.is_active,
     created_at: h.created_at,
+    effective_date: h.effective_date,
   }));
 
   if (habits.length === 0) {
@@ -103,7 +104,7 @@ export async function getHabitsHistory(
     const entries = Object.values(row.habits);
     // Denominator: active habits that existed on this date (unlogged = missed)
     const activeHabitsOnDate = habits.filter(
-      (h) => h.is_active && h.created_at <= date
+      (h) => h.is_active && h.effective_date <= date
     ).length;
     row.total_habits = activeHabitsOnDate;
     row.total_completed = entries.filter((e) => e.completed).length;

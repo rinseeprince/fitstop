@@ -7,8 +7,7 @@ import { upsertDailyLog, getDailyLogs } from "@/services/daily-logs-service";
 import { getTodaysNutritionTarget, getTodaysPlannedActivities } from "@/services/daily-context-service";
 import { getClientTrainingPlan } from "@/services/client-portal-training";
 import { calculateUnplannedActivityCalories, calculateAdjustedDayTarget, calculateAdjustedMacros } from "@/utils/nutrition-tracking-helpers";
-import { getTodayDateString, getDateDaysAgo, getWeekStart } from "@/lib/date-helpers";
-import { upsertWeeklySummary } from "@/services/weekly-nutrition-service";
+import { getTodayDateString, getDateDaysAgo } from "@/lib/date-helpers";
 import type { IntensityLevel } from "@/types/external-activity";
 
 export async function POST(request: NextRequest) {
@@ -124,11 +123,6 @@ export async function POST(request: NextRequest) {
     };
     
     const dailyLog = await upsertDailyLog(clientId, dataWithTargets);
-
-    // Recalculate weekly summary (fire-and-forget, non-blocking)
-    upsertWeeklySummary(clientId, getWeekStart(data.date)).catch((err) =>
-      console.error("Weekly summary recalculation failed:", err instanceof Error ? err.message : "Unknown error")
-    );
 
     return NextResponse.json({
       success: true,

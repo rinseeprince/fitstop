@@ -1,7 +1,6 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { calculateDailyMacros, DAYS_OF_WEEK, getTrainingDays } from "@/utils/nutrition-helpers";
-import { upsertWeeklySummary } from "@/services/weekly-nutrition-service";
-import { getWeekStart, getTodayDateString } from "@/lib/date-helpers";
+import { getTodayDateString } from "@/lib/date-helpers";
 import type { DietType } from "@/types/check-in";
 import type { TrainingPlan } from "@/types/training";
 import { recordBodyMetrics } from "@/services/body-metrics-service";
@@ -133,11 +132,6 @@ export async function createNutritionPlan(params: CreateNutritionPlanParams): Pr
       console.error("Dual-write to body_metrics failed:", dualWriteError instanceof Error ? dualWriteError.message : "Unknown error");
     }
   }
-
-  // Recalculate current week's summary with new plan targets (fire-and-forget)
-  upsertWeeklySummary(params.clientId, getWeekStart(getTodayDateString())).catch((err) =>
-    console.error("Weekly summary recalculation failed:", err instanceof Error ? err.message : "Unknown error")
-  );
 
   return newPlanId;
 }

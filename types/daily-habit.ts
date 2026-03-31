@@ -12,6 +12,7 @@ export type DailyHabit = {
   isBoolean: boolean;
   isActive: boolean;
   sortOrder: number;
+  effectiveDate: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -55,4 +56,5 @@ export type HabitLogWithDetails = DailyHabitLog & {
   targetUnit?: string;
   isBoolean: boolean;
   habitCreatedAt: string;
+  habitEffectiveDate: string;
 };

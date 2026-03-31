@@ -43,6 +43,7 @@ export type HabitMeta = {
   target_unit: string | null;
   is_active: boolean;
   created_at: string;
+  effective_date: string;
 };
 
 export type HabitsHistoryRow = {

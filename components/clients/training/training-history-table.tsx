@@ -100,19 +100,20 @@ export function TrainingHistoryTable({ clientId }: Props) {
   const summaryStats = useMemo(() => {
     const completed = rows.filter((r) => r.completion_quality === "full").length;
 
-    // Planned sessions this week: count sessions whose dayOfWeek falls between
-    // max(weekStart, planStartDate) and today. Handles partial weeks correctly.
+    // Full-week planned total + planned-up-to-today for adherence/missed
     let totalPlanned = total;
+    let plannedUpToToday = total;
     if (plan && trainingWeekStart) {
       const planStart = activePhase?.startDate || plan.createdAt.split("T")[0];
       const rangeStart = planStart > trainingWeekStart ? planStart : trainingWeekStart;
       const today = getTodayDateString();
       const weekEnd = getDateDaysFrom(new Date(trainingWeekStart + "T00:00:00"), 6);
-      const rangeEnd = today < weekEnd ? today : weekEnd;
-      totalPlanned = countPlannedSessions(plan.sessions, rangeStart, rangeEnd);
+      const rangeEndToday = today < weekEnd ? today : weekEnd;
+      totalPlanned = countPlannedSessions(plan.sessions, rangeStart, weekEnd);
+      plannedUpToToday = countPlannedSessions(plan.sessions, rangeStart, rangeEndToday);
     }
 
-    const adherencePct = totalPlanned > 0 ? Math.round((completed / totalPlanned) * 100) : 0;
+    const adherencePct = plannedUpToToday > 0 ? Math.round((completed / plannedUpToToday) * 100) : 0;
 
     // Current streak: count consecutive completed from most recent
     let streak = 0;
@@ -124,10 +125,10 @@ export function TrainingHistoryTable({ clientId }: Props) {
       }
     }
 
-    // Missed = planned sessions that weren't completed (includes unlogged days)
-    const missed = Math.max(0, totalPlanned - completed);
+    // Missed = planned sessions up to today that weren't completed
+    const missed = Math.max(0, plannedUpToToday - completed);
 
-    return { completed, missed, adherencePct, streak, totalPlanned };
+    return { completed, missed, adherencePct, streak, totalPlanned, plannedUpToToday };
   }, [rows, total, plan, activePhase, trainingWeekStart]);
 
   const columns: ColumnDef<TrainingHistoryRow>[] = useMemo(
@@ -252,7 +253,7 @@ export function TrainingHistoryTable({ clientId }: Props) {
                 </span>
               </p>
               <p className="text-[11px] text-[rgba(255,255,255,0.3)] font-mono-display mt-1">
-                {summaryStats.completed}/{summaryStats.totalPlanned} sessions
+                {summaryStats.completed}/{summaryStats.plannedUpToToday} sessions
               </p>
             </>
           )}

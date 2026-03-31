@@ -4,7 +4,7 @@ import { supabaseAdmin } from "./supabase-admin";
 import type { DailyLog } from "@/types/daily-log";
 import type { WeeklyNutritionSummary, WeeklyAdherenceStatus } from "@/types/weekly-nutrition";
 import type { Database } from "@/types/database";
-import { getWeekEnd, getWeekDays } from "@/lib/date-helpers";
+import { getWeekEnd, getWeekDays, getTrainingWeekStart, getTrainingWeekEnd, getTrainingWeekDays, getTodayDateString } from "@/lib/date-helpers";
 import { getPlanTargetForDate } from "@/services/daily-context-service";
 import {
   WEEKLY_NUTRITION_HIT_PER_DAY,
@@ -397,6 +397,115 @@ export async function getLatestWeeklySummary(
   }
 
   return data ? mapRowToSummary(data) : null;
+}
+
+/**
+ * Computes the current coaching week's nutrition summary live from nutrition_logs.
+ * Uses the client's check-in day to determine week boundaries (e.g. Thu-Wed for
+ * a Wednesday check-in client). Handles partial first weeks when client starts mid-week.
+ */
+export async function getCoachingWeekSummaryLive(
+  clientId: string,
+  checkInDay: string | null
+): Promise<WeeklyNutritionSummary | null> {
+  const today = getTodayDateString();
+  const weekStart = getTrainingWeekStart(today, checkInDay);
+  const weekEnd = getTrainingWeekEnd(today, checkInDay);
+
+  // Fetch client start_date for partial week handling
+  const { data: client } = await supabaseAdmin
+    .from("clients")
+    .select("start_date")
+    .eq("id", clientId)
+    .eq("active", true)
+    .single();
+
+  const clientStartDate = client?.start_date ?? null;
+  const effectiveStart = clientStartDate && clientStartDate > weekStart
+    ? clientStartDate
+    : weekStart;
+
+  const startMs = new Date(effectiveStart + "T00:00:00").getTime();
+  const endMs = new Date(weekEnd + "T00:00:00").getTime();
+  const daysInWeek = Math.round((endMs - startMs) / (1000 * 60 * 60 * 24)) + 1;
+
+  // Fetch nutrition logs for the coaching week
+  type NutritionRow = {
+    id: string; client_id: string; date: string;
+    calories_consumed: number | null; protein_g: number | null; carbs_g: number | null; fat_g: number | null;
+    target_calories: number | null; target_protein_g: number | null; target_carbs_g: number | null; target_fat_g: number | null;
+    created_at: string; updated_at: string;
+  };
+
+  const { data: rows, error } = await supabaseAdmin
+    .from("nutrition_logs" as never)
+    .select("id, client_id, date, calories_consumed, protein_g, carbs_g, fat_g, target_calories, target_protein_g, target_carbs_g, target_fat_g, created_at, updated_at")
+    .eq("client_id" as never, clientId as never)
+    .gte("date" as never, effectiveStart as never)
+    .lte("date" as never, weekEnd as never)
+    .order("date" as never, { ascending: true }) as unknown as { data: NutritionRow[] | null; error: { message: string } | null };
+
+  if (error) {
+    console.error("Failed to fetch nutrition logs for coaching week summary:", error.message);
+    throw new Error("Failed to fetch nutrition logs for coaching week summary");
+  }
+
+  const logs: DailyLog[] = (rows || []).map((r) => ({
+    id: r.id,
+    clientId: r.client_id,
+    date: r.date,
+    caloriesConsumed: r.calories_consumed ?? undefined,
+    proteinG: r.protein_g ?? undefined,
+    carbsG: r.carbs_g ?? undefined,
+    fatG: r.fat_g ?? undefined,
+    targetCalories: r.target_calories ?? undefined,
+    targetProteinG: r.target_protein_g ?? undefined,
+    targetCarbsG: r.target_carbs_g ?? undefined,
+    targetFatG: r.target_fat_g ?? undefined,
+    nutritionAdherence: undefined,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  }));
+
+  // Build full-week targets: logged days use saved snapshots, unlogged days use current plan
+  const loggedDates = new Set(logs.map((l) => l.date));
+  const allDaysInRange = getTrainingWeekDays(weekStart, checkInDay).filter(
+    (d) => d >= effectiveStart && d <= weekEnd
+  );
+  const unloggedDays = allDaysInRange.filter((d) => !loggedDates.has(d));
+
+  let fullWeekCal = logs.reduce((sum, l) => sum + (l.targetCalories ?? 0), 0);
+  let fullWeekProtein = logs.reduce((sum, l) => sum + (l.targetProteinG ?? 0), 0);
+  let fullWeekCarbs = logs.reduce((sum, l) => sum + (l.targetCarbsG ?? 0), 0);
+  let fullWeekFat = logs.reduce((sum, l) => sum + (l.targetFatG ?? 0), 0);
+
+  const planTargets = await Promise.all(
+    unloggedDays.map((d) => getPlanTargetForDate(clientId, d))
+  );
+  for (const pt of planTargets) {
+    if (!pt) continue;
+    fullWeekCal += pt.calories;
+    fullWeekProtein += pt.proteinG ?? 0;
+    fullWeekCarbs += pt.carbsG ?? 0;
+    fullWeekFat += pt.fatG ?? 0;
+  }
+
+  const fullWeekTargets: FullWeekTargets = {
+    calories: fullWeekCal,
+    proteinG: fullWeekProtein || null,
+    carbsG: fullWeekCarbs || null,
+    fatG: fullWeekFat || null,
+  };
+
+  const summary = calculateWeeklySummaryFromLogs(logs, effectiveStart, daysInWeek, fullWeekTargets, weekEnd);
+
+  return {
+    ...summary,
+    id: "",
+    clientId,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
 }
 
 type NWSRow = Database["public"]["Tables"]["nutrition_weekly_summaries"]["Row"];

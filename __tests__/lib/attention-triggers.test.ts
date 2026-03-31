@@ -246,8 +246,8 @@ describe('attention-triggers', () => {
   describe('evaluateHabitDropoff', () => {
     it('should detect when completion rate < 50% for 5+ of last 7 days', () => {
       const habits: DailyHabit[] = [
-        { id: 'h1', coachId: 'c1', clientId: 'cl1', name: 'Habit 1', isBoolean: true, isActive: true, sortOrder: 0, createdAt: '2024-01-01T00:00:00Z', updatedAt: '' },
-        { id: 'h2', coachId: 'c1', clientId: 'cl1', name: 'Habit 2', isBoolean: true, isActive: true, sortOrder: 1, createdAt: '2024-01-01T00:00:00Z', updatedAt: '' },
+        { id: 'h1', coachId: 'c1', clientId: 'cl1', name: 'Habit 1', isBoolean: true, isActive: true, sortOrder: 0, createdAt: '2024-01-01T00:00:00Z', updatedAt: '', effectiveDate: '2024-01-01' },
+        { id: 'h2', coachId: 'c1', clientId: 'cl1', name: 'Habit 2', isBoolean: true, isActive: true, sortOrder: 1, createdAt: '2024-01-01T00:00:00Z', updatedAt: '', effectiveDate: '2024-01-01' },
       ]
       
       const habitLogs: DailyHabitLog[] = [
@@ -292,7 +292,7 @@ describe('attention-triggers', () => {
       
       const habits: DailyHabit[] = [
         // Habit created 3 days ago (2024-01-07)
-        { id: 'h1', coachId: 'c1', clientId: 'cl1', name: 'Habit 1', isBoolean: true, isActive: true, sortOrder: 0, createdAt: '2024-01-07T00:00:00Z', updatedAt: '' },
+        { id: 'h1', coachId: 'c1', clientId: 'cl1', name: 'Habit 1', isBoolean: true, isActive: true, sortOrder: 0, createdAt: '2024-01-07T00:00:00Z', updatedAt: '', effectiveDate: '2024-01-07' },
       ]
       
       const habitLogs: DailyHabitLog[] = [
@@ -316,7 +316,7 @@ describe('attention-triggers', () => {
       expect(result1).toBeNull()
       
       const habits: DailyHabit[] = [
-        { id: 'h1', coachId: 'c1', clientId: 'cl1', name: 'Habit 1', isBoolean: true, isActive: true, sortOrder: 0, createdAt: '2024-01-01T00:00:00Z', updatedAt: '' },
+        { id: 'h1', coachId: 'c1', clientId: 'cl1', name: 'Habit 1', isBoolean: true, isActive: true, sortOrder: 0, createdAt: '2024-01-01T00:00:00Z', updatedAt: '', effectiveDate: '2024-01-01' },
       ]
       const result2 = evaluateHabitDropoff([], habits)
       expect(result2).toBeNull()

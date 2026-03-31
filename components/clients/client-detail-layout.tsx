@@ -5,6 +5,7 @@ import { UserPlus } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { ClientSidebar } from "@/components/clients/client-sidebar"
 import { InviteClientDialog } from "@/components/clients/invite-client-dialog"
+import { PinIntakeButton } from "@/components/coach/pin-intake-button"
 import { NotificationsDropdown } from "@/components/navbar/notifications-dropdown"
 import { CLIENT_TABS, type ClientTab } from "@/lib/client-tabs"
 import type { OnboardingStatus } from "@/types/client-intake"
@@ -56,6 +57,7 @@ export function ClientDetailLayout({
             </h1>
 
             <div className="flex items-center gap-2.5">
+              <PinIntakeButton clientId={client.id} clientName={client.name} onboardingStatus={client.onboardingStatus} />
               <InviteClientDialog
                 client={client}
                 trigger={

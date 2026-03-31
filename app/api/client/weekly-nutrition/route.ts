@@ -1,56 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAuthenticatedClientId } from "@/lib/auth-helpers";
+import { getAuthenticatedClientWithCheckInDay } from "@/lib/auth-helpers";
 import { clientApiRateLimit } from "@/lib/rate-limit";
-import { getWeeklySummaries, upsertWeeklySummary } from "@/services/weekly-nutrition-service";
-import { backfillWeeklySummariesForClient } from "@/services/weekly-nutrition-backfill-service";
-import { getWeekStart, getTodayDateString, getDateDaysAgo } from "@/lib/date-helpers";
+import { getCoachingWeekSummaryLive } from "@/services/weekly-nutrition-service";
 
 export async function GET(request: NextRequest) {
   const rateLimitResult = await clientApiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
 
   try {
-    const clientId = await getAuthenticatedClientId();
+    const auth = await getAuthenticatedClientWithCheckInDay();
 
-    if (!clientId) {
+    if (!auth) {
       return NextResponse.json(
         { success: false, error: "Unauthorized" },
         { status: 401 }
       );
     }
 
-    const { searchParams } = new URL(request.url);
-    const latest = searchParams.get("latest") === "true";
-
-    if (latest) {
-      // Always recalculate the current week so plan changes are reflected immediately
-      const currentWeekStart = getWeekStart(getTodayDateString());
-      const summary = await upsertWeeklySummary(clientId, currentWeekStart);
-      return NextResponse.json(
-        { success: true, data: summary },
-        { headers: { "Cache-Control": "no-store" } }
-      );
-    }
-
-    const startDate = searchParams.get("startDate") ?? undefined;
-    const endDate = searchParams.get("endDate") ?? undefined;
-
-    let summaries = await getWeeklySummaries(clientId, startDate, endDate);
-    if (summaries.length === 0) {
-      // Limit backfill to last 12 weeks to prevent unbounded computation
-      const maxBackfillStart = getWeekStart(getDateDaysAgo(12 * 7));
-      await backfillWeeklySummariesForClient(clientId, maxBackfillStart);
-      summaries = await getWeeklySummaries(clientId, startDate, endDate);
-    }
-
+    // Always compute live from nutrition_logs using coaching week boundaries
+    const summary = await getCoachingWeekSummaryLive(auth.clientId, auth.checkInDay);
     return NextResponse.json(
-      { success: true, data: summaries },
+      { success: true, data: summary },
       { headers: { "Cache-Control": "no-store" } }
     );
   } catch (error) {
-    console.error("Error fetching weekly nutrition summaries:", error instanceof Error ? error.message : "Unknown error");
+    console.error("Error fetching weekly nutrition summary:", error instanceof Error ? error.message : "Unknown error");
     return NextResponse.json(
-      { success: false, error: "Failed to fetch weekly nutrition summaries" },
+      { success: false, error: "Failed to fetch weekly nutrition summary" },
       { status: 500 }
     );
   }

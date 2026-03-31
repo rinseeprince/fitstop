@@ -7,7 +7,7 @@ import { mapArrayIndexToSortOrder } from "./daily-habits-logic";
 type DailyHabitRow = Database["public"]["Tables"]["daily_habits"]["Row"];
 type DailyHabitLogRow = Database["public"]["Tables"]["daily_habit_logs"]["Row"];
 type DailyHabitLogWithHabit = DailyHabitLogRow & {
-  daily_habits: Pick<DailyHabitRow, 'name' | 'target_value' | 'target_unit' | 'is_boolean' | 'created_at'>;
+  daily_habits: Pick<DailyHabitRow, 'name' | 'target_value' | 'target_unit' | 'is_boolean' | 'created_at' | 'effective_date'>;
 };
 
 type HabitLogWithDetails = DailyHabitLog & {
@@ -16,6 +16,7 @@ type HabitLogWithDetails = DailyHabitLog & {
   targetUnit?: string;
   isBoolean: boolean;
   habitCreatedAt: string;
+  habitEffectiveDate: string;
 };
 
 // Re-export pure logic functions from separate file
@@ -53,6 +54,7 @@ export const getClientHabits = async (clientId: string, includeInactive = false)
     isBoolean: row.is_boolean,
     isActive: row.is_active,
     sortOrder: row.sort_order,
+    effectiveDate: row.effective_date,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }));
@@ -76,6 +78,24 @@ export const createHabit = async (
 
   if (clientData.coach_id !== coachId) {
     throw new Error("Coach does not own this client");
+  }
+
+  // Resolve effective_date from the phase's start_date (if assigned to a phase)
+  let effectiveDate = getTodayDateString();
+  if (data.phaseId) {
+    const { data: phase } = await supabaseAdmin
+      .from("phases")
+      .select("start_date")
+      .eq("id", data.phaseId)
+      .single();
+
+    if (phase?.start_date) {
+      const phaseStart = phase.start_date.slice(0, 10);
+      // Use phase start_date if it's in the future, otherwise use today
+      if (phaseStart > effectiveDate) {
+        effectiveDate = phaseStart;
+      }
+    }
   }
 
   // Check if an inactive habit with the same name exists for this client
@@ -112,6 +132,7 @@ export const createHabit = async (
         is_boolean: data.isBoolean,
         sort_order: nextSortOrder,
         phase_id: data.phaseId || null,
+        effective_date: effectiveDate,
         updated_at: new Date().toISOString(),
       })
       .eq("id", existingHabit.id)
@@ -133,6 +154,7 @@ export const createHabit = async (
       isBoolean: reactivatedResult.is_boolean,
       isActive: reactivatedResult.is_active,
       sortOrder: reactivatedResult.sort_order,
+      effectiveDate: reactivatedResult.effective_date,
       createdAt: reactivatedResult.created_at,
       updatedAt: reactivatedResult.updated_at,
     };
@@ -161,6 +183,7 @@ export const createHabit = async (
     is_boolean: data.isBoolean,
     sort_order: nextSortOrder,
     phase_id: data.phaseId || null,
+    effective_date: effectiveDate,
     updated_at: new Date().toISOString(),
   };
 
@@ -185,6 +208,7 @@ export const createHabit = async (
     isBoolean: result.is_boolean,
     isActive: result.is_active,
     sortOrder: result.sort_order,
+    effectiveDate: result.effective_date,
     createdAt: result.created_at,
     updatedAt: result.updated_at,
   };
@@ -227,6 +251,7 @@ export const updateHabit = async (
     isBoolean: result.is_boolean,
     isActive: result.is_active,
     sortOrder: result.sort_order,
+    effectiveDate: result.effective_date,
     createdAt: result.created_at,
     updatedAt: result.updated_at,
   };
@@ -318,7 +343,7 @@ export const getHabitLogs = async (
     .from("daily_habit_logs")
     .select(`
       *,
-      daily_habits!inner(name, target_value, target_unit, is_boolean, created_at)
+      daily_habits!inner(name, target_value, target_unit, is_boolean, created_at, effective_date)
     `)
     .eq("client_id", clientId)
     .gte("date", startDate)
@@ -344,6 +369,7 @@ export const getHabitLogs = async (
     targetUnit: row.daily_habits.target_unit ?? undefined,
     isBoolean: row.daily_habits.is_boolean,
     habitCreatedAt: row.daily_habits.created_at,
+    habitEffectiveDate: row.daily_habits.effective_date,
   }));
 };
 
@@ -354,7 +380,7 @@ export const getTodayHabitLogs = async (clientId: string, date?: string): Promis
     .from("daily_habit_logs")
     .select(`
       *,
-      daily_habits!inner(name, target_value, target_unit, is_boolean, created_at)
+      daily_habits!inner(name, target_value, target_unit, is_boolean, created_at, effective_date)
     `)
     .eq("client_id", clientId)
     .eq("date", targetDate);
@@ -378,6 +404,7 @@ export const getTodayHabitLogs = async (clientId: string, date?: string): Promis
     targetUnit: row.daily_habits.target_unit ?? undefined,
     isBoolean: row.daily_habits.is_boolean,
     habitCreatedAt: row.daily_habits.created_at,
+    habitEffectiveDate: row.daily_habits.effective_date,
   }));
 };
 

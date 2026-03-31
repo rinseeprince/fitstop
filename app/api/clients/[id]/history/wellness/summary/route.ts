@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 import { supabaseAdmin } from "@/services/supabase-admin";
+import { getTrainingWeekStart, getTrainingWeekEnd, getTodayDateString } from "@/lib/date-helpers";
 
 export async function GET(
   request: NextRequest,
@@ -21,9 +22,40 @@ export async function GET(
     const rawDays = Number(searchParams.get("days") || 7);
     const days = ALLOWED_DAYS.includes(rawDays as 7 | 14 | 28) ? rawDays : 7;
 
-    const sinceDate = new Date();
-    sinceDate.setDate(sinceDate.getDate() - (days - 1));
-    const sinceDateStr = sinceDate.toISOString().split("T")[0];
+    let sinceDateStr: string;
+    let daysInWindow: number;
+
+    if (days === 7) {
+      // Use training week boundaries for the default 7-day view
+      // Fetch client's check-in day and start date
+      const { data: clientRow } = await supabaseAdmin
+        .from("clients")
+        .select("expected_check_in_day, start_date")
+        .eq("id", clientId)
+        .single();
+
+      const checkInDay = clientRow?.expected_check_in_day ?? null;
+      const clientStartDate: string | null = clientRow?.start_date ?? null;
+
+      const today = getTodayDateString();
+      const weekStart = getTrainingWeekStart(today, checkInDay);
+      const weekEnd = getTrainingWeekEnd(today, checkInDay);
+
+      const effectiveStart = clientStartDate && clientStartDate > weekStart
+        ? clientStartDate
+        : weekStart;
+
+      const startMs = new Date(effectiveStart + "T00:00:00").getTime();
+      const endMs = new Date(weekEnd + "T00:00:00").getTime();
+      daysInWindow = Math.round((endMs - startMs) / (1000 * 60 * 60 * 24)) + 1;
+      sinceDateStr = effectiveStart;
+    } else {
+      // For 14/28-day lookbacks, use calendar days
+      const sinceDate = new Date();
+      sinceDate.setDate(sinceDate.getDate() - (days - 1));
+      sinceDateStr = sinceDate.toISOString().split("T")[0];
+      daysInWindow = days;
+    }
 
     // Uses supabaseAdmin: coach querying client data (RLS exception 3)
     // Direct query on wellness_logs
@@ -58,7 +90,7 @@ export async function GET(
       avg_sleep: avgMetric("sleep"),
       avg_stress: avgMetric("stress"),
       days_logged: rows.length,
-      days_in_window: days,
+      days_in_window: daysInWindow,
     };
 
     return NextResponse.json(summary, { status: 200 });

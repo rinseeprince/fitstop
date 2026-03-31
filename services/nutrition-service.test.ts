@@ -18,7 +18,7 @@ describe('calculateBaselineCalories', () => {
 
     const result = calculateBaselineCalories(tdee, currentWeightKg, goalWeightKg, goalDeadline, gender)
 
-    // 10kg loss = 77,000 kcal total, over 90 days = ~856 kcal/day deficit
+    // 10kg loss = 77,000 kcal total, over 91 days (inclusive) = ~846 kcal/day deficit
     expect(result.requiredDailyDeficit).toBeGreaterThan(0)
     expect(result.baselineCalories).toBeLessThan(tdee)
     expect(result.warnings).toEqual([])
@@ -42,7 +42,7 @@ describe('calculateBaselineCalories', () => {
       tdee, currentWeightKg, goalWeightKg, deadline.toISOString(), gender
     )
 
-    // Future start → 90 days (120 - 30), so deficit should be LARGER (more aggressive)
+    // Future start → 91 days inclusive (120 - 30 + 1), so deficit should be LARGER (more aggressive)
     expect(resultWithFutureStart.requiredDailyDeficit).toBeGreaterThan(
       resultWithoutStart.requiredDailyDeficit
     )

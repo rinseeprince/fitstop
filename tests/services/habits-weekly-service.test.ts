@@ -60,6 +60,7 @@ function makeHabit(id: string, name: string, overrides: Record<string, unknown> 
     target_value: null,
     target_unit: null,
     created_at: '2024-01-01',
+    effective_date: (overrides.effective_date as string) ?? '2024-01-01',
     ...overrides,
   }
 }
@@ -94,8 +95,8 @@ describe('getWeeklyHabitsData', () => {
     expect(result.weekDays).toHaveLength(7)
   })
 
-  it('shows not-tracked for days before habit creation', async () => {
-    const habit = makeHabit('h1', 'New Habit', { created_at: '2024-03-28' })
+  it('shows not-tracked for days before habit effective date', async () => {
+    const habit = makeHabit('h1', 'New Habit', { created_at: '2024-03-25', effective_date: '2024-03-28' })
 
     setupMockQueries([
       { data: [habit], error: null },     // habits
@@ -109,6 +110,10 @@ describe('getWeeklyHabitsData', () => {
     // Days before March 28 should be not-tracked
     const notTrackedDays = row.days.filter(d => d.date < '2024-03-28')
     expect(notTrackedDays.every(d => d.status === 'not-tracked')).toBe(true)
+
+    // March 28 (effective date) should be trackable, not "not-tracked"
+    const effectiveDay = row.days.find(d => d.date === '2024-03-28')
+    expect(effectiveDay?.status).not.toBe('not-tracked')
   })
 
   it('computes weeklyRate correctly with all completed', async () => {

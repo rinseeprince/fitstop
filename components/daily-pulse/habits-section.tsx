@@ -77,11 +77,9 @@ export function HabitsSection({ habits, habitLogs, onHabitLogsUpdate, selectedDa
   const { toast } = useToast();
   const [savingHabits, setSavingHabits] = useState<Set<string>>(new Set());
 
-  // Filter habits to only show those created on or before the selected date
+  // Filter habits to only show those effective on or before the selected date
   const visibleHabits = habits.filter(habit => {
-    // Compare dates only (ignore time)
-    const habitCreatedDate = new Date(habit.createdAt).toISOString().split('T')[0];
-    return habitCreatedDate <= selectedDate;
+    return habit.effectiveDate <= selectedDate;
   });
 
   // Create a map for quick log lookup

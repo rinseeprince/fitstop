@@ -10,7 +10,6 @@ import { AddPhaseDialog } from "./add-phase-dialog";
 import { RoadmapSummaryStrip } from "./roadmap-summary-strip";
 import { Skeleton } from "@/components/ui/skeleton";
 import { swrFetcher } from "@/lib/swr-fetcher";
-import { weightFromKg } from "@/utils/nutrition-helpers";
 import type { Client } from "@/types/check-in";
 import type { Roadmap, Phase } from "@/types/roadmap";
 
@@ -88,12 +87,8 @@ export const RoadmapTabContent = ({ client }: RoadmapTabContentProps) => {
   const hasActivePhase = phases.some((p) => p.status === "active");
   const weightUnit = client.weightUnit || "lbs";
 
-  // Goal weight: prefer phase-level override from last non-skipped phase, fallback to client.goalWeight
-  const goalPhase = [...phases].reverse().find((p) => p.status !== "skipped");
-  const goalWeightDisplay =
-    goalPhase?.phaseGoalWeight != null
-      ? weightFromKg(goalPhase.phaseGoalWeight, weightUnit)
-      : (client.goalWeight ?? null);
+  // Always show the overall client goal in the hero — phase goals are shown in phase rows
+  const goalWeightDisplay = client.goalWeight ?? null;
 
   return (
     <>

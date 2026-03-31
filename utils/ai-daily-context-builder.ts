@@ -125,11 +125,11 @@ export function buildDailyContextForAI(
   const habitsById: Record<string, { name: string; completed: number; total: number; createdAt: string }> = {};
   habitLogs.forEach(log => {
     if (!habitsById[log.dailyHabitId]) {
-      // Calculate days the habit existed in the period
-      const habitCreatedDate = new Date(log.habitCreatedAt);
-      const habitStartDate = habitCreatedDate > startDate ? habitCreatedDate : startDate;
+      // Calculate days the habit existed in the period using effective_date
+      const habitEffective = new Date(log.habitEffectiveDate);
+      const habitStartDate = habitEffective > startDate ? habitEffective : startDate;
       const daysExisted = Math.floor((endDate.getTime() - habitStartDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-      
+
       habitsById[log.dailyHabitId] = {
         name: sanitizeForAIPrompt(log.habitName),
         completed: 0,

@@ -83,16 +83,20 @@ export const PhaseCard = ({
   const showActivate = phase.status === "planned";
   const activateDisabled = hasActivePhase || isActivating;
 
-  const msPerWeek = 7 * 24 * 60 * 60 * 1000;
-  const currentWeek =
-    phase.status === "active" && phase.startDate
-      ? Math.max(1, Math.ceil((Date.now() - new Date(phase.startDate).getTime()) / msPerWeek))
+  const msPerDay = 24 * 60 * 60 * 1000;
+  const totalDays =
+    phase.startDate && phase.endDate
+      ? Math.round((new Date(phase.endDate).getTime() - new Date(phase.startDate).getTime()) / msPerDay) + 1
       : null;
   const totalWeeks =
     phase.durationWeeks ??
-    (phase.startDate && phase.endDate
-      ? Math.ceil((new Date(phase.endDate).getTime() - new Date(phase.startDate).getTime()) / msPerWeek)
-      : null);
+    (totalDays != null ? Math.ceil(totalDays / 7) : null);
+  const currentWeek =
+    phase.status === "active" && phase.startDate
+      ? Math.max(1, Math.ceil(
+          (Math.round((Date.now() - new Date(phase.startDate).getTime()) / msPerDay) + 1) / 7
+        ))
+      : null;
 
   const goalParts: string[] = [];
   if (phase.phaseGoalWeight != null)
@@ -141,6 +145,11 @@ export const PhaseCard = ({
                 {phase.startDate ?? ""}
                 {phase.startDate && phase.endDate ? " → " : ""}
                 {phase.endDate ?? ""}
+                {totalDays != null && (
+                  <span className="text-[#93b0b4]">
+                    ({totalDays < 14 ? `${totalDays}d` : `${totalWeeks}wk`})
+                  </span>
+                )}
               </span>
             )}
           </div>
