@@ -80,9 +80,12 @@ export function calculateBaselineCalories(
   // Calculate time to goal
   // When a phase starts in the future, count from phase start, not today.
   // When a phase already started (or no phase), count from today.
+  // Normalize "now" to start of day so time-of-day doesn't skew the day count
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
   const startDate = calcStartDate
-    ? new Date(Math.max(new Date(calcStartDate).getTime(), Date.now()))
-    : new Date();
+    ? new Date(Math.max(new Date(calcStartDate).getTime(), now.getTime()))
+    : now;
   const deadline = new Date(goalDeadline);
   const daysToGoal = Math.round(
     (deadline.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)

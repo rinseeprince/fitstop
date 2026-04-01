@@ -53,6 +53,11 @@ export function IntakeReviewActions({ clientId, intakeStatus, intake, clientName
           ? `Synced: ${fields.join(", ")}`
           : "No new fields to sync",
       })
+      // Pin intake minimized and navigate to client page
+      if (intake && clientName) {
+        openMinimized(clientId, clientName, intake)
+      }
+      router.push(`/clients/${clientId}`)
     } catch (err) {
       console.error("Failed to sync metrics:", err)
       toast({ title: "Sync failed", description: "Could not sync metrics to client profile.", variant: "destructive" })

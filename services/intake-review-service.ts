@@ -4,6 +4,8 @@ import { mapClientIntakeRow } from "@/lib/mappers";
 import { getIntake } from "@/services/client-intake-service";
 import { recordBodyMetrics } from "@/services/body-metrics-service";
 import { updateGoals } from "@/services/client-goals-service";
+import { getClientById } from "@/services/client-service";
+import { updateClientBMR } from "@/services/bmr-service";
 
 const db = supabaseAdmin;
 
@@ -210,6 +212,23 @@ export async function syncMetricsToClient(
     } catch (dualWriteError) {
       console.error("Dual-write to client_goals failed:", dualWriteError instanceof Error ? dualWriteError.message : "Unknown error");
     }
+  }
+
+  // Calculate BMR from freshly-synced client data (non-blocking)
+  try {
+    const freshClient = await getClientById(clientId);
+    if (freshClient) {
+      const bmr = updateClientBMR(freshClient);
+      if (bmr !== null) {
+        await supabaseAdmin
+          .from("clients")
+          .update({ bmr } as never)
+          .eq("id", clientId);
+        syncedFields.push("BMR");
+      }
+    }
+  } catch (bmrError) {
+    console.error("BMR calculation after sync failed:", bmrError instanceof Error ? bmrError.message : "Unknown error");
   }
 
   return syncedFields;

@@ -9,15 +9,7 @@ import type { ClientTab } from "@/lib/client-tabs"
 import type { OnboardingStatus } from "@/types/client-intake"
 
 import { swrFetcher } from "@/lib/swr-fetcher"
-
-type Readiness = {
-  hasTrainingPlan: boolean
-  hasNutritionPlan: boolean
-  hasHabits: boolean
-  hasRoadmap: boolean
-  hasActivePhase: boolean
-  roadmapRecommended: boolean
-}
+import { REQUIRED_ITEMS, RECOMMENDED_ITEMS, type Readiness } from "@/lib/activation-readiness-items"
 
 interface ClientActivationBannerProps {
   client: {
@@ -29,17 +21,6 @@ interface ClientActivationBannerProps {
   onActivated?: () => void
   onTabChange?: (tab: ClientTab) => void
 }
-
-const REQUIRED_ITEMS: { key: keyof Readiness; label: string; tab: ClientTab }[] = [
-  { key: "hasTrainingPlan", label: "Training plan", tab: "training" },
-  { key: "hasNutritionPlan", label: "Nutrition plan", tab: "nutrition" },
-  { key: "hasHabits", label: "Daily habits", tab: "daily-habits" },
-]
-
-const RECOMMENDED_ITEMS: { key: keyof Readiness; label: string }[] = [
-  { key: "hasRoadmap", label: "Roadmap" },
-  { key: "hasActivePhase", label: "Active phase" },
-]
 
 export function ClientActivationBanner({ client, onActivated, onTabChange }: ClientActivationBannerProps) {
   const { data, isLoading } = useSWR<{ success: boolean; data: Readiness }>(

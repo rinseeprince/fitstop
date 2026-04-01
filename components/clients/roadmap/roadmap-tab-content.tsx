@@ -87,8 +87,8 @@ export const RoadmapTabContent = ({ client }: RoadmapTabContentProps) => {
   const hasActivePhase = phases.some((p) => p.status === "active");
   const weightUnit = client.weightUnit || "lbs";
 
-  // Always show the overall client goal in the hero — phase goals are shown in phase rows
-  const goalWeightDisplay = client.goalWeight ?? null;
+  // Prefer roadmap snapshot (frozen at creation), fall back to client table for pre-migration roadmaps
+  const goalWeightDisplay = roadmap.goalWeight ?? client.goalWeight ?? null;
 
   return (
     <>

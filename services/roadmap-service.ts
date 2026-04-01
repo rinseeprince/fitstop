@@ -10,13 +10,16 @@ import type {
   PhaseStatus,
 } from "@/types/roadmap";
 
-function mapRoadmapRow(row: RoadmapRow): Roadmap {
+// Accept partial row shape — new columns may not be in Supabase generated types yet
+function mapRoadmapRow(row: Omit<RoadmapRow, "goal_weight" | "goal_body_fat_percentage"> & Partial<Pick<RoadmapRow, "goal_weight" | "goal_body_fat_percentage">>): Roadmap {
   return {
     id: row.id,
     clientId: row.client_id,
     coachId: row.coach_id,
     name: row.name,
     longTermGoal: row.long_term_goal ?? undefined,
+    goalWeight: row.goal_weight ?? null,
+    goalBodyFatPercentage: row.goal_body_fat_percentage ?? null,
     status: row.status as RoadmapStatus,
     startedAt: row.started_at ?? undefined,
     targetEndDate: row.target_end_date ?? undefined,
@@ -75,6 +78,10 @@ export const createRoadmap = async (
     longTermGoal?: string;
     startedAt?: string;
     targetEndDate?: string;
+  },
+  clientGoals?: {
+    goalWeight?: number | null;
+    goalBodyFatPercentage?: number | null;
   }
 ): Promise<Roadmap> => {
   const now = new Date().toISOString();
@@ -99,6 +106,8 @@ export const createRoadmap = async (
         coach_id: coachId,
         name: data.name,
         long_term_goal: data.longTermGoal ?? null,
+        goal_weight: clientGoals?.goalWeight ?? null,
+        goal_body_fat_percentage: clientGoals?.goalBodyFatPercentage ?? null,
         status: "active",
         started_at: data.startedAt ?? now,
         target_end_date: data.targetEndDate ?? null,

@@ -8,6 +8,7 @@ import {
   updateRoadmap,
   deleteRoadmap,
 } from "@/services/roadmap-service";
+import { getClientById } from "@/services/client-service";
 import {
   createRoadmapSchema,
   updateRoadmapSchema,
@@ -64,7 +65,12 @@ export async function POST(
       );
     }
 
-    const roadmap = await createRoadmap(clientId, auth.coachId, validation.data);
+    // Fetch client to snapshot goal data onto the roadmap
+    const client = await getClientById(clientId);
+    const roadmap = await createRoadmap(clientId, auth.coachId, validation.data, {
+      goalWeight: client?.goalWeight ?? null,
+      goalBodyFatPercentage: client?.goalBodyFatPercentage ?? null,
+    });
 
     return NextResponse.json(
       { success: true, data: roadmap },

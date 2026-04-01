@@ -493,6 +493,8 @@ export interface MockRoadmapRowOptions {
   coachId?: string
   name?: string
   longTermGoal?: string | null
+  goalWeight?: number | null
+  goalBodyFatPercentage?: number | null
   status?: string
   startedAt?: string | null
   targetEndDate?: string | null
@@ -509,6 +511,8 @@ export function createMockRoadmapRow(options: MockRoadmapRowOptions = {}): Roadm
     coach_id: options.coachId ?? generateUUID(),
     name: options.name ?? 'Test Roadmap',
     long_term_goal: options.longTermGoal ?? null,
+    goal_weight: options.goalWeight ?? null,
+    goal_body_fat_percentage: options.goalBodyFatPercentage ?? null,
     status: options.status ?? 'active',
     started_at: options.startedAt ?? now,
     target_end_date: options.targetEndDate ?? null,

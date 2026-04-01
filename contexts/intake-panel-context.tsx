@@ -114,12 +114,6 @@ export function IntakePanelProvider({ children }: { children: ReactNode }) {
   )
 
   const updateIntake = useCallback((intake: ClientIntake) => {
-    // Auto-close when intake is marked as reviewed
-    if (intake.status === "reviewed") {
-      setPanel(null)
-      setIsExpanded(true)
-      return
-    }
     setPanel((prev) => (prev ? { ...prev, intake } : null))
   }, [])
 

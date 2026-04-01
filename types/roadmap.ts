@@ -22,6 +22,8 @@ export type Roadmap = {
   coachId: string;
   name: string;
   longTermGoal?: string;
+  goalWeight?: number | null;
+  goalBodyFatPercentage?: number | null;
   status: RoadmapStatus;
   startedAt?: string;
   targetEndDate?: string;
@@ -109,6 +111,8 @@ export type RoadmapRow = {
   coach_id: string;
   name: string;
   long_term_goal: string | null;
+  goal_weight: number | null;
+  goal_body_fat_percentage: number | null;
   status: string;
   started_at: string | null;
   target_end_date: string | null;
