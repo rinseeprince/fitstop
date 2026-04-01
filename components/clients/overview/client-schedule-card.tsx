@@ -2,10 +2,8 @@
 
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import { CheckInScheduleSection } from "@/components/clients/check-in/check-in-schedule-card"
-import { ReminderHistoryModal } from "@/components/clients/check-in/reminder-history-modal"
-import { Edit2, Mail, Phone, Bell } from "lucide-react"
+import { Edit2, Mail, Phone } from "lucide-react"
 import type { Client } from "@/types/check-in"
 
 interface ClientScheduleCardProps {
@@ -46,7 +44,6 @@ function getDayLabel(day: string | null | undefined): string {
 
 export function ClientScheduleCard({ client, onClientUpdated }: ClientScheduleCardProps) {
   const [isEditingSchedule, setIsEditingSchedule] = useState(false)
-  const [showReminderHistory, setShowReminderHistory] = useState(false)
 
   return (
     <>
@@ -101,9 +98,9 @@ export function ClientScheduleCard({ client, onClientUpdated }: ClientScheduleCa
               onCancel={() => setIsEditingSchedule(false)}
             />
           ) : (
-            <div className="space-y-3 mt-2">
+            <div className="space-y-2.5 mt-1">
               {/* Frequency | Check-in Day */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <p className="text-[10px] uppercase tracking-[0.06em] text-[#93b0b4] font-medium">
                     Frequency
@@ -123,19 +120,29 @@ export function ClientScheduleCard({ client, onClientUpdated }: ClientScheduleCa
               </div>
 
               {/* Email */}
-              <div className="flex items-center gap-2">
-                <Mail className="h-3.5 w-3.5 text-[#93b0b4]" strokeWidth={1.5} />
-                <p className="text-[13px] text-[#0c1a1e]">{client.email}</p>
+              <div>
+                <p className="text-[10px] uppercase tracking-[0.06em] text-[#93b0b4] font-medium">
+                  Email
+                </p>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <Mail className="h-3.5 w-3.5 text-[#93b0b4] shrink-0" strokeWidth={1.5} />
+                  <p className="text-[13px] text-[#0c1a1e] truncate">{client.email}</p>
+                </div>
               </div>
 
               {/* Phone */}
-              <div className="flex items-center gap-2">
-                <Phone className="h-3.5 w-3.5 text-[#93b0b4]" strokeWidth={1.5} />
-                <p className="text-[13px] text-[#93b0b4]">Not set</p>
+              <div>
+                <p className="text-[10px] uppercase tracking-[0.06em] text-[#93b0b4] font-medium">
+                  Phone
+                </p>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <Phone className="h-3.5 w-3.5 text-[#93b0b4] shrink-0" strokeWidth={1.5} />
+                  <p className="text-[13px] text-[#93b0b4]">Not set</p>
+                </div>
               </div>
 
               {/* Height | Gender */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <p className="text-[10px] uppercase tracking-[0.06em] text-[#93b0b4] font-medium">
                     Height
@@ -166,38 +173,7 @@ export function ClientScheduleCard({ client, onClientUpdated }: ClientScheduleCa
           )}
         </div>
 
-        {/* Footer */}
-        {!isEditingSchedule && (
-          <div className="px-5 py-3 border-t border-[rgba(13,148,136,0.08)] flex items-center justify-between">
-            <div className="flex items-center gap-1.5">
-              <Bell className="h-3 w-3 text-[#93b0b4]" strokeWidth={1.5} />
-              <span className="text-[11px] text-[#93b0b4]">
-                Reminders {client.reminderPreferences?.enabled ? "on" : "off"}
-              </span>
-              {client.reminderPreferences?.autoSend && (
-                <Badge
-                  className="text-[9px] px-1.5 py-0 h-4 bg-[rgba(13,148,136,0.08)] text-[#0d9488] border-none"
-                >
-                  Auto
-                </Badge>
-              )}
-            </div>
-            <button
-              onClick={() => setShowReminderHistory(true)}
-              className="text-[11px] text-[#0d9488] hover:underline font-medium"
-            >
-              History
-            </button>
-          </div>
-        )}
       </div>
-
-      <ReminderHistoryModal
-        clientId={client.id}
-        clientName={client.name}
-        open={showReminderHistory}
-        onClose={() => setShowReminderHistory(false)}
-      />
     </>
   )
 }

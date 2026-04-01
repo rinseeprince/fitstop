@@ -1,7 +1,7 @@
 "use client"
 
 import { ClientActivationBanner } from "@/components/clients/client-activation-banner"
-import { OverviewHeader } from "@/components/clients/overview/overview-header"
+import { OverviewContextBar } from "@/components/clients/overview/overview-context-bar"
 import { ClientScheduleCard } from "@/components/clients/overview/client-schedule-card"
 import { ClientStatusCard } from "@/components/clients/overview/client-status-card"
 import { DailyWellnessStrip } from "@/components/clients/daily-pulse/daily-wellness-strip"
@@ -41,10 +41,10 @@ export function ClientOverviewTab({
       )}
 
       {/* Header */}
-      <OverviewHeader clientId={client.id} />
+      <OverviewContextBar clientId={client.id} client={client} />
 
       {/* Two-card grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+      <div className="grid grid-cols-1 lg:grid-cols-[5fr_8fr] gap-4 mb-6">
         <ClientScheduleCard
           client={client}
           onClientUpdated={onClientUpdated}
