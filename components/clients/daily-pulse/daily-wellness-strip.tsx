@@ -1,19 +1,15 @@
 "use client"
 
 import { useState, useMemo } from "react"
-import useSWR from "swr"
 import { AnimatePresence, motion } from "framer-motion"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { WellnessBarChart } from "./wellness-bar-chart"
 import { AdherenceDotRow } from "./adherence-dot-row"
 import { DayDetailCard } from "./day-detail-card"
-import { getDateDaysAgo } from "@/lib/date-helpers"
 import { detectAlerts } from "@/lib/daily-wellness-alerts"
 import { AlertTriangle } from "lucide-react"
-import type { DailyLog } from "@/types/daily-log"
-import type { HabitLogWithDetails } from "@/types/daily-habit"
-import { swrFetcher } from "@/lib/swr-fetcher"
+import { useWellnessData } from "@/hooks/use-wellness-data"
 
 interface DailyWellnessStripProps {
   clientId: string
@@ -22,24 +18,7 @@ interface DailyWellnessStripProps {
 export function DailyWellnessStrip({ clientId }: DailyWellnessStripProps) {
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
 
-  const startDate = getDateDaysAgo(28)
-  const endDate = new Date().toISOString().split('T')[0]
-
-  const { data: dailyData, isLoading: dailyLoading } = useSWR<{ data: DailyLog[] }>(
-    `/api/clients/${clientId}/daily-logs?startDate=${startDate}&endDate=${endDate}`,
-    swrFetcher,
-    { revalidateOnFocus: false, dedupingInterval: 5000 }
-  )
-
-  const { data: habitData, isLoading: habitLoading } = useSWR<{ data: HabitLogWithDetails[] }>(
-    `/api/clients/${clientId}/habits/logs?startDate=${startDate}&endDate=${endDate}`,
-    swrFetcher,
-    { revalidateOnFocus: false, dedupingInterval: 5000 }
-  )
-
-  const logs = dailyData?.data || []
-  const allHabitLogs = habitData?.data || []
-  const isLoading = dailyLoading || habitLoading
+  const { logs, habitLogs: allHabitLogs, isLoading } = useWellnessData(clientId)
 
   const alerts = useMemo(() => detectAlerts(logs), [logs])
 

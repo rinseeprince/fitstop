@@ -71,6 +71,20 @@ export function calculateNextExpectedCheckIn(client: Client | ClientWithCheckInI
       return nextEnd;
     }
 
+    // New client with no prior check-ins: don't expect a check-in for a period
+    // that ended before the client was created (e.g. plan started Saturday,
+    // check-in day is Friday — the previous Friday shouldn't count).
+    if (!lastPeriodEnd) {
+      const clientCreated = parseISODate(client.createdAt);
+      const periodEndDate = new Date(periodEnd + "T00:00:00");
+      if (periodEndDate < clientCreated) {
+        // Current period predates the client — next expected is the following week
+        const nextEnd = new Date(periodEndDate);
+        nextEnd.setDate(nextEnd.getDate() + 7);
+        return nextEnd;
+      }
+    }
+
     // Not checked in for current period — current period end is the expected date
     return new Date(periodEnd + "T00:00:00");
   }
@@ -124,7 +138,7 @@ export function getDaysUntilOrPastDue(client: Client): number {
  */
 export function getOverdueSeverity(daysOverdue: number): OverdueSeverity {
   if (daysOverdue < -3) return "upcoming";
-  if (daysOverdue < 0) return "due_soon";
+  if (daysOverdue <= 0) return "due_soon";
   if (daysOverdue <= 3) return "overdue";
   return "critically_overdue";
 }
@@ -150,7 +164,7 @@ export async function getOverdueClients(coachId: string): Promise<OverdueClient[
         severity,
       };
     })
-    .filter((client) => client.daysOverdue >= 0) // Only include overdue clients
+    .filter((client) => client.daysOverdue > 0) // Only include overdue clients (not due-today)
     .sort((a, b) => b.daysOverdue - a.daysOverdue); // Most overdue first
 
   return overdueClients;

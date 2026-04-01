@@ -236,7 +236,7 @@
   @keyframes cardIn {
     from {
       opacity: 0;
-      transform: translateY(8px);
+      transform: translateY(10px);
     }
     to {
       opacity: 1;
@@ -245,7 +245,7 @@
   }
 
   .animate-card-in {
-    animation: cardIn 0.3s ease-out both;
+    animation: cardIn 0.35s ease both;
   }
 
   @keyframes slideUp {

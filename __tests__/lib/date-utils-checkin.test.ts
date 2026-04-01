@@ -40,9 +40,15 @@ describe('getCheckInStatus', () => {
   })
 
   describe('new client with no prior check-ins', () => {
-    it('returns not_due when no check-ins exist and today is on or past the due day', () => {
+    it('returns available when no check-ins exist and today is the due day', () => {
       const result = getCheckInStatus('sunday', null, d('2026-03-15'))
+      expect(result.status).toBe('available')
+    })
+
+    it('returns not_due when no check-ins exist and today is past the due day', () => {
+      const result = getCheckInStatus('sunday', null, d('2026-03-17'))
       expect(result.status).toBe('not_due')
+      expect(result.nextDueDate).toBe('2026-03-22')
     })
 
     it('returns not_due when no check-ins and today is before due day', () => {

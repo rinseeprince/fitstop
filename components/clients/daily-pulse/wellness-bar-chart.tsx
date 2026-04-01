@@ -1,8 +1,16 @@
 "use client"
 
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts"
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts"
+import type { ActiveDotType } from "recharts/types/util/types"
 import { Card, CardContent } from "@/components/ui/card"
-import { getBarColor, type WellnessMetric } from "@/utils/wellness-color-thresholds"
+import type { WellnessMetric } from "@/utils/wellness-color-thresholds"
+
+const DEFAULT_LINE_COLORS: Record<WellnessMetric, string> = {
+  mood: "#c8923a",
+  energy: "#0d9488",
+  sleep: "#c8923a",
+  stress: "#c8923a",
+}
 
 interface WellnessBarChartProps {
   metric: WellnessMetric
@@ -15,6 +23,7 @@ interface WellnessBarChartProps {
   label: string
   onBarClick?: (dateStr: string) => void
   selectedDate?: string | null
+  barColorOverride?: string
 }
 
 const getMetricStats = (data: Array<{ value: number | null }>) => {
@@ -44,10 +53,12 @@ export function WellnessBarChart({
   currentValue,
   label,
   onBarClick,
-  selectedDate
+  selectedDate,
+  barColorOverride
 }: WellnessBarChartProps) {
   const stats = getMetricStats(data)
   const yDomain = getYAxisDomain(metric)
+  const lineColor = barColorOverride || DEFAULT_LINE_COLORS[metric]
   
   const CustomTooltip = ({ active, payload }: { active?: boolean; payload?: Array<{ value: number | null; payload: { date: string } }> }) => {
     if (!active || !payload || !payload[0]) return null
@@ -78,43 +89,72 @@ export function WellnessBarChart({
           
           <div className="h-[160px] w-full -mx-2">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart 
-                data={data} 
+              <LineChart
+                data={data}
                 margin={{ top: 10, right: 5, bottom: 5, left: 5 }}
               >
-                <XAxis 
-                  dataKey="date"
-                  hide
-                />
-                <YAxis 
-                  hide 
-                  domain={yDomain}
-                />
+                <XAxis dataKey="date" hide />
+                <YAxis hide domain={yDomain} />
                 <Tooltip
                   content={<CustomTooltip />}
-                  cursor={{ fill: "transparent" }}
+                  cursor={{ stroke: "rgba(13,148,136,0.15)", strokeWidth: 1 }}
                 />
-                <Bar 
+                <Line
+                  type="monotone"
                   dataKey="value"
-                  radius={[2, 2, 0, 0]}
-                  onClick={(data) => {
-                    const entry = data as unknown as { dateStr?: string }
-                    if (onBarClick && entry.dateStr) {
-                      onBarClick(entry.dateStr)
+                  stroke={lineColor}
+                  strokeWidth={2}
+                  connectNulls
+                  dot={(props: Record<string, unknown>) => {
+                    const { cx, cy, payload, index } = props as {
+                      cx: number
+                      cy: number
+                      payload: { dateStr?: string; value: number | null }
+                      index: number
                     }
+                    if (payload.value === null) return <g key={`dot-${index}`} />
+                    const isSelected = payload.dateStr === selectedDate
+                    return (
+                      <circle
+                        key={`dot-${index}`}
+                        cx={cx}
+                        cy={cy}
+                        r={isSelected ? 5 : 3}
+                        fill={isSelected ? lineColor : "#fff"}
+                        stroke={lineColor}
+                        strokeWidth={isSelected ? 2 : 1.5}
+                        style={{ cursor: onBarClick ? "pointer" : "default" }}
+                        onClick={() => {
+                          if (onBarClick && payload.dateStr) onBarClick(payload.dateStr)
+                        }}
+                      />
+                    )
                   }}
-                >
-                  {data.map((entry, index) => (
-                    <Cell 
-                      key={`cell-${index}`} 
-                      fill={getBarColor(metric, entry.value)}
-                      stroke={entry.dateStr === selectedDate ? "#3b82f6" : "none"}
-                      strokeWidth={entry.dateStr === selectedDate ? 2 : 0}
-                      style={{ cursor: onBarClick ? 'pointer' : 'default' }}
-                    />
-                  ))}
-                </Bar>
-              </BarChart>
+                  activeDot={((props: Record<string, unknown>) => {
+                    const { cx, cy, payload, index } = props as {
+                      cx: number
+                      cy: number
+                      payload: { dateStr?: string }
+                      index: number
+                    }
+                    return (
+                      <circle
+                        key={`active-${index}`}
+                        cx={cx}
+                        cy={cy}
+                        r={5}
+                        fill={lineColor}
+                        stroke="#fff"
+                        strokeWidth={2}
+                        style={{ cursor: onBarClick ? "pointer" : "default" }}
+                        onClick={() => {
+                          if (onBarClick && payload.dateStr) onBarClick(payload.dateStr)
+                        }}
+                      />
+                    )
+                  }) as ActiveDotType}
+                />
+              </LineChart>
             </ResponsiveContainer>
           </div>
           

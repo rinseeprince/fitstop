@@ -193,9 +193,9 @@ export function getCheckInStatus(
 
   const todayStr = formatDateISO(today);
 
-  // Brand-new client with no prior check-ins: their first check-in isn't due until
-  // the next occurrence of their expected day, not the current/past one.
-  if (!lastCheckInPeriodEnd && todayStr >= periodEnd) {
+  // Brand-new client with no prior check-ins who is past their due day:
+  // push to next week. If today IS the due day, fall through to "available".
+  if (!lastCheckInPeriodEnd && todayStr > periodEnd) {
     const nextDueDate = getNextPeriodEnd(periodEnd);
     return { status: "not_due", periodStart, periodEnd, nextDueDate };
   }
