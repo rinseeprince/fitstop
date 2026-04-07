@@ -232,6 +232,8 @@ export function createMockTrainingPlanRow(options: MockTrainingPlanOptions = {})
     avg_sleep: null,
     avg_stress: null,
     recent_adherence_percentage: null,
+    effective_from: (options.createdAt ?? now).split('T')[0],
+    effective_until: null,
     created_at: options.createdAt ?? now,
     updated_at: options.updatedAt ?? now,
     deleted_at: null,

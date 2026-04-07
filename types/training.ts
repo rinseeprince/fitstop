@@ -81,6 +81,9 @@ export type TrainingPlan = {
   avgSleep?: number;
   avgStress?: number;
   recentAdherencePercentage?: number;
+  // Date-effective versioning
+  effectiveFrom?: string;
+  effectiveUntil?: string;
   sessions: TrainingSession[];
   createdAt: string;
   updatedAt: string;

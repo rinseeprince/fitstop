@@ -15,9 +15,10 @@ vi.mock('@/services/training-ai-service', () => ({
 }))
 
 vi.mock('@/services/training-service', () => ({
-  createTrainingPlan: vi.fn(),
   getActiveTrainingPlan: vi.fn().mockResolvedValue(null),
-  archiveTrainingPlan: vi.fn().mockResolvedValue(undefined),
+  createTrainingPlanAtomic: vi.fn().mockResolvedValue('plan-1'),
+  insertTrainingSessions: vi.fn().mockResolvedValue([]),
+  getTrainingPlanById: vi.fn().mockResolvedValue({ id: 'plan-1', sessions: [] }),
   saveTrainingPlanHistory: vi.fn().mockResolvedValue(undefined),
   updateSessionCalories: vi.fn().mockResolvedValue(undefined),
 }))
@@ -79,7 +80,7 @@ vi.mock('@/services/supabase-admin', () => ({
 
 import { getClientById } from '@/services/client-service'
 import { generateTrainingPlanAI } from '@/services/training-ai-service'
-import { createTrainingPlan, getActiveTrainingPlan } from '@/services/training-service'
+import { createTrainingPlanAtomic, getActiveTrainingPlan, getTrainingPlanById } from '@/services/training-service'
 import { getLatestBodyMetrics } from '@/services/body-metrics-service'
 import { getCurrentGoals } from '@/services/client-goals-service'
 import { POST } from './route'
@@ -120,7 +121,8 @@ describe('Training Route POST - read-switch behavior', () => {
     vi.clearAllMocks()
     vi.mocked(getClientById).mockResolvedValue(mockClient as never)
     vi.mocked(generateTrainingPlanAI).mockResolvedValue(mockAiResult as never)
-    vi.mocked(createTrainingPlan).mockResolvedValue(mockSavedPlan as never)
+    vi.mocked(createTrainingPlanAtomic).mockResolvedValue('plan-1')
+    vi.mocked(getTrainingPlanById).mockResolvedValue(mockSavedPlan as never)
     vi.mocked(getActiveTrainingPlan).mockResolvedValue(null)
   })
 
@@ -163,12 +165,11 @@ describe('Training Route POST - read-switch behavior', () => {
       })
     )
 
-    // createTrainingPlan snapshot should use new values
-    const snapshotArg = vi.mocked(createTrainingPlan).mock.calls[0][5]
-    expect(snapshotArg).toEqual(
+    // createTrainingPlanAtomic should use new metric values
+    expect(createTrainingPlanAtomic).toHaveBeenCalledWith(
       expect.objectContaining({
-        bodyFatPercentage: 18,
-        tdee: 2200,
+        clientBodyFatPercentage: 18,
+        clientTdee: 2200,
       })
     )
   })

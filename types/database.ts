@@ -2145,6 +2145,8 @@ export type Database = {
           created_at: string
           deleted_at: string | null
           description: string | null
+          effective_from: string
+          effective_until: string | null
           frequency_per_week: number
           id: string
           name: string
@@ -2171,6 +2173,8 @@ export type Database = {
           created_at?: string
           deleted_at?: string | null
           description?: string | null
+          effective_from?: string
+          effective_until?: string | null
           frequency_per_week: number
           id?: string
           name?: string
@@ -2197,6 +2201,8 @@ export type Database = {
           created_at?: string
           deleted_at?: string | null
           description?: string | null
+          effective_from?: string
+          effective_until?: string | null
           frequency_per_week?: number
           id?: string
           name?: string

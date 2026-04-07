@@ -5,6 +5,7 @@ import type {
   TrainingExercise,
   TrainingPlanHistory,
   AIGeneratedPlan,
+  AIGeneratedSession,
   UpdateTrainingPlanRequest,
   UpdateSessionRequest,
   UpdateExerciseRequest,
@@ -77,6 +78,8 @@ const mapPlanRow = (row: TrainingPlanRow, sessions: TrainingSession[] = []): Tra
   avgSleep: row.avg_sleep ?? undefined,
   avgStress: row.avg_stress ?? undefined,
   recentAdherencePercentage: row.recent_adherence_percentage ?? undefined,
+  effectiveFrom: row.effective_from ?? undefined,
+  effectiveUntil: row.effective_until ?? undefined,
   sessions,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
@@ -196,36 +199,19 @@ export const createTrainingPlan = async (
   return mapPlanRow(planRow, sessions);
 };
 
-// Get active training plan for a client
-export const getActiveTrainingPlan = async (clientId: string): Promise<TrainingPlan | null> => {
-  const { data: planRow, error: planError } = await supabaseAdmin
-    .from("training_plans")
-    .select("*")
-    .eq("client_id", clientId)
-    .eq("status", "active")
-    .is("deleted_at", null)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .single();
-
-  if (planError || !planRow) return null;
-
-  const planData = planRow;
-
-  // Get sessions
+// Fetch sessions with exercises for a plan (shared helper)
+const fetchSessionsWithExercises = async (planId: string): Promise<TrainingSession[]> => {
   const { data: sessionRows, error: sessionError } = await supabaseAdmin
     .from("training_sessions")
     .select("*")
-    .eq("plan_id", planData.id)
+    .eq("plan_id", planId)
     .eq("is_active", true)
     .order("order_index", { ascending: true });
 
   if (sessionError) throw new Error(`Failed to fetch sessions: ${sessionError.message}`);
 
   const sessionList = sessionRows || [];
-  if (sessionList.length === 0) {
-    return mapPlanRow(planData, []);
-  }
+  if (sessionList.length === 0) return [];
 
   // Fetch all exercises in one query (fixes N+1)
   const sessionIds = sessionList.map((s) => s.id);
@@ -248,12 +234,51 @@ export const getActiveTrainingPlan = async (clientId: string): Promise<TrainingP
     exercisesBySession.get(sessionId)!.push(mapExerciseRow(row));
   }
 
-  // Build sessions with their exercises
-  const sessions = sessionList.map((sessionRow) =>
+  return sessionList.map((sessionRow) =>
     mapSessionRow(sessionRow, exercisesBySession.get(sessionRow.id) || [])
   );
+};
 
-  return mapPlanRow(planData, sessions);
+// Get active training plan for a client
+export const getActiveTrainingPlan = async (clientId: string): Promise<TrainingPlan | null> => {
+  const { data: planRow, error: planError } = await supabaseAdmin
+    .from("training_plans")
+    .select("*")
+    .eq("client_id", clientId)
+    .eq("status", "active")
+    .is("deleted_at", null)
+    .is("effective_until", null)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .single();
+
+  if (planError || !planRow) return null;
+
+  const sessions = await fetchSessionsWithExercises(planRow.id);
+  return mapPlanRow(planRow, sessions);
+};
+
+// Get training plan that was active on a specific date
+export const getTrainingPlanForDate = async (
+  clientId: string,
+  date: string
+): Promise<TrainingPlan | null> => {
+  const { data: planRow, error: planError } = await supabaseAdmin
+    .from("training_plans")
+    .select("*")
+    .eq("client_id", clientId)
+    .is("deleted_at", null)
+    .lte("effective_from", date)
+    .or(`effective_until.gte.${date},effective_until.is.null`)
+    .order("effective_from", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (planError || !planRow) return null;
+
+  const sessions = await fetchSessionsWithExercises(planRow.id);
+  return mapPlanRow(planRow, sessions);
 };
 
 // Get training plan by ID
@@ -266,45 +291,8 @@ export const getTrainingPlanById = async (planId: string): Promise<TrainingPlan 
 
   if (planError || !planRow) return null;
 
-  const planData = planRow;
-
-  const { data: sessionRows } = await supabaseAdmin
-    .from("training_sessions")
-    .select("*")
-    .eq("plan_id", planId)
-    .eq("is_active", true)
-    .order("order_index", { ascending: true });
-
-  const sessionList = sessionRows || [];
-  if (sessionList.length === 0) {
-    return mapPlanRow(planData, []);
-  }
-
-  // Fetch all exercises in one query (fixes N+1)
-  const sessionIds = sessionList.map((s) => s.id);
-  const { data: exerciseRows } = await supabaseAdmin
-    .from("training_exercises")
-    .select("*")
-    .in("session_id", sessionIds)
-    .eq("is_active", true)
-    .order("order_index", { ascending: true });
-
-  // Group exercises by session_id
-  const exercisesBySession = new Map<string, TrainingExercise[]>();
-  for (const row of exerciseRows || []) {
-    const sessionId = row.session_id;
-    if (!exercisesBySession.has(sessionId)) {
-      exercisesBySession.set(sessionId, []);
-    }
-    exercisesBySession.get(sessionId)!.push(mapExerciseRow(row));
-  }
-
-  // Build sessions with their exercises
-  const sessions = sessionList.map((sessionRow) =>
-    mapSessionRow(sessionRow, exercisesBySession.get(sessionRow.id) || [])
-  );
-
-  return mapPlanRow(planData, sessions);
+  const sessions = await fetchSessionsWithExercises(planId);
+  return mapPlanRow(planRow, sessions);
 };
 
 // Update training plan
@@ -343,6 +331,120 @@ export const archiveTrainingPlan = async (planId: string): Promise<void> => {
   if (error) throw new Error(`Failed to archive plan: ${error.message}`);
 };
 
+// Atomically archive old plan + insert new plan via RPC
+export const createTrainingPlanAtomic = async (params: {
+  clientId: string;
+  coachId: string;
+  name: string;
+  description?: string;
+  coachPrompt: string;
+  aiResponseRaw?: string;
+  splitType: string;
+  frequencyPerWeek: number;
+  programDurationWeeks?: number;
+  clientWeightKg?: number;
+  clientBodyFatPercentage?: number;
+  clientGoalWeightKg?: number;
+  clientTdee?: number;
+  avgMood?: number;
+  avgEnergy?: number;
+  avgSleep?: number;
+  avgStress?: number;
+  recentAdherencePercentage?: number;
+  phaseId?: string;
+}): Promise<string> => {
+  const { data: newPlanId, error: rpcError } = await supabaseAdmin
+    .rpc("create_training_plan_atomic" as never, {
+      p_client_id: params.clientId,
+      p_coach_id: params.coachId,
+      p_name: params.name,
+      p_description: params.description || null,
+      p_coach_prompt: params.coachPrompt,
+      p_ai_response_raw: params.aiResponseRaw || null,
+      p_split_type: params.splitType,
+      p_frequency_per_week: params.frequencyPerWeek,
+      p_program_duration_weeks: params.programDurationWeeks || null,
+      p_client_weight_kg: params.clientWeightKg || null,
+      p_client_body_fat_percentage: params.clientBodyFatPercentage || null,
+      p_client_goal_weight_kg: params.clientGoalWeightKg || null,
+      p_client_tdee: params.clientTdee || null,
+      p_avg_mood: params.avgMood || null,
+      p_avg_energy: params.avgEnergy || null,
+      p_avg_sleep: params.avgSleep || null,
+      p_avg_stress: params.avgStress || null,
+      p_recent_adherence_percentage: params.recentAdherencePercentage || null,
+      p_phase_id: params.phaseId || null,
+    } as never) as unknown as { data: string | null; error: { message: string } | null };
+
+  if (rpcError || !newPlanId) {
+    throw new Error(`Failed to create training plan atomically: ${rpcError?.message || "No data returned"}`);
+  }
+
+  return newPlanId as string;
+};
+
+// Insert sessions and exercises for an existing plan row
+export const insertTrainingSessions = async (
+  planId: string,
+  sessions: AIGeneratedSession[]
+): Promise<TrainingSession[]> => {
+  const result: TrainingSession[] = [];
+
+  for (let i = 0; i < sessions.length; i++) {
+    const sessionData = sessions[i];
+
+    const { data: sessionRow, error: sessionError } = await supabaseAdmin
+      .from("training_sessions")
+      .insert({
+        plan_id: planId,
+        name: sessionData.name,
+        day_of_week: sessionData.dayOfWeek || null,
+        order_index: i,
+        focus: sessionData.focus || null,
+        notes: sessionData.notes || null,
+        estimated_duration_minutes: sessionData.estimatedDurationMinutes || null,
+      })
+      .select()
+      .single();
+
+    if (sessionError || !sessionRow) throw new Error(`Failed to create session: ${sessionError?.message || "No data returned"}`);
+
+    const exercises: TrainingExercise[] = [];
+
+    for (let j = 0; j < sessionData.exercises.length; j++) {
+      const exerciseData = sessionData.exercises[j];
+
+      const { data: exerciseRow, error: exerciseError } = await supabaseAdmin
+        .from("training_exercises")
+        .insert({
+          session_id: sessionRow.id,
+          name: exerciseData.name,
+          order_index: j,
+          sets: exerciseData.sets,
+          reps_min: exerciseData.repsMin || null,
+          reps_max: exerciseData.repsMax || null,
+          reps_target: exerciseData.repsTarget || null,
+          rpe_target: exerciseData.rpeTarget || null,
+          percentage_1rm: exerciseData.percentage1rm || null,
+          tempo: exerciseData.tempo || null,
+          rest_seconds: exerciseData.restSeconds || null,
+          notes: exerciseData.notes || null,
+          superset_group: exerciseData.supersetGroup || null,
+          is_warmup: exerciseData.isWarmup || false,
+        })
+        .select()
+        .single();
+
+      if (exerciseError || !exerciseRow) throw new Error(`Failed to create exercise: ${exerciseError?.message || "No data returned"}`);
+
+      exercises.push(mapExerciseRow(exerciseRow));
+    }
+
+    result.push(mapSessionRow(sessionRow, exercises));
+  }
+
+  return result;
+};
 
 // Update session
 export const updateSession = async (

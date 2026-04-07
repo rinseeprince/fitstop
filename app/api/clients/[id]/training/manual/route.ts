@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getClientById } from "@/services/client-service";
-import { createTrainingPlan, archiveTrainingPlan, getActiveTrainingPlan } from "@/services/training-service";
+import { createTrainingPlanAtomic, insertTrainingSessions, getTrainingPlanById } from "@/services/training-service";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { apiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { z } from "zod";
-import type { TrainingSplitType, AIGeneratedPlan, AIGeneratedSession, AIGeneratedExercise } from "@/types/training";
+import type { AIGeneratedSession, AIGeneratedExercise } from "@/types/training";
 import { requirePhaseSelection } from "@/lib/require-phase-selection";
 
 const manualExerciseSchema = z.object({
@@ -81,46 +81,42 @@ export async function POST(
 
     const { name, splitType, frequencyPerWeek, sessions } = validation.data;
 
-    // Archive existing active plan if any
-    const existingPlan = await getActiveTrainingPlan(clientId);
-    if (existingPlan) {
-      await archiveTrainingPlan(existingPlan.id);
-    }
-
-    // Convert to AIGeneratedPlan format for createTrainingPlan
-    const aiPlan: AIGeneratedPlan = {
-      name,
-      description: "Manually created training plan",
-      splitType: splitType as TrainingSplitType,
-      frequencyPerWeek,
-      sessions: sessions.map((session): AIGeneratedSession => ({
-        name: session.name,
-        dayOfWeek: session.dayOfWeek,
-        focus: session.focus,
-        estimatedDurationMinutes: 60,
-        exercises: session.exercises.map((exercise): AIGeneratedExercise => ({
-          name: exercise.name,
-          sets: exercise.sets,
-          repsTarget: exercise.repsTarget,
-          rpeTarget: exercise.rpeTarget,
-          restSeconds: exercise.restSeconds,
-          notes: exercise.notes,
-          isWarmup: false,
-        })),
+    // Convert to AIGeneratedSession format
+    const aiSessions: AIGeneratedSession[] = sessions.map((session): AIGeneratedSession => ({
+      name: session.name,
+      dayOfWeek: session.dayOfWeek,
+      focus: session.focus,
+      estimatedDurationMinutes: 60,
+      exercises: session.exercises.map((exercise): AIGeneratedExercise => ({
+        name: exercise.name,
+        sets: exercise.sets,
+        repsTarget: exercise.repsTarget,
+        rpeTarget: exercise.rpeTarget,
+        restSeconds: exercise.restSeconds,
+        notes: exercise.notes,
+        isWarmup: false,
       })),
-    };
+    }));
 
-    // Create the plan using existing service function
-    const plan = await createTrainingPlan(
+    // Atomically archive old plan + insert new plan row
+    const newPlanId = await createTrainingPlanAtomic({
       clientId,
       coachId,
-      aiPlan,
-      "Manual creation",
-      JSON.stringify({ manual: true }),
-      {}, // No client metrics snapshot for manual plans
-      undefined, // No check-in data
-      phaseCheck.phaseId
-    );
+      name,
+      description: "Manually created training plan",
+      coachPrompt: "Manual creation",
+      aiResponseRaw: JSON.stringify({ manual: true }),
+      splitType,
+      frequencyPerWeek,
+      phaseId: phaseCheck.phaseId,
+    });
+
+    // Insert sessions and exercises
+    await insertTrainingSessions(newPlanId, aiSessions);
+    const plan = await getTrainingPlanById(newPlanId);
+    if (!plan) {
+      return NextResponse.json({ error: "Failed to retrieve created plan" }, { status: 500 });
+    }
 
     return NextResponse.json({
       success: true,

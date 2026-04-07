@@ -3,9 +3,10 @@ import { getClientById } from "@/services/client-service";
 import { getClientCheckIns } from "@/services/check-in-service";
 import { generateTrainingPlanAI, calculateCheckInAverages } from "@/services/training-ai-service";
 import {
-  createTrainingPlan,
   getActiveTrainingPlan,
-  archiveTrainingPlan,
+  createTrainingPlanAtomic,
+  insertTrainingSessions,
+  getTrainingPlanById,
   saveTrainingPlanHistory,
   updateSessionCalories,
 } from "@/services/training-service";
@@ -120,11 +121,8 @@ export async function POST(
       recoveryImpact: activity.analysis?.recoveryImpact || "",
     }));
 
-    // Archive existing active plan if any
-    const existingPlan = await getActiveTrainingPlan(clientId);
-    if (existingPlan) {
-      await archiveTrainingPlan(existingPlan.id);
-    }
+    // Check if there's an existing plan (for history reason tracking)
+    const hadExistingPlan = !!(await getActiveTrainingPlan(clientId));
 
     // Generate plan via AI with external activities as context
     const { plan: aiPlan, rawResponse } = await generateTrainingPlanAI({
@@ -144,22 +142,35 @@ export async function POST(
       allowSameDayTraining: validation.data.allowSameDayTraining,
     });
 
-    // Save to database
-    const plan = await createTrainingPlan(
+    // Atomically archive old plan + insert new plan row
+    const newPlanId = await createTrainingPlanAtomic({
       clientId,
       coachId,
-      aiPlan,
-      validation.data.coachPrompt,
-      rawResponse,
-      {
-        weightKg: currentWeightKg,
-        bodyFatPercentage,
-        goalWeightKg,
-        tdee: clientTdee,
-      },
-      checkInData,
-      phaseCheck.phaseId
-    );
+      name: aiPlan.name,
+      description: aiPlan.description,
+      coachPrompt: validation.data.coachPrompt,
+      aiResponseRaw: rawResponse,
+      splitType: aiPlan.splitType,
+      frequencyPerWeek: aiPlan.frequencyPerWeek,
+      programDurationWeeks: aiPlan.programDurationWeeks,
+      clientWeightKg: currentWeightKg,
+      clientBodyFatPercentage: bodyFatPercentage,
+      clientGoalWeightKg: goalWeightKg,
+      clientTdee: clientTdee,
+      avgMood: checkInData?.avgMood,
+      avgEnergy: checkInData?.avgEnergy,
+      avgSleep: checkInData?.avgSleep,
+      avgStress: checkInData?.avgStress,
+      recentAdherencePercentage: checkInData?.adherencePercentage,
+      phaseId: phaseCheck.phaseId,
+    });
+
+    // Insert sessions and exercises
+    await insertTrainingSessions(newPlanId, aiPlan.sessions);
+    const plan = await getTrainingPlanById(newPlanId);
+    if (!plan) {
+      return NextResponse.json({ error: "Failed to retrieve created plan" }, { status: 500 });
+    }
 
     // Save pre-generation activities as external activities in the plan
     for (const activity of preGenActivities) {
@@ -209,7 +220,7 @@ export async function POST(
       validation.data.coachPrompt,
       rawResponse,
       coachId,
-      existingPlan ? "regenerated" : "initial"
+      hadExistingPlan ? "regenerated" : "initial"
     );
 
     return NextResponse.json({ success: true, plan: updatedPlan || plan }, { status: 201 });
