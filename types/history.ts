@@ -62,6 +62,13 @@ export type TrainingHistoryRow = {
   notes: string | null;
 };
 
+export type TrainingWeekSummary = {
+  completed: number;
+  totalPlanned: number;
+  plannedUpToToday: number;
+  missed: number;
+};
+
 // Weekly habits tracker types
 
 export type WeeklyHabitDayStatus = 'completed' | 'missed' | 'pending' | 'future' | 'not-tracked';

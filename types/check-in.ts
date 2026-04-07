@@ -231,6 +231,7 @@ export type CheckIn = {
   id: string;
   clientId: string;
   clientName?: string; // Populated when joining with clients table
+  clientAvatarUrl?: string | null; // Populated when joining with clients table
   status: CheckInStatus;
 
   // Subjective

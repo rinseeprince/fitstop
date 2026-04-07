@@ -10,7 +10,7 @@ import { CheckInDetailModal } from "@/components/check-in/check-in-detail-modal"
 import { useUnreviewedCheckIns } from "@/hooks/use-check-in-data";
 import { AlertCircle, CheckCircle } from "lucide-react";
 import Link from "next/link";
-import { format } from "date-fns";
+import { format, differenceInHours } from "date-fns";
 
 export default function ReviewCheckInsPage() {
   const { checkIns: unreviewedCheckIns, isLoading, mutate } = useUnreviewedCheckIns();
@@ -42,6 +42,19 @@ export default function ReviewCheckInsPage() {
       .map((n) => n[0])
       .join("")
       .toUpperCase();
+  };
+
+  const getUrgencyBorder = (createdAt: string) => {
+    const hours = differenceInHours(new Date(), new Date(createdAt));
+    if (hours > 48) return "border-l-4 border-l-destructive";
+    if (hours > 24) return "border-l-4 border-l-warning";
+    return "border-l-4 border-l-success";
+  };
+
+  const getAiPreview = (aiSummary?: string) => {
+    if (!aiSummary) return null;
+    const firstSentence = aiSummary.split(/[.!?]\s/)[0];
+    return firstSentence.length > 120 ? firstSentence.slice(0, 120) + "..." : firstSentence;
   };
 
   const pageHeader = (
@@ -91,33 +104,49 @@ export default function ReviewCheckInsPage() {
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                {unreviewedCheckIns.map((checkIn) => (
-                  <div
-                    key={checkIn.id}
-                    className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors cursor-pointer"
-                    onClick={() => setSelectedCheckInId(checkIn.id)}
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary font-semibold">
-                        {getInitials(checkIn.clientName || "Client")}
+                {unreviewedCheckIns.map((checkIn) => {
+                  const aiPreview = getAiPreview(checkIn.aiSummary);
+                  return (
+                    <div
+                      key={checkIn.id}
+                      className={`flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors cursor-pointer ${getUrgencyBorder(checkIn.createdAt)}`}
+                      onClick={() => setSelectedCheckInId(checkIn.id)}
+                    >
+                      <div className="flex items-center gap-4">
+                        {checkIn.clientAvatarUrl ? (
+                          <img
+                            src={checkIn.clientAvatarUrl}
+                            alt={checkIn.clientName || "Client"}
+                            className="h-12 w-12 rounded-full object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary font-semibold">
+                            {getInitials(checkIn.clientName || "Client")}
+                          </div>
+                        )}
+                        <div>
+                          <p className="font-medium">{checkIn.clientName || "Unknown Client"}</p>
+                          <p className="text-sm text-muted-foreground">
+                            Submitted {format(new Date(checkIn.createdAt), "MMM d, yyyy 'at' h:mm a")}
+                          </p>
+                          {aiPreview && (
+                            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
+                              {aiPreview}
+                            </p>
+                          )}
+                        </div>
                       </div>
-                      <div>
-                        <p className="font-medium">{checkIn.clientName || "Unknown Client"}</p>
-                        <p className="text-sm text-muted-foreground">
-                          Submitted {format(new Date(checkIn.createdAt), "MMM d, yyyy 'at' h:mm a")}
-                        </p>
+                      <div className="flex items-center gap-3">
+                        <Badge variant="secondary" className="bg-primary/10 text-primary">
+                          AI Processed
+                        </Badge>
+                        <Button size="sm">
+                          Review
+                        </Button>
                       </div>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <Badge variant="secondary" className="bg-primary/10 text-primary">
-                        AI Processed
-                      </Badge>
-                      <Button size="sm">
-                        Review
-                      </Button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </CardContent>
           </Card>

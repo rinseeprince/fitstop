@@ -3,10 +3,6 @@
 import { motion } from "framer-motion";
 import type { CheckIn, GetCheckInComparisonResponse, MetricChange } from "@/types/check-in";
 import type { DailyLog } from "@/types/daily-log";
-import {
-  WEEKLY_NUTRITION_HIT_PER_DAY,
-  WEEKLY_NUTRITION_PARTIAL_PER_DAY,
-} from "@/lib/constants";
 
 type FullWeekTarget = {
   calories: number;
@@ -22,6 +18,7 @@ type KPIRibbonProps = {
   contextStartDate: Date;
   contextEndDate: Date;
   fullWeekTarget?: FullWeekTarget | null;
+  trainingPeriodStats?: { sessionsCompleted: number; sessionsPlanned: number } | null;
 };
 
 type KPICardData = {
@@ -51,6 +48,7 @@ export const KPIRibbon = ({
   contextStartDate,
   contextEndDate,
   fullWeekTarget,
+  trainingPeriodStats,
 }: KPIRibbonProps) => {
   const changes = comparisonData?.comparison?.changes;
   const daysDiff = Math.floor((contextEndDate.getTime() - contextStartDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
@@ -68,27 +66,29 @@ export const KPIRibbon = ({
     { total: 0, target: 0, daysLogged: 0 }
   );
 
-  // Use full-week target (logged + plan-based unlogged) when available
+  // Daily average comparison for calorie adherence
   const effectiveTarget = fullWeekTarget ? fullWeekTarget.calories : calStats.target;
-  const weeklyDiff = Math.abs(calStats.total - effectiveTarget);
-  const hitThreshold = WEEKLY_NUTRITION_HIT_PER_DAY * daysDiff;
-  const partialThreshold = WEEKLY_NUTRITION_PARTIAL_PER_DAY * daysDiff;
+  const avgConsumed = calStats.daysLogged > 0 ? Math.round(calStats.total / calStats.daysLogged) : 0;
+  const avgTarget = calStats.daysLogged > 0 ? Math.round(effectiveTarget / daysDiff) : 0;
+  const dailyDiff = Math.abs(avgConsumed - avgTarget);
   const adherenceLabel =
     calStats.daysLogged === 0 ? null :
-    weeklyDiff <= hitThreshold ? "HIT" :
-    weeklyDiff <= partialThreshold ? "PARTIAL" : "MISSED";
+    dailyDiff <= 50 ? "HIT" :
+    dailyDiff <= 150 ? "PARTIAL" : "MISSED";
 
-  // Training calculations
-  const trainingStats = dailyLogs.reduce(
-    (acc, log) => {
-      if (log.trainingData?.trainingSessionId) {
-        acc.total++;
-        if (log.trainingData.sessionCompleted) acc.completed++;
-      }
-      return acc;
-    },
-    { total: 0, completed: 0 }
-  );
+  // Training calculations - prefer server-side period stats from session_logs
+  const trainingStats = trainingPeriodStats
+    ? { completed: trainingPeriodStats.sessionsCompleted, total: trainingPeriodStats.sessionsPlanned }
+    : dailyLogs.reduce(
+        (acc, log) => {
+          if (log.trainingData?.trainingSessionId) {
+            acc.total++;
+            if (log.trainingData.sessionCompleted) acc.completed++;
+          }
+          return acc;
+        },
+        { total: 0, completed: 0 }
+      );
 
   const trainingPct = trainingStats.total > 0
     ? Math.round((trainingStats.completed / trainingStats.total) * 100)
@@ -120,13 +120,13 @@ export const KPIRibbon = ({
     },
     {
       label: "Calories",
-      value: calStats.daysLogged > 0 ? calStats.total.toLocaleString() : "--",
-      unit: calStats.daysLogged > 0 ? `/ ${effectiveTarget.toLocaleString()}` : undefined,
+      value: calStats.daysLogged > 0 ? avgConsumed.toLocaleString() : "No data",
+      unit: calStats.daysLogged > 0 ? `/ ${avgTarget.toLocaleString()} avg/day` : undefined,
       delta: adherenceLabel ? {
         text: `${adherenceLabel}`,
         type: adherenceLabel === "HIT" ? "positive" : adherenceLabel === "PARTIAL" ? "neutral" : "negative",
       } : undefined,
-      subText: calStats.daysLogged > 0 ? `${calStats.daysLogged}/${daysDiff} days logged` : undefined,
+      subText: calStats.daysLogged > 0 ? `${calStats.daysLogged}/${daysDiff} days logged` : "No nutrition logs",
       borderColor: "before:bg-success",
     },
     {

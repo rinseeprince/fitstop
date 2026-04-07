@@ -3,6 +3,7 @@ import { getAuthenticatedClientId } from "@/lib/auth-helpers";
 import {
   getCheckInTrainingContext,
   getCheckInNutritionContext,
+  getCheckInTrainingPeriodStats,
 } from "@/services/check-in-context-service";
 import { getClientById } from "@/services/client-service";
 import { getDailyLogs } from "@/services/daily-logs-service";
@@ -44,30 +45,29 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // --- Access gating based on check-in schedule ---
+    // --- Fetch last check-in for gating + period calculation ---
     const expectedDay = client.expectedCheckInDay;
     let checkInGateStatus: CheckInGateStatus = "available";
 
+    const supabase = await createServerSupabaseClient();
+    const { data: lastCheckIn } = await supabase
+      .from("check_ins")
+      .select("period_end, created_at")
+      .eq("client_id", client.id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const lastCheckInPeriodEnd = lastCheckIn?.period_end
+      ?? (lastCheckIn?.created_at
+        ? new Date(lastCheckIn.created_at).toISOString().split("T")[0]
+        : null);
+
+    const isFirstCheckIn = !lastCheckIn;
+
     if (expectedDay) {
-      // Get the most recent check-in date for gating (uses server client with RLS)
-      const supabase = await createServerSupabaseClient();
-      const { data: lastCheckIn } = await supabase
-        .from("check_ins")
-        .select("period_end, created_at")
-        .eq("client_id", client.id)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      // Use period_end (the period the check-in covers) instead of created_at
-      // (when it was submitted). Fallback to created_at for pre-migration rows.
-      const lastCheckInPeriodEnd = lastCheckIn?.period_end
-        ?? (lastCheckIn?.created_at
-          ? new Date(lastCheckIn.created_at).toISOString().split("T")[0]
-          : null);
-
       const today = new Date();
-      const { status, periodStart: _periodStart, periodEnd: _periodEnd, nextDueDate } = getCheckInStatus(
+      const { status, nextDueDate } = getCheckInStatus(
         expectedDay,
         lastCheckInPeriodEnd,
         today
@@ -99,12 +99,17 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // --- Calculate period using fixed 7-day window ---
+    // --- Calculate period ---
+    // First check-in: start_date to today
+    // Subsequent check-ins: 7-day window based on expected check-in day
     const today = new Date();
     let periodStart: string;
     let periodEnd: string;
 
-    if (expectedDay) {
+    if (isFirstCheckIn && client.startDate) {
+      periodStart = client.startDate;
+      periodEnd = formatDateISO(today);
+    } else if (expectedDay) {
       const period = calculateCheckInPeriod(today, expectedDay);
       periodStart = period.periodStart;
       periodEnd = period.periodEnd;
@@ -116,9 +121,16 @@ export async function GET(request: NextRequest) {
       periodEnd = formatDateISO(today);
     }
 
+    // Math.round avoids off-by-one when dates straddle a DST transition
+    // (e.g. GMT→BST on Mar 29 steals 1 hour, making Math.floor short by 1 day)
+    const periodDays = Math.round(
+      (new Date(periodEnd + "T12:00:00").getTime() - new Date(periodStart + "T12:00:00").getTime())
+      / 86_400_000
+    ) + 1;
+
     // Fetch coach info, context in parallel
     // supabaseAdmin required: no client-facing SELECT RLS policy exists on coaches table
-    const [coachResult, trainingContext, nutritionContext] = await Promise.all([
+    const [coachResult, trainingContext, nutritionContext, trainingPeriodStats] = await Promise.all([
       supabaseAdmin
         .from("coaches")
         .select("name")
@@ -126,6 +138,7 @@ export async function GET(request: NextRequest) {
         .single(),
       getCheckInTrainingContext(client.id),
       getCheckInNutritionContext(client.id),
+      getCheckInTrainingPeriodStats(client.id, periodStart, periodEnd),
     ]);
 
     const coach = coachResult.data;
@@ -136,6 +149,8 @@ export async function GET(request: NextRequest) {
     const response: Omit<ValidateCheckInTokenResponse, "valid"> & {
       periodStart: string;
       periodEnd: string;
+      periodDays: number;
+      trainingPeriodStats: { sessionsCompleted: number; sessionsPlanned: number };
     } = {
       clientInfo: {
         id: client.id,
@@ -146,9 +161,11 @@ export async function GET(request: NextRequest) {
       },
       trainingContext,
       nutritionContext,
+      trainingPeriodStats,
       dailyLogs,
       periodStart,
       periodEnd,
+      periodDays,
     };
 
     return NextResponse.json({ success: true, data: { ...response, checkInStatus: checkInGateStatus } });

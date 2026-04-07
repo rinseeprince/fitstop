@@ -26,7 +26,7 @@ const METRICS: MetricConfig[] = [
   { key: "stress", label: "Stress", maxValue: 10, scale: "/ 10" },
 ];
 
-const DAY_LABELS = ["M", "T", "W", "T", "F", "S", "S"];
+const SHORT_DAY = ["S", "M", "T", "W", "T", "F", "S"];
 
 function buildDayMap(dailyLogs: DailyLog[]): Map<string, DailyLog> {
   const map = new Map<string, DailyLog>();
@@ -36,14 +36,17 @@ function buildDayMap(dailyLogs: DailyLog[]): Map<string, DailyLog> {
   return map;
 }
 
-function getDayRange(start: Date, end: Date): string[] {
-  const dates: string[] = [];
+// Returns date strings and day labels derived from local date components
+function getDayRange(start: Date, end: Date): { date: string; dayLabel: string }[] {
+  const days: { date: string; dayLabel: string }[] = [];
   const d = new Date(start);
   while (d <= end) {
-    dates.push(d.toISOString().split("T")[0]);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const dateStr = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    days.push({ date: dateStr, dayLabel: SHORT_DAY[d.getDay()] });
     d.setDate(d.getDate() + 1);
   }
-  return dates;
+  return days;
 }
 
 export const WellnessSection = ({
@@ -73,8 +76,8 @@ export const WellnessSection = ({
       </div>
       <div className="grid grid-cols-4 gap-4">
         {METRICS.map((metric) => {
-          const values = dateRange.map((date) => {
-            const log = dayMap.get(date);
+          const values = dateRange.map((day) => {
+            const log = dayMap.get(day.date);
             return log?.[metric.key] ?? null;
           });
 
@@ -84,9 +87,9 @@ export const WellnessSection = ({
               ? (validValues.reduce((a, b) => a + b, 0) / dateRange.length).toFixed(1)
               : "--";
 
-          const barData = dateRange.map((date, i) => ({
-            value: dayMap.get(date)?.[metric.key] ?? null,
-            dayLabel: DAY_LABELS[i % 7],
+          const barData = dateRange.map((day) => ({
+            value: dayMap.get(day.date)?.[metric.key] ?? null,
+            dayLabel: day.dayLabel,
           }));
 
           return (

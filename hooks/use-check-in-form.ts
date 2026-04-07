@@ -6,7 +6,7 @@ const STORAGE_KEY = "check-in-form-data";
 
 export const useCheckInForm = (token: string) => {
   const [currentStep, setCurrentStep] = useState(1);
-  const [formData, setFormData] = useState<Partial<CheckInFormData>>({});
+  const [formData, setFormData] = useState<Partial<CheckInFormData>>({ weightUnit: "kg" });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Load saved form data from localStorage on mount

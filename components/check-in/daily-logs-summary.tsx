@@ -1,13 +1,14 @@
 "use client";
 
 import { useMemo } from "react";
+import { CheckCircle2, Circle } from "lucide-react";
 import type { DailyLog } from "@/types/daily-log";
 import type { MetricAverages } from "@/utils/daily-logs-aggregation";
 
 type DailyLogsSummaryProps = {
   dailyLogs: DailyLog[];
-  startDate?: string;
-  endDate?: string;
+  periodStart?: string;
+  periodEnd?: string;
 };
 
 const getMetricColor = (metric: "mood" | "energy" | "sleep" | "stress", value: number) => {
@@ -16,13 +17,13 @@ const getMetricColor = (metric: "mood" | "energy" | "sleep" | "stress", value: n
     if (value >= 3) return "bg-warning";
     return "bg-destructive";
   }
-  
+
   if (metric === "stress") {
     if (value <= 3) return "bg-success";
     if (value <= 6) return "bg-warning";
     return "bg-destructive";
   }
-  
+
   // For energy and sleep (higher is better)
   if (value >= 7) return "bg-success";
   if (value >= 5) return "bg-warning";
@@ -34,19 +35,19 @@ const formatDate = (dateStr: string) => {
   return date.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
 };
 
-export const DailyLogsSummary = ({ dailyLogs }: DailyLogsSummaryProps) => {
+export const DailyLogsSummary = ({ dailyLogs, periodStart, periodEnd }: DailyLogsSummaryProps) => {
   const averages = useMemo<MetricAverages>(() => {
-    const validLogs = dailyLogs.filter(log => 
-      log.mood !== undefined || 
-      log.energy !== undefined || 
-      log.sleep !== undefined || 
+    const validLogs = dailyLogs.filter(log =>
+      log.mood !== undefined ||
+      log.energy !== undefined ||
+      log.sleep !== undefined ||
       log.stress !== undefined
     );
-    
+
     if (validLogs.length === 0) {
       return { mood: 0, energy: 0, sleep: 0, stress: 0 };
     }
-    
+
     const sums = validLogs.reduce((acc, log) => ({
       mood: acc.mood + (log.mood ?? 0),
       energy: acc.energy + (log.energy ?? 0),
@@ -68,44 +69,87 @@ export const DailyLogsSummary = ({ dailyLogs }: DailyLogsSummaryProps) => {
       stress: sums.stressCount > 0 ? Number((sums.stress / sums.stressCount).toFixed(1)) : 0,
     };
   }, [dailyLogs]);
-  
-  // Sort logs by date for display
-  const sortedLogs = useMemo(() => 
-    [...dailyLogs].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()),
-    [dailyLogs]
-  );
-  
+
+  // Build a lookup of logged dates (has at least one wellness metric)
+  const loggedDates = useMemo(() => {
+    const set = new Set<string>();
+    for (const log of dailyLogs) {
+      if (
+        log.mood !== undefined && log.mood !== null ||
+        log.energy !== undefined && log.energy !== null ||
+        log.sleep !== undefined && log.sleep !== null ||
+        log.stress !== undefined && log.stress !== null
+      ) {
+        set.add(log.date);
+      }
+    }
+    return set;
+  }, [dailyLogs]);
+
+  // Generate all dates in the period using local date parts (toISOString shifts to UTC, causing
+  // duplicates around DST transitions like the March 29 BST spring-forward)
+  const periodDays = useMemo(() => {
+    if (!periodStart || !periodEnd) {
+      const seen = new Set<string>();
+      return [...dailyLogs]
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+        .reduce<string[]>((acc, log) => {
+          if (!seen.has(log.date)) {
+            seen.add(log.date);
+            acc.push(log.date);
+          }
+          return acc;
+        }, []);
+    }
+    const days: string[] = [];
+    const cursor = new Date(periodStart + "T12:00:00");
+    const end = new Date(periodEnd + "T12:00:00");
+    while (cursor <= end) {
+      const y = cursor.getFullYear();
+      const m = String(cursor.getMonth() + 1).padStart(2, "0");
+      const d = String(cursor.getDate()).padStart(2, "0");
+      days.push(`${y}-${m}-${d}`);
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    return days;
+  }, [periodStart, periodEnd, dailyLogs]);
+
+  const loggedCount = periodDays.filter((d) => loggedDates.has(d)).length;
+
   return (
     <div className="space-y-6">
-      {/* Trend Visualization */}
+      {/* Week at a Glance */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-muted-foreground">Week at a Glance</h4>
+        <div className="flex items-center justify-between">
+          <h4 className="text-sm font-medium text-muted-foreground">Week at a Glance</h4>
+          <span className="text-xs text-muted-foreground">
+            {loggedCount}/{periodDays.length} days logged
+          </span>
+        </div>
 
-        {/* Day indicators with color coding */}
-        <div className="grid grid-cols-7 gap-2">
-          {sortedLogs.map((log) => {
-            const avgScore = ((log.mood ?? 0) + ((log.energy ?? 0) / 2) + ((log.sleep ?? 0) / 2) - ((log.stress ?? 0) / 2)) / 2.5;
-            const colorClass = avgScore >= 3.5 ? "bg-success" : avgScore >= 2.5 ? "bg-warning" : "bg-destructive";
-            
+        <div className={`grid gap-2`} style={{ gridTemplateColumns: `repeat(${periodDays.length}, 1fr)` }}>
+          {periodDays.map((dateStr) => {
+            const isLogged = loggedDates.has(dateStr);
+            const date = new Date(dateStr + "T00:00:00");
+
             return (
-              <div key={log.date} className="text-center">
+              <div key={dateStr} className="text-center">
                 <div className="text-xs text-muted-foreground mb-1">
-                  {new Date(log.date).toLocaleDateString("en-US", { weekday: "short" })}
+                  {date.toLocaleDateString("en-US", { weekday: "short" })}
                 </div>
-                <div className={`h-8 rounded ${colorClass} opacity-80`} />
+                <div className="flex justify-center">
+                  {isLogged ? (
+                    <CheckCircle2 className="h-6 w-6 text-success" />
+                  ) : (
+                    <Circle className="h-6 w-6 text-muted-foreground/30" />
+                  )}
+                </div>
                 <div className="text-xs mt-1">
-                  {new Date(log.date).getDate()}
+                  {date.getDate()}
                 </div>
               </div>
             );
           })}
-        </div>
-
-        {/* Legend */}
-        <div className="flex items-center justify-center gap-4 text-xs text-muted-foreground">
-          <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-full bg-success opacity-80" />Great</span>
-          <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-full bg-warning opacity-80" />Okay</span>
-          <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-full bg-destructive opacity-80" />Tough</span>
         </div>
       </div>
       
@@ -146,10 +190,10 @@ export const DailyLogsSummary = ({ dailyLogs }: DailyLogsSummaryProps) => {
       
       {/* Period Info */}
       <div className="text-xs text-muted-foreground text-center">
-        Based on {dailyLogs.length} days of data
-        {sortedLogs.length > 0 && (
+        Based on {loggedCount} days of data
+        {periodDays.length > 0 && (
           <span className="block">
-            {formatDate(sortedLogs[0].date)} - {formatDate(sortedLogs[sortedLogs.length - 1].date)}
+            {formatDate(periodDays[0])} - {formatDate(periodDays[periodDays.length - 1])}
           </span>
         )}
       </div>

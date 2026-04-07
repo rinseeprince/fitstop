@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { getActiveTrainingPlan } from "./training-service";
 import { getWeeklyNutritionTargets } from "@/utils/nutrition-helpers";
+import { countPlannedSessions } from "@/utils/training-week-helpers";
 import type {
   CheckInTrainingContext,
   CheckInNutritionContext,
@@ -114,4 +115,51 @@ export const getCheckInNutritionContext = async (
       fatG: avgFatG,
     },
   };
+};
+
+export type CheckInTrainingPeriodStats = {
+  sessionsCompleted: number;
+  sessionsPlanned: number;
+};
+
+/**
+ * Get training session stats for the check-in period using session_logs
+ * (same source of truth as the coach-side training hero).
+ */
+export const getCheckInTrainingPeriodStats = async (
+  clientId: string,
+  periodStart: string,
+  periodEnd: string
+): Promise<CheckInTrainingPeriodStats> => {
+  const plan = await getActiveTrainingPlan(clientId);
+
+  if (!plan) {
+    return { sessionsCompleted: 0, sessionsPlanned: 0 };
+  }
+
+  // Count completed sessions from session_logs in the period
+  // completed_at is the date the session was completed (YYYY-MM-DD)
+  // supabaseAdmin: client portal reading own session_logs (RLS exception 3)
+  const { count, error } = await supabaseAdmin
+    .from("session_logs")
+    .select("id", { count: "exact", head: true })
+    .eq("client_id", clientId)
+    .eq("completion_quality", "full")
+    .gte("completed_at", periodStart)
+    .lte("completed_at", periodEnd);
+
+  if (error) {
+    console.error("Error fetching session_logs for check-in:", error.message);
+  }
+
+  const sessionsCompleted = count ?? 0;
+
+  // Count planned sessions in the period using same utility as coach-side hero
+  const sessionsPlanned = countPlannedSessions(
+    plan.sessions.map((s) => ({ dayOfWeek: s.dayOfWeek, sessionType: s.sessionType })),
+    periodStart,
+    periodEnd
+  );
+
+  return { sessionsCompleted, sessionsPlanned };
 };

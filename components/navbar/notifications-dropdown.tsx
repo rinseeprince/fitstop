@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Bell, Clock, AlertCircle, CheckCircle } from "lucide-react";
+import { Bell, Clock, AlertCircle, CheckCircle, ClipboardList } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,15 +12,17 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
-import { useOverdueClients, useClientsDueSoon } from "@/hooks/use-check-in-data";
+import { useOverdueClients, useClientsDueSoon, useUnreviewedCheckIns } from "@/hooks/use-check-in-data";
 import { formatDistanceToNow } from "date-fns";
 
 export function NotificationsDropdown({ compact = false }: { compact?: boolean } = {}) {
   const { clients: overdueClients, total: overdueTotal } = useOverdueClients();
   const { clients: dueSoonClients, total: dueSoonTotal } = useClientsDueSoon();
+  const { checkIns: unreviewedCheckIns, total: unreviewedTotal } = useUnreviewedCheckIns();
   const [open, setOpen] = useState(false);
 
-  const totalNotifications = overdueTotal + dueSoonTotal;
+  const totalNotifications = overdueTotal + dueSoonTotal + unreviewedTotal;
+  const recentUnreviewed = unreviewedCheckIns.slice(0, 3);
   const criticallyOverdue = overdueClients.filter((c) => c.daysOverdue >= 4);
   const recentOverdue = overdueClients.slice(0, 3);
   const recentDueSoon = dueSoonClients.slice(0, 2);
@@ -58,6 +60,44 @@ export function NotificationsDropdown({ compact = false }: { compact?: boolean }
           </div>
         ) : (
           <div className="max-h-96 overflow-y-auto">
+            {recentUnreviewed.length > 0 && (
+              <>
+                <div className="px-2 py-1.5 text-xs font-semibold text-primary flex items-center gap-1">
+                  <ClipboardList className="h-3 w-3" />
+                  New Check-Ins
+                </div>
+                {recentUnreviewed.map((checkIn) => (
+                  <DropdownMenuItem key={checkIn.id} asChild>
+                    <Link
+                      href="/check-ins/review"
+                      className="flex items-start gap-3 p-3 cursor-pointer"
+                      onClick={() => setOpen(false)}
+                    >
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/15 text-primary text-xs font-semibold flex-shrink-0">
+                        {(checkIn.clientName || "C")
+                          .split(" ")
+                          .map((n) => n[0])
+                          .join("")
+                          .toUpperCase()}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">
+                          {checkIn.clientName || "Unknown Client"}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Submitted{" "}
+                          {formatDistanceToNow(new Date(checkIn.createdAt), {
+                            addSuffix: true,
+                          })}
+                        </p>
+                      </div>
+                    </Link>
+                  </DropdownMenuItem>
+                ))}
+                <DropdownMenuSeparator />
+              </>
+            )}
+
             {criticallyOverdue.length > 0 && (
               <>
                 <div className="px-2 py-1.5 text-xs font-semibold text-destructive flex items-center gap-1">
@@ -174,11 +214,11 @@ export function NotificationsDropdown({ compact = false }: { compact?: boolean }
             <DropdownMenuSeparator />
             <DropdownMenuItem asChild>
               <Link
-                href="/clients/overdue"
+                href={unreviewedTotal > 0 ? "/check-ins/review" : "/clients/overdue"}
                 className="w-full text-center text-sm font-medium cursor-pointer"
                 onClick={() => setOpen(false)}
               >
-                View all overdue clients
+                {unreviewedTotal > 0 ? "Review all check-ins" : "View all overdue clients"}
               </Link>
             </DropdownMenuItem>
           </>

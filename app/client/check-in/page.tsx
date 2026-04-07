@@ -55,9 +55,10 @@ export default function ClientCheckInPage() {
         }
         enrichedFormData.nutritionAdherence.daysOnTarget = aggregated.nutritionHitDays;
         
-        // Auto-populate workouts completed if not manually set
+        // Auto-populate workouts completed from session_logs (preferred) or daily logs fallback
         if (!enrichedFormData.workoutsCompleted && !enrichedFormData.sessionCompletions?.length) {
-          enrichedFormData.workoutsCompleted = aggregated.sessionsCompleted;
+          enrichedFormData.workoutsCompleted = contextData.trainingPeriodStats?.sessionsCompleted
+            ?? aggregated.sessionsCompleted;
         }
       }
       
@@ -199,6 +200,8 @@ export default function ClientCheckInPage() {
                 data={formData}
                 onChange={updateFormData}
                 dailyLogs={contextData.dailyLogs}
+                periodStart={contextData.periodStart}
+                periodEnd={contextData.periodEnd}
               />
             )}
 
@@ -220,6 +223,8 @@ export default function ClientCheckInPage() {
                 onChange={updateFormData}
                 trainingContext={contextData.trainingContext}
                 nutritionContext={contextData.nutritionContext}
+                trainingPeriodStats={contextData.trainingPeriodStats}
+                periodDays={contextData.periodDays}
                 weightUnit={formData.weightUnit || "lbs"}
                 frequencyDays={contextData.clientInfo.checkInFrequencyDays}
                 dailyLogs={contextData.dailyLogs}

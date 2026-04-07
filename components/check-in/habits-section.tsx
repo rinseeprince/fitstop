@@ -20,8 +20,9 @@ type HabitSummary = {
 function getDayRange(start: Date, end: Date): string[] {
   const dates: string[] = [];
   const d = new Date(start);
+  const pad = (n: number) => String(n).padStart(2, "0");
   while (d <= end) {
-    dates.push(d.toISOString().split("T")[0]);
+    dates.push(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`);
     d.setDate(d.getDate() + 1);
   }
   return dates;

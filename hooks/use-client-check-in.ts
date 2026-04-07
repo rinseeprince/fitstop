@@ -10,11 +10,20 @@ import type {
 } from "@/types/check-in";
 import type { DailyLog } from "@/types/daily-log";
 
+type TrainingPeriodStats = {
+  sessionsCompleted: number;
+  sessionsPlanned: number;
+};
+
 type CheckInContextData = {
   clientInfo: CheckInClientInfo;
   trainingContext?: CheckInTrainingContext;
   nutritionContext?: CheckInNutritionContext;
+  trainingPeriodStats?: TrainingPeriodStats;
   dailyLogs?: DailyLog[];
+  periodStart?: string;
+  periodEnd?: string;
+  periodDays?: number;
 };
 
 export function useClientCheckIn() {

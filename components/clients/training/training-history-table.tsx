@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useCallback } from "react";
+import useSWR from "swr";
 import { HistoryTable, type ColumnDef } from "@/components/clients/history-table/history-table";
 import { HistoryChartDialog } from "@/components/clients/history-table/history-chart-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -13,9 +14,8 @@ import { Info } from "lucide-react";
 import { useHistoryData } from "@/hooks/use-history-data";
 import { useTrainingBuilderContext } from "@/contexts/training-builder-context";
 import { SPLIT_TYPE_LABELS } from "@/lib/training-constants";
-import { getTodayDateString, getDateDaysFrom } from "@/lib/date-helpers";
-import { countPlannedSessions } from "@/utils/training-week-helpers";
-import type { TrainingHistoryRow } from "@/types/history";
+import { swrFetcher } from "@/lib/swr-fetcher";
+import type { TrainingHistoryRow, TrainingWeekSummary } from "@/types/history";
 
 function formatDate(dateStr: string) {
   const date = new Date(dateStr + "T00:00:00");
@@ -72,19 +72,28 @@ type Props = {
 
 export function TrainingHistoryTable({ clientId }: Props) {
   const builder = useTrainingBuilderContext();
-  const { plan, activePhase } = builder;
+  const { plan } = builder;
   const [page, setPage] = useState(0);
   const [chartColumn, setChartColumn] = useState<string | null>(null);
 
-  const { rows, total, extra, isLoading } = useHistoryData<TrainingHistoryRow>(
+  const { rows, total, isLoading } = useHistoryData<TrainingHistoryRow>(
     `/api/clients/${clientId}/history/training`,
     page
   );
-  const trainingWeekStart = (extra as { trainingWeekStart?: string }).trainingWeekStart;
-
   const handleColumnClick = useCallback((key: string) => {
     setChartColumn(key);
   }, []);
+
+  // Week-scoped summary from dedicated endpoint
+  const { data: summaryResponse, isLoading: summaryLoading } = useSWR<{ success: boolean; data: TrainingWeekSummary }>(
+    `/api/clients/${clientId}/history/training/summary`,
+    swrFetcher,
+    { revalidateOnFocus: false, dedupingInterval: 5000 }
+  );
+  const summary = summaryResponse?.data;
+  const adherencePct = summary && summary.plannedUpToToday > 0
+    ? Math.round((summary.completed / summary.plannedUpToToday) * 100)
+    : 0;
 
   const chartData = useMemo(() => {
     if (!chartColumn || rows.length === 0) return [];
@@ -95,41 +104,6 @@ export function TrainingHistoryTable({ clientId }: Props) {
         : 0,
     }));
   }, [chartColumn, rows]);
-
-  // Compute summary stats from available rows
-  const summaryStats = useMemo(() => {
-    const completed = rows.filter((r) => r.completion_quality === "full").length;
-
-    // Full-week planned total + planned-up-to-today for adherence/missed
-    let totalPlanned = total;
-    let plannedUpToToday = total;
-    if (plan && trainingWeekStart) {
-      const planStart = activePhase?.startDate || plan.createdAt.split("T")[0];
-      const rangeStart = planStart > trainingWeekStart ? planStart : trainingWeekStart;
-      const today = getTodayDateString();
-      const weekEnd = getDateDaysFrom(new Date(trainingWeekStart + "T00:00:00"), 6);
-      const rangeEndToday = today < weekEnd ? today : weekEnd;
-      totalPlanned = countPlannedSessions(plan.sessions, rangeStart, weekEnd);
-      plannedUpToToday = countPlannedSessions(plan.sessions, rangeStart, rangeEndToday);
-    }
-
-    const adherencePct = plannedUpToToday > 0 ? Math.round((completed / plannedUpToToday) * 100) : 0;
-
-    // Current streak: count consecutive completed from most recent
-    let streak = 0;
-    for (const row of rows) {
-      if (row.completion_quality === "full") {
-        streak++;
-      } else {
-        break;
-      }
-    }
-
-    // Missed = planned sessions up to today that weren't completed
-    const missed = Math.max(0, plannedUpToToday - completed);
-
-    return { completed, missed, adherencePct, streak, totalPlanned, plannedUpToToday };
-  }, [rows, total, plan, activePhase, trainingWeekStart]);
 
   const columns: ColumnDef<TrainingHistoryRow>[] = useMemo(
     () => [
@@ -217,21 +191,21 @@ export function TrainingHistoryTable({ clientId }: Props) {
           </div>
         )}
         {/* Stat columns */}
-        <div className="grid grid-cols-[1fr_1fr_1fr_1fr]">
+        <div className="grid grid-cols-[1fr_1fr_1fr]">
         {/* SESSIONS COMPLETED */}
         <div className="flex flex-col pr-5 border-r border-[rgba(255,255,255,0.08)]">
           <p className="text-[10px] uppercase tracking-[0.06em] text-[rgba(255,255,255,0.35)] font-medium">
             Sessions Completed
           </p>
-          {isLoading ? (
+          {summaryLoading ? (
             <Skeleton className="h-8 w-20 mt-1 bg-white/10" />
           ) : (
             <>
               <p className="text-[32px] font-bold leading-tight mt-1 text-white">
-                {summaryStats.completed}
+                {summary?.completed ?? 0}
               </p>
               <p className="text-[11px] text-[rgba(255,255,255,0.35)]">
-                of {summaryStats.totalPlanned} planned
+                of {summary?.totalPlanned ?? 0} planned
               </p>
             </>
           )}
@@ -242,37 +216,18 @@ export function TrainingHistoryTable({ clientId }: Props) {
           <p className="text-[10px] uppercase tracking-[0.06em] text-[rgba(255,255,255,0.35)] font-medium">
             Adherence
           </p>
-          {isLoading ? (
+          {summaryLoading ? (
             <Skeleton className="h-7 w-16 mt-1 bg-white/10" />
           ) : (
             <>
               <p className="text-[22px] font-bold text-white mt-1">
-                {summaryStats.adherencePct}
+                {adherencePct}
                 <span className="text-[13px] font-medium text-[rgba(255,255,255,0.25)] ml-0.5">
                   %
                 </span>
               </p>
               <p className="text-[11px] text-[rgba(255,255,255,0.3)] font-mono-display mt-1">
-                {summaryStats.completed}/{summaryStats.plannedUpToToday} sessions
-              </p>
-            </>
-          )}
-        </div>
-
-        {/* CURRENT STREAK */}
-        <div className="flex flex-col pl-5 pr-5 border-r border-[rgba(255,255,255,0.06)]">
-          <p className="text-[10px] uppercase tracking-[0.06em] text-[rgba(255,255,255,0.35)] font-medium">
-            Current Streak
-          </p>
-          {isLoading ? (
-            <Skeleton className="h-7 w-16 mt-1 bg-white/10" />
-          ) : (
-            <>
-              <p className="text-[22px] font-bold text-white mt-1">
-                {summaryStats.streak}
-                <span className="text-[13px] font-medium text-[rgba(255,255,255,0.25)] ml-0.5">
-                  days
-                </span>
+                {summary?.completed ?? 0}/{summary?.plannedUpToToday ?? 0} sessions
               </p>
             </>
           )}
@@ -283,12 +238,12 @@ export function TrainingHistoryTable({ clientId }: Props) {
           <p className="text-[10px] uppercase tracking-[0.06em] text-[rgba(255,255,255,0.35)] font-medium">
             Missed This Week
           </p>
-          {isLoading ? (
+          {summaryLoading ? (
             <Skeleton className="h-7 w-16 mt-1 bg-white/10" />
           ) : (
             <>
               <p className="text-[22px] font-bold text-white mt-1">
-                {summaryStats.missed}
+                {summary?.missed ?? 0}
               </p>
             </>
           )}

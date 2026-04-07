@@ -67,7 +67,7 @@ export const StepMetrics = ({
                 type="button"
                 onClick={() => onChange({ ...data, weightUnit: "lbs" })}
                 className={`px-2 py-1 text-xs rounded transition-colors ${
-                  data.weightUnit === "lbs" || !data.weightUnit
+                  data.weightUnit === "lbs"
                     ? "bg-primary text-primary-foreground"
                     : "text-muted-foreground hover:text-foreground"
                 }`}
@@ -78,7 +78,7 @@ export const StepMetrics = ({
                 type="button"
                 onClick={() => onChange({ ...data, weightUnit: "kg" })}
                 className={`px-2 py-1 text-xs rounded transition-colors ${
-                  data.weightUnit === "kg"
+                  data.weightUnit === "kg" || !data.weightUnit
                     ? "bg-primary text-primary-foreground"
                     : "text-muted-foreground hover:text-foreground"
                 }`}

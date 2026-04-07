@@ -49,6 +49,7 @@ export function useCheckInDetailData({
   const [contextStartDate, setContextStartDate] = useState<Date | null>(null);
   const [contextEndDate, setContextEndDate] = useState<Date | null>(null);
   const [fullWeekTarget, setFullWeekTarget] = useState<FullWeekTarget | null>(null);
+  const [trainingPeriodStats, setTrainingPeriodStats] = useState<{ sessionsCompleted: number; sessionsPlanned: number } | null>(null);
 
   // Fetch check-in + comparison data
   useEffect(() => {
@@ -100,6 +101,7 @@ export function useCheckInDetailData({
       setContextStartDate(null);
       setContextEndDate(null);
       setFullWeekTarget(null);
+      setTrainingPeriodStats(null);
       return;
     }
 
@@ -122,16 +124,23 @@ export function useCheckInDetailData({
         setContextStartDate(startDate);
         setContextEndDate(endDate);
 
-        const startDateStr = startDate.toISOString().split('T')[0];
-        const endDateStr = endDate.toISOString().split('T')[0];
+        // Use local date components to avoid UTC shift from .toISOString()
+        const pad = (n: number) => String(n).padStart(2, '0');
+        const toDateStr = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+        const startDateStr = toDateStr(startDate);
+        const endDateStr = toDateStr(endDate);
 
-        const [logsResponse, habitsResponse] = await Promise.all([
+        const [logsResponse, habitsResponse, trainingStatsResponse] = await Promise.all([
           fetch(
             `/api/clients/${clientId}/daily-logs?startDate=${startDateStr}&endDate=${endDateStr}`,
             { cache: 'no-store' }
           ),
           fetch(
             `/api/clients/${clientId}/habits/logs?startDate=${startDateStr}&endDate=${endDateStr}`,
+            { cache: 'no-store' }
+          ),
+          fetch(
+            `/api/clients/${clientId}/training/period-stats?start=${startDateStr}&end=${endDateStr}`,
             { cache: 'no-store' }
           ),
         ]);
@@ -148,13 +157,18 @@ export function useCheckInDetailData({
           setHabitLogs(habitsData.data || []);
         }
 
+        if (trainingStatsResponse.ok) {
+          const statsData = await trainingStatsResponse.json();
+          setTrainingPeriodStats(statsData.data || null);
+        }
+
         // Compute full-week target
         try {
           const loggedDates = new Set(fetchedLogs.map((l: DailyLog) => l.date));
           const allDates: string[] = [];
           const cursor = new Date(startDate);
           while (cursor <= endDate) {
-            allDates.push(cursor.toISOString().split("T")[0]);
+            allDates.push(toDateStr(cursor));
             cursor.setDate(cursor.getDate() + 1);
           }
           const unloggedDates = allDates.filter((d) => !loggedDates.has(d));
@@ -237,6 +251,7 @@ export function useCheckInDetailData({
     contextStartDate,
     contextEndDate,
     fullWeekTarget,
+    trainingPeriodStats,
     handleResponseSent,
   };
 }

@@ -69,10 +69,17 @@ export async function GET(request: NextRequest) {
       } | null;
     };
 
-    // Map the database rows to CheckIn objects using the mapper function
-    const checkIns = (checkInsData || []).map((row) =>
-      mapCheckInRow(row as CheckInWithClient)
-    );
+    // Map database rows and extract client data from the joined relation
+    const checkIns = (checkInsData || []).map((row) => {
+      const typed = row as CheckInWithClient;
+      const mapped = mapCheckInRow(typed);
+      return {
+        ...mapped,
+        clientName: typed.client?.name || "Unknown Client",
+        clientEmail: typed.client?.email || "",
+        clientAvatarUrl: typed.client?.avatar_url || null,
+      };
+    });
 
     const response: GetCheckInsResponse = {
       checkIns,

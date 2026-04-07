@@ -51,6 +51,7 @@ export const CheckInDetailModal = ({
     contextStartDate,
     contextEndDate,
     fullWeekTarget,
+    trainingPeriodStats,
     handleResponseSent,
   } = useCheckInDetailData({
     checkInId,
@@ -163,6 +164,7 @@ export const CheckInDetailModal = ({
                       contextStartDate={contextStartDate}
                       contextEndDate={contextEndDate}
                       fullWeekTarget={fullWeekTarget}
+                      trainingPeriodStats={trainingPeriodStats}
                     />
                   )}
 

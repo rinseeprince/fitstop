@@ -14,6 +14,8 @@ type StepSubjectiveProps = {
   data: Partial<SubjectiveMetrics>;
   onChange: (data: Partial<SubjectiveMetrics>) => void;
   dailyLogs?: DailyLog[];
+  periodStart?: string;
+  periodEnd?: string;
 };
 
 const moodEmojis = [
@@ -24,7 +26,7 @@ const moodEmojis = [
   { value: 5, icon: Heart, label: "Excellent", color: "text-success" },
 ];
 
-export const StepSubjective = ({ data, onChange, dailyLogs = [] }: StepSubjectiveProps) => {
+export const StepSubjective = ({ data, onChange, dailyLogs = [], periodStart, periodEnd }: StepSubjectiveProps) => {
   // Check if we have enough daily logs to show the summary
   const hasSufficientLogs = dailyLogs.length >= 3;
   
@@ -55,7 +57,7 @@ export const StepSubjective = ({ data, onChange, dailyLogs = [] }: StepSubjectiv
         </div>
         
         {/* Daily Logs Summary */}
-        <DailyLogsSummary dailyLogs={dailyLogs} />
+        <DailyLogsSummary dailyLogs={dailyLogs} periodStart={periodStart} periodEnd={periodEnd} />
         
         {/* Reflection Text Area */}
         <div className="space-y-3">

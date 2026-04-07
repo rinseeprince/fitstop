@@ -17,11 +17,18 @@ import type {
 } from "@/types/check-in";
 import type { DailyLog } from "@/types/daily-log";
 
+type TrainingPeriodStats = {
+  sessionsCompleted: number;
+  sessionsPlanned: number;
+};
+
 type StepTrainingProps = {
   data: Partial<EnhancedTrainingMetrics>;
   onChange: (data: Partial<EnhancedTrainingMetrics>) => void;
   trainingContext?: CheckInTrainingContext;
   nutritionContext?: CheckInNutritionContext;
+  trainingPeriodStats?: TrainingPeriodStats;
+  periodDays?: number;
   clientWeightKg?: number;
   weightUnit?: "lbs" | "kg";
   frequencyDays?: number;
@@ -33,6 +40,8 @@ export const StepTraining = ({
   onChange,
   trainingContext,
   nutritionContext,
+  trainingPeriodStats,
+  periodDays,
   clientWeightKg,
   weightUnit = "lbs",
   frequencyDays = 7,
@@ -64,9 +73,11 @@ export const StepTraining = ({
       {/* Training Sessions Section */}
       {hasDailyLogs ? (
         // Show auto-calculated summary from daily logs
-        <DailyLogsTrainingSummary 
-          dailyLogs={dailyLogs} 
+        <DailyLogsTrainingSummary
+          dailyLogs={dailyLogs}
           trainingContext={trainingContext}
+          trainingPeriodStats={trainingPeriodStats}
+          periodDays={periodDays}
         />
       ) : hasActivePlan && trainingContext && trainingContext.sessions.length > 0 ? (
         <TrainingSessionChecklist
