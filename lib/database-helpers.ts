@@ -32,6 +32,8 @@ export type TrainingSessionInsert = Database["public"]["Tables"]["training_sessi
 export type TrainingSessionUpdate = Database["public"]["Tables"]["training_sessions"]["Update"];
 export type TrainingExerciseInsert = Database["public"]["Tables"]["training_exercises"]["Insert"];
 export type TrainingExerciseUpdate = Database["public"]["Tables"]["training_exercises"]["Update"];
+export type TrainingEventRow = Database["public"]["Tables"]["training_events"]["Row"];
+export type TrainingEventInsert = Database["public"]["Tables"]["training_events"]["Insert"];
 
 // Roadmap & phase types
 export type RoadmapRow = Database["public"]["Tables"]["roadmaps"]["Row"];

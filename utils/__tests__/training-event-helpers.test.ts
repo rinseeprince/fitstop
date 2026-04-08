@@ -1,0 +1,232 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { mapEventsToScheduleDays, getEventCaloriesByDay } from "@/utils/training-event-helpers";
+import { createMockTrainingEvent } from "@/__tests__/helpers/mock-data-builders";
+
+describe("mapEventsToScheduleDays", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    // Fix "today" to Wednesday April 8, 2026
+    vi.setSystemTime(new Date("2026-04-08T12:00:00"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("maps a completed event correctly", () => {
+    const dates = ["2026-04-06"]; // Monday
+    const events = [
+      createMockTrainingEvent({
+        date: "2026-04-06",
+        sessionName: "Push Day",
+        status: "completed",
+        trainingSessionId: "session-1",
+      }),
+    ];
+
+    const result = mapEventsToScheduleDays(dates, events);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      date: "2026-04-06",
+      dayOfWeek: "monday",
+      status: "completed",
+      plannedSessionName: "Push Day",
+      completionQuality: "full",
+      loggedSessionName: "Push Day",
+      isAlternative: false,
+    });
+  });
+
+  it("maps a partial event correctly", () => {
+    const dates = ["2026-04-07"]; // Tuesday
+    const events = [
+      createMockTrainingEvent({
+        date: "2026-04-07",
+        sessionName: "Pull Day",
+        status: "partial",
+      }),
+    ];
+
+    const result = mapEventsToScheduleDays(dates, events);
+
+    expect(result[0]).toMatchObject({
+      status: "partial",
+      completionQuality: "partial",
+      loggedSessionName: "Pull Day",
+    });
+  });
+
+  it("treats a scheduled event in the past as missed", () => {
+    // 2026-04-06 is before today (2026-04-08)
+    const dates = ["2026-04-06"];
+    const events = [
+      createMockTrainingEvent({
+        date: "2026-04-06",
+        sessionName: "Leg Day",
+        status: "scheduled",
+      }),
+    ];
+
+    const result = mapEventsToScheduleDays(dates, events);
+
+    expect(result[0]).toMatchObject({
+      status: "missed",
+      completionQuality: null,
+      loggedSessionName: null,
+    });
+  });
+
+  it("treats a scheduled event in the future as rest with planned fields", () => {
+    // 2026-04-10 is after today (2026-04-08), it's a Friday
+    const dates = ["2026-04-10"];
+    const events = [
+      createMockTrainingEvent({
+        date: "2026-04-10",
+        sessionName: "Push Day",
+        status: "scheduled",
+        trainingSessionId: "session-1",
+      }),
+    ];
+
+    const result = mapEventsToScheduleDays(dates, events);
+
+    expect(result[0]).toMatchObject({
+      date: "2026-04-10",
+      dayOfWeek: "friday",
+      status: "rest",
+      plannedSessionId: "session-1",
+      plannedSessionName: "Push Day",
+      loggedSessionName: null,
+      completionQuality: null,
+    });
+  });
+
+  it("returns rest for dates with no event", () => {
+    const dates = ["2026-04-09"]; // Thursday with no event
+    const events: ReturnType<typeof createMockTrainingEvent>[] = [];
+
+    const result = mapEventsToScheduleDays(dates, events);
+
+    expect(result[0]).toMatchObject({
+      date: "2026-04-09",
+      dayOfWeek: "thursday",
+      status: "rest",
+      plannedSessionId: null,
+      plannedSessionName: null,
+      loggedSessionName: null,
+      completionQuality: null,
+    });
+  });
+
+  it("maps a skipped event as missed with skipped quality", () => {
+    const dates = ["2026-04-06"];
+    const events = [
+      createMockTrainingEvent({
+        date: "2026-04-06",
+        sessionName: "Push Day",
+        status: "skipped",
+      }),
+    ];
+
+    const result = mapEventsToScheduleDays(dates, events);
+
+    expect(result[0]).toMatchObject({
+      status: "missed",
+      completionQuality: "skipped",
+      loggedSessionName: null,
+    });
+  });
+
+  it("handles a full week with mixed event types", () => {
+    const dates = [
+      "2026-04-06", // Mon - completed
+      "2026-04-07", // Tue - rest
+      "2026-04-08", // Wed (today) - scheduled
+      "2026-04-09", // Thu - rest
+      "2026-04-10", // Fri - scheduled (future)
+      "2026-04-11", // Sat - rest
+      "2026-04-12", // Sun - rest
+    ];
+
+    const events = [
+      createMockTrainingEvent({ date: "2026-04-06", sessionName: "Push", status: "completed" }),
+      createMockTrainingEvent({ date: "2026-04-08", sessionName: "Pull", status: "scheduled" }),
+      createMockTrainingEvent({ date: "2026-04-10", sessionName: "Legs", status: "scheduled" }),
+    ];
+
+    const result = mapEventsToScheduleDays(dates, events);
+
+    expect(result.map((d) => d.status)).toEqual([
+      "completed", // Mon
+      "rest",      // Tue
+      "rest",      // Wed (today, scheduled → rest with planned)
+      "rest",      // Thu
+      "rest",      // Fri (future scheduled → rest with planned)
+      "rest",      // Sat
+      "rest",      // Sun
+    ]);
+
+    // Wednesday and Friday should have planned session names
+    expect(result[2].plannedSessionName).toBe("Pull");
+    expect(result[4].plannedSessionName).toBe("Legs");
+  });
+});
+
+describe("getEventCaloriesByDay", () => {
+  it("returns correct per-day calorie totals", () => {
+    const events = [
+      // Monday April 6
+      createMockTrainingEvent({ date: "2026-04-06", estimatedCalories: 400 }),
+      // Wednesday April 8
+      createMockTrainingEvent({ date: "2026-04-08", estimatedCalories: 350 }),
+      // Friday April 10
+      createMockTrainingEvent({ date: "2026-04-10", estimatedCalories: 500 }),
+    ];
+
+    const result = getEventCaloriesByDay(events);
+
+    expect(result.monday).toBe(400);
+    expect(result.wednesday).toBe(350);
+    expect(result.friday).toBe(500);
+    expect(result.tuesday).toBe(0);
+    expect(result.thursday).toBe(0);
+    expect(result.saturday).toBe(0);
+    expect(result.sunday).toBe(0);
+  });
+
+  it("sums calories for multiple events on the same day", () => {
+    const events = [
+      createMockTrainingEvent({ date: "2026-04-06", estimatedCalories: 300 }), // Monday
+      createMockTrainingEvent({ date: "2026-04-06", estimatedCalories: 200 }), // Monday
+    ];
+
+    const result = getEventCaloriesByDay(events);
+
+    expect(result.monday).toBe(500);
+  });
+
+  it("treats null estimatedCalories as 0", () => {
+    const events = [
+      createMockTrainingEvent({ date: "2026-04-06", estimatedCalories: null, sessionName: "Rest Test" }),
+    ];
+
+    const result = getEventCaloriesByDay(events);
+
+    expect(result.monday).toBe(0);
+  });
+
+  it("returns all zeros for empty events array", () => {
+    const result = getEventCaloriesByDay([]);
+
+    expect(result).toEqual({
+      monday: 0,
+      tuesday: 0,
+      wednesday: 0,
+      thursday: 0,
+      friday: 0,
+      saturday: 0,
+      sunday: 0,
+    });
+  });
+});

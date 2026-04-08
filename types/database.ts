@@ -1999,6 +1999,80 @@ export type Database = {
           },
         ]
       }
+      training_events: {
+        Row: {
+          client_id: string
+          created_at: string
+          date: string
+          estimated_calories: number | null
+          id: string
+          session_focus: string | null
+          session_log_id: string | null
+          session_name: string
+          status: string
+          training_plan_id: string
+          training_session_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          date: string
+          estimated_calories?: number | null
+          id?: string
+          session_focus?: string | null
+          session_log_id?: string | null
+          session_name: string
+          status?: string
+          training_plan_id: string
+          training_session_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          date?: string
+          estimated_calories?: number | null
+          id?: string
+          session_focus?: string | null
+          session_log_id?: string | null
+          session_name?: string
+          status?: string
+          training_plan_id?: string
+          training_session_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "training_events_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "training_events_training_plan_id_fkey"
+            columns: ["training_plan_id"]
+            isOneToOne: false
+            referencedRelation: "training_plans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "training_events_training_session_id_fkey"
+            columns: ["training_session_id"]
+            isOneToOne: false
+            referencedRelation: "training_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "training_events_session_log_id_fkey"
+            columns: ["session_log_id"]
+            isOneToOne: false
+            referencedRelation: "session_logs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       training_logs: {
         Row: {
           client_id: string

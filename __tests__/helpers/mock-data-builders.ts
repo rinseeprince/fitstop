@@ -5,8 +5,9 @@
 
 import { generateUUID, generateISODate } from './test-utils'
 import type { Client } from '@/types/check-in'
-import type { CheckInRow, CheckInTokenRow, ClientRow, TrainingPlanRow, TrainingSessionRow, TrainingExerciseRow } from '@/lib/database-helpers'
+import type { CheckInRow, CheckInTokenRow, ClientRow, TrainingPlanRow, TrainingSessionRow, TrainingExerciseRow, TrainingEventRow } from '@/lib/database-helpers'
 import type { BodyMetricsEventRow, ClientGoalRow, Milestone, RoadmapRow, PhaseRow } from '@/types/roadmap'
+import type { TrainingEvent, TrainingEventStatus } from '@/types/training'
 
 // =============================================================================
 // Client Builders
@@ -575,5 +576,62 @@ export function createMockPhaseRow(options: MockPhaseRowOptions = {}): PhaseRow 
     completion_seen: options.completionSeen ?? false,
     created_at: options.createdAt ?? now,
     updated_at: options.updatedAt ?? now,
+  }
+}
+
+// =============================================================================
+// Training Event Builders
+// =============================================================================
+
+export interface MockTrainingEventOptions {
+  id?: string
+  clientId?: string
+  trainingPlanId?: string
+  trainingSessionId?: string | null
+  date?: string
+  sessionName?: string
+  sessionFocus?: string | null
+  estimatedCalories?: number | null
+  status?: TrainingEventStatus
+  sessionLogId?: string | null
+  createdAt?: string
+  updatedAt?: string
+}
+
+export function createMockTrainingEvent(options: MockTrainingEventOptions = {}): TrainingEvent {
+  const now = generateISODate()
+
+  return {
+    id: options.id ?? generateUUID(),
+    clientId: options.clientId ?? generateUUID(),
+    trainingPlanId: options.trainingPlanId ?? generateUUID(),
+    trainingSessionId: options.trainingSessionId ?? generateUUID(),
+    date: options.date ?? '2026-04-08',
+    sessionName: options.sessionName ?? 'Push Day',
+    sessionFocus: options.sessionFocus ?? null,
+    estimatedCalories: options.estimatedCalories !== undefined ? options.estimatedCalories : 350,
+    status: options.status ?? 'scheduled',
+    sessionLogId: options.sessionLogId ?? null,
+    createdAt: options.createdAt ?? now,
+    updatedAt: options.updatedAt ?? now,
+  }
+}
+
+export function createMockTrainingEventRow(options: MockTrainingEventOptions = {}): TrainingEventRow {
+  const event = createMockTrainingEvent(options)
+
+  return {
+    id: event.id,
+    client_id: event.clientId,
+    training_plan_id: event.trainingPlanId,
+    training_session_id: event.trainingSessionId,
+    date: event.date,
+    session_name: event.sessionName,
+    session_focus: event.sessionFocus,
+    estimated_calories: event.estimatedCalories,
+    status: event.status,
+    session_log_id: event.sessionLogId,
+    created_at: event.createdAt,
+    updated_at: event.updatedAt,
   }
 }

@@ -116,6 +116,25 @@ export type TrainingPlanHistory = {
   createdAt: string;
 };
 
+// Training event status
+export type TrainingEventStatus = 'scheduled' | 'completed' | 'partial' | 'missed' | 'skipped';
+
+// Concrete calendar event for a training session on a specific date
+export type TrainingEvent = {
+  id: string;
+  clientId: string;
+  trainingPlanId: string;
+  trainingSessionId: string | null;
+  date: string;
+  sessionName: string;
+  sessionFocus: string | null;
+  estimatedCalories: number | null;
+  status: TrainingEventStatus;
+  sessionLogId: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 // Pre-generation activity (before plan is created)
 export type PreGenerationActivity = {
   tempId: string;
