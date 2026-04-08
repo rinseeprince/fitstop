@@ -5,6 +5,8 @@ import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { apiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { updateSessionSchema } from "@/lib/validations/training";
+import { regenerateFutureEvents } from "@/services/training-event-service";
+import { captureApiError } from "@/lib/error-handler";
 
 // PATCH - Update session
 export async function PATCH(
@@ -53,6 +55,10 @@ export async function PATCH(
 
     const session = await updateSession(sessionId, validation.data);
 
+    await regenerateFutureEvents(clientId, planId).catch((err) =>
+      captureApiError(err, { action: "regenerate-events-after-update", planId })
+    );
+
     return NextResponse.json({ success: true, session }, { status: 200 });
   } catch (error) {
     console.error("Error updating session:", error);
@@ -95,6 +101,10 @@ export async function DELETE(
     }
 
     await deleteSession(sessionId);
+
+    await regenerateFutureEvents(clientId, planId).catch((err) =>
+      captureApiError(err, { action: "regenerate-events-after-delete", planId })
+    );
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {

@@ -267,6 +267,38 @@ export async function getEventForDate(
 }
 
 /**
+ * Get a single event for a client + session on a specific date.
+ * More specific than getEventForDate — handles multiple sessions on the same day.
+ */
+export async function getEventForSessionAndDate(
+  clientId: string,
+  trainingSessionId: string,
+  date: string
+): Promise<TrainingEvent | null> {
+  const { data, error } = await supabaseAdmin
+    .from("training_events")
+    .select("*")
+    .eq("client_id", clientId)
+    .eq("training_session_id", trainingSessionId)
+    .eq("date", date)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data ? mapEventRow(data) : null;
+}
+
+/**
+ * Map completion quality ("full"/"partial"/"skipped") to event status.
+ */
+export function mapCompletionQualityToEventStatus(
+  quality: string
+): "completed" | "partial" | "skipped" {
+  if (quality === "full") return "completed";
+  if (quality === "partial") return "partial";
+  return "skipped";
+}
+
+/**
  * Count events for a client within a date range.
  */
 export async function countEventsInRange(

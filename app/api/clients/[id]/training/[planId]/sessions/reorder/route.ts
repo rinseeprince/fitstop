@@ -5,6 +5,8 @@ import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { apiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { reorderSessionsSchema } from "@/lib/validations/training";
+import { regenerateFutureEvents } from "@/services/training-event-service";
+import { captureApiError } from "@/lib/error-handler";
 
 // POST - Bulk reorder sessions (update day and order)
 export async function POST(
@@ -58,6 +60,10 @@ export async function POST(
     }
 
     await reorderSessions(planId, validation.data);
+
+    await regenerateFutureEvents(clientId, planId).catch((err) =>
+      captureApiError(err, { action: "regenerate-events-after-reorder", planId })
+    );
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {

@@ -9,6 +9,8 @@ import { clientApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { getTodayDateString, getTrainingWeekStart } from "@/lib/date-helpers";
 import { z } from "zod";
+import { getEventForSessionAndDate, linkSessionLogToEvent, mapCompletionQualityToEventStatus } from "@/services/training-event-service";
+import { captureApiError } from "@/lib/error-handler";
 
 // Validation schema for marking session complete (weekStartDate removed, computed server-side)
 const markCompleteSchema = z.object({
@@ -91,6 +93,28 @@ export async function POST(request: NextRequest) {
       quality,
       notes
     );
+
+    // Link completion to calendar event (non-blocking)
+    if (completion?.id) {
+      const todayDate = getTodayDateString();
+      getEventForSessionAndDate(auth.clientId, trainingSessionId, todayDate)
+        .then((event) => {
+          if (event) {
+            return linkSessionLogToEvent(
+              event.id,
+              completion.id,
+              mapCompletionQualityToEventStatus(quality)
+            );
+          }
+        })
+        .catch((err) =>
+          captureApiError(err, {
+            action: "link-session-log-to-event",
+            clientId: auth.clientId,
+            trainingSessionId,
+          })
+        );
+    }
 
     if (!completion) {
       return NextResponse.json(

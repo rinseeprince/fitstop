@@ -5,6 +5,8 @@ import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { z } from "zod";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { getTodayDateString, getTrainingWeekStart } from "@/lib/date-helpers";
+import { getEventForSessionAndDate, linkSessionLogToEvent, mapCompletionQualityToEventStatus } from "@/services/training-event-service";
+import { captureApiError } from "@/lib/error-handler";
 
 const sessionCompletionSchema = z.object({
   trainingSessionId: z.string().uuid(),
@@ -76,6 +78,27 @@ export async function POST(request: NextRequest) {
     if (error) {
       console.error("Error upserting session completion:", error);
       throw new Error(`Failed to save session completion: ${error.message}`);
+    }
+
+    // Link completion to calendar event (non-blocking)
+    if (result?.id) {
+      getEventForSessionAndDate(auth.clientId, data.trainingSessionId, completedAt)
+        .then((event) => {
+          if (event) {
+            return linkSessionLogToEvent(
+              event.id,
+              result.id,
+              mapCompletionQualityToEventStatus(data.completionQuality)
+            );
+          }
+        })
+        .catch((err) =>
+          captureApiError(err, {
+            action: "link-session-log-to-event",
+            clientId: auth.clientId,
+            trainingSessionId: data.trainingSessionId,
+          })
+        );
     }
 
     return NextResponse.json({

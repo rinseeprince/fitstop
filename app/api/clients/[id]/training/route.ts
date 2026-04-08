@@ -22,6 +22,8 @@ import type { ActivityMetadata, MuscleGroup, IntensityLevel } from "@/types/exte
 import { getLatestBodyMetrics } from "@/services/body-metrics-service";
 import { getCurrentGoals } from "@/services/client-goals-service";
 import { requirePhaseSelection } from "@/lib/require-phase-selection";
+import { deleteFutureEventsForPlan, regenerateFutureEvents } from "@/services/training-event-service";
+import { captureApiError } from "@/lib/error-handler";
 
 // Helper function for default recovery hours based on intensity
 function getDefaultRecoveryHours(intensity: IntensityLevel): number {
@@ -122,7 +124,8 @@ export async function POST(
     }));
 
     // Check if there's an existing plan (for history reason tracking)
-    const hadExistingPlan = !!(await getActiveTrainingPlan(clientId));
+    const existingPlan = await getActiveTrainingPlan(clientId);
+    const hadExistingPlan = !!existingPlan;
 
     // Generate plan via AI with external activities as context
     const { plan: aiPlan, rawResponse } = await generateTrainingPlanAI({
@@ -221,6 +224,16 @@ export async function POST(
       rawResponse,
       coachId,
       hadExistingPlan ? "regenerated" : "initial"
+    );
+
+    // Generate calendar events for the new plan (non-blocking)
+    if (existingPlan) {
+      await deleteFutureEventsForPlan(existingPlan.id).catch((err) =>
+        captureApiError(err, { action: "delete-future-events", planId: existingPlan.id })
+      );
+    }
+    await regenerateFutureEvents(clientId, newPlanId).catch((err) =>
+      captureApiError(err, { action: "generate-training-events", planId: newPlanId })
     );
 
     return NextResponse.json({ success: true, plan: updatedPlan || plan }, { status: 201 });

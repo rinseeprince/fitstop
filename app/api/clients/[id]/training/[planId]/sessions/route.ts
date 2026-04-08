@@ -5,6 +5,8 @@ import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { apiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { addSessionSchema } from "@/lib/validations/training";
+import { regenerateFutureEvents } from "@/services/training-event-service";
+import { captureApiError } from "@/lib/error-handler";
 
 // POST - Add new session to plan
 export async function POST(
@@ -47,6 +49,10 @@ export async function POST(
     }
 
     const session = await addSession(planId, validation.data);
+
+    await regenerateFutureEvents(clientId, planId).catch((err) =>
+      captureApiError(err, { action: "regenerate-events-after-add", planId })
+    );
 
     return NextResponse.json({ success: true, session }, { status: 201 });
   } catch (error) {

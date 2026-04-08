@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getClientById } from "@/services/client-service";
-import { createTrainingPlanAtomic, insertTrainingSessions, getTrainingPlanById } from "@/services/training-service";
+import { createTrainingPlanAtomic, insertTrainingSessions, getTrainingPlanById, getActiveTrainingPlan } from "@/services/training-service";
+import { deleteFutureEventsForPlan, regenerateFutureEvents } from "@/services/training-event-service";
+import { captureApiError } from "@/lib/error-handler";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { apiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
@@ -98,6 +100,8 @@ export async function POST(
       })),
     }));
 
+    const existingPlan = await getActiveTrainingPlan(clientId);
+
     // Atomically archive old plan + insert new plan row
     const newPlanId = await createTrainingPlanAtomic({
       clientId,
@@ -117,6 +121,16 @@ export async function POST(
     if (!plan) {
       return NextResponse.json({ error: "Failed to retrieve created plan" }, { status: 500 });
     }
+
+    // Generate calendar events for the new plan (non-blocking)
+    if (existingPlan) {
+      await deleteFutureEventsForPlan(existingPlan.id).catch((err) =>
+        captureApiError(err, { action: "delete-future-events", planId: existingPlan.id })
+      );
+    }
+    await regenerateFutureEvents(clientId, newPlanId).catch((err) =>
+      captureApiError(err, { action: "generate-training-events", planId: newPlanId })
+    );
 
     return NextResponse.json({
       success: true,
