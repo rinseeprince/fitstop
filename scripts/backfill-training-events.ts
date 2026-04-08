@@ -58,7 +58,7 @@ async function backfillEvents() {
         id: s.id,
         name: s.name,
         dayOfWeek: s.day_of_week ?? undefined,
-        sessionType: s.session_type ?? "training",
+        sessionType: (s.session_type ?? "training") as "training" | "external_activity",
         focus: s.focus ?? undefined,
         estimatedCalories: s.estimated_calories ?? undefined,
       }));
@@ -172,7 +172,7 @@ async function backfillEvents() {
         await linkSessionLogToEvent(
           event.id,
           log.id,
-          mapCompletionQualityToEventStatus(log.completion_quality ?? "full")
+          mapCompletionQualityToEventStatus((log.completion_quality ?? "full") as "full" | "partial" | "skipped")
         );
         linked++;
       } else {

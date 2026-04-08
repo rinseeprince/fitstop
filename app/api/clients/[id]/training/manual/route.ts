@@ -4,7 +4,7 @@ import { createTrainingPlanAtomic, insertTrainingSessions, getTrainingPlanById, 
 import { deleteFutureEventsForPlan, regenerateFutureEvents } from "@/services/training-event-service";
 import { captureApiError } from "@/lib/error-handler";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
-import { apiRateLimit } from "@/lib/rate-limit";
+import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { z } from "zod";
 import type { AIGeneratedSession, AIGeneratedExercise } from "@/types/training";
@@ -40,7 +40,7 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const rateLimitResult = await apiRateLimit(request);
+  const rateLimitResult = await coachApiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
 
   const csrfError = await requireCSRFProtection(request);
@@ -122,13 +122,17 @@ export async function POST(
       return NextResponse.json({ error: "Failed to retrieve created plan" }, { status: 500 });
     }
 
-    // Generate calendar events for the new plan (non-blocking)
+    // Generate calendar events for the new plan
+    const effectiveFrom = existingPlan
+      ? (validation.data as Record<string, unknown>).effectiveFrom as string | undefined
+      : phaseCheck.phaseStartDate ?? undefined;
+
     if (existingPlan) {
       await deleteFutureEventsForPlan(existingPlan.id).catch((err) =>
         captureApiError(err, { action: "delete-future-events", planId: existingPlan.id })
       );
     }
-    await regenerateFutureEvents(clientId, newPlanId).catch((err) =>
+    await regenerateFutureEvents(clientId, newPlanId, effectiveFrom).catch((err) =>
       captureApiError(err, { action: "generate-training-events", planId: newPlanId })
     );
 

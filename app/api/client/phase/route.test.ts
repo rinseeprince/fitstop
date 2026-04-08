@@ -30,7 +30,7 @@ const mockPhase = {
   startDate: "2024-01-01",
   endDate: "2024-02-01",
   durationWeeks: 4,
-  phaseGoalsSnapshot: null,
+  phaseGoalsSnapshot: undefined,
   milestones: [],
   createdAt: "2024-01-01T00:00:00Z",
   updatedAt: "2024-01-01T00:00:00Z",

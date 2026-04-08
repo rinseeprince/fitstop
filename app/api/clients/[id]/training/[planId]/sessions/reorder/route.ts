@@ -2,18 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { getClientById } from "@/services/client-service";
 import { getTrainingPlanById, reorderSessions } from "@/services/training-service";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
-import { apiRateLimit } from "@/lib/rate-limit";
+import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { reorderSessionsSchema } from "@/lib/validations/training";
-import { regenerateFutureEvents } from "@/services/training-event-service";
-import { captureApiError } from "@/lib/error-handler";
-
 // POST - Bulk reorder sessions (update day and order)
+// Events are NOT regenerated here — the coach triggers regeneration
+// via the "Done" button which calls /regenerate-events with an effective date.
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; planId: string }> }
 ) {
-  const rateLimitResult = await apiRateLimit(request);
+  const rateLimitResult = await coachApiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
 
   const csrfError = await requireCSRFProtection(request);
@@ -60,10 +59,6 @@ export async function POST(
     }
 
     await reorderSessions(planId, validation.data);
-
-    await regenerateFutureEvents(clientId, planId).catch((err) =>
-      captureApiError(err, { action: "regenerate-events-after-reorder", planId })
-    );
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {

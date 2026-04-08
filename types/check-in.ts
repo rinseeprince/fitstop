@@ -333,6 +333,27 @@ export type TrainingVolume = "0-1" | "2-3" | "4-5" | "6-7" | "8+";
 
 export type DietType = "balanced" | "high_carb" | "low_carb" | "keto" | "custom";
 
+export type NutritionEventStatus = "scheduled" | "logged" | "missed";
+
+export type NutritionEvent = {
+  id: string;
+  clientId: string;
+  nutritionPlanId: string;
+  date: string;
+  dayOfWeek: string;
+  baselineCalories: number;
+  trainingBurnCalories: number;
+  externalBurnCalories: number;
+  proteinG: number;
+  carbG: number;
+  fatG: number;
+  dietType: string;
+  isTrainingDay: boolean;
+  status: NutritionEventStatus;
+  createdAt: string;
+  updatedAt: string;
+};
+
 // Client record from database
 export type Client = {
   id: string;
@@ -607,6 +628,7 @@ export type GenerateNutritionPlanRequest = {
   customFatG?: number;
   customCalories?: number;
   coachNotes?: string;
+  effectiveFrom?: string;
 };
 
 export type GenerateNutritionPlanResponse = {

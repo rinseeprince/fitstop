@@ -1467,6 +1467,78 @@ export type Database = {
           },
         ]
       }
+      nutrition_events: {
+        Row: {
+          baseline_calories: number
+          carb_g: number
+          client_id: string
+          created_at: string
+          date: string
+          day_of_week: string
+          diet_type: string
+          external_burn_calories: number
+          fat_g: number
+          id: string
+          is_training_day: boolean
+          nutrition_plan_id: string
+          protein_g: number
+          status: string
+          training_burn_calories: number
+          updated_at: string
+        }
+        Insert: {
+          baseline_calories: number
+          carb_g: number
+          client_id: string
+          created_at?: string
+          date: string
+          day_of_week: string
+          diet_type?: string
+          external_burn_calories?: number
+          fat_g: number
+          id?: string
+          is_training_day?: boolean
+          nutrition_plan_id: string
+          protein_g: number
+          status?: string
+          training_burn_calories?: number
+          updated_at?: string
+        }
+        Update: {
+          baseline_calories?: number
+          carb_g?: number
+          client_id?: string
+          created_at?: string
+          date?: string
+          day_of_week?: string
+          diet_type?: string
+          external_burn_calories?: number
+          fat_g?: number
+          id?: string
+          is_training_day?: boolean
+          nutrition_plan_id?: string
+          protein_g?: number
+          status?: string
+          training_burn_calories?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "nutrition_events_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "nutrition_events_nutrition_plan_id_fkey"
+            columns: ["nutrition_plan_id"]
+            isOneToOne: false
+            referencedRelation: "nutrition_plans"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       nutrition_plan_daily_targets: {
         Row: {
           calories: number

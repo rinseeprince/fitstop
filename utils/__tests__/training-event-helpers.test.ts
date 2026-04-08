@@ -171,6 +171,48 @@ describe("mapEventsToScheduleDays", () => {
     expect(result[2].plannedSessionName).toBe("Pull");
     expect(result[4].plannedSessionName).toBe("Legs");
   });
+
+  it("prefers completed event over scheduled when duplicates exist on same date", () => {
+    const dates = ["2026-04-06"];
+    const events = [
+      // Scheduled event from new plan (inserted later, appears first)
+      createMockTrainingEvent({
+        date: "2026-04-06",
+        sessionName: "Full Body A",
+        status: "scheduled",
+        trainingSessionId: "new-session-1",
+      }),
+      // Completed event from old plan
+      createMockTrainingEvent({
+        date: "2026-04-06",
+        sessionName: "Push Day",
+        status: "completed",
+        trainingSessionId: "old-session-1",
+      }),
+    ];
+
+    const result = mapEventsToScheduleDays(dates, events);
+
+    expect(result[0]).toMatchObject({
+      status: "completed",
+      completionQuality: "full",
+      loggedSessionName: "Push Day",
+      plannedSessionName: "Push Day",
+    });
+  });
+
+  it("prefers partial over scheduled when duplicates exist", () => {
+    const dates = ["2026-04-06"];
+    const events = [
+      createMockTrainingEvent({ date: "2026-04-06", sessionName: "Legs", status: "partial" }),
+      createMockTrainingEvent({ date: "2026-04-06", sessionName: "Legs v2", status: "scheduled" }),
+    ];
+
+    const result = mapEventsToScheduleDays(dates, events);
+
+    expect(result[0].status).toBe("partial");
+    expect(result[0].plannedSessionName).toBe("Legs");
+  });
 });
 
 describe("getEventCaloriesByDay", () => {

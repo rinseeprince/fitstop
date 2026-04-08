@@ -1,50 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getClientById } from "@/services/client-service";
-import { getClientCheckIns } from "@/services/check-in-service";
-import { generateTrainingPlanAI, calculateCheckInAverages } from "@/services/training-ai-service";
-import {
-  getActiveTrainingPlan,
-  createTrainingPlanAtomic,
-  insertTrainingSessions,
-  getTrainingPlanById,
-  saveTrainingPlanHistory,
-  updateSessionCalories,
-} from "@/services/training-service";
-import { addExternalActivity } from "@/services/activity-service";
-import { estimateSessionCalories } from "@/services/training-calorie-service";
+import { getActiveTrainingPlan } from "@/services/training-service";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
-import { apiRateLimit } from "@/lib/rate-limit";
+import { aiRateLimit, coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { generateTrainingPlanSchema } from "@/lib/validations/training";
-import { weightToKg } from "@/utils/nutrition-helpers";
-import type { ExternalActivityContext } from "@/types/training";
-import type { ActivityMetadata, MuscleGroup, IntensityLevel } from "@/types/external-activity";
-import { getLatestBodyMetrics } from "@/services/body-metrics-service";
-import { getCurrentGoals } from "@/services/client-goals-service";
-import { requirePhaseSelection } from "@/lib/require-phase-selection";
-import { deleteFutureEventsForPlan, regenerateFutureEvents } from "@/services/training-event-service";
-import { captureApiError } from "@/lib/error-handler";
-
-// Helper function for default recovery hours based on intensity
-function getDefaultRecoveryHours(intensity: IntensityLevel): number {
-  switch (intensity) {
-    case "low":
-      return 12;
-    case "moderate":
-      return 24;
-    case "vigorous":
-      return 48;
-    default:
-      return 24;
-  }
-}
+import {
+  orchestrateTrainingPlanCreation,
+  TrainingPlanError,
+} from "@/services/training-plan-orchestrator";
 
 // POST - Generate new training plan via AI
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const rateLimitResult = await apiRateLimit(request);
+  const rateLimitResult = await aiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
 
   const csrfError = await requireCSRFProtection(request);
@@ -57,187 +28,28 @@ export async function POST(
     }
 
     const { id: clientId } = await params;
-    const client = await getClientById(clientId);
-
-    if (!client) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
-
-    if (client.coachId !== coachId) {
-      return NextResponse.json(
-        { error: "Forbidden: You don't have access to this client" },
-        { status: 403 }
-      );
-    }
 
     const body = await request.json();
     const validation = generateTrainingPlanSchema.safeParse(body);
 
     if (!validation.success) {
       console.error("Training plan validation errors:", validation.error.errors);
-      return NextResponse.json(
-        { error: "Invalid input" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Invalid input" }, { status: 400 });
     }
 
-    // Enforce phase selection when client has an active roadmap
-    const phaseCheck = await requirePhaseSelection(clientId, validation.data.phaseId);
-    if (!phaseCheck.ok) return phaseCheck.response;
-
-    // Prefer new services, fall back to client.* for pre-migration clients
-    const [latestMetrics, currentGoals] = await Promise.all([
-      getLatestBodyMetrics(clientId),
-      getCurrentGoals(clientId),
-    ]);
-
-    const currentWeight = latestMetrics?.weight ?? client.currentWeight;
-    const weightUnit = (latestMetrics?.weightUnit ?? client.weightUnit ?? "lbs") as "lbs" | "kg";
-    const bodyFatPercentage = latestMetrics?.bodyFatPercentage ?? client.currentBodyFatPercentage;
-    const goalWeight = currentGoals?.goalWeight ?? client.goalWeight;
-    const goalBodyFatPercentage = currentGoals?.goalBodyFatPercentage ?? client.goalBodyFatPercentage;
-    const clientTdee = latestMetrics?.tdee ?? client.tdee;
-    const clientBmr = latestMetrics?.bmr ?? client.bmr;
-
-    // Gather client metrics
-    const currentWeightKg = currentWeight
-      ? weightToKg(currentWeight, weightUnit)
-      : undefined;
-    const goalWeightKg = goalWeight
-      ? weightToKg(goalWeight, weightUnit)
-      : undefined;
-
-    // Get recent check-ins for context
-    const { checkIns } = await getClientCheckIns(clientId, { limit: 4 });
-    const checkInData = calculateCheckInAverages(checkIns);
-
-    // Convert pre-generation activities to external activity context for AI
-    const preGenActivities = validation.data.preGenerationActivities || [];
-    const externalActivities: ExternalActivityContext[] = preGenActivities.map((activity) => ({
-      activityName: activity.activityName,
-      dayOfWeek: activity.dayOfWeek,
-      intensityLevel: activity.intensityLevel,
-      durationMinutes: activity.durationMinutes,
-      recoveryHours: activity.analysis?.recoveryHours || getDefaultRecoveryHours(activity.intensityLevel),
-      muscleGroupsImpacted: (activity.analysis?.muscleGroupsImpacted || ["full_body"]) as MuscleGroup[],
-      recoveryImpact: activity.analysis?.recoveryImpact || "",
-    }));
-
-    // Check if there's an existing plan (for history reason tracking)
-    const existingPlan = await getActiveTrainingPlan(clientId);
-    const hadExistingPlan = !!existingPlan;
-
-    // Generate plan via AI with external activities as context
-    const { plan: aiPlan, rawResponse } = await generateTrainingPlanAI({
+    const result = await orchestrateTrainingPlanCreation(clientId, coachId, {
       coachPrompt: validation.data.coachPrompt,
-      client: {
-        name: client.name,
-        currentWeightKg,
-        goalWeightKg,
-        bodyFatPercentage,
-        goalBodyFatPercentage,
-        tdee: clientTdee,
-        bmr: clientBmr,
-        gender: client.gender,
-      },
-      checkInData,
-      externalActivities: externalActivities.length > 0 ? externalActivities : undefined,
+      phaseId: validation.data.phaseId,
+      preGenerationActivities: validation.data.preGenerationActivities,
       allowSameDayTraining: validation.data.allowSameDayTraining,
+      effectiveFrom: (validation.data as Record<string, unknown>).effectiveFrom as string | undefined,
     });
 
-    // Atomically archive old plan + insert new plan row
-    const newPlanId = await createTrainingPlanAtomic({
-      clientId,
-      coachId,
-      name: aiPlan.name,
-      description: aiPlan.description,
-      coachPrompt: validation.data.coachPrompt,
-      aiResponseRaw: rawResponse,
-      splitType: aiPlan.splitType,
-      frequencyPerWeek: aiPlan.frequencyPerWeek,
-      programDurationWeeks: aiPlan.programDurationWeeks,
-      clientWeightKg: currentWeightKg,
-      clientBodyFatPercentage: bodyFatPercentage,
-      clientGoalWeightKg: goalWeightKg,
-      clientTdee: clientTdee,
-      avgMood: checkInData?.avgMood,
-      avgEnergy: checkInData?.avgEnergy,
-      avgSleep: checkInData?.avgSleep,
-      avgStress: checkInData?.avgStress,
-      recentAdherencePercentage: checkInData?.adherencePercentage,
-      phaseId: phaseCheck.phaseId,
-    });
-
-    // Insert sessions and exercises
-    await insertTrainingSessions(newPlanId, aiPlan.sessions);
-    const plan = await getTrainingPlanById(newPlanId);
-    if (!plan) {
-      return NextResponse.json({ error: "Failed to retrieve created plan" }, { status: 500 });
-    }
-
-    // Save pre-generation activities as external activities in the plan
-    for (const activity of preGenActivities) {
-      const activityMetadata: ActivityMetadata = {
-        activityName: activity.activityName,
-        intensityLevel: activity.intensityLevel,
-        durationMinutes: activity.durationMinutes,
-        estimatedCalories: activity.analysis?.estimatedCalories || 0,
-        metValue: activity.analysis?.metValue || 5,
-        recoveryImpact: activity.analysis?.recoveryImpact || "",
-        recoveryHours: activity.analysis?.recoveryHours || getDefaultRecoveryHours(activity.intensityLevel),
-        muscleGroupsImpacted: (activity.analysis?.muscleGroupsImpacted || ["full_body"]) as MuscleGroup[],
-      };
-
-      await addExternalActivity(
-        plan.id,
-        {
-          activityName: activity.activityName,
-          dayOfWeek: activity.dayOfWeek,
-          durationMinutes: activity.durationMinutes,
-          notes: activity.notes ?? undefined,
-        },
-        activityMetadata
-      );
-    }
-
-    // Refetch plan to include the newly added external activities
-    let updatedPlan = await getActiveTrainingPlan(clientId);
-
-    // Estimate calories for all training sessions
-    if (updatedPlan) {
-      for (const session of updatedPlan.sessions) {
-        if (session.sessionType === "training" && session.exercises && session.exercises.length > 0) {
-          const estimate = await estimateSessionCalories(session, currentWeightKg || 70);
-          await updateSessionCalories(session.id, estimate.estimatedCalories);
-        }
-      }
-      // Refetch to include updated calories
-      updatedPlan = await getActiveTrainingPlan(clientId);
-    }
-
-    // Save to history
-    await saveTrainingPlanHistory(
-      clientId,
-      plan.id,
-      updatedPlan || plan,
-      validation.data.coachPrompt,
-      rawResponse,
-      coachId,
-      hadExistingPlan ? "regenerated" : "initial"
-    );
-
-    // Generate calendar events for the new plan (non-blocking)
-    if (existingPlan) {
-      await deleteFutureEventsForPlan(existingPlan.id).catch((err) =>
-        captureApiError(err, { action: "delete-future-events", planId: existingPlan.id })
-      );
-    }
-    await regenerateFutureEvents(clientId, newPlanId).catch((err) =>
-      captureApiError(err, { action: "generate-training-events", planId: newPlanId })
-    );
-
-    return NextResponse.json({ success: true, plan: updatedPlan || plan }, { status: 201 });
+    return NextResponse.json(result, { status: 201 });
   } catch (error) {
+    if (error instanceof TrainingPlanError) {
+      return NextResponse.json({ error: error.message }, { status: error.statusCode });
+    }
     console.error("Error generating training plan:", error);
     return NextResponse.json(
       { error: "Failed to generate training plan" },
@@ -251,7 +63,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const rateLimitResult = await apiRateLimit(request);
+  const rateLimitResult = await coachApiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
 
   try {

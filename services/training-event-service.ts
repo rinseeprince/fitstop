@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "./supabase-admin";
-import type { TrainingEvent, TrainingEventStatus } from "@/types/training";
+import type { TrainingEvent, TrainingEventStatus, SessionType } from "@/types/training";
+import type { SessionCompletionQuality } from "@/types/check-in";
 import type { TrainingEventRow, TrainingEventInsert } from "@/lib/database-helpers";
 import { getTodayDateString, getDateString, DAY_NUM } from "@/lib/date-helpers";
 
@@ -24,11 +25,11 @@ function mapEventRow(row: TrainingEventRow): TrainingEvent {
 
 // --- Session input type (narrower than full TrainingSession) ---
 
-type SessionInput = {
+export type SessionInput = {
   id: string;
   name: string;
   dayOfWeek?: string;
-  sessionType: string;
+  sessionType: SessionType;
   focus?: string;
   estimatedCalories?: number;
 };
@@ -103,21 +104,25 @@ export async function generateTrainingEvents(
 // --- Regenerate future events ---
 
 /**
- * Delete future scheduled events for a plan and regenerate from current sessions.
+ * Delete scheduled events from a given date onward and regenerate from current sessions.
  * Past events and non-scheduled events (completed, partial, missed, skipped) are preserved.
+ *
+ * @param effectiveFrom - Date from which to regenerate (defaults to today).
+ *   Use getTomorrowDateString() to preserve today's prescription and only change future days.
  */
 export async function regenerateFutureEvents(
   clientId: string,
-  planId: string
+  planId: string,
+  effectiveFrom?: string
 ): Promise<void> {
-  const today = getTodayDateString();
+  const fromDate = effectiveFrom ?? getTodayDateString();
 
-  // Delete future scheduled events only
+  // Delete scheduled events from effectiveFrom onward
   const { error: deleteError } = await supabaseAdmin
     .from("training_events")
     .delete()
     .eq("training_plan_id", planId)
-    .gte("date", today)
+    .gte("date", fromDate)
     .eq("status", "scheduled");
 
   if (deleteError) throw deleteError;
@@ -136,16 +141,16 @@ export async function regenerateFutureEvents(
     id: r.id,
     name: r.name,
     dayOfWeek: r.day_of_week ?? undefined,
-    sessionType: r.session_type ?? "training",
+    sessionType: (r.session_type ?? "training") as SessionType,
     focus: r.focus ?? undefined,
     estimatedCalories: r.estimated_calories ?? undefined,
   }));
 
   // Calculate end date
-  const endDate = await calculateEndDate(planId, today);
-  if (!endDate || endDate <= today) return;
+  const endDate = await calculateEndDate(planId, fromDate);
+  if (!endDate || endDate <= fromDate) return;
 
-  await generateTrainingEvents(clientId, planId, sessions, today, endDate);
+  await generateTrainingEvents(clientId, planId, sessions, fromDate, endDate);
 }
 
 // --- Calculate end date ---
@@ -291,7 +296,7 @@ export async function getEventForSessionAndDate(
  * Map completion quality ("full"/"partial"/"skipped") to event status.
  */
 export function mapCompletionQualityToEventStatus(
-  quality: string
+  quality: SessionCompletionQuality
 ): "completed" | "partial" | "skipped" {
   if (quality === "full") return "completed";
   if (quality === "partial") return "partial";

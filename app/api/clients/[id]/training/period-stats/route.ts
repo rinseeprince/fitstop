@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 import { supabaseAdmin } from "@/services/supabase-admin";
-import { getActiveTrainingPlan } from "@/services/training-service";
-import { countPlannedSessions } from "@/utils/training-week-helpers";
+import { countEventsInRange } from "@/services/training-event-service";
 
 export async function GET(
   request: NextRequest,
@@ -50,16 +49,8 @@ export async function GET(
 
     const sessionsCompleted = count ?? 0;
 
-    // Count planned sessions from active training plan
-    const plan = await getActiveTrainingPlan(clientId);
-    let sessionsPlanned = 0;
-    if (plan) {
-      const sessions = plan.sessions.map((s) => ({
-        dayOfWeek: s.dayOfWeek,
-        sessionType: s.sessionType,
-      }));
-      sessionsPlanned = countPlannedSessions(sessions, start, end);
-    }
+    // Count planned sessions from training events
+    const sessionsPlanned = await countEventsInRange(clientId, start, end);
 
     return NextResponse.json(
       { success: true, data: { sessionsCompleted, sessionsPlanned } },

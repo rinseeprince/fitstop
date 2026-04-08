@@ -31,9 +31,14 @@ vi.mock('./client-portal-training', () => ({
   getClientTrainingPlan: vi.fn(),
 }));
 
+vi.mock('./training-event-service', () => ({
+  getEventForDate: vi.fn(),
+}));
+
 import { supabaseAdmin } from './supabase-admin';
 import { getClientNutritionTargets } from './client-portal-service';
 import { getClientTrainingPlan } from './client-portal-training';
+import { getEventForDate } from './training-event-service';
 
 function createMockQuery(result: { data: unknown; error: unknown }) {
   const mockQuery = {
@@ -295,73 +300,61 @@ describe('Daily Logs Service - Database Functions', () => {
   });
 
   describe('getTodaysTrainingSession', () => {
-    it('returns training session for today\'s day of week', async () => {
-      const today = new Date('2024-01-15'); // Monday
-      vi.useFakeTimers();
-      vi.setSystemTime(today);
+    it('returns training session when event exists for today', async () => {
+      vi.mocked(getEventForDate).mockResolvedValue({
+        id: 'event-1',
+        clientId: 'client-123',
+        trainingPlanId: 'plan-1',
+        trainingSessionId: 'session-1',
+        date: '2024-01-15',
+        sessionName: 'Upper Body',
+        sessionFocus: null,
+        estimatedCalories: 300,
+        status: 'scheduled',
+        sessionLogId: null,
+        createdAt: '2024-01-01T00:00:00Z',
+        updatedAt: '2024-01-01T00:00:00Z',
+      });
 
-      const mockTrainingPlan = {
-        sessions: [
-          {
-            id: 'session-1',
-            name: 'Upper Body',
-            dayOfWeek: 'monday',
-            sessionType: 'training',
-            estimatedCalories: 300,
-          },
-          {
-            id: 'session-2',
-            name: 'BJJ',
-            dayOfWeek: 'monday',
-            sessionType: 'external_activity',
-            estimatedCalories: 400,
-          },
-        ],
-      };
+      const result = await getTodaysTrainingSession('client-123', '2024-01-15');
 
-      vi.mocked(getClientTrainingPlan).mockResolvedValue(mockTrainingPlan as any);
-
-      const result = await getTodaysTrainingSession('client-123');
-      
       expect(result).toEqual({
         sessionId: 'session-1',
         sessionName: 'Upper Body',
         estimatedCalories: 300,
       });
-
-      vi.useRealTimers();
     });
 
-    it('returns null when no training session today', async () => {
-      const today = new Date('2024-01-15'); // Monday
-      vi.useFakeTimers();
-      vi.setSystemTime(today);
+    it('returns null when no event exists for today', async () => {
+      vi.mocked(getEventForDate).mockResolvedValue(null);
 
-      const mockTrainingPlan = {
-        sessions: [
-          {
-            id: 'session-1',
-            name: 'Upper Body',
-            dayOfWeek: 'tuesday',
-            sessionType: 'training',
-            estimatedCalories: 300,
-          },
-        ],
-      };
-
-      vi.mocked(getClientTrainingPlan).mockResolvedValue(mockTrainingPlan as any);
-
-      const result = await getTodaysTrainingSession('client-123');
+      const result = await getTodaysTrainingSession('client-123', '2024-01-15');
       expect(result).toBeNull();
-
-      vi.useRealTimers();
     });
 
-    it('returns null when no training plan', async () => {
-      vi.mocked(getClientTrainingPlan).mockResolvedValue(null);
+    it('uses event id as sessionId when trainingSessionId is null', async () => {
+      vi.mocked(getEventForDate).mockResolvedValue({
+        id: 'event-1',
+        clientId: 'client-123',
+        trainingPlanId: 'plan-1',
+        trainingSessionId: null,
+        date: '2024-01-15',
+        sessionName: 'Custom Session',
+        sessionFocus: null,
+        estimatedCalories: null,
+        status: 'scheduled',
+        sessionLogId: null,
+        createdAt: '2024-01-01T00:00:00Z',
+        updatedAt: '2024-01-01T00:00:00Z',
+      });
 
-      const result = await getTodaysTrainingSession('client-123');
-      expect(result).toBeNull();
+      const result = await getTodaysTrainingSession('client-123', '2024-01-15');
+
+      expect(result).toEqual({
+        sessionId: 'event-1',
+        sessionName: 'Custom Session',
+        estimatedCalories: 0,
+      });
     });
   });
 

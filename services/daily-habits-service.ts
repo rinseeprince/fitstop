@@ -3,23 +3,12 @@ import type { DailyHabit, DailyHabitInput, DailyHabitLog } from "@/types/daily-h
 import type { Database } from "@/types/database";
 import { getTodayDateString } from "@/lib/date-helpers";
 import { mapArrayIndexToSortOrder } from "./daily-habits-logic";
+import {
+  mapHabitRow, mapHabitLogRow, mapHabitLogWithDetailsRow,
+  type DailyHabitLogWithHabit, type HabitLogWithDetails,
+} from "./daily-habits-mappers";
 
-type DailyHabitRow = Database["public"]["Tables"]["daily_habits"]["Row"];
-type DailyHabitLogRow = Database["public"]["Tables"]["daily_habit_logs"]["Row"];
-type DailyHabitLogWithHabit = DailyHabitLogRow & {
-  daily_habits: Pick<DailyHabitRow, 'name' | 'target_value' | 'target_unit' | 'is_boolean' | 'created_at' | 'effective_date'>;
-};
-
-type HabitLogWithDetails = DailyHabitLog & {
-  habitName: string;
-  targetValue?: number;
-  targetUnit?: string;
-  isBoolean: boolean;
-  habitCreatedAt: string;
-  habitEffectiveDate: string;
-};
-
-// Re-export pure logic functions from separate file
+export type { HabitLogWithDetails } from "./daily-habits-mappers";
 export { calculateCompletionRate, calculateCurrentStreak, mapArrayIndexToSortOrder } from "./daily-habits-logic";
 
 // Database functions
@@ -28,11 +17,11 @@ export const getClientHabits = async (clientId: string, includeInactive = false)
     .from("daily_habits")
     .select("*")
     .eq("client_id", clientId);
-  
+
   if (!includeInactive) {
     query = query.eq("is_active", true);
   }
-  
+
   // Order by is_active (true first) and then by sort_order
   query = query.order("is_active", { ascending: false })
     .order("sort_order", { ascending: true });
@@ -43,21 +32,7 @@ export const getClientHabits = async (clientId: string, includeInactive = false)
     throw new Error(`Failed to fetch client habits: ${error.message}`);
   }
 
-  return (data || []).map((row: DailyHabitRow) => ({
-    id: row.id,
-    coachId: row.coach_id,
-    clientId: row.client_id,
-    name: row.name,
-    description: row.description ?? undefined,
-    targetValue: row.target_value ?? undefined,
-    targetUnit: row.target_unit ?? undefined,
-    isBoolean: row.is_boolean,
-    isActive: row.is_active,
-    sortOrder: row.sort_order,
-    effectiveDate: row.effective_date,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  }));
+  return (data || []).map(mapHabitRow);
 };
 
 export const createHabit = async (
@@ -143,25 +118,10 @@ export const createHabit = async (
       throw new Error(`Failed to reactivate habit: ${updateError.message}`);
     }
 
-    return {
-      id: reactivatedResult.id,
-      coachId: reactivatedResult.coach_id,
-      clientId: reactivatedResult.client_id,
-      name: reactivatedResult.name,
-      description: reactivatedResult.description ?? undefined,
-      targetValue: reactivatedResult.target_value ?? undefined,
-      targetUnit: reactivatedResult.target_unit ?? undefined,
-      isBoolean: reactivatedResult.is_boolean,
-      isActive: reactivatedResult.is_active,
-      sortOrder: reactivatedResult.sort_order,
-      effectiveDate: reactivatedResult.effective_date,
-      createdAt: reactivatedResult.created_at,
-      updatedAt: reactivatedResult.updated_at,
-    };
+    return mapHabitRow(reactivatedResult);
   }
 
-  // No existing inactive habit found, create a new one
-  // Get the next sort order
+  // No existing inactive habit found, create a new one — get the next sort order
   const { data: lastHabit } = await supabaseAdmin
     .from("daily_habits")
     .select("sort_order")
@@ -197,21 +157,7 @@ export const createHabit = async (
     throw new Error(`Failed to create habit: ${error.message}`);
   }
 
-  return {
-    id: result.id,
-    coachId: result.coach_id,
-    clientId: result.client_id,
-    name: result.name,
-    description: result.description ?? undefined,
-    targetValue: result.target_value ?? undefined,
-    targetUnit: result.target_unit ?? undefined,
-    isBoolean: result.is_boolean,
-    isActive: result.is_active,
-    sortOrder: result.sort_order,
-    effectiveDate: result.effective_date,
-    createdAt: result.created_at,
-    updatedAt: result.updated_at,
-  };
+  return mapHabitRow(result);
 };
 
 export const updateHabit = async (
@@ -240,27 +186,13 @@ export const updateHabit = async (
     throw new Error(`Failed to update habit: ${error.message}`);
   }
 
-  return {
-    id: result.id,
-    coachId: result.coach_id,
-    clientId: result.client_id,
-    name: result.name,
-    description: result.description ?? undefined,
-    targetValue: result.target_value ?? undefined,
-    targetUnit: result.target_unit ?? undefined,
-    isBoolean: result.is_boolean,
-    isActive: result.is_active,
-    sortOrder: result.sort_order,
-    effectiveDate: result.effective_date,
-    createdAt: result.created_at,
-    updatedAt: result.updated_at,
-  };
+  return mapHabitRow(result);
 };
 
 export const deactivateHabit = async (habitId: string): Promise<void> => {
   const { error } = await supabaseAdmin
     .from("daily_habits")
-    .update({ 
+    .update({
       is_active: false,
       updated_at: new Date().toISOString(),
     })
@@ -273,12 +205,10 @@ export const deactivateHabit = async (habitId: string): Promise<void> => {
 
 export const reorderHabits = async (habitIds: string[]): Promise<void> => {
   const sortOrderMappings = mapArrayIndexToSortOrder(habitIds);
-  
-  // Update sort orders in parallel
   const updatePromises = sortOrderMappings.map(({ id, sortOrder }) =>
     supabaseAdmin
       .from("daily_habits")
-      .update({ 
+      .update({
         sort_order: sortOrder,
         updated_at: new Date().toISOString(),
       })
@@ -286,7 +216,7 @@ export const reorderHabits = async (habitIds: string[]): Promise<void> => {
   );
 
   const results = await Promise.all(updatePromises);
-  
+
   const errors = results.filter(result => result.error);
   if (errors.length > 0) {
     throw new Error(`Failed to reorder habits: ${errors[0].error?.message || 'Unknown error'}`);
@@ -321,17 +251,7 @@ export const logHabit = async (
     throw new Error(`Failed to log habit: ${error.message}`);
   }
 
-  return {
-    id: result.id,
-    dailyHabitId: result.daily_habit_id,
-    clientId: result.client_id,
-    date: result.date,
-    completed: result.completed,
-    value: result.value ?? undefined,
-    notes: result.notes ?? undefined,
-    createdAt: result.created_at,
-    updatedAt: result.updated_at,
-  };
+  return mapHabitLogRow(result);
 };
 
 export const getHabitLogs = async (
@@ -354,28 +274,12 @@ export const getHabitLogs = async (
     throw new Error(`Failed to fetch habit logs: ${error.message}`);
   }
 
-  return (data || []).map((row: DailyHabitLogWithHabit) => ({
-    id: row.id,
-    dailyHabitId: row.daily_habit_id,
-    clientId: row.client_id,
-    date: row.date,
-    completed: row.completed,
-    value: row.value ?? undefined,
-    notes: row.notes ?? undefined,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    habitName: row.daily_habits.name,
-    targetValue: row.daily_habits.target_value ?? undefined,
-    targetUnit: row.daily_habits.target_unit ?? undefined,
-    isBoolean: row.daily_habits.is_boolean,
-    habitCreatedAt: row.daily_habits.created_at,
-    habitEffectiveDate: row.daily_habits.effective_date,
-  }));
+  return (data || []).map((row) => mapHabitLogWithDetailsRow(row as unknown as DailyHabitLogWithHabit));
 };
 
 export const getTodayHabitLogs = async (clientId: string, date?: string): Promise<HabitLogWithDetails[]> => {
   const targetDate = date || getTodayDateString();
-  
+
   const { data, error } = await supabaseAdmin
     .from("daily_habit_logs")
     .select(`
@@ -389,24 +293,7 @@ export const getTodayHabitLogs = async (clientId: string, date?: string): Promis
     throw new Error(`Failed to fetch today's habit logs: ${error.message}`);
   }
 
-  return (data || []).map((row: DailyHabitLogWithHabit) => ({
-    id: row.id,
-    dailyHabitId: row.daily_habit_id,
-    clientId: row.client_id,
-    date: row.date,
-    completed: row.completed,
-    value: row.value ?? undefined,
-    notes: row.notes ?? undefined,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    habitName: row.daily_habits.name,
-    targetValue: row.daily_habits.target_value ?? undefined,
-    targetUnit: row.daily_habits.target_unit ?? undefined,
-    isBoolean: row.daily_habits.is_boolean,
-    habitCreatedAt: row.daily_habits.created_at,
-    habitEffectiveDate: row.daily_habits.effective_date,
-  }));
+  return (data || []).map((row) => mapHabitLogWithDetailsRow(row as unknown as DailyHabitLogWithHabit));
 };
 
-// Re-export getHabitStats from separate stats file
 export { getHabitStats } from "./daily-habits-stats";

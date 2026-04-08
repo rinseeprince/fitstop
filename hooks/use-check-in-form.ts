@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import type { CheckInFormData } from "@/types/check-in";
+import type { CheckInFormData, CheckInExerciseHighlight } from "@/types/check-in";
 import { sanitiseReps } from "@/utils/daily-logs-aggregation";
 
 const STORAGE_KEY = "check-in-form-data";
@@ -21,7 +21,7 @@ export const useCheckInForm = (token: string) => {
         if (data.exerciseHighlights && Array.isArray(data.exerciseHighlights)) {
           data = {
             ...data,
-            exerciseHighlights: data.exerciseHighlights.map((highlight: any) => ({
+            exerciseHighlights: data.exerciseHighlights.map((highlight: Partial<CheckInExerciseHighlight>) => ({
               ...highlight,
               reps: sanitiseReps(highlight.reps)
             }))

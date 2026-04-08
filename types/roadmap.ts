@@ -22,8 +22,8 @@ export type Roadmap = {
   coachId: string;
   name: string;
   longTermGoal?: string;
-  goalWeight?: number | null;
-  goalBodyFatPercentage?: number | null;
+  goalWeight?: number;
+  goalBodyFatPercentage?: number;
   status: RoadmapStatus;
   startedAt?: string;
   targetEndDate?: string;
@@ -47,11 +47,11 @@ export type Phase = {
   startDate?: string;
   endDate?: string;
   durationWeeks?: number;
-  phaseGoalsSnapshot?: Record<string, unknown> | null;
-  phaseGoalWeight?: number | null;
-  phaseGoalBodyFatPercentage?: number | null;
+  phaseGoalsSnapshot?: Record<string, unknown>;
+  phaseGoalWeight?: number;
+  phaseGoalBodyFatPercentage?: number;
   coachReflection?: string;
-  phaseSummary?: Record<string, unknown> | null;
+  phaseSummary?: Record<string, unknown>;
   milestones: Milestone[];
   completionSeen?: boolean;
   createdAt: string;
@@ -113,7 +113,7 @@ export type RoadmapRow = {
   long_term_goal: string | null;
   goal_weight: number | null;
   goal_body_fat_percentage: number | null;
-  status: string;
+  status: string; // DB returns string; cast to RoadmapStatus in mapper
   started_at: string | null;
   target_end_date: string | null;
   created_at: string;
@@ -128,7 +128,7 @@ export type PhaseRow = {
   description: string | null;
   objectives: string | null;
   order_index: number;
-  status: string;
+  status: string; // DB returns string; cast to PhaseStatus in mapper
   start_date: string | null;
   end_date: string | null;
   duration_weeks: number | null;
@@ -166,7 +166,7 @@ export type BodyMetricsEventRow = {
   body_fat_percentage: number | null;
   bmr: number | null;
   tdee: number | null;
-  source: string;
+  source: string; // DB returns string; cast to BodyMetricsSource in mapper
   source_id: string | null;
   recorded_at: string;
   created_at: string;

@@ -21,7 +21,7 @@ export async function saveCoachNotes(
     .update({
       coach_review_notes: notes,
       updated_at: new Date().toISOString(),
-    } as never)
+    } as never) // TODO: remove as never once client_intake types are regenerated
     .eq("client_id", clientId)
     .in("status", ["completed", "reviewed"]);
 
@@ -39,7 +39,13 @@ export async function reviewIntake(
   coachId: string,
   notes?: string
 ): Promise<ClientIntake> {
-  const updateData: Record<string, unknown> = {
+  const updateData: {
+    status: string;
+    reviewed_at: string;
+    reviewed_by: string;
+    updated_at: string;
+    coach_review_notes?: string;
+  } = {
     status: "reviewed",
     reviewed_at: new Date().toISOString(),
     reviewed_by: coachId,
@@ -52,7 +58,7 @@ export async function reviewIntake(
 
   const { data, error } = await db
     .from("client_intake")
-    .update(updateData as never)
+    .update(updateData as never) // TODO: remove as never once client_intake types are regenerated
     .eq("client_id", clientId)
     .eq("status", "completed")
     .select()
@@ -72,6 +78,7 @@ export async function reviewIntake(
     } as never)
     .eq("id", clientId);
 
+  // TODO: remove double-cast once client_intake types are regenerated
   return mapClientIntakeRow(data as unknown as ClientIntakeRow);
 }
 
@@ -114,7 +121,8 @@ export async function syncMetricsToClient(
     throw new Error("Client not found");
   }
 
-  const updates: Record<string, unknown> = {
+  // Typed loosely because we conditionally add fields — cast to `as never` at the update site
+  const updates: Record<string, string | number | undefined> = {
     updated_at: new Date().toISOString(),
   };
 

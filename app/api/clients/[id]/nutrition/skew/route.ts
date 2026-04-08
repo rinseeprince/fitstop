@@ -9,6 +9,7 @@ import { DAYS_OF_WEEK } from "@/utils/nutrition-helpers";
 import type { DayCalorieOverrides } from "@/types/check-in";
 import type { Database } from "@/types/database";
 import { getTodayDateString } from "@/lib/date-helpers";
+import { promoteNutritionPlanIfReady } from "@/services/nutrition-plan-service";
 
 type DailyTargetInsert = Database["public"]["Tables"]["nutrition_plan_daily_targets"]["Insert"];
 
@@ -57,6 +58,9 @@ export async function POST(
     }
 
     const dayCalorieOverrides = parseResult.data as DayCalorieOverrides;
+
+    // Promote planned plan if its effective date has arrived
+    await promoteNutritionPlanIfReady(clientId);
 
     // Get the current active plan
     const { data: currentPlan, error: planError } = await supabaseAdmin

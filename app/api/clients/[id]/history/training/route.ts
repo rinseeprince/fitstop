@@ -3,8 +3,8 @@ import { parsePaginationParams } from "@/lib/api-utils";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 import { getTrainingHistory } from "@/services/training-history-service";
-import { fetchTrainingDataForPeriod } from "@/services/schedule-data-service";
-import { buildTrainingSchedule } from "@/utils/training-schedule-generator";
+import { getEventsForDateRange } from "@/services/training-event-service";
+import { mapEventsToScheduleDays } from "@/utils/training-event-helpers";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { getTodayDateString } from "@/lib/date-helpers";
 import type { TrainingHistoryRow } from "@/types/history";
@@ -84,9 +84,9 @@ export async function GET(
       const dates = generateDateRange(phaseStartDate, today);
       const total = dates.length;
 
-      // Fetch training data for the full range
-      const trainingData = await fetchTrainingDataForPeriod(clientId, phaseStartDate, today);
-      const schedule = buildTrainingSchedule(dates, trainingData.plans, trainingData.sessionLogs, trainingData.trainingLogs);
+      // Fetch training events for the full range
+      const events = await getEventsForDateRange(clientId, phaseStartDate, today);
+      const schedule = mapEventsToScheduleDays(dates, events);
 
       // Reverse for newest-first, then paginate
       const reversed = schedule.reverse();

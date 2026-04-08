@@ -5,17 +5,13 @@ import useSWR from "swr";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import { useToast } from "@/hooks/use-toast";
 import { useNutritionPlan } from "@/hooks/use-nutrition-plan";
-import type { Client, ActivityLevel, DietType, DayCalorieOverrides } from "@/types/check-in";
+import { useCalorieSkew } from "@/hooks/use-calorie-skew";
+import type { Client, ActivityLevel, DietType } from "@/types/check-in";
 import type { Phase, Roadmap } from "@/types/roadmap";
 import { validateClientForNutrition } from "@/lib/validations/nutrition";
 import {
   weightToKg,
   getActivityMultiplier,
-  validateWeeklyBudget,
-  initializeDayOverridesFromTargets,
-  calculateDailyMacros,
-  type WeeklyBudgetValidation,
-  type DayOfWeek,
 } from "@/utils/nutrition-helpers";
 import { CUSTOM_MACRO_CALORIE_TOLERANCE } from "@/lib/constants";
 import { addDays } from "date-fns";
@@ -116,20 +112,20 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
     [client.id, onUpdate, toast]
   );
 
-  // Calorie skewing state
-  const [customDayDistribution, setCustomDayDistribution] = useState(false);
-  const [dayCalorieOverrides, setDayCalorieOverrides] = useState<DayCalorieOverrides | null>(null);
-  const [skewMacroMode, setSkewMacroMode] = useState<"proportional" | "custom">("proportional");
-  const [isSavingSkew, setIsSavingSkew] = useState(false);
+  // Calorie skewing (extracted hook)
+  const planBaseline = nutritionPlan.nutritionData?.baselineCalories ?? nutritionPlan.nutritionData?.calorieTarget ?? 0;
+  const calorieSkew = useCalorieSkew({
+    clientId: client.id,
+    weeklyTargets: nutritionPlan.weeklyTargets,
+    baselineCalories: planBaseline,
+    dietType: settings.dietType,
+    onUpdate,
+  });
 
   // Phase selection
   const [phaseId, setPhaseId] = useState<string | undefined>(undefined);
   const [phaseBlocked, setPhaseBlocked] = useState(false);
-
-  // Coach notes
   const [coachNotes, setCoachNotes] = useState("");
-
-  // Loading states
   const [isGenerating, setIsGenerating] = useState(false);
   const [warnings, setWarnings] = useState<string[]>([]);
 
@@ -158,88 +154,9 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
     setSettingsChanged(true);
   }, []);
 
-  // Calorie skewing handlers
-  const handleToggleCustomDistribution = useCallback(
-    (enabled: boolean) => {
-      if (enabled && nutritionPlan.weeklyTargets) {
-        const overrides = initializeDayOverridesFromTargets(nutritionPlan.weeklyTargets);
-        setDayCalorieOverrides(overrides);
-        setCustomDayDistribution(true);
-      } else {
-        setCustomDayDistribution(false);
-        setDayCalorieOverrides(null);
-      }
-    },
-    [nutritionPlan.weeklyTargets]
-  );
-
-  const handleDayOverrideChange = useCallback(
-    (day: DayOfWeek, field: keyof DayCalorieOverrides[DayOfWeek], value: number) => {
-      setDayCalorieOverrides((prev) => {
-        if (!prev) return prev;
-        const dayData = { ...prev[day], [field]: value };
-
-        // In proportional mode, recalculate macros when calories change
-        if (field === "calories" && skewMacroMode === "proportional") {
-          const isTrainingDay = nutritionPlan.weeklyTargets?.find((t) => t.day === day)?.isTrainingDay ?? false;
-          const proteinG = prev[day].protein_g;
-          const macros = calculateDailyMacros(value, proteinG, isTrainingDay, settings.dietType);
-          dayData.protein_g = macros.proteinG;
-          dayData.carbs_g = macros.carbsG;
-          dayData.fat_g = macros.fatG;
-        }
-
-        return { ...prev, [day]: dayData };
-      });
-    },
-    [skewMacroMode, nutritionPlan.weeklyTargets, settings.dietType]
-  );
-
-  const handleSaveCustomDistribution = useCallback(async () => {
-    setIsSavingSkew(true);
-    try {
-      // Save custom day distribution as a new plan version via the
-      // dedicated skewing endpoint. This archives the current active plan
-      // and creates a new nutrition_plans row + 7 daily target rows.
-      const res = await fetch(`/api/clients/${client.id}/nutrition/skew`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          dayCalorieOverrides,
-        }),
-      });
-      if (!res.ok) throw new Error("Failed to save");
-      onUpdate?.();
-      toast({ title: "Custom day distribution saved" });
-    } catch {
-      toast({
-        title: "Error",
-        description: "Failed to save custom day distribution",
-        variant: "destructive",
-      });
-    } finally {
-      setIsSavingSkew(false);
-    }
-  }, [client.id, dayCalorieOverrides, onUpdate, toast]);
-
-  const handleResetToDefault = useCallback(() => {
-    if (nutritionPlan.weeklyTargets) {
-      const overrides = initializeDayOverridesFromTargets(nutritionPlan.weeklyTargets);
-      setDayCalorieOverrides(overrides);
-    }
-  }, [nutritionPlan.weeklyTargets]);
-
-  // Budget validation
-  const planBaseline = nutritionPlan.nutritionData?.baselineCalories ?? nutritionPlan.nutritionData?.calorieTarget ?? 0;
-  const weeklyBaselineTarget = planBaseline * 7;
-  const budgetValidation: WeeklyBudgetValidation | null =
-    dayCalorieOverrides
-      ? validateWeeklyBudget(dayCalorieOverrides, weeklyBaselineTarget)
-      : null;
-
   // Generate nutrition plan
   const generatePlan = useCallback(
-    async (useCustomMacros = false) => {
+    async (useCustomMacros = false, effectiveFrom?: string | null) => {
       const validation = validateClientForNutrition(client);
       if (!validation.valid) {
         toast({
@@ -259,6 +176,7 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
           goalDeadline: settings.goalDeadline || undefined,
           phaseId: phaseId || undefined,
           ...(coachNotes.trim() ? { coachNotes: coachNotes.trim() } : {}),
+          ...(effectiveFrom ? { effectiveFrom } : {}),
         };
 
         if (useCustomMacros) {
@@ -284,8 +202,7 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
             description: `${data.plan.calorieTarget} cal/day with ${data.plan.proteinTargetG}g protein`,
           });
           setSettingsChanged(false);
-          setCustomDayDistribution(false);
-          setDayCalorieOverrides(null);
+          calorieSkew.resetSkew();
           setPhaseId(undefined);
           setCoachNotes("");
           onUpdate?.();
@@ -305,7 +222,7 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
         setIsGenerating(false);
       }
     },
-    [client, settings, customMacros, phaseId, coachNotes, onUpdate, toast]
+    [client, settings, customMacros, phaseId, coachNotes, onUpdate, toast, calorieSkew, nutritionPlan]
   );
 
   // Calculate projected goal date
@@ -356,16 +273,7 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
     handleToggleActivityBurn,
 
     // Calorie skewing
-    customDayDistribution,
-    dayCalorieOverrides,
-    skewMacroMode,
-    setSkewMacroMode,
-    isSavingSkew,
-    budgetValidation,
-    handleToggleCustomDistribution,
-    handleDayOverrideChange,
-    handleSaveCustomDistribution,
-    handleResetToDefault,
+    ...calorieSkew,
 
     // Phase / roadmap
     phases,

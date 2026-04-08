@@ -1,0 +1,119 @@
+import type { DailyLog } from "@/types/daily-log";
+import type { HabitLogWithDetails } from "@/types/daily-habit";
+import { NUTRITION_ADHERENCE_HIT_THRESHOLD, NUTRITION_ADHERENCE_PARTIAL_THRESHOLD } from "@/lib/constants";
+import { sanitizeForAIPrompt } from "@/utils/ai-prompt-sanitizer";
+
+export function buildWeeklyPatterns(
+  sortedLogs: DailyLog[],
+  habitLogs: HabitLogWithDetails[],
+  startDate: Date,
+  endDate: Date
+): string {
+  let context = '\nWEEKLY PATTERNS:\n';
+
+  // Nutrition patterns
+  const nutritionLogs = sortedLogs.filter(l => l.caloriesConsumed !== undefined && l.targetCalories);
+  if (nutritionLogs.length > 0) {
+    const avgCalories = Math.round(nutritionLogs.reduce((sum, l) => sum + (l.caloriesConsumed ?? 0), 0) / nutritionLogs.length);
+    const avgTarget = Math.round(nutritionLogs.reduce((sum, l) => sum + (l.targetCalories ?? 0), 0) / nutritionLogs.length);
+    const deficit = avgCalories - avgTarget;
+
+    const hitDays = nutritionLogs.filter(l => Math.abs((l.caloriesConsumed ?? 0) - (l.targetCalories ?? 0)) <= NUTRITION_ADHERENCE_HIT_THRESHOLD).length;
+    const partialDays = nutritionLogs.filter(l => {
+      const diff = Math.abs((l.caloriesConsumed ?? 0) - (l.targetCalories ?? 0));
+      return diff > NUTRITION_ADHERENCE_HIT_THRESHOLD && diff <= NUTRITION_ADHERENCE_PARTIAL_THRESHOLD;
+    }).length;
+    const missedDays = nutritionLogs.length - hitDays - partialDays;
+
+    context += `- Avg calories: ${avgCalories}/day vs ${avgTarget} target (${deficit > 0 ? 'surplus' : 'deficit'} of ${Math.abs(deficit)}/day)\n`;
+    context += `- Nutrition adherence: ${hitDays} hit, ${partialDays} partial, ${missedDays} missed\n`;
+  }
+
+  // Training patterns
+  const trainingLogs = sortedLogs.filter(l => l.trainingData?.trainingSessionId);
+  if (trainingLogs.length > 0) {
+    const completedSessions = trainingLogs.filter(l => l.trainingData?.sessionCompleted).length;
+    context += `- Training: ${completedSessions}/${trainingLogs.length} sessions completed`;
+
+    // Note any session swaps
+    const swaps = trainingLogs.filter(l => l.trainingData?.isAlternativeSession);
+    if (swaps.length > 0) {
+      const swapDetails = swaps.map(l => {
+        const date = new Date(l.date);
+        const dayName = date.toLocaleDateString('en-US', { weekday: 'long' });
+        return `swapped to ${sanitizeForAIPrompt(l.trainingData?.trainingSessionName || '')} on ${dayName}`;
+      }).join(', ');
+      context += `. Session swaps: ${swapDetails}`;
+    }
+    context += '\n';
+  }
+
+  // Habit patterns - group by habit ID with proper date range calculation
+  const habitsById: Record<string, { name: string; completed: number; total: number; createdAt: string }> = {};
+  habitLogs.forEach(log => {
+    if (!habitsById[log.dailyHabitId]) {
+      // Calculate days the habit existed in the period using effective_date
+      const habitEffective = new Date(log.habitEffectiveDate);
+      const habitStartDate = habitEffective > startDate ? habitEffective : startDate;
+      const daysExisted = Math.floor((endDate.getTime() - habitStartDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+
+      habitsById[log.dailyHabitId] = {
+        name: sanitizeForAIPrompt(log.habitName),
+        completed: 0,
+        total: Math.max(1, daysExisted),
+        createdAt: log.habitCreatedAt,
+      };
+    }
+    if (log.completed) habitsById[log.dailyHabitId].completed++;
+  });
+
+  // Convert to by-name for display
+  const habitsByName = Object.values(habitsById).reduce((acc, habit) => {
+    acc[habit.name] = { completed: habit.completed, total: habit.total };
+    return acc;
+  }, {} as Record<string, { completed: number; total: number }>);
+
+  if (Object.keys(habitsByName).length > 0) {
+    context += '- Habit completion: ';
+    const habitSummaries = Object.entries(habitsByName).map(
+      ([name, stats]) => `${name} ${stats.completed}/${stats.total}`
+    );
+    context += habitSummaries.join(', ') + '\n';
+  }
+
+  // Daily notes summary for AI notes intelligence
+  const logsWithNotes = sortedLogs.filter(l => l.notes);
+  if (logsWithNotes.length > 0) {
+    context += '\nDAILY NOTES:\n';
+    logsWithNotes.forEach(log => {
+      const date = new Date(log.date);
+      const dateStr = date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+      context += `- ${dateStr}: "${sanitizeForAIPrompt(log.notes!, 300)}"\n`;
+    });
+  } else {
+    context += '\nDAILY NOTES: No notes logged this week.\n';
+  }
+
+  // Energy/mood correlation notes
+  const lowEnergyDays = sortedLogs.filter(l => l.energy !== undefined && l.energy < 5);
+  if (lowEnergyDays.length > 0) {
+    const lowEnergyWithMissedNutrition = lowEnergyDays.filter(l => {
+      if (!l.caloriesConsumed || !l.targetCalories) return false;
+      return Math.abs(l.caloriesConsumed - l.targetCalories) > NUTRITION_ADHERENCE_PARTIAL_THRESHOLD;
+    });
+
+    if (lowEnergyWithMissedNutrition.length > 0) {
+      const days = lowEnergyWithMissedNutrition.map(l =>
+        new Date(l.date).toLocaleDateString('en-US', { weekday: 'short' })
+      ).join('/');
+      context += `- Energy dipped below 5 on ${days} (correlated with calorie misses)\n`;
+    } else {
+      const days = lowEnergyDays.map(l =>
+        new Date(l.date).toLocaleDateString('en-US', { weekday: 'short' })
+      ).join('/');
+      context += `- Energy dipped below 5 on ${days}\n`;
+    }
+  }
+
+  return context;
+}

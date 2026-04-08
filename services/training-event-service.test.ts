@@ -47,6 +47,7 @@ import {
   countEventsInRange,
   linkSessionLogToEvent,
 } from "./training-event-service";
+import type { SessionInput } from "./training-event-service";
 
 const mockFrom = vi.mocked(supabaseAdmin.from);
 
@@ -64,7 +65,7 @@ describe("training-event-service", () => {
       const mockQuery = createMockQuery({ data: [], error: null });
       mockFrom.mockReturnValue(mockQuery as any);
 
-      const sessions = [
+      const sessions: SessionInput[] = [
         { id: "s1", name: "Push", dayOfWeek: "monday", sessionType: "training", focus: "chest", estimatedCalories: 400 },
         { id: "s2", name: "Pull", dayOfWeek: "wednesday", sessionType: "training", focus: "back", estimatedCalories: 350 },
         { id: "s3", name: "Legs", dayOfWeek: "friday", sessionType: "training", focus: "legs", estimatedCalories: 500 },
@@ -105,7 +106,7 @@ describe("training-event-service", () => {
       const mockQuery = createMockQuery({ data: [], error: null });
       mockFrom.mockReturnValue(mockQuery as any);
 
-      const sessions = [
+      const sessions: SessionInput[] = [
         { id: "s1", name: "Push", dayOfWeek: "monday", sessionType: "training" },
         { id: "s2", name: "Unassigned", sessionType: "training" }, // No dayOfWeek
       ];
@@ -121,7 +122,7 @@ describe("training-event-service", () => {
       const mockQuery = createMockQuery({ data: [], error: null });
       mockFrom.mockReturnValue(mockQuery as any);
 
-      const sessions = [
+      const sessions: SessionInput[] = [
         { id: "s1", name: "Push", dayOfWeek: "monday", sessionType: "training" },
         { id: "s2", name: "Running", dayOfWeek: "tuesday", sessionType: "external_activity" },
       ];
@@ -137,7 +138,7 @@ describe("training-event-service", () => {
       const mockQuery = createMockQuery({ data: [], error: null });
       mockFrom.mockReturnValue(mockQuery as any);
 
-      const sessions = [
+      const sessions: SessionInput[] = [
         { id: "s1", name: "AM Cardio", dayOfWeek: "monday", sessionType: "training", estimatedCalories: 200 },
         { id: "s2", name: "PM Weights", dayOfWeek: "monday", sessionType: "training", estimatedCalories: 400 },
       ];
@@ -154,7 +155,7 @@ describe("training-event-service", () => {
       const mockQuery = createMockQuery({ data: [], error: null });
       mockFrom.mockReturnValue(mockQuery as any);
 
-      const sessions = [
+      const sessions: SessionInput[] = [
         { id: "s1", name: "Unassigned", sessionType: "training" },
       ];
 

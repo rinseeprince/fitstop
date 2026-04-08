@@ -18,8 +18,8 @@ function mapRoadmapRow(row: Omit<RoadmapRow, "goal_weight" | "goal_body_fat_perc
     coachId: row.coach_id,
     name: row.name,
     longTermGoal: row.long_term_goal ?? undefined,
-    goalWeight: row.goal_weight ?? null,
-    goalBodyFatPercentage: row.goal_body_fat_percentage ?? null,
+    goalWeight: row.goal_weight ?? undefined,
+    goalBodyFatPercentage: row.goal_body_fat_percentage ?? undefined,
     status: row.status as RoadmapStatus,
     startedAt: row.started_at ?? undefined,
     targetEndDate: row.target_end_date ?? undefined,
@@ -41,11 +41,11 @@ export function mapPhaseRow(row: PhaseRow): Phase {
     startDate: row.start_date ?? undefined,
     endDate: row.end_date ?? undefined,
     durationWeeks: row.duration_weeks ?? undefined,
-    phaseGoalsSnapshot: row.phase_goals_snapshot,
-    phaseGoalWeight: row.phase_goal_weight ?? null,
-    phaseGoalBodyFatPercentage: row.phase_goal_body_fat_percentage ?? null,
+    phaseGoalsSnapshot: row.phase_goals_snapshot ?? undefined,
+    phaseGoalWeight: row.phase_goal_weight ?? undefined,
+    phaseGoalBodyFatPercentage: row.phase_goal_body_fat_percentage ?? undefined,
     coachReflection: row.coach_reflection ?? undefined,
-    phaseSummary: row.phase_summary,
+    phaseSummary: row.phase_summary ?? undefined,
     milestones: row.milestones ?? [],
     completionSeen: row.completion_seen ?? false,
     createdAt: row.created_at,
@@ -190,7 +190,13 @@ export const updateRoadmap = async (
     targetEndDate?: string;
   }
 ): Promise<Roadmap> => {
-  const updateData: Record<string, unknown> = {
+  const updateData: {
+    updated_at: string;
+    name?: string;
+    long_term_goal?: string;
+    started_at?: string;
+    target_end_date?: string;
+  } = {
     updated_at: new Date().toISOString(),
   };
   if (data.name !== undefined) updateData.name = data.name;

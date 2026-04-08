@@ -1,13 +1,14 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { getActiveTrainingPlan } from "./training-service";
 import { getWeeklyNutritionTargets } from "@/utils/nutrition-helpers";
-import { countPlannedSessions } from "@/utils/training-week-helpers";
+import { countEventsInRange } from "./training-event-service";
 import type {
   CheckInTrainingContext,
   CheckInNutritionContext,
   DayOfWeek,
   DietType,
 } from "@/types/check-in";
+import { promoteNutritionPlanIfReady } from "./nutrition-plan-service";
 
 /**
  * Get training context for the check-in form
@@ -55,9 +56,9 @@ export const getCheckInTrainingContext = async (
 export const getCheckInNutritionContext = async (
   clientId: string
 ): Promise<CheckInNutritionContext> => {
-  // TODO: nutrition_plans has client RLS SELECT policies — could use a server
-  // client here instead of supabaseAdmin. Keeping admin for now to avoid
-  // refactoring the function signature across all callers.
+  // Promote planned plan if its effective date has arrived
+  await promoteNutritionPlanIfReady(clientId);
+
   const { data: nutritionPlan, error } = await supabaseAdmin
     .from("nutrition_plans")
     .select("baseline_calories, protein_target_g, carb_target_g, fat_target_g, diet_type")
@@ -131,35 +132,25 @@ export const getCheckInTrainingPeriodStats = async (
   periodStart: string,
   periodEnd: string
 ): Promise<CheckInTrainingPeriodStats> => {
-  const plan = await getActiveTrainingPlan(clientId);
-
-  if (!plan) {
-    return { sessionsCompleted: 0, sessionsPlanned: 0 };
-  }
-
-  // Count completed sessions from session_logs in the period
-  // completed_at is the date the session was completed (YYYY-MM-DD)
-  // supabaseAdmin: client portal reading own session_logs (RLS exception 3)
-  const { count, error } = await supabaseAdmin
-    .from("session_logs")
-    .select("id", { count: "exact", head: true })
-    .eq("client_id", clientId)
-    .eq("completion_quality", "full")
-    .gte("completed_at", periodStart)
-    .lte("completed_at", periodEnd);
+  // Count completed sessions and planned events in parallel
+  const [{ count, error }, sessionsPlanned] = await Promise.all([
+    // completed_at is the date the session was completed (YYYY-MM-DD)
+    // supabaseAdmin: client portal reading own session_logs (RLS exception 3)
+    supabaseAdmin
+      .from("session_logs")
+      .select("id", { count: "exact", head: true })
+      .eq("client_id", clientId)
+      .eq("completion_quality", "full")
+      .gte("completed_at", periodStart)
+      .lte("completed_at", periodEnd),
+    countEventsInRange(clientId, periodStart, periodEnd),
+  ]);
 
   if (error) {
     console.error("Error fetching session_logs for check-in:", error.message);
   }
 
   const sessionsCompleted = count ?? 0;
-
-  // Count planned sessions in the period using same utility as coach-side hero
-  const sessionsPlanned = countPlannedSessions(
-    plan.sessions.map((s) => ({ dayOfWeek: s.dayOfWeek, sessionType: s.sessionType })),
-    periodStart,
-    periodEnd
-  );
 
   return { sessionsCompleted, sessionsPlanned };
 };

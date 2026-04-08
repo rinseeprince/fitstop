@@ -3,8 +3,7 @@ import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { getTrainingWeekStart, getTrainingWeekEnd, getTodayDateString } from "@/lib/date-helpers";
-import { getActiveTrainingPlan } from "@/services/training-service";
-import { countPlannedSessions } from "@/utils/training-week-helpers";
+import { countEventsInRange } from "@/services/training-event-service";
 
 export async function GET(
   request: NextRequest,
@@ -55,15 +54,10 @@ export async function GET(
       (r) => r.completion_quality === "full"
     ).length;
 
-    // Get planned sessions from active training plan
-    const plan = await getActiveTrainingPlan(clientId);
-    const sessions = plan?.sessions.map((s) => ({
-      dayOfWeek: s.dayOfWeek,
-      sessionType: s.sessionType,
-    })) || [];
-
-    const totalPlanned = countPlannedSessions(sessions, weekStart, weekEnd);
-    const plannedUpToToday = countPlannedSessions(sessions, weekStart, today < weekEnd ? today : weekEnd);
+    // Count planned sessions from training events (cap at today — can't miss a future session)
+    const effectiveEnd = today < weekEnd ? today : weekEnd;
+    const plannedUpToToday = await countEventsInRange(clientId, weekStart, effectiveEnd);
+    const totalPlanned = plannedUpToToday;
 
     const missed = Math.max(0, plannedUpToToday - completed);
 

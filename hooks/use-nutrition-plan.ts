@@ -23,6 +23,16 @@ type UseNutritionPlanProps = {
   onUpdate?: () => void;
 };
 
+type UpcomingPlanData = {
+  effectiveFrom: string;
+  calorieTarget: number;
+  proteinTargetG: number;
+  carbTargetG: number;
+  fatTargetG: number;
+  dietType: string;
+  dailyTargets: DailyNutritionTargets[];
+};
+
 type NutritionTargetsData = {
   calorieTarget?: number;
   proteinTargetG?: number;
@@ -33,6 +43,8 @@ type NutritionTargetsData = {
   customCalories?: number;
   dietType?: DietType;
   includeActivityBurn: boolean;
+  effectiveFrom?: string;
+  upcomingPlan?: UpcomingPlanData | null;
   dailyTargets?: DailyNutritionTargets[];
 };
 

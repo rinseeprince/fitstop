@@ -1,9 +1,9 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { calculateDailyMacros, DAYS_OF_WEEK, getTrainingDays } from "@/utils/nutrition-helpers";
-import { getTodayDateString } from "@/lib/date-helpers";
 import type { DietType } from "@/types/check-in";
 import type { TrainingPlan } from "@/types/training";
 import { recordBodyMetrics } from "@/services/body-metrics-service";
+import { getTodayDateString } from "@/lib/date-helpers";
 export type CreateNutritionPlanParams = {
   clientId: string;
   coachId: string;
@@ -30,6 +30,7 @@ export type CreateNutritionPlanParams = {
   phaseId?: string;
   coachNotes?: string;
   goalSource?: "phase" | "client";
+  effectiveFrom?: string;
 };
 
 /**
@@ -103,6 +104,7 @@ export async function createNutritionPlan(params: CreateNutritionPlanParams): Pr
       p_phase_id: params.phaseId || null,
       p_coach_notes: params.coachNotes || null,
       p_goal_source: params.goalSource || null,
+      p_effective_from: params.effectiveFrom || null,
     } as never) as unknown as { data: string | null; error: { message: string } | null };
 
   if (rpcError || !newPlanId) {
@@ -134,4 +136,54 @@ export async function createNutritionPlan(params: CreateNutritionPlanParams): Pr
   }
 
   return newPlanId;
+}
+
+/**
+ * Lazy promotion: if a planned nutrition plan's effective_from has arrived,
+ * promote it to active and archive the current active plan.
+ * Called before any read of the active nutrition plan.
+ *
+ * supabaseAdmin: system-level write for plan lifecycle management.
+ */
+export async function promoteNutritionPlanIfReady(
+  clientId: string
+): Promise<{ promoted: boolean; newPlanId?: string }> {
+  const today = getTodayDateString();
+
+  const { data: plannedPlan, error } = await supabaseAdmin
+    .from("nutrition_plans")
+    .select("id, effective_from")
+    .eq("client_id", clientId)
+    .eq("status", "planned")
+    .lte("effective_from", today)
+    .maybeSingle();
+
+  if (error || !plannedPlan) return { promoted: false };
+
+  // Archive the current active plan
+  const archiveUntil = new Date(plannedPlan.effective_from + "T00:00:00");
+  archiveUntil.setDate(archiveUntil.getDate() - 1);
+  const archiveUntilStr = archiveUntil.toISOString().split("T")[0];
+
+  await supabaseAdmin
+    .from("nutrition_plans")
+    .update({
+      status: "archived",
+      effective_until: archiveUntilStr,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("client_id", clientId)
+    .eq("status", "active");
+
+  // Promote planned → active (clear effective_until so the active plan has open-ended coverage)
+  await supabaseAdmin
+    .from("nutrition_plans")
+    .update({
+      status: "active",
+      effective_until: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", plannedPlan.id);
+
+  return { promoted: true, newPlanId: plannedPlan.id };
 }

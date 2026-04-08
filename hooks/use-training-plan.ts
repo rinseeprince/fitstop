@@ -56,7 +56,7 @@ export function useTrainingPlan({ clientId, onUpdate }: UseTrainingPlanProps) {
     fetchPlan();
   }, [fetchPlan]);
 
-  const generate = async () => {
+  const generate = async (effectiveFrom?: string | null) => {
     if (!prompt.trim() || prompt.length < 10) {
       toast({
         title: "Please provide more detail",
@@ -84,6 +84,7 @@ export function useTrainingPlan({ clientId, onUpdate }: UseTrainingPlanProps) {
           preGenerationActivities: validActivities.length > 0 ? validActivities : undefined,
           allowSameDayTraining,
           phaseId: phaseId || undefined,
+          effectiveFrom: effectiveFrom ?? undefined,
         }),
       });
 

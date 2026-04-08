@@ -12,6 +12,8 @@ import { getActiveTrainingPlan } from "./training-service";
 import { getTrainingSessionCaloriesByDay } from "@/utils/training-calorie-helpers";
 import { getExternalActivitiesForDay, calculateExternalActivityCalories } from "@/utils/nutrition-helpers";
 import { getDayOfWeekLowercase } from "./daily-logs-service";
+import { getEventForDate } from "./training-event-service";
+import { getTodayDateString } from "@/lib/date-helpers";
 
 type TodaysTrainingSession = {
   sessionId: string;
@@ -26,25 +28,13 @@ type TodaysActivity = {
 };
 
 export const getTodaysTrainingSession = async (clientId: string, date?: string): Promise<TodaysTrainingSession> => {
-  const targetDate = date ? new Date(date + 'T00:00:00') : new Date();
-  const todayDayOfWeek = getDayOfWeekLowercase(targetDate);
-
-  const trainingPlan = await getClientTrainingPlan(clientId);
-
-  if (!trainingPlan) return null;
-
-  const session = trainingPlan.sessions.find(
-    (session) =>
-      session.dayOfWeek?.toLowerCase() === todayDayOfWeek &&
-      session.sessionType === "training"
-  );
-
-  if (!session) return null;
-
+  const dateStr = date ?? getTodayDateString();
+  const event = await getEventForDate(clientId, dateStr);
+  if (!event) return null;
   return {
-    sessionId: session.id,
-    sessionName: session.name,
-    estimatedCalories: session.estimatedCalories || 0,
+    sessionId: event.trainingSessionId ?? event.id,
+    sessionName: event.sessionName,
+    estimatedCalories: event.estimatedCalories ?? 0,
   };
 };
 

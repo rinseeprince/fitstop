@@ -1,8 +1,10 @@
 /**
  * Types for day-by-day schedule generation and check-in period snapshots.
- * Used by generators (training-schedule-generator, nutrition-period-summary),
+ * Used by generators (training-event-helpers, nutrition-period-summary),
  * the snapshot service, AI prompt builder, and history APIs.
  */
+
+import type { DayOfWeek } from "@/types/check-in";
 
 // --- Training schedule types ---
 
@@ -16,7 +18,7 @@ export type TrainingDayStatus =
 
 export type ScheduleDay = {
   date: string;                    // YYYY-MM-DD
-  dayOfWeek: string;               // lowercase e.g. "monday"
+  dayOfWeek: DayOfWeek;            // lowercase e.g. "monday"
   status: TrainingDayStatus;
   plannedSessionId: string | null;
   plannedSessionName: string | null;
@@ -32,7 +34,7 @@ export type NutritionDayStatus = "hit" | "partial" | "missed" | "not_logged";
 
 export type NutritionDay = {
   date: string;                    // YYYY-MM-DD
-  dayOfWeek: string;               // lowercase
+  dayOfWeek: DayOfWeek;            // lowercase
   status: NutritionDayStatus;
   targetCalories: number | null;
   targetProteinG: number | null;

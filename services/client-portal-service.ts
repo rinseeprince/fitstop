@@ -5,6 +5,7 @@ import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
 import { buildDailyTargetsFromPlan } from "@/utils/build-daily-targets";
 import { mapClientRow, mapCheckInRow } from "@/lib/mappers";
 import { getClientTrainingPlan } from "./client-portal-training";
+import { promoteNutritionPlanIfReady } from "./nutrition-plan-service";
 
 // Create authenticated Supabase client for server-side client portal access
 // Uses regular client (not admin) to respect RLS policies
@@ -128,6 +129,10 @@ export async function getClientNutritionTargets(
   if (clientError || !clientData) return null;
 
   const includeActivityBurn = clientData.include_activity_burn ?? true;
+
+  // Promote planned plan if its effective date has arrived
+  // supabaseAdmin: system-level write for plan lifecycle (promotion uses admin internally)
+  await promoteNutritionPlanIfReady(clientId);
 
   // Read active nutrition plan from new tables
   const { data: plan, error: planError } = await supabase

@@ -2,6 +2,8 @@
  * Date utility functions for consistent date handling across the application
  */
 
+import type { DayOfWeek } from "@/types/check-in";
+
 /**
  * Returns today's date as a YYYY-MM-DD string in local timezone
  * @returns {string} Today's date in YYYY-MM-DD format
@@ -12,6 +14,17 @@ export const getTodayDateString = (): string => {
   const month = String(today.getMonth() + 1).padStart(2, '0');
   const day = String(today.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+};
+
+/**
+ * Returns tomorrow's date as a YYYY-MM-DD string in local timezone.
+ * Uses midnight-anchored Date to avoid DST edge cases.
+ */
+export const getTomorrowDateString = (): string => {
+  const now = new Date();
+  const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  todayMidnight.setDate(todayMidnight.getDate() + 1);
+  return getDateString(todayMidnight);
 };
 
 /**
@@ -94,7 +107,7 @@ export const getWeekDays = (dateString: string): string[] => {
 /**
  * Day name to JS getDay() number mapping
  */
-export const DAY_NUM: Record<string, number> = {
+export const DAY_NUM: Record<DayOfWeek | string, number> = {
   sunday: 0, monday: 1, tuesday: 2, wednesday: 3,
   thursday: 4, friday: 5, saturday: 6,
 };
@@ -102,7 +115,7 @@ export const DAY_NUM: Record<string, number> = {
 /**
  * JS getDay() number to day name mapping (reverse of DAY_NUM)
  */
-export const DAY_NAMES: Record<number, string> = {
+export const DAY_NAMES: Record<number, DayOfWeek> = {
   0: "sunday", 1: "monday", 2: "tuesday", 3: "wednesday",
   4: "thursday", 5: "friday", 6: "saturday",
 };

@@ -1,6 +1,6 @@
 import type { TrainingEvent } from "@/types/training";
 import type { ScheduleDay, TrainingDayStatus } from "@/types/schedule";
-import { DAY_NAMES } from "@/lib/date-helpers";
+import { DAY_NAMES, getTodayDateString } from "@/lib/date-helpers";
 
 /**
  * Map training events onto a list of dates to produce ScheduleDay[].
@@ -16,15 +16,24 @@ export function mapEventsToScheduleDays(
   dates: string[],
   events: TrainingEvent[]
 ): ScheduleDay[] {
+  // When multiple events exist on the same date (e.g. from backfill across plan versions),
+  // prefer the most informative: completed > partial > skipped > missed > scheduled
+  const STATUS_PRIORITY: Record<string, number> = {
+    completed: 4, partial: 3, skipped: 2, missed: 1, scheduled: 0,
+  };
+
   const eventMap = new Map<string, TrainingEvent>();
   for (const event of events) {
-    // First event per date wins (most common case: one session per day)
-    if (!eventMap.has(event.date)) {
-      eventMap.set(event.date, event);
+    const dateKey = event.date.split("T")[0];
+    const existing = eventMap.get(dateKey);
+    const eventPriority = STATUS_PRIORITY[event.status] ?? 0;
+    const existingPriority = existing ? (STATUS_PRIORITY[existing.status] ?? 0) : -1;
+    if (eventPriority > existingPriority) {
+      eventMap.set(dateKey, event);
     }
   }
 
-  const today = new Date().toISOString().split("T")[0];
+  const today = getTodayDateString();
 
   return dates.map((date) => {
     const dayNum = new Date(date + "T00:00:00").getDay();

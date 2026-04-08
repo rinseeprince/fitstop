@@ -4,6 +4,7 @@
  * No DB calls — receives data from schedule-data-service.
  */
 
+import type { DayOfWeek } from "@/types/check-in";
 import type { NutritionDay, NutritionDayStatus } from "@/types/schedule";
 import type {
   NutritionPlanWithTargets,
@@ -15,12 +16,12 @@ import {
   NUTRITION_ADHERENCE_PARTIAL_THRESHOLD,
 } from "@/lib/constants";
 
-const DAY_NAMES: Record<number, string> = {
+const DAY_NAMES: Record<number, DayOfWeek> = {
   0: "sunday", 1: "monday", 2: "tuesday", 3: "wednesday",
   4: "thursday", 5: "friday", 6: "saturday",
 };
 
-function getDayOfWeek(dateStr: string): string {
+function getDayOfWeek(dateStr: string): DayOfWeek {
   return DAY_NAMES[new Date(dateStr + "T00:00:00").getDay()];
 }
 

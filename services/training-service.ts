@@ -1,90 +1,12 @@
 import { supabaseAdmin } from "./supabase-admin";
-import type {
-  TrainingPlan,
-  TrainingSession,
-  TrainingExercise,
-  TrainingPlanHistory,
-  AIGeneratedPlan,
-  AIGeneratedSession,
-  UpdateTrainingPlanRequest,
-  UpdateSessionRequest,
-  UpdateExerciseRequest,
-  AddSessionRequest,
-  AddExerciseRequest,
-  ReorderSessionItem,
-} from "@/types/training";
-import type { ActivityMetadata } from "@/types/external-activity";
-import type { TrainingExerciseRow, TrainingSessionRow, TrainingPlanRow } from "@/lib/database-helpers";
+import type { TrainingPlan, TrainingSession, TrainingExercise, AIGeneratedPlan, UpdateTrainingPlanRequest } from "@/types/training";
+import type { TrainingPlanUpdate } from "@/lib/database-helpers";
+import { mapExerciseRow, mapSessionRow, mapPlanRow } from "./training-mappers";
 
-// Map database row to TrainingExercise
-const mapExerciseRow = (row: TrainingExerciseRow): TrainingExercise => ({
-  id: row.id,
-  sessionId: row.session_id,
-  name: row.name,
-  orderIndex: row.order_index,
-  sets: row.sets,
-  repsMin: row.reps_min ?? undefined,
-  repsMax: row.reps_max ?? undefined,
-  repsTarget: row.reps_target ?? undefined,
-  rpeTarget: row.rpe_target ?? undefined,
-  percentage1rm: row.percentage_1rm ?? undefined,
-  tempo: row.tempo ?? undefined,
-  restSeconds: row.rest_seconds ?? undefined,
-  notes: row.notes ?? undefined,
-  supersetGroup: row.superset_group ?? undefined,
-  isWarmup: row.is_warmup || false,
-  createdAt: row.created_at,
-  updatedAt: row.updated_at,
-});
-
-// Map database row to TrainingSession
-const mapSessionRow = (row: TrainingSessionRow, exercises: TrainingExercise[] = []): TrainingSession => ({
-  id: row.id,
-  planId: row.plan_id,
-  name: row.name,
-  dayOfWeek: row.day_of_week ?? undefined,
-  orderIndex: row.order_index,
-  focus: row.focus ?? undefined,
-  notes: row.notes ?? undefined,
-  estimatedDurationMinutes: row.estimated_duration_minutes ?? undefined,
-  exercises,
-  sessionType: (row.session_type ?? "training") as "training" | "external_activity",
-  activityMetadata: (row.activity_metadata ?? undefined) as ActivityMetadata | undefined,
-  estimatedCalories: row.estimated_calories ?? undefined,
-  caloriesCalculatedAt: row.calories_calculated_at ?? undefined,
-  createdAt: row.created_at,
-  updatedAt: row.updated_at,
-});
-
-// Map database row to TrainingPlan
-const mapPlanRow = (row: TrainingPlanRow, sessions: TrainingSession[] = []): TrainingPlan => ({
-  id: row.id,
-  clientId: row.client_id,
-  coachId: row.coach_id,
-  name: row.name,
-  description: row.description ?? undefined,
-  status: row.status as "draft" | "active" | "archived",
-  coachPrompt: row.coach_prompt ?? undefined,
-  aiResponseRaw: row.ai_response_raw ?? undefined,
-  splitType: row.split_type as "push_pull_legs" | "upper_lower" | "full_body" | "bro_split" | "push_pull" | "custom",
-  frequencyPerWeek: row.frequency_per_week,
-  programDurationWeeks: row.program_duration_weeks ?? undefined,
-  clientWeightKg: row.client_weight_kg ?? undefined,
-  clientBodyFatPercentage: row.client_body_fat_percentage ?? undefined,
-  clientGoalWeightKg: row.client_goal_weight_kg ?? undefined,
-  clientTdee: row.client_tdee ?? undefined,
-  avgMood: row.avg_mood ?? undefined,
-  avgEnergy: row.avg_energy ?? undefined,
-  avgSleep: row.avg_sleep ?? undefined,
-  avgStress: row.avg_stress ?? undefined,
-  recentAdherencePercentage: row.recent_adherence_percentage ?? undefined,
-  effectiveFrom: row.effective_from ?? undefined,
-  effectiveUntil: row.effective_until ?? undefined,
-  sessions,
-  createdAt: row.created_at,
-  updatedAt: row.updated_at,
-  deletedAt: row.deleted_at ?? undefined,
-});
+// Re-export moved functions so existing imports continue to work
+export { updateSession, addSession, deleteSession, replaceSessionExercises, getSessionWithExercises, insertTrainingSessions, reorderSessions, updateSessionCalories } from "./training-session-service";
+export { updateExercise, addExercise, deleteExercise } from "./training-exercise-service";
+export { saveTrainingPlanHistory, getTrainingPlanHistory } from "./training-plan-history-service";
 
 // Create a new training plan with sessions and exercises
 export const createTrainingPlan = async (
@@ -209,11 +131,9 @@ const fetchSessionsWithExercises = async (planId: string): Promise<TrainingSessi
     .order("order_index", { ascending: true });
 
   if (sessionError) throw new Error(`Failed to fetch sessions: ${sessionError.message}`);
-
   const sessionList = sessionRows || [];
   if (sessionList.length === 0) return [];
 
-  // Fetch all exercises in one query (fixes N+1)
   const sessionIds = sessionList.map((s) => s.id);
   const { data: exerciseRows, error: exerciseError } = await supabaseAdmin
     .from("training_exercises")
@@ -223,8 +143,6 @@ const fetchSessionsWithExercises = async (planId: string): Promise<TrainingSessi
     .order("order_index", { ascending: true });
 
   if (exerciseError) throw new Error(`Failed to fetch exercises: ${exerciseError.message}`);
-
-  // Group exercises by session_id
   const exercisesBySession = new Map<string, TrainingExercise[]>();
   for (const row of exerciseRows || []) {
     const sessionId = row.session_id;
@@ -253,7 +171,6 @@ export const getActiveTrainingPlan = async (clientId: string): Promise<TrainingP
     .single();
 
   if (planError || !planRow) return null;
-
   const sessions = await fetchSessionsWithExercises(planRow.id);
   return mapPlanRow(planRow, sessions);
 };
@@ -276,7 +193,6 @@ export const getTrainingPlanForDate = async (
     .maybeSingle();
 
   if (planError || !planRow) return null;
-
   const sessions = await fetchSessionsWithExercises(planRow.id);
   return mapPlanRow(planRow, sessions);
 };
@@ -288,9 +204,7 @@ export const getTrainingPlanById = async (planId: string): Promise<TrainingPlan 
     .select("*")
     .eq("id", planId)
     .single();
-
   if (planError || !planRow) return null;
-
   const sessions = await fetchSessionsWithExercises(planId);
   return mapPlanRow(planRow, sessions);
 };
@@ -300,7 +214,7 @@ export const updateTrainingPlan = async (
   planId: string,
   updates: UpdateTrainingPlanRequest
 ): Promise<TrainingPlan> => {
-  const updateData: any = { updated_at: new Date().toISOString() };
+  const updateData: Partial<TrainingPlanUpdate> = { updated_at: new Date().toISOString() };
 
   if (updates.name !== undefined) updateData.name = updates.name;
   if (updates.description !== undefined) updateData.description = updates.description;
@@ -383,415 +297,3 @@ export const createTrainingPlanAtomic = async (params: {
   return newPlanId as string;
 };
 
-// Insert sessions and exercises for an existing plan row
-export const insertTrainingSessions = async (
-  planId: string,
-  sessions: AIGeneratedSession[]
-): Promise<TrainingSession[]> => {
-  const result: TrainingSession[] = [];
-
-  for (let i = 0; i < sessions.length; i++) {
-    const sessionData = sessions[i];
-
-    const { data: sessionRow, error: sessionError } = await supabaseAdmin
-      .from("training_sessions")
-      .insert({
-        plan_id: planId,
-        name: sessionData.name,
-        day_of_week: sessionData.dayOfWeek || null,
-        order_index: i,
-        focus: sessionData.focus || null,
-        notes: sessionData.notes || null,
-        estimated_duration_minutes: sessionData.estimatedDurationMinutes || null,
-      })
-      .select()
-      .single();
-
-    if (sessionError || !sessionRow) throw new Error(`Failed to create session: ${sessionError?.message || "No data returned"}`);
-
-    const exercises: TrainingExercise[] = [];
-
-    for (let j = 0; j < sessionData.exercises.length; j++) {
-      const exerciseData = sessionData.exercises[j];
-
-      const { data: exerciseRow, error: exerciseError } = await supabaseAdmin
-        .from("training_exercises")
-        .insert({
-          session_id: sessionRow.id,
-          name: exerciseData.name,
-          order_index: j,
-          sets: exerciseData.sets,
-          reps_min: exerciseData.repsMin || null,
-          reps_max: exerciseData.repsMax || null,
-          reps_target: exerciseData.repsTarget || null,
-          rpe_target: exerciseData.rpeTarget || null,
-          percentage_1rm: exerciseData.percentage1rm || null,
-          tempo: exerciseData.tempo || null,
-          rest_seconds: exerciseData.restSeconds || null,
-          notes: exerciseData.notes || null,
-          superset_group: exerciseData.supersetGroup || null,
-          is_warmup: exerciseData.isWarmup || false,
-        })
-        .select()
-        .single();
-
-      if (exerciseError || !exerciseRow) throw new Error(`Failed to create exercise: ${exerciseError?.message || "No data returned"}`);
-
-      exercises.push(mapExerciseRow(exerciseRow));
-    }
-
-    result.push(mapSessionRow(sessionRow, exercises));
-  }
-
-  return result;
-};
-
-// Update session
-export const updateSession = async (
-  sessionId: string,
-  updates: UpdateSessionRequest
-): Promise<TrainingSession> => {
-  const updateData: any = { updated_at: new Date().toISOString() };
-
-  if (updates.name !== undefined) updateData.name = updates.name;
-  if (updates.dayOfWeek !== undefined) updateData.day_of_week = updates.dayOfWeek;
-  if (updates.orderIndex !== undefined) updateData.order_index = updates.orderIndex;
-  if (updates.focus !== undefined) updateData.focus = updates.focus;
-  if (updates.notes !== undefined) updateData.notes = updates.notes;
-  if (updates.estimatedDurationMinutes !== undefined)
-    updateData.estimated_duration_minutes = updates.estimatedDurationMinutes;
-
-  const { data, error } = await supabaseAdmin
-    .from("training_sessions")
-    .update(updateData)
-    .eq("id", sessionId)
-    .select()
-    .single();
-
-  if (error) throw new Error(`Failed to update session: ${error.message}`);
-
-  const { data: exercises } = await supabaseAdmin
-    .from("training_exercises")
-    .select("*")
-    .eq("session_id", sessionId)
-    .eq("is_active", true)
-    .order("order_index", { ascending: true });
-
-  return mapSessionRow(data, (exercises || []).map(mapExerciseRow));
-};
-
-// Add session to plan
-export const addSession = async (
-  planId: string,
-  session: AddSessionRequest
-): Promise<TrainingSession> => {
-  // Get max order index from active sessions
-  const { data: existingSessions } = await supabaseAdmin
-    .from("training_sessions")
-    .select("order_index")
-    .eq("plan_id", planId)
-    .eq("is_active", true)
-    .order("order_index", { ascending: false })
-    .limit(1);
-
-  const nextOrderIndex = existingSessions?.[0]?.order_index !== undefined
-    ? existingSessions[0].order_index + 1
-    : 0;
-
-  const { data, error } = await supabaseAdmin
-    .from("training_sessions")
-    .insert({
-      plan_id: planId,
-      name: session.name,
-      day_of_week: session.dayOfWeek || null,
-      order_index: nextOrderIndex,
-      focus: session.focus || null,
-      notes: session.notes || null,
-      estimated_duration_minutes: session.estimatedDurationMinutes || null,
-    })
-    .select()
-    .single();
-
-  if (error) throw new Error(`Failed to add session: ${error.message}`);
-
-  return mapSessionRow(data, []);
-};
-
-// Soft-delete session (and its exercises)
-export const deleteSession = async (sessionId: string): Promise<void> => {
-  const { error } = await supabaseAdmin
-    .from("training_sessions")
-    .update({ is_active: false, updated_at: new Date().toISOString() })
-    .eq("id", sessionId);
-
-  if (error) throw new Error(`Failed to delete session: ${error.message}`);
-
-  // Also soft-delete child exercises
-  await supabaseAdmin
-    .from("training_exercises")
-    .update({ is_active: false, updated_at: new Date().toISOString() })
-    .eq("session_id", sessionId);
-};
-
-// Update exercise
-export const updateExercise = async (
-  exerciseId: string,
-  updates: UpdateExerciseRequest
-): Promise<TrainingExercise> => {
-  const updateData: any = { updated_at: new Date().toISOString() };
-
-  if (updates.name !== undefined) updateData.name = updates.name;
-  if (updates.sets !== undefined) updateData.sets = updates.sets;
-  if (updates.repsMin !== undefined) updateData.reps_min = updates.repsMin;
-  if (updates.repsMax !== undefined) updateData.reps_max = updates.repsMax;
-  if (updates.repsTarget !== undefined) updateData.reps_target = updates.repsTarget;
-  if (updates.rpeTarget !== undefined) updateData.rpe_target = updates.rpeTarget;
-  if (updates.percentage1rm !== undefined) updateData.percentage_1rm = updates.percentage1rm;
-  if (updates.tempo !== undefined) updateData.tempo = updates.tempo;
-  if (updates.restSeconds !== undefined) updateData.rest_seconds = updates.restSeconds;
-  if (updates.notes !== undefined) updateData.notes = updates.notes;
-  if (updates.supersetGroup !== undefined) updateData.superset_group = updates.supersetGroup;
-  if (updates.isWarmup !== undefined) updateData.is_warmup = updates.isWarmup;
-
-  const { data, error } = await supabaseAdmin
-    .from("training_exercises")
-    .update(updateData)
-    .eq("id", exerciseId)
-    .select()
-    .single();
-
-  if (error) throw new Error(`Failed to update exercise: ${error.message}`);
-
-  return mapExerciseRow(data);
-};
-
-// Add exercise to session
-export const addExercise = async (
-  sessionId: string,
-  exercise: AddExerciseRequest
-): Promise<TrainingExercise> => {
-  // Get max order index from active exercises
-  const { data: existingExercises } = await supabaseAdmin
-    .from("training_exercises")
-    .select("order_index")
-    .eq("session_id", sessionId)
-    .eq("is_active", true)
-    .order("order_index", { ascending: false })
-    .limit(1);
-
-  const nextOrderIndex = existingExercises?.[0]?.order_index !== undefined
-    ? existingExercises[0].order_index + 1
-    : 0;
-
-  const { data, error } = await supabaseAdmin
-    .from("training_exercises")
-    .insert({
-      session_id: sessionId,
-      name: exercise.name,
-      order_index: nextOrderIndex,
-      sets: exercise.sets,
-      reps_min: exercise.repsMin || null,
-      reps_max: exercise.repsMax || null,
-      reps_target: exercise.repsTarget || null,
-      rpe_target: exercise.rpeTarget || null,
-      percentage_1rm: exercise.percentage1rm || null,
-      tempo: exercise.tempo || null,
-      rest_seconds: exercise.restSeconds || null,
-      notes: exercise.notes || null,
-      superset_group: exercise.supersetGroup || null,
-      is_warmup: exercise.isWarmup || false,
-    })
-    .select()
-    .single();
-
-  if (error) throw new Error(`Failed to add exercise: ${error.message}`);
-
-  return mapExerciseRow(data);
-};
-
-// Soft-delete exercise
-export const deleteExercise = async (exerciseId: string): Promise<void> => {
-  const { error } = await supabaseAdmin
-    .from("training_exercises")
-    .update({ is_active: false, updated_at: new Date().toISOString() })
-    .eq("id", exerciseId);
-
-  if (error) throw new Error(`Failed to delete exercise: ${error.message}`);
-};
-
-// Replace all exercises for a session
-export const replaceSessionExercises = async (
-  sessionId: string,
-  exercises: AddExerciseRequest[]
-): Promise<TrainingExercise[]> => {
-  // Soft-delete existing exercises
-  const { error: deactivateError } = await supabaseAdmin
-    .from("training_exercises")
-    .update({ is_active: false, updated_at: new Date().toISOString() })
-    .eq("session_id", sessionId)
-    .eq("is_active", true);
-
-  if (deactivateError) throw new Error(`Failed to deactivate existing exercises: ${deactivateError.message}`);
-
-  // Insert new exercises
-  const newExercises: TrainingExercise[] = [];
-  for (let i = 0; i < exercises.length; i++) {
-    const exercise = exercises[i];
-    const { data, error } = await supabaseAdmin
-      .from("training_exercises")
-      .insert({
-        session_id: sessionId,
-        name: exercise.name,
-        order_index: i,
-        sets: exercise.sets,
-        reps_min: exercise.repsMin || null,
-        reps_max: exercise.repsMax || null,
-        reps_target: exercise.repsTarget || null,
-        rpe_target: exercise.rpeTarget || null,
-        percentage_1rm: exercise.percentage1rm || null,
-        tempo: exercise.tempo || null,
-        rest_seconds: exercise.restSeconds || null,
-        notes: exercise.notes || null,
-        superset_group: exercise.supersetGroup || null,
-        is_warmup: exercise.isWarmup || false,
-      })
-      .select()
-      .single();
-
-    if (error) throw new Error(`Failed to insert exercise: ${error.message}`);
-    newExercises.push(mapExerciseRow(data));
-  }
-
-  return newExercises;
-};
-
-// Save training plan to history
-export const saveTrainingPlanHistory = async (
-  clientId: string,
-  planId: string,
-  plan: TrainingPlan,
-  coachPrompt: string,
-  aiResponseRaw: string,
-  coachId: string,
-  regenerationReason?: string
-): Promise<void> => {
-  const { error } = await supabaseAdmin.from("training_plan_history").insert({
-    client_id: clientId,
-    plan_id: planId,
-    coach_prompt: coachPrompt,
-    ai_response_raw: aiResponseRaw,
-    plan_snapshot: plan,
-    client_metrics_snapshot: {
-      weightKg: plan.clientWeightKg,
-      bodyFatPercentage: plan.clientBodyFatPercentage,
-      goalWeightKg: plan.clientGoalWeightKg,
-      tdee: plan.clientTdee,
-    },
-    check_in_data_snapshot: {
-      avgMood: plan.avgMood,
-      avgEnergy: plan.avgEnergy,
-      avgSleep: plan.avgSleep,
-      avgStress: plan.avgStress,
-      adherencePercentage: plan.recentAdherencePercentage,
-    },
-    regeneration_reason: regenerationReason || "initial",
-    created_by_coach_id: coachId,
-  });
-
-  if (error) console.error("Failed to save training plan history:", error);
-};
-
-// Get training plan history
-export const getTrainingPlanHistory = async (clientId: string): Promise<TrainingPlanHistory[]> => {
-  const { data, error } = await supabaseAdmin
-    .from("training_plan_history")
-    .select("*")
-    .eq("client_id", clientId)
-    .order("created_at", { ascending: false });
-
-  if (error) throw new Error(`Failed to fetch history: ${error.message}`);
-
-  return (data || []).map((row: any) => ({
-    id: row.id,
-    clientId: row.client_id,
-    planId: row.plan_id,
-    coachPrompt: row.coach_prompt,
-    aiResponseRaw: row.ai_response_raw,
-    planSnapshot: row.plan_snapshot,
-    clientMetricsSnapshot: row.client_metrics_snapshot,
-    checkInDataSnapshot: row.check_in_data_snapshot,
-    regenerationReason: row.regeneration_reason,
-    createdByCoachId: row.created_by_coach_id,
-    createdAt: row.created_at,
-  }));
-};
-
-// Bulk reorder sessions (update day and order in batch)
-export const reorderSessions = async (
-  planId: string,
-  updates: ReorderSessionItem[]
-): Promise<void> => {
-  const timestamp = new Date().toISOString();
-
-  // Update each session's day and order
-  for (const update of updates) {
-    const { error } = await supabaseAdmin
-      .from("training_sessions")
-      .update({
-        day_of_week: update.dayOfWeek,
-        order_index: update.orderIndex,
-        updated_at: timestamp,
-      })
-      .eq("id", update.sessionId)
-      .eq("plan_id", planId);
-
-    if (error) {
-      throw new Error(`Failed to reorder session ${update.sessionId}: ${error.message}`);
-    }
-  }
-};
-
-// Update session estimated calories
-export const updateSessionCalories = async (
-  sessionId: string,
-  estimatedCalories: number
-): Promise<void> => {
-  const { error } = await supabaseAdmin
-    .from("training_sessions")
-    .update({
-      estimated_calories: estimatedCalories,
-      calories_calculated_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", sessionId);
-
-  if (error) {
-    throw new Error(`Failed to update session calories: ${error.message}`);
-  }
-};
-
-// Get session with exercises by ID
-export const getSessionWithExercises = async (
-  sessionId: string
-): Promise<TrainingSession | null> => {
-  const { data: sessionRow, error: sessionError } = await supabaseAdmin
-    .from("training_sessions")
-    .select("*")
-    .eq("id", sessionId)
-    .eq("is_active", true)
-    .single();
-
-  if (sessionError || !sessionRow) return null;
-
-  const { data: exerciseRows } = await supabaseAdmin
-    .from("training_exercises")
-    .select("*")
-    .eq("session_id", sessionId)
-    .eq("is_active", true)
-    .order("order_index", { ascending: true });
-
-  return mapSessionRow(
-    sessionRow,
-    (exerciseRows || []).map(mapExerciseRow)
-  );
-};

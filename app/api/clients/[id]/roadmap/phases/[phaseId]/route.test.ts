@@ -85,10 +85,10 @@ const mockPhase = {
   startDate: "2024-01-01",
   endDate: "2024-02-01",
   durationWeeks: 4,
-  phaseGoalsSnapshot: null,
-  phaseGoalWeight: null,
-  phaseGoalBodyFatPercentage: null,
-  phaseSummary: null,
+  phaseGoalsSnapshot: undefined,
+  phaseGoalWeight: undefined,
+  phaseGoalBodyFatPercentage: undefined,
+  phaseSummary: undefined,
   milestones: [],
   completionSeen: false,
   createdAt: "2024-01-01T00:00:00Z",
@@ -276,7 +276,7 @@ describe("/api/clients/[id]/roadmap/phases/[phaseId]", () => {
     it("clears goal override with null on a planned phase", async () => {
       vi.mocked(updatePhase).mockResolvedValue({
         ...mockPhase,
-        phaseGoalWeight: null,
+        phaseGoalWeight: undefined,
       });
 
       const response = await PUT(
