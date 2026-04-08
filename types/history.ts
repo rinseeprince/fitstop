@@ -10,6 +10,7 @@ export type NutritionHistoryRow = {
   target_fat_g: number | null;
   calorie_surplus_deficit: number | null;
   nutrition_adherence: "hit" | "partial" | "missed" | null;
+  is_logged?: boolean;
 };
 
 export type WellnessHistoryRow = {
@@ -18,6 +19,7 @@ export type WellnessHistoryRow = {
   energy: number | null;  // 1-10
   sleep: number | null;   // 1-10
   stress: number | null;  // 1-10
+  is_logged?: boolean;
 };
 
 export type BodyMetricsHistoryRow = {
@@ -60,6 +62,7 @@ export type TrainingHistoryRow = {
   is_alternative: boolean;
   completion_quality: "full" | "partial" | "skipped" | null;
   notes: string | null;
+  is_logged?: boolean;
 };
 
 export type TrainingWeekSummary = {

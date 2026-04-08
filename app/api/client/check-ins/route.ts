@@ -10,6 +10,8 @@ import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { clientSubmitCheckInSchema } from "@/lib/validations/check-in";
 import { calculateCheckInPeriod } from "@/lib/date-utils";
 import { supabaseAdmin } from "@/services/supabase-admin";
+import { generateAndSaveCheckInSnapshot } from "@/services/check-in-snapshot-service";
+import { captureApiError } from "@/lib/error-handler";
 import type { SubmitCheckInResponse } from "@/types/check-in";
 
 /**
@@ -254,6 +256,10 @@ export async function POST(request: NextRequest) {
         .from("check_ins")
         .update({ period_start: periodStart, period_end: periodEnd })
         .eq("id", checkInId);
+
+      // Generate and freeze period snapshot (awaited so AI can use it)
+      await generateAndSaveCheckInSnapshot(checkInId, clientId, periodStart, periodEnd)
+        .catch((err) => captureApiError(err, { action: "check-in-snapshot-generation", checkInId, clientId }));
     }
 
     // Update client metadata

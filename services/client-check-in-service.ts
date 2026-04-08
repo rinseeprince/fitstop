@@ -18,6 +18,7 @@ import { getHabitLogs } from "@/services/daily-habits-service";
 import { getNutritionSummaryForPeriod } from "@/services/weekly-nutrition-service";
 import { calculateCheckInPeriod } from "@/lib/date-utils";
 import type { SubmitCheckInRequest, CheckInFormData, Client } from "@/types/check-in";
+import type { PeriodSnapshot } from "@/types/schedule";
 
 /**
  * Triggers AI summary generation for a completed check-in
@@ -90,6 +91,9 @@ export async function triggerAISummaryGeneration(
       weeklySummary = null;
     }
 
+    // Read period snapshot if it was generated during submission
+    const periodSnapshot = currentCheckIn.periodSnapshot as PeriodSnapshot | null ?? null;
+
     // Generate AI summary with enhanced data including daily tracking
     const aiSummary = await generateCheckInSummary(
       currentCheckIn,
@@ -99,7 +103,8 @@ export async function triggerAISummaryGeneration(
       habitLogs,
       startDate,
       endDate,
-      weeklySummary
+      weeklySummary,
+      periodSnapshot
     );
 
     // Update check-in with AI summary (v2 format)

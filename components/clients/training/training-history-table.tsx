@@ -31,8 +31,22 @@ function renderDash() {
   return <span className="text-[#93b0b4]">—</span>;
 }
 
-function renderStatus(quality: TrainingHistoryRow["completion_quality"]) {
-  switch (quality) {
+function renderStatus(row: TrainingHistoryRow) {
+  // Unlogged rows: show "Not Logged" or "Rest"
+  if (row.is_logged === false) {
+    if (row.session_name) {
+      return (
+        <span className="inline-flex items-center px-2 py-0.5 rounded-[6px] text-xs font-medium bg-[#f0f4f4] text-[#93b0b4]">
+          Not Logged
+        </span>
+      );
+    }
+    return (
+      <span className="text-xs text-[#b8cfd3]">Rest</span>
+    );
+  }
+
+  switch (row.completion_quality) {
     case "full":
       return (
         <span className="inline-flex items-center px-2 py-0.5 rounded-[6px] text-xs font-medium bg-[rgba(13,148,136,0.08)] text-[#0d9488]">
@@ -111,7 +125,7 @@ export function TrainingHistoryTable({ clientId }: Props) {
         key: "date",
         label: "Date",
         render: (_v, row) => (
-          <span className="font-mono-display text-[#93b0b4]">
+          <span className={`font-mono-display ${row.is_logged === false ? "text-[#b8cfd3]" : "text-[#93b0b4]"}`}>
             {formatDate(row.date)}
           </span>
         ),
@@ -120,7 +134,9 @@ export function TrainingHistoryTable({ clientId }: Props) {
         key: "day",
         label: "Day",
         render: (_v, row) => (
-          <span className="text-[#0c1a1e] font-medium">{formatDay(row.date)}</span>
+          <span className={row.is_logged === false ? "text-[#b8cfd3] font-medium" : "text-[#0c1a1e] font-medium"}>
+            {formatDay(row.date)}
+          </span>
         ),
       },
       {
@@ -128,7 +144,9 @@ export function TrainingHistoryTable({ clientId }: Props) {
         label: "Session",
         render: (_v, row) =>
           row.session_name ? (
-            <span className="text-[#0c1a1e]">{row.session_name}</span>
+            <span className={row.is_logged === false ? "text-[#b8cfd3]" : "text-[#0c1a1e]"}>
+              {row.session_name}
+            </span>
           ) : (
             renderDash()
           ),
@@ -137,7 +155,7 @@ export function TrainingHistoryTable({ clientId }: Props) {
         key: "completion_quality",
         label: "Status",
         chartType: "bar" as const,
-        render: (_v, row) => renderStatus(row.completion_quality),
+        render: (_v, row) => renderStatus(row),
       },
       {
         key: "notes",

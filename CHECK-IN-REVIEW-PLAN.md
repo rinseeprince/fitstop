@@ -387,6 +387,104 @@ After implementing, run `npx tsc --noEmit` to verify no type errors. Run `npx vi
 
 ---
 
+## Session 3b: Unlogged Day Visibility in Data Pages
+
+**Goal:** Surface unlogged days as explicit rows in the Training, Nutrition, and Wellness data tables. After this session: coaches see every day in the period — logged or not — so client consistency is immediately visible without mental gap-counting.
+
+### Why this matters
+Currently all three data pages only show rows where the client logged something. A client who logged 3 of 7 days shows 3 rows and looks "complete." The coach has no visibility into consistency unless they manually count dates. Making gaps explicit turns the data tables into a consistency signal, not just a log viewer.
+
+### What gets done
+- Update the training history API to return a full day-by-day schedule (using `generateTrainingSchedule` from Session 3) instead of only logged entries, for the selected week/period
+- Update the nutrition history API to return all days in the period (using `generateNutritionSummary` from Session 3), filling unlogged days with plan targets and blank actuals
+- Update the wellness history API to return all days in the period, inserting placeholder rows for unlogged days
+- Update `training-history-table.tsx` to render unlogged rows: show date, day, prescribed session name, "Not Logged" status badge (dimmed styling)
+- Update `nutrition-history-table.tsx` to render unlogged rows: show date, day, target macros, dashes for actuals, "Not Logged" adherence badge (dimmed styling)
+- Update `wellness-history-table.tsx` to render unlogged rows: show date, day, dashes for all metrics (dimmed styling)
+- All unlogged rows use a consistent dimmed/muted visual treatment (e.g. `text-muted-foreground`, slightly reduced opacity) so they're clearly distinguishable from logged entries
+
+### Design notes
+- Date range scoping: use the current training week (derived from `expected_check_in_day`) as the default view window, matching the existing summary strip logic. Paging back shows previous full weeks.
+- Sort order remains newest-first. Unlogged days interleave naturally by date.
+- Pagination stays at 10 rows per page. A full week (7 days) fits in one page.
+- For training: reuse `generateTrainingSchedule()` directly — it already returns `missed`, `rest`, and all other statuses. Map these to table rows.
+- For nutrition: reuse `generateNutritionSummary()` — days with `adherence: "not_logged"` become the dimmed rows showing only the target side.
+- For wellness: no generator exists yet — query `daily_logs` for the period, then fill date gaps with placeholder rows. Simpler since wellness has no "prescribed" concept.
+
+### How to test
+1. Open a client's Training Data tab who has logged 3 of 5 prescribed sessions this week — verify all 7 days appear, with 2 missed sessions showing "Not Logged" and rest days showing "Rest"
+2. Open Nutrition Data tab for same client — verify all 7 days appear, unlogged days show target macros with dashes for actuals
+3. Open Wellness Data tab — verify all days in the period appear, unlogged days show dashes for mood/energy/sleep/stress
+4. Verify unlogged rows are visually dimmed/muted compared to logged rows
+5. Page back to a previous week — verify the full week renders with correct logged/unlogged mix
+6. Verify summary strip stats remain unchanged (they already compute from logged data only)
+
+### Claude Code prompt
+
+```
+Read CHECK-IN-REVIEW-PLAN.md for full context, then read CONVENTIONS.md and docs/ARCHITECTURE.md.
+
+This is Session 3b of 5. Surface unlogged days in the Training, Nutrition, and Wellness data tables so coaches can see client logging consistency at a glance.
+
+**Read first:**
+- `utils/training-schedule-generator.ts` - `generateTrainingSchedule()` (built in Session 3)
+- `utils/nutrition-period-summary.ts` - `generateNutritionSummary()` (built in Session 3)
+- `components/clients/training/training-history-table.tsx` - current training data table
+- `components/clients/nutrition/nutrition-history-table.tsx` - current nutrition data table
+- `components/clients/wellness/wellness-history-table.tsx` - current wellness data table
+- `app/api/clients/[id]/history/training/route.ts` - training history API
+- `app/api/clients/[id]/history/nutrition/route.ts` - nutrition history API
+- `app/api/clients/[id]/history/wellness/route.ts` - wellness history API
+- `hooks/use-history-data.ts` - shared history data hook
+- `types/history.ts` - history row types
+- `lib/date-helpers.ts` - `getTrainingWeekStart()`, `getTrainingWeekEnd()`
+
+**1. Update Training History API**
+In `app/api/clients/[id]/history/training/route.ts`:
+- Accept optional `weekStart` and `weekEnd` query params (default to current training week from `expected_check_in_day`)
+- When week params are provided, call `generateTrainingSchedule(clientId, weekStart, weekEnd)` and map the result to `TrainingHistoryRow[]`
+- Map schedule statuses: `completed`/`completed_swap`/`partial` → logged rows (as today), `missed` → row with prescribed session name + status "not_logged", `rest` → row with status "rest", `rest_trained` → logged row with status "rest_trained"
+- Add `is_logged: boolean` field to `TrainingHistoryRow` in `types/history.ts` so the frontend can style accordingly
+- Maintain backward compat: if no week params, fall back to existing paginated behavior
+
+**2. Update Nutrition History API**
+In `app/api/clients/[id]/history/nutrition/route.ts`:
+- Accept optional `weekStart` and `weekEnd` query params
+- When provided, call `generateNutritionSummary(clientId, weekStart, weekEnd)` and map to `NutritionHistoryRow[]`
+- Unlogged days (`adherence: "not_logged"`) get target macros populated but actuals as null
+- Add `is_logged: boolean` field to `NutritionHistoryRow` in `types/history.ts`
+
+**3. Update Wellness History API**
+In `app/api/clients/[id]/history/wellness/route.ts`:
+- Accept optional `weekStart` and `weekEnd` query params
+- Query `daily_logs` for the client in that range
+- Generate the full date range, inserting placeholder rows (all nulls) for dates with no daily log
+- Add `is_logged: boolean` field to `WellnessHistoryRow` in `types/history.ts`
+
+**4. Update Training History Table**
+In `components/clients/training/training-history-table.tsx`:
+- Pass `weekStart`/`weekEnd` params to the API via `useHistoryData` hook
+- Render unlogged rows: date, day, prescribed session name (from the schedule), "Not Logged" badge or "Rest" badge
+- Apply dimmed styling to unlogged rows: `text-muted-foreground` text, consider slightly lower opacity or a dashed left border
+- "Not Logged" badge: use a neutral/muted variant (not red — it's informational, not an error)
+- "Rest" rows: even more subtle — lighter text, no badge needed, just "Rest" label
+
+**5. Update Nutrition History Table**
+In `components/clients/nutrition/nutrition-history-table.tsx`:
+- Same pattern: pass week params, render unlogged rows with target macros + dashes for actuals
+- "Not Logged" adherence badge in muted style
+- Surplus/Deficit column shows dash for unlogged days
+
+**6. Update Wellness History Table**
+In `components/clients/wellness/wellness-history-table.tsx`:
+- Same pattern: pass week params, render unlogged rows with dashes for all metric columns
+- Dimmed row styling consistent with training and nutrition tables
+
+After implementing, run `npx tsc --noEmit` to verify no type errors. Run `npx vitest run`. Commit when done.
+```
+
+---
+
 ## Session 4: Check-Ins Tab (List + Detail Views)
 
 **Goal:** Build the new "Check-Ins" tab in the client sidebar with list and detail views. The detail view reads from `period_snapshot` for historical accuracy. After this session you can test: navigating to the tab, filtering check-ins, clicking into a detail view with full client-submitted data that survives plan changes.
@@ -589,7 +687,8 @@ After implementing, run `npx tsc --noEmit` to verify no type errors. Check that 
 | 1 | Bug fixes + notifications | KPI shows 4/4, client names correct, bell/toast work | Nothing |
 | 2 | Training plan versioning | Plans have date ranges, atomic replacement works | Nothing |
 | 3 | Schedule generator + snapshots | Day-by-day grid generated, snapshot frozen at submission | Session 2 |
+| 3b | Unlogged day visibility in data pages | All 7 days show in training/nutrition/wellness tables, gaps explicit | Session 3 |
 | 4 | Check-Ins tab (list + detail) | New tab renders, reads from snapshot, all client data visible | Session 3 |
 | 5 | Dashboard + roadmap enrichment | Queue card works, phase table shows BF%/workouts/calories from snapshots | Session 3 |
 
-Sessions 1 and 2 can run in parallel (no dependencies). Sessions 4 and 5 can run in parallel after Session 3.
+Sessions 1 and 2 can run in parallel (no dependencies). Sessions 3b, 4, and 5 can run in parallel after Session 3.

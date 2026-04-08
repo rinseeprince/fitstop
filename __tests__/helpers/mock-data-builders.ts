@@ -153,6 +153,7 @@ export function createMockCheckInRow(options: MockCheckInOptions = {}): CheckInR
     response_sent_at: null,
     period_start: null,
     period_end: null,
+    period_snapshot: null,
     daily_logs_start_date: null,
     daily_logs_end_date: null,
     uses_daily_logs: false,

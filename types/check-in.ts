@@ -283,6 +283,9 @@ export type CheckIn = {
   periodStart?: string;
   periodEnd?: string;
 
+  // Frozen period snapshot (training + nutrition day-by-day schedule)
+  periodSnapshot?: unknown;
+
   // Timestamps
   createdAt: string;
   updatedAt: string;

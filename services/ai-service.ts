@@ -7,6 +7,7 @@ import type {
 import type { DailyLog } from "@/types/daily-log";
 import type { HabitLogWithDetails } from "@/types/daily-habit";
 import type { WeeklyNutritionSummary } from "@/types/weekly-nutrition";
+import type { PeriodSnapshot } from "@/types/schedule";
 import { AI_SYSTEM_PROMPT, buildCheckInAnalysisPrompt } from "@/utils/ai-prompt-builder";
 import { parseAIResponse } from "@/utils/ai-response-parser";
 
@@ -43,7 +44,8 @@ export const generateCheckInSummary = async (
   habitLogs?: HabitLogWithDetails[],
   startDate?: Date,
   endDate?: Date,
-  weeklySummary?: WeeklyNutritionSummary | null
+  weeklySummary?: WeeklyNutritionSummary | null,
+  periodSnapshot?: PeriodSnapshot | null
 ): Promise<AICheckInSummary> => {
   try {
     const prompt = buildCheckInAnalysisPrompt(
@@ -54,7 +56,8 @@ export const generateCheckInSummary = async (
       habitLogs,
       startDate,
       endDate,
-      weeklySummary
+      weeklySummary,
+      periodSnapshot
     );
 
     const completion = await openai.chat.completions.create({

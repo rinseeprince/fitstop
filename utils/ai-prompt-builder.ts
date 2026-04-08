@@ -2,6 +2,7 @@ import type { CheckInWithDetails, CheckIn } from "@/types/check-in";
 import type { DailyLog } from "@/types/daily-log";
 import type { HabitLogWithDetails } from "@/types/daily-habit";
 import type { WeeklyNutritionSummary } from "@/types/weekly-nutrition";
+import type { PeriodSnapshot } from "@/types/schedule";
 import { buildDailyContextForAI } from "@/utils/ai-daily-context-builder";
 import { sanitizeForAIPrompt } from "@/utils/ai-prompt-sanitizer";
 
@@ -40,7 +41,8 @@ export function buildCheckInAnalysisPrompt(
   habitLogs?: HabitLogWithDetails[],
   startDate?: Date,
   endDate?: Date,
-  weeklySummary?: WeeklyNutritionSummary | null
+  weeklySummary?: WeeklyNutritionSummary | null,
+  periodSnapshot?: PeriodSnapshot | null
 ): string {
   let prompt = `Analyze this check-in for ${sanitizeForAIPrompt(clientName)}:\n\n`;
 
@@ -123,6 +125,23 @@ export function buildCheckInAnalysisPrompt(
   if (current.prs) prompt += `\nPersonal Records (free text): ${sanitizeForAIPrompt(current.prs)}\n`;
   if (current.challenges) prompt += `\nChallenges (free text): ${sanitizeForAIPrompt(current.challenges)}\n`;
   if (current.notes) prompt += `\nNotes: ${sanitizeForAIPrompt(current.notes)}\n`;
+
+  // Prefer frozen snapshot for day-by-day detail when available
+  if (periodSnapshot) {
+    prompt += "\n**DAY-BY-DAY TRAINING SCHEDULE (from snapshot):**\n";
+    for (const day of periodSnapshot.training) {
+      const planned = day.plannedSessionName ? ` [Planned: ${sanitizeForAIPrompt(day.plannedSessionName)}]` : "";
+      const logged = day.loggedSessionName ? ` [Logged: ${sanitizeForAIPrompt(day.loggedSessionName)}]` : "";
+      prompt += `- ${day.date} (${day.dayOfWeek}): ${day.status}${planned}${logged}\n`;
+    }
+
+    prompt += "\n**DAY-BY-DAY NUTRITION (from snapshot):**\n";
+    for (const day of periodSnapshot.nutrition) {
+      const target = day.targetCalories != null ? `target=${day.targetCalories}` : "no target";
+      const actual = day.actualCalories != null ? `actual=${day.actualCalories}` : "not logged";
+      prompt += `- ${day.date} (${day.dayOfWeek}): ${day.status} (${target}, ${actual})\n`;
+    }
+  }
 
   if (dailyLogs && dailyLogs.length > 0 && startDate && endDate) {
     const dailyContext = buildDailyContextForAI(dailyLogs, habitLogs || [], startDate, endDate);

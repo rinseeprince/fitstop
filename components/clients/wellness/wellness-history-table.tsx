@@ -101,15 +101,15 @@ export function WellnessHistoryTable({ clientId }: Props) {
 
   const columns: ColumnDef<WellnessHistoryRow>[] = useMemo(() => [
     { key: "date", label: "Date", render: (_v, row) => (
-      <span className="font-mono-display text-[#93b0b4]">{formatDate(row.date)}</span>
+      <span className={`font-mono-display ${row.is_logged === false ? "text-[#b8cfd3]" : "text-[#93b0b4]"}`}>{formatDate(row.date)}</span>
     )},
     { key: "day", label: "Day", render: (_v, row) => (
-      <span className="text-[#0c1a1e] font-medium">{formatDay(row.date)}</span>
+      <span className={row.is_logged === false ? "text-[#b8cfd3] font-medium" : "text-[#0c1a1e] font-medium"}>{formatDay(row.date)}</span>
     )},
-    { key: "mood", label: "Mood", render: (_v, row) => renderMetricCell("mood", row.mood, 5) },
-    { key: "energy", label: "Energy", render: (_v, row) => renderMetricCell("energy", row.energy, 10) },
-    { key: "sleep", label: "Sleep", render: (_v, row) => renderMetricCell("sleep", row.sleep, 10) },
-    { key: "stress", label: "Stress", render: (_v, row) => renderMetricCell("stress", row.stress, 10) },
+    { key: "mood", label: "Mood", render: (_v, row) => row.is_logged === false ? <span className="text-[#b8cfd3]">—</span> : renderMetricCell("mood", row.mood, 5) },
+    { key: "energy", label: "Energy", render: (_v, row) => row.is_logged === false ? <span className="text-[#b8cfd3]">—</span> : renderMetricCell("energy", row.energy, 10) },
+    { key: "sleep", label: "Sleep", render: (_v, row) => row.is_logged === false ? <span className="text-[#b8cfd3]">—</span> : renderMetricCell("sleep", row.sleep, 10) },
+    { key: "stress", label: "Stress", render: (_v, row) => row.is_logged === false ? <span className="text-[#b8cfd3]">—</span> : renderMetricCell("stress", row.stress, 10) },
   ], []);
 
   return (

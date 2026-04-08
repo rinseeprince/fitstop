@@ -378,6 +378,7 @@ export type Database = {
           nutrition_days_on_target: number | null
           nutrition_notes: string | null
           period_end: string | null
+          period_snapshot: Json | null
           period_start: string | null
           photo_back: string | null
           photo_front: string | null
@@ -421,6 +422,7 @@ export type Database = {
           nutrition_days_on_target?: number | null
           nutrition_notes?: string | null
           period_end?: string | null
+          period_snapshot?: Json | null
           period_start?: string | null
           photo_back?: string | null
           photo_front?: string | null
@@ -464,6 +466,7 @@ export type Database = {
           nutrition_days_on_target?: number | null
           nutrition_notes?: string | null
           period_end?: string | null
+          period_snapshot?: Json | null
           period_start?: string | null
           photo_back?: string | null
           photo_front?: string | null

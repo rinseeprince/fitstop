@@ -43,6 +43,7 @@ export function mapCheckInRow(row: CheckInRow): CheckIn {
     responseSentAt: row.response_sent_at ?? undefined,
     periodStart: row.period_start ?? undefined,
     periodEnd: row.period_end ?? undefined,
+    periodSnapshot: row.period_snapshot ?? undefined,
     createdAt: row.created_at ?? new Date().toISOString(),
     updatedAt: row.updated_at ?? new Date().toISOString(),
   };

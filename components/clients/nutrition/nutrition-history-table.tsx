@@ -52,7 +52,15 @@ function formatSurplusDeficit(value: number | null) {
   );
 }
 
-function getAdherenceBadge(adherence: NutritionHistoryRow["nutrition_adherence"]) {
+function getAdherenceBadge(row: NutritionHistoryRow) {
+  if (row.is_logged === false) {
+    return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded-[6px] text-xs font-medium bg-[#f0f4f4] text-[#b8cfd3]">
+        Not Logged
+      </span>
+    );
+  }
+  const adherence = row.nutrition_adherence;
   if (!adherence) return <span className="text-[#93b0b4]">-</span>;
   const styles = {
     hit: "bg-[#e6f5f3] text-[#0d9488]",
@@ -95,63 +103,80 @@ export function NutritionHistoryTable({ clientId }: Props) {
     {
       key: "date",
       label: "Date",
-      render: (_v, row) => <span className="text-[#93b0b4]">{formatDate(row.date)}</span>,
+      render: (_v, row) => <span className={row.is_logged === false ? "text-[#b8cfd3]" : "text-[#93b0b4]"}>{formatDate(row.date)}</span>,
     },
     {
       key: "day",
       label: "Day",
-      render: (_v, row) => <span className="text-[#0c1a1e] font-medium">{formatDay(row.date)}</span>,
+      render: (_v, row) => <span className={row.is_logged === false ? "text-[#b8cfd3] font-medium" : "text-[#0c1a1e] font-medium"}>{formatDay(row.date)}</span>,
     },
     {
       key: "calories_consumed",
       label: "Calories",
-      render: (_v, row) => renderMacro(row.calories_consumed, row.target_calories),
+      render: (_v, row) => {
+        if (row.is_logged === false) {
+          return <span className="font-mono-display text-[#b8cfd3]">{row.target_calories != null ? `— / ${row.target_calories}` : "—"}</span>;
+        }
+        return renderMacro(row.calories_consumed, row.target_calories);
+      },
     },
     {
       key: "protein_g",
       label: "Protein (g)",
-      render: (_v, row) => (
-        <span className="font-mono-display text-protein">
-          {row.protein_g != null ? `${row.protein_g}` : "-"}
-          {row.target_protein_g != null && row.protein_g != null && (
-            <span className="text-[#93b0b4]"> / {row.target_protein_g}</span>
-          )}
-        </span>
-      ),
+      render: (_v, row) => {
+        if (row.is_logged === false) return <span className="font-mono-display text-[#b8cfd3]">—</span>;
+        return (
+          <span className="font-mono-display text-protein">
+            {row.protein_g != null ? `${row.protein_g}` : "-"}
+            {row.target_protein_g != null && row.protein_g != null && (
+              <span className="text-[#93b0b4]"> / {row.target_protein_g}</span>
+            )}
+          </span>
+        );
+      },
     },
     {
       key: "carbs_g",
       label: "Carbs (g)",
-      render: (_v, row) => (
-        <span className="font-mono-display text-carbs">
-          {row.carbs_g != null ? `${row.carbs_g}` : "-"}
-          {row.target_carbs_g != null && row.carbs_g != null && (
-            <span className="text-[#93b0b4]"> / {row.target_carbs_g}</span>
-          )}
-        </span>
-      ),
+      render: (_v, row) => {
+        if (row.is_logged === false) return <span className="font-mono-display text-[#b8cfd3]">—</span>;
+        return (
+          <span className="font-mono-display text-carbs">
+            {row.carbs_g != null ? `${row.carbs_g}` : "-"}
+            {row.target_carbs_g != null && row.carbs_g != null && (
+              <span className="text-[#93b0b4]"> / {row.target_carbs_g}</span>
+            )}
+          </span>
+        );
+      },
     },
     {
       key: "fat_g",
       label: "Fat (g)",
-      render: (_v, row) => (
-        <span className="font-mono-display text-fat">
-          {row.fat_g != null ? `${row.fat_g}` : "-"}
-          {row.target_fat_g != null && row.fat_g != null && (
-            <span className="text-[#93b0b4]"> / {row.target_fat_g}</span>
-          )}
-        </span>
-      ),
+      render: (_v, row) => {
+        if (row.is_logged === false) return <span className="font-mono-display text-[#b8cfd3]">—</span>;
+        return (
+          <span className="font-mono-display text-fat">
+            {row.fat_g != null ? `${row.fat_g}` : "-"}
+            {row.target_fat_g != null && row.fat_g != null && (
+              <span className="text-[#93b0b4]"> / {row.target_fat_g}</span>
+            )}
+          </span>
+        );
+      },
     },
     {
       key: "calorie_surplus_deficit",
       label: "Surplus/Deficit",
-      render: (_v, row) => formatSurplusDeficit(row.calorie_surplus_deficit),
+      render: (_v, row) => {
+        if (row.is_logged === false) return <span className="text-[#b8cfd3]">—</span>;
+        return formatSurplusDeficit(row.calorie_surplus_deficit);
+      },
     },
     {
       key: "nutrition_adherence",
       label: "Adherence",
-      render: (_v, row) => getAdherenceBadge(row.nutrition_adherence),
+      render: (_v, row) => getAdherenceBadge(row),
     },
   ], []);
 

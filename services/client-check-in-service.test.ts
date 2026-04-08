@@ -116,10 +116,11 @@ describe('Client Check-in Service', () => {
         mockCurrentCheckIn,
         mockPreviousCheckIns,
         mockClientName,
-        [],
-        [],
+        undefined,
+        undefined,
         expect.any(Date),
         expect.any(Date),
+        null,
         null
       )
       expect(updateCheckInAISummary).toHaveBeenCalledWith(
@@ -165,10 +166,11 @@ describe('Client Check-in Service', () => {
         mockCurrentCheckIn,
         mockPreviousCheckIns, // Should not include current check-in
         mockClientName,
-        [],
-        [],
+        undefined,
+        undefined,
         expect.any(Date),
         expect.any(Date),
+        null,
         null
       )
     })
@@ -230,10 +232,11 @@ describe('Client Check-in Service', () => {
         mockCurrentCheckIn,
         [], // Empty array for no previous check-ins
         mockClientName,
-        [],
-        [],
+        undefined,
+        undefined,
         expect.any(Date),
         expect.any(Date),
+        null,
         null
       )
     })
