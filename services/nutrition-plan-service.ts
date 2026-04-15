@@ -1,9 +1,12 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { calculateDailyMacros, DAYS_OF_WEEK, getTrainingDays } from "@/utils/nutrition-helpers";
-import type { DietType } from "@/types/check-in";
+import type { DietType, DayCalorieOverrides } from "@/types/check-in";
+import type { DayOfWeek } from "@/utils/nutrition-helpers";
 import type { TrainingPlan } from "@/types/training";
 import { recordBodyMetrics } from "@/services/body-metrics-service";
 import { getTodayDateString } from "@/lib/date-helpers";
+import { deleteFutureNutritionEventsForPlan, regenerateFutureNutritionEvents } from "@/services/nutrition-event-service";
+import { captureApiError } from "@/lib/error-handler";
 export type CreateNutritionPlanParams = {
   clientId: string;
   coachId: string;
@@ -31,6 +34,7 @@ export type CreateNutritionPlanParams = {
   coachNotes?: string;
   goalSource?: "phase" | "client";
   effectiveFrom?: string;
+  dayCalorieOverrides?: DayCalorieOverrides;
 };
 
 /**
@@ -72,6 +76,19 @@ export async function createNutritionPlan(params: CreateNutritionPlanParams): Pr
         fat_g: baselineMacros.fatG,
         is_training_day: trainingDays.has(day),
       });
+    }
+  }
+
+  // Apply custom day distribution overrides if provided
+  if (params.dayCalorieOverrides) {
+    for (const target of dailyTargets) {
+      const override = params.dayCalorieOverrides[target.day_of_week as DayOfWeek];
+      if (override) {
+        target.calories = override.calories;
+        target.protein_g = override.protein_g;
+        target.carb_g = override.carbs_g;
+        target.fat_g = override.fat_g;
+      }
     }
   }
 
@@ -160,6 +177,14 @@ export async function promoteNutritionPlanIfReady(
 
   if (error || !plannedPlan) return { promoted: false };
 
+  // Capture old active plan ID BEFORE archiving it
+  const { data: oldActivePlan } = await supabaseAdmin
+    .from("nutrition_plans")
+    .select("id")
+    .eq("client_id", clientId)
+    .eq("status", "active")
+    .maybeSingle();
+
   // Archive the current active plan
   const archiveUntil = new Date(plannedPlan.effective_from + "T00:00:00");
   archiveUntil.setDate(archiveUntil.getDate() - 1);
@@ -184,6 +209,16 @@ export async function promoteNutritionPlanIfReady(
       updated_at: new Date().toISOString(),
     })
     .eq("id", plannedPlan.id);
+
+  // Clean up old plan's future events, generate for promoted plan
+  if (oldActivePlan) {
+    await deleteFutureNutritionEventsForPlan(oldActivePlan.id).catch((err) =>
+      captureApiError(err, { action: "delete-future-nutrition-events-promote", planId: oldActivePlan.id })
+    );
+  }
+  await regenerateFutureNutritionEvents(clientId, plannedPlan.id).catch((err) =>
+    captureApiError(err, { action: "generate-nutrition-events-promote", planId: plannedPlan.id })
+  );
 
   return { promoted: true, newPlanId: plannedPlan.id };
 }

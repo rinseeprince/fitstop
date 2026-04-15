@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getClientById } from "@/services/client-service";
-import { getActiveTrainingPlan } from "@/services/training-service";
+import { getActiveTrainingPlan, promoteTrainingPlanIfReady, getTrainingPlanById } from "@/services/training-service";
+import { supabaseAdmin } from "@/services/supabase-admin";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { aiRateLimit, coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
@@ -42,7 +43,7 @@ export async function POST(
       phaseId: validation.data.phaseId,
       preGenerationActivities: validation.data.preGenerationActivities,
       allowSameDayTraining: validation.data.allowSameDayTraining,
-      effectiveFrom: (validation.data as Record<string, unknown>).effectiveFrom as string | undefined,
+      effectiveFrom: validation.data.effectiveFrom,
     });
 
     return NextResponse.json(result, { status: 201 });
@@ -86,9 +87,43 @@ export async function GET(
       );
     }
 
+    // Promote planned plan if its effective date has arrived
+    await promoteTrainingPlanIfReady(clientId);
+
     const plan = await getActiveTrainingPlan(clientId);
 
-    return NextResponse.json({ success: true, plan }, { status: 200 });
+    // Check for a planned (upcoming) plan
+    const { data: plannedPlanRow } = await supabaseAdmin
+      .from("training_plans")
+      .select("id, effective_from, name, split_type, frequency_per_week")
+      .eq("client_id", clientId)
+      .eq("status", "planned")
+      .maybeSingle();
+
+    let upcomingPlan: {
+      id: string;
+      effectiveFrom: string;
+      name: string;
+      splitType: string;
+      frequencyPerWeek: number;
+      sessions: NonNullable<Awaited<ReturnType<typeof getActiveTrainingPlan>>>["sessions"];
+    } | null = null;
+
+    if (plannedPlanRow) {
+      const plannedFullPlan = await getTrainingPlanById(plannedPlanRow.id);
+      if (plannedFullPlan) {
+        upcomingPlan = {
+          id: plannedFullPlan.id,
+          effectiveFrom: plannedPlanRow.effective_from,
+          name: plannedFullPlan.name,
+          splitType: plannedFullPlan.splitType,
+          frequencyPerWeek: plannedFullPlan.frequencyPerWeek,
+          sessions: plannedFullPlan.sessions,
+        };
+      }
+    }
+
+    return NextResponse.json({ success: true, plan, upcomingPlan }, { status: 200 });
   } catch (error) {
     console.error("Error fetching training plan:", error);
     return NextResponse.json(

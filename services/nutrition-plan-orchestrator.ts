@@ -5,13 +5,16 @@ import { supabaseAdmin } from "@/services/supabase-admin";
 import {
   validateClientForNutrition,
 } from "@/lib/validations/nutrition";
-import { weightToKg } from "@/utils/nutrition-helpers";
+import { weightToKg, calculateDailyMacros } from "@/utils/nutrition-helpers";
 import { createNutritionPlan } from "@/services/nutrition-plan-service";
 import { CUSTOM_MACRO_CALORIE_TOLERANCE } from "@/lib/constants";
 import { getLatestBodyMetrics } from "@/services/body-metrics-service";
 import { getCurrentGoals } from "@/services/client-goals-service";
 import { requirePhaseSelection } from "@/lib/require-phase-selection";
 import type { GenerateNutritionPlanRequest, DietType } from "@/types/check-in";
+import { deleteFutureNutritionEventsForPlan, regenerateFutureNutritionEvents } from "@/services/nutrition-event-service";
+import { captureApiError } from "@/lib/error-handler";
+import { getTodayDateString } from "@/lib/date-helpers";
 
 export class NutritionPlanError extends Error {
   constructor(
@@ -66,6 +69,19 @@ export async function orchestrateNutritionPlanCreation(
   // Nutrition plans can only be created for the active phase
   if (phase.phaseId && phase.phaseStatus !== "active") {
     throw new NutritionPlanError("Nutrition plans can only be created for the active phase", 400);
+  }
+
+  // Validate effectiveFrom date
+  if (body.effectiveFrom) {
+    if (body.effectiveFrom < getTodayDateString()) {
+      throw new NutritionPlanError("Effective date cannot be in the past", 400);
+    }
+    if (phase.phaseId && phase.phaseEndDate && body.effectiveFrom > phase.phaseEndDate) {
+      throw new NutritionPlanError(
+        `Start date cannot be after the phase end date (${phase.phaseEndDate})`,
+        400
+      );
+    }
   }
 
   const clientValidation = validateClientForNutrition(client);
@@ -154,6 +170,15 @@ async function handleCustomMacros(
     : tdeeValue;
 
   const trainingPlan = await getActiveTrainingPlan(clientId);
+
+  // Capture old plan ID BEFORE the RPC archives it
+  const { data: existingPlan } = await supabaseAdmin
+    .from("nutrition_plans")
+    .select("id")
+    .eq("client_id", clientId)
+    .eq("status", "active")
+    .maybeSingle();
+
   const newPlanId = await createNutritionPlan({
     clientId,
     coachId,
@@ -175,17 +200,28 @@ async function handleCustomMacros(
     customProteinG: body.customProteinG,
     customCarbG: body.customCarbG,
     customFatG: body.customFatG,
-    regenerationReason: "custom_macros",
+    regenerationReason: body.dayCalorieOverrides ? "custom_macros_custom_day_distribution" : "custom_macros",
     trainingPlan,
     phaseId: phase.phaseId,
     coachNotes: validatedData.coachNotes,
     goalSource,
     effectiveFrom: body.effectiveFrom,
+    dayCalorieOverrides: body.dayCalorieOverrides,
   });
 
   if (!newPlanId) {
     throw new NutritionPlanError("Failed to create nutrition plan", 500);
   }
+
+  // Non-blocking: clean up old plan's future events, then generate for new plan
+  if (existingPlan) {
+    await deleteFutureNutritionEventsForPlan(existingPlan.id, body.effectiveFrom ?? undefined).catch((err) =>
+      captureApiError(err, { action: "delete-future-nutrition-events", planId: existingPlan.id })
+    );
+  }
+  await regenerateFutureNutritionEvents(clientId, newPlanId, body.effectiveFrom ?? undefined).catch((err) =>
+    captureApiError(err, { action: "generate-nutrition-events", planId: newPlanId })
+  );
 
   return {
     success: true,
@@ -221,28 +257,57 @@ async function handleCalculatedPlan(
 
   const trainingPlan = await getActiveTrainingPlan(clientId);
 
-  const plan = generateNutritionPlan({
-    currentWeightKg,
-    goalWeightKg: effectiveGoalWeightKg ?? undefined,
-    bmr: bmr!,
-    gender: client.gender as "male" | "female" | "other",
-    workActivityLevel: body.workActivityLevel,
-    trainingVolumeHours: body.trainingVolumeHours,
-    trainingPlan,
-    proteinTargetGPerKg: body.proteinTargetGPerKg,
-    dietType: body.dietType,
-    goalDeadline: effectiveGoalDeadline ?? undefined,
-    startDate: effectiveStartDate ?? undefined,
-    weightUnit: weightUnit,
-  });
-
-  // Check if client already has an active plan (for regeneration_reason)
+  // Capture old plan BEFORE the RPC archives it (need id + baseline for preserveCalories)
   const { data: existingPlan } = await supabaseAdmin
     .from("nutrition_plans")
-    .select("id")
+    .select("id, baseline_calories")
     .eq("client_id", clientId)
     .eq("status", "active")
     .maybeSingle();
+
+  let plan: import("@/services/nutrition-service").NutritionPlan;
+  let regenerationReason: string;
+
+  if (body.preserveCalories) {
+    if (!existingPlan) {
+      throw new NutritionPlanError("No active nutrition plan to preserve calories from", 400);
+    }
+    // Skip TDEE calculation — reuse existing baseline calories with new training day distribution
+    const baselineCalories = existingPlan.baseline_calories;
+    const proteinG = Math.round(currentWeightKg * body.proteinTargetGPerKg);
+    const macros = calculateDailyMacros(baselineCalories, proteinG, false, body.dietType);
+    plan = {
+      baselineCalories,
+      tdee: bmr ? calculateTDEE(bmr, body.workActivityLevel) : 0,
+      calorieTarget: baselineCalories,
+      proteinTargetG: macros.proteinG,
+      carbTargetG: macros.carbsG,
+      fatTargetG: macros.fatG,
+      adjustedTdee: bmr ? calculateTDEE(bmr, body.workActivityLevel) : 0,
+      weeklyWeightChangeKg: 0,
+      requiredDailyDeficit: 0,
+      warnings: [],
+    };
+    regenerationReason = "regenerated_preserved_calories";
+  } else {
+    plan = generateNutritionPlan({
+      currentWeightKg,
+      goalWeightKg: effectiveGoalWeightKg ?? undefined,
+      bmr: bmr!,
+      gender: client.gender as "male" | "female" | "other",
+      workActivityLevel: body.workActivityLevel,
+      trainingVolumeHours: body.trainingVolumeHours,
+      trainingPlan,
+      proteinTargetGPerKg: body.proteinTargetGPerKg,
+      dietType: body.dietType,
+      goalDeadline: effectiveGoalDeadline ?? undefined,
+      startDate: effectiveStartDate ?? undefined,
+      weightUnit: weightUnit,
+    });
+    regenerationReason = existingPlan
+      ? (body.dayCalorieOverrides ? "regenerated_custom_day_distribution" : "regenerated")
+      : "initial";
+  }
 
   const newPlanId = await createNutritionPlan({
     clientId,
@@ -265,17 +330,28 @@ async function handleCalculatedPlan(
     customProteinG: null,
     customCarbG: null,
     customFatG: null,
-    regenerationReason: existingPlan ? "regenerated" : "initial",
+    regenerationReason,
     trainingPlan,
     phaseId: phase.phaseId,
     coachNotes: validatedData.coachNotes,
     goalSource,
     effectiveFrom: body.effectiveFrom,
+    dayCalorieOverrides: body.dayCalorieOverrides,
   });
 
   if (!newPlanId) {
     throw new NutritionPlanError("Failed to create nutrition plan", 500);
   }
+
+  // Non-blocking: clean up old plan's future events, then generate for new plan
+  if (existingPlan) {
+    await deleteFutureNutritionEventsForPlan(existingPlan.id, body.effectiveFrom ?? undefined).catch((err) =>
+      captureApiError(err, { action: "delete-future-nutrition-events", planId: existingPlan.id })
+    );
+  }
+  await regenerateFutureNutritionEvents(clientId, newPlanId, body.effectiveFrom ?? undefined).catch((err) =>
+    captureApiError(err, { action: "generate-nutrition-events", planId: newPlanId })
+  );
 
   return {
     success: true,

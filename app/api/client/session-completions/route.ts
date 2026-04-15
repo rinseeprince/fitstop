@@ -5,7 +5,8 @@ import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { z } from "zod";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { getTodayDateString, getTrainingWeekStart } from "@/lib/date-helpers";
-import { getEventForSessionAndDate, linkSessionLogToEvent, mapCompletionQualityToEventStatus } from "@/services/training-event-service";
+import { getEventForSessionAndDate, getEventForDate, linkSessionLogToEvent, mapCompletionQualityToEventStatus } from "@/services/training-event-service";
+import { updateNutritionEventTrainingBurn } from "@/services/nutrition-event-service";
 import { captureApiError } from "@/lib/error-handler";
 
 const sessionCompletionSchema = z.object({
@@ -52,7 +53,7 @@ export async function POST(request: NextRequest) {
     // Build snapshot from the training session for history preservation
     const { data: sessionData } = await supabaseAdmin
       .from("training_sessions")
-      .select("name, day_of_week, focus, session_type, estimated_duration_minutes")
+      .select("name, day_of_week, focus, session_type, estimated_duration_minutes, estimated_calories")
       .eq("id", data.trainingSessionId)
       .single();
 
@@ -82,15 +83,32 @@ export async function POST(request: NextRequest) {
 
     // Link completion to calendar event (non-blocking)
     if (result?.id) {
+      const completedBurn = sessionData?.estimated_calories ?? 0;
       getEventForSessionAndDate(auth.clientId, data.trainingSessionId, completedAt)
         .then((event) => {
           if (event) {
-            return linkSessionLogToEvent(
-              event.id,
-              result.id,
-              mapCompletionQualityToEventStatus(data.completionQuality)
-            );
+            return Promise.all([
+              linkSessionLogToEvent(
+                event.id,
+                result.id,
+                mapCompletionQualityToEventStatus(data.completionQuality)
+              ),
+              updateNutritionEventTrainingBurn(auth.clientId, completedAt, completedBurn),
+            ]);
           }
+          // Fallback: link to any event on this date (alternative session or re-completion)
+          return getEventForDate(auth.clientId, completedAt).then((fallbackEvent) => {
+            if (fallbackEvent) {
+              return Promise.all([
+                linkSessionLogToEvent(
+                  fallbackEvent.id,
+                  result.id,
+                  mapCompletionQualityToEventStatus(data.completionQuality)
+                ),
+                updateNutritionEventTrainingBurn(auth.clientId, completedAt, completedBurn),
+              ]);
+            }
+          });
         })
         .catch((err) =>
           captureApiError(err, {

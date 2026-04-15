@@ -2,6 +2,9 @@
 // Phase transition spans phases, plans, habits, and roadmaps atomically.
 import { supabaseAdmin } from "./supabase-admin";
 import { mapPhaseRow } from "./roadmap-service";
+import { deleteFutureNutritionEventsForPlan } from "@/services/nutrition-event-service";
+import { deleteFutureEventsForPlan as deleteFutureTrainingEventsForPlan } from "@/services/training-event-service";
+import { captureApiError } from "@/lib/error-handler";
 import { getBodyMetricsHistory, getLatestBodyMetrics } from "./body-metrics-service";
 import { getCurrentGoals } from "./client-goals-service";
 import type { PhaseRow, PhaseReviewData, Milestone } from "@/types/roadmap";
@@ -261,6 +264,27 @@ export const transitionPhase = async (
     milestones: options.milestones ?? reviewData.phase.milestones ?? [],
   };
 
+  // Capture plan IDs BEFORE the RPC archives them
+  const nutritionPlanId = options.planHandling.nutritionPlan === "archive"
+    ? (await supabaseAdmin
+        .from("nutrition_plans")
+        .select("id")
+        .eq("client_id", clientId)
+        .eq("status", "active")
+        .maybeSingle()
+      ).data?.id ?? null
+    : null;
+
+  const trainingPlanId = options.planHandling.trainingPlan === "archive"
+    ? (await supabaseAdmin
+        .from("training_plans")
+        .select("id")
+        .eq("client_id", clientId)
+        .eq("status", "active")
+        .maybeSingle()
+      ).data?.id ?? null
+    : null;
+
   // Uses supabaseAdmin: system-level atomic write (RLS exception 3)
   const { data: resultId, error: rpcError } = (await supabaseAdmin.rpc(
     "transition_phase_atomic" as never,
@@ -281,6 +305,18 @@ export const transitionPhase = async (
   if (rpcError || !resultId) {
     throw new Error(
       `Failed to transition phase: ${rpcError?.message ?? "No result returned"}`
+    );
+  }
+
+  // Clean up future events for archived plans (non-blocking)
+  if (nutritionPlanId) {
+    await deleteFutureNutritionEventsForPlan(nutritionPlanId).catch((err) =>
+      captureApiError(err, { action: "delete-nutrition-events-phase-transition", planId: nutritionPlanId })
+    );
+  }
+  if (trainingPlanId) {
+    await deleteFutureTrainingEventsForPlan(trainingPlanId).catch((err) =>
+      captureApiError(err, { action: "delete-training-events-phase-transition", planId: trainingPlanId })
     );
   }
 

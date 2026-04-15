@@ -1,34 +1,54 @@
-# Unified Implementation Plan — 7 Remaining Sessions
+# Unified Implementation Plan
 
 ## Completed Sessions
 
-| Session | Status |
-|---------|--------|
-| CHECK-IN Session 1: Bug fixes + notifications | Done |
-| CHECK-IN Session 2: Training plan versioning | Done |
-| CHECK-IN Session 3: Schedule generator + snapshots | Done |
-| CHECK-IN Session 3b: Unlogged day visibility in data pages | Done |
-| CE-1: Training events migration + event service + helpers | Done |
-| CE-2: Wire training events into plan lifecycle + backfill | Done |
-| CE-3: Training consumer migration (12+ consumers) | Done |
+| Order | Session | Status |
+|-------|---------|--------|
+| 1 | CE-1: Training events migration + event service + helpers | Done |
+| 2 | CE-2: Wire training events into plan lifecycle + backfill | Done |
+| 3 | CE-3: Training consumer migration (12+ consumers) | Done |
+| 4 | NE-1: Nutrition events migration + event service + helpers | Done |
+| 5 | NE-2: Wire nutrition events into plan lifecycle + backfill | Done |
+| 6 | EX-1: Exercise catalog - master table, resolution service, wire into insertion paths | Done |
+| 7 | CAL-1: Calendar backend - is_modified migration + move/duplicate service + API endpoints | Done |
+| 8 | CAL-2: Calendar UI - multi-week grid + drag/move + duplicate week + session detail drawer | Done |
+| 9 | NE-3: Nutrition consumer migration + training cascade | Done |
 
-## Remaining Sessions — Execution Order
+## Remaining Sessions
 
-| Order | Session | Source | Scope | Depends On |
-|-------|---------|--------|-------|------------|
-| 1 | NE-1 | Nutrition Events | Migration + nutrition event service + helpers | CE-2 (done) |
-| 2 | NE-2 | Nutrition Events | Wire nutrition events into plan lifecycle + backfill | NE-1 |
-| 3 | NE-3 | Nutrition Events | Nutrition consumer migration + training cascade | NE-1, NE-2, CE-3 (done) |
-| 4 | PT-1 | Plan Transitions | Plan continuation across phase transitions | NE-2 (event extension functions exist) |
-| 5 | EL-1 | Event Lifecycle | Rolling event window for no-roadmap clients | NE-2 (event extension functions exist) |
-| 6 | CR-4 | Check-In Review | Check-Ins tab (list + detail views) | CE-3 (done), NE-3 |
-| 7 | CR-5 | Check-In Review | Dashboard + roadmap enrichment | CE-3 (done) |
+| Order | Session | Scope | Depends On |
+|-------|---------|-------|------------|
+| 10 | LIB-1 | Library backend: relational tables + CRUD service + API + single event deletion | EX-1 (done), CAL-2 (done) |
+| 11 | LIB-2 | Preview UI + generation redirect + calorie surplus model: preview drawer, library pages, orchestrator changes, AI prompt update, all nutrition consumer updates for % model | LIB-1 |
+| 12 | LIB-3 | Placement + calendar integration: cycle-aware placement with % nutrition cascade, library panel, save-from-calendar, atomic plan archival | LIB-2 |
+| 13 | EL-1 | Rolling event window for no-roadmap clients + stale draft cleanup | NE-2 (done), LIB-1 (draft cleanup queries coach_saved_plans table) |
+| 14 | CR-4 | Check-Ins tab (list + detail views) | NE-3 (done) |
+| 15 | CR-5 | Dashboard + roadmap enrichment | CE-3 (done) |
 
 **Notes:**
-- NE-1 → NE-2 → NE-3 must be sequential (each depends on the previous)
-- PT-1 and EL-1 depend on NE-2 (the event regeneration functions) but NOT on NE-3 (consumer migration). They can run in parallel with NE-3 if desired.
-- CR-5 only depends on CE-3 (done), so it can run in parallel with any session
-- CR-4 depends on NE-3 so snapshots use both training and nutrition event types
+- LIB-1, CR-4, and CR-5 are all unblocked and can run now
+- LIB-1 -> LIB-2 -> LIB-3 must be sequential
+- EL-1 depends on LIB-1 (draft cleanup queries `coach_saved_plans` table from migration 084)
+- CR-4 and CR-5 are independent and can run in parallel with LIB sessions
+
+**Library-first architecture (LIB-1 + LIB-2 + LIB-3):**
+
+The coach's library is the foundation for plan creation. AI and manual generation produce drafts in the library. The coach previews, edits, then places onto a client's calendar. Plans are ordered session sequences (programs) with cycle-aware duplication, not fixed weekly schedules.
+
+1. **Plans are programs, not schedules.** A plan is an ordered list of sessions (e.g., Push, Pull, Legs, Rest). Which calendar dates they land on is decided at placement time, not generation time. No `day_of_week` binding at generation.
+2. **Library-first generation.** AI and manual plan creation targets `coach_saved_plans` (with `status = 'draft'`). The coach previews on a full-page editor with full exercise editing, then saves to library, applies to a client, or discards.
+3. **Transient drafts.** Drafts are not shown in the library list. The coach explicitly saves to library via "Save to Library" (promotes to `status = 'saved'`). Saving a plan also saves each session as a standalone reusable entry. Stale drafts (7+ days, never saved or applied) are auto-cleaned.
+4. **Cycle-aware placement.** When applying to a client, the coach picks a start date. The system detects the cycle length (e.g., PPL+Rest = 4 days) and places sessions accordingly, repeating for the phase duration. A PPL+Rest plan starting on Wednesday places Push(Wed), Pull(Thu), Legs(Fri), Rest(Sat), Push(Sun), etc.
+5. **Standalone sessions.** Coaches can create individual sessions from scratch in the library (not attached to any plan). These can be dragged onto specific calendar days for mix-and-match programming.
+6. **Phase defines the grid.** The phase `start_date` to `end_date` determines the calendar dimensions and the valid date range for events. Coaches cannot place sessions or plans on dates outside the active phase. Dates outside the phase are greyed out and non-droppable. Plans without a phase have no boundary - all dates within the event range are valid.
+7. **Calendar is the source of truth.** Once events are on the calendar, the coach works directly with them. Days without events are rest days (derived at render time, not stored). Sessions own exercises. Events own scheduling.
+8. **Placement creates copies.** When placing from library, the system creates fresh `training_session` + `training_exercises` + `training_event` rows for the client. The saved template is never modified by client-side edits.
+9. **Exercise catalog underpins everything.** A master `exercises` table gives exercises stable identities. Both client exercises (`training_exercises`) and library exercises (`coach_saved_exercises`) reference the catalog via `exercise_id` FK.
+10. **No template-to-event sync for calendar-placed sessions.** Once events are on the calendar, the coach works directly with them. The `day_of_week` field on sessions is irrelevant for calendar-placed sessions (left null). Regeneration (`regenerateFutureEvents`) is the template-driven path still used by the weekly template editor. Calendar-placed sessions (from library placement or duplicate-week) have `day_of_week = null` and are managed directly. Both coexist during the transition.
+11. **Three on-ramps to a populated calendar:**
+    - **AI Generator** - generates a plan using client context. Lands as a draft in the library. Coach previews, edits, then applies to any start date.
+    - **Library Plans** - coach applies a saved plan from their library onto any client's calendar from any start date. The fast path for experienced coaches.
+    - **Library Sessions** - coach drags individual saved sessions onto specific calendar days. Mix and match for fully custom programming.
 
 **Why nutrition events?** The original CE-4/CE-5 planned to make nutrition calorie calculations read from training events while keeping the template-based nutrition plan model (7 day-of-week rows per plan). This had critical bugs:
 1. ~~The `create_nutrition_plan_atomic` RPC always archives the old plan immediately and sets `effective_from = CURRENT_DATE`, even when the coach picks a future date. This creates a date gap where no plan covers the intervening days.~~ **Fixed:** RPC now accepts `p_effective_from` (migration 078). Future dates insert as `planned` status instead of immediately archiving the active plan (migration 080). Lazy promotion via `promoteNutritionPlanIfReady()` upgrades planned → active when `effective_from <= today`.
@@ -477,6 +497,7 @@ CREATE TABLE nutrition_events (
   protein_g NUMERIC NOT NULL,
   carb_g NUMERIC NOT NULL,
   fat_g NUMERIC NOT NULL,
+  diet_type TEXT,
   is_training_day BOOLEAN NOT NULL DEFAULT false,
   status TEXT NOT NULL DEFAULT 'scheduled'
     CHECK (status IN ('scheduled', 'logged', 'missed')),
@@ -675,9 +696,8 @@ d. Iterate dates from `startDate` to `endDate` (same date loop pattern as `gener
    - Determine `is_training_day` from whether training events exist for this date
    - Get baseline calories: look up `dailyTargetRows` for this day-of-week. If found, use `stored.calories` as baseline (this handles both custom macros plans and custom day distribution — the stored row IS the baseline for that day). If no row found, fall back to `plan.baselineCalories`.
    - Get protein from the same stored row (`stored.protein_g`) if available, otherwise `plan.proteinTargetG`.
-   - Calculate total calories = baseline + training burn + external burn
-   - Calculate macros via `calculateDailyMacros(totalCalories, proteinG, isTrainingDay, dietType)`
-   - Build insert row: `{ client_id, nutrition_plan_id, date, day_of_week, baseline_calories, training_burn_calories, external_burn_calories, protein_g, carb_g, fat_g, is_training_day, status: 'scheduled' }`
+   - Calculate **baseline** macros via `calculateDailyMacros(baselineCalories, proteinG, isTrainingDay, dietType)` — use `baselineCalories` only, NOT burn-inclusive total. Macros stored on events are always baseline. When `include_activity_burn` is on, the display helper recalculates macros from `baseline + burns` at render time using the snapshotted `diet_type`.
+   - Build insert row: `{ client_id, nutrition_plan_id, date, day_of_week, baseline_calories, training_burn_calories, external_burn_calories, protein_g, carb_g, fat_g, diet_type, is_training_day, status: 'scheduled' }`
 e. Bulk upsert: `supabaseAdmin.from("nutrition_events").upsert(rows, { onConflict: 'client_id,date', ignoreDuplicates: true })`
 
 ```typescript
@@ -929,7 +949,9 @@ After implementing, run `npx tsc --noEmit` and `npx vitest run`. Commit when don
 | Check-in nutrition context | `getCheckInNutritionContext()` in `check-in-context-service.ts` | Active plan + `getWeeklyNutritionTargets()` | `getNutritionEventsForDateRange()` |
 | Plan targets API (unlogged fill) | `GET /api/clients/[id]/nutrition/plan-targets` | `getPlanTargetForDate()` | `getNutritionEventForDate()` |
 | Coaching week live summary | `getCoachingWeekSummaryLive()` in `weekly-nutrition-service.ts` | nutrition_logs + `getPlanTargetForDate()` for unlogged | nutrition_logs + `getNutritionEventForDate()` for unlogged |
-| Nutrition period summary | `buildNutritionSummary()` in `nutrition-period-summary.ts` | Plans + templates + training template for unlogged | `getNutritionEventsForDateRange()` for unlogged |
+| Nutrition period summary | `buildNutritionSummary()` in `nutrition-period-summary.ts` | Plans + templates + training template for unlogged | `getNutritionEventsForDateRange()` for unlogged | **DONE** |
+
+**NE-3 partial (done):** `buildNutritionSummary()` in `nutrition-period-summary.ts` now reads unlogged day targets from `nutrition_events` (with template fallback for pre-backfill dates). The remaining NE-3 consumers (Daily Pulse targets, weekly summary, check-in context) are not yet migrated.
 
 ### Claude Code prompt
 
@@ -1094,255 +1116,16 @@ After implementing, run `npx tsc --noEmit` and `npx vitest run`. Commit when don
 
 ---
 
-## PT-1: Plan Continuation Across Phase Transitions
+## ~~PT-1: Plan Continuation Across Phase Transitions~~ (Removed)
 
-**Goal:** Allow coaches to continue an existing plan into the next phase instead of being forced to archive and recreate. The plan is cloned as a new row linked to the next phase, preserving the completed phase's full history.
+**Removed.** The coach library (LIB-1/2/3) provides a better UX for plan reuse across phases. Instead of magic auto-cloning, the coach saves a plan to their library, then places it onto a new phase's calendar from any start date. This gives the coach full control and avoids the complexity of cloning events with their `is_modified` flags, date offsets, and edge cases around different phase durations.
 
-### Design: Clone, don't re-link
-
-The "continue" option **clones the plan** into the next phase rather than re-linking it:
-
-1. The old plan is archived (same as today) — stays linked to the completed phase with `effective_until = transition date`
-2. A new plan row is created with identical settings — linked to the next phase with `effective_from = transition date`
-3. For nutrition: the existing `create_nutrition_plan_atomic` RPC handles archive-then-create. Feed it the old plan's settings.
-4. For training: clone the plan row + clone all active sessions + exercises into the new plan, then generate events.
-5. Events are generated for the new plan covering the new phase's date range.
-
-**Why clone instead of re-link:**
-- The completed phase retains a complete record of every plan version that was active during it. No orphaned references.
-- Follows the existing pattern: every plan change already archives-then-creates. Continuation is just another archive-then-create with copied settings.
-- No RPC restructuring needed for nutrition (the existing RPC works as-is).
-- No cross-phase foreign keys, no JSONB snapshots to compensate for moved pointers.
-- `regeneration_reason = "phase_continuation"` makes the intent clear in the history.
-
-### Claude Code prompt
-
-```
-Read IMPLEMENTATION-PLAN.md for full context, then read CONVENTIONS.md and docs/ARCHITECTURE.md.
-
-This is PT-1: Plan continuation across phase transitions.
-
-**Read first:**
-- `services/phase-transition-service.ts` — `TransitionOptions` type, `transitionPhase()` function
-- `supabase/migrations/067_phase_transition_support.sql` — `transition_phase_atomic` RPC
-- `services/nutrition-plan-service.ts` — `createNutritionPlan()` and `CreateNutritionPlanParams`
-- `services/training-service.ts` — `createTrainingPlanAtomic()` (understand the params)
-- `services/training-event-service.ts` — `generateTrainingEvents()`, `deleteFutureEventsForPlan()`
-- `services/nutrition-event-service.ts` — `generateNutritionEvents()`, `deleteFutureNutritionEventsForPlan()`
-- `components/clients/roadmap/phase-review-drawer.tsx` — the UI where coaches choose plan handling
-- `app/api/clients/[id]/roadmap/phases/[phaseId]/transition/route.ts` — the API route with Zod validation
-
-**1. Update the plan handling options — modify `services/phase-transition-service.ts`**
-
-Change `TransitionOptions.planHandling` from:
-```typescript
-planHandling: {
-  trainingPlan: "keep" | "archive";
-  nutritionPlan: "keep" | "archive";
-  habits: "keep" | "archive";
-};
-```
-
-To:
-```typescript
-planHandling: {
-  trainingPlan: "continue" | "archive";
-  nutritionPlan: "continue" | "archive";
-  habits: "continue" | "archive";
-};
-```
-
-Also update the Zod schema in `app/api/clients/[id]/roadmap/phases/[phaseId]/transition/route.ts` from `z.enum(["keep", "archive"])` to `z.enum(["continue", "archive"])`.
-
-"continue" means: archive the old plan, clone it into the next phase, generate events for the new phase.
-
-**2. Update the RPC — `supabase/migrations/079_phase_transition_continue_option.sql`**
-
-The RPC needs two changes:
-
-a. Move the `v_next_phase_id` lookup and activation BEFORE the plan handling block (currently it's after). This is needed so the clone service knows which phase to link the new plan to.
-
-b. The RPC itself always archives plans when instructed (`p_archive_training/nutrition/habits = true`). For the "continue" case, the RPC ALSO archives the old plan (same SQL) — the clone happens in the service layer after the RPC returns. This means the RPC's behavior for `p_archive_training = true` doesn't change. When "continue" is selected, the caller passes `p_archive_training = true` AND performs the clone after.
-
-The key RPC restructuring:
-
-```sql
-CREATE OR REPLACE FUNCTION transition_phase_atomic(
-  p_phase_id UUID,
-  p_coach_reflection TEXT,
-  p_phase_summary JSONB,
-  p_next_action TEXT,
-  p_archive_training BOOLEAN,
-  p_archive_nutrition BOOLEAN,
-  p_archive_habits BOOLEAN
-)
-RETURNS UUID
-LANGUAGE plpgsql
-SECURITY DEFINER
-AS $$
-DECLARE
-  v_roadmap_id UUID;
-  v_next_phase_id UUID;
-BEGIN
-  -- 1. Complete the phase
-  UPDATE phases
-  SET status = 'completed',
-      end_date = COALESCE(end_date, CURRENT_DATE),
-      coach_reflection = p_coach_reflection,
-      phase_summary = p_phase_summary,
-      updated_at = NOW()
-  WHERE id = p_phase_id
-  RETURNING roadmap_id INTO v_roadmap_id;
-
-  IF v_roadmap_id IS NULL THEN
-    RAISE EXCEPTION 'Phase not found: %', p_phase_id;
-  END IF;
-
-  -- 2. Activate next phase FIRST (needed so clone knows the target phase)
-  IF p_next_action = 'activate_next' THEN
-    SELECT id INTO v_next_phase_id FROM phases
-      WHERE roadmap_id = v_roadmap_id AND status = 'planned'
-      ORDER BY order_index ASC LIMIT 1;
-    IF v_next_phase_id IS NOT NULL THEN
-      UPDATE phases SET status = 'active',
-        start_date = COALESCE(start_date, CURRENT_DATE),
-        updated_at = NOW()
-      WHERE id = v_next_phase_id;
-    END IF;
-  ELSIF p_next_action = 'archive_roadmap' THEN
-    UPDATE phases SET status = 'skipped', updated_at = NOW()
-      WHERE roadmap_id = v_roadmap_id AND status = 'planned';
-    UPDATE roadmaps SET status = 'archived', updated_at = NOW()
-      WHERE id = v_roadmap_id;
-  END IF;
-
-  -- 3. Archive plans (always — for "continue", the clone happens in the service layer)
-  IF p_archive_training THEN
-    UPDATE training_plans SET status = 'archived',
-      effective_until = CURRENT_DATE, updated_at = NOW()
-      WHERE phase_id = p_phase_id AND status = 'active';
-  END IF;
-  IF p_archive_nutrition THEN
-    UPDATE nutrition_plans SET status = 'archived',
-      effective_until = CURRENT_DATE, updated_at = NOW()
-      WHERE phase_id = p_phase_id AND status = 'active';
-  END IF;
-  IF p_archive_habits THEN
-    UPDATE daily_habits SET is_active = false, updated_at = NOW()
-      WHERE phase_id = p_phase_id AND is_active = true;
-  END IF;
-
-  -- 4. Write nextPhaseId into summary
-  IF v_next_phase_id IS NOT NULL THEN
-    UPDATE phases SET phase_summary = jsonb_set(
-      phase_summary, '{nextPhaseId}', to_jsonb(v_next_phase_id::TEXT)
-    ) WHERE id = p_phase_id;
-  END IF;
-
-  RETURN COALESCE(v_next_phase_id, p_phase_id);
-END;
-$$;
-```
-
-Key change: next phase activation moved before plan archival. The plan archival logic stays the same. For the "continue" case, the caller passes `p_archive_training = true` (archives the old plan) and then clones after the RPC.
-
-**3. Clone plans after transition — modify `services/phase-transition-service.ts`**
-
-Before calling the RPC, fetch the full plan data needed for cloning:
-
-```typescript
-// Before RPC: fetch plan data for potential cloning
-let trainingPlanSnapshot = null;
-let nutritionPlanSnapshot = null;
-
-if (options.planHandling.trainingPlan === "continue") {
-  // Fetch training plan + sessions + exercises for cloning
-  trainingPlanSnapshot = await getActiveTrainingPlan(clientId);
-}
-if (options.planHandling.nutritionPlan === "continue") {
-  // Fetch nutrition plan + daily target rows for cloning
-  nutritionPlanSnapshot = await supabaseAdmin
-    .from("nutrition_plans")
-    .select("*, nutrition_plan_daily_targets(*)")
-    .eq("client_id", clientId)
-    .eq("status", "active")
-    .maybeSingle();
-}
-```
-
-When calling the RPC, ALWAYS pass `p_archive_training = true` / `p_archive_nutrition = true` for "continue" (the old plan gets archived regardless — the clone is the new plan):
-
-```typescript
-const rpcParams = {
-  p_phase_id: phaseId,
-  p_coach_reflection: options.coachReflection ?? null,
-  p_phase_summary: phaseSummary,
-  p_next_action: options.nextAction,
-  // "continue" archives the old plan; the clone creates the new one
-  p_archive_training: true,  // Always archive for both "continue" and "archive"
-  p_archive_nutrition: true,
-  p_archive_habits: options.planHandling.habits === "archive",
-};
-```
-
-After the RPC returns the `nextPhaseId`:
-
-a. **Training plan continuation:**
-   If `trainingPlanSnapshot` was captured and `nextPhaseId` exists:
-   - Call `createTrainingPlanAtomic()` with the old plan's settings + `phaseId: nextPhaseId`
-   - Clone all active sessions via `insertTrainingSessions()` (copy session names, day_of_week, exercises, etc.)
-   - Call `generateTrainingEvents(clientId, newPlanId, sessions, today, phaseEndDate)` for the new phase
-   - Set `regeneration_reason` or plan description to indicate this is a continuation
-
-b. **Nutrition plan continuation:**
-   If `nutritionPlanSnapshot` was captured and `nextPhaseId` exists:
-   - Call `createNutritionPlan()` with the old plan's settings copied over:
-     - Same `baselineCalories`, `proteinTargetG`, `carbTargetG`, `fatTargetG`
-     - Same `dietType`, `workActivityLevel`, `proteinTargetGPerKg`
-     - Same `customMacrosEnabled`, `customCalories`, etc.
-     - Same daily target row values (preserves custom day distribution)
-     - `phaseId: nextPhaseId`
-     - `effectiveFrom: today` (or phase start date)
-     - `regenerationReason: "phase_continuation"`
-   - The `createNutritionPlan` RPC handles archiving the old plan + creating the new one atomically
-   - After creation, call `generateNutritionEvents()` for the new plan (wired in NE-2)
-
-c. **Habits continuation:**
-   If habits are "continue", the RPC does NOT archive them (pass `p_archive_habits = false`). Instead, clone each active habit to the new phase:
-   - Fetch all active habits for the old phase
-   - For each: insert a new row with `phase_id = nextPhaseId` and same name/description/settings
-   - Deactivate the old habits: `UPDATE daily_habits SET is_active = false WHERE phase_id = oldPhaseId`
-
-d. **Archive cases:**
-   If a plan was archived (not continued):
-   - Delete future training events: `deleteFutureEventsForPlan(oldPlanId).catch(...)`
-   - Delete future nutrition events: `deleteFutureNutritionEventsForPlan(oldPlanId).catch(...)`
-
-e. **No next phase (archive_roadmap):**
-   When `nextAction = "archive_roadmap"`, there's no phase to clone into. In this case:
-   - "continue" still archives the old plan but does NOT create a clone (no target phase)
-   - The UI should show: "Plan will be archived with the roadmap" when archive_roadmap is selected, and disable/hide the "continue" option
-
-**4. Update the transition UI**
-
-Read `components/clients/roadmap/phase-review-drawer.tsx` — the current UI uses Switch toggles for archive decisions. Replace with radio button groups:
-- "Continue into next phase" (default when `nextAction = "activate_next"`) — clones the plan into the next phase
-- "Archive plan" — archives the plan, future events are cleaned up
-- Brief helper text for "Continue": "Same settings carry over as a new plan in the next phase."
-
-When `nextAction = "archive_roadmap"`:
-- Hide the "continue" option (no next phase to clone into)
-- Default to "archive"
-- Show text: "Plans will be archived with the roadmap"
-
-After implementing, run `npx tsc --noEmit` and `npx vitest run`. Commit when done.
-```
 
 ---
 
 ## EL-1: Rolling Event Window for No-Roadmap Clients
 
-**Goal:** Ensure events are continuously generated for clients without phases/roadmaps, so their plans don't silently expire after the 8-week default window.
+**Goal:** Ensure events are continuously generated for clients without phases/roadmaps, so their plans don't silently expire after the 8-week default window. Also cleans up stale library drafts.
 
 ### Design
 
@@ -1401,7 +1184,7 @@ b. Query active training plans where events are about to expire OR have zero eve
      )
    ```
    This finds plans where: the client is active, the plan has no phase (or phase has no end date), and either the plan has zero scheduled events OR the latest scheduled event is within 7 days of expiry.
-c. For each plan: call `regenerateFutureEvents(clientId, planId)` — this generates events from today through today + 8 weeks, skipping dates that already have events (upsert ignoreDuplicates)
+c. For each plan: call `regenerateFutureEvents(clientId, planId)` — this generates events from today through today + 8 weeks, skipping dates that already have events (upsert ignoreDuplicates). **Note (post-CAL-1):** uses `force = false` by default, so any `is_modified` events from calendar edits are preserved. New template events are generated only for dates without existing events.
 d. Same query pattern for nutrition plans / nutrition events
 e. Return counts for logging
 
@@ -1410,6 +1193,12 @@ export async function extendExpiringNutritionEvents(): Promise<{ extended: numbe
 ```
 
 Same pattern for nutrition events.
+
+```typescript
+export async function cleanupStaleDrafts(): Promise<{ deleted: number }>
+```
+
+Delete `coach_saved_plans` where `status = 'draft'` AND `created_at < NOW() - INTERVAL '7 days'`. CASCADE deletes child sessions and exercises. Return count of deleted drafts.
 
 **2. Create the cron endpoint — `app/api/cron/extend-events/route.ts`**
 
@@ -1434,11 +1223,13 @@ export async function POST(request: NextRequest) {
   try {
     const trainingResult = await extendExpiringEvents();
     const nutritionResult = await extendExpiringNutritionEvents();
+    const draftCleanup = await cleanupStaleDrafts();
 
     return NextResponse.json({
       success: true,
       training: trainingResult,
       nutrition: nutritionResult,
+      draftsDeleted: draftCleanup.deleted,
     });
   } catch (error) {
     console.error("Event extension cron failed:", error instanceof Error ? error.message : "Unknown error");
@@ -1479,6 +1270,1400 @@ After implementing, run `npx tsc --noEmit` and `npx vitest run`. Commit when don
 
 ---
 
+## CAL-1: Calendar Backend — Migration + Event Service + API Endpoints
+
+**Goal:** Add `is_modified` flag to `training_events`, create service functions for move/duplicate, create API endpoints, and update regeneration to warn about modified events.
+
+**Why a calendar?** Coaches are currently limited to a 7-day weekly template view, which forces a Mon-Sun mental model and prevents proactive programming across a full phase. The calendar adds a multi-week view reading from `training_events` (already in the DB), letting coaches move, duplicate, and edit individual events. The template editor stays for bulk changes; the calendar is the fine-tuning layer on top.
+
+### Claude Code prompt
+
+```
+Read IMPLEMENTATION-PLAN.md for full context, then read CONVENTIONS.md and docs/ARCHITECTURE.md.
+
+This is CAL-1: Calendar Backend — Migration + Event Service + API Endpoints.
+
+**Read first:**
+- `services/training-event-service.ts` — all exported functions, especially `regenerateFutureEvents()`, `mapEventRow()`, `getEventsForDateRange()`
+- `supabase/migrations/075_create_training_events.sql` — training_events table schema
+- `supabase/migrations/076_fix_training_events_constraint.sql` — partial unique index on (client_id, training_session_id, date)
+- `app/api/clients/[id]/training/[planId]/regenerate-events/route.ts` — regeneration endpoint (understand full flow including nutrition cascade)
+- `services/nutrition-event-service.ts` — `regenerateFutureNutritionEvents()` for cascade pattern
+- `types/training.ts` — `TrainingEvent` type
+- `types/database.ts` — `training_events` Row/Insert/Update types
+- `lib/date-helpers.ts` — `getTodayDateString()`, `getDateString()`, `DAY_NUM`
+- `services/supabase-admin.ts` — supabaseAdmin import pattern
+- `lib/error-handler.ts` — `captureApiError()` for non-blocking error handling
+
+**1. Migration: `supabase/migrations/082_add_is_modified_to_training_events.sql`**
+
+```sql
+-- Tracks events manually moved or duplicated by the coach via the calendar UI.
+-- Regeneration warns before overwriting modified events.
+ALTER TABLE training_events ADD COLUMN is_modified BOOLEAN NOT NULL DEFAULT false;
+```
+
+No index needed on `is_modified` alone — the existing `idx_training_events_client_date` covers queries that filter by client + date range.
+
+**2. Update types**
+
+**`types/training.ts`** — Add `isModified: boolean` to the `TrainingEvent` type (after `sessionLogId`).
+
+**`types/database.ts`** — Add `is_modified: boolean` to the `training_events` Row type, `is_modified?: boolean` to Insert and Update types.
+
+**3. Update existing service: `services/training-event-service.ts`**
+
+a. Update `mapEventRow()` to include `isModified: row.is_modified`.
+
+b. Add `force?: boolean` parameter to `regenerateFutureEvents()`:
+   - Current behavior: deletes all events where `status = 'scheduled' AND date >= fromDate`
+   - New behavior: when `force` is false (default), add `.eq("is_modified", false)` to the delete query — preserves manually adjusted events
+   - When `force` is true, delete all `scheduled` events regardless (current behavior, used when coach confirms the warning)
+
+**4. New service: `services/training-event-calendar-service.ts` (~150 lines)**
+
+All functions use `supabaseAdmin` (system-level writes for calendar operations).
+
+```typescript
+export async function moveEvent(
+  eventId: string,
+  newDate: string,
+  clientId: string,
+  planId: string
+): Promise<void>
+```
+
+Implementation:
+a. Fetch the event: `.select("*").eq("id", eventId).single()`.
+b. Validate: event belongs to `clientId` and `planId`, event `status === "scheduled"`, `newDate >= getTodayDateString()`.
+c. Phase boundary check: if the plan has a `phase_id`, query `phases` for `start_date` and `end_date`. Validate `newDate` falls within range. If not, throw with "Target date is outside the current phase".
+d. Conflict check: query for existing event with same `training_session_id` on `newDate`. If found, throw with "Session is already scheduled on this date".
+e. Update: `.update({ date: newDate, is_modified: true, updated_at: new Date().toISOString() }).eq("id", eventId)`.
+
+```typescript
+export async function moveEventAndFuture(
+  trainingSessionId: string,
+  newDayOfWeek: string,
+  clientId: string,
+  planId: string,
+  draggedEventId: string,
+  draggedNewDate: string
+): Promise<void>
+```
+
+Implementation:
+a. Update the template session: `supabaseAdmin.from("training_sessions").update({ day_of_week: newDayOfWeek }).eq("id", trainingSessionId)`.
+b. Update the dragged event directly: `.update({ date: draggedNewDate, is_modified: true }).eq("id", draggedEventId)`.
+c. Call `regenerateFutureEvents(clientId, planId, effectiveFrom, true)` with `force = true` — the coach is explicitly choosing to update all future events, so any previously modified events should also be reset to the new template. Use the day after `draggedNewDate` as `effectiveFrom` so the dragged event itself is preserved (it was already updated in step b).
+
+```typescript
+export async function duplicateEvent(
+  sourceEventId: string,
+  targetDate: string,
+  clientId: string,
+  planId: string
+): Promise<string>
+```
+
+Implementation:
+a. Fetch source event.
+b. Validate: `targetDate >= today`, target within phase bounds (same check as moveEvent).
+c. Conflict check: same `training_session_id` on `targetDate`.
+d. Insert new row copying `client_id`, `training_plan_id`, `training_session_id`, `session_name`, `session_focus`, `estimated_calories` from source, with `date = targetDate`, `status = 'scheduled'`, `is_modified = true`.
+e. Return new event ID.
+
+```typescript
+export async function countModifiedFutureEvents(
+  clientId: string,
+  planId: string
+): Promise<number>
+```
+
+Implementation: Count query with `{ count: "exact", head: true }` where `training_plan_id = planId AND is_modified = true AND date >= today AND status = 'scheduled'`.
+
+**5. Events GET API: `app/api/clients/[id]/training/[planId]/events/route.ts`**
+
+GET endpoint. Query params: `startDate` (YYYY-MM-DD), `endDate` (YYYY-MM-DD).
+
+Standard middleware: `coachApiRateLimit` → `getAuthenticatedCoachId` → IDOR check (client belongs to coach, **plan belongs to client**). No CSRF needed (GET request).
+
+Calls `getEventsForDateRange(clientId, startDate, endDate)`. Returns `{ success: true, events: TrainingEvent[] }`.
+
+This endpoint is required by the calendar data hook in CAL-2. Creating it here (not in CAL-2) so all backend work is in one session.
+
+**6. Move API: `app/api/clients/[id]/training/[planId]/events/[eventId]/move/route.ts`**
+
+POST endpoint. Standard middleware ordering: `coachApiRateLimit` → `requireCSRFProtection` → `getAuthenticatedCoachId` → IDOR check (client belongs to coach, plan belongs to client).
+
+Zod schema:
+```typescript
+const moveEventSchema = z.object({
+  targetDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format"),
+  scope: z.enum(["single", "all_future"]),
+});
+```
+
+For `scope === "single"`: call `moveEvent(eventId, targetDate, clientId, planId)`.
+
+For `scope === "all_future"`:
+a. Fetch the event to get its `training_session_id`.
+b. Calculate the new day_of_week from targetDate: `const dayNum = new Date(targetDate + "T00:00:00").getDay()`, then reverse-lookup in `DAY_NUM`.
+c. Call `moveEventAndFuture(trainingSessionId, newDayOfWeek, clientId, planId, eventId, targetDate)`.
+
+After either path: cascade nutrition events for affected dates (reuse the pattern from `regenerate-events/route.ts` lines 58-70 — fetch active/planned nutrition plans, call `regenerateFutureNutritionEvents` for each).
+
+Return `{ success: true }` on success. Return 400/409 for validation/conflict errors.
+
+**7. Duplicate API: `app/api/clients/[id]/training/[planId]/events/[eventId]/duplicate/route.ts`**
+
+POST endpoint. Same middleware pattern.
+
+Zod schema:
+```typescript
+const duplicateEventSchema = z.object({
+  targetDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format"),
+});
+```
+
+Call `duplicateEvent(eventId, targetDate, clientId, planId)`. Cascade nutrition events for the target date. Return `{ success: true, eventId: newEventId }`.
+
+**8. Modified count API: `app/api/clients/[id]/training/[planId]/events/modified-count/route.ts`**
+
+GET endpoint. Standard middleware (coachApiRateLimit, auth, IDOR). No CSRF needed (GET request).
+
+Call `countModifiedFutureEvents(clientId, planId)`. Return `{ success: true, count: number }`.
+
+**9. Update regeneration endpoint: `app/api/clients/[id]/training/[planId]/regenerate-events/route.ts`**
+
+a. Add `force: z.boolean().optional()` to the Zod schema.
+b. Before calling `regenerateFutureEvents`:
+   - If `force` is not set, call `countModifiedFutureEvents(clientId, planId)`.
+   - If count > 0, return `{ success: false, modifiedCount: count, requiresConfirmation: true }` with status 200. This lets the UI show a warning dialog.
+   - If count === 0 or `force === true`, proceed with regeneration.
+c. Pass `force` through to `regenerateFutureEvents(clientId, planId, effectiveFrom, force)`.
+
+After implementing, run `npx tsc --noEmit` and `npx vitest run`. Commit when done.
+```
+
+---
+
+## EX-1: Exercise Catalog — Master Table + Resolution Service
+
+**Goal:** Create a master `exercises` table that gives every exercise a stable identity. Wire it into all exercise insertion paths so `training_exercises` rows link to the catalog via `exercise_id` FK. This is the foundation for the coach library (CAL-3a) and future exercise logging/progression tracking.
+
+### Design
+
+**Two-tier catalog:**
+- Global exercises (`coach_id = NULL`) — seeded with 1000+ common exercises, read-only for coaches. Maintained by the platform.
+- Coach-specific exercises (`coach_id = UUID`) — created when AI generates a novel exercise or coach manually adds one. Only visible to that coach.
+
+**Resolution strategy (Option B):**
+- Case-insensitive exact match on `name`
+- Alias matching via `aliases` text array (e.g., "DB Bench Press" matches "Dumbbell Bench Press" via aliases)
+- Common abbreviation normalization before matching (DB → Dumbbell, BB → Barbell, OHP → Overhead Press, etc.)
+- Resolution order: coach-specific exact → global exact → coach-specific alias → global alias → normalize and retry → create as coach-specific
+
+### Claude Code prompt
+
+```
+Read IMPLEMENTATION-PLAN.md for full context, then read CONVENTIONS.md and docs/ARCHITECTURE.md.
+
+This is EX-1: Exercise Catalog — Master Table + Resolution Service.
+
+**Read first:**
+- `types/database.ts` — `training_exercises` Row/Insert/Update types
+- `types/training.ts` — `TrainingExercise` type
+- `services/training-session-service.ts` — `insertTrainingSessions()`, `replaceSessionExercises()`, `addExercise()` (all exercise insertion paths)
+- `services/training-plan-orchestrator.ts` — plan creation flow that calls `insertTrainingSessions()`
+- `app/api/clients/[id]/training/[planId]/sessions/[sessionId]/exercises/route.ts` — exercise CRUD API (if exists, check `app/api/clients/[id]/training/[planId]/sessions/[sessionId]/` directory)
+- `lib/database-helpers.ts` — type exports pattern
+- `services/supabase-admin.ts` — supabaseAdmin import pattern
+
+**1. Migration: `supabase/migrations/083_create_exercises_catalog.sql`**
+
+```sql
+-- Master exercise catalog with two-tier ownership:
+-- coach_id = NULL → global (platform-seeded, read-only for coaches)
+-- coach_id = UUID → coach-specific (AI-generated or manually created)
+
+CREATE TABLE exercises (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  coach_id UUID REFERENCES coaches(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  muscle_group TEXT,
+  equipment TEXT,
+  category TEXT,
+  aliases TEXT[] DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Unique per coach (or globally when coach_id is NULL)
+CREATE UNIQUE INDEX idx_exercises_coach_name
+  ON exercises(COALESCE(coach_id, '00000000-0000-0000-0000-000000000000'), LOWER(name));
+
+CREATE INDEX idx_exercises_coach ON exercises(coach_id);
+CREATE INDEX idx_exercises_name ON exercises(LOWER(name));
+
+-- Add exercise_id FK to training_exercises (nullable for backward compat)
+ALTER TABLE training_exercises ADD COLUMN exercise_id UUID REFERENCES exercises(id) ON DELETE SET NULL;
+CREATE INDEX idx_training_exercises_exercise ON training_exercises(exercise_id);
+```
+
+**2. Update types**
+
+**`types/database.ts`** — Add `exercises` table types (Row/Insert/Update) and add `exercise_id: string | null` to `training_exercises` Row, `exercise_id?: string | null` to Insert and Update.
+
+**`types/training.ts`** — Add to `TrainingExercise` type: `exerciseId: string | null`. Add new type:
+
+```typescript
+export type Exercise = {
+  id: string;
+  coachId: string | null;
+  name: string;
+  muscleGroup: string | null;
+  equipment: string | null;
+  category: string | null;
+  aliases: string[];
+  createdAt: string;
+  updatedAt: string;
+};
+```
+
+**`lib/database-helpers.ts`** — Add `ExerciseRow`, `ExerciseInsert` type exports.
+
+**3. Resolution service: `services/exercise-catalog-service.ts` (~200 lines)**
+
+All functions use `supabaseAdmin` (system-level writes for catalog operations).
+
+**Abbreviation map** (constant at top of file):
+
+```typescript
+const ABBREVIATIONS: Record<string, string> = {
+  "db": "dumbbell", "bb": "barbell", "ohp": "overhead press",
+  "rdl": "romanian deadlift", "cgbp": "close grip bench press",
+  "sldl": "stiff leg deadlift", "ez": "ez-bar",
+  "kb": "kettlebell", "bw": "bodyweight",
+};
+```
+
+```typescript
+export async function resolveExercise(
+  name: string,
+  coachId: string
+): Promise<string>
+```
+
+Implementation:
+a. Normalize input: `name.trim()`.
+b. Case-insensitive exact match (coach-specific first, then global):
+   - Query `exercises` where `LOWER(name) = LOWER(input)` AND (`coach_id = coachId` OR `coach_id IS NULL`), ordered by `coach_id NULLS LAST` (coach-specific takes precedence).
+   - If found, return `id`.
+c. Alias match: query where `LOWER(input) = ANY(SELECT LOWER(unnest(aliases)))` with same coach filter.
+   - If found, return `id`.
+d. Abbreviation normalization: apply `ABBREVIATIONS` map to each word in the input string (split by spaces, replace matching words, rejoin). Re-run steps b and c with the normalized string.
+   - If found, return `id`.
+e. No match: insert new exercise with `coach_id = coachId`, `name = input (original casing)`. Return new `id`.
+
+```typescript
+export async function resolveExercises(
+  names: string[],
+  coachId: string
+): Promise<Map<string, string>>
+```
+
+Batch version: resolves multiple exercise names efficiently. Fetches all coach + global exercises in one query, matches in memory, creates missing ones in a batch insert. Returns `Map<originalName, exerciseId>`.
+
+```typescript
+export async function getExercisesForCoach(
+  coachId: string,
+  search?: string
+): Promise<Exercise[]>
+```
+
+Returns all exercises visible to the coach (global + coach-specific), optionally filtered by search term (ILIKE on name). Ordered alphabetically. Used by exercise picker UI.
+
+```typescript
+export async function createExercise(
+  coachId: string,
+  data: { name: string; muscleGroup?: string; equipment?: string; category?: string; aliases?: string[] }
+): Promise<Exercise>
+```
+
+Creates a coach-specific exercise. Returns the new exercise.
+
+```typescript
+function normalizeExerciseName(name: string): string
+```
+
+Private helper: applies abbreviation map to each word, lowercases. Used internally for matching.
+
+**4. Wire into exercise insertion paths**
+
+**`services/training-session-service.ts`** — Update `insertTrainingSessions()`:
+- Before inserting exercises, call `resolveExercises(exerciseNames, coachId)` to get exercise IDs.
+- Add `exercise_id` to each `training_exercises` insert.
+- The `coachId` must be passed through from the API route. Add it as a parameter to `insertTrainingSessions()`.
+
+**`services/training-session-service.ts`** — Update `replaceSessionExercises()`:
+- Same pattern: resolve exercise names before inserting.
+- Add `coachId` parameter.
+
+**`services/training-session-service.ts`** — Update `addExercise()` (if it exists as a single-exercise insert):
+- Resolve single exercise name before inserting.
+
+Update all callers of these functions to pass `coachId`:
+- `services/training-plan-orchestrator.ts` — `orchestrateTrainingPlanCreation()` already has `coachId` available
+- `app/api/clients/[id]/training/manual/route.ts` — has `coachId` from auth
+- Any exercise CRUD API routes
+
+**5. Update `mapExerciseRow()` in `services/training-mappers.ts`**
+
+Add `exerciseId: row.exercise_id` to the mapped output.
+
+**6. Exercise catalog API: `app/api/training/exercises/route.ts`**
+
+Note: lives under `/api/training/` (coach-level resource, not client-specific).
+
+GET handler: `coachApiRateLimit` → `getAuthenticatedCoachId()` → `getExercisesForCoach(coachId, searchParam)`. Query param: `search` (optional, for filtering). Returns `{ success: true, exercises: Exercise[] }`.
+
+POST handler: `coachApiRateLimit` → `requireCSRFProtection` → `getAuthenticatedCoachId()` → validate body `{ name, muscleGroup?, equipment?, category?, aliases? }` → `createExercise(coachId, data)`. Returns `{ success: true, exercise: Exercise }`.
+
+**7. Seed data structure: `scripts/seed-exercise-catalog.ts`**
+
+Create a seed script that reads from a CSV/JSON file and inserts global exercises (coach_id = NULL). Structure:
+
+```typescript
+type SeedExercise = {
+  name: string;
+  muscleGroup: string;
+  equipment: string;
+  category: string;
+  aliases: string[];
+};
+```
+
+The actual seed data (1000+ exercises) will be prepared separately as a JSON file. The script reads it and upserts into `exercises` with `coach_id = NULL`. Run via `npx tsx scripts/seed-exercise-catalog.ts`.
+
+Do NOT generate the seed data in this session. Just create the script structure that reads from `scripts/data/exercises.json` and upserts. The JSON file will be populated separately.
+
+**8. Unit tests: `services/exercise-catalog-service.test.ts`**
+
+Follow the pattern of `services/training-event-service.test.ts` (vi.mock supabaseAdmin, createMockQuery helpers).
+
+Test `resolveExercise`:
+- Returns existing exercise ID on exact name match (case-insensitive)
+- Returns existing exercise ID on alias match
+- Normalizes abbreviations and matches (e.g., "DB Bench Press" resolves to "Dumbbell Bench Press")
+- Creates a new coach-specific exercise when no match found
+- Coach-specific exercises take precedence over global exercises with the same name
+
+Test `resolveExercises` (batch):
+- Resolves multiple names in one call, returns correct Map
+- Creates missing exercises while reusing existing ones
+
+Test `normalizeExerciseName`:
+- Applies abbreviation map correctly ("db" to "dumbbell", "bb" to "barbell")
+- Handles mixed case and multiple abbreviations in one name
+
+After implementing, run `npx tsc --noEmit` and `npx vitest run`.
+```
+
+---
+
+## CAL-2: Calendar View + Interactions + Duplicate Week with Session Cloning
+
+**Goal:** Build the multi-week calendar UI where the calendar is the source of truth for the client's training program. The phase defines the grid dimensions. Coaches drag to move events, duplicate individual events, duplicate entire weeks (with independent session cloning), and edit session exercises via a detail drawer. This replaces the weekly template view as the primary scheduling interface.
+
+### Claude Code prompt
+
+```
+Read IMPLEMENTATION-PLAN.md for full context (especially the "Calendar-as-SOT architecture" section), then read CONVENTIONS.md and docs/ARCHITECTURE.md.
+
+This is CAL-2: Calendar View + Interactions + Duplicate Week with Session Cloning.
+
+**Key architectural principle:** The calendar is the source of truth for the client's training program. The phase defines the grid (start_date to end_date). Days without events are rest days. Sessions own exercises. Events own scheduling. Duplicate-week clones sessions so each week is independent.
+
+**Read first:**
+- `services/training-event-calendar-service.ts` — move/duplicate service functions built in CAL-1
+- `services/training-event-service.ts` — `getEventsForDateRange()`, `countEventsInRange()`, `regenerateFutureEvents()` (with force param), `generateTrainingEvents()`
+- `app/api/clients/[id]/training/[planId]/events/route.ts` — GET events endpoint from CAL-1
+- `app/api/clients/[id]/training/[planId]/events/[eventId]/move/route.ts` — move endpoint from CAL-1
+- `app/api/clients/[id]/training/[planId]/events/[eventId]/duplicate/route.ts` — duplicate endpoint from CAL-1
+- `app/api/clients/[id]/training/[planId]/events/modified-count/route.ts` — modified count endpoint from CAL-1
+- `services/exercise-catalog-service.ts` — exercise resolution from EX-1
+- `components/clients/training/schedule/weekly-schedule-view.tsx` — existing 7-day grid (pattern reference for layout, styling, DnD)
+- `components/clients/training/schedule/droppable-day-cell.tsx` — existing droppable cell pattern
+- `components/clients/training/schedule/sortable-schedule-item.tsx` — existing draggable item pattern
+- `components/clients/training/schedule/weekly-schedule-item.tsx` — existing session card in grid
+- `components/clients/training/schedule/day-headers-grid.tsx` — existing Mon-Sun labels
+- `hooks/use-schedule-dnd.ts` — existing drag/drop hook (follow this pattern)
+- `components/clients/training/sessions/training-session-card.tsx` — session accordion with exercise editing
+- `components/clients/training/sessions/training-exercise-row.tsx` — inline exercise editing
+- `components/clients/training/sessions/add-exercise-dialog.tsx` — add exercise dialog
+- `components/clients/training/builder/training-builder-right-panel.tsx` — right panel with viewMode toggle (week/list)
+- `components/clients/training/builder/training-plan-helpers.tsx` — EditModeButton with ApplyDateDialog
+- `components/clients/training/builder/training-plan-builder.tsx` — Plans/Data subtab container with Regenerate button
+- `components/ui/sheet.tsx` — Sheet component for drawer pattern
+- `components/ui/dialog.tsx` — Dialog component for modals
+- `contexts/training-builder-context.tsx` — training builder context
+- `hooks/use-training-plan.ts` — training plan hook (plan data, phases)
+- `lib/swr-fetcher.ts` — SWR fetcher pattern
+- `types/training.ts` — TrainingEvent, TrainingSession, Exercise types
+- `types/roadmap.ts` — Phase type (start_date, end_date, status, name)
+- `lib/constants/days.ts` — DAYS_OF_WEEK constant
+- `services/training-session-service.ts` — session/exercise insertion (for duplicate-week cloning)
+- `utils/training-event-helpers.ts` — `mapEventsToScheduleDays()` (existing day-by-day mapping)
+
+**1. Duplicate-week backend: `services/training-event-calendar-service.ts` (add ~100 lines)**
+
+Add to the existing calendar service from CAL-1.
+
+```typescript
+export async function duplicateWeek(
+  clientId: string,
+  planId: string,
+  coachId: string,
+  sourceStartDate: string,
+  targetStartDate: string
+): Promise<{ eventsCreated: number }>
+```
+
+Implementation:
+a. Fetch all events in the source week (7 days from sourceStartDate): `getEventsForDateRange(clientId, sourceStartDate, sourceEndDate)`.
+b. Filter to `status === "scheduled"` events only (don't duplicate completed/missed events).
+c. For each source event with a `training_session_id`:
+   - Fetch the source session with exercises: `supabaseAdmin.from("training_sessions").select("*, training_exercises(*)").eq("id", event.trainingSessionId).single()`.
+   - Clone the session: insert a new `training_sessions` row copying all fields except `id` (new UUID), `day_of_week` (set to null - calendar-placed sessions don't use template day matching), and `created_at`/`updated_at` (new timestamps).
+   - Clone the exercises: insert new `training_exercises` rows for the cloned session, copying all fields including `exercise_id` FK (preserving catalog link from EX-1).
+   - Calculate the target date: offset from source week to target week (e.g., source Monday to target Monday).
+   - Insert a new `training_event` row: `client_id`, `training_plan_id = planId`, `training_session_id = clonedSessionId`, `date = targetDate`, `session_name`, `session_focus`, `estimated_calories` from source event, `status = "scheduled"`, `is_modified = true`.
+d. Return `{ eventsCreated: count }`.
+
+```typescript
+export async function duplicateWeekToRemaining(
+  clientId: string,
+  planId: string,
+  coachId: string,
+  sourceStartDate: string,
+  phaseEndDate: string
+): Promise<{ weeksCreated: number; eventsCreated: number }>
+```
+
+Implementation:
+a. Calculate all target week start dates from `sourceStartDate + 7 days` through `phaseEndDate`.
+b. For each target week: call `duplicateWeek(clientId, planId, coachId, sourceStartDate, targetStartDate)`.
+c. Return totals.
+
+**2. Duplicate-week API: `app/api/clients/[id]/training/[planId]/events/duplicate-week/route.ts`**
+
+POST endpoint. Standard middleware: `coachApiRateLimit` -> `requireCSRFProtection` -> `getAuthenticatedCoachId` -> IDOR.
+
+Zod schema:
+```typescript
+const duplicateWeekSchema = z.object({
+  sourceStartDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  targetStartDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  fillRemaining: z.boolean().optional(),
+  phaseEndDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+});
+```
+
+If `fillRemaining === true` and `phaseEndDate` provided: call `duplicateWeekToRemaining()`.
+If `targetStartDate` provided: call `duplicateWeek()` for a single target week.
+
+After either path: cascade nutrition events (same pattern as move/duplicate endpoints - fetch active/planned nutrition plans, regenerate from earliest affected date).
+
+Return `{ success: true, eventsCreated, weeksCreated? }`.
+
+**3. Calendar data hook: `hooks/use-calendar-events.ts` (~100 lines)**
+
+```typescript
+export function useCalendarEvents(clientId: string, planId: string, plan: TrainingPlan | null)
+```
+
+Returns `{ events, eventsByDate, isLoading, error, mutate }`.
+
+Implementation:
+a. Compute date range from plan: `startDate = plan.effectiveFrom ?? getTodayDateString()`. For `endDate`: if plan has `phase_id`, fetch phase end date. Otherwise use `effectiveFrom + programDurationWeeks * 7` or fallback 8 weeks.
+b. SWR fetch: `GET /api/clients/${clientId}/training/${planId}/events?startDate=${startDate}&endDate=${endDate}` using `swrFetcher`.
+c. Memoize `eventsByDate: Map<string, TrainingEvent[]>` from the events array for O(1) cell lookup.
+d. SWR config: `revalidateOnFocus: false`.
+
+**4. Calendar DnD hook: `hooks/use-calendar-dnd.ts` (~200 lines)**
+
+Follow the pattern of `hooks/use-schedule-dnd.ts` but operate on `TrainingEvent` objects and calendar dates.
+
+```typescript
+export function useCalendarDnd(
+  eventsByDate: Map<string, TrainingEvent[]>,
+  clientId: string,
+  planId: string,
+  mutate: () => void
+)
+```
+
+Returns `{ sensors, handleDragStart, handleDragEnd, activeEvent, pendingMove, handleMoveConfirm, handleMoveCancel }`.
+
+Implementation:
+a. Sensors: `PointerSensor` with `distance: 8` + `KeyboardSensor` (same as existing).
+b. `handleDragStart`: set `activeEvent` state for the `DragOverlay`.
+c. `handleDragEnd`: determine source date (from dragged event) and target date (from droppable cell ID). If they differ and target is a future date, set `pendingMove = { event, sourceDate, targetDate }` to open the move scope dialog.
+d. `handleMoveConfirm(scope: "single" | "all_future")`: POST to move endpoint with the pending move data. Optimistic update: temporarily move event in local state, revert on error. Toast on success/failure. Call `mutate()` after.
+e. `handleMoveCancel`: clear `pendingMove`.
+f. Only allow dragging events where `status === "scheduled"` and date is >= today.
+
+**5. Calendar grid: `components/clients/training/calendar/training-calendar-view.tsx` (~200 lines)**
+
+Multi-week scrollable grid showing the full phase duration. The phase defines the grid - days without events are rest days.
+
+Implementation:
+a. Compute weeks array: from plan start date to end date, grouped into 7-day weeks (Mon-Sun).
+b. Layout: `DndContext` wrapping a scrollable container. Header row with Mon-Sun labels (reuse pattern from `DayHeadersGrid`). Left gutter showing week numbers (W1, W2, etc.).
+c. For each week: render a row of 7 `CalendarDayCell` components. Pass `eventsByDate.get(dateString)` to each cell.
+d. `DragOverlay`: render a compact `CalendarEventCard` for the active dragged event.
+e. **Week action menu:** Each week row header (W1, W2, etc.) has a dropdown menu with:
+   - "Duplicate to next week"
+   - "Duplicate to all remaining weeks" (with confirmation: "This will create events for weeks N-M. Existing events in target weeks will not be removed.")
+   - "Clear week" (delete all scheduled events in this week, with confirmation)
+f. **Live date anchoring:** on mount, scroll to the row containing today's date. Use `scrollIntoView({ behavior: 'smooth', block: 'center' })`.
+g. Today indicator: ring highlight (ring-2 ring-teal-500) on today's cell.
+h. Past dates: dimmed opacity (opacity-60). Events show status badges but are not draggable.
+i. **For plans without a phase** (`phase_id = NULL`): all dates from plan start to plan end are interactive. No phase boundary markers.
+j. Render `MoveScopeDialog` when `pendingMove` is set.
+
+**6. Day cell: `components/clients/training/calendar/calendar-day-cell.tsx` (~120 lines)**
+
+Implementation:
+a. `useDroppable({ id: dateString, disabled: isPast })`.
+b. Show date number (day of month) in the top-right corner.
+c. Map events for this date to `CalendarEventCard` components. If 3+ events exist on one date, show the first 2 and a "+N more" indicator with tooltip.
+d. Empty future cells: show "Rest" in muted text (`text-[#93b0b4] text-[10px]`).
+e. Min height: ~80px for compact multi-week display.
+f. Drag-over highlight: `ring-2 ring-teal-500/50` when `isOver && !disabled`.
+
+**7. Event card: `components/clients/training/calendar/calendar-event-card.tsx` (~80 lines)**
+
+Compact card for displaying a training event within a calendar cell.
+
+Implementation:
+a. Show: session name (truncated), status dot (colors: scheduled=teal, completed=green, partial=amber, missed=red, skipped=gray).
+b. If `event.isModified`: show a small pencil icon to indicate manual adjustment.
+c. Click handler: `onClick` callback to open session detail drawer (pass `event.trainingSessionId`).
+d. Action dropdown (three-dot button): "Duplicate" and "Delete" options. Only on future scheduled events.
+e. Styling: match `WeeklyScheduleItem` card pattern (rounded-[4px], subtle border, teal accent).
+f. Drag visual: `opacity-50` while dragging.
+
+**8. Move scope dialog: `components/clients/training/calendar/move-scope-dialog.tsx` (~80 lines)**
+
+Standard `Dialog` component following existing dialog patterns.
+
+Implementation:
+a. Props: `open`, `onOpenChange`, `event: TrainingEvent`, `sourceDate: string`, `targetDate: string`, `onConfirm: (scope: "single" | "all_future") => void`, `isLoading: boolean`.
+b. Title: "Move {event.sessionName}?"
+c. Body: "From {formatted sourceDate} to {formatted targetDate}"
+d. Two radio options: "Just this date" and "This and all future {sessionName} sessions"
+e. Footer: Cancel button + Confirm button (shows Loader2 when isLoading).
+
+**9. Duplicate event flow**
+
+Handled within `CalendarEventCard`'s action dropdown and `TrainingCalendarView`'s state.
+
+Implementation:
+a. `TrainingCalendarView` manages `pendingDuplicate: { eventId: string, sessionName: string } | null` state.
+b. When "Duplicate" is clicked on a card: set `pendingDuplicate`.
+c. Show a banner at the top of the calendar: "Click a day to place a copy of {sessionName}" with a "Cancel" button.
+d. When cell is clicked while `pendingDuplicate` is set: POST to duplicate endpoint.
+e. On success: `mutate()`, clear `pendingDuplicate`, toast "Session duplicated".
+f. Press Escape or click Cancel: clear `pendingDuplicate`.
+
+**10. Session detail drawer: `components/clients/training/calendar/session-detail-drawer.tsx` (~150 lines)**
+
+Right-side Sheet for viewing and editing a session's exercises directly from the calendar.
+
+Implementation:
+a. Props: `open`, `onOpenChange`, `trainingSessionId: string | null`, `clientId: string`, `planId: string`, `onUpdate: () => void`.
+b. Uses `Sheet` / `SheetContent` (side="right") from `@/components/ui/sheet`.
+c. Fetch session data: SWR fetch to get session with exercises.
+d. SheetHeader: session name, focus, duration badge.
+e. Edit mode toggle: local `editMode` state with Edit/Done button.
+f. Body: render exercises using the same `TrainingExerciseRow` component. Reuses existing inline edit pattern.
+g. "Add Exercise" button: opens `AddExerciseDialog`. Update the add exercise dialog to use the exercise catalog from EX-1 (search/select from `GET /api/training/exercises?search=...` instead of free-text name input).
+h. All exercise edits use existing PATCH/POST/DELETE endpoints. **Important scope note:** If the session was cloned via duplicate-week, edits only affect this copy. If it was generated via AI (shared across weeks), edits affect all events sharing the same `training_session_id`. Show a toast: "Session updated across all weeks using this session." This makes the scope explicit.
+i. On any edit success: call `onUpdate()` which triggers `mutate()`.
+
+**11. Integration into right panel: modify `components/clients/training/builder/training-builder-right-panel.tsx`**
+
+a. Change viewMode type from `"week" | "list"` to `"week" | "list" | "calendar"`.
+b. Add a third button to the segmented control:
+   ```tsx
+   <button onClick={() => setViewMode("calendar")} className={cn(...)}>
+     <CalendarRange className="h-3 w-3" />
+     Calendar
+   </button>
+   ```
+c. `viewMode === "calendar"` renders `<TrainingCalendarView>`.
+d. Pass required props: `clientId`, `planId`, `plan`, `editMode`, `onUpdate`.
+
+**12. Regeneration warning: modify `components/clients/training/builder/training-plan-helpers.tsx`**
+
+Update `handleApply` in `EditModeButton`:
+a. Before calling the regenerate endpoint, fetch `GET /api/clients/${clientId}/training/${planId}/events/modified-count`.
+b. If count > 0: show `RegenerationWarningDialog`.
+c. If count === 0: proceed with regeneration as normal.
+
+Create `components/clients/training/calendar/regeneration-warning-dialog.tsx` (~70 lines):
+a. Destructive confirm dialog.
+b. Title: "Reset manually adjusted sessions?"
+c. Body: "You have {count} manually adjusted sessions in the future. Regenerating will reset them to the template schedule."
+d. Confirm: calls regenerate with `force: true`. Cancel: returns to edit mode.
+
+**13. New plan generation protection: modify `components/clients/training/builder/training-plan-builder.tsx`**
+
+Add confirmation dialog before opening the generator drawer when a plan exists:
+a. Dialog text: "Generating a new plan will archive your current plan and delete all future scheduled sessions. This cannot be undone."
+b. If modified events exist: add "You have X manually arranged sessions that will be lost."
+c. Confirm opens the generator drawer. Cancel does nothing.
+
+**14. Unit tests: add to `services/training-event-calendar-service.test.ts`**
+
+Follow the pattern of `services/training-event-service.test.ts`.
+
+Test `duplicateWeek`:
+- Clones sessions and exercises for each event in the source week
+- Preserves `exercise_id` FKs on cloned exercises
+- Sets `is_modified = true` on new events
+- Sets `day_of_week = null` on cloned sessions (calendar-placed, not template-driven)
+- Skips non-scheduled events (completed, missed, skipped)
+- Calculates correct target dates (source Monday to target Monday, etc.)
+
+Test `duplicateWeekToRemaining`:
+- Creates the correct number of target weeks between source and phase end
+- Returns accurate `weeksCreated` and `eventsCreated` totals
+
+After implementing, run `npx tsc --noEmit` and `npx vitest run`.
+```
+
+---
+
+## Calorie Burn Model Change: Percentage-Based Surplus
+
+**Problem:** The current system uses AI (GPT-4o-mini) to estimate absolute calorie burn per training session (e.g., "Push Day burns 350 cal"). This estimate is not personalized - it's the same whether the client is a 55kg woman or a 100kg man. The flat number is then added to baseline calories for training day nutrition targets.
+
+**New model:** Replace absolute calorie burns with a coach-defined **training day surplus percentage** per session. The percentage scales with the client's individual baseline calories (which are already personalized via TDEE/goal calculations).
+
+**How it works:**
+- Coach sets a surplus percentage per session when building the plan (e.g., Push Day +15%, Leg Day +20%)
+- Plan-level default percentage (e.g., 15%) applies to sessions without an override
+- Rest day calories = baseline (from nutrition plan TDEE calculation)
+- Training day calories = baseline * (1 + surplus_percentage / 100)
+- Macros: protein stays fixed, the extra calories distribute to carbs and fats proportionally per diet type (uses existing `calculateDailyMacros()` function - just pass the boosted total instead of baseline + flat burn)
+- The `include_activity_burn` client toggle controls whether the surplus is applied or ignored (same as before, just controls percentage application instead of flat burn addition)
+- Free numeric input (not presets) - coach types any value (12%, 17.5%, etc.)
+
+**What gets removed:**
+- `estimated_calories` on `training_events` - no longer populated (column stays nullable, stops being written)
+- `training_burn_calories` on `nutrition_events` - replaced by reading surplus % from the training session
+- `external_burn_calories` on `nutrition_events` - external activities are client-specific, not part of library plans. External activity calories were also AI-estimated and suffer the same personalization problem. Remove from nutrition event generation.
+- `estimateSessionCalories()` AI calls in `training-calorie-service.ts` - no longer called during plan creation
+- `getTrainingSessionCaloriesByDay()`, `getEventCaloriesByDay()`, `calculateExternalActivityCalories()` - replaced by percentage lookup
+
+**What stays:**
+- `nutrition_events.baseline_calories` - unchanged
+- `nutrition_events.is_training_day` - unchanged (derived from training events on that date)
+- `include_activity_burn` client toggle - unchanged (controls whether surplus % is applied)
+- `calculateDailyMacros(totalCalories, proteinG, isTrainingDay, dietType)` - unchanged, just receives boosted calories instead of baseline + burn
+
+**Full consumer audit - files that change:**
+
+| File | What changes |
+|------|-------------|
+| `services/nutrition-event-service.ts` | `generateNutritionEvents()`: replace burn sum with percentage lookup from training session. `updateNutritionEventTrainingBurn()`: remove (no longer needed) |
+| `utils/nutrition-event-helpers.ts` | `getTotalCalories()`: `includeActivityBurn ? baseline * (1 + surplus/100) : baseline`. `mapNutritionEventToDisplayTarget()`: same logic, recalculate macros with boosted total |
+| `utils/build-daily-targets.ts` | `buildDailyTargetsFromPlan()`: replace burn addition with percentage calculation |
+| `utils/training-calorie-helpers.ts` | Remove `getTrainingSessionCaloriesByDay()`, `calculateWeeklyTrainingCalories()`, `getTrainingCaloriesByDay()`. Keep `getTrainingSessionsSummary()` (name-only, no calories) |
+| `utils/training-event-helpers.ts` | Remove `getEventCaloriesByDay()` |
+| `utils/nutrition-helpers.ts` | Remove `calculateExternalActivityCalories()`, `getExternalActivitiesForDay()`. Keep `getTrainingDays()`, `calculateDailyMacros()` |
+| `services/daily-context-service.ts` | `getTodaysNutritionTarget()`: use percentage from training event's session. Remove external activity calorie lookups |
+| `services/client-portal-service.ts` | `getClientNutritionTargets()`: pass surplus % instead of flat burns to `buildDailyTargetsFromPlan()` |
+| `services/check-in-context-service.ts` | `getCheckInNutritionContext()`: use percentage from events |
+| `services/training-plan-orchestrator.ts` | Remove `estimateSessionCalories()` calls. No AI calorie estimation on plan creation |
+| `services/training-calorie-service.ts` | `estimateSessionCalories()` no longer called during plan creation. Keep file but mark functions as deprecated or remove |
+| `app/api/client/training/completions/route.ts` | Remove `updateNutritionEventTrainingBurn()` call |
+| `app/api/client/session-completions/route.ts` | Remove `updateNutritionEventTrainingBurn()` call |
+| `components/daily-pulse/nutrition-target-display.tsx` | Display surplus % instead of flat calorie burn. "Training day: +15%" instead of "+350 cal" |
+| `components/clients/nutrition/builder/nutrition-training-calories-display.tsx` | Show percentage surplus instead of absolute calorie breakdown |
+| `hooks/use-nutrition-builder.ts` | `include_activity_burn` toggle stays but label changes to "Apply training day surplus" |
+| `utils/nutrition-period-summary.ts` | `buildNutritionSummary()`: use percentage for unlogged day targets |
+| `lib/validations/training.ts` | Update response schemas |
+| `types/check-in.ts` | `NutritionEvent`: add `calorieSurplusPercentage`, keep `trainingBurnCalories`/`externalBurnCalories` as deprecated (read as 0 for new events) |
+| `types/training.ts` | `TrainingSession`: add `calorieSurplusPercentage`. `TrainingEvent`: keep `estimatedCalories` nullable (stops being written) |
+
+**Migration strategy:** New nutrition events use percentage model. Old events with flat burns still work - `getTotalCalories()` checks: if event has `calorie_surplus_percentage`, use it; otherwise fall back to legacy `baseline + burns`. This means no backfill needed.
+
+**Where percentage is stored:**
+- `coach_saved_sessions.calorie_surplus_percentage NUMERIC` - set by coach on preview page
+- `coach_saved_plans.default_surplus_percentage NUMERIC DEFAULT 15` - plan-level default
+- `training_sessions.calorie_surplus_percentage NUMERIC` - copied from saved session at placement time
+- `nutrition_events.calorie_surplus_percentage NUMERIC` - snapshotted at event generation time (for historical accuracy)
+
+This change is woven into LIB-1 (schema), LIB-2 (preview UI for setting percentages), and LIB-3 (placement generates nutrition events with percentage model).
+
+---
+
+## LIB-1: Library Backend + Calorie Surplus Schema + Single Event Deletion
+
+**Goal:** Create the coach library tables with draft/saved lifecycle and calorie surplus percentage fields, build full CRUD service and API, implement single event deletion, and add the `calorie_surplus_percentage` column to `training_sessions` and `nutrition_events`.
+
+### Design changes from original CAL-3a
+
+- `coach_saved_plans` gains: `status` (draft/saved), `cycle_length`, `rest_pattern`, `source`, `coach_prompt`, `program_duration_weeks`
+- `coach_saved_sessions` loses `day_offset` (replaced by `order_index` only), gains `is_rest` for rest day markers
+- Plans are programs (ordered session sequences), not weekly schedules
+- Saving a plan to library also saves each session as a standalone entry
+
+### Claude Code prompt
+
+```
+Read IMPLEMENTATION-PLAN.md for full context (especially the "Library-first architecture" section), then read CONVENTIONS.md and docs/ARCHITECTURE.md.
+
+This is LIB-1: Library Backend - Relational Tables + CRUD Service + Single Event Deletion.
+
+**Read first:**
+- `services/exercise-catalog-service.ts` - exercise resolution service from EX-1 (`resolveExercise`, `resolveExercises`)
+- `services/training-session-service.ts` - `insertTrainingSessions()` pattern for creating sessions + exercises
+- `services/training-mappers.ts` - `mapSessionRow()`, `mapExerciseRow()` for data shapes
+- `services/training-event-calendar-service.ts` - existing calendar operations (move, duplicate, duplicateWeek) + `validatePhaseBounds()`
+- `services/training-event-service.ts` - `deleteFutureEventsForPlan()` pattern for event deletion
+- `services/nutrition-event-service.ts` - `regenerateFutureNutritionEvents()` for cascade pattern
+- `types/training.ts` - `TrainingSession`, `TrainingExercise`, `Exercise`, `TrainingEvent` types
+- `types/database.ts` - existing table type patterns
+- `lib/database-helpers.ts` - type export pattern
+- `services/supabase-admin.ts` - supabaseAdmin import
+- `lib/auth-helpers.ts` - `getAuthenticatedCoachId()`
+- `app/api/training/exercises/route.ts` - exercise catalog API from EX-1 (pattern reference for coach-level routes)
+- `components/clients/training/calendar/training-calendar-view.tsx` - line 285-288, the TODO stub for event deletion
+
+**1. Migration: `supabase/migrations/084_create_coach_library_tables.sql`**
+
+```sql
+-- Coach's library of reusable training plans and sessions.
+-- Plans are ordered session sequences (programs) with cycle-aware placement.
+-- Sessions can belong to a plan or exist independently for mix-and-match use.
+-- Exercises reference the master exercises catalog (EX-1).
+
+CREATE TABLE coach_saved_plans (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  coach_id UUID NOT NULL REFERENCES coaches(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  description TEXT,
+  split_type TEXT,
+  frequency_per_week INTEGER,
+  status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'saved')),
+  cycle_length INTEGER,
+  rest_pattern INTEGER[] DEFAULT '{}',
+  default_surplus_percentage NUMERIC DEFAULT 15,
+  source TEXT DEFAULT 'manual',
+  coach_prompt TEXT,
+  program_duration_weeks INTEGER,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_coach_saved_plans_coach ON coach_saved_plans(coach_id);
+CREATE INDEX idx_coach_saved_plans_coach_status ON coach_saved_plans(coach_id, status);
+
+CREATE TABLE coach_saved_sessions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  coach_id UUID NOT NULL REFERENCES coaches(id) ON DELETE CASCADE,
+  saved_plan_id UUID REFERENCES coach_saved_plans(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  focus TEXT,
+  order_index INTEGER NOT NULL DEFAULT 0,
+  is_rest BOOLEAN DEFAULT false,
+  estimated_duration_minutes INTEGER,
+  calorie_surplus_percentage NUMERIC,
+  notes TEXT,
+  session_type TEXT NOT NULL DEFAULT 'training',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_coach_saved_sessions_coach ON coach_saved_sessions(coach_id);
+CREATE INDEX idx_coach_saved_sessions_plan ON coach_saved_sessions(saved_plan_id);
+
+CREATE TABLE coach_saved_exercises (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  saved_session_id UUID NOT NULL REFERENCES coach_saved_sessions(id) ON DELETE CASCADE,
+  exercise_id UUID REFERENCES exercises(id) ON DELETE SET NULL,
+  name TEXT NOT NULL,
+  order_index INTEGER NOT NULL DEFAULT 0,
+  sets INTEGER NOT NULL DEFAULT 3,
+  reps_min INTEGER,
+  reps_max INTEGER,
+  reps_target TEXT,
+  rpe_target NUMERIC,
+  percentage_1rm NUMERIC,
+  tempo TEXT,
+  rest_seconds INTEGER,
+  superset_group TEXT,
+  is_warmup BOOLEAN DEFAULT false,
+  notes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_coach_saved_exercises_session ON coach_saved_exercises(saved_session_id);
+CREATE INDEX idx_coach_saved_exercises_exercise ON coach_saved_exercises(exercise_id);
+
+-- Add provenance FK to training_plans (tracks which library plan was placed)
+ALTER TABLE training_plans ADD COLUMN saved_plan_id UUID REFERENCES coach_saved_plans(id) ON DELETE SET NULL;
+
+-- Add calorie surplus percentage to existing training tables
+ALTER TABLE training_sessions ADD COLUMN calorie_surplus_percentage NUMERIC;
+ALTER TABLE nutrition_events ADD COLUMN calorie_surplus_percentage NUMERIC;
+```
+
+Key design: `status = 'draft'` for AI/manual generation drafts (not shown in library list), `status = 'saved'` for permanent library entries. `cycle_length` + `rest_pattern` enable non-weekly placement (e.g., PPL+Rest = cycle_length 4, rest_pattern {3}). `order_index` on sessions determines position within the cycle. `is_rest` marks rest day slots. `coach_saved_exercises.name` is denormalized from `exercises.name` for display without joins. `default_surplus_percentage` on plans provides the plan-level default; `calorie_surplus_percentage` on sessions allows per-session override (null = use plan default). `estimated_calories` is removed from saved sessions (replaced by surplus %). Existing `training_sessions` and `nutrition_events` gain the new column for the percentage model.
+
+**2. Update types**
+
+**`types/database.ts`** - Add Row/Insert/Update types for all three new tables. Add `saved_plan_id: string | null` to `training_plans` Row/Insert/Update. Add `calorie_surplus_percentage: number | null` to `training_sessions` and `nutrition_events` Row/Insert/Update types.
+
+**`types/training.ts`** - Add `calorieSurplusPercentage: number | null` to the existing `TrainingSession` type. Add to existing `TrainingEvent` type (stops being populated but stays on type for backward compat). Add new types:
+
+```typescript
+export type SavedPlanStatus = 'draft' | 'saved';
+
+export type SavedPlan = {
+  id: string;
+  coachId: string;
+  name: string;
+  description: string | null;
+  splitType: string | null;
+  frequencyPerWeek: number | null;
+  status: SavedPlanStatus;
+  cycleLength: number | null;
+  restPattern: number[];
+  defaultSurplusPercentage: number | null;
+  source: string;
+  coachPrompt: string | null;
+  programDurationWeeks: number | null;
+  sessions: SavedSession[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type SavedSession = {
+  id: string;
+  coachId: string;
+  savedPlanId: string | null;
+  name: string;
+  focus: string | null;
+  orderIndex: number;
+  isRest: boolean;
+  estimatedDurationMinutes: number | null;
+  calorieSurplusPercentage: number | null;
+  notes: string | null;
+  sessionType: string;
+  exercises: SavedExercise[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+// Update existing NutritionEvent type in types/check-in.ts:
+// Add: calorieSurplusPercentage: number | null;
+// Keep trainingBurnCalories/externalBurnCalories for backward compat (read as 0 for new events)
+
+export type SavedExercise = {
+  id: string;
+  savedSessionId: string;
+  exerciseId: string | null;
+  name: string;
+  orderIndex: number;
+  sets: number;
+  repsMin: number | null;
+  repsMax: number | null;
+  repsTarget: string | null;
+  rpeTarget: number | null;
+  percentage1rm: number | null;
+  tempo: string | null;
+  restSeconds: number | null;
+  supersetGroup: string | null;
+  isWarmup: boolean;
+  notes: string | null;
+  createdAt: string;
+};
+```
+
+**`lib/database-helpers.ts`** - Add type exports for all three tables.
+
+**3. Service: `services/coach-library-service.ts` (~300 lines)**
+
+All functions use `supabaseAdmin` (system-level writes for library operations).
+
+```typescript
+export async function createSavedPlanFromAI(
+  coachId: string,
+  aiPlan: AIGeneratedPlan,
+  coachPrompt: string
+): Promise<string>
+```
+
+Implementation:
+a. Auto-detect cycle_length and rest_pattern from AI output:
+   - If sessions have `dayOfWeek` assigned: `cycle_length = 7`, `rest_pattern` = unassigned day positions
+   - If sessions lack `dayOfWeek`: `cycle_length = sessions.length + inferred rest days` based on `frequencyPerWeek`
+b. Insert `coach_saved_plans` row with `status = 'draft'`, `source = 'ai'`, `coach_prompt`, `program_duration_weeks`, detected `cycle_length` and `rest_pattern`
+c. Resolve all exercise names to catalog IDs via `resolveExercises()`
+d. For each AI session: insert `coach_saved_sessions` row with `order_index` based on position
+e. For each exercise: insert `coach_saved_exercises` row with all prescription fields + `exercise_id`
+f. Return new saved plan ID
+
+```typescript
+export async function createSavedPlanManual(
+  coachId: string,
+  name: string,
+  splitType: string,
+  sessions: ManualSessionDraft[]
+): Promise<string>
+```
+
+Same pattern as AI, but `source = 'manual'`, `status = 'draft'`.
+
+```typescript
+export async function promoteDraftToSaved(
+  planId: string,
+  coachId: string,
+  options: { saveSessionsIndividually: boolean }
+): Promise<{ nameConflict?: string }>
+```
+
+Implementation:
+a. Verify ownership
+b. Name conflict check: query `coach_saved_plans` and `coach_saved_sessions` for this coach where `name` matches (case-insensitive). If conflict found, return `{ nameConflict: "A session or plan with this name already exists" }` without promoting. The UI shows the conflict and lets the coach rename.
+c. Update `status = 'saved'`
+d. If `saveSessionsIndividually === true`: for each non-rest session in the plan, check for name conflicts against existing standalone sessions, then create a standalone copy with `saved_plan_id = NULL`. Skip sessions whose names already exist as standalone entries for this coach (deduplication).
+
+```typescript
+export async function createStandaloneSession(
+  coachId: string,
+  data: { name: string; focus?: string; exercises: Array<{ name: string; sets: number; repsTarget?: string; rpeTarget?: number; restSeconds?: number; notes?: string }> }
+): Promise<string>
+```
+
+Creates a session from scratch in the library (`saved_plan_id = NULL`). Resolves exercise names to catalog IDs.
+
+```typescript
+export async function getSavedPlans(coachId: string): Promise<SavedPlan[]>
+```
+
+Filters to `status = 'saved'` only. Three-level join. Order by `created_at DESC`.
+
+```typescript
+export async function getStandaloneSessions(coachId: string): Promise<SavedSession[]>
+```
+
+Fetches sessions where `saved_plan_id IS NULL`. Includes exercises. Order by `created_at DESC`.
+
+Additional CRUD functions (standard patterns):
+- `getSavedPlanById(planId, coachId)` - single plan with sessions/exercises, IDOR check
+- `updateSavedPlan(planId, coachId, updates)` - update plan metadata
+- `deleteSavedPlan(planId, coachId)` - CASCADE deletes children
+- `addSavedSession(planId, coachId, session)` - add session to plan
+- `updateSavedSession(sessionId, coachId, updates)` - update session
+- `removeSavedSession(sessionId, coachId)` - delete session
+- `reorderSavedSessions(planId, coachId, order)` - bulk reorder
+- `addSavedExercise(sessionId, coachId, exercise)` - add exercise, resolves catalog ID
+- `updateSavedExercise(exerciseId, coachId, updates)` - update exercise
+- `removeSavedExercise(exerciseId, coachId)` - delete exercise
+- `savePlanFromCalendar(coachId, clientId, planId, weekStartDate, name)` - save from calendar as `status = 'saved'`
+- `saveSessionFromCalendar(coachId, sourceSessionId, name)` - save single session from calendar
+
+**4. Library API routes (all coach-level, under `/api/training/`)**
+
+All follow standard middleware: `coachApiRateLimit` -> `requireCSRFProtection` (mutating) -> `getAuthenticatedCoachId` -> IDOR via `coach_id`.
+
+- `GET/POST /api/training/saved-plans/route.ts` - list saved plans + create from source
+- `GET/PATCH/DELETE /api/training/saved-plans/[savedPlanId]/route.ts` - single plan CRUD
+- `POST /api/training/saved-plans/[savedPlanId]/promote/route.ts` - promote draft to saved
+- `POST /api/training/saved-plans/[savedPlanId]/sessions/route.ts` - add session
+- `PATCH/DELETE /api/training/saved-plans/[savedPlanId]/sessions/[sessionId]/route.ts` - session CRUD
+- `POST /api/training/saved-plans/[savedPlanId]/sessions/[sessionId]/exercises/route.ts` - add exercise
+- `PATCH/DELETE /api/training/saved-plans/[savedPlanId]/sessions/[sessionId]/exercises/[exerciseId]/route.ts` - exercise CRUD
+- `PATCH /api/training/saved-plans/[savedPlanId]/sessions/reorder/route.ts` - bulk reorder
+- `GET/POST /api/training/saved-sessions/route.ts` - list standalone sessions + create from scratch
+- `GET/PATCH/DELETE /api/training/saved-sessions/[savedSessionId]/route.ts` - standalone session CRUD
+
+**5. Single event deletion - `services/training-event-calendar-service.ts` ADD `deleteEvent()`**
+
+```typescript
+export async function deleteEvent(eventId: string, clientId: string, planId: string): Promise<void>
+```
+
+Implementation:
+a. Fetch event, validate ownership (client_id, training_plan_id)
+b. Validate: `status = 'scheduled'` and `date >= today` (cannot delete past or completed events)
+c. Hard delete the `training_events` row
+d. Cascade: `regenerateFutureNutritionEvents()` for affected nutrition plans (training burn removed for that date)
+
+**6. Delete event API: `DELETE /api/clients/[id]/training/[planId]/events/[eventId]/route.ts`**
+
+Standard middleware: `coachApiRateLimit` -> `requireCSRFProtection` -> `getAuthenticatedCoachId` -> IDOR (client belongs to coach, plan belongs to client) -> call `deleteEvent()`.
+
+**7. Wire delete UI: modify `components/clients/training/calendar/training-calendar-view.tsx`**
+
+Replace the TODO stub at line 285-288 with: confirmation dialog ("Delete {sessionName} on {date}?") -> DELETE API call -> `mutate()` on success -> toast "Session removed".
+
+**8. Unit tests: `services/coach-library-service.test.ts`**
+
+Follow the pattern of `services/training-event-service.test.ts`.
+
+Test `createSavedPlanFromAI`:
+- Creates plan with `status = 'draft'`, `source = 'ai'`, correct cycle_length detection
+- Resolves exercise names to catalog IDs
+- Creates sessions with correct order_index
+
+Test `promoteDraftToSaved`:
+- Updates status to 'saved'
+- Returns nameConflict if plan name already exists for this coach
+- When `saveSessionsIndividually = true`: creates standalone copies of each non-rest session
+- When `saveSessionsIndividually = false`: does not create standalone copies
+- Deduplicates: skips standalone session creation if a session with that name already exists for this coach
+
+Test `createStandaloneSession`:
+- Creates session with `saved_plan_id = NULL`
+- Resolves exercise names to catalog IDs
+
+Test `getSavedPlans`:
+- Filters to `status = 'saved'` only (excludes drafts)
+- Returns nested sessions and exercises
+
+Test `deleteEvent` (in calendar service test file):
+- Validates ownership before deleting
+- Only deletes future scheduled events
+- Rejects past or completed events
+
+After implementing, run `npx tsc --noEmit` and `npx vitest run`.
+```
+
+---
+
+## LIB-2: Preview UI + Generation Redirect + Calorie Surplus Model
+
+**Goal:** Build the library list page and plan preview drawer (on client page). Redirect AI and manual generation to create drafts in the library. Update the AI prompt to not assign `dayOfWeek`. Build the calorie surplus percentage UI on session cards. Implement all breaking changes from the orchestrator return type change. Update all nutrition consumers to use percentage model instead of flat burns.
+
+### Claude Code prompt
+
+```
+Read IMPLEMENTATION-PLAN.md for full context (especially "Library-first architecture" and "Calorie Burn Model Change" sections), then read CONVENTIONS.md and docs/ARCHITECTURE.md.
+
+This is LIB-2: Preview UI + Generation Redirect + Calorie Surplus Model.
+
+**Read first:**
+- `services/coach-library-service.ts` - all CRUD functions from LIB-1
+- `services/training-plan-orchestrator.ts` - current `orchestrateTrainingPlanCreation()` (will be changed)
+- `services/training-ai-service.ts` - `generateTrainingPlanAI()`, `TRAINING_PLAN_SYSTEM_PROMPT`, `AIGeneratedPlan` type
+- `services/training-calorie-service.ts` - `estimateSessionCalories()` AI calorie estimation (being removed)
+- `services/nutrition-event-service.ts` - `generateNutritionEvents()`, `updateNutritionEventTrainingBurn()` (consumers of burn data)
+- `services/daily-context-service.ts` - `getTodaysNutritionTarget()`, `getPlanTargetForDate()` (burn consumers)
+- `services/client-portal-service.ts` - `getClientNutritionTargets()` (burn consumer)
+- `services/check-in-context-service.ts` - `getCheckInNutritionContext()` (burn consumer)
+- `utils/nutrition-event-helpers.ts` - `getTotalCalories()`, `mapNutritionEventToDisplayTarget()` (burn consumers)
+- `utils/build-daily-targets.ts` - `buildDailyTargetsFromPlan()` (burn consumer)
+- `utils/training-calorie-helpers.ts` - `getTrainingSessionCaloriesByDay()`, `calculateWeeklyTrainingCalories()` (being removed)
+- `utils/training-event-helpers.ts` - `getEventCaloriesByDay()` (being removed)
+- `utils/nutrition-helpers.ts` - `calculateExternalActivityCalories()`, `getExternalActivitiesForDay()` (being removed), `calculateDailyMacros()` (stays)
+- `utils/nutrition-period-summary.ts` - `buildNutritionSummary()` (burn consumer)
+- `app/api/clients/[id]/training/route.ts` - AI plan creation POST handler
+- `app/api/clients/[id]/training/manual/route.ts` - manual plan creation POST handler
+- `app/api/client/training/completions/route.ts` - calls `updateNutritionEventTrainingBurn()` (being removed)
+- `app/api/client/session-completions/route.ts` - same
+- `hooks/use-training-plan.ts` - `generate()` function (breaking change)
+- `hooks/use-manual-sessions.ts` - `saveManualPlan()` function (breaking change)
+- `lib/validations/training.ts` - `generateTrainingPlanApiResponseSchema`, `parseSaveManualResponse` (breaking change)
+- `components/clients/training/builder/training-plan-generator-drawer.tsx` - auto-close logic (breaking change)
+- `components/clients/training/builder/drawer-footer.tsx` - generation trigger
+- `components/clients/training/builder/training-builder-right-panel.tsx` - plan display
+- `components/daily-pulse/nutrition-target-display.tsx` - calorie display with burns
+- `components/clients/nutrition/builder/nutrition-training-calories-display.tsx` - burn toggle + display
+- `hooks/use-nutrition-builder.ts` - `include_activity_burn` toggle
+- `types/training.ts` - SavedPlan, SavedSession types from LIB-1
+- `types/check-in.ts` - NutritionEvent type
+
+**1. Modify AI system prompt: `services/training-ai-service.ts`**
+
+Update `TRAINING_PLAN_SYSTEM_PROMPT` to explicitly instruct AI NOT to assign `dayOfWeek` on sessions:
+- Change: `"dayOfWeek": "monday" | "tuesday" | etc. (optional)` to `"dayOfWeek": null (do NOT assign - the coach decides placement dates)`
+- The coach picks which calendar dates sessions land on at placement time. AI generates an ordered sequence of sessions, not a weekly schedule.
+
+**2. Modify orchestrator: `services/training-plan-orchestrator.ts`**
+
+Rename `orchestrateTrainingPlanCreation()` to `orchestrateTrainingPlanGeneration()`. Change it to:
+a. Gather client context (metrics, goals, check-ins) - same as today
+b. Call AI service (`generateTrainingPlanAI()`) - same as today
+c. Call `createSavedPlanFromAI(coachId, aiPlan, coachPrompt)` instead of creating client-side records
+d. Return `{ success: true, savedPlanId }` instead of `{ plan }`
+e. Remove: `createTrainingPlanAtomic`, `insertTrainingSessions`, `addExternalActivity`, `estimateSessionCalories`, `saveTrainingPlanHistory`, event generation, nutrition cascade - all moves to placement (LIB-3)
+f. Remove the `estimateSessionCalories()` AI calls entirely - calorie burns are now percentage-based, set by the coach on the preview page
+
+**3. Modify AI plan route: `app/api/clients/[id]/training/route.ts` POST handler**
+
+Update to call `orchestrateTrainingPlanGeneration()`. Return `{ success: true, savedPlanId }` instead of `{ plan }`.
+
+**4. Modify manual route: `app/api/clients/[id]/training/manual/route.ts`**
+
+Call `createSavedPlanManual()` instead of `createTrainingPlanAtomic` + `insertTrainingSessions`. Return `{ success: true, savedPlanId }`.
+
+**5. Breaking change chain - ALL files that must update for the new response format:**
+
+The response changes from `{ success: true, plan: TrainingPlan }` to `{ success: true, savedPlanId: string }`. This breaks:
+
+a. **`lib/validations/training.ts`** - Update `generateTrainingPlanApiResponseSchema` and `saveManualPlanApiResponseSchema` to accept `{ savedPlanId: string }` instead of `{ plan: TrainingPlan }`. Update `parseGeneratePlanResponse()` and `parseSaveManualResponse()` parse functions.
+
+b. **`hooks/use-training-plan.ts`** - `generate()` function: on success, instead of `setPlan(data.plan)` + `fetchPlan()`, set a `draftSavedPlanId` state and open the preview drawer. Remove `data.plan.name` access for toast. New toast: "Plan draft created".
+
+c. **`hooks/use-manual-sessions.ts`** - `saveManualPlan()`: same pattern - set `draftSavedPlanId` state, open preview drawer.
+
+d. **`components/clients/training/builder/training-plan-generator-drawer.tsx`** - Auto-close logic (lines 34-40) watches `builder.plan?.id` changing to detect success. This no longer works because `setPlan()` is not called. Change auto-close to watch `builder.draftSavedPlanId` - when it becomes non-null, close the generator drawer and open the preview drawer.
+
+e. **`components/clients/training/builder/training-builder-right-panel.tsx`** - The existing plan display (`builder.plan`) continues to show the currently active client plan (if one exists). The draft preview is shown in a separate drawer, not in this panel. No change needed here for the response format change.
+
+f. **`components/clients/training/builder/drawer-footer.tsx`** - Success handling stays the same (it calls `builder.generate()` and checks the boolean return). No change needed.
+
+**6. Preview drawer (on client page, NOT a separate page)**
+
+The preview lives as a full-width Sheet/drawer on the client's training page, not a standalone route. The coach stays on `/clients/[id]?tab=training` throughout.
+
+Create `components/clients/training/builder/plan-preview-drawer.tsx` (~250 lines):
+a. Props: `{ open, onOpenChange, savedPlanId, clientId, onApply }`
+b. Fetches plan via `useSavedPlan(savedPlanId)`
+c. Full-width Sheet (side="right", width: 100% or 80%)
+d. **Top bar:** plan name (editable inline), split type badge, cycle length display with edit override, default surplus percentage (editable)
+e. **Action buttons:** "Save to Library" (with name conflict check + "Also save sessions individually?" checkbox), "Discard" (deletes draft), "Apply to Client" (placement dialog - LIB-3, disabled placeholder for now)
+f. **Main content:** vertically stacked session cards in `order_index` order. Rest day markers between sessions. Each card shows:
+   - Session name (editable), focus (editable)
+   - **Calorie surplus: free numeric input** showing "Training day surplus: __%" (defaults to plan's `default_surplus_percentage`, overridable per session)
+   - Exercise list with full prescription fields (reuse `TrainingExerciseRow` pattern)
+   - "Add Exercise" button -> `AddExerciseDialog` with catalog autocomplete
+g. "Add Session" and "Add Rest Day" buttons at bottom
+h. Session cards draggable for reorder (dnd-kit sortable)
+i. All edits auto-save via PATCH endpoints
+
+**7. Library list page: `app/dashboard/training-library/page.tsx` (~200 lines)**
+
+Coach-level page for browsing and managing saved plans/sessions.
+
+Two tabs: **Plans** and **Sessions**.
+
+**Plans tab:** Grid of saved plan cards (fetched via `useSavedPlans()`, filters `status = 'saved'`). Each card: name, split type badge, session count, cycle length, source badge, created date. Click opens plan in a preview drawer (same component as step 6, but with a client selector in the "Apply" dialog). Delete with confirmation.
+
+**Sessions tab:** Grid of standalone session cards. Each card: name, focus, exercise count, created date. "New Session" button opens creation dialog (name, focus, add exercises via catalog autocomplete). Click to edit. Delete with confirmation.
+
+The workout builder (AI prompt + manual builder from `training-plan-generator-drawer.tsx`) should be reusable from this page too - a "Generate Plan" button opens the same builder but without client context (or with an optional client selector for AI personalization).
+
+**8. New hooks:**
+
+`hooks/use-saved-plan.ts` (~60 lines): SWR fetch single saved plan with sessions/exercises. Config: `revalidateOnFocus: false`.
+
+`hooks/use-saved-plans.ts` (~40 lines): SWR fetch list of saved plans (`status = 'saved'`). Config: `revalidateOnFocus: false`.
+
+**9. Calorie surplus model - update all nutrition consumers:**
+
+The percentage model replaces flat calorie burns. For each file:
+
+a. **`utils/nutrition-event-helpers.ts`** - `getTotalCalories()`: change from `baseline + trainingBurn + externalBurn` to:
+   - If event has `calorie_surplus_percentage` (new model): `includeActivityBurn ? baseline * (1 + surplusPercentage/100) : baseline`
+   - If event has legacy burn fields (old events): fall back to `baseline + burns` for backward compat
+   `mapNutritionEventToDisplayTarget()`: same logic. When surplus is applied, recalculate macros via `calculateDailyMacros(boostedTotal, proteinG, isTrainingDay, dietType)` - protein stays fixed, extra calories go to carbs/fats per diet type.
+
+b. **`services/nutrition-event-service.ts`** - `generateNutritionEvents()`: instead of summing `event.estimatedCalories` for `training_burn_calories`, look up the training session's `calorie_surplus_percentage` and store it on the nutrition event. Set `training_burn_calories = 0` and `external_burn_calories = 0` on new events (deprecated fields).
+   Remove `updateNutritionEventTrainingBurn()` function entirely (no longer called on session completion).
+
+c. **`utils/build-daily-targets.ts`** - `buildDailyTargetsFromPlan()`: replace burn addition with surplus percentage. When `includeActivityBurn` is true and a training event exists for that day, compute `calories = baseline * (1 + surplusPercentage/100)`. Remove calls to `getTrainingSessionCaloriesByDay()`, `getEventCaloriesByDay()`, `calculateExternalActivityCalories()`, `getExternalActivitiesForDay()`.
+
+d. **`services/daily-context-service.ts`** - `getTodaysNutritionTarget()` and `getPlanTargetForDate()`: use percentage from nutrition event. Remove external activity calorie lookups. The template fallback (`getPlanTargetForDateFromTemplate`) should also use percentage if available on the session.
+
+e. **`services/client-portal-service.ts`** - `getClientNutritionTargets()`: pass surplus percentages to `buildDailyTargetsFromPlan()` instead of flat burns.
+
+f. **`services/check-in-context-service.ts`** - `getCheckInNutritionContext()`: use percentage from events.
+
+g. **`utils/nutrition-period-summary.ts`** - `buildNutritionSummary()`: for unlogged days with events, use percentage model.
+
+h. **`app/api/client/training/completions/route.ts`** - Remove call to `updateNutritionEventTrainingBurn()`.
+
+i. **`app/api/client/session-completions/route.ts`** - Remove call to `updateNutritionEventTrainingBurn()`.
+
+j. **`components/daily-pulse/nutrition-target-display.tsx`** - Display "Training day: +X%" instead of "+350 cal". When `includeActivityBurn` is off, show baseline only.
+
+k. **`components/clients/nutrition/builder/nutrition-training-calories-display.tsx`** - Show percentage surplus per day instead of absolute calorie breakdown. Toggle label changes from "Add activity burn to calorie targets" to "Apply training day surplus".
+
+l. **`hooks/use-nutrition-builder.ts`** - `include_activity_burn` toggle stays, label/description update.
+
+**10. Remove dead code:**
+
+After all consumers updated, grep to verify no remaining callers then remove:
+- `estimateSessionCalories()` from `services/training-calorie-service.ts` (or the entire file if nothing else uses it)
+- `getTrainingSessionCaloriesByDay()`, `calculateWeeklyTrainingCalories()`, `getTrainingCaloriesByDay()` from `utils/training-calorie-helpers.ts`
+- `getEventCaloriesByDay()` from `utils/training-event-helpers.ts`
+- `calculateExternalActivityCalories()`, `getExternalActivitiesForDay()`, `getWeeklyNutritionTargets()` from `utils/nutrition-helpers.ts`
+- `updateNutritionEventTrainingBurn()` from `services/nutrition-event-service.ts`
+- Keep: `getTrainingDays()`, `calculateDailyMacros()`, `getTrainingSessionsSummary()` (name-only, used for display)
+- Grep each function before deleting to verify no remaining callers. `getWeeklyNutritionTargets()` may have been partially removed in NE-3 - verify.
+
+After implementing, run `npx tsc --noEmit` and `npx vitest run`.
+```
+
+---
+
+## LIB-3: Placement + Calendar Integration
+
+**Goal:** Build the cycle-aware placement service with percentage-based nutrition cascade, the "Apply to Client" dialog on the preview drawer, the calendar library panel for drag-to-place, and save-from-calendar functionality. Handle atomic plan archival, partial cycle truncation at phase boundaries, and external activities as client-level concerns (not library).
+
+### Claude Code prompt
+
+```
+Read IMPLEMENTATION-PLAN.md for full context (especially the "Library-first architecture" section), then read CONVENTIONS.md and docs/ARCHITECTURE.md.
+
+This is LIB-3: Placement + Calendar Integration.
+
+**Read first:**
+- `services/coach-library-service.ts` - all CRUD functions from LIB-1
+- `services/training-event-calendar-service.ts` - existing calendar operations (move, duplicate, duplicateWeek, deleteEvent)
+- `services/training-event-service.ts` - `generateTrainingEvents()`, `deleteFutureEventsForPlan()`, `regenerateFutureEvents()`
+- `services/training-session-service.ts` - `insertTrainingSessions()` for creating client sessions
+- `services/nutrition-event-service.ts` - `regenerateFutureNutritionEvents()` for cascade
+- `services/exercise-catalog-service.ts` - exercise resolution from EX-1
+- `app/api/clients/[id]/training/[planId]/events/duplicate-week/route.ts` - duplicate-week route (nutrition cascade pattern)
+- `app/dashboard/training-library/[savedPlanId]/page.tsx` - preview page from LIB-2 (wire "Apply to Client" button)
+- `components/clients/training/calendar/training-calendar-view.tsx` - calendar grid from CAL-2
+- `components/clients/training/calendar/calendar-day-cell.tsx` - day cell from CAL-2
+- `components/clients/training/calendar/session-detail-drawer.tsx` - session drawer from CAL-2
+- `hooks/use-calendar-events.ts` - calendar data hook from CAL-2
+- `hooks/use-calendar-dnd.ts` - calendar DnD hook from CAL-2
+- `components/ui/sheet.tsx` - Sheet component for panel
+- `types/training.ts` - SavedPlan, SavedSession types
+- `lib/require-phase-selection.ts` - `requirePhaseSelection()` for phase-aware placement
+- `lib/date-helpers.ts` - date utilities
+
+**1. Placement service: `services/library-placement-service.ts` (~200 lines)**
+
+```typescript
+export async function placePlanOnCalendar(params: {
+  savedPlanId: string;
+  coachId: string;
+  clientId: string;
+  startDate: string;
+  repeatCycles?: number;
+  phaseId?: string;
+}): Promise<{ planId: string; sessionsCreated: number; eventsCreated: number }>
+```
+
+Implementation:
+a. Fetch saved plan with sessions and exercises
+b. IDOR check on coach_id
+c. Verify client belongs to coach
+d. **Atomic plan archival:** Use `createTrainingPlanAtomic` RPC (or a new `place_plan_from_library_atomic` RPC) to archive the existing active plan and create the new one in a single transaction. Set `effective_until = startDate - 1` on the old plan, `effective_from = startDate` on the new one. This preserves the historical date range for queries like "what plan was active on date X?"
+e. Create `training_plans` row: `status = 'active'`, `effective_from = startDate`, copy metadata from saved plan, set `saved_plan_id` FK, `phase_id` if provided
+f. For each non-rest session in order_index order: create `training_sessions` row with `plan_id`, `day_of_week = NULL`, copy `calorie_surplus_percentage` from saved session (or plan's `default_surplus_percentage` if session override is null). Create `training_exercises` rows copying all fields including `exercise_id`
+g. Generate cycle-aware events: iterate from `startDate`, walk through cycle positions 0..cycle_length-1. If position is in `rest_pattern`, skip. Otherwise create `training_event` for the corresponding session on that date. `is_modified = false`, `status = 'scheduled'`. **Partial cycle truncation:** if a session's date exceeds the end date (phase boundary), skip it - don't generate events outside the phase. This means the last cycle may be incomplete.
+h. Calculate end date: phase `end_date` (hard boundary), or `program_duration_weeks * 7`, or `repeatCycles * cycle_length`, or 8-week fallback. Phase `end_date` always wins if set.
+i. **Nutrition cascade with percentage model:** `regenerateFutureNutritionEvents()` for active/planned nutrition plans. The regeneration reads `calorie_surplus_percentage` from `training_sessions` (via the `training_event.training_session_id` join) and stores it on `nutrition_events.calorie_surplus_percentage`. Sets `training_burn_calories = 0`, `external_burn_calories = 0` (deprecated fields).
+j. **External activities are client-level, not library-level.** External activities (BJJ, cycling, etc.) are NOT part of the saved plan. They remain on the client's existing plan/profile. Nutrition event generation reads external activities from the client's data, not the library template. Since external activity calorie estimation has the same personalization problem as training burns, external burns are also excluded from the percentage model - the `include_activity_burn` toggle now only controls the training day surplus percentage.
+k. Return counts
+
+```typescript
+export async function placeSessionOnCalendar(params: {
+  savedSessionId: string;
+  coachId: string;
+  clientId: string;
+  planId: string;
+  targetDate: string;
+}): Promise<{ sessionId: string; eventId: string }>
+```
+
+Implementation: same as original CAL-3b spec - creates fresh session + exercises + event for a single date. `is_modified = true`. Cascades nutrition.
+
+**2. Placement API: `POST /api/clients/[id]/training/place-from-library/route.ts`**
+
+Standard middleware: `coachApiRateLimit` -> `requireCSRFProtection` -> `getAuthenticatedCoachId` -> IDOR -> Zod validation.
+
+Zod schema:
+```typescript
+const placeFromLibrarySchema = z.object({
+  type: z.enum(["plan", "session"]),
+  savedPlanId: z.string().uuid().optional(),
+  savedSessionId: z.string().uuid().optional(),
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  repeatCycles: z.number().int().positive().optional(),
+  phaseId: z.string().uuid().optional(),
+  planId: z.string().uuid().optional(),
+});
+```
+
+If `type === "plan"`: call `placePlanOnCalendar()`.
+If `type === "session"`: call `placeSessionOnCalendar()` (requires `planId` for existing client plan).
+
+Return `{ success: true, planId?, sessionsCreated, eventsCreated }`.
+
+**3. "Apply to Client" dialog**
+
+Two entry points for the Apply dialog:
+
+a. **From client page preview drawer** (`plan-preview-drawer.tsx`): Coach generated a plan for this client. "Apply" pre-selects the current client. Dialog fields: start date picker, cycle info display ("PPL+Rest, 4-day cycle - will create events for 8 weeks"), optional phase selection (if client has active roadmap), repeat cycles override. On success: close preview drawer, refresh calendar view.
+
+b. **From library list page** (`/dashboard/training-library/`): Coach is browsing saved plans and wants to apply to any client. Dialog adds a client selector (search/dropdown) before the start date picker. On success: navigate to `/clients/[clientId]?tab=training`.
+
+Create `components/training-library/apply-to-client-dialog.tsx` (~150 lines). Props include optional `preselectedClientId` to handle both entry points.
+
+**4. Save-from-calendar: `POST /api/training/saved-plans/from-calendar/route.ts`**
+
+POST handler: `coachApiRateLimit` -> `requireCSRFProtection` -> `getAuthenticatedCoachId` -> validate body `{ clientId, planId, weekStartDate, name, description? }`.
+
+Calls `savePlanFromCalendar()` from library service. Returns `{ success: true, savedPlanId }`.
+
+**5. Save-from-calendar UI: modify calendar components**
+
+`training-calendar-view.tsx` - add "Save as plan" to week dropdown menu. Opens dialog with name/description fields. On submit: POST to from-calendar endpoint. Toast on success.
+
+`session-detail-drawer.tsx` - add "Save to Library" button in drawer header. Opens name dialog. On submit: POST to saved-sessions endpoint with `{ sourceSessionId, name }`. Toast on success.
+
+**6. Library panel: `components/clients/training/calendar/library-panel.tsx` (~200 lines)**
+
+Left-side Sheet alongside the calendar for drag-to-place.
+
+a. Toggle button on calendar toolbar: "Library" icon
+b. Two tabs: "Plans" and "Sessions" (fetches saved plans + standalone sessions)
+c. Search input for client-side filtering
+d. **Drag from library**: each card uses `useDraggable` from dnd-kit with data payload `{ type: "library-plan" | "library-session", id }`
+e. **Drop onto calendar**: extend `CalendarDayCell` to accept library drops. Session drop: POST place-from-library with `type: "session"`. Plan drop: POST with `type: "plan"`, `startDate = cell date`
+f. Visual feedback during drag
+
+**7. Extend calendar DnD: modify `hooks/use-calendar-dnd.ts`**
+
+Add `handleLibraryDrop` callback that detects library item drops (check `active.data.current.type`). Calls placement API instead of move API. `mutate()` on success.
+
+**8. Unit tests: `services/library-placement-service.test.ts`**
+
+Test `placePlanOnCalendar`:
+- Creates training_plan with correct metadata and saved_plan_id FK
+- Clones sessions with `day_of_week = null` and `calorie_surplus_percentage` copied from saved session
+- Clones exercises with `exercise_id` FK preserved
+- Generates cycle-aware events (respects rest_pattern, correct dates)
+- Truncates partial cycle at phase boundary (e.g., 30-day phase with 4-day cycle stops at day 28+partial)
+- Archives existing active plan atomically (effective_until set correctly)
+- Cascades nutrition events with percentage model (calorie_surplus_percentage on nutrition events)
+
+Test `placeSessionOnCalendar`:
+- Creates session, exercises, event for single date
+- Copies `calorie_surplus_percentage` from saved session
+- Sets `is_modified = true` on event
+- Returns correct IDs
+
+After implementing, run `npx tsc --noEmit` and `npx vitest run`.
+```
+
+---
+
 ## CR-4: Check-Ins Tab (List + Detail Views)
 
 **Goal:** Build the new "Check-Ins" tab in the client sidebar with list and detail views. The detail view reads from `period_snapshot` for historical accuracy.
@@ -1504,13 +2689,20 @@ Full prompt: see [CHECK-IN-REVIEW-PLAN.md](CHECK-IN-REVIEW-PLAN.md) Session 5 Cl
 | 1 | **CE-1** | Create `training_events` table + event generation service (DONE) |
 | 2 | **CE-2** | Wire training events into create/edit/regenerate/complete flows + backfill (DONE) |
 | 3 | **CE-3** | Switch 12+ training consumers to events, delete template reconstruction code (DONE) |
-| 4 | **NE-1** | Create `nutrition_events` table + event service + fix effective_from RPC bug |
-| 5 | **NE-2** | Wire nutrition events into plan lifecycle + training cascade + keep-calories + backfill |
-| 6 | **NE-3** | Switch all nutrition consumers to events, delete template estimation code |
-| 7 | **PT-1** | Plan continuation across phase transitions (re-link + extend events) |
-| 8 | **EL-1** | Rolling event window for no-roadmap clients (weekly cron extends expiring events) |
-| 9 | **CR-4** | Check-Ins tab with list + detail views (reads from both event types) |
-| 10 | **CR-5** | Dashboard queue card + roadmap phase enrichment |
+| 4 | **NE-1** | Create `nutrition_events` table + event service + fix effective_from RPC bug (DONE) |
+| 5 | **NE-2** | Wire nutrition events into plan lifecycle + training cascade + keep-calories + backfill (DONE) |
+| 6 | **EX-1** | Exercise catalog: master `exercises` table + resolution service + wire into insertion paths (DONE) |
+| 7 | **CAL-1** | Calendar backend: `is_modified` migration + move/duplicate service + API endpoints (DONE) |
+| 8 | **CAL-2** | Calendar UI: multi-week phase grid + drag/move + duplicate week + session detail drawer (DONE) |
+| 9 | **NE-3** | Switch all nutrition consumers to events, delete template estimation code (DONE) |
+| 10 | **LIB-1** | Library backend: relational tables (draft/saved, cycle-aware, surplus %), CRUD service, API, single event deletion |
+| 11 | **LIB-2** | Preview drawer + generation redirect + calorie surplus model: preview UI, AI prompt update, orchestrator change, all nutrition consumer updates for % model, dead code removal |
+| 12 | **LIB-3** | Placement + calendar integration: cycle-aware placement with % nutrition cascade, atomic plan archival, library panel, save-from-calendar |
+| 13 | **EL-1** | Rolling event window for no-roadmap clients + stale draft cleanup |
+| 14 | **CR-4** | Check-Ins tab with list + detail views (reads from both event types) |
+| 15 | **CR-5** | Dashboard queue card + roadmap phase enrichment |
+| -- | ~~PT-1~~ | ~~Plan continuation across phase transitions~~ (Removed: library gives coaches direct control) |
+| -- | ~~CAL-3a/3b~~ | ~~Original library spec~~ (Replaced by LIB-1/LIB-2/LIB-3 with library-first architecture) |
 
 ---
 
@@ -1527,27 +2719,41 @@ Once all sessions are done and verified:
 
 Add/update the following sections to reflect the new reality:
 
-**Data hierarchy** — add `training_events` and `nutrition_events` to the diagram:
+**Data hierarchy** - add `exercises`, `training_events`, `nutrition_events`, and coach library tables to the diagram:
 ```
-training_plans (template/blueprint)
-  └── training_sessions (weekly blueprint)
-        └── training_exercises
-training_events (materialized schedule — one row per session per date)
+exercises (master catalog - global + coach-specific)
+  └── referenced by training_exercises.exercise_id and coach_saved_exercises.exercise_id
+
+training_plans (plan container)
+  └── training_sessions (exercise container - sessions own exercises)
+        └── training_exercises (exercise_id FK to exercises catalog)
+training_events (calendar SOT - one row per session per date)
+  ├── is_modified: tracks manually moved/duplicated/library-placed events
   └── linked to session_logs on completion
 
 nutrition_plans (template/blueprint)
   └── nutrition_plan_daily_targets (7-row weekly blueprint)
-nutrition_events (materialized schedule — one row per client per date)
+nutrition_events (materialized schedule - one row per client per date)
   └── status tracks logged/missed
+
+coach_saved_plans (coach-level plan templates, status: draft/saved)
+  └── coach_saved_sessions (reusable sessions, can be standalone via saved_plan_id = NULL)
+        └── coach_saved_exercises (exercise_id FK to exercises catalog)
+training_plans.saved_plan_id FK tracks provenance (which library plan was placed)
 ```
 
-**Training events lifecycle:**
-- Plan created (AI or manual) → events generated for phase duration (or 8 weeks default)
-- Coach moves a session → past events frozen, future events regenerated
-- Coach edits session name/exercises → future events regenerated with new snapshot
-- Coach regenerates plan → old plan's future events deleted, new plan's events generated
+**Training events lifecycle (calendar-as-SOT):**
+- The calendar is the source of truth for the client's training program. Sessions own exercises, events own scheduling.
+- Three on-ramps to a populated calendar: AI generator (draft in library, preview, then place from any start date), library plans (apply or drag onto calendar), library sessions (drag individual sessions onto specific days)
+- AI/manual plan created → draft in coach library. Coach previews, edits exercises, then applies to client from any start date with cycle-aware placement
+- Library placement → fresh `training_session` + `training_exercises` + `training_event` rows created (copies, never references to saved template)
+- Duplicate-week → clones sessions + exercises so each week is independently editable
+- Coach moves a session via calendar → single event date updated (`is_modified = true`), or template + future events regenerated ("all future" scope)
+- Coach duplicates a session via calendar → new event row created (`is_modified = true`)
+- Coach edits exercises in session drawer → changes apply to all events sharing that `training_session_id` (cloned sessions are independent)
 - Client completes a session → event status updated, `session_log_id` linked
-- Past events are immutable — they represent what was actually scheduled
+- Past events are immutable. `is_modified` flag tracks manually adjusted events; regeneration skips them unless `force = true`
+- Phase boundaries enforce where events can be moved/duplicated (backend validation + UI non-droppable cells)
 
 **Nutrition events lifecycle:**
 - Plan created/regenerated → nutrition events generated for phase duration (or 8 weeks default)
@@ -1558,28 +2764,52 @@ nutrition_events (materialized schedule — one row per client per date)
 - Past events are immutable — they represent what was actually prescribed
 
 **Templates vs events (both domains):**
-- `training_sessions.day_of_week` = training blueprint (what the recurring week looks like)
-- `training_events` = training reality (concrete dates with snapshotted session names)
+- `training_sessions` = exercise containers (what exercises are in this workout). `day_of_week` is null for calendar-placed sessions.
+- `training_events` = the schedule (calendar SOT - which session happens on which date)
 - `nutrition_plan_daily_targets` = nutrition blueprint (7 day-of-week target rows)
 - `nutrition_events` = nutrition reality (concrete dates with calorie/macro targets)
-- The Plans tab reads from templates (coach's blueprint view)
+- The calendar view is the primary scheduling interface (reads from events)
+- The Plans tab reads from templates (coach's initial generation/editing view)
 - The Data tab, Daily Pulse, check-in snapshots, weekly summaries read from events
 
-**Nutrition event calorie composition:**
+**Training calendar (coach-side):**
+- Multi-week scrollable view reading from `training_events` for the full plan/phase duration
+- Anchored to the current week on load; scrollable backward (history) and forward (future)
+- Phase bands: coloured left-border per week row (teal=active, gray=completed, blue=planned) with phase name labels and start/end boundary markers
+- Move: drag event to different date. "Just this date" updates one event; "All future" updates the template + regenerates
+- Duplicate: copy a session to an empty day (creates new event with `is_modified = true`)
+- Edit: click event to open session detail drawer with inline exercise editing (reuses existing exercise CRUD endpoints)
+- Phase boundary enforcement: events cannot be moved/duplicated outside the phase date range (plans without a phase have no boundary — all dates within the plan's event range are valid)
+- Regeneration protection: warning dialog when modified events exist before template regeneration; confirmation dialog before generating a new plan from AI
+
+**Coach library (LIB-1/2/3):**
+- `coach_saved_plans` table: coach-level plan templates with `status` (draft/saved), `cycle_length`, `rest_pattern` for non-weekly splits
+- `coach_saved_sessions` table: reusable sessions (can belong to a plan or stand alone). `order_index` determines cycle position. `is_rest` marks rest day slots
+- `coach_saved_exercises` table: exercise prescriptions referencing the master catalog via `exercise_id` FK
+- AI/manual generation creates drafts (`status = 'draft'`) in the library. Coach previews on full-page editor, then saves/discards/applies
+- Saving a plan also saves each session as a standalone entry for mix-and-match use
+- Placement creates fresh client-side `training_plans` + `training_sessions` + `training_exercises` + `training_events` from library templates
+- Cycle-aware placement: PPL+Rest (4-day) places Push/Pull/Legs/Rest/Push/Pull... from any start date
+- `training_plans.saved_plan_id` FK tracks which library plan was placed (provenance)
+- Stale drafts (7+ days old) cleaned up by the EL-1 cron
+
+**Nutrition event calorie composition (percentage model, post-LIB-2):**
 - `baseline_calories` — plan's rest-day calorie target (frozen at event creation)
-- `training_burn_calories` — from training event on that date (0 if rest day)
-- `external_burn_calories` — from external activities on that day-of-week
-- Display total = baseline + burns (when `include_activity_burn` is on) or baseline only (when off)
-- The `include_activity_burn` toggle is display-only — does not require event regeneration
+- `calorie_surplus_percentage` — from the training session assigned to that date (e.g., 15 for +15%). NULL on rest days.
+- `training_burn_calories` / `external_burn_calories` — deprecated (0 on new events, legacy values preserved on old events for backward compat)
+- Display total = `baseline * (1 + surplus/100)` when `include_activity_burn` is on, or `baseline` when off
+- Macros: protein stays fixed, extra calories distribute to carbs/fats per diet type via `calculateDailyMacros()`
+- The `include_activity_burn` toggle controls whether the surplus percentage is applied - does not require event regeneration
 
 **Nutrition regeneration options:**
-- "Recalculate calories" — recalculates from TDEE/deficit using current weight and goal timeline
+- "Recalculate calories" — recalculates TDEE/deficit using current weight and goal timeline
 - "Keep current calories" — preserves existing baseline, only updates training day distribution and macros
 
 **Training → Nutrition cascade:**
-- Training event regeneration triggers nutrition event regeneration
+- Training event changes trigger nutrition event regeneration
+- Nutrition events read `calorie_surplus_percentage` from the training session (via `training_event.training_session_id`)
 - Only future `scheduled` events are replaced; `logged`/`missed` events are immutable
-- The cascade preserves baseline calories — only the training burn column changes
+- The cascade preserves baseline calories — only the surplus percentage and `is_training_day` flag change
 
 **Check-in snapshot:**
 - `check_ins.period_snapshot` JSONB — frozen day-by-day training + nutrition schedule
@@ -1669,7 +2899,7 @@ The Data Hierarchy diagram (line 28) needs `nutrition_events` added alongside `t
 | `MISSED_CHECKIN_TRACKING_PLAN.md` | Check-in tracking, not nutrition |
 | `ROADMAP-REDESIGN-PLAN.md` | Roadmap features, not nutrition |
 | `docs/NUTRITION_PLAN_CALCULATOR.md` | Calculation formulas (TDEE, macros) — still correct, these don't change with events |
-| `docs/TRAINING_PLAN_FEATURE.md` | Training plan architecture, not nutrition |
+| `docs/TRAINING_PLAN_FEATURE.md` | Describes AI generation UX, not calendar or event architecture. Add a note about the calendar view and saved plans after CAL-2/CAL-3 ship. |
 | `docs/newdesignsystem.md` | Visual design tokens |
 | `schema_dump.md` | Auto-generated schema snapshot, regenerated after migrations |
 

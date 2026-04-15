@@ -259,24 +259,24 @@ describe('Check-in Utilities', () => {
   })
 
   describe('getStatusColor', () => {
-    it('returns yellow classes for pending', () => {
+    it('returns warning classes for pending', () => {
       const result = getStatusColor('pending')
-      expect(result).toContain('yellow')
+      expect(result).toContain('warning')
     })
 
-    it('returns blue classes for ai_processed', () => {
+    it('returns primary classes for ai_processed', () => {
       const result = getStatusColor('ai_processed')
-      expect(result).toContain('blue')
+      expect(result).toContain('primary')
     })
 
-    it('returns green classes for reviewed', () => {
+    it('returns success classes for reviewed', () => {
       const result = getStatusColor('reviewed')
-      expect(result).toContain('green')
+      expect(result).toContain('success')
     })
 
-    it('returns gray classes for unknown status', () => {
+    it('returns muted classes for unknown status', () => {
       const result = getStatusColor('unknown' as any)
-      expect(result).toContain('gray')
+      expect(result).toContain('muted')
     })
   })
 

@@ -22,6 +22,9 @@ vi.mock('./supabase-admin', () => ({
                 maybeSingle: vi.fn().mockResolvedValue({ data: null }),
               }),
             }),
+            lte: vi.fn().mockReturnValue({
+              maybeSingle: vi.fn().mockResolvedValue({ data: null }),
+            }),
           }),
           single: vi.fn().mockResolvedValue({ data: { goal_deadline: null } }),
         }),

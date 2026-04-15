@@ -18,6 +18,8 @@ function mapEventRow(row: TrainingEventRow): TrainingEvent {
     estimatedCalories: row.estimated_calories,
     status: row.status as TrainingEventStatus,
     sessionLogId: row.session_log_id,
+    isModified: row.is_modified,
+    calorieSurplusPercentage: null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -113,17 +115,26 @@ export async function generateTrainingEvents(
 export async function regenerateFutureEvents(
   clientId: string,
   planId: string,
-  effectiveFrom?: string
+  effectiveFrom?: string,
+  force?: boolean
 ): Promise<void> {
   const fromDate = effectiveFrom ?? getTodayDateString();
 
-  // Delete scheduled events from effectiveFrom onward
-  const { error: deleteError } = await supabaseAdmin
+  // Delete scheduled events from effectiveFrom onward.
+  // force === false: preserve is_modified events (calendar UI opt-in).
+  // force === undefined or true: delete all scheduled events (backward compatible).
+  let deleteQuery = supabaseAdmin
     .from("training_events")
     .delete()
     .eq("training_plan_id", planId)
     .gte("date", fromDate)
     .eq("status", "scheduled");
+
+  if (force === false) {
+    deleteQuery = deleteQuery.eq("is_modified", false);
+  }
+
+  const { error: deleteError } = await deleteQuery;
 
   if (deleteError) throw deleteError;
 
@@ -150,7 +161,36 @@ export async function regenerateFutureEvents(
   const endDate = await calculateEndDate(planId, fromDate);
   if (!endDate || endDate <= fromDate) return;
 
-  await generateTrainingEvents(clientId, planId, sessions, fromDate, endDate);
+  // Cap end date if this is the active plan and a planned plan exists
+  // (active plan events shouldn't overlap with planned plan's date range)
+  const { data: thisPlan } = await supabaseAdmin
+    .from("training_plans")
+    .select("status")
+    .eq("id", planId)
+    .single();
+
+  let cappedEndDate = endDate;
+  if (thisPlan?.status === "active") {
+    const { data: plannedPlan } = await supabaseAdmin
+      .from("training_plans")
+      .select("effective_from")
+      .eq("client_id", clientId)
+      .eq("status", "planned")
+      .maybeSingle();
+
+    if (plannedPlan?.effective_from) {
+      const dayBefore = new Date(plannedPlan.effective_from + "T00:00:00");
+      dayBefore.setDate(dayBefore.getDate() - 1);
+      const capDate = getDateString(dayBefore);
+      if (capDate < cappedEndDate) {
+        cappedEndDate = capDate;
+      }
+    }
+  }
+
+  if (cappedEndDate <= fromDate) return;
+
+  await generateTrainingEvents(clientId, planId, sessions, fromDate, cappedEndDate);
 }
 
 // --- Calculate end date ---
@@ -172,7 +212,22 @@ async function calculateEndDate(
   if (plan.program_duration_weeks) {
     const start = new Date((plan.effective_from ?? today) + "T00:00:00");
     start.setDate(start.getDate() + plan.program_duration_weeks * 7);
-    return getDateString(start);
+    const durationEnd = getDateString(start);
+
+    // If plan also has a phase, cap at the phase end date
+    if (plan.phase_id) {
+      const { data: phase } = await supabaseAdmin
+        .from("phases")
+        .select("end_date")
+        .eq("id", plan.phase_id)
+        .maybeSingle();
+
+      if (phase?.end_date && phase.end_date < durationEnd) {
+        return phase.end_date;
+      }
+    }
+
+    return durationEnd;
   }
 
   // Branch 2: phase_id is set
@@ -216,14 +271,17 @@ function fallbackEndDate(today: string): string {
  * Delete all future scheduled events for a plan.
  * Used when a plan is being replaced or deactivated.
  */
-export async function deleteFutureEventsForPlan(planId: string): Promise<void> {
-  const today = getTodayDateString();
+export async function deleteFutureEventsForPlan(
+  planId: string,
+  fromDate?: string
+): Promise<void> {
+  const deleteFrom = fromDate ?? getTodayDateString();
 
   const { error } = await supabaseAdmin
     .from("training_events")
     .delete()
     .eq("training_plan_id", planId)
-    .gte("date", today)
+    .gte("date", deleteFrom)
     .eq("status", "scheduled");
 
   if (error) throw error;

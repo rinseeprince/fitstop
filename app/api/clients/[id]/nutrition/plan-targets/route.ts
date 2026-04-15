@@ -3,6 +3,9 @@ import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { getClientById } from "@/services/client-service";
 import { getPlanTargetForDate } from "@/services/daily-context-service";
+import { getNutritionEventsForDateRange } from "@/services/nutrition-event-service";
+import { getTotalCalories } from "@/utils/nutrition-event-helpers";
+import { supabaseAdmin } from "@/services/supabase-admin";
 
 const MAX_DATES = 31;
 const DATE_FORMAT = /^\d{4}-\d{2}-\d{2}$/;
@@ -54,9 +57,34 @@ export async function GET(
       return NextResponse.json({ error: "Invalid date format, expected YYYY-MM-DD" }, { status: 400 });
     }
 
+    const sortedDates = [...dates].sort();
+    const minDate = sortedDates[0];
+    const maxDate = sortedDates[sortedDates.length - 1];
+
+    // Batch fetch: events + activity burn flag in parallel
+    const [events, { data: clientRow }] = await Promise.all([
+      getNutritionEventsForDateRange(clientId, minDate, maxDate),
+      supabaseAdmin.from("clients").select("include_activity_burn").eq("id", clientId).single(),
+    ]);
+    const includeActivityBurn = clientRow?.include_activity_burn !== false;
+
+    const eventsByDate = new Map(events.map((e) => [e.date.split("T")[0], e]));
+
     const targets = await Promise.all(
       dates.map(async (date) => {
-        const target = await getPlanTargetForDate(clientId, date);
+        const event = eventsByDate.get(date);
+        if (event) {
+          return {
+            date,
+            calories: getTotalCalories(event, includeActivityBurn),
+            proteinG: event.proteinG,
+            carbsG: event.carbG,
+            fatG: event.fatG,
+            isTrainingDay: event.isTrainingDay,
+          };
+        }
+        // TODO NE-3-cleanup: remove template fallback once event coverage guaranteed
+        const target = await getPlanTargetForDate(clientId, date, includeActivityBurn);
         return target
           ? { date, ...target }
           : { date, calories: 0, proteinG: 0, carbsG: 0, fatG: 0, isTrainingDay: false };

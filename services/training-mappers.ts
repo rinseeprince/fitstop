@@ -23,6 +23,7 @@ export const mapExerciseRow = (row: TrainingExerciseRow): TrainingExercise => ({
   notes: row.notes ?? undefined,
   supersetGroup: row.superset_group ?? undefined,
   isWarmup: row.is_warmup || false,
+  exerciseId: row.exercise_id ?? null,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
 });
@@ -42,6 +43,7 @@ export const mapSessionRow = (row: TrainingSessionRow, exercises: TrainingExerci
   activityMetadata: (row.activity_metadata ?? undefined) as ActivityMetadata | undefined,
   estimatedCalories: row.estimated_calories ?? undefined,
   caloriesCalculatedAt: row.calories_calculated_at ?? undefined,
+  calorieSurplusPercentage: row.calorie_surplus_percentage ?? null,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
 });

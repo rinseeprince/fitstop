@@ -2,6 +2,9 @@ import { supabaseAdmin } from "./supabase-admin";
 import type { TrainingPlan, TrainingSession, TrainingExercise, AIGeneratedPlan, UpdateTrainingPlanRequest } from "@/types/training";
 import type { TrainingPlanUpdate } from "@/lib/database-helpers";
 import { mapExerciseRow, mapSessionRow, mapPlanRow } from "./training-mappers";
+import { getTodayDateString } from "@/lib/date-helpers";
+import { deleteFutureEventsForPlan, regenerateFutureEvents } from "@/services/training-event-service";
+import { captureApiError } from "@/lib/error-handler";
 
 // Re-export moved functions so existing imports continue to work
 export { updateSession, addSession, deleteSession, replaceSessionExercises, getSessionWithExercises, insertTrainingSessions, reorderSessions, updateSessionCalories } from "./training-session-service";
@@ -266,6 +269,7 @@ export const createTrainingPlanAtomic = async (params: {
   avgStress?: number;
   recentAdherencePercentage?: number;
   phaseId?: string;
+  effectiveFrom?: string;
 }): Promise<string> => {
   const { data: newPlanId, error: rpcError } = await supabaseAdmin
     .rpc("create_training_plan_atomic" as never, {
@@ -288,6 +292,7 @@ export const createTrainingPlanAtomic = async (params: {
       p_avg_stress: params.avgStress || null,
       p_recent_adherence_percentage: params.recentAdherencePercentage || null,
       p_phase_id: params.phaseId || null,
+      p_effective_from: params.effectiveFrom || null,
     } as never) as unknown as { data: string | null; error: { message: string } | null };
 
   if (rpcError || !newPlanId) {
@@ -296,4 +301,72 @@ export const createTrainingPlanAtomic = async (params: {
 
   return newPlanId as string;
 };
+
+/**
+ * Lazy promotion: if a planned training plan's effective_from has arrived,
+ * promote it to active and archive the current active plan.
+ * Called before any read of the active training plan.
+ *
+ * supabaseAdmin: system-level write for plan lifecycle management.
+ */
+export async function promoteTrainingPlanIfReady(
+  clientId: string
+): Promise<{ promoted: boolean; newPlanId?: string }> {
+  const today = getTodayDateString();
+
+  const { data: plannedPlan, error } = await supabaseAdmin
+    .from("training_plans")
+    .select("id, effective_from")
+    .eq("client_id", clientId)
+    .eq("status", "planned")
+    .lte("effective_from", today)
+    .maybeSingle();
+
+  if (error || !plannedPlan) return { promoted: false };
+
+  // Capture old active plan ID before archiving it
+  const { data: oldActivePlan } = await supabaseAdmin
+    .from("training_plans")
+    .select("id")
+    .eq("client_id", clientId)
+    .eq("status", "active")
+    .maybeSingle();
+
+  // Archive the current active plan
+  const archiveUntil = new Date(plannedPlan.effective_from + "T00:00:00");
+  archiveUntil.setDate(archiveUntil.getDate() - 1);
+  const archiveUntilStr = archiveUntil.toISOString().split("T")[0];
+
+  await supabaseAdmin
+    .from("training_plans")
+    .update({
+      status: "archived",
+      effective_until: archiveUntilStr,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("client_id", clientId)
+    .eq("status", "active");
+
+  // Promote planned to active
+  await supabaseAdmin
+    .from("training_plans")
+    .update({
+      status: "active",
+      effective_until: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", plannedPlan.id);
+
+  // Clean up old plan's future events, generate for promoted plan
+  if (oldActivePlan) {
+    await deleteFutureEventsForPlan(oldActivePlan.id).catch((err) =>
+      captureApiError(err, { action: "delete-future-training-events-promote", planId: oldActivePlan.id })
+    );
+  }
+  await regenerateFutureEvents(clientId, plannedPlan.id).catch((err) =>
+    captureApiError(err, { action: "generate-training-events-promote", planId: plannedPlan.id })
+  );
+
+  return { promoted: true, newPlanId: plannedPlan.id };
+}
 

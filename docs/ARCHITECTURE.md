@@ -27,9 +27,13 @@ coaches
         │           └── daily_habits     -- phase_id FK (nullable)
         │
         ├── training_plans            -- can exist without roadmap (phase_id = null)
-        │     └── training_sessions
-        │           └── training_exercises
+        │     ├── training_sessions
+        │     │     └── training_exercises  -- exercise_id FK to exercises catalog
+        │     └── training_events        -- one row per session per date
         ├── nutrition_plans           -- can exist without roadmap (phase_id = null)
+        │     └── nutrition_events       -- one row per client per date
+        │
+        ├── exercises (catalog)          -- two-tier: global (coach_id=NULL) + coach-specific
         ├── daily_habits              -- can exist without roadmap (phase_id = null)
         │
         ├── daily_logs (spine)        -- one per client per day
@@ -197,6 +201,45 @@ daily_logs (spine)         -- id, client_id, date, notes, phase_id
 
 ---
 
+## Nutrition & Training Events
+
+Concrete calendar events materialize plan templates into per-date rows:
+
+```
+training_events    -- one row per training session per date
+nutrition_events   -- one row per client per date
+```
+
+Events are the **source of truth for date-specific targets**. Plan templates (`nutrition_plan_daily_targets`, `training_sessions`) are blueprints used to generate events, not for display.
+
+### Training event fields
+- `training_session_id` FK (SET NULL on delete, preserves events when sessions removed)
+- `session_name`, `session_focus` - snapshotted at creation, survive template renames
+- `estimated_calories` - from the session template
+- `is_modified` - true when manually moved/duplicated via the calendar UI. Regeneration preserves modified events by default (`force = false`); coaches can override with `force = true` after a warning dialog
+- `status`: `scheduled` / `completed` / `partial` / `missed` / `skipped`
+- Unique constraint: `(client_id, training_session_id, date)` partial index where `training_session_id IS NOT NULL`
+
+### Nutrition event fields
+- `baseline_calories` + `training_burn_calories` + `external_burn_calories` = total prescribed calories
+- `protein_g`, `carb_g`, `fat_g` - baseline macros (calculated from baseline_calories only, not burn-inclusive)
+- `diet_type` - snapshotted from plan, enables display-time macro recalculation when `include_activity_burn` is on
+- `is_training_day` - derived from training events on that date
+- `status`: `scheduled` / `logged` / `missed`
+
+### Event lifecycle
+- **Generated** when a plan is created or regenerated
+- **Cascaded** when training events change (training day swaps trigger nutrition event regeneration via `regenerateFutureNutritionEvents`)
+- **Frozen once past** - only future `scheduled` events are deleted/regenerated. Past events and non-scheduled statuses are preserved
+- **Calendar operations** (training events only): coaches can move events to different dates, duplicate individual events, and duplicate entire weeks. Duplicate-week clones sessions + exercises so each week is independent. Moved/duplicated events get `is_modified = true`
+
+### Read priority for nutrition targets
+1. **Logged days**: `nutrition_logs.target_calories` (snapshot written at log time, authoritative)
+2. **Unlogged days with event**: `nutrition_events` row for that date (primary path since NE-3)
+3. **Unlogged days without event**: template fallback via `getPlanTargetForDateFromTemplate()` for pre-backfill dates or coverage gaps
+
+---
+
 ## Training Completion Hierarchy
 
 ```
@@ -207,6 +250,34 @@ training_logs        -- did the client train today? (1:1 per day, child of daily
 - `session_logs.training_session_id` is SET NULL on delete (nullable). When a training plan is replaced, old completion records are preserved via `prescribed_session_snapshot` JSONB
 - `exercise_logs.training_exercise_id` is SET NULL on delete (nullable). History preserved via `prescribed_exercise_snapshot` JSONB
 - Snapshots are written at completion time and backfilled for existing data
+
+---
+
+## Exercise Catalog
+
+```
+exercises                    -- master catalog, two-tier ownership
+  ├── training_exercises     -- client exercises reference via exercise_id FK (nullable)
+  └── coach_saved_exercises  -- library exercises reference via exercise_id FK (nullable)
+```
+
+### Two-tier ownership
+- **Global exercises** (`coach_id = NULL`) - platform-seeded, read-only for coaches. Common exercises with aliases.
+- **Coach-specific exercises** (`coach_id = UUID`) - created when AI generates a novel exercise or coach manually adds one. Only visible to that coach.
+
+### Resolution strategy
+When an exercise name is encountered (AI generation, manual add, import):
+1. Case-insensitive exact match on `name` (coach-specific first, then global)
+2. Alias match via `aliases` text array (e.g., "DB Bench Press" matches "Dumbbell Bench Press")
+3. Abbreviation normalization (DB to Dumbbell, BB to Barbell, OHP to Overhead Press, etc.) then retry steps 1-2
+4. No match: create as coach-specific exercise
+
+Batch resolution via `resolveExercises()` fetches all coach + global exercises in one query and matches in memory.
+
+### Schema
+- Unique index: `COALESCE(coach_id, '00000000-...'), LOWER(name)` - one exercise per name per coach (or globally)
+- `exercise_id` FK on `training_exercises` is nullable for backward compatibility (pre-EX-1 exercises have `exercise_id = NULL`)
+- ON DELETE SET NULL preserves client/library exercises if a catalog entry is removed
 
 ---
 

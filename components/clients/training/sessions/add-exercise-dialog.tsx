@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import {
   Dialog,
   DialogContent,
@@ -14,7 +14,14 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2 } from "lucide-react";
+import { Loader2, Search } from "lucide-react";
+
+type CatalogExercise = {
+  id: string;
+  name: string;
+  muscle_group?: string;
+  equipment?: string;
+};
 
 type AddExerciseDialogProps = {
   clientId: string;
@@ -45,6 +52,45 @@ export function AddExerciseDialog({
     notes: "",
     isWarmup: false,
   });
+
+  // Catalog search state
+  const [catalogResults, setCatalogResults] = useState<CatalogExercise[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const suggestionsRef = useRef<HTMLDivElement>(null);
+
+  const searchCatalog = useCallback(async (query: string) => {
+    if (query.length < 2) {
+      setCatalogResults([]);
+      return;
+    }
+    setIsSearching(true);
+    try {
+      const res = await fetch(`/api/training/exercises?search=${encodeURIComponent(query)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setCatalogResults(data.exercises?.slice(0, 8) ?? []);
+      }
+    } catch {
+      // Non-critical — free-text fallback still works
+    } finally {
+      setIsSearching(false);
+    }
+  }, []);
+
+  const handleNameChange = useCallback((value: string) => {
+    setFormData((prev) => ({ ...prev, name: value }));
+    setShowSuggestions(true);
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    searchTimeoutRef.current = setTimeout(() => searchCatalog(value), 300);
+  }, [searchCatalog]);
+
+  const handleSelectExercise = useCallback((exercise: CatalogExercise) => {
+    setFormData((prev) => ({ ...prev, name: exercise.name }));
+    setShowSuggestions(false);
+    setCatalogResults([]);
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -90,6 +136,8 @@ export function AddExerciseDialog({
         notes: "",
         isWarmup: false,
       });
+      setCatalogResults([]);
+      setShowSuggestions(false);
       onOpenChange(false);
       onSuccess();
     } catch (_error) {
@@ -111,14 +159,49 @@ export function AddExerciseDialog({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
+          <div className="space-y-2 relative">
             <Label htmlFor="exercise-name">Exercise Name *</Label>
-            <Input
-              id="exercise-name"
-              placeholder="e.g., Bench Press, Squats"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            />
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#93b0b4]" />
+              <Input
+                id="exercise-name"
+                placeholder="Search or type exercise name..."
+                value={formData.name}
+                onChange={(e) => handleNameChange(e.target.value)}
+                onFocus={() => catalogResults.length > 0 && setShowSuggestions(true)}
+                onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                className="pl-8"
+                autoComplete="off"
+              />
+              {isSearching && (
+                <Loader2 className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#93b0b4] animate-spin" />
+              )}
+            </div>
+            {showSuggestions && catalogResults.length > 0 && (
+              <div
+                ref={suggestionsRef}
+                className="absolute z-50 top-full left-0 right-0 mt-1 bg-white border border-[rgba(13,148,136,0.12)] rounded-[6px] shadow-lg max-h-48 overflow-y-auto"
+              >
+                {catalogResults.map((exercise) => (
+                  <button
+                    key={exercise.id}
+                    type="button"
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-[rgba(13,148,136,0.05)] flex items-center gap-2 transition-colors"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      handleSelectExercise(exercise);
+                    }}
+                  >
+                    <span className="text-[#0c1a1e]">{exercise.name}</span>
+                    {exercise.muscle_group && (
+                      <span className="text-[10px] text-[#93b0b4] bg-[rgba(13,148,136,0.05)] px-1.5 py-0.5 rounded-[3px]">
+                        {exercise.muscle_group}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-3 gap-3">

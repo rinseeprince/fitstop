@@ -13,12 +13,13 @@ export type TrainingSplitType =
 export type SessionType = "training" | "external_activity";
 
 // Training plan status
-export type TrainingPlanStatus = "active" | "archived" | "draft";
+export type TrainingPlanStatus = "active" | "archived" | "draft" | "planned";
 
 // Training exercise
 export type TrainingExercise = {
   id: string;
   sessionId: string;
+  exerciseId: string | null;
   name: string;
   orderIndex: number;
   sets: number;
@@ -32,6 +33,19 @@ export type TrainingExercise = {
   notes?: string;
   supersetGroup?: string;
   isWarmup: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+// Exercise catalog entry
+export type Exercise = {
+  id: string;
+  coachId: string | null;
+  name: string;
+  muscleGroup: string | null;
+  equipment: string | null;
+  category: string | null;
+  aliases: string[];
   createdAt: string;
   updatedAt: string;
 };
@@ -53,6 +67,8 @@ export type TrainingSession = {
   // AI-estimated calorie burn (for training sessions)
   estimatedCalories?: number;
   caloriesCalculatedAt?: string;
+  // Calorie surplus percentage (overrides plan default when set)
+  calorieSurplusPercentage: number | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -131,6 +147,8 @@ export type TrainingEvent = {
   estimatedCalories: number | null;
   status: TrainingEventStatus;
   sessionLogId: string | null;
+  isModified: boolean;
+  calorieSurplusPercentage: number | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -368,4 +386,65 @@ export type ManualExerciseDraft = {
   rpeTarget?: number;
   restSeconds?: number;
   notes?: string;
+};
+
+// --- Coach Library Types ---
+
+export type SavedPlanStatus = 'draft' | 'saved';
+
+export type SavedPlan = {
+  id: string;
+  coachId: string;
+  name: string;
+  description: string | null;
+  splitType: string | null;
+  frequencyPerWeek: number | null;
+  status: SavedPlanStatus;
+  cycleLength: number | null;
+  restPattern: number[];
+  defaultSurplusPercentage: number | null;
+  source: string;
+  coachPrompt: string | null;
+  programDurationWeeks: number | null;
+  sessions: SavedSession[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type SavedSession = {
+  id: string;
+  coachId: string;
+  savedPlanId: string | null;
+  name: string;
+  focus: string | null;
+  orderIndex: number;
+  isRest: boolean;
+  estimatedDurationMinutes: number | null;
+  calorieSurplusPercentage: number | null;
+  notes: string | null;
+  sessionType: string;
+  exercises: SavedExercise[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type SavedExercise = {
+  id: string;
+  savedSessionId: string;
+  exerciseId: string | null;
+  name: string;
+  orderIndex: number;
+  sets: number;
+  repsMin: number | null;
+  repsMax: number | null;
+  repsTarget: string | null;
+  rpeTarget: number | null;
+  percentage1rm: number | null;
+  tempo: string | null;
+  restSeconds: number | null;
+  supersetGroup: string | null;
+  isWarmup: boolean;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
 };

@@ -29,6 +29,7 @@ function mapNutritionEventRow(row: NutritionEventRow): NutritionEvent {
     fatG: Number(row.fat_g),
     dietType: row.diet_type,
     isTrainingDay: row.is_training_day,
+    calorieSurplusPercentage: row.calorie_surplus_percentage ?? null,
     status: row.status as NutritionEventStatus,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -198,12 +199,55 @@ export async function regenerateFutureNutritionEvents(
 
   if (targetsError) throw targetsError;
 
-  // Fetch active training plan
+  // Fetch active training plan and sync is_training_day on daily targets
   const trainingPlan = await getActiveTrainingPlan(clientId);
+  if (trainingPlan && dailyTargetRows) {
+    const { getTrainingDays } = await import("@/utils/nutrition-helpers");
+    const trainingDays = getTrainingDays(trainingPlan);
+    for (const row of dailyTargetRows) {
+      const shouldBeTrain = trainingDays.has(row.day_of_week);
+      if (row.is_training_day !== shouldBeTrain) {
+        await supabaseAdmin
+          .from("nutrition_plan_daily_targets")
+          .update({ is_training_day: shouldBeTrain })
+          .eq("nutrition_plan_id", planId)
+          .eq("day_of_week", row.day_of_week);
+        row.is_training_day = shouldBeTrain;
+      }
+    }
+  }
 
   // Calculate end date
   const endDate = await calculateNutritionEndDate(planId, fromDate);
   if (!endDate || endDate <= fromDate) return;
+
+  // Cap end date if this is the active plan and a planned plan exists
+  const { data: thisPlan } = await supabaseAdmin
+    .from("nutrition_plans")
+    .select("status")
+    .eq("id", planId)
+    .single();
+
+  let cappedEndDate = endDate;
+  if (thisPlan?.status === "active") {
+    const { data: plannedNutritionPlan } = await supabaseAdmin
+      .from("nutrition_plans")
+      .select("effective_from")
+      .eq("client_id", clientId)
+      .eq("status", "planned")
+      .maybeSingle();
+
+    if (plannedNutritionPlan?.effective_from) {
+      const dayBefore = new Date(plannedNutritionPlan.effective_from + "T00:00:00");
+      dayBefore.setDate(dayBefore.getDate() - 1);
+      const capDate = getDateString(dayBefore);
+      if (capDate < cappedEndDate) {
+        cappedEndDate = capDate;
+      }
+    }
+  }
+
+  if (cappedEndDate <= fromDate) return;
 
   await generateNutritionEvents(
     clientId,
@@ -216,7 +260,7 @@ export async function regenerateFutureNutritionEvents(
     dailyTargetRows,
     trainingPlan,
     fromDate,
-    endDate
+    cappedEndDate
   );
 }
 
@@ -271,15 +315,18 @@ function fallbackEndDate(today: string): string {
  * Delete all future scheduled events for a plan.
  * Used when a plan is being replaced or deactivated.
  */
-export async function deleteFutureNutritionEventsForPlan(planId: string): Promise<void> {
-  const today = getTodayDateString();
+export async function deleteFutureNutritionEventsForPlan(
+  planId: string,
+  fromDate?: string
+): Promise<void> {
+  const deleteFrom = fromDate ?? getTodayDateString();
 
   // supabaseAdmin: system-level write for event cleanup
   const { error } = await supabaseAdmin
     .from("nutrition_events")
     .delete()
     .eq("nutrition_plan_id", planId)
-    .gte("date", today)
+    .gte("date", deleteFrom)
     .eq("status", "scheduled");
 
   if (error) throw error;
@@ -324,6 +371,32 @@ export async function getNutritionEventForDate(
 
   if (error) throw error;
   return data ? mapNutritionEventRow(data) : null;
+}
+
+// --- Training burn updates ---
+
+/**
+ * Update the training burn on a nutrition event for a specific date.
+ * Called when a client completes a training session (scheduled or alternative)
+ * so the nutrition event reflects the actual burn, not the originally planned one.
+ */
+export async function updateNutritionEventTrainingBurn(
+  clientId: string,
+  date: string,
+  trainingBurnCalories: number
+): Promise<void> {
+  // supabaseAdmin: system-level write for event accuracy
+  const { error } = await supabaseAdmin
+    .from("nutrition_events")
+    .update({
+      training_burn_calories: trainingBurnCalories,
+      is_training_day: trainingBurnCalories > 0,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("client_id", clientId)
+    .eq("date", date);
+
+  if (error) throw error;
 }
 
 // --- Status updates ---

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
 import type { TrainingPlan, PreGenerationActivity } from "@/types/training";
 import { parseGetPlanResponse, parseGeneratePlanResponse } from "@/lib/validations/training";
+import type { UpcomingTrainingPlan } from "@/lib/validations/training";
 
 type UseTrainingPlanProps = {
   clientId: string;
@@ -13,6 +14,7 @@ type UseTrainingPlanProps = {
 export function useTrainingPlan({ clientId, onUpdate }: UseTrainingPlanProps) {
   const { toast } = useToast();
   const [plan, setPlan] = useState<TrainingPlan | null>(null);
+  const [upcomingPlan, setUpcomingPlan] = useState<UpcomingTrainingPlan | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -37,6 +39,7 @@ export function useTrainingPlan({ clientId, onUpdate }: UseTrainingPlanProps) {
       }
       if (data.success) {
         setPlan(data.plan || null);
+        setUpcomingPlan((data.upcomingPlan as UpcomingTrainingPlan) || null);
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Failed to load training plan";
@@ -107,8 +110,13 @@ export function useTrainingPlan({ clientId, onUpdate }: UseTrainingPlanProps) {
         setPreGenerationActivities([]);
         setAllowSameDayTraining(false);
         setPhaseId(undefined);
-        toast({ title: "Training plan generated", description: data.plan.name });
+        toast({
+          title: effectiveFrom ? "Training plan scheduled" : "Training plan generated",
+          description: data.plan.name,
+        });
         onUpdate?.();
+        // Re-fetch to pick up upcomingPlan from GET handler
+        await fetchPlan();
         return true;
       } else {
         throw new Error(data.error || data.errorMessage || "Failed to generate plan");
@@ -139,6 +147,7 @@ export function useTrainingPlan({ clientId, onUpdate }: UseTrainingPlanProps) {
   return {
     clientId,
     plan,
+    upcomingPlan,
     isLoading,
     isGenerating,
     loadError,

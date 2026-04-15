@@ -10,7 +10,7 @@
  * @param maxLength - Maximum allowed length (default 2000)
  * @returns Sanitized string safe for AI prompt interpolation
  */
-export function sanitizeForAIPrompt(input: string, maxLength = 2000): string {
+export function sanitizeForAIPrompt(input: string, maxLength = 500): string {
   if (!input || typeof input !== "string") {
     return "";
   }
@@ -33,14 +33,14 @@ export function sanitizeForAIPrompt(input: string, maxLength = 2000): string {
 
   // Filter out lines that look like prompt injection attempts
   const injectionPatterns = [
-    /^\s*ignore\s+(all\s+)?(previous|above|prior)/i,
-    /^\s*disregard\s+(all\s+)?(previous|above|prior)/i,
+    /^\s*ignore\s+/i,
+    /^\s*disregard\s+/i,
     /^\s*forget\s+(all\s+)?(previous|above|prior)/i,
     /^\s*system\s*:/i,
     /^\s*assistant\s*:/i,
     /^\s*human\s*:/i,
     /^\s*user\s*:/i,
-    /^\s*override\s+(all\s+)?(instructions|rules|guidelines)/i,
+    /^\s*override\s+/i,
     /^\s*you\s+are\s+now\s+/i,
     /^\s*new\s+instructions?\s*:/i,
     /^\s*\[system\]/i,

@@ -119,6 +119,7 @@ export type TrainingSessionRow = {
   estimated_duration_minutes: number | null;
   session_type: "training" | "external_activity";
   activity_metadata: ActivityMetadata | null;
+  calorie_surplus_percentage: number | null;
   created_at: string;
   updated_at: string;
 };

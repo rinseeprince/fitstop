@@ -10,7 +10,7 @@ export const splitTypeSchema = z.enum([
   "custom",
 ]);
 
-export const planStatusSchema = z.enum(["active", "archived", "draft"]);
+export const planStatusSchema = z.enum(["active", "archived", "draft", "planned"]);
 
 export const dayOfWeekSchema = z.enum([
   "monday",
@@ -75,6 +75,7 @@ export const generateTrainingPlanSchema = z.object({
   preGenerationActivities: z.array(preGenerationActivitySchema).optional(),
   allowSameDayTraining: z.boolean().optional().default(false),
   phaseId: z.string().uuid().optional(),
+  effectiveFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format").optional(),
 });
 
 export const updateTrainingPlanSchema = z.object({
@@ -163,6 +164,7 @@ const trainingPlanResponseSchema = z.object({
 const getTrainingPlanApiResponseSchema = z.object({
   success: z.boolean(),
   plan: trainingPlanResponseSchema.nullable().optional(),
+  upcomingPlan: z.unknown().optional(),
   errorMessage: z.string().optional(),
 });
 
@@ -195,9 +197,19 @@ const refreshExercisesApiResponseSchema = z.object({
 });
 
 // Response types for API calls
+export type UpcomingTrainingPlan = {
+  id: string;
+  effectiveFrom: string;
+  name: string;
+  splitType: string;
+  frequencyPerWeek: number;
+  sessions: TrainingPlan["sessions"];
+};
+
 export type GetPlanApiResponse = {
   success: boolean;
   plan?: TrainingPlan | null;
+  upcomingPlan?: UpcomingTrainingPlan | null;
   errorMessage?: string;
 };
 

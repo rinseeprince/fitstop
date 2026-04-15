@@ -58,7 +58,7 @@ export async function POST(
       );
     }
 
-    const exercise = await addExercise(sessionId, validation.data);
+    const exercise = await addExercise(sessionId, validation.data, coachId);
 
     // Recalculate session calories after adding exercise
     const session = plan.sessions.find((s) => s.id === sessionId);

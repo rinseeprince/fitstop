@@ -1,8 +1,30 @@
 import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
 import { DAYS_OF_WEEK, calculateDailyMacros, getExternalActivitiesForDay, calculateExternalActivityCalories, getExternalActivitiesSummary } from "@/utils/nutrition-helpers";
 import { getTrainingSessionCaloriesByDay, getTrainingSessionsSummary } from "@/utils/training-calorie-helpers";
-import type { TrainingPlan } from "@/types/training";
+import type { TrainingPlan, TrainingEvent } from "@/types/training";
 import type { DietType } from "@/types/check-in";
+
+const DAY_NAMES: Record<number, string> = {
+  0: "sunday", 1: "monday", 2: "tuesday", 3: "wednesday",
+  4: "thursday", 5: "friday", 6: "saturday",
+};
+
+/** Aggregate training event estimated calories by day-of-week. */
+function getEventCaloriesByDay(events: TrainingEvent[]): Record<string, number> {
+  const result: Record<string, number> = {};
+  for (const event of events) {
+    const dayOfWeek = DAY_NAMES[new Date(event.date + "T00:00:00").getDay()];
+    result[dayOfWeek] = (result[dayOfWeek] || 0) + (event.estimatedCalories || 0);
+  }
+  return result;
+}
+
+/** Build training session summaries from events, grouped by day-of-week. */
+function getEventSessionsSummary(events: TrainingEvent[], day: string): Array<{ name: string; calories: number }> {
+  return events
+    .filter((e) => DAY_NAMES[new Date(e.date + "T00:00:00").getDay()] === day)
+    .map((e) => ({ name: e.sessionName, calories: e.estimatedCalories || 0 }));
+}
 
 type StoredDailyTarget = {
   day_of_week: string;
@@ -29,9 +51,13 @@ export function buildDailyTargetsFromPlan(
   dailyTargetRows: StoredDailyTarget[] | null,
   trainingPlan: TrainingPlan | null,
   includeActivityBurn: boolean,
-  dietType: DietType
+  dietType: DietType,
+  trainingEvents?: TrainingEvent[]
 ): DailyNutritionTargets[] {
-  const trainingSessionCaloriesByDay = getTrainingSessionCaloriesByDay(trainingPlan);
+  // Use event-based burns when available, otherwise fall back to template
+  const trainingSessionCaloriesByDay = trainingEvents
+    ? getEventCaloriesByDay(trainingEvents)
+    : getTrainingSessionCaloriesByDay(trainingPlan);
 
   const targetsByDay = new Map(
     (dailyTargetRows || []).map((dt) => [dt.day_of_week, dt])
@@ -46,7 +72,9 @@ export function buildDailyTargetsFromPlan(
     const isTrainingDay = stored?.is_training_day ?? false;
 
     const trainingSessionCalories = trainingSessionCaloriesByDay[day] || 0;
-    const trainingSessions = getTrainingSessionsSummary(trainingPlan, day);
+    const trainingSessions = trainingEvents
+      ? getEventSessionsSummary(trainingEvents, day)
+      : getTrainingSessionsSummary(trainingPlan, day);
 
     const dayActivities = getExternalActivitiesForDay(trainingPlan, day);
     const externalActivityCalories = calculateExternalActivityCalories(dayActivities);

@@ -70,6 +70,7 @@ export async function getClientTrainingPlan(
     const exercises: TrainingExercise[] = exerciseList.map((ex) => ({
       id: ex.id,
       sessionId: ex.session_id,
+      exerciseId: (ex as unknown as { exercise_id: string | null }).exercise_id ?? null,
       name: ex.name,
       orderIndex: ex.order_index,
       sets: ex.sets,
@@ -101,6 +102,7 @@ export async function getClientTrainingPlan(
       estimatedCalories: session.estimated_calories ?? undefined,
       caloriesCalculatedAt: session.calories_calculated_at ?? undefined,
       exercises,
+      calorieSurplusPercentage: session.calorie_surplus_percentage ?? null,
       createdAt: session.created_at,
       updatedAt: session.updated_at,
     };
@@ -176,7 +178,7 @@ export async function markSessionComplete(
   let snapshot: Record<string, unknown> | null = null;
   const { data: sessionData } = await supabase
     .from("training_sessions")
-    .select("name, day_of_week, focus, session_type, estimated_duration_minutes")
+    .select("name, day_of_week, focus, session_type, estimated_duration_minutes, estimated_calories")
     .eq("id", trainingSessionId)
     .single();
   if (sessionData) {

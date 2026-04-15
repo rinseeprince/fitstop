@@ -21,12 +21,13 @@ export async function upsertWeeklySummary(
   // Check client start_date for partial week handling
   const { data: client } = await supabaseAdmin
     .from("clients")
-    .select("start_date")
+    .select("start_date, include_activity_burn")
     .eq("id", clientId)
     .eq("active", true)
     .single();
 
   const clientStartDate = client?.start_date ?? null;
+  const includeActivityBurn = client?.include_activity_burn !== false;
   // If client started mid-week, only count from their start date
   const effectiveStart = clientStartDate && clientStartDate > weekStartDate
     ? clientStartDate
@@ -67,7 +68,7 @@ export async function upsertWeeklySummary(
 
   // Fill in unlogged days with the plan that was active on each specific date
   const planTargets = await Promise.all(
-    unloggedDays.map((d) => getPlanTargetForDate(clientId, d))
+    unloggedDays.map((d) => getPlanTargetForDate(clientId, d, includeActivityBurn))
   );
   for (const pt of planTargets) {
     if (!pt) continue;
@@ -218,15 +219,16 @@ export async function getCoachingWeekSummaryLive(
   const weekStart = getTrainingWeekStart(today, checkInDay);
   const weekEnd = getTrainingWeekEnd(today, checkInDay);
 
-  // Fetch client start_date for partial week handling
+  // Fetch client start_date + include_activity_burn for partial week handling
   const { data: client } = await supabaseAdmin
     .from("clients")
-    .select("start_date")
+    .select("start_date, include_activity_burn")
     .eq("id", clientId)
     .eq("active", true)
     .single();
 
   const clientStartDate = client?.start_date ?? null;
+  const includeActivityBurn = client?.include_activity_burn !== false;
   const effectiveStart = clientStartDate && clientStartDate > weekStart
     ? clientStartDate
     : weekStart;
@@ -263,7 +265,7 @@ export async function getCoachingWeekSummaryLive(
   let fullWeekFat = logs.reduce((sum, l) => sum + (l.targetFatG ?? 0), 0);
 
   const planTargets = await Promise.all(
-    unloggedDays.map((d) => getPlanTargetForDate(clientId, d))
+    unloggedDays.map((d) => getPlanTargetForDate(clientId, d, includeActivityBurn))
   );
   for (const pt of planTargets) {
     if (!pt) continue;

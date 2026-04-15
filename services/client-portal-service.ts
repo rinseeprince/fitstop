@@ -5,6 +5,8 @@ import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
 import { buildDailyTargetsFromPlan } from "@/utils/build-daily-targets";
 import { mapClientRow, mapCheckInRow } from "@/lib/mappers";
 import { getClientTrainingPlan } from "./client-portal-training";
+import { getEventsForDateRange } from "./training-event-service";
+import { getTrainingWeekStart, getTrainingWeekEnd } from "@/lib/date-helpers";
 import { promoteNutritionPlanIfReady } from "./nutrition-plan-service";
 
 // Create authenticated Supabase client for server-side client portal access
@@ -154,8 +156,15 @@ export async function getClientNutritionTargets(
 
   if (dtError) return null;
 
-  // Fetch the real training plan for live training calorie additions
-  const trainingPlan = await getClientTrainingPlan(clientId);
+  // Fetch training plan + current week's training events for live calorie enrichment
+  const today = new Date().toISOString().split("T")[0];
+  const weekStart = getTrainingWeekStart(today);
+  const weekEnd = getTrainingWeekEnd(today);
+
+  const [trainingPlan, trainingEvents] = await Promise.all([
+    getClientTrainingPlan(clientId),
+    getEventsForDateRange(clientId, weekStart, weekEnd),
+  ]);
   const dietType = (plan.diet_type as DietType) || "balanced";
 
   const dailyTargets = buildDailyTargetsFromPlan(
@@ -163,7 +172,8 @@ export async function getClientNutritionTargets(
     dailyTargetRows,
     trainingPlan,
     includeActivityBurn,
-    dietType
+    dietType,
+    trainingEvents
   );
 
   return {

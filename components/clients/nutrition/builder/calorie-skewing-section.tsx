@@ -123,19 +123,14 @@ export function CalorieSkewingSection({
               <RotateCcw className="h-3 w-3 mr-1" />
               Reset to default
             </Button>
-            <Button
-              size="sm"
-              onClick={onSave}
-              disabled={isSaving || !budgetValidation.isValid}
-              className="text-xs h-7 ml-auto"
-            >
-              {isSaving ? "Saving..." : "Save distribution"}
-            </Button>
+            <span className="text-[11px] text-[#93b0b4] ml-auto">
+              Applied when you regenerate
+            </span>
           </div>
 
           {!budgetValidation.isValid && (
             <p className="text-xs text-red-500">
-              Adjust day calories to match the weekly baseline budget before saving.
+              Adjust day calories to match the weekly baseline budget before regenerating.
             </p>
           )}
         </div>

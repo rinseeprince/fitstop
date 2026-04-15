@@ -84,7 +84,8 @@ export async function POST(
           notes: e.notes,
           supersetGroup: e.supersetGroup,
           isWarmup: e.isWarmup,
-        }))
+        })),
+        coachId
       );
     }
 

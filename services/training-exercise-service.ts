@@ -6,6 +6,7 @@ import type {
 } from "@/types/training";
 import type { TrainingExerciseUpdate } from "@/lib/database-helpers";
 import { mapExerciseRow } from "./training-mappers";
+import { resolveExercise } from "./exercise-catalog-service";
 
 // Update exercise
 export const updateExercise = async (
@@ -42,7 +43,8 @@ export const updateExercise = async (
 // Add exercise to session
 export const addExercise = async (
   sessionId: string,
-  exercise: AddExerciseRequest
+  exercise: AddExerciseRequest,
+  coachId: string
 ): Promise<TrainingExercise> => {
   // Get max order index from active exercises
   const { data: existingExercises } = await supabaseAdmin
@@ -57,11 +59,15 @@ export const addExercise = async (
     ? existingExercises[0].order_index + 1
     : 0;
 
+  // Resolve exercise name to catalog ID
+  const exerciseId = await resolveExercise(exercise.name, coachId);
+
   const { data, error } = await supabaseAdmin
     .from("training_exercises")
     .insert({
       session_id: sessionId,
       name: exercise.name,
+      exercise_id: exerciseId,
       order_index: nextOrderIndex,
       sets: exercise.sets,
       reps_min: exercise.repsMin || null,

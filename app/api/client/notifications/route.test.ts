@@ -305,7 +305,7 @@ describe('/api/client/notifications', () => {
       // Assert
       expect(response.status).toBe(500)
       expect(data.success).toBe(false)
-      expect(data.error).toBe('Database error')
+      expect(data.error).toBe('Failed to fetch notifications')
     })
 
     it('should respect rate limiting', async () => {

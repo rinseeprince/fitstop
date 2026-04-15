@@ -8,6 +8,7 @@ import { supabaseAdmin } from "@/services/supabase-admin";
 import { getTodayDateString } from "@/lib/date-helpers";
 import type { NutritionHistoryRow } from "@/types/history";
 import type { NutritionDay } from "@/types/schedule";
+import { getNutritionEventsForDateRange } from "@/services/nutrition-event-service";
 
 const NUTRITION_COLUMNS = `
   date,
@@ -99,11 +100,12 @@ export async function GET(
       const dates = generateDateRange(phaseStartDate, today);
       const total = dates.length;
 
-      const [nutritionData, trainingData] = await Promise.all([
+      const [nutritionData, trainingData, nutritionEvents] = await Promise.all([
         fetchNutritionDataForPeriod(clientId, phaseStartDate, today),
         fetchTrainingDataForPeriod(clientId, phaseStartDate, today),
+        getNutritionEventsForDateRange(clientId, phaseStartDate, today),
       ]);
-      const summary = buildNutritionSummary(dates, nutritionData.plans, nutritionData.nutritionLogs, trainingData.plans);
+      const summary = buildNutritionSummary(dates, nutritionData.plans, nutritionData.nutritionLogs, trainingData.plans, nutritionEvents);
 
       // Reverse for newest-first, then paginate
       const reversed = summary.reverse();

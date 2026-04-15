@@ -129,6 +129,8 @@
   - Service functions
   - Helper utilities
 
+  These limits are guidelines for catching runaway files, not hard rules. If a file exceeds the threshold but its contents are cohesive (single responsibility, tightly coupled state), that's fine. Only split when you can identify a natural boundary - a reusable sub-component, an independent service concern, a separable hook. If the only way to split is scattering one flow across multiple files connected by prop-drilling or re-exports, the cure is worse than the disease.
+
   ## 5. Code Style
   - Use Tailwind for styling
   - Lucide icons only

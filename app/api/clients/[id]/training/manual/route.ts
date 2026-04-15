@@ -116,7 +116,7 @@ export async function POST(
     });
 
     // Insert sessions and exercises
-    await insertTrainingSessions(newPlanId, aiSessions);
+    await insertTrainingSessions(newPlanId, aiSessions, coachId);
     const plan = await getTrainingPlanById(newPlanId);
     if (!plan) {
       return NextResponse.json({ error: "Failed to retrieve created plan" }, { status: 500 });

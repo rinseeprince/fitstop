@@ -16,6 +16,8 @@ import { getLatestBodyMetrics } from "@/services/body-metrics-service";
 import { getCurrentGoals } from "@/services/client-goals-service";
 import { requirePhaseSelection } from "@/lib/require-phase-selection";
 import { deleteFutureEventsForPlan, regenerateFutureEvents } from "@/services/training-event-service";
+import { regenerateFutureNutritionEvents } from "@/services/nutrition-event-service";
+import { supabaseAdmin } from "@/services/supabase-admin";
 import { captureApiError } from "@/lib/error-handler";
 import type { ExternalActivityContext } from "@/types/training";
 import type { ActivityMetadata, MuscleGroup, IntensityLevel } from "@/types/external-activity";
@@ -173,10 +175,11 @@ export async function orchestrateTrainingPlanCreation(
     avgStress: checkInData?.avgStress,
     recentAdherencePercentage: checkInData?.adherencePercentage,
     phaseId: phaseCheck.phaseId,
+    effectiveFrom: input.effectiveFrom,
   });
 
   // Insert sessions and exercises
-  await insertTrainingSessions(newPlanId, aiPlan.sessions);
+  await insertTrainingSessions(newPlanId, aiPlan.sessions, coachId);
   const plan = await getTrainingPlanById(newPlanId);
   if (!plan) {
     throw new TrainingPlanError("Failed to retrieve created plan", 500);
@@ -208,7 +211,10 @@ export async function orchestrateTrainingPlanCreation(
   }
 
   // Refetch plan to include the newly added external activities
-  let updatedPlan = await getActiveTrainingPlan(clientId);
+  // For planned plans, fetch by ID since getActiveTrainingPlan returns the old active plan
+  let updatedPlan = input.effectiveFrom
+    ? await getTrainingPlanById(newPlanId)
+    : await getActiveTrainingPlan(clientId);
 
   // Estimate calories for all training sessions
   if (updatedPlan) {
@@ -219,7 +225,9 @@ export async function orchestrateTrainingPlanCreation(
       }
     }
     // Refetch to include updated calories
-    updatedPlan = await getActiveTrainingPlan(clientId);
+    updatedPlan = input.effectiveFrom
+      ? await getTrainingPlanById(newPlanId)
+      : await getActiveTrainingPlan(clientId);
   }
 
   // Save to history
@@ -240,13 +248,27 @@ export async function orchestrateTrainingPlanCreation(
     : phaseCheck.phaseStartDate ?? undefined;
 
   if (existingPlan) {
-    await deleteFutureEventsForPlan(existingPlan.id).catch((err) =>
+    await deleteFutureEventsForPlan(existingPlan.id, effectiveFrom).catch((err) =>
       captureApiError(err, { action: "delete-future-events", planId: existingPlan.id })
     );
   }
   await regenerateFutureEvents(clientId, newPlanId, effectiveFrom).catch((err) =>
     captureApiError(err, { action: "generate-training-events", planId: newPlanId })
   );
+
+  // Cascade: regenerate nutrition events so burns match the new training schedule
+  const { data: nutritionPlans } = await supabaseAdmin
+    .from("nutrition_plans")
+    .select("id, status")
+    .eq("client_id", clientId)
+    .in("status", ["active", "planned"]);
+
+  for (const np of nutritionPlans ?? []) {
+    const fromDate = np.status === "active" ? effectiveFrom : undefined;
+    await regenerateFutureNutritionEvents(clientId, np.id, fromDate).catch((err) =>
+      captureApiError(err, { action: "cascade-nutrition-events-from-training-plan", planId: np.id })
+    );
+  }
 
   return { success: true, plan: updatedPlan || plan };
 }

@@ -36,7 +36,7 @@ vi.mock('@/lib/auth-helpers', () => ({
 }))
 
 vi.mock('@/lib/rate-limit', () => ({
-  apiRateLimit: vi.fn().mockResolvedValue(null),
+  aiRateLimit: vi.fn().mockResolvedValue(null),
 }))
 
 vi.mock('@/lib/csrf-protection', () => ({

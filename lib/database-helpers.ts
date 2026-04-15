@@ -6,6 +6,8 @@ export type CheckInTokenRow = Database["public"]["Tables"]["check_in_tokens"]["R
 export type TrainingPlanRow = Database["public"]["Tables"]["training_plans"]["Row"];
 export type TrainingSessionRow = Database["public"]["Tables"]["training_sessions"]["Row"];
 export type TrainingExerciseRow = Database["public"]["Tables"]["training_exercises"]["Row"];
+export type ExerciseRow = Database["public"]["Tables"]["exercises"]["Row"];
+export type ExerciseInsert = Database["public"]["Tables"]["exercises"]["Insert"];
 export type ClientRow = Database["public"]["Tables"]["clients"]["Row"];
 export type CheckInReminderRow = Database["public"]["Tables"]["check_in_reminders"]["Row"];
 export type ClientInvitationRow = Database["public"]["Tables"]["client_invitations"]["Row"];
@@ -52,3 +54,14 @@ export type ClientGoalInsert = Database["public"]["Tables"]["client_goals"]["Ins
 export type ClientGoalUpdate = Database["public"]["Tables"]["client_goals"]["Update"];
 export type BodyMetricsInsert = Database["public"]["Tables"]["body_metrics"]["Insert"];
 // No BodyMetricsUpdate — immutable event table
+
+// Coach library types (added by migration 084)
+export type CoachSavedPlanRow = Database["public"]["Tables"]["coach_saved_plans"]["Row"];
+export type CoachSavedPlanInsert = Database["public"]["Tables"]["coach_saved_plans"]["Insert"];
+export type CoachSavedPlanUpdate = Database["public"]["Tables"]["coach_saved_plans"]["Update"];
+export type CoachSavedSessionRow = Database["public"]["Tables"]["coach_saved_sessions"]["Row"];
+export type CoachSavedSessionInsert = Database["public"]["Tables"]["coach_saved_sessions"]["Insert"];
+export type CoachSavedSessionUpdate = Database["public"]["Tables"]["coach_saved_sessions"]["Update"];
+export type CoachSavedExerciseRow = Database["public"]["Tables"]["coach_saved_exercises"]["Row"];
+export type CoachSavedExerciseInsert = Database["public"]["Tables"]["coach_saved_exercises"]["Insert"];
+export type CoachSavedExerciseUpdate = Database["public"]["Tables"]["coach_saved_exercises"]["Update"];

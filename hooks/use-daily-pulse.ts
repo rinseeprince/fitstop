@@ -139,7 +139,7 @@ export function useDailyPulse(selectedDate: string): UseDailyPulseReturn {
           setStreak(streakData.data?.currentStreak ?? 0);
         }
 
-        let nutritionData: { data?: { nutritionTarget?: DailyNutritionTargets; trainingSession?: { sessionId: string }; plannedActivities?: TodaysActivity[] } } | null = null;
+        let nutritionData: { data?: { nutritionTarget?: DailyNutritionTargets; trainingSession?: { sessionId: string; sessionName: string; estimatedCalories: number } | null; plannedActivities?: TodaysActivity[] } } | null = null;
         if (nutritionRes.ok) {
           nutritionData = await nutritionRes.json();
           if (nutritionData?.data) {
@@ -156,13 +156,19 @@ export function useDailyPulse(selectedDate: string): UseDailyPulseReturn {
               .filter((s: TrainingSession) => s.sessionType === "training");
             setAllTrainingSessions(trainingSessions);
             
-            // Update todaysTrainingSession with full session data if we have the ID
+            // Enrich with full session data (exercises, etc.) but preserve the
+            // event-based estimatedCalories — the template session value may be
+            // stale legacy data from before training events existed.
             if (nutritionData?.data?.trainingSession) {
+              const eventCalories = nutritionData.data.trainingSession.estimatedCalories;
               const fullSession = trainingSessions.find(
                 (s: TrainingSession) => s.id === nutritionData.data?.trainingSession?.sessionId
               );
               if (fullSession) {
-                setTodaysTrainingSession(fullSession);
+                setTodaysTrainingSession({
+                  ...fullSession,
+                  estimatedCalories: eventCalories ?? fullSession.estimatedCalories,
+                });
               }
             }
           }

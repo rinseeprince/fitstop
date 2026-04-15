@@ -84,9 +84,31 @@ export async function GET(
       const dates = generateDateRange(phaseStartDate, today);
       const total = dates.length;
 
-      // Fetch training events for the full range
-      const events = await getEventsForDateRange(clientId, phaseStartDate, today);
-      const schedule = mapEventsToScheduleDays(dates, events);
+      // Fetch training events and session_logs for the full range
+      const [events, { data: sessionLogs }] = await Promise.all([
+        getEventsForDateRange(clientId, phaseStartDate, today),
+        supabaseAdmin
+          .from("session_logs")
+          .select("id, training_session_id, completed_at, completion_quality, notes, prescribed_session_snapshot")
+          .eq("client_id", clientId)
+          .gte("completed_at", phaseStartDate)
+          .lte("completed_at", today),
+      ]);
+
+      // Build lookup map of ALL session_logs by id (for swap detection)
+      const sessionLogMap = new Map(
+        (sessionLogs ?? []).map((log) => [log.id, log])
+      );
+
+      // Find session_logs not linked to any event
+      const linkedLogIds = new Set(
+        events.filter((e) => e.sessionLogId).map((e) => e.sessionLogId)
+      );
+      const unlinkedLogs = (sessionLogs ?? []).filter(
+        (log) => !linkedLogIds.has(log.id)
+      );
+
+      const schedule = mapEventsToScheduleDays(dates, events, unlinkedLogs, sessionLogMap);
 
       // Reverse for newest-first, then paginate
       const reversed = schedule.reverse();

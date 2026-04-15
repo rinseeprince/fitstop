@@ -40,6 +40,9 @@ vi.mock("@/services/supabase-admin", () => ({
             limit: vi.fn(() => ({
               maybeSingle: mockMaybeSingle,
             })),
+            lte: vi.fn(() => ({
+              maybeSingle: vi.fn().mockResolvedValue({ data: null }),
+            })),
           })),
         })),
       })),

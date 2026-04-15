@@ -10,6 +10,8 @@ import type { DayCalorieOverrides } from "@/types/check-in";
 import type { Database } from "@/types/database";
 import { getTodayDateString } from "@/lib/date-helpers";
 import { promoteNutritionPlanIfReady } from "@/services/nutrition-plan-service";
+import { deleteFutureNutritionEventsForPlan, regenerateFutureNutritionEvents } from "@/services/nutrition-event-service";
+import { captureApiError } from "@/lib/error-handler";
 
 type DailyTargetInsert = Database["public"]["Tables"]["nutrition_plan_daily_targets"]["Insert"];
 
@@ -168,6 +170,13 @@ export async function POST(
       );
     }
 
+    // Non-blocking: clean up old plan events, generate for new skewed plan
+    await deleteFutureNutritionEventsForPlan(currentPlan.id).catch((err) =>
+      captureApiError(err, { action: "delete-future-nutrition-events-skew", planId: currentPlan.id })
+    );
+    await regenerateFutureNutritionEvents(clientId, newPlan.id).catch((err) =>
+      captureApiError(err, { action: "generate-nutrition-events-skew", planId: newPlan.id })
+    );
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {

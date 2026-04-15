@@ -349,6 +349,7 @@ export type NutritionEvent = {
   fatG: number;
   dietType: string;
   isTrainingDay: boolean;
+  calorieSurplusPercentage: number | null;
   status: NutritionEventStatus;
   createdAt: string;
   updatedAt: string;
@@ -629,6 +630,8 @@ export type GenerateNutritionPlanRequest = {
   customCalories?: number;
   coachNotes?: string;
   effectiveFrom?: string;
+  preserveCalories?: boolean;
+  dayCalorieOverrides?: DayCalorieOverrides;
 };
 
 export type GenerateNutritionPlanResponse = {

@@ -5,10 +5,15 @@ import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { regenerateFutureEvents } from "@/services/training-event-service";
+import { countModifiedFutureEvents } from "@/services/training-event-calendar-service";
+import { supabaseAdmin } from "@/services/supabase-admin";
+import { regenerateFutureNutritionEvents } from "@/services/nutrition-event-service";
+import { captureApiError } from "@/lib/error-handler";
 import { z } from "zod";
 
 const regenerateEventsSchema = z.object({
   effectiveFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format").optional(),
+  force: z.boolean().optional(),
 });
 
 /**
@@ -48,9 +53,35 @@ export async function POST(
     if (!validation.success) {
       return NextResponse.json({ error: "Invalid input" }, { status: 400 });
     }
-    const effectiveFrom = validation.data.effectiveFrom;
+    const { effectiveFrom, force } = validation.data;
 
-    await regenerateFutureEvents(clientId, planId, effectiveFrom);
+    // When force is explicitly false, check for modified events and return a warning.
+    // When force is undefined (existing callers) or true, proceed with full regeneration.
+    if (force === false) {
+      const modifiedCount = await countModifiedFutureEvents(clientId, planId);
+      if (modifiedCount > 0) {
+        return NextResponse.json(
+          { success: false, modifiedCount, requiresConfirmation: true },
+          { status: 200 }
+        );
+      }
+    }
+
+    await regenerateFutureEvents(clientId, planId, effectiveFrom, force);
+
+    // Cascade: regenerate nutrition events (they depend on training burn data)
+    const { data: nutritionPlans } = await supabaseAdmin
+      .from("nutrition_plans")
+      .select("id, status")
+      .eq("client_id", clientId)
+      .in("status", ["active", "planned"]);
+
+    for (const np of nutritionPlans ?? []) {
+      const fromDate = np.status === "active" ? effectiveFrom : undefined;
+      await regenerateFutureNutritionEvents(clientId, np.id, fromDate).catch((err) =>
+        captureApiError(err, { action: "cascade-nutrition-events-from-training", planId: np.id })
+      );
+    }
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {

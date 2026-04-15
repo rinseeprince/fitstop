@@ -2,6 +2,16 @@ import type { TrainingEvent } from "@/types/training";
 import type { ScheduleDay, TrainingDayStatus } from "@/types/schedule";
 import { DAY_NAMES, getTodayDateString } from "@/lib/date-helpers";
 
+/** Session log shape used for unlinked log merging and swap detection. */
+export type UnlinkedSessionLog = {
+  id: string;
+  training_session_id: string | null;
+  completed_at: string;
+  completion_quality: string | null;
+  notes: string | null;
+  prescribed_session_snapshot: unknown;
+};
+
 /**
  * Map training events onto a list of dates to produce ScheduleDay[].
  * Pure function — no DB calls.
@@ -11,10 +21,16 @@ import { DAY_NAMES, getTodayDateString } from "@/lib/date-helpers";
  * - Event scheduled + date in past → missed
  * - Event scheduled + date today or future → rest (with planned fields populated)
  * - No event for date → rest
+ *
+ * Unlinked session logs (completed sessions with no matching event) are merged:
+ * - Missed day (had a planned event) → completed_swap + isAlternative
+ * - Rest day (no planned event) → rest_trained + isAlternative
  */
 export function mapEventsToScheduleDays(
   dates: string[],
-  events: TrainingEvent[]
+  events: TrainingEvent[],
+  unlinkedLogs?: UnlinkedSessionLog[],
+  sessionLogMap?: Map<string, UnlinkedSessionLog>
 ): ScheduleDay[] {
   // When multiple events exist on the same date (e.g. from backfill across plan versions),
   // prefer the most informative: completed > partial > skipped > missed > scheduled
@@ -35,7 +51,7 @@ export function mapEventsToScheduleDays(
 
   const today = getTodayDateString();
 
-  return dates.map((date) => {
+  const schedule: ScheduleDay[] = dates.map((date) => {
     const dayNum = new Date(date + "T00:00:00").getDay();
     const dayOfWeek = DAY_NAMES[dayNum] ?? "monday";
     const event = eventMap.get(date);
@@ -54,11 +70,30 @@ export function mapEventsToScheduleDays(
       };
     }
 
-    const { status, completionQuality, loggedSessionName } = resolveEventStatus(
+    let { status, completionQuality, loggedSessionName } = resolveEventStatus(
       event,
       date,
       today
     );
+    let isAlternative = false;
+    let notes: string | null = null;
+
+    // Detect alternative session: event linked to a log for a different session
+    if (
+      sessionLogMap &&
+      event.sessionLogId &&
+      (status === "completed" || status === "partial")
+    ) {
+      const linkedLog = sessionLogMap.get(event.sessionLogId);
+      if (linkedLog && linkedLog.training_session_id !== event.trainingSessionId) {
+        status = "completed_swap";
+        isAlternative = true;
+        const snapshot = linkedLog.prescribed_session_snapshot as Record<string, unknown> | null;
+        loggedSessionName =
+          (typeof snapshot?.name === "string" ? snapshot.name : null) ?? loggedSessionName;
+        notes = linkedLog.notes;
+      }
+    }
 
     return {
       date,
@@ -68,10 +103,45 @@ export function mapEventsToScheduleDays(
       plannedSessionName: event.sessionName,
       loggedSessionName,
       completionQuality,
-      isAlternative: false,
-      notes: null,
+      isAlternative,
+      notes,
     };
   });
+
+  // Merge unlinked session logs (completions with no matching event)
+  if (unlinkedLogs && unlinkedLogs.length > 0) {
+    const scheduleByDate = new Map(schedule.map((day) => [day.date, day]));
+
+    for (const log of unlinkedLogs) {
+      const logDate = log.completed_at.substring(0, 10);
+      const day = scheduleByDate.get(logDate);
+      if (!day) continue;
+
+      const snapshot = log.prescribed_session_snapshot as Record<string, unknown> | null;
+      const logSessionName =
+        (typeof snapshot?.name === "string" ? snapshot.name : null) ?? "Training";
+      const quality = (log.completion_quality ?? "full") as "full" | "partial" | "skipped";
+
+      if (day.status === "missed") {
+        // Had a planned event but client did a different session
+        day.status = "completed_swap";
+        day.loggedSessionName = logSessionName;
+        day.completionQuality = quality;
+        day.isAlternative = true;
+        day.notes = log.notes;
+      } else if (day.status === "rest") {
+        // Rest day but client trained anyway
+        day.status = "rest_trained";
+        day.loggedSessionName = logSessionName;
+        day.completionQuality = quality;
+        day.isAlternative = true;
+        day.notes = log.notes;
+      }
+      // Skip if day already completed/partial — don't overwrite
+    }
+  }
+
+  return schedule;
 }
 
 function resolveEventStatus(

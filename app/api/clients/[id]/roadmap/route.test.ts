@@ -14,6 +14,18 @@ vi.mock("@/lib/require-coach-auth", () => ({
   requireCoachOwnsClient: vi.fn(),
 }));
 
+vi.mock("@/services/supabase-admin", () => ({
+  supabaseAdmin: { from: vi.fn() },
+}));
+
+vi.mock("@/services/client-service", () => ({
+  getClientById: vi.fn(),
+}));
+
+vi.mock("@/lib/auth-helpers", () => ({
+  getAuthenticatedCoachId: vi.fn().mockResolvedValue("coach-1"),
+}));
+
 vi.mock("@/services/roadmap-service", () => ({
   getActiveRoadmap: vi.fn(),
   createRoadmap: vi.fn(),
@@ -125,7 +137,10 @@ describe("/api/clients/[id]/roadmap", () => {
       expect(createRoadmap).toHaveBeenCalledWith("client-1", "coach-1", {
         name: "12-Week Plan",
         longTermGoal: "Lose 10 lbs",
-      });
+      }, expect.objectContaining({
+        goalWeight: null,
+        goalBodyFatPercentage: null,
+      }));
     });
 
     it("returns 400 with invalid body", async () => {

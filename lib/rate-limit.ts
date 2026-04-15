@@ -136,6 +136,7 @@ export async function rateLimit(
   const ratelimit = new Ratelimit({
     redis: redisClient,
     limiter: Ratelimit.slidingWindow(config.maxRequests, `${config.windowMs} ms`),
+    prefix: "ratelimit:api",
     analytics: true,
   });
 
@@ -263,6 +264,7 @@ export async function aiRateLimit(request: NextRequest, userId?: string): Promis
   const ratelimit = new Ratelimit({
     redis: redisClient,
     limiter: Ratelimit.slidingWindow(config.maxRequests, `${config.windowMs} ms`),
+    prefix: "ratelimit:ai",
     analytics: true,
   });
 

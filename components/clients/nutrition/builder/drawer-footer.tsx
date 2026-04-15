@@ -8,6 +8,7 @@ import { ApplyDateDialog } from "@/components/ui/apply-date-dialog";
 export function DrawerFooter() {
   const builder = useNutritionBuilderContext();
   const [showApplyDialog, setShowApplyDialog] = useState(false);
+  const [preserveCalories, setPreserveCalories] = useState(false);
 
   const hasPlan = builder.hasPlan;
 
@@ -22,7 +23,7 @@ export function DrawerFooter() {
   };
 
   const handleApply = (effectiveFrom: string | null) => {
-    builder.generatePlan(false, effectiveFrom);
+    builder.generatePlan(false, effectiveFrom, preserveCalories);
   };
 
   return (
@@ -42,11 +43,13 @@ export function DrawerFooter() {
             <Sparkles className={`w-4 h-4 ${builder.isGenerating ? "animate-pulse" : ""}`} strokeWidth={1.5} />
             {builder.isGenerating
               ? "Generating..."
-              : builder.settingsChanged
-                ? "Save & Regenerate Plan"
-                : builder.hasPlan
-                  ? "Regenerate Plan"
-                  : "Generate Plan"}
+              : builder.customDayDistribution
+                ? "Apply Distribution & Regenerate"
+                : builder.settingsChanged
+                  ? "Save & Regenerate Plan"
+                  : builder.hasPlan
+                    ? "Regenerate Plan"
+                    : "Generate Plan"}
           </button>
 
           {!builder.client.bmr && (
@@ -70,6 +73,10 @@ export function DrawerFooter() {
         onOpenChange={setShowApplyDialog}
         description="The new nutrition plan will replace the current one. Choose when the updated targets should start."
         onApply={handleApply}
+        maxDate={builder.activePhase?.endDate}
+        showPreserveCalories={true}
+        preserveCalories={preserveCalories}
+        onPreserveCaloriesChange={setPreserveCalories}
       />
     </>
   );

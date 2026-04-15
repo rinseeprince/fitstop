@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getClientById } from "@/services/client-service";
 import { getActiveTrainingPlan } from "@/services/training-service";
+import { getEventsForDateRange } from "@/services/training-event-service";
+import { getTrainingWeekStart, getTrainingWeekEnd } from "@/lib/date-helpers";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
@@ -69,8 +71,15 @@ export async function GET(
       .select("*")
       .eq("nutrition_plan_id", plan.id);
 
-    // Fetch training plan for live calorie enrichment
-    const trainingPlan = await getActiveTrainingPlan(clientId);
+    // Fetch training plan + current week's training events for live calorie enrichment
+    const today = new Date().toISOString().split("T")[0];
+    const weekStart = getTrainingWeekStart(today);
+    const weekEnd = getTrainingWeekEnd(today);
+
+    const [trainingPlan, trainingEvents] = await Promise.all([
+      getActiveTrainingPlan(clientId),
+      getEventsForDateRange(clientId, weekStart, weekEnd),
+    ]);
     const dietType = (plan.diet_type as DietType) || "balanced";
 
     const dailyTargets = buildDailyTargetsFromPlan(
@@ -78,7 +87,8 @@ export async function GET(
       dailyTargetRows,
       trainingPlan,
       includeActivityBurn,
-      dietType
+      dietType,
+      trainingEvents
     );
 
     // Check for a planned (upcoming) plan
@@ -111,7 +121,8 @@ export async function GET(
         plannedDailyTargetRows,
         trainingPlan,
         includeActivityBurn,
-        plannedDietType
+        plannedDietType,
+        trainingEvents
       );
 
       upcomingPlan = {

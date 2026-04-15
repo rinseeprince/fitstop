@@ -76,6 +76,7 @@ export function useTrainingRestoration({
           exercises: [],
           sessionType: 'training',
           estimatedCalories: 0, // We don't have this data anymore
+          calorieSurplusPercentage: null,
           createdAt: '',
           updatedAt: '',
         };

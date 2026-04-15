@@ -323,6 +323,20 @@ Reviewed: 2026-03-25
 | 1 | Fallback mode assumption wrong | `rate-limit.test.ts` | 2 failures. Tests expect unlimited requests in fallback mode but in-memory rate limiter actually enforces limits. Tests assume fallback = no limit; implementation says fallback = still rate limited. | Open |
 | 2 | Error exposure assumption wrong | `notifications/route.test.ts` | 1 failure. Expects raw DB error message in 500 response but route returns generic `"Failed to fetch notifications"`. Test expectation conflicts with the convention of not exposing internal errors to users. | Open |
 
+---
+
+## Training Plan Architecture
+
+Reviewed: 2026-04-13
+
+### P2 - Rethink External Activities
+
+| # | Issue | File(s) | Details | Status |
+|---|-------|---------|---------|--------|
+| 1 | External activities add complexity with questionable value | `services/training-ai-service.ts`, `utils/nutrition-helpers.ts`, `services/nutrition-event-service.ts`, `components/clients/training/schedule/weekly-schedule-item.tsx` | External activities use a separate `session_type = 'external_activity'` with `activity_metadata` JSONB (MET values, duration, intensity), `allowSameDayTraining` AI prompt flag, `getExternalActivitiesForDay()` for nutrition burn calculations, and dedicated UI rendering. With the calendar feature (CAL-1/CAL-2), coaches can prescribe any session type directly on the calendar, making the external activity distinction less necessary. A coach can just create a "BJJ" or "Cycling" session as a regular training session with estimated calories. **Review when building the client app** - the feature may be worth keeping but needs rethinking: (a) Should external activities just be regular sessions with a tag/category? (b) Should the MET-based calorie calculation be a helper available to any session rather than tied to a special type? (c) The `allowSameDayTraining` flag in AI generation adds prompt complexity - could be replaced by the coach simply placing sessions on the calendar. | Open |
+
+---
+
 ### Missing Mocks (2 suite failures)
 
 | # | Issue | File(s) | Details | Status |

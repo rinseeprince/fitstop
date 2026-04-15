@@ -156,7 +156,7 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
 
   // Generate nutrition plan
   const generatePlan = useCallback(
-    async (useCustomMacros = false, effectiveFrom?: string | null) => {
+    async (useCustomMacros = false, effectiveFrom?: string | null, preserveCalories?: boolean) => {
       const validation = validateClientForNutrition(client);
       if (!validation.valid) {
         toast({
@@ -177,6 +177,10 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
           phaseId: phaseId || undefined,
           ...(coachNotes.trim() ? { coachNotes: coachNotes.trim() } : {}),
           ...(effectiveFrom ? { effectiveFrom } : {}),
+          ...(preserveCalories ? { preserveCalories: true } : {}),
+          ...(calorieSkew.customDayDistribution && calorieSkew.dayCalorieOverrides
+            ? { dayCalorieOverrides: calorieSkew.dayCalorieOverrides }
+            : {}),
         };
 
         if (useCustomMacros) {

@@ -18,6 +18,14 @@ vi.mock('./client-goals-service', () => ({
   updateGoals: vi.fn().mockResolvedValue({}),
 }))
 
+vi.mock('@/services/client-service', () => ({
+  getClientById: vi.fn().mockResolvedValue(null),
+}))
+
+vi.mock('@/services/bmr-service', () => ({
+  updateClientBMR: vi.fn().mockResolvedValue(undefined),
+}))
+
 import { supabaseAdmin } from './supabase-admin'
 import { getIntake } from './client-intake-service'
 import { recordBodyMetrics } from './body-metrics-service'

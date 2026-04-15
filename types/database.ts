@@ -896,6 +896,210 @@ export type Database = {
           },
         ]
       }
+      // Added by migration 084
+      coach_saved_exercises: {
+        Row: {
+          created_at: string
+          exercise_id: string | null
+          id: string
+          is_warmup: boolean
+          name: string
+          notes: string | null
+          order_index: number
+          percentage_1rm: number | null
+          reps_max: number | null
+          reps_min: number | null
+          reps_target: string | null
+          rest_seconds: number | null
+          rpe_target: number | null
+          saved_session_id: string
+          sets: number
+          superset_group: string | null
+          tempo: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          exercise_id?: string | null
+          id?: string
+          is_warmup?: boolean
+          name: string
+          notes?: string | null
+          order_index?: number
+          percentage_1rm?: number | null
+          reps_max?: number | null
+          reps_min?: number | null
+          reps_target?: string | null
+          rest_seconds?: number | null
+          rpe_target?: number | null
+          saved_session_id: string
+          sets?: number
+          superset_group?: string | null
+          tempo?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          exercise_id?: string | null
+          id?: string
+          is_warmup?: boolean
+          name?: string
+          notes?: string | null
+          order_index?: number
+          percentage_1rm?: number | null
+          reps_max?: number | null
+          reps_min?: number | null
+          reps_target?: string | null
+          rest_seconds?: number | null
+          rpe_target?: number | null
+          saved_session_id?: string
+          sets?: number
+          superset_group?: string | null
+          tempo?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "coach_saved_exercises_saved_session_id_fkey"
+            columns: ["saved_session_id"]
+            isOneToOne: false
+            referencedRelation: "coach_saved_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "coach_saved_exercises_exercise_id_fkey"
+            columns: ["exercise_id"]
+            isOneToOne: false
+            referencedRelation: "exercises"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      coach_saved_plans: {
+        Row: {
+          coach_id: string
+          coach_prompt: string | null
+          created_at: string
+          cycle_length: number | null
+          default_surplus_percentage: number | null
+          description: string | null
+          frequency_per_week: number | null
+          id: string
+          name: string
+          program_duration_weeks: number | null
+          rest_pattern: number[]
+          source: string
+          split_type: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          coach_id: string
+          coach_prompt?: string | null
+          created_at?: string
+          cycle_length?: number | null
+          default_surplus_percentage?: number | null
+          description?: string | null
+          frequency_per_week?: number | null
+          id?: string
+          name: string
+          program_duration_weeks?: number | null
+          rest_pattern?: number[]
+          source?: string
+          split_type?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          coach_id?: string
+          coach_prompt?: string | null
+          created_at?: string
+          cycle_length?: number | null
+          default_surplus_percentage?: number | null
+          description?: string | null
+          frequency_per_week?: number | null
+          id?: string
+          name?: string
+          program_duration_weeks?: number | null
+          rest_pattern?: number[]
+          source?: string
+          split_type?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "coach_saved_plans_coach_id_fkey"
+            columns: ["coach_id"]
+            isOneToOne: false
+            referencedRelation: "coaches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      coach_saved_sessions: {
+        Row: {
+          calorie_surplus_percentage: number | null
+          coach_id: string
+          created_at: string
+          estimated_duration_minutes: number | null
+          focus: string | null
+          id: string
+          is_rest: boolean
+          name: string
+          notes: string | null
+          order_index: number
+          saved_plan_id: string | null
+          session_type: string
+          updated_at: string
+        }
+        Insert: {
+          calorie_surplus_percentage?: number | null
+          coach_id: string
+          created_at?: string
+          estimated_duration_minutes?: number | null
+          focus?: string | null
+          id?: string
+          is_rest?: boolean
+          name: string
+          notes?: string | null
+          order_index?: number
+          saved_plan_id?: string | null
+          session_type?: string
+          updated_at?: string
+        }
+        Update: {
+          calorie_surplus_percentage?: number | null
+          coach_id?: string
+          created_at?: string
+          estimated_duration_minutes?: number | null
+          focus?: string | null
+          id?: string
+          is_rest?: boolean
+          name?: string
+          notes?: string | null
+          order_index?: number
+          saved_plan_id?: string | null
+          session_type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "coach_saved_sessions_coach_id_fkey"
+            columns: ["coach_id"]
+            isOneToOne: false
+            referencedRelation: "coaches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "coach_saved_sessions_saved_plan_id_fkey"
+            columns: ["saved_plan_id"]
+            isOneToOne: false
+            referencedRelation: "coach_saved_plans"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       coaches: {
         Row: {
           avatar_url: string | null
@@ -1378,6 +1582,50 @@ export type Database = {
           },
         ]
       }
+      exercises: {
+        Row: {
+          aliases: string[]
+          category: string | null
+          coach_id: string | null
+          created_at: string
+          equipment: string | null
+          id: string
+          muscle_group: string | null
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          aliases?: string[]
+          category?: string | null
+          coach_id?: string | null
+          created_at?: string
+          equipment?: string | null
+          id?: string
+          muscle_group?: string | null
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          aliases?: string[]
+          category?: string | null
+          coach_id?: string | null
+          created_at?: string
+          equipment?: string | null
+          id?: string
+          muscle_group?: string | null
+          name?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "exercises_coach_id_fkey"
+            columns: ["coach_id"]
+            isOneToOne: false
+            referencedRelation: "coaches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       nutrition_logs: {
         Row: {
           calorie_surplus_deficit: number | null
@@ -1470,6 +1718,7 @@ export type Database = {
       nutrition_events: {
         Row: {
           baseline_calories: number
+          calorie_surplus_percentage: number | null
           carb_g: number
           client_id: string
           created_at: string
@@ -1488,6 +1737,7 @@ export type Database = {
         }
         Insert: {
           baseline_calories: number
+          calorie_surplus_percentage?: number | null
           carb_g: number
           client_id: string
           created_at?: string
@@ -1506,6 +1756,7 @@ export type Database = {
         }
         Update: {
           baseline_calories?: number
+          calorie_surplus_percentage?: number | null
           carb_g?: number
           client_id?: string
           created_at?: string
@@ -2003,6 +2254,7 @@ export type Database = {
       training_exercises: {
         Row: {
           created_at: string
+          exercise_id: string | null
           id: string
           is_active: boolean
           is_warmup: boolean | null
@@ -2023,6 +2275,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          exercise_id?: string | null
           id?: string
           is_active?: boolean
           is_warmup?: boolean | null
@@ -2043,6 +2296,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          exercise_id?: string | null
           id?: string
           is_active?: boolean
           is_warmup?: boolean | null
@@ -2063,6 +2317,13 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "training_exercises_exercise_id_fkey"
+            columns: ["exercise_id"]
+            isOneToOne: false
+            referencedRelation: "exercises"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "training_exercises_session_id_fkey"
             columns: ["session_id"]
             isOneToOne: false
@@ -2078,6 +2339,7 @@ export type Database = {
           date: string
           estimated_calories: number | null
           id: string
+          is_modified: boolean
           session_focus: string | null
           session_log_id: string | null
           session_name: string
@@ -2092,6 +2354,7 @@ export type Database = {
           date: string
           estimated_calories?: number | null
           id?: string
+          is_modified?: boolean
           session_focus?: string | null
           session_log_id?: string | null
           session_name: string
@@ -2106,6 +2369,7 @@ export type Database = {
           date?: string
           estimated_calories?: number | null
           id?: string
+          is_modified?: boolean
           session_focus?: string | null
           session_log_id?: string | null
           session_name?: string
@@ -2302,6 +2566,7 @@ export type Database = {
           phase_id: string | null
           program_duration_weeks: number | null
           recent_adherence_percentage: number | null
+          saved_plan_id: string | null
           split_type: string
           status: string
           updated_at: string
@@ -2330,6 +2595,7 @@ export type Database = {
           phase_id?: string | null
           program_duration_weeks?: number | null
           recent_adherence_percentage?: number | null
+          saved_plan_id?: string | null
           split_type: string
           status?: string
           updated_at?: string
@@ -2358,6 +2624,7 @@ export type Database = {
           phase_id?: string | null
           program_duration_weeks?: number | null
           recent_adherence_percentage?: number | null
+          saved_plan_id?: string | null
           split_type?: string
           status?: string
           updated_at?: string
@@ -2384,12 +2651,20 @@ export type Database = {
             referencedRelation: "phases"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "training_plans_saved_plan_id_fkey"
+            columns: ["saved_plan_id"]
+            isOneToOne: false
+            referencedRelation: "coach_saved_plans"
+            referencedColumns: ["id"]
+          },
         ]
       }
       training_sessions: {
         Row: {
           activity_metadata: Json | null
           calories_calculated_at: string | null
+          calorie_surplus_percentage: number | null
           created_at: string
           day_of_week: string | null
           estimated_calories: number | null
@@ -2407,6 +2682,7 @@ export type Database = {
         Insert: {
           activity_metadata?: Json | null
           calories_calculated_at?: string | null
+          calorie_surplus_percentage?: number | null
           created_at?: string
           day_of_week?: string | null
           estimated_calories?: number | null
@@ -2424,6 +2700,7 @@ export type Database = {
         Update: {
           activity_metadata?: Json | null
           calories_calculated_at?: string | null
+          calorie_surplus_percentage?: number | null
           created_at?: string
           day_of_week?: string | null
           estimated_calories?: number | null

@@ -11,6 +11,7 @@ import {
   fetchNutritionDataForPeriod,
 } from "./schedule-data-service";
 import { getEventsForDateRange } from "./training-event-service";
+import { getNutritionEventsForDateRange } from "./nutrition-event-service";
 import { mapEventsToScheduleDays } from "@/utils/training-event-helpers";
 import { buildNutritionSummary } from "@/utils/nutrition-period-summary";
 import type { PeriodSnapshot } from "@/types/schedule";
@@ -43,10 +44,11 @@ export async function generateAndSaveCheckInSnapshot(
   const dates = generateDateRange(periodStart, periodEnd);
 
   // Fetch all data in parallel
-  const [events, trainingData, nutritionData] = await Promise.all([
+  const [events, trainingData, nutritionData, nutritionEvents] = await Promise.all([
     getEventsForDateRange(clientId, periodStart, periodEnd),
     fetchTrainingDataForPeriod(clientId, periodStart, periodEnd),
     fetchNutritionDataForPeriod(clientId, periodStart, periodEnd),
+    getNutritionEventsForDateRange(clientId, periodStart, periodEnd),
   ]);
 
   // Build training schedule from events
@@ -56,7 +58,8 @@ export async function generateAndSaveCheckInSnapshot(
     dates,
     nutritionData.plans,
     nutritionData.nutritionLogs,
-    trainingData.plans
+    trainingData.plans,
+    nutritionEvents
   );
 
   const snapshot: PeriodSnapshot = {

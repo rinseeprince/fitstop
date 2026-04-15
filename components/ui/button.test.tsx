@@ -13,13 +13,13 @@ describe('Button', () => {
 
   it('renders with different variants', () => {
     const { rerender } = render(<Button variant="secondary">Secondary</Button>)
-    expect(screen.getByRole('button')).toHaveClass('bg-white')
+    expect(screen.getByRole('button')).toHaveClass('bg-secondary')
 
     rerender(<Button variant="destructive">Destructive</Button>)
     expect(screen.getByRole('button')).toHaveClass('bg-destructive')
 
     rerender(<Button variant="ghost">Ghost</Button>)
-    expect(screen.getByRole('button')).toHaveClass('hover:bg-gray-100')
+    expect(screen.getByRole('button')).toHaveClass('hover:bg-muted')
   })
 
   it('renders with different sizes', () => {

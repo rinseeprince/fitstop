@@ -9,7 +9,9 @@ import { clientApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { getTodayDateString, getTrainingWeekStart } from "@/lib/date-helpers";
 import { z } from "zod";
-import { getEventForSessionAndDate, linkSessionLogToEvent, mapCompletionQualityToEventStatus } from "@/services/training-event-service";
+import { getEventForSessionAndDate, getEventForDate, linkSessionLogToEvent, mapCompletionQualityToEventStatus } from "@/services/training-event-service";
+import { updateNutritionEventTrainingBurn } from "@/services/nutrition-event-service";
+import { supabaseAdmin } from "@/services/supabase-admin";
 import { captureApiError } from "@/lib/error-handler";
 
 // Validation schema for marking session complete (weekStartDate removed, computed server-side)
@@ -97,15 +99,39 @@ export async function POST(request: NextRequest) {
     // Link completion to calendar event (non-blocking)
     if (completion?.id) {
       const todayDate = getTodayDateString();
+      // Fetch completed session's estimated_calories for nutrition event update
+      const { data: completedSession } = await supabaseAdmin
+        .from("training_sessions")
+        .select("estimated_calories")
+        .eq("id", trainingSessionId)
+        .single();
+      const completedBurn = completedSession?.estimated_calories ?? 0;
+
       getEventForSessionAndDate(auth.clientId, trainingSessionId, todayDate)
         .then((event) => {
           if (event) {
-            return linkSessionLogToEvent(
-              event.id,
-              completion.id,
-              mapCompletionQualityToEventStatus(quality)
-            );
+            return Promise.all([
+              linkSessionLogToEvent(
+                event.id,
+                completion.id,
+                mapCompletionQualityToEventStatus(quality)
+              ),
+              updateNutritionEventTrainingBurn(auth.clientId, todayDate, completedBurn),
+            ]);
           }
+          // Fallback: link to any event on this date (alternative session or re-completion)
+          return getEventForDate(auth.clientId, todayDate).then((fallbackEvent) => {
+            if (fallbackEvent) {
+              return Promise.all([
+                linkSessionLogToEvent(
+                  fallbackEvent.id,
+                  completion.id,
+                  mapCompletionQualityToEventStatus(quality)
+                ),
+                updateNutritionEventTrainingBurn(auth.clientId, todayDate, completedBurn),
+              ]);
+            }
+          });
         })
         .catch((err) =>
           captureApiError(err, {

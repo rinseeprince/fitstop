@@ -1,0 +1,262 @@
+import { supabaseAdmin } from "./supabase-admin";
+import type { Exercise } from "@/types/training";
+import type { ExerciseRow } from "@/lib/database-helpers";
+
+// --- Abbreviation map ---
+
+const ABBREVIATIONS: Record<string, string> = {
+  db: "dumbbell",
+  bb: "barbell",
+  ohp: "overhead press",
+  rdl: "romanian deadlift",
+  cgbp: "close grip bench press",
+  sldl: "stiff leg deadlift",
+  ez: "ez-bar",
+  kb: "kettlebell",
+  bw: "bodyweight",
+};
+
+// --- Row mapper ---
+
+function mapExerciseCatalogRow(row: ExerciseRow): Exercise {
+  return {
+    id: row.id,
+    coachId: row.coach_id,
+    name: row.name,
+    muscleGroup: row.muscle_group,
+    equipment: row.equipment,
+    category: row.category,
+    aliases: row.aliases ?? [],
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+// --- Helpers ---
+
+/**
+ * Applies abbreviation map to each word, lowercases.
+ */
+export function normalizeExerciseName(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .map((word) => ABBREVIATIONS[word] ?? word)
+    .join(" ");
+}
+
+/**
+ * Try to find an exercise by matching a value against names or aliases.
+ * Coach-specific exercises take precedence over global.
+ */
+function findMatch(
+  exercises: ExerciseRow[],
+  normalized: string
+): ExerciseRow | undefined {
+  // Exact name match (coach-specific first due to sort order)
+  const nameMatch = exercises.find(
+    (e) => e.name.toLowerCase() === normalized
+  );
+  if (nameMatch) return nameMatch;
+
+  // Alias match
+  const aliasMatch = exercises.find((e) =>
+    (e.aliases ?? []).some((a) => a.toLowerCase() === normalized)
+  );
+  return aliasMatch;
+}
+
+// --- Public API ---
+
+/**
+ * Resolve a single exercise name to an exercise ID.
+ * Pipeline: exact match → alias match → abbreviation-normalize & retry → create new.
+ */
+export async function resolveExercise(
+  name: string,
+  coachId: string
+): Promise<string> {
+  const trimmed = name.trim();
+  const lower = trimmed.toLowerCase();
+  const normalized = normalizeExerciseName(trimmed);
+
+  // Fetch all exercises for this coach + global, ordered coach-first
+  const { data: exercises, error } = await supabaseAdmin
+    .from("exercises")
+    .select("*")
+    .or(`coach_id.eq.${coachId},coach_id.is.null`)
+    .order("coach_id", { ascending: false, nullsFirst: false });
+
+  if (error) throw new Error(`Failed to fetch exercises: ${error.message}`);
+
+  const rows = exercises ?? [];
+
+  // Step 1: Exact name match
+  const exactMatch = findMatch(rows, lower);
+  if (exactMatch) return exactMatch.id;
+
+  // Step 2: Abbreviation-normalized match (only if different from original)
+  if (normalized !== lower) {
+    const normalizedMatch = findMatch(rows, normalized);
+    if (normalizedMatch) return normalizedMatch.id;
+  }
+
+  // Step 3: No match — create new coach-specific exercise
+  const { data: newExercise, error: insertError } = await supabaseAdmin
+    .from("exercises")
+    .insert({ coach_id: coachId, name: trimmed })
+    .select()
+    .single();
+
+  if (insertError)
+    throw new Error(`Failed to create exercise: ${insertError.message}`);
+
+  return newExercise.id;
+}
+
+/**
+ * Batch resolve multiple exercise names to exercise IDs.
+ * Fetches all coach + global exercises in one query, matches in memory,
+ * batch-inserts missing ones.
+ * Returns Map<originalName, exerciseId>.
+ */
+export async function resolveExercises(
+  names: string[],
+  coachId: string
+): Promise<Map<string, string>> {
+  if (names.length === 0) return new Map();
+
+  // Deduplicate input names (preserve original casing for first occurrence)
+  const uniqueMap = new Map<string, string>(); // lower → original
+  for (const name of names) {
+    const lower = name.trim().toLowerCase();
+    if (!uniqueMap.has(lower)) {
+      uniqueMap.set(lower, name.trim());
+    }
+  }
+
+  // Fetch all exercises for this coach + global
+  const { data: exercises, error } = await supabaseAdmin
+    .from("exercises")
+    .select("*")
+    .or(`coach_id.eq.${coachId},coach_id.is.null`)
+    .order("coach_id", { ascending: false, nullsFirst: false });
+
+  if (error) throw new Error(`Failed to fetch exercises: ${error.message}`);
+
+  const rows = exercises ?? [];
+  const result = new Map<string, string>(); // originalName → exerciseId
+  const toCreate: Array<{ name: string; lower: string }> = [];
+
+  for (const [lower, original] of uniqueMap) {
+    const normalized = normalizeExerciseName(original);
+
+    // Try exact match
+    let match = findMatch(rows, lower);
+
+    // Try abbreviation-normalized match
+    if (!match && normalized !== lower) {
+      match = findMatch(rows, normalized);
+    }
+
+    if (match) {
+      result.set(original, match.id);
+    } else {
+      toCreate.push({ name: original, lower });
+    }
+  }
+
+  // Batch insert missing exercises
+  if (toCreate.length > 0) {
+    const inserts = toCreate.map((e) => ({
+      coach_id: coachId,
+      name: e.name,
+    }));
+
+    const { data: newExercises, error: insertError } = await supabaseAdmin
+      .from("exercises")
+      .insert(inserts)
+      .select();
+
+    if (insertError)
+      throw new Error(`Failed to create exercises: ${insertError.message}`);
+
+    for (const row of newExercises ?? []) {
+      const lower = row.name.toLowerCase();
+      const original = uniqueMap.get(lower);
+      if (original) {
+        result.set(original, row.id);
+      }
+    }
+  }
+
+  // Map all original names (including duplicates) to their exercise IDs
+  const fullResult = new Map<string, string>();
+  for (const name of names) {
+    const trimmed = name.trim();
+    const lower = trimmed.toLowerCase();
+    const original = uniqueMap.get(lower);
+    if (original && result.has(original)) {
+      fullResult.set(trimmed, result.get(original)!);
+    }
+  }
+
+  return fullResult;
+}
+
+/**
+ * Returns all exercises visible to the coach (global + coach-specific),
+ * optionally filtered by search term. Ordered alphabetically.
+ */
+export async function getExercisesForCoach(
+  coachId: string,
+  search?: string
+): Promise<Exercise[]> {
+  let query = supabaseAdmin
+    .from("exercises")
+    .select("*")
+    .or(`coach_id.eq.${coachId},coach_id.is.null`)
+    .order("name", { ascending: true });
+
+  if (search) {
+    query = query.ilike("name", `%${search}%`);
+  }
+
+  const { data, error } = await query;
+
+  if (error) throw new Error(`Failed to fetch exercises: ${error.message}`);
+
+  return (data ?? []).map(mapExerciseCatalogRow);
+}
+
+/**
+ * Creates a coach-specific exercise.
+ */
+export async function createExercise(
+  coachId: string,
+  data: {
+    name: string;
+    muscleGroup?: string;
+    equipment?: string;
+    category?: string;
+    aliases?: string[];
+  }
+): Promise<Exercise> {
+  const { data: row, error } = await supabaseAdmin
+    .from("exercises")
+    .insert({
+      coach_id: coachId,
+      name: data.name,
+      muscle_group: data.muscleGroup ?? null,
+      equipment: data.equipment ?? null,
+      category: data.category ?? null,
+      aliases: data.aliases ?? [],
+    })
+    .select()
+    .single();
+
+  if (error) throw new Error(`Failed to create exercise: ${error.message}`);
+
+  return mapExerciseCatalogRow(row);
+}

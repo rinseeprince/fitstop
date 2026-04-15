@@ -2,6 +2,9 @@ import { supabaseAdmin } from "./supabase-admin";
 import { getActiveTrainingPlan } from "./training-service";
 import { getWeeklyNutritionTargets } from "@/utils/nutrition-helpers";
 import { countEventsInRange } from "./training-event-service";
+import { getNutritionEventsForDateRange } from "./nutrition-event-service";
+import { mapNutritionEventToDisplayTarget } from "@/utils/nutrition-event-helpers";
+import { getTodayDateString, getTrainingWeekStart, getTrainingWeekEnd } from "@/lib/date-helpers";
 import type {
   CheckInTrainingContext,
   CheckInNutritionContext,
@@ -72,35 +75,44 @@ export const getCheckInNutritionContext = async (
     return { hasNutritionPlan: false };
   }
 
-  // Get active training plan for training day detection
-  const plan = await getActiveTrainingPlan(clientId);
+  // Try event-based targets for the current week
+  const today = getTodayDateString();
+  const weekStart = getTrainingWeekStart(today);
+  const weekEnd = getTrainingWeekEnd(today);
 
-  // Calculate weekly targets
-  const dietType = (nutritionPlan.diet_type || "balanced") as DietType;
-  const weeklyTargets = getWeeklyNutritionTargets(
-    nutritionPlan.baseline_calories,
-    nutritionPlan.protein_target_g || 150,
-    plan,
-    dietType
-  );
+  const [events, { data: clientRow }] = await Promise.all([
+    getNutritionEventsForDateRange(clientId, weekStart, weekEnd),
+    supabaseAdmin.from("clients").select("include_activity_burn").eq("id", clientId).single(),
+  ]);
+  const includeActivityBurn = clientRow?.include_activity_burn !== false;
 
-  // Calculate average targets
-  const avgCalories = Math.round(
-    weeklyTargets.reduce((sum, d) => sum + d.calories, 0) / 7
-  );
-  const avgProteinG = Math.round(
-    weeklyTargets.reduce((sum, d) => sum + d.proteinG, 0) / 7
-  );
-  const avgCarbsG = Math.round(
-    weeklyTargets.reduce((sum, d) => sum + d.carbsG, 0) / 7
-  );
-  const avgFatG = Math.round(
-    weeklyTargets.reduce((sum, d) => sum + d.fatG, 0) / 7
-  );
+  let weeklyTargets: Array<{ day: DayOfWeek; dayLabel: string; isTrainingDay: boolean; calories: number; proteinG: number; carbsG: number; fatG: number }>;
 
-  return {
-    hasNutritionPlan: true,
-    weeklyTargets: weeklyTargets.map((d) => ({
+  if (events.length >= 7) {
+    // Full week of events — use event-based targets
+    weeklyTargets = events.slice(0, 7).map((event) => {
+      const display = mapNutritionEventToDisplayTarget(event, includeActivityBurn);
+      return {
+        day: display.day as DayOfWeek,
+        dayLabel: display.dayLabel,
+        isTrainingDay: display.isTrainingDay,
+        calories: display.calories,
+        proteinG: display.proteinG,
+        carbsG: display.carbsG,
+        fatG: display.fatG,
+      };
+    });
+  } else {
+    // TODO NE-3-cleanup: remove template fallback once event coverage guaranteed
+    const plan = await getActiveTrainingPlan(clientId);
+    const dietType = (nutritionPlan.diet_type || "balanced") as DietType;
+    const templateTargets = getWeeklyNutritionTargets(
+      nutritionPlan.baseline_calories,
+      nutritionPlan.protein_target_g || 150,
+      plan,
+      dietType
+    );
+    weeklyTargets = templateTargets.map((d) => ({
       day: d.day as DayOfWeek,
       dayLabel: d.dayLabel,
       isTrainingDay: d.isTrainingDay,
@@ -108,7 +120,18 @@ export const getCheckInNutritionContext = async (
       proteinG: d.proteinG,
       carbsG: d.carbsG,
       fatG: d.fatG,
-    })),
+    }));
+  }
+
+  const count = weeklyTargets.length || 1;
+  const avgCalories = Math.round(weeklyTargets.reduce((sum, d) => sum + d.calories, 0) / count);
+  const avgProteinG = Math.round(weeklyTargets.reduce((sum, d) => sum + d.proteinG, 0) / count);
+  const avgCarbsG = Math.round(weeklyTargets.reduce((sum, d) => sum + d.carbsG, 0) / count);
+  const avgFatG = Math.round(weeklyTargets.reduce((sum, d) => sum + d.fatG, 0) / count);
+
+  return {
+    hasNutritionPlan: true,
+    weeklyTargets,
     averageTargets: {
       calories: avgCalories,
       proteinG: avgProteinG,

@@ -12,8 +12,17 @@ import { TrainingHistoryTable } from "../training-history-table";
 import { TrainingPlanHistory } from "../training-plan-history";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { EditModeButton, getPhaseGoalProgress, getGoalWeightDisplay } from "./training-plan-helpers";
-import { Sparkles, Shuffle, Loader2 } from "lucide-react";
+import { Sparkles, Shuffle, Loader2, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
 import type { Client } from "@/types/check-in";
 import { weightToKg } from "@/utils/nutrition-helpers";
@@ -92,6 +101,15 @@ function TopContentBar({
 }) {
   const builder = useTrainingBuilderContext();
   const { plan, editMode, setEditMode, activePhase } = builder;
+  const [showGenerateConfirm, setShowGenerateConfirm] = useState(false);
+
+  const handleGenerateClick = () => {
+    if (plan) {
+      setShowGenerateConfirm(true);
+    } else {
+      onOpenGenerator();
+    }
+  };
 
   const showPhaseInfo = activePhase && plan;
 
@@ -175,7 +193,7 @@ function TopContentBar({
               <>
                 <EditModeButton editMode={editMode} setEditMode={setEditMode} clientId={client.id} />
                 <button
-                  onClick={onOpenGenerator}
+                  onClick={handleGenerateClick}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[12.5px] font-medium text-[#5a7d82] bg-white border border-[rgba(13,148,136,0.08)] rounded-[6px] hover:bg-[#f0f5f4] transition-colors"
                 >
                   <Sparkles className="h-3.5 w-3.5" />
@@ -200,6 +218,36 @@ function TopContentBar({
           </div>
         </>
       )}
+
+      <Dialog open={showGenerateConfirm} onOpenChange={setShowGenerateConfirm}>
+        <DialogContent>
+          <DialogHeader>
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-full bg-[rgba(192,96,96,0.08)] flex items-center justify-center">
+                <AlertTriangle className="h-4 w-4 text-[#c06060]" />
+              </div>
+              <DialogTitle>Generate a new plan?</DialogTitle>
+            </div>
+            <DialogDescription className="pt-2">
+              Generating a new plan will archive your current plan and delete all future scheduled sessions. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowGenerateConfirm(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                setShowGenerateConfirm(false);
+                onOpenGenerator();
+              }}
+            >
+              Generate New Plan
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

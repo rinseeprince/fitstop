@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { buildNutritionSummary } from "../nutrition-period-summary";
 import type { NutritionPlanWithTargets, NutritionLogRow } from "@/services/schedule-data-service";
+import type { NutritionEvent } from "@/types/check-in";
 
 // --- Fixtures ---
 
@@ -163,5 +164,76 @@ describe("buildNutritionSummary", () => {
     expect(result[0].actualProteinG).toBe(155);
     expect(result[0].actualCarbsG).toBe(245);
     expect(result[0].actualFatG).toBe(68);
+  });
+
+  it("uses nutrition event targets over template for unlogged days", () => {
+    const event: NutritionEvent = {
+      id: "ne-1",
+      clientId: "c1",
+      nutritionPlanId: "np-1",
+      date: "2026-03-30",
+      dayOfWeek: "monday",
+      baselineCalories: 2000,
+      trainingBurnCalories: 300,
+      externalBurnCalories: 50,
+      proteinG: 160,
+      carbG: 250,
+      fatG: 70,
+      dietType: "balanced",
+      isTrainingDay: true,
+      calorieSurplusPercentage: null,
+      status: "scheduled",
+      createdAt: "",
+      updatedAt: "",
+    };
+
+    const result = buildNutritionSummary(
+      ["2026-03-30"],
+      [makePlan()],
+      [], // no logs — unlogged day
+      undefined,
+      [event]
+    );
+
+    // Event target = baseline + training + external = 2000 + 300 + 50 = 2350
+    expect(result[0].targetCalories).toBe(2350);
+    expect(result[0].targetProteinG).toBe(160);
+    expect(result[0].targetCarbsG).toBe(250);
+    expect(result[0].targetFatG).toBe(70);
+    expect(result[0].status).toBe("not_logged");
+  });
+
+  it("prefers logged target over event target", () => {
+    const event: NutritionEvent = {
+      id: "ne-1",
+      clientId: "c1",
+      nutritionPlanId: "np-1",
+      date: "2026-03-30",
+      dayOfWeek: "monday",
+      baselineCalories: 2000,
+      trainingBurnCalories: 300,
+      externalBurnCalories: 50,
+      proteinG: 160,
+      carbG: 250,
+      fatG: 70,
+      dietType: "balanced",
+      isTrainingDay: true,
+      calorieSurplusPercentage: null,
+      status: "logged",
+      createdAt: "",
+      updatedAt: "",
+    };
+
+    const result = buildNutritionSummary(
+      ["2026-03-30"],
+      [makePlan()],
+      [makeLog({ targetCalories: 2200, caloriesConsumed: 2180 })],
+      undefined,
+      [event]
+    );
+
+    // Logged target (2200) takes priority over event target (2350)
+    expect(result[0].targetCalories).toBe(2200);
+    expect(result[0].status).toBe("hit");
   });
 });

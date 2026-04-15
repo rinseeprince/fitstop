@@ -34,6 +34,7 @@ const mapExternalActivityRow = (row: TrainingSessionRow): TrainingSession => ({
   exercises: [],
   sessionType: row.session_type,
   activityMetadata: row.activity_metadata ?? undefined,
+  calorieSurplusPercentage: row.calorie_surplus_percentage ?? null,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
 });

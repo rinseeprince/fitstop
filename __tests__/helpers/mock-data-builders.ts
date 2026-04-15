@@ -240,6 +240,7 @@ export function createMockTrainingPlanRow(options: MockTrainingPlanOptions = {})
     updated_at: options.updatedAt ?? now,
     deleted_at: null,
     phase_id: null,
+    saved_plan_id: null,
   }
 }
 
@@ -274,6 +275,7 @@ export function createMockTrainingSessionRow(options: MockTrainingSessionOptions
     activity_metadata: null,
     estimated_calories: null,
     calories_calculated_at: null,
+    calorie_surplus_percentage: null,
     is_active: true,
     created_at: options.createdAt ?? now,
     updated_at: options.updatedAt ?? now,
@@ -316,6 +318,7 @@ export function createMockTrainingExerciseRow(options: MockTrainingExerciseOptio
     superset_group: null,
     is_warmup: false,
     is_active: true,
+    exercise_id: null,
     created_at: options.createdAt ?? now,
     updated_at: options.updatedAt ?? now,
   }
@@ -612,6 +615,8 @@ export function createMockTrainingEvent(options: MockTrainingEventOptions = {}):
     estimatedCalories: options.estimatedCalories !== undefined ? options.estimatedCalories : 350,
     status: options.status ?? 'scheduled',
     sessionLogId: options.sessionLogId ?? null,
+    isModified: false,
+    calorieSurplusPercentage: null,
     createdAt: options.createdAt ?? now,
     updatedAt: options.updatedAt ?? now,
   }
@@ -631,6 +636,7 @@ export function createMockTrainingEventRow(options: MockTrainingEventOptions = {
     estimated_calories: event.estimatedCalories,
     status: event.status,
     session_log_id: event.sessionLogId,
+    is_modified: event.isModified,
     created_at: event.createdAt,
     updated_at: event.updatedAt,
   }

@@ -10,6 +10,7 @@ import type {
 } from "@/types/training";
 import type { TrainingSessionUpdate } from "@/lib/database-helpers";
 import { mapExerciseRow, mapSessionRow } from "./training-mappers";
+import { resolveExercises } from "./exercise-catalog-service";
 
 // Update session
 export const updateSession = async (
@@ -101,7 +102,8 @@ export const deleteSession = async (sessionId: string): Promise<void> => {
 // Replace all exercises for a session
 export const replaceSessionExercises = async (
   sessionId: string,
-  exercises: AddExerciseRequest[]
+  exercises: AddExerciseRequest[],
+  coachId: string
 ): Promise<TrainingExercise[]> => {
   // Soft-delete existing exercises
   const { error: deactivateError } = await supabaseAdmin
@@ -112,6 +114,10 @@ export const replaceSessionExercises = async (
 
   if (deactivateError) throw new Error(`Failed to deactivate existing exercises: ${deactivateError.message}`);
 
+  // Resolve exercise names to catalog IDs
+  const exerciseNames = exercises.map((e) => e.name);
+  const resolvedMap = await resolveExercises(exerciseNames, coachId);
+
   // Insert new exercises
   const newExercises: TrainingExercise[] = [];
   for (let i = 0; i < exercises.length; i++) {
@@ -121,6 +127,7 @@ export const replaceSessionExercises = async (
       .insert({
         session_id: sessionId,
         name: exercise.name,
+        exercise_id: resolvedMap.get(exercise.name.trim()) ?? null,
         order_index: i,
         sets: exercise.sets,
         reps_min: exercise.repsMin || null,
@@ -173,8 +180,15 @@ export const getSessionWithExercises = async (
 // Insert sessions and exercises for an existing plan row
 export const insertTrainingSessions = async (
   planId: string,
-  sessions: AIGeneratedSession[]
+  sessions: AIGeneratedSession[],
+  coachId: string
 ): Promise<TrainingSession[]> => {
+  // Collect all exercise names across sessions for batch resolution
+  const allExerciseNames = sessions.flatMap((s) =>
+    s.exercises.map((e) => e.name)
+  );
+  const resolvedMap = await resolveExercises(allExerciseNames, coachId);
+
   const result: TrainingSession[] = [];
 
   for (let i = 0; i < sessions.length; i++) {
@@ -206,6 +220,7 @@ export const insertTrainingSessions = async (
         .insert({
           session_id: sessionRow.id,
           name: exerciseData.name,
+          exercise_id: resolvedMap.get(exerciseData.name.trim()) ?? null,
           order_index: j,
           sets: exerciseData.sets,
           reps_min: exerciseData.repsMin || null,

@@ -77,6 +77,7 @@ export function TrainingDrawerFooter() {
         onOpenChange={setShowApplyDialog}
         description="The new plan will replace the current one. Choose when the updated schedule should start."
         onApply={handleApply}
+        maxDate={builder.activePhase?.endDate}
       />
     </>
   );

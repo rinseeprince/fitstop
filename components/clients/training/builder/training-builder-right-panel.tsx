@@ -16,6 +16,8 @@ import {
 import {
   Dumbbell,
   CalendarDays,
+  CalendarClock,
+  CalendarRange,
   LayoutList,
   Loader2,
   AlertTriangle,
@@ -23,6 +25,8 @@ import {
   Sparkles,
   Info,
 } from "lucide-react";
+import { TrainingCalendarView } from "../calendar/training-calendar-view";
+import { format } from "date-fns";
 import { SPLIT_TYPE_LABELS } from "@/lib/training-constants";
 import type { TrainingHistoryRow } from "@/types/history";
 
@@ -42,7 +46,7 @@ export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel
 }: TrainingBuilderRightPanelProps) {
   const builder = useTrainingBuilderContext();
   const { editMode } = builder;
-  const [viewMode, setViewMode] = useState<"week" | "list">("week");
+  const [viewMode, setViewMode] = useState<"week" | "list" | "calendar">("week");
 
   // Fetch training history for completion stats
   const { data: historyData } = useSWR<HistoryResponse>(
@@ -179,6 +183,16 @@ export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel
   // Plan exists - show workout
   return (
     <div className="flex flex-col gap-4">
+      {/* Upcoming plan banner */}
+      {builder.upcomingPlan && (
+        <div className="flex items-start gap-2 p-3 bg-blue-50 rounded-[6px]">
+          <CalendarClock className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
+          <p className="text-sm text-[#0c1a1e]">
+            A new plan takes effect on {format(new Date(builder.upcomingPlan.effectiveFrom + "T00:00:00"), "d MMMM yyyy")}. Current sessions remain active until then.
+          </p>
+        </div>
+      )}
+
       {/* Dark summary strip */}
       <div className="bg-[#0f2027] rounded-[6px] p-5">
         {/* Program info row */}
@@ -314,12 +328,33 @@ export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel
             <LayoutList className="h-3 w-3" />
             List
           </button>
+          <button
+            onClick={() => setViewMode("calendar")}
+            className={cn(
+              "flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium rounded-[4px] transition-all",
+              viewMode === "calendar"
+                ? "bg-white text-[#0c1a1e] shadow-[0_1px_3px_rgba(0,0,0,0.05)]"
+                : "text-[#5a7d82] hover:text-[#0c1a1e]"
+            )}
+          >
+            <CalendarRange className="h-3 w-3" />
+            Calendar
+          </button>
         </div>
       </div>
 
       {/* Workout content */}
       <div className="px-0">
-        {viewMode === "week" ? (
+        {viewMode === "calendar" ? (
+          <TrainingCalendarView
+            clientId={clientId}
+            planId={builder.plan.id}
+            plan={builder.plan}
+            activePhase={builder.activePhase}
+            editMode={editMode}
+            onUpdate={builder.fetchPlan}
+          />
+        ) : viewMode === "week" ? (
           <WeeklyScheduleView
             sessions={builder.trainingSessions}
             activities={builder.externalActivities}
@@ -352,6 +387,27 @@ export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel
           </>
         )}
       </div>
+
+      {/* Upcoming plan schedule */}
+      {builder.upcomingPlan && (
+        <>
+          <div className="flex items-center gap-3 mt-4">
+            <span className="text-[11px] uppercase tracking-[0.06em] text-[#93b0b4] font-medium whitespace-nowrap">
+              Upcoming Plan - starts {format(new Date(builder.upcomingPlan.effectiveFrom + "T00:00:00"), "MMM d, yyyy")}
+            </span>
+            <div className="flex-1 h-px bg-[rgba(13,148,136,0.08)]" />
+          </div>
+
+          <WeeklyScheduleView
+            sessions={builder.upcomingPlan.sessions.filter((s) => s.sessionType !== "external_activity")}
+            activities={builder.upcomingPlan.sessions.filter((s) => s.sessionType === "external_activity")}
+            editMode={false}
+            clientId={clientId}
+            planId={builder.upcomingPlan.id}
+            onUpdate={builder.fetchPlan}
+          />
+        </>
+      )}
     </div>
   );
 });

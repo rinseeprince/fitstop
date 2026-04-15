@@ -3,6 +3,7 @@
 import { useState, useCallback } from "react";
 import { useTrainingBuilderContext } from "@/contexts/training-builder-context";
 import { ApplyDateDialog } from "@/components/ui/apply-date-dialog";
+import { RegenerationWarningDialog } from "../calendar/regeneration-warning-dialog";
 import { Settings2 } from "lucide-react";
 import { weightToKg, weightFromKg } from "@/utils/nutrition-helpers";
 import type { Client } from "@/types/check-in";
@@ -58,33 +59,70 @@ export function EditModeButton({
 }) {
   const builder = useTrainingBuilderContext();
   const [showApplyDialog, setShowApplyDialog] = useState(false);
+  const [showWarningDialog, setShowWarningDialog] = useState(false);
+  const [pendingEffectiveFrom, setPendingEffectiveFrom] = useState<string | null>(null);
+  const [modifiedCount, setModifiedCount] = useState(0);
+  const [isRegenerating, setIsRegenerating] = useState(false);
 
   const handleClick = useCallback(() => {
     if (editMode) {
-      // Exiting edit mode — show popup to regenerate events
       setShowApplyDialog(true);
     } else {
       setEditMode(true);
     }
   }, [editMode, setEditMode]);
 
-  const handleApply = useCallback(async (effectiveFrom: string | null) => {
+  const doRegenerate = useCallback(async (effectiveFrom: string | null, force?: boolean) => {
     if (!builder.plan) return;
+    setIsRegenerating(true);
     try {
       await fetch(
         `/api/clients/${clientId}/training/${builder.plan.id}/regenerate-events`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ effectiveFrom: effectiveFrom ?? undefined }),
+          body: JSON.stringify({
+            effectiveFrom: effectiveFrom ?? undefined,
+            force: force ?? undefined,
+          }),
         }
       );
     } catch {
       // Non-critical — events will be regenerated on next plan change
+    } finally {
+      setIsRegenerating(false);
     }
     setEditMode(false);
+    setShowWarningDialog(false);
+    setPendingEffectiveFrom(null);
     void builder.fetchPlan();
   }, [clientId, builder, setEditMode]);
+
+  const handleApply = useCallback(async (effectiveFrom: string | null) => {
+    if (!builder.plan) return;
+    setShowApplyDialog(false);
+
+    // Check for modified events before regenerating
+    try {
+      const res = await fetch(
+        `/api/clients/${clientId}/training/${builder.plan.id}/events/modified-count`
+      );
+      if (res.ok) {
+        const data = await res.json();
+        const count = data.count ?? 0;
+        if (count > 0) {
+          setPendingEffectiveFrom(effectiveFrom);
+          setModifiedCount(count);
+          setShowWarningDialog(true);
+          return;
+        }
+      }
+    } catch {
+      // Non-critical — proceed with regeneration
+    }
+
+    await doRegenerate(effectiveFrom);
+  }, [clientId, builder, doRegenerate]);
 
   return (
     <>
@@ -100,6 +138,17 @@ export function EditModeButton({
         onOpenChange={setShowApplyDialog}
         description="Session changes have been saved. Choose when the updated schedule should take effect."
         onApply={handleApply}
+      />
+      <RegenerationWarningDialog
+        open={showWarningDialog}
+        onOpenChange={setShowWarningDialog}
+        modifiedCount={modifiedCount}
+        onConfirm={() => doRegenerate(pendingEffectiveFrom, true)}
+        onCancel={() => {
+          setShowWarningDialog(false);
+          setPendingEffectiveFrom(null);
+        }}
+        isLoading={isRegenerating}
       />
     </>
   );

@@ -176,7 +176,7 @@ describe('Client Service', () => {
           weightUnit: 'lbs',
           heightUnit: 'in',
         } as any)
-      ).rejects.toThrow('Failed to create client: Unknown error')
+      ).rejects.toThrow('Failed to create client')
     })
 
     it('sets starting values from current values', async () => {
@@ -328,7 +328,7 @@ describe('Client Service', () => {
       vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
 
       await expect(getClientsForCoach('coach-456')).rejects.toThrow(
-        'Failed to fetch clients: Query failed'
+        'Failed to fetch clients'
       )
     })
 
@@ -398,7 +398,7 @@ describe('Client Service', () => {
     it('returns null when not found', async () => {
       const mockQuery = createMockQuery({
         data: null,
-        error: { message: 'Not found' },
+        error: { code: 'PGRST116', message: 'Not found' },
       })
 
       vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
@@ -475,7 +475,7 @@ describe('Client Service', () => {
       })
 
       const updateCall = mockQuery.update.mock.calls[0][0]
-      expect(updateCall.notes).toBeNull()
+      expect(updateCall.notes).toBe('')
     })
 
     it('dual-writes body metrics when currentWeight updated', async () => {
@@ -534,7 +534,7 @@ describe('Client Service', () => {
       vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
 
       await expect(deleteClient('client-123')).rejects.toThrow(
-        'Failed to delete client: Delete failed'
+        'Failed to delete client'
       )
     })
   })
@@ -563,7 +563,7 @@ describe('Client Service', () => {
       vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
 
       await expect(permanentlyDeleteClient('client-123')).rejects.toThrow(
-        'Failed to permanently delete client: Delete failed'
+        'Failed to permanently delete client'
       )
     })
   })
@@ -611,7 +611,7 @@ describe('Client Service', () => {
           checkInFrequency: 'weekly',
           reminderPreferences: { enabled: true, autoSend: true, sendBeforeHours: 24 },
         } as any)
-      ).rejects.toThrow('Failed to update check-in config: Update failed')
+      ).rejects.toThrow('Failed to update check-in config')
     })
   })
 })

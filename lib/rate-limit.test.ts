@@ -52,12 +52,12 @@ describe('Rate Limit Utilities', () => {
       expect(result).toBeNull()
     })
 
-    it('allows multiple requests in fallback mode', async () => {
+    it('allows requests within limit in fallback mode', async () => {
       const request = createMockRequest('192.168.1.2')
       const config = { windowMs: 60000, maxRequests: 5 }
 
-      // Should allow unlimited requests in fallback mode
-      for (let i = 0; i < 10; i++) {
+      // Should allow requests up to the limit in fallback mode
+      for (let i = 0; i < 5; i++) {
         const result = await rateLimit(request, config)
         expect(result).toBeNull()
       }
@@ -105,11 +105,11 @@ describe('Rate Limit Utilities', () => {
       expect(result).toBeNull()
     })
 
-    it('continues to allow requests in fallback mode', async () => {
+    it('allows requests within limit in fallback mode', async () => {
       const request = createMockRequest('192.168.2.2')
 
-      // Should allow unlimited requests in fallback mode
-      for (let i = 0; i < 10; i++) {
+      // authRateLimit allows 5 requests per 15 minutes
+      for (let i = 0; i < 5; i++) {
         const result = await authRateLimit(request)
         expect(result).toBeNull()
       }

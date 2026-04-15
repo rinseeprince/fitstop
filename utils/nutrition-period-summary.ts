@@ -4,7 +4,7 @@
  * No DB calls — receives data from schedule-data-service.
  */
 
-import type { DayOfWeek } from "@/types/check-in";
+import type { DayOfWeek, NutritionEvent } from "@/types/check-in";
 import type { NutritionDay, NutritionDayStatus } from "@/types/schedule";
 import type {
   NutritionPlanWithTargets,
@@ -83,12 +83,20 @@ export function buildNutritionSummary(
   dates: string[],
   plans: NutritionPlanWithTargets[],
   nutritionLogs: NutritionLogRow[],
-  trainingPlans?: TrainingPlanWithSessions[]
+  trainingPlans?: TrainingPlanWithSessions[],
+  nutritionEvents?: NutritionEvent[]
 ): NutritionDay[] {
-  // Build lookup map for O(1) access per date
+  // Build lookup maps for O(1) access per date
   const logsByDate = new Map<string, NutritionLogRow>();
   for (const log of nutritionLogs) {
     logsByDate.set(log.date, log);
+  }
+
+  const eventsByDate = new Map<string, NutritionEvent>();
+  if (nutritionEvents) {
+    for (const event of nutritionEvents) {
+      eventsByDate.set(event.date.split("T")[0], event);
+    }
   }
 
   return dates.map((date): NutritionDay => {
@@ -118,13 +126,22 @@ export function buildNutritionSummary(
       targetCarbsG = log.targetCarbsG ?? planTarget?.carbG ?? null;
       targetFatG = log.targetFatG ?? planTarget?.fatG ?? null;
     } else {
-      // Unlogged day — estimate from plan baseline + session burn
-      targetCalories = trainingPlans
-        ? estimateTargetForUnloggedDay(planTarget?.calories ?? null, dayOfWeek, trainingPlans, date)
-        : planTarget?.calories ?? null;
-      targetProteinG = planTarget?.proteinG ?? null;
-      targetCarbsG = planTarget?.carbG ?? null;
-      targetFatG = planTarget?.fatG ?? null;
+      // Unlogged day — prefer nutrition event (accurate per-date burns)
+      const event = eventsByDate.get(date);
+      if (event) {
+        targetCalories = event.baselineCalories + event.trainingBurnCalories + event.externalBurnCalories;
+        targetProteinG = event.proteinG;
+        targetCarbsG = event.carbG;
+        targetFatG = event.fatG;
+      } else {
+        // Fallback: no event for this date (pre-backfill data), estimate from template
+        targetCalories = trainingPlans
+          ? estimateTargetForUnloggedDay(planTarget?.calories ?? null, dayOfWeek, trainingPlans, date)
+          : planTarget?.calories ?? null;
+        targetProteinG = planTarget?.proteinG ?? null;
+        targetCarbsG = planTarget?.carbG ?? null;
+        targetFatG = planTarget?.fatG ?? null;
+      }
     }
 
     return {
