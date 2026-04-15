@@ -5,11 +5,7 @@ import type { TrainingPlan } from "@/types/training";
 import { getTodayDateString, getDateString, DAY_NUM } from "@/lib/date-helpers";
 import { getEventsForDateRange } from "@/services/training-event-service";
 import { getActiveTrainingPlan } from "@/services/training-service";
-import {
-  calculateDailyMacros,
-  getExternalActivitiesForDay,
-  calculateExternalActivityCalories,
-} from "@/utils/nutrition-helpers";
+import { calculateDailyMacros } from "@/utils/nutrition-helpers";
 import type { DayOfWeek } from "@/utils/nutrition-helpers";
 
 // --- Row mapper ---
@@ -104,24 +100,27 @@ export async function generateNutritionEvents(
       }
     }
 
-    // Training burn: sum estimatedCalories from training events on this date
     const dayTrainingEvents = trainingEventsByDate.get(dateStr) ?? [];
-    const trainingBurnCalories = dayTrainingEvents.reduce(
-      (sum, e) => sum + (e.estimatedCalories ?? 0),
-      0
-    );
-
-    // External burn: from training plan template (external activities aren't events yet)
-    const externalActivities = getExternalActivitiesForDay(trainingPlan, dayName);
-    const externalBurnCalories = calculateExternalActivityCalories(externalActivities);
-
-    // Is training day: based on whether training events exist for this date
     const isTrainingDay = dayTrainingEvents.length > 0;
 
     // Baseline from stored daily target row (handles custom macros + custom day distribution)
     const stored = targetsByDay.get(dayName);
     const baselineCalories = stored?.calories ?? plan.baselineCalories;
     const proteinG = stored ? Number(stored.protein_g) : plan.proteinTargetG;
+
+    // New percentage model: use surplus % from training event's session
+    // Legacy fallback: sum estimatedCalories as flat burn
+    const firstEvent = dayTrainingEvents[0];
+    const surplusPercentage = firstEvent?.calorieSurplusPercentage ?? null;
+    let trainingBurnCalories = 0;
+    if (surplusPercentage != null) {
+      trainingBurnCalories = Math.round(baselineCalories * surplusPercentage / 100);
+    } else {
+      trainingBurnCalories = dayTrainingEvents.reduce(
+        (sum, e) => sum + (e.estimatedCalories ?? 0),
+        0
+      );
+    }
 
     // Calculate baseline macros (from baseline calories only, not burn-inclusive)
     const macros = calculateDailyMacros(
@@ -138,12 +137,13 @@ export async function generateNutritionEvents(
       day_of_week: dayName,
       baseline_calories: baselineCalories,
       training_burn_calories: trainingBurnCalories,
-      external_burn_calories: externalBurnCalories,
+      external_burn_calories: 0,
       protein_g: macros.proteinG,
       carb_g: macros.carbsG,
       fat_g: macros.fatG,
       diet_type: plan.dietType,
       is_training_day: isTrainingDay,
+      calorie_surplus_percentage: surplusPercentage,
       status: "scheduled",
     });
   }
@@ -371,32 +371,6 @@ export async function getNutritionEventForDate(
 
   if (error) throw error;
   return data ? mapNutritionEventRow(data) : null;
-}
-
-// --- Training burn updates ---
-
-/**
- * Update the training burn on a nutrition event for a specific date.
- * Called when a client completes a training session (scheduled or alternative)
- * so the nutrition event reflects the actual burn, not the originally planned one.
- */
-export async function updateNutritionEventTrainingBurn(
-  clientId: string,
-  date: string,
-  trainingBurnCalories: number
-): Promise<void> {
-  // supabaseAdmin: system-level write for event accuracy
-  const { error } = await supabaseAdmin
-    .from("nutrition_events")
-    .update({
-      training_burn_calories: trainingBurnCalories,
-      is_training_day: trainingBurnCalories > 0,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("client_id", clientId)
-    .eq("date", date);
-
-  if (error) throw error;
 }
 
 // --- Status updates ---

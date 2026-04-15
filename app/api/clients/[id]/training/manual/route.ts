@@ -1,14 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getClientById } from "@/services/client-service";
-import { createTrainingPlanAtomic, insertTrainingSessions, getTrainingPlanById, getActiveTrainingPlan } from "@/services/training-service";
-import { deleteFutureEventsForPlan, regenerateFutureEvents } from "@/services/training-event-service";
-import { captureApiError } from "@/lib/error-handler";
+import { createSavedPlanManual } from "@/services/coach-library-service";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
+import type { ManualSessionDraft } from "@/types/training";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { z } from "zod";
-import type { AIGeneratedSession, AIGeneratedExercise } from "@/types/training";
-import { requirePhaseSelection } from "@/lib/require-phase-selection";
 
 const manualExerciseSchema = z.object({
   name: z.string().min(1),
@@ -35,7 +32,7 @@ const manualPlanSchema = z.object({
   phaseId: z.string().uuid().optional(),
 });
 
-// POST - Create manual training plan
+// POST - Create manual training plan as a library draft
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -77,69 +74,13 @@ export async function POST(
       );
     }
 
-    // Enforce phase selection when client has an active roadmap
-    const phaseCheck = await requirePhaseSelection(clientId, validation.data.phaseId);
-    if (!phaseCheck.ok) return phaseCheck.response;
+    const { name, splitType, sessions } = validation.data;
 
-    const { name, splitType, frequencyPerWeek, sessions } = validation.data;
+    // Save as a library draft (coach previews/edits before applying to client)
+    // Zod-parsed sessions match ManualSessionDraft shape (tempId is only used client-side)
+    const savedPlanId = await createSavedPlanManual(coachId, name, splitType, sessions as ManualSessionDraft[]);
 
-    // Convert to AIGeneratedSession format
-    const aiSessions: AIGeneratedSession[] = sessions.map((session): AIGeneratedSession => ({
-      name: session.name,
-      dayOfWeek: session.dayOfWeek,
-      focus: session.focus,
-      estimatedDurationMinutes: 60,
-      exercises: session.exercises.map((exercise): AIGeneratedExercise => ({
-        name: exercise.name,
-        sets: exercise.sets,
-        repsTarget: exercise.repsTarget,
-        rpeTarget: exercise.rpeTarget,
-        restSeconds: exercise.restSeconds,
-        notes: exercise.notes,
-        isWarmup: false,
-      })),
-    }));
-
-    const existingPlan = await getActiveTrainingPlan(clientId);
-
-    // Atomically archive old plan + insert new plan row
-    const newPlanId = await createTrainingPlanAtomic({
-      clientId,
-      coachId,
-      name,
-      description: "Manually created training plan",
-      coachPrompt: "Manual creation",
-      aiResponseRaw: JSON.stringify({ manual: true }),
-      splitType,
-      frequencyPerWeek,
-      phaseId: phaseCheck.phaseId,
-    });
-
-    // Insert sessions and exercises
-    await insertTrainingSessions(newPlanId, aiSessions, coachId);
-    const plan = await getTrainingPlanById(newPlanId);
-    if (!plan) {
-      return NextResponse.json({ error: "Failed to retrieve created plan" }, { status: 500 });
-    }
-
-    // Generate calendar events for the new plan
-    const effectiveFrom = existingPlan
-      ? (validation.data as Record<string, unknown>).effectiveFrom as string | undefined
-      : phaseCheck.phaseStartDate ?? undefined;
-
-    if (existingPlan) {
-      await deleteFutureEventsForPlan(existingPlan.id).catch((err) =>
-        captureApiError(err, { action: "delete-future-events", planId: existingPlan.id })
-      );
-    }
-    await regenerateFutureEvents(clientId, newPlanId, effectiveFrom).catch((err) =>
-      captureApiError(err, { action: "generate-training-events", planId: newPlanId })
-    );
-
-    return NextResponse.json({
-      success: true,
-      plan,
-    });
+    return NextResponse.json({ success: true, savedPlanId }, { status: 201 });
   } catch (error) {
     console.error("Error creating manual plan:", error);
     return NextResponse.json(

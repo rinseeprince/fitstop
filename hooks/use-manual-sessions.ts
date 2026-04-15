@@ -16,6 +16,7 @@ type UseManualSessionsProps = {
   phaseId: string | undefined;
   setPhaseId: (id: string | undefined) => void;
   fetchPlan: () => void;
+  setSavedPlanId: (id: string | null) => void;
   onUpdate?: () => void;
 };
 
@@ -24,6 +25,7 @@ export function useManualSessions({
   phaseId,
   setPhaseId,
   fetchPlan,
+  setSavedPlanId,
   onUpdate,
 }: UseManualSessionsProps) {
   const { toast } = useToast();
@@ -153,13 +155,12 @@ export function useManualSessions({
         console.error("Invalid API response structure:", rawData);
         throw new Error("Invalid response from server");
       }
-      if (data.success) {
+      if (data.success && data.savedPlanId) {
+        setSavedPlanId(data.savedPlanId);
         setManualSessions([]);
         setSelectedTemplate(null);
         setPhaseId(undefined);
-        toast({ title: "Plan created", description: "Manual training plan saved" });
-        fetchPlan();
-        onUpdate?.();
+        toast({ title: "Plan draft created" });
         return true;
       } else {
         throw new Error(data.error || "Failed to save plan");
@@ -174,7 +175,7 @@ export function useManualSessions({
     } finally {
       setIsSavingManual(false);
     }
-  }, [clientId, manualSessions, selectedTemplate, toast, phaseId, setPhaseId, fetchPlan, onUpdate]);
+  }, [clientId, manualSessions, selectedTemplate, toast, phaseId, setPhaseId, setSavedPlanId]);
 
   /** Reset manual session state */
   const resetManualSessions = useCallback(() => {

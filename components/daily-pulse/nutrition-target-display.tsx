@@ -21,6 +21,13 @@ export function NutritionTargetDisplay({
     if (nutritionTarget.includeActivityBurn === false) {
       return baselineCalories;
     }
+
+    // New percentage model: surplus already computed in the target
+    if (nutritionTarget.calorieSurplusPercentage != null) {
+      return Math.round(baselineCalories * (1 + nutritionTarget.calorieSurplusPercentage / 100));
+    }
+
+    // Legacy flat burn model
     const currentSessionCalories = currentTrainingSession?.estimatedCalories || 0;
     const plannedActivityCalories = plannedActivities.reduce(
       (sum, activity) => sum + activity.estimatedCalories, 0
@@ -30,15 +37,21 @@ export function NutritionTargetDisplay({
 
   // Build the "Assumes..." text for planned training/activities
   const buildAssumptionsText = () => {
+    // New percentage model: show surplus percentage
+    if (nutritionTarget.calorieSurplusPercentage != null && currentTrainingSession) {
+      return `Training day: +${nutritionTarget.calorieSurplusPercentage}% (${currentTrainingSession.name})`;
+    }
+
+    // Legacy flat burn model
     const parts: string[] = [];
-    
+
     if (currentTrainingSession) {
       const calories = currentTrainingSession.estimatedCalories || 0;
       if (calories > 0) {
         parts.push(`${currentTrainingSession.name} (${calories} cal)`);
       }
     }
-    
+
     if (plannedActivities.length > 0) {
       plannedActivities.forEach(activity => {
         if (activity.estimatedCalories > 0) {
@@ -46,11 +59,11 @@ export function NutritionTargetDisplay({
         }
       });
     }
-    
+
     if (parts.length === 0) {
       return null; // Rest day with no training or activities
     }
-    
+
     return `Assumes ${parts.join(' + ')} completed`;
   };
 

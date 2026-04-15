@@ -40,7 +40,6 @@ vi.mock('./nutrition-event-service', () => ({
 }));
 
 import { supabaseAdmin } from './supabase-admin';
-import { getClientNutritionTargets } from './client-portal-service';
 import { getClientTrainingPlan } from './client-portal-training';
 import { getEventForDate } from './training-event-service';
 import { getNutritionEventForDate } from './nutrition-event-service';
@@ -480,58 +479,8 @@ describe('Daily Logs Service - Database Functions', () => {
       expect(getNutritionEventForDate).toHaveBeenCalledWith('client-123', '2024-01-15');
     });
 
-    it('falls back to template when no nutrition event exists', async () => {
-      const today = new Date('2024-01-15'); // Monday
-      vi.useFakeTimers();
-      vi.setSystemTime(today);
-
+    it('returns null when no nutrition event exists', async () => {
       vi.mocked(getNutritionEventForDate).mockResolvedValue(null);
-
-      const mockNutritionTargets = {
-        dailyTargets: [
-          {
-            day: 'monday',
-            calories: 2200,
-            proteinG: 165,
-            carbsG: 220,
-            fatG: 73,
-          },
-          {
-            day: 'tuesday',
-            calories: 1800,
-            proteinG: 165,
-            carbsG: 180,
-            fatG: 60,
-          },
-        ],
-      };
-
-      vi.mocked(getClientNutritionTargets).mockResolvedValue(mockNutritionTargets as any);
-
-      const result = await getTodaysNutritionTarget('client-123');
-
-      expect(result).toEqual({
-        day: 'monday',
-        calories: 2200,
-        proteinG: 165,
-        carbsG: 220,
-        fatG: 73,
-      });
-
-      vi.useRealTimers();
-    });
-
-    it('returns null when no event and no nutrition targets', async () => {
-      vi.mocked(getNutritionEventForDate).mockResolvedValue(null);
-      vi.mocked(getClientNutritionTargets).mockResolvedValue(null);
-
-      const result = await getTodaysNutritionTarget('client-123');
-      expect(result).toBeNull();
-    });
-
-    it('returns null when no event and no daily targets', async () => {
-      vi.mocked(getNutritionEventForDate).mockResolvedValue(null);
-      vi.mocked(getClientNutritionTargets).mockResolvedValue({ dailyTargets: undefined } as any);
 
       const result = await getTodaysNutritionTarget('client-123');
       expect(result).toBeNull();

@@ -5,12 +5,20 @@ import { calculateDailyMacros } from "@/utils/nutrition-helpers";
 
 /**
  * Get total calories for a nutrition event, respecting the activity burn toggle.
+ * New model: percentage surplus. Legacy model: flat burn addition.
  */
 export function getTotalCalories(
   event: NutritionEvent,
   includeActivityBurn: boolean
 ): number {
   if (!includeActivityBurn) return event.baselineCalories;
+
+  // New percentage model: training day total = baseline * (1 + surplus/100)
+  if (event.calorieSurplusPercentage != null) {
+    return Math.round(event.baselineCalories * (1 + event.calorieSurplusPercentage / 100));
+  }
+
+  // Legacy flat burn model
   return event.baselineCalories + event.trainingBurnCalories + event.externalBurnCalories;
 }
 
@@ -52,11 +60,13 @@ export function mapNutritionEventToDisplayTarget(
       externalActivities: [],
       totalCaloriesWithActivities: event.baselineCalories,
       includeActivityBurn: false,
+      calorieSurplusPercentage: event.calorieSurplusPercentage,
     };
   }
 
-  // Recalculate macros for total calories (baseline + burns)
-  const totalCalories = event.baselineCalories + event.trainingBurnCalories + event.externalBurnCalories;
+  // Recalculate macros for total calories (baseline + surplus or burns)
+  const totalCalories = getTotalCalories(event, true);
+  const surplusCalories = totalCalories - event.baselineCalories;
   const macros = calculateDailyMacros(
     totalCalories,
     event.proteinG,
@@ -80,11 +90,12 @@ export function mapNutritionEventToDisplayTarget(
     proteinPercent,
     carbsPercent,
     fatPercent: 100 - proteinPercent - carbsPercent,
-    trainingSessionCalories: event.trainingBurnCalories,
+    trainingSessionCalories: surplusCalories,
     trainingSessions: [],
-    externalActivityCalories: event.externalBurnCalories,
+    externalActivityCalories: 0,
     externalActivities: [],
     totalCaloriesWithActivities: totalCalories,
     includeActivityBurn: true,
+    calorieSurplusPercentage: event.calorieSurplusPercentage,
   };
 }

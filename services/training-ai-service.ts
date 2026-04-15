@@ -22,7 +22,7 @@ The JSON must follow this exact structure:
   "sessions": [
     {
       "name": "Session Name (e.g., 'Push Day A', 'Upper Body')",
-      "dayOfWeek": "monday" | "tuesday" | etc. (optional),
+      "dayOfWeek": null (do NOT assign days - the coach decides placement dates),
       "focus": "Primary muscle groups or movement patterns",
       "estimatedDurationMinutes": 45-90,
       "exercises": [
@@ -236,14 +236,8 @@ const buildTrainingPlanPrompt = (input: AITrainingPlanInput): string => {
 
   prompt += `\n## Task:\nGenerate a complete training program based on the coach's request and all the client data above. The program should be practical, evidence-based, and tailored to this specific client's situation.`;
 
-  // Add reminder about activities if present
-  if (input.externalActivities && input.externalActivities.length > 0) {
-    if (input.allowSameDayTraining) {
-      prompt += ` Remember to assign specific days of the week to each session. You CAN schedule training on the same days as external activities - just ensure you choose complementary muscle groups.`;
-    } else {
-      prompt += ` Remember to assign specific days of the week to each session, ensuring they do NOT overlap with the client's external activity days.`;
-    }
-  }
+  // Remind AI not to assign days - coach decides placement dates
+  prompt += ` Do NOT assign dayOfWeek to any session. Sessions are an ordered sequence - the coach will decide which calendar dates they land on.`;
 
   return prompt;
 };

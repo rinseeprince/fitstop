@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { getClientById } from "@/services/client-service";
-import { getPlanTargetForDate } from "@/services/daily-context-service";
 import { getNutritionEventsForDateRange } from "@/services/nutrition-event-service";
 import { getTotalCalories } from "@/utils/nutrition-event-helpers";
 import { supabaseAdmin } from "@/services/supabase-admin";
@@ -70,26 +69,20 @@ export async function GET(
 
     const eventsByDate = new Map(events.map((e) => [e.date.split("T")[0], e]));
 
-    const targets = await Promise.all(
-      dates.map(async (date) => {
-        const event = eventsByDate.get(date);
-        if (event) {
-          return {
-            date,
-            calories: getTotalCalories(event, includeActivityBurn),
-            proteinG: event.proteinG,
-            carbsG: event.carbG,
-            fatG: event.fatG,
-            isTrainingDay: event.isTrainingDay,
-          };
-        }
-        // TODO NE-3-cleanup: remove template fallback once event coverage guaranteed
-        const target = await getPlanTargetForDate(clientId, date, includeActivityBurn);
-        return target
-          ? { date, ...target }
-          : { date, calories: 0, proteinG: 0, carbsG: 0, fatG: 0, isTrainingDay: false };
-      })
-    );
+    const targets = dates.map((date) => {
+      const event = eventsByDate.get(date);
+      if (event) {
+        return {
+          date,
+          calories: getTotalCalories(event, includeActivityBurn),
+          proteinG: event.proteinG,
+          carbsG: event.carbG,
+          fatG: event.fatG,
+          isTrainingDay: event.isTrainingDay,
+        };
+      }
+      return { date, calories: 0, proteinG: 0, carbsG: 0, fatG: 0, isTrainingDay: false };
+    });
 
     return NextResponse.json({ targets }, { status: 200 });
   } catch (error) {

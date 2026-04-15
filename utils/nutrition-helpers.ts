@@ -1,7 +1,6 @@
 import type { UnitPreference, ActivityLevel, TrainingVolume, DietType, DayCalorieOverrides } from "@/types/check-in";
 import { WEEKLY_BUDGET_ROUNDING_TOLERANCE } from "@/lib/constants";
-import type { TrainingPlan, TrainingSession } from "@/types/training";
-import { getTrainingSessionCaloriesByDay, getTrainingSessionsSummary } from "@/utils/training-calorie-helpers";
+import type { TrainingPlan } from "@/types/training";
 
 /**
  * Days of the week constant
@@ -42,47 +41,8 @@ export type DailyNutritionTargets = {
   externalActivities: Array<{ name: string; calories: number }>;
   totalCaloriesWithActivities: number;
   includeActivityBurn: boolean;
+  calorieSurplusPercentage?: number | null;
 };
-
-/**
- * Get external activities for a specific day from a training plan
- */
-export function getExternalActivitiesForDay(
-  plan: TrainingPlan | null,
-  day: DayOfWeek
-): TrainingSession[] {
-  if (!plan) return [];
-
-  return plan.sessions.filter(
-    (session) =>
-      session.sessionType === "external_activity" &&
-      session.dayOfWeek?.toLowerCase() === day
-  );
-}
-
-/**
- * Calculate total external activity calories for a day
- */
-export function calculateExternalActivityCalories(
-  activities: TrainingSession[]
-): number {
-  return activities.reduce(
-    (sum, activity) => sum + (activity.activityMetadata?.estimatedCalories || 0),
-    0
-  );
-}
-
-/**
- * Get external activities summary for a day
- */
-export function getExternalActivitiesSummary(
-  activities: TrainingSession[]
-): Array<{ name: string; calories: number }> {
-  return activities.map((activity) => ({
-    name: activity.name,
-    calories: activity.activityMetadata?.estimatedCalories || 0,
-  }));
-}
 
 /**
  * Get training days from a training plan (excluding external activities)
@@ -116,23 +76,6 @@ export function getTrainingDays(plan: TrainingPlan | null): Set<string> {
   }
 
   return days;
-}
-
-/**
- * @deprecated This function used a 25% multiplier approach.
- * Use getWeeklyNutritionTargets with baselineCalories instead,
- * which adds actual training session calories per day.
- */
-export function calculateCalorieDistribution(
-  dailyCalorieTarget: number,
-  _trainingDaysCount: number
-): { trainingDayCalories: number; restDayCalories: number } {
-  // Now just returns the same calories for both - actual training calories
-  // are added per-day in getWeeklyNutritionTargets
-  return {
-    trainingDayCalories: dailyCalorieTarget,
-    restDayCalories: dailyCalorieTarget,
-  };
 }
 
 /**
@@ -177,69 +120,6 @@ export function calculateDailyMacros(
     carbsG: Math.round(carbCal / 4),
     fatG: Math.round(fatCal / 9),
   };
-}
-
-/**
- * Get complete daily nutrition targets for all 7 days
- * Uses baseline calories (TDEE - deficit) and adds actual training calories per day.
- *
- */
-export function getWeeklyNutritionTargets(
-  baselineCalories: number,
-  proteinTargetG: number,
-  trainingPlan: TrainingPlan | null,
-  dietType: DietType = "balanced"
-): DailyNutritionTargets[] {
-  // Get training session calories (from generated training plan)
-  const trainingSessionCaloriesByDay = getTrainingSessionCaloriesByDay(trainingPlan);
-  const trainingDays = getTrainingDays(trainingPlan);
-
-  return DAYS_OF_WEEK.map((day) => {
-    const isTrainingDay = trainingDays.has(day);
-
-    // Get training session calories for this day (from generated plan)
-    const trainingSessionCalories = trainingSessionCaloriesByDay[day] || 0;
-    const trainingSessions = getTrainingSessionsSummary(trainingPlan, day);
-
-    // Get external activities breakdown for this day
-    const dayActivities = getExternalActivitiesForDay(trainingPlan, day);
-    const externalActivityCalories = calculateExternalActivityCalories(dayActivities);
-    const externalActivities = getExternalActivitiesSummary(dayActivities);
-
-    // Total calories = baseline + training sessions + external activities
-    const totalActivityCalories = trainingSessionCalories + externalActivityCalories;
-    const dayCalories = baselineCalories + totalActivityCalories;
-
-    // Calculate macros based on total day calories
-    // Protein stays constant, extra calories go to carbs/fats
-    const macros = calculateDailyMacros(dayCalories, proteinTargetG, isTrainingDay, dietType);
-
-    // Calculate percentages based on total day calories
-    const totalCal = macros.proteinG * 4 + macros.carbsG * 4 + macros.fatG * 9;
-    const proteinPercent = totalCal > 0 ? Math.round((macros.proteinG * 4 / totalCal) * 100) : 0;
-    const carbsPercent = totalCal > 0 ? Math.round((macros.carbsG * 4 / totalCal) * 100) : 0;
-    const fatPercent = 100 - proteinPercent - carbsPercent;
-
-    return {
-      day,
-      dayLabel: day.charAt(0).toUpperCase() + day.slice(1),
-      isTrainingDay,
-      calories: dayCalories,
-      baselineCalories,
-      proteinG: macros.proteinG,
-      carbsG: macros.carbsG,
-      fatG: macros.fatG,
-      proteinPercent,
-      carbsPercent,
-      fatPercent,
-      trainingSessionCalories,
-      trainingSessions,
-      externalActivityCalories,
-      externalActivities,
-      totalCaloriesWithActivities: dayCalories,
-      includeActivityBurn: true,
-    };
-  });
 }
 
 /**

@@ -12,11 +12,6 @@ import {
   kgToLbs,
   getTrainingDays,
 } from "@/utils/nutrition-helpers";
-import {
-  calculateDailyTrainingCalories,
-  calculateWeeklyTrainingCalories,
-  getTrainingCaloriesByDay,
-} from "@/utils/training-calorie-helpers";
 
 type UseNutritionPlanProps = {
   client: Client;
@@ -111,9 +106,10 @@ export function useNutritionPlan({ client, onUpdate }: UseNutritionPlanProps) {
   // This is now handled via the plan data, not client fields
   const showRegenerationBanner = false; // Will be computed from plan data when available
 
-  const dailyTrainingCalories = trainingPlan ? calculateDailyTrainingCalories(trainingPlan) : 0;
-  const weeklyTrainingCalories = trainingPlan ? calculateWeeklyTrainingCalories(trainingPlan) : 0;
-  const trainingCaloriesByDay = trainingPlan ? getTrainingCaloriesByDay(trainingPlan) : null;
+  // Legacy flat calorie values (kept for backward compat with display component)
+  const dailyTrainingCalories = 0;
+  const weeklyTrainingCalories = 0;
+  const trainingCaloriesByDay = null;
 
   const weeklyTotal = weeklyTargets
     ? weeklyTargets.reduce((sum, day) => sum + day.calories, 0)

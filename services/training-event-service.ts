@@ -19,7 +19,7 @@ function mapEventRow(row: TrainingEventRow): TrainingEvent {
     status: row.status as TrainingEventStatus,
     sessionLogId: row.session_log_id,
     isModified: row.is_modified,
-    calorieSurplusPercentage: null,
+    calorieSurplusPercentage: row.calorie_surplus_percentage ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -34,6 +34,7 @@ export type SessionInput = {
   sessionType: SessionType;
   focus?: string;
   estimatedCalories?: number;
+  calorieSurplusPercentage?: number | null;
 };
 
 // --- Generate events ---
@@ -86,6 +87,7 @@ export async function generateTrainingEvents(
         session_name: session.name,
         session_focus: session.focus ?? null,
         estimated_calories: session.estimatedCalories ?? null,
+        calorie_surplus_percentage: session.calorieSurplusPercentage ?? null,
         status: "scheduled",
       });
     }
@@ -141,7 +143,7 @@ export async function regenerateFutureEvents(
   // Fetch current active sessions
   const { data: sessionRows, error: sessionsError } = await supabaseAdmin
     .from("training_sessions")
-    .select("id, name, day_of_week, session_type, focus, estimated_calories")
+    .select("id, name, day_of_week, session_type, focus, estimated_calories, calorie_surplus_percentage")
     .eq("plan_id", planId)
     .eq("is_active", true);
 
@@ -155,6 +157,7 @@ export async function regenerateFutureEvents(
     sessionType: (r.session_type ?? "training") as SessionType,
     focus: r.focus ?? undefined,
     estimatedCalories: r.estimated_calories ?? undefined,
+    calorieSurplusPercentage: r.calorie_surplus_percentage ?? null,
   }));
 
   // Calculate end date

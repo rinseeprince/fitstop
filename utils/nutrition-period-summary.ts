@@ -126,10 +126,12 @@ export function buildNutritionSummary(
       targetCarbsG = log.targetCarbsG ?? planTarget?.carbG ?? null;
       targetFatG = log.targetFatG ?? planTarget?.fatG ?? null;
     } else {
-      // Unlogged day — prefer nutrition event (accurate per-date burns)
+      // Unlogged day — prefer nutrition event (percentage surplus or legacy burns)
       const event = eventsByDate.get(date);
       if (event) {
-        targetCalories = event.baselineCalories + event.trainingBurnCalories + event.externalBurnCalories;
+        targetCalories = event.calorieSurplusPercentage != null
+          ? Math.round(event.baselineCalories * (1 + event.calorieSurplusPercentage / 100))
+          : event.baselineCalories + event.trainingBurnCalories + event.externalBurnCalories;
         targetProteinG = event.proteinG;
         targetCarbsG = event.carbG;
         targetFatG = event.fatG;

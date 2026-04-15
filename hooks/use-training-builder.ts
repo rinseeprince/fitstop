@@ -80,6 +80,7 @@ export function useTrainingBuilder({ clientId, onUpdate }: UseTrainingBuilderPro
     phaseId: trainingPlan.phaseId,
     setPhaseId: trainingPlan.setPhaseId,
     fetchPlan: trainingPlan.fetchPlan,
+    setSavedPlanId: trainingPlan.setSavedPlanId,
     onUpdate,
   });
 

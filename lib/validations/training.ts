@@ -168,18 +168,18 @@ const getTrainingPlanApiResponseSchema = z.object({
   errorMessage: z.string().optional(),
 });
 
-// POST /api/clients/[id]/training response (generate)
+// POST /api/clients/[id]/training response (generate) - returns savedPlanId (library draft)
 const generateTrainingPlanApiResponseSchema = z.object({
   success: z.boolean(),
-  plan: trainingPlanResponseSchema.optional(),
+  savedPlanId: z.string().optional(),
   error: z.string().optional(),
   errorMessage: z.string().optional(),
 });
 
-// POST /api/clients/[id]/training/manual response
+// POST /api/clients/[id]/training/manual response - returns savedPlanId (library draft)
 const saveManualPlanApiResponseSchema = z.object({
   success: z.boolean(),
-  plan: trainingPlanResponseSchema.optional(),
+  savedPlanId: z.string().optional(),
   error: z.string().optional(),
 });
 
@@ -215,14 +215,14 @@ export type GetPlanApiResponse = {
 
 export type GeneratePlanApiResponse = {
   success: boolean;
-  plan?: TrainingPlan;
+  savedPlanId?: string;
   error?: string;
   errorMessage?: string;
 };
 
 export type SaveManualPlanApiResponse = {
   success: boolean;
-  plan?: TrainingPlan;
+  savedPlanId?: string;
   error?: string;
 };
 

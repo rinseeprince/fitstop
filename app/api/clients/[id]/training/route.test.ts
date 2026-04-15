@@ -14,21 +14,14 @@ vi.mock('@/services/training-ai-service', () => ({
   calculateCheckInAverages: vi.fn().mockReturnValue({}),
 }))
 
+vi.mock('@/services/coach-library-service', () => ({
+  createSavedPlanFromAI: vi.fn().mockResolvedValue('saved-plan-1'),
+}))
+
 vi.mock('@/services/training-service', () => ({
   getActiveTrainingPlan: vi.fn().mockResolvedValue(null),
-  createTrainingPlanAtomic: vi.fn().mockResolvedValue('plan-1'),
-  insertTrainingSessions: vi.fn().mockResolvedValue([]),
-  getTrainingPlanById: vi.fn().mockResolvedValue({ id: 'plan-1', sessions: [] }),
-  saveTrainingPlanHistory: vi.fn().mockResolvedValue(undefined),
-  updateSessionCalories: vi.fn().mockResolvedValue(undefined),
-}))
-
-vi.mock('@/services/activity-service', () => ({
-  addExternalActivity: vi.fn().mockResolvedValue(undefined),
-}))
-
-vi.mock('@/services/training-calorie-service', () => ({
-  estimateSessionCalories: vi.fn().mockResolvedValue({ estimatedCalories: 300 }),
+  promoteTrainingPlanIfReady: vi.fn().mockResolvedValue(undefined),
+  getTrainingPlanById: vi.fn().mockResolvedValue(null),
 }))
 
 vi.mock('@/lib/auth-helpers', () => ({
@@ -37,6 +30,7 @@ vi.mock('@/lib/auth-helpers', () => ({
 
 vi.mock('@/lib/rate-limit', () => ({
   aiRateLimit: vi.fn().mockResolvedValue(null),
+  coachApiRateLimit: vi.fn().mockResolvedValue(null),
 }))
 
 vi.mock('@/lib/csrf-protection', () => ({
@@ -64,6 +58,10 @@ vi.mock('@/services/client-goals-service', () => ({
   getCurrentGoals: vi.fn(),
 }))
 
+vi.mock('@/lib/require-phase-selection', () => ({
+  requirePhaseSelection: vi.fn().mockResolvedValue({ ok: true }),
+}))
+
 vi.mock('@/services/supabase-admin', () => ({
   supabaseAdmin: {
     from: vi.fn().mockReturnValue({
@@ -80,7 +78,7 @@ vi.mock('@/services/supabase-admin', () => ({
 
 import { getClientById } from '@/services/client-service'
 import { generateTrainingPlanAI } from '@/services/training-ai-service'
-import { createTrainingPlanAtomic, getActiveTrainingPlan, getTrainingPlanById } from '@/services/training-service'
+import { createSavedPlanFromAI } from '@/services/coach-library-service'
 import { getLatestBodyMetrics } from '@/services/body-metrics-service'
 import { getCurrentGoals } from '@/services/client-goals-service'
 import { POST } from './route'
@@ -104,11 +102,6 @@ const mockAiResult = {
   rawResponse: 'raw',
 }
 
-const mockSavedPlan = {
-  id: 'plan-1',
-  sessions: [],
-}
-
 function makeRequest(body: Record<string, unknown>): NextRequest {
   return new NextRequest('http://localhost/api/clients/client-1/training', {
     method: 'POST',
@@ -121,9 +114,7 @@ describe('Training Route POST - read-switch behavior', () => {
     vi.clearAllMocks()
     vi.mocked(getClientById).mockResolvedValue(mockClient as never)
     vi.mocked(generateTrainingPlanAI).mockResolvedValue(mockAiResult as never)
-    vi.mocked(createTrainingPlanAtomic).mockResolvedValue('plan-1')
-    vi.mocked(getTrainingPlanById).mockResolvedValue(mockSavedPlan as never)
-    vi.mocked(getActiveTrainingPlan).mockResolvedValue(null)
+    vi.mocked(createSavedPlanFromAI).mockResolvedValue('saved-plan-1')
   })
 
   it('uses body_metrics and goals values when available', async () => {
@@ -151,7 +142,8 @@ describe('Training Route POST - read-switch behavior', () => {
     })
 
     const request = makeRequest({ coachPrompt: 'Build a plan' })
-    await POST(request, { params: Promise.resolve({ id: 'client-1' }) })
+    const response = await POST(request, { params: Promise.resolve({ id: 'client-1' }) })
+    const data = await response.json()
 
     // AI call should use body_metrics and goals values
     expect(generateTrainingPlanAI).toHaveBeenCalledWith(
@@ -165,13 +157,16 @@ describe('Training Route POST - read-switch behavior', () => {
       })
     )
 
-    // createTrainingPlanAtomic should use new metric values
-    expect(createTrainingPlanAtomic).toHaveBeenCalledWith(
-      expect.objectContaining({
-        clientBodyFatPercentage: 18,
-        clientTdee: 2200,
-      })
+    // Should create a saved plan (library draft) instead of client-side plan
+    expect(createSavedPlanFromAI).toHaveBeenCalledWith(
+      'coach-1',
+      mockAiResult.plan,
+      'Build a plan'
     )
+
+    // Response returns savedPlanId instead of plan object
+    expect(data.success).toBe(true)
+    expect(data.savedPlanId).toBe('saved-plan-1')
   })
 
   it('falls back to client fields when services return null', async () => {

@@ -4,6 +4,7 @@ import { Flame, Dumbbell } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import type { TrainingPlan } from "@/types/training";
+import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
 
 type NutritionTrainingCaloriesDisplayProps = {
   trainingPlan: TrainingPlan | null;
@@ -14,6 +15,7 @@ type NutritionTrainingCaloriesDisplayProps = {
   includeActivityBurn: boolean;
   onToggleActivityBurn: (value: boolean) => void;
   isSavingToggle?: boolean;
+  dailyTargets?: DailyNutritionTargets[];
 };
 
 export function NutritionTrainingCaloriesDisplay({
@@ -25,6 +27,7 @@ export function NutritionTrainingCaloriesDisplay({
   includeActivityBurn,
   onToggleActivityBurn,
   isSavingToggle,
+  dailyTargets,
 }: NutritionTrainingCaloriesDisplayProps) {
   if (isLoading) {
     return (
@@ -53,6 +56,8 @@ export function NutritionTrainingCaloriesDisplay({
     );
   }
 
+  // Check if any daily target uses the percentage model
+  const hasPercentageModel = dailyTargets?.some((d) => d.calorieSurplusPercentage != null);
   const days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
 
   return (
@@ -64,7 +69,9 @@ export function NutritionTrainingCaloriesDisplay({
           </div>
           <div className="flex-1">
             <div className="flex items-center justify-between mb-3">
-              <h4 className="text-sm font-semibold text-foreground">Training Calories</h4>
+              <h4 className="text-sm font-semibold text-foreground">
+                {hasPercentageModel ? "Training Day Surplus" : "Training Calories"}
+              </h4>
               {!includeActivityBurn ? (
                 <span className="inline-flex items-center px-2.5 py-1 rounded-md text-[10px] font-medium bg-muted text-muted-foreground">
                   Not added to targets
@@ -75,35 +82,61 @@ export function NutritionTrainingCaloriesDisplay({
                 </span>
               )}
             </div>
-            <div className="grid grid-cols-2 gap-4 text-center">
-              <div className="bg-card rounded-lg p-3">
-                <p className="text-xl font-semibold text-training">+{dailyCalories}</p>
-                <p className="text-xs text-muted-foreground">cal/day avg</p>
-              </div>
-              <div className="bg-card rounded-lg p-3">
-                <p className="text-xl font-semibold text-training">{weeklyCalories}</p>
-                <p className="text-xs text-muted-foreground">cal/week</p>
-              </div>
-            </div>
-            {caloriesByDay && (
-              <div className="mt-4 pt-4">
+            {hasPercentageModel ? (
+              // Percentage surplus display
+              <div className="mt-2 pt-2">
                 <div className="flex flex-wrap gap-1.5">
                   {days.map((day) => {
-                    const cals = caloriesByDay[day] || 0;
+                    const target = dailyTargets?.find((d) => d.day === day);
+                    const surplus = target?.calorieSurplusPercentage;
                     const shortDay = day.slice(0, 2).toUpperCase();
                     return (
                       <div
                         key={day}
                         className={`text-[10px] px-2.5 py-1 rounded-lg font-medium ${
-                          cals > 0 ? "bg-training/10 text-training" : "bg-muted text-muted-foreground"
+                          surplus != null ? "bg-training/10 text-training" : "bg-muted text-muted-foreground"
                         }`}
                       >
-                        {shortDay}: {cals > 0 ? `+${cals}` : "-"}
+                        {shortDay}: {surplus != null ? `+${surplus}%` : "Rest"}
                       </div>
                     );
                   })}
                 </div>
               </div>
+            ) : (
+              // Legacy flat calorie display
+              <>
+                <div className="grid grid-cols-2 gap-4 text-center">
+                  <div className="bg-card rounded-lg p-3">
+                    <p className="text-xl font-semibold text-training">+{dailyCalories}</p>
+                    <p className="text-xs text-muted-foreground">cal/day avg</p>
+                  </div>
+                  <div className="bg-card rounded-lg p-3">
+                    <p className="text-xl font-semibold text-training">{weeklyCalories}</p>
+                    <p className="text-xs text-muted-foreground">cal/week</p>
+                  </div>
+                </div>
+                {caloriesByDay && (
+                  <div className="mt-4 pt-4">
+                    <div className="flex flex-wrap gap-1.5">
+                      {days.map((day) => {
+                        const cals = caloriesByDay[day] || 0;
+                        const shortDay = day.slice(0, 2).toUpperCase();
+                        return (
+                          <div
+                            key={day}
+                            className={`text-[10px] px-2.5 py-1 rounded-lg font-medium ${
+                              cals > 0 ? "bg-training/10 text-training" : "bg-muted text-muted-foreground"
+                            }`}
+                          >
+                            {shortDay}: {cals > 0 ? `+${cals}` : "-"}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -112,10 +145,12 @@ export function NutritionTrainingCaloriesDisplay({
       <div className="flex items-center justify-between px-1">
         <div className="space-y-0.5">
           <Label className="text-[12.5px] font-semibold text-[#0c1a1e]">
-            Add activity burn to calorie targets
+            {hasPercentageModel ? "Apply training day surplus" : "Add activity burn to calorie targets"}
           </Label>
           <p className="text-[11px] text-[#93b0b4] leading-[1.4]">
-            When on, estimated calories burned from training are added to daily targets
+            {hasPercentageModel
+              ? "When on, training days get a percentage boost above baseline calories"
+              : "When on, estimated calories burned from training are added to daily targets"}
           </p>
         </div>
         <Switch

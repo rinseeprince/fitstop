@@ -2334,6 +2334,7 @@ export type Database = {
       }
       training_events: {
         Row: {
+          calorie_surplus_percentage: number | null
           client_id: string
           created_at: string
           date: string
@@ -2349,6 +2350,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          calorie_surplus_percentage?: number | null
           client_id: string
           created_at?: string
           date: string
@@ -2364,6 +2366,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          calorie_surplus_percentage?: number | null
           client_id?: string
           created_at?: string
           date?: string

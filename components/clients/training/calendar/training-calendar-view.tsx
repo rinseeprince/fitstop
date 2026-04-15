@@ -169,17 +169,27 @@ export function TrainingCalendarView({
           weekEvents.push(...dayEvents.filter((e) => e.status === "scheduled"));
           weekStart.setDate(weekStart.getDate() + 1);
         }
+        let clearFailed = false;
         for (const event of weekEvents) {
-          await fetch(
-            `/api/clients/${clientId}/training/${planId}/events/${event.id}/move`,
-            { method: "DELETE" }
-          ).catch(() => {});
+          try {
+            const res = await fetch(
+              `/api/clients/${clientId}/training/${planId}/events/${event.id}/move`,
+              { method: "DELETE" }
+            );
+            if (!res.ok) clearFailed = true;
+          } catch {
+            clearFailed = true;
+          }
         }
-        toast({ title: `Week ${weekNumber} cleared` });
+        if (clearFailed) {
+          toast({ title: "Error", description: "Some events could not be deleted", variant: "destructive" });
+        } else {
+          toast({ title: `Week ${weekNumber} cleared` });
+        }
       } else if (action === "duplicate_next") {
         const nextWeekStart = new Date(weekStartDate + "T00:00:00");
         nextWeekStart.setDate(nextWeekStart.getDate() + 7);
-        await fetch(
+        const res = await fetch(
           `/api/clients/${clientId}/training/${planId}/events/duplicate-week`,
           {
             method: "POST",
@@ -190,9 +200,13 @@ export function TrainingCalendarView({
             }),
           }
         );
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || "Failed to duplicate week");
+        }
         toast({ title: "Week duplicated to next week" });
       } else {
-        await fetch(
+        const res = await fetch(
           `/api/clients/${clientId}/training/${planId}/events/duplicate-week`,
           {
             method: "POST",
@@ -204,6 +218,10 @@ export function TrainingCalendarView({
             }),
           }
         );
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || "Failed to duplicate weeks");
+        }
         toast({ title: "Week duplicated to all remaining weeks" });
       }
       await mutate();

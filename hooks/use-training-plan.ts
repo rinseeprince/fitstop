@@ -23,6 +23,7 @@ export function useTrainingPlan({ clientId, onUpdate }: UseTrainingPlanProps) {
   const [allowSameDayTraining, setAllowSameDayTraining] = useState(false);
   const [phaseId, setPhaseId] = useState<string | undefined>(undefined);
   const [phaseBlocked, setPhaseBlocked] = useState(false);
+  const [savedPlanId, setSavedPlanId] = useState<string | null>(null);
 
   const fetchPlan = useCallback(async () => {
     setLoadError(null);
@@ -104,19 +105,13 @@ export function useTrainingPlan({ clientId, onUpdate }: UseTrainingPlanProps) {
         throw new Error("Invalid response from server");
       }
 
-      if (data.success && data.plan) {
-        setPlan(data.plan);
+      if (data.success && data.savedPlanId) {
+        setSavedPlanId(data.savedPlanId);
         setPrompt("");
         setPreGenerationActivities([]);
         setAllowSameDayTraining(false);
         setPhaseId(undefined);
-        toast({
-          title: effectiveFrom ? "Training plan scheduled" : "Training plan generated",
-          description: data.plan.name,
-        });
-        onUpdate?.();
-        // Re-fetch to pick up upcomingPlan from GET handler
-        await fetchPlan();
+        toast({ title: "Plan draft created" });
         return true;
       } else {
         throw new Error(data.error || data.errorMessage || "Failed to generate plan");
@@ -161,6 +156,8 @@ export function useTrainingPlan({ clientId, onUpdate }: UseTrainingPlanProps) {
     setPhaseId,
     phaseBlocked,
     setPhaseBlocked,
+    savedPlanId,
+    setSavedPlanId,
     generate,
     addPreGenActivity,
     removePreGenActivity,

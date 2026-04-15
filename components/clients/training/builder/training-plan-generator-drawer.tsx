@@ -26,19 +26,15 @@ export function TrainingPlanGeneratorDrawer({
   weightUnit = "lbs",
 }: TrainingPlanGeneratorDrawerProps) {
   const builder = useTrainingBuilderContext();
-  const wasGenerating = useRef(false);
-  const previousPlanId = useRef(builder.plan?.id);
+  const previousSavedPlanId = useRef<string | null>(null);
 
-  // Auto-close drawer on successful generation
+  // Auto-close drawer when a draft is created (savedPlanId becomes non-null)
   useEffect(() => {
-    if (wasGenerating.current && !builder.isGenerating && builder.plan) {
-      if (builder.plan.id !== previousPlanId.current || previousPlanId.current === undefined) {
-        onOpenChange(false);
-      }
+    if (builder.savedPlanId && builder.savedPlanId !== previousSavedPlanId.current) {
+      onOpenChange(false);
     }
-    wasGenerating.current = builder.isGenerating;
-    previousPlanId.current = builder.plan?.id;
-  }, [builder.isGenerating, builder.plan, onOpenChange]);
+    previousSavedPlanId.current = builder.savedPlanId;
+  }, [builder.savedPlanId, onOpenChange]);
 
   const title = builder.plan ? "Regenerate Training Plan" : "Generate Training Plan";
 

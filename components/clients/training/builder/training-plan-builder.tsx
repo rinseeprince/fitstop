@@ -8,6 +8,7 @@ import {
 } from "@/contexts/training-builder-context";
 import { TrainingBuilderRightPanel } from "./training-builder-right-panel";
 import { TrainingPlanGeneratorDrawer } from "./training-plan-generator-drawer";
+import { PlanPreviewDrawer } from "../library/plan-preview-drawer";
 import { TrainingHistoryTable } from "../training-history-table";
 import { TrainingPlanHistory } from "../training-plan-history";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
@@ -83,6 +84,8 @@ export function TrainingPlanBuilder({
           clientWeightKg={clientWeightKg}
           weightUnit={client.weightUnit || "lbs"}
         />
+
+        <PreviewDrawerBridge />
       </TrainingBuilderProvider>
     </ErrorBoundary>
   );
@@ -249,5 +252,22 @@ function TopContentBar({
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+/** Bridges builder context to the preview drawer (must be inside TrainingBuilderProvider). */
+function PreviewDrawerBridge() {
+  const builder = useTrainingBuilderContext();
+  if (!builder.savedPlanId) return null;
+
+  return (
+    <PlanPreviewDrawer
+      savedPlanId={builder.savedPlanId}
+      open={!!builder.savedPlanId}
+      onOpenChange={(open) => {
+        if (!open) builder.setSavedPlanId(null);
+      }}
+      onDiscard={() => builder.setSavedPlanId(null)}
+    />
   );
 }

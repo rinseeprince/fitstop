@@ -637,6 +637,7 @@ export function createMockTrainingEventRow(options: MockTrainingEventOptions = {
     status: event.status,
     session_log_id: event.sessionLogId,
     is_modified: event.isModified,
+    calorie_surplus_percentage: event.calorieSurplusPercentage ?? null,
     created_at: event.createdAt,
     updated_at: event.updatedAt,
   }

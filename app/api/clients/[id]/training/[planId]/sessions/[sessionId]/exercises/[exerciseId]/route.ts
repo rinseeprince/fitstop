@@ -4,15 +4,11 @@ import {
   getTrainingPlanById,
   updateExercise,
   deleteExercise,
-  getSessionWithExercises,
-  updateSessionCalories,
 } from "@/services/training-service";
-import { estimateSessionCalories } from "@/services/training-calorie-service";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { apiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { updateExerciseSchema } from "@/lib/validations/training";
-import { weightToKg } from "@/utils/nutrition-helpers";
 
 type RouteParams = {
   id: string;
@@ -73,18 +69,6 @@ export async function PATCH(
 
     const exercise = await updateExercise(exerciseId, validation.data);
 
-    // Recalculate session calories after updating exercise
-    if (session.sessionType === "training") {
-      const updatedSession = await getSessionWithExercises(sessionId);
-      if (updatedSession) {
-        const clientWeightKg = client.currentWeight
-          ? weightToKg(client.currentWeight, client.weightUnit || "lbs")
-          : 70;
-        const estimate = await estimateSessionCalories(updatedSession, clientWeightKg);
-        await updateSessionCalories(sessionId, estimate.estimatedCalories);
-      }
-    }
-
     return NextResponse.json({ success: true, exercise }, { status: 200 });
   } catch (error) {
     console.error("Error updating exercise:", error);
@@ -132,18 +116,6 @@ export async function DELETE(
     }
 
     await deleteExercise(exerciseId);
-
-    // Recalculate session calories after deleting exercise
-    if (session.sessionType === "training") {
-      const updatedSession = await getSessionWithExercises(sessionId);
-      if (updatedSession) {
-        const clientWeightKg = client.currentWeight
-          ? weightToKg(client.currentWeight, client.weightUnit || "lbs")
-          : 70;
-        const estimate = await estimateSessionCalories(updatedSession, clientWeightKg);
-        await updateSessionCalories(sessionId, estimate.estimatedCalories);
-      }
-    }
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {

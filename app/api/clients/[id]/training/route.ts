@@ -7,7 +7,7 @@ import { aiRateLimit, coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { generateTrainingPlanSchema } from "@/lib/validations/training";
 import {
-  orchestrateTrainingPlanCreation,
+  orchestrateTrainingPlanGeneration,
   TrainingPlanError,
 } from "@/services/training-plan-orchestrator";
 
@@ -38,7 +38,7 @@ export async function POST(
       return NextResponse.json({ error: "Invalid input" }, { status: 400 });
     }
 
-    const result = await orchestrateTrainingPlanCreation(clientId, coachId, {
+    const result = await orchestrateTrainingPlanGeneration(clientId, coachId, {
       coachPrompt: validation.data.coachPrompt,
       phaseId: validation.data.phaseId,
       preGenerationActivities: validation.data.preGenerationActivities,

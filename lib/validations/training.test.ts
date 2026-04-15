@@ -449,38 +449,16 @@ describe('Training Validation Schemas', () => {
     })
 
     describe('parseGeneratePlanResponse', () => {
-      it('parses a successful generation response', () => {
+      it('parses a successful generation response with savedPlanId', () => {
         const data = {
           success: true,
-          plan: {
-            id: '123',
-            clientId: '456',
-            coachId: '789',
-            name: 'Generated Plan',
-            status: 'active',
-            coachPrompt: 'Test prompt',
-            splitType: 'upper_lower',
-            frequencyPerWeek: 4,
-            sessions: [
-              {
-                id: 'sess-1',
-                planId: '123',
-                name: 'Upper A',
-                sessionType: 'training',
-                exercises: [
-                  { id: 'ex-1', name: 'Bench Press', sets: 4 },
-                ],
-              },
-            ],
-            createdAt: '2024-01-01T00:00:00Z',
-            updatedAt: '2024-01-01T00:00:00Z',
-          },
+          savedPlanId: 'saved-plan-123',
         }
 
         const result = parseGeneratePlanResponse(data)
         expect(result).not.toBeNull()
         expect(result?.success).toBe(true)
-        expect(result?.plan).toBeDefined()
+        expect(result?.savedPlanId).toBe('saved-plan-123')
       })
 
       it('parses an error response', () => {

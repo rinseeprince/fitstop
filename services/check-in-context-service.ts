@@ -1,6 +1,5 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { getActiveTrainingPlan } from "./training-service";
-import { getWeeklyNutritionTargets } from "@/utils/nutrition-helpers";
 import { countEventsInRange } from "./training-event-service";
 import { getNutritionEventsForDateRange } from "./nutrition-event-service";
 import { mapNutritionEventToDisplayTarget } from "@/utils/nutrition-event-helpers";
@@ -9,7 +8,6 @@ import type {
   CheckInTrainingContext,
   CheckInNutritionContext,
   DayOfWeek,
-  DietType,
 } from "@/types/check-in";
 import { promoteNutritionPlanIfReady } from "./nutrition-plan-service";
 
@@ -88,40 +86,19 @@ export const getCheckInNutritionContext = async (
 
   let weeklyTargets: Array<{ day: DayOfWeek; dayLabel: string; isTrainingDay: boolean; calories: number; proteinG: number; carbsG: number; fatG: number }>;
 
-  if (events.length >= 7) {
-    // Full week of events — use event-based targets
-    weeklyTargets = events.slice(0, 7).map((event) => {
-      const display = mapNutritionEventToDisplayTarget(event, includeActivityBurn);
-      return {
-        day: display.day as DayOfWeek,
-        dayLabel: display.dayLabel,
-        isTrainingDay: display.isTrainingDay,
-        calories: display.calories,
-        proteinG: display.proteinG,
-        carbsG: display.carbsG,
-        fatG: display.fatG,
-      };
-    });
-  } else {
-    // TODO NE-3-cleanup: remove template fallback once event coverage guaranteed
-    const plan = await getActiveTrainingPlan(clientId);
-    const dietType = (nutritionPlan.diet_type || "balanced") as DietType;
-    const templateTargets = getWeeklyNutritionTargets(
-      nutritionPlan.baseline_calories,
-      nutritionPlan.protein_target_g || 150,
-      plan,
-      dietType
-    );
-    weeklyTargets = templateTargets.map((d) => ({
-      day: d.day as DayOfWeek,
-      dayLabel: d.dayLabel,
-      isTrainingDay: d.isTrainingDay,
-      calories: d.calories,
-      proteinG: d.proteinG,
-      carbsG: d.carbsG,
-      fatG: d.fatG,
-    }));
-  }
+  // Use event-based targets (all available events for the week)
+  weeklyTargets = events.slice(0, 7).map((event) => {
+    const display = mapNutritionEventToDisplayTarget(event, includeActivityBurn);
+    return {
+      day: display.day as DayOfWeek,
+      dayLabel: display.dayLabel,
+      isTrainingDay: display.isTrainingDay,
+      calories: display.calories,
+      proteinG: display.proteinG,
+      carbsG: display.carbsG,
+      fatG: display.fatG,
+    };
+  });
 
   const count = weeklyTargets.length || 1;
   const avgCalories = Math.round(weeklyTargets.reduce((sum, d) => sum + d.calories, 0) / count);
