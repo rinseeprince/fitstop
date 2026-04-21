@@ -236,6 +236,11 @@ export async function duplicateEvent(
       session_name: source.session_name,
       session_focus: source.session_focus,
       estimated_calories: source.estimated_calories,
+      // Load-bearing: the nutrition cascade reads surplus % from the event.
+      // Omitting it leaves the duplicated event with NULL, which falls through
+      // to rest-day calories even though the TRAIN badge still renders (the
+      // badge is driven by event presence, the calorie bump by surplus value).
+      calorie_surplus_percentage: source.calorie_surplus_percentage,
       date: targetDate,
       status: "scheduled",
       is_modified: true,
@@ -355,6 +360,7 @@ export async function duplicateWeek(
           activity_metadata: session.activity_metadata as Json | null,
           estimated_calories: session.estimated_calories as number | null,
           calories_calculated_at: session.calories_calculated_at as string | null,
+          calorie_surplus_percentage: session.calorie_surplus_percentage as number | null,
           is_active: true,
         })
         .select("id")
@@ -417,6 +423,8 @@ export async function duplicateWeek(
         session_name: event.sessionName,
         session_focus: event.sessionFocus,
         estimated_calories: event.estimatedCalories,
+        // Required for nutrition cascade — see duplicateEvent comment above.
+        calorie_surplus_percentage: event.calorieSurplusPercentage,
         status: "scheduled",
         is_modified: true,
       });

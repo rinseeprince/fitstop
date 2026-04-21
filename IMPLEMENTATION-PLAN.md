@@ -2536,7 +2536,7 @@ This is LIB-3: Placement + Calendar Integration.
 - `app/api/clients/[id]/training/[planId]/events/duplicate-week/route.ts` - duplicate-week route (nutrition cascade pattern)
 - `components/clients/training/library/plan-preview-drawer.tsx - preview drawer from LIB-2 (wire "Apply to Client" button) (wire "Apply to Client" button)
 - `components/clients/training/calendar/training-calendar-view.tsx` - calendar grid from CAL-2
-- `components/clients/training/calendar/calendar-day-cell.tsx` - day cell from CAL-2
+- `components/clients/training/calendar/calendar-day-cell.tsx` - day cell from CAL-2Plwe
 - `components/clients/training/calendar/session-detail-drawer.tsx` - session drawer from CAL-2
 - `hooks/use-calendar-events.ts` - calendar data hook from CAL-2
 - `hooks/use-calendar-dnd.ts` - calendar DnD hook from CAL-2
@@ -2553,7 +2553,7 @@ export async function placePlanOnCalendar(params: {
   coachId: string;
   clientId: string;
   startDate: string;
-  repeatCycles?: number;
+  repeatCycles?: number;Ok, 
   phaseId?: string;
 }): Promise<{ planId: string; sessionsCreated: number; eventsCreated: number }>
 ```

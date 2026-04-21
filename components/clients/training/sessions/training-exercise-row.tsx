@@ -4,7 +4,6 @@ import { memo, useState } from "react";
 import type { TrainingExercise } from "@/types/training";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { Trash2, Check, X, Pencil, Loader2 } from "lucide-react";
@@ -163,14 +162,20 @@ export const TrainingExerciseRow = memo(function TrainingExerciseRow({
 
   if (isEditing && editMode) {
     return (
-      <div className="grid grid-cols-12 gap-2 items-center px-2 py-2 bg-muted/50 rounded">
-        <div className="col-span-4">
-          <Input
-            value={editedExercise.name}
-            onChange={(e) => setEditedExercise({ ...editedExercise, name: e.target.value })}
-            className="h-8 text-sm"
-            placeholder="Exercise name"
-          />
+      <div className="grid grid-cols-12 gap-2 items-center px-3 py-3 bg-[rgba(13,148,136,0.05)] rounded-[6px]">
+        {/* Name is read-only — to change the exercise, delete this row and add a new one from the catalog. */}
+        <div className="col-span-4 flex items-center gap-2 min-w-0">
+          {exercise.isWarmup && (
+            <span className="text-[10px] uppercase tracking-[0.06em] font-medium text-[#5a7d82] bg-[rgba(13,148,136,0.05)] px-1.5 py-0.5 rounded-[3px] flex-shrink-0">
+              W
+            </span>
+          )}
+          <span
+            className="text-[13px] font-medium text-[#0c1a1e] truncate"
+            title={exercise.name}
+          >
+            {exercise.name}
+          </span>
         </div>
         <div className="col-span-3 flex items-center gap-1 min-w-0">
           <Input
@@ -178,16 +183,16 @@ export const TrainingExerciseRow = memo(function TrainingExerciseRow({
             onChange={(e) =>
               setEditedExercise({ ...editedExercise, sets: parseInt(e.target.value) || 1 })
             }
-            className="h-8 flex-1 min-w-0 px-1.5 text-sm text-center"
+            className="h-8 flex-1 min-w-0 px-1.5 text-[13px] text-center font-mono-display"
             type="number"
             min={1}
             max={20}
           />
-          <span className="text-xs text-muted-foreground shrink-0">×</span>
+          <span className="text-[11px] text-[#5a7d82] shrink-0">×</span>
           <Input
             value={editedExercise.repsTarget}
             onChange={(e) => setEditedExercise({ ...editedExercise, repsTarget: e.target.value })}
-            className="h-8 flex-[1.5] min-w-0 px-1.5 text-sm text-center"
+            className="h-8 flex-[1.5] min-w-0 px-1.5 text-[13px] text-center font-mono-display"
             placeholder="8-12"
           />
         </div>
@@ -200,7 +205,7 @@ export const TrainingExerciseRow = memo(function TrainingExerciseRow({
                 rpeTarget: e.target.value ? parseFloat(e.target.value) : undefined,
               })
             }
-            className="h-8 px-2 text-sm text-center"
+            className="h-8 px-2 text-[13px] text-center font-mono-display"
             placeholder="RPE"
             type="number"
             min={1}
@@ -217,7 +222,7 @@ export const TrainingExerciseRow = memo(function TrainingExerciseRow({
                 restSeconds: e.target.value ? parseInt(e.target.value) : undefined,
               })
             }
-            className="h-8 px-2 text-sm text-center"
+            className="h-8 px-2 text-[13px] text-center font-mono-display"
             placeholder="Rest (s)"
             type="number"
             min={0}
@@ -249,27 +254,31 @@ export const TrainingExerciseRow = memo(function TrainingExerciseRow({
   }
 
   return (
-    <div className="grid grid-cols-12 gap-2 items-center px-2 py-2 hover:bg-muted/30 rounded-lg group transition-colors">
-      <div className="col-span-4 flex items-center gap-2">
+    <div className="grid grid-cols-12 gap-2 items-center px-3 py-3 hover:bg-[rgba(13,148,136,0.03)] rounded-[6px] group transition-colors">
+      <div className="col-span-4 flex items-center gap-2 min-w-0">
         {exercise.isWarmup && (
-          <Badge variant="outline" className="text-xs px-1">
+          <span className="text-[10px] uppercase tracking-[0.06em] font-medium text-[#5a7d82] bg-[rgba(13,148,136,0.05)] px-1.5 py-0.5 rounded-[3px] flex-shrink-0">
             W
-          </Badge>
+          </span>
         )}
-        <span className="text-sm">{exercise.name}</span>
+        <span className="text-[13px] font-medium text-[#0c1a1e] truncate" title={exercise.name}>
+          {exercise.name}
+        </span>
         {exercise.notes && (
-          <span className="text-xs text-muted-foreground truncate max-w-[100px]" title={exercise.notes}>
+          <span className="text-[11px] text-[#93b0b4] truncate max-w-[100px]" title={exercise.notes}>
             ({exercise.notes})
           </span>
         )}
       </div>
-      <div className="col-span-3 text-center text-sm">
+      <div className="col-span-3 text-center text-[13px] font-mono-display text-[#5a7d82]">
         {exercise.sets} × {formatReps()}
       </div>
-      <div className="col-span-2 text-center text-sm text-muted-foreground">
-        {exercise.rpeTarget ? `RPE ${exercise.rpeTarget}` : "-"}
+      <div className="col-span-2 text-center text-[13px] font-mono-display text-[#5a7d82]">
+        {exercise.rpeTarget ? `RPE ${exercise.rpeTarget}` : "—"}
       </div>
-      <div className="col-span-2 text-center text-sm text-muted-foreground">{formatRest()}</div>
+      <div className="col-span-2 text-center text-[13px] font-mono-display text-[#5a7d82]">
+        {formatRest()}
+      </div>
       <div className="col-span-1 flex justify-end gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
         {editMode && (
           <>

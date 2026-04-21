@@ -4,7 +4,6 @@ import { useState, useCallback } from "react";
 import {
   Sheet,
   SheetContent,
-  SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
@@ -17,7 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { TrainingExerciseRow } from "../sessions/training-exercise-row";
 import { AddExerciseDialog } from "../sessions/add-exercise-dialog";
-import { Pencil, Check, Plus, Clock, Save, Loader2, X } from "lucide-react";
+import { Pencil, Check, Plus, Clock, Save, Loader2, X, Dumbbell } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { TrainingSession, TrainingExercise } from "@/types/training";
 
@@ -151,7 +150,7 @@ export function SessionDetailDrawer({
     onUpdate();
     if (isShared) {
       toast({
-        title: `Session updated across all ${sharedEventCount} weeks using this session`,
+        title: "Session updated across all future sessions",
       });
     }
   };
@@ -230,7 +229,7 @@ export function SessionDetailDrawer({
         throw new Error(data.error || "Failed to save");
       }
 
-      toast({ title: `Saved across all ${sharedEventCount} weeks` });
+      toast({ title: "Saved across all future sessions" });
       setShowSaveScope(false);
       exitEditMode();
       onUpdate();
@@ -249,118 +248,139 @@ export function SessionDetailDrawer({
 
   return (
     <Sheet open={open} onOpenChange={(o) => { if (!o) exitEditMode(); onOpenChange(o); }}>
-      <SheetContent side="right" className="w-[420px] sm:w-[480px] overflow-y-auto">
-        <SheetHeader className="pb-4 border-b border-[rgba(13,148,136,0.08)]">
-          <div className="flex items-center justify-between">
-            <SheetTitle className="text-[15px] font-semibold text-[#0c1a1e]">
+      <SheetContent
+        side="right"
+        // Width: override shadcn's sm:max-w-sm cap (24rem) by re-asserting
+        // sm:max-w-none, then set our own responsive widths.
+        // Styling: bypass shadcn's bg-background + border-l + p-4 + gap-4
+        // defaults so the drawer matches the Generate Plan overlay visual
+        // language (#f4f7f6 body, teal-tinted soft shadow, dark header).
+        // Hide the default close button so we can put our own in the dark header.
+        className="w-full sm:max-w-none sm:w-[600px] md:w-[680px] p-0 gap-0 bg-[#f4f7f6] border-l-0 shadow-[-8px_0_24px_rgba(15,32,39,0.12)] flex flex-col overflow-hidden [&>[data-slot=sheet-close]]:hidden"
+      >
+        {/* a11y: visible title replaces this, but SheetPrimitive needs one. */}
+        <SheetTitle className="sr-only">{session.name}</SheetTitle>
+
+        {/* Premium dark header — matches the Generate Plan overlay pattern */}
+        <div className="bg-[#0f2027] px-6 py-4 flex items-center gap-4 flex-shrink-0">
+          <div className="w-[36px] h-[36px] rounded-[6px] bg-[rgba(13,148,136,0.15)] flex items-center justify-center flex-shrink-0">
+            <Dumbbell className="w-[18px] h-[18px] text-[#0d9488]" strokeWidth={1.5} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-[17px] font-bold text-white leading-tight truncate">
               {session.name}
-            </SheetTitle>
-            <div className="flex items-center gap-1">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => void handleSaveToLibrary()}
-                disabled={isSavingToLibrary || editMode}
-                className="h-7 text-[11px]"
-              >
-                <Save className="h-3 w-3 mr-1" /> Save to Library
-              </Button>
-              {!editMode ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={enterEditMode}
-                  className="h-7 text-[11px]"
-                >
-                  <Pencil className="h-3 w-3 mr-1" /> Edit
-                </Button>
-              ) : isShared ? (
-                // Shared session: Cancel button (Save is in footer)
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={exitEditMode}
-                  className="h-7 text-[11px]"
-                >
-                  <X className="h-3 w-3 mr-1" /> Cancel
-                </Button>
-              ) : (
-                // Non-shared session: Done button
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={exitEditMode}
-                  className="h-7 text-[11px]"
-                >
-                  <Check className="h-3 w-3 mr-1" /> Done
-                </Button>
+            </h2>
+            <div className="flex items-center gap-2 mt-1">
+              {session.focus && (
+                <span className="text-[11px] text-[rgba(255,255,255,0.7)] bg-[rgba(255,255,255,0.08)] px-1.5 py-0.5 rounded-[3px]">
+                  {session.focus}
+                </span>
+              )}
+              {session.estimatedDurationMinutes && (
+                <span className="flex items-center gap-1 text-[11px] text-[rgba(255,255,255,0.5)] font-mono-display">
+                  <Clock className="h-3 w-3" />
+                  {session.estimatedDurationMinutes}min
+                </span>
               )}
             </div>
           </div>
 
-          <div className="flex items-center gap-2 mt-1">
-            {session.focus && (
-              <span className="text-[11px] text-[#5a7d82] bg-[rgba(13,148,136,0.05)] px-1.5 py-0.5 rounded-[3px]">
-                {session.focus}
-              </span>
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            <button
+              onClick={() => void handleSaveToLibrary()}
+              disabled={isSavingToLibrary || editMode}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-[6px] bg-[rgba(255,255,255,0.06)] hover:bg-[rgba(255,255,255,0.1)] text-[12.5px] font-medium text-[rgba(255,255,255,0.85)] transition-colors disabled:opacity-40 disabled:hover:bg-[rgba(255,255,255,0.06)]"
+            >
+              {isSavingToLibrary ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Save className="h-3.5 w-3.5" />
+              )}
+              Save to Library
+            </button>
+            {!editMode ? (
+              <button
+                onClick={enterEditMode}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-[6px] bg-[rgba(255,255,255,0.06)] hover:bg-[rgba(255,255,255,0.1)] text-[12.5px] font-medium text-[rgba(255,255,255,0.85)] transition-colors"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+                Edit
+              </button>
+            ) : isShared ? (
+              <button
+                onClick={exitEditMode}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-[6px] bg-[rgba(255,255,255,0.06)] hover:bg-[rgba(255,255,255,0.1)] text-[12.5px] font-medium text-[rgba(255,255,255,0.85)] transition-colors"
+              >
+                <X className="h-3.5 w-3.5" />
+                Cancel
+              </button>
+            ) : (
+              <button
+                onClick={exitEditMode}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-[6px] bg-[#0d9488] hover:bg-[#0f766e] text-[12.5px] font-medium text-white transition-colors"
+              >
+                <Check className="h-3.5 w-3.5" />
+                Done
+              </button>
             )}
-            {session.estimatedDurationMinutes && (
-              <span className="flex items-center gap-1 text-[11px] text-[#93b0b4]">
-                <Clock className="h-3 w-3" />
-                {session.estimatedDurationMinutes}min
-              </span>
-            )}
+            <button
+              onClick={() => { exitEditMode(); onOpenChange(false); }}
+              aria-label="Close"
+              className="w-[32px] h-[32px] rounded-[6px] bg-[rgba(255,255,255,0.06)] flex items-center justify-center flex-shrink-0 hover:bg-[rgba(255,255,255,0.1)] transition-colors ml-1"
+            >
+              <X className="w-4 h-4 text-[rgba(255,255,255,0.6)]" strokeWidth={1.5} />
+            </button>
           </div>
-        </SheetHeader>
-
-        {/* Spacer when no banner */}
-
-        {/* Exercises */}
-        <div className="mt-4 space-y-1">
-          {displayExercises.length === 0 ? (
-            <p className="text-sm text-[#93b0b4] py-4 text-center">
-              No exercises yet
-            </p>
-          ) : (
-            displayExercises.map((exercise) => (
-              <TrainingExerciseRow
-                key={exercise.id}
-                exercise={exercise}
-                clientId={clientId}
-                planId={planId}
-                sessionId={session.id}
-                editMode={editMode}
-                onUpdate={handleExerciseUpdate}
-                onLocalUpdate={isLocalEdit ? handleLocalUpdate : undefined}
-                onLocalDelete={isLocalEdit ? handleLocalDelete : undefined}
-              />
-            ))
-          )}
         </div>
 
-        {/* Add exercise button */}
-        {editMode && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="mt-3 w-full text-[12px]"
-            onClick={() => setAddExerciseOpen(true)}
-          >
-            <Plus className="h-3 w-3 mr-1" />
-            Add Exercise
-          </Button>
-        )}
+        {/* Body — page-background with white content card */}
+        <div className="flex-1 overflow-y-auto px-6 py-5">
+          <div className="bg-white rounded-[6px] p-2">
+            {displayExercises.length === 0 ? (
+              <p className="text-sm text-[#93b0b4] py-6 text-center">
+                No exercises yet
+              </p>
+            ) : (
+              <div className="space-y-1">
+                {displayExercises.map((exercise) => (
+                  <TrainingExerciseRow
+                    key={exercise.id}
+                    exercise={exercise}
+                    clientId={clientId}
+                    planId={planId}
+                    sessionId={session.id}
+                    editMode={editMode}
+                    onUpdate={handleExerciseUpdate}
+                    onLocalUpdate={isLocalEdit ? handleLocalUpdate : undefined}
+                    onLocalDelete={isLocalEdit ? handleLocalDelete : undefined}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
 
-        {/* Save button for shared sessions */}
-        {isLocalEdit && (
-          <Button
-            className="mt-4 w-full"
-            onClick={() => setShowSaveScope(true)}
-          >
-            <Save className="h-3.5 w-3.5 mr-1.5" />
-            Save Changes
-          </Button>
-        )}
+          {editMode && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-3 w-full text-[12.5px] font-medium text-[#5a7d82] bg-white border-[rgba(13,148,136,0.08)] hover:bg-[#f0f5f4] rounded-[6px]"
+              onClick={() => setAddExerciseOpen(true)}
+            >
+              <Plus className="h-3.5 w-3.5 mr-1" />
+              Add Exercise
+            </Button>
+          )}
+
+          {isLocalEdit && (
+            <Button
+              className="mt-4 w-full bg-[#0d9488] hover:bg-[#0f766e] text-white rounded-[6px]"
+              onClick={() => setShowSaveScope(true)}
+            >
+              <Save className="h-3.5 w-3.5 mr-1.5" />
+              Save Changes
+            </Button>
+          )}
+        </div>
 
         <AddExerciseDialog
           clientId={clientId}
@@ -380,7 +400,7 @@ export function SessionDetailDrawer({
             <DialogTitle>Save Changes</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            This session is used across {sharedEventCount} weeks. Where should these changes apply?
+            This session repeats across your calendar. Where should these changes apply?
           </p>
           <div className="space-y-2 py-2">
             <button
@@ -406,7 +426,7 @@ export function SessionDetailDrawer({
               <div className="h-4 w-4 rounded-full border-2 border-[#93b0b4] flex-shrink-0" />
               <div>
                 <p className="text-sm font-medium text-[#0c1a1e]">All occurrences</p>
-                <p className="text-[11px] text-muted-foreground">Apply changes to all {sharedEventCount} weeks</p>
+                <p className="text-[11px] text-muted-foreground">Apply changes to all future sessions</p>
               </div>
             </button>
           </div>
