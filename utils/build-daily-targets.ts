@@ -67,7 +67,14 @@ export function buildDailyTargetsFromPlan(
     const stored = targetsByDay.get(day);
     const baselineCalories = stored?.calories ?? plan.baseline_calories;
     const proteinG = stored?.protein_g ?? plan.protein_target_g;
-    const isTrainingDay = stored?.is_training_day ?? false;
+    // Badge must track the live training events for the week, not the stored
+    // column on nutrition_plan_daily_targets (which can drift — the sync in
+    // regenerateFutureNutritionEvents uses getTrainingDays which returns empty
+    // in the current architecture where sessions live on dates, not days).
+    // When events are available, use them; otherwise fall back to the column.
+    const isTrainingDay = trainingEvents
+      ? day in surplusByDay
+      : stored?.is_training_day ?? false;
 
     const trainingSessions = trainingEvents
       ? getEventSessionsSummary(trainingEvents, day)

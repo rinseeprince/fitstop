@@ -22,7 +22,7 @@ export async function POST(
     }
 
     const { savedPlanId } = await params;
-    const body = await request.json();
+    const body = await request.json().catch(() => ({}));
 
     const saveSessionsIndividually = body.saveSessionsIndividually === true;
 

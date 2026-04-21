@@ -1,19 +1,23 @@
 "use client";
 
 import { useState } from "react";
-import { Dumbbell, LayoutGrid, Loader2, Trash2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Calendar, Dumbbell, LayoutGrid, Loader2, Trash2 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useSavedPlans } from "@/hooks/use-saved-plans";
 import { PlanPreviewDrawer } from "@/components/clients/training/library/plan-preview-drawer";
+import { ApplyToClientDialog } from "@/components/training-library/apply-to-client-dialog";
 import type { SavedPlan } from "@/types/training";
 
 export default function TrainingLibraryPage() {
   const { toast } = useToast();
+  const router = useRouter();
   const { plans, isLoading, mutate } = useSavedPlans();
   const [previewPlanId, setPreviewPlanId] = useState<string | null>(null);
+  const [applyPlan, setApplyPlan] = useState<SavedPlan | null>(null);
 
   const savedPlans = plans.filter((p) => p.status === "saved");
 
@@ -70,6 +74,7 @@ export default function TrainingLibraryPage() {
                   plan={plan}
                   onClick={() => setPreviewPlanId(plan.id)}
                   onDelete={() => void handleDelete(plan.id)}
+                  onApply={() => setApplyPlan(plan)}
                 />
               ))}
             </div>
@@ -95,6 +100,22 @@ export default function TrainingLibraryPage() {
             setPreviewPlanId(null);
             void mutate();
           }}
+          onApplySuccess={() => {
+            // Refresh the list so any applied-count / derived info is current,
+            // but keep the drawer open — the coach may apply to another client.
+            void mutate();
+          }}
+        />
+      )}
+
+      {applyPlan && (
+        <ApplyToClientDialog
+          open={!!applyPlan}
+          onOpenChange={(open) => { if (!open) setApplyPlan(null); }}
+          savedPlan={applyPlan}
+          onSuccess={(clientId) => {
+            router.push(`/clients/${clientId}?tab=training`);
+          }}
         />
       )}
     </div>
@@ -105,10 +126,12 @@ function PlanCard({
   plan,
   onClick,
   onDelete,
+  onApply,
 }: {
   plan: SavedPlan;
   onClick: () => void;
   onDelete: () => void;
+  onApply: () => void;
 }) {
   const sessionCount = plan.sessions?.length ?? 0;
   const trainingCount = plan.sessions?.filter((s) => !s.isRest).length ?? 0;
@@ -122,14 +145,24 @@ function PlanCard({
         <h3 className="text-sm font-semibold text-foreground line-clamp-1">
           {plan.name}
         </h3>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-6 w-6 opacity-0 group-hover:opacity-100 -mr-1 -mt-1"
-          onClick={(e) => { e.stopPropagation(); onDelete(); }}
-        >
-          <Trash2 className="h-3 w-3 text-destructive" />
-        </Button>
+        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 -mr-1 -mt-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6"
+            onClick={(e) => { e.stopPropagation(); onApply(); }}
+          >
+            <Calendar className="h-3 w-3 text-teal-600" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6"
+            onClick={(e) => { e.stopPropagation(); onDelete(); }}
+          >
+            <Trash2 className="h-3 w-3 text-destructive" />
+          </Button>
+        </div>
       </div>
       <div className="flex items-center gap-2 flex-wrap">
         {plan.splitType && (

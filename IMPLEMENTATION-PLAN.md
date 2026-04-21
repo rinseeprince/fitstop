@@ -2534,7 +2534,7 @@ This is LIB-3: Placement + Calendar Integration.
 - `services/nutrition-event-service.ts` - `regenerateFutureNutritionEvents()` for cascade
 - `services/exercise-catalog-service.ts` - exercise resolution from EX-1
 - `app/api/clients/[id]/training/[planId]/events/duplicate-week/route.ts` - duplicate-week route (nutrition cascade pattern)
-- `app/dashboard/training-library/[savedPlanId]/page.tsx` - preview page from LIB-2 (wire "Apply to Client" button)
+- `components/clients/training/library/plan-preview-drawer.tsx - preview drawer from LIB-2 (wire "Apply to Client" button) (wire "Apply to Client" button)
 - `components/clients/training/calendar/training-calendar-view.tsx` - calendar grid from CAL-2
 - `components/clients/training/calendar/calendar-day-cell.tsx` - day cell from CAL-2
 - `components/clients/training/calendar/session-detail-drawer.tsx` - session drawer from CAL-2
@@ -2668,7 +2668,7 @@ After implementing, run `npx tsc --noEmit` and `npx vitest run`.
 
 **Goal:** Build the new "Check-Ins" tab in the client sidebar with list and detail views. The detail view reads from `period_snapshot` for historical accuracy.
 
-Full prompt: see [CHECK-IN-REVIEW-PLAN.md](CHECK-IN-REVIEW-PLAN.md) Session 4 Claude Code prompt (unchanged — it reads from snapshots which are now populated from events).
+**Status:** Prompt pending — the original session prompt lived in `CHECK-IN-REVIEW-PLAN.md`, which was deleted because it referenced legacy logic (magic-link flow, template reconstruction, pre-events data paths). A fresh plan will be authored separately against the current architecture (events-based, snapshot-driven, percentage surplus model).
 
 ---
 
@@ -2676,9 +2676,7 @@ Full prompt: see [CHECK-IN-REVIEW-PLAN.md](CHECK-IN-REVIEW-PLAN.md) Session 4 Cl
 
 **Goal:** Upgrade the dashboard check-in widget and enrich roadmap phase cards with data from snapshots.
 
-Full prompt: see [CHECK-IN-REVIEW-PLAN.md](CHECK-IN-REVIEW-PLAN.md) Session 5 Claude Code prompt.
-
-**One update:** The prompt references `countPlannedSessions()` in the phase weekly data service. After CE-3, this should use `countEventsInRange()` instead. When executing this session, use event counts rather than `countPlannedSessions`.
+**Status:** Prompt pending — the original session prompt lived in `CHECK-IN-REVIEW-PLAN.md`, which was deleted (see CR-4 above). A fresh plan will be authored separately. Note: the phase weekly data service should use `countEventsInRange()` (post-CE-3), not the legacy `countPlannedSessions()`.
 
 ---
 
@@ -2713,7 +2711,7 @@ Once all sessions are done and verified:
 ### 1. Delete plan documents
 - DELETE `IMPLEMENTATION-PLAN.md` (this file)
 - DELETE `CALENDAR-EVENTS-PLAN.md`
-- DELETE `CHECK-IN-REVIEW-PLAN.md`
+- ~~DELETE `CHECK-IN-REVIEW-PLAN.md`~~ (already deleted — referenced legacy logic)
 
 ### 2. Update `docs/ARCHITECTURE.md`
 

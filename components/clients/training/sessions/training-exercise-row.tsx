@@ -16,6 +16,8 @@ type TrainingExerciseRowProps = {
   sessionId: string;
   editMode: boolean;
   onUpdate: () => void;
+  onLocalUpdate?: (exerciseId: string, updates: Partial<TrainingExercise>) => void;
+  onLocalDelete?: (exerciseId: string) => void;
 };
 
 export const TrainingExerciseRow = memo(function TrainingExerciseRow({
@@ -25,6 +27,8 @@ export const TrainingExerciseRow = memo(function TrainingExerciseRow({
   sessionId,
   editMode,
   onUpdate,
+  onLocalUpdate,
+  onLocalDelete,
 }: TrainingExerciseRowProps) {
   const { toast } = useToast();
   const [isEditing, setIsEditing] = useState(false);
@@ -39,21 +43,40 @@ export const TrainingExerciseRow = memo(function TrainingExerciseRow({
     restSeconds: exercise.restSeconds,
   });
 
+  const parseReps = () => {
+    let repsMin: number | null = null;
+    let repsMax: number | null = null;
+    let repsTarget: string | null = editedExercise.repsTarget;
+
+    const repsMatch = editedExercise.repsTarget?.match(/^(\d+)-(\d+)$/);
+    if (repsMatch) {
+      repsMin = parseInt(repsMatch[1]);
+      repsMax = parseInt(repsMatch[2]);
+      repsTarget = null;
+    }
+    return { repsMin, repsMax, repsTarget };
+  };
+
   const handleSave = async () => {
+    const { repsMin, repsMax, repsTarget } = parseReps();
+
+    // Local mode: update state directly, no API call
+    if (onLocalUpdate) {
+      onLocalUpdate(exercise.id, {
+        name: editedExercise.name,
+        sets: editedExercise.sets,
+        repsMin: repsMin ?? undefined,
+        repsMax: repsMax ?? undefined,
+        repsTarget: repsTarget ?? undefined,
+        rpeTarget: editedExercise.rpeTarget || undefined,
+        restSeconds: editedExercise.restSeconds || undefined,
+      });
+      setIsEditing(false);
+      return;
+    }
+
     setIsSaving(true);
     try {
-      // Parse reps target
-      let repsMin: number | null = null;
-      let repsMax: number | null = null;
-      let repsTarget: string | null = editedExercise.repsTarget;
-
-      const repsMatch = editedExercise.repsTarget?.match(/^(\d+)-(\d+)$/);
-      if (repsMatch) {
-        repsMin = parseInt(repsMatch[1]);
-        repsMax = parseInt(repsMatch[2]);
-        repsTarget = null;
-      }
-
       const res = await fetch(
         `/api/clients/${clientId}/training/${planId}/sessions/${sessionId}/exercises/${exercise.id}`,
         {
@@ -88,6 +111,13 @@ export const TrainingExerciseRow = memo(function TrainingExerciseRow({
   };
 
   const handleDelete = async () => {
+    // Local mode: remove from state directly
+    if (onLocalDelete) {
+      onLocalDelete(exercise.id);
+      setShowDeleteConfirm(false);
+      return;
+    }
+
     setIsDeleting(true);
     try {
       const res = await fetch(

@@ -157,11 +157,14 @@ describe('Training Route POST - read-switch behavior', () => {
       })
     )
 
-    // Should create a saved plan (library draft) instead of client-side plan
+    // Should create a saved plan (library draft) instead of client-side plan.
+    // The 4th arg is the optional coach-supplied plan name — undefined when the
+    // POST body doesn't include `name`.
     expect(createSavedPlanFromAI).toHaveBeenCalledWith(
       'coach-1',
       mockAiResult.plan,
-      'Build a plan'
+      'Build a plan',
+      undefined
     )
 
     // Response returns savedPlanId instead of plan object

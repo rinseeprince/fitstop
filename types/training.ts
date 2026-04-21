@@ -211,6 +211,8 @@ export type AIGeneratedPlan = {
   splitType: TrainingSplitType;
   frequencyPerWeek: number;
   programDurationWeeks?: number;
+  cycleLength?: number;
+  restDayPositions?: number[];
   sessions: AIGeneratedSession[];
 };
 
@@ -330,7 +332,7 @@ export type GetTrainingPlanHistoryResponse = {
 };
 
 // Builder mode for training plan creation
-export type BuilderMode = "ai" | "manual";
+export type BuilderMode = "ai" | "manual" | "saved";
 
 // Manual creation sub-mode
 export type ManualCreationMode = "scratch" | "template";
@@ -357,15 +359,6 @@ export type WorkoutTemplate = {
 export type TemplateSession = {
   name: string;
   focus: string;
-  exercises: TemplateExercise[];
-};
-
-// Template exercise structure
-export type TemplateExercise = {
-  name: string;
-  sets: number;
-  repsTarget: string;
-  notes?: string;
 };
 
 // Manual session being built (before saving)
@@ -374,6 +367,7 @@ export type ManualSessionDraft = {
   name: string;
   dayOfWeek?: string;
   focus?: string;
+  isRest?: boolean;
   exercises: ManualExerciseDraft[];
 };
 

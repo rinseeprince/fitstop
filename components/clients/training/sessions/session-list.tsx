@@ -1,111 +1,74 @@
 "use client";
 
 import { memo } from "react";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ExerciseSearchInput } from "../../shared/exercise-search-input";
-import { Trash2, GripVertical } from "lucide-react";
-import type { ManualSessionDraft, ManualExerciseDraft } from "@/types/training";
+import { Trash2, GripVertical, Moon } from "lucide-react";
+import { cn } from "@/lib/utils";
+import type { ManualSessionDraft } from "@/types/training";
 
 type SessionListProps = {
   sessions: ManualSessionDraft[];
   onUpdateSession: (tempId: string, updates: Partial<ManualSessionDraft>) => void;
   onRemoveSession: (tempId: string) => void;
-  onAddExercise: (sessionTempId: string, exerciseName: string) => void;
-  onUpdateExercise: (sessionTempId: string, exerciseTempId: string, updates: Partial<ManualExerciseDraft>) => void;
-  onRemoveExercise: (sessionTempId: string, exerciseTempId: string) => void;
 };
 
 export const SessionList = memo(function SessionList({
   sessions,
   onUpdateSession,
   onRemoveSession,
-  onAddExercise,
-  onUpdateExercise,
-  onRemoveExercise,
 }: SessionListProps) {
   if (sessions.length === 0) {
     return (
-      <div className="text-center py-8 text-sm text-muted-foreground">
-        Add your first training session above
+      <div className="text-center py-6 text-[12.5px] text-[#93b0b4]">
+        Add sessions and rest days above to build your cycle.
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
-      {sessions.map((session) => (
-        <div
-          key={session.tempId}
-          className="border rounded-lg bg-card"
-        >
-          {/* Session Header */}
-          <div className="flex items-center gap-2 p-3 bg-muted/50 border-b">
-            <GripVertical className="h-4 w-4 text-muted-foreground" />
-            <Input
-              value={session.name}
-              onChange={(e) => onUpdateSession(session.tempId, { name: e.target.value })}
-              className="flex-1 h-8 font-medium"
-            />
-            <Button
-              variant="ghost"
-              size="sm"
+    <div className="space-y-2">
+      {sessions.map((session, idx) => {
+        const isRest = !!session.isRest;
+        return (
+          <div
+            key={session.tempId}
+            className={cn(
+              "flex items-center gap-2 px-3 py-2 rounded-[6px] border transition-colors",
+              isRest
+                ? "bg-[rgba(148,163,184,0.08)] border-[rgba(148,163,184,0.2)]"
+                : "bg-white border-[rgba(13,148,136,0.1)]"
+            )}
+          >
+            <GripVertical className="h-4 w-4 text-[#93b0b4] flex-shrink-0" />
+            <span className="text-[11px] font-semibold text-[#93b0b4] tabular-nums w-6 flex-shrink-0">
+              {String(idx + 1).padStart(2, "0")}
+            </span>
+
+            {isRest ? (
+              <div className="flex-1 flex items-center gap-2">
+                <Moon className="h-3.5 w-3.5 text-[#64748b]" />
+                <span className="text-[13px] font-medium text-[#64748b]">Rest Day</span>
+              </div>
+            ) : (
+              <Input
+                value={session.name}
+                onChange={(e) =>
+                  onUpdateSession(session.tempId, { name: e.target.value })
+                }
+                className="flex-1 h-8 text-[13px] font-medium border-0 bg-transparent px-0 focus-visible:ring-0 focus-visible:border-b focus-visible:border-[rgba(13,148,136,0.35)] rounded-none"
+              />
+            )}
+
+            <button
               onClick={() => onRemoveSession(session.tempId)}
-              className="text-destructive hover:text-destructive hover:bg-destructive/10"
+              className="p-1 text-[#93b0b4] hover:text-[#c06060] transition-colors"
+              aria-label="Remove"
             >
               <Trash2 className="h-4 w-4" />
-            </Button>
+            </button>
           </div>
-
-          {/* Exercises */}
-          <div className="p-3 space-y-2">
-            {session.exercises.map((exercise) => (
-              <div
-                key={exercise.tempId}
-                className="flex items-center gap-2 text-sm"
-              >
-                <span className="flex-1 truncate">{exercise.name}</span>
-                <Input
-                  type="number"
-                  value={exercise.sets}
-                  onChange={(e) =>
-                    onUpdateExercise(session.tempId, exercise.tempId, {
-                      sets: parseInt(e.target.value) || 3,
-                    })
-                  }
-                  className="w-16 h-7 px-2 text-center"
-                  min={1}
-                  max={20}
-                />
-                <span className="text-muted-foreground">x</span>
-                <Input
-                  value={exercise.repsTarget || ""}
-                  onChange={(e) =>
-                    onUpdateExercise(session.tempId, exercise.tempId, {
-                      repsTarget: e.target.value,
-                    })
-                  }
-                  placeholder="8-12"
-                  className="w-20 h-7 px-2 text-center"
-                />
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => onRemoveExercise(session.tempId, exercise.tempId)}
-                  className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-            ))}
-
-            {/* Add Exercise */}
-            <ExerciseSearchInput
-              onSelect={(name) => onAddExercise(session.tempId, name)}
-            />
-          </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 });

@@ -8,7 +8,6 @@ import { moveEvent, moveEventAndFuture } from "@/services/training-event-calenda
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { regenerateFutureNutritionEvents } from "@/services/nutrition-event-service";
 import { captureApiError } from "@/lib/error-handler";
-import { DAY_NAMES } from "@/lib/date-helpers";
 import { z } from "zod";
 
 const moveEventSchema = z.object({
@@ -60,31 +59,9 @@ export async function POST(
     if (scope === "single") {
       await moveEvent(eventId, targetDate, clientId, planId);
     } else {
-      // Fetch the event to get its training_session_id
-      const { data: event } = await supabaseAdmin
-        .from("training_events")
-        .select("training_session_id")
-        .eq("id", eventId)
-        .single();
-
-      if (!event?.training_session_id) {
-        return NextResponse.json(
-          { error: "Cannot move all future events: session link is missing" },
-          { status: 400 }
-        );
-      }
-
-      const dayNum = new Date(targetDate + "T00:00:00").getDay();
-      const newDayOfWeek = DAY_NAMES[dayNum];
-
-      await moveEventAndFuture(
-        event.training_session_id,
-        newDayOfWeek,
-        clientId,
-        planId,
-        eventId,
-        targetDate
-      );
+      // Shifts all future events sharing this session's training_session_id by the
+      // same day offset. For events with no session link, degrades to a single move.
+      await moveEventAndFuture(eventId, targetDate, clientId, planId);
     }
 
     // Cascade: regenerate nutrition events for affected dates

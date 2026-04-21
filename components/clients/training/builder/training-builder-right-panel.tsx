@@ -1,12 +1,8 @@
 "use client";
 
-import { useState, useMemo, memo } from "react";
+import { useMemo, memo, useState } from "react";
 import useSWR from "swr";
-import { cn } from "@/lib/utils";
 import { swrFetcher } from "@/lib/swr-fetcher";
-import { WeeklyScheduleView } from "../schedule/weekly-schedule-view";
-import { TrainingSessionCard } from "../sessions/training-session-card";
-import { ExternalActivitiesSection } from "../../activities/external-activities-section";
 import { useTrainingBuilderContext } from "@/contexts/training-builder-context";
 import {
   Tooltip,
@@ -14,21 +10,28 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
-  Dumbbell,
-  CalendarDays,
   CalendarClock,
-  CalendarRange,
-  LayoutList,
   Loader2,
   AlertTriangle,
   RefreshCw,
   Sparkles,
   Info,
+  Trash2,
 } from "lucide-react";
 import { TrainingCalendarView } from "../calendar/training-calendar-view";
 import { format } from "date-fns";
 import { SPLIT_TYPE_LABELS } from "@/lib/training-constants";
 import type { TrainingHistoryRow } from "@/types/history";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
 
 type TrainingBuilderRightPanelProps = {
   clientId: string;
@@ -46,7 +49,33 @@ export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel
 }: TrainingBuilderRightPanelProps) {
   const builder = useTrainingBuilderContext();
   const { editMode } = builder;
-  const [viewMode, setViewMode] = useState<"week" | "list" | "calendar">("week");
+  const { toast } = useToast();
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
+
+  const handleCancelUpcoming = async () => {
+    if (!builder.upcomingPlan) return;
+    setIsCancelling(true);
+    try {
+      const res = await fetch(
+        `/api/clients/${clientId}/training/${builder.upcomingPlan.id}`,
+        { method: "DELETE" },
+      );
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error ?? "Failed to cancel upcoming plan");
+      }
+      toast({ title: "Upcoming plan cancelled" });
+      setShowCancelConfirm(false);
+      await builder.fetchPlan();
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to cancel upcoming plan";
+      toast({ title: "Error", description: message, variant: "destructive" });
+    } finally {
+      setIsCancelling(false);
+    }
+  };
 
   // Fetch training history for completion stats
   const { data: historyData } = useSWR<HistoryResponse>(
@@ -154,46 +183,66 @@ export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel
     );
   }
 
-  // Empty state
-  if (!builder.plan) {
-    return (
-      <div className="flex flex-col items-center justify-center py-16 text-center">
-        <div className="w-16 h-16 bg-[#f0f5f4] rounded-full flex items-center justify-center mb-4">
-          <Dumbbell className="h-8 w-8 text-[#93b0b4]" />
-        </div>
-        <h3 className="text-base font-semibold text-[#0c1a1e] mb-2">
-          No training plan yet
-        </h3>
-        <p className="text-sm text-[#93b0b4] mb-6 max-w-sm">
-          Generate a customized training plan using AI or create one manually.
-        </p>
-        {onOpenGenerator && (
-          <button
-            onClick={onOpenGenerator}
-            className="inline-flex items-center gap-1.5 px-4 py-2 text-[13px] font-medium text-white bg-[#0d9488] rounded-[6px] hover:bg-[#0f766e] transition-colors"
-          >
-            <Sparkles className="h-4 w-4" />
-            Generate Plan
-          </button>
-        )}
-      </div>
-    );
-  }
-
-  // Plan exists - show workout
+  // Calendar is always visible — plan-specific UI renders only when plan exists.
   return (
     <div className="flex flex-col gap-4">
       {/* Upcoming plan banner */}
       {builder.upcomingPlan && (
         <div className="flex items-start gap-2 p-3 bg-blue-50 rounded-[6px]">
           <CalendarClock className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
-          <p className="text-sm text-[#0c1a1e]">
+          <p className="text-sm text-[#0c1a1e] flex-1">
             A new plan takes effect on {format(new Date(builder.upcomingPlan.effectiveFrom + "T00:00:00"), "d MMMM yyyy")}. Current sessions remain active until then.
           </p>
+          <button
+            onClick={() => setShowCancelConfirm(true)}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[12px] font-medium text-[#c06060] bg-white border border-[rgba(192,96,96,0.2)] rounded-[6px] hover:bg-[rgba(192,96,96,0.05)] transition-colors flex-shrink-0"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            Cancel plan
+          </button>
         </div>
       )}
 
-      {/* Dark summary strip */}
+      <Dialog open={showCancelConfirm} onOpenChange={setShowCancelConfirm}>
+        <DialogContent>
+          <DialogHeader>
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-full bg-[rgba(192,96,96,0.08)] flex items-center justify-center">
+                <AlertTriangle className="h-4 w-4 text-[#c06060]" />
+              </div>
+              <DialogTitle>Cancel upcoming plan?</DialogTitle>
+            </div>
+            <DialogDescription className="pt-2">
+              {builder.upcomingPlan
+                ? `This removes the scheduled plan for ${format(new Date(builder.upcomingPlan.effectiveFrom + "T00:00:00"), "d MMMM yyyy")}. Sessions and exercises created for this plan will be archived. This cannot be undone.`
+                : "This removes the scheduled plan. This cannot be undone."}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowCancelConfirm(false)}
+              disabled={isCancelling}
+            >
+              Keep plan
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleCancelUpcoming}
+              disabled={isCancelling}
+            >
+              {isCancelling ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                "Cancel plan"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dark summary strip — only when a plan exists */}
+      {builder.plan && (
       <div className="bg-[#0f2027] rounded-[6px] p-5">
         {/* Program info row */}
         <div className="flex items-center justify-between mb-3 pb-3 border-b border-[rgba(255,255,255,0.06)]">
@@ -295,119 +344,46 @@ export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel
         </div>
         </div>
       </div>
-
-      {/* Section header: WEEKLY SCHEDULE */}
-      <div className="flex items-center gap-3 mt-2">
-        <span className="text-[10.5px] uppercase tracking-[0.07em] text-[#93b0b4] font-semibold whitespace-nowrap">
-          Weekly Schedule
-        </span>
-        <div className="flex-1 h-px bg-[rgba(13,148,136,0.08)]" />
-        {/* Week/List segmented control */}
-        <div className="bg-[rgba(13,148,136,0.05)] rounded-[6px] p-[2px] inline-flex">
-          <button
-            onClick={() => setViewMode("week")}
-            className={cn(
-              "flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium rounded-[4px] transition-all",
-              viewMode === "week"
-                ? "bg-white text-[#0c1a1e] shadow-[0_1px_3px_rgba(0,0,0,0.05)]"
-                : "text-[#5a7d82] hover:text-[#0c1a1e]"
-            )}
-          >
-            <CalendarDays className="h-3 w-3" />
-            Week
-          </button>
-          <button
-            onClick={() => setViewMode("list")}
-            className={cn(
-              "flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium rounded-[4px] transition-all",
-              viewMode === "list"
-                ? "bg-white text-[#0c1a1e] shadow-[0_1px_3px_rgba(0,0,0,0.05)]"
-                : "text-[#5a7d82] hover:text-[#0c1a1e]"
-            )}
-          >
-            <LayoutList className="h-3 w-3" />
-            List
-          </button>
-          <button
-            onClick={() => setViewMode("calendar")}
-            className={cn(
-              "flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium rounded-[4px] transition-all",
-              viewMode === "calendar"
-                ? "bg-white text-[#0c1a1e] shadow-[0_1px_3px_rgba(0,0,0,0.05)]"
-                : "text-[#5a7d82] hover:text-[#0c1a1e]"
-            )}
-          >
-            <CalendarRange className="h-3 w-3" />
-            Calendar
-          </button>
-        </div>
-      </div>
-
-      {/* Workout content */}
-      <div className="px-0">
-        {viewMode === "calendar" ? (
-          <TrainingCalendarView
-            clientId={clientId}
-            planId={builder.plan.id}
-            plan={builder.plan}
-            activePhase={builder.activePhase}
-            editMode={editMode}
-            onUpdate={builder.fetchPlan}
-          />
-        ) : viewMode === "week" ? (
-          <WeeklyScheduleView
-            sessions={builder.trainingSessions}
-            activities={builder.externalActivities}
-            editMode={editMode}
-            clientId={clientId}
-            planId={builder.plan.id}
-            onUpdate={builder.fetchPlan}
-          />
-        ) : (
-          <>
-            <div className="space-y-2">
-              {builder.trainingSessions.map((session) => (
-                <TrainingSessionCard
-                  key={session.id}
-                  session={session}
-                  clientId={clientId}
-                  planId={builder.plan!.id}
-                  editMode={editMode}
-                  onUpdate={builder.fetchPlan}
-                />
-              ))}
-            </div>
-            <ExternalActivitiesSection
-              activities={builder.externalActivities}
-              clientId={clientId}
-              planId={builder.plan.id}
-              editMode={editMode}
-              onUpdate={builder.fetchPlan}
-            />
-          </>
-        )}
-      </div>
-
-      {/* Upcoming plan schedule */}
-      {builder.upcomingPlan && (
-        <>
-          <div className="flex items-center gap-3 mt-4">
-            <span className="text-[11px] uppercase tracking-[0.06em] text-[#93b0b4] font-medium whitespace-nowrap">
-              Upcoming Plan - starts {format(new Date(builder.upcomingPlan.effectiveFrom + "T00:00:00"), "MMM d, yyyy")}
-            </span>
-            <div className="flex-1 h-px bg-[rgba(13,148,136,0.08)]" />
-          </div>
-
-          <WeeklyScheduleView
-            sessions={builder.upcomingPlan.sessions.filter((s) => s.sessionType !== "external_activity")}
-            activities={builder.upcomingPlan.sessions.filter((s) => s.sessionType === "external_activity")}
-            editMode={false}
-            clientId={clientId}
-            planId={builder.upcomingPlan.id}
-            onUpdate={builder.fetchPlan}
-          />
-        </>
       )}
+
+      {/* Empty-state hero — shown when no plan exists */}
+      {!builder.plan && (
+        <div className="bg-[#0f2027] rounded-[6px] p-5 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-[rgba(13,148,136,0.15)] flex items-center justify-center flex-shrink-0">
+              <Sparkles className="h-5 w-5 text-[#0d9488]" />
+            </div>
+            <div>
+              <p className="text-[13px] font-semibold text-white">
+                No training plan yet
+              </p>
+              <p className="text-[11.5px] text-[rgba(255,255,255,0.5)] mt-0.5">
+                Generate a customized training plan using AI or create one manually.
+              </p>
+            </div>
+          </div>
+          {onOpenGenerator && (
+            <button
+              onClick={onOpenGenerator}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[12.5px] font-medium text-white bg-[#0d9488] rounded-[6px] hover:bg-[#0f766e] transition-colors flex-shrink-0"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              Generate Plan
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Calendar — always visible */}
+      <div className="px-0">
+        <TrainingCalendarView
+          clientId={clientId}
+          plan={builder.plan ?? null}
+          phases={builder.phases}
+          editMode={editMode}
+          onUpdate={builder.fetchPlan}
+        />
+      </div>
     </div>
   );
 });

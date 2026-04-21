@@ -81,7 +81,9 @@ export const quickSuggestions: QuickSuggestion[] = [
   },
 ];
 
-// Pre-built workout templates for manual creation
+// Pre-built workout templates for manual creation.
+// Templates define the session structure (names + focus) only.
+// The coach adds exercises inside the DraftEditor after picking a template.
 export const workoutTemplates: WorkoutTemplate[] = [
   {
     id: "ppl-6day",
@@ -90,72 +92,12 @@ export const workoutTemplates: WorkoutTemplate[] = [
     splitType: "push_pull_legs",
     frequency: 6,
     sessions: [
-      {
-        name: "Push Day A",
-        focus: "Chest, Shoulders, Triceps",
-        exercises: [
-          { name: "Barbell Bench Press", sets: 4, repsTarget: "6-8" },
-          { name: "Overhead Press", sets: 3, repsTarget: "8-10" },
-          { name: "Incline Dumbbell Press", sets: 3, repsTarget: "10-12" },
-          { name: "Lateral Raises", sets: 3, repsTarget: "12-15" },
-          { name: "Tricep Pushdowns", sets: 3, repsTarget: "10-12" },
-        ],
-      },
-      {
-        name: "Pull Day A",
-        focus: "Back, Biceps",
-        exercises: [
-          { name: "Barbell Rows", sets: 4, repsTarget: "6-8" },
-          { name: "Pull-ups", sets: 3, repsTarget: "8-10" },
-          { name: "Seated Cable Rows", sets: 3, repsTarget: "10-12" },
-          { name: "Face Pulls", sets: 3, repsTarget: "12-15" },
-          { name: "Barbell Curls", sets: 3, repsTarget: "10-12" },
-        ],
-      },
-      {
-        name: "Legs Day A",
-        focus: "Quads, Hamstrings, Glutes",
-        exercises: [
-          { name: "Barbell Squats", sets: 4, repsTarget: "6-8" },
-          { name: "Romanian Deadlifts", sets: 3, repsTarget: "8-10" },
-          { name: "Leg Press", sets: 3, repsTarget: "10-12" },
-          { name: "Leg Curls", sets: 3, repsTarget: "10-12" },
-          { name: "Calf Raises", sets: 4, repsTarget: "12-15" },
-        ],
-      },
-      {
-        name: "Push Day B",
-        focus: "Chest, Shoulders, Triceps",
-        exercises: [
-          { name: "Incline Barbell Press", sets: 4, repsTarget: "6-8" },
-          { name: "Dumbbell Shoulder Press", sets: 3, repsTarget: "8-10" },
-          { name: "Cable Flyes", sets: 3, repsTarget: "12-15" },
-          { name: "Rear Delt Flyes", sets: 3, repsTarget: "12-15" },
-          { name: "Overhead Tricep Extension", sets: 3, repsTarget: "10-12" },
-        ],
-      },
-      {
-        name: "Pull Day B",
-        focus: "Back, Biceps",
-        exercises: [
-          { name: "Deadlifts", sets: 4, repsTarget: "5-6" },
-          { name: "Lat Pulldowns", sets: 3, repsTarget: "10-12" },
-          { name: "Dumbbell Rows", sets: 3, repsTarget: "8-10" },
-          { name: "Shrugs", sets: 3, repsTarget: "10-12" },
-          { name: "Hammer Curls", sets: 3, repsTarget: "10-12" },
-        ],
-      },
-      {
-        name: "Legs Day B",
-        focus: "Quads, Hamstrings, Glutes",
-        exercises: [
-          { name: "Front Squats", sets: 4, repsTarget: "6-8" },
-          { name: "Walking Lunges", sets: 3, repsTarget: "10-12 each" },
-          { name: "Leg Extensions", sets: 3, repsTarget: "12-15" },
-          { name: "Glute Bridges", sets: 3, repsTarget: "10-12" },
-          { name: "Seated Calf Raises", sets: 4, repsTarget: "12-15" },
-        ],
-      },
+      { name: "Push Day A", focus: "Chest, Shoulders, Triceps" },
+      { name: "Pull Day A", focus: "Back, Biceps" },
+      { name: "Legs Day A", focus: "Quads, Hamstrings, Glutes" },
+      { name: "Push Day B", focus: "Chest, Shoulders, Triceps" },
+      { name: "Pull Day B", focus: "Back, Biceps" },
+      { name: "Legs Day B", focus: "Quads, Hamstrings, Glutes" },
     ],
   },
   {
@@ -165,52 +107,10 @@ export const workoutTemplates: WorkoutTemplate[] = [
     splitType: "upper_lower",
     frequency: 4,
     sessions: [
-      {
-        name: "Upper Body A",
-        focus: "Chest, Back, Shoulders, Arms",
-        exercises: [
-          { name: "Barbell Bench Press", sets: 4, repsTarget: "6-8" },
-          { name: "Barbell Rows", sets: 4, repsTarget: "6-8" },
-          { name: "Overhead Press", sets: 3, repsTarget: "8-10" },
-          { name: "Pull-ups", sets: 3, repsTarget: "8-10" },
-          { name: "Dumbbell Curls", sets: 2, repsTarget: "10-12" },
-          { name: "Tricep Dips", sets: 2, repsTarget: "10-12" },
-        ],
-      },
-      {
-        name: "Lower Body A",
-        focus: "Quads, Hamstrings, Glutes",
-        exercises: [
-          { name: "Barbell Squats", sets: 4, repsTarget: "6-8" },
-          { name: "Romanian Deadlifts", sets: 4, repsTarget: "8-10" },
-          { name: "Leg Press", sets: 3, repsTarget: "10-12" },
-          { name: "Leg Curls", sets: 3, repsTarget: "10-12" },
-          { name: "Calf Raises", sets: 4, repsTarget: "12-15" },
-        ],
-      },
-      {
-        name: "Upper Body B",
-        focus: "Back, Chest, Shoulders, Arms",
-        exercises: [
-          { name: "Deadlifts", sets: 4, repsTarget: "5-6" },
-          { name: "Incline Dumbbell Press", sets: 3, repsTarget: "8-10" },
-          { name: "Lat Pulldowns", sets: 3, repsTarget: "10-12" },
-          { name: "Dumbbell Shoulder Press", sets: 3, repsTarget: "8-10" },
-          { name: "Face Pulls", sets: 3, repsTarget: "12-15" },
-          { name: "Hammer Curls", sets: 2, repsTarget: "10-12" },
-        ],
-      },
-      {
-        name: "Lower Body B",
-        focus: "Glutes, Hamstrings, Quads",
-        exercises: [
-          { name: "Hip Thrusts", sets: 4, repsTarget: "8-10" },
-          { name: "Front Squats", sets: 3, repsTarget: "8-10" },
-          { name: "Walking Lunges", sets: 3, repsTarget: "10-12 each" },
-          { name: "Good Mornings", sets: 3, repsTarget: "10-12" },
-          { name: "Leg Extensions", sets: 3, repsTarget: "12-15" },
-        ],
-      },
+      { name: "Upper Body A", focus: "Chest, Back, Shoulders, Arms" },
+      { name: "Lower Body A", focus: "Quads, Hamstrings, Glutes" },
+      { name: "Upper Body B", focus: "Back, Chest, Shoulders, Arms" },
+      { name: "Lower Body B", focus: "Glutes, Hamstrings, Quads" },
     ],
   },
   {
@@ -220,39 +120,9 @@ export const workoutTemplates: WorkoutTemplate[] = [
     splitType: "full_body",
     frequency: 3,
     sessions: [
-      {
-        name: "Full Body A",
-        focus: "Compound Focus",
-        exercises: [
-          { name: "Barbell Squats", sets: 4, repsTarget: "6-8" },
-          { name: "Barbell Bench Press", sets: 4, repsTarget: "6-8" },
-          { name: "Barbell Rows", sets: 4, repsTarget: "6-8" },
-          { name: "Overhead Press", sets: 3, repsTarget: "8-10" },
-          { name: "Plank", sets: 3, repsTarget: "30-60 sec" },
-        ],
-      },
-      {
-        name: "Full Body B",
-        focus: "Strength & Hypertrophy",
-        exercises: [
-          { name: "Deadlifts", sets: 4, repsTarget: "5-6" },
-          { name: "Incline Dumbbell Press", sets: 3, repsTarget: "8-10" },
-          { name: "Pull-ups", sets: 3, repsTarget: "8-10" },
-          { name: "Dumbbell Lunges", sets: 3, repsTarget: "10-12 each" },
-          { name: "Face Pulls", sets: 3, repsTarget: "12-15" },
-        ],
-      },
-      {
-        name: "Full Body C",
-        focus: "Volume & Accessory",
-        exercises: [
-          { name: "Front Squats", sets: 3, repsTarget: "8-10" },
-          { name: "Dumbbell Bench Press", sets: 3, repsTarget: "10-12" },
-          { name: "Seated Cable Rows", sets: 3, repsTarget: "10-12" },
-          { name: "Romanian Deadlifts", sets: 3, repsTarget: "10-12" },
-          { name: "Lateral Raises", sets: 3, repsTarget: "12-15" },
-        ],
-      },
+      { name: "Full Body A", focus: "Compound Focus" },
+      { name: "Full Body B", focus: "Strength & Hypertrophy" },
+      { name: "Full Body C", focus: "Volume & Accessory" },
     ],
   },
 ];

@@ -105,6 +105,31 @@ export async function generateTrainingEvents(
   if (error) throw error;
 }
 
+// --- Cancel future events (no regeneration) ---
+
+/**
+ * Delete future scheduled events for a plan without regenerating. Used when a plan
+ * is archived and the coach wants the calendar cleared of upcoming sessions while
+ * preserving completed/missed history.
+ *
+ * @param effectiveFrom - Date from which to delete (defaults to today).
+ */
+export async function cancelFutureScheduledEvents(
+  planId: string,
+  effectiveFrom?: string
+): Promise<void> {
+  const fromDate = effectiveFrom ?? getTodayDateString();
+
+  const { error } = await supabaseAdmin
+    .from("training_events")
+    .delete()
+    .eq("training_plan_id", planId)
+    .gte("date", fromDate)
+    .eq("status", "scheduled");
+
+  if (error) throw error;
+}
+
 // --- Regenerate future events ---
 
 /**

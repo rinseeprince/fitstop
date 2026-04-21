@@ -21,11 +21,10 @@ export function useTrainingPlan({ clientId, onUpdate }: UseTrainingPlanProps) {
   const [prompt, setPrompt] = useState("");
   const [preGenerationActivities, setPreGenerationActivities] = useState<PreGenerationActivity[]>([]);
   const [allowSameDayTraining, setAllowSameDayTraining] = useState(false);
-  const [phaseId, setPhaseId] = useState<string | undefined>(undefined);
-  const [phaseBlocked, setPhaseBlocked] = useState(false);
   const [savedPlanId, setSavedPlanId] = useState<string | null>(null);
 
   const fetchPlan = useCallback(async () => {
+    setIsLoading(true);
     setLoadError(null);
     try {
       const res = await fetch(`/api/clients/${clientId}/training`);
@@ -60,7 +59,7 @@ export function useTrainingPlan({ clientId, onUpdate }: UseTrainingPlanProps) {
     fetchPlan();
   }, [fetchPlan]);
 
-  const generate = async (effectiveFrom?: string | null) => {
+  const generate = async (options: { planName?: string; effectiveFrom?: string | null } = {}) => {
     if (!prompt.trim() || prompt.length < 10) {
       toast({
         title: "Please provide more detail",
@@ -78,6 +77,8 @@ export function useTrainingPlan({ clientId, onUpdate }: UseTrainingPlanProps) {
       return hasValidName && hasValidDay;
     });
 
+    const trimmedName = options.planName?.trim();
+
     setIsGenerating(true);
     try {
       const res = await fetch(`/api/clients/${clientId}/training`, {
@@ -85,10 +86,10 @@ export function useTrainingPlan({ clientId, onUpdate }: UseTrainingPlanProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           coachPrompt: prompt,
+          name: trimmedName || undefined,
           preGenerationActivities: validActivities.length > 0 ? validActivities : undefined,
           allowSameDayTraining,
-          phaseId: phaseId || undefined,
-          effectiveFrom: effectiveFrom ?? undefined,
+          effectiveFrom: options.effectiveFrom ?? undefined,
         }),
       });
 
@@ -110,7 +111,6 @@ export function useTrainingPlan({ clientId, onUpdate }: UseTrainingPlanProps) {
         setPrompt("");
         setPreGenerationActivities([]);
         setAllowSameDayTraining(false);
-        setPhaseId(undefined);
         toast({ title: "Plan draft created" });
         return true;
       } else {
@@ -152,10 +152,6 @@ export function useTrainingPlan({ clientId, onUpdate }: UseTrainingPlanProps) {
     setPreGenerationActivities,
     allowSameDayTraining,
     setAllowSameDayTraining,
-    phaseId,
-    setPhaseId,
-    phaseBlocked,
-    setPhaseBlocked,
     savedPlanId,
     setSavedPlanId,
     generate,

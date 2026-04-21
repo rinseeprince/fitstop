@@ -10,6 +10,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import type { TrainingEvent } from "@/types/training";
+import type { PhaseStatus } from "@/types/roadmap";
 
 type CalendarDayCellProps = {
   date: string;
@@ -17,6 +18,8 @@ type CalendarDayCellProps = {
   events: TrainingEvent[];
   isToday: boolean;
   isPast: boolean;
+  isOutsideMonth?: boolean;
+  phaseStatus?: PhaseStatus | null;
   editMode: boolean;
   duplicateMode: boolean;
   onCellClick: (date: string) => void;
@@ -27,12 +30,27 @@ type CalendarDayCellProps = {
 
 const MAX_VISIBLE_EVENTS = 2;
 
+function phaseTintClass(status: PhaseStatus | null | undefined): string {
+  switch (status) {
+    case "active":
+      return "bg-[rgba(13,148,136,0.06)]";
+    case "completed":
+      return "bg-[rgba(148,163,184,0.08)]";
+    case "planned":
+      return "bg-[rgba(59,130,246,0.06)]";
+    default:
+      return "";
+  }
+}
+
 export const CalendarDayCell = memo(function CalendarDayCell({
   date,
   dayOfMonth,
   events,
   isToday,
   isPast,
+  isOutsideMonth,
+  phaseStatus,
   editMode,
   duplicateMode,
   onCellClick,
@@ -54,7 +72,9 @@ export const CalendarDayCell = memo(function CalendarDayCell({
       ref={setNodeRef}
       className={cn(
         "min-h-[80px] rounded-[4px] border border-[rgba(13,148,136,0.06)] p-1.5 flex flex-col gap-1 relative transition-all",
-        isPast && "opacity-60",
+        phaseTintClass(phaseStatus),
+        isOutsideMonth && "opacity-40",
+        isPast && !isOutsideMonth && "opacity-60",
         isToday && "ring-2 ring-teal-500",
         isOver && !isPast && "ring-2 ring-teal-500/50 bg-[rgba(13,148,136,0.03)]",
         duplicateMode && !isPast && "cursor-crosshair hover:bg-[rgba(13,148,136,0.05)]"
@@ -106,7 +126,7 @@ export const CalendarDayCell = memo(function CalendarDayCell({
       )}
 
       {/* Rest day label */}
-      {events.length === 0 && !isPast && (
+      {events.length === 0 && !isPast && !isOutsideMonth && (
         <span className="text-[10px] text-[#93b0b4] mt-auto">Rest</span>
       )}
     </div>

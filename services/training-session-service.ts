@@ -11,6 +11,7 @@ import type {
 import type { TrainingSessionUpdate } from "@/lib/database-helpers";
 import { mapExerciseRow, mapSessionRow } from "./training-mappers";
 import { resolveExercises } from "./exercise-catalog-service";
+import type { Json } from "@/types/database";
 
 // Update session
 export const updateSession = async (
@@ -291,3 +292,162 @@ export const updateSessionCalories = async (
     throw new Error(`Failed to update session calories: ${error.message}`);
   }
 };
+
+// Exercise input shape for bulk operations
+export type ExerciseInput = {
+  name: string;
+  sets: number;
+  orderIndex: number;
+  exerciseId?: string | null;
+  repsMin?: number | null;
+  repsMax?: number | null;
+  repsTarget?: string | null;
+  rpeTarget?: number | null;
+  restSeconds?: number | null;
+  tempo?: string | null;
+  percentage1rm?: number | null;
+  supersetGroup?: string | null;
+  isWarmup?: boolean;
+  notes?: string | null;
+};
+
+function buildExerciseInserts(sessionId: string, exercises: ExerciseInput[]) {
+  return exercises.map((ex) => ({
+    session_id: sessionId,
+    name: ex.name,
+    exercise_id: ex.exerciseId ?? null,
+    order_index: ex.orderIndex,
+    sets: ex.sets,
+    reps_min: ex.repsMin ?? null,
+    reps_max: ex.repsMax ?? null,
+    reps_target: ex.repsTarget ?? null,
+    rpe_target: ex.rpeTarget ?? null,
+    percentage_1rm: ex.percentage1rm ?? null,
+    tempo: ex.tempo ?? null,
+    rest_seconds: ex.restSeconds ?? null,
+    notes: ex.notes ?? null,
+    superset_group: ex.supersetGroup ?? null,
+    is_warmup: ex.isWarmup ?? false,
+    is_active: true,
+  }));
+}
+
+// Clone a session and reassign a specific event to the clone.
+// If exerciseOverrides is provided, use those instead of cloning the originals.
+export async function cloneSessionForEvent(
+  sessionId: string,
+  eventId: string,
+  exerciseOverrides?: ExerciseInput[]
+): Promise<string> {
+  // 1. Fetch source session
+  const { data: session, error: sessionError } = await supabaseAdmin
+    .from("training_sessions")
+    .select("*")
+    .eq("id", sessionId)
+    .eq("is_active", true)
+    .single();
+
+  if (sessionError || !session) {
+    throw new Error(`Session not found: ${sessionError?.message}`);
+  }
+
+  // 2. Clone session
+  const { data: clonedSession, error: cloneError } = await supabaseAdmin
+    .from("training_sessions")
+    .insert({
+      plan_id: session.plan_id as string,
+      name: session.name as string,
+      day_of_week: null,
+      order_index: session.order_index as number,
+      focus: session.focus as string | null,
+      notes: session.notes as string | null,
+      estimated_duration_minutes: session.estimated_duration_minutes as number | null,
+      session_type: session.session_type as string,
+      activity_metadata: session.activity_metadata as Json | null,
+      estimated_calories: session.estimated_calories as number | null,
+      calories_calculated_at: session.calories_calculated_at as string | null,
+      calorie_surplus_percentage: session.calorie_surplus_percentage as number | null,
+      is_active: true,
+    })
+    .select("id")
+    .single();
+
+  if (cloneError || !clonedSession) {
+    throw new Error(`Failed to clone session: ${cloneError?.message}`);
+  }
+
+  // 3. Insert exercises (overrides or cloned from original)
+  if (exerciseOverrides) {
+    if (exerciseOverrides.length > 0) {
+      const inserts = buildExerciseInserts(clonedSession.id, exerciseOverrides);
+      const { error: exError } = await supabaseAdmin.from("training_exercises").insert(inserts);
+      if (exError) throw new Error(`Failed to insert exercises: ${exError.message}`);
+    }
+  } else {
+    const { data: exercises } = await supabaseAdmin
+      .from("training_exercises")
+      .select("*")
+      .eq("session_id", sessionId)
+      .eq("is_active", true)
+      .order("order_index", { ascending: true });
+
+    if (exercises && exercises.length > 0) {
+      const exerciseInserts = exercises.map((ex) => ({
+        session_id: clonedSession.id,
+        name: ex.name as string,
+        exercise_id: ex.exercise_id as string | null,
+        order_index: ex.order_index as number,
+        sets: ex.sets as number,
+        reps_min: ex.reps_min as number | null,
+        reps_max: ex.reps_max as number | null,
+        reps_target: ex.reps_target as string | null,
+        rpe_target: ex.rpe_target as number | null,
+        percentage_1rm: ex.percentage_1rm as number | null,
+        tempo: ex.tempo as string | null,
+        rest_seconds: ex.rest_seconds as number | null,
+        notes: ex.notes as string | null,
+        superset_group: ex.superset_group as string | null,
+        is_warmup: ex.is_warmup as boolean,
+        is_active: true,
+      }));
+      const { error: exError } = await supabaseAdmin.from("training_exercises").insert(exerciseInserts);
+      if (exError) throw new Error(`Failed to clone exercises: ${exError.message}`);
+    }
+  }
+
+  // 4. Update event to point to cloned session
+  const { error: eventError } = await supabaseAdmin
+    .from("training_events")
+    .update({
+      training_session_id: clonedSession.id,
+      is_modified: true,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", eventId);
+
+  if (eventError) throw new Error(`Failed to update event: ${eventError.message}`);
+
+  return clonedSession.id;
+}
+
+// Bulk replace all exercises for a session (soft-delete old, insert new)
+export async function bulkReplaceExercises(
+  sessionId: string,
+  exercises: ExerciseInput[]
+): Promise<void> {
+  // Soft-delete existing exercises
+  const { error: deleteError } = await supabaseAdmin
+    .from("training_exercises")
+    .update({ is_active: false, updated_at: new Date().toISOString() })
+    .eq("session_id", sessionId)
+    .eq("is_active", true);
+
+  if (deleteError) throw new Error(`Failed to deactivate exercises: ${deleteError.message}`);
+
+  // Insert new exercises
+  if (exercises.length > 0) {
+    const inserts = buildExerciseInserts(sessionId, exercises);
+    const { error: insertError } = await supabaseAdmin.from("training_exercises").insert(inserts);
+    if (insertError) throw new Error(`Failed to insert exercises: ${insertError.message}`);
+  }
+}

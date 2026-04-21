@@ -25,16 +25,18 @@ type UseCalendarDndProps = {
   events: TrainingEvent[];
   eventsByDate: Map<string, TrainingEvent[]>;
   clientId: string;
-  planId: string;
   mutate: KeyedMutator<{ success: boolean; events: TrainingEvent[] }>;
+  onLibraryPlanDrop?: (planId: string, startDate: string) => void;
+  onLibrarySessionDrop?: (sessionId: string, targetDate: string) => void;
 };
 
 export function useCalendarDnd({
   events,
   eventsByDate,
   clientId,
-  planId,
   mutate,
+  onLibraryPlanDrop,
+  onLibrarySessionDrop,
 }: UseCalendarDndProps) {
   const { toast } = useToast();
   const [activeEvent, setActiveEvent] = useState<TrainingEvent | null>(null);
@@ -52,6 +54,10 @@ export function useCalendarDnd({
 
   const handleDragStart = useCallback(
     (event: DragStartEvent) => {
+      // Skip library items — they don't have a preview in the calendar overlay
+      const dataType = event.active.data.current?.type as string | undefined;
+      if (dataType === "library-plan" || dataType === "library-session") return;
+
       const found = events.find((e) => e.id === event.active.id);
       if (found && found.status === "scheduled" && found.date >= getTodayDateString()) {
         setActiveEvent(found);
@@ -67,17 +73,38 @@ export function useCalendarDnd({
 
       if (!over) return;
 
+      const targetDate = over.id as string;
+      const today = getTodayDateString();
+
+      // Handle library drops
+      const dataType = active.data.current?.type as string | undefined;
+      if (dataType === "library-plan") {
+        if (targetDate < today) {
+          toast({ title: "Cannot place in the past", variant: "destructive" });
+          return;
+        }
+        onLibraryPlanDrop?.(active.data.current?.id as string, targetDate);
+        return;
+      }
+      if (dataType === "library-session") {
+        if (targetDate < today) {
+          toast({ title: "Cannot place in the past", variant: "destructive" });
+          return;
+        }
+        onLibrarySessionDrop?.(active.data.current?.id as string, targetDate);
+        return;
+      }
+
+      // Standard event move
       const draggedEvent = events.find((e) => e.id === active.id);
       if (!draggedEvent) return;
 
-      const targetDate = over.id as string;
       const sourceDate = draggedEvent.date;
 
       // No-op if dropped on same date
       if (targetDate === sourceDate) return;
 
       // Only allow moving to future dates
-      const today = getTodayDateString();
       if (targetDate < today) {
         toast({
           title: "Cannot move to past",
@@ -90,7 +117,7 @@ export function useCalendarDnd({
       // Set pending move to show the scope dialog
       setPendingMove({ event: draggedEvent, sourceDate, targetDate });
     },
-    [events, toast]
+    [events, toast, onLibraryPlanDrop, onLibrarySessionDrop]
   );
 
   const handleMoveConfirm = useCallback(
@@ -117,7 +144,7 @@ export function useCalendarDnd({
 
       try {
         const res = await fetch(
-          `/api/clients/${clientId}/training/${planId}/events/${event.id}/move`,
+          `/api/clients/${clientId}/training/${event.trainingPlanId}/events/${event.id}/move`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -148,7 +175,7 @@ export function useCalendarDnd({
         setPendingMove(null);
       }
     },
-    [pendingMove, events, clientId, planId, mutate, toast]
+    [pendingMove, events, clientId, mutate, toast]
   );
 
   const handleMoveCancel = useCallback(() => {

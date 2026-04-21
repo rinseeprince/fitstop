@@ -1,0 +1,476 @@
+import { supabaseAdmin } from "./supabase-admin";
+import { getSavedPlanById } from "./coach-library-service";
+import { createTrainingPlanAtomic } from "./training-service";
+import { deleteFutureEventsForPlan } from "./training-event-service";
+import { validatePhaseBounds } from "./training-event-calendar-service";
+import { getDateString } from "@/lib/date-helpers";
+import { captureApiError } from "@/lib/error-handler";
+import type { TrainingEventInsert } from "@/lib/database-helpers";
+import type { SavedSession, SavedExercise } from "@/types/training";
+
+// --- Shape used by both DB-backed and inline (in-memory) placements ---
+
+export type PlaceablePlan = {
+  name: string;
+  splitType: string | null;
+  frequencyPerWeek: number | null;
+  programDurationWeeks: number | null;
+  cycleLength: number | null;
+  restPattern: number[];
+  defaultSurplusPercentage: number | null;
+  sessions: SavedSession[];
+};
+
+// --- Place a saved plan onto a client's calendar ---
+
+export async function placePlanOnCalendar(params: {
+  savedPlanId: string;
+  coachId: string;
+  clientId: string;
+  startDate: string;
+  repeatCycles?: number;
+  phaseId?: string;
+}): Promise<{ planId: string; sessionsCreated: number; eventsCreated: number }> {
+  const { savedPlanId, coachId, clientId, startDate, repeatCycles, phaseId } = params;
+
+  // 1. Fetch saved plan with sessions + exercises
+  const savedPlan = await getSavedPlanById(savedPlanId, coachId);
+  if (!savedPlan) throw new Error("Saved plan not found");
+  if (savedPlan.status !== "saved") throw new Error("Only saved plans can be placed on calendar");
+
+  return placePlaceablePlanOnCalendar({
+    plan: savedPlan,
+    savedPlanId,
+    coachId,
+    clientId,
+    startDate,
+    repeatCycles,
+    phaseId,
+  });
+}
+
+async function placePlaceablePlanOnCalendar(params: {
+  plan: PlaceablePlan;
+  savedPlanId: string | null;
+  coachId: string;
+  clientId: string;
+  startDate: string;
+  repeatCycles?: number;
+  phaseId?: string;
+}): Promise<{ planId: string; sessionsCreated: number; eventsCreated: number }> {
+  const {
+    plan: savedPlan,
+    savedPlanId,
+    coachId,
+    clientId,
+    startDate,
+    repeatCycles,
+    phaseId,
+  } = params;
+
+  // 2. Find any existing active AND planned plans — both need their future
+  //    events cleaned up after the RPC archives them, or orphan events remain
+  //    on the calendar. The RPC archives planned plans silently when a new
+  //    plan is applied, so we have to capture the id beforehand.
+  const [{ data: oldActivePlan }, { data: oldPlannedPlan }] = await Promise.all([
+    supabaseAdmin
+      .from("training_plans")
+      .select("id")
+      .eq("client_id", clientId)
+      .eq("status", "active")
+      .maybeSingle(),
+    supabaseAdmin
+      .from("training_plans")
+      .select("id")
+      .eq("client_id", clientId)
+      .eq("status", "planned")
+      .maybeSingle(),
+  ]);
+
+  // 3. Atomically archive old plan + create new one
+  const newPlanId = await createTrainingPlanAtomic({
+    clientId,
+    coachId,
+    name: savedPlan.name,
+    description: undefined,
+    coachPrompt: "",
+    splitType: savedPlan.splitType || "custom",
+    frequencyPerWeek: savedPlan.frequencyPerWeek || 0,
+    programDurationWeeks: savedPlan.programDurationWeeks ?? undefined,
+    phaseId,
+    effectiveFrom: startDate,
+    // null → inline placement (edited working copy), don't link back to any
+    // library template. The helper normalizes falsy values to null for the RPC.
+    savedPlanId: savedPlanId ?? undefined,
+  });
+
+  // 4. Delete future events for the now-archived plans. Matches the pattern in
+  //    promoteTrainingPlanIfReady: non-blocking cleanup, Sentry on failure.
+  if (oldActivePlan) {
+    await deleteFutureEventsForPlan(oldActivePlan.id, startDate).catch((err) =>
+      captureApiError(err, {
+        action: "delete-future-events-placement-active",
+        planId: oldActivePlan.id,
+      }),
+    );
+  }
+  if (oldPlannedPlan && oldPlannedPlan.id !== newPlanId) {
+    // Planned plans have no past events, so default fromDate=today is safe.
+    await deleteFutureEventsForPlan(oldPlannedPlan.id).catch((err) =>
+      captureApiError(err, {
+        action: "delete-future-events-placement-planned",
+        planId: oldPlannedPlan.id,
+      }),
+    );
+  }
+
+  // 5. Clone sessions and exercises
+  const nonRestSessions = savedPlan.sessions
+    .filter((s) => !s.isRest)
+    .sort((a, b) => a.orderIndex - b.orderIndex);
+
+  const clonedSessions: Array<{
+    id: string;
+    name: string;
+    focus: string | null;
+    calorieSurplusPercentage: number | null;
+    estimatedCalories: number | null;
+  }> = [];
+
+  for (const savedSession of nonRestSessions) {
+    const surplusPercentage =
+      savedSession.calorieSurplusPercentage ?? savedPlan.defaultSurplusPercentage ?? null;
+
+    const { data: clonedSession, error: sessionError } = await supabaseAdmin
+      .from("training_sessions")
+      .insert({
+        plan_id: newPlanId,
+        name: savedSession.name,
+        day_of_week: null,
+        order_index: savedSession.orderIndex,
+        focus: savedSession.focus ?? null,
+        notes: null,
+        estimated_duration_minutes: savedSession.estimatedDurationMinutes ?? null,
+        session_type: savedSession.sessionType ?? "training",
+        calorie_surplus_percentage: surplusPercentage,
+        is_active: true,
+      })
+      .select("id")
+      .single();
+
+    if (sessionError || !clonedSession) {
+      throw new Error(`Failed to clone session "${savedSession.name}": ${sessionError?.message}`);
+    }
+
+    // Clone exercises
+    if (savedSession.exercises.length > 0) {
+      const exerciseInserts = savedSession.exercises
+        .sort((a, b) => a.orderIndex - b.orderIndex)
+        .map((ex: SavedExercise) => ({
+          session_id: clonedSession.id,
+          name: ex.name,
+          exercise_id: ex.exerciseId ?? null,
+          order_index: ex.orderIndex,
+          sets: ex.sets,
+          reps_min: ex.repsMin ?? null,
+          reps_max: ex.repsMax ?? null,
+          reps_target: ex.repsTarget ?? null,
+          rpe_target: ex.rpeTarget ?? null,
+          percentage_1rm: ex.percentage1rm ?? null,
+          tempo: ex.tempo ?? null,
+          rest_seconds: ex.restSeconds ?? null,
+          notes: ex.notes ?? null,
+          superset_group: ex.supersetGroup ?? null,
+          is_warmup: ex.isWarmup ?? false,
+          is_active: true,
+        }));
+
+      const { error: exError } = await supabaseAdmin
+        .from("training_exercises")
+        .insert(exerciseInserts);
+
+      if (exError) throw new Error(`Failed to clone exercises: ${exError.message}`);
+    }
+
+    clonedSessions.push({
+      id: clonedSession.id,
+      name: savedSession.name,
+      focus: savedSession.focus ?? null,
+      calorieSurplusPercentage: surplusPercentage,
+      estimatedCalories: null,
+    });
+  }
+
+  // 6. Calculate end date
+  const endDate = await calculatePlacementEndDate({
+    phaseId,
+    clientId,
+    programDurationWeeks: savedPlan.programDurationWeeks ?? null,
+    cycleLength: savedPlan.cycleLength ?? null,
+    repeatCycles: repeatCycles ?? null,
+    startDate,
+  });
+
+  // 7. Generate cycle-aware events
+  const eventsCreated = await generateCycleAwareEvents({
+    clientId,
+    planId: newPlanId,
+    sessions: clonedSessions,
+    cycleLength: savedPlan.cycleLength ?? clonedSessions.length,
+    restPattern: savedPlan.restPattern ?? [],
+    startDate,
+    endDate,
+  });
+
+  return { planId: newPlanId, sessionsCreated: clonedSessions.length, eventsCreated };
+}
+
+// --- Place a single saved session onto a client's calendar ---
+
+export async function placeSessionOnCalendar(params: {
+  savedSessionId: string;
+  coachId: string;
+  clientId: string;
+  planId: string;
+  targetDate: string;
+}): Promise<{ sessionId: string; eventId: string }> {
+  const { savedSessionId, coachId, clientId, planId, targetDate } = params;
+
+  // 1. Fetch saved session with exercises
+  const { data: savedSession, error: fetchError } = await supabaseAdmin
+    .from("coach_saved_sessions")
+    .select("*, coach_saved_exercises(*)")
+    .eq("id", savedSessionId)
+    .eq("coach_id", coachId)
+    .single();
+
+  if (fetchError || !savedSession) throw new Error("Saved session not found");
+
+  // 2. Phase boundary validation
+  await validatePhaseBounds(planId, targetDate);
+
+  // 3. Clone session
+  const { data: clonedSession, error: sessionError } = await supabaseAdmin
+    .from("training_sessions")
+    .insert({
+      plan_id: planId,
+      name: savedSession.name,
+      day_of_week: null,
+      order_index: savedSession.order_index,
+      focus: savedSession.focus ?? null,
+      notes: savedSession.notes ?? null,
+      estimated_duration_minutes: savedSession.estimated_duration_minutes ?? null,
+      session_type: savedSession.session_type ?? "training",
+      calorie_surplus_percentage: savedSession.calorie_surplus_percentage ?? null,
+      is_active: true,
+    })
+    .select("id")
+    .single();
+
+  if (sessionError || !clonedSession) {
+    throw new Error(`Failed to clone session: ${sessionError?.message}`);
+  }
+
+  // 4. Clone exercises
+  const exercises = (savedSession.coach_saved_exercises ?? []).sort(
+    (a: { order_index: number }, b: { order_index: number }) => a.order_index - b.order_index
+  );
+
+  if (exercises.length > 0) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const exerciseInserts = exercises.map((ex: any) => ({
+      session_id: clonedSession.id,
+      name: ex.name as string,
+      exercise_id: (ex.exercise_id as string | null) ?? null,
+      order_index: ex.order_index as number,
+      sets: ex.sets as number,
+      reps_min: (ex.reps_min as number | null) ?? null,
+      reps_max: (ex.reps_max as number | null) ?? null,
+      reps_target: (ex.reps_target as string | null) ?? null,
+      rpe_target: (ex.rpe_target as number | null) ?? null,
+      percentage_1rm: (ex.percentage_1rm as number | null) ?? null,
+      tempo: (ex.tempo as string | null) ?? null,
+      rest_seconds: (ex.rest_seconds as number | null) ?? null,
+      notes: (ex.notes as string | null) ?? null,
+      superset_group: (ex.superset_group as string | null) ?? null,
+      is_warmup: (ex.is_warmup as boolean) ?? false,
+      is_active: true,
+    }));
+
+    const { error: exError } = await supabaseAdmin
+      .from("training_exercises")
+      .insert(exerciseInserts);
+
+    if (exError) throw new Error(`Failed to clone exercises: ${exError.message}`);
+  }
+
+  // 5. Create single event
+  const { data: event, error: eventError } = await supabaseAdmin
+    .from("training_events")
+    .insert({
+      client_id: clientId,
+      training_plan_id: planId,
+      training_session_id: clonedSession.id,
+      date: targetDate,
+      session_name: savedSession.name,
+      session_focus: savedSession.focus ?? null,
+      calorie_surplus_percentage: savedSession.calorie_surplus_percentage ?? null,
+      status: "scheduled",
+      is_modified: true,
+    })
+    .select("id")
+    .single();
+
+  if (eventError || !event) {
+    throw new Error(`Failed to create event: ${eventError?.message}`);
+  }
+
+  return { sessionId: clonedSession.id, eventId: event.id };
+}
+
+// --- Internal helpers ---
+
+/**
+ * Generate cycle-aware training events by walking through dates and
+ * rotating sessions based on cycle position and rest pattern.
+ */
+async function generateCycleAwareEvents(params: {
+  clientId: string;
+  planId: string;
+  sessions: Array<{
+    id: string;
+    name: string;
+    focus: string | null;
+    calorieSurplusPercentage: number | null;
+    estimatedCalories: number | null;
+  }>;
+  cycleLength: number;
+  restPattern: number[];
+  startDate: string;
+  endDate: string;
+}): Promise<number> {
+  const { clientId, planId, sessions, cycleLength, restPattern, startDate, endDate } = params;
+
+  if (sessions.length === 0) return 0;
+
+  const restPositions = new Set(restPattern);
+  const rows: TrainingEventInsert[] = [];
+
+  const start = new Date(startDate + "T00:00:00");
+  const end = new Date(endDate + "T00:00:00");
+  let cyclePosition = 0;
+  let sessionIndex = 0;
+
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    if (!restPositions.has(cyclePosition)) {
+      const session = sessions[sessionIndex % sessions.length];
+      rows.push({
+        client_id: clientId,
+        training_plan_id: planId,
+        training_session_id: session.id,
+        date: getDateString(d),
+        session_name: session.name,
+        session_focus: session.focus ?? null,
+        estimated_calories: session.estimatedCalories ?? null,
+        calorie_surplus_percentage: session.calorieSurplusPercentage ?? null,
+        status: "scheduled",
+        is_modified: false,
+      });
+      sessionIndex++;
+    }
+
+    cyclePosition = (cyclePosition + 1) % cycleLength;
+  }
+
+  if (rows.length === 0) return 0;
+
+  const { error } = await supabaseAdmin
+    .from("training_events")
+    .upsert(rows, {
+      onConflict: "client_id,training_session_id,date",
+      ignoreDuplicates: true,
+    });
+
+  if (error) throw new Error(`Failed to generate events: ${error.message}`);
+
+  return rows.length;
+}
+
+/**
+ * Calculate the end date for placement using priority chain:
+ * phase end_date > programDurationWeeks > repeatCycles * cycleLength > 8-week fallback.
+ */
+async function calculatePlacementEndDate(params: {
+  phaseId?: string;
+  clientId: string;
+  programDurationWeeks: number | null;
+  cycleLength: number | null;
+  repeatCycles: number | null;
+  startDate: string;
+}): Promise<string> {
+  const { phaseId, clientId, programDurationWeeks, cycleLength, repeatCycles, startDate } = params;
+
+  let phaseEndDate: string | null = null;
+
+  // Phase end_date always wins if set
+  if (phaseId) {
+    const { data: phase } = await supabaseAdmin
+      .from("phases")
+      .select("end_date, start_date, duration_weeks")
+      .eq("id", phaseId)
+      .maybeSingle();
+
+    if (phase?.end_date) {
+      phaseEndDate = phase.end_date;
+    } else if (phase?.start_date && phase?.duration_weeks) {
+      const d = new Date(phase.start_date + "T00:00:00");
+      d.setDate(d.getDate() + phase.duration_weeks * 7 - 1);
+      phaseEndDate = getDateString(d);
+    }
+  } else {
+    // No explicit phase — look up the client's phase containing startDate and cap by it.
+    const { data: containingPhase } = await supabaseAdmin
+      .from("phases")
+      .select("end_date, start_date, duration_weeks")
+      .eq("client_id", clientId)
+      .in("status", ["active", "planned"])
+      .lte("start_date", startDate)
+      .gte("end_date", startDate)
+      .order("start_date", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (containingPhase?.end_date) {
+      phaseEndDate = containingPhase.end_date;
+    } else if (containingPhase?.start_date && containingPhase?.duration_weeks) {
+      const d = new Date(containingPhase.start_date + "T00:00:00");
+      d.setDate(d.getDate() + containingPhase.duration_weeks * 7 - 1);
+      phaseEndDate = getDateString(d);
+    }
+  }
+
+  // Calculate duration-based end date
+  let durationEndDate: string | null = null;
+
+  if (programDurationWeeks) {
+    const d = new Date(startDate + "T00:00:00");
+    d.setDate(d.getDate() + programDurationWeeks * 7 - 1);
+    durationEndDate = getDateString(d);
+  } else if (repeatCycles && cycleLength) {
+    const d = new Date(startDate + "T00:00:00");
+    d.setDate(d.getDate() + repeatCycles * cycleLength - 1);
+    durationEndDate = getDateString(d);
+  }
+
+  // Phase boundary caps everything
+  if (phaseEndDate && durationEndDate) {
+    return phaseEndDate < durationEndDate ? phaseEndDate : durationEndDate;
+  }
+  if (phaseEndDate) return phaseEndDate;
+  if (durationEndDate) return durationEndDate;
+
+  // Fallback: 8 weeks from start
+  const d = new Date(startDate + "T00:00:00");
+  d.setDate(d.getDate() + 8 * 7 - 1);
+  return getDateString(d);
+}

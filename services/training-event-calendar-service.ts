@@ -1,5 +1,5 @@
 import { supabaseAdmin } from "./supabase-admin";
-import { regenerateFutureEvents, getEventsForDateRange } from "./training-event-service";
+import { getEventsForDateRange } from "./training-event-service";
 import { getTodayDateString, getDateString } from "@/lib/date-helpers";
 import type { Json } from "@/types/database";
 
@@ -63,43 +63,124 @@ export async function moveEvent(
 }
 
 /**
- * Move a single event and update the template session's day_of_week,
- * then regenerate all future events from the day after the dragged event.
+ * Move the dragged event and all future events that share its training_session_id
+ * by the same day offset. Does NOT touch the session template's day_of_week and
+ * does NOT call regenerateFutureEvents — safe for both AI-plan sessions (recurring
+ * template) and library-placed sessions (day_of_week = null).
+ *
+ * For events with no training_session_id (one-off calendar placements), this
+ * degrades to a single-event move.
  */
 export async function moveEventAndFuture(
-  trainingSessionId: string,
-  newDayOfWeek: string,
+  eventId: string,
+  targetDate: string,
   clientId: string,
-  planId: string,
-  draggedEventId: string,
-  draggedNewDate: string
+  planId: string
 ): Promise<void> {
-  // Update the template session's day_of_week
-  const { error: sessionError } = await supabaseAdmin
-    .from("training_sessions")
-    .update({ day_of_week: newDayOfWeek })
-    .eq("id", trainingSessionId);
-
-  if (sessionError) throw sessionError;
-
-  // Update the dragged event directly
-  const { error: eventError } = await supabaseAdmin
+  // Fetch the dragged event
+  const { data: draggedEvent, error: fetchError } = await supabaseAdmin
     .from("training_events")
-    .update({
-      date: draggedNewDate,
-      is_modified: true,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", draggedEventId);
+    .select("id, date, training_session_id, status, client_id, training_plan_id")
+    .eq("id", eventId)
+    .single();
 
-  if (eventError) throw eventError;
+  if (fetchError || !draggedEvent) throw new Error("Event not found");
+  if (draggedEvent.client_id !== clientId || draggedEvent.training_plan_id !== planId) {
+    throw new Error("Event does not belong to this client/plan");
+  }
+  if (draggedEvent.status !== "scheduled") {
+    throw new Error("Only scheduled events can be moved");
+  }
 
-  // Regenerate from the day after the dragged event with force=true
-  const dayAfter = new Date(draggedNewDate + "T00:00:00");
-  dayAfter.setDate(dayAfter.getDate() + 1);
-  const effectiveFrom = getDateString(dayAfter);
+  const today = getTodayDateString();
+  if (targetDate < today) {
+    throw new Error("Cannot move event to a past date");
+  }
 
-  await regenerateFutureEvents(clientId, planId, effectiveFrom, true);
+  // No session link means no sibling occurrences to shift - behave like a single move.
+  if (!draggedEvent.training_session_id) {
+    await moveEvent(eventId, targetDate, clientId, planId);
+    return;
+  }
+
+  const sourceDate = draggedEvent.date;
+  const offsetDays = Math.round(
+    (new Date(targetDate + "T00:00:00").getTime() -
+      new Date(sourceDate + "T00:00:00").getTime()) /
+      (1000 * 60 * 60 * 24)
+  );
+
+  if (offsetDays === 0) return;
+
+  // Future scheduled siblings (same session, on or after source date). Includes the dragged event.
+  const { data: siblings, error: siblingsError } = await supabaseAdmin
+    .from("training_events")
+    .select("id, date")
+    .eq("client_id", clientId)
+    .eq("training_plan_id", planId)
+    .eq("training_session_id", draggedEvent.training_session_id)
+    .eq("status", "scheduled")
+    .gte("date", sourceDate);
+
+  if (siblingsError) throw siblingsError;
+  if (!siblings || siblings.length === 0) return;
+
+  // Build new-date mapping and validate bounds.
+  const updates = siblings.map((e) => {
+    const newDate = new Date(e.date + "T00:00:00");
+    newDate.setDate(newDate.getDate() + offsetDays);
+    return { id: e.id, newDate: getDateString(newDate) };
+  });
+
+  for (const u of updates) {
+    if (u.newDate < today) {
+      throw new Error("Cannot move events to a past date");
+    }
+    await validatePhaseBounds(planId, u.newDate);
+  }
+
+  // Guard against duplicate target dates within the batch (would violate the
+  // (client_id, training_session_id, date) partial unique index).
+  const batchDates = new Set<string>();
+  for (const u of updates) {
+    if (batchDates.has(u.newDate)) {
+      throw new Error(`Cannot move - duplicate target date ${u.newDate} in batch`);
+    }
+    batchDates.add(u.newDate);
+  }
+
+  // Collision check: any OTHER scheduled event for this session on one of the new dates.
+  const siblingIds = new Set(updates.map((u) => u.id));
+  const { data: collisions, error: collisionError } = await supabaseAdmin
+    .from("training_events")
+    .select("id, date")
+    .eq("client_id", clientId)
+    .eq("training_session_id", draggedEvent.training_session_id)
+    .eq("status", "scheduled")
+    .in("date", updates.map((u) => u.newDate));
+
+  if (collisionError) throw collisionError;
+
+  const conflict = (collisions ?? []).find((c) => !siblingIds.has(c.id));
+  if (conflict) {
+    throw new Error(`Cannot move - conflicts with existing sessions on ${conflict.date}`);
+  }
+
+  // Apply updates. Per-row matches the existing pattern in duplicateWeek and keeps
+  // errors attributable to a specific event.
+  const now = new Date().toISOString();
+  for (const u of updates) {
+    const { error: updateError } = await supabaseAdmin
+      .from("training_events")
+      .update({
+        date: u.newDate,
+        is_modified: true,
+        updated_at: now,
+      })
+      .eq("id", u.id);
+
+    if (updateError) throw updateError;
+  }
 }
 
 /**

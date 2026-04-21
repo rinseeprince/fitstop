@@ -13,17 +13,13 @@ import type {
 
 type UseManualSessionsProps = {
   clientId: string;
-  phaseId: string | undefined;
-  setPhaseId: (id: string | undefined) => void;
-  fetchPlan: () => void;
+  fetchPlan: () => Promise<void> | void;
   setSavedPlanId: (id: string | null) => void;
   onUpdate?: () => void;
 };
 
 export function useManualSessions({
   clientId,
-  phaseId,
-  setPhaseId,
   fetchPlan,
   setSavedPlanId,
   onUpdate,
@@ -100,26 +96,44 @@ export function useManualSessions({
   // TEMPLATE AND SAVE OPERATIONS
   // ═══════════════════════════════════════════════════════════════════════════
 
-  /** Apply a workout template to populate manual sessions */
+  /** Apply a workout template: populate session names + focus only. Exercises are added later in DraftEditor. */
   const applyTemplate = useCallback((template: WorkoutTemplate) => {
     setSelectedTemplate(template);
     const sessions: ManualSessionDraft[] = template.sessions.map((ts) => ({
       tempId: crypto.randomUUID(),
       name: ts.name,
       focus: ts.focus,
-      exercises: ts.exercises.map((te) => ({
-        tempId: crypto.randomUUID(),
-        name: te.name,
-        sets: te.sets,
-        repsTarget: te.repsTarget,
-        notes: te.notes,
-      })),
+      exercises: [],
     }));
     setManualSessions(sessions);
   }, []);
 
-  /** Save the manual plan to the server */
-  const saveManualPlan = useCallback(async (effectiveFrom?: string | null) => {
+  type SaveManualOptions = {
+    planName?: string;
+    effectiveFrom?: string | null;
+  };
+
+  const [isSavingTemplate, setIsSavingTemplate] = useState(false);
+
+  /**
+   * Shared POST-manual body builder. Keeps the payload in one place so
+   * saveManualPlan and saveManualPlanAsTemplate don't drift.
+   */
+  const buildManualPayload = useCallback((options: SaveManualOptions) => {
+    const trimmedName = options.planName?.trim();
+    return {
+      name: trimmedName || selectedTemplate?.name || "Custom Training Plan",
+      splitType: selectedTemplate?.splitType || "custom",
+      // frequencyPerWeek here means "training sessions per cycle" for the schema;
+      // the server recomputes it from is_rest flags, but we still send a sane value.
+      frequencyPerWeek: manualSessions.filter((s) => !s.isRest).length || 1,
+      sessions: manualSessions,
+      effectiveFrom: options.effectiveFrom ?? undefined,
+    };
+  }, [manualSessions, selectedTemplate]);
+
+  /** Save the manual plan to the server as a draft — coach continues to DraftEditor. */
+  const saveManualPlan = useCallback(async (options: SaveManualOptions = {}) => {
     if (manualSessions.length === 0) {
       toast({
         title: "No sessions",
@@ -134,14 +148,7 @@ export function useManualSessions({
       const res = await fetch(`/api/clients/${clientId}/training/manual`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: selectedTemplate?.name || "Custom Training Plan",
-          splitType: selectedTemplate?.splitType || "custom",
-          frequencyPerWeek: manualSessions.length,
-          sessions: manualSessions,
-          phaseId: phaseId || undefined,
-          effectiveFrom: effectiveFrom ?? undefined,
-        }),
+        body: JSON.stringify(buildManualPayload(options)),
       });
 
       if (!res.ok) {
@@ -159,7 +166,6 @@ export function useManualSessions({
         setSavedPlanId(data.savedPlanId);
         setManualSessions([]);
         setSelectedTemplate(null);
-        setPhaseId(undefined);
         toast({ title: "Plan draft created" });
         return true;
       } else {
@@ -175,7 +181,75 @@ export function useManualSessions({
     } finally {
       setIsSavingManual(false);
     }
-  }, [clientId, manualSessions, selectedTemplate, toast, phaseId, setPhaseId, setSavedPlanId]);
+  }, [clientId, manualSessions, toast, setSavedPlanId, buildManualPayload]);
+
+  /**
+   * Save the current scratch session structure directly to the coach library
+   * as a reusable template. Chains save-draft + promote-to-saved in one UX step.
+   * Skips the DraftEditor transition — the coach returns to the builder afterwards.
+   */
+  const saveManualPlanAsTemplate = useCallback(async (options: SaveManualOptions = {}) => {
+    if (manualSessions.length === 0) {
+      toast({
+        title: "No sessions",
+        description: "Add at least one training session",
+        variant: "destructive",
+      });
+      return false;
+    }
+
+    setIsSavingTemplate(true);
+    try {
+      const createRes = await fetch(`/api/clients/${clientId}/training/manual`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(buildManualPayload(options)),
+      });
+
+      if (!createRes.ok) {
+        const errorData = await createRes.json().catch(() => ({}));
+        throw new Error(errorData.error || `Server error: ${createRes.status}`);
+      }
+
+      const rawData = await createRes.json();
+      const data = parseSaveManualResponse(rawData);
+      if (!data?.success || !data.savedPlanId) {
+        throw new Error(data?.error || "Failed to save plan");
+      }
+
+      const promoteRes = await fetch(
+        `/api/training/saved-plans/${data.savedPlanId}/promote`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ saveSessionsIndividually: false }),
+        },
+      );
+
+      if (!promoteRes.ok) {
+        toast({
+          title: "Saved as draft",
+          description: "We saved it as a draft. Open Saved Plans to finish saving.",
+          variant: "destructive",
+        });
+        return false;
+      }
+
+      setManualSessions([]);
+      setSelectedTemplate(null);
+      toast({ title: "Saved to library" });
+      return true;
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to save template",
+        variant: "destructive",
+      });
+      return false;
+    } finally {
+      setIsSavingTemplate(false);
+    }
+  }, [clientId, manualSessions, toast, buildManualPayload]);
 
   /** Reset manual session state */
   const resetManualSessions = useCallback(() => {
@@ -187,6 +261,7 @@ export function useManualSessions({
     manualSessions,
     selectedTemplate,
     isSavingManual,
+    isSavingTemplate,
     addManualSession,
     updateManualSession,
     removeManualSession,
@@ -195,6 +270,7 @@ export function useManualSessions({
     removeExerciseFromSession,
     applyTemplate,
     saveManualPlan,
+    saveManualPlanAsTemplate,
     resetManualSessions,
   };
 }

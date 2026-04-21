@@ -1,13 +1,10 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useTrainingPlan } from "@/hooks/use-training-plan";
 import { useManualSessions } from "@/hooks/use-manual-sessions";
-import {
-  parseSuggestionsResponse,
-  parseRefreshExercisesResponse,
-} from "@/lib/validations/training";
+import { parseSuggestionsResponse } from "@/lib/validations/training";
 import type {
   BuilderMode,
   ManualCreationMode,
@@ -33,7 +30,7 @@ type UseTrainingBuilderProps = {
  * - mode/manualMode - Builder mode toggles
  * - AI suggestions - selectedSuggestionIds, aiSuggestions, fetchAiSuggestions
  * - Manual creation - manualSessions, add/update/remove methods, applyTemplate
- * - Utilities - refreshExercises, resetBuilder
+ * - Utilities - resetBuilder
  */
 export function useTrainingBuilder({ clientId, onUpdate }: UseTrainingBuilderProps) {
   const { toast } = useToast();
@@ -50,20 +47,9 @@ export function useTrainingBuilder({ clientId, onUpdate }: UseTrainingBuilderPro
   const [manualMode, setManualMode] = useState<ManualCreationMode>("template");
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // SESSION PARAMETERS (UI-only, drives preview bar)
-  // TODO: Include in generate() POST body when API supports session params
+  // PLAN NAME (shared across AI / Template / Scratch modes)
   // ═══════════════════════════════════════════════════════════════════════════
-  const [sessionsPerWeek, setSessionsPerWeek] = useState(3);
-  const [sessionDuration, setSessionDuration] = useState(45);
-
-  const totalMinutesPerWeek = useMemo(
-    () => sessionsPerWeek * sessionDuration,
-    [sessionsPerWeek, sessionDuration]
-  );
-  const estimatedExercises = useMemo(
-    () => Math.round(sessionDuration / 7.5),
-    [sessionDuration]
-  );
+  const [planName, setPlanName] = useState("");
 
   // ═══════════════════════════════════════════════════════════════════════════
   // AI SUGGESTIONS STATE
@@ -77,8 +63,6 @@ export function useTrainingBuilder({ clientId, onUpdate }: UseTrainingBuilderPro
   // ═══════════════════════════════════════════════════════════════════════════
   const manual = useManualSessions({
     clientId,
-    phaseId: trainingPlan.phaseId,
-    setPhaseId: trainingPlan.setPhaseId,
     fetchPlan: trainingPlan.fetchPlan,
     setSavedPlanId: trainingPlan.setSavedPlanId,
     onUpdate,
@@ -137,71 +121,53 @@ export function useTrainingBuilder({ clientId, onUpdate }: UseTrainingBuilderPro
     }
   }, [clientId, toast]);
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // EXERCISE REFRESH AND UTILITIES
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  const [isRefreshingExercises, setIsRefreshingExercises] = useState(false);
-
-  /** Refresh exercises for all sessions in the current plan */
-  const refreshExercises = useCallback(async () => {
-    if (!trainingPlan.plan) return false;
-
-    setIsRefreshingExercises(true);
-    try {
-      const res = await fetch(
-        `/api/clients/${clientId}/training/${trainingPlan.plan.id}/refresh-exercises`,
-        { method: "POST" }
-      );
-
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.error || `Server error: ${res.status}`);
-      }
-
-      const rawData = await res.json();
-      const data = parseRefreshExercisesResponse(rawData);
-
-      if (!data) {
-        console.error("Invalid API response structure:", rawData);
-        throw new Error("Invalid response from server");
-      }
-
-      if (data.success) {
-        toast({
-          title: "Exercises refreshed",
-          description: "New exercises have been generated for your training sessions",
-        });
-        trainingPlan.fetchPlan();
-        onUpdate?.();
-        return true;
-      } else {
-        throw new Error(data.error || "Failed to refresh exercises");
-      }
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to refresh exercises",
-        variant: "destructive",
-      });
-      return false;
-    } finally {
-      setIsRefreshingExercises(false);
-    }
-  }, [clientId, trainingPlan, toast, onUpdate]);
-
   /** Reset all builder state to initial values */
   const resetBuilder = useCallback(() => {
     setMode("ai");
     setManualMode("template");
     setSelectedSuggestionIds([]);
     setAiSuggestions([]);
+    setPlanName("");
     manual.resetManualSessions();
-    setSessionsPerWeek(3);
-    setSessionDuration(45);
     trainingPlan.setPrompt("");
     trainingPlan.setPreGenerationActivities([]);
   }, [trainingPlan, manual]);
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PLAN-NAME-AWARE WRAPPERS
+  // These inject the builder-level planName into downstream save calls so the
+  // overlay/footer can keep calling generate() / saveManualPlan() with no args.
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  const generateWithName = useCallback(
+    (effectiveFrom?: string | null) =>
+      trainingPlan.generate({ planName, effectiveFrom }),
+    [trainingPlan, planName],
+  );
+
+  const saveManualPlanWithName = useCallback(
+    (effectiveFrom?: string | null) =>
+      manual.saveManualPlan({ planName, effectiveFrom }),
+    [manual, planName],
+  );
+
+  const saveManualPlanAsTemplateWithName = useCallback(
+    () => manual.saveManualPlanAsTemplate({ planName }),
+    [manual, planName],
+  );
+
+  /**
+   * Pre-fill the plan name from a picked template if the coach hasn't already
+   * typed one — matches the expectation that a freshly-picked template "knows"
+   * its own name but lets the coach override.
+   */
+  const applyTemplateWithName = useCallback(
+    (template: Parameters<typeof manual.applyTemplate>[0]) => {
+      manual.applyTemplate(template);
+      setPlanName((current) => (current.trim().length === 0 ? template.name : current));
+    },
+    [manual],
+  );
 
   return {
     // Base training plan state and methods
@@ -213,13 +179,9 @@ export function useTrainingBuilder({ clientId, onUpdate }: UseTrainingBuilderPro
     manualMode,
     setManualMode,
 
-    // Session parameters (UI-only, drives preview bar)
-    sessionsPerWeek,
-    setSessionsPerWeek,
-    sessionDuration,
-    setSessionDuration,
-    totalMinutesPerWeek,
-    estimatedExercises,
+    // Plan naming (top-level, shared across modes)
+    planName,
+    setPlanName,
 
     // AI suggestions
     selectedSuggestionIds,
@@ -228,12 +190,14 @@ export function useTrainingBuilder({ clientId, onUpdate }: UseTrainingBuilderPro
     isLoadingSuggestions,
     fetchAiSuggestions,
 
-    // Manual creation
+    // Manual creation (spread first so we can override specific methods below)
     ...manual,
 
-    // Refresh exercises
-    refreshExercises,
-    isRefreshingExercises,
+    // Name-aware overrides
+    generate: generateWithName,
+    saveManualPlan: saveManualPlanWithName,
+    saveManualPlanAsTemplate: saveManualPlanAsTemplateWithName,
+    applyTemplate: applyTemplateWithName,
 
     // Utils
     resetBuilder,

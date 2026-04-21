@@ -8,20 +8,29 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MoreVertical, Copy, CopyPlus, Trash2 } from "lucide-react";
+import { MoreVertical, Copy, CopyPlus, Save, Trash2 } from "lucide-react";
 import type { TrainingEvent } from "@/types/training";
+import type { PhaseStatus } from "@/types/roadmap";
 
-type WeekAction = "duplicate_next" | "duplicate_remaining" | "clear";
+type WeekAction = "duplicate_next" | "duplicate_remaining" | "save_to_library" | "clear";
 
 type CalendarWeekRowProps = {
-  weekNumber: number;
   days: string[];
   eventsByDate: Map<string, TrainingEvent[]>;
   editMode: boolean;
   todayDate: string;
   duplicateMode: boolean;
+  /** Month shown in the grid; days outside it render dimmed. 0-indexed. */
+  viewMonth: number;
+  viewYear: number;
+  /** Per-day phase status for tinting. Keyed by YYYY-MM-DD. */
+  phaseByDate?: Map<string, PhaseStatus>;
+  /** Whether week-level actions should render. False when no plan or row spans plans. */
+  showWeekKebab: boolean;
+  weekActionDisabledReason?: string;
+  /** For "duplicate to remaining" — end of current plan/phase. */
   isLastWeek: boolean;
-  onWeekAction: (weekNumber: number, weekStartDate: string, action: WeekAction) => void;
+  onWeekAction: (weekStartDate: string, action: WeekAction) => void;
   onCellClick: (date: string) => void;
   onEventClick: (event: TrainingEvent) => void;
   onDuplicate: (event: TrainingEvent) => void;
@@ -29,12 +38,16 @@ type CalendarWeekRowProps = {
 };
 
 export const CalendarWeekRow = memo(function CalendarWeekRow({
-  weekNumber,
   days,
   eventsByDate,
   editMode,
   todayDate,
   duplicateMode,
+  viewMonth,
+  viewYear,
+  phaseByDate,
+  showWeekKebab,
+  weekActionDisabledReason,
   isLastWeek,
   onWeekAction,
   onCellClick,
@@ -46,50 +59,61 @@ export const CalendarWeekRow = memo(function CalendarWeekRow({
 
   return (
     <div className="flex gap-1">
-      {/* Week label + actions */}
+      {/* Kebab menu column (replaces W1/W2 label) */}
       <div className="w-10 flex-shrink-0 flex flex-col items-center pt-1">
-        <span className="text-[10px] font-semibold text-[#93b0b4] leading-none">
-          W{weekNumber}
-        </span>
-
-        {editMode && (
+        {editMode && showWeekKebab ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="mt-1 p-0.5 rounded hover:bg-[rgba(13,148,136,0.05)] transition-colors">
+              <button className="p-0.5 rounded hover:bg-[rgba(13,148,136,0.05)] transition-colors">
                 <MoreVertical className="h-3 w-3 text-[#93b0b4]" />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-52">
               {!isLastWeek && (
                 <DropdownMenuItem
-                  onClick={() => onWeekAction(weekNumber, weekStartDate, "duplicate_next")}
+                  onClick={() => onWeekAction(weekStartDate, "duplicate_next")}
                 >
                   <Copy className="h-3.5 w-3.5 mr-2" />
                   Duplicate to next week
                 </DropdownMenuItem>
               )}
               <DropdownMenuItem
-                onClick={() => onWeekAction(weekNumber, weekStartDate, "duplicate_remaining")}
+                onClick={() => onWeekAction(weekStartDate, "duplicate_remaining")}
               >
                 <CopyPlus className="h-3.5 w-3.5 mr-2" />
                 Duplicate to all remaining
               </DropdownMenuItem>
               <DropdownMenuItem
+                onClick={() => onWeekAction(weekStartDate, "save_to_library")}
+              >
+                <Save className="h-3.5 w-3.5 mr-2" />
+                Save as plan
+              </DropdownMenuItem>
+              <DropdownMenuItem
                 className="text-red-600 focus:text-red-600"
-                onClick={() => onWeekAction(weekNumber, weekStartDate, "clear")}
+                onClick={() => onWeekAction(weekStartDate, "clear")}
               >
                 <Trash2 className="h-3.5 w-3.5 mr-2" />
                 Clear week
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-        )}
+        ) : editMode && weekActionDisabledReason ? (
+          <span
+            className="text-[10px] text-[#93b0b4] cursor-help"
+            title={weekActionDisabledReason}
+          >
+            —
+          </span>
+        ) : null}
       </div>
 
       {/* Day cells */}
       <div className="flex-1 grid grid-cols-7 gap-1">
         {days.map((date) => {
           const dayDate = new Date(date + "T00:00:00");
+          const isOutsideMonth =
+            dayDate.getFullYear() !== viewYear || dayDate.getMonth() !== viewMonth;
           return (
             <CalendarDayCell
               key={date}
@@ -98,6 +122,8 @@ export const CalendarWeekRow = memo(function CalendarWeekRow({
               events={eventsByDate.get(date) ?? []}
               isToday={date === todayDate}
               isPast={date < todayDate}
+              isOutsideMonth={isOutsideMonth}
+              phaseStatus={phaseByDate?.get(date) ?? null}
               editMode={editMode}
               duplicateMode={duplicateMode}
               onCellClick={onCellClick}

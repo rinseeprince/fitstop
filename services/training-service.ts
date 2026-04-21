@@ -270,6 +270,7 @@ export const createTrainingPlanAtomic = async (params: {
   recentAdherencePercentage?: number;
   phaseId?: string;
   effectiveFrom?: string;
+  savedPlanId?: string;
 }): Promise<string> => {
   const { data: newPlanId, error: rpcError } = await supabaseAdmin
     .rpc("create_training_plan_atomic" as never, {
@@ -293,6 +294,7 @@ export const createTrainingPlanAtomic = async (params: {
       p_recent_adherence_percentage: params.recentAdherencePercentage || null,
       p_phase_id: params.phaseId || null,
       p_effective_from: params.effectiveFrom || null,
+      p_saved_plan_id: params.savedPlanId || null,
     } as never) as unknown as { data: string | null; error: { message: string } | null };
 
   if (rpcError || !newPlanId) {

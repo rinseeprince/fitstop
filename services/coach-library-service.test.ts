@@ -199,11 +199,15 @@ describe("coach-library-service", () => {
 
       await createSavedPlanFromAI("coach-1", aiPlan, "prompt");
 
-      // Should have been called twice for sessions
+      // 2 training sessions + 1 rest day session (cycleLength = 3, restPattern = [2])
       const sessionCalls = sessionInsertQuery.insert.mock.calls;
-      expect(sessionCalls).toHaveLength(2);
+      expect(sessionCalls).toHaveLength(3);
       expect(sessionCalls[0][0].order_index).toBe(0);
+      expect(sessionCalls[0][0].is_rest).toBe(false);
       expect(sessionCalls[1][0].order_index).toBe(1);
+      expect(sessionCalls[1][0].is_rest).toBe(false);
+      expect(sessionCalls[2][0].order_index).toBe(2);
+      expect(sessionCalls[2][0].is_rest).toBe(true);
     });
   });
 

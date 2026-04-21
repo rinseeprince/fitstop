@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createMockTrainingEvent } from "@/__tests__/helpers/mock-data-builders";
 
 // Mock supabase-admin before importing the service
@@ -46,6 +46,7 @@ import {
   duplicateWeek,
   duplicateWeekToRemaining,
   deleteEvent,
+  moveEventAndFuture,
 } from "./training-event-calendar-service";
 
 const mockFrom = vi.mocked(supabaseAdmin.from);
@@ -415,6 +416,222 @@ describe("training-event-calendar-service", () => {
       await expect(deleteEvent("event-1", "client-1", "plan-1")).rejects.toThrow(
         "Cannot delete past events"
       );
+    });
+  });
+
+  // =========================================================================
+  // moveEventAndFuture
+  // =========================================================================
+
+  describe("moveEventAndFuture", () => {
+    const clientId = "client-1";
+    const planId = "plan-1";
+    const sessionId = "session-1";
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-04-20T12:00:00"));
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("shifts all future scheduled siblings by the day offset without touching the template", async () => {
+      // Source: Mon Apr 27 -> Target: Wed Apr 29 (offset +2 days)
+      // Siblings: Apr 27, May 4, May 11 (three weekly Mondays).
+      const draggedEvent = {
+        id: "event-1",
+        date: "2026-04-27",
+        training_session_id: sessionId,
+        status: "scheduled",
+        client_id: clientId,
+        training_plan_id: planId,
+      };
+
+      const siblings = [
+        { id: "event-1", date: "2026-04-27" },
+        { id: "event-2", date: "2026-05-04" },
+        { id: "event-3", date: "2026-05-11" },
+      ];
+
+      const updateCalls: { id: string; data: Record<string, unknown> }[] = [];
+      let fromCallIndex = 0;
+
+      mockFrom.mockImplementation((table: string) => {
+        if (table === "training_sessions") {
+          throw new Error("Template must NOT be touched by moveEventAndFuture");
+        }
+        if (table === "training_plans") {
+          // validatePhaseBounds queries this per update; return no phase.
+          return createMockQuery({ data: { phase_id: null }, error: null }) as any;
+        }
+        if (table === "training_events") {
+          fromCallIndex++;
+          if (fromCallIndex === 1) {
+            // Initial fetch of the dragged event.
+            return createMockQuery({ data: draggedEvent, error: null }) as any;
+          }
+          if (fromCallIndex === 2) {
+            // Siblings fetch (thenable).
+            return createMockQuery({ data: siblings, error: null }) as any;
+          }
+          if (fromCallIndex === 3) {
+            // Collision check - no conflicts.
+            return createMockQuery({ data: [], error: null }) as any;
+          }
+          // Per-row updates (one query each, thenable chain).
+          const q = createMockQuery({ data: null, error: null });
+          let capturedId: string | undefined;
+          let capturedUpdate: Record<string, unknown> | undefined;
+          q.update = vi.fn().mockImplementation((data: Record<string, unknown>) => {
+            capturedUpdate = data;
+            return q;
+          });
+          q.eq = vi.fn().mockImplementation((col: string, value: string) => {
+            if (col === "id") capturedId = value;
+            return q;
+          });
+          Object.defineProperty(q, "then", {
+            value: (resolve: (value: { data: null; error: null }) => void) => {
+              if (capturedId && capturedUpdate) {
+                updateCalls.push({ id: capturedId, data: capturedUpdate });
+              }
+              return Promise.resolve({ data: null, error: null }).then(resolve);
+            },
+          });
+          return q as any;
+        }
+        return createMockQuery({ data: null, error: null }) as any;
+      });
+
+      await moveEventAndFuture("event-1", "2026-04-29", clientId, planId);
+
+      // All three siblings should be updated, each shifted by +2 days.
+      expect(updateCalls).toHaveLength(3);
+      const byId = new Map(updateCalls.map((u) => [u.id, u.data]));
+      expect(byId.get("event-1")).toMatchObject({ date: "2026-04-29", is_modified: true });
+      expect(byId.get("event-2")).toMatchObject({ date: "2026-05-06", is_modified: true });
+      expect(byId.get("event-3")).toMatchObject({ date: "2026-05-13", is_modified: true });
+    });
+
+    it("falls back to single-event move when the dragged event has no training_session_id", async () => {
+      // Library-placed / one-off event: session_id null. Should call moveEvent path,
+      // which fetches the event again (select * this time), checks collision, and updates.
+      const draggedEvent = {
+        id: "event-1",
+        date: "2026-04-27",
+        training_session_id: null,
+        status: "scheduled",
+        client_id: clientId,
+        training_plan_id: planId,
+      };
+
+      const draggedEventFull = {
+        ...draggedEvent,
+        session_name: "One-off",
+        session_focus: null,
+        estimated_calories: 300,
+        is_modified: false,
+      };
+
+      let fromCallIndex = 0;
+      let updateApplied = false;
+
+      mockFrom.mockImplementation((table: string) => {
+        if (table === "training_sessions") {
+          throw new Error("Template must NOT be touched");
+        }
+        if (table === "training_plans") {
+          return createMockQuery({ data: { phase_id: null }, error: null }) as any;
+        }
+        if (table === "training_events") {
+          fromCallIndex++;
+          if (fromCallIndex === 1) {
+            // Initial fetch by moveEventAndFuture.
+            return createMockQuery({ data: draggedEvent, error: null }) as any;
+          }
+          if (fromCallIndex === 2) {
+            // moveEvent's own fetch (select *).
+            return createMockQuery({ data: draggedEventFull, error: null }) as any;
+          }
+          // Update call from moveEvent.
+          const q = createMockQuery({ data: null, error: null });
+          q.update = vi.fn().mockImplementation(() => {
+            updateApplied = true;
+            return q;
+          });
+          Object.defineProperty(q, "then", {
+            value: (resolve: (value: { data: null; error: null }) => void) =>
+              Promise.resolve({ data: null, error: null }).then(resolve),
+          });
+          return q as any;
+        }
+        return createMockQuery({ data: null, error: null }) as any;
+      });
+
+      await moveEventAndFuture("event-1", "2026-04-29", clientId, planId);
+
+      expect(updateApplied).toBe(true);
+    });
+
+    it("throws on collision with another scheduled event on a shifted date", async () => {
+      const draggedEvent = {
+        id: "event-1",
+        date: "2026-04-27",
+        training_session_id: sessionId,
+        status: "scheduled",
+        client_id: clientId,
+        training_plan_id: planId,
+      };
+
+      const siblings = [
+        { id: "event-1", date: "2026-04-27" },
+        { id: "event-2", date: "2026-05-04" },
+      ];
+
+      // A stray event already occupies the target Wednesday (May 6 = May 4 + 2).
+      const collision = [{ id: "event-STRAY", date: "2026-05-06" }];
+
+      let fromCallIndex = 0;
+
+      mockFrom.mockImplementation((table: string) => {
+        if (table === "training_plans") {
+          return createMockQuery({ data: { phase_id: null }, error: null }) as any;
+        }
+        if (table === "training_events") {
+          fromCallIndex++;
+          if (fromCallIndex === 1) return createMockQuery({ data: draggedEvent, error: null }) as any;
+          if (fromCallIndex === 2) return createMockQuery({ data: siblings, error: null }) as any;
+          if (fromCallIndex === 3) return createMockQuery({ data: collision, error: null }) as any;
+          return createMockQuery({ data: null, error: null }) as any;
+        }
+        return createMockQuery({ data: null, error: null }) as any;
+      });
+
+      await expect(
+        moveEventAndFuture("event-1", "2026-04-29", clientId, planId)
+      ).rejects.toThrow(/conflicts with existing sessions/);
+    });
+
+    it("rejects moves into the past", async () => {
+      mockFrom.mockReturnValue(
+        createMockQuery({
+          data: {
+            id: "event-1",
+            date: "2026-04-27",
+            training_session_id: sessionId,
+            status: "scheduled",
+            client_id: clientId,
+            training_plan_id: planId,
+          },
+          error: null,
+        }) as any
+      );
+
+      await expect(
+        moveEventAndFuture("event-1", "2026-04-10", clientId, planId)
+      ).rejects.toThrow(/past date/);
     });
   });
 });

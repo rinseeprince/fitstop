@@ -6,6 +6,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { QuickSuggestions } from "./quick-suggestions";
 import { PreGenerationActivities } from "../../activities/pre-generation-activities";
 import { SameDayTrainingCheckbox } from "./same-day-training-checkbox";
+import { PlanNameInput } from "./plan-name-input";
 import { useTrainingBuilderContext } from "@/contexts/training-builder-context";
 import { Sparkles, Loader2, ArrowUp } from "lucide-react";
 
@@ -19,6 +20,14 @@ export const AIPromptPanel = memo(function AIPromptPanel({ clientWeightKg }: AIP
 
   return (
     <div className="space-y-5">
+      {/* Plan Name */}
+      <PlanNameInput
+        value={builder.planName}
+        onChange={builder.setPlanName}
+        placeholder="Plan name (optional)"
+        helpText="Leave blank and AI will suggest one for you."
+      />
+
       {/* Quick Suggestions */}
       <QuickSuggestions
         selectedIds={builder.selectedSuggestionIds}

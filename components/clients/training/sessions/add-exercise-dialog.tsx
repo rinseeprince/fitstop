@@ -23,6 +23,18 @@ type CatalogExercise = {
   equipment?: string;
 };
 
+type LocalExerciseData = {
+  name: string;
+  sets: number;
+  repsMin?: number;
+  repsMax?: number;
+  repsTarget?: string;
+  rpeTarget?: number;
+  restSeconds?: number;
+  notes?: string;
+  isWarmup: boolean;
+};
+
 type AddExerciseDialogProps = {
   clientId: string;
   planId: string;
@@ -30,6 +42,7 @@ type AddExerciseDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess: () => void;
+  onLocalAdd?: (exercise: LocalExerciseData) => void;
 };
 
 export function AddExerciseDialog({
@@ -39,6 +52,7 @@ export function AddExerciseDialog({
   open,
   onOpenChange,
   onSuccess,
+  onLocalAdd,
 }: AddExerciseDialogProps) {
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -103,29 +117,18 @@ export function AddExerciseDialog({
       return;
     }
 
-    setIsSubmitting(true);
-    try {
-      const res = await fetch(
-        `/api/clients/${clientId}/training/${planId}/sessions/${sessionId}/exercises`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: formData.name,
-            sets: parseInt(formData.sets) || 3,
-            repsMin: formData.repsMin ? parseInt(formData.repsMin) : undefined,
-            repsMax: formData.repsMax ? parseInt(formData.repsMax) : undefined,
-            rpeTarget: formData.rpeTarget ? parseFloat(formData.rpeTarget) : undefined,
-            restSeconds: formData.restSeconds ? parseInt(formData.restSeconds) : undefined,
-            notes: formData.notes || undefined,
-            isWarmup: formData.isWarmup,
-          }),
-        }
-      );
+    const exerciseData: LocalExerciseData = {
+      name: formData.name,
+      sets: parseInt(formData.sets) || 3,
+      repsMin: formData.repsMin ? parseInt(formData.repsMin) : undefined,
+      repsMax: formData.repsMax ? parseInt(formData.repsMax) : undefined,
+      rpeTarget: formData.rpeTarget ? parseFloat(formData.rpeTarget) : undefined,
+      restSeconds: formData.restSeconds ? parseInt(formData.restSeconds) : undefined,
+      notes: formData.notes || undefined,
+      isWarmup: formData.isWarmup,
+    };
 
-      if (!res.ok) throw new Error("Failed to add exercise");
-
-      toast({ title: "Exercise added" });
+    const resetForm = () => {
       setFormData({
         name: "",
         sets: "3",
@@ -138,6 +141,31 @@ export function AddExerciseDialog({
       });
       setCatalogResults([]);
       setShowSuggestions(false);
+    };
+
+    // Local mode: no API call
+    if (onLocalAdd) {
+      onLocalAdd(exerciseData);
+      resetForm();
+      onOpenChange(false);
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const res = await fetch(
+        `/api/clients/${clientId}/training/${planId}/sessions/${sessionId}/exercises`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(exerciseData),
+        }
+      );
+
+      if (!res.ok) throw new Error("Failed to add exercise");
+
+      toast({ title: "Exercise added" });
+      resetForm();
       onOpenChange(false);
       onSuccess();
     } catch (_error) {

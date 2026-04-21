@@ -10,6 +10,7 @@ type TrainingBuilderContextType = ReturnType<typeof useTrainingBuilder> & {
   editMode: boolean;
   setEditMode: (v: boolean) => void;
   activePhase: Phase | null;
+  phases: Phase[];
 };
 
 const TrainingBuilderContext = createContext<TrainingBuilderContextType | null>(null);
@@ -35,13 +36,15 @@ export function TrainingBuilderProvider({
     { revalidateOnFocus: false }
   );
 
+  const phases = useMemo(() => phasesData?.data ?? [], [phasesData]);
+
   const activePhase = useMemo(
-    () => phasesData?.data?.find((p) => p.status === "active") ?? null,
-    [phasesData]
+    () => phases.find((p) => p.status === "active") ?? null,
+    [phases]
   );
 
   return (
-    <TrainingBuilderContext.Provider value={{ ...builder, editMode, setEditMode, activePhase }}>
+    <TrainingBuilderContext.Provider value={{ ...builder, editMode, setEditMode, activePhase, phases }}>
       {children}
     </TrainingBuilderContext.Provider>
   );

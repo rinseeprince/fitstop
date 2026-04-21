@@ -72,9 +72,9 @@ export const generateTrainingPlanSchema = z.object({
     .string()
     .min(10, "Please provide more detail in your prompt (at least 10 characters)")
     .max(2000, "Prompt is too long (maximum 2000 characters)"),
+  name: z.string().trim().min(1).max(80).optional(),
   preGenerationActivities: z.array(preGenerationActivitySchema).optional(),
   allowSameDayTraining: z.boolean().optional().default(false),
-  phaseId: z.string().uuid().optional(),
   effectiveFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format").optional(),
 });
 
@@ -190,12 +190,6 @@ const suggestionsApiResponseSchema = z.object({
   error: z.string().optional(),
 });
 
-// POST /api/clients/[id]/training/[planId]/refresh-exercises response
-const refreshExercisesApiResponseSchema = z.object({
-  success: z.boolean(),
-  error: z.string().optional(),
-});
-
 // Response types for API calls
 export type UpcomingTrainingPlan = {
   id: string;
@@ -229,11 +223,6 @@ export type SaveManualPlanApiResponse = {
 export type SuggestionsApiResponse = {
   success: boolean;
   suggestions?: string[];
-  error?: string;
-};
-
-export type RefreshExercisesApiResponse = {
-  success: boolean;
   error?: string;
 };
 
@@ -274,11 +263,3 @@ export function parseSuggestionsResponse(data: unknown): SuggestionsApiResponse 
   return result.data;
 }
 
-export function parseRefreshExercisesResponse(data: unknown): RefreshExercisesApiResponse | null {
-  const result = refreshExercisesApiResponseSchema.safeParse(data);
-  if (!result.success) {
-    console.error("Validation error:", result.error.issues);
-    return null;
-  }
-  return result.data;
-}

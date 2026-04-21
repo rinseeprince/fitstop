@@ -19,6 +19,8 @@ The JSON must follow this exact structure:
   "splitType": "push_pull_legs" | "upper_lower" | "full_body" | "bro_split" | "push_pull" | "custom",
   "frequencyPerWeek": 3-6,
   "programDurationWeeks": 4-16 (optional, can be null),
+  "cycleLength": total days in one repeating cycle including rest days,
+  "restDayPositions": [0-indexed positions within the cycle that are rest days],
   "sessions": [
     {
       "name": "Session Name (e.g., 'Push Day A', 'Upper Body')",
@@ -49,6 +51,18 @@ ALWAYS set rpeTarget and restSeconds based on exercise type:
 - Moderate compounds (rows, lunges, RDLs, pull-ups, dips): restSeconds 90-120, rpeTarget 7-8
 - Isolation/accessories (curls, laterals, flyes, extensions): restSeconds 60-90, rpeTarget 7-8
 - Warm-up exercises (isWarmup: true): restSeconds 30-60, omit rpeTarget
+
+## Cycle Definition (MANDATORY)
+Define the complete training cycle including rest days using cycleLength and restDayPositions.
+- cycleLength = total days in one repeating cycle (training days + rest days)
+- restDayPositions = 0-indexed positions within the cycle that are rest days
+- The number of training sessions MUST equal cycleLength minus restDayPositions.length
+- Examples:
+  - Push/Pull/Legs/Rest: cycleLength: 4, restDayPositions: [3] (3 sessions)
+  - PPL x2 + Rest: cycleLength: 7, restDayPositions: [6] (6 sessions)
+  - Upper/Lower/Rest: cycleLength: 3, restDayPositions: [2] (2 sessions)
+  - Upper/Lower x2 + Rest: cycleLength: 5, restDayPositions: [4] (4 sessions)
+  - Full Body 3x (every other day): cycleLength: 2, restDayPositions: [1] (1 session, cycles through all sessions)
 
 Guidelines for creating effective programs:
 1. Consider the client's stated goals, current metrics, and recovery capacity
@@ -285,159 +299,3 @@ export const calculateCheckInAverages = (
   };
 };
 
-// System prompt for refreshing exercises only
-const REFRESH_EXERCISES_SYSTEM_PROMPT = `You are an expert strength and conditioning coach. Your task is to generate NEW exercises for an existing training program structure.
-
-IMPORTANT: Always respond with valid JSON only - no markdown, no code blocks, just the raw JSON object.
-Do NOT include coaching notes or form cues - this tool is for professional coaches who write their own cues.
-
-You will be given the current session structure. You must:
-1. KEEP the exact same session names, days, and focus areas
-2. GENERATE completely NEW exercises that still match each session's focus
-3. Vary exercise selection from typical choices to add variety
-4. Maintain similar volume (sets x reps) and intensity (RPE) structure
-5. Include appropriate warm-up exercises
-
-The JSON must follow this exact structure:
-{
-  "sessions": [
-    {
-      "sessionId": "the-session-id-provided",
-      "exercises": [
-        {
-          "name": "Exercise Name",
-          "sets": 3-5,
-          "repsMin": 6 (optional),
-          "repsMax": 12 (optional),
-          "repsTarget": "8-12" or "AMRAP" (alternative to min/max, optional),
-          "rpeTarget": 7-9,
-          "percentage1rm": null (optional),
-          "restSeconds": 60-180,
-          "supersetGroup": "A" (for pairing exercises, optional),
-          "isWarmup": false
-        }
-      ]
-    }
-  ]
-}
-
-## Rest & RPE Rules (MANDATORY for every non-warmup exercise)
-ALWAYS set rpeTarget and restSeconds based on exercise type:
-- Heavy compounds (squat, deadlift, bench press, overhead press): restSeconds 150-180, rpeTarget 7-9
-- Moderate compounds (rows, lunges, RDLs, pull-ups, dips): restSeconds 90-120, rpeTarget 7-8
-- Isolation/accessories (curls, laterals, flyes, extensions): restSeconds 60-90, rpeTarget 7-8
-- Warm-up exercises (isWarmup: true): restSeconds 30-60, omit rpeTarget
-
-Guidelines:
-1. Generate variety - if the current exercise is bench press, suggest incline dumbbell press, etc.
-2. Match the movement patterns and muscle groups of the session's focus
-3. Maintain similar training stimulus (strength, hypertrophy, power)
-4. Keep warm-up exercises relevant to the main work`;
-
-// Input type for refreshing exercises
-type RefreshExercisesInput = {
-  sessions: Array<{
-    id: string;
-    name: string;
-    focus?: string;
-    estimatedDurationMinutes?: number;
-    currentExerciseCount: number;
-  }>;
-  clientContext?: {
-    name: string;
-    experience?: string;
-    equipment?: string;
-  };
-};
-
-// Output type from AI
-type RefreshExercisesOutput = {
-  sessions: Array<{
-    sessionId: string;
-    exercises: Array<{
-      name: string;
-      sets: number;
-      repsMin?: number;
-      repsMax?: number;
-      repsTarget?: string;
-      rpeTarget?: number;
-      percentage1rm?: number;
-      tempo?: string;
-      restSeconds?: number;
-      notes?: string;
-      supersetGroup?: string;
-      isWarmup?: boolean;
-    }>;
-  }>;
-};
-
-// Regenerate exercises for existing sessions
-export const regenerateExercisesAI = async (
-  input: RefreshExercisesInput
-): Promise<{ result: RefreshExercisesOutput; rawResponse: string }> => {
-  let prompt = `## Current Training Program Sessions:\n\n`;
-
-  for (const session of input.sessions) {
-    prompt += `### Session: ${session.name}\n`;
-    prompt += `- Session ID: ${session.id}\n`;
-    if (session.focus) prompt += `- Focus: ${session.focus}\n`;
-    if (session.estimatedDurationMinutes) {
-      prompt += `- Target Duration: ${session.estimatedDurationMinutes} minutes\n`;
-    }
-    prompt += `- Current Exercise Count: ${session.currentExerciseCount}\n`;
-    prompt += `\n`;
-  }
-
-  if (input.clientContext) {
-    prompt += `## Client Context:\n`;
-    prompt += `- Name: ${input.clientContext.name}\n`;
-    if (input.clientContext.experience) {
-      prompt += `- Experience: ${input.clientContext.experience}\n`;
-    }
-    if (input.clientContext.equipment) {
-      prompt += `- Available Equipment: ${input.clientContext.equipment}\n`;
-    }
-    prompt += `\n`;
-  }
-
-  prompt += `## Task:\nGenerate NEW exercises for each session above. The exercises should be different from typical choices to provide variety, but still match the session's focus and goals. Generate approximately the same number of exercises as currently in each session. Include 1-2 warm-up exercises per session.`;
-
-  const completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [
-      { role: "system", content: REFRESH_EXERCISES_SYSTEM_PROMPT },
-      { role: "user", content: prompt },
-    ],
-    temperature: 0.8, // Higher temperature for more variety
-    max_tokens: 4000,
-    response_format: { type: "json_object" },
-  }, { timeout: 45000 });
-
-  const rawResponse = completion.choices[0]?.message?.content || "";
-
-  try {
-    const result = JSON.parse(rawResponse) as RefreshExercisesOutput;
-
-    // Validate sessions
-    if (!result.sessions || result.sessions.length === 0) {
-      throw new Error("AI generated response with no sessions");
-    }
-
-    // Ensure each exercise has required fields
-    result.sessions = result.sessions.map((session) => ({
-      ...session,
-      exercises: (session.exercises || []).map((exercise) => ({
-        ...exercise,
-        name: exercise.name || "Exercise",
-        sets: Math.max(1, Math.min(20, exercise.sets || 3)),
-        isWarmup: exercise.isWarmup || false,
-      })),
-    }));
-
-    return { result, rawResponse };
-  } catch (error) {
-    console.error("Failed to parse AI refresh exercises response:", error);
-    console.error("Raw response:", rawResponse);
-    throw new Error("Failed to parse AI-generated exercises", { cause: error });
-  }
-};

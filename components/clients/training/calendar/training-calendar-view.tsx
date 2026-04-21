@@ -8,53 +8,58 @@ import { CalendarWeekRow } from "./calendar-week-row";
 import { CalendarEventCard } from "./calendar-event-card";
 import { MoveScopeDialog } from "./move-scope-dialog";
 import { SessionDetailDrawer } from "./session-detail-drawer";
+import { LibraryPanel } from "./library-panel";
+import { ApplyToClientDialog } from "@/components/training-library/apply-to-client-dialog";
 import { useToast } from "@/hooks/use-toast";
+import { useSavedPlans } from "@/hooks/use-saved-plans";
 import { getTodayDateString, getDateString } from "@/lib/date-helpers";
-import { Loader2, X } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { BookOpen, Loader2, X, ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import { format } from "date-fns";
 import type { TrainingPlan, TrainingEvent } from "@/types/training";
-import type { Phase } from "@/types/roadmap";
+import type { Phase, PhaseStatus } from "@/types/roadmap";
 
 const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 type TrainingCalendarViewProps = {
   clientId: string;
-  planId: string;
-  plan: TrainingPlan;
-  activePhase: Phase | null;
+  plan: TrainingPlan | null;
+  phases: Phase[];
   editMode: boolean;
   onUpdate: () => void;
 };
 
-function computeDateRange(plan: TrainingPlan, activePhase: Phase | null) {
-  const startDate = activePhase?.startDate ?? plan.effectiveFrom ?? getTodayDateString();
-  let endDate = activePhase?.endDate;
-  if (!endDate && plan.effectiveFrom && plan.programDurationWeeks) {
-    const end = new Date(plan.effectiveFrom + "T00:00:00");
-    end.setDate(end.getDate() + plan.programDurationWeeks * 7 - 1);
-    endDate = getDateString(end);
-  }
-  if (!endDate) {
-    const end = new Date(startDate + "T00:00:00");
-    end.setDate(end.getDate() + 55); // 8 weeks fallback
-    endDate = getDateString(end);
-  }
-  return { startDate, endDate };
+/** Returns the Monday on or before the given date (local time). */
+function mondayOnOrBefore(d: Date): Date {
+  const result = new Date(d);
+  const day = result.getDay(); // 0 = Sun
+  const offset = day === 0 ? -6 : 1 - day;
+  result.setDate(result.getDate() + offset);
+  return result;
 }
 
-function computeWeeks(startDate: string, endDate: string): string[][] {
+/** Returns the Sunday on or after the given date (local time). */
+function sundayOnOrAfter(d: Date): Date {
+  const result = new Date(d);
+  const day = result.getDay();
+  const offset = day === 0 ? 0 : 7 - day;
+  result.setDate(result.getDate() + offset);
+  return result;
+}
+
+function buildWeeks(gridStart: Date, gridEnd: Date): string[][] {
   const weeks: string[][] = [];
-  const start = new Date(startDate + "T00:00:00");
-  // Align to Monday
-  const dayOfWeek = start.getDay();
-  const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-  const monday = new Date(start);
-  monday.setDate(monday.getDate() + mondayOffset);
-
-  const end = new Date(endDate + "T00:00:00");
-  const current = new Date(monday);
-
-  while (current <= end) {
+  const current = new Date(gridStart);
+  while (current <= gridEnd) {
     const week: string[] = [];
     for (let d = 0; d < 7; d++) {
       week.push(getDateString(current));
@@ -67,9 +72,8 @@ function computeWeeks(startDate: string, endDate: string): string[][] {
 
 export function TrainingCalendarView({
   clientId,
-  planId,
   plan,
-  activePhase,
+  phases,
   editMode,
   onUpdate,
 }: TrainingCalendarViewProps) {
@@ -78,27 +82,96 @@ export function TrainingCalendarView({
   const scrollRef = useRef<HTMLDivElement>(null);
   const todayRowRef = useRef<HTMLDivElement>(null);
 
+  // Month nav state — defaults to the current month
+  const [viewMonth, setViewMonth] = useState(() => {
+    const today = new Date();
+    return { year: today.getFullYear(), month: today.getMonth() };
+  });
+
   // State
-  const [selectedSession, setSelectedSession] = useState<string | null>(null);
+  const [selectedSession, setSelectedSession] = useState<{ sessionId: string; eventId: string; planId: string } | null>(null);
   const [pendingDuplicate, setPendingDuplicate] = useState<TrainingEvent | null>(null);
   const [isWeekActionLoading, setIsWeekActionLoading] = useState(false);
+  const [saveDialogWeek, setSaveDialogWeek] = useState<string | null>(null);
+  const [savePlanName, setSavePlanName] = useState("");
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [applyFromDrop, setApplyFromDrop] = useState<{ planId: string; startDate: string } | null>(null);
 
-  // Compute date range and weeks
-  const { startDate, endDate } = useMemo(() => computeDateRange(plan, activePhase), [plan, activePhase]);
-  const weeks = useMemo(() => computeWeeks(startDate, endDate), [startDate, endDate]);
+  // Compute grid range for the viewed month
+  const { weeks, startDate, endDate } = useMemo(() => {
+    const firstOfMonth = new Date(viewMonth.year, viewMonth.month, 1);
+    const lastOfMonth = new Date(viewMonth.year, viewMonth.month + 1, 0);
+    const gs = mondayOnOrBefore(firstOfMonth);
+    const ge = sundayOnOrAfter(lastOfMonth);
+    return {
+      weeks: buildWeeks(gs, ge),
+      startDate: getDateString(gs),
+      endDate: getDateString(ge),
+    };
+  }, [viewMonth]);
 
-  // Fetch events
-  const { events, eventsByDate, isLoading, mutate } = useCalendarEvents(clientId, planId, startDate, endDate);
+  // Fetch events across all plans for this range
+  const { events, eventsByDate, isLoading, mutate } = useCalendarEvents(clientId, startDate, endDate);
 
-  // DnD
-  const dnd = useCalendarDnd({ events, eventsByDate, clientId, planId, mutate });
+  // Saved plans for apply-from-drop dialog
+  const { plans: savedPlans } = useSavedPlans();
 
-  // Scroll to today on mount
+  // DnD with library drop handlers
+  const dnd = useCalendarDnd({
+    events,
+    eventsByDate,
+    clientId,
+    mutate,
+    onLibraryPlanDrop: (libraryPlanId, targetStartDate) => {
+      setApplyFromDrop({ planId: libraryPlanId, startDate: targetStartDate });
+    },
+    onLibrarySessionDrop: (sessionId, targetDate) => {
+      void (async () => {
+        if (!plan) {
+          toast({
+            title: "No active plan",
+            description: "Generate a plan before dropping sessions from the library.",
+            variant: "destructive",
+          });
+          return;
+        }
+        try {
+          const res = await fetch(`/api/clients/${clientId}/training/place-from-library`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              type: "session",
+              savedSessionId: sessionId,
+              planId: plan.id,
+              targetDate,
+            }),
+          });
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.error || "Failed to place session");
+          }
+          toast({ title: "Session placed" });
+          await mutate();
+        } catch (error) {
+          toast({
+            title: "Placement failed",
+            description: error instanceof Error ? error.message : "Failed to place session",
+            variant: "destructive",
+          });
+        }
+      })();
+    },
+  });
+
+  // Scroll today row into view when the viewed month contains today
   useEffect(() => {
-    if (todayRowRef.current) {
+    const viewingCurrentMonth =
+      new Date().getFullYear() === viewMonth.year &&
+      new Date().getMonth() === viewMonth.month;
+    if (viewingCurrentMonth && todayRowRef.current) {
       todayRowRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
     }
-  }, [isLoading]);
+  }, [isLoading, viewMonth]);
 
   // Escape key to cancel duplicate mode
   useEffect(() => {
@@ -112,22 +185,43 @@ export function TrainingCalendarView({
 
   // Find session from plan for drawer
   const selectedSessionData = useMemo(() => {
-    if (!selectedSession) return null;
-    return plan.sessions.find((s) => s.id === selectedSession) ?? null;
-  }, [selectedSession, plan.sessions]);
+    if (!selectedSession || !plan) return null;
+    return plan.sessions.find((s) => s.id === selectedSession.sessionId) ?? null;
+  }, [selectedSession, plan]);
 
   // Count events sharing the selected session
   const sharedEventCount = useMemo(() => {
     if (!selectedSession) return 0;
-    return events.filter((e) => e.trainingSessionId === selectedSession).length;
+    return events.filter((e) => e.trainingSessionId === selectedSession.sessionId).length;
   }, [selectedSession, events]);
+
+  // Build per-day phase status map for tinting
+  const phaseByDate = useMemo(() => {
+    const map = new Map<string, PhaseStatus>();
+    if (phases.length === 0) return map;
+    const phasesSorted = [...phases].sort((a, b) => (a.startDate ?? "").localeCompare(b.startDate ?? ""));
+    // Iterate each day in grid; linear scan over phases (typically <= 5)
+    for (const week of weeks) {
+      for (const date of week) {
+        for (const phase of phasesSorted) {
+          const start = phase.startDate;
+          const end = phase.endDate;
+          if (start && end && date >= start && date <= end) {
+            map.set(date, phase.status);
+            break;
+          }
+        }
+      }
+    }
+    return map;
+  }, [phases, weeks]);
 
   // Cell click handler (for duplicate mode)
   const handleCellClick = useCallback(async (targetDate: string) => {
     if (!pendingDuplicate) return;
     try {
       const res = await fetch(
-        `/api/clients/${clientId}/training/${planId}/events/${pendingDuplicate.id}/duplicate`,
+        `/api/clients/${clientId}/training/${pendingDuplicate.trainingPlanId}/events/${pendingDuplicate.id}/duplicate`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -149,31 +243,84 @@ export function TrainingCalendarView({
     } finally {
       setPendingDuplicate(null);
     }
-  }, [pendingDuplicate, clientId, planId, mutate, toast]);
+  }, [pendingDuplicate, clientId, mutate, toast]);
+
+  const handleSavePlanFromCalendar = useCallback(async (weekStartDate: string, name: string, sourcePlanId: string) => {
+    try {
+      const res = await fetch("/api/training/saved-plans/from-calendar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId, planId: sourcePlanId, weekStartDate, name }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to save plan");
+      }
+      toast({ title: "Saved to library", description: `"${name}" saved to your training library` });
+    } catch (error) {
+      toast({
+        title: "Save failed",
+        description: error instanceof Error ? error.message : "Failed to save plan",
+        variant: "destructive",
+      });
+    }
+  }, [clientId, toast]);
+
+  // Resolve the single plan a week row belongs to, or null if mixed/empty.
+  const weekRowPlanId = useCallback(
+    (days: string[]): string | null => {
+      const ids = new Set<string>();
+      for (const date of days) {
+        for (const e of eventsByDate.get(date) ?? []) {
+          ids.add(e.trainingPlanId);
+        }
+      }
+      if (ids.size === 1) return [...ids][0];
+      return null;
+    },
+    [eventsByDate]
+  );
 
   // Week action handler
   const handleWeekAction = useCallback(async (
-    weekNumber: number,
     weekStartDate: string,
-    action: "duplicate_next" | "duplicate_remaining" | "clear"
+    action: "duplicate_next" | "duplicate_remaining" | "save_to_library" | "clear"
   ) => {
+    const weekDays: string[] = [];
+    const ws = new Date(weekStartDate + "T00:00:00");
+    for (let d = 0; d < 7; d++) {
+      weekDays.push(getDateString(ws));
+      ws.setDate(ws.getDate() + 1);
+    }
+    const rowPlanId = weekRowPlanId(weekDays);
+    if (!rowPlanId) {
+      toast({
+        title: "Mixed plans",
+        description: "Week-level actions require a single plan in this row.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (action === "save_to_library") {
+      setSaveDialogWeek(weekStartDate);
+      setSavePlanName(`${plan?.name ?? "Plan"} - ${format(new Date(weekStartDate + "T00:00:00"), "MMM d")}`);
+      return;
+    }
+
     setIsWeekActionLoading(true);
     try {
       if (action === "clear") {
-        // Delete all scheduled events in this week
-        const weekEvents = [];
-        const weekStart = new Date(weekStartDate + "T00:00:00");
-        for (let d = 0; d < 7; d++) {
-          const date = getDateString(weekStart);
+        const weekEvents: TrainingEvent[] = [];
+        for (const date of weekDays) {
           const dayEvents = eventsByDate.get(date) ?? [];
           weekEvents.push(...dayEvents.filter((e) => e.status === "scheduled"));
-          weekStart.setDate(weekStart.getDate() + 1);
         }
         let clearFailed = false;
         for (const event of weekEvents) {
           try {
             const res = await fetch(
-              `/api/clients/${clientId}/training/${planId}/events/${event.id}/move`,
+              `/api/clients/${clientId}/training/${event.trainingPlanId}/events/${event.id}`,
               { method: "DELETE" }
             );
             if (!res.ok) clearFailed = true;
@@ -184,13 +331,13 @@ export function TrainingCalendarView({
         if (clearFailed) {
           toast({ title: "Error", description: "Some events could not be deleted", variant: "destructive" });
         } else {
-          toast({ title: `Week ${weekNumber} cleared` });
+          toast({ title: "Week cleared" });
         }
       } else if (action === "duplicate_next") {
         const nextWeekStart = new Date(weekStartDate + "T00:00:00");
         nextWeekStart.setDate(nextWeekStart.getDate() + 7);
         const res = await fetch(
-          `/api/clients/${clientId}/training/${planId}/events/duplicate-week`,
+          `/api/clients/${clientId}/training/${rowPlanId}/events/duplicate-week`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -206,15 +353,23 @@ export function TrainingCalendarView({
         }
         toast({ title: "Week duplicated to next week" });
       } else {
+        // duplicate_remaining — use plan's effective range when available
+        const phaseEnd = (plan && plan.effectiveFrom && plan.programDurationWeeks)
+          ? (() => {
+              const end = new Date(plan.effectiveFrom + "T00:00:00");
+              end.setDate(end.getDate() + plan.programDurationWeeks * 7 - 1);
+              return getDateString(end);
+            })()
+          : undefined;
         const res = await fetch(
-          `/api/clients/${clientId}/training/${planId}/events/duplicate-week`,
+          `/api/clients/${clientId}/training/${rowPlanId}/events/duplicate-week`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               sourceStartDate: weekStartDate,
               fillRemaining: true,
-              phaseEndDate: endDate,
+              phaseEndDate: phaseEnd,
             }),
           }
         );
@@ -234,15 +389,22 @@ export function TrainingCalendarView({
     } finally {
       setIsWeekActionLoading(false);
     }
-  }, [clientId, planId, endDate, eventsByDate, mutate, toast]);
+  }, [clientId, plan, eventsByDate, mutate, toast, weekRowPlanId]);
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-6 w-6 animate-spin text-[#93b0b4]" />
-      </div>
+  const monthLabel = format(new Date(viewMonth.year, viewMonth.month, 1), "MMMM yyyy");
+
+  const goPrevMonth = () =>
+    setViewMonth(({ year, month }) =>
+      month === 0 ? { year: year - 1, month: 11 } : { year, month: month - 1 }
     );
-  }
+  const goNextMonth = () =>
+    setViewMonth(({ year, month }) =>
+      month === 11 ? { year: year + 1, month: 0 } : { year, month: month + 1 }
+    );
+  const goToday = () => {
+    const today = new Date();
+    setViewMonth({ year: today.getFullYear(), month: today.getMonth() });
+  };
 
   return (
     <DndContext
@@ -267,6 +429,50 @@ export function TrainingCalendarView({
           </div>
         )}
 
+        {/* Month nav toolbar */}
+        <div className="flex items-center gap-2 px-1">
+          <button
+            onClick={goPrevMonth}
+            aria-label="Previous month"
+            className="p-1 rounded hover:bg-[rgba(13,148,136,0.05)] transition-colors"
+          >
+            <ChevronLeft className="h-4 w-4 text-[#5a7d82]" />
+          </button>
+          <span className="text-[13px] font-semibold text-[#0c1a1e] min-w-[120px] text-center">
+            {monthLabel}
+          </span>
+          <button
+            onClick={goNextMonth}
+            aria-label="Next month"
+            className="p-1 rounded hover:bg-[rgba(13,148,136,0.05)] transition-colors"
+          >
+            <ChevronRight className="h-4 w-4 text-[#5a7d82]" />
+          </button>
+          <button
+            onClick={goToday}
+            className="text-[11px] font-medium text-[#5a7d82] hover:text-[#0c1a1e] px-2 py-1 rounded transition-colors"
+          >
+            Today
+          </button>
+
+          <div className="ml-auto flex items-center gap-2">
+            {editMode && (
+              <Button
+                variant={libraryOpen ? "default" : "outline"}
+                size="sm"
+                className="h-7 text-[11px]"
+                onClick={() => setLibraryOpen(!libraryOpen)}
+              >
+                <BookOpen className="h-3 w-3 mr-1" />
+                Library
+              </Button>
+            )}
+            {isLoading && (
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-[#93b0b4]" />
+            )}
+          </div>
+        </div>
+
         {/* Day headers */}
         <div className="flex gap-1">
           <div className="w-10 flex-shrink-0" />
@@ -283,28 +489,46 @@ export function TrainingCalendarView({
         <div ref={scrollRef} className="flex flex-col gap-1 max-h-[600px] overflow-y-auto">
           {weeks.map((days, i) => {
             const containsToday = days.includes(todayDate);
+            const rowPlanId = weekRowPlanId(days);
+            const rowHasEvents = days.some((d) => (eventsByDate.get(d) ?? []).length > 0);
+            const showKebab = !!plan && !!rowPlanId && rowHasEvents;
+            const disabledReason = !rowHasEvents
+              ? undefined
+              : rowPlanId === null
+              ? "Mixed plans — use session menu"
+              : undefined;
             return (
               <div key={days[0]} ref={containsToday ? todayRowRef : undefined}>
                 <CalendarWeekRow
-                  weekNumber={i + 1}
                   days={days}
                   eventsByDate={eventsByDate}
                   editMode={editMode}
                   todayDate={todayDate}
                   duplicateMode={!!pendingDuplicate}
+                  viewMonth={viewMonth.month}
+                  viewYear={viewMonth.year}
+                  phaseByDate={phaseByDate}
+                  showWeekKebab={showKebab}
+                  weekActionDisabledReason={disabledReason}
                   isLastWeek={i === weeks.length - 1}
                   onWeekAction={handleWeekAction}
                   onCellClick={handleCellClick}
                   onEventClick={(event) => {
                     if (pendingDuplicate) return;
-                    setSelectedSession(event.trainingSessionId);
+                    if (event.trainingSessionId) {
+                      setSelectedSession({
+                        sessionId: event.trainingSessionId,
+                        eventId: event.id,
+                        planId: event.trainingPlanId,
+                      });
+                    }
                   }}
                   onDuplicate={(event) => setPendingDuplicate(event)}
                   onDelete={async (event) => {
                     if (!confirm(`Delete "${event.sessionName}" on ${event.date}?`)) return;
                     try {
                       const res = await fetch(
-                        `/api/clients/${clientId}/training/${planId}/events/${event.id}`,
+                        `/api/clients/${clientId}/training/${event.trainingPlanId}/events/${event.id}`,
                         { method: "DELETE" }
                       );
                       if (!res.ok) {
@@ -323,6 +547,12 @@ export function TrainingCalendarView({
             );
           })}
         </div>
+
+        {isWeekActionLoading && (
+          <div className="flex items-center justify-center py-2">
+            <Loader2 className="h-4 w-4 animate-spin text-[#93b0b4]" />
+          </div>
+        )}
       </div>
 
       {/* Drag overlay */}
@@ -350,6 +580,58 @@ export function TrainingCalendarView({
         />
       )}
 
+      {/* Save plan to library dialog */}
+      <Dialog
+        open={!!saveDialogWeek}
+        onOpenChange={(open) => { if (!open) setSaveDialogWeek(null); }}
+      >
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Save as Plan</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="save-plan-name">Plan Name</Label>
+            <Input
+              id="save-plan-name"
+              value={savePlanName}
+              onChange={(e) => setSavePlanName(e.target.value)}
+              placeholder="Enter plan name"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSaveDialogWeek(null)}>
+              Cancel
+            </Button>
+            <Button
+              disabled={!savePlanName.trim()}
+              onClick={async () => {
+                if (!saveDialogWeek || !savePlanName.trim()) return;
+                const rowPlanId = weekRowPlanId(
+                  (() => {
+                    const wd: string[] = [];
+                    const ws = new Date(saveDialogWeek + "T00:00:00");
+                    for (let d = 0; d < 7; d++) {
+                      wd.push(getDateString(ws));
+                      ws.setDate(ws.getDate() + 1);
+                    }
+                    return wd;
+                  })()
+                );
+                if (!rowPlanId) {
+                  toast({ title: "Mixed plans", variant: "destructive" });
+                  setSaveDialogWeek(null);
+                  return;
+                }
+                await handleSavePlanFromCalendar(saveDialogWeek, savePlanName.trim(), rowPlanId);
+                setSaveDialogWeek(null);
+              }}
+            >
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Session detail drawer */}
       <SessionDetailDrawer
         open={!!selectedSession}
@@ -357,14 +639,44 @@ export function TrainingCalendarView({
           if (!open) setSelectedSession(null);
         }}
         session={selectedSessionData}
+        eventId={selectedSession?.eventId}
         clientId={clientId}
-        planId={planId}
+        planId={selectedSession?.planId ?? plan?.id ?? ""}
         sharedEventCount={sharedEventCount}
         onUpdate={() => {
           onUpdate();
-          mutate();
+          void mutate();
         }}
+        onSelectSession={(sessionId, eventId) =>
+          setSelectedSession(
+            selectedSession
+              ? { sessionId, eventId, planId: selectedSession.planId }
+              : null
+          )
+        }
       />
+
+      {/* Library panel */}
+      <LibraryPanel open={libraryOpen} onOpenChange={setLibraryOpen} />
+
+      {/* Apply from library drop dialog */}
+      {applyFromDrop && (() => {
+        const dropPlan = savedPlans.find((p) => p.id === applyFromDrop.planId);
+        if (!dropPlan) return null;
+        return (
+          <ApplyToClientDialog
+            open={!!applyFromDrop}
+            onOpenChange={(open) => { if (!open) setApplyFromDrop(null); }}
+            savedPlan={dropPlan}
+            preselectedClientId={clientId}
+            onSuccess={() => {
+              setApplyFromDrop(null);
+              void mutate();
+              onUpdate();
+            }}
+          />
+        );
+      })()}
     </DndContext>
   );
 }

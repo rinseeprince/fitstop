@@ -199,23 +199,15 @@ export async function regenerateFutureNutritionEvents(
 
   if (targetsError) throw targetsError;
 
-  // Fetch active training plan and sync is_training_day on daily targets
+  // `nutrition_plan_daily_targets.is_training_day` is no longer synced here.
+  // Under the current architecture training sessions live on dates (via
+  // training_events), not days of week — getTrainingDays() used to read
+  // session.dayOfWeek which is always null now, producing stale Mon/Tue/Thu/Fri
+  // defaults and wrong badges. All display paths now derive isTrainingDay
+  // from the actual event rows via buildDailyTargetsFromPlan, so the stored
+  // column is no longer read. The per-date `nutrition_events.is_training_day`
+  // written below by generateNutritionEvents remains the source of truth.
   const trainingPlan = await getActiveTrainingPlan(clientId);
-  if (trainingPlan && dailyTargetRows) {
-    const { getTrainingDays } = await import("@/utils/nutrition-helpers");
-    const trainingDays = getTrainingDays(trainingPlan);
-    for (const row of dailyTargetRows) {
-      const shouldBeTrain = trainingDays.has(row.day_of_week);
-      if (row.is_training_day !== shouldBeTrain) {
-        await supabaseAdmin
-          .from("nutrition_plan_daily_targets")
-          .update({ is_training_day: shouldBeTrain })
-          .eq("nutrition_plan_id", planId)
-          .eq("day_of_week", row.day_of_week);
-        row.is_training_day = shouldBeTrain;
-      }
-    }
-  }
 
   // Calculate end date
   const endDate = await calculateNutritionEndDate(planId, fromDate);

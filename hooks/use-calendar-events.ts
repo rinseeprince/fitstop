@@ -11,18 +11,18 @@ type EventsResponse = {
 };
 
 /**
- * Fetches and memoizes calendar events for a plan's full date range.
- * Returns events grouped by date for O(1) cell lookup.
+ * Fetches and memoizes calendar events for a client across a date range.
+ * Returns events grouped by date for O(1) cell lookup. Includes events from
+ * all plans (active, planned, archived) so historical months render correctly.
  */
 export function useCalendarEvents(
-  clientId: string,
-  planId: string | null,
+  clientId: string | null,
   startDate: string | null,
   endDate: string | null
 ) {
   const key =
-    clientId && planId && startDate && endDate
-      ? `/api/clients/${clientId}/training/${planId}/events?startDate=${startDate}&endDate=${endDate}`
+    clientId && startDate && endDate
+      ? `/api/clients/${clientId}/training/events?startDate=${startDate}&endDate=${endDate}`
       : null;
 
   const { data, error, isLoading, mutate } = useSWR<EventsResponse>(key, swrFetcher, {

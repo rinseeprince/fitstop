@@ -1,5 +1,5 @@
 import { supabaseAdmin } from "./supabase-admin";
-import { calculateDailyMacros, DAYS_OF_WEEK, getTrainingDays } from "@/utils/nutrition-helpers";
+import { calculateDailyMacros, DAYS_OF_WEEK } from "@/utils/nutrition-helpers";
 import type { DietType, DayCalorieOverrides } from "@/types/check-in";
 import type { DayOfWeek } from "@/utils/nutrition-helpers";
 import type { TrainingPlan } from "@/types/training";
@@ -58,13 +58,17 @@ export async function createNutritionPlan(params: CreateNutritionPlanParams): Pr
       });
     }
   } else {
-    const trainingDays = getTrainingDays(params.trainingPlan);
-
+    // is_training_day is stored for schema compatibility but is no longer the
+    // source of truth for the training/rest badge. The badge is derived per
+    // day-of-week from live training_events at read time in
+    // buildDailyTargetsFromPlan — see that function's `day in surplusByDay`
+    // check. Writing false here is safe because calculateDailyMacros ignores
+    // the isTrainingDay arg (see the underscore prefix on its parameter).
     for (const day of DAYS_OF_WEEK) {
       const baselineMacros = calculateDailyMacros(
         params.baselineCalories,
         params.proteinTargetG,
-        trainingDays.has(day),
+        false,
         params.dietType
       );
 
@@ -74,7 +78,7 @@ export async function createNutritionPlan(params: CreateNutritionPlanParams): Pr
         protein_g: baselineMacros.proteinG,
         carb_g: baselineMacros.carbsG,
         fat_g: baselineMacros.fatG,
-        is_training_day: trainingDays.has(day),
+        is_training_day: false,
       });
     }
   }

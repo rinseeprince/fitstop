@@ -21,15 +21,15 @@ const manualSessionSchema = z.object({
   name: z.string().min(1),
   dayOfWeek: z.string().optional(),
   focus: z.string().optional(),
+  isRest: z.boolean().optional(),
   exercises: z.array(manualExerciseSchema),
 });
 
 const manualPlanSchema = z.object({
-  name: z.string().min(1).default("Custom Training Plan"),
+  name: z.string().trim().min(1).max(80).default("Custom Training Plan"),
   splitType: z.enum(["push_pull_legs", "upper_lower", "full_body", "bro_split", "push_pull", "custom"]).default("custom"),
   frequencyPerWeek: z.number().min(1).max(7),
   sessions: z.array(manualSessionSchema).min(1),
-  phaseId: z.string().uuid().optional(),
 });
 
 // POST - Create manual training plan as a library draft

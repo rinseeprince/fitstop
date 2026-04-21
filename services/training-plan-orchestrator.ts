@@ -5,7 +5,6 @@ import { createSavedPlanFromAI } from "@/services/coach-library-service";
 import { weightToKg } from "@/utils/nutrition-helpers";
 import { getLatestBodyMetrics } from "@/services/body-metrics-service";
 import { getCurrentGoals } from "@/services/client-goals-service";
-import { requirePhaseSelection } from "@/lib/require-phase-selection";
 import type { ExternalActivityContext } from "@/types/training";
 import type { MuscleGroup, IntensityLevel } from "@/types/external-activity";
 import type { z } from "zod";
@@ -38,7 +37,7 @@ type PreGenActivity = z.infer<typeof preGenerationActivitySchema>;
 
 interface GenerateTrainingPlanInput {
   coachPrompt: string;
-  phaseId?: string;
+  coachSuppliedName?: string;
   preGenerationActivities?: PreGenActivity[];
   allowSameDayTraining?: boolean;
   effectiveFrom?: string;
@@ -68,12 +67,6 @@ export async function orchestrateTrainingPlanGeneration(
   }
   if (client.coachId !== coachId) {
     throw new TrainingPlanError("Forbidden: You don't have access to this client", 403);
-  }
-
-  // Enforce phase selection when client has an active roadmap
-  const phaseCheck = await requirePhaseSelection(clientId, input.phaseId);
-  if (!phaseCheck.ok) {
-    throw new TrainingPlanError("Phase selection required", 400);
   }
 
   // Prefer new services, fall back to client.* for pre-migration clients
@@ -132,7 +125,12 @@ export async function orchestrateTrainingPlanGeneration(
   });
 
   // Save as a library draft (coach previews/edits before applying to client)
-  const savedPlanId = await createSavedPlanFromAI(coachId, aiPlan, input.coachPrompt);
+  const savedPlanId = await createSavedPlanFromAI(
+    coachId,
+    aiPlan,
+    input.coachPrompt,
+    input.coachSuppliedName,
+  );
 
   return { success: true, savedPlanId };
 }

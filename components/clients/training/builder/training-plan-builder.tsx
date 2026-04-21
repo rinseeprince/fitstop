@@ -7,13 +7,12 @@ import {
   useTrainingBuilderContext,
 } from "@/contexts/training-builder-context";
 import { TrainingBuilderRightPanel } from "./training-builder-right-panel";
-import { TrainingPlanGeneratorDrawer } from "./training-plan-generator-drawer";
-import { PlanPreviewDrawer } from "../library/plan-preview-drawer";
+import { TrainingPlanBuilderOverlay } from "./training-plan-builder-overlay";
 import { TrainingHistoryTable } from "../training-history-table";
 import { TrainingPlanHistory } from "../training-plan-history";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { EditModeButton, getPhaseGoalProgress, getGoalWeightDisplay } from "./training-plan-helpers";
-import { Sparkles, Shuffle, Loader2, AlertTriangle } from "lucide-react";
+import { Sparkles, Loader2, AlertTriangle, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Dialog,
@@ -24,6 +23,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import type { Client } from "@/types/check-in";
 import { weightToKg } from "@/utils/nutrition-helpers";
@@ -78,14 +78,12 @@ export function TrainingPlanBuilder({
           </div>
         )}
 
-        <TrainingPlanGeneratorDrawer
+        <TrainingPlanBuilderOverlay
           open={drawerOpen}
           onOpenChange={setDrawerOpen}
           clientWeightKg={clientWeightKg}
           weightUnit={client.weightUnit || "lbs"}
         />
-
-        <PreviewDrawerBridge />
       </TrainingBuilderProvider>
     </ErrorBoundary>
   );
@@ -104,13 +102,39 @@ function TopContentBar({
 }) {
   const builder = useTrainingBuilderContext();
   const { plan, editMode, setEditMode, activePhase } = builder;
+  const { toast } = useToast();
   const [showGenerateConfirm, setShowGenerateConfirm] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
 
   const handleGenerateClick = () => {
     if (plan) {
       setShowGenerateConfirm(true);
     } else {
       onOpenGenerator();
+    }
+  };
+
+  const handleClearPlan = async () => {
+    if (!plan) return;
+    setIsClearing(true);
+    try {
+      const res = await fetch(
+        `/api/clients/${client.id}/training/${plan.id}`,
+        { method: "DELETE" }
+      );
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error ?? "Failed to clear plan");
+      }
+      toast({ title: "Plan cleared" });
+      setShowClearConfirm(false);
+      await builder.fetchPlan();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to clear plan";
+      toast({ title: "Error", description: message, variant: "destructive" });
+    } finally {
+      setIsClearing(false);
     }
   };
 
@@ -203,18 +227,11 @@ function TopContentBar({
                   Regenerate
                 </button>
                 <button
-                  onClick={() => builder.refreshExercises()}
-                  disabled={builder.isRefreshingExercises}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[12.5px] font-medium text-[#5a7d82] bg-white border border-[rgba(13,148,136,0.08)] rounded-[6px] hover:bg-[#f0f5f4] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  onClick={() => setShowClearConfirm(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[12.5px] font-medium text-[#c06060] bg-white border border-[rgba(192,96,96,0.2)] rounded-[6px] hover:bg-[rgba(192,96,96,0.05)] transition-colors"
                 >
-                  {builder.isRefreshingExercises ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Shuffle className="h-3.5 w-3.5" />
-                  )}
-                  {builder.isRefreshingExercises
-                    ? "Refreshing..."
-                    : "New Exercises"}
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Clear Plan
                 </button>
               </>
             )}
@@ -251,23 +268,45 @@ function TopContentBar({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={showClearConfirm} onOpenChange={setShowClearConfirm}>
+        <DialogContent>
+          <DialogHeader>
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-full bg-[rgba(192,96,96,0.08)] flex items-center justify-center">
+                <AlertTriangle className="h-4 w-4 text-[#c06060]" />
+              </div>
+              <DialogTitle>
+                Clear {plan?.name ?? "training plan"}?
+              </DialogTitle>
+            </div>
+            <DialogDescription className="pt-2">
+              This archives the plan and removes all future scheduled sessions. Completed and past sessions are kept for history. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowClearConfirm(false)}
+              disabled={isClearing}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleClearPlan}
+              disabled={isClearing}
+            >
+              {isClearing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                "Clear plan"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
-/** Bridges builder context to the preview drawer (must be inside TrainingBuilderProvider). */
-function PreviewDrawerBridge() {
-  const builder = useTrainingBuilderContext();
-  if (!builder.savedPlanId) return null;
-
-  return (
-    <PlanPreviewDrawer
-      savedPlanId={builder.savedPlanId}
-      open={!!builder.savedPlanId}
-      onOpenChange={(open) => {
-        if (!open) builder.setSavedPlanId(null);
-      }}
-      onDiscard={() => builder.setSavedPlanId(null)}
-    />
-  );
-}
