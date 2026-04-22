@@ -7,6 +7,7 @@ import { getEventsForDateRange } from "@/services/training-event-service";
 import { getActiveTrainingPlan } from "@/services/training-service";
 import { calculateDailyMacros } from "@/utils/nutrition-helpers";
 import type { DayOfWeek } from "@/utils/nutrition-helpers";
+import { captureApiError } from "@/lib/error-handler";
 
 // --- Row mapper ---
 
@@ -299,6 +300,42 @@ function fallbackEndDate(today: string): string {
   const d = new Date(today + "T00:00:00");
   d.setDate(d.getDate() + 8 * 7); // 8 weeks
   return getDateString(d);
+}
+
+// --- Cascade helper ---
+
+/**
+ * Regenerate future nutrition events for every active/planned nutrition plan
+ * a client has. Shared by all training-side mutations that affect training
+ * events (placement, duplicate, move, surplus edits) so calorie targets
+ * always stay in sync with the training calendar.
+ *
+ * Errors are logged to Sentry per plan so a single failing plan doesn't
+ * block the caller's primary operation.
+ *
+ * @param fromDate YYYY-MM-DD — regenerate from this date onward for *active*
+ *   plans. Planned plans fall back to their own effective_from via the default.
+ */
+export async function cascadeNutritionAfterTrainingChange(
+  clientId: string,
+  fromDate: string,
+  actionTag: string,
+): Promise<void> {
+  const { data: nutritionPlans } = await supabaseAdmin
+    .from("nutrition_plans")
+    .select("id, status")
+    .eq("client_id", clientId)
+    .in("status", ["active", "planned"]);
+
+  for (const np of nutritionPlans ?? []) {
+    const effectiveFrom = np.status === "active" ? fromDate : undefined;
+    await regenerateFutureNutritionEvents(clientId, np.id, effectiveFrom).catch((err) =>
+      captureApiError(err, {
+        action: actionTag,
+        planId: np.id,
+      }),
+    );
+  }
 }
 
 // --- Delete future events ---

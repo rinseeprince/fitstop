@@ -246,7 +246,6 @@ export function ApplyToClientDialog({
               type="number"
               min={1}
               max={52}
-              placeholder={`Default: ${savedPlan.programDurationWeeks ? `${savedPlan.programDurationWeeks} weeks` : "8 weeks"}`}
               value={repeatCycles}
               onChange={(e) => setRepeatCycles(e.target.value)}
             />

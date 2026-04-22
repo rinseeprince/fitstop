@@ -50,14 +50,27 @@ export function SessionDetailDrawer({
 
   // Local exercise state for shared session editing
   const [localExercises, setLocalExercises] = useState<TrainingExercise[]>([]);
+  // Local surplus state for shared session editing. String for the input to
+  // allow blank / transient values while typing; committed to a number on
+  // save.
+  const [localSurplusInput, setLocalSurplusInput] = useState<string>("");
   const [showSaveScope, setShowSaveScope] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
+  // Which scope is currently saving, so spinners attach to the right button.
+  const [savingScope, setSavingScope] = useState<"day" | "all" | null>(null);
+  const isSaving = savingScope !== null;
+  const [isSavingSurplus, setIsSavingSurplus] = useState(false);
 
   const isShared = sharedEventCount > 1;
   const isLocalEdit = isShared && editMode;
 
   // Which exercises to render
   const displayExercises = isLocalEdit ? localExercises : (session?.exercises ?? []);
+
+  // Parsed surplus from the live input. null if blank.
+  const parsedLocalSurplus =
+    localSurplusInput.trim() === "" ? null : Number(localSurplusInput);
+  // Display: edit mode shows the working-copy value, view mode shows the server value.
+  const displaySurplus = editMode ? parsedLocalSurplus : session?.calorieSurplusPercentage ?? null;
 
   const handleSaveToLibrary = async () => {
     if (!session) return;
@@ -93,12 +106,16 @@ export function SessionDetailDrawer({
       // Initialize local state from current exercises
       setLocalExercises([...session.exercises]);
     }
+    // Seed the surplus input from the session in both shared and non-shared
+    // modes. Non-shared saves on blur; shared saves through the scope dialog.
+    setLocalSurplusInput(session.calorieSurplusPercentage?.toString() ?? "");
     setEditMode(true);
   };
 
   const exitEditMode = () => {
     setEditMode(false);
     setLocalExercises([]);
+    setLocalSurplusInput("");
   };
 
   // --- Local edit callbacks (shared sessions only) ---
@@ -175,9 +192,13 @@ export function SessionDetailDrawer({
       notes: ex.notes ?? undefined,
     }));
 
+  // Did the coach change surplus relative to the session's current value?
+  const surplusChanged = (current: TrainingSession) =>
+    parsedLocalSurplus !== (current.calorieSurplusPercentage ?? null);
+
   const handleSaveJustThisDay = async () => {
     if (!session || !eventId) return;
-    setIsSaving(true);
+    setSavingScope("day");
     try {
       const res = await fetch(
         `/api/clients/${clientId}/training/${planId}/sessions/${session.id}/clone`,
@@ -196,6 +217,27 @@ export function SessionDetailDrawer({
       }
       const { newSessionId } = await res.json();
 
+      // The clone copies the source session's surplus verbatim, so if the coach
+      // changed surplus we still need to write the new value. PATCH the cloned
+      // session (not the event): the clone is dedicated to this one event, and
+      // the session endpoint already propagates surplus to that event and
+      // cascades nutrition — one call, and the drawer's displayed value
+      // (session.calorieSurplusPercentage) reflects the edit immediately.
+      if (surplusChanged(session)) {
+        const surplusRes = await fetch(
+          `/api/clients/${clientId}/training/${planId}/sessions/${newSessionId}`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ calorieSurplusPercentage: parsedLocalSurplus }),
+          },
+        );
+        if (!surplusRes.ok) {
+          const data = await surplusRes.json().catch(() => ({}));
+          throw new Error(data.error || "Saved session but failed to update surplus");
+        }
+      }
+
       toast({ title: "Saved for this day only" });
       setShowSaveScope(false);
       exitEditMode();
@@ -208,13 +250,13 @@ export function SessionDetailDrawer({
         variant: "destructive",
       });
     } finally {
-      setIsSaving(false);
+      setSavingScope(null);
     }
   };
 
   const handleSaveAllOccurrences = async () => {
     if (!session) return;
-    setIsSaving(true);
+    setSavingScope("all");
     try {
       const res = await fetch(
         `/api/clients/${clientId}/training/${planId}/sessions/${session.id}/exercises`,
@@ -229,6 +271,24 @@ export function SessionDetailDrawer({
         throw new Error(data.error || "Failed to save");
       }
 
+      // Propagate surplus change to session + all future events + nutrition.
+      // Only fires if the coach actually changed it to avoid an unnecessary
+      // cascade roundtrip.
+      if (surplusChanged(session)) {
+        const surplusRes = await fetch(
+          `/api/clients/${clientId}/training/${planId}/sessions/${session.id}`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ calorieSurplusPercentage: parsedLocalSurplus }),
+          },
+        );
+        if (!surplusRes.ok) {
+          const data = await surplusRes.json().catch(() => ({}));
+          throw new Error(data.error || "Saved exercises but failed to update surplus");
+        }
+      }
+
       toast({ title: "Saved across all future sessions" });
       setShowSaveScope(false);
       exitEditMode();
@@ -240,7 +300,39 @@ export function SessionDetailDrawer({
         variant: "destructive",
       });
     } finally {
-      setIsSaving(false);
+      setSavingScope(null);
+    }
+  };
+
+  // Non-shared session: surplus saves immediately on blur (matches how
+  // exercise edits work for non-shared sessions — direct writes, no dialog).
+  const handleNonSharedSurplusBlur = async () => {
+    if (!session || isShared || !editMode) return;
+    if (!surplusChanged(session)) return;
+    setIsSavingSurplus(true);
+    try {
+      const res = await fetch(
+        `/api/clients/${clientId}/training/${planId}/sessions/${session.id}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ calorieSurplusPercentage: parsedLocalSurplus }),
+        },
+      );
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to save surplus");
+      }
+      toast({ title: "Surplus updated" });
+      onUpdate();
+    } catch (error) {
+      toast({
+        title: "Save failed",
+        description: error instanceof Error ? error.message : "Failed to save surplus",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSavingSurplus(false);
     }
   };
 
@@ -281,6 +373,33 @@ export function SessionDetailDrawer({
                   <Clock className="h-3 w-3" />
                   {session.estimatedDurationMinutes}min
                 </span>
+              )}
+              {/* Calorie surplus — read-only chip in view mode, inline input
+                  in edit mode. For non-shared sessions, blur saves directly;
+                  for shared sessions, the working copy is committed via the
+                  Save Changes scope dialog. */}
+              {editMode ? (
+                <span className="flex items-center gap-1 text-[11px] text-[rgba(255,255,255,0.7)] bg-[rgba(255,255,255,0.08)] px-1.5 py-0.5 rounded-[3px]">
+                  <span className="font-mono-display">+</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={localSurplusInput}
+                    onChange={(e) => setLocalSurplusInput(e.target.value)}
+                    onBlur={() => void handleNonSharedSurplusBlur()}
+                    disabled={isSavingSurplus}
+                    className="w-10 bg-transparent text-[11px] text-white font-mono-display text-center outline-none focus:bg-[rgba(255,255,255,0.06)] rounded-[3px] disabled:opacity-50"
+                  />
+                  <span className="font-mono-display">%</span>
+                  {isSavingSurplus && <Loader2 className="h-3 w-3 animate-spin" />}
+                </span>
+              ) : (
+                displaySurplus !== null && (
+                  <span className="flex items-center gap-1 text-[11px] text-[rgba(255,255,255,0.7)] bg-[rgba(255,255,255,0.08)] px-1.5 py-0.5 rounded-[3px] font-mono-display">
+                    +{displaySurplus}%
+                  </span>
+                )
               )}
             </div>
           </div>
@@ -408,7 +527,7 @@ export function SessionDetailDrawer({
               onClick={() => void handleSaveJustThisDay()}
               disabled={isSaving}
             >
-              {isSaving ? (
+              {savingScope === "day" ? (
                 <Loader2 className="h-4 w-4 animate-spin text-teal-600 flex-shrink-0" />
               ) : (
                 <div className="h-4 w-4 rounded-full border-2 border-teal-600 flex-shrink-0" />
@@ -423,7 +542,11 @@ export function SessionDetailDrawer({
               onClick={() => void handleSaveAllOccurrences()}
               disabled={isSaving}
             >
-              <div className="h-4 w-4 rounded-full border-2 border-[#93b0b4] flex-shrink-0" />
+              {savingScope === "all" ? (
+                <Loader2 className="h-4 w-4 animate-spin text-teal-600 flex-shrink-0" />
+              ) : (
+                <div className="h-4 w-4 rounded-full border-2 border-[#93b0b4] flex-shrink-0" />
+              )}
               <div>
                 <p className="text-sm font-medium text-[#0c1a1e]">All occurrences</p>
                 <p className="text-[11px] text-muted-foreground">Apply changes to all future sessions</p>

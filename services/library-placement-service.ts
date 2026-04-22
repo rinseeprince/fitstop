@@ -449,16 +449,20 @@ async function calculatePlacementEndDate(params: {
     }
   }
 
-  // Calculate duration-based end date
+  // Calculate duration-based end date. Coach-supplied repeatCycles wins over
+  // the plan's baked-in programDurationWeeks: the plan default is a fallback
+  // for when the coach doesn't provide an explicit cycle count. Before this
+  // flip, repeatCycles was silently ignored whenever programDurationWeeks
+  // was set on the plan, which misled coaches using the Repeat Cycles input.
   let durationEndDate: string | null = null;
 
-  if (programDurationWeeks) {
-    const d = new Date(startDate + "T00:00:00");
-    d.setDate(d.getDate() + programDurationWeeks * 7 - 1);
-    durationEndDate = getDateString(d);
-  } else if (repeatCycles && cycleLength) {
+  if (repeatCycles && cycleLength) {
     const d = new Date(startDate + "T00:00:00");
     d.setDate(d.getDate() + repeatCycles * cycleLength - 1);
+    durationEndDate = getDateString(d);
+  } else if (programDurationWeeks) {
+    const d = new Date(startDate + "T00:00:00");
+    d.setDate(d.getDate() + programDurationWeeks * 7 - 1);
     durationEndDate = getDateString(d);
   }
 

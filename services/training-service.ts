@@ -7,7 +7,7 @@ import { deleteFutureEventsForPlan, regenerateFutureEvents } from "@/services/tr
 import { captureApiError } from "@/lib/error-handler";
 
 // Re-export moved functions so existing imports continue to work
-export { updateSession, addSession, deleteSession, replaceSessionExercises, getSessionWithExercises, insertTrainingSessions, reorderSessions, updateSessionCalories } from "./training-session-service";
+export { updateSession, addSession, deleteSession, replaceSessionExercises, getSessionWithExercises, insertTrainingSessions, reorderSessions, updateSessionCalories, updateSurplusForFutureEvents } from "./training-session-service";
 export { updateExercise, addExercise, deleteExercise } from "./training-exercise-service";
 export { saveTrainingPlanHistory, getTrainingPlanHistory } from "./training-plan-history-service";
 

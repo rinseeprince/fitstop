@@ -44,6 +44,7 @@ export const sessionSchema = z.object({
   focus: z.string().max(200).optional().nullable(),
   notes: z.string().max(1000).optional().nullable(),
   estimatedDurationMinutes: z.number().int().min(10).max(180).optional().nullable(),
+  calorieSurplusPercentage: z.number().min(0).max(100).optional().nullable(),
 });
 
 // Activity analysis from API (nested in pre-generation activity)

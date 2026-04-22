@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getClientById } from "@/services/client-service";
-import { getTrainingPlanById, updateSession, deleteSession } from "@/services/training-service";
+import { getTrainingPlanById, updateSession, deleteSession, updateSurplusForFutureEvents } from "@/services/training-service";
+import { cascadeNutritionAfterTrainingChange } from "@/services/nutrition-event-service";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { updateSessionSchema } from "@/lib/validations/training";
+import { getTodayDateString } from "@/lib/date-helpers";
 
 // PATCH - Update session
 // Events are NOT regenerated here — the coach triggers regeneration
@@ -54,6 +56,24 @@ export async function PATCH(
     }
 
     const session = await updateSession(sessionId, validation.data);
+
+    // Surplus % changes propagate to every future scheduled event with this
+    // session_id + trigger a nutrition cascade so calorie targets reflect
+    // the new training-day load. Other session fields (name, focus, etc.)
+    // don't affect nutrition and don't need this cascade.
+    if (validation.data.calorieSurplusPercentage !== undefined) {
+      const today = getTodayDateString();
+      await updateSurplusForFutureEvents(
+        sessionId,
+        validation.data.calorieSurplusPercentage ?? null,
+        today,
+      );
+      await cascadeNutritionAfterTrainingChange(
+        clientId,
+        today,
+        "cascade-nutrition-from-session-surplus-edit",
+      );
+    }
 
     return NextResponse.json({ success: true, session }, { status: 200 });
   } catch (error) {

@@ -27,6 +27,8 @@ export const updateSession = async (
   if (updates.notes !== undefined) updateData.notes = updates.notes;
   if (updates.estimatedDurationMinutes !== undefined)
     updateData.estimated_duration_minutes = updates.estimatedDurationMinutes;
+  if (updates.calorieSurplusPercentage !== undefined)
+    updateData.calorie_surplus_percentage = updates.calorieSurplusPercentage;
 
   const { data, error } = await supabaseAdmin
     .from("training_sessions")
@@ -46,6 +48,39 @@ export const updateSession = async (
 
   return mapSessionRow(data, (exercises || []).map(mapExerciseRow));
 };
+
+/**
+ * Propagate a session's new calorie_surplus_percentage to all of its future
+ * scheduled training_events. Mirrors the "all future" pattern used by
+ * moveEventAndFuture in training-event-calendar-service.ts.
+ *
+ * Also sets is_modified=true so the regeneration pathway doesn't overwrite
+ * the coach's deliberate edit.
+ *
+ * Returns the count of event rows updated (useful for the caller to know if
+ * a nutrition cascade is worth triggering).
+ */
+export async function updateSurplusForFutureEvents(
+  sessionId: string,
+  surplus: number | null,
+  fromDate: string,
+): Promise<number> {
+  const { data, error } = await supabaseAdmin
+    .from("training_events")
+    .update({
+      calorie_surplus_percentage: surplus,
+      is_modified: true,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("training_session_id", sessionId)
+    .gte("date", fromDate)
+    .eq("status", "scheduled")
+    .select("id");
+
+  if (error) throw new Error(`Failed to update future event surpluses: ${error.message}`);
+
+  return data?.length ?? 0;
+}
 
 // Add session to plan
 export const addSession = async (

@@ -253,6 +253,38 @@ export async function duplicateEvent(
 }
 
 /**
+ * Update a single event's calorie_surplus_percentage. Used for the "Just this
+ * day" scope when a coach edits the surplus for one specific date without
+ * affecting the shared session's other occurrences.
+ *
+ * Sets is_modified=true so regeneration doesn't overwrite this edit.
+ * Nutrition cascade reads surplus from events, not sessions, so this update
+ * alone is sufficient for that day's nutrition to recompute correctly on the
+ * next cascade.
+ */
+export async function updateEventSurplus(
+  eventId: string,
+  surplus: number | null,
+): Promise<{ clientId: string; date: string }> {
+  const { data, error } = await supabaseAdmin
+    .from("training_events")
+    .update({
+      calorie_surplus_percentage: surplus,
+      is_modified: true,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", eventId)
+    .select("client_id, date")
+    .single();
+
+  if (error || !data) {
+    throw new Error(`Failed to update event surplus: ${error?.message ?? "event not found"}`);
+  }
+
+  return { clientId: data.client_id, date: data.date };
+}
+
+/**
  * Count future scheduled events that have been manually modified (moved/duplicated).
  */
 export async function countModifiedFutureEvents(

@@ -274,6 +274,7 @@ export type UpdateSessionRequest = {
   focus?: string | null;
   notes?: string | null;
   estimatedDurationMinutes?: number | null;
+  calorieSurplusPercentage?: number | null;
 };
 
 // Bulk reorder request type

@@ -4,10 +4,83 @@ import { getTrainingPlanById } from "@/services/training-service";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
-import { deleteEvent } from "@/services/training-event-calendar-service";
+import { deleteEvent, updateEventSurplus } from "@/services/training-event-calendar-service";
 import { supabaseAdmin } from "@/services/supabase-admin";
-import { regenerateFutureNutritionEvents } from "@/services/nutrition-event-service";
+import {
+  regenerateFutureNutritionEvents,
+  cascadeNutritionAfterTrainingChange,
+} from "@/services/nutrition-event-service";
 import { captureApiError } from "@/lib/error-handler";
+import { z } from "zod";
+
+const patchEventSchema = z.object({
+  calorieSurplusPercentage: z.number().min(0).max(100).nullable(),
+});
+
+/**
+ * PATCH - Update a single event's field(s). Currently only supports surplus %
+ * for the "Just this day" scope when editing a shared session's calorie
+ * surplus — changes only this one event, preserving the shared session's
+ * defaults for other dates.
+ */
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string; planId: string; eventId: string }> },
+) {
+  const rateLimitResult = await coachApiRateLimit(request);
+  if (rateLimitResult) return rateLimitResult;
+
+  const csrfError = await requireCSRFProtection(request);
+  if (csrfError) return csrfError;
+
+  try {
+    const coachId = await getAuthenticatedCoachId();
+    if (!coachId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { id: clientId, planId, eventId } = await params;
+    const client = await getClientById(clientId);
+
+    if (!client || client.coachId !== coachId) {
+      return NextResponse.json({ error: "Access denied" }, { status: 403 });
+    }
+
+    const plan = await getTrainingPlanById(planId);
+    if (!plan || plan.clientId !== clientId) {
+      return NextResponse.json({ error: "Plan not found" }, { status: 404 });
+    }
+
+    const body = await request.json();
+    const validation = patchEventSchema.safeParse(body);
+    if (!validation.success) {
+      return NextResponse.json(
+        { error: "Invalid input", details: validation.error.issues },
+        { status: 400 },
+      );
+    }
+
+    const { clientId: eventClientId, date } = await updateEventSurplus(
+      eventId,
+      validation.data.calorieSurplusPercentage,
+    );
+
+    if (eventClientId !== clientId) {
+      return NextResponse.json({ error: "Event does not belong to this client" }, { status: 403 });
+    }
+
+    await cascadeNutritionAfterTrainingChange(
+      clientId,
+      date,
+      "cascade-nutrition-from-event-surplus-edit",
+    );
+
+    return NextResponse.json({ success: true }, { status: 200 });
+  } catch (error) {
+    console.error("Error updating event:", error);
+    return NextResponse.json({ error: "Failed to update event" }, { status: 500 });
+  }
+}
 
 // DELETE - Delete a single scheduled training event
 export async function DELETE(

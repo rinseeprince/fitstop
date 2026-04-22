@@ -281,7 +281,9 @@ Batch resolution via `resolveExercises()` fetches all coach + global exercises i
 
 ---
 
-## Daily Pulse Architecture (Client-side)
+## Client Portal Architecture
+
+> **Redesign in progress.** See `docs/CLIENT-PORTAL-REDESIGN.md` and `docs/CLIENT-PORTAL-EXECUTION-PLAN.md` for the target day-centric, event-driven model replacing Daily Pulse pre-mobile launch. The sections below describe the current (Daily Pulse) implementation that is being replaced.
 
 Daily Pulse is the client's daily tracking interface at `/client/dashboard`. Clients log wellness (mood, energy, sleep, stress), training completion, nutrition intake, and habits each day.
 
@@ -289,10 +291,9 @@ Daily Pulse is the client's daily tracking interface at `/client/dashboard`. Cli
 
 1. **Lifted state** - `daily-pulse.tsx` owns ALL state. Child components are controlled/presentational. Props down, callbacks up.
 2. **Single source of truth** - The `training_data` JSONB column on `training_logs` stores the complete training UI state. On page load, everything restores from this column, not from cross-referencing other tables.
-3. **No auto-save** - Nothing saves until "Log Day" is clicked (wellness + training + nutrition). Exception: habits auto-save independently on toggle.
-4. **Cache busting** - All fetches use `{ cache: 'no-store' }`. All GET API routes return `Cache-Control: no-store` headers.
-5. **Historical snapshots** - Training and nutrition targets are snapshotted at save time. Coach-side views always read saved values, never the current plan.
-6. **Date-aware saves** - The server-side save flow uses the log's `date` field (not today's date) when looking up nutrition targets and planned activities.
+3. **Cache busting** - All fetches use `{ cache: 'no-store' }`. All GET API routes return `Cache-Control: no-store` headers.
+4. **Historical snapshots** - Training and nutrition targets are snapshotted at save time. Coach-side views always read saved values, never the current plan.
+5. **Date-aware saves** - The server-side save flow uses the log's `date` field (not today's date) when looking up nutrition targets and planned activities.
 
 ### Data fetching
 
