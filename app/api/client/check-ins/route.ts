@@ -8,7 +8,7 @@ import { updateClientAdherenceStats } from "@/services/check-in-adherence-servic
 import { clientApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { clientSubmitCheckInSchema } from "@/lib/validations/check-in";
-import { calculateCheckInPeriod } from "@/lib/date-utils";
+import { calculateCheckInPeriod } from "@/lib/date-helpers";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { generateAndSaveCheckInSnapshot } from "@/services/check-in-snapshot-service";
 import { captureApiError } from "@/lib/error-handler";

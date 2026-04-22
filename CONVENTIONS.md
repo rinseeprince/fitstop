@@ -145,9 +145,11 @@
   ```
   /app           - Next.js App Router pages and API routes
   /components    - React components
-    /daily-pulse - Client-side Daily Pulse components
-    /clients     - Coach-side components (daily-pulse/, habits/, etc.)
-    /ui          - Shadcn/Radix base components
+    /clients       - Coach-facing: a coach viewing their clients' data (plural)
+    /client        - Client-facing: pre-activation flows (onboarding, walkthrough, waiting state)
+    /client-portal - Client-facing: post-activation portal (home, detail pages, nav, settings)
+    /daily-pulse   - Legacy client-side pulse (being retired in client portal redesign)
+    /ui            - Shadcn/Radix base components
   /services      - Business logic and data operations
   /utils         - Helper functions (AI, nutrition, training calculations)
   /hooks         - Custom React hooks
@@ -171,7 +173,21 @@
   - `lib/design-tokens.ts` - Type-safe design system constants
   - `lib/auth-helpers.ts` - `getAuthenticatedCoachId()`, `getAuthenticatedClientId()`
 
-  Coach-side components in `components/clients/`. Client-side in `components/daily-pulse/` or `components/`. Never mix them.
+  ### Component folder audience conventions
+
+  The `components/` tree has three audience-scoped folders that are easy to confuse because of the singular/plural difference. They are **parallel audiences**, not refactor-before-and-after, and files never move across them.
+
+  - **`components/clients/`** (plural) - **coach-facing**. A coach viewing, editing, or managing their clients' data: training plans, nutrition plans, roadmap, history tables, check-in review, wellness strip, attention feed, etc.
+  - **`components/client/`** (singular) - **client-facing, pre-activation**. Flows the client sees before their coach has fully activated them: intake/onboarding (`client/onboarding/`) and the guided walkthrough (`client/walkthrough/`).
+  - **`components/client-portal/`** - **client-facing, post-activation**. The logged-in client portal after activation: home day view, detail pages (training, nutrition, wellness, habits), navigation, settings, phase banner, etc.
+
+  Rule of thumb when placing a new component:
+  1. Is the coach the primary viewer? → `components/clients/`.
+  2. Is this shown to a client who has not yet been activated by their coach? → `components/client/`.
+  3. Is this shown to an activated client inside the portal? → `components/client-portal/`.
+  4. Never mix audiences in the same file. A component used by both coach and client belongs in `components/` or `components/ui/`.
+
+  `components/daily-pulse/` is legacy and being retired as part of the client portal redesign. Do not add new files there. See `docs/CLIENT-PORTAL-REDESIGN.md` for the target structure.
 
   ## 7. Data Fetching & State
 

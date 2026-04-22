@@ -12,18 +12,13 @@ import { getEventForDate } from "./training-event-service";
 import { getTodayDateString } from "@/lib/date-helpers";
 import { getNutritionEventForDate } from "./nutrition-event-service";
 import { getTotalCalories, mapNutritionEventToDisplayTarget } from "@/utils/nutrition-event-helpers";
+import type { TodaysActivity } from "@/types/daily-pulse";
 
 type TodaysTrainingSession = {
   sessionId: string;
   sessionName: string;
   estimatedCalories: number;
 } | null;
-
-type TodaysActivity = {
-  sessionId: string;
-  activityName: string;
-  estimatedCalories: number;
-};
 
 export const getTodaysTrainingSession = async (clientId: string, date?: string): Promise<TodaysTrainingSession> => {
   const dateStr = date ?? getTodayDateString();

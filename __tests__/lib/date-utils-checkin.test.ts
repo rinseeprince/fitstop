@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { getCheckInStatus } from '@/lib/date-utils'
+import { getCheckInStatus } from '@/lib/date-helpers'
 
 describe('getCheckInStatus', () => {
   // Helper: create a Date from an ISO string in local time

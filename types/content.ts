@@ -106,14 +106,6 @@ export interface UpdateContentItemInput {
   sortOrder?: number;
 }
 
-// File upload types
-export interface FileUploadProgress {
-  file: File;
-  progress: number;
-  status: 'pending' | 'uploading' | 'completed' | 'error';
-  error?: string;
-}
-
 // URL metadata types (for oEmbed and Open Graph)
 export interface VideoMetadata {
   provider: 'youtube' | 'vimeo' | 'other';
@@ -144,12 +136,6 @@ export interface ClientResourcesResponse {
   libraryContent: ContentLibraryResponse;
 }
 
-// Content viewer types
-export interface ContentViewerProps {
-  content: ContentItem;
-  onClose: () => void;
-}
-
 // Search and filter types
 export interface ContentFilters {
   type?: ContentType;
@@ -162,26 +148,6 @@ export interface ContentSearchResult {
   items: ContentItem[];
   totalCount: number;
   hasMore: boolean;
-}
-
-// Content organization types
-export interface FolderHierarchy {
-  folder: ContentFolder;
-  subfolders: FolderHierarchy[];
-  items: ContentItem[];
-}
-
-export interface ContentBreadcrumb {
-  id?: string;
-  name: string;
-  href: string;
-}
-
-// Error types
-export interface ContentError {
-  type: 'upload' | 'fetch' | 'delete' | 'permission';
-  message: string;
-  details?: string;
 }
 
 // Form types
@@ -223,23 +189,6 @@ export interface FolderCardProps {
   onDelete?: (folderId: string) => void;
   onClick?: () => void;
   itemCount?: number;
-}
-
-// Bulk operations
-export interface BulkContentOperation {
-  type: 'delete' | 'move' | 'assign';
-  contentIds: string[];
-  targetFolderId?: string; // For move operations
-  clientIds?: string[]; // For assign operations
-}
-
-// Content statistics
-export interface ContentStats {
-  totalItems: number;
-  itemsByType: Record<ContentType, number>;
-  assignedItems: number;
-  libraryItems: number;
-  totalFolders: number;
 }
 
 // Database table types for migration compatibility

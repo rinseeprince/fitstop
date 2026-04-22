@@ -3,12 +3,7 @@
 import { Badge } from "@/components/ui/badge";
 import { Flame, Check } from "lucide-react";
 import type { TrainingSession } from "@/types/training";
-
-type TodaysActivity = {
-  sessionId: string;
-  activityName: string;
-  estimatedCalories: number;
-};
+import type { TodaysActivity } from "@/types/daily-pulse";
 
 interface TrainingSummaryProps {
   sessionCompleted: boolean;

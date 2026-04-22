@@ -10,12 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-
-type UnplannedActivity = {
-  activityName: string;
-  intensityLevel: "low" | "moderate" | "vigorous";
-  durationMinutes: number;
-};
+import type { UnplannedActivity } from "@/types/daily-pulse";
 
 const COMMON_ACTIVITIES = [
   "Running", "Cycling", "Swimming", "Walking", "Hiking",

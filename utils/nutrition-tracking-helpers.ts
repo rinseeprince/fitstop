@@ -1,8 +1,4 @@
-type UnplannedActivity = {
-  activityName: string;
-  intensityLevel: "low" | "moderate" | "vigorous";
-  durationMinutes: number;
-};
+import type { UnplannedActivity } from "@/types/daily-pulse";
 
 export type CalorieFeedback = {
   difference: number;

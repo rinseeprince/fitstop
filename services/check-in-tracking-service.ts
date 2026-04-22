@@ -14,7 +14,7 @@ import {
   differenceInDays,
   parseISODate,
   calculateCheckInPeriod,
-} from "@/lib/date-utils";
+} from "@/lib/date-helpers";
 import type {
   Client,
   CheckInFrequency,

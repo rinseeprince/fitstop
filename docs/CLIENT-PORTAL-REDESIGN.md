@@ -197,7 +197,17 @@ Food logging is a deliberate future phase. The card contract will not change whe
 - **Past day, logged**: locked. Display-only, with clear messaging.
 - **Future day**: view-only. The client can swipe/scroll forward to see what's on their plan but cannot log against it.
 
-No retroactive nutrition cascade on past days (past nutrition is past). Rules are enforced server-side (API rejects PATCH with 403 on locked/future days) and mirrored in the UI (inputs disabled, explanatory notice).
+No retroactive nutrition cascade on past days (past nutrition is past).
+
+### Single source of truth for the rule
+
+The rule above lives in one file — `lib/daily-log-permissions.ts` — as pure helpers:
+- `canEditDay(date, loggedStatus, clientTimezone): boolean` — client-safe, drives UI disabled state.
+- `assertCanEdit(clientId, date, resourceType): Promise<void>` — server-side wrapper that throws an HTTP-friendly error when violated.
+
+Both are imported by every surface that cares (UI detail pages for disabled/notice state; every write endpoint for hard rejection). Neither UI nor server reimplements the date math, so they cannot disagree about whether a day is editable (which matters around client-local midnight).
+
+Same pattern for plan context: `resolvePlanContextForDate(clientId, date): { phaseId, nutritionPlanId, trainingPlanId }` is the single function every write endpoint calls to populate `daily_logs.phase_id` and `*_plan_id` links. Do not duplicate this query per endpoint.
 
 ---
 
@@ -271,7 +281,7 @@ Existing `PhaseCompletionCard` relocates from `components/daily-pulse/` to `comp
 
 Settings form: starts as a single `app/client/settings/page.tsx`. A `components/client-portal/settings/` subdirectory is only created if the page blows past the 250-line limit. No speculative form component splits.
 
-Client program data (`getClientProgram`): lives as a function in the existing roadmap service, not a new `client-program-service.ts`. One exported function does not earn a dedicated file.
+Client program data (`getClientProgram`): lives in a new `services/client-program-service.ts`. This reverses the earlier "put in existing roadmap service" call. The existing roadmap service likely uses `supabaseAdmin` for coach cross-client reads; client-side reads must use session-scoped Supabase (RLS). Keeping access contexts in separate files prevents accidental use of the wrong client and the data leak risk that comes with it.
 
 No `useClientDay` hook. `useSWR` is called directly in the page. Only create a wrapper hook if it grows actual reusable logic (retries, transforms, dependent fetches).
 
@@ -314,6 +324,7 @@ Before Phase 1:
 ## Deliberate reversals of existing documented principles
 
 1. **"No auto-save" principle (old Daily Pulse rule).** Per-card independent saves replace the monolithic "Log Day" button. This reversal is intentional and reflected in `docs/ARCHITECTURE.md` (the principle is removed there).
+2. **"Props down, callbacks up" for the phase completion card.** The relocated `PhaseCompletionCard` fetches its own data and POSTs its own dismissal via SWR, which technically violates the CONVENTIONS rule that child components be controlled/presentational. We deliberately keep this because Session 2.5 is scoped to relocation, not refactor, and the card's self-contained fetch pattern works today. Do not imitate this for new components.
 
 ---
 

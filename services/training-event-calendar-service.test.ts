@@ -335,6 +335,15 @@ describe("training-event-calendar-service", () => {
   // =========================================================================
 
   describe("deleteEvent", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-04-15T12:00:00"));
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
     it("validates ownership before deleting", async () => {
       const eventQuery = createMockQuery({
         data: {

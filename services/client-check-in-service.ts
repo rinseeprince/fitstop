@@ -16,7 +16,7 @@ import { supabaseAdmin } from "@/services/supabase-admin";
 import { getDailyLogs } from "@/services/daily-logs-service";
 import { getHabitLogs } from "@/services/daily-habits-service";
 import { getNutritionSummaryForPeriod } from "@/services/weekly-nutrition-service";
-import { calculateCheckInPeriod } from "@/lib/date-utils";
+import { calculateCheckInPeriod } from "@/lib/date-helpers";
 import type { SubmitCheckInRequest, CheckInFormData, Client } from "@/types/check-in";
 import type { PeriodSnapshot } from "@/types/schedule";
 

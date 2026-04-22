@@ -25,6 +25,11 @@ These apply to every code-producing session:
 
 The point of this bar is to catch real bugs, not to pad coverage. If a test asserts something that cannot meaningfully break, don't write it.
 
+**Test layer boundaries** (keep each layer's tests testing its own responsibility):
+- **Service tests**: mock Supabase clients. Assert write shapes, transaction boundaries, derivation logic. Do not hit real DB or real HTTP.
+- **API route tests**: hit the route handler without mocking services; use a test Supabase instance or a per-test transaction. Assert status codes, response shape, IDOR rejection. Do not assert internal service behavior — that belongs to service tests.
+- **UI component tests**: mock the network layer (`useSWR` / `fetch`). Assert render state transitions and payload shapes on save. Do not hit real endpoints.
+
 ## Session overview
 
 | # | Title | Phase |
@@ -207,6 +212,7 @@ If Session 0.1 flagged a missing timezone column, this session also adds that mi
 - `supabase/migrations/027_add_session_completion_tracking.sql`.
 - `docs/ARCHITECTURE.md` "Training Completion Hierarchy".
 - `CONVENTIONS.md` database access section.
+- **Grep for existing `training_events.status` writers** across `services/` and `app/api/`. The derivation logic defined in this session (status from completion quality OR exercise completeness) must be the single source of truth. If any other writer derives status differently, either refactor it to call this one, or document why the contexts are genuinely different.
 
 **Plan (report before implementing)**:
 - Transaction strategy (single RPC vs chained writes).
@@ -447,12 +453,12 @@ If Session 0.1 flagged a missing timezone column, this session also adds that mi
 - Program endpoint shape.
 
 **Implement**:
-- `services/client-day-service.ts`: `getDaySummary(clientId, date)` aggregating:
-  - Training events (array). Per event: `eventId`, `sessionName`, `sessionFocus`, `completionQuality` (null if not logged), `loggedExerciseCount`, `prescribedExerciseCount`.
-  - Nutrition event + log existence.
-  - Wellness log existence.
-  - Habit count + logged count.
-- Add `getClientProgram(clientId)` as an exported function in the **existing** roadmap service (grep for where roadmap CRUD lives today, e.g. `services/roadmap-service.ts`). Do NOT create `services/client-program-service.ts` — a new file for one function is premature.
+- `services/client-day-service.ts`: `getDaySummary(clientId, date)`. **Composes existing domain services; does not query tables directly**. Calls into `services/training-event-service.ts` (events for date), `services/nutrition-event-service.ts` (nutrition event + log existence), `services/daily-log-service.ts` or equivalent (wellness log existence), habit service (habit count + logged count). Aggregates their outputs into the summary shape. If a domain service is missing a read the summary needs, extend that domain service, don't add a raw table query here.
+  - Per training event: `eventId`, `sessionName`, `sessionFocus`, `completionQuality` (null if not logged), `loggedExerciseCount`, `prescribedExerciseCount`.
+  - Per nutrition: log exists yes/no.
+  - Per wellness: log exists yes/no.
+  - Per habits: total habit count + count with log for date.
+- `services/client-program-service.ts` (new file): `getClientProgram(clientId)` returning roadmap + phases. **Kept separate from the existing roadmap service** because that file uses `supabaseAdmin` for coach cross-client queries; this client-side read must use session-scoped Supabase (RLS). Separate file prevents accidentally grabbing the admin helper.
 - `app/api/client/day-summary/route.ts` (GET, `clientApiRateLimit`, `Cache-Control: no-store`).
 - `app/api/client/program/route.ts` (GET).
 
@@ -610,6 +616,8 @@ If Session 0.1 flagged a missing timezone column, this session also adds that mi
 
 **Do NOT**: Build phase-editing UI. Do not change the phase-completion endpoint. Do not rewrite the card's internal fetch logic.
 
+**Known convention violation (intentional)**: The relocated card fetches its own data, which violates CONVENTIONS' "props down, callbacks up" rule for child components. We're keeping this because Session 2.5 is relocation-only, not a refactor, and the fetch pattern already works. This is documented in the "Deliberate reversals" section of `docs/CLIENT-PORTAL-REDESIGN.md`. Do NOT imitate this pattern for any new components built in later sessions.
+
 **Tests to write**:
 - Program page: active phase highlighted; no-roadmap empty state.
 - Relocated phase completion card: renders with coach reflection + stats; dismiss fires correct POST.
@@ -661,38 +669,49 @@ If Session 0.1 flagged a missing timezone column, this session also adds that mi
 
 ---
 
-## Session 3.1: Nutrition + wellness endpoints (GET/PATCH)
+## Session 3.1: Shared day-log helpers + nutrition/wellness endpoints
 
-**Commit message**: `feat(api): add per-card nutrition and wellness endpoints`
+**Commit message**: `feat(api): add day-log permission helpers, plan-context resolver, nutrition and wellness endpoints`
 
-**Objective**: Detail-page endpoints for nutrition + wellness with past-day lock and future-day rejection.
+**Objective**: Build the per-card nutrition and wellness endpoints, plus two shared helpers that every subsequent per-card write will reuse (habits in Session 4.1, any future card). The helpers centralize the date-edit rule and plan-context resolution so they cannot drift across endpoints.
 
 **Read first**:
 - Grep existing `daily_logs` writers in `services/`.
 - `supabase/migrations/` for nutrition_logs + wellness_logs schemas.
 - `docs/ARCHITECTURE.md` "Daily Logs" section.
+- `docs/CLIENT-PORTAL-REDESIGN.md` (Date edit rules, single-source-of-truth subsection).
 - `services/nutrition-event-service.ts`.
-- `docs/CLIENT-PORTAL-REDESIGN.md` (Date edit rules).
+- `lib/date-helpers.ts` (timezone utilities).
 
 **Plan (report before implementing)**:
-- Whether to extend existing service or create `services/daily-log-card-service.ts`.
-- Server-side enforcement of:
-  - Today: allowed.
-  - Past unlogged: allowed.
-  - Past logged: rejected (403).
-  - Future: rejected (403).
+- Exact signatures for the two shared helpers (see Implement).
+- How `assertCanEdit` throws (custom error class vs Next.js response helper) and how route handlers translate the throw into a 403.
+- Whether `resolvePlanContextForDate` belongs in a new file or inside an existing plan-adjacent service.
+- Whether to extend an existing day-log service or create `services/daily-log-card-service.ts` for the per-card writes.
 
 **Implement**:
-- `GET /api/client/daily-logs/[date]/nutrition/route.ts` (log + event target per ARCHITECTURE three-level priority).
-- `PATCH /api/client/daily-logs/[date]/nutrition/route.ts` (writes kcal + macros to `nutrition_logs`; populates `daily_logs.phase_id` and `nutrition_logs.nutrition_plan_id`).
-- `GET` + `PATCH` equivalents for `/wellness` writing to `wellness_logs`.
-- Date-rule enforcement in both PATCH routes.
-- Standard middleware.
 
-**Do NOT**: Build UI. Do not remove monolithic `/api/client/daily-logs` POST yet.
+1. **`lib/daily-log-permissions.ts`** (new):
+   - `canEditDay(date, loggedStatus, clientTimezone): boolean` — pure function, client-safe (no Supabase imports). Returns true for today + past-unlogged; false for past-logged + future. Imported by UI detail pages to drive disabled state.
+   - `assertCanEdit({ clientId, date, resourceType }): Promise<void>` — server-side wrapper. Loads the client's timezone and current log state for the resource, calls `canEditDay`, throws a typed error (e.g. `DayLockedError`) on violation. Route handlers catch and return 403.
+
+2. **`resolvePlanContextForDate(clientId, date): { phaseId, nutritionPlanId, trainingPlanId }`** — shared helper used by every per-card write to populate `daily_logs.phase_id` and child `*_plan_id` links. Lives in an existing plan-adjacent service (decided in planning step). Every write calls it once; no endpoint reimplements the lookup.
+
+3. **Nutrition endpoints**:
+   - `GET /api/client/daily-logs/[date]/nutrition/route.ts` (log + event target per ARCHITECTURE three-level priority).
+   - `PATCH /api/client/daily-logs/[date]/nutrition/route.ts`: calls `assertCanEdit`, then `resolvePlanContextForDate`, then writes kcal + macros to `nutrition_logs`. No inline date-rule code.
+
+4. **Wellness endpoints**:
+   - `GET` + `PATCH` equivalents for `/wellness`. Same pattern: `assertCanEdit` + `resolvePlanContextForDate` + write to `wellness_logs`.
+
+5. Standard middleware on all four routes (rate limit, CSRF, auth, ownership, validation).
+
+**Do NOT**: Build UI (Sessions 3.2, 3.3). Remove the monolithic `/api/client/daily-logs` POST yet. Duplicate date-rule logic or plan-context resolution inside any route handler.
 
 **Tests to write**:
-- All four routes: 200/201 happy; 400 malformed; 401 unauthenticated; 403 for past-logged and future dates (PATCH).
+- `lib/daily-log-permissions.test.ts`: `canEditDay` covers today, past-unlogged, past-logged, future, and client-local midnight boundary cases. `assertCanEdit` throws on violation and resolves cleanly on allowed cases (mock the log-state read).
+- Plan-context resolver test: returns correct IDs for phase-active, no-phase, and no-plan fixtures.
+- All four API routes: 200/201 happy path; 400 malformed; 401 unauthenticated; 403 for past-logged and future dates (PATCH). Assert the 403 is produced via `assertCanEdit`, not via duplicated inline logic.
 - Nutrition GET: three-level priority returns expected value per case.
 
 **Verify**: Manual curl for each date-rule case. `npx tsc --noEmit`, `npx vitest run`. Commit.
@@ -716,8 +735,9 @@ If Session 0.1 flagged a missing timezone column, this session also adds that mi
 - Vs-target progress display.
 - Save to `PATCH /api/client/daily-logs/[date]/nutrition`.
 - Loading, error, locked (past-logged), and view-only (future) states.
+- **Import `canEditDay` from `lib/daily-log-permissions.ts`** (Session 3.1) to derive `isLocked` for the UI. Do not compute the rule locally with date math — single source of truth.
 
-**Do NOT**: Add meal or food logging.
+**Do NOT**: Add meal or food logging. Reimplement the date-edit rule; always import from the shared helper.
 
 **Tests to write**:
 - `app/client/nutrition/page.test.tsx`:
@@ -745,6 +765,7 @@ If Session 0.1 flagged a missing timezone column, this session also adds that mi
 **Implement**:
 - `app/client/wellness/page.tsx` with mood/energy/sleep/stress inputs (reuse primitives).
 - Save to `PATCH /api/client/daily-logs/[date]/wellness`.
+- Import `canEditDay` from `lib/daily-log-permissions.ts` (Session 3.1) for `isLocked` state. Do not duplicate date math in the page.
 - `components/client-portal/day/locked-day-notice.tsx`: **single component** with a `reason: 'past-logged' | 'future' | 'today-no-plan'` prop that switches copy. Do NOT create separate variant components. Reuse in nutrition page.
 
 **Tests to write**:
@@ -769,9 +790,10 @@ If Session 0.1 flagged a missing timezone column, this session also adds that mi
 **Implement**:
 - `app/client/habits/page.tsx` renders per-habit toggles for selected date.
 - Writes via existing habit-log endpoint.
-- Past-day lock + future-day rejection on server-side habit endpoint if not already present (check first; if missing, add with same pattern as 3.1).
+- Import `canEditDay` from `lib/daily-log-permissions.ts` (Session 3.1) for the `isLocked` UI state.
+- Past-day lock + future-day rejection on server-side habit endpoint if not already present. If missing, add by calling `assertCanEdit` from Session 3.1 — do NOT reimplement the rule. If present, audit it against `assertCanEdit` and replace any inline date-rule logic with the shared helper.
 
-**Do NOT**: Add new habit-log endpoints. Do not modify habit CRUD.
+**Do NOT**: Add new habit-log endpoints. Modify habit CRUD. Duplicate date-rule logic.
 
 **Tests to write**:
 - Habits page: one toggle per habit; toggle fires correct POST; locked and future states render notice.

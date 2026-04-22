@@ -8,7 +8,7 @@ import { generateCheckInSummary, regenerateAISummary } from "@/services/ai-servi
 import { getDailyLogs } from "@/services/daily-logs-service";
 import { getHabitLogs } from "@/services/daily-habits-service";
 import { getNutritionSummaryForPeriod } from "@/services/weekly-nutrition-service";
-import { calculateCheckInPeriod } from "@/lib/date-utils";
+import { calculateCheckInPeriod } from "@/lib/date-helpers";
 import type { GenerateAISummaryResponse } from "@/types/check-in";
 import { aiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";

@@ -3,8 +3,49 @@ import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { getClientById } from "@/services/client-service";
 import { getWeeklySummaries, getLatestWeeklySummary, upsertWeeklySummary } from "@/services/weekly-nutrition-service";
-import { backfillWeeklySummariesForClient } from "@/services/weekly-nutrition-backfill-service";
+import { supabaseAdmin } from "@/services/supabase-admin";
 import { getWeekStart, getTodayDateString, getDateDaysAgo } from "@/lib/date-helpers";
+
+const MAX_BACKFILL_WEEKS = 12;
+
+async function backfillWeeklySummariesForClient(
+  clientId: string,
+  earliestWeekStart?: string
+): Promise<void> {
+  let query = supabaseAdmin
+    .from("daily_logs")
+    .select("date")
+    .eq("client_id", clientId)
+    .order("date", { ascending: true });
+
+  if (earliestWeekStart) {
+    query = query.gte("date", earliestWeekStart);
+  }
+
+  const { data: logDates, error: datesError } = await query;
+  if (datesError || !logDates?.length) return;
+
+  const weekStarts = new Set<string>();
+  for (const row of logDates) {
+    weekStarts.add(getWeekStart(row.date));
+  }
+
+  const { data: existing } = await supabaseAdmin
+    .from("nutrition_weekly_summaries")
+    .select("week_start_date")
+    .eq("client_id", clientId);
+
+  const existingWeeks = new Set((existing ?? []).map((r) => r.week_start_date));
+  const missing = [...weekStarts].filter((ws) => !existingWeeks.has(ws)).slice(0, MAX_BACKFILL_WEEKS);
+
+  await Promise.all(
+    missing.map((weekStart) =>
+      upsertWeeklySummary(clientId, weekStart).catch((err) => {
+        console.error(`Backfill failed for week ${weekStart}:`, err instanceof Error ? err.message : "Unknown error");
+      })
+    )
+  );
+}
 
 export async function GET(
   request: NextRequest,

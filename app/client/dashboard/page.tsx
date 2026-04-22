@@ -22,7 +22,7 @@ import type { TrainingPlan } from "@/types/training";
 import type { Client } from "@/types/check-in";
 import type { NutritionTargets } from "@/services/client-portal-service";
 import type { ProgressData } from "@/services/client-portal-progress";
-import type { CheckInGateStatus } from "@/lib/date-utils";
+import type { CheckInGateStatus } from "@/lib/date-helpers";
 import type { DailyHabit } from "@/types/daily-habit";
 
 export default function ClientDashboardPage() {

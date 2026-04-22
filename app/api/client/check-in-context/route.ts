@@ -10,8 +10,8 @@ import { getDailyLogs } from "@/services/daily-logs-service";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { clientApiRateLimit } from "@/lib/rate-limit";
-import { calculateCheckInPeriod, getCheckInStatus, formatDateISO } from "@/lib/date-utils";
-import type { CheckInGateStatus } from "@/lib/date-utils";
+import { calculateCheckInPeriod, getCheckInStatus, formatDateISO } from "@/lib/date-helpers";
+import type { CheckInGateStatus } from "@/lib/date-helpers";
 import type { ValidateCheckInTokenResponse } from "@/types/check-in";
 
 /**

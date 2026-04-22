@@ -13,7 +13,7 @@ import {
   addDays,
   differenceInDays,
   parseISODate,
-} from "@/lib/date-utils";
+} from "@/lib/date-helpers";
 import { getFrequencyInDays } from "./check-in-tracking-service";
 import type { ClientAdherenceStats } from "@/types/check-in";
 

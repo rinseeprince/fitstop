@@ -7,7 +7,7 @@ import { supabaseAdmin } from "./supabase-admin";
 import { getClientById, getClientsForCoach } from "./client-service";
 import { createCheckInToken } from "./check-in-service";
 import { getDaysUntilOrPastDue } from "./check-in-tracking-service";
-import { differenceInHours } from "@/lib/date-utils";
+import { differenceInHours } from "@/lib/date-helpers";
 import type { ReminderType, CheckInReminder } from "@/types/check-in";
 import type { CheckInReminderRow } from "@/lib/database-helpers";
 
