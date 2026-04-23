@@ -3,7 +3,6 @@ import type {
   TrainingSession,
   TrainingExercise,
 } from "@/types/training";
-import type { ActivityMetadata } from "@/types/external-activity";
 import type { TrainingExerciseRow, TrainingSessionRow, TrainingPlanRow } from "@/lib/database-helpers";
 
 // Map database row to TrainingExercise
@@ -39,8 +38,7 @@ export const mapSessionRow = (row: TrainingSessionRow, exercises: TrainingExerci
   notes: row.notes ?? undefined,
   estimatedDurationMinutes: row.estimated_duration_minutes ?? undefined,
   exercises,
-  sessionType: (row.session_type ?? "training") as "training" | "external_activity",
-  activityMetadata: (row.activity_metadata ?? undefined) as ActivityMetadata | undefined,
+  sessionType: "training",
   estimatedCalories: row.estimated_calories ?? undefined,
   caloriesCalculatedAt: row.calories_calculated_at ?? undefined,
   calorieSurplusPercentage: row.calorie_surplus_percentage ?? null,

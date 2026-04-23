@@ -1,5 +1,4 @@
 import type { TrainingPlan, TrainingSession, TrainingExercise, SessionType } from "@/types/training";
-import type { ActivityMetadata } from "@/types/external-activity";
 import type { TrainingSessionRow, TrainingExerciseRow, SessionLogRow } from "@/lib/database-helpers";
 import { createPortalClient } from "./client-portal-service";
 
@@ -97,8 +96,7 @@ export async function getClientTrainingPlan(
       focus: session.focus ?? undefined,
       notes: session.notes ?? undefined,
       estimatedDurationMinutes: session.estimated_duration_minutes ?? undefined,
-      sessionType: (session.session_type || "training") as SessionType,
-      activityMetadata: (session.activity_metadata as ActivityMetadata) ?? undefined,
+      sessionType: "training" as SessionType,
       estimatedCalories: session.estimated_calories ?? undefined,
       caloriesCalculatedAt: session.calories_calculated_at ?? undefined,
       exercises,
@@ -178,7 +176,7 @@ export async function markSessionComplete(
   let snapshot: Record<string, unknown> | null = null;
   const { data: sessionData } = await supabase
     .from("training_sessions")
-    .select("name, day_of_week, focus, session_type, estimated_duration_minutes, estimated_calories")
+    .select("name, day_of_week, focus, estimated_duration_minutes, estimated_calories")
     .eq("id", trainingSessionId)
     .single();
   if (sessionData) {

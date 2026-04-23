@@ -397,8 +397,6 @@ export async function cloneSessionForEvent(
       focus: session.focus as string | null,
       notes: session.notes as string | null,
       estimated_duration_minutes: session.estimated_duration_minutes as number | null,
-      session_type: session.session_type as string,
-      activity_metadata: session.activity_metadata as Json | null,
       estimated_calories: session.estimated_calories as number | null,
       calories_calculated_at: session.calories_calculated_at as string | null,
       calorie_surplus_percentage: session.calorie_surplus_percentage as number | null,

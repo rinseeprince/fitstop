@@ -130,7 +130,6 @@ export function useTrainingBuilder({ clientId, onUpdate }: UseTrainingBuilderPro
     setPlanName("");
     manual.resetManualSessions();
     trainingPlan.setPrompt("");
-    trainingPlan.setPreGenerationActivities([]);
   }, [trainingPlan, manual]);
 
   // ═══════════════════════════════════════════════════════════════════════════

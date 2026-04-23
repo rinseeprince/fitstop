@@ -50,8 +50,7 @@ export function getTrainingDays(plan: TrainingPlan | null): Set<string> {
 
   const days = new Set<string>();
   plan.sessions.forEach((session) => {
-    // Only count actual training sessions, not external activities
-    if (session.dayOfWeek && session.sessionType !== "external_activity") {
+    if (session.dayOfWeek) {
       days.add(session.dayOfWeek.toLowerCase());
     }
   });

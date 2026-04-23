@@ -254,7 +254,6 @@ export interface MockTrainingSessionOptions {
   name?: string
   dayOfWeek?: string | null
   orderIndex?: number
-  sessionType?: 'training' | 'external_activity'
   createdAt?: string
   updatedAt?: string
 }
@@ -271,7 +270,7 @@ export function createMockTrainingSessionRow(options: MockTrainingSessionOptions
     focus: 'Chest, Shoulders, Triceps',
     notes: null,
     estimated_duration_minutes: 60,
-    session_type: options.sessionType ?? 'training',
+    session_type: 'training',
     activity_metadata: null,
     estimated_calories: null,
     calories_calculated_at: null,

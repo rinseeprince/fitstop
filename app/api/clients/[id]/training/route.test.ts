@@ -41,7 +41,7 @@ vi.mock('@/lib/validations/training', () => ({
   generateTrainingPlanSchema: {
     safeParse: vi.fn().mockReturnValue({
       success: true,
-      data: { coachPrompt: 'Build a plan', preGenerationActivities: [] },
+      data: { coachPrompt: 'Build a plan' },
     }),
   },
 }))

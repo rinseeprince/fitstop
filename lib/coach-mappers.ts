@@ -56,7 +56,7 @@ export function mapSavedSessionRow(
     estimatedDurationMinutes: row.estimated_duration_minutes ?? null,
     calorieSurplusPercentage: row.calorie_surplus_percentage ?? null,
     notes: row.notes ?? null,
-    sessionType: row.session_type ?? "training",
+    sessionType: "training",
     exercises,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

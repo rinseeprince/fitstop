@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
-import type { TrainingPlan, PreGenerationActivity } from "@/types/training";
+import type { TrainingPlan } from "@/types/training";
 import { parseGetPlanResponse, parseGeneratePlanResponse } from "@/lib/validations/training";
 import type { UpcomingTrainingPlan } from "@/lib/validations/training";
 
@@ -19,8 +19,6 @@ export function useTrainingPlan({ clientId, onUpdate }: UseTrainingPlanProps) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
-  const [preGenerationActivities, setPreGenerationActivities] = useState<PreGenerationActivity[]>([]);
-  const [allowSameDayTraining, setAllowSameDayTraining] = useState(false);
   const [savedPlanId, setSavedPlanId] = useState<string | null>(null);
 
   const fetchPlan = useCallback(async () => {
@@ -69,14 +67,6 @@ export function useTrainingPlan({ clientId, onUpdate }: UseTrainingPlanProps) {
       return false;
     }
 
-    // Filter to only valid activities (safety net for validation)
-    const validDays = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
-    const validActivities = preGenerationActivities.filter((a) => {
-      const hasValidName = a.activityName && a.activityName.trim().length > 0;
-      const hasValidDay = a.dayOfWeek && validDays.includes(a.dayOfWeek.toLowerCase());
-      return hasValidName && hasValidDay;
-    });
-
     const trimmedName = options.planName?.trim();
 
     setIsGenerating(true);
@@ -87,8 +77,6 @@ export function useTrainingPlan({ clientId, onUpdate }: UseTrainingPlanProps) {
         body: JSON.stringify({
           coachPrompt: prompt,
           name: trimmedName || undefined,
-          preGenerationActivities: validActivities.length > 0 ? validActivities : undefined,
-          allowSameDayTraining,
           effectiveFrom: options.effectiveFrom ?? undefined,
         }),
       });
@@ -109,8 +97,6 @@ export function useTrainingPlan({ clientId, onUpdate }: UseTrainingPlanProps) {
       if (data.success && data.savedPlanId) {
         setSavedPlanId(data.savedPlanId);
         setPrompt("");
-        setPreGenerationActivities([]);
-        setAllowSameDayTraining(false);
         toast({ title: "Plan draft created" });
         return true;
       } else {
@@ -128,16 +114,7 @@ export function useTrainingPlan({ clientId, onUpdate }: UseTrainingPlanProps) {
     }
   };
 
-  const addPreGenActivity = (activity: PreGenerationActivity) => {
-    setPreGenerationActivities((prev) => [...prev, activity]);
-  };
-
-  const removePreGenActivity = (tempId: string) => {
-    setPreGenerationActivities((prev) => prev.filter((a) => a.tempId !== tempId));
-  };
-
-  const trainingSessions = plan?.sessions.filter((s) => s.sessionType !== "external_activity") ?? [];
-  const externalActivities = plan?.sessions.filter((s) => s.sessionType === "external_activity") ?? [];
+  const trainingSessions = plan?.sessions ?? [];
 
   return {
     clientId,
@@ -148,17 +125,10 @@ export function useTrainingPlan({ clientId, onUpdate }: UseTrainingPlanProps) {
     loadError,
     prompt,
     setPrompt,
-    preGenerationActivities,
-    setPreGenerationActivities,
-    allowSameDayTraining,
-    setAllowSameDayTraining,
     savedPlanId,
     setSavedPlanId,
     generate,
-    addPreGenActivity,
-    removePreGenActivity,
     fetchPlan,
     trainingSessions,
-    externalActivities,
   };
 }

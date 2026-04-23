@@ -24,7 +24,7 @@ async function backfillEvents() {
   const { data: plans, error: plansError } = await supabaseAdmin
     .from("training_plans")
     .select(
-      "id, client_id, status, effective_from, effective_until, program_duration_weeks, phase_id, training_sessions(id, name, day_of_week, session_type, focus, estimated_calories, is_active)"
+      "id, client_id, status, effective_from, effective_until, program_duration_weeks, phase_id, training_sessions(id, name, day_of_week, focus, estimated_calories, is_active)"
     );
 
   if (plansError) {
@@ -43,22 +43,16 @@ async function backfillEvents() {
       id: string;
       name: string;
       day_of_week: string | null;
-      session_type: string | null;
       focus: string | null;
       estimated_calories: number | null;
       is_active: boolean | null;
     }>)
-      .filter(
-        (s) =>
-          s.is_active !== false &&
-          s.session_type === "training" &&
-          s.day_of_week
-      )
+      .filter((s) => s.is_active !== false && s.day_of_week)
       .map((s) => ({
         id: s.id,
         name: s.name,
         dayOfWeek: s.day_of_week ?? undefined,
-        sessionType: (s.session_type ?? "training") as "training" | "external_activity",
+        sessionType: "training" as const,
         focus: s.focus ?? undefined,
         estimatedCalories: s.estimated_calories ?? undefined,
       }));

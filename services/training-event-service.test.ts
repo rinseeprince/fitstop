@@ -118,22 +118,6 @@ describe("training-event-service", () => {
       expect(rows[0].session_name).toBe("Push");
     });
 
-    it("filters out external activity sessions", async () => {
-      const mockQuery = createMockQuery({ data: [], error: null });
-      mockFrom.mockReturnValue(mockQuery as any);
-
-      const sessions: SessionInput[] = [
-        { id: "s1", name: "Push", dayOfWeek: "monday", sessionType: "training" },
-        { id: "s2", name: "Running", dayOfWeek: "tuesday", sessionType: "external_activity" },
-      ];
-
-      await generateTrainingEvents("client-1", "plan-1", sessions, "2026-04-06", "2026-04-12");
-
-      const rows = mockQuery.upsert.mock.calls[0][0];
-      expect(rows).toHaveLength(1);
-      expect(rows[0].session_name).toBe("Push");
-    });
-
     it("generates events for multiple sessions on the same day", async () => {
       const mockQuery = createMockQuery({ data: [], error: null });
       mockFrom.mockReturnValue(mockQuery as any);

@@ -89,15 +89,6 @@ export function buildCheckInAnalysisPrompt(
     }
   }
 
-  if (current.externalActivities?.length) {
-    prompt += "\nExternal Activities (outside training plan):\n";
-    current.externalActivities.forEach((a) => {
-      prompt += `- ${sanitizeForAIPrompt(a.activityName)}: ${a.durationMinutes}min (${a.intensityLevel})`;
-      if (a.estimatedCalories) prompt += ` ~${a.estimatedCalories}cal`;
-      prompt += "\n";
-    });
-  }
-
   if (current.prs) prompt += `\nPersonal Records (free text): ${sanitizeForAIPrompt(current.prs)}\n`;
   if (current.challenges) prompt += `\nChallenges (free text): ${sanitizeForAIPrompt(current.challenges)}\n`;
   if (current.notes) prompt += `\nNotes: ${sanitizeForAIPrompt(current.notes)}\n`;

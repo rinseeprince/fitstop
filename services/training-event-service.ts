@@ -51,10 +51,8 @@ export async function generateTrainingEvents(
   startDate: string,
   endDate: string
 ): Promise<void> {
-  // Filter to training sessions with a day assigned
-  const trainingSessions = sessions.filter(
-    (s) => s.sessionType === "training" && s.dayOfWeek
-  );
+  // Keep sessions with a day assigned
+  const trainingSessions = sessions.filter((s) => s.dayOfWeek);
 
   if (trainingSessions.length === 0) return;
 
@@ -168,7 +166,7 @@ export async function regenerateFutureEvents(
   // Fetch current active sessions
   const { data: sessionRows, error: sessionsError } = await supabaseAdmin
     .from("training_sessions")
-    .select("id, name, day_of_week, session_type, focus, estimated_calories, calorie_surplus_percentage")
+    .select("id, name, day_of_week, focus, estimated_calories, calorie_surplus_percentage")
     .eq("plan_id", planId)
     .eq("is_active", true);
 
@@ -179,7 +177,7 @@ export async function regenerateFutureEvents(
     id: r.id,
     name: r.name,
     dayOfWeek: r.day_of_week ?? undefined,
-    sessionType: (r.session_type ?? "training") as SessionType,
+    sessionType: "training",
     focus: r.focus ?? undefined,
     estimatedCalories: r.estimated_calories ?? undefined,
     calorieSurplusPercentage: r.calorie_surplus_percentage ?? null,
