@@ -1,64 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAuthenticatedClientId } from "@/lib/auth-helpers";
-import { createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
-import { clientApiRateLimit } from "@/lib/rate-limit";
-import { 
-  getCheckInSessionCompletions, 
-  getCheckInExerciseHighlights, 
-  getCheckInExternalActivities 
+import { requireClientAuth } from "@/lib/require-client-auth";
+import { supabaseAdmin } from "@/services/supabase-admin";
+import {
+  getCheckInSessionCompletions,
+  getCheckInExerciseHighlights,
+  getCheckInExternalActivities
 } from "@/services/check-in-service";
-
-async function createClient() {
-  const cookieStore = await cookies();
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll();
-        },
-        setAll(cookiesToSet) {
-          try {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
-            );
-          } catch {
-            // Handle read-only error in Server Components
-          }
-        },
-      },
-    }
-  );
-}
 
 // GET /api/client/check-ins/[id] - Get specific check-in details for authenticated client
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const rateLimitResult = await clientApiRateLimit(request);
-  if (rateLimitResult) return rateLimitResult;
+  const auth = await requireClientAuth(request);
+  if (!auth.ok) return auth.response;
 
   try {
     const { id } = await params;
-    const clientId = await getAuthenticatedClientId();
 
-    if (!clientId) {
-      return NextResponse.json(
-        { success: false, error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
-    const supabase = await createClient();
-    
-    const { data: checkIn, error } = await supabase
+    // IDOR: filter on client_id to ensure the client can only read their own check-in
+    const { data: checkIn, error } = await supabaseAdmin
       .from("check_ins")
       .select("*")
       .eq("id", id)
-      .eq("client_id", clientId) // Ensure client can only access their own check-ins
+      .eq("client_id", auth.clientId)
       .single();
 
     if (error) {

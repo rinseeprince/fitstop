@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAuthenticatedClientId } from "@/lib/auth-helpers";
+import { requireClientAuth } from "@/lib/require-client-auth";
 import { getClientById } from "@/services/client-service";
-import { 
-  calculateNextExpectedCheckIn, 
-  getDaysUntilOrPastDue, 
-  isClientOverdue 
+import {
+  calculateNextExpectedCheckIn,
+  getDaysUntilOrPastDue,
+  isClientOverdue
 } from "@/services/check-in-tracking-service";
-import { clientApiRateLimit } from "@/lib/rate-limit";
 import type { ClientNotification } from "@/hooks/use-client-notifications";
 
 /**
@@ -52,19 +51,11 @@ import type { ClientNotification } from "@/hooks/use-client-notifications";
  * @throws {500} Server error during notification retrieval
  */
 export async function GET(request: NextRequest) {
-  const rateLimitResult = await clientApiRateLimit(request);
-  if (rateLimitResult) return rateLimitResult;
+  const auth = await requireClientAuth(request);
+  if (!auth.ok) return auth.response;
+  const { clientId } = auth;
 
   try {
-    const clientId = await getAuthenticatedClientId();
-
-    if (!clientId) {
-      return NextResponse.json(
-        { success: false, error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
     const client = await getClientById(clientId);
 
     if (!client) {

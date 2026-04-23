@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAuthenticatedClientId } from "@/lib/auth-helpers";
-import { clientApiRateLimit } from "@/lib/rate-limit";
+import { requireClientAuth } from "@/lib/require-client-auth";
 import { getIntake, createIntake } from "@/services/client-intake-service";
 import type { ClientIntake } from "@/types/client-intake";
 
@@ -41,22 +40,14 @@ function getCompletedSteps(intake: ClientIntake): number[] {
 }
 
 export async function GET(request: NextRequest) {
-  const rateLimitResult = await clientApiRateLimit(request);
-  if (rateLimitResult) return rateLimitResult;
+  const auth = await requireClientAuth(request);
+  if (!auth.ok) return auth.response;
 
   try {
-    const clientId = await getAuthenticatedClientId();
-    if (!clientId) {
-      return NextResponse.json(
-        { success: false, error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
     // Auto-create intake on first access
-    let intake = await getIntake(clientId);
+    let intake = await getIntake(auth.clientId);
     if (!intake) {
-      intake = await createIntake(clientId);
+      intake = await createIntake(auth.clientId);
     }
 
     return NextResponse.json({

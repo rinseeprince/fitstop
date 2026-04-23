@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAuthenticatedClientWithCheckInDay } from "@/lib/auth-helpers";
-import { clientApiRateLimit } from "@/lib/rate-limit";
-import { requireCSRFProtection } from "@/lib/csrf-protection";
+import { requireClientAuthWithCheckInDay } from "@/lib/require-client-auth";
 import { z } from "zod";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { getTodayDateString, getTrainingWeekStart } from "@/lib/date-helpers";
@@ -15,22 +13,10 @@ const sessionCompletionSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
-  const rateLimitResult = await clientApiRateLimit(request);
-  if (rateLimitResult) return rateLimitResult;
-
-  const csrfError = await requireCSRFProtection(request);
-  if (csrfError) return csrfError;
+  const auth = await requireClientAuthWithCheckInDay(request);
+  if (!auth.ok) return auth.response;
 
   try {
-    const auth = await getAuthenticatedClientWithCheckInDay();
-
-    if (!auth) {
-      return NextResponse.json(
-        { success: false, error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
     const body = await request.json();
     const validationResult = sessionCompletionSchema.safeParse(body);
 
@@ -128,22 +114,10 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const rateLimitResult = await clientApiRateLimit(request);
-  if (rateLimitResult) return rateLimitResult;
-
-  const csrfError = await requireCSRFProtection(request);
-  if (csrfError) return csrfError;
+  const auth = await requireClientAuthWithCheckInDay(request);
+  if (!auth.ok) return auth.response;
 
   try {
-    const auth = await getAuthenticatedClientWithCheckInDay();
-
-    if (!auth) {
-      return NextResponse.json(
-        { success: false, error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
     const { searchParams } = new URL(request.url);
     const trainingSessionId = searchParams.get("trainingSessionId");
 

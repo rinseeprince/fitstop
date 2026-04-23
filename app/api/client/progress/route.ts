@@ -1,27 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAuthenticatedClientId } from "@/lib/auth-helpers";
+import { requireClientAuth } from "@/lib/require-client-auth";
 import { getClientProgressData } from "@/services/client-portal-progress";
-import { clientApiRateLimit } from "@/lib/rate-limit";
 
 // GET /api/client/progress - Get client's progress data for charts
 export async function GET(request: NextRequest) {
-  const rateLimitResult = await clientApiRateLimit(request);
-  if (rateLimitResult) return rateLimitResult;
+  const auth = await requireClientAuth(request);
+  if (!auth.ok) return auth.response;
 
   try {
-    const clientId = await getAuthenticatedClientId();
-
-    if (!clientId) {
-      return NextResponse.json(
-        { success: false, error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
     const { searchParams } = new URL(request.url);
     const days = Math.min(Math.max(parseInt(searchParams.get("days") || "90", 10) || 90, 1), 365);
 
-    const progressData = await getClientProgressData(clientId, days);
+    const progressData = await getClientProgressData(auth.clientId, days);
 
     return NextResponse.json({
       success: true,

@@ -1,28 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAuthenticatedClientId } from "@/lib/auth-helpers";
-import { clientApiRateLimit } from "@/lib/rate-limit";
-import { requireCSRFProtection } from "@/lib/csrf-protection";
+import { requireClientAuth } from "@/lib/require-client-auth";
 import { dailyExternalActivitySchema } from "@/lib/validations/daily-activity";
 import { addActivity, getActivities, getActivitiesRange } from "@/services/daily-activities-service";
 import { getTodayDateString } from "@/lib/date-helpers";
 
 export async function POST(request: NextRequest) {
-  const rateLimitResult = await clientApiRateLimit(request);
-  if (rateLimitResult) return rateLimitResult;
-
-  const csrfError = await requireCSRFProtection(request);
-  if (csrfError) return csrfError;
+  const auth = await requireClientAuth(request);
+  if (!auth.ok) return auth.response;
 
   try {
-    const clientId = await getAuthenticatedClientId();
-
-    if (!clientId) {
-      return NextResponse.json(
-        { success: false, error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
     const rawBody = await request.json();
     
     // Convert snake_case to camelCase for compatibility
@@ -47,7 +33,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const activity = await addActivity(clientId, validationResult.data);
+    const activity = await addActivity(auth.clientId, validationResult.data);
 
     return NextResponse.json({
       success: true,
@@ -66,19 +52,10 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
-  const rateLimitResult = await clientApiRateLimit(request);
-  if (rateLimitResult) return rateLimitResult;
+  const auth = await requireClientAuth(request);
+  if (!auth.ok) return auth.response;
 
   try {
-    const clientId = await getAuthenticatedClientId();
-
-    if (!clientId) {
-      return NextResponse.json(
-        { success: false, error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
     const { searchParams } = new URL(request.url);
     const date = searchParams.get("date");
     const startDate = searchParams.get("startDate");
@@ -87,12 +64,12 @@ export async function GET(request: NextRequest) {
     let activities: any[];
 
     if (date) {
-      activities = await getActivities(clientId, date);
+      activities = await getActivities(auth.clientId, date);
     } else if (startDate && endDate) {
-      activities = await getActivitiesRange(clientId, startDate, endDate);
+      activities = await getActivitiesRange(auth.clientId, startDate, endDate);
     } else {
       const today = getTodayDateString();
-      activities = await getActivities(clientId, today);
+      activities = await getActivities(auth.clientId, today);
     }
 
     return NextResponse.json({

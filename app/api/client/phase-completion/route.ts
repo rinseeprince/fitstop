@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { clientApiRateLimit } from "@/lib/rate-limit";
-import { requireCSRFProtection } from "@/lib/csrf-protection";
-import { getAuthenticatedClientId } from "@/lib/auth-helpers";
+import { requireClientAuth } from "@/lib/require-client-auth";
 import { supabaseAdmin } from "@/services/supabase-admin";
 
 const markSeenSchema = z.object({
@@ -10,17 +8,11 @@ const markSeenSchema = z.object({
 });
 
 export async function GET(request: NextRequest) {
-  const rateLimitResult = await clientApiRateLimit(request);
-  if (rateLimitResult) return rateLimitResult;
+  const auth = await requireClientAuth(request);
+  if (!auth.ok) return auth.response;
+  const { clientId } = auth;
 
   try {
-    const clientId = await getAuthenticatedClientId();
-    if (!clientId) {
-      return NextResponse.json(
-        { success: false, error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
 
     // Find the most recent completed phase with unseen completion
     // New columns (coach_reflection, phase_summary, completion_seen) added in migration 067
@@ -116,21 +108,11 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const rateLimitResult = await clientApiRateLimit(request);
-  if (rateLimitResult) return rateLimitResult;
-
-  const csrfError = await requireCSRFProtection(request);
-  if (csrfError) return csrfError;
+  const auth = await requireClientAuth(request);
+  if (!auth.ok) return auth.response;
+  const { clientId } = auth;
 
   try {
-    const clientId = await getAuthenticatedClientId();
-    if (!clientId) {
-      return NextResponse.json(
-        { success: false, error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
     const body = await request.json();
     const validation = markSeenSchema.safeParse(body);
     if (!validation.success) {

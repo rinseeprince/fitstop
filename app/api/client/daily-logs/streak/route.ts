@@ -1,23 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAuthenticatedClientId } from "@/lib/auth-helpers";
-import { clientApiRateLimit } from "@/lib/rate-limit";
+import { requireClientAuth } from "@/lib/require-client-auth";
 import { calculateStreaks } from "@/services/daily-logs-service";
 
 export async function GET(request: NextRequest) {
-  const rateLimitResult = await clientApiRateLimit(request);
-  if (rateLimitResult) return rateLimitResult;
+  const auth = await requireClientAuth(request);
+  if (!auth.ok) return auth.response;
 
   try {
-    const clientId = await getAuthenticatedClientId();
-
-    if (!clientId) {
-      return NextResponse.json(
-        { success: false, error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
-    const streaks = await calculateStreaks(clientId);
+    const streaks = await calculateStreaks(auth.clientId);
 
     return NextResponse.json(
       {

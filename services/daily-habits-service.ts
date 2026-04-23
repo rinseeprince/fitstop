@@ -230,6 +230,22 @@ export const logHabit = async (
   completed: boolean,
   value?: number
 ): Promise<DailyHabitLog> => {
+  // IDOR: confirm the habit belongs to this client before writing a log row.
+  // Without this, an authed client could pollute their own log table with entries
+  // pointing at arbitrary habit IDs (data-integrity risk, not a cross-user leak).
+  const { data: habit, error: habitError } = await supabaseAdmin
+    .from("daily_habits")
+    .select("client_id")
+    .eq("id", habitId)
+    .maybeSingle();
+
+  if (habitError) {
+    throw new Error(`Failed to verify habit ownership: ${habitError.message}`);
+  }
+  if (!habit || habit.client_id !== clientId) {
+    throw new Error("Habit not found or access denied");
+  }
+
   const logData = {
     daily_habit_id: habitId,
     client_id: clientId,

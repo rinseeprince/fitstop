@@ -1,31 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAuthenticatedClientId } from "@/lib/auth-helpers";
-import { clientApiRateLimit } from "@/lib/rate-limit";
-import { requireCSRFProtection } from "@/lib/csrf-protection";
+import { requireClientAuth } from "@/lib/require-client-auth";
 import { dailyExternalActivitySchema } from "@/lib/validations/daily-activity";
 import { updateActivity, deleteActivity } from "@/services/daily-activities-service";
 
+// IDOR: updateActivity / deleteActivity verify the resource belongs to this client.
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const rateLimitResult = await clientApiRateLimit(request);
-  if (rateLimitResult) return rateLimitResult;
-
-  const csrfError = await requireCSRFProtection(request);
-  if (csrfError) return csrfError;
+  const auth = await requireClientAuth(request);
+  if (!auth.ok) return auth.response;
 
   try {
     const { id: activityId } = await params;
-    const clientId = await getAuthenticatedClientId();
-
-    if (!clientId) {
-      return NextResponse.json(
-        { success: false, error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
     const rawBody = await request.json();
     
     // Convert snake_case to camelCase for compatibility
@@ -50,7 +37,7 @@ export async function PUT(
       );
     }
 
-    const activity = await updateActivity(activityId, clientId, validationResult.data);
+    const activity = await updateActivity(activityId, auth.clientId, validationResult.data);
 
     return NextResponse.json({
       success: true,
@@ -73,24 +60,13 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const rateLimitResult = await clientApiRateLimit(request);
-  if (rateLimitResult) return rateLimitResult;
-
-  const csrfError = await requireCSRFProtection(request);
-  if (csrfError) return csrfError;
+  const auth = await requireClientAuth(request);
+  if (!auth.ok) return auth.response;
 
   try {
     const { id: activityId } = await params;
-    const clientId = await getAuthenticatedClientId();
 
-    if (!clientId) {
-      return NextResponse.json(
-        { success: false, error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
-    await deleteActivity(activityId, clientId);
+    await deleteActivity(activityId, auth.clientId);
 
     return NextResponse.json({
       success: true,

@@ -1,32 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAuthenticatedClientId } from "@/lib/auth-helpers";
-import { clientApiRateLimit } from "@/lib/rate-limit";
+import { requireClientAuth } from "@/lib/require-client-auth";
 import { getWeeklyLogs } from "@/services/daily-logs-service";
 import { getWeekStart, getWeekEnd } from "@/lib/date-helpers";
 
 export async function GET(request: NextRequest) {
-  const rateLimitResult = await clientApiRateLimit(request);
-  if (rateLimitResult) return rateLimitResult;
+  const auth = await requireClientAuth(request);
+  if (!auth.ok) return auth.response;
 
   try {
-    const clientId = await getAuthenticatedClientId();
-
-    if (!clientId) {
-      return NextResponse.json(
-        { success: false, error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
     // Get date from query params (defaults to today for current week)
     const { searchParams } = new URL(request.url);
     const date = searchParams.get("date");
-    
+
     // Get the week boundaries for the given date
     const weekStart = date ? getWeekStart(date) : getWeekStart(new Date().toISOString().split('T')[0]);
     const weekEnd = date ? getWeekEnd(date) : getWeekEnd(new Date().toISOString().split('T')[0]);
 
-    const logs = await getWeeklyLogs(clientId, weekStart, weekEnd);
+    const logs = await getWeeklyLogs(auth.clientId, weekStart, weekEnd);
 
     return NextResponse.json(
       {

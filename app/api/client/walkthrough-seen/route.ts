@@ -1,31 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAuthenticatedClientId } from "@/lib/auth-helpers";
-import { clientApiRateLimit } from "@/lib/rate-limit";
-import { requireCSRFProtection } from "@/lib/csrf-protection";
+import { requireClientAuth } from "@/lib/require-client-auth";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 
 export async function POST(request: NextRequest) {
-  const rateLimitResult = await clientApiRateLimit(request);
-  if (rateLimitResult) return rateLimitResult;
-
-  const csrfError = await requireCSRFProtection(request);
-  if (csrfError) return csrfError;
+  const auth = await requireClientAuth(request);
+  if (!auth.ok) return auth.response;
 
   try {
-    const clientId = await getAuthenticatedClientId();
-
-    if (!clientId) {
-      return NextResponse.json(
-        { success: false, error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
     const supabase = await createServerSupabaseClient();
     const { error } = await supabase
       .from("clients")
       .update({ walkthrough_completed_at: new Date().toISOString() })
-      .eq("id", clientId);
+      .eq("id", auth.clientId);
 
     if (error) throw error;
 

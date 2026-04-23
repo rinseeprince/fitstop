@@ -295,8 +295,12 @@ describe('/api/client/notifications', () => {
 
   describe('Error handling', () => {
     it('should handle service errors gracefully', async () => {
-      // Arrange
-      vi.mocked(getAuthenticatedClientId).mockRejectedValue(new Error('Database error'))
+      // Arrange: auth succeeds, service call throws inside the handler's try/catch.
+      // Note: the auth helper has its own internal try/catch, so modelling errors via
+      // the auth path no longer exercises the route's error handler after the
+      // requireClientAuth migration — use a service-layer failure instead.
+      vi.mocked(getAuthenticatedClientId).mockResolvedValue('client-123')
+      vi.mocked(getClientById).mockRejectedValue(new Error('Database error'))
 
       // Act
       const response = await GET(createMockRequest())

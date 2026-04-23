@@ -1,26 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAuthenticatedClientId } from "@/lib/auth-helpers";
-import { clientApiRateLimit } from "@/lib/rate-limit";
-import { requireCSRFProtection } from "@/lib/csrf-protection";
+import { requireClientAuth } from "@/lib/require-client-auth";
 import { submitIntake, IntakeValidationError } from "@/services/client-intake-service";
 
 export async function POST(request: NextRequest) {
-  const rateLimitResult = await clientApiRateLimit(request);
-  if (rateLimitResult) return rateLimitResult;
-
-  const csrfError = await requireCSRFProtection(request);
-  if (csrfError) return csrfError;
+  const auth = await requireClientAuth(request);
+  if (!auth.ok) return auth.response;
 
   try {
-    const clientId = await getAuthenticatedClientId();
-    if (!clientId) {
-      return NextResponse.json(
-        { success: false, error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
-    const intake = await submitIntake(clientId);
+    const intake = await submitIntake(auth.clientId);
 
     return NextResponse.json({ success: true, data: intake });
   } catch (error) {

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAuthenticatedClientId } from "@/lib/auth-helpers";
-import { clientApiRateLimit } from "@/lib/rate-limit";
+import { requireClientAuth } from "@/lib/require-client-auth";
 import {
   getTodaysNutritionTarget,
   getTodaysTrainingSession,
@@ -9,19 +8,10 @@ import {
 import { validateDateParameter } from "@/lib/validation-helpers";
 
 export async function GET(request: NextRequest) {
-  const rateLimitResult = await clientApiRateLimit(request);
-  if (rateLimitResult) return rateLimitResult;
+  const auth = await requireClientAuth(request);
+  if (!auth.ok) return auth.response;
 
   try {
-    const clientId = await getAuthenticatedClientId();
-
-    if (!clientId) {
-      return NextResponse.json(
-        { success: false, error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
     // Get date from query params
     const { searchParams } = new URL(request.url);
     const date = searchParams.get("date");
@@ -31,9 +21,9 @@ export async function GET(request: NextRequest) {
     if (dateValidation) return dateValidation;
 
     const [nutritionTarget, trainingSession, plannedActivities] = await Promise.all([
-      getTodaysNutritionTarget(clientId, date || undefined),
-      getTodaysTrainingSession(clientId, date || undefined),
-      getTodaysPlannedActivities(clientId, date || undefined),
+      getTodaysNutritionTarget(auth.clientId, date || undefined),
+      getTodaysTrainingSession(auth.clientId, date || undefined),
+      getTodaysPlannedActivities(auth.clientId, date || undefined),
     ]);
 
     return NextResponse.json(

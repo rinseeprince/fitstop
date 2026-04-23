@@ -1,27 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAuthenticatedClientId } from "@/lib/auth-helpers";
-import { clientApiRateLimit } from "@/lib/rate-limit";
-import { requireCSRFProtection } from "@/lib/csrf-protection";
+import { requireClientAuth } from "@/lib/require-client-auth";
 import { dailyHabitLogSchema } from "@/lib/validations/daily-habit";
 import { logHabit } from "@/services/daily-habits-service";
 
+// IDOR: the dailyHabitId comes from the request body; logHabit() verifies the
+// habit belongs to clientId before writing a log row.
 export async function POST(request: NextRequest) {
-  const rateLimitResult = await clientApiRateLimit(request);
-  if (rateLimitResult) return rateLimitResult;
-
-  const csrfError = await requireCSRFProtection(request);
-  if (csrfError) return csrfError;
+  const auth = await requireClientAuth(request);
+  if (!auth.ok) return auth.response;
 
   try {
-    const clientId = await getAuthenticatedClientId();
-
-    if (!clientId) {
-      return NextResponse.json(
-        { success: false, error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
     const rawBody = await request.json();
     
     // Convert snake_case to camelCase for compatibility
@@ -46,7 +34,7 @@ export async function POST(request: NextRequest) {
     const data = validationResult.data;
     const log = await logHabit(
       data.dailyHabitId,
-      clientId,
+      auth.clientId,
       data.date,
       data.completed,
       data.value
@@ -58,12 +46,13 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error("Error logging habit:", error);
+    const statusCode = error instanceof Error && error.message.includes("not found") ? 404 : 500;
     return NextResponse.json(
       {
         success: false,
         error: "Failed to log habit",
       },
-      { status: 500 }
+      { status: statusCode }
     );
   }
 }

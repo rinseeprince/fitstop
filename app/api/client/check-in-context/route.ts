@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAuthenticatedClientId } from "@/lib/auth-helpers";
+import { requireClientAuth } from "@/lib/require-client-auth";
 import {
   getCheckInTrainingContext,
   getCheckInNutritionContext,
@@ -9,7 +9,6 @@ import { getClientById } from "@/services/client-service";
 import { getDailyLogs } from "@/services/daily-logs-service";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
-import { clientApiRateLimit } from "@/lib/rate-limit";
 import { calculateCheckInPeriod, getCheckInStatus, formatDateISO } from "@/lib/date-helpers";
 import type { CheckInGateStatus } from "@/lib/date-helpers";
 import type { ValidateCheckInTokenResponse } from "@/types/check-in";
@@ -22,21 +21,12 @@ import type { ValidateCheckInTokenResponse } from "@/types/check-in";
  * for the check-in form. Enforces check-in schedule gating.
  */
 export async function GET(request: NextRequest) {
-  const rateLimitResult = await clientApiRateLimit(request);
-  if (rateLimitResult) return rateLimitResult;
+  const auth = await requireClientAuth(request);
+  if (!auth.ok) return auth.response;
 
   try {
-    const clientId = await getAuthenticatedClientId();
-
-    if (!clientId) {
-      return NextResponse.json(
-        { success: false, error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
     // Fetch client info
-    const client = await getClientById(clientId);
+    const client = await getClientById(auth.clientId);
 
     if (!client) {
       return NextResponse.json(

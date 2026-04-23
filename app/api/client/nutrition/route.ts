@@ -1,24 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAuthenticatedClientId } from "@/lib/auth-helpers";
+import { requireClientAuth } from "@/lib/require-client-auth";
 import { getClientNutritionTargets } from "@/services/client-portal-service";
-import { clientApiRateLimit } from "@/lib/rate-limit";
 
 // GET /api/client/nutrition - Get client's nutrition targets
 export async function GET(request: NextRequest) {
-  const rateLimitResult = await clientApiRateLimit(request);
-  if (rateLimitResult) return rateLimitResult;
+  const auth = await requireClientAuth(request);
+  if (!auth.ok) return auth.response;
 
   try {
-    const clientId = await getAuthenticatedClientId();
-
-    if (!clientId) {
-      return NextResponse.json(
-        { success: false, error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
-    const targets = await getClientNutritionTargets(clientId);
+    const targets = await getClientNutritionTargets(auth.clientId);
 
     return NextResponse.json({
       success: true,

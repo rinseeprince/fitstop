@@ -1,12 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAuthenticatedClientId } from "@/lib/auth-helpers";
+import { requireClientAuth } from "@/lib/require-client-auth";
 import { getClientById } from "@/services/client-service";
 import { uploadProgressPhotoFromBase64 } from "@/services/storage-service";
 import { submitCheckIn, getClientCheckIns } from "@/services/check-in-service";
 import { triggerAISummaryGeneration, updateClientMetricsFromCheckIn } from "@/services/client-check-in-service";
 import { updateClientAdherenceStats } from "@/services/check-in-adherence-service";
-import { clientApiRateLimit } from "@/lib/rate-limit";
-import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { clientSubmitCheckInSchema } from "@/lib/validations/check-in";
 import { calculateCheckInPeriod } from "@/lib/date-helpers";
 import { supabaseAdmin } from "@/services/supabase-admin";
@@ -53,24 +51,15 @@ import type { SubmitCheckInResponse } from "@/types/check-in";
  * @throws {500} Server error during check-in retrieval
  */
 export async function GET(request: NextRequest) {
-  const rateLimitResult = await clientApiRateLimit(request);
-  if (rateLimitResult) return rateLimitResult;
+  const auth = await requireClientAuth(request);
+  if (!auth.ok) return auth.response;
 
   try {
-    const clientId = await getAuthenticatedClientId();
-
-    if (!clientId) {
-      return NextResponse.json(
-        { success: false, error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
     const { searchParams } = new URL(request.url);
     const limit = Math.min(Math.max(parseInt(searchParams.get("limit") || "20", 10) || 20, 1), 100);
     const offset = Math.max(parseInt(searchParams.get("offset") || "0", 10) || 0, 0);
 
-    const result = await getClientCheckIns(clientId, { limit, offset });
+    const result = await getClientCheckIns(auth.clientId, { limit, offset });
 
     return NextResponse.json({
       success: true,
@@ -142,22 +131,11 @@ export async function GET(request: NextRequest) {
  * @throws {500} Server error during check-in processing
  */
 export async function POST(request: NextRequest) {
-  const rateLimitResult = await clientApiRateLimit(request);
-  if (rateLimitResult) return rateLimitResult;
-
-  const csrfError = await requireCSRFProtection(request);
-  if (csrfError) return csrfError;
+  const auth = await requireClientAuth(request);
+  if (!auth.ok) return auth.response;
+  const authenticatedClientId = auth.clientId;
 
   try {
-    const authenticatedClientId = await getAuthenticatedClientId();
-
-    if (!authenticatedClientId) {
-      return NextResponse.json(
-        { success: false, error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
     const rawBody = await request.json();
 
     // Validate input using the comprehensive schema

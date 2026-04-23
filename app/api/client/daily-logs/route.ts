@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAuthenticatedClientId } from "@/lib/auth-helpers";
-import { clientApiRateLimit } from "@/lib/rate-limit";
-import { requireCSRFProtection } from "@/lib/csrf-protection";
+import { requireClientAuth } from "@/lib/require-client-auth";
 import { dailyLogSchema } from "@/lib/validations/daily-log";
 import { upsertDailyLog, getDailyLogs } from "@/services/daily-logs-service";
 import { getTodaysNutritionTarget, getTodaysPlannedActivities } from "@/services/daily-context-service";
@@ -11,22 +9,11 @@ import { getTodayDateString, getDateDaysAgo } from "@/lib/date-helpers";
 import type { IntensityLevel } from "@/types/external-activity";
 
 export async function POST(request: NextRequest) {
-  const rateLimitResult = await clientApiRateLimit(request);
-  if (rateLimitResult) return rateLimitResult;
-
-  const csrfError = await requireCSRFProtection(request);
-  if (csrfError) return csrfError;
+  const auth = await requireClientAuth(request);
+  if (!auth.ok) return auth.response;
+  const clientId = auth.clientId;
 
   try {
-    const clientId = await getAuthenticatedClientId();
-
-    if (!clientId) {
-      return NextResponse.json(
-        { success: false, error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
     const rawBody = await request.json();
     
     // Convert snake_case to camelCase for compatibility
@@ -141,26 +128,17 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
-  const rateLimitResult = await clientApiRateLimit(request);
-  if (rateLimitResult) return rateLimitResult;
+  const auth = await requireClientAuth(request);
+  if (!auth.ok) return auth.response;
 
   try {
-    const clientId = await getAuthenticatedClientId();
-
-    if (!clientId) {
-      return NextResponse.json(
-        { success: false, error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
     const { searchParams } = new URL(request.url);
-    
+
     // Default to last 30 days if not provided
     const endDate = searchParams.get("endDate") || getTodayDateString();
     const startDate = searchParams.get("startDate") || getDateDaysAgo(30);
 
-    const logs = await getDailyLogs(clientId, startDate, endDate);
+    const logs = await getDailyLogs(auth.clientId, startDate, endDate);
 
     return NextResponse.json({
       success: true,

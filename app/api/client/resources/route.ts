@@ -1,29 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase-server";
+import { requireClientAuth } from "@/lib/require-client-auth";
+import { supabaseAdmin } from "@/services/supabase-admin";
 import { getClientResources } from "@/services/content-service";
-import { clientApiRateLimit } from "@/lib/rate-limit";
 
 export async function GET(request: NextRequest) {
-  const rateLimitResult = await clientApiRateLimit(request);
-  if (rateLimitResult) return rateLimitResult;
+  const auth = await requireClientAuth(request);
+  if (!auth.ok) return auth.response;
 
   try {
-    const supabase = await createServerSupabaseClient();
-    
-    // Get authenticated user
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
-      return NextResponse.json(
-        { success: false, error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
-    // Get client profile
-    const { data: client, error: clientError } = await supabase
+    // Resolve coach_id for this client (getClientResources needs both ids)
+    const { data: client, error: clientError } = await supabaseAdmin
       .from("clients")
-      .select("id, coach_id")
-      .eq("user_id", user.id)
+      .select("coach_id")
+      .eq("id", auth.clientId)
       .single();
 
     if (clientError || !client) {
@@ -34,7 +23,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Fetch client resources (both assigned and library content)
-    const resources = await getClientResources(client.id, client.coach_id);
+    const resources = await getClientResources(auth.clientId, client.coach_id);
 
     return NextResponse.json({
       success: true,

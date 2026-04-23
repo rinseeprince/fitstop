@@ -1,24 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAuthenticatedClientId } from "@/lib/auth-helpers";
+import { requireClientAuth } from "@/lib/require-client-auth";
 import { getClientTrainingPlan } from "@/services/client-portal-training";
-import { clientApiRateLimit } from "@/lib/rate-limit";
 
 // GET /api/client/training - Get client's active training plan
 export async function GET(request: NextRequest) {
-  const rateLimitResult = await clientApiRateLimit(request);
-  if (rateLimitResult) return rateLimitResult;
+  const auth = await requireClientAuth(request);
+  if (!auth.ok) return auth.response;
 
   try {
-    const clientId = await getAuthenticatedClientId();
-
-    if (!clientId) {
-      return NextResponse.json(
-        { success: false, error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
-    const plan = await getClientTrainingPlan(clientId);
+    const plan = await getClientTrainingPlan(auth.clientId);
 
     return NextResponse.json({
       success: true,
