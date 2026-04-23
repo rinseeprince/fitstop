@@ -5,6 +5,11 @@ import {
   mapSavedSessionRow,
   mapSavedPlanRow,
 } from "@/lib/coach-mappers";
+import {
+  detectCycleInfoFallback,
+  insertSavedExercises,
+  recomputePlanCycleInfo,
+} from "./coach-library-helpers";
 import type {
   SavedPlan,
   SavedSession,
@@ -33,87 +38,6 @@ function collectExerciseNames(
     }
   }
   return names;
-}
-
-// --- Helper: detect cycle length and rest pattern ---
-
-/**
- * Fallback cycle detection when AI doesn't provide cycleLength/restDayPositions.
- * Uses a simple heuristic: one rest day after all training sessions.
- */
-function detectCycleInfoFallback(
-  sessions: AIGeneratedPlan["sessions"],
-  frequencyPerWeek: number | undefined
-): { cycleLength: number; restPattern: number[] } {
-  const hasDayOfWeek = sessions.some((s) => s.dayOfWeek);
-  if (hasDayOfWeek) {
-    const dayMap: Record<string, number> = {
-      monday: 0, tuesday: 1, wednesday: 2, thursday: 3,
-      friday: 4, saturday: 5, sunday: 6,
-    };
-    const assigned = new Set(
-      sessions
-        .filter((s) => s.dayOfWeek)
-        .map((s) => dayMap[s.dayOfWeek!.toLowerCase()] ?? -1)
-        .filter((d) => d >= 0)
-    );
-    const restDays: number[] = [];
-    for (let i = 0; i < 7; i++) {
-      if (!assigned.has(i)) restDays.push(i);
-    }
-    return { cycleLength: 7, restPattern: restDays };
-  }
-
-  // Simple fallback: sessions + 1 rest day at the end
-  const trainingDays = sessions.length;
-  if (trainingDays >= 7) return { cycleLength: trainingDays, restPattern: [] };
-
-  return { cycleLength: trainingDays + 1, restPattern: [trainingDays] };
-}
-
-// --- Insert exercises for a saved session ---
-
-async function insertSavedExercises(
-  sessionId: string,
-  exercises: Array<{
-    name: string;
-    sets: number;
-    repsMin?: number;
-    repsMax?: number;
-    repsTarget?: string;
-    rpeTarget?: number;
-    percentage1rm?: number;
-    tempo?: string;
-    restSeconds?: number;
-    notes?: string;
-    supersetGroup?: string;
-    isWarmup?: boolean;
-  }>,
-  exerciseIdMap: Map<string, string>
-): Promise<void> {
-  if (exercises.length === 0) return;
-  const rows: CoachSavedExerciseInsert[] = exercises.map((e, i) => ({
-    saved_session_id: sessionId,
-    exercise_id: exerciseIdMap.get(e.name.trim().toLowerCase()) ?? null,
-    name: e.name,
-    order_index: i,
-    sets: e.sets,
-    reps_min: e.repsMin ?? null,
-    reps_max: e.repsMax ?? null,
-    reps_target: e.repsTarget ?? null,
-    rpe_target: e.rpeTarget ?? null,
-    percentage_1rm: e.percentage1rm ?? null,
-    tempo: e.tempo ?? null,
-    rest_seconds: e.restSeconds ?? null,
-    notes: e.notes ?? null,
-    superset_group: e.supersetGroup ?? null,
-    is_warmup: e.isWarmup ?? false,
-  }));
-
-  const { error } = await supabaseAdmin
-    .from("coach_saved_exercises")
-    .insert(rows);
-  if (error) throw new Error(`Failed to insert saved exercises: ${error.message}`);
 }
 
 // --- Plan creation ---
@@ -818,38 +742,6 @@ export async function deleteSavedPlan(planId: string, coachId: string): Promise<
 }
 
 // --- Session CRUD ---
-
-/**
- * Recomputes cycle_length + rest_pattern + frequency_per_week for a plan from
- * its current session list. Call after any session insert/delete/reorder/rest-toggle
- * so the plan's cycle metadata stays consistent with its sessions — the calendar
- * generator and the AI/manual initial-insert logic both assume this invariant.
- */
-async function recomputePlanCycleInfo(planId: string, coachId: string): Promise<void> {
-  const { data: sessions, error } = await supabaseAdmin
-    .from("coach_saved_sessions")
-    .select("is_rest, order_index")
-    .eq("saved_plan_id", planId)
-    .order("order_index", { ascending: true });
-  if (error) throw new Error(`Failed to read sessions for cycle recompute: ${error.message}`);
-
-  const cycleLength = sessions?.length ?? 0;
-  const restPattern = (sessions ?? [])
-    .map((s, i) => (s.is_rest ? i : -1))
-    .filter((i) => i >= 0);
-  const trainingCount = cycleLength - restPattern.length;
-
-  const { error: updateError } = await supabaseAdmin
-    .from("coach_saved_plans")
-    .update({
-      cycle_length: cycleLength,
-      rest_pattern: restPattern,
-      frequency_per_week: trainingCount,
-    })
-    .eq("id", planId)
-    .eq("coach_id", coachId);
-  if (updateError) throw new Error(`Failed to update plan cycle info: ${updateError.message}`);
-}
 
 export async function addSavedSession(
   planId: string,
