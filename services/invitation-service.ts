@@ -1,4 +1,3 @@
-import { supabase } from "@/services/supabase-client"
 import { supabaseAdmin } from "@/services/supabase-admin"
 import { sendInvitationEmail, generateInviteToken } from "@/services/email-service"
 import type {
@@ -21,7 +20,7 @@ const _coachesTable = "coaches"
 export async function getInvitationForClient(
   clientId: string
 ): Promise<ClientInvitation | null> {
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from(invitationsTable)
     .select("*")
     .eq("client_id", clientId)
