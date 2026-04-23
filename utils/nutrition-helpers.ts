@@ -36,9 +36,6 @@ export type DailyNutritionTargets = {
   // Training session data (from generated training plan)
   trainingSessionCalories: number;
   trainingSessions: Array<{ name: string; calories: number }>;
-  // External activity data (BJJ, cycling, etc.)
-  externalActivityCalories: number;
-  externalActivities: Array<{ name: string; calories: number }>;
   totalCaloriesWithActivities: number;
   includeActivityBurn: boolean;
   calorieSurplusPercentage?: number | null;
@@ -372,8 +369,7 @@ export function applyDayOverrides(
     if (!override) return day;
 
     const customBaseline = override.calories;
-    const dayCalories =
-      customBaseline + day.trainingSessionCalories + day.externalActivityCalories;
+    const dayCalories = customBaseline + day.trainingSessionCalories;
 
     // Recalculate macros for the TOTAL day calories (baseline + training burn)
     const macros = calculateDailyMacros(dayCalories, override.protein_g, day.isTrainingDay, dietType);

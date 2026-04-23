@@ -375,7 +375,6 @@ describe('Daily Logs Service - Database Functions', () => {
         dayOfWeek: 'monday',
         baselineCalories: 2000,
         trainingBurnCalories: 200,
-        externalBurnCalories: 0,
         proteinG: 160,
         carbG: 220,
         fatG: 70,

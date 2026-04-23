@@ -175,7 +175,6 @@ describe("buildNutritionSummary", () => {
       dayOfWeek: "monday",
       baselineCalories: 2000,
       trainingBurnCalories: 300,
-      externalBurnCalories: 50,
       proteinG: 160,
       carbG: 250,
       fatG: 70,
@@ -195,8 +194,8 @@ describe("buildNutritionSummary", () => {
       [event]
     );
 
-    // Event target = baseline + training + external = 2000 + 300 + 50 = 2350
-    expect(result[0].targetCalories).toBe(2350);
+    // Event target = baseline + training = 2000 + 300 = 2300
+    expect(result[0].targetCalories).toBe(2300);
     expect(result[0].targetProteinG).toBe(160);
     expect(result[0].targetCarbsG).toBe(250);
     expect(result[0].targetFatG).toBe(70);
@@ -212,7 +211,6 @@ describe("buildNutritionSummary", () => {
       dayOfWeek: "monday",
       baselineCalories: 2000,
       trainingBurnCalories: 300,
-      externalBurnCalories: 50,
       proteinG: 160,
       carbG: 250,
       fatG: 70,

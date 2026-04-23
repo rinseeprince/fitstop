@@ -343,7 +343,6 @@ export type NutritionEvent = {
   dayOfWeek: string;
   baselineCalories: number;
   trainingBurnCalories: number;
-  externalBurnCalories: number;
   proteinG: number;
   carbG: number;
   fatG: number;

@@ -131,7 +131,7 @@ export function buildNutritionSummary(
       if (event) {
         targetCalories = event.calorieSurplusPercentage != null
           ? Math.round(event.baselineCalories * (1 + event.calorieSurplusPercentage / 100))
-          : event.baselineCalories + event.trainingBurnCalories + event.externalBurnCalories;
+          : event.baselineCalories + event.trainingBurnCalories;
         targetProteinG = event.proteinG;
         targetCarbsG = event.carbG;
         targetFatG = event.fatG;

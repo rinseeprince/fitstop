@@ -19,7 +19,7 @@ export function getTotalCalories(
   }
 
   // Legacy flat burn model
-  return event.baselineCalories + event.trainingBurnCalories + event.externalBurnCalories;
+  return event.baselineCalories + event.trainingBurnCalories;
 }
 
 /**
@@ -56,8 +56,6 @@ export function mapNutritionEventToDisplayTarget(
       fatPercent: 100 - proteinPercent - carbsPercent,
       trainingSessionCalories: 0,
       trainingSessions: [],
-      externalActivityCalories: 0,
-      externalActivities: [],
       totalCaloriesWithActivities: event.baselineCalories,
       includeActivityBurn: false,
       calorieSurplusPercentage: event.calorieSurplusPercentage,
@@ -92,8 +90,6 @@ export function mapNutritionEventToDisplayTarget(
     fatPercent: 100 - proteinPercent - carbsPercent,
     trainingSessionCalories: surplusCalories,
     trainingSessions: [],
-    externalActivityCalories: 0,
-    externalActivities: [],
     totalCaloriesWithActivities: totalCalories,
     includeActivityBurn: true,
     calorieSurplusPercentage: event.calorieSurplusPercentage,
