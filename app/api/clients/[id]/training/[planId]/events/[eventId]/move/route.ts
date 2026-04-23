@@ -56,15 +56,21 @@ export async function POST(
 
     const { targetDate, scope } = validation.data;
 
+    let earliestAffectedDate: string;
     if (scope === "single") {
-      await moveEvent(eventId, targetDate, clientId, planId);
+      const result = await moveEvent(eventId, targetDate, clientId, planId);
+      earliestAffectedDate = result.sourceDate < targetDate ? result.sourceDate : targetDate;
     } else {
       // Shifts all future events sharing this session's training_session_id by the
       // same day offset. For events with no session link, degrades to a single move.
-      await moveEventAndFuture(eventId, targetDate, clientId, planId);
+      const result = await moveEventAndFuture(eventId, targetDate, clientId, planId);
+      earliestAffectedDate =
+        result.earliestSourceDate < targetDate ? result.earliestSourceDate : targetDate;
     }
 
-    // Cascade: regenerate nutrition events for affected dates
+    // Cascade: regenerate nutrition events for affected dates.
+    // Use min(source, target) so a forward-in-time move also clears the stale
+    // nutrition_event row on the source date.
     const { data: nutritionPlans } = await supabaseAdmin
       .from("nutrition_plans")
       .select("id, status")
@@ -72,7 +78,7 @@ export async function POST(
       .in("status", ["active", "planned"]);
 
     for (const np of nutritionPlans ?? []) {
-      const fromDate = np.status === "active" ? targetDate : undefined;
+      const fromDate = np.status === "active" ? earliestAffectedDate : undefined;
       await regenerateFutureNutritionEvents(clientId, np.id, fromDate).catch((err) =>
         captureApiError(err, { action: "cascade-nutrition-events-from-move", planId: np.id })
       );

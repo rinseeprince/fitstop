@@ -12,7 +12,7 @@ export async function moveEvent(
   newDate: string,
   clientId: string,
   planId: string
-): Promise<void> {
+): Promise<{ sourceDate: string; targetDate: string }> {
   const { data: event, error } = await supabaseAdmin
     .from("training_events")
     .select("*")
@@ -60,6 +60,8 @@ export async function moveEvent(
     .eq("id", eventId);
 
   if (updateError) throw updateError;
+
+  return { sourceDate: event.date, targetDate: newDate };
 }
 
 /**
@@ -76,7 +78,7 @@ export async function moveEventAndFuture(
   targetDate: string,
   clientId: string,
   planId: string
-): Promise<void> {
+): Promise<{ earliestSourceDate: string; targetDate: string }> {
   // Fetch the dragged event
   const { data: draggedEvent, error: fetchError } = await supabaseAdmin
     .from("training_events")
@@ -99,8 +101,8 @@ export async function moveEventAndFuture(
 
   // No session link means no sibling occurrences to shift - behave like a single move.
   if (!draggedEvent.training_session_id) {
-    await moveEvent(eventId, targetDate, clientId, planId);
-    return;
+    const result = await moveEvent(eventId, targetDate, clientId, planId);
+    return { earliestSourceDate: result.sourceDate, targetDate: result.targetDate };
   }
 
   const sourceDate = draggedEvent.date;
@@ -110,9 +112,11 @@ export async function moveEventAndFuture(
       (1000 * 60 * 60 * 24)
   );
 
-  if (offsetDays === 0) return;
+  if (offsetDays === 0) return { earliestSourceDate: sourceDate, targetDate };
 
   // Future scheduled siblings (same session, on or after source date). Includes the dragged event.
+  // The `.gte("date", sourceDate)` filter makes sourceDate the earliest source date across all
+  // shifted siblings — no per-sibling min tracking needed.
   const { data: siblings, error: siblingsError } = await supabaseAdmin
     .from("training_events")
     .select("id, date")
@@ -123,7 +127,7 @@ export async function moveEventAndFuture(
     .gte("date", sourceDate);
 
   if (siblingsError) throw siblingsError;
-  if (!siblings || siblings.length === 0) return;
+  if (!siblings || siblings.length === 0) return { earliestSourceDate: sourceDate, targetDate };
 
   // Build new-date mapping and validate bounds.
   const updates = siblings.map((e) => {
@@ -181,6 +185,8 @@ export async function moveEventAndFuture(
 
     if (updateError) throw updateError;
   }
+
+  return { earliestSourceDate: sourceDate, targetDate };
 }
 
 /**

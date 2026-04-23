@@ -191,46 +191,75 @@
 
   ## 7. Data Fetching & State
 
-  ### Client-side (Daily Pulse)
-  - Use `fetch` with `{ cache: 'no-store' }` for all API calls
-  - Client-facing GET API routes should return `Cache-Control: no-store` headers
-  - Single `Promise.all` for initial data load - components never fetch their own data
-  - `fetchWithRetry` helper for handling 429 rate limit errors
-  - AbortController to cancel previous requests on date changes
+  ### Data fetching (all surfaces)
+  - Use SWR for all new data fetching - coach-side and client portal alike.
+  - Use `swrFetcher` from `lib/swr-fetcher.ts` (throws on non-OK responses so SWR preserves previously cached data).
+  - SWR config should include: `revalidateOnFocus: false`, `errorRetryCount: 3`, `errorRetryInterval: 1000`.
+  - Use `isLoading` for initial load skeletons, NOT `isValidating` (which fires on background refetches).
+  - Dedupe rapid requests with `dedupingInterval: 2000` where appropriate (especially anywhere the user can trigger rapid navigation, e.g. day-swipe in the client portal).
+  - Include `onError` callback for debugging failed fetches.
+  - Client-facing GET API routes should return `Cache-Control: no-store` headers.
 
-  ### Coach-side
-  - Use SWR for data fetching and caching
-  - SWR config should include: `revalidateOnFocus: false`, `errorRetryCount: 3`, `errorRetryInterval: 1000`
-  - Use `isLoading` for initial load skeletons, NOT `isValidating` (which fires on background refetches)
-  - Dedupe rapid requests with `dedupingInterval: 2000` where appropriate
-  - Include `onError` callback for debugging failed fetches
+  ### Legacy (being retired)
+  - The old Daily Pulse used `fetch` with `{ cache: 'no-store' }`, `Promise.all` for initial load, `fetchWithRetry`, and AbortController for request cancellation. That pattern is being removed in the client portal redesign (see `docs/CLIENT-PORTAL-REDESIGN.md` and `docs/CLIENT-PORTAL-EXECUTION-PLAN.md`). Do NOT imitate it in new code. If you find yourself editing Daily Pulse code before it's deleted, keep the existing pattern - don't mix the two.
 
   ### State management
-  - Server state: SWR (coach-side), fetch with cache busting (client-side)
-  - Form state: React Hook Form with Zod where applicable
-  - Local component state: useState
-  - URL state: Search params for filters/pagination
-  - No useState for server data on the coach side - use SWR
+  - Server state: SWR.
+  - Form state: React Hook Form with Zod where applicable.
+  - Local component state: useState.
+  - URL state: Search params for filters/pagination.
+  - No useState for server data - use SWR.
 
   ### What NOT to use
-  - Do not use TanStack Query / React Query (not installed)
-  - Do not use Zustand (not installed)
-  - Do not use axios (not installed)
+  - Do not use TanStack Query / React Query (not installed).
+  - Do not use Zustand (not installed).
+  - Do not use axios (not installed).
 
   ## 8. Database
 
-  ### Database Access
-  - Use `createServerSupabaseClient()` (session-scoped, respects RLS) for all
-    database operations in authenticated routes by default.
-  - Use `supabaseAdmin` (bypasses RLS) ONLY when:
-    1. The operation is called from an unauthenticated context (e.g. token-based
-      check-in submission)
-    2. The operation queries across multiple clients (e.g. coach aggregation
-      queries where RLS would block cross-client reads)
-    3. The operation is a system-level write (e.g. background upserts not tied
-      to a user session)
-  - When supabaseAdmin is required, add a comment above the usage explaining
-    which exception applies.
+  ### Auth & data-access architecture (Shape B)
+
+  CoachHub runs in a backend-mediated shape: the browser calls Next.js API routes, routes authenticate the user and verify ownership, routes call service functions scoped by `clientId`, service functions read/write through `supabaseAdmin`. Row-Level Security policies exist on most tables as **defense-in-depth**, not as the primary access control. This is a valid pattern for apps with a dedicated backend, multiple user audiences (coach + client), cross-user aggregation reads, and server-only integrations (OpenAI, Stripe, Resend). See `TECHNICAL-DEBT.md → Auth Architecture Hygiene` for the rationale and for open hardening items.
+
+  The consequence: the route layer **is** the security perimeter. Gaps in route-level auth are not caught by a second line of defense. Treat the route's auth chain and the service function's scoping parameter as non-optional.
+
+  #### Route-level auth chain (mandatory, in this order)
+
+  Every authenticated API handler must execute these steps before any business logic. Order matters (§9 and §10 restate this; it is the same chain).
+
+  1. **Rate limit** — `apiRateLimit` / `coachApiRateLimit` / `clientApiRateLimit` / `authRateLimit` / `checkInRateLimit` / `aiRateLimit` per the route's category.
+  2. **CSRF** — `requireCSRFProtection(request)` on any mutating verb (POST / PUT / PATCH / DELETE).
+  3. **Authentication** — `getAuthenticatedCoachId()` or `getAuthenticatedClientId()` from `lib/auth-helpers.ts`. 401 on null.
+  4. **Authorization / IDOR** — verify the authed principal owns or has permission to access the resource. Coach routes verify `client.coachId === coachId`. Client routes verify the resource's `client_id === authedClientId`. Returns 403 (or 404 to avoid leaking existence) on mismatch.
+  5. **Input validation** — zod `schema.safeParse(body)`. 400 on failure.
+  6. **Business logic** — call the service function, passing the verified scope (e.g. `clientId`). Wrap in try/catch.
+
+  Repeat per handler. Do NOT skip step 4 because step 3 succeeded — auth proves identity, not permission.
+
+  #### Service layer contract
+
+  - **Services use `supabaseAdmin`.** This is the default client for the service layer, not an exception. Import from `services/supabase-admin.ts`. Do NOT add a comment justifying its use — that was an artifact of the old rule and creates noise.
+  - **Services that read or write user-owned data MUST accept an explicit scope parameter** (usually `clientId`, sometimes `coachId` for coach-owned resources). No service function reads client-owned data without being told whose data to read.
+  - **Services MUST filter on the provided scope.** `.eq('client_id', clientId)` (or the equivalent join constraint for nested entities). A service that accepts `clientId` but doesn't filter on it is a data leak waiting to happen.
+  - **Services trust their callers.** The route layer is responsible for proving that the `clientId` passed in is one the authed principal is allowed to access. Services do not re-verify (that would be the auth check moving into the wrong layer and creating circular dependencies).
+  - **Never pass a user-provided `clientId` straight to a service.** The route takes `clientId` from the URL path (or request body) and MUST run an ownership check against the authed principal before handing it to a service. See the IDOR chain in step 4 above.
+  - **Cross-user reads are legitimate.** Coach dashboard reads aggregate across all of a coach's clients; attention feed, library, roadmap browsing, etc. These pass `coachId` to services that fan out; the service filters on `coach_id` rather than `client_id`. Same rule: caller-verified scope, service filters on it.
+
+  #### When to use `createServerSupabaseClient()`
+
+  Rarely. Most existing usages are either legacy or candidates for consolidation (see `TECHNICAL-DEBT.md → Auth Architecture Hygiene H1 #4`). If you think you need the session-scoped client, first confirm:
+
+  - You genuinely need `auth.uid()` in-database (to satisfy an RLS policy that is doing real work), AND
+  - The admin + explicit-scope pattern doesn't fit, AND
+  - There is no cleaner way to pass the scope through.
+
+  If all three are true, use it and add a one-line comment explaining why. Otherwise use `supabaseAdmin`.
+
+  #### RLS policies
+
+  - RLS is enabled on most tables. Policies exist as a safety net for bugs in the route or service layers.
+  - Do NOT write new app-code that relies on RLS to enforce access. If the route layer is broken, RLS under service_role does nothing (service_role bypasses RLS entirely — which is most of our DB traffic).
+  - When adding a new table, enable RLS with simple deny-by-default plus authenticated-allow policies. Do not write nested-subquery policies that try to replicate the IDOR chain — those have a performance cost and no practical benefit because service_role bypasses them. See `TECHNICAL-DEBT.md → Auth Architecture Hygiene H3 #1` for the simplification plan for legacy policies.
 
   ### General
   - Migrations: Version controlled, never edit directly
@@ -380,7 +409,7 @@
 
   ## 16. References
   - **docs/ARCHITECTURE.md**: Database schema diagrams, table hierarchies, JSONB conventions. Evolves with migrations - update when shipping schema changes.
-  - **Daily Pulse README**: Full architectural documentation for the Daily Pulse feature, including data flow, component structure, and rules that must not be violated. Claude Code should read this before modifying any Daily Pulse related code.
+  - **docs/CLIENT-PORTAL-REDESIGN.md** + **docs/CLIENT-PORTAL-EXECUTION-PLAN.md**: Active redesign replacing Daily Pulse with a day-centric, event-driven client portal. These are the source of truth for any client-portal work. Read both before modifying anything under `app/client/**` or `components/client-portal/**`.
   - **DESIGNSYSTEM.md**: Visual patterns, colour tokens, spacing, component styling conventions. This is the authoritative source for all visual tokens and takes precedence over any inline references in other sections.
   - **TECHNICAL-DEBT.md**: Known gaps between conventions and current implementation.
 

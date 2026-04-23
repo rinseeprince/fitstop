@@ -280,12 +280,21 @@ Reviewed: 2026-03-22
 | # | Issue | File(s) | Details | Status |
 |---|-------|---------|---------|--------|
 | 1 | `as never` casts on view/new table queries | `services/daily-logs-service.ts`, `services/attention-feed-service.ts`, `services/training-history-service.ts`, `services/weekly-nutrition-service.ts`, `app/api/client/session-completions/route.ts`, wellness/nutrition history routes and summary routes | 8 locations use `as never` casts bypassing type safety on `.from()`, `.update()`, or `.upsert()` calls for the `daily_logs_full` view and new child tables. These should be replaced with proper type definitions once the generated types stabilize. | Open |
+| 2 | `types/database.ts` is stale — missing `profiles` and `coaches` | `types/database.ts` (3055 lines), `contexts/auth-context.tsx:92,114-116,125,149,174` | The generated `Database` type does not include the `profiles` or `coaches` tables, forcing `as unknown as` and `as Record<string, unknown>` casts across auth-context (6 sites) to do anything with those tables. Combined with #1 (`as never` casts for post-split child tables), the root cause is one stale generation. Fix: `npx supabase gen types typescript --linked > types/database.ts`, then grep for `as never` / `as unknown as` in services and auth-context and drop the casts that become unnecessary. Not a file-size problem — generator output is expected to be large — but the staleness leaks type-safety holes into ~13 files. Duplicates Auth P2 #3; consolidated here because root cause is shared with #1. | Open |
 
 ### Check-in Training Completion Duplication
 
 | # | Issue | File(s) | Details | Status |
 |---|-------|---------|---------|--------|
-| 1 | Parallel entry for training completions | `check_in_session_completions`, `session_logs` | `check_in_session_completions` should pre-populate from `session_logs` for the check-in period instead of being a parallel entry system. Currently clients can enter conflicting completion data between the daily flow and the check-in form. | Open |
+| 1 | Parallel entry for training completions | `check_in_session_completions`, `session_logs` | `check_in_session_completions` should pre-populate from `session_logs` for the check-in period instead of being a parallel entry system. Currently clients can enter conflicting completion data between the daily flow and the check-in form. **Addressed by Session 6.4 of the client portal redesign**: daily logs become the source of truth for the check-in, the form locks fields for logged days, unlogged-day edits route through the canonical per-card write endpoints, and the table is dropped in the same migration. Mark Resolved once 6.4 commits. | Scheduled |
+
+### Post-Phase-7 Column Retirement
+
+The client portal redesign (Phase 1 Session 1.7) rewires the attention feed's training signals to read `training_events.status` directly. The legacy `training_logs.trained` column becomes dead data once Phase 7 (coach-side metrics + progression) ships and no reader remains.
+
+| # | Issue | File(s) | Details | Status |
+|---|-------|---------|---------|--------|
+| 1 | Retire `training_logs.trained` column | `training_logs` table; `services/training-history-service.ts:45` (primary reader) | Once Phase 7 of the client portal redesign ships and `training_events.status` is the single source of truth for training completion, `training_logs.trained` has no consumers. Write a migration that (a) audits for any remaining readers via grep, (b) drops the column, (c) updates `types/database.ts`. Do NOT do this before Phase 7 completes — the attention feed rewire in Session 1.7 intentionally leaves the column in place for backward compat during the transition. | Open |
 
 ### Documentation Updates Needed
 
@@ -297,31 +306,29 @@ Reviewed: 2026-03-22
 
 ## Pre-existing Test Failures
 
-Reviewed: 2026-03-25
-
-24 tests across 7 files are failing. These are not regressions — they represent tests written against planned behavior that was never implemented, assertion mismatches after refactors, or incorrect assumptions about implementation details.
+Reviewed: 2026-03-25. **Resolved as of 2026-04-23** — full `npx vitest run` passes (50 files, 683 tests). The entries below are preserved for historical context; all failures were addressed in earlier cleanup passes.
 
 ### Unimplemented Behavior (8 failures)
 
 | # | Issue | File(s) | Details | Status |
 |---|-------|---------|---------|--------|
-| 1 | Tests expect sanitization logic that was never implemented | `ai-prompt-sanitizer.test.ts` | 8 tests expect `sanitizeForAIPrompt` to strip "Disregard", "Override", whitespace-prefixed injection patterns, and truncate at 500 chars. The implementation performs none of this. Tests were written for planned behavior. | Open |
+| 1 | Tests expect sanitization logic that was never implemented | `ai-prompt-sanitizer.test.ts` | 8 tests expect `sanitizeForAIPrompt` to strip "Disregard", "Override", whitespace-prefixed injection patterns, and truncate at 500 chars. The implementation performs none of this. Tests were written for planned behavior. | Resolved |
 
 ### Stale Assertions After Refactors (12 failures)
 
 | # | Issue | File(s) | Details | Status |
 |---|-------|---------|---------|--------|
-| 1 | Error message format mismatch | `client-service.test.ts` | 7 failures. Tests expect `"Failed to X: <db error>"` format but service throws `"Failed to X"` without appending the DB error. Tests also expect `getClientById` to return `null` for not-found but it throws, and expect `null` for empty string notes but service sends empty string. | Open |
-| 2 | Color value assertions outdated | `check-in-utils.test.ts` | 4 failures. `getStatusColor` tests expect raw color names (`"yellow"`, `"blue"`, `"green"`, `"gray"`) but implementation returns semantic Tailwind classes (`"bg-warning/10 text-warning"`, etc.). Tests weren't updated after design token migration. | Open |
-| 3 | Button variant class outdated | `button.test.tsx` | 1 failure. Expects `bg-white` class on secondary variant but component uses `bg-secondary`. Test wasn't updated after button styling change. | Open |
-| 4 | Date-dependent test assertion | `attention-triggers.test.ts` | 1 failure. `evaluateTrainingMisses` test creates logs for today/yesterday and expects a trigger, but the function's week-window logic returns `null` depending on what day of the week the test runs. Test needs fixed date mocking. | Open |
+| 1 | Error message format mismatch | `client-service.test.ts` | 7 failures. Tests expect `"Failed to X: <db error>"` format but service throws `"Failed to X"` without appending the DB error. Tests also expect `getClientById` to return `null` for not-found but it throws, and expect `null` for empty string notes but service sends empty string. | Resolved |
+| 2 | Color value assertions outdated | `check-in-utils.test.ts` | 4 failures. `getStatusColor` tests expect raw color names (`"yellow"`, `"blue"`, `"green"`, `"gray"`) but implementation returns semantic Tailwind classes (`"bg-warning/10 text-warning"`, etc.). Tests weren't updated after design token migration. | Resolved |
+| 3 | Button variant class outdated | `button.test.tsx` | 1 failure. Expects `bg-white` class on secondary variant but component uses `bg-secondary`. Test wasn't updated after button styling change. | Resolved |
+| 4 | Date-dependent test assertion | `attention-triggers.test.ts` | 1 failure. `evaluateTrainingMisses` test creates logs for today/yesterday and expects a trigger, but the function's week-window logic returns `null` depending on what day of the week the test runs. Test needs fixed date mocking. | Resolved |
 
 ### Incorrect Assumptions (3 failures)
 
 | # | Issue | File(s) | Details | Status |
 |---|-------|---------|---------|--------|
-| 1 | Fallback mode assumption wrong | `rate-limit.test.ts` | 2 failures. Tests expect unlimited requests in fallback mode but in-memory rate limiter actually enforces limits. Tests assume fallback = no limit; implementation says fallback = still rate limited. | Open |
-| 2 | Error exposure assumption wrong | `notifications/route.test.ts` | 1 failure. Expects raw DB error message in 500 response but route returns generic `"Failed to fetch notifications"`. Test expectation conflicts with the convention of not exposing internal errors to users. | Open |
+| 1 | Fallback mode assumption wrong | `rate-limit.test.ts` | 2 failures. Tests expect unlimited requests in fallback mode but in-memory rate limiter actually enforces limits. Tests assume fallback = no limit; implementation says fallback = still rate limited. | Resolved |
+| 2 | Error exposure assumption wrong | `notifications/route.test.ts` | 1 failure. Expects raw DB error message in 500 response but route returns generic `"Failed to fetch notifications"`. Test expectation conflicts with the convention of not exposing internal errors to users. | Resolved |
 
 ---
 
@@ -339,7 +346,67 @@ Reviewed: 2026-04-13
 
 ### Missing Mocks (2 suite failures)
 
+Both suites now run cleanly; preserved for historical context.
+
 | # | Issue | File(s) | Details | Status |
 |---|-------|---------|---------|--------|
-| 1 | Supabase client not mocked | `intake-review-service.test.ts` | Suite fails before any test runs. Imports `supabase-client.ts` which throws when `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` are not set. Needs `vi.mock("@/services/supabase-client")` at the top. | Open |
-| 2 | Supabase admin not mocked | `app/api/clients/[id]/roadmap/route.test.ts` | Suite fails before any test runs. Imports `supabase-admin.ts` which throws when `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are not set. Needs `vi.mock("@/services/supabase-admin")` at the top. | Open |
+| 1 | Supabase client not mocked | `intake-review-service.test.ts` | Suite fails before any test runs. Imports `supabase-client.ts` which throws when `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` are not set. Needs `vi.mock("@/services/supabase-client")` at the top. | Resolved |
+| 2 | Supabase admin not mocked | `app/api/clients/[id]/roadmap/route.test.ts` | Suite fails before any test runs. Imports `supabase-admin.ts` which throws when `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are not set. Needs `vi.mock("@/services/supabase-admin")` at the top. | Resolved |
+
+---
+
+## Auth Architecture Hygiene (Shape-B hardening)
+
+Reviewed: 2026-04-23
+
+CoachHub runs in a backend-mediated shape (browser → Next.js API → Supabase). The primary security control is route-level auth + ownership checks (the IDOR chain); service functions accept `clientId` explicitly and use `supabaseAdmin` internally; RLS is defense-in-depth. This is a valid and common pattern for apps with a dedicated backend, multiple audiences, cross-user reads, and server-only integrations (OpenAI, Stripe, email).
+
+The consequence: the route layer **is** the security perimeter. Gaps in route-level auth are not caught by a second line of defense. The items below close that perimeter. Bundle into a pre-launch hardening session after the client portal redesign ships - do NOT mix into redesign work, it muddies the diffs.
+
+CONVENTIONS §8 is scheduled for rewrite to describe this pattern accurately (currently describes an aspirational RLS-first model that was never actually built).
+
+### H1 - Pre-launch
+
+| # | Issue | File(s) | Details | Status |
+|---|-------|---------|---------|--------|
+| 1 | Build `requireClientAuth()` helper | `lib/` (new), `app/api/client/**/route.ts` | `lib/require-coach-auth.ts` exists for coach routes; no client-side equivalent. Every client route rolls its own auth chain (rate limit → CSRF → `getAuthenticatedClientId` → 401 handling). Any route that forgets or reorders a step is a hole. A single shared helper returning `{ clientId }` or a typed error response eliminates drift. Duplicates "Authentication & Authorization P0 #3" — promoted here because it is Shape-B-critical. | Open |
+| 2 | Audit every client-portal route for the §9 auth chain | `app/api/client/**/route.ts` | After H1 #1 ships, sweep every client route to confirm it uses the helper. No exceptions. A missing step in Shape B is the whole hole; there is no RLS safety net on admin-serviced reads. | Open |
+| 3 | `invitation-service.ts` imports browser Supabase client | `services/invitation-service.ts:1` | Called from server-side routes but imports the browser client. In Shape A this would be caught by RLS because the browser client has no session server-side. In Shape B it means the route is authed, the service runs with no session, and nothing enforces scope. Direct bug. Duplicates "Authentication & Authorization P2 #7" — elevated priority due to Shape-B blast radius. | Open |
+| 4 | Consolidate duplicate Supabase server-client factories | `lib/auth-helpers.ts:5-28`, `lib/supabase-server.ts:8-29` | `createSupabaseServerClient()` and `createServerSupabaseClient()` are nearly identical with confusingly similar names. In Shape B session-scoped is rarely used; two variants where almost nobody calls either is a foot-gun. Collapse to one. Duplicates "Authentication & Authorization P2 #1" — elevated because Shape-B ambiguity. | Open |
+
+### H2 - Post-launch operational hygiene
+
+| # | Issue | File(s) | Details | Status |
+|---|-------|---------|---------|--------|
+| 1 | Structured auth-failure logging | `lib/auth-helpers.ts` | `getAuthenticatedCoachId` and `getAuthenticatedClientId` return null on auth failure with no log. In Shape B these are security-relevant events; without an audit trail a probe campaign is invisible. Log timestamp, route, IP (not PII), reason (missing / invalid / expired). Duplicates "Production Readiness Medium #6". | Open |
+| 2 | Codify "services accept `clientId` explicitly" | `CONVENTIONS.md §8`, all `services/*.ts` | Most services follow this already but it is convention not rule. Make it a documented requirement: no service function reads client-owned data without a `clientId` parameter. Audit call sites to prove compliance. Addressed as part of the §8 rewrite. | Open |
+
+### H3 - Philosophical cleanup (defer)
+
+| # | Issue | File(s) | Details | Status |
+|---|-------|---------|---------|--------|
+| 1 | Simplify nested-subquery RLS policies | `supabase/migrations/015_*.sql`, `044_*.sql`, `075_*.sql`, `077_*.sql` | The 4-level subquery chains for training_exercises / nutrition_events / etc. exist because RLS was written assuming direct-to-Supabase access that never materialized. Under Shape B these policies don't run (service_role bypasses them) and carry only perf cost. Replace with simple `authenticated`-role policies, or remove entirely. Not a security issue — the app layer is the control. Defer; the migration effort outweighs the gain pre-launch. Duplicates "Production Readiness P1 #4". | Open |
+
+---
+
+## Training Builder & Content Library Bloat
+
+Reviewed: 2026-04-23
+
+These three files were identified in a codebase-wide bloat audit as genuinely painful to work in — not "long but cohesive," but files mixing multiple concerns where the next change is meaningfully harder because of the file's shape. CONVENTIONS.md §4 caps are loose guidelines, so these are the three that would be worth splitting even under a generous reading. Other long files found in the same audit (`training-calendar-view.tsx` 682, `training-event-calendar-service.ts` 571, `session-detail-drawer.tsx` 565, `content-upload-dialog.tsx` 532, `app/dashboard/content/page.tsx` 501) are long but cohesive — splitting them would prop-drill one flow across multiple files, which §4 itself warns against. Leave those alone.
+
+### P1 - File Size Violations
+
+| # | File | Lines | Limit | Over By | Status |
+|---|------|-------|-------|---------|--------|
+| 1 | `services/coach-library-service.ts` | 1211 | 300 | 911 (304%) | Open |
+| 2 | `components/clients/training/builder/draft-editor.tsx` | 890 | 250 | 640 (256%) | Open |
+| 3 | `services/content-service.ts` | 635 | 300 | 335 (112%) | Open |
+
+**Suggested splits:**
+
+1. **`services/coach-library-service.ts`** — Mixes three concerns on top of 8+ CRUD functions for saved plans, sessions, and standalone sessions: row-to-model mappers (~lines 21-42), insertion helpers (~144-185), and cycle-length detection (~106-140). Extract mappers to `lib/coach-mappers.ts` first — lowest-risk ~200 LOC win with zero coupling to the CRUD surface. Move cycle-length detection to `utils/plan-cycle-helpers.ts`. Then split remaining CRUD into `coach-saved-plan-service.ts` and `coach-saved-session-service.ts`. The three stages can land as three separate PRs.
+
+2. **`components/clients/training/builder/draft-editor.tsx`** — 8 `useState` calls plus inline DnD sensors, form modal, fetch-based mutations, and promote/discard flow. The session mutation cluster (`patchSession`, `patchExercise`, `removeSession`, `removeExercise`) is a self-contained unit that lifts cleanly to a `useSessionMutations()` hook. DnD sensors + `DndContext` wiring lift to `useSessionDragDrop()`. Session form modal becomes `SessionFormDialog`. Target shape: render + promote/discard only, ~400 LOC.
+
+3. **`services/content-service.ts`** — 20+ exports spanning five decoupled concerns: folders, items, assignments, metadata fetching (video/link), and S3 storage (upload/signed URLs). Unlike the training builder, these concerns are genuinely independent — a folder rename does not touch S3. Split into `content-folder-service.ts`, `content-item-service.ts`, `content-assignment-service.ts`, `content-metadata-service.ts`, `content-storage-service.ts`. No prop-drilling risk.

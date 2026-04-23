@@ -349,7 +349,7 @@ EL-1 (not currently in scope) specifies a cron that deletes draft plans older th
 
 ## Client Portal Architecture
 
-> **Redesign in progress.** See `docs/CLIENT-PORTAL-REDESIGN.md` and `docs/CLIENT-PORTAL-EXECUTION-PLAN.md` for the target day-centric, event-driven model replacing Daily Pulse pre-mobile launch. The sections below describe the current (Daily Pulse) implementation that is being replaced.
+> ⚠️ **STOP — read this before using the section below.** The content that follows describes **Daily Pulse**, which is being replaced by the client portal redesign currently in flight. When building or modifying client portal work (`app/client/**`, `components/client-portal/**`, new `/api/client/*` endpoints), **do not follow the patterns described here**. Use `docs/CLIENT-PORTAL-REDESIGN.md` and `docs/CLIENT-PORTAL-EXECUTION-PLAN.md` as the source of truth. This section remains for historical context only until Session 5.1 of the execution plan deletes the Daily Pulse code and rewrites this section.
 
 Daily Pulse is the client's daily tracking interface at `/client/dashboard`. Clients log wellness (mood, energy, sleep, stress), training completion, nutrition intake, and habits each day.
 

@@ -34,8 +34,8 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 
 | # | Title | Phase |
 |---|-------|-------|
-| 0.1 | Project reconnaissance and doc alignment | 0 Prep |
-| 0.2 | Consolidate duplicate types + date helper cleanup | 0 |
+| 0.1 | Project reconnaissance and doc alignment | 0 Prep | COMPLETE
+| 0.2 | getDateString sweep + HabitLogWithDetails dedupe | 0 | 
 | 0.3 | Verify existing weight_unit wiring | 0 |
 | 1.1 | Design training-log contracts | 1 Training |
 | 1.2 | Training log service layer + unit tests | 1 |
@@ -59,6 +59,7 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 | 6.1 | Walkthrough copy/step update | 6 Check-in + onboarding |
 | 6.2 | Check-in context: session-keyed to event-keyed | 6 |
 | 6.3 | Check-in AI summary enrichment (optional) | 6 |
+| 6.4 | Daily logs as SOT for check-in + drop check_in_session_completions | 6 |
 | 7.1 | Coach roadmap end-and-replace UI | 7 Coach-side fixes |
 | 7.2 | Coach phase edit unlock for active phases | 7 |
 | 7.3 | Coach archived-roadmap browsing | 7 |
@@ -99,43 +100,52 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 
 ---
 
-## Session 0.2: Consolidate duplicate types and standardize date handling
+## Session 0.2: Standardize on getDateString + consolidate the one cross-5.1 type duplicate
 
-**Commit message**: `refactor: consolidate duplicate daily-log types and standardize on getDateString`
+**Commit message**: `refactor: standardize on getDateString and dedupe HabitLogWithDetails`
 
-**Objective**: Eliminate the duplicate type definitions flagged in TECHNICAL-DEBT.md (`TodaysActivity`, `UnplannedActivity`, `HabitLogWithDetails`) and replace every `.split('T')[0]` with `getDateString()`.
+**Objective**: Replace every `.split('T')[0]` in non-test, non-Daily-Pulse code with `getDateString()`, and consolidate `HabitLogWithDetails` (defined in both `types/daily-habit.ts` and `services/daily-habits-mappers.ts` — both survive the Daily Pulse deletion in Session 5.1).
+
+**Scope narrowed from the original TECHNICAL-DEBT entry**. The original entry flagged `TodaysActivity`, `UnplannedActivity`, and `HabitLogWithDetails` as duplicated across 4-5 files each, plus a `saveUnplannedActivities` date bug. Verification (2026-04-23) shows:
+- `TodaysActivity` / `UnplannedActivity` already have canonical definitions in `types/daily-pulse.ts`; every non-canonical reference lives inside `components/daily-pulse/` or `hooks/use-daily-pulse*.ts`, all of which are deleted in Session 5.1. Consolidation would be thrown away with the files.
+- `HabitLogWithDetails` has canonical form in `types/daily-habit.ts:53` **and** a redefined copy in `services/daily-habits-mappers.ts:11`. Both outlive 5.1. This is the only duplicate worth fixing.
+- The `saveUnplannedActivities` date bug lives in `components/daily-pulse/utils/daily-pulse-handlers.ts`, which is deleted in 5.1. Pre-launch with no users, the bug can't hurt anyone; skipping the fix.
 
 **Read first**:
-- `TECHNICAL-DEBT.md`.
-- `types/` directory listing.
-- `lib/date-helpers.ts`.
-- Grep `TodaysActivity|UnplannedActivity|HabitLogWithDetails` across the whole repo.
-- Grep `\.split\('T'\)\[0\]` across the whole repo.
+- `TECHNICAL-DEBT.md` (Daily Pulse section — now partly stale; this session's scope is the authoritative narrowing).
+- `types/daily-habit.ts`, `services/daily-habits-mappers.ts`, `services/daily-habits-service.ts` (the re-export chain).
+- `lib/date-helpers.ts` (confirm `getDateString` and `getTodayDateString` signatures).
+- Grep `\.split\('T'\)\[0\]` and `\.split\("T"\)\[0\]` across the whole repo (expect ~40 hits; confirm scope).
 
 **Plan (report before implementing)**:
-- Canonical location for each consolidated type.
-- Every file that will be edited.
+- Which `.split('T')[0]` hits live in files slated for deletion in Session 5.1 (skip those — they die with Daily Pulse). The rest fall into two shapes: `new Date().toISOString().split("T")[0]` (today) and `someDate.toISOString().split("T")[0]` (specific date). Replace with `getTodayDateString()` and `getDateString(someDate)` respectively.
+- For `HabitLogWithDetails`: pick `types/daily-habit.ts` as canonical. Have `services/daily-habits-mappers.ts` import from there and remove its local definition. `services/daily-habits-service.ts` continues to re-export — repoint its re-export source.
 
 **Implement**:
-- Move each duplicated type to its canonical location; delete duplicates.
-- Replace `.split('T')[0]` with `getDateString(date)` in every hit.
-- Fix `saveUnplannedActivities` to use the selected date (TECHNICAL-DEBT.md flags it hardcoding `new Date()`).
+- Replace every non-DP `.split('T')[0]` with `getDateString(date)` (or `getTodayDateString()` for the `new Date()` case). Skip hits in files listed in REDESIGN's "Retired" list.
+- Delete the `HabitLogWithDetails` definition in `services/daily-habits-mappers.ts` and import from `types/daily-habit.ts` instead. Update the re-export in `daily-habits-service.ts` so the canonical source is the types file, not the mapper.
 
-**Do NOT**: Change type shapes or rename fields.
+**Do NOT**:
+- Consolidate `TodaysActivity` / `UnplannedActivity` — their only non-canonical definitions are in files deleted in 5.1.
+- Fix `saveUnplannedActivities` — file dies in 5.1, pre-launch, no user impact.
+- Touch `.split('T')[0]` inside `components/daily-pulse/**` or `hooks/use-daily-pulse*.ts` — deleted in 5.1.
+- Change type shapes or rename fields.
 
-**Tests to write**: None new, but existing tests must pass. Update imports if any test referenced a duplicate.
+**Tests to write**: None new. Existing tests must still pass; update imports in any test that referenced the deleted mapper-local type.
 
 **Verify**: `npx tsc --noEmit`, `npx eslint .`, `npx vitest run` all pass. Commit.
 
 ---
 
-## Session 0.3: Verify existing weight_unit wiring
+## Session 0.3: Verify existing weight_unit wiring + add client timezone migration
 
-**Commit message**: `chore(clients): wire existing weight_unit preference through to tracker inputs`
+**Commit message**: `chore(clients): wire weight_unit preference and add client timezone column`
 
-**Objective**: The `clients.weight_unit` column already exists (migration 009, `'lbs' | 'kg'`, default `'lbs'`). Verify types plus services expose it correctly and surface it wherever weight inputs need a default. No migration.
+**Objective**: The `clients.weight_unit` column already exists (migration 009, `'lbs' | 'kg'`, default `'lbs'`). Verify types plus services expose it correctly and surface it wherever weight inputs need a default. Add the client timezone column that Session 0.1 confirmed is missing.
 
-If Session 0.1 flagged a missing timezone column, this session also adds that migration.
+Session 0.1 confirmed no `timezone` column exists on `clients` and all date helpers run in server-local time. The REDESIGN's past-day lock requires client-local "today." This session lands the column.
+
+**Migration numbering**: `088_add_client_timezone.sql` (current tip is 087 per `supabase/migrations/`). Session 7.6's `coach_client_views` migration will be 089. If any other schema work lands between, bump accordingly.
 
 **Read first**:
 - `supabase/migrations/009_add_client_goal_fields.sql` (weight_unit definition).
@@ -143,20 +153,25 @@ If Session 0.1 flagged a missing timezone column, this session also adds that mi
 - `types/database.ts` (confirm `Client` row type exposes `weight_unit` + `unit_preference`).
 - `types/check-in.ts` or wherever the `Client` TS type lives (confirm camelCase mapping).
 - Grep `weight_unit|weightUnit` in `services/` and `components/` for places where weight is rendered or defaulted.
-- Session 0.1 timezone findings.
+- `docs/CLIENT-PORTAL-REDESIGN.md` "Timezone handling" section (the authoritative spec for the column shape, written by Session 0.1).
 
 **Plan (report before implementing)**:
-- Any missing type exports or service accessors.
+- Any missing type exports or service accessors for `weight_unit`.
 - Any component that hardcodes `'lbs'` or `'kg'` instead of reading the client's preference.
-- Whether to add a timezone migration (only if Session 0.1 said yes).
 - **Resolve the `unit_preference` vs `weight_unit` overlap**: `clients.unit_preference` (`'metric' | 'imperial'`) and `clients.weight_unit` (`'lbs' | 'kg'`) cover adjacent concerns and can contradict each other. Decide whether `unit_preference` is the source of truth and `weight_unit` derives from it (imperial → lbs, metric → kg), OR they're genuinely independent fields. Document the decision in the REDESIGN doc. Session 2.6 implements the settings UI based on this decision.
 
 **Implement**:
 - Add accessors or type extensions if missing.
 - Replace any hardcoded weight-unit fallbacks with reads of `client.weightUnit` (or `unit_preference` per the decision above).
-- If timezone migration is needed: new migration `<next>_add_client_timezone.sql` with a `timezone TEXT` column (nullable, default null means use server default), update types.
+- Create `supabase/migrations/088_add_client_timezone.sql`:
+  - `ALTER TABLE clients ADD COLUMN timezone TEXT NOT NULL DEFAULT 'UTC' CHECK (timezone ~ '^[A-Za-z_+\-/]+$');`
+  - `COMMENT ON COLUMN clients.timezone IS 'IANA time zone (e.g. America/Los_Angeles). Default UTC for pre-backfill rows; Settings UI in Session 2.6 lets clients pick theirs.';`
+  - Column shape matches the REDESIGN spec (NOT NULL, default 'UTC', IANA format). The pre-launch state has no existing rows to backfill; the default covers the no-data case.
+- Regenerate `types/database.ts` so `Client.timezone` is typed.
+- Update the camelCase `Client` TS type (in `types/check-in.ts` or wherever it lives) to include `timezone: string`.
+- Update `lib/mappers.ts` if it maps `clients` rows to add the `timezone` field.
 
-**Do NOT**: Build settings UI (Session 2.6). Do not change the tracker yet (Session 1.5).
+**Do NOT**: Build settings UI (Session 2.6). Do not change the tracker yet (Session 1.5). Do not touch `lib/date-helpers.ts` yet; Session 3.1 is where the permission helpers introduce `Intl.DateTimeFormat(timezone, ...)` usage.
 
 **Tests to write**: None for this session unless adding a timezone migration; in that case, a simple type-level check is enough.
 
@@ -549,6 +564,7 @@ If Session 0.1 flagged a missing timezone column, this session also adds that mi
 - `app/client/page.tsx`: renders day header + 4 placeholder card slots.
 - `components/client-portal/day/day-header.tsx`: prev/next, "Today" button, date display.
 - Fetches `GET /api/client/day-summary` via SWR with loading skeleton. Call `useSWR` directly; do not create a `useClientDay` wrapper hook unless it grows real logic (retries, transforms, dependent fetches).
+- SWR config on this fetch: include `dedupingInterval: 2000` (per CONVENTIONS §7). Day-swipe can fire multiple date changes per second; `clientApiRateLimit` is 30 req / 10s, so a user holding down the arrow key or rapid-swiping without deduping can brush the limit and get 429s. Deduping collapses identical same-date fetches inside the window. Also set `revalidateOnFocus: false` and `errorRetryCount: 3` per CONVENTIONS §7.
 - Swipe/arrow updates `?date=` (no remount; SWR key swap).
 - **Update post-login redirect**: today the client probably lands on `/client/dashboard` after login. Grep for redirect destinations (likely in `middleware.ts`, `lib/auth-helpers.ts`, or the login action) and change them to `/client`. The old dashboard route still exists until Session 5.1 removes it, but nothing should send the client there anymore.
 - **Grep email templates** under `emails/` for any `/client/dashboard` deep links and update them to `/client`.
@@ -579,6 +595,9 @@ If Session 0.1 flagged a missing timezone column, this session also adds that mi
 - Card hierarchy; shared primitive if warranted.
 - Click targets → detail pages.
 
+**Design note — day-summary vs. detail fetch trade-off (do NOT "optimize"):**
+Clicking a card navigates to a detail page which fires its own fetch (e.g. `GET /api/client/training/events/[eventId]`). That means data the day-summary already returned (session name, log status) is re-fetched. This is deliberate: keeps the home payload under 5KB, keeps detail pages independently cacheable, and lets each page own its own freshness rules. Do NOT widen `day-summary` to include full detail-page data as a "performance improvement." If the brief loading flash between home and detail is noticeable in practice, add SWR prefetch on card tap-down / hover to the detail endpoint rather than denormalizing into day-summary. Cards link via `next/link` with `prefetch` default; detail data can be warmed via `useSWRConfig().mutate(key, fetcher())` from a tap-down handler if needed — but wait for real feedback before adding that.
+
 **Implement**:
 - `components/client-portal/day/training-card-summary.tsx` (handles 0/1/N events). Renders three display states per event:
   - Unlogged: "Pull Day A • Not logged yet" + "Tap to log" affordance.
@@ -590,7 +609,7 @@ If Session 0.1 flagged a missing timezone column, this session also adds that mi
 - `components/client-portal/day/phase-banner.tsx` (hides when no active phase; handles transition).
 - Wire home page to render them from day-summary data.
 
-**Do NOT**: Build nutrition/wellness/habits detail pages (Phase 3/4). Training detail exists from 1.4.
+**Do NOT**: Build nutrition/wellness/habits detail pages (Phase 3/4). Training detail exists from 1.4. Widen the day-summary payload to pre-populate detail pages (see Design note above).
 
 **Tests to write**:
 - `training-card-summary.test.tsx`: all three per-event states (unlogged, quick-logged, detailed-logged) render expected copy. Multiple events render as list.
@@ -752,15 +771,27 @@ If Session 0.1 flagged a missing timezone column, this session also adds that mi
 
 5. Standard middleware on all four routes (rate limit, CSRF, auth, ownership, validation).
 
-**Do NOT**: Build UI (Sessions 3.2, 3.3). Remove the monolithic `/api/client/daily-logs` POST yet. Duplicate date-rule logic or plan-context resolution inside any route handler.
+6. **In-session cleanup of `services/daily-logs-service.ts`** while the file is being edited anyway:
+   - Extract `mapRowToDailyLog(row: DailyLogRow): DailyLog` into a module-local helper. Replace the three duplicated row-to-model mapping blocks with calls to the helper. If a new column is added later, one place to update instead of three. Flagged in TECHNICAL-DEBT as "Daily Pulse Feature → P2 #5."
+   - Replace every `as never` cast in functions touched by this session with proper local types: one for the `daily_logs_full` view row shape (snake_case), one for the `upsert_daily_log_atomic` RPC param/return signature. Cast through the local types instead of through `never`. Do NOT introduce any new `as never` casts in code added by this session. Flagged in TECHNICAL-DEBT as "Type Safety Gaps from Schema Split #1."
+   - After commit, mark both TECHNICAL-DEBT entries Resolved.
+
+**Do NOT**: Build UI (Sessions 3.2, 3.3). Remove the monolithic `/api/client/daily-logs` POST yet. Duplicate date-rule logic or plan-context resolution inside any route handler. Introduce new `as never` casts in service-layer code this session touches.
 
 **Tests to write**:
-- `lib/daily-log-permissions.test.ts`: `canEditDay` covers today, past-unlogged, past-logged, future, and client-local midnight boundary cases. `assertCanEdit` throws on violation and resolves cleanly on allowed cases (mock the log-state read).
+- `lib/daily-log-permissions.test.ts`: `canEditDay` covers:
+  - Today, past-unlogged, past-logged, future — base cases.
+  - Client-local midnight boundary (a server UTC time that's "tomorrow" in PST should still treat PST's "today" as editable).
+  - **DST transition day** (e.g. `America/Los_Angeles` on 2026-03-08 when clocks spring forward; 2026-11-01 when they fall back). `Intl.DateTimeFormat` handles this correctly but a fixture makes sure our wrapper doesn't mangle it. Assert `canEditDay` returns the same answer before and after the DST jump for the same IANA zone.
+  - **Client timezone changed mid-day**: client was `America/New_York`, switched to `Asia/Tokyo`; the in-flight request uses the current timezone value at read time. Not a bug to prevent — just a regression test that the helper reads fresh `client.timezone` on every call, not a cached value.
+  - **Invalid / unknown timezone string** (e.g. someone manually set `"Mars/Olympus"`): the helper falls back to UTC rather than throwing. Pre-launch we can't fully prevent this; guard against the crash mode.
+  - `assertCanEdit` throws on violation and resolves cleanly on allowed cases (mock the log-state read + client timezone read).
 - Plan-context resolver test: returns correct IDs for phase-active, no-phase, and no-plan fixtures.
 - All four API routes: 200/201 happy path; 400 malformed; 401 unauthenticated; 403 for past-logged and future dates (PATCH). Assert the 403 is produced via `assertCanEdit`, not via duplicated inline logic.
 - Nutrition GET: three-level priority returns expected value per case.
+- `services/daily-logs-service.test.ts` (extend): direct unit test for `mapRowToDailyLog` — verifies snake_case to camelCase mapping, null handling, and nested JSONB fields. One test per meaningful column group is enough.
 
-**Verify**: Manual curl for each date-rule case. `npx tsc --noEmit`, `npx vitest run`. Commit.
+**Verify**: Manual curl for each date-rule case. `npx tsc --noEmit`, `npx vitest run`. Confirm no `as never` casts remain in functions touched by this session (`grep -n "as never" services/daily-logs-service.ts` should only show untouched functions, if any). Commit.
 
 ---
 
@@ -880,13 +911,15 @@ If Session 0.1 flagged a missing timezone column, this session also adds that mi
 4. Remove unused exports from `services/client-portal-training.ts`.
 5. Delete `components/clients/training/history-chart-dialog.tsx`.
 6. Clean imports. Remove unused types.
-7. Update `docs/ARCHITECTURE.md`: the "Client Portal Architecture" section was already added in an earlier pass; this session confirms it's accurate, removes any stale Daily Pulse references elsewhere in the doc, and updates the Data Hierarchy diagram if anything changed.
+7. Delete `DAILY-PULSE-README.md` at the repo root (the CONVENTIONS §16 reference to it was removed in the pre-Phase-1 doc sweep; the file itself lingers).
+8. Audit the other root-level docs for stale references to `/client/dashboard` and Daily Pulse internals: `CHECK_IN_SETUP.md`, `CLIENT-APP-REFERENCE.md`, `CLIENT-ONBOARDING-README.md`, `MISSED_CHECKIN_TRACKING_PLAN.md`. Update or delete as appropriate. `CLIENT-ONBOARDING-README.md` likely survives with edits; the others may be stale.
+9. Rewrite `docs/ARCHITECTURE.md`'s "Client Portal Architecture" section from the ground up. Until this session, that section has a banner warning readers off - this session replaces the Daily Pulse content with the event-driven day-centric architecture described in `CLIENT-PORTAL-REDESIGN.md`. Remove the "STOP - read this before using the section below" banner once the rewrite is complete. Sweep the rest of the doc for stale Daily Pulse references and update the Data Hierarchy diagram if anything changed.
 
-**Do NOT**: Drop `upsert_daily_log_atomic()` from DB (separate schema work). Change `CONVENTIONS.md` beyond Session 0.1.
+**Do NOT**: Drop `upsert_daily_log_atomic()` from DB (separate schema work). Change `CONVENTIONS.md` beyond what the pre-Phase-1 doc sweep already did.
 
 **Tests to write**: None. Remove tests for deleted code.
 
-**Verify**: `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Manual smoke across client portal: login lands on `/client`, every tab works, no 404s. Read ARCHITECTURE.md end to end for stale references. Commit.
+**Verify**: `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Manual smoke across client portal: login lands on `/client`, every tab works, no 404s. Read ARCHITECTURE.md end to end to confirm the rewrite is complete and no stale references remain. Commit.
 
 ---
 
@@ -978,6 +1011,101 @@ If Session 0.1 flagged a missing timezone column, this session also adds that mi
   - Empty exercise_logs composes prompt gracefully.
 
 **Verify**: Manual check-in with logged exercises; summary references them. `npx tsc --noEmit`, `npx vitest run`. Commit.
+
+---
+
+## Session 6.4: Daily logs as source of truth for check-in; retire check_in_session_completions
+
+**Commit message**: `refactor(check-in): daily logs as source of truth; drop check_in_session_completions`
+
+**Objective**: Convert the check-in form from a parallel-entry system to a daily-logs viewer with fill-in-the-gaps editing. For sections that overlap with daily logs (wellness, training completions, nutrition adherence), the form displays what was logged, locks fields for logged days, and only permits edits for days that weren't logged. Submitted edits route to the canonical per-card write endpoints, not to check-in-specific tables. Drop `check_in_session_completions` in the same session since it becomes write-dead and the app is pre-launch.
+
+**Why this session exists**: The current check-in captures training-completion / wellness / nutrition data twice — once via the daily flow, again via the form. Coaches can see conflicting values. The redesign's broader rule is "daily logs are the spine; single source of truth per domain." This session enforces that rule for the check-in.
+
+**What is out of scope** (stays as-is): body metrics (weight, body fat, measurements — live in the separate `body_metrics` event log), photos (storage), qualitative reflection (went well / challenges / goals — genuinely unique to the check-in). These have no daily-log equivalent.
+
+**Prerequisites**: Session 3.1 (`lib/daily-log-permissions.ts` with `canEditDay`), Session 1.3 (training event log POST endpoint), Session 6.2 (context service reads from `training_events.status`).
+
+**Read first**:
+- `services/check-in-context-service.ts` (post-Session-6.2 state).
+- `services/check-in-details-service.ts` (`getCheckInSessionCompletions`, `insertSessionCompletions` — both need to change).
+- `app/api/check-in/submit/[token]/route.ts` (check-in submit writer).
+- `app/api/check-in/[id]/route.ts` + `app/api/client/check-ins/[id]/route.ts` (detail-view readers — consume `getCheckInSessionCompletions`).
+- `components/check-in/training-session-checklist.tsx` (the form step that collects completions).
+- `components/check-in/step-subjective.tsx` and other wellness/nutrition step components.
+- `types/check-in.ts` (find `CheckInSessionCompletion`, `sessionCompletions` on the `CheckIn` shape).
+- `lib/daily-log-permissions.ts` (from Session 3.1 — import `canEditDay`).
+- `lib/database-helpers.ts:22` (`CheckInSessionCompletionRow` type alias).
+- `supabase/migrations/017_enhanced_check_in_tracking.sql` (table definition + RLS policies).
+- `supabase/migrations/026_add_client_portal_rls_policies.sql` (additional policies on the table).
+- `supabase/migrations/052_drop_public_insert_policies.sql` (policy drop).
+
+**Plan (report before implementing)**:
+1. Per check-in section, identify which surface is the canonical source post-redesign:
+   - Wellness → `wellness_logs`.
+   - Training completions → `training_events.status` (+ `session_logs`/`exercise_logs` for detail).
+   - Nutrition adherence → `nutrition_logs`.
+2. For each section, map out:
+   - The form UI change (view vs edit per day using `canEditDay`).
+   - The submit-path change (where edits for unlogged days write to).
+3. Confirm that `check_in_session_completions` has **zero** remaining consumers after the form + detail-view changes. Grep one more time before the migration lands. If any consumer is missed, the migration's `DROP TABLE` fails loudly.
+4. Detail view of historical check-ins (`/client/check-ins/[id]`, coach review page): after the migration, the "sessions completed" section derives from `training_events.status` for the check-in period, not from a check-in-specific table. Document how historical data (pre-migration check-in rows that referenced the now-dropped table via `check_in_id` FK) is rendered. Since pre-launch, any existing dev rows are disposable.
+
+**Implement**:
+
+1. **Form UI rewrite** (per overlapping section):
+   - Training session checklist (`components/check-in/training-session-checklist.tsx`): load `training_events` for the check-in period; render each event with its status. For days where `canEditDay(date, loggedStatus, clientTimezone)` returns `false`, lock the row (display `training_events.status`, no controls). For days where it returns `true`, render the same inputs as the per-event log form (quick: mark complete/partial/skipped; optional notes). Unify the visual treatment with the detail-page tracker.
+   - Wellness step: same pattern against `wellness_logs`.
+   - Nutrition adherence step: same pattern against `nutrition_logs`.
+2. **Submit path**:
+   - Edits for unlogged days route through the canonical per-card endpoints built in Phase 1 and Phase 3: `POST /api/client/training/events/[eventId]/log`, `PATCH /api/client/daily-logs/[date]/wellness`, `PATCH /api/client/daily-logs/[date]/nutrition`. Do NOT invent a new check-in-scoped writer.
+   - The check-in-submit writer (`app/api/check-in/submit/[token]/route.ts`) drops its calls to `insertSessionCompletions` (and any parallel-write equivalents for wellness/nutrition if they exist).
+3. **Detail view**:
+   - `services/check-in-details-service.ts:getCheckInSessionCompletions` is deleted. Detail-view consumers (`app/api/check-in/[id]/route.ts`, `app/api/client/check-ins/[id]/route.ts`) switch to a new read (or extend the existing context service) that returns training completion data derived from `training_events.status` + `session_logs` for the check-in period's date range.
+   - The API response shape visible to the UI is preserved: both detail endpoints continue to return a `sessionCompletions` field with the same element shape, just derived. The form component's existing TypeScript type stays valid.
+4. **Type cleanup**:
+   - Remove the `CheckInSessionCompletionRow` type alias from `lib/database-helpers.ts` once the table is dropped.
+   - Keep `CheckInSessionCompletion` in `types/check-in.ts` as the API/UI shape (it describes response data; it's no longer tied 1:1 to a DB row). Add a one-line comment noting the derivation source.
+5. **Migration** (new, next sequential number after Session 7.6's `coach_client_views`):
+   - `<next>_drop_check_in_session_completions.sql`:
+     - `DROP TABLE IF EXISTS check_in_session_completions CASCADE;` (CASCADE removes the FK references from migrations 026/052 policy drops that target this table).
+     - Verify with `\d check_in_session_completions` locally that it's gone.
+   - No data preservation — pre-launch, no users, any dev-seeded rows are disposable.
+6. **RLS policy file cleanup**:
+   - Note in the commit message that migration 017's table creation + migrations 026/052's policy rules for this table are logically superseded. Do NOT edit prior migrations in-place (migrations are append-only per CONVENTIONS §8); the DROP TABLE handles it at runtime.
+
+**Do NOT**:
+- Add a new check-in-scoped write table. The existing per-card endpoints are the only write path.
+- Rewrite the check-in form's non-overlapping sections (body metrics, photos, reflections). Those are genuinely check-in-unique.
+- Preserve `check_in_session_completions` rows or backfill them anywhere. The table is pre-launch disposable.
+- Touch `session_logs` or `training_events` schema. The new derivation reads existing columns.
+- Skip the pre-migration grep. A missed consumer means the DROP fails and the migration gets rolled back.
+
+**Tests to write**:
+- **Service tests** (`services/check-in-context-service.test.ts` or similar):
+  - Derivation function returns correct completion counts for a period with mixed logged / unlogged days.
+  - Edge case: period fully unlogged returns zero completions.
+  - Edge case: period fully logged returns real statuses.
+- **Route tests** (for the two detail-view endpoints):
+  - Response shape preserved (UI-visible `sessionCompletions` field still present, still an array of the documented type).
+  - IDOR still rejected (403 when check-in belongs to another client / coach).
+  - Historical-check-in read: render derived completion data, no 500.
+- **Form component tests** (`training-session-checklist.test.tsx`):
+  - Logged-day rows render locked with the logged status; no inputs.
+  - Unlogged-day rows render editable inputs.
+  - `canEditDay` is the only rule used to decide lock state (verify by injecting a stubbed return).
+  - Submit of an edited unlogged day calls the per-event log endpoint (not a check-in-specific write).
+- **Migration verify**: `npx tsc --noEmit` + `npx vitest run` pass after DROP; manual `SELECT 1 FROM check_in_session_completions` errors in psql.
+
+**Verify**: `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Manual flow:
+1. As a client, log a few days mid-week via the portal.
+2. Open the check-in form; confirm the logged days show locked with correct values.
+3. Fill an unlogged day via the form; submit.
+4. Verify the unlogged-day edit shows up in the portal's day view (proving it wrote to the canonical table, not a parallel one).
+5. As coach, open the submitted check-in; confirm the "sessions completed" section renders the derived data correctly.
+6. Confirm the DB no longer has a `check_in_session_completions` table.
+
+Commit.
 
 ---
 

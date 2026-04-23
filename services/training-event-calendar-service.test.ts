@@ -46,6 +46,7 @@ import {
   duplicateWeek,
   duplicateWeekToRemaining,
   deleteEvent,
+  moveEvent,
   moveEventAndFuture,
 } from "./training-event-calendar-service";
 
@@ -429,6 +430,61 @@ describe("training-event-calendar-service", () => {
   });
 
   // =========================================================================
+  // moveEvent
+  // =========================================================================
+
+  describe("moveEvent", () => {
+    const clientId = "client-1";
+    const planId = "plan-1";
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-04-20T12:00:00"));
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("returns the original event date as sourceDate and the newDate as targetDate", async () => {
+      const existingEvent = {
+        id: "event-1",
+        client_id: clientId,
+        training_plan_id: planId,
+        date: "2026-04-27",
+        training_session_id: null,
+        status: "scheduled",
+        session_name: "Push",
+        session_focus: null,
+        estimated_calories: 300,
+        is_modified: false,
+      };
+
+      let fromCallIndex = 0;
+
+      mockFrom.mockImplementation((table: string) => {
+        if (table === "training_plans") {
+          return createMockQuery({ data: { phase_id: null }, error: null }) as any;
+        }
+        if (table === "training_events") {
+          fromCallIndex++;
+          if (fromCallIndex === 1) {
+            // Initial event fetch.
+            return createMockQuery({ data: existingEvent, error: null }) as any;
+          }
+          // Update call.
+          return createMockQuery({ data: null, error: null }) as any;
+        }
+        return createMockQuery({ data: null, error: null }) as any;
+      });
+
+      const result = await moveEvent("event-1", "2026-04-30", clientId, planId);
+
+      expect(result).toEqual({ sourceDate: "2026-04-27", targetDate: "2026-04-30" });
+    });
+  });
+
+  // =========================================================================
   // moveEventAndFuture
   // =========================================================================
 
@@ -514,7 +570,7 @@ describe("training-event-calendar-service", () => {
         return createMockQuery({ data: null, error: null }) as any;
       });
 
-      await moveEventAndFuture("event-1", "2026-04-29", clientId, planId);
+      const result = await moveEventAndFuture("event-1", "2026-04-29", clientId, planId);
 
       // All three siblings should be updated, each shifted by +2 days.
       expect(updateCalls).toHaveLength(3);
@@ -522,6 +578,10 @@ describe("training-event-calendar-service", () => {
       expect(byId.get("event-1")).toMatchObject({ date: "2026-04-29", is_modified: true });
       expect(byId.get("event-2")).toMatchObject({ date: "2026-05-06", is_modified: true });
       expect(byId.get("event-3")).toMatchObject({ date: "2026-05-13", is_modified: true });
+
+      // Return value reports the earliest source date across shifted siblings
+      // so the nutrition cascade can clear stale rows on that date.
+      expect(result).toEqual({ earliestSourceDate: "2026-04-27", targetDate: "2026-04-29" });
     });
 
     it("falls back to single-event move when the dragged event has no training_session_id", async () => {
@@ -579,9 +639,10 @@ describe("training-event-calendar-service", () => {
         return createMockQuery({ data: null, error: null }) as any;
       });
 
-      await moveEventAndFuture("event-1", "2026-04-29", clientId, planId);
+      const result = await moveEventAndFuture("event-1", "2026-04-29", clientId, planId);
 
       expect(updateApplied).toBe(true);
+      expect(result).toEqual({ earliestSourceDate: "2026-04-27", targetDate: "2026-04-29" });
     });
 
     it("throws on collision with another scheduled event on a shifted date", async () => {
