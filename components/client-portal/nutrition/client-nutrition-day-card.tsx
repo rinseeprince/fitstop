@@ -28,10 +28,9 @@ interface ClientNutritionDayCardProps {
 export function ClientNutritionDayCard({ dayTarget }: ClientNutritionDayCardProps) {
   const [isOpen, setIsOpen] = useState(false);
 
-  const hasActivities =
-    dayTarget.trainingSessionCalories > 0 || dayTarget.externalActivityCalories > 0;
+  const hasActivities = dayTarget.trainingSessionCalories > 0;
 
-  const totalActivityCalories = dayTarget.trainingSessionCalories + dayTarget.externalActivityCalories;
+  const totalActivityCalories = dayTarget.trainingSessionCalories;
 
   return (
     <Card className={cn(
@@ -136,12 +135,6 @@ export function ClientNutritionDayCard({ dayTarget }: ClientNutritionDayCardProp
                         <span>+{dayTarget.trainingSessionCalories}</span>
                       </div>
                     )}
-                    {dayTarget.externalActivityCalories > 0 && (
-                      <div className="flex justify-between text-warning">
-                        <span>Other activities</span>
-                        <span>+{dayTarget.externalActivityCalories}</span>
-                      </div>
-                    )}
                     <div className="border-t pt-1 flex justify-between font-medium">
                       <span>Total</span>
                       <span>{dayTarget.calories.toLocaleString()}</span>
@@ -181,7 +174,7 @@ export function ClientNutritionDayCard({ dayTarget }: ClientNutritionDayCardProp
               </div>
 
               {/* Activities */}
-              {(dayTarget.trainingSessions?.length > 0 || dayTarget.externalActivities?.length > 0) && (
+              {dayTarget.trainingSessions?.length > 0 && (
                 <div className="rounded-md bg-muted/50 p-3">
                   <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
                     Planned Activities
@@ -194,15 +187,6 @@ export function ClientNutritionDayCard({ dayTarget }: ClientNutritionDayCardProp
                           {session.name}
                         </span>
                         <span className="text-primary">+{session.calories} cal</span>
-                      </div>
-                    ))}
-                    {dayTarget.externalActivities?.map((activity, idx) => (
-                      <div key={`external-${idx}`} className="flex justify-between text-sm">
-                        <span className="flex items-center gap-1 text-warning">
-                          <Flame className="h-3 w-3" />
-                          {activity.name}
-                        </span>
-                        <span className="text-warning">+{activity.calories} cal</span>
                       </div>
                     ))}
                   </div>

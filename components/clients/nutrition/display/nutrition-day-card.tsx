@@ -16,7 +16,7 @@ type NutritionDayCardProps = {
 };
 
 export const NutritionDayCard = memo(function NutritionDayCard({ dayTarget, index = 0 }: NutritionDayCardProps) {
-  const surplusCalories = dayTarget.trainingSessionCalories + dayTarget.externalActivityCalories;
+  const surplusCalories = dayTarget.trainingSessionCalories;
   const isTraining = dayTarget.isTrainingDay;
 
   return (
@@ -110,8 +110,6 @@ type NutritionDayTooltipProps = {
 
 function NutritionDayTooltip({ dayTarget }: NutritionDayTooltipProps) {
   const hasTrainingSessions = dayTarget.trainingSessions && dayTarget.trainingSessions.length > 0;
-  const hasExternalActivities =
-    dayTarget.externalActivities && dayTarget.externalActivities.length > 0;
 
   return (
     <div className="text-[#0c1a1e]">
@@ -141,13 +139,13 @@ function NutritionDayTooltip({ dayTarget }: NutritionDayTooltipProps) {
           </p>
           <p className="text-xs text-[#93b0b4]">total calories</p>
         </div>
-        {(dayTarget.trainingSessionCalories > 0 || dayTarget.externalActivityCalories > 0) && (
+        {dayTarget.trainingSessionCalories > 0 && (
           <div className="flex items-center justify-center gap-2 text-xs text-[#93b0b4]">
             <span>Base: {dayTarget.baselineCalories.toLocaleString()}</span>
             <span>+</span>
             <span className="flex items-center gap-1 text-surplus font-medium">
               <Flame className="h-3 w-3" />
-              {dayTarget.trainingSessionCalories + dayTarget.externalActivityCalories}
+              {dayTarget.trainingSessionCalories}
             </span>
           </div>
         )}
@@ -172,29 +170,18 @@ function NutritionDayTooltip({ dayTarget }: NutritionDayTooltipProps) {
       </div>
 
       {/* Activities */}
-      {(hasTrainingSessions || hasExternalActivities) && (
+      {hasTrainingSessions && (
         <div className="px-4 py-3 space-y-1">
           <p className="text-xs font-medium text-[#93b0b4] mb-1">Activities:</p>
-          {hasTrainingSessions &&
-            dayTarget.trainingSessions?.map((session, idx) => (
-              <div key={`training-${idx}`} className="flex justify-between text-xs text-[#0d9488]">
-                <span className="flex items-center gap-1">
-                  <Dumbbell className="h-3 w-3" />
-                  {session.name}
-                </span>
-                <span>+{session.calories} cal</span>
-              </div>
-            ))}
-          {hasExternalActivities &&
-            dayTarget.externalActivities?.map((activity, idx) => (
-              <div key={`external-${idx}`} className="flex justify-between text-xs text-surplus">
-                <span className="flex items-center gap-1">
-                  <Flame className="h-3 w-3" />
-                  {activity.name}
-                </span>
-                <span>+{activity.calories} cal</span>
-              </div>
-            ))}
+          {dayTarget.trainingSessions?.map((session, idx) => (
+            <div key={`training-${idx}`} className="flex justify-between text-xs text-[#0d9488]">
+              <span className="flex items-center gap-1">
+                <Dumbbell className="h-3 w-3" />
+                {session.name}
+              </span>
+              <span>+{session.calories} cal</span>
+            </div>
+          ))}
         </div>
       )}
     </div>

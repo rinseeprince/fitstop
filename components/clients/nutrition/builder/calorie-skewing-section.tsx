@@ -102,7 +102,7 @@ export function CalorieSkewingSection({
                   day={day}
                   isTrainingDay={target.isTrainingDay}
                   override={override}
-                  trainingCalories={target.trainingSessionCalories + target.externalActivityCalories}
+                  trainingCalories={target.trainingSessionCalories}
                   percentOfBudget={pct}
                   macroMode={macroMode}
                   onCaloriesChange={(v) => onDayChange(day, "calories", v)}

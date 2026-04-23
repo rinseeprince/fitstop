@@ -5,8 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { WorkoutTemplatePicker } from "../schedule/workout-template-picker";
 import { SessionList } from "../sessions/session-list";
-import { PreGenerationActivities } from "../../activities/pre-generation-activities";
-import { SameDayTrainingCheckbox } from "./same-day-training-checkbox";
 import { PlanNameInput } from "./plan-name-input";
 import { useTrainingBuilderContext } from "@/contexts/training-builder-context";
 import { cn } from "@/lib/utils";
@@ -132,15 +130,6 @@ export const ManualWorkoutBuilder = memo(function ManualWorkoutBuilder({
         </div>
       )}
 
-      {/* External Activities */}
-      <PreGenerationActivities
-        activities={builder.preGenerationActivities}
-        onAddActivity={builder.addPreGenActivity}
-        onRemoveActivity={builder.removePreGenActivity}
-        clientWeightKg={clientWeightKg}
-      />
-
-      <SameDayTrainingCheckbox />
     </div>
   );
 });

@@ -68,31 +68,6 @@ export async function handleSessionCompletion(
   }
 }
 
-export async function saveUnplannedActivities(
-  unplannedActivities: Array<{
-    activityName: string;
-    intensityLevel: "low" | "moderate" | "vigorous";
-    durationMinutes: number;
-  }>
-) {
-  for (const activity of unplannedActivities) {
-    try {
-      await fetch("/api/client/daily-activities", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          date: new Date().toISOString().split('T')[0],
-          activityName: activity.activityName,
-          intensityLevel: activity.intensityLevel,
-          durationMinutes: activity.durationMinutes,
-        }),
-      });
-    } catch (error) {
-      console.error("Error saving unplanned activity:", error);
-    }
-  }
-}
-
 // Form data extraction helpers (moved from form-data-helpers.ts)
 export function extractWellnessData(log: DailyLog | null) {
   return {

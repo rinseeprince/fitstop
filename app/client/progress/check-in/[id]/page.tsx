@@ -19,11 +19,9 @@ import {
   Camera,
   Trophy,
   Target,
-  Zap,
 } from "lucide-react";
 import type { CheckInWithDetails } from "@/types/check-in";
 
-// DB row shapes for exercise highlights and external activities (snake_case from API)
 type ExerciseHighlightRow = {
   exercise_name: string;
   highlight_type: string;
@@ -31,15 +29,6 @@ type ExerciseHighlightRow = {
   weight_value?: number;
   weight_unit?: string;
   reps?: number;
-};
-
-type ExternalActivityRow = {
-  activity_name: string;
-  intensity_level: string;
-  duration_minutes: number;
-  estimated_calories?: number;
-  day_performed?: string;
-  notes?: string;
 };
 
 export default function CheckInDetailPage() {
@@ -336,41 +325,6 @@ export default function CheckInDetailPage() {
           </Card>
         )}
 
-        {/* External Activities */}
-        {checkIn.externalActivities && checkIn.externalActivities.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Zap className="h-5 w-5" />
-                Other Activities
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {(checkIn.externalActivities as unknown as ExternalActivityRow[]).map((activity, index) => (
-                <div key={index} className="rounded-lg border p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="font-medium">{activity.activity_name}</span>
-                    <Badge variant="outline" className="capitalize">
-                      {activity.intensity_level}
-                    </Badge>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4 text-sm text-muted-foreground">
-                    <div>Duration: {activity.duration_minutes} min</div>
-                    {activity.estimated_calories && (
-                      <div>Calories: {activity.estimated_calories}</div>
-                    )}
-                    {activity.day_performed && (
-                      <div>Day: {activity.day_performed}</div>
-                    )}
-                  </div>
-                  {activity.notes && (
-                    <p className="text-sm text-muted-foreground mt-2">{activity.notes}</p>
-                  )}
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        )}
 
         {/* Notes */}
         {(checkIn.notes || checkIn.nutritionNotes) && (

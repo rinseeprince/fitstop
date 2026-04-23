@@ -11,10 +11,9 @@ import { useTrainingRestoration } from "@/hooks/use-training-restoration";
 import { useDailyPulseState } from "@/hooks/use-daily-pulse-state";
 import { DailyPulseContent } from "./daily-pulse-content";
 import { DayNavBar } from "./day-nav-bar";
-import { 
+import {
   handleAlternativeSessionSelect as handleAltSession,
   handleSessionCompletion,
-  saveUnplannedActivities,
   extractWellnessData,
   extractNutritionData
 } from "./utils/daily-pulse-handlers";
@@ -177,8 +176,7 @@ export function DailyPulse({ startDate }: DailyPulseProps = {}) {
       fatG: nutritionData.fatG ?? undefined,
     });
     await handleSessionCompletion(sessionCompleted, trainingSessionId, todayLog?.trainingSessionId, wasCompletedPreviously, setWasCompletedPreviously);
-    await saveUnplannedActivities(unplannedActivities);
-    
+
     // Optimistically update weekly logs if a new log was created
     if (!todayLog && debouncedSelectedDate) {
       updateWeeklyLogs(debouncedSelectedDate);

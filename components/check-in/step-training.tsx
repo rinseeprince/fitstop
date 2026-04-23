@@ -8,7 +8,6 @@ import { Separator } from "@/components/ui/separator";
 import { TrainingSessionChecklist } from "./training-session-checklist";
 import { NutritionAdherenceSection } from "./nutrition-adherence-section";
 import { ExerciseHighlightsSection } from "./exercise-highlights-section";
-import { ExternalActivitiesCheckin } from "./external-activities-checkin";
 import { DailyLogsTrainingSummary } from "./daily-logs-training-summary";
 import type {
   EnhancedTrainingMetrics,
@@ -197,15 +196,6 @@ export const StepTraining = ({
           weightUnit={weightUnit}
         />
       )}
-
-      {/* External Activities (Collapsible) */}
-      <ExternalActivitiesCheckin
-        activities={data.externalActivities || []}
-        onChange={(externalActivities) =>
-          onChange({ ...data, externalActivities })
-        }
-        clientWeightKg={clientWeightKg}
-      />
 
       <Separator />
 

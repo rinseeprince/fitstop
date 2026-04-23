@@ -4,8 +4,6 @@ import { memo } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { QuickSuggestions } from "./quick-suggestions";
-import { PreGenerationActivities } from "../../activities/pre-generation-activities";
-import { SameDayTrainingCheckbox } from "./same-day-training-checkbox";
 import { PlanNameInput } from "./plan-name-input";
 import { useTrainingBuilderContext } from "@/contexts/training-builder-context";
 import { Sparkles, Loader2, ArrowUp } from "lucide-react";
@@ -65,16 +63,6 @@ export const AIPromptPanel = memo(function AIPromptPanel({ clientWeightKg }: AIP
           ))}
         </div>
       )}
-
-      {/* External Activities */}
-      <PreGenerationActivities
-        activities={builder.preGenerationActivities}
-        onAddActivity={builder.addPreGenActivity}
-        onRemoveActivity={builder.removePreGenActivity}
-        clientWeightKg={clientWeightKg}
-      />
-
-      <SameDayTrainingCheckbox />
 
       {/* Prompt Input with Send Button */}
       <div>
