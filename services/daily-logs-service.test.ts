@@ -11,7 +11,6 @@ import {
 } from './daily-logs-service';
 import {
   getTodaysTrainingSession,
-  getTodaysPlannedActivities,
   getTodaysNutritionTarget,
 } from './daily-context-service';
 import type { DailyLog } from '@/types/daily-log';
@@ -363,83 +362,6 @@ describe('Daily Logs Service - Database Functions', () => {
         sessionName: 'Custom Session',
         estimatedCalories: 0,
       });
-    });
-  });
-
-  describe('getTodaysPlannedActivities', () => {
-    it('returns external activities for today', async () => {
-      const today = new Date('2024-01-15'); // Monday
-      vi.useFakeTimers();
-      vi.setSystemTime(today);
-
-      const mockTrainingPlan = {
-        sessions: [
-          {
-            id: 'activity-1',
-            name: 'BJJ',
-            dayOfWeek: 'monday',
-            sessionType: 'external_activity',
-            activityMetadata: { estimatedCalories: 400 },
-          },
-          {
-            id: 'activity-2',
-            name: 'Cycling',
-            dayOfWeek: 'monday',
-            sessionType: 'external_activity',
-            activityMetadata: { estimatedCalories: 300 },
-          },
-          {
-            id: 'session-1',
-            name: 'Upper Body',
-            dayOfWeek: 'monday',
-            sessionType: 'training',
-            estimatedCalories: 300,
-          },
-        ],
-      };
-
-      vi.mocked(getClientTrainingPlan).mockResolvedValue(mockTrainingPlan as any);
-
-      const result = await getTodaysPlannedActivities('client-123');
-      
-      expect(result).toHaveLength(2);
-      expect(result[0]).toEqual({
-        sessionId: 'activity-1',
-        activityName: 'BJJ',
-        estimatedCalories: 400,
-      });
-      expect(result[1]).toEqual({
-        sessionId: 'activity-2',
-        activityName: 'Cycling',
-        estimatedCalories: 300,
-      });
-
-      vi.useRealTimers();
-    });
-
-    it('returns empty array when no activities today', async () => {
-      const today = new Date('2024-01-15'); // Monday
-      vi.useFakeTimers();
-      vi.setSystemTime(today);
-
-      const mockTrainingPlan = {
-        sessions: [
-          {
-            id: 'activity-1',
-            name: 'BJJ',
-            dayOfWeek: 'tuesday',
-            sessionType: 'external_activity',
-            estimatedCalories: 400,
-          },
-        ],
-      };
-
-      vi.mocked(getClientTrainingPlan).mockResolvedValue(mockTrainingPlan as any);
-
-      const result = await getTodaysPlannedActivities('client-123');
-      expect(result).toEqual([]);
-
-      vi.useRealTimers();
     });
   });
 

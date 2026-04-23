@@ -41,8 +41,6 @@ export async function POST(
     const result = await orchestrateTrainingPlanGeneration(clientId, coachId, {
       coachPrompt: validation.data.coachPrompt,
       coachSuppliedName: validation.data.name,
-      preGenerationActivities: validation.data.preGenerationActivities,
-      allowSameDayTraining: validation.data.allowSameDayTraining,
       effectiveFrom: validation.data.effectiveFrom,
     });
 

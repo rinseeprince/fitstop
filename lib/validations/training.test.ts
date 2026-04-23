@@ -236,25 +236,6 @@ describe('Training Validation Schemas', () => {
       expect(result.success).toBe(true)
     })
 
-    it('validates with pre-generation activities', () => {
-      const data = {
-        coachPrompt: 'Create a training plan around existing activities',
-        preGenerationActivities: [
-          {
-            tempId: 'temp-1',
-            activityName: 'Soccer',
-            dayOfWeek: 'saturday',
-            intensityLevel: 'moderate',
-            durationMinutes: 90,
-          },
-        ],
-        allowSameDayTraining: true,
-      }
-
-      const result = generateTrainingPlanSchema.safeParse(data)
-      expect(result.success).toBe(true)
-    })
-
     it('rejects prompt under 10 characters', () => {
       const data = { coachPrompt: 'Short' }
       const result = generateTrainingPlanSchema.safeParse(data)
@@ -265,16 +246,6 @@ describe('Training Validation Schemas', () => {
       const data = { coachPrompt: 'A'.repeat(2001) }
       const result = generateTrainingPlanSchema.safeParse(data)
       expect(result.success).toBe(false)
-    })
-
-    it('defaults allowSameDayTraining to false', () => {
-      const data = { coachPrompt: 'Create a training plan' }
-      const result = generateTrainingPlanSchema.safeParse(data)
-
-      expect(result.success).toBe(true)
-      if (result.success) {
-        expect(result.data.allowSameDayTraining).toBe(false)
-      }
     })
   })
 

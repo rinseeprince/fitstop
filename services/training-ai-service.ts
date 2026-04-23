@@ -70,21 +70,7 @@ Guidelines for creating effective programs:
 3. Include appropriate warm-up exercises marked with "isWarmup": true
 4. Use progressive overload principles
 5. Balance pushing and pulling movements
-6. Consider training age and experience level when selecting exercises
-
-## External Activities (RECOVERY CONSIDERATIONS)
-When external activities are provided, you MUST:
-1. Treat these as FIXED, immovable time slots - DO NOT suggest moving or changing them
-2. Follow the specific scheduling rules provided in each request (some clients can train on activity days, others cannot)
-3. Consider recovery requirements carefully:
-   - NEVER schedule heavy leg training within 24-48 hours BEFORE high-impact leg activities (rugby, soccer, basketball, running)
-   - Avoid scheduling upper body pressing before activities requiring shoulder stability (swimming, climbing, tennis)
-   - Account for the activity's recovery hours when spacing workouts
-4. Consider muscle group overlap:
-   - If an activity heavily impacts "legs", reduce leg volume on adjacent training days
-   - If an activity impacts "full_body", consider lighter training the day before/after
-5. Place rest days strategically around high-intensity (vigorous) activities
-6. When scheduling same-day training with activities, choose COMPLEMENTARY muscle groups (e.g., upper body training on a leg-intensive activity day)`;
+6. Consider training age and experience level when selecting exercises`;
 
 // Generate training plan using OpenAI
 export const generateTrainingPlanAI = async (
@@ -152,48 +138,6 @@ export const generateTrainingPlanAI = async (
 // Build the prompt for AI generation
 const buildTrainingPlanPrompt = (input: AITrainingPlanInput): string => {
   let prompt = `## Coach's Request:\n${input.coachPrompt}\n\n`;
-
-  // Add external activities section if provided
-  if (input.externalActivities && input.externalActivities.length > 0) {
-    prompt += `## FIXED EXTERNAL ACTIVITIES (DO NOT MOVE):\n`;
-    prompt += `The client has the following recurring activities that are IMMOVABLE:\n\n`;
-
-    const allDays = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
-    const activityDays = input.externalActivities.map((a) => a.dayOfWeek.toLowerCase());
-    const availableDays = allDays.filter((d) => !activityDays.includes(d));
-
-    for (const activity of input.externalActivities) {
-      prompt += `### ${activity.activityName} - ${activity.dayOfWeek.charAt(0).toUpperCase() + activity.dayOfWeek.slice(1)}\n`;
-      prompt += `- Intensity: ${activity.intensityLevel}\n`;
-      prompt += `- Duration: ${activity.durationMinutes} minutes\n`;
-      prompt += `- Recovery needed: ${activity.recoveryHours} hours\n`;
-      prompt += `- Muscle groups impacted: ${activity.muscleGroupsImpacted.join(", ")}\n`;
-      if (activity.recoveryImpact) {
-        prompt += `- Impact note: ${activity.recoveryImpact}\n`;
-      }
-      prompt += `\n`;
-    }
-
-    prompt += `### Scheduling Rules:\n`;
-    if (input.allowSameDayTraining) {
-      // Allow same-day training
-      prompt += `- **SAME-DAY TRAINING ALLOWED**: This client CAN train on the same days as their activities\n`;
-      prompt += `- Days with activities: ${activityDays.map((d) => d.charAt(0).toUpperCase() + d.slice(1)).join(", ")}\n`;
-      prompt += `- Days without activities: ${availableDays.map((d) => d.charAt(0).toUpperCase() + d.slice(1)).join(", ")}\n`;
-      prompt += `- When scheduling same-day training, choose COMPLEMENTARY muscle groups:\n`;
-      prompt += `  - On leg-activity days (running, soccer, etc.): schedule upper body training\n`;
-      prompt += `  - On upper-activity days (swimming, climbing): schedule lower body training\n`;
-      prompt += `- Still avoid scheduling the SAME muscle groups that will be heavily used in the activity\n`;
-      prompt += `- IMPORTANT: Do NOT schedule leg-heavy training the day BEFORE any activity that impacts legs\n\n`;
-    } else {
-      // Default: no same-day training
-      prompt += `- Days BLOCKED by activities (no training): ${activityDays.map((d) => d.charAt(0).toUpperCase() + d.slice(1)).join(", ")}\n`;
-      prompt += `- Available days for training: ${availableDays.map((d) => d.charAt(0).toUpperCase() + d.slice(1)).join(", ")}\n`;
-      prompt += `- IMPORTANT: Do NOT schedule training on activity days\n`;
-      prompt += `- IMPORTANT: Do NOT schedule leg-heavy training the day BEFORE any activity that impacts legs\n`;
-      prompt += `- Consider placing rest days after vigorous activities\n\n`;
-    }
-  }
 
   prompt += `## Client Profile:\n`;
   prompt += `- Name: ${input.client.name}\n`;

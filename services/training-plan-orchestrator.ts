@@ -5,10 +5,6 @@ import { createSavedPlanFromAI } from "@/services/coach-saved-plan-service";
 import { weightToKg } from "@/utils/nutrition-helpers";
 import { getLatestBodyMetrics } from "@/services/body-metrics-service";
 import { getCurrentGoals } from "@/services/client-goals-service";
-import type { ExternalActivityContext } from "@/types/training";
-import type { MuscleGroup, IntensityLevel } from "@/types/external-activity";
-import type { z } from "zod";
-import type { preGenerationActivitySchema } from "@/lib/validations/training";
 
 export class TrainingPlanError extends Error {
   constructor(
@@ -20,26 +16,9 @@ export class TrainingPlanError extends Error {
   }
 }
 
-function getDefaultRecoveryHours(intensity: IntensityLevel): number {
-  switch (intensity) {
-    case "low":
-      return 12;
-    case "moderate":
-      return 24;
-    case "vigorous":
-      return 48;
-    default:
-      return 24;
-  }
-}
-
-type PreGenActivity = z.infer<typeof preGenerationActivitySchema>;
-
 interface GenerateTrainingPlanInput {
   coachPrompt: string;
   coachSuppliedName?: string;
-  preGenerationActivities?: PreGenActivity[];
-  allowSameDayTraining?: boolean;
   effectiveFrom?: string;
 }
 
@@ -94,19 +73,6 @@ export async function orchestrateTrainingPlanGeneration(
   const { checkIns } = await getClientCheckIns(clientId, { limit: 4 });
   const checkInData = calculateCheckInAverages(checkIns);
 
-  // Convert pre-generation activities to external activity context for AI
-  const preGenActivities = input.preGenerationActivities || [];
-  const externalActivities: ExternalActivityContext[] = preGenActivities.map((activity) => ({
-    activityName: activity.activityName,
-    dayOfWeek: activity.dayOfWeek,
-    intensityLevel: activity.intensityLevel,
-    durationMinutes: activity.durationMinutes,
-    recoveryHours: activity.analysis?.recoveryHours || getDefaultRecoveryHours(activity.intensityLevel),
-    muscleGroupsImpacted: (activity.analysis?.muscleGroupsImpacted || ["full_body"]) as MuscleGroup[],
-    recoveryImpact: activity.analysis?.recoveryImpact || "",
-  }));
-
-  // Generate plan via AI with external activities as context
   const { plan: aiPlan } = await generateTrainingPlanAI({
     coachPrompt: input.coachPrompt,
     client: {
@@ -120,8 +86,6 @@ export async function orchestrateTrainingPlanGeneration(
       gender: client.gender,
     },
     checkInData,
-    externalActivities: externalActivities.length > 0 ? externalActivities : undefined,
-    allowSameDayTraining: input.allowSameDayTraining,
   });
 
   // Save as a library draft (coach previews/edits before applying to client)

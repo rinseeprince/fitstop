@@ -5,7 +5,6 @@ import type { CheckInRow } from "@/lib/database-helpers";
 import {
   getCheckInSessionCompletions,
   getCheckInExerciseHighlights,
-  getCheckInExternalActivities
 } from "@/services/check-in-service";
 import { apiRateLimit } from "@/lib/rate-limit";
 import { requireCoachOwnsCheckIn } from "@/lib/require-coach-auth";
@@ -64,10 +63,9 @@ export async function GET(
     const checkIn = mapCheckInRow(checkInData);
 
     // Fetch related data
-    const [sessionCompletions, exerciseHighlights, externalActivities] = await Promise.all([
+    const [sessionCompletions, exerciseHighlights] = await Promise.all([
       getCheckInSessionCompletions(id),
       getCheckInExerciseHighlights(id),
-      getCheckInExternalActivities(id)
     ]);
 
     return NextResponse.json({
@@ -75,7 +73,6 @@ export async function GET(
         ...checkIn,
         sessionCompletions,
         exerciseHighlights,
-        externalActivities,
       },
       client: checkInData.clients || null,
     });

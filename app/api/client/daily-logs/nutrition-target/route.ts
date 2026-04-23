@@ -3,7 +3,6 @@ import { requireClientAuth } from "@/lib/require-client-auth";
 import {
   getTodaysNutritionTarget,
   getTodaysTrainingSession,
-  getTodaysPlannedActivities
 } from "@/services/daily-context-service";
 import { validateDateParameter } from "@/lib/validation-helpers";
 
@@ -20,10 +19,9 @@ export async function GET(request: NextRequest) {
     const dateValidation = validateDateParameter(date);
     if (dateValidation) return dateValidation;
 
-    const [nutritionTarget, trainingSession, plannedActivities] = await Promise.all([
+    const [nutritionTarget, trainingSession] = await Promise.all([
       getTodaysNutritionTarget(auth.clientId, date || undefined),
       getTodaysTrainingSession(auth.clientId, date || undefined),
-      getTodaysPlannedActivities(auth.clientId, date || undefined),
     ]);
 
     return NextResponse.json(
@@ -32,7 +30,6 @@ export async function GET(request: NextRequest) {
         data: {
           nutritionTarget,
           trainingSession,
-          plannedActivities,
         },
       },
       {

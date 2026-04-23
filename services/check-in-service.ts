@@ -10,7 +10,6 @@ import { mapCheckInRow } from "@/lib/mappers";
 import {
   insertSessionCompletions,
   insertExerciseHighlights,
-  insertExternalActivities,
 } from "./check-in-details-service";
 
 // Re-export split modules so existing imports continue to work
@@ -27,7 +26,6 @@ export {
 export {
   getCheckInSessionCompletions,
   getCheckInExerciseHighlights,
-  getCheckInExternalActivities,
   getCheckInWithDetails,
 } from "./check-in-details-service";
 
@@ -95,9 +93,6 @@ export const submitCheckIn = async (
     }
     if (formData.exerciseHighlights?.length) {
       await insertExerciseHighlights(checkInId, formData.exerciseHighlights);
-    }
-    if (formData.externalActivities?.length) {
-      await insertExternalActivities(checkInId, formData.externalActivities);
     }
   } catch (relatedDataError) {
     // Log the error but don't fail the check-in submission

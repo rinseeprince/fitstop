@@ -74,8 +74,6 @@ export const generateTrainingPlanSchema = z.object({
     .min(10, "Please provide more detail in your prompt (at least 10 characters)")
     .max(2000, "Prompt is too long (maximum 2000 characters)"),
   name: z.string().trim().min(1).max(80).optional(),
-  preGenerationActivities: z.array(preGenerationActivitySchema).optional(),
-  allowSameDayTraining: z.boolean().optional().default(false),
   effectiveFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format").optional(),
 });
 

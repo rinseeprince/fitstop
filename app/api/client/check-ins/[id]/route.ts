@@ -4,7 +4,6 @@ import { supabaseAdmin } from "@/services/supabase-admin";
 import {
   getCheckInSessionCompletions,
   getCheckInExerciseHighlights,
-  getCheckInExternalActivities
 } from "@/services/check-in-service";
 
 // GET /api/client/check-ins/[id] - Get specific check-in details for authenticated client
@@ -37,10 +36,9 @@ export async function GET(
     }
 
     // Fetch related data
-    const [sessionCompletions, exerciseHighlights, externalActivities] = await Promise.all([
+    const [sessionCompletions, exerciseHighlights] = await Promise.all([
       getCheckInSessionCompletions(id),
       getCheckInExerciseHighlights(id),
-      getCheckInExternalActivities(id)
     ]);
 
     return NextResponse.json({
@@ -84,7 +82,6 @@ export async function GET(
         // Enhanced training data
         sessionCompletions,
         exerciseHighlights,
-        externalActivities,
       },
     });
   } catch (error) {

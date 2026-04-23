@@ -6,13 +6,10 @@
 
 import { supabaseAdmin } from "./supabase-admin";
 import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
-import { getClientTrainingPlan } from "./client-portal-training";
-import { getDayOfWeekLowercase } from "./daily-logs-service";
 import { getEventForDate } from "./training-event-service";
 import { getTodayDateString } from "@/lib/date-helpers";
 import { getNutritionEventForDate } from "./nutrition-event-service";
 import { getTotalCalories, mapNutritionEventToDisplayTarget } from "@/utils/nutrition-event-helpers";
-import type { TodaysActivity } from "@/types/daily-pulse";
 
 type TodaysTrainingSession = {
   sessionId: string;
@@ -29,27 +26,6 @@ export const getTodaysTrainingSession = async (clientId: string, date?: string):
     sessionName: event.sessionName,
     estimatedCalories: event.estimatedCalories ?? 0,
   };
-};
-
-export const getTodaysPlannedActivities = async (clientId: string, date?: string): Promise<TodaysActivity[]> => {
-  const targetDate = date ? new Date(date + 'T00:00:00') : new Date();
-  const todayDayOfWeek = getDayOfWeekLowercase(targetDate);
-
-  const trainingPlan = await getClientTrainingPlan(clientId);
-
-  if (!trainingPlan) return [];
-
-  const activities = trainingPlan.sessions.filter(
-    (session) =>
-      session.dayOfWeek?.toLowerCase() === todayDayOfWeek &&
-      session.sessionType === "external_activity"
-  );
-
-  return activities.map((activity) => ({
-    sessionId: activity.id,
-    activityName: activity.name,
-    estimatedCalories: activity.activityMetadata?.estimatedCalories || 0,
-  }));
 };
 
 export const getTodaysNutritionTarget = async (clientId: string, date?: string): Promise<DailyNutritionTargets | null> => {

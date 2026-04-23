@@ -2,13 +2,11 @@ import { supabaseAdmin } from "./supabase-admin";
 import type {
   CheckInSessionCompletion,
   CheckInExerciseHighlight,
-  CheckInExternalActivity,
   CheckInWithDetails,
 } from "@/types/check-in";
 import type {
   CheckInSessionCompletionRow,
   CheckInExerciseHighlightRow,
-  CheckInExternalActivityRow,
 } from "@/lib/database-helpers";
 import { getCheckInById } from "./check-in-service";
 
@@ -50,24 +48,6 @@ export const getCheckInExerciseHighlights = async (
 
   if (error) {
     console.error("Error fetching exercise highlights:", error.message);
-    return [];
-  }
-
-  return data || [];
-};
-
-// Get external activities for a check-in (public)
-export const getCheckInExternalActivities = async (
-  checkInId: string
-): Promise<CheckInExternalActivityRow[]> => {
-  const { data, error } = await supabaseAdmin
-    .from("check_in_external_activities")
-    .select("*")
-    .eq("check_in_id", checkInId)
-    .order("created_at", { ascending: true });
-
-  if (error) {
-    console.error("Error fetching external activities:", error.message);
     return [];
   }
 
@@ -121,30 +101,6 @@ export const insertExerciseHighlights = async (
   }
 };
 
-// Insert external activities for a check-in
-export const insertExternalActivities = async (
-  checkInId: string,
-  activities: CheckInExternalActivity[]
-): Promise<void> => {
-  const rows = activities.map((a) => ({
-    check_in_id: checkInId,
-    activity_name: a.activityName,
-    intensity_level: a.intensityLevel,
-    duration_minutes: a.durationMinutes,
-    estimated_calories: a.estimatedCalories ?? null,
-    day_performed: a.dayPerformed ?? null,
-    notes: a.notes ?? null,
-  }));
-
-  const { error } = await supabaseAdmin
-    .from("check_in_external_activities")
-    .insert(rows);
-
-  if (error) {
-    throw new Error(`Failed to insert external activities: ${error.message}`);
-  }
-};
-
 // Map internal row to domain type for session completions
 const mapSessionCompletion = (
   row: SessionCompletionWithSession
@@ -174,20 +130,6 @@ const mapExerciseHighlight = (
   reps: row.reps ?? undefined,
 });
 
-// Map internal row to domain type for external activities
-const mapExternalActivity = (
-  row: CheckInExternalActivityRow
-): CheckInExternalActivity => ({
-  id: row.id,
-  checkInId: row.check_in_id,
-  activityName: row.activity_name,
-  intensityLevel: row.intensity_level as CheckInExternalActivity["intensityLevel"],
-  durationMinutes: row.duration_minutes,
-  estimatedCalories: row.estimated_calories ?? undefined,
-  dayPerformed: row.day_performed as CheckInExternalActivity["dayPerformed"],
-  notes: row.notes ?? undefined,
-});
-
 // Get check-in with all related details
 export const getCheckInWithDetails = async (
   checkInId: string
@@ -195,16 +137,15 @@ export const getCheckInWithDetails = async (
   const checkIn = await getCheckInById(checkInId);
   if (!checkIn) return null;
 
-  const [sessionRows, highlightRows, activityRows] = await Promise.all([
+  const [sessionRows, highlightRows] = await Promise.all([
     getCheckInSessionCompletions(checkInId),
     getCheckInExerciseHighlights(checkInId),
-    getCheckInExternalActivities(checkInId),
   ]);
 
   return {
     ...checkIn,
     sessionCompletions: sessionRows.map(mapSessionCompletion),
     exerciseHighlights: highlightRows.map(mapExerciseHighlight),
-    externalActivities: activityRows.map(mapExternalActivity),
+    externalActivities: [],
   };
 };

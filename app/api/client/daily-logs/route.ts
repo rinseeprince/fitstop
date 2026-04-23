@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireClientAuth } from "@/lib/require-client-auth";
 import { dailyLogSchema } from "@/lib/validations/daily-log";
 import { upsertDailyLog, getDailyLogs } from "@/services/daily-logs-service";
-import { getTodaysNutritionTarget, getTodaysPlannedActivities } from "@/services/daily-context-service";
+import { getTodaysNutritionTarget } from "@/services/daily-context-service";
 import { getClientTrainingPlan } from "@/services/client-portal-training";
 import { calculateUnplannedActivityCalories, calculateAdjustedDayTarget, calculateAdjustedMacros } from "@/utils/nutrition-tracking-helpers";
 import { getTodayDateString, getDateDaysAgo } from "@/lib/date-helpers";
@@ -42,8 +42,7 @@ export async function POST(request: NextRequest) {
     // Get nutrition targets and training data for the log's date to calculate adjusted targets
     const nutritionTarget = await getTodaysNutritionTarget(clientId, data.date);
     const trainingPlan = await getClientTrainingPlan(clientId);
-    const plannedActivities = await getTodaysPlannedActivities(clientId, data.date);
-    
+
     let adjustedTargets = {
       targetCalories: nutritionTarget?.calories,
       targetProteinG: nutritionTarget?.proteinG,
@@ -63,12 +62,6 @@ export async function POST(request: NextRequest) {
         completedTrainingCals = selectedSession?.estimatedCalories || 0;
       }
 
-      // Calculate completed planned activity calories
-      const completedActivityCals = burnIncluded
-        ? plannedActivities.reduce((sum, activity) =>
-            sum + (trainingData.activityStatuses[activity.sessionId]?.completed ? activity.estimatedCalories : 0), 0)
-        : 0;
-
       // Calculate unplanned activity calories
       const _unplannedActivityCals = trainingData.unplannedActivities.reduce((sum, activity) =>
         sum + calculateUnplannedActivityCalories({
@@ -82,7 +75,7 @@ export async function POST(request: NextRequest) {
       const adjustedCalories = calculateAdjustedDayTarget(
         nutritionTarget.baselineCalories,
         completedTrainingCals,
-        completedActivityCals
+        0
       );
       
       // Calculate adjusted macros
