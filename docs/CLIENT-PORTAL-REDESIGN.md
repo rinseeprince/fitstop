@@ -401,4 +401,21 @@ Two systems are partially coupled to the old model and get addressed in Phase 6.
 
 ## Timezone handling
 
-Session 0.1 records the current state and decision here after reading the code. Until then, every new endpoint must compute "today" using a client-local date (not server UTC). If the `clients` table lacks an explicit timezone column, Session 0.1 documents the gap and either proposes adding one or a workaround.
+### Current state (as of Session 0.1 audit)
+
+- **No client timezone column exists.** The `clients` table has no `timezone` / `time_zone` column in any migration under `supabase/migrations/`, and no `timezone` field appears in `types/`, `lib/mappers.ts`, or the client-service layer.
+- **"Today" is computed in server-local time.** All date helpers in `lib/date-helpers.ts` (`getTodayDateString`, `getTomorrowDateString`, `getDateString`, `getDateDaysAgo`, `getDateDaysFrom`, `calculateCheckInPeriod`, `getCheckInStatus`) derive the current day from `new Date()` using the Node process's local timezone. There is no client-timezone parameter anywhere in the helper signatures.
+- **Check-in period gating uses server day.** `calculateCheckInPeriod()` calls `checkInDate.getDay()` on a server-constructed `Date`, so the 7-day window endpoints collapse to the server's perception of "today." Same for `getCheckInStatus()`.
+- **Downstream impact.** `services/client-check-in-service.ts:50-70` resolves the AI summary period via server-local dates; `daily-logs` reads/writes, training week start (`getTrainingWeekStart`), and the attention feed's "today" comparisons all inherit this.
+
+In practice, on Vercel (UTC process timezone), "today" rolls over at 00:00 UTC for every client regardless of where they live. A client in PST sees their Sunday check-in close at 4 PM Saturday local; a client in AEDT sees theirs open a day early.
+
+### Decision for the redesign
+
+The redesign's past-day lock (home view, detail-page edits, server-side `assertCanEdit`) requires a stable, client-local definition of "today." Using server UTC would let a client in PST edit "tomorrow" for eight hours after midnight local.
+
+**Add a `timezone` column (TEXT, IANA zone e.g. `"America/Los_Angeles"`, NOT NULL, default `"UTC"`) to `clients`.** Migration lands in **Session 0.3**. The Settings page (Session 5.x) surfaces a timezone selector. The `canEditDay()` and `assertCanEdit()` helpers in `lib/daily-log-permissions.ts` take `clientTimezone` as an argument; `resolvePlanContextForDate` and every new client portal endpoint read the client's timezone and derive "today" via `Intl.DateTimeFormat(timezone, ...)` rather than `new Date()`.
+
+Pre-activation fallback: if `clients.timezone IS NULL` (legacy rows before backfill) or defaults to `"UTC"`, the helper uses UTC — acceptable because pre-launch there are no users, and the Settings UI prompts the client to confirm their zone during walkthrough.
+
+No runtime code outside `lib/date-helpers.ts` + the new permission helpers should reconstruct timezone math; they are the only surfaces that own `Intl.DateTimeFormat` calls.

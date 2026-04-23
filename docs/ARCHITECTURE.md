@@ -585,7 +585,7 @@ Written to `phases.phase_summary` during phase transition. Captures completion m
 After submission, `triggerAISummaryGeneration()` (`services/client-check-in-service.ts`) runs asynchronously:
 1. Fetches current check-in with details + previous 5 check-ins for trend analysis
 2. Fetches daily logs, habit logs, and weekly nutrition summary for the check-in period
-3. Calls `generateCheckInSummary()` (Anthropic Claude API) with all context
+3. Calls `generateCheckInSummary()` (OpenAI GPT-4o via `services/ai-service.ts`) with all context
 4. Updates check-in with AI summary in v2 format (`ai_insights` JSONB)
 5. Status transitions: `pending` -> `ai_processed` -> `reviewed` (after coach reviews)
 
