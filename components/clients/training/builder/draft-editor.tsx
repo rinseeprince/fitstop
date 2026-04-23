@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Loader2, Save, Trash2, Calendar, Plus, Moon, GripVertical } from "lucide-react";
+import { Loader2, Save, Trash2, Calendar, Moon, GripVertical } from "lucide-react";
 import {
   DndContext,
   DragOverlay,
@@ -31,6 +31,7 @@ import { PreviewSessionCard } from "../library/preview-session-card";
 import { AddLibraryExerciseDialog } from "../library/add-library-exercise-dialog";
 import { ApplyToClientDialog } from "@/components/training-library/apply-to-client-dialog";
 import { useSessionMutations } from "./use-session-mutations";
+import { SessionForm } from "./session-form";
 import type { SavedPlan, SavedSession, SavedExercise } from "@/types/training";
 
 type DraftEditorProps = {
@@ -570,62 +571,12 @@ export function DraftEditor({
           {/* Add session / rest day at the end of the cycle. For working-copy
               mode this is instant; for drafts it triggers a quick POST which
               completes in <500ms — fast enough that a spinner would flicker. */}
-          {newSessionDraft !== null ? (
-            <div className="flex items-center gap-2 px-4 py-3 rounded-[8px] border border-dashed border-[rgba(13,148,136,0.3)] bg-white">
-              <Input
-                autoFocus
-                value={newSessionDraft}
-                onChange={(e) => setNewSessionDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && newSessionDraft.trim()) {
-                    void addSession({ name: newSessionDraft.trim(), isRest: false });
-                  } else if (e.key === "Escape") {
-                    setNewSessionDraft(null);
-                  }
-                }}
-                placeholder="Session name (e.g., Upper Body)"
-                className="flex-1 h-9 text-[13px]"
-              />
-              <Button
-                size="sm"
-                onClick={() =>
-                  newSessionDraft.trim() &&
-                  void addSession({ name: newSessionDraft.trim(), isRest: false })
-                }
-                disabled={!newSessionDraft.trim()}
-              >
-                Add
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setNewSessionDraft(null)}
-              >
-                Cancel
-              </Button>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2 pt-1">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setNewSessionDraft("")}
-                className="border-[rgba(13,148,136,0.2)] text-[#5a7d82] hover:bg-[rgba(13,148,136,0.04)] hover:text-[#0c1a1e]"
-              >
-                <Plus className="h-3.5 w-3.5 mr-1" />
-                Add Session
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => void addSession({ name: "Rest", isRest: true })}
-                className="border-[rgba(148,163,184,0.3)] text-[#64748b] hover:bg-[rgba(148,163,184,0.08)] hover:text-[#0c1a1e]"
-              >
-                <Moon className="h-3.5 w-3.5 mr-1" />
-                Add Rest Day
-              </Button>
-            </div>
-          )}
+          <SessionForm
+            draft={newSessionDraft}
+            onDraftChange={setNewSessionDraft}
+            onAdd={(name) => void addSession({ name, isRest: false })}
+            onAddRest={() => void addSession({ name: "Rest", isRest: true })}
+          />
         </div>
       </div>
 
