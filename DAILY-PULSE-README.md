@@ -36,7 +36,7 @@
 
   5. **Single instance** - One `TrainingSection` rendered with an `isExpanded` prop. Not separate instances for compact/expanded views.
 
-  6. **Historical snapshots** - Both training and nutrition data are snapshotted at save time. `training_data` JSONB preserves the training state. `target_calories`, `target_protein_g`, `target_carbs_g`, `target_fat_g` columns preserve the nutrition targets. Coach-side views always read these saved values, never the current plan. This ensures historical accuracy survives plan regeneration.
+  6. **Historical snapshots** - Both training and nutrition data are snapshotted at save time. `training_data` JSONB preserves the training state. `target_calories`, `target_protein_g`, `target_carbs_g`, `target_fat_g` columns preserve the nutrition targets. Coach-side views always read these saved values, never the current plan. This ensures historical accuracy survives plan regeneration. Nutrition targets now come from `nutrition_events` (one row per client per date) at lookup time; when the client logs, the target from the event is snapshotted into `nutrition_logs.target_*` columns.
 
   7. **Date-aware saves** - The server-side save flow uses the log's `date` field (not today's date) when looking up nutrition targets and planned activities. This prevents incorrect targets when editing a past day's log.
 
