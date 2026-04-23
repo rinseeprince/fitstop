@@ -1,7 +1,7 @@
 import { getClientById } from "@/services/client-service";
 import { getClientCheckIns } from "@/services/check-in-service";
 import { generateTrainingPlanAI, calculateCheckInAverages } from "@/services/training-ai-service";
-import { createSavedPlanFromAI } from "@/services/coach-library-service";
+import { createSavedPlanFromAI } from "@/services/coach-saved-plan-service";
 import { weightToKg } from "@/utils/nutrition-helpers";
 import { getLatestBodyMetrics } from "@/services/body-metrics-service";
 import { getCurrentGoals } from "@/services/client-goals-service";

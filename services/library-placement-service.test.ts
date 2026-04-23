@@ -9,7 +9,7 @@ vi.mock("./supabase-admin", () => ({
 }));
 
 // Mock dependent services
-vi.mock("./coach-library-service", () => ({
+vi.mock("./coach-saved-plan-service", () => ({
   getSavedPlanById: vi.fn(),
 }));
 
@@ -26,7 +26,7 @@ vi.mock("./training-event-calendar-service", () => ({
 }));
 
 import { supabaseAdmin } from "./supabase-admin";
-import { getSavedPlanById } from "./coach-library-service";
+import { getSavedPlanById } from "./coach-saved-plan-service";
 import { createTrainingPlanAtomic } from "./training-service";
 import { deleteFutureEventsForPlan } from "./training-event-service";
 import { validatePhaseBounds } from "./training-event-calendar-service";

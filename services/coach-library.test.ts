@@ -50,10 +50,12 @@ import {
   createSavedPlanFromAI,
   createSavedPlanManual,
   promoteDraftToSaved,
-  createStandaloneSession,
   getSavedPlans,
+} from "./coach-saved-plan-service";
+import {
+  createStandaloneSession,
   getStandaloneSessions,
-} from "./coach-library-service";
+} from "./coach-saved-session-service";
 import type { AIGeneratedPlan } from "@/types/training";
 
 const mockFrom = vi.mocked(supabaseAdmin.from);

@@ -5,7 +5,7 @@ import { requireCSRFProtection } from "@/lib/csrf-protection";
 import {
   updateSavedExercise,
   removeSavedExercise,
-} from "@/services/coach-library-service";
+} from "@/services/coach-saved-session-service";
 
 type Params = {
   params: Promise<{ savedPlanId: string; sessionId: string; exerciseId: string }>;

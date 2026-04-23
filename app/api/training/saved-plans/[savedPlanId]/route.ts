@@ -6,7 +6,7 @@ import {
   getSavedPlanById,
   updateSavedPlan,
   deleteSavedPlan,
-} from "@/services/coach-library-service";
+} from "@/services/coach-saved-plan-service";
 
 type Params = { params: Promise<{ savedPlanId: string }> };
 

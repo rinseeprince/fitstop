@@ -5,7 +5,7 @@ import { requireCSRFProtection } from "@/lib/csrf-protection";
 import {
   getSavedPlans,
   createSavedPlanManual,
-} from "@/services/coach-library-service";
+} from "@/services/coach-saved-plan-service";
 
 // GET - List saved plans for the authenticated coach
 export async function GET(request: NextRequest) {

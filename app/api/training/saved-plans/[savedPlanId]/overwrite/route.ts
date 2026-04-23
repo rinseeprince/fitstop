@@ -5,7 +5,7 @@ import { requireCSRFProtection } from "@/lib/csrf-protection";
 import {
   overwriteSavedPlan,
   type OverwriteSavedPlanInput,
-} from "@/services/coach-library-service";
+} from "@/services/coach-saved-plan-service";
 
 /**
  * POST - Replace a saved plan's sessions + exercises with a new working-copy

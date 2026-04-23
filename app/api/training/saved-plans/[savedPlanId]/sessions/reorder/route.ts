@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
-import { reorderSavedSessions } from "@/services/coach-library-service";
+import { reorderSavedSessions } from "@/services/coach-saved-session-service";
 
 // PATCH - Bulk reorder sessions within a plan
 export async function PATCH(

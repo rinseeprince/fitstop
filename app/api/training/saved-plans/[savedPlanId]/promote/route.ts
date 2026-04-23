@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
-import { promoteDraftToSaved } from "@/services/coach-library-service";
+import { promoteDraftToSaved } from "@/services/coach-saved-plan-service";
 
 // POST - Promote a draft plan to saved status
 export async function POST(

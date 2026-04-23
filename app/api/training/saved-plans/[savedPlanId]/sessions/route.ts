@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
-import { addSavedSession } from "@/services/coach-library-service";
+import { addSavedSession } from "@/services/coach-saved-session-service";
 
 // POST - Add a session to a saved plan
 export async function POST(

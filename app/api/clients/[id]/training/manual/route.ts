@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getClientById } from "@/services/client-service";
-import { createSavedPlanManual } from "@/services/coach-library-service";
+import { createSavedPlanManual } from "@/services/coach-saved-plan-service";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import type { ManualSessionDraft } from "@/types/training";
 import { coachApiRateLimit } from "@/lib/rate-limit";

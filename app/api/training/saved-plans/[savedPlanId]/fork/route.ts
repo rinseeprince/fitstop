@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
-import { cloneSavedPlanAsDraft } from "@/services/coach-library-service";
+import { cloneSavedPlanAsDraft } from "@/services/coach-saved-plan-service";
 
 // POST - Clone a saved library plan into a new draft owned by the same coach.
 // The source plan is untouched; the returned draft is editable and can be

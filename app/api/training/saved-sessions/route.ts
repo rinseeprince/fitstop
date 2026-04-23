@@ -5,7 +5,7 @@ import { requireCSRFProtection } from "@/lib/csrf-protection";
 import {
   getStandaloneSessions,
   createStandaloneSession,
-} from "@/services/coach-library-service";
+} from "@/services/coach-saved-session-service";
 
 // GET - List standalone sessions for the authenticated coach
 export async function GET(request: NextRequest) {

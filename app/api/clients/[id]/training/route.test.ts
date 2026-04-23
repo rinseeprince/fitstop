@@ -14,7 +14,7 @@ vi.mock('@/services/training-ai-service', () => ({
   calculateCheckInAverages: vi.fn().mockReturnValue({}),
 }))
 
-vi.mock('@/services/coach-library-service', () => ({
+vi.mock('@/services/coach-saved-plan-service', () => ({
   createSavedPlanFromAI: vi.fn().mockResolvedValue('saved-plan-1'),
 }))
 
@@ -78,7 +78,7 @@ vi.mock('@/services/supabase-admin', () => ({
 
 import { getClientById } from '@/services/client-service'
 import { generateTrainingPlanAI } from '@/services/training-ai-service'
-import { createSavedPlanFromAI } from '@/services/coach-library-service'
+import { createSavedPlanFromAI } from '@/services/coach-saved-plan-service'
 import { getLatestBodyMetrics } from '@/services/body-metrics-service'
 import { getCurrentGoals } from '@/services/client-goals-service'
 import { POST } from './route'
