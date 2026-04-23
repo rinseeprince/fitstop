@@ -49,7 +49,7 @@ export async function requireClientAuth(
   const csrfResponse = await requireCSRFProtection(request);
   if (csrfResponse) return { ok: false, response: csrfResponse };
 
-  const clientId = await getAuthenticatedClientId();
+  const clientId = await getAuthenticatedClientId(request);
   if (!clientId) return { ok: false, response: unauthorized() };
 
   return { ok: true, clientId };
@@ -69,7 +69,7 @@ export async function requireClientAuthWithCheckInDay(
   const csrfResponse = await requireCSRFProtection(request);
   if (csrfResponse) return { ok: false, response: csrfResponse };
 
-  const authed = await getAuthenticatedClientWithCheckInDay();
+  const authed = await getAuthenticatedClientWithCheckInDay(request);
   if (!authed) return { ok: false, response: unauthorized() };
 
   return { ok: true, clientId: authed.clientId, checkInDay: authed.checkInDay };

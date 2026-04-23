@@ -1,10 +1,61 @@
+import { createHash } from "crypto";
+import type { NextRequest } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 
+type AuthFailureReason =
+  | "missing_session"
+  | "invalid_session"
+  | "db_error"
+  | "coach_profile_not_found"
+  | "client_profile_not_found";
+
 /**
- * Gets the authenticated coach ID from the current session
- * @returns The coach ID if authenticated, null otherwise
+ * Emit a structured auth-failure log. Called on every 401-equivalent path
+ * in this module so a probe campaign is visible in local logs / Sentry
+ * breadcrumbs. Intentionally never logs PII (no user_id, no email, no
+ * JWT contents). IPs are hashed via SHA-256 so repeated failures from
+ * the same source group without revealing the address.
+ *
+ * `route` and `ipHash` fall back to "unknown" when no `request` is passed
+ * (coach-side callers don't thread it yet — see TECHNICAL-DEBT H2 #1).
  */
-export async function getAuthenticatedCoachId(): Promise<string | null> {
+function logAuthFailure(opts: {
+  role: "coach" | "client";
+  reason: AuthFailureReason;
+  request?: NextRequest;
+}): void {
+  const { role, reason, request } = opts;
+  let route = "unknown";
+  let ipHash = "unknown";
+
+  if (request) {
+    route = request.nextUrl.pathname;
+    const forwarded = request.headers.get("x-forwarded-for");
+    const ip = forwarded?.split(",")[0]?.trim();
+    if (ip) {
+      ipHash = createHash("sha256").update(ip).digest("hex").slice(0, 12);
+    }
+  }
+
+  console.warn("auth_failure", {
+    timestamp: new Date().toISOString(),
+    role,
+    reason,
+    route,
+    ipHash,
+  });
+}
+
+/**
+ * Gets the authenticated coach ID from the current session.
+ * @param request Optional NextRequest used for structured auth-failure logging
+ *   (route + hashed IP). Coach-side callers can omit it; failures will log
+ *   "unknown" for route/IP but still record the reason and timestamp.
+ * @returns The coach ID if authenticated, null otherwise.
+ */
+export async function getAuthenticatedCoachId(
+  request?: NextRequest
+): Promise<string | null> {
   try {
     const supabase = await createServerSupabaseClient();
 
@@ -13,7 +64,12 @@ export async function getAuthenticatedCoachId(): Promise<string | null> {
       error: userError,
     } = await supabase.auth.getUser();
 
-    if (userError || !user) {
+    if (userError) {
+      logAuthFailure({ role: "coach", reason: "invalid_session", request });
+      return null;
+    }
+    if (!user) {
+      logAuthFailure({ role: "coach", reason: "missing_session", request });
       return null;
     }
 
@@ -24,13 +80,18 @@ export async function getAuthenticatedCoachId(): Promise<string | null> {
       .eq("user_id", user.id)
       .maybeSingle();
 
-    // Log unexpected errors but don't throw
     if (error) {
       console.error("Error fetching coach:", error.message);
+      logAuthFailure({ role: "coach", reason: "db_error", request });
       return null;
     }
 
-    return coach?.id || null;
+    if (!coach?.id) {
+      logAuthFailure({ role: "coach", reason: "coach_profile_not_found", request });
+      return null;
+    }
+
+    return coach.id;
   } catch (error) {
     console.error("Unexpected error in getAuthenticatedCoachId:", error);
     return null;
@@ -38,10 +99,13 @@ export async function getAuthenticatedCoachId(): Promise<string | null> {
 }
 
 /**
- * Gets the authenticated client ID from the current session
- * @returns The client ID if authenticated as a client, null otherwise
+ * Gets the authenticated client ID from the current session.
+ * @param request Optional NextRequest used for structured auth-failure logging.
+ * @returns The client ID if authenticated as a client, null otherwise.
  */
-export async function getAuthenticatedClientId(): Promise<string | null> {
+export async function getAuthenticatedClientId(
+  request?: NextRequest
+): Promise<string | null> {
   try {
     const supabase = await createServerSupabaseClient();
 
@@ -50,7 +114,12 @@ export async function getAuthenticatedClientId(): Promise<string | null> {
       error: userError,
     } = await supabase.auth.getUser();
 
-    if (userError || !user) {
+    if (userError) {
+      logAuthFailure({ role: "client", reason: "invalid_session", request });
+      return null;
+    }
+    if (!user) {
+      logAuthFailure({ role: "client", reason: "missing_session", request });
       return null;
     }
 
@@ -61,13 +130,18 @@ export async function getAuthenticatedClientId(): Promise<string | null> {
       .eq("user_id", user.id)
       .maybeSingle();
 
-    // Log unexpected errors but don't throw
     if (error) {
       console.error("Error fetching client:", error.message);
+      logAuthFailure({ role: "client", reason: "db_error", request });
       return null;
     }
 
-    return client?.id || null;
+    if (!client?.id) {
+      logAuthFailure({ role: "client", reason: "client_profile_not_found", request });
+      return null;
+    }
+
+    return client.id;
   } catch (error) {
     console.error("Unexpected error in getAuthenticatedClientId:", error);
     return null;
@@ -78,8 +152,11 @@ export async function getAuthenticatedClientId(): Promise<string | null> {
  * Gets the authenticated client ID and check-in day from the current session.
  * Used by training-related routes that need the client's check-in day
  * to compute correct training week boundaries.
+ * @param request Optional NextRequest used for structured auth-failure logging.
  */
-export async function getAuthenticatedClientWithCheckInDay(): Promise<{
+export async function getAuthenticatedClientWithCheckInDay(
+  request?: NextRequest
+): Promise<{
   clientId: string;
   checkInDay: string | null;
 } | null> {
@@ -91,7 +168,12 @@ export async function getAuthenticatedClientWithCheckInDay(): Promise<{
       error: userError,
     } = await supabase.auth.getUser();
 
-    if (userError || !user) {
+    if (userError) {
+      logAuthFailure({ role: "client", reason: "invalid_session", request });
+      return null;
+    }
+    if (!user) {
+      logAuthFailure({ role: "client", reason: "missing_session", request });
       return null;
     }
 
@@ -103,10 +185,14 @@ export async function getAuthenticatedClientWithCheckInDay(): Promise<{
 
     if (error) {
       console.error("Error fetching client:", error.message);
+      logAuthFailure({ role: "client", reason: "db_error", request });
       return null;
     }
 
-    if (!client?.id) return null;
+    if (!client?.id) {
+      logAuthFailure({ role: "client", reason: "client_profile_not_found", request });
+      return null;
+    }
 
     return {
       clientId: client.id,
