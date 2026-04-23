@@ -19,6 +19,10 @@ CoachHub is a fitness coaching platform built with Next.js 14 (App Router). It c
 
 ```
 coaches
+  ├── coach_saved_plans             -- library plan templates (status: draft/saved)
+  │     └── coach_saved_sessions    -- reusable sessions (saved_plan_id NULL = standalone)
+  │           └── coach_saved_exercises  -- exercise_id FK to exercises catalog
+  │
   └── clients                        -- coach_id FK, one coach per client
         ├── roadmaps                  -- opt-in, one active per client
         │     └── phases              -- time-bound strategy blocks
@@ -26,10 +30,10 @@ coaches
         │           ├── nutrition_plans  -- phase_id FK (nullable)
         │           └── daily_habits     -- phase_id FK (nullable)
         │
-        ├── training_plans            -- can exist without roadmap (phase_id = null)
-        │     ├── training_sessions
+        ├── training_plans            -- can exist without roadmap (phase_id = null); saved_plan_id FK tracks library provenance (nullable)
+        │     ├── training_sessions   -- carries calorie_surplus_percentage (source for nutrition cascade)
         │     │     └── training_exercises  -- exercise_id FK to exercises catalog
-        │     └── training_events        -- one row per session per date
+        │     └── training_events        -- one row per session per date (calendar SOT)
         ├── nutrition_plans           -- can exist without roadmap (phase_id = null)
         │     └── nutrition_events       -- one row per client per date
         │
@@ -220,18 +224,34 @@ Events are the **source of truth for date-specific targets**. Plan templates (`n
 - `status`: `scheduled` / `completed` / `partial` / `missed` / `skipped`
 - Unique constraint: `(client_id, training_session_id, date)` partial index where `training_session_id IS NOT NULL`
 
-### Nutrition event fields
-- `baseline_calories` + `training_burn_calories` + `external_burn_calories` = total prescribed calories
-- `protein_g`, `carb_g`, `fat_g` - baseline macros (calculated from baseline_calories only, not burn-inclusive)
+`training_sessions.calorie_surplus_percentage` (NUMERIC, nullable) is the source the nutrition cascade reads when materializing surplus onto nutrition events. Rest-day sessions have NULL.
+
+### Nutrition event fields (percentage-surplus model, post-LIB-2)
+- `baseline_calories` - plan's rest-day target, frozen at event creation
+- `calorie_surplus_percentage` (NUMERIC, nullable) - read from the training session assigned to that date (e.g., 15 for +15%). NULL on rest days
+- `training_burn_calories`, `external_burn_calories` - **deprecated**; 0 on new events, legacy values preserved on pre-LIB-2 events for backward compat
+- `protein_g`, `carb_g`, `fat_g` - baseline macros (protein fixed; extra calories redistribute to carbs/fats per `diet_type` via `calculateDailyMacros()`)
 - `diet_type` - snapshotted from plan, enables display-time macro recalculation when `include_activity_burn` is on
 - `is_training_day` - derived from training events on that date
 - `status`: `scheduled` / `logged` / `missed`
 
+**Display total**: `baseline * (1 + surplus/100)` when `include_activity_burn` is on, else `baseline`. The toggle does not require event regeneration.
+
 ### Event lifecycle
+- **Generation paths** (training):
+  1. AI generator or manual builder → draft in coach library (`coach_saved_plans.status = 'draft'`) → coach previews and edits on full-page editor → place from any start date with cycle-aware placement
+  2. Library plan → apply or drag onto calendar (creates fresh client-side `training_plans` + `training_sessions` + `training_exercises` + `training_events`)
+  3. Library session → drag individual saved session onto a specific calendar day
+  4. Direct plan creation via the legacy builder (still supported)
 - **Generated** when a plan is created or regenerated
 - **Cascaded** when training events change (training day swaps trigger nutrition event regeneration via `regenerateFutureNutritionEvents`)
 - **Frozen once past** - only future `scheduled` events are deleted/regenerated. Past events and non-scheduled statuses are preserved
 - **Calendar operations** (training events only): coaches can move events to different dates, duplicate individual events, and duplicate entire weeks. Duplicate-week clones sessions + exercises so each week is independent. Moved/duplicated events get `is_modified = true`
+
+### Training → Nutrition cascade
+- Training event changes invoke `regenerateFutureNutritionEvents()`. Nutrition events read `calorie_surplus_percentage` via `training_event.training_session_id` → `training_sessions.calorie_surplus_percentage`.
+- Only future `scheduled` nutrition events are replaced; `logged` / `missed` events are immutable.
+- Baseline is preserved across a cascade — only `calorie_surplus_percentage` and `is_training_day` change.
 
 ### Read priority for nutrition targets
 1. **Logged days**: `nutrition_logs.target_calories` (snapshot written at log time, authoritative)
@@ -278,6 +298,52 @@ Batch resolution via `resolveExercises()` fetches all coach + global exercises i
 - Unique index: `COALESCE(coach_id, '00000000-...'), LOWER(name)` - one exercise per name per coach (or globally)
 - `exercise_id` FK on `training_exercises` is nullable for backward compatibility (pre-EX-1 exercises have `exercise_id = NULL`)
 - ON DELETE SET NULL preserves client/library exercises if a catalog entry is removed
+
+---
+
+## Coach Library
+
+The coach library is the source of reusable training templates. AI or manual generation lands here as a draft; the coach previews, edits, and either saves or places the plan onto a client calendar.
+
+```
+coach_saved_plans              -- plan templates (status: draft / saved)
+  └── coach_saved_sessions     -- reusable sessions (saved_plan_id NULL = standalone)
+        └── coach_saved_exercises  -- exercise_id FK to exercises catalog
+```
+
+### `coach_saved_plans`
+- `coach_id` (FK), `name`, `description`
+- `split_type`, `frequency_per_week`
+- `status`: `'draft'` (generated, awaiting coach review) | `'saved'` (coach-confirmed)
+- `cycle_length` (INTEGER) — number of days in the training cycle. Non-weekly splits like PPL+Rest are `4`
+- `rest_pattern` (INTEGER[]) — which slots in the cycle are rest days (0-indexed)
+- `default_surplus_percentage`, `source`, `coach_prompt`, `program_duration_weeks`
+
+### `coach_saved_sessions`
+- `saved_plan_id` (FK, nullable) — NULL means a standalone session usable for mix-and-match
+- `name`, `focus`
+- `order_index` — position in the cycle
+- `is_rest` (BOOLEAN) — marks a rest day slot
+- `estimated_duration_minutes`, `calorie_surplus_percentage`, `session_type`
+
+### `coach_saved_exercises`
+- `saved_session_id` (FK), `exercise_id` (FK to `exercises` catalog, SET NULL)
+- Full prescription fields: `sets`, `reps_min`/`reps_max`/`reps_target`, `rpe_target`, `percentage_1rm`, `tempo`, `rest_seconds`, `superset_group`, `is_warmup`
+
+### Library-first generation flow
+1. AI generator or manual builder creates a `coach_saved_plans` row with `status = 'draft'` plus its sessions and exercises
+2. Coach opens the full-page preview editor, tweaks sessions/exercises/surplus, then saves (sets `status = 'saved'` and creates standalone copies of each non-rest session for reuse) or discards
+3. Placement creates fresh client-side rows — `training_plans`, `training_sessions`, `training_exercises`, `training_events` — from the library template. Library templates are never referenced live; each placement is a copy
+4. `training_plans.saved_plan_id` FK (nullable, SET NULL) tracks which library plan was placed (provenance for analytics and reapply)
+
+### Cycle-aware placement
+`coach_saved_plans.cycle_length` + session `order_index` let placement map any start date onto the correct position. For example, a PPL+Rest plan (cycle_length=4) starting on a Wednesday places Push/Pull/Legs/Rest/Push/... from that Wednesday onward, regardless of calendar week boundaries.
+
+### Atomic placement (migration 087)
+`create_training_plan_atomic()` runs event cleanup in the same transaction as plan creation/archival. STEP 0 deletes scheduled `training_events` from `v_effective_from` onward so an outgoing plan's events cannot collide with the incoming plan. Archival of the previous `training_plan` and insertion of the new plan/sessions/events happen atomically.
+
+### Stale drafts
+EL-1 (not currently in scope) specifies a cron that deletes draft plans older than 7 days. Until then, abandoned drafts accumulate in `coach_saved_plans` with `status = 'draft'`.
 
 ---
 

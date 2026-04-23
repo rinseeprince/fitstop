@@ -71,12 +71,21 @@ Read-only roadmap and phases. Active phase highlighted; completed phases collaps
 The client portal gets a persistent bottom tab bar (native-app feel) with five destinations:
 
 1. **Home** (`/client`): the day view with summary cards.
-2. **Check-in** (`/client/check-in`): the existing weekly check-in submission. The tab badge hints when a check-in is in window.
+2. **Check-in** (`/client/check-in`): the weekly check-in hub — submission form when a check-in is in window, plus a list of past check-ins with drill-down detail. The tab badge hints when a check-in is in window.
 3. **Program** (`/client/program`): the read-only roadmap/phase view.
 4. **Content** (`/client/resources`): the existing content library already built (assigned content + coach library, `app/client/resources/page.tsx`).
 5. **Settings**: accessed via a profile avatar in the top-right corner, not as a 5th tab, to keep the bar tight.
 
 The old header-only layout (`app/client/layout.tsx`) is replaced with a layout that renders the bottom tab bar at the bottom of the viewport and the avatar/settings trigger in the top-right.
+
+### Check-in hub (`/client/check-in`)
+
+The Check-in tab is a hub, not a single-purpose submission form. Shows:
+- **Submission form** at top when a check-in is in window (driven by `clients.expected_check_in_day` + `calculateCheckInPeriod()`). When not in window, a friendly "Next check-in opens on [date]" notice replaces the form.
+- **Past check-ins list** below: chronological, newest first. Each row shows date, status badge (pending/ai_processed/reviewed), and a short AI-summary preview.
+- Tapping a past check-in opens a full detail view (`/client/check-in/[id]` already exists per `app/client/progress/check-in/[id]/page.tsx` — reuse it, just route to it from the new hub).
+
+If `/client/progress` today contains only check-in history (no other progress metrics), it gets retired in Session 5.1 cleanup; the hub replaces it. If it contains non-check-in content (e.g. weight trends), it remains reachable via a link from the check-in hub or Settings and is evaluated separately.
 
 ### Settings page (`/client/settings`)
 
@@ -330,26 +339,53 @@ Before Phase 1:
 
 ## Coach-side improvements (bundled into this effort)
 
-Two coach-side gaps surfaced during planning and are included in the execution plan because they're related to the same domain and small enough to fold in.
+Several coach-side gaps surfaced during planning and are bundled because they touch the same domain and benefit from the same under-the-hood changes.
 
 ### Roadmap end-and-replace flow
 
 Backend CRUD exists (`POST /api/clients/[id]/roadmap` creates, `PATCH` updates, `DELETE` archives if no started/completed phases exist). Coach-side UI exposes create and edit, but there is no clear "end this roadmap and start a new one" workflow visible to the coach. Add:
 
-- An "End roadmap" button on `/components/clients/roadmap/roadmap-tab-content.tsx` that confirms intent, calls the existing archive path (likely via status change to `archived` rather than DELETE, since DELETE is blocked once phases have started), and then opens the existing `create-roadmap-dialog.tsx`.
-- Confirmation dialog copy makes clear the current roadmap becomes read-only history and a new one can be set up.
+- An "End roadmap" button on `components/clients/roadmap/roadmap-tab-content.tsx` that confirms intent, calls the existing archive path (likely via status change to `archived` rather than DELETE, since DELETE is blocked once phases have started), and then opens the existing `create-roadmap-dialog.tsx`.
+- Confirmation copy makes clear the current roadmap becomes read-only history and a new one can be set up.
 
 ### Phase edit unlock for active phases
 
 Today phase goal fields (`phase_goal_weight`, `phase_goal_body_fat_percentage`) lock once `phase.status !== 'planned'` (`components/clients/roadmap/edit-phase-dialog.tsx:50` plus server guard in `updatePhase()`). Loosen to:
 
 - **Planned**: fully editable (current behavior).
-- **Active**: fully editable (new behavior). Show a small warning banner in the dialog that goal changes may affect downstream nutrition plan targets for this phase.
+- **Active**: fully editable (new behavior). Show a small warning banner that goal changes may affect downstream nutrition plan targets for this phase.
 - **Completed / skipped**: remain read-only (history is history).
 
 Implementation: remove the `goalsDisabled` status check for active; update the `updatePhase()` guard to allow edits on `['planned', 'active']`.
 
-Known downstream implication: nutrition plans calculated with the old phase goal won't auto-recalculate. Flag in the confirmation dialog; a recalc workflow is out of scope for this change.
+Known downstream implication: nutrition plans calculated with the old phase goal won't auto-recalculate. Flag in the confirmation; a recalc workflow is out of scope for this change.
+
+### Archived-roadmap browsing
+
+Today the coach can archive a roadmap but cannot view archived ones afterwards. Add a "Past roadmaps" surface to `roadmap-tab-content.tsx` (collapsible section or dropdown) that lists archived roadmaps for this client. Selecting one renders its phases read-only — same component as the active roadmap's phase list, but nothing is editable. Archived phase goals, reflections, and summaries visible for historical reference.
+
+Backend: read endpoint needs to accept `status=archived` filter on `GET /api/clients/[id]/roadmap` (or a separate list route). No write path.
+
+### Per-client Check-ins tab (coach side)
+
+Today coaches review check-ins through `/check-ins/review/page.tsx` (global unreviewed queue). There is no per-client historical view — a coach wanting to see a specific client's check-in timeline has to dig through the global queue or hit the database. Add a **Check-ins** tab to `app/clients/[id]/page.tsx` positioned between **Daily Habits** and **Notes** in the tab order.
+
+The new tab shows:
+- A list of the client's check-ins (all statuses: pending, ai_processed, reviewed), newest first.
+- Each row: date, status badge, AI summary preview, coach response snippet if any.
+- Click a row to open full detail (same rendering pattern as the existing review page's detail modal, or a new read-only detail pane — decided during implementation).
+
+API `/api/clients/[id]/check-ins` already supports status filtering. This is primarily a UI surface.
+
+### Metrics page phase filter
+
+`MetricsTabContent` today filters by date range only (7d, 30d, 90d, all time) and metric category (body vs wellness). Add phase scoping so coaches can see trends within a single phase (useful for comparing what happened during a cut vs a bulk, for example):
+
+- Add a filter chip row or dropdown: "All time" (current default), "Active phase," plus one entry per past phase on the roadmap.
+- Selecting a phase scopes all charts (body metrics, wellness, adherence) to that phase's date range.
+- Works for clients with and without roadmaps; when no roadmap exists, only "All time" is available (filter is hidden or disabled).
+
+Implementation touches `components/clients/metrics/metrics-tab-content.tsx` and its data hook (`use-metrics-data.ts`) to accept an optional phase scope and pass it through to chart date ranges.
 
 ---
 

@@ -50,6 +50,7 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 | 2.4 | Summary cards + phase banner | 2 |
 | 2.5 | Program page + phase completion card relocation | 2 |
 | 2.6 | Settings page + settings endpoint | 2 |
+| 2.7 | Client check-in hub (submission + history) | 2 |
 | 3.1 | Nutrition + wellness endpoints | 3 Detail pages |
 | 3.2 | Nutrition detail page | 3 |
 | 3.3 | Wellness detail page + past-day lock enforcement | 3 |
@@ -60,6 +61,11 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 | 6.3 | Check-in AI summary enrichment (optional) | 6 |
 | 7.1 | Coach roadmap end-and-replace UI | 7 Coach-side fixes |
 | 7.2 | Coach phase edit unlock for active phases | 7 |
+| 7.3 | Coach archived-roadmap browsing | 7 |
+| 7.4 | Coach per-client Check-ins tab | 7 |
+| 7.5 | Coach metrics page phase filter | 7 |
+| 7.6 | Coach client overview tab as pre-session brief | 7 |
+| 7.7 | Coach exercise progression charts on Metrics tab | 7 |
 
 ---
 
@@ -669,6 +675,46 @@ If Session 0.1 flagged a missing timezone column, this session also adds that mi
 
 ---
 
+## Session 2.7: Client check-in hub (submission + history)
+
+**Commit message**: `feat(client-portal): turn check-in page into a hub with submission and past history`
+
+**Objective**: Rework `/client/check-in` so it acts as the hub the bottom nav's Check-in tab routes to: shows the submission form when a check-in is in window, and a list of past check-ins with drill-down detail either way. Reuse the existing submission flow and the existing check-in detail page; do not rebuild either.
+
+**Read first**:
+- `app/client/check-in/page.tsx` (current submission flow).
+- `app/client/progress/page.tsx` (current check-in history + any non-check-in content).
+- `app/client/progress/check-in/[id]/page.tsx` (existing check-in detail page — reuse target).
+- `app/api/client/check-ins/` (existing endpoints).
+- `services/check-in-context-service.ts` + `calculateCheckInPeriod()` (window gating).
+- `docs/CLIENT-PORTAL-REDESIGN.md` (Check-in hub section).
+
+**Plan (report before implementing)**:
+- Whether to re-use `/client/check-in/page.tsx` in place or restructure.
+- Whether `/client/progress` contains non-check-in content. If it's only check-in history, flag it for retirement in Session 5.1 cleanup. If it contains other progress metrics (weight trends, etc.), leave `/client/progress` as a linked-to page and link from the hub or Settings.
+- Detail drill-down: reuse `app/client/progress/check-in/[id]/page.tsx` if it renders what we need. Adjust the route path if needed (e.g. move under `/client/check-in/[id]` for URL consistency).
+
+**Implement**:
+- `app/client/check-in/page.tsx`:
+  - When a check-in window is open: render submission form at top (existing flow unchanged).
+  - When closed: replace form with a "Next check-in opens on [date]" notice, no form.
+  - Below either state: a "Past check-ins" list, chronological, newest first. Each row: date, status badge, short AI-summary preview.
+- Past check-in rows link to the existing detail page (path adjustment if needed for URL consistency).
+- If `/client/progress` is retired in cleanup, update any incoming links.
+
+**Do NOT**: Rebuild the submission form. Rebuild the check-in detail page. Change the window-gating logic. Add AI-regen or edit flows.
+
+**Tests to write**:
+- `app/client/check-in/page.test.tsx`:
+  - Window open: submission form + past list both render.
+  - Window closed: "next opens on" notice + past list render; no form.
+  - Empty history: past list shows an empty-state placeholder.
+  - Past row click navigates to the detail route.
+
+**Verify**: Manually open/close window via test client; confirm both states render. Reach detail page from a past row. `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Commit.
+
+---
+
 ## Session 3.1: Shared day-log helpers + nutrition/wellness endpoints
 
 **Commit message**: `feat(api): add day-log permission helpers, plan-context resolver, nutrition and wellness endpoints`
@@ -998,3 +1044,186 @@ If Session 0.1 flagged a missing timezone column, this session also adds that mi
 - API: 200 on goal edit for active phase; 403 for completed/skipped.
 
 **Verify**: Manual: edit an active phase's goal weight; confirm save succeeds and warning rendered. `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Commit.
+
+---
+
+## Session 7.3: Coach archived-roadmap browsing
+
+**Commit message**: `feat(coach): add archived roadmap browsing to client roadmap tab`
+
+**Objective**: Today coaches can archive a roadmap but cannot view archived ones afterward. Add a read-only browser on the roadmap tab that lists the client's archived roadmaps and lets the coach open any one to inspect its phases, goals, reflections, and summaries. No edit flows.
+
+**Read first**:
+- `components/clients/roadmap/roadmap-tab-content.tsx` (current active-roadmap rendering).
+- `app/api/clients/[id]/roadmap/route.ts` (existing reads; confirm whether it already accepts `status` filter).
+- `services/roadmap-service.ts` or equivalent (grep for where roadmap reads live).
+- `docs/CLIENT-PORTAL-REDESIGN.md` (Archived-roadmap browsing section).
+- `docs/ARCHITECTURE.md` (Roadmap/Phase Architecture section — phase_goals_snapshot, phase_summary, coach_reflection fields).
+
+**Plan (report before implementing)**:
+- Whether the existing read endpoint supports `?status=archived` filter. If not, either extend it or add a new list route (`GET /api/clients/[id]/roadmap/archived`).
+- UI shape: collapsible "Past roadmaps" section at the bottom of the roadmap tab, versus a separate page. Collapsible section is simpler and matches the tab's existing single-scroll layout.
+- Whether the archived-roadmap view reuses the active-roadmap phase-list component in read-only mode, or if it needs a new render component.
+
+**Implement**:
+- Backend: support `status=archived` on the roadmap read (or add a dedicated list route).
+- `components/clients/roadmap/roadmap-tab-content.tsx`: add a "Past roadmaps" collapsible below the active roadmap's phases. Fetches archived roadmaps via SWR.
+- Clicking an archived roadmap expands its phase list in the same view (or opens in a side panel / inline). Phase list is rendered via the existing phase-list component with an `isReadOnly` prop (or equivalent) so all edit affordances disappear.
+- Empty state when no archived roadmaps exist.
+
+**Do NOT**: Build unarchive ("reactivate old roadmap"). Build archived-roadmap editing. Show archived roadmaps on any non-coach surface.
+
+**Tests to write**:
+- Backend: route test for `status=archived` filter returns only archived roadmaps for the client.
+- UI: archived-roadmap list renders; phase-list renders read-only with no edit buttons; empty state renders.
+
+**Verify**: Archive a roadmap via Session 7.1 flow; then browse it from the Past roadmaps section; inspect phases, reflections, summaries. `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Commit.
+
+---
+
+## Session 7.4: Coach per-client Check-ins tab
+
+**Commit message**: `feat(coach): add per-client Check-ins tab to client detail page`
+
+**Objective**: Give coaches a per-client view of check-in history. Today the global queue (`/check-ins/review/page.tsx`) only shows unreviewed submissions; there is no way for a coach to browse one client's full check-in timeline. Add a **Check-ins** tab to the client detail page, positioned between **Daily Habits** and **Notes**.
+
+**Read first**:
+- `app/clients/[id]/page.tsx` (current tab structure + URL sync).
+- `components/clients/client-overview-tab.tsx` and existing tab components for the file pattern.
+- `app/check-ins/review/page.tsx` + its detail modal (reuse render patterns).
+- `app/api/clients/[id]/check-ins/` (existing endpoint; confirm shape).
+- `docs/CLIENT-PORTAL-REDESIGN.md` (Per-client Check-ins tab section).
+
+**Plan (report before implementing)**:
+- Exact tab insertion point (between Habits and Notes) and URL-param key (`?tab=check-ins`).
+- Whether detail opens in a modal (matches the review page pattern) or in a read-only right-hand pane or expansion.
+- Whether the AI summary + coach response are editable from this tab. Decision: NO — editing happens in the global review queue. This tab is browse-only to keep scope tight.
+
+**Implement**:
+- `components/clients/check-ins/check-ins-tab-content.tsx` (new): fetches via `/api/clients/[id]/check-ins` (SWR per CONVENTIONS coach-side pattern). Renders a list of all check-ins with status badges, dates, AI-summary preview, coach-response snippet.
+- Detail view: open existing review-page detail modal (extracted to a shared component if necessary) or a new read-only detail pane.
+- Update `app/clients/[id]/page.tsx` to register the new tab at the documented position.
+
+**Do NOT**: Add editing from this tab (global review queue owns that). Duplicate the review queue's unreviewed-filter logic. Build check-in generation or resubmission.
+
+**Tests to write**:
+- `check-ins-tab-content.test.tsx`: renders list from fixture; loading / error / empty states render; detail click opens detail.
+- API route test: confirm `/api/clients/[id]/check-ins` returns the expected shape and respects coach-ownership IDOR.
+
+**Verify**: As coach, open a client with multiple check-ins; confirm tab shows all; open a detail; confirm the tab URL param persists across refresh. `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Commit.
+
+---
+
+## Session 7.5: Coach metrics page phase filter
+
+**Commit message**: `feat(coach): add phase scope filter to client metrics page`
+
+**Objective**: `MetricsTabContent` today filters by date range (7d/30d/90d/all) and metric category. Add phase scoping so coaches can see body-metric and wellness trends within one phase (e.g. the cut vs the bulk), on top of all-time.
+
+**Read first**:
+- `components/clients/metrics/metrics-tab-content.tsx`.
+- `components/clients/metrics/hooks/use-metrics-data.ts` (or equivalent).
+- `services/roadmap-service.ts` and phase-service equivalents (to fetch phases for this client).
+- `docs/CLIENT-PORTAL-REDESIGN.md` (Metrics page phase filter section).
+- `docs/ARCHITECTURE.md` (Roadmap/Phase Architecture — phase date fields).
+
+**Plan (report before implementing)**:
+- Filter UI: chip row or dropdown. "All time" (current default) plus "Active phase" plus one entry per past phase. Hidden when client has no roadmap.
+- Where phase scope is applied: in the data hook, by constraining the query's date range to `[phase.started_at, phase.ended_at || now]`. Preserves existing date-range logic downstream.
+- Interaction with the existing date-range filter (7d/30d/90d/all). Decision: the date-range filter and phase filter are mutually exclusive — selecting a phase hides (or disables) the date-range chips, because they'd compound awkwardly. Document this in the session.
+
+**Implement**:
+- Data hook accepts optional `phaseId`. When set, overrides the date range with the phase's date window.
+- Filter chip/dropdown component. Phases listed in chronological order with active phase marked. Fetches phases from existing roadmap service.
+- All charts (body metrics, wellness, any adherence charts on the tab) honor the phase scope.
+- Empty-state handling: if a phase has no metrics in its window, show a friendly "no metrics recorded during this phase" per chart, not a broken UI.
+
+**Do NOT**: Build phase comparison ("overlay phase 1 vs phase 2"). Fix or improve any metric calculations unrelated to scoping. Change the existing date-range chips when a roadmap doesn't exist.
+
+**Tests to write**:
+- Data hook test: when `phaseId` is passed, the fetched data is scoped to the phase's window.
+- `metrics-tab-content.test.tsx`: filter renders with phases from a fixture; selecting a phase updates the chart's data prop; "no roadmap" case hides the filter.
+
+**Verify**: As coach, open a client with multiple completed phases; switch between "All time," "Active phase," and past phases; confirm charts rescope. `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Commit.
+
+---
+
+## Session 7.6: Coach client overview tab as pre-session brief
+
+**Commit message**: `feat(coach): restructure client overview tab into a pre-session brief`
+
+**Objective**: Turn the client detail page's Overview tab from a metrics dashboard into a "brief me on this client right now" surface. When a coach opens a client, the first thing they see should answer: what's changed since I last looked, and what's waiting on me? Existing metrics and wellness strip drop below this framing rather than leading.
+
+**Read first**:
+- `components/clients/client-overview-tab.tsx` (current overview implementation).
+- `app/clients/[id]/page.tsx` (tab structure).
+- `components/dashboard/needs-attention-feed.tsx` and `services/attention-feed-service.ts` (existing attention-feed data; need to scope to one client here).
+- `app/api/clients/[id]/check-ins/` (to count unreviewed check-ins for this client).
+- `services/training-event-service.ts`, `services/nutrition-event-service.ts`, `daily_logs_full` view (for "since last visit" deltas).
+- `docs/CLIENT-PORTAL-REDESIGN.md` — confirm the brief's sections match the redesign intent if documented there.
+
+**Plan (report before implementing)**:
+- How "last viewed" is tracked per coach-client pair. Recommended: new tiny table `coach_client_views` with `(coach_id, client_id, last_viewed_at)`, upserted when the coach opens the tab. Alternative: use session storage (loses across devices) — not recommended.
+- What "since last visit" surfaces count as: new logs (any child of `daily_logs`), new check-ins, new `exercise_logs` rows, new `body_metrics` rows, new `training_events.status` changes. Keep the list tight; don't include every timestamp update.
+- What "waiting on you" scopes per-client: unreviewed check-in (if one exists) + attention-feed items filtered to this client.
+- Zero-state copy for each section.
+- Whether to defer the `coach_client_views` upsert to the session load or the first meaningful paint. Load is simpler.
+
+**Implement**:
+1. **Migration**: `<next>_add_coach_client_views.sql`. Table with `coach_id` FK, `client_id` FK, `last_viewed_at` TIMESTAMPTZ, unique on `(coach_id, client_id)`. No `created_at` needed.
+2. **Service**: `services/coach-view-service.ts` with `getLastViewedAt(coachId, clientId)` and `upsertLastViewed(coachId, clientId)`. Returns null when no prior view (treat "since last visit" as "ever" in that case).
+3. **Brief data aggregator**: extend `services/client-overview-service.ts` (or equivalent — grep for where overview tab data comes from) with `getOverviewBrief(coachId, clientId)` returning `{ lastViewedAt, waitingOnYou: { unreviewedCheckIn, attentionFeedItems }, sinceLastVisit: { newLogs, newCheckIns, newExerciseLogs, newBodyMetrics, eventStatusChanges }, currentContext: { phase, weekInPhase, currentWeekGoal, phaseGoalProgress } }`. Compose from existing domain services; don't re-query tables directly.
+4. **Route**: extend the existing overview endpoint or add `GET /api/clients/[id]/overview-brief`. On GET, also upsert `last_viewed_at`.
+5. **UI**: restructure `client-overview-tab.tsx`:
+   - Top: "Waiting on you" — unreviewed check-in link + attention-feed item list. Zero-state: "You're caught up on [client name]."
+   - Middle: "Since your last visit" — compact list of new events with timestamps. Zero-state: "Nothing new since [timestamp]."
+   - Below: "Current context" — phase name, week-in-phase, phase-goal progress indicator (simple: trajectory vs target, or just the snapshotted goal with current value).
+   - Bottom: existing quick metrics + 28-day wellness strip (preserved, just demoted in visual hierarchy).
+
+**Do NOT**: Rebuild the wellness strip. Add predictive insights or trend interpretation (defer). Surface attention-feed items for OTHER clients — this view is scoped to one client.
+
+**Tests to write**:
+- Service test: `getOverviewBrief` returns correct aggregates for fixtures (first visit, repeat visit with new events, repeat visit with nothing new, no roadmap).
+- Route test: 200 happy; 403 IDOR; confirms `last_viewed_at` is updated after a GET.
+- UI tests: waiting-on-you section shows check-in + attention items when present, zero-state when empty; since-last-visit respects first-visit case; current context hides phase section when no roadmap.
+
+**Verify**: As coach, open a client with pending check-in + recent logs; confirm the brief renders correctly. Refresh; confirm "since your last visit" narrows since the upsert ran. Open a client with nothing pending; confirm zero-states render cleanly. `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Commit.
+
+---
+
+## Session 7.7: Coach exercise progression charts on Metrics tab
+
+**Commit message**: `feat(coach): add exercise progression charts to client metrics tab`
+
+**Objective**: Expose the `exercise_logs` data (written starting in Session 1.5) as longitudinal charts on the Metrics tab. Top-set weight × date per exercise is the primary lens; optional volume chart as a secondary view. Honors the phase filter from Session 7.5 automatically.
+
+**Read first**:
+- `components/clients/metrics/metrics-tab-content.tsx` (after Session 7.5's phase filter is in place).
+- `components/clients/metrics/hooks/use-metrics-data.ts` (reference for the data hook pattern).
+- `supabase/migrations/027_add_session_completion_tracking.sql` (`exercise_logs` schema).
+- `services/training-log-service.ts` (from Session 1.2 — existing reads).
+- `docs/ARCHITECTURE.md` "Training Completion Hierarchy" section.
+
+**Plan (report before implementing)**:
+- How exercises are identified across time. Preferred: group by `exercise_id` (catalog FK). Fallback for pre-EX-1 / orphaned rows: group by normalized name from `prescribed_exercise_snapshot`. Document the exact grouping rule.
+- Which exercises to chart. Recommendation: the client's N most-logged exercises (N=5-8) plus a dropdown/search to add any other logged exercise. Don't chart every exercise by default — visual noise.
+- Chart primary metric: max weight in the top set (highest `actual_weight` in the session's logged rows for that exercise). Secondary: total volume per session (sum of `actual_sets × actual_reps × actual_weight`). Expose a toggle.
+- Phase filter behavior: when a phase is selected in the Metrics tab (Session 7.5), all exercise progression charts scope to that phase's date range automatically. When "All time" is selected, full history.
+- Empty states: no `exercise_logs` for any exercise in range; fewer than 2 data points for an exercise (chart would be a single dot — show "not enough data yet").
+
+**Implement**:
+1. **Service**: new read functions in `services/training-log-service.ts`:
+   - `getMostLoggedExercises(clientId, phaseId?, limit)` — returns ordered list of `{ exerciseId | null, name, logCount }`.
+   - `getExerciseProgressionSeries(clientId, exerciseIdOrName, phaseId?)` — returns ordered `[{ date, topSetWeight, volume, unit }]`.
+2. **Read route**: `GET /api/clients/[id]/training/progression?exerciseId=...&phaseId=...` or similar. Standard coach middleware + IDOR. Accepts optional `phaseId` param.
+3. **UI section** on Metrics tab: new "Exercise progression" section. Renders the N most-logged exercises as small multiples (one chart each) by default. Toggle between "Top set" and "Volume" views. Empty states per chart when data is thin. Phase filter from Session 7.5 is read from the same context/state as body metrics + wellness charts.
+4. **Chart components**: reuse whatever charting primitives the Metrics tab already uses for body metrics — do NOT introduce a new charting library.
+
+**Do NOT**: Add prescribed-vs-actual comparison here (that belongs to the session-log-detail dialog from Session 1.6). Add predicted-next-session weight or stall detection (deferred attention-feed territory). Introduce a new charting library. Chart every exercise by default — cap at N most-logged.
+
+**Tests to write**:
+- Service tests: `getMostLoggedExercises` orders by log count; `getExerciseProgressionSeries` returns chronological series; both respect phaseId when passed; both gracefully handle empty results.
+- Route test: 200 with expected shape; 403 IDOR; 400 missing required params.
+- UI test: charts render for fixture data; toggle between top-set and volume works; empty state renders when no data; phase-filter change rescopes charts.
+
+**Verify**: As coach, open a client with logged exercise data across multiple phases; switch phase filter; confirm charts rescope. Switch top-set/volume toggle. Check empty-state rendering. `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Commit.
