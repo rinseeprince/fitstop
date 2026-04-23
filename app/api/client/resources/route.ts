@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireClientAuth } from "@/lib/require-client-auth";
 import { supabaseAdmin } from "@/services/supabase-admin";
-import { getClientResources } from "@/services/content-service";
+import { getClientResources } from "@/services/content-item-service";
 
 export async function GET(request: NextRequest) {
   const auth = await requireClientAuth(request);

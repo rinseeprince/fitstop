@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
-import { createContentItem, getCoachContent } from "@/services/content-service";
+import { createContentItem, getCoachContent } from "@/services/content-item-service";
 import { apiRateLimit } from "@/lib/rate-limit";
 import { createContentItemSchema } from "@/lib/validations/content";
 

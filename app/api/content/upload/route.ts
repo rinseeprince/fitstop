@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
-import { uploadContentFile, createContentItem } from "@/services/content-service";
+import { uploadContentFile } from "@/services/content-storage-service";
+import { createContentItem } from "@/services/content-item-service";
 import type { ContentType } from "@/types/content";
 import { apiRateLimit } from "@/lib/rate-limit";
 

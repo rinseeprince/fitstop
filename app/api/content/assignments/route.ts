@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
-import { assignContentToClient } from "@/services/content-service";
+import { assignContentToClient } from "@/services/content-assignment-service";
 import { apiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { createAssignmentSchema } from "@/lib/validations/content";

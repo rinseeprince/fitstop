@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
-import { fetchVideoMetadata, fetchLinkMetadata } from "@/services/content-service";
+import { fetchVideoMetadata, fetchLinkMetadata } from "@/services/content-metadata-service";
 import { apiRateLimit } from "@/lib/rate-limit";
 import { validateExternalUrl } from "@/lib/url-safety";
 import { fetchMetadataSchema } from "@/lib/validations/content";

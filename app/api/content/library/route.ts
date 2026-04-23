@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
-import { getCoachContentLibrary } from "@/services/content-service";
+import { getCoachContentLibrary } from "@/services/content-item-service";
 import { apiRateLimit } from "@/lib/rate-limit";
 
 export async function GET(request: NextRequest) {

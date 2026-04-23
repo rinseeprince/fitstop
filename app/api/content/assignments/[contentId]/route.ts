@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
-import { getContentAssignments } from "@/services/content-service";
+import { getContentAssignments } from "@/services/content-assignment-service";
 import { apiRateLimit } from "@/lib/rate-limit";
 
 export async function GET(
