@@ -1,5 +1,4 @@
-import { createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
+import { createServerSupabaseClient } from "@/lib/supabase-server";
 import type { Client, CheckIn, DietType, UnitPreference } from "@/types/check-in";
 import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
 import { buildDailyTargetsFromPlan } from "@/utils/build-daily-targets";
@@ -9,31 +8,10 @@ import { getEventsForDateRange } from "./training-event-service";
 import { getTrainingWeekStart, getTrainingWeekEnd } from "@/lib/date-helpers";
 import { promoteNutritionPlanIfReady } from "./nutrition-plan-service";
 
-// Create authenticated Supabase client for server-side client portal access
-// Uses regular client (not admin) to respect RLS policies
-export async function createPortalClient() {
-  const cookieStore = await cookies();
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll();
-        },
-        setAll(cookiesToSet) {
-          try {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
-            );
-          } catch {
-            // Server Components are read-only; cookie write errors are expected here
-          }
-        },
-      },
-    }
-  );
-}
+// Session-scoped Supabase client for client-portal reads that rely on RLS.
+// Re-exported under the old name so existing callers don't churn; the body
+// lives in lib/supabase-server.ts (canonical factory).
+export const createPortalClient = createServerSupabaseClient;
 
 // Nutrition targets type
 export type NutritionTargets = {

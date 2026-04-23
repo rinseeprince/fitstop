@@ -1,31 +1,4 @@
-import { cookies } from "next/headers";
-import { createServerClient } from "@supabase/ssr";
-
-/** Create a server-side Supabase client with cookie handling */
-async function createSupabaseServerClient() {
-  const cookieStore = await cookies();
-
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll();
-        },
-        setAll(cookiesToSet) {
-          try {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
-            );
-          } catch {
-            // Handle read-only error in Server Components
-          }
-        },
-      },
-    }
-  );
-}
+import { createServerSupabaseClient } from "@/lib/supabase-server";
 
 /**
  * Gets the authenticated coach ID from the current session
@@ -33,7 +6,7 @@ async function createSupabaseServerClient() {
  */
 export async function getAuthenticatedCoachId(): Promise<string | null> {
   try {
-    const supabase = await createSupabaseServerClient();
+    const supabase = await createServerSupabaseClient();
 
     const {
       data: { user },
@@ -70,7 +43,7 @@ export async function getAuthenticatedCoachId(): Promise<string | null> {
  */
 export async function getAuthenticatedClientId(): Promise<string | null> {
   try {
-    const supabase = await createSupabaseServerClient();
+    const supabase = await createServerSupabaseClient();
 
     const {
       data: { user },
@@ -111,7 +84,7 @@ export async function getAuthenticatedClientWithCheckInDay(): Promise<{
   checkInDay: string | null;
 } | null> {
   try {
-    const supabase = await createSupabaseServerClient();
+    const supabase = await createServerSupabaseClient();
 
     const {
       data: { user },
