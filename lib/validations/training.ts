@@ -100,10 +100,6 @@ export const reorderSessionSchema = z.object({
 
 export const reorderSessionsSchema = z.array(reorderSessionSchema);
 
-export const addSessionSchema = sessionSchema;
-
-export const addExerciseSchema = exerciseSchema;
-
 // Validation function to ensure client has basic data for training plan
 export function validateClientForTraining(client: {
   currentWeight?: number;

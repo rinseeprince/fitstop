@@ -98,9 +98,6 @@ export function mapClientRow(row: ClientRow): Client {
   };
 }
 
-// Legacy alias for backward compatibility
-export const mapCheckInFromDatabase = mapCheckInRow;
-
 /**
  * Map a database client_intake row to a ClientIntake type
  */

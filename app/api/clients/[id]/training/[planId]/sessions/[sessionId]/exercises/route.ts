@@ -8,7 +8,7 @@ import { bulkReplaceExercises } from "@/services/training-session-service";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { apiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
-import { addExerciseSchema } from "@/lib/validations/training";
+import { exerciseSchema } from "@/lib/validations/training";
 import { z } from "zod";
 
 // POST - Add new exercise to session
@@ -46,7 +46,7 @@ export async function POST(
     }
 
     const body = await request.json();
-    const validation = addExerciseSchema.safeParse(body);
+    const validation = exerciseSchema.safeParse(body);
 
     if (!validation.success) {
       console.error("Validation error:", validation.error.errors);

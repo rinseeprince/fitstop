@@ -4,7 +4,7 @@ import { getTrainingPlanById, addSession } from "@/services/training-service";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
-import { addSessionSchema } from "@/lib/validations/training";
+import { sessionSchema } from "@/lib/validations/training";
 // POST - Add new session to plan
 // Events are NOT regenerated here — the coach triggers regeneration
 // via the "Done" button which calls /regenerate-events with an effective date.
@@ -37,7 +37,7 @@ export async function POST(
     }
 
     const body = await request.json();
-    const validation = addSessionSchema.safeParse(body);
+    const validation = sessionSchema.safeParse(body);
 
     if (!validation.success) {
       console.error("Validation error:", validation.error.errors);

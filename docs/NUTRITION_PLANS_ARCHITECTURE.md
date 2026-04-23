@@ -1,3 +1,10 @@
+> **STATUS: SUPERSEDED** — This document describes the migration from flat `clients` columns
+> to `nutrition_plans` + `nutrition_plan_daily_targets` tables (completed in migrations 044-069).
+> The architecture has since evolved to include `nutrition_events` (one row per client per date)
+> which replaced template-based daily target lookups, and the calorie model moved from additive
+> (baseline + training_burn) to percentage surplus (baseline * (1 + surplus/100)). See
+> `docs/ARCHITECTURE.md` for the current architecture.
+
 # Nutrition Plans Architecture — Proposed Redesign
 
 ## Problem Statement
