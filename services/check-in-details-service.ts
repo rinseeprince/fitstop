@@ -146,6 +146,5 @@ export const getCheckInWithDetails = async (
     ...checkIn,
     sessionCompletions: sessionRows.map(mapSessionCompletion),
     exerciseHighlights: highlightRows.map(mapExerciseHighlight),
-    externalActivities: [],
   };
 };

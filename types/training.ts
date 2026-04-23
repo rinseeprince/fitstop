@@ -1,4 +1,3 @@
-import type { ActivityMetadata, IntensityLevel, MuscleGroup, ActivityAnalysis } from "./external-activity";
 
 // Training plan split types
 export type TrainingSplitType =
@@ -8,9 +7,6 @@ export type TrainingSplitType =
   | "bro_split"
   | "push_pull"
   | "custom";
-
-// Session type to distinguish training from external activities
-export type SessionType = "training" | "external_activity";
 
 // Training plan status
 export type TrainingPlanStatus = "active" | "archived" | "draft" | "planned";
@@ -61,9 +57,6 @@ export type TrainingSession = {
   notes?: string;
   estimatedDurationMinutes?: number;
   exercises: TrainingExercise[];
-  // External activity fields
-  sessionType: SessionType;
-  activityMetadata?: ActivityMetadata;
   // AI-estimated calorie burn (for training sessions)
   estimatedCalories?: number;
   caloriesCalculatedAt?: string;
@@ -153,28 +146,6 @@ export type TrainingEvent = {
   updatedAt: string;
 };
 
-// Pre-generation activity (before plan is created)
-export type PreGenerationActivity = {
-  tempId: string;
-  activityName: string;
-  dayOfWeek: string;
-  intensityLevel: IntensityLevel;
-  durationMinutes: number;
-  notes?: string;
-  analysis?: ActivityAnalysis;
-};
-
-// External activity context for AI generation
-export type ExternalActivityContext = {
-  activityName: string;
-  dayOfWeek: string;
-  intensityLevel: IntensityLevel;
-  durationMinutes: number;
-  recoveryHours: number;
-  muscleGroupsImpacted: MuscleGroup[];
-  recoveryImpact: string;
-};
-
 // AI generation input
 export type AITrainingPlanInput = {
   coachPrompt: string;
@@ -198,10 +169,6 @@ export type AITrainingPlanInput = {
     recentChallenges?: string;
     recentPRs?: string;
   };
-  // External activities as immovable constraints for scheduling
-  externalActivities?: ExternalActivityContext[];
-  // Allow training sessions on the same day as external activities
-  allowSameDayTraining?: boolean;
 };
 
 // AI generated plan structure
@@ -243,8 +210,6 @@ export type AIGeneratedExercise = {
 // API request/response types
 export type GenerateTrainingPlanRequest = {
   coachPrompt: string;
-  preGenerationActivities?: PreGenerationActivity[];
-  allowSameDayTraining?: boolean;
 };
 
 export type GenerateTrainingPlanResponse = {

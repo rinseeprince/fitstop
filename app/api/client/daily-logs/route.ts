@@ -6,7 +6,7 @@ import { getTodaysNutritionTarget } from "@/services/daily-context-service";
 import { getClientTrainingPlan } from "@/services/client-portal-training";
 import { calculateUnplannedActivityCalories, calculateAdjustedDayTarget, calculateAdjustedMacros } from "@/utils/nutrition-tracking-helpers";
 import { getTodayDateString, getDateDaysAgo } from "@/lib/date-helpers";
-import type { IntensityLevel } from "@/types/external-activity";
+import type { IntensityLevel } from "@/types/daily-pulse";
 
 export async function POST(request: NextRequest) {
   const auth = await requireClientAuth(request);

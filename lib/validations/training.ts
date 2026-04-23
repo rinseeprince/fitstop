@@ -47,27 +47,6 @@ export const sessionSchema = z.object({
   calorieSurplusPercentage: z.number().min(0).max(100).optional().nullable(),
 });
 
-// Activity analysis from API (nested in pre-generation activity)
-export const activityAnalysisSchema = z.object({
-  estimatedCalories: z.number(),
-  metValue: z.number(),
-  recoveryImpact: z.string().max(500),
-  recoveryHours: z.number(),
-  muscleGroupsImpacted: z.array(z.string().max(100)),
-  trainingRecommendations: z.array(z.string().max(500)),
-});
-
-// Pre-generation activity schema
-export const preGenerationActivitySchema = z.object({
-  tempId: z.string(),
-  activityName: z.string().min(1, "Activity name is required").max(100),
-  dayOfWeek: dayOfWeekSchema,
-  intensityLevel: z.enum(["low", "moderate", "vigorous"]),
-  durationMinutes: z.number().int().min(10, "Minimum 10 minutes").max(480, "Maximum 8 hours"),
-  notes: z.string().max(500).optional().nullable(),
-  analysis: activityAnalysisSchema.optional().nullable(),
-});
-
 export const generateTrainingPlanSchema = z.object({
   coachPrompt: z
     .string()
@@ -144,7 +123,6 @@ const trainingPlanResponseSchema = z.object({
     id: z.string(),
     planId: z.string(),
     name: z.string(),
-    sessionType: z.enum(["training", "external_activity"]),
     exercises: z.array(z.object({
       id: z.string(),
       name: z.string(),

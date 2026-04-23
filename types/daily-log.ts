@@ -1,6 +1,6 @@
 // Daily log types for wellness and nutrition tracking
 
-import type { IntensityLevel } from "./external-activity";
+import type { IntensityLevel } from "./daily-pulse";
 
 export type NutritionAdherenceStatus = "hit" | "partial" | "missed";
 

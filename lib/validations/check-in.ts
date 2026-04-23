@@ -66,19 +66,6 @@ export const exerciseHighlightSchema = z.object({
   reps: optionalInt(z.number().int().min(1).max(1000)),
 });
 
-// External activity schema
-export const externalActivitySchema = z.object({
-  activityName: z.string().min(1).max(100),
-  intensityLevel: z.enum(["low", "moderate", "vigorous"]),
-  durationMinutes: z.preprocess(
-    (val) => (typeof val === "string" ? parseInt(val, 10) : val),
-    z.number().int().min(1).max(600)
-  ),
-  estimatedCalories: optionalInt(z.number().int().min(0).max(5000)),
-  dayPerformed: optionalDayOfWeek,
-  notes: optionalString(500),
-});
-
 // Nutrition adherence schema
 export const nutritionAdherenceSchema = z.object({
   daysOnTarget: optionalInt(z.number().int().min(0).max(30)), // Max 30 for monthly check-ins
@@ -125,7 +112,6 @@ export const submitCheckInSchema = z.object({
   // Enhanced training tracking
   sessionCompletions: z.array(sessionCompletionSchema).max(20).optional().nullable().transform((v) => v ?? undefined),
   exerciseHighlights: z.array(exerciseHighlightSchema).max(10).optional().nullable().transform((v) => v ?? undefined),
-  externalActivities: z.array(externalActivitySchema).max(20).optional().nullable().transform((v) => v ?? undefined),
   nutritionAdherence: nutritionAdherenceSchema.optional().nullable().transform((v) => v ?? undefined),
 
   // Token (required for submission)
@@ -140,7 +126,7 @@ export const clientSubmitCheckInSchema = submitCheckInSchema
         data.mood, data.energy, data.sleep, data.stress,
         data.weight, data.notes,
         data.sessionCompletions, data.exerciseHighlights,
-        data.externalActivities, data.nutritionAdherence,
+        data.nutritionAdherence,
       ];
       return meaningfulFields.some((field) => field !== undefined);
     },
@@ -151,7 +137,6 @@ export type SubmitCheckInInput = z.infer<typeof submitCheckInSchema>;
 export type ClientSubmitCheckInInput = z.infer<typeof clientSubmitCheckInSchema>;
 export type SessionCompletionInput = z.infer<typeof sessionCompletionSchema>;
 export type ExerciseHighlightInput = z.infer<typeof exerciseHighlightSchema>;
-export type ExternalActivityInput = z.infer<typeof externalActivitySchema>;
 export type NutritionAdherenceInput = z.infer<typeof nutritionAdherenceSchema>;
 
 // AI summary request validation

@@ -1,4 +1,4 @@
-import type { IntensityLevel } from "./external-activity";
+export type IntensityLevel = "low" | "moderate" | "vigorous";
 
 export type UnplannedActivity = {
   activityName: string;

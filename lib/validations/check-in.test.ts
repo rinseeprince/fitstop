@@ -3,7 +3,6 @@ import {
   submitCheckInSchema,
   sessionCompletionSchema,
   exerciseHighlightSchema,
-  externalActivitySchema,
   nutritionAdherenceSchema,
 } from './check-in'
 
@@ -161,22 +160,6 @@ describe('Check-in Validation Schemas', () => {
       expect(result.success).toBe(true)
     })
 
-    it('validates externalActivities array', () => {
-      const data = {
-        token: 'valid-token',
-        externalActivities: [
-          {
-            activityName: 'Running',
-            intensityLevel: 'moderate',
-            durationMinutes: 30,
-            estimatedCalories: 300,
-          },
-        ],
-      }
-
-      const result = submitCheckInSchema.safeParse(data)
-      expect(result.success).toBe(true)
-    })
   })
 
   describe('sessionCompletionSchema', () => {
@@ -308,85 +291,6 @@ describe('Check-in Validation Schemas', () => {
       }
 
       const result = exerciseHighlightSchema.safeParse(data)
-      expect(result.success).toBe(false)
-    })
-  })
-
-  describe('externalActivitySchema', () => {
-    it('validates a complete external activity', () => {
-      const data = {
-        activityName: 'Running',
-        intensityLevel: 'moderate',
-        durationMinutes: 45,
-        estimatedCalories: 400,
-        dayPerformed: 'wednesday',
-        notes: 'Easy pace',
-      }
-
-      const result = externalActivitySchema.safeParse(data)
-      expect(result.success).toBe(true)
-    })
-
-    it('validates all intensity levels', () => {
-      const levels = ['low', 'moderate', 'vigorous'] as const
-
-      levels.forEach((level) => {
-        const data = {
-          activityName: 'Running',
-          intensityLevel: level,
-          durationMinutes: 30,
-        }
-
-        const result = externalActivitySchema.safeParse(data)
-        expect(result.success).toBe(true)
-      })
-    })
-
-    it('rejects duration under 1 minute', () => {
-      const data = {
-        activityName: 'Running',
-        intensityLevel: 'moderate',
-        durationMinutes: 0,
-      }
-
-      const result = externalActivitySchema.safeParse(data)
-      expect(result.success).toBe(false)
-    })
-
-    it('rejects duration over 600 minutes (10 hours)', () => {
-      const data = {
-        activityName: 'Marathon',
-        intensityLevel: 'moderate',
-        durationMinutes: 700,
-      }
-
-      const result = externalActivitySchema.safeParse(data)
-      expect(result.success).toBe(false)
-    })
-
-    it('converts string duration to number', () => {
-      const data = {
-        activityName: 'Running',
-        intensityLevel: 'moderate',
-        durationMinutes: '45',
-      }
-
-      const result = externalActivitySchema.safeParse(data)
-      expect(result.success).toBe(true)
-      if (result.success) {
-        expect(result.data.durationMinutes).toBe(45)
-      }
-    })
-
-    it('rejects estimated calories over 5000', () => {
-      const data = {
-        activityName: 'Ultramarathon',
-        intensityLevel: 'vigorous',
-        durationMinutes: 300,
-        estimatedCalories: 6000,
-      }
-
-      const result = externalActivitySchema.safeParse(data)
       expect(result.success).toBe(false)
     })
   })

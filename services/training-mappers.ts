@@ -38,7 +38,6 @@ export const mapSessionRow = (row: TrainingSessionRow, exercises: TrainingExerci
   notes: row.notes ?? undefined,
   estimatedDurationMinutes: row.estimated_duration_minutes ?? undefined,
   exercises,
-  sessionType: "training",
   estimatedCalories: row.estimated_calories ?? undefined,
   caloriesCalculatedAt: row.calories_calculated_at ?? undefined,
   calorieSurplusPercentage: row.calorie_surplus_percentage ?? null,

@@ -152,8 +152,7 @@ export function useDailyPulse(selectedDate: string): UseDailyPulseReturn {
         if (trainingRes.ok) {
           const trainingData = await trainingRes.json();
           if (trainingData.data) {
-            const trainingSessions = (trainingData.data as TrainingPlan).sessions
-              .filter((s: TrainingSession) => s.sessionType === "training");
+            const trainingSessions = (trainingData.data as TrainingPlan).sessions;
             setAllTrainingSessions(trainingSessions);
             
             // Enrich with full session data (exercises, etc.) but preserve the

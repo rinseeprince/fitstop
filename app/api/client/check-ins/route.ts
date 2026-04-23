@@ -218,7 +218,6 @@ export async function POST(request: NextRequest) {
       // Enhanced tracking
       sessionCompletions: body.sessionCompletions ?? [],
       exerciseHighlights: body.exerciseHighlights ?? [],
-      externalActivities: body.externalActivities ?? [],
       nutritionAdherence: body.nutritionAdherence,
     });
 

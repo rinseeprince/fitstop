@@ -66,9 +66,9 @@ describe("training-event-service", () => {
       mockFrom.mockReturnValue(mockQuery as any);
 
       const sessions: SessionInput[] = [
-        { id: "s1", name: "Push", dayOfWeek: "monday", sessionType: "training", focus: "chest", estimatedCalories: 400 },
-        { id: "s2", name: "Pull", dayOfWeek: "wednesday", sessionType: "training", focus: "back", estimatedCalories: 350 },
-        { id: "s3", name: "Legs", dayOfWeek: "friday", sessionType: "training", focus: "legs", estimatedCalories: 500 },
+        { id: "s1", name: "Push", dayOfWeek: "monday", focus: "chest", estimatedCalories: 400 },
+        { id: "s2", name: "Pull", dayOfWeek: "wednesday", focus: "back", estimatedCalories: 350 },
+        { id: "s3", name: "Legs", dayOfWeek: "friday", focus: "legs", estimatedCalories: 500 },
       ];
 
       await generateTrainingEvents("client-1", "plan-1", sessions, "2026-04-06", "2026-04-19");
@@ -107,8 +107,8 @@ describe("training-event-service", () => {
       mockFrom.mockReturnValue(mockQuery as any);
 
       const sessions: SessionInput[] = [
-        { id: "s1", name: "Push", dayOfWeek: "monday", sessionType: "training" },
-        { id: "s2", name: "Unassigned", sessionType: "training" }, // No dayOfWeek
+        { id: "s1", name: "Push", dayOfWeek: "monday" },
+        { id: "s2", name: "Unassigned" }, // No dayOfWeek
       ];
 
       await generateTrainingEvents("client-1", "plan-1", sessions, "2026-04-06", "2026-04-12");
@@ -123,8 +123,8 @@ describe("training-event-service", () => {
       mockFrom.mockReturnValue(mockQuery as any);
 
       const sessions: SessionInput[] = [
-        { id: "s1", name: "AM Cardio", dayOfWeek: "monday", sessionType: "training", estimatedCalories: 200 },
-        { id: "s2", name: "PM Weights", dayOfWeek: "monday", sessionType: "training", estimatedCalories: 400 },
+        { id: "s1", name: "AM Cardio", dayOfWeek: "monday", estimatedCalories: 200 },
+        { id: "s2", name: "PM Weights", dayOfWeek: "monday", estimatedCalories: 400 },
       ];
 
       await generateTrainingEvents("client-1", "plan-1", sessions, "2026-04-06", "2026-04-06");
@@ -140,7 +140,7 @@ describe("training-event-service", () => {
       mockFrom.mockReturnValue(mockQuery as any);
 
       const sessions: SessionInput[] = [
-        { id: "s1", name: "Unassigned", sessionType: "training" },
+        { id: "s1", name: "Unassigned" },
       ];
 
       await generateTrainingEvents("client-1", "plan-1", sessions, "2026-04-06", "2026-04-12");

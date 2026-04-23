@@ -24,10 +24,7 @@ export const getCheckInTrainingContext = async (
     return { hasActivePlan: false, sessions: [] };
   }
 
-  // Filter to only training sessions (not external activities)
-  const trainingSessions = plan.sessions.filter(
-    (s) => s.sessionType === "training"
-  );
+  const trainingSessions = plan.sessions;
 
   return {
     hasActivePlan: true,

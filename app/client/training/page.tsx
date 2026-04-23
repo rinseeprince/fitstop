@@ -122,9 +122,7 @@ export default function ClientTrainingPage() {
   }
 
   const completedSessionIds = new Set(completions.map((c) => c.trainingSessionId));
-  const trainingSessions = plan.sessions.filter(
-    (s) => s.sessionType === "training"
-  );
+  const trainingSessions = plan.sessions;
 
   return (
     <div className="space-y-6">

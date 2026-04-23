@@ -11,9 +11,7 @@ export const getTrainingSessionsSummary = (
 
   return plan.sessions
     .filter(
-      (session) =>
-        session.sessionType === "training" &&
-        session.dayOfWeek?.toLowerCase() === day.toLowerCase()
+      (session) => session.dayOfWeek?.toLowerCase() === day.toLowerCase()
     )
     .map((session) => ({
       name: session.name,

@@ -176,7 +176,6 @@ export function GuidedWalkthrough({
                   </p>
                   <div className="space-y-1 text-sm text-muted-foreground">
                     {plan.sessions
-                      .filter((s) => s.sessionType === "training")
                       .map((session) => (
                         <div key={session.id} className="flex justify-between">
                           <span>{session.name}</span>

@@ -394,28 +394,6 @@ export function createMockExerciseHighlight(options: {
 }
 
 // =============================================================================
-// External Activity Builders
-// =============================================================================
-
-export function createMockExternalActivity(options: {
-  activityName?: string
-  intensityLevel?: 'low' | 'moderate' | 'vigorous'
-  durationMinutes?: number
-  estimatedCalories?: number
-  dayPerformed?: string
-  notes?: string
-} = {}) {
-  return {
-    activityName: options.activityName ?? 'Running',
-    intensityLevel: options.intensityLevel ?? 'moderate',
-    durationMinutes: options.durationMinutes ?? 30,
-    estimatedCalories: options.estimatedCalories ?? 300,
-    dayPerformed: options.dayPerformed ?? 'monday',
-    notes: options.notes,
-  }
-}
-
-// =============================================================================
 // Client Goals Builders
 // =============================================================================
 

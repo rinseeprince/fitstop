@@ -1,5 +1,5 @@
 import { supabaseAdmin } from "./supabase-admin";
-import type { TrainingEvent, TrainingEventStatus, SessionType } from "@/types/training";
+import type { TrainingEvent, TrainingEventStatus } from "@/types/training";
 import type { SessionCompletionQuality } from "@/types/check-in";
 import type { TrainingEventRow, TrainingEventInsert } from "@/lib/database-helpers";
 import { getTodayDateString, getDateString, DAY_NUM } from "@/lib/date-helpers";
@@ -31,7 +31,6 @@ export type SessionInput = {
   id: string;
   name: string;
   dayOfWeek?: string;
-  sessionType: SessionType;
   focus?: string;
   estimatedCalories?: number;
   calorieSurplusPercentage?: number | null;
@@ -177,7 +176,6 @@ export async function regenerateFutureEvents(
     id: r.id,
     name: r.name,
     dayOfWeek: r.day_of_week ?? undefined,
-    sessionType: "training",
     focus: r.focus ?? undefined,
     estimatedCalories: r.estimated_calories ?? undefined,
     calorieSurplusPercentage: r.calorie_surplus_percentage ?? null,

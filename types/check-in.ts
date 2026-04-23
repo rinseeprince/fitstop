@@ -92,16 +92,6 @@ export type CheckInExerciseHighlight = {
   reps?: number;
 };
 
-export type CheckInExternalActivity = {
-  id?: string;
-  checkInId?: string;
-  activityName: string;
-  intensityLevel: "low" | "moderate" | "vigorous";
-  durationMinutes: number;
-  estimatedCalories?: number;
-  dayPerformed?: DayOfWeek;
-  notes?: string;
-};
 
 export type NutritionAdherence = {
   daysOnTarget?: number; // 0-7
@@ -151,7 +141,6 @@ export type CheckInNutritionContext = {
 export type EnhancedTrainingMetrics = TrainingMetrics & {
   sessionCompletions?: CheckInSessionCompletion[];
   exerciseHighlights?: CheckInExerciseHighlight[];
-  externalActivities?: CheckInExternalActivity[];
   nutritionAdherence?: NutritionAdherence;
 };
 
@@ -756,5 +745,4 @@ export type CheckInWithDailyLogCounts = CheckIn & {
 export type CheckInWithDetails = CheckIn & {
   sessionCompletions?: CheckInSessionCompletion[];
   exerciseHighlights?: CheckInExerciseHighlight[];
-  externalActivities?: CheckInExternalActivity[];
 };

@@ -21,7 +21,6 @@ export type SessionLogRow = Database["public"]["Tables"]["session_logs"]["Row"];
 export type ClientSessionCompletionRow = SessionLogRow;
 export type CheckInSessionCompletionRow = Database["public"]["Tables"]["check_in_session_completions"]["Row"];
 export type CheckInExerciseHighlightRow = Database["public"]["Tables"]["check_in_exercise_highlights"]["Row"];
-export type CheckInExternalActivityRow = Database["public"]["Tables"]["check_in_external_activities"]["Row"];
 
 // Additional helper types for insert/update operations
 export type CheckInInsert = Database["public"]["Tables"]["check_ins"]["Insert"];

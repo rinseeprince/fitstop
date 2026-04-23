@@ -1,4 +1,4 @@
-import type { TrainingPlan, TrainingSession, TrainingExercise, SessionType } from "@/types/training";
+import type { TrainingPlan, TrainingSession, TrainingExercise } from "@/types/training";
 import type { TrainingSessionRow, TrainingExerciseRow, SessionLogRow } from "@/lib/database-helpers";
 import { createPortalClient } from "./client-portal-service";
 
@@ -96,7 +96,6 @@ export async function getClientTrainingPlan(
       focus: session.focus ?? undefined,
       notes: session.notes ?? undefined,
       estimatedDurationMinutes: session.estimated_duration_minutes ?? undefined,
-      sessionType: "training" as SessionType,
       estimatedCalories: session.estimated_calories ?? undefined,
       caloriesCalculatedAt: session.calories_calculated_at ?? undefined,
       exercises,
