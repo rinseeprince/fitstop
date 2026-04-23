@@ -577,6 +577,9 @@ Session 0.1 confirmed no `timezone` column exists on `clients` and all date help
 
 **Verify**: Navigate forward/back; URL updates; refetch happens. `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Commit.
 
+**Initial-login fetch burst audit (carry into 2.4/2.5 if not addressed here)**:
+The legacy Daily Pulse dashboard fires ~24 parallel GETs on fresh login (notifications, me, habits, nutrition, training, progress, check-in-context, resources, daily-logs/{week,today,streak,nutrition-target}, habits/logs/today, weekly-nutrition, phase-completion, plus Next-dev hot-reload duplicates). With `clientApiRateLimit` at 30/10sec IP-keyed, slow-returning routes (`/api/client/training`, `/api/client/training/completions`) intermittently 429 on hard refresh. The redesign's `GET /api/client/day-summary` (Session 2.1) is intended to absorb most of these. As part of this session's Verify step, open the network tab on fresh login and count the client-portal requests fired in the first 5 seconds of `/client`. Target: ≤ 6 requests to `/api/client/*` (day-summary, me, program, check-in-context if due, phase-completion, notifications). If the count is higher, file the excess against the specific card/session that still needs converting rather than papering over with rate-limit tuning.
+
 ---
 
 ## Session 2.4: Summary cards + phase banner
@@ -761,6 +764,8 @@ Clicking a card navigates to a detail page which fires its own fetch (e.g. `GET 
    - `assertCanEdit({ clientId, date, resourceType }): Promise<void>` — server-side wrapper. Loads the client's timezone and current log state for the resource, calls `canEditDay`, throws a typed error (e.g. `DayLockedError`) on violation. Route handlers catch and return 403.
 
 2. **`resolvePlanContextForDate(clientId, date): { phaseId, nutritionPlanId, trainingPlanId }`** — shared helper used by every per-card write to populate `daily_logs.phase_id` and child `*_plan_id` links. Lives in an existing plan-adjacent service (decided in planning step). Every write calls it once; no endpoint reimplements the lookup.
+
+   **Training-event sourcing rule (addresses legacy bug)**: For nutrition adjusted-target math, the training context for a date MUST be resolved from the calendar event actually placed on that date (`training_events` with cloned-event support), NOT from the plan's static day-of-week session lookup. The old `services/daily-context-service.ts:getTodaysTrainingSession` reads the plan's session by `day_of_week` and drives `calculateAdjustedDayTarget` / `calculateAdjustedMacros` (see `app/api/client/daily-logs/route.ts` POST and `utils/nutrition-tracking-helpers.ts`). When a coach swaps a session to a different day (event clone), the plan-side lookup returns the *original* day's session (or the rest day if today was originally rest), so the calorie/macro adjustment math uses the wrong training burn. User-visible symptom: entering `baseline + trainingBurn` as consumed calories still flags "over target" because the target is computed from baseline only; macros display baseline values, not adjusted. Fix in this session: the new PATCH `/api/client/daily-logs/[date]/nutrition` endpoint must resolve today's training context by querying `training_events` for the date (authoritative) and ignore plan-side day-of-week inference entirely. Add a test fixture for a cloned/swapped event and assert adjusted targets reflect the cloned event's calories, not the original day's.
 
 3. **Nutrition endpoints**:
    - `GET /api/client/daily-logs/[date]/nutrition/route.ts` (log + event target per ARCHITECTURE three-level priority).
