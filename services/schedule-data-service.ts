@@ -17,7 +17,6 @@ export type TrainingPlanWithSessions = {
     id: string;
     name: string;
     dayOfWeek: string | null;
-    sessionType: string;
     focus: string | null;
     estimatedCalories: number | null;
   }>;
@@ -89,7 +88,7 @@ export async function fetchTrainingDataForPeriod(
       .select(`
         id, name, effective_from, effective_until,
         training_sessions!inner (
-          id, name, day_of_week, session_type, focus, estimated_calories
+          id, name, day_of_week, focus, estimated_calories
         )
       `)
       .eq("client_id", clientId)
@@ -136,7 +135,6 @@ export async function fetchTrainingDataForPeriod(
         id: s.id as string,
         name: s.name as string,
         dayOfWeek: (s.day_of_week as string) || null,
-        sessionType: (s.session_type as string) || "training",
         focus: (s.focus as string) || null,
         estimatedCalories: (s.estimated_calories as number) ?? null,
       })),

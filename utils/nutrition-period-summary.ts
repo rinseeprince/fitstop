@@ -73,7 +73,7 @@ function estimateTargetForUnloggedDay(
   if (!plan) return baseCalories;
 
   const session = plan.sessions.find(
-    (s) => s.dayOfWeek?.toLowerCase() === dayOfWeek && s.sessionType === "training"
+    (s) => s.dayOfWeek?.toLowerCase() === dayOfWeek
   );
   const burn = session?.estimatedCalories;
   return burn ? baseCalories + burn : baseCalories;

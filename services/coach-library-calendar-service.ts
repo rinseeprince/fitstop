@@ -57,7 +57,7 @@ export async function savePlanFromCalendar(
         estimated_duration_minutes: s.estimated_duration_minutes,
         calorie_surplus_percentage: s.calorie_surplus_percentage ?? null,
         notes: s.notes,
-        session_type: s.session_type ?? "training",
+        session_type: "training",
       })
       .select("id")
       .single();
@@ -120,7 +120,7 @@ export async function saveSessionFromCalendar(
       estimated_duration_minutes: source.estimated_duration_minutes,
       calorie_surplus_percentage: source.calorie_surplus_percentage ?? null,
       notes: source.notes,
-      session_type: source.session_type ?? "training",
+      session_type: "training",
     })
     .select("id")
     .single();

@@ -172,8 +172,8 @@ describe("training-event-service", () => {
       // Mock select sessions query (training_sessions)
       const sessionsQuery = createMockQuery({
         data: [
-          { id: "s1", name: "Push", day_of_week: "monday", session_type: "training", focus: "chest", estimated_calories: 400 },
-          { id: "s2", name: "Pull", day_of_week: "wednesday", session_type: "training", focus: "back", estimated_calories: 350 },
+          { id: "s1", name: "Push", day_of_week: "monday", focus: "chest", estimated_calories: 400 },
+          { id: "s2", name: "Pull", day_of_week: "wednesday", focus: "back", estimated_calories: 350 },
         ],
         error: null,
       });
@@ -232,7 +232,7 @@ describe("training-event-service", () => {
       const deleteQuery = createMockQuery({ data: null, error: null });
       const sessionsQuery = createMockQuery({
         data: [
-          { id: "s1", name: "Push", day_of_week: "monday", session_type: "training", focus: null, estimated_calories: null },
+          { id: "s1", name: "Push", day_of_week: "monday", focus: null, estimated_calories: null },
         ],
         error: null,
       });
@@ -274,7 +274,7 @@ describe("training-event-service", () => {
       const deleteQuery = createMockQuery({ data: null, error: null });
       const sessionsQuery = createMockQuery({
         data: [
-          { id: "s1", name: "Push", day_of_week: "monday", session_type: "training", focus: null, estimated_calories: null },
+          { id: "s1", name: "Push", day_of_week: "monday", focus: null, estimated_calories: null },
         ],
         error: null,
       });
@@ -313,7 +313,7 @@ describe("training-event-service", () => {
       const deleteQuery = createMockQuery({ data: null, error: null });
       const sessionsQuery = createMockQuery({
         data: [
-          { id: "s1", name: "Push", day_of_week: "monday", session_type: "training", focus: null, estimated_calories: null },
+          { id: "s1", name: "Push", day_of_week: "monday", focus: null, estimated_calories: null },
         ],
         error: null,
       });
@@ -345,7 +345,7 @@ describe("training-event-service", () => {
       const deleteQuery = createMockQuery({ data: null, error: null });
       const sessionsQuery = createMockQuery({
         data: [
-          { id: "s1", name: "Push", day_of_week: "monday", session_type: "training", focus: null, estimated_calories: null },
+          { id: "s1", name: "Push", day_of_week: "monday", focus: null, estimated_calories: null },
         ],
         error: null,
       });

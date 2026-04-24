@@ -76,8 +76,6 @@ describe("training-event-calendar-service", () => {
       focus: "chest",
       notes: null,
       estimated_duration_minutes: 60,
-      session_type: "training",
-      activity_metadata: null,
       estimated_calories: 400,
       calories_calculated_at: null,
       is_active: true,
@@ -293,7 +291,7 @@ describe("training-event-calendar-service", () => {
       // Mock all supabase calls to succeed
       const noPhaseMock = createMockQuery({ data: { phase_id: null }, error: null });
       const sessionMock = createMockQuery({
-        data: { id: "s1", plan_id: "plan-1", name: "Push", day_of_week: "monday", order_index: 0, focus: null, notes: null, estimated_duration_minutes: 60, session_type: "training", activity_metadata: null, estimated_calories: 400, calories_calculated_at: null, is_active: true },
+        data: { id: "s1", plan_id: "plan-1", name: "Push", day_of_week: "monday", order_index: 0, focus: null, notes: null, estimated_duration_minutes: 60, estimated_calories: 400, calories_calculated_at: null, is_active: true },
         error: null,
       });
       const exercisesMock = createMockQuery({ data: [], error: null });

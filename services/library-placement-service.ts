@@ -151,7 +151,6 @@ async function placePlaceablePlanOnCalendar(params: {
         focus: savedSession.focus ?? null,
         notes: null,
         estimated_duration_minutes: savedSession.estimatedDurationMinutes ?? null,
-        session_type: savedSession.sessionType ?? "training",
         calorie_surplus_percentage: surplusPercentage,
         is_active: true,
       })
@@ -260,7 +259,6 @@ export async function placeSessionOnCalendar(params: {
       focus: savedSession.focus ?? null,
       notes: savedSession.notes ?? null,
       estimated_duration_minutes: savedSession.estimated_duration_minutes ?? null,
-      session_type: savedSession.session_type ?? "training",
       calorie_surplus_percentage: savedSession.calorie_surplus_percentage ?? null,
       is_active: true,
     })

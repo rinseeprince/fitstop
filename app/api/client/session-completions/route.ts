@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
     // Build snapshot from the training session for history preservation
     const { data: sessionData } = await supabaseAdmin
       .from("training_sessions")
-      .select("name, day_of_week, focus, session_type, estimated_duration_minutes, estimated_calories")
+      .select("name, day_of_week, focus, estimated_duration_minutes, estimated_calories")
       .eq("id", data.trainingSessionId)
       .single();
 

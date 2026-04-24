@@ -14,48 +14,6 @@ export type Database = {
   }
   public: {
     Tables: {
-      activity_suggestions: {
-        Row: {
-          activity_name: string
-          category: string
-          created_at: string
-          default_met_low: number
-          default_met_moderate: number
-          default_met_vigorous: number
-          id: string
-          muscle_groups_impacted: string[] | null
-          popularity_score: number | null
-          recovery_notes: string | null
-          updated_at: string
-        }
-        Insert: {
-          activity_name: string
-          category: string
-          created_at?: string
-          default_met_low: number
-          default_met_moderate: number
-          default_met_vigorous: number
-          id?: string
-          muscle_groups_impacted?: string[] | null
-          popularity_score?: number | null
-          recovery_notes?: string | null
-          updated_at?: string
-        }
-        Update: {
-          activity_name?: string
-          category?: string
-          created_at?: string
-          default_met_low?: number
-          default_met_moderate?: number
-          default_met_vigorous?: number
-          id?: string
-          muscle_groups_impacted?: string[] | null
-          popularity_score?: number | null
-          recovery_notes?: string | null
-          updated_at?: string
-        }
-        Relationships: []
-      }
       body_metrics: {
         Row: {
           bmr: number | null
@@ -156,50 +114,6 @@ export type Database = {
             columns: ["exercise_id"]
             isOneToOne: false
             referencedRelation: "training_exercises"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      check_in_external_activities: {
-        Row: {
-          activity_name: string
-          check_in_id: string
-          created_at: string
-          day_performed: string | null
-          duration_minutes: number
-          estimated_calories: number | null
-          id: string
-          intensity_level: string
-          notes: string | null
-        }
-        Insert: {
-          activity_name: string
-          check_in_id: string
-          created_at?: string
-          day_performed?: string | null
-          duration_minutes: number
-          estimated_calories?: number | null
-          id?: string
-          intensity_level: string
-          notes?: string | null
-        }
-        Update: {
-          activity_name?: string
-          check_in_id?: string
-          created_at?: string
-          day_performed?: string | null
-          duration_minutes?: number
-          estimated_calories?: number | null
-          id?: string
-          intensity_level?: string
-          notes?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "check_in_external_activities_check_in_id_fkey"
-            columns: ["check_in_id"]
-            isOneToOne: false
-            referencedRelation: "check_ins"
             referencedColumns: ["id"]
           },
         ]
@@ -1296,53 +1210,6 @@ export type Database = {
           },
         ]
       }
-      daily_external_activities: {
-        Row: {
-          activity_name: string
-          client_id: string
-          created_at: string
-          date: string
-          duration_minutes: number
-          estimated_calories: number | null
-          id: string
-          intensity_level: string
-          notes: string | null
-          updated_at: string
-        }
-        Insert: {
-          activity_name: string
-          client_id: string
-          created_at?: string
-          date: string
-          duration_minutes: number
-          estimated_calories?: number | null
-          id?: string
-          intensity_level: string
-          notes?: string | null
-          updated_at?: string
-        }
-        Update: {
-          activity_name?: string
-          client_id?: string
-          created_at?: string
-          date?: string
-          duration_minutes?: number
-          estimated_calories?: number | null
-          id?: string
-          intensity_level?: string
-          notes?: string | null
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "daily_external_activities_client_id_fkey"
-            columns: ["client_id"]
-            isOneToOne: false
-            referencedRelation: "clients"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       daily_habit_logs: {
         Row: {
           client_id: string
@@ -1725,7 +1592,6 @@ export type Database = {
           date: string
           day_of_week: string
           diet_type: string
-          external_burn_calories: number
           fat_g: number
           id: string
           is_training_day: boolean
@@ -1744,7 +1610,6 @@ export type Database = {
           date: string
           day_of_week: string
           diet_type?: string
-          external_burn_calories?: number
           fat_g: number
           id?: string
           is_training_day?: boolean
@@ -1763,7 +1628,6 @@ export type Database = {
           date?: string
           day_of_week?: string
           diet_type?: string
-          external_burn_calories?: number
           fat_g?: number
           id?: string
           is_training_day?: boolean
@@ -2665,7 +2529,6 @@ export type Database = {
       }
       training_sessions: {
         Row: {
-          activity_metadata: Json | null
           calories_calculated_at: string | null
           calorie_surplus_percentage: number | null
           created_at: string
@@ -2679,11 +2542,9 @@ export type Database = {
           notes: string | null
           order_index: number
           plan_id: string
-          session_type: string
           updated_at: string
         }
         Insert: {
-          activity_metadata?: Json | null
           calories_calculated_at?: string | null
           calorie_surplus_percentage?: number | null
           created_at?: string
@@ -2697,11 +2558,9 @@ export type Database = {
           notes?: string | null
           order_index?: number
           plan_id: string
-          session_type?: string
           updated_at?: string
         }
         Update: {
-          activity_metadata?: Json | null
           calories_calculated_at?: string | null
           calorie_surplus_percentage?: number | null
           created_at?: string
@@ -2715,7 +2574,6 @@ export type Database = {
           notes?: string | null
           order_index?: number
           plan_id?: string
-          session_type?: string
           updated_at?: string
         }
         Relationships: [
