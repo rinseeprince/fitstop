@@ -12,6 +12,31 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "13.0.5"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       body_metrics: {
@@ -810,13 +835,12 @@ export type Database = {
           },
         ]
       }
-      // Added by migration 084
       coach_saved_exercises: {
         Row: {
           created_at: string
           exercise_id: string | null
           id: string
-          is_warmup: boolean
+          is_warmup: boolean | null
           name: string
           notes: string | null
           order_index: number
@@ -836,7 +860,7 @@ export type Database = {
           created_at?: string
           exercise_id?: string | null
           id?: string
-          is_warmup?: boolean
+          is_warmup?: boolean | null
           name: string
           notes?: string | null
           order_index?: number
@@ -856,7 +880,7 @@ export type Database = {
           created_at?: string
           exercise_id?: string | null
           id?: string
-          is_warmup?: boolean
+          is_warmup?: boolean | null
           name?: string
           notes?: string | null
           order_index?: number
@@ -874,17 +898,17 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "coach_saved_exercises_saved_session_id_fkey"
-            columns: ["saved_session_id"]
-            isOneToOne: false
-            referencedRelation: "coach_saved_sessions"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "coach_saved_exercises_exercise_id_fkey"
             columns: ["exercise_id"]
             isOneToOne: false
             referencedRelation: "exercises"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "coach_saved_exercises_saved_session_id_fkey"
+            columns: ["saved_session_id"]
+            isOneToOne: false
+            referencedRelation: "coach_saved_sessions"
             referencedColumns: ["id"]
           },
         ]
@@ -901,8 +925,8 @@ export type Database = {
           id: string
           name: string
           program_duration_weeks: number | null
-          rest_pattern: number[]
-          source: string
+          rest_pattern: number[] | null
+          source: string | null
           split_type: string | null
           status: string
           updated_at: string
@@ -918,8 +942,8 @@ export type Database = {
           id?: string
           name: string
           program_duration_weeks?: number | null
-          rest_pattern?: number[]
-          source?: string
+          rest_pattern?: number[] | null
+          source?: string | null
           split_type?: string | null
           status?: string
           updated_at?: string
@@ -935,8 +959,8 @@ export type Database = {
           id?: string
           name?: string
           program_duration_weeks?: number | null
-          rest_pattern?: number[]
-          source?: string
+          rest_pattern?: number[] | null
+          source?: string | null
           split_type?: string | null
           status?: string
           updated_at?: string
@@ -959,7 +983,7 @@ export type Database = {
           estimated_duration_minutes: number | null
           focus: string | null
           id: string
-          is_rest: boolean
+          is_rest: boolean | null
           name: string
           notes: string | null
           order_index: number
@@ -974,7 +998,7 @@ export type Database = {
           estimated_duration_minutes?: number | null
           focus?: string | null
           id?: string
-          is_rest?: boolean
+          is_rest?: boolean | null
           name: string
           notes?: string | null
           order_index?: number
@@ -989,7 +1013,7 @@ export type Database = {
           estimated_duration_minutes?: number | null
           focus?: string | null
           id?: string
-          is_rest?: boolean
+          is_rest?: boolean | null
           name?: string
           notes?: string | null
           order_index?: number
@@ -1451,7 +1475,7 @@ export type Database = {
       }
       exercises: {
         Row: {
-          aliases: string[]
+          aliases: string[] | null
           category: string | null
           coach_id: string | null
           created_at: string
@@ -1462,7 +1486,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
-          aliases?: string[]
+          aliases?: string[] | null
           category?: string | null
           coach_id?: string | null
           created_at?: string
@@ -1473,7 +1497,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
-          aliases?: string[]
+          aliases?: string[] | null
           category?: string | null
           coach_id?: string | null
           created_at?: string
@@ -1489,6 +1513,78 @@ export type Database = {
             columns: ["coach_id"]
             isOneToOne: false
             referencedRelation: "coaches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      nutrition_events: {
+        Row: {
+          baseline_calories: number
+          calorie_surplus_percentage: number | null
+          carb_g: number
+          client_id: string
+          created_at: string
+          date: string
+          day_of_week: string
+          diet_type: string
+          fat_g: number
+          id: string
+          is_training_day: boolean
+          nutrition_plan_id: string
+          protein_g: number
+          status: string
+          training_burn_calories: number
+          updated_at: string
+        }
+        Insert: {
+          baseline_calories: number
+          calorie_surplus_percentage?: number | null
+          carb_g: number
+          client_id: string
+          created_at?: string
+          date: string
+          day_of_week: string
+          diet_type?: string
+          fat_g: number
+          id?: string
+          is_training_day?: boolean
+          nutrition_plan_id: string
+          protein_g: number
+          status?: string
+          training_burn_calories?: number
+          updated_at?: string
+        }
+        Update: {
+          baseline_calories?: number
+          calorie_surplus_percentage?: number | null
+          carb_g?: number
+          client_id?: string
+          created_at?: string
+          date?: string
+          day_of_week?: string
+          diet_type?: string
+          fat_g?: number
+          id?: string
+          is_training_day?: boolean
+          nutrition_plan_id?: string
+          protein_g?: number
+          status?: string
+          training_burn_calories?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "nutrition_events_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "nutrition_events_nutrition_plan_id_fkey"
+            columns: ["nutrition_plan_id"]
+            isOneToOne: false
+            referencedRelation: "nutrition_plans"
             referencedColumns: ["id"]
           },
         ]
@@ -1582,78 +1678,6 @@ export type Database = {
           },
         ]
       }
-      nutrition_events: {
-        Row: {
-          baseline_calories: number
-          calorie_surplus_percentage: number | null
-          carb_g: number
-          client_id: string
-          created_at: string
-          date: string
-          day_of_week: string
-          diet_type: string
-          fat_g: number
-          id: string
-          is_training_day: boolean
-          nutrition_plan_id: string
-          protein_g: number
-          status: string
-          training_burn_calories: number
-          updated_at: string
-        }
-        Insert: {
-          baseline_calories: number
-          calorie_surplus_percentage?: number | null
-          carb_g: number
-          client_id: string
-          created_at?: string
-          date: string
-          day_of_week: string
-          diet_type?: string
-          fat_g: number
-          id?: string
-          is_training_day?: boolean
-          nutrition_plan_id: string
-          protein_g: number
-          status?: string
-          training_burn_calories?: number
-          updated_at?: string
-        }
-        Update: {
-          baseline_calories?: number
-          calorie_surplus_percentage?: number | null
-          carb_g?: number
-          client_id?: string
-          created_at?: string
-          date?: string
-          day_of_week?: string
-          diet_type?: string
-          fat_g?: number
-          id?: string
-          is_training_day?: boolean
-          nutrition_plan_id?: string
-          protein_g?: number
-          status?: string
-          training_burn_calories?: number
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "nutrition_events_client_id_fkey"
-            columns: ["client_id"]
-            isOneToOne: false
-            referencedRelation: "clients"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "nutrition_events_nutrition_plan_id_fkey"
-            columns: ["nutrition_plan_id"]
-            isOneToOne: false
-            referencedRelation: "nutrition_plans"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       nutrition_plan_daily_targets: {
         Row: {
           calories: number
@@ -1703,6 +1727,7 @@ export type Database = {
           carb_target_g: number
           client_id: string
           coach_id: string
+          coach_notes: string | null
           created_at: string
           custom_calories: number | null
           custom_carb_g: number | null
@@ -1714,6 +1739,7 @@ export type Database = {
           effective_until: string | null
           fat_target_g: number
           goal_deadline: string | null
+          goal_source: string | null
           goal_weight_kg: number | null
           id: string
           name: string | null
@@ -1734,6 +1760,7 @@ export type Database = {
           carb_target_g: number
           client_id: string
           coach_id: string
+          coach_notes?: string | null
           created_at?: string
           custom_calories?: number | null
           custom_carb_g?: number | null
@@ -1745,6 +1772,7 @@ export type Database = {
           effective_until?: string | null
           fat_target_g: number
           goal_deadline?: string | null
+          goal_source?: string | null
           goal_weight_kg?: number | null
           id?: string
           name?: string | null
@@ -1765,6 +1793,7 @@ export type Database = {
           carb_target_g?: number
           client_id?: string
           coach_id?: string
+          coach_notes?: string | null
           created_at?: string
           custom_calories?: number | null
           custom_carb_g?: number | null
@@ -1776,6 +1805,7 @@ export type Database = {
           effective_until?: string | null
           fat_target_g?: number
           goal_deadline?: string | null
+          goal_source?: string | null
           goal_weight_kg?: number | null
           id?: string
           name?: string | null
@@ -1918,9 +1948,12 @@ export type Database = {
           duration_weeks: number | null
           end_date: string | null
           id: string
+          milestones: Json
           name: string
           objectives: string | null
           order_index: number
+          phase_goal_body_fat_percentage: number | null
+          phase_goal_weight: number | null
           phase_goals_snapshot: Json | null
           phase_summary: Json | null
           roadmap_id: string
@@ -1937,9 +1970,12 @@ export type Database = {
           duration_weeks?: number | null
           end_date?: string | null
           id?: string
+          milestones?: Json
           name: string
           objectives?: string | null
           order_index?: number
+          phase_goal_body_fat_percentage?: number | null
+          phase_goal_weight?: number | null
           phase_goals_snapshot?: Json | null
           phase_summary?: Json | null
           roadmap_id: string
@@ -1956,9 +1992,12 @@ export type Database = {
           duration_weeks?: number | null
           end_date?: string | null
           id?: string
+          milestones?: Json
           name?: string
           objectives?: string | null
           order_index?: number
+          phase_goal_body_fat_percentage?: number | null
+          phase_goal_weight?: number | null
           phase_goals_snapshot?: Json | null
           phase_summary?: Json | null
           roadmap_id?: string
@@ -2012,6 +2051,8 @@ export type Database = {
           client_id: string
           coach_id: string
           created_at: string
+          goal_body_fat_percentage: number | null
+          goal_weight: number | null
           id: string
           long_term_goal: string | null
           name: string
@@ -2024,6 +2065,8 @@ export type Database = {
           client_id: string
           coach_id: string
           created_at?: string
+          goal_body_fat_percentage?: number | null
+          goal_weight?: number | null
           id?: string
           long_term_goal?: string | null
           name?: string
@@ -2036,6 +2079,8 @@ export type Database = {
           client_id?: string
           coach_id?: string
           created_at?: string
+          goal_body_fat_percentage?: number | null
+          goal_weight?: number | null
           id?: string
           long_term_goal?: string | null
           name?: string
@@ -2108,6 +2153,86 @@ export type Database = {
           },
           {
             foreignKeyName: "session_logs_training_session_id_fkey"
+            columns: ["training_session_id"]
+            isOneToOne: false
+            referencedRelation: "training_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      training_events: {
+        Row: {
+          calorie_surplus_percentage: number | null
+          client_id: string
+          created_at: string
+          date: string
+          estimated_calories: number | null
+          id: string
+          is_modified: boolean
+          session_focus: string | null
+          session_log_id: string | null
+          session_name: string
+          status: string
+          training_plan_id: string
+          training_session_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          calorie_surplus_percentage?: number | null
+          client_id: string
+          created_at?: string
+          date: string
+          estimated_calories?: number | null
+          id?: string
+          is_modified?: boolean
+          session_focus?: string | null
+          session_log_id?: string | null
+          session_name: string
+          status?: string
+          training_plan_id: string
+          training_session_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          calorie_surplus_percentage?: number | null
+          client_id?: string
+          created_at?: string
+          date?: string
+          estimated_calories?: number | null
+          id?: string
+          is_modified?: boolean
+          session_focus?: string | null
+          session_log_id?: string | null
+          session_name?: string
+          status?: string
+          training_plan_id?: string
+          training_session_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "training_events_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "training_events_session_log_id_fkey"
+            columns: ["session_log_id"]
+            isOneToOne: false
+            referencedRelation: "session_logs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "training_events_training_plan_id_fkey"
+            columns: ["training_plan_id"]
+            isOneToOne: false
+            referencedRelation: "training_plans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "training_events_training_session_id_fkey"
             columns: ["training_session_id"]
             isOneToOne: false
             referencedRelation: "training_sessions"
@@ -2192,86 +2317,6 @@ export type Database = {
             columns: ["session_id"]
             isOneToOne: false
             referencedRelation: "training_sessions"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      training_events: {
-        Row: {
-          calorie_surplus_percentage: number | null
-          client_id: string
-          created_at: string
-          date: string
-          estimated_calories: number | null
-          id: string
-          is_modified: boolean
-          session_focus: string | null
-          session_log_id: string | null
-          session_name: string
-          status: string
-          training_plan_id: string
-          training_session_id: string | null
-          updated_at: string
-        }
-        Insert: {
-          calorie_surplus_percentage?: number | null
-          client_id: string
-          created_at?: string
-          date: string
-          estimated_calories?: number | null
-          id?: string
-          is_modified?: boolean
-          session_focus?: string | null
-          session_log_id?: string | null
-          session_name: string
-          status?: string
-          training_plan_id: string
-          training_session_id?: string | null
-          updated_at?: string
-        }
-        Update: {
-          calorie_surplus_percentage?: number | null
-          client_id?: string
-          created_at?: string
-          date?: string
-          estimated_calories?: number | null
-          id?: string
-          is_modified?: boolean
-          session_focus?: string | null
-          session_log_id?: string | null
-          session_name?: string
-          status?: string
-          training_plan_id?: string
-          training_session_id?: string | null
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "training_events_client_id_fkey"
-            columns: ["client_id"]
-            isOneToOne: false
-            referencedRelation: "clients"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "training_events_training_plan_id_fkey"
-            columns: ["training_plan_id"]
-            isOneToOne: false
-            referencedRelation: "training_plans"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "training_events_training_session_id_fkey"
-            columns: ["training_session_id"]
-            isOneToOne: false
-            referencedRelation: "training_sessions"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "training_events_session_log_id_fkey"
-            columns: ["session_log_id"]
-            isOneToOne: false
-            referencedRelation: "session_logs"
             referencedColumns: ["id"]
           },
         ]
@@ -2529,8 +2574,8 @@ export type Database = {
       }
       training_sessions: {
         Row: {
-          calories_calculated_at: string | null
           calorie_surplus_percentage: number | null
+          calories_calculated_at: string | null
           created_at: string
           day_of_week: string | null
           estimated_calories: number | null
@@ -2545,8 +2590,8 @@ export type Database = {
           updated_at: string
         }
         Insert: {
-          calories_calculated_at?: string | null
           calorie_surplus_percentage?: number | null
+          calories_calculated_at?: string | null
           created_at?: string
           day_of_week?: string | null
           estimated_calories?: number | null
@@ -2561,8 +2606,8 @@ export type Database = {
           updated_at?: string
         }
         Update: {
-          calories_calculated_at?: string | null
           calorie_surplus_percentage?: number | null
+          calories_calculated_at?: string | null
           created_at?: string
           day_of_week?: string | null
           estimated_calories?: number | null
@@ -2705,33 +2750,199 @@ export type Database = {
         }[]
       }
       clean_expired_tokens: { Args: never; Returns: undefined }
-      create_nutrition_plan_atomic: {
-        Args: {
-          p_base_weight_kg: number
-          p_baseline_calories: number
-          p_bmr: number
-          p_carb_target_g: number
-          p_client_id: string
-          p_coach_id: string
-          p_custom_calories: number
-          p_custom_carb_g: number
-          p_custom_fat_g: number
-          p_custom_macros_enabled: boolean
-          p_custom_protein_g: number
-          p_daily_targets: Json
-          p_diet_type: string
-          p_fat_target_g: number
-          p_goal_deadline: string
-          p_goal_weight_kg: number
-          p_protein_target_g: number
-          p_protein_target_g_per_kg: number
-          p_regeneration_reason: string
-          p_tdee: number
-          p_training_volume_hours: string
-          p_work_activity_level: string
-        }
-        Returns: string
-      }
+      create_nutrition_plan_atomic:
+        | {
+            Args: {
+              p_base_weight_kg: number
+              p_baseline_calories: number
+              p_bmr: number
+              p_carb_target_g: number
+              p_client_id: string
+              p_coach_id: string
+              p_custom_calories: number
+              p_custom_carb_g: number
+              p_custom_fat_g: number
+              p_custom_macros_enabled: boolean
+              p_custom_protein_g: number
+              p_daily_targets: Json
+              p_diet_type: string
+              p_fat_target_g: number
+              p_goal_deadline: string
+              p_goal_weight_kg: number
+              p_protein_target_g: number
+              p_protein_target_g_per_kg: number
+              p_regeneration_reason: string
+              p_tdee: number
+              p_training_volume_hours: string
+              p_work_activity_level: string
+            }
+            Returns: string
+          }
+        | {
+            Args: {
+              p_base_weight_kg: number
+              p_baseline_calories: number
+              p_bmr: number
+              p_carb_target_g: number
+              p_client_id: string
+              p_coach_id: string
+              p_custom_calories: number
+              p_custom_carb_g: number
+              p_custom_fat_g: number
+              p_custom_macros_enabled: boolean
+              p_custom_protein_g: number
+              p_daily_targets: Json
+              p_diet_type: string
+              p_fat_target_g: number
+              p_goal_deadline: string
+              p_goal_weight_kg: number
+              p_phase_id?: string
+              p_protein_target_g: number
+              p_protein_target_g_per_kg: number
+              p_regeneration_reason: string
+              p_tdee: number
+              p_training_volume_hours: string
+              p_work_activity_level: string
+            }
+            Returns: string
+          }
+        | {
+            Args: {
+              p_base_weight_kg: number
+              p_baseline_calories: number
+              p_bmr: number
+              p_carb_target_g: number
+              p_client_id: string
+              p_coach_id: string
+              p_coach_notes?: string
+              p_custom_calories: number
+              p_custom_carb_g: number
+              p_custom_fat_g: number
+              p_custom_macros_enabled: boolean
+              p_custom_protein_g: number
+              p_daily_targets: Json
+              p_diet_type: string
+              p_fat_target_g: number
+              p_goal_deadline: string
+              p_goal_source?: string
+              p_goal_weight_kg: number
+              p_phase_id?: string
+              p_protein_target_g: number
+              p_protein_target_g_per_kg: number
+              p_regeneration_reason: string
+              p_tdee: number
+              p_training_volume_hours: string
+              p_work_activity_level: string
+            }
+            Returns: string
+          }
+        | {
+            Args: {
+              p_base_weight_kg: number
+              p_baseline_calories: number
+              p_bmr: number
+              p_carb_target_g: number
+              p_client_id: string
+              p_coach_id: string
+              p_coach_notes?: string
+              p_custom_calories: number
+              p_custom_carb_g: number
+              p_custom_fat_g: number
+              p_custom_macros_enabled: boolean
+              p_custom_protein_g: number
+              p_daily_targets: Json
+              p_diet_type: string
+              p_effective_from?: string
+              p_fat_target_g: number
+              p_goal_deadline: string
+              p_goal_source?: string
+              p_goal_weight_kg: number
+              p_phase_id?: string
+              p_protein_target_g: number
+              p_protein_target_g_per_kg: number
+              p_regeneration_reason: string
+              p_tdee: number
+              p_training_volume_hours: string
+              p_work_activity_level: string
+            }
+            Returns: string
+          }
+      create_training_plan_atomic:
+        | {
+            Args: {
+              p_ai_response_raw: string
+              p_avg_energy: number
+              p_avg_mood: number
+              p_avg_sleep: number
+              p_avg_stress: number
+              p_client_body_fat_percentage: number
+              p_client_goal_weight_kg: number
+              p_client_id: string
+              p_client_tdee: number
+              p_client_weight_kg: number
+              p_coach_id: string
+              p_coach_prompt: string
+              p_description: string
+              p_frequency_per_week: number
+              p_name: string
+              p_phase_id: string
+              p_program_duration_weeks: number
+              p_recent_adherence_percentage: number
+              p_split_type: string
+            }
+            Returns: string
+          }
+        | {
+            Args: {
+              p_ai_response_raw: string
+              p_avg_energy: number
+              p_avg_mood: number
+              p_avg_sleep: number
+              p_avg_stress: number
+              p_client_body_fat_percentage: number
+              p_client_goal_weight_kg: number
+              p_client_id: string
+              p_client_tdee: number
+              p_client_weight_kg: number
+              p_coach_id: string
+              p_coach_prompt: string
+              p_description: string
+              p_effective_from?: string
+              p_frequency_per_week: number
+              p_name: string
+              p_phase_id: string
+              p_program_duration_weeks: number
+              p_recent_adherence_percentage: number
+              p_split_type: string
+            }
+            Returns: string
+          }
+        | {
+            Args: {
+              p_ai_response_raw: string
+              p_avg_energy: number
+              p_avg_mood: number
+              p_avg_sleep: number
+              p_avg_stress: number
+              p_client_body_fat_percentage: number
+              p_client_goal_weight_kg: number
+              p_client_id: string
+              p_client_tdee: number
+              p_client_weight_kg: number
+              p_coach_id: string
+              p_coach_prompt: string
+              p_description: string
+              p_effective_from?: string
+              p_frequency_per_week: number
+              p_name: string
+              p_phase_id: string
+              p_program_duration_weeks: number
+              p_recent_adherence_percentage: number
+              p_saved_plan_id?: string
+              p_split_type: string
+            }
+            Returns: string
+          }
       generate_weekly_nutrition_goals: {
         Args: { p_client_id: string; p_week_start_date: string }
         Returns: undefined
@@ -2905,6 +3116,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {
       content_type: ["video_link", "hyperlink", "pdf", "image", "document"],
