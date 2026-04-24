@@ -765,8 +765,6 @@ Clicking a card navigates to a detail page which fires its own fetch (e.g. `GET 
 
 2. **`resolvePlanContextForDate(clientId, date): { phaseId, nutritionPlanId, trainingPlanId }`** — shared helper used by every per-card write to populate `daily_logs.phase_id` and child `*_plan_id` links. Lives in an existing plan-adjacent service (decided in planning step). Every write calls it once; no endpoint reimplements the lookup.
 
-   **Training-event sourcing rule (addresses legacy bug)**: For nutrition adjusted-target math, the training context for a date MUST be resolved from the calendar event actually placed on that date (`training_events` with cloned-event support), NOT from the plan's static day-of-week session lookup. The old `services/daily-context-service.ts:getTodaysTrainingSession` reads the plan's session by `day_of_week` and drives `calculateAdjustedDayTarget` / `calculateAdjustedMacros` (see `app/api/client/daily-logs/route.ts` POST and `utils/nutrition-tracking-helpers.ts`). When a coach swaps a session to a different day (event clone), the plan-side lookup returns the *original* day's session (or the rest day if today was originally rest), so the calorie/macro adjustment math uses the wrong training burn. User-visible symptom: entering `baseline + trainingBurn` as consumed calories still flags "over target" because the target is computed from baseline only; macros display baseline values, not adjusted. Fix in this session: the new PATCH `/api/client/daily-logs/[date]/nutrition` endpoint must resolve today's training context by querying `training_events` for the date (authoritative) and ignore plan-side day-of-week inference entirely. Add a test fixture for a cloned/swapped event and assert adjusted targets reflect the cloned event's calories, not the original day's.
-
 3. **Nutrition endpoints**:
    - `GET /api/client/daily-logs/[date]/nutrition/route.ts` (log + event target per ARCHITECTURE three-level priority).
    - `PATCH /api/client/daily-logs/[date]/nutrition/route.ts`: calls `assertCanEdit`, then `resolvePlanContextForDate`, then writes kcal + macros to `nutrition_logs`. No inline date-rule code.
@@ -890,6 +888,8 @@ Clicking a card navigates to a detail page which fires its own fetch (e.g. `GET 
 **Commit message**: `chore: remove legacy Daily Pulse, deprecated routes, and refresh architecture doc`
 
 **Objective**: Delete old portal surfaces replaced by the new design and update the architecture doc to reflect the new reality. Bundled because both are cleanup against the same surface.
+
+**Prior work (2026-04-24)**: The external-activities removal sprint (commits `37f6eaf..fadff55`) already deleted Feature A (training-plan external activities) and Feature B (daily external activities + `daily_external_activities` table) plus the `saveUnplannedActivities` network call from Daily Pulse. Daily Pulse UI still functions; this session retires it entirely. The `UnplannedActivity` / `TodaysActivity` type duplication noted in the preamble below is also already collapsed — `IntensityLevel` was relocated to `types/daily-pulse.ts` and the duplicate mock helper in `__tests__/helpers/mock-data-builders.ts` was removed. Session 5.1's scope is therefore slightly narrower than originally drafted but otherwise unchanged.
 
 **Read first**:
 - Import graph from `app/client/dashboard/page.tsx`.

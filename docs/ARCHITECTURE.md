@@ -46,8 +46,7 @@ coaches
         │     ├── training_logs
         │     │     └── session_logs
         │     │           └── exercise_logs
-        │     ├── daily_habit_logs
-        │     └── daily_external_activities
+        │     └── daily_habit_logs
         │
         ├── check_ins                 -- weekly structured submissions
         ├── client_goals              -- versioned goal records
@@ -193,8 +192,7 @@ daily_logs (spine)         -- id, client_id, date, notes, phase_id
   ├── wellness_logs        -- mood, energy, sleep, stress (1:1 via daily_log_id FK)
   ├── nutrition_logs       -- consumed, targets, adherence (1:1 via daily_log_id FK)
   ├── training_logs        -- trained, training_session_id, training_data JSONB (1:1 via daily_log_id FK)
-  ├── daily_habit_logs     -- per-habit completion (1:many, FK to daily_habits)
-  └── daily_external_activities -- ad-hoc activities (1:many)
+  └── daily_habit_logs     -- per-habit completion (1:many, FK to daily_habits)
 ```
 - **Writes** go through the `upsert_daily_log_atomic()` RPC function which upserts spine + child tables in a single transaction
 - **Domain-specific reads** query child tables directly (e.g. wellness history queries `wellness_logs`, not the view)

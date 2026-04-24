@@ -25,6 +25,7 @@
   - Debug first, fix second. Add console.logs and show the output before changing logic.
   - Never guess at the root cause - prove it with evidence.
   - When reverting a fix that made things worse, revert only the specific changes, don't rewrite the file.
+  - **Stale `.next` cache after refactors.** Next.js maintains an incremental build cache in `.next/` that survives dev server restarts. After a large refactor that moves/renames files (≥5 files), the cache can carry zombie entries for deleted routes and miss newly-added ones. Symptoms: routes that exist on disk return 404, services silently no-op while returning "success", or TypeScript shows phantom errors in `.next/dev/types/routes.d.ts`. Before debugging further, try: stop the dev server, `rm -rf .next`, restart. Solves ~90% of post-refactor weirdness in under a minute. If the bug persists after a clean rebuild, it's a real bug.
 
   ### Don't silently change working code
   - If a fix requires changing an unrelated file, call it out before doing it.
@@ -284,6 +285,41 @@
   - If adding a required column, it needs a default value
   - If renaming a column, everything that queries it breaks
   - JSONB columns: Supabase handles serialization automatically - never use `JSON.stringify()` on JSONB
+
+  ### Migration workflow (MANDATORY)
+
+  **Never paste schema SQL into the Supabase Studio SQL Editor.** The Studio SQL Editor is read-only in our mental model — fine for `SELECT` queries, ad-hoc investigation, debugging. Never `CREATE`, `ALTER`, `DROP`. Pasting schema SQL into the editor bypasses the `supabase_migrations.schema_migrations` tracking table and causes silent drift between the codebase and the live DB. Any schema change that reaches prod without a migration file in git is a bug.
+
+  **The five-step workflow for every schema change:**
+
+  1. Create a new migration file at `supabase/migrations/XXX_<short_description>.sql` with the next available number (never reuse, never skip, never edit existing migrations).
+  2. Apply it via terminal: `npx supabase db push`.
+  3. Regenerate types: `npx supabase gen types typescript --linked > types/database.ts`.
+  4. Skim the `types/database.ts` diff — the changes should exactly correspond to your migration. Unexpected additions/removals are a red flag.
+  5. Commit the migration file and regenerated types in the **same commit** so git history stays coherent.
+
+  **Rules that keep this healthy:**
+  - One file per change. Don't edit an existing migration to "add one more thing" — write a new file.
+  - Never edit a migration file after `db push` has applied it. Once it's history, changes go in the next number.
+  - Never skip or reuse migration numbers. 088 → 089 → 090. No `088_v2`, no going back.
+  - `types/database.ts` is generated — never hand-edit it. If something looks wrong in that file, the bug is in the database schema, and the fix is a new migration.
+
+  **Useful commands:**
+  ```
+  # Current state of the tracking table vs local migration files:
+  npx supabase migration list --linked
+
+  # Apply any pending migrations to the live DB:
+  npx supabase db push
+
+  # Regenerate types/database.ts from the live schema:
+  npx supabase gen types typescript --linked > types/database.ts
+
+  # Repair tracking table if drift appears (e.g. someone pasted into Studio):
+  npx supabase migration repair --status applied <version> --linked
+  ```
+
+  **Docker requirement:** The daily workflow above does NOT need Docker — `db push` and `gen types` talk directly to the cloud DB via `--linked` credentials. Docker Desktop is only required for commands that spin up a local shadow DB (`supabase start`, `supabase db reset`, `supabase db diff`). Open Docker when you need those; keep it closed otherwise.
 
   ### Schema architecture
   Schema diagrams, table hierarchies, and JSONB conventions are documented in **docs/ARCHITECTURE.md**. That file evolves with migrations. These coding rules stay stable.

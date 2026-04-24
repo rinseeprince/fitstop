@@ -336,11 +336,9 @@ Reviewed: 2026-03-25. **Resolved as of 2026-04-23** — full `npx vitest run` pa
 
 Reviewed: 2026-04-13
 
-### P2 - Rethink External Activities
+### ~~P2 - Rethink External Activities~~ (Resolved 2026-04-24)
 
-| # | Issue | File(s) | Details | Status |
-|---|-------|---------|---------|--------|
-| 1 | External activities add complexity with questionable value | `services/training-ai-service.ts`, `utils/nutrition-helpers.ts`, `services/nutrition-event-service.ts`, `components/clients/training/schedule/weekly-schedule-item.tsx` | External activities use a separate `session_type = 'external_activity'` with `activity_metadata` JSONB (MET values, duration, intensity), `allowSameDayTraining` AI prompt flag, `getExternalActivitiesForDay()` for nutrition burn calculations, and dedicated UI rendering. With the calendar feature (CAL-1/CAL-2), coaches can prescribe any session type directly on the calendar, making the external activity distinction less necessary. A coach can just create a "BJJ" or "Cycling" session as a regular training session with estimated calories. **Review when building the client app** - the feature may be worth keeping but needs rethinking: (a) Should external activities just be regular sessions with a tag/category? (b) Should the MET-based calorie calculation be a helper available to any session rather than tied to a special type? (c) The `allowSameDayTraining` flag in AI generation adds prompt complexity - could be replaced by the coach simply placing sessions on the calendar. | Open |
+Removed entirely in commits `37f6eaf..fadff55` (external-activities sprint, 7 commits). Features A (training-plan external activities: pre-generation activities, `session_type = 'external_activity'`, `activity_metadata`, `allowSameDayTraining` AI prompt flag, `check_in_external_activities` table) and B (daily external activities: `daily_external_activities` table + Daily Pulse write path) both gone. Coach calendar prescribes any session type as a regular training session now, as anticipated. Schema changes in migration `088_remove_external_activities.sql`. `IntensityLevel` relocated from `types/external-activity.ts` to `types/daily-pulse.ts` where it's still used by the in-JSONB unplanned-activity flow.
 
 ---
 
