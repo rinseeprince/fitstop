@@ -67,6 +67,9 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 | 7.5 | Coach metrics page phase filter | 7 |
 | 7.6 | Coach client overview tab as pre-session brief | 7 |
 | 7.7 | Coach exercise progression charts on Metrics tab | 7 |
+| 8.1 | Coach unit preference column + viewer-resolver foundation | 8 Viewer-relative units |
+| 8.2 | Render-path sweep for viewer-relative weight display | 8 |
+| 8.3 | Coach + client unit preference settings + form write paths | 8 |
 
 ---
 
@@ -1360,3 +1363,153 @@ Commit.
 - UI test: charts render for fixture data; toggle between top-set and volume works; empty state renders when no data; phase-filter change rescopes charts.
 
 **Verify**: As coach, open a client with logged exercise data across multiple phases; switch phase filter; confirm charts rescope. Switch top-set/volume toggle. Check empty-state rendering. `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Commit.
+
+---
+
+## Session 8.1: Coach unit preference column + viewer-resolver foundation
+
+**Commit message**: `feat(units): add coaches.unit_preference and viewer-relative unit helpers`
+
+**Objective**: Lay the schema + helper foundation for viewer-relative unit display. Adds `coaches.unit_preference`, the `getViewerUnitPreference(request)` resolver, and the consolidated `formatWeight(value, valueUnit, viewerPreference)` + `formatLength(value, valueUnit, viewerPreference)` helpers. **No existing render paths change yet** — that is Session 8.2.
+
+**Read first**:
+- `docs/CLIENT-PORTAL-REDESIGN.md` (Viewer-relative unit display section — the architecture spec).
+- `supabase/migrations/011_add_nutrition_fields.sql` (`clients.unit_preference` definition; mirror its shape on `coaches`).
+- `utils/nutrition-helpers.ts` (existing partial `formatWeight`, `kgToLbs`, `lbsToKg` — to be consolidated, not deleted).
+- `lib/auth-helpers.ts` (`getAuthenticatedCoachId`, `getAuthenticatedClientId`).
+- `services/coach-service.ts` (or grep for where coach reads live).
+- `services/client-service.ts` (`unit_preference` read pattern for clients).
+- `lib/mappers.ts` (existing `mapClientRow.unitPreference` mapping; locate or add the equivalent for `Coach`).
+- `types/coach.ts` (or wherever the `Coach` TS type lives).
+
+**Plan (report before implementing)**:
+- Migration shape for `coaches.unit_preference`. Default `'imperial'` for parity with `clients.unit_preference`. Same enum.
+- Where `getViewerUnitPreference` lives. Recommend new file `lib/viewer-preferences.ts` rather than co-locating in `lib/auth-helpers.ts` (auth-helpers is already large; the concern is distinct).
+- Where `formatWeight` ultimately lives. Today partial logic is in `utils/nutrition-helpers.ts`. Recommend new `utils/unit-conversions.ts` so it is not nutrition-coupled. The nutrition-helpers version becomes a thin re-export until Session 8.2 sweeps callers.
+- Confirm the helper signatures return `{ value, unit }` objects (not pre-formatted strings). Callers handle their own number formatting (decimal places, locale).
+- `formatLength` companion: same shape (`(value, valueUnit, viewerPreference) → { value, unit }`). Same conversion utilities.
+- Whether `Coach` has an existing TS type that needs `unitPreference` added. If not, decide where it lands.
+
+**Implement**:
+1. **Migration** (next sequential number, e.g. `091_add_coach_unit_preference.sql` — bump if other migrations have landed):
+   ```sql
+   ALTER TABLE coaches ADD COLUMN unit_preference TEXT NOT NULL DEFAULT 'imperial' CHECK (unit_preference IN ('metric', 'imperial'));
+   COMMENT ON COLUMN coaches.unit_preference IS 'Coach display preference: metric (kg, cm) or imperial (lbs, in). Used by getViewerUnitPreference() to render weights and measurements in the coach''s unit when viewing client data.';
+   ```
+2. Apply via `npx supabase db push`; regenerate `types/database.ts`; commit migration + types in the same commit per CONVENTIONS §8.
+3. Update the `Coach` TS type to include `unitPreference: 'metric' | 'imperial'`.
+4. Update the coach mapper (or `lib/mappers.ts`) to map `row.unit_preference` → `unitPreference`.
+5. New `lib/viewer-preferences.ts`:
+   - `getViewerUnitPreference(request: NextRequest): Promise<'metric' | 'imperial'>` — resolves the authed principal via existing helpers, returns their preference, defaults to `'imperial'` for unauthed.
+6. New `utils/unit-conversions.ts`:
+   - `formatWeight(value: number, valueUnit: 'lbs' | 'kg', viewerPreference: 'metric' | 'imperial'): { value: number; unit: 'lbs' | 'kg' }`.
+   - `formatLength(value: number, valueUnit: 'in' | 'cm', viewerPreference: 'metric' | 'imperial'): { value: number; unit: 'in' | 'cm' }`.
+   - Move `kgToLbs`, `lbsToKg`, `inToCm`, `cmToIn` here as the canonical home.
+7. `utils/nutrition-helpers.ts`: thin re-export shim pointing at `utils/unit-conversions.ts`. Existing exports continue to work; Session 8.2 sweeps callers.
+
+**Do NOT**: Change any render path (Session 8.2). Add UI toggles (Session 8.3). Convert existing `weight_unit` columns to canonical kg storage. Touch nutrition-flow display rendering — it keeps working through the re-export.
+
+**Tests to write**:
+- `utils/unit-conversions.test.ts`:
+  - `formatWeight`: identity (lbs + imperial → same lbs), conversion (lbs + metric → kg with correct rounding), reverse cases (kg + imperial → lbs), boundary inputs (0, fractional, integer).
+  - `formatLength`: same shape across in/cm.
+- `lib/viewer-preferences.test.ts`:
+  - Coach-authed request returns `coach.unit_preference`.
+  - Client-authed request returns `client.unit_preference`.
+  - Unauthed returns `'imperial'`.
+
+**Verify**: `npx tsc --noEmit`, `npx vitest run`. Confirm migration applied via `npx supabase migration list --linked`. Commit.
+
+---
+
+## Session 8.2: Render-path sweep for viewer-relative weight display
+
+**Commit message**: `refactor(units): route weight rendering through formatWeight with viewer preference`
+
+**Objective**: Sweep every place that today renders a weight value via `${value} ${weight_unit || "lbs"}` (or equivalent) and route it through `formatWeight()` from Session 8.1, using the viewer's preference. Convert at the API boundary where possible — keeps components dumb.
+
+**Read first**:
+- Output of Session 8.1.
+- Grep `weight_unit\|weightUnit` across `app/`, `components/`, `utils/`, `services/` (excluding any legacy files already deleted). Build the punch list.
+- `docs/CLIENT-PORTAL-REDESIGN.md` (Render rule + Viewer resolver subsections).
+
+**Plan (report before implementing)**:
+- Punch list of every render path. Group into:
+  - **Convert at API**: routes that return weight values in response payloads. The route resolves viewer preference, calls `formatWeight()`, returns the converted value + unit. Component just renders.
+  - **Convert in component**: places where the component fetches its own data via SWR. Use a `useViewerPreference()` hook against `/api/me/unit-preference`; component calls `formatWeight()` directly.
+- Decide which approach for which surface. Rule: if the API endpoint is coach-or-client scoped (different viewers possible), convert at API. If a component takes weight from props after a parent fetch, the parent (or its API source) converts.
+- Identify any history/audit views that should *intentionally* render the recorded unit verbatim (e.g. "client logged 180 lbs" timeline entries). Annotate with an inline comment explaining why they bypass `formatWeight()`.
+
+**Implement**:
+1. Add `GET /api/me/unit-preference` route: returns `{ preference: 'metric' | 'imperial' }` for the authed principal. Standard auth + rate limit, `Cache-Control: no-store`.
+2. Add `hooks/use-viewer-preference.ts`: SWR-backed hook with deduping, returns `{ preference, isLoading }`.
+3. Sweep render paths (estimate ~15 callsites):
+   - Coach-side: `components/clients/metrics/body-metrics-history-table.tsx`, `components/clients/metrics/hooks/use-metrics-data.ts`, coach review pages, dashboard cards, `app/api/clients/[id]/training/suggestions/route.ts`.
+   - Client-side: `app/client/check-in/page.tsx`, `app/client/progress/check-in/[id]/page.tsx`, `app/client/progress/page.tsx`, client portal home + detail surfaces from Phase 3.
+   - Cross-cut: `utils/ai-prompt-builder.ts` (renders weights into AI prompts surfaced to coaches; convert to coach unit before prompting).
+4. For API-boundary conversions: each touched route resolves viewer preference once, applies `formatWeight()` to every weight in the response.
+5. For component-boundary conversions: replace `${value} ${unit || "lbs"}` with `formatWeight(value, unit, viewerPref)` then render `{value} {unit}`.
+6. Update API response types where the converted shape changes (e.g. `weight: number, weightUnit: string` → `weight: { value: number, unit: string }`). Adjust consuming components accordingly.
+
+**Do NOT**: Touch settings UIs (Session 8.3). Change forms / write paths (Session 8.3). Migrate stored values to canonical kg. Skip the audit-view annotation — those need an inline comment explaining the bypass.
+
+**Tests to write**:
+- API route tests for each touched endpoint: response includes the value converted to the viewer's preference. Test with both coach-imperial-against-metric-client and coach-metric-against-imperial-client fixtures.
+- Component tests for each touched surface: renders correctly when given raw weight + viewer preference. One assertion per preference.
+- Hook test (`use-viewer-preference.test.tsx`): returns coach preference for coach-authed, client preference for client-authed, default for unauthed.
+
+**Verify**: Manual cross-check: log in as coach (imperial) and view a metric client's weight history; confirm rendered as lbs. Switch coach to metric; confirm same data renders as kg. Repeat in reverse with a client viewing their own data. `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Commit.
+
+---
+
+## Session 8.3: Coach + client unit preference settings + form write paths
+
+**Commit message**: `feat(settings): add coach and client unit preference toggles with form-aware write paths`
+
+**Objective**: Ship the user-facing controls for unit preference on both coach and client settings, and update forms that capture weights to write in the viewer's unit (preserves the per-record audit trail).
+
+**Read first**:
+- Output of Sessions 8.1 + 8.2.
+- `app/client/settings/page.tsx` (from Session 2.6 — existing client settings).
+- `app/coach/settings/page.tsx` (or grep for current coach settings entrypoint; if none exists, decide where to land).
+- `lib/validations/client.ts` (`updateSettingsSchema` from Session 2.6).
+- `services/client-service.ts:updateClientSettings` (from Session 2.6).
+- All weight-input forms: `components/clients/add-client-manual-form.tsx`, `app/client/check-in/page.tsx`, intake flows (`components/client/onboarding/intake-step-*.tsx`), `components/clients/metrics/...`.
+
+**Plan (report before implementing)**:
+- Whether to extend Session 2.6's existing client toggle to also drive `weight_unit` in sync (recommended: yes — they are effectively the same control from the user's perspective). Audit Session 2.6's write path.
+- Where coach settings live. If `app/coach/settings/page.tsx` does not exist, decide: add a minimal one with just the unit toggle, or fold the toggle into an existing coach profile page.
+- Form write-path sweep: for each form that captures a weight (intake step 1, manual add client, check-in submission, metrics edit dialog), update the write path to:
+  - Show input label in the viewer's preferred unit.
+  - On submit, send `{ value, weight_unit: viewerPreference === 'imperial' ? 'lbs' : 'kg' }`.
+  - Store as-entered (no conversion on the API).
+- Document the coach-edits-client-record case: form pre-fills via `formatWeight()` in coach unit; on save, record's `weight_unit` updates to coach's unit.
+
+**Implement**:
+1. **Coach settings**:
+   - If `app/coach/settings/page.tsx` does not exist, add a minimal one with the unit toggle (and any existing coach preferences if surfaced elsewhere). Otherwise extend the existing page.
+   - `PATCH /api/coach/settings`: mirror of `/api/client/settings`. Standard middleware (rate limit, CSRF, auth, validation). Writes `coaches.unit_preference`.
+   - `services/coach-service.ts:updateCoachSettings(coachId, updates)`.
+2. **Client settings cleanup**:
+   - Update Session 2.6's toggle to write both `unit_preference` AND `weight_unit` in sync (imperial → 'lbs', metric → 'kg'). The toggle is logically one control even though it touches two columns.
+3. **Form write paths**:
+   - Intake step 1 (weight + height): inputs labeled in viewer's preference.
+   - Add-client manual form: same.
+   - Check-in submission form: weight input labeled in client's preference; submit sends value + `weight_unit`.
+   - Metrics edit dialog (coach-side): labeled in coach's preference; submit sends value + the coach's `weight_unit` equivalent.
+4. **Coach-on-client edits**: form pre-fills via `formatWeight()` (coach sees their unit); on save the record's `weight_unit` updates to the coach's preference. Add a small inline UI hint when the coach's unit differs from the client's: "Saving will record this entry in your unit (kg/lbs)."
+
+**Do NOT**: Build a per-record unit override for cross-edits (e.g. tickbox to force one client's records into a specific unit). YAGNI. Convert historical records to canonical units. Migrate per-record `weight_unit` columns.
+
+**Tests to write**:
+- Coach settings page test: renders existing preference; toggle save submits correct payload; error toast on save rejection.
+- Coach settings API: 200 happy; 400 invalid enum; 401 unauthenticated; CSRF rejection.
+- Client settings (extending Session 2.6's tests): toggling Imperial / Metric writes both `unit_preference` AND `weight_unit` consistently.
+- Form write-path tests per touched form: serializes weight + viewer's `weight_unit` correctly on submit; pre-fill respects viewer preference for cross-unit-original records.
+
+**Verify**: Manual end-to-end:
+1. As a coach in metric, edit a client's weight via the coach view; confirm new record stores `weight_unit='kg'`.
+2. As that client in imperial, view the same record; confirm it renders converted to lbs.
+3. Same in reverse (coach imperial editing a metric client's record).
+4. Toggle coach unit preference; confirm dashboard rosters re-render in the new unit.
+`npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Commit.

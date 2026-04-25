@@ -236,14 +236,87 @@ Existing `PhaseCompletionCard` relocates from `components/daily-pulse/` to `comp
 
 ---
 
-## Client weight-unit preference
+## Viewer-relative unit display
 
-`clients.weight_unit` already exists (migration 009, values `'lbs' | 'kg'`, default `'lbs'`). No new migration needed. Also `clients.unit_preference` exists (`'metric' | 'imperial'`) from migration 011.
+### Goal
 
-- The tracker UI seeds weight inputs in the client's `weight_unit` preference.
-- `exercise_logs.weight_unit` always stores the unit the client actually entered (supports per-set override).
-- Coach drill-down renders values in their logged unit.
-- Settings page lets the client change their `weight_unit` and `unit_preference`.
+Every weight value in the app renders in the **viewer's** preferred unit, not the recorded unit. A coach in metric viewing a client who logs in imperial sees kg; the same client viewing their own data sees lbs. The system handles all conversions transparently.
+
+This applies first to weight (the most common cross-unit case) and follows for height + body measurements (per-record `measurement_unit` already exists on relevant tables).
+
+### Why this is launch-critical
+
+Without it, a coach managing multiple clients with different unit preferences sees a mixed-unit roster, and switching client contexts repeatedly forces them to do mental conversions. That is a daily-use friction point at the heart of the coaching workflow. Shipping the client portal redesign without this means coaches will hit the friction on day one. The fix is bounded (one schema add, one helper, a render-path sweep, two toggles) so it ships at launch rather than after.
+
+### Data model
+
+Two-column model on every record that holds a weight, two-column model on profile rows. Stored values are NOT canonicalised; conversion happens at render time.
+
+- **Per-record `weight_unit`** stays as-is on `check_ins`, `body_metrics`, `exercise_logs`, etc. It records the unit the value was originally entered in. Audit trail; never used for display.
+- **Per-profile `unit_preference`** drives display. `clients.unit_preference` (`'metric' | 'imperial'`, exists today from migration 011) and a new `coaches.unit_preference` (added in Session 8.1) are the only sources of truth for "what unit should we render in for this viewer."
+- **`clients.weight_unit`** stays as the per-client default for write-time labelling on records the client creates. Settings UI keeps it in sync with `clients.unit_preference` (imperial → lbs, metric → kg). They never independently diverge from a user perspective.
+- **No canonical-storage migration.** Stored values keep their original units paired with `weight_unit`. The conversion happens at render time (read path), not on save (write path). Pre-launch this is a tradeoff in favour of simplicity: no risk of botched data conversion, no need to update historical rows, no per-row backfill.
+
+### Render rule
+
+Every place that renders a weight value goes through one helper:
+
+```ts
+formatWeight(value: number, valueUnit: 'lbs' | 'kg', viewerPreference: 'metric' | 'imperial'): { value: number; unit: 'lbs' | 'kg' }
+```
+
+The function reads from the per-record `weight_unit`, converts to the viewer's preferred unit, and returns the converted value plus the label. Components render `{value} {unit}` directly. Companion `formatLength(value, valueUnit, viewerPreference): { value, unit }` for height + measurements.
+
+**No render path bypasses this helper.** Exception: explicit audit views that should show the recorded unit verbatim ("client logged 180 lbs at 7:42pm") may render the recorded `weight_unit` directly with an inline comment explaining why. There are very few of these (probably zero at launch).
+
+### Viewer resolver
+
+Request-scoped helper:
+
+```ts
+getViewerUnitPreference(request: NextRequest): Promise<'metric' | 'imperial'>
+```
+
+- For coach-authenticated requests, returns `coach.unit_preference`.
+- For client-authenticated requests, returns `client.unit_preference`.
+- For unauthenticated public surfaces (none currently render weights, but future-proof), returns `'imperial'` as a safe default.
+
+**Conversion happens at the API boundary, not in components.** Routes that return weight values resolve viewer preference once per request, run `formatWeight()` over response payloads, and return already-converted `{value, unit}` pairs. Keeps render code dumb and avoids 15+ components having to fetch viewer preference via context.
+
+For client-side flows where the component fetches its own data (settings page, intake review), a thin `useViewerPreference()` SWR hook backed by `/api/me/unit-preference` provides the preference; the component then calls `formatWeight()` directly.
+
+### Write path
+
+When a viewer enters a weight in a form:
+- The form input shows the viewer's unit (lbs or kg) as the label.
+- On submit, the value is sent to the API along with the unit it was entered in: `{ value, weight_unit: viewerPreference === 'imperial' ? 'lbs' : 'kg' }`.
+- The API stores `(value, weight_unit)` as-entered. No conversion on the API write path.
+
+When a coach edits a weight that the client originally logged in a different unit:
+- The form pre-fills with the *viewer's* unit (after `formatWeight()` conversion).
+- On save, the new value is stored with `weight_unit` set to the coach's preferred unit. The most recent edit wins for the unit label on that record.
+- This is a deliberate choice: cross-edit unit provenance ("entered by client in lbs, edited by coach in kg") is recoverable from `updated_at` + audit history if ever needed; we are not building a per-edit history of which unit was used.
+
+### Settings UI
+
+- **Client side**: a single Imperial / Metric toggle in the client settings page. Session 2.6 ships the basic version writing only `unit_preference` + `weight_unit` for the client. Session 8.3 brings it under the unified write-path rule (no behaviour change, just consistent helper usage).
+- **Coach side**: a parallel toggle in coach settings. Session 8.3 adds it (extending an existing settings page if one exists, or adding a minimal one if not).
+
+The toggle is binary: Imperial or Metric. We do not expose the per-unit columns (`weight_unit`, `height_unit`, `measurement_unit`) as separate user controls — those are derived from the single preference.
+
+### Out of scope
+
+- **Per-record unit override at edit time** (e.g. coach forcing one client's records into a specific unit regardless of preference). YAGNI.
+- **Mid-string mixed units in coach-authored notes.** Notes are free-text; we are not parsing them.
+- **Historical re-canonicalisation** of pre-existing records into a single stored unit. The render rule still applies — they convert at render time — but no DB migration backfills older rows to canonical kg.
+- **Volume / energy units** (calories vs kJ, etc.). Same principle would apply but no demand at launch; defer.
+
+### Execution
+
+Phase 8 in `CLIENT-PORTAL-EXECUTION-PLAN.md`:
+- **Session 8.1**: schema + helper foundation. New `coaches.unit_preference` column, `getViewerUnitPreference()` resolver, consolidated `formatWeight()` + `formatLength()` helpers.
+- **Session 8.2**: render-path refactor. Sweep every render path; route through `formatWeight()` with viewer preference. Convert at API boundary where possible.
+- **Session 8.3**: write-path + settings toggles. Coach settings UI, client settings UI cleanup (extends Session 2.6's toggle), forms-convert-on-submit logic.
 
 ---
 
