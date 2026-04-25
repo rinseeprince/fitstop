@@ -145,7 +145,7 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 
 Session 0.1 confirmed no `timezone` column exists on `clients` and all date helpers run in server-local time. The REDESIGN's past-day lock requires client-local "today." This session lands the column.
 
-**Migration numbering**: `088_add_client_timezone.sql` (current tip is 087 per `supabase/migrations/`). Session 7.6's `coach_client_views` migration will be 089. If any other schema work lands between, bump accordingly.
+**Migration numbering**: `089_add_client_timezone.sql` (current tip is 088 per `supabase/migrations/` — `088_remove_external_activities.sql` was added in the external-activities removal sprint). Session 7.6's `coach_client_views` migration will be 090. If any other schema work lands between, bump accordingly.
 
 **Read first**:
 - `supabase/migrations/009_add_client_goal_fields.sql` (weight_unit definition).
@@ -163,7 +163,7 @@ Session 0.1 confirmed no `timezone` column exists on `clients` and all date help
 **Implement**:
 - Add accessors or type extensions if missing.
 - Replace any hardcoded weight-unit fallbacks with reads of `client.weightUnit` (or `unit_preference` per the decision above).
-- Create `supabase/migrations/088_add_client_timezone.sql`:
+- Create `supabase/migrations/089_add_client_timezone.sql`:
   - `ALTER TABLE clients ADD COLUMN timezone TEXT NOT NULL DEFAULT 'UTC' CHECK (timezone ~ '^[A-Za-z_+\-/]+$');`
   - `COMMENT ON COLUMN clients.timezone IS 'IANA time zone (e.g. America/Los_Angeles). Default UTC for pre-backfill rows; Settings UI in Session 2.6 lets clients pick theirs.';`
   - Column shape matches the REDESIGN spec (NOT NULL, default 'UTC', IANA format). The pre-launch state has no existing rows to backfill; the default covers the no-data case.
