@@ -725,6 +725,7 @@ export type Database = {
           starting_weight: number | null
           tdee: number | null
           tdee_manual_override: boolean | null
+          timezone: string
           total_check_ins_completed: number | null
           total_check_ins_expected: number | null
           unit_preference: string | null
@@ -770,6 +771,7 @@ export type Database = {
           starting_weight?: number | null
           tdee?: number | null
           tdee_manual_override?: boolean | null
+          timezone?: string
           total_check_ins_completed?: number | null
           total_check_ins_expected?: number | null
           unit_preference?: string | null
@@ -815,6 +817,7 @@ export type Database = {
           starting_weight?: number | null
           tdee?: number | null
           tdee_manual_override?: boolean | null
+          timezone?: string
           total_check_ins_completed?: number | null
           total_check_ins_expected?: number | null
           unit_preference?: string | null

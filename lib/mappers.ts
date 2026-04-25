@@ -95,6 +95,7 @@ export function mapClientRow(row: ClientRow): Client {
     onboardingStatus: (row.onboarding_status ?? undefined) as OnboardingStatus | undefined,
     walkthroughCompletedAt: row.walkthrough_completed_at ?? undefined,
     startDate: row.start_date ?? undefined,
+    timezone: row.timezone,
   };
 }
 

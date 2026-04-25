@@ -408,6 +408,9 @@ export type Client = {
   onboardingStatus?: OnboardingStatus;
   walkthroughCompletedAt?: string;
   startDate?: string;
+
+  // IANA time zone for client-local "today" computation
+  timezone: string;
 };
 
 // Calorie skewing types

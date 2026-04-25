@@ -40,6 +40,7 @@ export function createMockClient(options: MockClientOptions = {}): Client {
     goalWeight: options.goalWeight ?? 170,
     weightUnit: options.weightUnit ?? 'lbs',
     includeActivityBurn: true,
+    timezone: 'UTC',
     createdAt: options.createdAt ?? now,
     updatedAt: options.updatedAt ?? now,
   }
@@ -90,6 +91,7 @@ export function createMockClientDatabaseRow(options: MockClientOptions = {}): Cl
     walkthrough_completed_at: null,
     start_date: null,
     work_activity_level: null,
+    timezone: 'UTC',
     created_at: client.createdAt,
     updated_at: client.updatedAt,
   }

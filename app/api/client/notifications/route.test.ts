@@ -92,6 +92,7 @@ describe('/api/client/notifications', () => {
     customCalories: undefined,
     bmrManualOverride: undefined,
     tdeeManualOverride: undefined,
+    timezone: 'UTC',
   }
 
   const createMockRequest = () => {
