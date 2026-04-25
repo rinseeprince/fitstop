@@ -408,3 +408,64 @@ export type SavedExercise = {
   createdAt: string;
   updatedAt: string;
 };
+
+// =============================================================================
+// Event-keyed training log types (Session 1.1)
+// Stable contracts for Session 1.2 (service impl) and 1.3 (API routes).
+// =============================================================================
+
+export type LogTrainingEventResponse = {
+  sessionLogId: string;
+};
+
+// Camel-case mirror of the session_logs row.
+export type SessionLog = {
+  id: string;
+  clientId: string;
+  trainingSessionId: string | null;
+  completedAt: string;
+  completionQuality: 'full' | 'partial' | 'skipped';
+  notes: string | null;
+  weekStartDate: string;
+  prescribedSessionSnapshot: Record<string, unknown> | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+// Camel-case mirror of the exercise_logs row.
+export type ExerciseLog = {
+  id: string;
+  sessionLogId: string;
+  trainingExerciseId: string | null;
+  completed: boolean;
+  actualSets: number | null;
+  actualReps: string | null;
+  actualWeight: number | null;
+  weightUnit: 'lbs' | 'kg';
+  notes: string | null;
+  prescribedExerciseSnapshot: Record<string, unknown> | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+// Resolved session/exercise carries a discriminator so consumers know whether
+// the row came from a live FK reference or the snapshot fallback. After plan
+// edits or session deletions, the live ref may be null while the snapshot
+// preserves the prescription as it was at log time.
+export type ResolvedSession =
+  | { source: 'live'; session: TrainingSession }
+  | { source: 'snapshot'; snapshot: Record<string, unknown> };
+
+export type ResolvedExercise =
+  | { source: 'live'; exercise: TrainingExercise }
+  | { source: 'snapshot'; snapshot: Record<string, unknown> };
+
+// Combined event detail returned by getTrainingEventDetail().
+// exerciseLogs is empty when the client used quick log only or hasn't logged yet.
+export type TrainingEventDetail = {
+  event: TrainingEvent;
+  session: ResolvedSession;
+  exercises: ResolvedExercise[];
+  sessionLog: SessionLog | null;
+  exerciseLogs: ExerciseLog[];
+};

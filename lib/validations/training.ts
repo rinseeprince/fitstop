@@ -77,6 +77,46 @@ export const reorderSessionSchema = z.object({
 
 export const reorderSessionsSchema = z.array(reorderSessionSchema);
 
+// =============================================================================
+// Event-keyed training log schemas (Session 1.1)
+// Quick log = { completionQuality, notes? } — no exercises array.
+// Detailed log = same plus an exercises array of per-exercise performance.
+// Both shapes hit the same API endpoint; service layer (Session 1.2) decides
+// the storage path.
+// =============================================================================
+
+export const completionQualitySchema = z.enum(["full", "partial", "skipped"]);
+
+export const setPerformanceSchema = z.object({
+  reps: z.number().int().min(1).max(100).optional(),
+  weight: z.number().min(0).max(2000).optional(),
+  rpe: z.number().min(1).max(10).optional(),
+});
+
+export const exercisePerformanceSchema = z
+  .object({
+    trainingExerciseId: z.string().uuid().optional(),
+    exerciseName: z.string().min(1).max(200),
+    sets: z.array(setPerformanceSchema),
+    weightUnit: z.enum(["lbs", "kg"]),
+    notes: z.string().max(1000).optional(),
+    skipped: z.boolean().optional(),
+  })
+  .refine(
+    (val) => val.skipped === true || val.sets.length > 0,
+    { message: "sets must be non-empty unless skipped is true", path: ["sets"] }
+  );
+
+export const logTrainingEventSchema = z.object({
+  completionQuality: completionQualitySchema,
+  notes: z.string().max(1000).optional(),
+  exercises: z.array(exercisePerformanceSchema).optional(),
+});
+
+export type SetPerformanceInput = z.infer<typeof setPerformanceSchema>;
+export type ExercisePerformanceInput = z.infer<typeof exercisePerformanceSchema>;
+export type LogTrainingEventInput = z.infer<typeof logTrainingEventSchema>;
+
 // Validation function to ensure client has basic data for training plan
 export function validateClientForTraining(client: {
   currentWeight?: number;

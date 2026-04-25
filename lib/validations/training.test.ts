@@ -12,6 +12,7 @@ import {
   parseGetPlanResponse,
   parseGeneratePlanResponse,
   parseSuggestionsResponse,
+  logTrainingEventSchema,
 } from './training'
 
 describe('Training Validation Schemas', () => {
@@ -471,6 +472,131 @@ describe('Training Validation Schemas', () => {
         expect(result).not.toBeNull()
         expect(result?.success).toBe(false)
       })
+    })
+  })
+
+  describe('logTrainingEventSchema', () => {
+    it('accepts a quick log without notes', () => {
+      const result = logTrainingEventSchema.safeParse({ completionQuality: 'full' })
+      expect(result.success).toBe(true)
+    })
+
+    it('accepts a quick log with notes', () => {
+      const result = logTrainingEventSchema.safeParse({
+        completionQuality: 'partial',
+        notes: 'Lower back tight, capped weights.',
+      })
+      expect(result.success).toBe(true)
+    })
+
+    it('accepts a detailed log with one logged exercise', () => {
+      const result = logTrainingEventSchema.safeParse({
+        completionQuality: 'full',
+        exercises: [
+          {
+            trainingExerciseId: '00000000-0000-0000-0000-000000000001',
+            exerciseName: 'Back Squat',
+            sets: [{ reps: 5, weight: 140, rpe: 8 }],
+            weightUnit: 'kg',
+          },
+        ],
+      })
+      expect(result.success).toBe(true)
+    })
+
+    it('accepts a detailed log with skipped:true and empty sets', () => {
+      const result = logTrainingEventSchema.safeParse({
+        completionQuality: 'partial',
+        exercises: [
+          {
+            exerciseName: 'Romanian Deadlift',
+            sets: [],
+            weightUnit: 'lbs',
+            skipped: true,
+          },
+        ],
+      })
+      expect(result.success).toBe(true)
+    })
+
+    it('accepts an unplanned exercise (no trainingExerciseId)', () => {
+      const result = logTrainingEventSchema.safeParse({
+        completionQuality: 'full',
+        exercises: [
+          {
+            exerciseName: 'Walking Lunges',
+            sets: [{ reps: 10, weight: 50 }],
+            weightUnit: 'lbs',
+          },
+        ],
+      })
+      expect(result.success).toBe(true)
+    })
+
+    it('rejects when completionQuality is missing', () => {
+      const result = logTrainingEventSchema.safeParse({})
+      expect(result.success).toBe(false)
+    })
+
+    it('rejects an invalid completionQuality enum value', () => {
+      const result = logTrainingEventSchema.safeParse({ completionQuality: 'almost' })
+      expect(result.success).toBe(false)
+    })
+
+    it('rejects a detailed-log exercise missing exerciseName', () => {
+      const result = logTrainingEventSchema.safeParse({
+        completionQuality: 'full',
+        exercises: [
+          {
+            trainingExerciseId: '00000000-0000-0000-0000-000000000001',
+            sets: [{ reps: 5, weight: 100 }],
+            weightUnit: 'lbs',
+          },
+        ],
+      })
+      expect(result.success).toBe(false)
+    })
+
+    it('rejects a non-skipped exercise with empty sets', () => {
+      const result = logTrainingEventSchema.safeParse({
+        completionQuality: 'full',
+        exercises: [
+          {
+            exerciseName: 'Bench Press',
+            sets: [],
+            weightUnit: 'lbs',
+          },
+        ],
+      })
+      expect(result.success).toBe(false)
+    })
+
+    it('rejects an RPE outside 1-10', () => {
+      const result = logTrainingEventSchema.safeParse({
+        completionQuality: 'full',
+        exercises: [
+          {
+            exerciseName: 'Bench Press',
+            sets: [{ reps: 5, weight: 100, rpe: 11 }],
+            weightUnit: 'lbs',
+          },
+        ],
+      })
+      expect(result.success).toBe(false)
+    })
+
+    it('rejects an invalid weightUnit value', () => {
+      const result = logTrainingEventSchema.safeParse({
+        completionQuality: 'full',
+        exercises: [
+          {
+            exerciseName: 'Bench Press',
+            sets: [{ reps: 5, weight: 100 }],
+            weightUnit: 'stone',
+          },
+        ],
+      })
+      expect(result.success).toBe(false)
     })
   })
 })
