@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { swrFetcher } from "@/lib/swr-fetcher";
+import { getDateString } from "@/lib/date-helpers";
 import type { SavedPlan } from "@/types/training";
 
 type ApplyToClientDialogProps = {
@@ -52,7 +53,7 @@ function getNextMonday(): string {
   const day = d.getDay();
   const diff = day === 0 ? 1 : 8 - day;
   d.setDate(d.getDate() + diff);
-  return d.toISOString().split("T")[0];
+  return getDateString(d);
 }
 
 export function ApplyToClientDialog({

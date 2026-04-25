@@ -27,7 +27,7 @@ export function evaluateLoggingGap(
       for (let j = 1; j < daysBetween && j <= LOGGING_GAP_THRESHOLD_DAYS; j++) {
         const missingDate = new Date(previousDate)
         missingDate.setDate(missingDate.getDate() + j)
-        missingDays.push(missingDate.toISOString().split('T')[0])
+        missingDays.push(getDateString(missingDate))
       }
       
       return {
@@ -48,7 +48,7 @@ export function evaluateLoggingGap(
       for (let i = 1; i <= Math.min(daysSinceLastLog, LOGGING_GAP_THRESHOLD_DAYS); i++) {
         const missingDate = new Date(mostRecentDate)
         missingDate.setDate(missingDate.getDate() + i)
-        missingDays.push(missingDate.toISOString().split('T')[0])
+        missingDays.push(getDateString(missingDate))
       }
       
       return {

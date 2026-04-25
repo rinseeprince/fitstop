@@ -9,7 +9,7 @@ import { getClientById } from "@/services/client-service";
 import { getDailyLogs } from "@/services/daily-logs-service";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
-import { calculateCheckInPeriod, getCheckInStatus, formatDateISO } from "@/lib/date-helpers";
+import { calculateCheckInPeriod, getCheckInStatus, formatDateISO, getDateString } from "@/lib/date-helpers";
 import type { CheckInGateStatus } from "@/lib/date-helpers";
 import type { ValidateCheckInTokenResponse } from "@/types/check-in";
 
@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
 
     const lastCheckInPeriodEnd = lastCheckIn?.period_end
       ?? (lastCheckIn?.created_at
-        ? new Date(lastCheckIn.created_at).toISOString().split("T")[0]
+        ? getDateString(new Date(lastCheckIn.created_at))
         : null);
 
     const isFirstCheckIn = !lastCheckIn;

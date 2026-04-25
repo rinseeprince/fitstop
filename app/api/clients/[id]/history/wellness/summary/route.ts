@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 import { supabaseAdmin } from "@/services/supabase-admin";
-import { getTrainingWeekStart, getTrainingWeekEnd, getTodayDateString } from "@/lib/date-helpers";
+import { getTrainingWeekStart, getTrainingWeekEnd, getTodayDateString, getDateString } from "@/lib/date-helpers";
 
 export async function GET(
   request: NextRequest,
@@ -53,7 +53,7 @@ export async function GET(
       // For 14/28-day lookbacks, use calendar days
       const sinceDate = new Date();
       sinceDate.setDate(sinceDate.getDate() - (days - 1));
-      sinceDateStr = sinceDate.toISOString().split("T")[0];
+      sinceDateStr = getDateString(sinceDate);
       daysInWindow = days;
     }
 

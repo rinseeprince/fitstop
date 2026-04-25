@@ -9,6 +9,7 @@ import { DayDetailCard } from "./day-detail-card"
 import { detectAlerts } from "@/lib/daily-wellness-alerts"
 import { AlertTriangle } from "lucide-react"
 import { useWellnessData } from "@/hooks/use-wellness-data"
+import { getDateString } from "@/lib/date-helpers"
 
 interface DailyWellnessStripProps {
   clientId: string
@@ -76,7 +77,7 @@ export function DailyWellnessStrip({ clientId }: DailyWellnessStripProps) {
     for (let i = 27; i >= 0; i--) {
       const date = new Date(today)
       date.setDate(date.getDate() - i)
-      const dateStr = date.toISOString().split('T')[0]
+      const dateStr = getDateString(date)
       const log = logs.find(l => l.date === dateStr)
 
       data.push({

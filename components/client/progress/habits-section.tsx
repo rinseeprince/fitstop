@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import type { DailyHabit, DailyHabitLog } from "@/types/daily-habit";
 import { HabitProgressCard } from "./habit-progress-card";
 import { calculateCompletionRate, calculateCurrentStreak } from "@/services/daily-habits-logic";
+import { getDateString } from "@/lib/date-helpers";
 
 interface HabitsSectionProps {
   habits: DailyHabit[];
@@ -28,7 +29,7 @@ export function HabitsSection({ habits, habitLogs }: HabitsSectionProps) {
     const dateRange: string[] = [];
     
     for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
-      dateRange.push(new Date(d).toISOString().split('T')[0]);
+      dateRange.push(getDateString(new Date(d)));
     }
     
     return habits.map((habit): ProcessedHabitData => {

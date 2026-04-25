@@ -13,6 +13,7 @@ import {
   Shield,
 } from "lucide-react"
 import type { ClientIntake, PrimaryGoal } from "@/types/client-intake"
+import { getTodayDateString } from "@/lib/date-helpers"
 
 type IntakeStep2Props = {
   data: Partial<ClientIntake>
@@ -105,7 +106,7 @@ export function IntakeStep2({ data, onChange, errors }: IntakeStep2Props) {
           type="date"
           value={data.goalDeadline || ""}
           onChange={(e) => onChange({ goalDeadline: e.target.value })}
-          min={new Date().toISOString().split("T")[0]}
+          min={getTodayDateString()}
           className="min-h-[44px]"
         />
         {errors.goalDeadline && <p className="text-sm text-destructive">{errors.goalDeadline}</p>}

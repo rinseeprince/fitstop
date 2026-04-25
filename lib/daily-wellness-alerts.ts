@@ -7,6 +7,7 @@ import {
   evaluateTrainingMisses,
   evaluateHighStress
 } from "@/lib/attention-triggers"
+import { getDateString } from "@/lib/date-helpers"
 
 /**
  * Detects wellness alerts based on patterns in daily logs
@@ -20,10 +21,10 @@ export function detectAlerts(dailyLogs: DailyLog[], now: Date = new Date()): Wel
   }
 
   const alerts: WellnessAlert[] = []
-  const endDate = now.toISOString().split('T')[0]
+  const endDate = getDateString(now)
   const startDate = new Date(now)
   startDate.setDate(now.getDate() - 28)
-  const dateRange = { start: startDate.toISOString().split('T')[0], end: endDate }
+  const dateRange = { start: getDateString(startDate), end: endDate }
   
   // 1. Check for mood drop
   const moodDropResult = evaluateMoodEnergyDrop(dailyLogs, "mood")

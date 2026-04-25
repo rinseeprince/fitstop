@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
+import { getDateString, getTodayDateString } from "@/lib/date-helpers";
 import { getHabitLogs } from "@/services/daily-habits-service";
 import { getClientById } from "@/services/client-service";
 
@@ -41,10 +42,10 @@ export async function GET(
     const { searchParams } = new URL(request.url);
     
     // Default to last 30 days if not provided
-    const endDate = searchParams.get("endDate") || new Date().toISOString().split('T')[0];
+    const endDate = searchParams.get("endDate") || getTodayDateString();
     const defaultStartDate = new Date();
     defaultStartDate.setDate(defaultStartDate.getDate() - 30);
-    const startDate = searchParams.get("startDate") || defaultStartDate.toISOString().split('T')[0];
+    const startDate = searchParams.get("startDate") || getDateString(defaultStartDate);
 
     const logs = await getHabitLogs(clientId, startDate, endDate);
 

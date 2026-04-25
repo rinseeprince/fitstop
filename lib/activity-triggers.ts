@@ -7,6 +7,7 @@ import {
   ACTIVITY_CAL_MISMATCH_DAY_COUNT,
   ACTIVITY_CAL_MISMATCH_WINDOW_DAYS,
 } from "@/lib/constants"
+import { getDateString } from "@/lib/date-helpers"
 
 /**
  * Evaluates if habit completion has dropped off
@@ -29,7 +30,7 @@ export function evaluateHabitDropoff(
   for (let i = 0; i < 7; i++) {
     const checkDate = new Date(sevenDaysAgo)
     checkDate.setDate(sevenDaysAgo.getDate() + i)
-    const dateStr = checkDate.toISOString().split('T')[0]
+    const dateStr = getDateString(checkDate)
     
     // Only count habits that existed on this day (created_at <= day)
     const habitsOnThisDay = habits.filter(habit => {

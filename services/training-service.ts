@@ -2,7 +2,7 @@ import { supabaseAdmin } from "./supabase-admin";
 import type { TrainingPlan, TrainingSession, TrainingExercise, AIGeneratedPlan, UpdateTrainingPlanRequest } from "@/types/training";
 import type { TrainingPlanUpdate } from "@/lib/database-helpers";
 import { mapExerciseRow, mapSessionRow, mapPlanRow } from "./training-mappers";
-import { getTodayDateString } from "@/lib/date-helpers";
+import { getTodayDateString, getDateString } from "@/lib/date-helpers";
 import { deleteFutureEventsForPlan, regenerateFutureEvents } from "@/services/training-event-service";
 import { captureApiError } from "@/lib/error-handler";
 
@@ -337,7 +337,7 @@ export async function promoteTrainingPlanIfReady(
   // Archive the current active plan
   const archiveUntil = new Date(plannedPlan.effective_from + "T00:00:00");
   archiveUntil.setDate(archiveUntil.getDate() - 1);
-  const archiveUntilStr = archiveUntil.toISOString().split("T")[0];
+  const archiveUntilStr = getDateString(archiveUntil);
 
   await supabaseAdmin
     .from("training_plans")

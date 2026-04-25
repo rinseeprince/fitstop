@@ -8,7 +8,7 @@ import { generateCheckInSummary, regenerateAISummary } from "@/services/ai-servi
 import { getDailyLogs } from "@/services/daily-logs-service";
 import { getHabitLogs } from "@/services/daily-habits-service";
 import { getNutritionSummaryForPeriod } from "@/services/weekly-nutrition-service";
-import { calculateCheckInPeriod } from "@/lib/date-helpers";
+import { calculateCheckInPeriod, getDateString } from "@/lib/date-helpers";
 import type { GenerateAISummaryResponse } from "@/types/check-in";
 import { aiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
@@ -74,8 +74,8 @@ export async function POST(
       startDate.setDate(startDate.getDate() - 6);
     }
 
-    const startDateStr = startDate.toISOString().split('T')[0];
-    const endDateStr = endDate.toISOString().split('T')[0];
+    const startDateStr = getDateString(startDate);
+    const endDateStr = getDateString(endDate);
 
     // Fetch daily tracking context and weekly nutrition summary for the period
     let dailyLogs, habitLogs, weeklySummary;

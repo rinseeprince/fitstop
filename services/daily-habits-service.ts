@@ -1,14 +1,14 @@
 import { supabaseAdmin } from "./supabase-admin";
-import type { DailyHabit, DailyHabitInput, DailyHabitLog } from "@/types/daily-habit";
+import type { DailyHabit, DailyHabitInput, DailyHabitLog, HabitLogWithDetails } from "@/types/daily-habit";
 import type { Database } from "@/types/database";
 import { getTodayDateString } from "@/lib/date-helpers";
 import { mapArrayIndexToSortOrder } from "./daily-habits-logic";
 import {
   mapHabitRow, mapHabitLogRow, mapHabitLogWithDetailsRow,
-  type DailyHabitLogWithHabit, type HabitLogWithDetails,
+  type DailyHabitLogWithHabit,
 } from "./daily-habits-mappers";
 
-export type { HabitLogWithDetails } from "./daily-habits-mappers";
+export type { HabitLogWithDetails } from "@/types/daily-habit";
 export { calculateCompletionRate, calculateCurrentStreak, mapArrayIndexToSortOrder } from "./daily-habits-logic";
 
 // Database functions

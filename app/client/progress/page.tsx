@@ -22,6 +22,7 @@ import { DateRangeSelector } from "@/components/client/progress/date-range-selec
 import { MetricChartCard } from "@/components/clients/metrics/metric-chart-card";
 import { useClientProgressMetrics } from "@/hooks/use-client-progress-metrics";
 import { HabitsSection } from "@/components/client/progress/habits-section";
+import { getDateString, getTodayDateString } from "@/lib/date-helpers";
 
 export default function ClientProgressPage() {
   const router = useRouter();
@@ -45,8 +46,8 @@ export default function ClientProgressPage() {
         const days = dateRange === "all" ? 365 : parseInt(dateRange);
         
         // Calculate date range for habit logs (last 28 days)
-        const endDate = new Date().toISOString().split('T')[0];
-        const startDate = new Date(Date.now() - 28 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        const endDate = getTodayDateString();
+        const startDate = getDateString(new Date(Date.now() - 28 * 24 * 60 * 60 * 1000));
         
         const [progressRes, checkInsRes, habitsRes, habitLogsRes] = await Promise.all([
           fetch(`/api/client/progress?days=${days}`, { 

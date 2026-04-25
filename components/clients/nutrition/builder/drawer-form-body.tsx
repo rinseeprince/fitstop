@@ -10,6 +10,7 @@ import { NutritionTrainingCaloriesDisplay } from "./nutrition-training-calories-
 import { CalorieSkewingSection } from "./calorie-skewing-section";
 import { UnitToggle } from "../../shared/unit-toggle";
 import { PhaseSelector } from "../../shared/phase-selector";
+import { getTodayDateString } from "@/lib/date-helpers";
 
 function Divider() {
   return <div className="h-px bg-[rgba(13,148,136,0.08)]" />;
@@ -84,7 +85,7 @@ export function DrawerFormBody() {
                 type="date"
                 value={builder.settings.goalDeadline}
                 onChange={(e) => builder.handleSettingsChange({ goalDeadline: e.target.value })}
-                min={new Date().toISOString().split("T")[0]}
+                min={getTodayDateString()}
                 placeholder="dd / mm / yyyy"
                 className="w-full px-3.5 py-2.5 bg-white border border-[rgba(13,148,136,0.08)] rounded-[6px] text-[13px] font-medium text-[#0c1a1e] focus:border-[rgba(13,148,136,0.25)] focus:shadow-[0_0_0_3px_rgba(13,148,136,0.06)] focus:ring-0 focus:outline-none transition-all"
               />

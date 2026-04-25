@@ -4,7 +4,7 @@ import type { DietType, DayCalorieOverrides } from "@/types/check-in";
 import type { DayOfWeek } from "@/utils/nutrition-helpers";
 import type { TrainingPlan } from "@/types/training";
 import { recordBodyMetrics } from "@/services/body-metrics-service";
-import { getTodayDateString } from "@/lib/date-helpers";
+import { getTodayDateString, getDateString } from "@/lib/date-helpers";
 import { deleteFutureNutritionEventsForPlan, regenerateFutureNutritionEvents } from "@/services/nutrition-event-service";
 import { captureApiError } from "@/lib/error-handler";
 export type CreateNutritionPlanParams = {
@@ -192,7 +192,7 @@ export async function promoteNutritionPlanIfReady(
   // Archive the current active plan
   const archiveUntil = new Date(plannedPlan.effective_from + "T00:00:00");
   archiveUntil.setDate(archiveUntil.getDate() - 1);
-  const archiveUntilStr = archiveUntil.toISOString().split("T")[0];
+  const archiveUntilStr = getDateString(archiveUntil);
 
   await supabaseAdmin
     .from("nutrition_plans")

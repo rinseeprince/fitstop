@@ -30,6 +30,7 @@ import {
   Rocket,
 } from "lucide-react"
 import type { DayOfWeek } from "@/types/check-in"
+import { getTodayDateString } from "@/lib/date-helpers"
 
 interface ClientActivationDialogProps {
   client: {
@@ -74,7 +75,7 @@ export function ClientActivationDialog({
   useEffect(() => {
     if (open) {
       setWelcomeMessage(getDefaultMessage(client.name))
-      setStartDate(new Date().toISOString().split("T")[0])
+      setStartDate(getTodayDateString())
       setReadiness(null)
       fetchReadiness()
     }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireClientAuth } from "@/lib/require-client-auth";
+import { getDateString, getTodayDateString } from "@/lib/date-helpers";
 import { getHabitLogs } from "@/services/daily-habits-service";
 
 export async function GET(request: NextRequest) {
@@ -10,10 +11,10 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
 
     // Default to last 30 days if not provided
-    const endDate = searchParams.get("endDate") || new Date().toISOString().split('T')[0];
+    const endDate = searchParams.get("endDate") || getTodayDateString();
     const defaultStartDate = new Date();
     defaultStartDate.setDate(defaultStartDate.getDate() - 30);
-    const startDate = searchParams.get("startDate") || defaultStartDate.toISOString().split('T')[0];
+    const startDate = searchParams.get("startDate") || getDateString(defaultStartDate);
 
     const logs = await getHabitLogs(auth.clientId, startDate, endDate);
 

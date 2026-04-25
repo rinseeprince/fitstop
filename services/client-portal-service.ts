@@ -5,7 +5,7 @@ import { buildDailyTargetsFromPlan } from "@/utils/build-daily-targets";
 import { mapClientRow, mapCheckInRow } from "@/lib/mappers";
 import { getClientTrainingPlan } from "./client-portal-training";
 import { getEventsForDateRange } from "./training-event-service";
-import { getTrainingWeekStart, getTrainingWeekEnd } from "@/lib/date-helpers";
+import { getTrainingWeekStart, getTrainingWeekEnd, getTodayDateString } from "@/lib/date-helpers";
 import { promoteNutritionPlanIfReady } from "./nutrition-plan-service";
 
 // Session-scoped Supabase client for client-portal reads that rely on RLS.
@@ -135,7 +135,7 @@ export async function getClientNutritionTargets(
   if (dtError) return null;
 
   // Fetch training plan + current week's training events for live calorie enrichment
-  const today = new Date().toISOString().split("T")[0];
+  const today = getTodayDateString();
   const weekStart = getTrainingWeekStart(today);
   const weekEnd = getTrainingWeekEnd(today);
 

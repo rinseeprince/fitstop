@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getClientById } from "@/services/client-service";
 import { getActiveTrainingPlan } from "@/services/training-service";
 import { getEventsForDateRange } from "@/services/training-event-service";
-import { getTrainingWeekStart, getTrainingWeekEnd } from "@/lib/date-helpers";
+import { getTrainingWeekStart, getTrainingWeekEnd, getTodayDateString } from "@/lib/date-helpers";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
@@ -72,7 +72,7 @@ export async function GET(
       .eq("nutrition_plan_id", plan.id);
 
     // Fetch training plan + current week's training events for live calorie enrichment
-    const today = new Date().toISOString().split("T")[0];
+    const today = getTodayDateString();
     const weekStart = getTrainingWeekStart(today);
     const weekEnd = getTrainingWeekEnd(today);
 

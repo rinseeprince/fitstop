@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { SelectableCard } from "./selectable-card"
+import { getDateString } from "@/lib/date-helpers"
 import type { ClientIntake } from "@/types/client-intake"
 
 type IntakeStep1Props = {
@@ -39,7 +40,7 @@ const VALID_WEIGHT_UNITS = ["kg", "lbs"] as const
 // Minimum 16 years old
 const maxDob = new Date()
 maxDob.setFullYear(maxDob.getFullYear() - 16)
-const MAX_DOB_STRING = maxDob.toISOString().split("T")[0]
+const MAX_DOB_STRING = getDateString(maxDob)
 
 function readValidUnit<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
   try {

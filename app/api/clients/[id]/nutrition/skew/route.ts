@@ -8,7 +8,7 @@ import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { DAYS_OF_WEEK } from "@/utils/nutrition-helpers";
 import type { DayCalorieOverrides } from "@/types/check-in";
 import type { Database } from "@/types/database";
-import { getTodayDateString } from "@/lib/date-helpers";
+import { getTodayDateString, getDateString } from "@/lib/date-helpers";
 import { promoteNutritionPlanIfReady } from "@/services/nutrition-plan-service";
 import { deleteFutureNutritionEventsForPlan, regenerateFutureNutritionEvents } from "@/services/nutrition-event-service";
 import { captureApiError } from "@/lib/error-handler";
@@ -81,10 +81,10 @@ export async function POST(
       );
     }
 
-    const today = new Date().toISOString().split("T")[0];
+    const today = getTodayDateString();
     const yesterdayDate = new Date(today + "T00:00:00");
     yesterdayDate.setDate(yesterdayDate.getDate() - 1);
-    const yesterday = yesterdayDate.toISOString().split("T")[0];
+    const yesterday = getDateString(yesterdayDate);
 
     // Archive current plan (effective_until = yesterday to avoid overlap with new plan)
     await supabaseAdmin

@@ -1,5 +1,5 @@
 import useSWR from "swr"
-import { getDateDaysAgo } from "@/lib/date-helpers"
+import { getDateDaysAgo, getTodayDateString } from "@/lib/date-helpers"
 import { swrFetcher } from "@/lib/swr-fetcher"
 import type { DailyLog } from "@/types/daily-log"
 import type { HabitLogWithDetails } from "@/types/daily-habit"
@@ -12,7 +12,7 @@ interface UseWellnessDataReturn {
 
 export function useWellnessData(clientId: string): UseWellnessDataReturn {
   const startDate = getDateDaysAgo(28)
-  const endDate = new Date().toISOString().split("T")[0]
+  const endDate = getTodayDateString()
 
   const { data: dailyData, isLoading: dailyLoading } = useSWR<{ data: DailyLog[] }>(
     `/api/clients/${clientId}/daily-logs?startDate=${startDate}&endDate=${endDate}`,

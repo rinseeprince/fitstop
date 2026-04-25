@@ -1,6 +1,7 @@
 "use client"
 
 import { cn } from "@/lib/utils"
+import { getDateString } from "@/lib/date-helpers"
 import type { DailyLog } from "@/types/daily-log"
 
 interface AdherenceDotRowProps {
@@ -72,7 +73,7 @@ export function AdherenceDotRow({ logs, type, label, onDotClick, selectedDate }:
   for (let i = 27; i >= 0; i--) {
     const date = new Date(today)
     date.setDate(date.getDate() - i)
-    const dateStr = date.toISOString().split('T')[0]
+    const dateStr = getDateString(date)
     dates.push(dateStr)
   }
   

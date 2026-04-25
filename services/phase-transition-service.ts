@@ -7,6 +7,7 @@ import { deleteFutureEventsForPlan as deleteFutureTrainingEventsForPlan } from "
 import { captureApiError } from "@/lib/error-handler";
 import { getBodyMetricsHistory, getLatestBodyMetrics } from "./body-metrics-service";
 import { getCurrentGoals } from "./client-goals-service";
+import { getTodayDateString } from "@/lib/date-helpers";
 import type { PhaseRow, PhaseReviewData, Milestone } from "@/types/roadmap";
 
 const ADHERENCE_SCORES: Record<string, number> = {
@@ -35,7 +36,7 @@ export const getPhaseReviewData = async (
 
   const phase = mapPhaseRow(phaseRow as unknown as PhaseRow);
   const startDate = phase.startDate ?? phase.createdAt;
-  const endDate = phase.endDate ?? new Date().toISOString().split("T")[0];
+  const endDate = phase.endDate ?? getTodayDateString();
   const daysInRange = Math.max(
     1,
     Math.round(

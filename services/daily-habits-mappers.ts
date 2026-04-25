@@ -1,4 +1,4 @@
-import type { DailyHabit, DailyHabitLog } from "@/types/daily-habit";
+import type { DailyHabit, DailyHabitLog, HabitLogWithDetails } from "@/types/daily-habit";
 import type { Database } from "@/types/database";
 
 type DailyHabitRow = Database["public"]["Tables"]["daily_habits"]["Row"];
@@ -6,15 +6,6 @@ type DailyHabitLogRow = Database["public"]["Tables"]["daily_habit_logs"]["Row"];
 
 export type DailyHabitLogWithHabit = DailyHabitLogRow & {
   daily_habits: Pick<DailyHabitRow, 'name' | 'target_value' | 'target_unit' | 'is_boolean' | 'created_at' | 'effective_date'>;
-};
-
-export type HabitLogWithDetails = DailyHabitLog & {
-  habitName: string;
-  targetValue?: number;
-  targetUnit?: string;
-  isBoolean: boolean;
-  habitCreatedAt: string;
-  habitEffectiveDate: string;
 };
 
 export const mapHabitRow = (row: DailyHabitRow): DailyHabit => ({

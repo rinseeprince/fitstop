@@ -7,6 +7,7 @@ import type {
   AICheckInSummary,
 } from "@/types/check-in";
 import { mapCheckInRow } from "@/lib/mappers";
+import { getDateString } from "@/lib/date-helpers";
 import {
   insertSessionCompletions,
   insertExerciseHighlights,
@@ -189,8 +190,8 @@ async function enrichWithDailyLogCounts(
       startDate.setDate(startDate.getDate() - 6);
     }
 
-    const startDateStr = startDate.toISOString().split('T')[0];
-    const endDateStr = endDate.toISOString().split('T')[0];
+    const startDateStr = getDateString(startDate);
+    const endDateStr = getDateString(endDate);
 
     const { count: dailyLogsCount } = await supabaseAdmin
       .from("daily_logs")

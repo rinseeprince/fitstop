@@ -12,7 +12,7 @@
 import { supabaseAdmin } from "./supabase-admin"
 import type { Database } from "@/types/database"
 import type { ClientWithAlerts } from "@/types/attention-feed"
-import { getDateDaysAgo } from "@/lib/date-helpers"
+import { getDateDaysAgo, getTodayDateString } from "@/lib/date-helpers"
 import { groupClientData, evaluateAndSortTriggers } from "@/lib/attention-feed-helpers"
 import type { DailyLogRow } from "@/lib/attention-feed-helpers"
 
@@ -25,7 +25,7 @@ type ClientInfoWithCheckIn = ClientInfo & Pick<ClientRow, 'expected_check_in_day
  */
 export async function evaluateAllClientTriggers(coachId: string): Promise<{ clients: ClientWithAlerts[], totalClientCount: number }> {
   const startDate = getDateDaysAgo(28)
-  const endDate = new Date().toISOString().split('T')[0]
+  const endDate = getTodayDateString()
   const dateRange = { start: startDate, end: endDate }
 
   // 1. Get all clients for this coach
