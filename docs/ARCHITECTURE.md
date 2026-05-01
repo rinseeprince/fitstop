@@ -480,6 +480,85 @@ Every coach API route manually verifies the ownership chain:
 
 ---
 
+## Client Onboarding Flow
+
+Client-led onboarding. The coach sends an invite, the client completes a structured intake questionnaire, the coach reviews the intake and builds plans from it, and the client receives a guided walkthrough on first login post-activation. Replaces manual coach data entry, external intake forms, and cold first-login experiences.
+
+### Data flow
+
+```
+Coach adds client (name + email)
+  -> client_invitations row created with token
+  -> Invitation email sent via Resend
+  -> client_intake row created (status: pending)
+  -> clients.onboarding_status = 'pending_intake'
+
+Client clicks invite link
+  -> /invite/[token] -> creates Supabase auth account (or signs in)
+  -> Redirected to intake form
+  -> Each step PATCHes client_intake via API
+  -> On submit: client_intake.status = 'completed'
+  -> clients.onboarding_status = 'intake_completed'
+
+Coach reviews intake
+  -> Reads formatted intake on review page
+  -> Adds private coach notes (never visible to client)
+  -> "Sync Metrics to Profile" button pushes weight/height/age/goals from
+     client_intake into the clients table
+  -> Builds nutrition / training / habits using existing builders
+  -> clients.onboarding_status = 'setup_in_progress'
+
+Coach activates client
+  -> Sets welcome message + first check-in day
+  -> clients.onboarding_status = 'active'
+  -> Activation email sent
+  -> walkthrough_completed_at remains NULL until first login
+
+Client first login post-activation
+  -> Guided walkthrough renders (covers nutrition / training / habits / how it works)
+  -> walkthrough_completed_at timestamp set on completion
+  -> Client lands on the day-centric portal home (see Client Portal Architecture)
+```
+
+### `client_intake` table
+
+One row per client. Stores the questionnaire responses verbatim (client's own words for goals, motivation, challenges, injuries) plus structured fields (DOB, height, weight, dietary requirements as array). Status lifecycle: `pending` → `in_progress` → `completed` → `reviewed`.
+
+### Intake step structure
+
+The form is mobile-first, one section per step, auto-saves on Continue:
+
+| Step | Section | Key fields |
+|------|---------|------------|
+| 1 | About You | DOB, gender, height, weight, body fat % (optional) |
+| 2 | Your Goals | Primary goal type, target weight (conditional), deadline, motivation |
+| 3 | Your Lifestyle | Work activity, training days/week, time preference, location, equipment, session duration |
+| 4 | Nutrition | Dietary requirements, allergies, current diet description, cooking frequency, macro tracking experience |
+| 5 | History | Injuries / limitations, training experience level, previous coaching, open notes |
+
+### Onboarding status state machine
+
+`clients.onboarding_status` is the single source of truth for which screen the client and coach see:
+
+| Status | Coach sees | Client sees |
+|--------|-----------|-------------|
+| `pending_intake` | "Pending Intake" badge | Intake form |
+| `intake_completed` | "Intake Ready for Review" badge + review link | "Waiting for coach" screen |
+| `setup_in_progress` | "Setting Up" badge | "Waiting for coach" screen |
+| `active` | No badge (normal state) | Day-centric portal home |
+| `paused` | "Paused" badge | Paused message |
+
+Pre-onboarding clients (created before the intake feature shipped) default to `active` for backward compatibility. The manual coach-driven setup path still works — the intake flow is opt-in at the invitation level.
+
+### Design principles
+
+- **Coach stays in control.** Intake captures client data; the coach decides what to do with it. Metrics sync is explicit (button click), not automatic.
+- **No coach notes visible to clients.** Review notes, coach reasoning, internal observations never leave the coach surface.
+- **Progress saves automatically.** Each step PATCHes on Continue so a client can close mid-intake and resume later.
+- **Backward compatible.** Existing clients are unaffected. The `active` default for pre-feature rows means no migration backfill is needed.
+
+---
+
 ## Activation Flow
 
 `GET /api/clients/[id]/activation-readiness` checks whether a client is ready for full activation.

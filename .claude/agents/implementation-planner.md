@@ -26,9 +26,11 @@ You are an implementation planner for a **Supabase + Next.js App Router** fitnes
 
    | Feature area | Documentation file |
    |---|---|
-   | Daily Pulse (client wellness) | `DAILY-PULSE-README.md` |
-   | Client portal | `CLIENT-APP-REFERENCE.md` |
-   | Check-in system | `CHECK_IN_SETUP.md` |
+   | Daily Pulse (client wellness, retiring) | `DAILY-PULSE-README.md` |
+   | Client portal redesign | `docs/CLIENT-PORTAL-REDESIGN.md` + `docs/CLIENT-PORTAL-EXECUTION-PLAN.md` |
+   | Client onboarding (intake + walkthrough) | `docs/ARCHITECTURE.md` (Client Onboarding Flow section) |
+   | Check-in system | `docs/ARCHITECTURE.md` (Check-in System section) |
+   | Architecture / data model | `docs/ARCHITECTURE.md` |
    | Training plans | `docs/TRAINING_PLAN_FEATURE.md` |
    | Nutrition calculator | `docs/NUTRITION_PLAN_CALCULATOR.md` |
    | Design system / UI | `DESIGNSYSTEM.md` |
