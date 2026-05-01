@@ -35,9 +35,9 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 | # | Title | Phase |
 |---|-------|-------|
 | 0.1 | Project reconnaissance and doc alignment | 0 Prep | COMPLETE
-| 0.2 | getDateString sweep + HabitLogWithDetails dedupe | 0 | 
-| 0.3 | Verify existing weight_unit wiring | 0 |
-| 1.1 | Design training-log contracts | 1 Training |
+| 0.2 | getDateString sweep + HabitLogWithDetails dedupe | 0 | COMPLETE
+| 0.3 | Verify existing weight_unit wiring | 0 | COMPLETE
+| 1.1 | Design training-log contracts | 1 Training | COMPLETE
 | 1.2 | Training log service layer + unit tests | 1 |
 | 1.3 | Training log API endpoints | 1 |
 | 1.4 | Set tracker UI, read-only skeleton | 1 |
@@ -70,10 +70,21 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 | 8.1 | Coach unit preference column + viewer-resolver foundation | 8 Viewer-relative units |
 | 8.2 | Render-path sweep for viewer-relative weight display | 8 |
 | 8.3 | Coach + client unit preference settings + form write paths | 8 |
+| 9.1 | Document required environment variables in .env.example | 9 Pre-launch hardening |
+| 9.2 | Auth callback rate limit + magic-link onboarding fix | 9 |
+| 9.3 | Sentry capture on fire-and-forget background tasks | 9 |
+| 9.4 | Resolve real ESLint bugs (await-thenable, misused-promise) | 9 |
+| 9.5 | Coach API response shape consistency sweep | 9 Mobile prep |
+| 9.6 | Cache-Control: no-store sweep on coach GET routes | 9 |
+| 9.7 | Bearer token auth path for native clients | 9 |
+| 9.8 | API versioning policy + Client-Version header gate | 9 |
+| 9.9 | TECHNICAL-DEBT.md sweep (mark resolved items) | 9 |
 
 ---
 
 ## Session 0.1: Project reconnaissance and doc alignment
+
+**Status**: COMPLETE
 
 **Commit message**: `docs: align check-in AI provider reference and record timezone approach`
 
@@ -104,6 +115,8 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 ---
 
 ## Session 0.2: Standardize on getDateString + consolidate the one cross-5.1 type duplicate
+
+**Status**: COMPLETE (commit `49fda7d`)
 
 **Commit message**: `refactor: standardize on getDateString and dedupe HabitLogWithDetails`
 
@@ -141,6 +154,8 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 ---
 
 ## Session 0.3: Verify existing weight_unit wiring + add client timezone migration
+
+**Status**: COMPLETE (commit `5f3443a`)
 
 **Commit message**: `chore(clients): wire weight_unit preference and add client timezone column`
 
@@ -183,6 +198,8 @@ Session 0.1 confirmed no `timezone` column exists on `clients` and all date help
 ---
 
 ## Session 1.1: Design training-log contracts
+
+**Status**: COMPLETE (commit `59e2f31`)
 
 **Commit message**: `feat(training): add zod schemas and service signatures for event-keyed log writes`
 
@@ -1513,3 +1530,304 @@ Commit.
 3. Same in reverse (coach imperial editing a metric client's record).
 4. Toggle coach unit preference; confirm dashboard rosters re-render in the new unit.
 `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Commit.
+
+---
+
+# Phase 9: Pre-launch hardening (MUST DO before production / mobile)
+
+These sessions are not part of the client portal redesign itself but are blockers identified during the pre-Phase-1 audit. None block resuming the redesign work, but **all must complete before pushing to production**, and a subset (9.5–9.8) must complete before the iOS/Android build begins.
+
+Sessions 9.1–9.4 are prod blockers. Sessions 9.5–9.8 are mobile blockers. Session 9.9 is hygiene.
+
+---
+
+## Session 9.1: Document required environment variables in .env.example
+
+**Commit message**: `docs(env): add .env.example with all required environment variables`
+
+**Objective**: CONVENTIONS §15 mandates `.env.example` documenting every required environment variable. The file does not exist; only `.env.local` does. New environments (CI, mobile-team dev machines, post-launch hires) cannot boot without reverse-engineering env-var usage from code.
+
+**Read first**:
+- `CONVENTIONS.md` §15 and §19.
+- `.env.local` (do NOT commit; just reference for the variable list).
+- Grep `process.env\.` across the repo to enumerate every env var actually consumed in code.
+- `next.config.mjs` for any build-time env vars.
+- `sentry.client.config.ts` and `sentry.server.config.ts` for Sentry vars.
+
+**Plan (report before implementing)**:
+- The full list of env vars consumed by the codebase, grouped by service (Supabase, OpenAI, Resend, Sentry, Upstash Redis, app URL, optional Svix).
+- For each, a one-line description of what it is and whether it's required or optional in dev.
+- Whether to keep secret values out (yes — `.env.example` is committed, so it must contain placeholders only).
+- Whether the file lives at repo root (yes, conventional location).
+
+**Implement**:
+- Create `.env.example` at repo root.
+- Group variables by service with section comments.
+- Use placeholder values (`your-supabase-url-here`, `sk-...`, etc.) — never real secrets.
+- Add a top-of-file comment pointing readers at `CONVENTIONS.md` §15 and noting that `.env.local` is the active file (gitignored).
+
+**Do NOT**: Commit any real secret values. Add tooling to validate the env file (out of scope; can be a separate session if desired). Touch `.gitignore` (it already excludes `.env*` except `.env.example` if listed correctly — verify but do not change unless misconfigured).
+
+**Tests to write**: None. Doc-only change.
+
+**Verify**: `npx tsc --noEmit`, `npx eslint .`, `npx vitest run` (no behavioral change so all pass). Manual: confirm every `process.env.X` reference in code has a corresponding entry in `.env.example`. Commit.
+
+---
+
+## Session 9.2: Auth callback rate limit + magic-link onboarding fix
+
+**Commit message**: `fix(auth): rate-limit OAuth callback and gate magic-link onboarding correctly`
+
+**Objective**: Two unrelated auth bugs flagged in `TECHNICAL-DEBT.md` (Auth P0 #4 and P2 #13). Bundling because both touch auth flows and are small.
+
+**Read first**:
+- `app/auth/callback/route.ts` (OAuth callback handler).
+- `lib/rate-limit.ts` (`authRateLimit` definition).
+- The magic-link entrypoint (grep for `user_metadata?.password_set` or `needsOnboarding`).
+- `TECHNICAL-DEBT.md` Auth P0 #4 and P2 #13 entries.
+
+**Plan (report before implementing)**:
+- Where the auth callback runs and which rate-limit tier applies (`authRateLimit` matches the surrounding auth routes' tier).
+- Where `password_set` should actually be written and read. The current check `!user.user_metadata?.password_set` is always true because nothing writes that key. Decide: write it on password creation, or replace the check with a different signal (e.g. an `onboarding_status` column on `clients`, or `walkthrough_completed_at`).
+- Whether the fix is a metadata write or a check-side change. Prefer the simpler one.
+
+**Implement**:
+- Add `authRateLimit(request)` as the first check in `app/auth/callback/route.ts`. Match the pattern from `app/api/auth/login/route.ts` or similar.
+- Fix the magic-link onboarding gate per the planning decision. If writing metadata: add `await supabase.auth.updateUser({ data: { password_set: true } })` at password-creation time. If replacing the check: switch to `clients.onboarding_status === 'active'` or equivalent.
+
+**Do NOT**: Refactor `app/auth/callback/route.ts` beyond adding the rate limit. Restructure the onboarding flow. Add new metadata fields beyond what's needed.
+
+**Tests to write**:
+- Auth callback route test: 200 happy path; 429 when rate limit exceeded.
+- Magic-link onboarding test: previously-onboarded user does not see onboarding; new user does. (If the test infra makes this hard, manual verification with two test accounts.)
+
+**Verify**: `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Manual: trigger the OAuth callback rapidly; verify rate limit. Sign in via magic link with a previously-onboarded test client; verify no onboarding redirect. Mark TECHNICAL-DEBT.md entries Auth P0 #4 and P2 #13 as Resolved. Commit.
+
+---
+
+## Session 9.3: Sentry capture on fire-and-forget background tasks
+
+**Commit message**: `fix(observability): wire captureApiError into fire-and-forget background tasks`
+
+**Objective**: TECHNICAL-DEBT.md Production Readiness P1 #1 — `markReminderAsResponded()`, `triggerAISummaryGeneration()`, and similar fire-and-forget tasks log only to `console.error()`. Production failures are invisible. Wire `captureApiError()` into every background-task error path.
+
+**Read first**:
+- `lib/error-handler.ts` (`captureApiError` signature and usage).
+- `services/reminder-service.ts:markReminderAsResponded`.
+- `services/client-check-in-service.ts:triggerAISummaryGeneration` (or wherever it lives).
+- Grep for `.catch(console.error)` and `void <somePromise>()` patterns across `app/api/`, `services/`, `lib/`.
+- `TECHNICAL-DEBT.md` Production Readiness P1 #1.
+
+**Plan (report before implementing)**:
+- The exhaustive list of fire-and-forget background tasks. Each is either a `.catch(console.error)` chain or a `void` fire-and-forget after a `Promise.resolve()`.
+- For each, decide the `captureApiError` context (route name, operation, key identifiers).
+
+**Implement**:
+- For each background task, replace bare `.catch(console.error)` with `.catch((err) => captureApiError(err, { operation: '...', ... }))`.
+- Where errors are logged via `console.error` inside async IIFEs, add a sibling `captureApiError` call.
+- Keep the `console.error` call too — it's still useful for local development and stdout observability.
+
+**Do NOT**: Restructure the background task invocation. Add retry logic (out of scope; tracked separately as P1 #2). Change AI summary or reminder logic.
+
+**Tests to write**:
+- Service test extending the existing reminder-service / check-in-service tests: when the background task throws, `captureApiError` is called with the expected context. Mock the error-handler module.
+
+**Verify**: `npx tsc --noEmit`, `npx vitest run`. Mark TECHNICAL-DEBT.md Production Readiness P1 #1 as Resolved. Commit.
+
+---
+
+## Session 9.4: Resolve real ESLint bugs (await-thenable, misused-promise)
+
+**Commit message**: `fix(lint): resolve await-thenable and misused-promise errors`
+
+**Objective**: Three of the 29 baseline ESLint errors are bug-flavoured (the other 26 are stylistic): two `@typescript-eslint/await-thenable` in `services/schedule-data-service.ts:109,186` and one `@typescript-eslint/no-misused-promises`. Investigate each, confirm whether it's a real bug, fix it.
+
+**Read first**:
+- Output of `npx eslint . | grep -E "error.*await-thenable|error.*no-misused-promises"` to locate the misused-promise.
+- The flagged sites in `services/schedule-data-service.ts`.
+- Any unit tests for the affected functions.
+
+**Plan (report before implementing)**:
+- For each error, determine: is it a real bug (data not awaited correctly, function misused), or a false positive (e.g. `Promise.all` over a sync iterable that is fine)?
+- If real bug: the fix.
+- If false positive: confirm and add an `eslint-disable-next-line` comment with a one-line justification. (Prefer fixing over suppressing whenever possible.)
+
+**Implement**:
+- Apply the fix per case. Likely `await Promise.all([...])` becomes `Promise.all([...])` (no await) for sync iterables, or vice versa for misuse cases.
+- For misused-promises (typically passing async functions where sync are expected), wrap in an IIFE or use `void promise()`.
+
+**Do NOT**: Touch the 26 stylistic errors (`no-unnecessary-type-assertion`, `prefer-const`) in this session. Refactor the surrounding logic. Bump the ESLint baseline to zero (out of scope; do that as the final pre-prod sweep).
+
+**Tests to write**: Where a real bug is fixed, add a regression test if the function has unit-test coverage. Otherwise, none.
+
+**Verify**: `npx eslint . 2>&1 | grep error` shows 26 errors (down from 29). `npx tsc --noEmit`, `npx vitest run`. Commit.
+
+---
+
+## Session 9.5: Coach API response shape consistency sweep
+
+**Commit message**: `refactor(api): standardize coach API responses on { success, data, error? }`
+
+**Objective**: CONVENTIONS §10 mandates `{ success: bool, data: {}, error?: string }` for every API response. Coach-side routes are inconsistent: many return raw fields like `{ clients, total }` (verified at `app/api/clients/route.ts:23`) or just `{ error: "..." }` on failure. Mobile apps cannot share a single response parser across coach and client surfaces. Mobile-launch blocker.
+
+**Read first**:
+- `CONVENTIONS.md` §10.
+- `app/api/clients/route.ts` (canonical example of the drift).
+- Grep across `app/api/` for `NextResponse.json({` to enumerate every response shape.
+- Existing client-portal routes for the canonical pattern.
+
+**Plan (report before implementing)**:
+- Punch list of routes that return the wrong shape, grouped by:
+  - **Group A**: Coach-side routes returning raw fields (`{ clients, total }`, `{ phases, ... }`, etc.). Wrap in `{ success: true, data: { clients, total } }`.
+  - **Group B**: Routes returning `{ error: "..." }` on failure without `success: false`. Add `success: false`.
+- Check every consumer of these endpoints for the response-shape change. SWR fetchers, `swrFetcher`, useEffect/useState patterns, route tests.
+- Decide migration approach: switch all routes at once and update consumers in the same commit (recommended; one commit, atomic), or ship a compatibility layer first.
+
+**Implement**:
+- For every flagged route, wrap the response in `{ success: true, data: ... }` (success path) or `{ success: false, error: ... }` (failure path).
+- Update consumers: SWR fetchers expecting raw fields now read `.data`. Update tests accordingly.
+- Update `lib/swr-fetcher.ts` if the shape change requires it (likely no; it's already shape-agnostic).
+
+**Do NOT**: Change route paths. Add new fields. Rename existing fields. Touch error message text. Modify response status codes.
+
+**Tests to write**:
+- Update existing route tests to assert the new shape. Each affected route should have a 200 happy-path test.
+- Component tests that exercise the response-consuming code path stay valid (the data object should be unchanged, just nested under `data`).
+
+**Verify**: `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Manual: load the coach dashboard, client list, roadmap tab — confirm every page still renders. Commit.
+
+---
+
+## Session 9.6: Cache-Control: no-store sweep on coach GET routes
+
+**Commit message**: `fix(api): apply Cache-Control no-store to coach-side GET routes`
+
+**Objective**: CONVENTIONS §7 says "Client-facing GET API routes should return `Cache-Control: no-store` headers." Coach-side GETs are inconsistent — verified `/api/clients` GET and `/api/client/me` lack the header while `/api/dashboard/attention-feed` and `/api/client/weekly-nutrition` have it. Mobile clients (and proxy CDNs) cache more aggressively than browsers; missing headers means stale rosters, stale profiles.
+
+**Read first**:
+- `CONVENTIONS.md` §7.
+- Existing routes that DO set `Cache-Control: no-store` for the canonical pattern.
+- Grep `NextResponse.json` across `app/api/` to find GET routes; cross-reference against ones that already set the header.
+
+**Plan (report before implementing)**:
+- The list of GET routes missing `Cache-Control: no-store`. Estimate ~15 routes (mostly coach-side).
+- Whether to apply uniformly to every GET, or only to ones returning user-specific data. Recommend uniformly — caching of public data is rare in this codebase, and uniform is easier to maintain.
+- Whether to extract a helper (`jsonNoStore(data, options)`) or just add the header inline. Inline is fine for ~15 callsites.
+
+**Implement**:
+- For each flagged GET route, add `headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' }` to the `NextResponse.json` options.
+- Match the existing pattern from `app/api/dashboard/attention-feed/route.ts` or wherever it's already done.
+
+**Do NOT**: Apply to mutating routes (POST/PUT/etc. — different concern). Touch any response body. Add `s-maxage` or other CDN-specific directives without a use case.
+
+**Tests to write**:
+- Spot-check route tests assert the `Cache-Control` header is present in successful responses. One per route is overkill; add to a few representative routes.
+
+**Verify**: `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Manual: open Network tab, hit a coach-side GET, confirm header. Commit.
+
+---
+
+## Session 9.7: Bearer token auth path for native clients
+
+**Commit message**: `feat(auth): support Authorization bearer header alongside cookie session`
+
+**Objective**: Native iOS/Android apps work better with bearer tokens than with cookies. Today `lib/auth-helpers.ts` reads JWT only from Supabase session cookies. Add a parallel `Authorization: Bearer <jwt>` path so mobile can authenticate without reverse-engineering cookie behaviour.
+
+**Decision required before this session**: Is mobile using bearer tokens, or accepting a cookie-jar approach? This session assumes bearer. If you choose cookie-jar, this session can be skipped.
+
+**Read first**:
+- `lib/auth-helpers.ts:getAuthenticatedClientId`, `getAuthenticatedCoachId`.
+- `lib/require-client-auth.ts` (auth chain helper).
+- `lib/csrf-protection.ts` (CSRF policy — bearer-token auth typically bypasses CSRF since there's no ambient credential).
+- Supabase auth docs for `supabase.auth.setSession()` / verifying a JWT manually.
+
+**Plan (report before implementing)**:
+- The order: try bearer first, fall back to cookie. Or try cookie first, fall back to bearer. Recommend bearer-first because it's the explicit signal.
+- CSRF behavior: when bearer-authed, skip CSRF (no ambient credential to forge). Document the exception.
+- How to verify the JWT. Supabase exposes `supabase.auth.getUser(jwt)` which validates server-side. Use that, not local-decode.
+- Rate limit: keep IP-based for bearer routes (and add user-based as a follow-up).
+
+**Implement**:
+- Extend `getAuthenticatedClientId(request)` and `getAuthenticatedCoachId(request)` to check the `Authorization` header first. If `Bearer <token>` is present, call `supabase.auth.getUser(token)` to verify and extract user id; map to client/coach id as today.
+- In `lib/require-client-auth.ts` and any coach equivalent, skip `requireCSRFProtection` when the request was authenticated via bearer. Document the exception inline.
+
+**Do NOT**: Change cookie auth behaviour. Add bearer issuance endpoints (Supabase already issues the JWT during sign-in; the mobile app captures it). Touch route logic. Add bearer support to non-API routes (middleware-protected pages stay cookie-only; mobile uses APIs only).
+
+**Tests to write**:
+- Auth helper tests: bearer-authed request returns the right id; invalid bearer returns null; missing both bearer and cookie returns null; cookie-authed request still works.
+- One route test (any client API route) with bearer auth instead of cookie — confirm 200 + CSRF bypassed.
+
+**Verify**: `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Manual via curl: hit a client route with `Authorization: Bearer <jwt>` and confirm 200; same with bad token returns 401. Commit.
+
+---
+
+## Session 9.8: API versioning policy + Client-Version header gate
+
+**Commit message**: `feat(api): add Client-Version header gate and deprecation framework`
+
+**Objective**: Web has atomic deploys (frontend + backend ship together). Mobile doesn't — old app versions on phones will break when the API changes. Add a `Client-Version` request header check so the server can reject incompatible clients with a clear error, and a `Deprecation` response header so the server can warn old clients of upcoming changes.
+
+**Decision required before this session**: The minimum supported `Client-Version`. If unsure, defer this session until the first iOS/Android version ships and you have a baseline to anchor against. Section can land empty (the helper exists but rejects nothing) and tighten later.
+
+**Read first**:
+- `CONVENTIONS.md` §10 (currently says no version prefix; this session adds version handling without changing the URL structure).
+- `middleware.ts` for global request handling.
+- `lib/require-client-auth.ts` for the existing chain.
+
+**Plan (report before implementing)**:
+- The header name (`Client-Version` is conventional; `X-Client-Version` is the legacy convention but `X-` prefixes are deprecated per RFC 6648). Use `Client-Version`.
+- The minimum-version table: a small constants file (`lib/api-version.ts`) holding `MIN_CLIENT_VERSION` and a `Deprecation` window.
+- Where the gate lives: middleware (global) or per-route helper (granular). Recommend per-route helper that auth chains opt into; web requests omit the header and skip the check.
+- The error response shape when blocked: 426 Upgrade Required with `{ success: false, error: "Client version too old. Please update.", minSupportedVersion: "..." }`.
+
+**Implement**:
+- New `lib/api-version.ts` exporting `MIN_CLIENT_VERSION`, `getClientVersion(request)`, `assertClientVersion(request)`.
+- Extend `lib/require-client-auth.ts` (and coach equivalent) to call `assertClientVersion()` when the header is present. If header is absent, no check (web).
+- Optional: add `Deprecation` response header (RFC 9745) when client version is below a "deprecated but still allowed" threshold, with a `Sunset` date.
+
+**Do NOT**: Add URL versioning (`/api/v1/...`) — out of scope; CONVENTIONS forbids. Add version logic to every individual route — the helper handles it. Block web requests (they don't send the header).
+
+**Tests to write**:
+- `lib/api-version.test.ts`: rejects below-min version with 426; accepts at-min and above; missing header passes through.
+- One route test exercising the helper.
+
+**Verify**: `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Manual via curl: hit a client route with `Client-Version: 0.0.1`; expect 426. Commit.
+
+---
+
+## Session 9.9: TECHNICAL-DEBT.md sweep (mark resolved items)
+
+**Commit message**: `docs: sweep TECHNICAL-DEBT.md to reflect resolved items`
+
+**Objective**: TECHNICAL-DEBT.md still lists items that have been resolved by recent sprints. A stale tech-debt doc is worse than none — it leads to wasted re-investigation and obscures the items that actually matter. Sweep, mark Resolved with date + commit hash, retain the entry as history.
+
+**Read first**:
+- `TECHNICAL-DEBT.md` (entire file).
+- Recent commits referenced in the doc (`requireClientAuth`, coach library refactor, external activities removal, date helper sweep).
+
+**Plan (report before implementing)**:
+- Items confirmed resolved by audit (commit refs in parentheses):
+  - External activities removal (mig 088, commits `37f6eaf..fadff55`).
+  - Date helper sweep + HabitLogWithDetails dedupe (commit `49fda7d`).
+  - DAY_MAP duplicate (verified absent).
+  - Middleware role fallback (now denies, not defaults).
+  - All "Pre-existing Test Failures" entries (full suite passes).
+  - `requireClientAuth` helper + 29-route migration (commits `627b684..113a4bf`).
+  - Coach library service split (commits `f127e4e..f8c8371`).
+  - Duplicate Supabase server factories (commit `04ddf1d`).
+  - `clients.timezone` migration (mig 089).
+- Items partially addressed (note "partial — outstanding scope: ...").
+- Items still open and accurate (leave as-is).
+- Items added by Phase 9 sessions (cross-reference resolutions back).
+
+**Implement**:
+- For each resolved item, mark with `**RESOLVED** YYYY-MM-DD (commit `hash`) — <one-line how>` at the top of the entry. Do NOT delete entries; the history is useful.
+- For partially resolved, add a `**PARTIAL** — outstanding: <one-line>` annotation.
+- Re-sort the document so RESOLVED items move to the bottom of their section (or a new "Resolved" section per phase).
+
+**Do NOT**: Delete entries. Restructure the doc's section hierarchy. Add new tech-debt items in this session — they belong in their own commits.
+
+**Tests to write**: None.
+
+**Verify**: Skim the doc top-to-bottom; confirm every open item is genuinely open. Commit.
+
