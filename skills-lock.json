@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "skills": {
+    "architect": {
+      "source": "AgentiveStack/skills",
+      "sourceType": "github",
+      "skillPath": "architect/SKILL.md",
+      "computedHash": "d8ea74c9b7a61bfc77c85c16a049c1d216723f9467382b9fb169e23bd2581a5b"
+    },
+    "domain": {
+      "source": "AgentiveStack/skills",
+      "sourceType": "github",
+      "skillPath": "domain/SKILL.md",
+      "computedHash": "284994564d1518cbeddf20cc7b2c447372b53331586ddaf57011bd89f219b0a9"
+    },
+    "holistic": {
+      "source": "AgentiveStack/skills",
+      "sourceType": "github",
+      "skillPath": "holistic/SKILL.md",
+      "computedHash": "9242710ccaef64842373913bc48f74e628a1b69a7d16b40ed6ed458809ad6020"
+    },
+    "qa": {
+      "source": "AgentiveStack/skills",
+      "sourceType": "github",
+      "skillPath": "qa/SKILL.md",
+      "computedHash": "9963b2838cf051296f511c1e952bd268729f301a595a42c3b98d00db40dde446"
+    },
+    "slice": {
+      "source": "AgentiveStack/skills",
+      "sourceType": "github",
+      "skillPath": "slice/SKILL.md",
+      "computedHash": "a3e77de5ff166155295ac46e53a4a4e11272a2a455c89d8574cf3686bf72bedc"
+    },
+    "spec": {
+      "source": "AgentiveStack/skills",
+      "sourceType": "github",
+      "skillPath": "spec/SKILL.md",
+      "computedHash": "39740996c78f80669e8623925517efbc5e1c168b3b3ef32c6fb07feff99beba5"
+    },
+    "tdd": {
+      "source": "AgentiveStack/skills",
+      "sourceType": "github",
+      "skillPath": "tdd/SKILL.md",
+      "computedHash": "1535bb3dc0c360a483f17e84b9cbfaea067df1096146269ec620433e519d186d"
+    }
+  }
+}
