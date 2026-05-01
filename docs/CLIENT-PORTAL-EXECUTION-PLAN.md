@@ -79,7 +79,7 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 | 9.7 | Bearer token auth path for native clients | 9 |
 | 9.8 | API versioning policy + Client-Version header gate | 9 |
 | 9.9 | TECHNICAL-DEBT.md sweep (mark resolved items) | 9 |
-| 9.10 | Root-level doc rewrite (README) + audit of remaining stale docs | 9 |
+| 9.10 | Root-level doc rewrite (README) + CLIENT-APP-REFERENCE.md audit | 9 |
 
 ---
 
@@ -938,7 +938,7 @@ Clicking a card navigates to a detail page which fires its own fetch (e.g. `GET 
 5. Delete `components/clients/training/history-chart-dialog.tsx`.
 6. Clean imports. Remove unused types.
 7. Delete `DAILY-PULSE-README.md` at the repo root (the CONVENTIONS §16 reference to it was removed in the pre-Phase-1 doc sweep; the file itself lingers).
-8. Root-level doc audit moved to Session 9.10. `CHECK_IN_SETUP.md` and `CLIENT-ONBOARDING-README.md` were already deleted in 9.10 prep work; `CLIENT-APP-REFERENCE.md`, `MISSED_CHECKIN_TRACKING_PLAN.md`, and `README.md` are 9.10's scope.
+8. Root-level doc audit moved to Session 9.10. `CHECK_IN_SETUP.md`, `CLIENT-ONBOARDING-README.md`, and `MISSED_CHECKIN_TRACKING_PLAN.md` were already deleted in 9.10 prep work; `CLIENT-APP-REFERENCE.md` and `README.md` are 9.10's scope.
 9. Rewrite `docs/ARCHITECTURE.md`'s "Client Portal Architecture" section from the ground up. Until this session, that section has a banner warning readers off - this session replaces the Daily Pulse content with the event-driven day-centric architecture described in `CLIENT-PORTAL-REDESIGN.md`. Remove the "STOP - read this before using the section below" banner once the rewrite is complete. Sweep the rest of the doc for stale Daily Pulse references and update the Data Hierarchy diagram if anything changed.
 
 **Do NOT**: Drop `upsert_daily_log_atomic()` from DB (separate schema work). Change `CONVENTIONS.md` beyond what the pre-Phase-1 doc sweep already did.
@@ -1838,12 +1838,11 @@ Sessions 9.1–9.4 are prod blockers. Sessions 9.5–9.8 are mobile blockers. Se
 
 **Commit message**: `docs: rewrite README and audit remaining stale root-level docs`
 
-**Objective**: The pre-Phase-9 audit identified the project root has accumulated stale or redundant documentation. `CHECK_IN_SETUP.md` (deleted) and `CLIENT-ONBOARDING-README.md` (content moved to ARCHITECTURE.md, then deleted) were addressed during Phase 9 prep work. This session handles what remains: rewriting `README.md` from scratch and auditing `CLIENT-APP-REFERENCE.md` + `MISSED_CHECKIN_TRACKING_PLAN.md`. `DAILY-PULSE-README.md` stays out of scope — it dies with Daily Pulse in Session 5.1.
+**Objective**: The pre-Phase-9 audit identified the project root has accumulated stale or redundant documentation. Three files were addressed during Phase 9 prep work: `CHECK_IN_SETUP.md` (deleted as wildly stale), `CLIENT-ONBOARDING-README.md` (content moved to ARCHITECTURE.md, then deleted), and `MISSED_CHECKIN_TRACKING_PLAN.md` (deleted — feature has been fully implemented; doc was historical). This session handles what remains: rewriting `README.md` from scratch and auditing `CLIENT-APP-REFERENCE.md`. `DAILY-PULSE-README.md` stays out of scope — it dies with Daily Pulse in Session 5.1.
 
 **Read first**:
 - `README.md` (entire file — the current version is largely stale).
 - `CLIENT-APP-REFERENCE.md` (entire file — assess relevance).
-- `MISSED_CHECKIN_TRACKING_PLAN.md` (entire file — assess relevance).
 - `CONVENTIONS.md` §6 (file structure — used as the canonical reference for what to point at, not duplicate).
 - `docs/ARCHITECTURE.md` end-to-end (this is what README points at for technical depth).
 - `docs/CLIENT-PORTAL-REDESIGN.md` (referenced from README too).
@@ -1858,7 +1857,6 @@ Sessions 9.1–9.4 are prod blockers. Sessions 9.5–9.8 are mobile blockers. Se
   - The wrong "Components max 200 lines" claim (CONVENTIONS says 250).
   - The `cp .env.example .env.local` instruction (only valid AFTER Session 9.1).
 - For `CLIENT-APP-REFERENCE.md`, decide: still useful, partly useful, or obsolete? Likely partly useful. Either trim and keep, or move unique content into ARCHITECTURE.md and delete (the same pattern as CLIENT-ONBOARDING-README handled here).
-- For `MISSED_CHECKIN_TRACKING_PLAN.md`, decide: this looks like a planning doc from earlier in the project (44KB, dated Feb 2 2026). If the plan's been executed, it's history; if it's a future feature spec, it should live somewhere intentional. Likely DELETE.
 
 **Implement**:
 
@@ -1879,11 +1877,7 @@ Sessions 9.1–9.4 are prod blockers. Sessions 9.5–9.8 are mobile blockers. Se
    - If trim-and-keep: remove stale references, repoint anything that overlaps with ARCHITECTURE.md.
    - If move-and-delete: extract unique reference content into ARCHITECTURE.md (likely a "Client App Reference" section), then delete.
 
-3. **`MISSED_CHECKIN_TRACKING_PLAN.md` audit**. Per planning decision:
-   - If implemented and historical: delete (git history preserves it).
-   - If still aspirational and useful: relocate to `docs/` with a clearer name, OR distill the still-relevant parts into a single section under `docs/ARCHITECTURE.md` (Check-in System).
-
-4. **Update `.claude/agents/implementation-planner.md`** if any of its references were broken by this session. (Pre-Phase-9 prep work already updated it for `CHECK_IN_SETUP.md` and `CLIENT-ONBOARDING-README.md`.)
+3. **Update `.claude/agents/implementation-planner.md`** if any of its references were broken by this session. (Pre-Phase-9 prep work already updated it for `CHECK_IN_SETUP.md` and `CLIENT-ONBOARDING-README.md`.)
 
 **Do NOT**: Touch `DAILY-PULSE-README.md` (Session 5.1 owns its deletion). Restructure `docs/ARCHITECTURE.md` beyond adding sections for relocated content. Add new feature documentation here — the goal is consolidation, not net-new docs. Delete `TECHNICAL-DEBT.md` (Session 9.9 sweeps it; this session does not touch it).
 
@@ -1891,7 +1885,7 @@ Sessions 9.1–9.4 are prod blockers. Sessions 9.5–9.8 are mobile blockers. Se
 
 **Verify**:
 - Open `README.md` cold; confirm a new contributor could clone and run within 5 minutes.
-- `grep -rln "CHECK_IN_SETUP\|CLIENT-ONBOARDING-README\|MISSED_CHECKIN_TRACKING_PLAN\|CLIENT-APP-REFERENCE"` (the latter two only if deleted) — no stale references remain in code, configs, or other docs.
+- `grep -rln "CHECK_IN_SETUP\|CLIENT-ONBOARDING-README\|MISSED_CHECKIN_TRACKING_PLAN\|CLIENT-APP-REFERENCE"` (the last only if deleted) — no stale references remain in code, configs, or other docs.
 - `npx tsc --noEmit`, `npx vitest run` (no behavioural change so all pass).
 - Commit.
 
