@@ -1,6 +1,10 @@
 import type { TrainingPlan, TrainingSession, TrainingExercise } from "@/types/training";
 import type { TrainingSessionRow, TrainingExerciseRow, SessionLogRow } from "@/lib/database-helpers";
-import { createPortalClient } from "./client-portal-service";
+// Imported directly from lib/supabase-server (not re-exported via
+// client-portal-service) to avoid a circular import:
+// client-portal-service ↔ client-portal-training. Aliased so call sites stay
+// readable. See TECHNICAL-DEBT.md → Auth Architecture Hygiene H2 for context.
+import { createServerSupabaseClient as createPortalClient } from "@/lib/supabase-server";
 
 // Session completion type
 export type SessionCompletion = {
