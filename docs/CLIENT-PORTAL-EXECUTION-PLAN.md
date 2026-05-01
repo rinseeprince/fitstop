@@ -38,7 +38,7 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 | 0.2 | getDateString sweep + HabitLogWithDetails dedupe | 0 | COMPLETE
 | 0.3 | Verify existing weight_unit wiring | 0 | COMPLETE
 | 1.1 | Design training-log contracts | 1 Training | COMPLETE
-| 1.2 | Training log service layer + unit tests | 1 |
+| 1.2 | Training log service layer + unit tests | 1 | COMPLETE
 | 1.3 | Training log API endpoints | 1 |
 | 1.4 | Set tracker UI, read-only skeleton | 1 |
 | 1.5 | Set tracker UI, inputs + save flow | 1 |
@@ -243,7 +243,11 @@ Session 0.1 confirmed no `timezone` column exists on `clients` and all date help
 
 ## Session 1.2: Training log service layer + unit tests
 
-**Commit message**: `feat(training): implement event-keyed log write with snapshots and cascade`
+**Status**: COMPLETE (commit `a7e1ea1`)
+
+**Commit message**: `feat(training): implement event-keyed log write with prescription snapshots`
+
+**Note**: Final commit title diverges from the originally-planned `feat(training): implement event-keyed log write with snapshots and cascade`. The cascade was deliberately deferred (see commit body and TECHNICAL-DEBT.md context) because `cascadeNutritionAfterTrainingChange` is a no-op on log writes per `docs/ARCHITECTURE.md:250` — it ties to event changes, not log writes. Future actual-burn → nutrition adjustment session will wire it in with the right `fromDate` semantics.
 
 **Objective**: Implement `logTrainingEvent()` and `getTrainingEventDetail()` from Session 1.1. Writes must be transactional, include prescribed snapshots, and trigger the nutrition cascade.
 
