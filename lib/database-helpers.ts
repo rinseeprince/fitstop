@@ -17,6 +17,11 @@ export type ContentAssignmentRow = Database["public"]["Tables"]["content_assignm
 export type CoachRow = Database["public"]["Tables"]["coaches"]["Row"];
 export type ProfileRow = Database["public"]["Tables"]["profiles"]["Row"];
 export type SessionLogRow = Database["public"]["Tables"]["session_logs"]["Row"];
+export type SessionLogInsert = Database["public"]["Tables"]["session_logs"]["Insert"];
+export type SessionLogUpdate = Database["public"]["Tables"]["session_logs"]["Update"];
+export type ExerciseLogRow = Database["public"]["Tables"]["exercise_logs"]["Row"];
+export type ExerciseLogInsert = Database["public"]["Tables"]["exercise_logs"]["Insert"];
+export type ExerciseLogUpdate = Database["public"]["Tables"]["exercise_logs"]["Update"];
 /** @deprecated Use SessionLogRow */
 export type ClientSessionCompletionRow = SessionLogRow;
 export type CheckInSessionCompletionRow = Database["public"]["Tables"]["check_in_session_completions"]["Row"];
