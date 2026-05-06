@@ -61,7 +61,7 @@ describe("ExerciseSearchInput", () => {
     await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(1));
     const url = (global.fetch as unknown as ReturnType<typeof vi.fn>).mock
       .calls[0][0] as string;
-    expect(url).toContain("/api/training/exercises?search=be");
+    expect(url).toContain("/api/client/exercises?search=be");
   });
 
   it("renders results in the dropdown and fills name + exerciseId on select", async () => {

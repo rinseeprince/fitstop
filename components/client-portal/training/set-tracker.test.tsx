@@ -656,7 +656,7 @@ describe("SetTracker", () => {
       .mockImplementation((url: string, init?: RequestInit) => {
         if (
           typeof url === "string" &&
-          url.startsWith("/api/training/exercises")
+          url.startsWith("/api/client/exercises")
         ) {
           return Promise.resolve({
             ok: true,
@@ -727,7 +727,7 @@ describe("SetTracker", () => {
       .mockImplementation((url: string, init?: RequestInit) => {
         if (
           typeof url === "string" &&
-          url.startsWith("/api/training/exercises")
+          url.startsWith("/api/client/exercises")
         ) {
           return Promise.resolve({
             ok: true,
@@ -805,7 +805,7 @@ describe("SetTracker", () => {
       .mockImplementation((url: string, init?: RequestInit) => {
         if (
           typeof url === "string" &&
-          url.startsWith("/api/training/exercises")
+          url.startsWith("/api/client/exercises")
         ) {
           return Promise.resolve({
             ok: true,
@@ -876,7 +876,7 @@ describe("SetTracker", () => {
       .mockImplementation((url: string, init?: RequestInit) => {
         if (
           typeof url === "string" &&
-          url.startsWith("/api/training/exercises")
+          url.startsWith("/api/client/exercises")
         ) {
           return Promise.resolve({
             ok: true,

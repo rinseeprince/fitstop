@@ -58,7 +58,7 @@ export function ExerciseSearchInput({
     setIsSearching(true);
     try {
       const res = await fetch(
-        `/api/training/exercises?search=${encodeURIComponent(query)}`,
+        `/api/client/exercises?search=${encodeURIComponent(query)}`,
       );
       if (res.ok) {
         const data = (await res.json()) as { exercises?: CatalogExercise[] };
