@@ -163,13 +163,13 @@ function FormModeBlock({
   const prescribedName = getValues(`exercises.${index}.prescribedName`);
 
   const applySwap = (next: { name: string; exerciseId: string | undefined }) => {
-    const trimmed = next.name.trim();
-    if (!trimmed) return;
-    setValue(`exercises.${index}.exerciseName`, trimmed, { shouldDirty: true });
+    setValue(`exercises.${index}.exerciseName`, next.name, { shouldDirty: true });
     setValue(`exercises.${index}.exerciseId`, next.exerciseId, {
       shouldDirty: true,
     });
-    setValue(`exercises.${index}.isSwapped`, true, { shouldDirty: true });
+    if (next.name.trim()) {
+      setValue(`exercises.${index}.isSwapped`, true, { shouldDirty: true });
+    }
     // Close the picker only when the user actually picks a catalog item.
     // Free typing keeps the picker open so they can keep searching/select.
     if (next.exerciseId !== undefined) {
