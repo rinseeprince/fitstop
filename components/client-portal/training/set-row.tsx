@@ -1,5 +1,5 @@
 import type { UseFormRegister } from "react-hook-form";
-import { Copy } from "lucide-react";
+import { Copy, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import type { LogFormValues } from "./log-form-types";
 
@@ -15,6 +15,7 @@ type SetRowProps = {
   disabled?: boolean;
   onCopyPrevious?: () => void;
   canCopyPrevious?: boolean;
+  onRemove?: () => void;
 };
 
 export function SetRow({
@@ -29,6 +30,7 @@ export function SetRow({
   disabled,
   onCopyPrevious,
   canCopyPrevious,
+  onRemove,
 }: SetRowProps) {
   const editable =
     register !== undefined && exerciseIndex != null && setIndex != null;
@@ -100,7 +102,19 @@ export function SetRow({
           className="h-9 text-center text-[13px] font-mono-display"
         />
       </div>
-      <div className="col-span-2 flex items-center justify-end">
+      <div className="col-span-2 flex items-center justify-end gap-1">
+        {onRemove ? (
+          <button
+            type="button"
+            onClick={onRemove}
+            disabled={disabled}
+            aria-label={`Delete set ${setNumber}`}
+            data-testid={`delete-set-${exerciseIndex}-${setIndex}`}
+            className="inline-flex h-7 w-7 items-center justify-center rounded-[6px] text-[#5a7d82] transition-colors hover:bg-[rgba(220,38,38,0.06)] hover:text-[#dc2626] disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        ) : null}
         {showCopy ? (
           <button
             type="button"

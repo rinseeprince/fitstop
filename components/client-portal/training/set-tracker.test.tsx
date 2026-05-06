@@ -528,6 +528,32 @@ describe("SetTracker", () => {
     ]);
   });
 
+  // ---- 17b. Delete set ----------------------------------------------------
+
+  it("[delete-set] delete-set button removes a row and excludes its data from payload", async () => {
+    setEventReady();
+    const user = userEvent.setup();
+    render(<SetTracker eventId="evt-1" />);
+    await user.click(screen.getByTestId("detailed-toggle"));
+    const ex0 = screen.getAllByTestId("exercise-tracker-block")[0];
+    expect(within(ex0).getAllByTestId("set-row")).toHaveLength(3);
+    await user.type(within(ex0).getByLabelText("Set 1 reps"), "10");
+    await user.type(within(ex0).getByLabelText("Set 1 weight"), "100");
+    await user.type(within(ex0).getByLabelText("Set 2 reps"), "9");
+    await user.type(within(ex0).getByLabelText("Set 2 weight"), "100");
+    // Delete row 2 (the second filled row).
+    await user.click(within(ex0).getByTestId("delete-set-0-1"));
+    expect(within(ex0).getAllByTestId("set-row")).toHaveLength(2);
+    await user.click(screen.getByTestId("quick-log-full"));
+    await user.click(screen.getByTestId("save-button"));
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    const payload = getLastFetchPayload() as {
+      exercises?: Array<{ sets: Array<{ reps?: number; weight?: number }> }>;
+    };
+    expect(payload.exercises).toHaveLength(1);
+    expect(payload.exercises![0].sets).toEqual([{ reps: 10, weight: 100 }]);
+  });
+
   // ---- 18. Collapsible session notes --------------------------------------
 
   it("[notes-collapsed] session notes hidden by default; toggle reveals textarea", async () => {

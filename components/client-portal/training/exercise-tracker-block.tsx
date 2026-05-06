@@ -135,7 +135,7 @@ function FormModeBlock({
   const { control, register, setValue, getValues, weightUnit, isUnplanned } =
     formContext;
 
-  const { fields, append } = useFieldArray({
+  const { fields, append, remove } = useFieldArray({
     control,
     name: `exercises.${index}.sets`,
   });
@@ -245,6 +245,7 @@ function FormModeBlock({
                     i > 0 ? () => handleCopyPrevious(i) : undefined
                   }
                   canCopyPrevious={i > 0 ? canCopyAt(i) : undefined}
+                  onRemove={() => remove(i)}
                   repsPlaceholder={repsHint}
                   rpePlaceholder={rpeHint}
                 />
