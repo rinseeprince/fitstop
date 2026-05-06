@@ -633,31 +633,44 @@ export async function getTrainingEventDetail(
         };
 
   // Build ResolvedExercise[].
+  // Truly unplanned logs (trainingExerciseId is null) are excluded from this
+  // array. They already live in exerciseLogs, and the frontend's
+  // seedDefaultValues handles them via its orphan-log path. Including them
+  // here would cause each unplanned exercise to render twice (once as
+  // "prescribed", once as orphan).
   let exercises: ResolvedExercise[];
   if (liveSession === null) {
-    // No live prescription — every log is snapshot-source, ordered by created_at.
-    exercises = exerciseLogs.map((log) => ({
-      source: "snapshot",
-      snapshot: log.prescribedExerciseSnapshot ?? {},
-    }));
+    // No live session — reconstruct prescribed exercise blocks from logged
+    // snapshots. Exclude unplanned logs (trainingExerciseId is null).
+    exercises = exerciseLogs
+      .filter((log) => log.trainingExerciseId !== null)
+      .map((log) => ({
+        source: "snapshot",
+        snapshot: log.prescribedExerciseSnapshot ?? {},
+      }));
   } else {
-    // Live exercises in order_index order; orphan logs (training_exercise_id
-    // doesn't match any live row, or is null) appended as snapshot-source by
-    // created_at.
+    // Live exercises in order_index order.
     const liveIds = new Set(liveSession.exercises.map((e) => e.id));
-    const liveResolved: ResolvedExercise[] = liveSession.exercises.map(
-      (exercise) => ({ source: "live", exercise }),
-    );
-    const orphanResolved: ResolvedExercise[] = exerciseLogs
+    exercises = liveSession.exercises.map((exercise) => ({
+      source: "live",
+      exercise,
+    }));
+    // Append snapshot blocks for logs of soft-deleted prescribed exercises
+    // (trainingExerciseId set but no longer in live). Truly unplanned logs
+    // (trainingExerciseId null) are NOT appended — see comment above.
+    const deletedOrphans: ResolvedExercise[] = exerciseLogs
       .filter(
         (log) =>
-          log.trainingExerciseId === null || !liveIds.has(log.trainingExerciseId),
+          log.trainingExerciseId !== null &&
+          !liveIds.has(log.trainingExerciseId),
       )
       .map((log) => ({
         source: "snapshot",
         snapshot: log.prescribedExerciseSnapshot ?? {},
       }));
-    exercises = [...liveResolved, ...orphanResolved];
+    if (deletedOrphans.length > 0) {
+      exercises = [...exercises, ...deletedOrphans];
+    }
   }
 
   return {
