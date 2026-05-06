@@ -1,4 +1,4 @@
-import { Home, Users, Library, KanbanSquare, MessageSquare, Zap, Mail, Settings } from "lucide-react"
+import { Home, Users, Library, KanbanSquare, Zap, Settings } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 
 export interface NavItem {
@@ -6,15 +6,14 @@ export interface NavItem {
   href: string
   icon: LucideIcon
   showBadge?: boolean
+  beta?: boolean
 }
 
 export const navigation: NavItem[] = [
   { name: "Dashboard", href: "/dashboard", icon: Home },
   { name: "Clients", href: "/clients", icon: Users, showBadge: true },
   { name: "Content", href: "/dashboard/content", icon: Library },
-  { name: "CRM", href: "/crm", icon: KanbanSquare },
-  { name: "Messages", href: "/messages", icon: MessageSquare },
-  { name: "Automation", href: "/automation", icon: Zap },
-  { name: "Email Marketing", href: "/email", icon: Mail },
+  { name: "CRM", href: "/crm", icon: KanbanSquare, beta: true },
+  { name: "Automation", href: "/automation", icon: Zap, beta: true },
   { name: "Settings", href: "/settings", icon: Settings },
 ]

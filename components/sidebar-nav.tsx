@@ -98,6 +98,11 @@ export function SidebarNav() {
                 )}
               </div>
               <span className="relative mt-1 text-[10px] text-center leading-tight">{item.name}</span>
+              {item.beta && (
+                <span className="relative mt-0.5 text-[8px] font-semibold uppercase tracking-[0.06em] px-1.5 py-[1px] rounded-[4px] bg-[rgba(13,148,136,0.15)] text-[#0d9488]">
+                  Beta
+                </span>
+              )}
             </Link>
           </motion.div>
         )

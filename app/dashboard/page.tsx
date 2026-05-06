@@ -6,7 +6,6 @@ import { AppLayout } from "@/components/app-layout"
 import { PageHeader } from "@/components/page-header"
 import { MetricCard } from "@/components/metric-card"
 import { CoachTipCard } from "@/components/coach-tip-card"
-import { FloatingActionButton } from "@/components/floating-action-button"
 import { NeedsAttentionFeed } from "@/components/dashboard/needs-attention-feed"
 import { PendingIntakeBanner } from "@/components/coach/pending-intake-banner"
 import { Users, MessageSquare, PhoneCall, Clock, TrendingUp, AlertCircle } from "lucide-react"
@@ -200,8 +199,6 @@ export default function DashboardPage() {
           </motion.div>
         </div>
       </div>
-
-      <FloatingActionButton />
     </AppLayout>
   )
 }
