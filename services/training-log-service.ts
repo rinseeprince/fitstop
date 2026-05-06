@@ -617,3 +617,37 @@ export async function getTrainingEventDetail(
     exerciseLogs,
   };
 }
+
+// =============================================================================
+// getSessionLogDetail
+// =============================================================================
+
+export async function getSessionLogDetail(
+  sessionLogId: string,
+): Promise<{ sessionLog: SessionLog; exerciseLogs: ExerciseLog[] } | null> {
+  const { data: row, error: logErr } = await supabaseAdmin
+    .from("session_logs")
+    .select("*")
+    .eq("id", sessionLogId)
+    .maybeSingle();
+  if (logErr) {
+    throw new Error(`Failed to load session log: ${logErr.message}`);
+  }
+  if (!row) return null;
+
+  const { data: exerciseRows, error: exErr } = await supabaseAdmin
+    .from("exercise_logs")
+    .select("*")
+    .eq("session_log_id", sessionLogId)
+    .order("created_at", { ascending: true });
+  if (exErr) {
+    throw new Error(`Failed to load exercise logs: ${exErr.message}`);
+  }
+
+  return {
+    sessionLog: mapSessionLogRow(row as SessionLogRow),
+    exerciseLogs: (exerciseRows ?? []).map((r) =>
+      mapExerciseLogRow(r as ExerciseLogRow),
+    ),
+  };
+}

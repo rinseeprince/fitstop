@@ -314,11 +314,13 @@ Session 0.1 confirmed no `timezone` column exists on `clients` and all date help
 **Do NOT**: Touch UI. Do not modify existing completion endpoints yet.
 
 **Tests to write**:
-- Log POST route: 201 valid; 400 malformed; 401 unauthenticated; 403 event belongs to another client; CSRF rejection.
+- Log POST route: 201 valid; 400 malformed; 401 unauthenticated; 404 event belongs to another client (collapsed with "missing" for security; see ARCHITECTURE.md §IDOR); CSRF rejection.
 - Event GET: 200 happy; 401; 404 when event missing.
 - Coach drill-down GET: 200; 403 when coach does not own client; 404 when session_log missing.
 
 **Verify**: `npx tsc --noEmit`, `npx vitest run`. Manual curl smoke test. Commit.
+
+**Status**: ✅ Complete (commits TBD).
 
 ---
 
