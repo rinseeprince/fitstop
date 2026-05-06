@@ -44,6 +44,16 @@ import { logTrainingEvent, getTrainingEventDetail } from "./training-log-service
 
 const mockFrom = vi.mocked(supabaseAdmin.from);
 
+// Helper for the new insert-then-select pattern on exercise_logs. The writer
+// chains `.insert(...).select("id")` and reads the inserted ids to wire up
+// child set_logs rows, so the mock must return an array of {id} rows.
+function insertExerciseLogsReturning(ids: string[]) {
+  return createMockQuery({
+    data: ids.map((id) => ({ id })),
+    error: null,
+  });
+}
+
 // ---- shared fixtures ----
 
 const CLIENT_ID = "client-1";
@@ -243,7 +253,8 @@ describe("logTrainingEvent", () => {
     const upsertQ = createMockQuery({ data: { id: SESSION_LOG_ID }, error: null });
     const existingExLogsQ = createMockQuery({ data: [], error: null });
     const deleteExQ = createMockQuery({ data: null, error: null });
-    const insertExQ = createMockQuery({ data: null, error: null });
+    const insertExQ = insertExerciseLogsReturning(["el-a"]);
+    const setLogsInsertQ = createMockQuery({ data: null, error: null });
     const linkQ = createMockQuery({ data: null, error: null });
 
     installRouter({
@@ -253,6 +264,7 @@ describe("logTrainingEvent", () => {
       training_exercises: exerciseSnapQ,
       session_logs: upsertQ,
       exercise_logs: [existingExLogsQ, deleteExQ, insertExQ],
+      set_logs: setLogsInsertQ,
     });
 
     await logTrainingEvent({
@@ -275,16 +287,27 @@ describe("logTrainingEvent", () => {
       },
     });
 
-    // Insert payload includes the snapshot.
+    // exercise_logs insert: snapshot + new performed_name field.
     expect(insertExQ.insert).toHaveBeenCalledTimes(1);
     const inserts = insertExQ.insert.mock.calls[0][0];
     expect(inserts).toHaveLength(1);
     expect(inserts[0]).toMatchObject({
       session_log_id: SESSION_LOG_ID,
       training_exercise_id: EXERCISE_A,
+      exercise_id: null,
       completed: true,
+      performed_name: "Bench Press",
       prescribed_exercise_snapshot: EXERCISE_A_SNAPSHOT,
     });
+
+    // set_logs insert: one row per set with full per-set fidelity.
+    expect(setLogsInsertQ.insert).toHaveBeenCalledTimes(1);
+    const setRows = setLogsInsertQ.insert.mock.calls[0][0];
+    expect(setRows).toEqual([
+      { exercise_log_id: "el-a", set_number: 1, reps: 10, weight: 100, rpe: null },
+      { exercise_log_id: "el-a", set_number: 2, reps: 10, weight: 105, rpe: null },
+      { exercise_log_id: "el-a", set_number: 3, reps: 8, weight: 105, rpe: null },
+    ]);
 
     // payload completionQuality='full' → status='completed' (mapping).
     expect(linkQ.update.mock.calls[0][0].status).toBe("completed");
@@ -307,7 +330,8 @@ describe("logTrainingEvent", () => {
     const upsertQ = createMockQuery({ data: { id: SESSION_LOG_ID }, error: null });
     const existingExLogsQ = createMockQuery({ data: [], error: null });
     const deleteExQ = createMockQuery({ data: null, error: null });
-    const insertExQ = createMockQuery({ data: null, error: null });
+    const insertExQ = insertExerciseLogsReturning(["el-a", "el-b"]);
+    const setLogsInsertQ = createMockQuery({ data: null, error: null });
     const linkQ = createMockQuery({ data: null, error: null });
 
     installRouter({
@@ -317,6 +341,7 @@ describe("logTrainingEvent", () => {
       training_exercises: exerciseSnapQ,
       session_logs: upsertQ,
       exercise_logs: [existingExLogsQ, deleteExQ, insertExQ],
+      set_logs: setLogsInsertQ,
     });
 
     await logTrainingEvent({
@@ -360,7 +385,8 @@ describe("logTrainingEvent", () => {
     const upsertQ = createMockQuery({ data: { id: SESSION_LOG_ID }, error: null });
     const existingExLogsQ = createMockQuery({ data: [], error: null });
     const deleteExQ = createMockQuery({ data: null, error: null });
-    const insertExQ = createMockQuery({ data: null, error: null });
+    const insertExQ = insertExerciseLogsReturning(["el-a", "el-b"]);
+    const setLogsInsertQ = createMockQuery({ data: null, error: null });
     const linkQ = createMockQuery({ data: null, error: null });
 
     installRouter({
@@ -370,6 +396,7 @@ describe("logTrainingEvent", () => {
       training_exercises: exerciseSnapQ,
       session_logs: upsertQ,
       exercise_logs: [existingExLogsQ, deleteExQ, insertExQ],
+      set_logs: setLogsInsertQ,
     });
 
     await logTrainingEvent({
@@ -386,6 +413,8 @@ describe("logTrainingEvent", () => {
 
     expect(upsertQ.upsert.mock.calls[0][0].completion_quality).toBe("skipped");
     expect(linkQ.update.mock.calls[0][0].status).toBe("skipped");
+    // All-skipped: no set_logs rows written.
+    expect(setLogsInsertQ.insert).not.toHaveBeenCalled();
   });
 
   // -------------------------------------------------------------------------
@@ -406,7 +435,8 @@ describe("logTrainingEvent", () => {
     const upsertQ = createMockQuery({ data: { id: SESSION_LOG_ID }, error: null });
     const existingExLogsQ = createMockQuery({ data: [], error: null });
     const deleteExQ = createMockQuery({ data: null, error: null });
-    const insertExQ = createMockQuery({ data: null, error: null });
+    const insertExQ = insertExerciseLogsReturning(["el-a", "el-b"]);
+    const setLogsInsertQ = createMockQuery({ data: null, error: null });
     const linkQ = createMockQuery({ data: null, error: null });
 
     installRouter({
@@ -416,6 +446,7 @@ describe("logTrainingEvent", () => {
       training_exercises: exerciseSnapQ,
       session_logs: upsertQ,
       exercise_logs: [existingExLogsQ, deleteExQ, insertExQ],
+      set_logs: setLogsInsertQ,
     });
 
     await logTrainingEvent({
@@ -435,9 +466,9 @@ describe("logTrainingEvent", () => {
   });
 
   // -------------------------------------------------------------------------
-  // 6. Set-collapse rule
+  // 6. Per-set fidelity via set_logs (replaces the old scalar-collapse rule).
   // -------------------------------------------------------------------------
-  it("[6] set-collapse: actual_sets, actual_reps='10,10,8', actual_weight=top set", async () => {
+  it("[6] per-set fidelity: writes one set_logs row per set with reps/weight/rpe; exercise_logs row carries weight_unit + completed", async () => {
     const eventQ = createMockQuery({ data: eventRow(), error: null });
     const clientQ = createMockQuery({
       data: { expected_check_in_day: null },
@@ -451,7 +482,8 @@ describe("logTrainingEvent", () => {
     const upsertQ = createMockQuery({ data: { id: SESSION_LOG_ID }, error: null });
     const existingExLogsQ = createMockQuery({ data: [], error: null });
     const deleteExQ = createMockQuery({ data: null, error: null });
-    const insertExQ = createMockQuery({ data: null, error: null });
+    const insertExQ = insertExerciseLogsReturning(["el-bench"]);
+    const setLogsInsertQ = createMockQuery({ data: null, error: null });
     const linkQ = createMockQuery({ data: null, error: null });
 
     installRouter({
@@ -461,6 +493,7 @@ describe("logTrainingEvent", () => {
       training_exercises: exerciseSnapQ,
       session_logs: upsertQ,
       exercise_logs: [existingExLogsQ, deleteExQ, insertExQ],
+      set_logs: setLogsInsertQ,
     });
 
     await logTrainingEvent({
@@ -472,9 +505,9 @@ describe("logTrainingEvent", () => {
           {
             exerciseName: "Bench",
             sets: [
-              { reps: 10, weight: 100 },
-              { reps: 10, weight: 105 },
-              { reps: 8, weight: 105 },
+              { reps: 10, weight: 100, rpe: 7 },
+              { reps: 10, weight: 105, rpe: 8 },
+              { reps: 8, weight: 105, rpe: 9 },
             ],
             weightUnit: "kg",
           },
@@ -483,17 +516,23 @@ describe("logTrainingEvent", () => {
     });
 
     const inserted = insertExQ.insert.mock.calls[0][0][0];
-    expect(inserted.actual_sets).toBe(3);
-    expect(inserted.actual_reps).toBe("10,10,8");
-    expect(inserted.actual_weight).toBe(105);
     expect(inserted.weight_unit).toBe("kg");
     expect(inserted.completed).toBe(true);
+    expect(inserted.performed_name).toBe("Bench");
+
+    // set_logs preserves per-set values exactly.
+    expect(setLogsInsertQ.insert).toHaveBeenCalledTimes(1);
+    expect(setLogsInsertQ.insert.mock.calls[0][0]).toEqual([
+      { exercise_log_id: "el-bench", set_number: 1, reps: 10, weight: 100, rpe: 7 },
+      { exercise_log_id: "el-bench", set_number: 2, reps: 10, weight: 105, rpe: 8 },
+      { exercise_log_id: "el-bench", set_number: 3, reps: 8, weight: 105, rpe: 9 },
+    ]);
   });
 
   // -------------------------------------------------------------------------
   // 7. Free-form exercise (no trainingExerciseId)
   // -------------------------------------------------------------------------
-  it("[7] free-form exercise: training_exercise_id=null and prescribed_exercise_snapshot=null", async () => {
+  it("[7] free-form exercise: training_exercise_id=null, exercise_id=null, prescribed_exercise_snapshot.name persisted from payload", async () => {
     const eventQ = createMockQuery({ data: eventRow(), error: null });
     const clientQ = createMockQuery({
       data: { expected_check_in_day: null },
@@ -507,7 +546,8 @@ describe("logTrainingEvent", () => {
     const upsertQ = createMockQuery({ data: { id: SESSION_LOG_ID }, error: null });
     const existingExLogsQ = createMockQuery({ data: [], error: null });
     const deleteExQ = createMockQuery({ data: null, error: null });
-    const insertExQ = createMockQuery({ data: null, error: null });
+    const insertExQ = insertExerciseLogsReturning(["el-free"]);
+    const setLogsInsertQ = createMockQuery({ data: null, error: null });
     const linkQ = createMockQuery({ data: null, error: null });
 
     installRouter({
@@ -517,6 +557,7 @@ describe("logTrainingEvent", () => {
       training_exercises: exerciseSnapQ,
       session_logs: upsertQ,
       exercise_logs: [existingExLogsQ, deleteExQ, insertExQ],
+      set_logs: setLogsInsertQ,
     });
 
     await logTrainingEvent({
@@ -536,13 +577,72 @@ describe("logTrainingEvent", () => {
 
     const inserted = insertExQ.insert.mock.calls[0][0][0];
     expect(inserted.training_exercise_id).toBeNull();
-    expect(inserted.prescribed_exercise_snapshot).toBeNull();
+    expect(inserted.exercise_id).toBeNull();
+    expect(inserted.performed_name).toBe("Some custom move");
+    // Free-form snapshot persistence fix: name captured from the payload so
+    // revisit shows it instead of "Unknown exercise".
+    expect(inserted.prescribed_exercise_snapshot).toEqual({
+      name: "Some custom move",
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // 7b. Picker selection: payload exerciseId is persisted into the row.
+  // -------------------------------------------------------------------------
+  it("[7b] picker-selected exercise: payload exerciseId is persisted into exercise_logs.exercise_id", async () => {
+    const PICKED_EXERCISE_ID = "11111111-1111-4111-8111-111111111111";
+    const eventQ = createMockQuery({ data: eventRow(), error: null });
+    const clientQ = createMockQuery({
+      data: { expected_check_in_day: null },
+      error: null,
+    });
+    const sessionSnapQ = createMockQuery({
+      data: SESSION_PRESCRIPTION,
+      error: null,
+    });
+    const exerciseSnapQ = createMockQuery({ data: [], error: null });
+    const upsertQ = createMockQuery({ data: { id: SESSION_LOG_ID }, error: null });
+    const existingExLogsQ = createMockQuery({ data: [], error: null });
+    const deleteExQ = createMockQuery({ data: null, error: null });
+    const insertExQ = insertExerciseLogsReturning(["el-pick"]);
+    const setLogsInsertQ = createMockQuery({ data: null, error: null });
+    const linkQ = createMockQuery({ data: null, error: null });
+
+    installRouter({
+      training_events: [eventQ, linkQ],
+      clients: clientQ,
+      training_sessions: sessionSnapQ,
+      training_exercises: exerciseSnapQ,
+      session_logs: upsertQ,
+      exercise_logs: [existingExLogsQ, deleteExQ, insertExQ],
+      set_logs: setLogsInsertQ,
+    });
+
+    await logTrainingEvent({
+      eventId: EVENT_ID,
+      clientId: CLIENT_ID,
+      payload: {
+        completionQuality: "full",
+        exercises: [
+          {
+            exerciseId: PICKED_EXERCISE_ID,
+            exerciseName: "Bench Press",
+            sets: [{ reps: 10, weight: 100 }],
+            weightUnit: "lbs",
+          },
+        ],
+      },
+    });
+
+    const inserted = insertExQ.insert.mock.calls[0][0][0];
+    expect(inserted.exercise_id).toBe(PICKED_EXERCISE_ID);
+    expect(inserted.performed_name).toBe("Bench Press");
   });
 
   // -------------------------------------------------------------------------
   // 8. Skipped exercise: completed=false, actuals null
   // -------------------------------------------------------------------------
-  it("[8] skipped exercise: completed=false, actual_sets/reps/weight null", async () => {
+  it("[8] skipped exercise: completed=false; no set_logs rows written", async () => {
     const eventQ = createMockQuery({ data: eventRow(), error: null });
     const clientQ = createMockQuery({
       data: { expected_check_in_day: null },
@@ -559,7 +659,8 @@ describe("logTrainingEvent", () => {
     const upsertQ = createMockQuery({ data: { id: SESSION_LOG_ID }, error: null });
     const existingExLogsQ = createMockQuery({ data: [], error: null });
     const deleteExQ = createMockQuery({ data: null, error: null });
-    const insertExQ = createMockQuery({ data: null, error: null });
+    const insertExQ = insertExerciseLogsReturning(["el-skip"]);
+    const setLogsInsertQ = createMockQuery({ data: null, error: null });
     const linkQ = createMockQuery({ data: null, error: null });
 
     installRouter({
@@ -569,6 +670,7 @@ describe("logTrainingEvent", () => {
       training_exercises: exerciseSnapQ,
       session_logs: upsertQ,
       exercise_logs: [existingExLogsQ, deleteExQ, insertExQ],
+      set_logs: setLogsInsertQ,
     });
 
     await logTrainingEvent({
@@ -590,9 +692,7 @@ describe("logTrainingEvent", () => {
 
     const inserted = insertExQ.insert.mock.calls[0][0][0];
     expect(inserted.completed).toBe(false);
-    expect(inserted.actual_sets).toBeNull();
-    expect(inserted.actual_reps).toBeNull();
-    expect(inserted.actual_weight).toBeNull();
+    expect(setLogsInsertQ.insert).not.toHaveBeenCalled();
   });
 
   // -------------------------------------------------------------------------
@@ -631,7 +731,8 @@ describe("logTrainingEvent", () => {
     const upsertQ = createMockQuery({ data: { id: SESSION_LOG_ID }, error: null });
     const existingExLogsQ = createMockQuery({ data: [], error: null });
     const deleteExQ = createMockQuery({ data: null, error: null });
-    const insertExQ = createMockQuery({ data: null, error: null });
+    const insertExQ = insertExerciseLogsReturning(["el-snap"]);
+    const setLogsInsertQ = createMockQuery({ data: null, error: null });
     const linkQ = createMockQuery({ data: null, error: null });
 
     installRouter({
@@ -641,6 +742,7 @@ describe("logTrainingEvent", () => {
       training_exercises: exerciseSnapQ,
       session_logs: upsertQ,
       exercise_logs: [existingExLogsQ, deleteExQ, insertExQ],
+      set_logs: setLogsInsertQ,
     });
 
     await logTrainingEvent({
@@ -710,7 +812,8 @@ describe("logTrainingEvent", () => {
     const upsertQ = createMockQuery({ data: { id: SESSION_LOG_ID }, error: null });
     const existingExLogsQ = createMockQuery({ data: [], error: null });
     const deleteExQ = createMockQuery({ data: null, error: null });
-    const insertExQ = createMockQuery({ data: null, error: null });
+    const insertExQ = insertExerciseLogsReturning(["el-rerun"]);
+    const setLogsInsertQ = createMockQuery({ data: null, error: null });
     const linkQ = createMockQuery({ data: null, error: null });
 
     installRouter({
@@ -720,6 +823,7 @@ describe("logTrainingEvent", () => {
       training_exercises: exerciseSnapQ,
       session_logs: upsertQ,
       exercise_logs: [existingExLogsQ, deleteExQ, insertExQ],
+      set_logs: setLogsInsertQ,
     });
 
     await logTrainingEvent({
@@ -745,6 +849,9 @@ describe("logTrainingEvent", () => {
     });
     expect(deleteExQ.delete).toHaveBeenCalledTimes(1);
     expect(insertExQ.insert).toHaveBeenCalledTimes(1);
+    // set_logs insert fires for the one filled set (cascade-deleted with the
+    // exercise_logs DELETE in step 6b, then re-inserted from the new payload).
+    expect(setLogsInsertQ.insert).toHaveBeenCalledTimes(1);
   });
 
   // -------------------------------------------------------------------------
@@ -932,7 +1039,8 @@ describe("logTrainingEvent", () => {
       error: null,
     });
     const deleteExQ = createMockQuery({ data: null, error: null });
-    const insertExQ = createMockQuery({ data: null, error: null });
+    const insertExQ = insertExerciseLogsReturning(["el-a", "el-free"]);
+    const setLogsInsertQ = createMockQuery({ data: null, error: null });
     const linkQ = createMockQuery({ data: null, error: null });
 
     installRouter({
@@ -942,6 +1050,7 @@ describe("logTrainingEvent", () => {
       training_exercises: exerciseSnapQ,
       session_logs: upsertQ,
       exercise_logs: [existingExLogsQ, deleteExQ, insertExQ],
+      set_logs: setLogsInsertQ,
     });
 
     await logTrainingEvent({
@@ -973,12 +1082,16 @@ describe("logTrainingEvent", () => {
         r.training_exercise_id === EXERCISE_A,
     );
     expect(aRow.prescribed_exercise_snapshot).toEqual(EXERCISE_A_SNAPSHOT);
-    // Free-form: no preservation (no stable cross-write key) — null.
+    // Free-form: no prescription preservation (no stable cross-write key),
+    // but the user-supplied name is now captured in the snapshot for revisit.
     const freeForm = inserts.find(
       (r: { training_exercise_id: string | null }) =>
         r.training_exercise_id === null,
     );
-    expect(freeForm.prescribed_exercise_snapshot).toBeNull();
+    expect(freeForm.prescribed_exercise_snapshot).toEqual({
+      name: "Mystery Lift",
+    });
+    expect(freeForm.performed_name).toBe("Mystery Lift");
   });
 
   // -------------------------------------------------------------------------

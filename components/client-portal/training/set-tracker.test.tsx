@@ -644,6 +644,307 @@ describe("SetTracker", () => {
     ).toBe("Pre-existing notes");
   });
 
+  // ---- 17d. Picker integration in Add unplanned --------------------------
+
+  it("[picker-typeahead] picking a result from the dropdown populates name + exerciseId", async () => {
+    setEventReady();
+    const PICKED_ID = "33333333-3333-4333-8333-333333333333";
+    // Override fetch to handle BOTH the search call AND the save POST.
+    const realFetch = global.fetch;
+    global.fetch = vi
+      .fn()
+      .mockImplementation((url: string, init?: RequestInit) => {
+        if (
+          typeof url === "string" &&
+          url.startsWith("/api/training/exercises")
+        ) {
+          return Promise.resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve({
+                exercises: [
+                  {
+                    id: PICKED_ID,
+                    name: "Bulgarian Split Squat",
+                    muscle_group: "legs",
+                  },
+                ],
+              }),
+          });
+        }
+        return (realFetch as unknown as typeof fetch)(url, init);
+      }) as unknown as typeof fetch;
+
+    const user = userEvent.setup();
+    render(<SetTracker eventId="evt-1" />);
+    await user.click(screen.getByTestId("detailed-toggle"));
+    await user.type(
+      screen.getByTestId("add-exercise-name"),
+      "bulgarian",
+    );
+    // Wait for the dropdown option to appear and click it.
+    await waitFor(() =>
+      expect(screen.getByText("Bulgarian Split Squat")).toBeInTheDocument(),
+    );
+    await user.click(screen.getByTestId(`add-exercise-name-option-${PICKED_ID}`));
+    await user.click(screen.getByTestId("add-exercise-submit"));
+    // Fill a set so the unplanned exercise is included in the payload.
+    const blocks = screen.getAllByTestId("exercise-tracker-block");
+    const newBlock = blocks[blocks.length - 1];
+    await user.type(within(newBlock).getByLabelText("Set 1 reps"), "10");
+    await user.type(within(newBlock).getByLabelText("Set 1 weight"), "30");
+    await user.click(screen.getByTestId("quick-log-full"));
+    await user.click(screen.getByTestId("save-button"));
+    await waitFor(() =>
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/client/training/events/"),
+        expect.objectContaining({ method: "POST" }),
+      ),
+    );
+    const postCall = (
+      global.fetch as unknown as ReturnType<typeof vi.fn>
+    ).mock.calls.find((c) =>
+      String(c[0]).includes("/api/client/training/events/"),
+    );
+    const body = JSON.parse(postCall![1].body as string) as {
+      exercises?: Array<{
+        exerciseId?: string;
+        exerciseName: string;
+      }>;
+    };
+    const unplanned = body.exercises!.find(
+      (ex) => ex.exerciseName === "Bulgarian Split Squat",
+    );
+    expect(unplanned).toBeDefined();
+    expect(unplanned!.exerciseId).toBe(PICKED_ID);
+  });
+
+  it("[picker-freehand] free-form name (no match) submits exerciseName but no exerciseId", async () => {
+    setEventReady();
+    const realFetch = global.fetch;
+    global.fetch = vi
+      .fn()
+      .mockImplementation((url: string, init?: RequestInit) => {
+        if (
+          typeof url === "string" &&
+          url.startsWith("/api/training/exercises")
+        ) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ exercises: [] }),
+          });
+        }
+        return (realFetch as unknown as typeof fetch)(url, init);
+      }) as unknown as typeof fetch;
+
+    const user = userEvent.setup();
+    render(<SetTracker eventId="evt-1" />);
+    await user.click(screen.getByTestId("detailed-toggle"));
+    await user.type(
+      screen.getByTestId("add-exercise-name"),
+      "Made-up Movement",
+    );
+    await user.click(screen.getByTestId("add-exercise-submit"));
+    const blocks = screen.getAllByTestId("exercise-tracker-block");
+    const newBlock = blocks[blocks.length - 1];
+    await user.type(within(newBlock).getByLabelText("Set 1 reps"), "10");
+    await user.type(within(newBlock).getByLabelText("Set 1 weight"), "20");
+    await user.click(screen.getByTestId("quick-log-full"));
+    await user.click(screen.getByTestId("save-button"));
+    await waitFor(() =>
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/client/training/events/"),
+        expect.objectContaining({ method: "POST" }),
+      ),
+    );
+    const postCall = (
+      global.fetch as unknown as ReturnType<typeof vi.fn>
+    ).mock.calls.find((c) =>
+      String(c[0]).includes("/api/client/training/events/"),
+    );
+    const body = JSON.parse(postCall![1].body as string) as {
+      exercises?: Array<{ exerciseId?: string; exerciseName: string }>;
+    };
+    const made = body.exercises!.find(
+      (ex) => ex.exerciseName === "Made-up Movement",
+    );
+    expect(made).toBeDefined();
+    expect(made!.exerciseId).toBeUndefined();
+  });
+
+  // ---- 17e. Log workout button location ----------------------------------
+
+  it("[log-button-location] Log workout button sits above the quick-log card and submits the form", async () => {
+    setEventReady();
+    const user = userEvent.setup();
+    render(<SetTracker eventId="evt-1" />);
+    const saveBtn = screen.getByTestId("save-button");
+    expect(saveBtn).toHaveTextContent(/log workout/i);
+    // The button is OUTSIDE the QuickLogControls section (no longer inside).
+    // The QuickLogControls section is identifiable by quick-log-full living
+    // inside it; assert the save button is not a descendant.
+    const quickFull = screen.getByTestId("quick-log-full");
+    const quickSection = quickFull.closest("section");
+    expect(quickSection).not.toBeNull();
+    expect(quickSection!.contains(saveBtn)).toBe(false);
+    // Submit still works.
+    await user.click(screen.getByTestId("quick-log-full"));
+    await user.click(saveBtn);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    expect(getLastFetchPayload()).toEqual({ completionQuality: "full" });
+  });
+
+  // ---- 17f. Swap UI for prescribed exercises -----------------------------
+
+  it("[swap-prescribed] picking a swap target updates the displayed name + payload, preserves training_exercise_id", async () => {
+    setEventReady();
+    const PICKED_ID = "44444444-4444-4444-8444-444444444444";
+    const realFetch = global.fetch;
+    global.fetch = vi
+      .fn()
+      .mockImplementation((url: string, init?: RequestInit) => {
+        if (
+          typeof url === "string" &&
+          url.startsWith("/api/training/exercises")
+        ) {
+          return Promise.resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve({
+                exercises: [
+                  {
+                    id: PICKED_ID,
+                    name: "Dumbbell Bench",
+                    muscle_group: "chest",
+                  },
+                ],
+              }),
+          });
+        }
+        return (realFetch as unknown as typeof fetch)(url, init);
+      }) as unknown as typeof fetch;
+
+    const user = userEvent.setup();
+    render(<SetTracker eventId="evt-1" />);
+    await user.click(screen.getByTestId("detailed-toggle"));
+    await user.click(screen.getByTestId("swap-0"));
+    await user.type(screen.getByTestId("swap-picker-0"), "dumbbell");
+    await waitFor(() =>
+      expect(screen.getByText("Dumbbell Bench")).toBeInTheDocument(),
+    );
+    await user.click(screen.getByTestId(`swap-picker-0-option-${PICKED_ID}`));
+    // Block now shows new name + "swapped from Bench Press" indicator.
+    const ex0 = screen.getAllByTestId("exercise-tracker-block")[0];
+    expect(within(ex0).getByText("Dumbbell Bench")).toBeInTheDocument();
+    expect(within(ex0).getByText(/swapped from Bench Press/i)).toBeInTheDocument();
+    // Fill a set + save.
+    await user.type(within(ex0).getByLabelText("Set 1 reps"), "10");
+    await user.type(within(ex0).getByLabelText("Set 1 weight"), "60");
+    await user.click(screen.getByTestId("quick-log-full"));
+    await user.click(screen.getByTestId("save-button"));
+    await waitFor(() =>
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/client/training/events/"),
+        expect.objectContaining({ method: "POST" }),
+      ),
+    );
+    const postCall = (
+      global.fetch as unknown as ReturnType<typeof vi.fn>
+    ).mock.calls.find((c) =>
+      String(c[0]).includes("/api/client/training/events/"),
+    );
+    const body = JSON.parse(postCall![1].body as string) as {
+      exercises?: Array<{
+        trainingExerciseId?: string;
+        exerciseId?: string;
+        exerciseName: string;
+      }>;
+    };
+    const swapped = body.exercises![0];
+    expect(swapped.exerciseName).toBe("Dumbbell Bench");
+    expect(swapped.exerciseId).toBe(PICKED_ID);
+    // Original prescription link preserved.
+    expect(swapped.trainingExerciseId).toBe(REAL_UUID_A);
+  });
+
+  it("[swap-reset] Reset reverts to prescribed name and clears exerciseId/isSwapped", async () => {
+    setEventReady();
+    const PICKED_ID = "55555555-5555-4555-8555-555555555555";
+    const realFetch = global.fetch;
+    global.fetch = vi
+      .fn()
+      .mockImplementation((url: string, init?: RequestInit) => {
+        if (
+          typeof url === "string" &&
+          url.startsWith("/api/training/exercises")
+        ) {
+          return Promise.resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve({
+                exercises: [
+                  { id: PICKED_ID, name: "Smith Press", muscle_group: "chest" },
+                ],
+              }),
+          });
+        }
+        return (realFetch as unknown as typeof fetch)(url, init);
+      }) as unknown as typeof fetch;
+
+    const user = userEvent.setup();
+    render(<SetTracker eventId="evt-1" />);
+    await user.click(screen.getByTestId("detailed-toggle"));
+    await user.click(screen.getByTestId("swap-0"));
+    await user.type(screen.getByTestId("swap-picker-0"), "smith");
+    await waitFor(() =>
+      expect(screen.getByText("Smith Press")).toBeInTheDocument(),
+    );
+    await user.click(screen.getByTestId(`swap-picker-0-option-${PICKED_ID}`));
+    // Now reset.
+    await user.click(screen.getByTestId("swap-reset-0"));
+    const ex0 = screen.getAllByTestId("exercise-tracker-block")[0];
+    expect(within(ex0).getByText("Bench Press")).toBeInTheDocument();
+    expect(within(ex0).queryByText(/swapped from/i)).toBeNull();
+    // Save → payload has prescribed name, no exerciseId.
+    await user.type(within(ex0).getByLabelText("Set 1 reps"), "10");
+    await user.type(within(ex0).getByLabelText("Set 1 weight"), "100");
+    await user.click(screen.getByTestId("quick-log-full"));
+    await user.click(screen.getByTestId("save-button"));
+    await waitFor(() =>
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/client/training/events/"),
+        expect.objectContaining({ method: "POST" }),
+      ),
+    );
+    const postCall = (
+      global.fetch as unknown as ReturnType<typeof vi.fn>
+    ).mock.calls.find((c) =>
+      String(c[0]).includes("/api/client/training/events/"),
+    );
+    const body = JSON.parse(postCall![1].body as string) as {
+      exercises?: Array<{ exerciseName: string; exerciseId?: string }>;
+    };
+    expect(body.exercises![0].exerciseName).toBe("Bench Press");
+    expect(body.exercises![0].exerciseId).toBeUndefined();
+  });
+
+  it("[unplanned-no-swap] unplanned blocks do not render the Swap action", async () => {
+    setEventReady();
+    const user = userEvent.setup();
+    render(<SetTracker eventId="evt-1" />);
+    await user.click(screen.getByTestId("detailed-toggle"));
+    await user.type(
+      screen.getByTestId("add-exercise-name"),
+      "Mystery Move",
+    );
+    await user.click(screen.getByTestId("add-exercise-submit"));
+    // Newly added unplanned block is the last one.
+    const blocks = screen.getAllByTestId("exercise-tracker-block");
+    expect(blocks.length).toBeGreaterThanOrEqual(3);
+    const unplannedIdx = blocks.length - 1;
+    expect(screen.queryByTestId(`swap-${unplannedIdx}`)).toBeNull();
+  });
+
   // ---- 19. Pre-populated from existing log --------------------------------
 
   it("[restore] pre-populates form from existing sessionLog + exerciseLogs", async () => {
@@ -665,13 +966,44 @@ describe("SetTracker", () => {
         id: "elog-1",
         sessionLogId: "log-1",
         trainingExerciseId: REAL_UUID_A,
+        exerciseId: null,
         completed: true,
-        actualSets: 3,
-        actualReps: "10,10,8",
-        actualWeight: 105,
         weightUnit: "lbs",
         notes: null,
-        prescribedExerciseSnapshot: null,
+        performedName: "Bench Press",
+        prescribedExerciseSnapshot: { name: "Bench Press" },
+        sets: [
+          {
+            id: "sl-1",
+            exerciseLogId: "elog-1",
+            setNumber: 1,
+            reps: 10,
+            weight: 100,
+            rpe: 8,
+            createdAt: ISO,
+            updatedAt: ISO,
+          },
+          {
+            id: "sl-2",
+            exerciseLogId: "elog-1",
+            setNumber: 2,
+            reps: 10,
+            weight: 105,
+            rpe: 8,
+            createdAt: ISO,
+            updatedAt: ISO,
+          },
+          {
+            id: "sl-3",
+            exerciseLogId: "elog-1",
+            setNumber: 3,
+            reps: 8,
+            weight: 105,
+            rpe: 9,
+            createdAt: ISO,
+            updatedAt: ISO,
+          },
+        ],
         createdAt: ISO,
         updatedAt: ISO,
       },
@@ -688,7 +1020,8 @@ describe("SetTracker", () => {
     expect(
       screen.getByTestId<HTMLTextAreaElement>("session-notes").value,
     ).toBe("Felt good");
-    // Set rows pre-populated
+    // Set rows pre-populated with EXACT per-set values (no more lossy
+    // top-set broadcast — weights and RPEs differ per row).
     await user.click(screen.getByTestId("detailed-toggle"));
     const ex0 = screen.getAllByTestId("exercise-tracker-block")[0];
     expect(
@@ -702,22 +1035,36 @@ describe("SetTracker", () => {
     ).toBe("8");
     expect(
       within(ex0).getByLabelText<HTMLInputElement>("Set 1 weight").value,
+    ).toBe("100");
+    expect(
+      within(ex0).getByLabelText<HTMLInputElement>("Set 2 weight").value,
     ).toBe("105");
+    expect(
+      within(ex0).getByLabelText<HTMLInputElement>("Set 3 weight").value,
+    ).toBe("105");
+    expect(
+      within(ex0).getByLabelText<HTMLInputElement>("Set 1 RPE").value,
+    ).toBe("8");
+    expect(
+      within(ex0).getByLabelText<HTMLInputElement>("Set 3 RPE").value,
+    ).toBe("9");
     // Save without modification → submitted payload includes restored values
     await user.click(screen.getByTestId("save-button"));
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
     const payload = getLastFetchPayload() as {
       completionQuality: string;
       notes?: string;
-      exercises?: Array<{ sets: Array<{ reps?: number; weight?: number }> }>;
+      exercises?: Array<{
+        sets: Array<{ reps?: number; weight?: number; rpe?: number }>;
+      }>;
     };
     expect(payload.completionQuality).toBe("partial");
     expect(payload.notes).toBe("Felt good");
     expect(payload.exercises).toHaveLength(1);
     expect(payload.exercises![0].sets).toEqual([
-      { reps: 10, weight: 105 },
-      { reps: 10, weight: 105 },
-      { reps: 8, weight: 105 },
+      { reps: 10, weight: 100, rpe: 8 },
+      { reps: 10, weight: 105, rpe: 8 },
+      { reps: 8, weight: 105, rpe: 9 },
     ]);
   });
 });

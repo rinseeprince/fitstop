@@ -9,7 +9,10 @@ export type SetRowValues = { reps: string; weight: string; rpe: string };
 
 export type ExerciseFormValues = {
   trainingExerciseId: string;
+  exerciseId?: string;
   exerciseName: string;
+  prescribedName?: string;
+  isSwapped: boolean;
   weightUnit: "lbs" | "kg";
   skipped: boolean;
   notes: string;
@@ -48,6 +51,8 @@ export function buildLogPayload(
         ...(UUID_RE.test(ex.trainingExerciseId) && {
           trainingExerciseId: ex.trainingExerciseId,
         }),
+        ...(ex.exerciseId &&
+          UUID_RE.test(ex.exerciseId) && { exerciseId: ex.exerciseId }),
         exerciseName: ex.exerciseName,
         sets: ex.skipped ? [] : filledSets,
         weightUnit: ex.weightUnit,
@@ -68,26 +73,30 @@ export function buildLogPayload(
   return detailed.length > 0 ? { ...base, exercises: detailed } : base;
 }
 
-// Restoration is best-effort and lossy. exercise_logs.actual_weight stores
-// only the top set's weight, so the same weight is shown on every set row.
-// RPE is not persisted in exercise_logs and cannot be restored.
-function restoreSetsFromLog(
-  log: ExerciseLog,
-  prescribedSetsCount: number,
-): SetRowValues[] {
-  if (log.completed === false && log.actualSets === null) {
-    return [emptySet()];
-  }
-  const reps = log.actualReps
-    ? log.actualReps.split(",").map((r) => r.trim()).filter(Boolean)
-    : [];
-  const weight = log.actualWeight != null ? String(log.actualWeight) : "";
-  if (reps.length === 0) {
-    return Array.from({ length: Math.max(1, prescribedSetsCount) }, () =>
-      emptySet(),
-    );
-  }
-  return reps.map((r) => ({ reps: r, weight, rpe: "" }));
+// Restoration reads structured set data from set_logs (attached to ExerciseLog
+// by the service reader). Per-set fidelity (reps, weight, RPE) is preserved
+// exactly as logged.
+function restoreSetsFromLog(log: ExerciseLog): SetRowValues[] {
+  if (log.sets.length === 0) return [emptySet()];
+  return [...log.sets]
+    .sort((a, b) => a.setNumber - b.setNumber)
+    .map((s) => ({
+      reps: s.reps != null ? String(s.reps) : "",
+      weight: s.weight != null ? String(s.weight) : "",
+      rpe: s.rpe != null ? String(s.rpe) : "",
+    }));
+}
+
+function displayName(log: ExerciseLog): string {
+  return (
+    log.performedName ??
+    (log.prescribedExerciseSnapshot?.name as string | undefined) ??
+    "Unplanned exercise"
+  );
+}
+
+function isSkippedLog(log: ExerciseLog): boolean {
+  return log.completed === false && log.sets.length === 0;
 }
 
 export function seedDefaultValues(args: {
@@ -104,7 +113,10 @@ export function seedDefaultValues(args: {
       notes: "",
       exercises: prescribedViews.map((v) => ({
         trainingExerciseId: v.id,
+        exerciseId: undefined,
         exerciseName: v.name,
+        prescribedName: v.name,
+        isSwapped: false,
         weightUnit,
         skipped: false,
         notes: "",
@@ -126,7 +138,10 @@ export function seedDefaultValues(args: {
     if (!log) {
       return {
         trainingExerciseId: v.id,
+        exerciseId: undefined,
         exerciseName: v.name,
+        prescribedName: v.name,
+        isSwapped: false,
         weightUnit,
         skipped: false,
         notes: "",
@@ -134,14 +149,22 @@ export function seedDefaultValues(args: {
         isUnplanned: false,
       };
     }
-    const skipped = log.completed === false && log.actualSets === null;
+    const skipped = isSkippedLog(log);
+    const performed = displayName(log);
+    const isSwapped =
+      log.performedName != null &&
+      typeof log.prescribedExerciseSnapshot?.name === "string" &&
+      log.performedName !== log.prescribedExerciseSnapshot.name;
     return {
       trainingExerciseId: v.id,
-      exerciseName: v.name,
+      exerciseId: log.exerciseId ?? undefined,
+      exerciseName: performed,
+      prescribedName: v.name,
+      isSwapped,
       weightUnit: log.weightUnit ?? weightUnit,
       skipped,
       notes: log.notes ?? "",
-      sets: skipped ? [emptySet()] : restoreSetsFromLog(log, v.sets),
+      sets: skipped ? [emptySet()] : restoreSetsFromLog(log),
       isUnplanned: false,
     };
   });
@@ -153,17 +176,17 @@ export function seedDefaultValues(args: {
       !prescribedIdSet.has(log.trainingExerciseId),
   );
   const orphanExercises: ExerciseFormValues[] = orphanLogs.map((log) => {
-    const skipped = log.completed === false && log.actualSets === null;
-    const snapshotName =
-      (log.prescribedExerciseSnapshot?.name as string | undefined) ??
-      "Unplanned exercise";
+    const skipped = isSkippedLog(log);
     return {
       trainingExerciseId: log.trainingExerciseId ?? "",
-      exerciseName: snapshotName,
+      exerciseId: log.exerciseId ?? undefined,
+      exerciseName: displayName(log),
+      prescribedName: undefined,
+      isSwapped: false,
       weightUnit: log.weightUnit ?? weightUnit,
       skipped,
       notes: log.notes ?? "",
-      sets: skipped ? [emptySet()] : restoreSetsFromLog(log, 1),
+      sets: skipped ? [emptySet()] : restoreSetsFromLog(log),
       isUnplanned: true,
     };
   });

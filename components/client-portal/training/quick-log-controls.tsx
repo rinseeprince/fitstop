@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2, Plus, X } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import {
   useWatch,
   type Control,
@@ -18,7 +18,6 @@ type QuickLogControlsProps = {
   register: UseFormRegister<LogFormValues>;
   setValue: UseFormSetValue<LogFormValues>;
   getValues: UseFormGetValues<LogFormValues>;
-  isSubmitting: boolean;
 };
 
 const STATUS_OPTIONS: Array<{
@@ -35,10 +34,8 @@ export function QuickLogControls({
   register,
   setValue,
   getValues,
-  isSubmitting,
 }: QuickLogControlsProps) {
   const completionQuality = useWatch({ control, name: "completionQuality" });
-  const canSave = completionQuality !== "" && !isSubmitting;
   const initialNotes = getValues("notes") ?? "";
   const [notesOpen, setNotesOpen] = useState(initialNotes.trim().length > 0);
 
@@ -103,16 +100,6 @@ export function QuickLogControls({
           Add notes
         </Button>
       )}
-      <Button
-        type="submit"
-        size="lg"
-        disabled={!canSave}
-        data-testid="save-button"
-        className="w-full"
-      >
-        {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
-        Save workout
-      </Button>
     </section>
   );
 }

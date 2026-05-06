@@ -96,6 +96,7 @@ export const setPerformanceSchema = z.object({
 export const exercisePerformanceSchema = z
   .object({
     trainingExerciseId: z.string().uuid().optional(),
+    exerciseId: z.string().uuid().optional(),
     exerciseName: z.string().min(1).max(200),
     sets: z.array(setPerformanceSchema),
     weightUnit: z.enum(["lbs", "kg"]),

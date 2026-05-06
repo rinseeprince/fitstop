@@ -2,8 +2,9 @@
 
 import { useMemo, useState } from "react";
 import useSWR from "swr";
-import { useFieldArray, useForm } from "react-hook-form";
-import { ChevronDown } from "lucide-react";
+import { useFieldArray, useForm, useWatch } from "react-hook-form";
+import { ChevronDown, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -227,12 +228,16 @@ function TrainingLogForm({
         </div>
       </header>
 
+      <LogWorkoutButton
+        control={control}
+        isSubmitting={isSubmitting}
+      />
+
       <QuickLogControls
         control={control}
         register={register}
         setValue={setValue}
         getValues={getValues}
-        isSubmitting={isSubmitting}
       />
 
       {exerciseFields.length === 0 ? (
@@ -364,4 +369,30 @@ function formatTrainingDate(value: string | undefined): string | null {
     month: "short",
     day: "numeric",
   });
+}
+
+// Compact, right-aligned submit button. Sits above the QuickLogControls card
+// so the primary action is reachable without scrolling past the status buttons.
+function LogWorkoutButton({
+  control,
+  isSubmitting,
+}: {
+  control: import("react-hook-form").Control<LogFormValues>;
+  isSubmitting: boolean;
+}) {
+  const completionQuality = useWatch({ control, name: "completionQuality" });
+  const canSave = completionQuality !== "" && !isSubmitting;
+  return (
+    <div className="flex justify-end">
+      <Button
+        type="submit"
+        size="default"
+        disabled={!canSave}
+        data-testid="save-button"
+      >
+        {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
+        Log workout
+      </Button>
+    </div>
+  );
 }

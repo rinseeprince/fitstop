@@ -10,6 +10,8 @@ import type {
   SessionLogInsert,
   SessionLogRow,
   SessionLogUpdate,
+  SetLogInsert,
+  SetLogRow,
   TrainingEventRow,
   TrainingExerciseRow,
 } from "@/lib/database-helpers";
@@ -24,6 +26,7 @@ import type {
   ResolvedExercise,
   ResolvedSession,
   SessionLog,
+  SetLog,
   TrainingEvent,
   TrainingEventDetail,
   TrainingEventStatus,
@@ -44,23 +47,8 @@ function setHasData(set: SetPerformanceInput): boolean {
   return set.reps != null || set.weight != null;
 }
 
-function countSetsWithData(sets: SetPerformanceInput[]): number {
-  return sets.filter(setHasData).length;
-}
-
-function joinReps(sets: SetPerformanceInput[]): string | null {
-  const reps = sets
-    .filter(setHasData)
-    .map((s) => s.reps)
-    .filter((r): r is number => r != null);
-  if (reps.length === 0) return null;
-  return reps.join(",").slice(0, 200);
-}
-
-function topSetWeight(sets: SetPerformanceInput[]): number | null {
-  const weights = sets.map((s) => s.weight).filter((w): w is number => w != null);
-  if (weights.length === 0) return null;
-  return Math.round(Math.max(...weights) * 100) / 100;
+function setRowHasAnyValue(set: SetPerformanceInput): boolean {
+  return set.reps != null || set.weight != null || set.rpe != null;
 }
 
 // --- Snapshot shapes (JSONB-bound) ---
@@ -111,19 +99,56 @@ function mapExerciseLogRow(row: ExerciseLogRow): ExerciseLog {
     id: row.id,
     sessionLogId: row.session_log_id,
     trainingExerciseId: row.training_exercise_id,
+    exerciseId: row.exercise_id,
     completed: row.completed ?? false,
-    actualSets: row.actual_sets,
-    actualReps: row.actual_reps,
-    actualWeight: row.actual_weight,
     // weight_unit is nullable in the DB schema but writers always send "lbs"|"kg".
     // Default to "lbs" defensively for any historical row that's null.
     weightUnit: ((row.weight_unit as "lbs" | "kg" | null) ?? "lbs") as "lbs" | "kg",
     notes: row.notes,
+    performedName: row.performed_name,
     prescribedExerciseSnapshot:
       (row.prescribed_exercise_snapshot as Record<string, unknown> | null) ?? null,
+    sets: [],
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+function mapSetLogRow(row: SetLogRow): SetLog {
+  return {
+    id: row.id,
+    exerciseLogId: row.exercise_log_id,
+    setNumber: row.set_number,
+    reps: row.reps,
+    weight: row.weight,
+    rpe: row.rpe,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+// Fetches set_logs for the given exercise_logs in one query and attaches them
+// to each ExerciseLog under `sets`. Caller passes already-mapped logs.
+async function attachSetLogs(logs: ExerciseLog[]): Promise<ExerciseLog[]> {
+  if (logs.length === 0) return logs;
+  const { data, error } = await supabaseAdmin
+    .from("set_logs")
+    .select("*")
+    .in(
+      "exercise_log_id",
+      logs.map((l) => l.id),
+    )
+    .order("set_number", { ascending: true });
+  if (error) {
+    throw new Error(`Failed to load set logs: ${error.message}`);
+  }
+  const byExercise = new Map<string, SetLog[]>();
+  for (const row of data ?? []) {
+    const list = byExercise.get(row.exercise_log_id) ?? [];
+    list.push(mapSetLogRow(row));
+    byExercise.set(row.exercise_log_id, list);
+  }
+  return logs.map((log) => ({ ...log, sets: byExercise.get(log.id) ?? [] }));
 }
 
 function mapEventRow(row: TrainingEventRow): TrainingEvent {
@@ -394,6 +419,9 @@ export async function logTrainingEvent(params: {
     }
 
     // 6c. Insert with fresh-or-preserved snapshots.
+    // For free-form exercises (no trainingExerciseId, no prior snapshot),
+    // capture the user-supplied name into prescribed_exercise_snapshot so
+    // revisit displays it instead of "Unknown exercise".
     const inserts: ExerciseLogInsert[] = (payload.exercises ?? []).map((ex) => {
       const fresh = ex.trainingExerciseId
         ? freshExerciseSnapshotMap.get(ex.trainingExerciseId) ?? null
@@ -401,27 +429,64 @@ export async function logTrainingEvent(params: {
       const preserved = ex.trainingExerciseId
         ? existingSnapshotMap.get(ex.trainingExerciseId) ?? null
         : null;
+      const freeFormSnapshot =
+        !fresh && !preserved && !ex.trainingExerciseId
+          ? { name: ex.exerciseName }
+          : null;
       const completed = ex.skipped !== true && ex.sets.some(setHasData);
       return {
         session_log_id: sessionLogId,
         training_exercise_id: ex.trainingExerciseId ?? null,
+        exercise_id: ex.exerciseId ?? null,
         completed,
-        actual_sets: ex.skipped ? null : countSetsWithData(ex.sets),
-        actual_reps: ex.skipped ? null : joinReps(ex.sets),
-        actual_weight: ex.skipped ? null : topSetWeight(ex.sets),
         weight_unit: ex.weightUnit,
         notes: ex.notes ?? null,
-        prescribed_exercise_snapshot: (fresh ?? preserved) as unknown as Json | null,
+        performed_name: ex.exerciseName,
+        prescribed_exercise_snapshot:
+          (fresh ?? preserved ?? freeFormSnapshot) as unknown as Json | null,
       };
     });
 
+    let insertedExerciseLogIds: string[] = [];
     if (inserts.length > 0) {
-      const { error: insertErr } = await supabaseAdmin
+      const { data: insertedRows, error: insertErr } = await supabaseAdmin
         .from("exercise_logs")
-        .insert(inserts);
-      if (insertErr) {
+        .insert(inserts)
+        .select("id");
+      if (insertErr || !insertedRows) {
         throw new Error(
-          `Failed to insert exercise logs: ${insertErr.message}`,
+          `Failed to insert exercise logs: ${insertErr?.message ?? "no rows returned"}`,
+        );
+      }
+      insertedExerciseLogIds = insertedRows.map((r) => r.id);
+    }
+
+    // 6d. Insert set_logs for non-skipped exercises.
+    // FK CASCADE on the exercise_logs DELETE in step 6b already removed any
+    // stale set_logs, so this is a clean insert.
+    const setLogInserts: SetLogInsert[] = [];
+    (payload.exercises ?? []).forEach((ex, exIdx) => {
+      if (ex.skipped) return;
+      const exerciseLogId = insertedExerciseLogIds[exIdx];
+      if (!exerciseLogId) return;
+      ex.sets.forEach((s, setIdx) => {
+        if (!setRowHasAnyValue(s)) return;
+        setLogInserts.push({
+          exercise_log_id: exerciseLogId,
+          set_number: setIdx + 1,
+          reps: s.reps ?? null,
+          weight: s.weight ?? null,
+          rpe: s.rpe ?? null,
+        });
+      });
+    });
+    if (setLogInserts.length > 0) {
+      const { error: setInsertErr } = await supabaseAdmin
+        .from("set_logs")
+        .insert(setLogInserts);
+      if (setInsertErr) {
+        throw new Error(
+          `Failed to insert set logs: ${setInsertErr.message}`,
         );
       }
     }
@@ -556,7 +621,7 @@ export async function getTrainingEventDetail(
     }
     exerciseLogRows = data ?? [];
   }
-  const exerciseLogs = exerciseLogRows.map(mapExerciseLogRow);
+  const exerciseLogs = await attachSetLogs(exerciseLogRows.map(mapExerciseLogRow));
 
   // Build ResolvedSession.
   const session: ResolvedSession =
@@ -630,10 +695,12 @@ export async function getSessionLogDetail(
     throw new Error(`Failed to load exercise logs: ${exErr.message}`);
   }
 
+  const exerciseLogs = await attachSetLogs(
+    (exerciseRows ?? []).map((r) => mapExerciseLogRow(r as ExerciseLogRow)),
+  );
+
   return {
     sessionLog: mapSessionLogRow(row as SessionLogRow),
-    exerciseLogs: (exerciseRows ?? []).map((r) =>
-      mapExerciseLogRow(r as ExerciseLogRow),
-    ),
+    exerciseLogs,
   };
 }

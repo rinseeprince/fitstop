@@ -22,6 +22,9 @@ export type SessionLogUpdate = Database["public"]["Tables"]["session_logs"]["Upd
 export type ExerciseLogRow = Database["public"]["Tables"]["exercise_logs"]["Row"];
 export type ExerciseLogInsert = Database["public"]["Tables"]["exercise_logs"]["Insert"];
 export type ExerciseLogUpdate = Database["public"]["Tables"]["exercise_logs"]["Update"];
+export type SetLogRow = Database["public"]["Tables"]["set_logs"]["Row"];
+export type SetLogInsert = Database["public"]["Tables"]["set_logs"]["Insert"];
+export type SetLogUpdate = Database["public"]["Tables"]["set_logs"]["Update"];
 /** @deprecated Use SessionLogRow */
 export type ClientSessionCompletionRow = SessionLogRow;
 export type CheckInSessionCompletionRow = Database["public"]["Tables"]["check_in_session_completions"]["Row"];

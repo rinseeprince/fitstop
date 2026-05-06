@@ -1418,13 +1418,12 @@ export type Database = {
       }
       exercise_logs: {
         Row: {
-          actual_reps: string | null
-          actual_sets: number | null
-          actual_weight: number | null
           completed: boolean | null
           created_at: string
+          exercise_id: string | null
           id: string
           notes: string | null
+          performed_name: string | null
           prescribed_exercise_snapshot: Json | null
           session_log_id: string
           training_exercise_id: string | null
@@ -1432,13 +1431,12 @@ export type Database = {
           weight_unit: string | null
         }
         Insert: {
-          actual_reps?: string | null
-          actual_sets?: number | null
-          actual_weight?: number | null
           completed?: boolean | null
           created_at?: string
+          exercise_id?: string | null
           id?: string
           notes?: string | null
+          performed_name?: string | null
           prescribed_exercise_snapshot?: Json | null
           session_log_id: string
           training_exercise_id?: string | null
@@ -1446,13 +1444,12 @@ export type Database = {
           weight_unit?: string | null
         }
         Update: {
-          actual_reps?: string | null
-          actual_sets?: number | null
-          actual_weight?: number | null
           completed?: boolean | null
           created_at?: string
+          exercise_id?: string | null
           id?: string
           notes?: string | null
+          performed_name?: string | null
           prescribed_exercise_snapshot?: Json | null
           session_log_id?: string
           training_exercise_id?: string | null
@@ -1460,6 +1457,13 @@ export type Database = {
           weight_unit?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "exercise_logs_exercise_id_fkey"
+            columns: ["exercise_id"]
+            isOneToOne: false
+            referencedRelation: "exercises"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "exercise_logs_session_log_id_fkey"
             columns: ["session_log_id"]
@@ -1472,6 +1476,47 @@ export type Database = {
             columns: ["training_exercise_id"]
             isOneToOne: false
             referencedRelation: "training_exercises"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      set_logs: {
+        Row: {
+          created_at: string
+          exercise_log_id: string
+          id: string
+          reps: number | null
+          rpe: number | null
+          set_number: number
+          updated_at: string
+          weight: number | null
+        }
+        Insert: {
+          created_at?: string
+          exercise_log_id: string
+          id?: string
+          reps?: number | null
+          rpe?: number | null
+          set_number: number
+          updated_at?: string
+          weight?: number | null
+        }
+        Update: {
+          created_at?: string
+          exercise_log_id?: string
+          id?: string
+          reps?: number | null
+          rpe?: number | null
+          set_number?: number
+          updated_at?: string
+          weight?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "set_logs_exercise_log_id_fkey"
+            columns: ["exercise_log_id"]
+            isOneToOne: false
+            referencedRelation: "exercise_logs"
             referencedColumns: ["id"]
           },
         ]

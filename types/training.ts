@@ -432,18 +432,34 @@ export type SessionLog = {
   updatedAt: string;
 };
 
-// Camel-case mirror of the exercise_logs row.
+// Camel-case mirror of a set_logs row.
+export type SetLog = {
+  id: string;
+  exerciseLogId: string;
+  setNumber: number;
+  reps: number | null;
+  weight: number | null;
+  rpe: number | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+// Camel-case mirror of the exercise_logs row, plus a service-attached `sets`
+// array of child set_logs (populated by the reader, not present on the row).
+//
+// Display-name resolution rule:
+//   performedName ?? prescribedExerciseSnapshot?.name ?? "Unknown exercise"
 export type ExerciseLog = {
   id: string;
   sessionLogId: string;
   trainingExerciseId: string | null;
+  exerciseId: string | null;
   completed: boolean;
-  actualSets: number | null;
-  actualReps: string | null;
-  actualWeight: number | null;
   weightUnit: 'lbs' | 'kg';
   notes: string | null;
+  performedName: string | null;
   prescribedExerciseSnapshot: Record<string, unknown> | null;
+  sets: SetLog[];
   createdAt: string;
   updatedAt: string;
 };

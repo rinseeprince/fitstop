@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ExerciseSearchInput } from "./exercise-search-input";
 import type { ExerciseFormValues } from "./log-form-types";
 import { emptySet } from "./log-form-types";
 
@@ -17,6 +18,7 @@ const MAX_SETS = 10;
 
 export function AddExerciseRow({ weightUnit, onAdd }: AddExerciseRowProps) {
   const [name, setName] = useState("");
+  const [exerciseId, setExerciseId] = useState<string | undefined>(undefined);
   const [sets, setSets] = useState(String(DEFAULT_SETS));
 
   const handleAdd = () => {
@@ -29,7 +31,10 @@ export function AddExerciseRow({ weightUnit, onAdd }: AddExerciseRowProps) {
         : DEFAULT_SETS;
     onAdd({
       trainingExerciseId: "",
+      exerciseId,
       exerciseName: trimmed,
+      prescribedName: undefined,
+      isSwapped: false,
       weightUnit,
       skipped: false,
       notes: "",
@@ -37,6 +42,7 @@ export function AddExerciseRow({ weightUnit, onAdd }: AddExerciseRowProps) {
       isUnplanned: true,
     });
     setName("");
+    setExerciseId(undefined);
     setSets(String(DEFAULT_SETS));
   };
 
@@ -50,12 +56,15 @@ export function AddExerciseRow({ weightUnit, onAdd }: AddExerciseRowProps) {
       </div>
       <div className="mt-2 grid grid-cols-12 gap-2">
         <div className="col-span-7">
-          <Input
+          <ExerciseSearchInput
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(next) => {
+              setName(next.name);
+              setExerciseId(next.exerciseId);
+            }}
             placeholder="Exercise name"
-            aria-label="Unplanned exercise name"
-            data-testid="add-exercise-name"
+            ariaLabel="Unplanned exercise name"
+            testId="add-exercise-name"
           />
         </div>
         <div className="col-span-2">

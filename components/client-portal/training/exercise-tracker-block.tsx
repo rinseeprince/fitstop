@@ -10,11 +10,12 @@ import {
   type UseFormRegister,
   type UseFormSetValue,
 } from "react-hook-form";
-import { Plus, Trash2, X } from "lucide-react";
+import { Plus, Repeat, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { SetRow } from "./set-row";
+import { ExerciseSearchInput } from "./exercise-search-input";
 import { emptySet, type LogFormValues } from "./log-form-types";
 
 export type PrescribedExerciseView = {
@@ -150,9 +151,41 @@ function FormModeBlock({
 
   const initialNotes = getValues(`exercises.${index}.notes`) ?? "";
   const [notesOpen, setNotesOpen] = useState(initialNotes.trim().length > 0);
+  const [swapping, setSwapping] = useState(false);
 
   const skipped =
     useWatch({ control, name: `exercises.${index}.skipped` }) ?? false;
+  const liveName =
+    useWatch({ control, name: `exercises.${index}.exerciseName` }) ??
+    exercise.name;
+  const isSwapped =
+    useWatch({ control, name: `exercises.${index}.isSwapped` }) ?? false;
+  const prescribedName = getValues(`exercises.${index}.prescribedName`);
+
+  const applySwap = (next: { name: string; exerciseId: string | undefined }) => {
+    const trimmed = next.name.trim();
+    if (!trimmed) return;
+    setValue(`exercises.${index}.exerciseName`, trimmed, { shouldDirty: true });
+    setValue(`exercises.${index}.exerciseId`, next.exerciseId, {
+      shouldDirty: true,
+    });
+    setValue(`exercises.${index}.isSwapped`, true, { shouldDirty: true });
+    // Close the picker only when the user actually picks a catalog item.
+    // Free typing keeps the picker open so they can keep searching/select.
+    if (next.exerciseId !== undefined) {
+      setSwapping(false);
+    }
+  };
+
+  const resetSwap = () => {
+    if (!prescribedName) return;
+    setValue(`exercises.${index}.exerciseName`, prescribedName, {
+      shouldDirty: true,
+    });
+    setValue(`exercises.${index}.exerciseId`, undefined, { shouldDirty: true });
+    setValue(`exercises.${index}.isSwapped`, false, { shouldDirty: true });
+    setSwapping(false);
+  };
 
   const watchedSets =
     useWatch({ control, name: `exercises.${index}.sets` }) ?? [];
@@ -196,16 +229,64 @@ function FormModeBlock({
       className="rounded-[6px] bg-white p-4"
     >
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="truncate text-[15px] font-semibold text-[#0c1a1e]">
-              {exercise.name}
+              {liveName}
             </h3>
             {exercise.isWarmup && <WarmupBadge />}
             {isUnplanned && <UnplannedBadge />}
           </div>
           {summary && (
             <p className="mt-1 text-[12px] text-[#5a7d82]">{summary}</p>
+          )}
+          {!isUnplanned && isSwapped && prescribedName && !swapping && (
+            <p className="mt-1 text-[11px] text-[#5a7d82]">
+              Swapped from {prescribedName}
+              <button
+                type="button"
+                onClick={resetSwap}
+                data-testid={`swap-reset-${index}`}
+                className="ml-2 font-medium text-[#0d9488] transition-colors hover:text-[#0a766b]"
+              >
+                Reset
+              </button>
+            </p>
+          )}
+          {!isUnplanned && !swapping && !isSwapped && (
+            <button
+              type="button"
+              onClick={() => setSwapping(true)}
+              disabled={skipped}
+              data-testid={`swap-${index}`}
+              className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-[#5a7d82] transition-colors hover:text-[#0d9488] disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <Repeat className="h-3 w-3" />
+              Swap
+            </button>
+          )}
+          {!isUnplanned && swapping && (
+            <div className="mt-2 flex items-center gap-2">
+              <div className="flex-1">
+                <ExerciseSearchInput
+                  value={liveName}
+                  onChange={applySwap}
+                  placeholder="Search a replacement exercise..."
+                  ariaLabel={`Swap ${prescribedName ?? exercise.name}`}
+                  testId={`swap-picker-${index}`}
+                  autoFocus
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => setSwapping(false)}
+                data-testid={`swap-cancel-${index}`}
+                className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[6px] text-[#5a7d82] transition-colors hover:bg-[rgba(13,148,136,0.06)] hover:text-[#0d9488]"
+                aria-label="Cancel swap"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
           )}
         </div>
         <div className="flex shrink-0 items-center gap-3">

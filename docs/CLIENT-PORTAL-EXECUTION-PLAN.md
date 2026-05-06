@@ -44,6 +44,7 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 | 1.5 | Set tracker UI, inputs + save flow | 1 | COMPLETE
 | 1.6 | Coach drill-down dialog | 1 |
 | 1.7 | Attention feed rewire | 1 |
+| 1.8 | Coach-facing analytics over set_logs | 1 |
 | 2.1 | Day summary + program endpoints | 2 Home + nav |
 | 2.2 | Bottom tab bar + client layout restructure | 2 |
 | 2.3 | Home page shell + swipe navigation | 2 |
@@ -484,6 +485,45 @@ Session 0.1 confirmed no `timezone` column exists on `clients` and all date help
 - `services/attention-feed-service.test.ts`: regression for aggregated feed.
 
 **Verify**: `npx vitest run`. Manual signal test. Commit.
+
+---
+
+## Session 1.8: Coach-facing analytics over set_logs
+
+**Commit message**: `feat(coach): per-exercise analytics over set_logs (PRs, volume, intensity)`
+
+**Objective**: Surface what `set_logs` enables. Coach views to track per-exercise progression, top sets / PRs, weekly volume, and average intensity (RPE) over time. Builds on the schema landed in migration 090 (`set_logs` child table, `exercise_logs.exercise_id` global FK, `exercise_logs.performed_name`).
+
+**Read first**:
+- `supabase/migrations/090_normalize_set_logs.sql`.
+- `services/training-log-service.ts` (read path, in particular how `sets[]` is attached to each `ExerciseLog` via `attachSetLogs`).
+- `components/clients/training/training-history-table.tsx` (existing table to extend).
+- `components/clients/training/session-log-detail-dialog.tsx` (built in Session 1.6 — already shows per-set actuals for a single session).
+
+**Plan (report before implementing)**:
+- Decide query layer: SQL views, RPC functions, or service-layer helpers.
+- Decide which charts/tiles ship first (suggested: per-exercise top set over time + volume trend).
+- Identity rule: prefer `exercise_logs.exercise_id` for catalog joins; fall back to `LOWER(performed_name)` for legacy / freehand rows where the FK is null.
+
+**Implement**:
+- New service `services/exercise-analytics-service.ts`:
+  - `getTopSetHistory(clientId, exerciseId, range)` — max(weight) per session.
+  - `getVolumeHistory(clientId, exerciseId, range)` — sum(reps × weight) per session.
+  - `getIntensityHistory(clientId, exerciseId, range)` — avg(rpe) per session.
+- New API routes under `app/api/clients/[id]/training/analytics/`.
+- UI: extend the per-exercise drilldown in the coach training tab with charts (Recharts already in repo).
+- Identity match: prefer `exercise_logs.exercise_id`; fall back to `LOWER(performed_name)` for rows without the FK.
+
+**Do NOT**: Backfill legacy logs in this session. If real-user logs predate migration 090, scope a separate backfill task.
+
+**Tests to write**:
+- `exercise-analytics-service.test.ts`:
+  - Top-set series: handles single-session, multi-session, and skipped-exercise rows correctly.
+  - Volume = sum(reps × weight) ignores null weights / null reps.
+  - Intensity = avg(rpe) ignores null rpe.
+  - Identity match: `exercise_id` takes precedence; name match is fallback.
+
+**Verify**: `npx tsc --noEmit`, `npx vitest run`. Manual: open coach view of a client with logged sessions, confirm charts render with sane numbers.
 
 ---
 
