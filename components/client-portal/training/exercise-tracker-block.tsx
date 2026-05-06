@@ -10,7 +10,7 @@ import {
   type UseFormRegister,
   type UseFormSetValue,
 } from "react-hook-form";
-import { Plus, X } from "lucide-react";
+import { Plus, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
@@ -37,6 +37,7 @@ export type ExerciseFormContext = {
   getValues: UseFormGetValues<LogFormValues>;
   weightUnit: "lbs" | "kg";
   isUnplanned?: boolean;
+  onRemove?: () => void;
 };
 
 type ExerciseTrackerBlockProps = {
@@ -132,8 +133,15 @@ function FormModeBlock({
   rpeHint: string | undefined;
   summary: string;
 }) {
-  const { control, register, setValue, getValues, weightUnit, isUnplanned } =
-    formContext;
+  const {
+    control,
+    register,
+    setValue,
+    getValues,
+    weightUnit,
+    isUnplanned,
+    onRemove,
+  } = formContext;
 
   const { fields, append, remove } = useFieldArray({
     control,
@@ -200,21 +208,34 @@ function FormModeBlock({
             <p className="mt-1 text-[12px] text-[#5a7d82]">{summary}</p>
           )}
         </div>
-        <label className="flex shrink-0 items-center gap-2 whitespace-nowrap text-[12px] text-[#5a7d82]">
-          <span>Skip</span>
-          <Controller
-            control={control}
-            name={`exercises.${index}.skipped`}
-            render={({ field }) => (
-              <Switch
-                checked={field.value}
-                onCheckedChange={field.onChange}
-                aria-label={`Skip ${exercise.name}`}
-                data-testid={`skip-toggle-${index}`}
-              />
-            )}
-          />
-        </label>
+        <div className="flex shrink-0 items-center gap-3">
+          <label className="flex items-center gap-2 whitespace-nowrap text-[12px] text-[#5a7d82]">
+            <span>Skip</span>
+            <Controller
+              control={control}
+              name={`exercises.${index}.skipped`}
+              render={({ field }) => (
+                <Switch
+                  checked={field.value}
+                  onCheckedChange={field.onChange}
+                  aria-label={`Skip ${exercise.name}`}
+                  data-testid={`skip-toggle-${index}`}
+                />
+              )}
+            />
+          </label>
+          {onRemove ? (
+            <button
+              type="button"
+              onClick={onRemove}
+              aria-label={`Delete ${exercise.name}`}
+              data-testid={`delete-exercise-${index}`}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-[6px] text-[#5a7d82] transition-colors hover:bg-[rgba(220,38,38,0.06)] hover:text-[#dc2626]"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          ) : null}
+        </div>
       </div>
 
       {exercise.notes && (

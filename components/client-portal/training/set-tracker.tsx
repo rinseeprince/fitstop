@@ -152,7 +152,11 @@ function TrainingLogForm({
     formState: { isSubmitting },
   } = useForm<LogFormValues>({ defaultValues });
 
-  const { fields: exerciseFields, append } = useFieldArray({
+  const {
+    fields: exerciseFields,
+    append,
+    remove: removeExercise,
+  } = useFieldArray({
     control,
     name: "exercises",
   });
@@ -267,6 +271,9 @@ function TrainingLogForm({
                 getValues,
                 weightUnit: field.weightUnit,
                 isUnplanned: field.isUnplanned,
+                onRemove: field.isUnplanned
+                  ? () => removeExercise(i)
+                  : undefined,
               };
               const prescribedView = prescribedViews[i] ?? view;
               return (

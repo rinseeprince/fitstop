@@ -554,6 +554,40 @@ describe("SetTracker", () => {
     expect(payload.exercises![0].sets).toEqual([{ reps: 10, weight: 100 }]);
   });
 
+  // ---- 17c. Delete unplanned exercise -------------------------------------
+
+  it("[delete-exercise] delete button only on unplanned blocks; removes block + excludes data", async () => {
+    setEventReady();
+    const user = userEvent.setup();
+    render(<SetTracker eventId="evt-1" />);
+    await user.click(screen.getByTestId("detailed-toggle"));
+    // Prescribed blocks (indices 0 and 1) must NOT have a delete-exercise button.
+    expect(screen.queryByTestId("delete-exercise-0")).toBeNull();
+    expect(screen.queryByTestId("delete-exercise-1")).toBeNull();
+    // Add an unplanned exercise.
+    await user.type(
+      screen.getByTestId("add-exercise-name"),
+      "Calf Raises",
+    );
+    await user.click(screen.getByTestId("add-exercise-submit"));
+    expect(screen.getAllByTestId("exercise-tracker-block")).toHaveLength(3);
+    // Fill a set so the unplanned exercise would otherwise be in the payload.
+    const ex2 = screen.getAllByTestId("exercise-tracker-block")[2];
+    await user.type(within(ex2).getByLabelText("Set 1 reps"), "20");
+    await user.type(within(ex2).getByLabelText("Set 1 weight"), "30");
+    // Delete the unplanned exercise.
+    expect(screen.getByTestId("delete-exercise-2")).toBeInTheDocument();
+    await user.click(screen.getByTestId("delete-exercise-2"));
+    expect(screen.getAllByTestId("exercise-tracker-block")).toHaveLength(2);
+    // Save → no exercises in payload (the only filled exercise was just deleted).
+    await user.click(screen.getByTestId("quick-log-full"));
+    await user.click(screen.getByTestId("save-button"));
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    const payload = getLastFetchPayload() as { exercises?: unknown };
+    expect(payload).toEqual({ completionQuality: "full" });
+    expect(payload.exercises).toBeUndefined();
+  });
+
   // ---- 18. Collapsible session notes --------------------------------------
 
   it("[notes-collapsed] session notes hidden by default; toggle reveals textarea", async () => {
