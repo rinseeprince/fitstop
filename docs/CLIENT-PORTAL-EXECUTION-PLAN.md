@@ -44,7 +44,6 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 | 1.5 | Set tracker UI, inputs + save flow | 1 | COMPLETE
 | 1.6 | Coach drill-down dialog | 1 |
 | 1.7 | Attention feed rewire | 1 |
-| 1.8 | Coach-facing analytics over set_logs | 1 |
 | 2.1 | Day summary + program endpoints | 2 Home + nav |
 | 2.2 | Bottom tab bar + client layout restructure | 2 |
 | 2.3 | Home page shell + swipe navigation | 2 |
@@ -250,6 +249,10 @@ Session 0.1 confirmed no `timezone` column exists on `clients` and all date help
 
 **Note**: Final commit title diverges from the originally-planned `feat(training): implement event-keyed log write with snapshots and cascade`. The cascade was deliberately deferred (see commit body and TECHNICAL-DEBT.md context) because `cascadeNutritionAfterTrainingChange` is a no-op on log writes per `docs/ARCHITECTURE.md:250` — it ties to event changes, not log writes. Future actual-burn → nutrition adjustment session will wire it in with the right `fromDate` semantics.
 
+**Post-Session 1.5 follow-up (commits `2614085` and `c66b18a`)**: Two contract changes from this session's original spec landed during the Session 1.5 work:
+- **`completionQuality` is now payload-authoritative in BOTH modes.** The original spec described detailed-mode status as derived from per-exercise completeness; that derivation (`deriveDetailedQuality`) was removed because clients have legitimate reasons to mark "complete" with partial set data.
+- **Per-set actuals moved to a normalized `set_logs` child table** (migration 090). The scalar columns `actual_sets`, `actual_reps`, `actual_weight` were dropped from `exercise_logs`. The writer now does an `exercise_logs` insert returning ids, then batch-inserts `set_logs` keyed on `(exercise_log_id, set_number)`. The reader's new `attachSetLogs` helper joins them back. New columns on `exercise_logs`: `exercise_id` (global catalog FK, populated when the client used the typeahead picker) and `performed_name` (the canonical display name; differs from `prescribed_exercise_snapshot.name` when the exercise was swapped or freehand).
+
 **Objective**: Implement `logTrainingEvent()` and `getTrainingEventDetail()` from Session 1.1. Writes must be transactional, include prescribed snapshots, and trigger the nutrition cascade.
 
 **Read first**:
@@ -263,16 +266,14 @@ Session 0.1 confirmed no `timezone` column exists on `clients` and all date help
 
 **Plan (report before implementing)**:
 - Transaction strategy (single RPC vs chained writes).
-- How `training_events.status` is derived in BOTH modes:
-  - Quick log (no exercises array): status follows `completionQuality` directly.
-  - Detailed log (with exercises): status derives from exercise logging completeness (all logged → `completed`; some logged → `partial`; none + explicit skip → `skipped`). If `completionQuality` is also supplied in detailed mode, the service picks one as authoritative; document the rule.
+- How `training_events.status` is derived. **(Updated post-1.5: payload `completionQuality` is authoritative in both modes — the original derivation rule was removed in commit `2614085`.)** Status maps directly from `payload.completionQuality` via `mapCompletionQualityToEventStatus`.
 - How snapshots are composed at log time.
 - How the service handles the "no exercises array" case: skip the `exercise_logs` bulk-replace entirely.
 
 **Implement**:
 - Full `logTrainingEvent()`:
   - Upsert `session_logs` keyed on `(client_id, training_session_id, week_start_date)`, writing `prescribed_session_snapshot`. Always happens (both modes).
-  - If `exercises` array provided: bulk-replace `exercise_logs` with `prescribed_exercise_snapshot` per row (`actual_sets`, `actual_reps`, `actual_weight`, `weight_unit`, `notes`). If not provided: skip this step entirely.
+  - If `exercises` array provided: bulk-replace `exercise_logs` with `prescribed_exercise_snapshot` per row (`completed`, `weight_unit`, `notes`, plus `exercise_id` and `performed_name` from migration 090). **Then batch-insert `set_logs` children for non-skipped exercises** (`set_number`, `reps`, `weight`, `rpe`). If `exercises` not provided: skip both inserts entirely.
   - Update `training_events.status` + `session_log_id` per the derivation rule above.
   - Trigger `cascadeNutritionAfterTrainingChange` in both modes.
 - Full `getTrainingEventDetail()`: event + resolved session + exercises + existing session_log + exercise_logs, with snapshot fallback when live rows are null. Returns empty `exerciseLogs` array when the client used quick log only.
@@ -281,9 +282,9 @@ Session 0.1 confirmed no `timezone` column exists on `clients` and all date help
 
 **Tests to write**:
 - `services/training-log-service.test.ts`:
-  - **Quick log (no exercises)**: writes session_log + snapshot, skips exercise_logs, sets event status from `completionQuality`, fires cascade.
-  - **Detailed log (with exercises)**: writes session_log + snapshot + exercise_logs with snapshots, derives status from exercise completeness, fires cascade.
-  - **Detailed partial**: status = `partial` when some exercises unlogged.
+  - **Quick log (no exercises)**: writes session_log + snapshot, skips exercise_logs and set_logs, sets event status from `completionQuality`, fires cascade.
+  - **Detailed log (with exercises)**: writes session_log + snapshot + exercise_logs with snapshots + set_logs children, status maps from payload `completionQuality` (post-1.5: payload is authoritative — see commit `2614085`), fires cascade.
+  - **Detailed payload-authoritative**: payload `completionQuality='full'` with mixed/skipped exercises still produces status `completed` (no override from data).
   - **Transaction integrity**: exercise_logs insert failure rolls back session_log (or documented behavior).
   - `getTrainingEventDetail()` live path returns live rows.
   - `getTrainingEventDetail()` returns empty `exerciseLogs` for quick-logged sessions.
@@ -366,7 +367,9 @@ Session 0.1 confirmed no `timezone` column exists on `clients` and all date help
 
 ## Session 1.5: Tracker UI, quick log + expandable detailed log
 
-**Status**: COMPLETE
+**Status**: COMPLETE (initial commit `2614085`; UX/UI follow-up in `c66b18a`)
+
+**Post-merge follow-up (commit `c66b18a`)**: Beyond the original 1.5 spec below, the follow-up commit landed: (1) typeahead exercise picker on "Add unplanned" wired to `GET /api/training/exercises` with min-2-char debounced search; (2) **Swap action** on prescribed exercise blocks reusing the same picker — preserves `training_exercise_id` while writing the new `performed_name` + `exercise_id`; (3) Save button renamed **"Log workout"** and lifted out of the quick-log card to sit compact + right-aligned above it; (4) per-set fidelity via the new `set_logs` table (migration 090) — replaces the lossy `actual_sets/reps/weight` scalars and now also persists RPE per set. The original spec line "completionQuality derives from the detailed state if the client set status there" did NOT ship — buttons are always required and the payload is authoritative.
 
 **Commit message**: `feat(client-portal): enable quick and detailed workout logging with bulk save`
 
@@ -421,32 +424,38 @@ Session 0.1 confirmed no `timezone` column exists on `clients` and all date help
 
 **Commit message**: `feat(coach): add session log detail dialog with prescribed-vs-actual view`
 
-**Objective**: Replace chart-only `HistoryChartDialog` with detail dialog showing prescribed vs actual per exercise plus client notes plus status. Snapshot fallback for orphaned rows.
+**Objective**: Replace chart-only `HistoryChartDialog` with detail dialog showing prescribed vs actual per exercise plus client notes plus status. Snapshot fallback for orphaned rows. Surface swapped exercises ("Prescribed X · Performed Y") and per-set RPE — both newly available after migration 090.
 
 **Read first**:
 - `components/clients/training/training-history-table.tsx`.
 - `components/clients/training/history-chart-dialog.tsx`.
+- `supabase/migrations/090_normalize_set_logs.sql` (per-set actuals + `exercise_id` + `performed_name` schema).
+- `services/training-log-service.ts` (`attachSetLogs` populates `ExerciseLog.sets[]`; reader path).
 - `CONVENTIONS.md` dialog structure.
 
 **Plan (report before implementing)**:
 - Dialog layout with three render states: quick-logged only (no exercise_logs), detailed (exercise_logs present), orphaned (snapshot fallback).
-- Snapshot-fallback rendering.
+- Per-set rendering reads from `ExerciseLog.sets[]` directly (sorted by `setNumber`) — reps, weight, optional RPE. No csv parsing; no broadcasting a single weight to every row.
+- Display-name resolution rule: `performed_name ?? prescribed_exercise_snapshot?.name ?? "Unknown exercise"`. When `performed_name` differs from the snapshot name, surface BOTH ("Prescribed Bench Press · Performed Dumbbell Bench") so the coach sees the swap.
+- Snapshot-fallback rendering for orphaned rows.
 
 **Implement**:
 - `components/clients/training/session-log-detail-dialog.tsx` (follows CONVENTIONS dialog pattern).
 - Fetches `GET /api/clients/[id]/training/session-logs/[sessionLogId]` via SWR.
 - Three display states:
   - **Quick-logged only** (`exercise_logs` empty): show session name, completion quality, notes. Display a clear label like "Client logged this session as complete without per-set detail." Show the prescribed exercises as reference only (from snapshot), no actuals column.
-  - **Detailed**: show prescribed vs actual per exercise, set-by-set, plus client notes and status.
-  - **Orphaned**: use `prescribed_session_snapshot` + `prescribed_exercise_snapshot` when live refs are null.
+  - **Detailed**: per exercise, render the prescribed prescription alongside the per-set actuals from `ExerciseLog.sets[]` (reps × weight, optional RPE). When the row was swapped (`performed_name` differs from snapshot name), prefix the row with both names. Include client notes and status.
+  - **Orphaned**: use `prescribed_session_snapshot` + `prescribed_exercise_snapshot` when live refs are null. Per-set actuals still come from the attached `sets[]`.
 - Update `training-history-table.tsx` row click to open new dialog. Keep `HistoryChartDialog` (removed in 5.1).
 
-**Do NOT**: Delete `history-chart-dialog.tsx`. Do not restructure history table beyond row-click. Do not treat missing exercise_logs as an error state; it's valid.
+**Do NOT**: Delete `history-chart-dialog.tsx`. Do not restructure history table beyond row-click. Do not treat missing exercise_logs as an error state; it's valid. Do not parse `actual_reps` csv — those columns are gone post-090.
 
 **Tests to write**:
 - `session-log-detail-dialog.test.tsx`:
   - **Quick-logged display**: renders "no detail logged" label + prescribed reference only + notes + status.
-  - **Detailed display**: prescribed + actual when exercise_logs present.
+  - **Detailed display**: prescribed + per-set actuals (reps, weight, RPE) when `ExerciseLog.sets[]` is non-empty.
+  - **Swapped exercise**: when `performed_name !== prescribed_exercise_snapshot.name`, both names render ("Prescribed X · Performed Y").
+  - **Per-set RPE**: when sets carry RPE, the column renders the value; when null, renders empty / placeholder.
   - Snapshot fallback when live session null.
   - Snapshot fallback when live exercise null.
   - Loading + error states.
@@ -485,45 +494,6 @@ Session 0.1 confirmed no `timezone` column exists on `clients` and all date help
 - `services/attention-feed-service.test.ts`: regression for aggregated feed.
 
 **Verify**: `npx vitest run`. Manual signal test. Commit.
-
----
-
-## Session 1.8: Coach-facing analytics over set_logs
-
-**Commit message**: `feat(coach): per-exercise analytics over set_logs (PRs, volume, intensity)`
-
-**Objective**: Surface what `set_logs` enables. Coach views to track per-exercise progression, top sets / PRs, weekly volume, and average intensity (RPE) over time. Builds on the schema landed in migration 090 (`set_logs` child table, `exercise_logs.exercise_id` global FK, `exercise_logs.performed_name`).
-
-**Read first**:
-- `supabase/migrations/090_normalize_set_logs.sql`.
-- `services/training-log-service.ts` (read path, in particular how `sets[]` is attached to each `ExerciseLog` via `attachSetLogs`).
-- `components/clients/training/training-history-table.tsx` (existing table to extend).
-- `components/clients/training/session-log-detail-dialog.tsx` (built in Session 1.6 — already shows per-set actuals for a single session).
-
-**Plan (report before implementing)**:
-- Decide query layer: SQL views, RPC functions, or service-layer helpers.
-- Decide which charts/tiles ship first (suggested: per-exercise top set over time + volume trend).
-- Identity rule: prefer `exercise_logs.exercise_id` for catalog joins; fall back to `LOWER(performed_name)` for legacy / freehand rows where the FK is null.
-
-**Implement**:
-- New service `services/exercise-analytics-service.ts`:
-  - `getTopSetHistory(clientId, exerciseId, range)` — max(weight) per session.
-  - `getVolumeHistory(clientId, exerciseId, range)` — sum(reps × weight) per session.
-  - `getIntensityHistory(clientId, exerciseId, range)` — avg(rpe) per session.
-- New API routes under `app/api/clients/[id]/training/analytics/`.
-- UI: extend the per-exercise drilldown in the coach training tab with charts (Recharts already in repo).
-- Identity match: prefer `exercise_logs.exercise_id`; fall back to `LOWER(performed_name)` for rows without the FK.
-
-**Do NOT**: Backfill legacy logs in this session. If real-user logs predate migration 090, scope a separate backfill task.
-
-**Tests to write**:
-- `exercise-analytics-service.test.ts`:
-  - Top-set series: handles single-session, multi-session, and skipped-exercise rows correctly.
-  - Volume = sum(reps × weight) ignores null weights / null reps.
-  - Intensity = avg(rpe) ignores null rpe.
-  - Identity match: `exercise_id` takes precedence; name match is fallback.
-
-**Verify**: `npx tsc --noEmit`, `npx vitest run`. Manual: open coach view of a client with logged sessions, confirm charts render with sane numbers.
 
 ---
 
@@ -1080,7 +1050,7 @@ Clicking a card navigates to a detail page which fires its own fetch (e.g. `GET 
 
 **Implement**:
 - Extend data fetch for `exercise_logs` within period.
-- Extend prompt with compact per-exercise summary block. For completed/partial sessions, include exercise names and key actuals (sets, reps, weight). For skipped sessions, the skip notes from Session 6.2's per-event detail are sufficient — no exercise-level data exists.
+- Extend prompt with compact per-exercise summary block. For completed/partial sessions, include exercise names and per-set actuals from `ExerciseLog.sets[]` (reps, weight, optional RPE). Summarize when there are many sets — don't enumerate every set if it blows the context budget. For skipped sessions, the skip notes from Session 6.2's per-event detail are sufficient — no exercise-level data exists.
 - Respect 25s timeout per CONVENTIONS section 11.
 
 **Do NOT**: Swap AI providers. Do not change `ai_insights` JSONB shape.
@@ -1410,29 +1380,29 @@ Commit.
 **Read first**:
 - `components/clients/metrics/metrics-tab-content.tsx` (after Session 7.5's phase filter is in place).
 - `components/clients/metrics/hooks/use-metrics-data.ts` (reference for the data hook pattern).
-- `supabase/migrations/027_add_session_completion_tracking.sql` (`exercise_logs` schema).
-- `services/training-log-service.ts` (from Session 1.2 — existing reads).
+- `supabase/migrations/090_normalize_set_logs.sql` (per-set actuals via `set_logs`; `exercise_logs.exercise_id` global catalog FK; `exercise_logs.performed_name` canonical display name).
+- `services/training-log-service.ts` — note `attachSetLogs` populates `ExerciseLog.sets[]` on reads; analytics queries can join `set_logs` directly for aggregation.
 - `docs/ARCHITECTURE.md` "Training Completion Hierarchy" section.
 
 **Plan (report before implementing)**:
-- How exercises are identified across time. Preferred: group by `exercise_id` (catalog FK). Fallback for pre-EX-1 / orphaned rows: group by normalized name from `prescribed_exercise_snapshot`. Document the exact grouping rule.
+- How exercises are identified across time. Preferred: group by `exercise_logs.exercise_id` (catalog FK; populated for prescribed exercises via `training_exercises.exercise_id` resolver, and for picker-selected unplanned/swapped via the post-1.5 follow-up). Fallback for legacy rows where the FK is null: group by `LOWER(exercise_logs.performed_name)`. `performed_name` is the canonical display name (matches the snapshot for non-swapped, differs for swaps). Document the exact grouping rule.
 - Which exercises to chart. Recommendation: the client's N most-logged exercises (N=5-8) plus a dropdown/search to add any other logged exercise. Don't chart every exercise by default — visual noise.
-- Chart primary metric: max weight in the top set (highest `actual_weight` in the session's logged rows for that exercise). Secondary: total volume per session (sum of `actual_sets × actual_reps × actual_weight`). Expose a toggle.
+- Chart primary metric: top-set weight per session, computed as `MAX(set_logs.weight)` across the exercise's set_logs in that session. Secondary: total volume per session, `SUM(set_logs.reps * set_logs.weight)` joined to `exercise_logs` for the session/exercise scope. Optional tertiary: average intensity per session, `AVG(set_logs.rpe)` ignoring nulls. Expose a toggle.
 - Phase filter behavior: when a phase is selected in the Metrics tab (Session 7.5), all exercise progression charts scope to that phase's date range automatically. When "All time" is selected, full history.
 - Empty states: no `exercise_logs` for any exercise in range; fewer than 2 data points for an exercise (chart would be a single dot — show "not enough data yet").
 
 **Implement**:
-1. **Service**: new read functions in `services/training-log-service.ts`:
-   - `getMostLoggedExercises(clientId, phaseId?, limit)` — returns ordered list of `{ exerciseId | null, name, logCount }`.
-   - `getExerciseProgressionSeries(clientId, exerciseIdOrName, phaseId?)` — returns ordered `[{ date, topSetWeight, volume, unit }]`.
+1. **Service**: new read functions in `services/training-log-service.ts` (or a dedicated `services/exercise-analytics-service.ts` if the file is getting large):
+   - `getMostLoggedExercises(clientId, phaseId?, limit)` — returns ordered list of `{ exerciseId | null, name, logCount }`. Group by `COALESCE(exercise_id::text, LOWER(performed_name))`.
+   - `getExerciseProgressionSeries(clientId, exerciseIdOrName, phaseId?)` — returns ordered `[{ date, topSetWeight, volume, avgRpe, unit }]`. Joins `exercise_logs → set_logs` per session_log + exercise filter; aggregates as described above.
 2. **Read route**: `GET /api/clients/[id]/training/progression?exerciseId=...&phaseId=...` or similar. Standard coach middleware + IDOR. Accepts optional `phaseId` param.
-3. **UI section** on Metrics tab: new "Exercise progression" section. Renders the N most-logged exercises as small multiples (one chart each) by default. Toggle between "Top set" and "Volume" views. Empty states per chart when data is thin. Phase filter from Session 7.5 is read from the same context/state as body metrics + wellness charts.
+3. **UI section** on Metrics tab: new "Exercise progression" section. Renders the N most-logged exercises as small multiples (one chart each) by default. Toggle between "Top set", "Volume", and (optional) "Intensity (RPE)" views. Empty states per chart when data is thin. Phase filter from Session 7.5 is read from the same context/state as body metrics + wellness charts.
 4. **Chart components**: reuse whatever charting primitives the Metrics tab already uses for body metrics — do NOT introduce a new charting library.
 
-**Do NOT**: Add prescribed-vs-actual comparison here (that belongs to the session-log-detail dialog from Session 1.6). Add predicted-next-session weight or stall detection (deferred attention-feed territory). Introduce a new charting library. Chart every exercise by default — cap at N most-logged.
+**Do NOT**: Add prescribed-vs-actual comparison here (that belongs to the session-log-detail dialog from Session 1.6). Add predicted-next-session weight or stall detection (deferred attention-feed territory). Introduce a new charting library. Chart every exercise by default — cap at N most-logged. Use the dropped `actual_*` scalar columns — they're gone post-090.
 
 **Tests to write**:
-- Service tests: `getMostLoggedExercises` orders by log count; `getExerciseProgressionSeries` returns chronological series; both respect phaseId when passed; both gracefully handle empty results.
+- Service tests: `getMostLoggedExercises` orders by log count, groups by `exercise_id` when present and falls back to `LOWER(performed_name)` when null. `getExerciseProgressionSeries` returns chronological series with correct top-set-max and volume-sum aggregates from joined `set_logs`. Both respect `phaseId` when passed and gracefully handle empty results.
 - Route test: 200 with expected shape; 403 IDOR; 400 missing required params.
 - UI test: charts render for fixture data; toggle between top-set and volume works; empty state renders when no data; phase-filter change rescopes charts.
 
