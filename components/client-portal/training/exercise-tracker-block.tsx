@@ -10,7 +10,7 @@ import {
   type UseFormRegister,
   type UseFormSetValue,
 } from "react-hook-form";
-import { Plus } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
@@ -267,14 +267,27 @@ function FormModeBlock({
 
       <div className="mt-3">
         {notesOpen ? (
-          <Textarea
-            {...register(`exercises.${index}.notes`)}
-            placeholder="Notes for this exercise (optional)"
-            rows={2}
-            aria-label={`Notes for ${exercise.name}`}
-            data-testid={`exercise-notes-${index}`}
-            className="text-[13px]"
-          />
+          <div className="space-y-1">
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => setNotesOpen(false)}
+                data-testid={`exercise-notes-hide-${index}`}
+                className="inline-flex items-center gap-1 text-[12px] font-medium text-[#5a7d82] transition-colors hover:text-[#0d9488]"
+              >
+                <X className="h-3.5 w-3.5" />
+                Hide notes
+              </button>
+            </div>
+            <Textarea
+              {...register(`exercises.${index}.notes`)}
+              placeholder="Notes for this exercise (optional)"
+              rows={2}
+              aria-label={`Notes for ${exercise.name}`}
+              data-testid={`exercise-notes-${index}`}
+              className="text-[13px]"
+            />
+          </div>
         ) : (
           <Button
             type="button"

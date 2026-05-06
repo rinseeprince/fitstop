@@ -566,6 +566,28 @@ describe("SetTracker", () => {
     expect(screen.getByTestId("session-notes")).toBeInTheDocument();
   });
 
+  it("[notes-hide] expanded notes can be collapsed; content persists across hide/show and is submitted", async () => {
+    setEventReady();
+    const user = userEvent.setup();
+    render(<SetTracker eventId="evt-1" />);
+    await user.click(screen.getByTestId("session-notes-toggle"));
+    await user.type(screen.getByTestId("session-notes"), "Persisted text");
+    await user.click(screen.getByTestId("session-notes-hide"));
+    expect(screen.queryByTestId("session-notes")).toBeNull();
+    expect(screen.getByTestId("session-notes-toggle")).toBeInTheDocument();
+    await user.click(screen.getByTestId("session-notes-toggle"));
+    expect(
+      screen.getByTestId<HTMLTextAreaElement>("session-notes").value,
+    ).toBe("Persisted text");
+    await user.click(screen.getByTestId("quick-log-full"));
+    await user.click(screen.getByTestId("save-button"));
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    expect(getLastFetchPayload()).toEqual({
+      completionQuality: "full",
+      notes: "Persisted text",
+    });
+  });
+
   it("[notes-auto-expand] session notes auto-expand when pre-populated from log", () => {
     const detail = baseFixture();
     detail.sessionLog = {
