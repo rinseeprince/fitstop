@@ -39,9 +39,9 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 | 0.3 | Verify existing weight_unit wiring | 0 | COMPLETE
 | 1.1 | Design training-log contracts | 1 Training | COMPLETE
 | 1.2 | Training log service layer + unit tests | 1 | COMPLETE
-| 1.3 | Training log API endpoints | 1 |
-| 1.4 | Set tracker UI, read-only skeleton | 1 |
-| 1.5 | Set tracker UI, inputs + save flow | 1 |
+| 1.3 | Training log API endpoints | 1 | COMPLETE
+| 1.4 | Set tracker UI, read-only skeleton | 1 | COMPLETE
+| 1.5 | Set tracker UI, inputs + save flow | 1 | COMPLETE
 | 1.6 | Coach drill-down dialog | 1 |
 | 1.7 | Attention feed rewire | 1 |
 | 2.1 | Day summary + program endpoints | 2 Home + nav |
@@ -295,6 +295,8 @@ Session 0.1 confirmed no `timezone` column exists on `clients` and all date help
 
 ## Session 1.3: Training log API endpoints (client POST/GET, coach GET)
 
+**Status**: COMPLETE (commit `f882783`)
+
 **Commit message**: `feat(api): add event-keyed training log endpoints with CSRF and rate limit`
 
 **Objective**: Wire the service layer from Session 1.2 to three API routes.
@@ -320,11 +322,11 @@ Session 0.1 confirmed no `timezone` column exists on `clients` and all date help
 
 **Verify**: `npx tsc --noEmit`, `npx vitest run`. Manual curl smoke test. Commit.
 
-**Status**: ✅ Complete (commits TBD).
-
 ---
 
 ## Session 1.4: Set tracker UI, read-only skeleton
+
+**Status**: COMPLETE (commit `dcea553`)
 
 **Commit message**: `feat(client-portal): add training detail page with read-only set tracker`
 
@@ -362,6 +364,8 @@ Session 0.1 confirmed no `timezone` column exists on `clients` and all date help
 ---
 
 ## Session 1.5: Tracker UI, quick log + expandable detailed log
+
+**Status**: COMPLETE
 
 **Commit message**: `feat(client-portal): enable quick and detailed workout logging with bulk save`
 
@@ -997,6 +1001,7 @@ Clicking a card navigates to a detail page which fires its own fetch (e.g. `GET 
 
 **Implement**:
 - Update `check-in-context-service.ts` to count `training_events.status='completed'` for the period.
+- **Add per-event detail to the AI context**: fetch training events for the check-in period, left-join `session_logs` (via `training_events.session_log_id`). For each event, include: `sessionName`, `status` (completed/partial/skipped/not logged), and `session_log.notes` when status is skipped. Events with no session_log are "not logged" (the client never interacted with the event — treat as incomplete). Events with a session_log where `completion_quality = 'skipped'` are explicitly skipped and may have notes explaining why. The AI must be able to distinguish these so it can say e.g. "Skipped Shoulder Day (shoulder was sore). Arm Day and Back Day were not logged."
 - Preserve form's response shape.
 
 **Do NOT**: Change submission flow or AI invocation.
@@ -1007,6 +1012,9 @@ Clicking a card navigates to a detail page which fires its own fetch (e.g. `GET 
   - Zero completed returns 0.
   - Partial statuses not counted.
   - Shape preserved.
+  - Per-event detail: completed event shows status + session name.
+  - Per-event detail: explicitly skipped event includes notes from session_log.
+  - Per-event detail: unlogged event (no session_log) shows "not logged" status.
 
 **Verify**: Manual check-in submission. `npx vitest run`. Commit.
 
@@ -1016,14 +1024,15 @@ Clicking a card navigates to a detail page which fires its own fetch (e.g. `GET 
 
 **Commit message**: `feat(check-in): enrich AI summary with exercise-level completion data`
 
-**Optional**: This session is nice-to-have polish, not MOAT-load-bearing. The MOAT work is Session 6.2 (event-keyed completion counts). If launch timing is tight, defer 6.3 and ship without it. Auto-populated check-in already works with the event-keyed switch alone.
+**Optional**: This session is nice-to-have polish, not MOAT-load-bearing. The MOAT work is Session 6.2 (event-keyed completion counts + per-event detail). If launch timing is tight, defer 6.3 and ship without it. Auto-populated check-in already works with the event-keyed switch alone.
 
-**Objective**: Feed `exercise_logs` into the AI prompt for richer progression insights.
+**Objective**: Feed `exercise_logs` into the AI prompt for richer progression insights. The per-event detail from Session 6.2 already tells the AI which sessions were completed, skipped (with notes), or not logged. This session adds the exercise-level granularity within completed/partial sessions.
 
 **Read first**:
 - `services/ai-service.ts` (check-in summary generation).
 - `services/client-check-in-service.ts`.
 - Current prompt template.
+- Output of Session 6.2 (per-event detail shape).
 
 **Plan (report before implementing)**:
 - Which exercise-log aggregates to include.
@@ -1031,7 +1040,7 @@ Clicking a card navigates to a detail page which fires its own fetch (e.g. `GET 
 
 **Implement**:
 - Extend data fetch for `exercise_logs` within period.
-- Extend prompt with compact per-exercise summary block.
+- Extend prompt with compact per-exercise summary block. For completed/partial sessions, include exercise names and key actuals (sets, reps, weight). For skipped sessions, the skip notes from Session 6.2's per-event detail are sufficient — no exercise-level data exists.
 - Respect 25s timeout per CONVENTIONS section 11.
 
 **Do NOT**: Swap AI providers. Do not change `ai_insights` JSONB shape.
@@ -1041,6 +1050,7 @@ Clicking a card navigates to a detail page which fires its own fetch (e.g. `GET 
   - Prompt includes expected per-exercise text given a fixture.
   - Timeout boundary aborts at 25s+.
   - Empty exercise_logs composes prompt gracefully.
+  - Skipped session with notes: prompt includes skip reason, no exercise block.
 
 **Verify**: Manual check-in with logged exercises; summary references them. `npx tsc --noEmit`, `npx vitest run`. Commit.
 

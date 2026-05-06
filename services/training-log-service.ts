@@ -15,7 +15,6 @@ import type {
 } from "@/lib/database-helpers";
 import type { Json } from "@/types/database";
 import type {
-  ExercisePerformanceInput,
   LogTrainingEventInput,
   SetPerformanceInput,
 } from "@/lib/validations/training";
@@ -62,17 +61,6 @@ function topSetWeight(sets: SetPerformanceInput[]): number | null {
   const weights = sets.map((s) => s.weight).filter((w): w is number => w != null);
   if (weights.length === 0) return null;
   return Math.round(Math.max(...weights) * 100) / 100;
-}
-
-function deriveDetailedQuality(
-  exercises: ExercisePerformanceInput[],
-): SessionCompletionQuality {
-  if (exercises.every((e) => e.skipped === true)) return "skipped";
-  const loggedCount = exercises.filter(
-    (e) => e.skipped !== true && e.sets.some(setHasData),
-  ).length;
-  if (loggedCount === exercises.length) return "full";
-  return "partial";
 }
 
 // --- Snapshot shapes (JSONB-bound) ---
@@ -293,13 +281,11 @@ export async function logTrainingEvent(params: {
     }
   }
 
-  // 4b. Derive the canonical SessionCompletionQuality.
-  // Modes are mutually exclusive at the product level. In detailed mode, the
-  // incoming completionQuality is ignored — per-exercise data is the single
-  // source of truth.
-  const derivedQuality: SessionCompletionQuality = isDetailedMode
-    ? deriveDetailedQuality(payload.exercises!)
-    : payload.completionQuality;
+  // 4b. The client's explicit completionQuality is authoritative in both
+  // quick and detailed modes. Clients have legitimate reasons to mark a
+  // session "complete" with partial set data (only tracking compounds, lost
+  // signal mid-workout, etc.), so per-exercise data does not override the tap.
+  const derivedQuality: SessionCompletionQuality = payload.completionQuality;
 
   // 5. Write session_logs. Branch on orphan-event retry vs normal.
   const baseRow = {

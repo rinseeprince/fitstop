@@ -259,7 +259,7 @@ describe("logTrainingEvent", () => {
       eventId: EVENT_ID,
       clientId: CLIENT_ID,
       payload: {
-        completionQuality: "full", // ignored in detailed mode (see test 5b)
+        completionQuality: "full",
         exercises: [
           {
             trainingExerciseId: EXERCISE_A,
@@ -286,14 +286,14 @@ describe("logTrainingEvent", () => {
       prescribed_exercise_snapshot: EXERCISE_A_SNAPSHOT,
     });
 
-    // Status derived from data: all logged → completed.
+    // payload completionQuality='full' → status='completed' (mapping).
     expect(linkQ.update.mock.calls[0][0].status).toBe("completed");
   });
 
   // -------------------------------------------------------------------------
-  // 4. Detailed log partial — 2 of 3 logged
+  // 4. Detailed mixed-log: payload completionQuality is authoritative.
   // -------------------------------------------------------------------------
-  it("[4] detailed partial: 1 of 2 logged → status='partial', completion_quality='partial'", async () => {
+  it("[4] detailed mixed-log payload-authoritative: payload completionQuality='full' wins → completion_quality='full', status='completed'", async () => {
     const eventQ = createMockQuery({ data: eventRow(), error: null });
     const clientQ = createMockQuery({
       data: { expected_check_in_day: null },
@@ -323,7 +323,7 @@ describe("logTrainingEvent", () => {
       eventId: EVENT_ID,
       clientId: CLIENT_ID,
       payload: {
-        completionQuality: "full", // ignored
+        completionQuality: "full",
         exercises: [
           {
             exerciseName: "A",
@@ -339,8 +339,8 @@ describe("logTrainingEvent", () => {
       },
     });
 
-    expect(upsertQ.upsert.mock.calls[0][0].completion_quality).toBe("partial");
-    expect(linkQ.update.mock.calls[0][0].status).toBe("partial");
+    expect(upsertQ.upsert.mock.calls[0][0].completion_quality).toBe("full");
+    expect(linkQ.update.mock.calls[0][0].status).toBe("completed");
   });
 
   // -------------------------------------------------------------------------
@@ -389,10 +389,10 @@ describe("logTrainingEvent", () => {
   });
 
   // -------------------------------------------------------------------------
-  // 5b. Detailed all-skipped + payload 'full' → derived 'skipped' (data wins).
-  //     This is the contract test for "detailed mode ignores incoming completionQuality."
+  // 5b. Detailed all-skipped + payload 'full': payload is authoritative.
+  //     Contract test for "completionQuality is the single source of truth."
   // -------------------------------------------------------------------------
-  it("[5b] detailed all-skipped + payload 'full' → BOTH session_logs.completion_quality AND status are 'skipped' (payload ignored)", async () => {
+  it("[5b] detailed all-skipped + payload 'full' → completion_quality='full' and status='completed' (payload is authoritative)", async () => {
     const eventQ = createMockQuery({ data: eventRow(), error: null });
     const clientQ = createMockQuery({
       data: { expected_check_in_day: null },
@@ -422,7 +422,7 @@ describe("logTrainingEvent", () => {
       eventId: EVENT_ID,
       clientId: CLIENT_ID,
       payload: {
-        completionQuality: "full", // explicitly disagrees with the data
+        completionQuality: "full",
         exercises: [
           { exerciseName: "A", sets: [{}], weightUnit: "lbs", skipped: true },
           { exerciseName: "B", sets: [{}], weightUnit: "lbs", skipped: true },
@@ -430,8 +430,8 @@ describe("logTrainingEvent", () => {
       },
     });
 
-    expect(upsertQ.upsert.mock.calls[0][0].completion_quality).toBe("skipped");
-    expect(linkQ.update.mock.calls[0][0].status).toBe("skipped");
+    expect(upsertQ.upsert.mock.calls[0][0].completion_quality).toBe("full");
+    expect(linkQ.update.mock.calls[0][0].status).toBe("completed");
   });
 
   // -------------------------------------------------------------------------
