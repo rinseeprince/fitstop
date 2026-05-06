@@ -46,6 +46,7 @@ coaches
         │     ├── training_logs
         │     │     └── session_logs
         │     │           └── exercise_logs
+        │     │                 └── set_logs   -- per-set actuals (reps, weight, rpe)
         │     └── daily_habit_logs
         │
         ├── check_ins                 -- weekly structured submissions
@@ -261,13 +262,18 @@ Events are the **source of truth for date-specific targets**. Plan templates (`n
 ## Training Completion Hierarchy
 
 ```
-training_logs        -- did the client train today? (1:1 per day, child of daily_logs)
-  └── session_logs   -- per-session-per-week completion details (renamed from client_session_completions)
-        └── exercise_logs  -- per-exercise performance (renamed from client_exercise_completions)
+training_logs            -- did the client train today? (1:1 per day, child of daily_logs)
+  └── session_logs       -- per-session-per-week completion details (renamed from client_session_completions)
+        └── exercise_logs    -- per-exercise metadata (renamed from client_exercise_completions)
+              └── set_logs   -- per-set actuals (added in migration 090)
 ```
 - `session_logs.training_session_id` is SET NULL on delete (nullable). When a training plan is replaced, old completion records are preserved via `prescribed_session_snapshot` JSONB
 - `exercise_logs.training_exercise_id` is SET NULL on delete (nullable). History preserved via `prescribed_exercise_snapshot` JSONB
 - Snapshots are written at completion time and backfilled for existing data
+- `set_logs` (migration 090) holds per-set actuals: `(set_number, reps, weight, rpe)`. Replaces the legacy scalar aggregates `actual_sets`/`actual_reps`(csv)/`actual_weight` that lived on `exercise_logs` before 090. ON DELETE CASCADE from `exercise_logs`.
+- `exercise_logs.exercise_id` (added in 090) is a nullable FK to the global `exercises` catalog. Populated when the client picked an exercise from the typeahead picker (Add unplanned, Swap). NULL for prescribed-without-swap (catalog identity is reachable via `training_exercise_id → training_exercises.exercise_id`) and for freehand entries.
+- `exercise_logs.performed_name` (added in 090) is the canonical display name for the logged exercise. Differs from `prescribed_exercise_snapshot.name` when the client swapped a prescribed exercise or added a freehand unplanned one. Display rule: `performed_name ?? prescribed_exercise_snapshot?.name ?? "Unknown exercise"`.
+- Session-level status: `training_events.status` maps directly from `payload.completionQuality` (full→completed / partial / skipped). Per-exercise data does NOT override the client's tap — clients have legitimate reasons to mark "complete" with partial set data.
 
 ---
 
@@ -276,7 +282,8 @@ training_logs        -- did the client train today? (1:1 per day, child of daily
 ```
 exercises                    -- master catalog, two-tier ownership
   ├── training_exercises     -- client exercises reference via exercise_id FK (nullable)
-  └── coach_saved_exercises  -- library exercises reference via exercise_id FK (nullable)
+  ├── coach_saved_exercises  -- library exercises reference via exercise_id FK (nullable)
+  └── exercise_logs          -- per-completion catalog ref (nullable; populated for picker-selected unplanned/swap rows)
 ```
 
 ### Two-tier ownership
@@ -611,7 +618,7 @@ Status codes: 200 (success), 201 (created), 400 (validation), 401 (auth), 403 (f
 
 - See Daily Pulse README for `training_data` and `activityStatuses` shape documentation
 - `activityStatuses` is `Record<string, { completed, activityName, estimatedCalories }>` - always read `.completed` field, never use the object as a truthy check
-- `training_data` JSONB on `training_logs` is a **UI restore cache** for the Daily Pulse. It preserves the exact training state at save time so the UI can restore without cross-referencing. The **source of truth** for training completion is `session_logs` + `exercise_logs`
+- `training_data` JSONB on `training_logs` is a **UI restore cache** for the Daily Pulse. It preserves the exact training state at save time so the UI can restore without cross-referencing. The **source of truth** for training completion is `session_logs` + `exercise_logs` + `set_logs` (post migration 090; per-set actuals were inline scalars on `exercise_logs` before).
 
 ### phase_goals_snapshot
 
