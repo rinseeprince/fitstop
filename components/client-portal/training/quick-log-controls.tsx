@@ -70,17 +70,17 @@ export function QuickLogControls({
       </div>
       {notesOpen ? (
         <div className="space-y-1">
-          <div className="flex justify-end">
-            <button
-              type="button"
-              onClick={() => setNotesOpen(false)}
-              data-testid="session-notes-hide"
-              className="inline-flex items-center gap-1 text-[12px] font-medium text-[#5a7d82] transition-colors hover:text-[#0d9488]"
-            >
-              <X className="h-3.5 w-3.5" />
-              Hide notes
-            </button>
-          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => setNotesOpen(false)}
+            data-testid="session-notes-hide"
+            className="h-auto justify-start px-0 text-[12px] font-medium text-[#5a7d82] hover:bg-transparent hover:text-[#0d9488]"
+          >
+            <X className="h-3.5 w-3.5" />
+            Hide notes
+          </Button>
           <Textarea
             {...register("notes")}
             placeholder="Notes for this session (optional)"
