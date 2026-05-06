@@ -1,9 +1,11 @@
 "use client";
 
-import { Loader2 } from "lucide-react";
+import { useState } from "react";
+import { Loader2, Plus } from "lucide-react";
 import {
   useWatch,
   type Control,
+  type UseFormGetValues,
   type UseFormRegister,
   type UseFormSetValue,
 } from "react-hook-form";
@@ -15,6 +17,7 @@ type QuickLogControlsProps = {
   control: Control<LogFormValues>;
   register: UseFormRegister<LogFormValues>;
   setValue: UseFormSetValue<LogFormValues>;
+  getValues: UseFormGetValues<LogFormValues>;
   isSubmitting: boolean;
 };
 
@@ -31,10 +34,13 @@ export function QuickLogControls({
   control,
   register,
   setValue,
+  getValues,
   isSubmitting,
 }: QuickLogControlsProps) {
   const completionQuality = useWatch({ control, name: "completionQuality" });
   const canSave = completionQuality !== "" && !isSubmitting;
+  const initialNotes = getValues("notes") ?? "";
+  const [notesOpen, setNotesOpen] = useState(initialNotes.trim().length > 0);
 
   return (
     <section className="space-y-3 rounded-[6px] bg-white p-4">
@@ -62,14 +68,28 @@ export function QuickLogControls({
           );
         })}
       </div>
-      <Textarea
-        {...register("notes")}
-        placeholder="Notes for this session (optional)"
-        rows={3}
-        aria-label="Session notes"
-        data-testid="session-notes"
-        className="text-[13px]"
-      />
+      {notesOpen ? (
+        <Textarea
+          {...register("notes")}
+          placeholder="Notes for this session (optional)"
+          rows={3}
+          aria-label="Session notes"
+          data-testid="session-notes"
+          className="text-[13px]"
+        />
+      ) : (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => setNotesOpen(true)}
+          data-testid="session-notes-toggle"
+          className="h-auto justify-start px-0 text-[12px] font-medium text-[#5a7d82] hover:bg-transparent hover:text-[#0d9488]"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          Add notes
+        </Button>
+      )}
       <Button
         type="submit"
         size="lg"

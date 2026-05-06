@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   Controller,
   useFieldArray,
@@ -9,10 +10,12 @@ import {
   type UseFormRegister,
   type UseFormSetValue,
 } from "react-hook-form";
+import { Plus } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { SetRow } from "./set-row";
-import type { LogFormValues } from "./log-form-types";
+import { emptySet, type LogFormValues } from "./log-form-types";
 
 export type PrescribedExerciseView = {
   id: string;
@@ -132,10 +135,13 @@ function FormModeBlock({
   const { control, register, setValue, getValues, weightUnit, isUnplanned } =
     formContext;
 
-  const { fields } = useFieldArray({
+  const { fields, append } = useFieldArray({
     control,
     name: `exercises.${index}.sets`,
   });
+
+  const initialNotes = getValues(`exercises.${index}.notes`) ?? "";
+  const [notesOpen, setNotesOpen] = useState(initialNotes.trim().length > 0);
 
   const skipped =
     useWatch({ control, name: `exercises.${index}.skipped` }) ?? false;
@@ -215,47 +221,73 @@ function FormModeBlock({
         <p className="mt-3 text-[12px] text-[#5a7d82]">{exercise.notes}</p>
       )}
 
-      {fields.length === 0 ? (
-        <p className="mt-3 text-[12px] text-[#93b0b4]">No sets prescribed</p>
-      ) : (
-        <div className="mt-3">
-          <div className="grid grid-cols-12 gap-2 px-3 pb-1 text-[10px] uppercase tracking-[0.06em] text-[#93b0b4]">
-            <div className="col-span-1 text-center">Set</div>
-            <div className="col-span-3 text-center">Weight</div>
-            <div className="col-span-3 text-center">Reps</div>
-            <div className="col-span-3 text-center">RPE</div>
-            <div className="col-span-2"></div>
-          </div>
-          <div className="space-y-1">
-            {fields.map((field, i) => (
-              <SetRow
-                key={field.id}
-                setNumber={i + 1}
-                register={register}
-                exerciseIndex={index}
-                setIndex={i}
-                weightUnit={weightUnit}
-                disabled={skipped}
-                onCopyPrevious={
-                  i > 0 ? () => handleCopyPrevious(i) : undefined
-                }
-                canCopyPrevious={i > 0 ? canCopyAt(i) : undefined}
-                repsPlaceholder={repsHint}
-                rpePlaceholder={rpeHint}
-              />
-            ))}
-          </div>
-        </div>
-      )}
+      <div className="mt-3">
+        {fields.length > 0 && (
+          <>
+            <div className="grid grid-cols-12 gap-2 px-3 pb-1 text-[10px] uppercase tracking-[0.06em] text-[#93b0b4]">
+              <div className="col-span-1 text-center">Set</div>
+              <div className="col-span-3 text-center">Weight</div>
+              <div className="col-span-3 text-center">Reps</div>
+              <div className="col-span-3 text-center">RPE</div>
+              <div className="col-span-2"></div>
+            </div>
+            <div className="space-y-1">
+              {fields.map((field, i) => (
+                <SetRow
+                  key={field.id}
+                  setNumber={i + 1}
+                  register={register}
+                  exerciseIndex={index}
+                  setIndex={i}
+                  weightUnit={weightUnit}
+                  disabled={skipped}
+                  onCopyPrevious={
+                    i > 0 ? () => handleCopyPrevious(i) : undefined
+                  }
+                  canCopyPrevious={i > 0 ? canCopyAt(i) : undefined}
+                  repsPlaceholder={repsHint}
+                  rpePlaceholder={rpeHint}
+                />
+              ))}
+            </div>
+          </>
+        )}
+        <button
+          type="button"
+          onClick={() => append(emptySet())}
+          disabled={skipped}
+          data-testid={`add-set-${index}`}
+          className="mt-2 inline-flex items-center gap-1 text-[12px] font-medium text-[#0d9488] transition-colors hover:text-[#0a766b] disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          Add set
+        </button>
+      </div>
 
-      <Textarea
-        {...register(`exercises.${index}.notes`)}
-        placeholder="Notes for this exercise (optional)"
-        rows={2}
-        aria-label={`Notes for ${exercise.name}`}
-        data-testid={`exercise-notes-${index}`}
-        className="mt-3 text-[13px]"
-      />
+      <div className="mt-3">
+        {notesOpen ? (
+          <Textarea
+            {...register(`exercises.${index}.notes`)}
+            placeholder="Notes for this exercise (optional)"
+            rows={2}
+            aria-label={`Notes for ${exercise.name}`}
+            data-testid={`exercise-notes-${index}`}
+            className="text-[13px]"
+          />
+        ) : (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => setNotesOpen(true)}
+            data-testid={`exercise-notes-toggle-${index}`}
+            className="h-auto px-0 text-[12px] font-medium text-[#5a7d82] hover:bg-transparent hover:text-[#0d9488]"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add notes
+          </Button>
+        )}
+      </div>
     </div>
   );
 }

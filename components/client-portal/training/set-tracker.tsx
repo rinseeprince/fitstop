@@ -227,6 +227,7 @@ function TrainingLogForm({
         control={control}
         register={register}
         setValue={setValue}
+        getValues={getValues}
         isSubmitting={isSubmitting}
       />
 

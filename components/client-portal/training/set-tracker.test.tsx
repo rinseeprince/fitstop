@@ -240,6 +240,7 @@ describe("SetTracker", () => {
     setEventReady();
     const user = userEvent.setup();
     render(<SetTracker eventId="evt-1" />);
+    await user.click(screen.getByTestId("session-notes-toggle"));
     await user.type(screen.getByTestId("session-notes"), "Felt strong today");
     await user.click(screen.getByTestId("quick-log-full"));
     await user.click(screen.getByTestId("save-button"));
@@ -429,6 +430,7 @@ describe("SetTracker", () => {
     setEventReady();
     const user = userEvent.setup();
     render(<SetTracker eventId="evt-1" />);
+    await user.click(screen.getByTestId("session-notes-toggle"));
     await user.type(screen.getByTestId("session-notes"), "Tough session");
     await user.click(screen.getByTestId("detailed-toggle"));
     const ex0 = screen.getAllByTestId("exercise-tracker-block")[0];
@@ -487,6 +489,7 @@ describe("SetTracker", () => {
     const user = userEvent.setup();
     render(<SetTracker eventId="evt-1" />);
     await user.click(screen.getByTestId("detailed-toggle"));
+    await user.click(screen.getByTestId("exercise-notes-toggle-0"));
     await user.type(
       screen.getByTestId("exercise-notes-0"),
       "Felt easy, no soreness",
@@ -499,7 +502,67 @@ describe("SetTracker", () => {
     expect(payload.exercises).toBeUndefined();
   });
 
-  // ---- 16. Pre-populated from existing log --------------------------------
+  // ---- 17. Add set --------------------------------------------------------
+
+  it("[add-set] add-set button appends a new set row", async () => {
+    setEventReady();
+    const user = userEvent.setup();
+    render(<SetTracker eventId="evt-1" />);
+    await user.click(screen.getByTestId("detailed-toggle"));
+    const ex0 = screen.getAllByTestId("exercise-tracker-block")[0];
+    // Bench Press is prescribed with sets: 3 → starts with 3 rows.
+    expect(within(ex0).getAllByTestId("set-row")).toHaveLength(3);
+    await user.click(within(ex0).getByTestId("add-set-0"));
+    expect(within(ex0).getAllByTestId("set-row")).toHaveLength(4);
+    // The new row is editable and submittable.
+    await user.type(within(ex0).getByLabelText("Set 4 reps"), "12");
+    await user.type(within(ex0).getByLabelText("Set 4 weight"), "95");
+    await user.click(screen.getByTestId("quick-log-full"));
+    await user.click(screen.getByTestId("save-button"));
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    const payload = getLastFetchPayload() as {
+      exercises?: Array<{ sets: Array<{ reps?: number; weight?: number }> }>;
+    };
+    expect(payload.exercises![0].sets).toEqual([
+      { reps: 12, weight: 95 },
+    ]);
+  });
+
+  // ---- 18. Collapsible session notes --------------------------------------
+
+  it("[notes-collapsed] session notes hidden by default; toggle reveals textarea", async () => {
+    setEventReady();
+    const user = userEvent.setup();
+    render(<SetTracker eventId="evt-1" />);
+    expect(screen.queryByTestId("session-notes")).toBeNull();
+    expect(screen.getByTestId("session-notes-toggle")).toBeInTheDocument();
+    await user.click(screen.getByTestId("session-notes-toggle"));
+    expect(screen.getByTestId("session-notes")).toBeInTheDocument();
+  });
+
+  it("[notes-auto-expand] session notes auto-expand when pre-populated from log", () => {
+    const detail = baseFixture();
+    detail.sessionLog = {
+      id: "log-1",
+      clientId: "c-1",
+      trainingSessionId: "s-1",
+      completedAt: "2026-05-06",
+      completionQuality: "full",
+      notes: "Pre-existing notes",
+      weekStartDate: "2026-05-04",
+      prescribedSessionSnapshot: null,
+      createdAt: ISO,
+      updatedAt: ISO,
+    };
+    setEventReady(detail);
+    render(<SetTracker eventId="evt-1" />);
+    expect(screen.queryByTestId("session-notes-toggle")).toBeNull();
+    expect(
+      screen.getByTestId<HTMLTextAreaElement>("session-notes").value,
+    ).toBe("Pre-existing notes");
+  });
+
+  // ---- 19. Pre-populated from existing log --------------------------------
 
   it("[restore] pre-populates form from existing sessionLog + exerciseLogs", async () => {
     const detail = baseFixture();
