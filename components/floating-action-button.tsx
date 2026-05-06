@@ -6,10 +6,10 @@ import { useState } from "react"
 import { Button } from "./ui/button"
 
 const actions = [
-  { icon: UserPlus, label: "Add Client", color: "bg-primary" },
-  { icon: Send, label: "Send Check-In", color: "bg-primary" },
-  { icon: FileText, label: "Create Program", color: "bg-primary" },
-  { icon: Calendar, label: "Schedule Call", color: "bg-success" },
+  { icon: UserPlus, label: "Add Client", color: "bg-[#0d9488]" },
+  { icon: Send, label: "Send Check-In", color: "bg-[#0d9488]" },
+  { icon: FileText, label: "Create Program", color: "bg-[#0d9488]" },
+  { icon: Calendar, label: "Schedule Call", color: "bg-[#0f766e]" },
 ]
 
 export function FloatingActionButton() {
@@ -35,14 +35,14 @@ export function FloatingActionButton() {
               >
                 <Button
                   variant="outline"
-                  className="group h-12 rounded-lg bg-card border border-border transition-all duration-150 hover:scale-105 whitespace-nowrap"
+                  className="group h-12 rounded-[6px] bg-white border border-[rgba(13,148,136,0.08)] text-[#0c1a1e] transition-all duration-150 hover:scale-105 whitespace-nowrap shadow-[0_6px_20px_rgba(13,148,136,0.08)]"
                 >
                   <motion.div
                     whileHover={{ scale: 1.1 }}
                     transition={{ duration: 0.15 }}
-                    className={`flex h-9 w-9 items-center justify-center rounded-xs ${action.color} text-white mr-3`}
+                    className={`flex h-9 w-9 items-center justify-center rounded-[4px] ${action.color} text-white mr-3`}
                   >
-                    <action.icon className="h-4 w-4" />
+                    <action.icon className="h-4 w-4" strokeWidth={1.5} />
                   </motion.div>
                   <span className="font-medium text-sm">{action.label}</span>
                 </Button>
@@ -56,7 +56,7 @@ export function FloatingActionButton() {
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.95 }}
         onClick={() => setIsOpen(!isOpen)}
-        className="relative flex h-14 w-14 items-center justify-center rounded-lg bg-primary text-primary-foreground"
+        className="relative flex h-14 w-14 items-center justify-center rounded-[6px] bg-[#0d9488] text-white shadow-[0_8px_24px_rgba(13,148,136,0.30)]"
       >
         <AnimatePresence mode="wait">
           <motion.div
@@ -66,7 +66,7 @@ export function FloatingActionButton() {
             exit={{ rotate: 90, opacity: 0 }}
             transition={{ duration: 0.15 }}
           >
-            {isOpen ? <X className="h-5 w-5" /> : <Plus className="h-5 w-5" />}
+            {isOpen ? <X className="h-5 w-5" strokeWidth={1.5} /> : <Plus className="h-5 w-5" strokeWidth={1.5} />}
           </motion.div>
         </AnimatePresence>
       </motion.button>

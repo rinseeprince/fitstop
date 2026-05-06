@@ -6,7 +6,6 @@ import { AppLayout } from "@/components/app-layout";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { AddClientDialog } from "@/components/add-client-dialog";
 import { OverdueBanner } from "@/components/clients/check-in/overdue-banner";
 import { PendingIntakeBanner } from "@/components/coach/pending-intake-banner";
@@ -17,12 +16,20 @@ import { useOverdueClients } from "@/hooks/use-check-in-data";
 
 type ClientStatus = "invited" | "awaiting_review" | "awaiting_activation" | "active" | "inactive";
 
-const statusConfig: Record<ClientStatus, { label: string; variant: "warning" | "default" | "success" | "secondary" }> = {
-  invited: { label: "Invited", variant: "warning" },
-  awaiting_review: { label: "Intake Review", variant: "default" },
-  awaiting_activation: { label: "Awaiting Activation", variant: "warning" },
-  active: { label: "Active", variant: "success" },
-  inactive: { label: "Inactive", variant: "secondary" },
+const statusBadgeClass: Record<ClientStatus, string> = {
+  invited: "bg-[rgba(245,158,11,0.07)] text-[#d97706]",
+  awaiting_review: "bg-[rgba(13,148,136,0.05)] text-[#5a7d82]",
+  awaiting_activation: "bg-[rgba(245,158,11,0.07)] text-[#d97706]",
+  active: "bg-[rgba(13,148,136,0.08)] text-[#0d9488]",
+  inactive: "bg-[rgba(0,0,0,0.03)] text-[#93b0b4]",
+};
+
+const statusLabel: Record<ClientStatus, string> = {
+  invited: "Invited",
+  awaiting_review: "Intake Review",
+  awaiting_activation: "Awaiting Activation",
+  active: "Active",
+  inactive: "Inactive",
 };
 
 import { swrFetcher } from "@/lib/swr-fetcher";
@@ -133,101 +140,87 @@ export default function ClientsPage() {
         <OverdueBanner />
 
         {/* Search and Filters */}
-        <div className="bg-card rounded-lg border border-border p-4">
+        <div className="bg-white rounded-[6px] p-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#93b0b4]" strokeWidth={1.5} />
               <Input
                 placeholder="Search clients..."
-                className="pl-10"
+                className="pl-10 border-[rgba(13,148,136,0.08)] rounded-[6px] text-[#0c1a1e] placeholder:text-[#93b0b4] focus:border-[#0d9488] focus:ring-[#0d9488]/20"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
-            <div className="bg-muted p-1 rounded-lg inline-flex">
-              <button
-                onClick={() => setActiveFilter("all")}
-                className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${
-                  activeFilter === "all"
-                    ? "bg-card text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                All ({statusCounts.all})
-              </button>
-              <button
-                onClick={() => setActiveFilter("active")}
-                className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${
-                  activeFilter === "active"
-                    ? "bg-card text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                Active ({statusCounts.active})
-              </button>
-              <button
-                onClick={() => setActiveFilter("onboarding")}
-                className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${
-                  activeFilter === "onboarding"
-                    ? "bg-card text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                Onboarding ({statusCounts.onboarding})
-              </button>
-              <button
-                onClick={() => setActiveFilter("inactive")}
-                className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${
-                  activeFilter === "inactive"
-                    ? "bg-card text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                Inactive ({statusCounts.inactive})
-              </button>
+            <div className="bg-[rgba(13,148,136,0.05)] p-[2px] rounded-[6px] inline-flex">
+              {[
+                { key: "all" as const, label: `All (${statusCounts.all})` },
+                { key: "active" as const, label: `Active (${statusCounts.active})` },
+                { key: "onboarding" as const, label: `Onboarding (${statusCounts.onboarding})` },
+                { key: "inactive" as const, label: `Inactive (${statusCounts.inactive})` },
+              ].map((tab) => {
+                const isActive = activeFilter === tab.key;
+                return (
+                  <button
+                    key={tab.key}
+                    onClick={() => setActiveFilter(tab.key)}
+                    className={`px-4 py-1.5 text-sm rounded-[4px] transition-all ${
+                      isActive
+                        ? "bg-white text-[#0c1a1e] shadow-[0_1px_3px_rgba(0,0,0,0.05)] font-semibold"
+                        : "text-[#5a7d82] font-medium hover:text-[#0c1a1e]"
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
 
         {/* Loading State */}
         {isLoading && (
-          <div className="bg-card rounded-lg border border-border p-6">
+          <div className="bg-white rounded-[6px] p-6">
             <div className="flex flex-col items-center justify-center py-12 space-y-3">
-              <div className="w-5 h-5 border-2 border-muted border-t-primary rounded-full animate-spin" />
-              <p className="text-sm text-muted-foreground">Loading clients...</p>
+              <div className="w-5 h-5 border-2 border-[rgba(13,148,136,0.08)] border-t-[#0d9488] rounded-full animate-spin" />
+              <p className="text-sm text-[#5a7d82]">Loading clients...</p>
             </div>
           </div>
         )}
 
         {/* Error State */}
         {error && !isLoading && (
-          <div className="bg-card rounded-lg border border-border p-6">
+          <div className="bg-white rounded-[6px] p-6">
             <div className="flex flex-col items-center justify-center py-12 space-y-3">
-              <div className="w-16 h-16 bg-destructive/10 rounded-full flex items-center justify-center">
-                <AlertCircle className="w-8 h-8 text-destructive" />
+              <div className="w-16 h-16 bg-[rgba(185,28,28,0.08)] rounded-full flex items-center justify-center">
+                <AlertCircle className="w-8 h-8 text-[#b91c1c]" strokeWidth={1.5} />
               </div>
               <div className="text-center space-y-1">
-                <p className="text-lg font-semibold text-foreground">Failed to load clients</p>
-                <p className="text-sm text-muted-foreground">Please try again</p>
+                <p className="text-lg font-semibold text-[#0c1a1e]">Failed to load clients</p>
+                <p className="text-sm text-[#5a7d82]">Please try again</p>
               </div>
-              <Button onClick={() => mutate()}>Try Again</Button>
+              <Button
+                onClick={() => mutate()}
+                className="bg-[#0d9488] hover:bg-[#0d9488]/90 text-white"
+              >
+                Try Again
+              </Button>
             </div>
           </div>
         )}
 
         {/* Empty State */}
         {!isLoading && !error && filteredClients.length === 0 && (
-          <div className="bg-card rounded-lg border border-border p-6">
+          <div className="bg-white rounded-[6px] p-6">
             <div className="flex flex-col items-center justify-center py-16 px-8 text-center">
-              <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-4">
-                <Users className="w-8 h-8 text-muted-foreground" />
+              <div className="w-16 h-16 bg-[rgba(13,148,136,0.05)] rounded-full flex items-center justify-center mb-4">
+                <Users className="w-8 h-8 text-[#93b0b4]" strokeWidth={1.5} />
               </div>
-              <h3 className="text-lg font-semibold text-foreground mb-2">
+              <h3 className="text-lg font-semibold text-[#0c1a1e] mb-2">
                 {searchQuery || activeFilter !== "all"
                   ? "No clients found"
                   : "No clients yet"}
               </h3>
-              <p className="text-sm text-muted-foreground mb-6 max-w-sm">
+              <p className="text-sm text-[#5a7d82] mb-6 max-w-sm">
                 {searchQuery || activeFilter !== "all"
                   ? "Try adjusting your search or filters"
                   : "Get started by adding your first client to manage their training and nutrition."}
@@ -236,7 +229,7 @@ export default function ClientsPage() {
                 <AddClientDialog
                   onClientAdded={() => mutate()}
                   trigger={
-                    <Button>
+                    <Button className="bg-[#0d9488] hover:bg-[#0d9488]/90 text-white">
                       Add Your First Client
                     </Button>
                   }
@@ -263,36 +256,39 @@ export default function ClientsPage() {
                 <Link
                   key={client.id}
                   href={`/clients/${client.id}`}
-                  className="flex items-center gap-4 p-4 bg-card rounded-lg border border-border hover:border-primary/30 transition-colors cursor-pointer group"
+                  className="flex items-center gap-4 p-4 bg-white rounded-[6px] transition-all duration-150 cursor-pointer group hover:-translate-y-px hover:shadow-[0_6px_20px_rgba(13,148,136,0.08)]"
                 >
                   {/* Avatar */}
-                  <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                    <span className="text-sm font-medium text-primary">{initials}</span>
+                  <div
+                    className="w-12 h-12 rounded-[6px] flex items-center justify-center flex-shrink-0 text-white text-sm font-bold"
+                    style={{ background: "linear-gradient(135deg, #0d9488, #0f766e)" }}
+                  >
+                    {initials}
                   </div>
 
                   {/* Info */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <h4 className="text-sm font-medium text-foreground">{client.name}</h4>
+                      <h4 className="text-sm font-semibold text-[#0c1a1e]">{client.name}</h4>
                       {isOverdue && (
-                        <Badge variant="destructive" className="text-xs">
-                          <Clock className="w-3 h-3" />
+                        <span className="inline-flex items-center gap-1 rounded-[4px] bg-[rgba(245,158,11,0.07)] px-2 py-0.5 text-[11px] font-medium text-[#d97706]">
+                          <Clock className="w-3 h-3" strokeWidth={1.5} />
                           {daysOverdue}d overdue
-                        </Badge>
+                        </span>
                       )}
                     </div>
-                    <p className="text-xs text-muted-foreground truncate">
+                    <p className="text-xs text-[#5a7d82] truncate">
                       Last check-in: {formatLastCheckIn(client.lastCheckInDate)}
                     </p>
                   </div>
 
                   {/* Status Badge */}
-                  <Badge variant={statusConfig[status].variant}>
-                    {statusConfig[status].label}
-                  </Badge>
+                  <span className={`inline-flex items-center rounded-[4px] px-2 py-0.5 text-[11px] font-medium ${statusBadgeClass[status]}`}>
+                    {statusLabel[status]}
+                  </span>
 
                   {/* Arrow */}
-                  <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors" />
+                  <ChevronRight className="w-4 h-4 text-[#93b0b4] group-hover:text-[#5a7d82] transition-colors" strokeWidth={1.5} />
                 </Link>
               );
             })}

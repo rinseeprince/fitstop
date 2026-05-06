@@ -4,8 +4,6 @@ import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/app-layout";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   DropdownMenu,
@@ -89,20 +87,8 @@ export default function ContentLibraryPage() {
     }
   };
 
-  const getContentTypeColor = (type: string) => {
-    switch (type) {
-      case "video_link":
-        return "bg-red-500/10 text-red-600";
-      case "hyperlink":
-        return "bg-blue-500/10 text-blue-600";
-      case "pdf":
-      case "document":
-        return "bg-muted text-muted-foreground";
-      case "image":
-        return "bg-green-500/10 text-green-600";
-      default:
-        return "bg-muted text-muted-foreground";
-    }
+  const getContentTypeColor = (_type: string) => {
+    return "bg-[rgba(13,148,136,0.05)] text-[#5a7d82]";
   };
 
   const getCurrentFolderData = () => {
@@ -264,19 +250,19 @@ export default function ContentLibraryPage() {
       <Button
         variant="ghost"
         size="icon"
-        className="h-9 w-9 rounded-md transition-colors"
+        className="h-9 w-9 rounded-[6px] text-[#5a7d82] hover:text-[#0c1a1e] hover:bg-[rgba(0,0,0,0.02)] transition-colors"
         onClick={() => setFolderDialogOpen(true)}
       >
-        <FolderPlus className="h-4 w-4" />
+        <FolderPlus className="h-4 w-4" strokeWidth={1.5} />
         <span className="sr-only">Create New Folder</span>
       </Button>
       <Button
         variant="ghost"
         size="icon"
-        className="h-9 w-9 rounded-md transition-colors"
+        className="h-9 w-9 rounded-[6px] text-[#5a7d82] hover:text-[#0c1a1e] hover:bg-[rgba(0,0,0,0.02)] transition-colors"
         onClick={() => setUploadDialogOpen(true)}
       >
-        <Plus className="h-4 w-4" />
+        <Plus className="h-4 w-4" strokeWidth={1.5} />
         <span className="sr-only">Add Content</span>
       </Button>
     </div>
@@ -287,7 +273,7 @@ export default function ContentLibraryPage() {
       <div className="space-y-6">
         {/* Breadcrumbs */}
         {breadcrumbs.length > 1 && (
-          <nav className="flex items-center space-x-2 text-sm text-muted-foreground">
+          <nav className="flex items-center space-x-2 text-sm text-[#93b0b4]">
             {breadcrumbs.map((crumb, index) => (
               <span key={crumb.id || "root"} className="flex items-center">
                 {index > 0 && <span className="mx-2">/</span>}
@@ -297,7 +283,7 @@ export default function ContentLibraryPage() {
                       navigateToFolder(null);
                     }
                   }}
-                  className={index === breadcrumbs.length - 1 ? "text-foreground" : "hover:text-foreground"}
+                  className={index === breadcrumbs.length - 1 ? "text-[#0c1a1e]" : "hover:text-[#5a7d82]"}
                 >
                   {crumb.name}
                 </button>
@@ -309,32 +295,39 @@ export default function ContentLibraryPage() {
         {/* Search and Filters */}
         <div className="flex items-center gap-4">
           <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#93b0b4]" strokeWidth={1.5} />
             <input
               type="text"
               placeholder="Search content..."
-              className="w-full pl-9 pr-4 py-2 border border-input rounded-md bg-background"
+              className="w-full pl-9 pr-4 py-2 border border-[rgba(13,148,136,0.08)] rounded-[6px] bg-white text-[#0c1a1e] placeholder:text-[#93b0b4] outline-none focus:border-[#0d9488] focus:ring-1 focus:ring-[#0d9488]/20 transition-colors"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
-          <Button variant="outline">
-            <Filter className="h-4 w-4 mr-2" />
+          <Button
+            variant="outline"
+            className="bg-white border-[rgba(13,148,136,0.08)] text-[#5a7d82] hover:bg-[rgba(13,148,136,0.05)] hover:text-[#0c1a1e] rounded-[6px]"
+          >
+            <Filter className="h-4 w-4 mr-2" strokeWidth={1.5} />
             Filter
           </Button>
-          <Button variant="outline" onClick={() => setViewMode(viewMode === "grid" ? "list" : "grid")}>
-            {viewMode === "grid" ? <List className="h-4 w-4" /> : <Grid className="h-4 w-4" />}
+          <Button
+            variant="outline"
+            onClick={() => setViewMode(viewMode === "grid" ? "list" : "grid")}
+            className="bg-white border-[rgba(13,148,136,0.08)] text-[#5a7d82] hover:bg-[rgba(13,148,136,0.05)] hover:text-[#0c1a1e] rounded-[6px]"
+          >
+            {viewMode === "grid" ? <List className="h-4 w-4" strokeWidth={1.5} /> : <Grid className="h-4 w-4" strokeWidth={1.5} />}
           </Button>
         </div>
 
         {/* Empty State */}
         {folders.length === 0 && items.length === 0 && !searchQuery && (
           <div className="text-center py-12">
-            <div className="mx-auto w-24 h-24 bg-muted rounded-full flex items-center justify-center mb-4">
-              <FolderOpen className="h-8 w-8 text-muted-foreground" />
+            <div className="mx-auto w-24 h-24 bg-[rgba(13,148,136,0.05)] rounded-full flex items-center justify-center mb-4">
+              <FolderOpen className="h-8 w-8 text-[#93b0b4]" strokeWidth={1.5} />
             </div>
-            <h3 className="text-lg font-medium mb-2">No content yet</h3>
-            <p className="text-muted-foreground">
+            <h3 className="text-lg font-semibold mb-2 text-[#0c1a1e]">No content yet</h3>
+            <p className="text-[#5a7d82]">
               Start building your content library by adding videos, documents, or links.
             </p>
           </div>
@@ -348,123 +341,126 @@ export default function ContentLibraryPage() {
           }>
             {/* Folders */}
             {folders.map((folder: ContentFolder) => (
-              <Card key={folder.id} className="group">
-                <CardContent className="p-4">
-                  <div className="flex items-center gap-3">
-                    <div 
-                      className="flex h-10 w-10 items-center justify-center rounded-lg bg-yellow-500/10 cursor-pointer"
-                      onClick={() => navigateToFolder(folder)}
-                    >
-                      <Folder className="h-5 w-5 text-yellow-600" />
-                    </div>
-                    <div className="flex-1 min-w-0 cursor-pointer" onClick={() => navigateToFolder(folder)}>
-                      <p className="font-medium truncate">{folder.name}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {/* This would need to be calculated */}
-                        Folder
-                      </p>
-                    </div>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="opacity-0 group-hover:opacity-100 transition-opacity"
-                        >
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => handleFolderAction("edit", folder)}>
-                          <Edit className="h-4 w-4 mr-2" />
-                          Rename
-                        </DropdownMenuItem>
-                        <DropdownMenuItem 
-                          onClick={() => handleFolderAction("delete", folder)}
-                          className="text-red-600"
-                        >
-                          <Trash2 className="h-4 w-4 mr-2" />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+              <div
+                key={folder.id}
+                className="group bg-white rounded-[6px] p-4 transition-all duration-150 hover:-translate-y-px hover:shadow-[0_6px_20px_rgba(13,148,136,0.08)]"
+              >
+                <div className="flex items-center gap-3">
+                  <div
+                    className="flex h-10 w-10 items-center justify-center rounded-[6px] bg-[rgba(245,158,11,0.07)] cursor-pointer"
+                    onClick={() => navigateToFolder(folder)}
+                  >
+                    <Folder className="h-5 w-5 text-[#d97706]" strokeWidth={1.5} />
                   </div>
-                </CardContent>
-              </Card>
+                  <div className="flex-1 min-w-0 cursor-pointer" onClick={() => navigateToFolder(folder)}>
+                    <p className="font-semibold truncate text-[#0c1a1e]">{folder.name}</p>
+                    <p className="text-sm text-[#5a7d82]">
+                      Folder
+                    </p>
+                  </div>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="opacity-0 group-hover:opacity-100 transition-opacity text-[#93b0b4] hover:text-[#5a7d82] hover:bg-[rgba(0,0,0,0.02)]"
+                      >
+                        <MoreHorizontal className="h-4 w-4" strokeWidth={1.5} />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => handleFolderAction("edit", folder)}>
+                        <Edit className="h-4 w-4 mr-2" strokeWidth={1.5} />
+                        Rename
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => handleFolderAction("delete", folder)}
+                        className="text-[#b91c1c]"
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" strokeWidth={1.5} />
+                        Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              </div>
             ))}
 
             {/* Content Items */}
             {items.map((item: ContentItem) => (
-              <Card key={item.id} className="group">
-                <CardHeader className="pb-2">
+              <div
+                key={item.id}
+                className="group bg-white rounded-[6px] transition-all duration-150 hover:-translate-y-px hover:shadow-[0_6px_20px_rgba(13,148,136,0.08)]"
+              >
+                <div className="px-4 pt-4 pb-2">
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-2">
-                      <div className={`p-2 rounded-lg ${getContentTypeColor(item.type)}`}>
+                      <div className={`p-2 rounded-[6px] ${getContentTypeColor(item.type)}`}>
                         {getContentIcon(item.type)}
                       </div>
-                      <Badge variant="secondary" className="text-xs">
+                      <span className="inline-flex items-center rounded-[4px] bg-[rgba(13,148,136,0.05)] px-2 py-0.5 text-[11px] font-medium text-[#5a7d82]">
                         {item.type.replace("_", " ")}
-                      </Badge>
+                      </span>
                     </div>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="opacity-0 group-hover:opacity-100 transition-opacity"
+                          className="opacity-0 group-hover:opacity-100 transition-opacity text-[#93b0b4] hover:text-[#5a7d82] hover:bg-[rgba(0,0,0,0.02)]"
                         >
-                          <MoreHorizontal className="h-4 w-4" />
+                          <MoreHorizontal className="h-4 w-4" strokeWidth={1.5} />
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem onClick={() => handleContentAction("assign", item)}>
-                          <Users className="h-4 w-4 mr-2" />
+                          <Users className="h-4 w-4 mr-2" strokeWidth={1.5} />
                           Assign to Clients
                         </DropdownMenuItem>
                         {(item.type === "pdf" || item.type === "document" || item.type === "image") && (
                           <DropdownMenuItem onClick={() => window.open(item.storagePath, "_blank")}>
-                            <Download className="h-4 w-4 mr-2" />
+                            <Download className="h-4 w-4 mr-2" strokeWidth={1.5} />
                             Download
                           </DropdownMenuItem>
                         )}
                         {(item.type === "video_link" || item.type === "hyperlink") && (
                           <DropdownMenuItem onClick={() => window.open(item.url, "_blank")}>
-                            <ExternalLink className="h-4 w-4 mr-2" />
+                            <ExternalLink className="h-4 w-4 mr-2" strokeWidth={1.5} />
                             Open Link
                           </DropdownMenuItem>
                         )}
                         <DropdownMenuItem onClick={() => handleContentAction("edit", item)}>
-                          <Edit className="h-4 w-4 mr-2" />
+                          <Edit className="h-4 w-4 mr-2" strokeWidth={1.5} />
                           Edit
                         </DropdownMenuItem>
-                        <DropdownMenuItem 
+                        <DropdownMenuItem
                           onClick={() => handleContentAction("delete", item)}
-                          className="text-red-600"
+                          className="text-[#b91c1c]"
                         >
-                          <Trash2 className="h-4 w-4 mr-2" />
+                          <Trash2 className="h-4 w-4 mr-2" strokeWidth={1.5} />
                           Delete
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
-                </CardHeader>
-                <CardContent>
-                  <h4 className="font-medium mb-1 line-clamp-2">{item.title}</h4>
+                </div>
+                <div className="px-4 pb-4">
+                  <h4 className="font-semibold mb-1 line-clamp-2 text-[#0c1a1e]">{item.title}</h4>
                   {item.description && (
-                    <p className="text-sm text-muted-foreground line-clamp-2 mb-2">
+                    <p className="text-sm text-[#5a7d82] line-clamp-2 mb-2">
                       {item.description}
                     </p>
                   )}
-                  <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    <span>{new Date(item.createdAt).toLocaleDateString()}</span>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-[#93b0b4] font-mono-display">{new Date(item.createdAt).toLocaleDateString()}</span>
                     {item.isLibrary ? (
-                      <Badge variant="outline" className="text-xs">Library</Badge>
+                      <span className="inline-flex items-center rounded-[4px] bg-[rgba(13,148,136,0.05)] px-2 py-0.5 text-[11px] font-medium text-[#5a7d82]">Library</span>
                     ) : (
-                      <Badge variant="secondary" className="text-xs">Assigned</Badge>
+                      <span className="inline-flex items-center rounded-[4px] bg-[rgba(13,148,136,0.08)] px-2 py-0.5 text-[11px] font-medium text-[#0d9488]">Assigned</span>
                     )}
                   </div>
-                </CardContent>
-              </Card>
+                </div>
+              </div>
             ))}
           </div>
         )}

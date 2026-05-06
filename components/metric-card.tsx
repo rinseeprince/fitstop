@@ -23,13 +23,13 @@ export function MetricCard({ title, value, icon: Icon, trend, chart, delay = 0, 
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay, duration: 0.2, ease: "easeOut" }}
-      className={`group relative overflow-hidden rounded-lg bg-card border border-border p-6 transition-colors duration-150 hover:border-primary/30 ${href ? "cursor-pointer" : ""}`}
+      className={`group relative overflow-hidden rounded-[6px] bg-white p-6 transition-all duration-150 ${href ? "cursor-pointer hover:-translate-y-px hover:shadow-[0_6px_20px_rgba(13,148,136,0.08)]" : ""}`}
     >
       <div className="relative flex items-start justify-between">
         <div className="flex-1">
-          <p className="text-sm font-medium text-muted-foreground mb-3">{title}</p>
+          <p className="text-[10px] font-medium uppercase tracking-[0.06em] text-[#93b0b4] mb-3">{title}</p>
           <div className="flex items-baseline gap-2">
-            <motion.h3 className="text-4xl font-semibold tracking-tight">
+            <motion.h3 className="text-[32px] font-bold tracking-[-0.02em] font-mono-display text-[#0c1a1e] leading-tight">
               <AnimatedCounter value={value} />
             </motion.h3>
             {trend && (
@@ -38,18 +38,18 @@ export function MetricCard({ title, value, icon: Icon, trend, chart, delay = 0, 
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ delay: delay + 0.2 }}
                 className={`flex items-center gap-1 text-xs font-medium ${
-                  trend.positive ? "text-success" : "text-destructive"
+                  trend.positive ? "text-[#0d9488]" : "text-[#d97706]"
                 }`}
               >
-                {trend.positive ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                {trend.positive ? <TrendingUp className="h-3 w-3" strokeWidth={1.5} /> : <TrendingDown className="h-3 w-3" strokeWidth={1.5} />}
                 {trend.value}
               </motion.div>
             )}
           </div>
         </div>
 
-        <div className="flex h-12 w-12 items-center justify-center rounded-md bg-primary/10 text-primary transition-colors duration-150 group-hover:bg-primary/15">
-          <Icon className="h-5 w-5" />
+        <div className="flex h-12 w-12 items-center justify-center rounded-[6px] bg-[rgba(13,148,136,0.08)] text-[#0d9488] transition-colors duration-150 group-hover:bg-[rgba(13,148,136,0.12)]">
+          <Icon className="h-5 w-5" strokeWidth={1.5} />
         </div>
       </div>
 
@@ -60,7 +60,7 @@ export function MetricCard({ title, value, icon: Icon, trend, chart, delay = 0, 
           transition={{ delay: delay + 0.3, duration: 0.2 }}
           className="mt-4"
         >
-          <Sparkline data={chart} color="hsl(var(--primary))" />
+          <Sparkline data={chart} color="#0d9488" />
         </motion.div>
       )}
     </motion.div>

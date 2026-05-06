@@ -85,29 +85,30 @@ export function PersistentSidebar() {
   }
 
   return (
-    <aside className="hidden lg:flex w-20 flex-col border-r border-primary-foreground/10 bg-primary fixed inset-y-0 left-0 z-20">
-      <div className="flex h-[72px] items-center justify-center border-b border-primary-foreground/10">
-        <motion.h1
+    <aside className="hidden lg:flex w-20 flex-col border-r border-[rgba(255,255,255,0.06)] bg-[#0f2027] fixed inset-y-0 left-0 z-20">
+      <div className="flex h-[72px] items-center justify-center border-b border-[rgba(255,255,255,0.06)]">
+        <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="text-lg font-semibold text-primary-foreground"
+          className="flex h-8 w-8 items-center justify-center rounded-[6px] text-[13px] font-bold text-white"
+          style={{ background: "linear-gradient(135deg, #0d9488, #0f766e)" }}
         >
           CH
-        </motion.h1>
+        </motion.div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-2">
         <SidebarNav />
       </div>
 
-      <div className="border-t border-white/10 p-2">
+      <div className="border-t border-[rgba(255,255,255,0.06)] p-2">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button className="flex flex-col items-center justify-center w-full rounded-lg p-3 transition-all duration-150 hover:bg-white/10 text-white/70 hover:text-white">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white/20 text-white">
-                <User className="h-4 w-4" />
+            <button className="flex flex-col items-center justify-center w-full rounded-[6px] p-3 transition-all duration-150 hover:bg-[rgba(255,255,255,0.05)] text-[rgba(255,255,255,0.55)] hover:text-white">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[rgba(255,255,255,0.08)] text-white">
+                <User className="h-4 w-4" strokeWidth={1.5} />
               </div>
-              <ChevronDown className="h-3 w-3 mt-1" />
+              <ChevronDown className="h-3 w-3 mt-1" strokeWidth={1.5} />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="center" side="right" className="w-56">

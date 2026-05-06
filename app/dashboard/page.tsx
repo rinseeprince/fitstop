@@ -87,21 +87,21 @@ export default function DashboardPage() {
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2, duration: 0.2 }}
-            className="rounded-lg bg-card border border-border p-6"
+            className="rounded-[6px] bg-white p-6"
           >
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-lg font-semibold tracking-tight">Recent Check-ins</h2>
-              <div className="flex h-9 w-9 items-center justify-center rounded-md bg-success/10">
-                <TrendingUp className="h-4 w-4 text-success" />
+              <h2 className="text-base font-semibold tracking-tight text-[#0c1a1e]">Recent Check-ins</h2>
+              <div className="flex h-9 w-9 items-center justify-center rounded-[6px] bg-[rgba(13,148,136,0.08)]">
+                <TrendingUp className="h-4 w-4 text-[#0d9488]" strokeWidth={1.5} />
               </div>
             </div>
             <div className="space-y-1">
               {isLoading ? (
                 <div className="flex items-center justify-center py-8">
-                  <div className="w-6 h-6 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
+                  <div className="w-6 h-6 border-4 border-[rgba(13,148,136,0.10)] border-t-[#0d9488] rounded-full animate-spin" />
                 </div>
               ) : recentCheckIns.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground text-sm">
+                <div className="text-center py-8 text-[#93b0b4] text-sm">
                   No recent check-ins
                 </div>
               ) : (
@@ -115,34 +115,37 @@ export default function DashboardPage() {
 
                   return (
                     <Link key={checkIn.id} href={`/clients/${checkIn.clientId}`}>
-                      <div className="group flex items-center justify-between rounded-md p-3 transition-colors duration-150 hover:bg-muted/50 cursor-pointer">
+                      <div className="group flex items-center justify-between rounded-[6px] p-3 transition-colors duration-150 hover:bg-[rgba(0,0,0,0.02)] cursor-pointer">
                         <div className="flex items-center gap-3">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-md bg-primary/10 text-primary text-sm font-medium">
+                          <div
+                            className="flex h-10 w-10 items-center justify-center rounded-[6px] text-white text-xs font-bold"
+                            style={{ background: "linear-gradient(135deg, #0d9488, #0f766e)" }}
+                          >
                             {checkIn.clientAvatar ? (
                               <img
                                 src={checkIn.clientAvatar}
                                 alt={checkIn.clientName}
-                                className="h-full w-full rounded-md object-cover"
+                                className="h-full w-full rounded-[6px] object-cover"
                               />
                             ) : (
                               initials
                             )}
                           </div>
                           <div>
-                            <p className="font-medium text-sm">{checkIn.clientName}</p>
-                            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                              <Clock className="h-3 w-3" />
-                              {formatRelativeTime(checkIn.createdAt)}
+                            <p className="font-semibold text-sm text-[#0c1a1e]">{checkIn.clientName}</p>
+                            <div className="flex items-center gap-1.5 text-xs text-[#93b0b4]">
+                              <Clock className="h-3 w-3" strokeWidth={1.5} />
+                              <span className="font-mono-display">{formatRelativeTime(checkIn.createdAt)}</span>
                             </div>
                           </div>
                         </div>
                         <div
                           className={`h-2 w-2 rounded-full ${
                             checkIn.status === "reviewed"
-                              ? "bg-success"
+                              ? "bg-[#0d9488]"
                               : checkIn.status === "ai_processed"
-                                ? "bg-primary"
-                                : "bg-warning"
+                                ? "bg-[#0d9488]"
+                                : "bg-[#d97706]"
                           }`}
                         />
                       </div>
@@ -158,12 +161,12 @@ export default function DashboardPage() {
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.25, duration: 0.2 }}
-            className="rounded-lg bg-card border border-border p-6"
+            className="rounded-[6px] bg-white p-6"
           >
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-lg font-semibold tracking-tight">Upcoming Calls</h2>
-              <div className="flex h-9 w-9 items-center justify-center rounded-md bg-primary/10">
-                <PhoneCall className="h-4 w-4 text-primary" />
+              <h2 className="text-base font-semibold tracking-tight text-[#0c1a1e]">Upcoming Calls</h2>
+              <div className="flex h-9 w-9 items-center justify-center rounded-[6px] bg-[rgba(13,148,136,0.08)]">
+                <PhoneCall className="h-4 w-4 text-[#0d9488]" strokeWidth={1.5} />
               </div>
             </div>
             <div className="space-y-1">
@@ -175,18 +178,21 @@ export default function DashboardPage() {
               ].map((call, i) => (
                 <div
                   key={i}
-                  className="group flex items-start gap-3 rounded-md p-3 transition-colors duration-150 hover:bg-muted/50"
+                  className="group flex items-start gap-3 rounded-[6px] p-3 transition-colors duration-150 hover:bg-[rgba(0,0,0,0.02)]"
                 >
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground text-sm font-medium">
+                  <div
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[6px] text-white text-xs font-bold"
+                    style={{ background: "linear-gradient(135deg, #0d9488, #0f766e)" }}
+                  >
                     {call.avatar}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm">{call.name}</p>
-                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5">
-                      <Clock className="h-3 w-3" />
-                      {call.time}
+                    <p className="font-semibold text-sm text-[#0c1a1e]">{call.name}</p>
+                    <div className="flex items-center gap-1.5 text-xs text-[#93b0b4] mt-0.5">
+                      <Clock className="h-3 w-3" strokeWidth={1.5} />
+                      <span className="font-mono-display">{call.time}</span>
                     </div>
-                    <p className="text-xs text-primary font-medium mt-1">{call.type}</p>
+                    <p className="text-xs text-[#0d9488] font-medium mt-1">{call.type}</p>
                   </div>
                 </div>
               ))}

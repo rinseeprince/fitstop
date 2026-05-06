@@ -66,21 +66,22 @@ export function SidebarNav() {
               href={item.href}
               onClick={() => setOptimisticHref(item.href)}
               className={cn(
-                "group relative flex flex-col items-center justify-center rounded-lg px-2 py-3 text-xs font-medium transition-all duration-150",
+                "group relative flex flex-col items-center justify-center rounded-[6px] px-2 py-3 text-xs font-medium transition-all duration-150",
                 isActive
-                  ? "bg-white/20 text-white"
-                  : "text-white/70 hover:text-white hover:bg-white/10",
+                  ? "text-[#0d9488]"
+                  : "text-[rgba(255,255,255,0.45)] hover:text-white hover:bg-[rgba(255,255,255,0.05)]",
               )}
             >
               {isActive && (
                 <motion.div
                   layoutId="activeNav"
-                  className="absolute inset-0 rounded-lg bg-white/20"
+                  className="absolute inset-0 rounded-[6px] bg-[rgba(13,148,136,0.15)]"
                   transition={{ type: "spring", bounce: 0.2, duration: 0.4 }}
                 />
               )}
               <div className="relative">
                 <item.icon
+                  strokeWidth={1.5}
                   className={cn(
                     "relative h-5 w-5 transition-transform duration-150",
                     isActive && "scale-105",
@@ -90,7 +91,7 @@ export function SidebarNav() {
                   <motion.span
                     initial={{ scale: 0 }}
                     animate={{ scale: 1 }}
-                    className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-white text-primary text-[10px] font-medium"
+                    className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-[#0d9488] text-white text-[10px] font-medium"
                   >
                     {unreviewedCount > 9 ? "9+" : unreviewedCount}
                   </motion.span>

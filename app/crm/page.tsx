@@ -6,7 +6,6 @@ import { useState } from "react"
 import { AppLayout } from "@/components/app-layout"
 import { PageHeader } from "@/components/page-header"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   Dialog,
   DialogContent,
@@ -22,6 +21,9 @@ import { Textarea } from "@/components/ui/textarea"
 import { LeadCard } from "@/components/lead-card"
 import { Plus } from "lucide-react"
 import type { Lead, KanbanColumn } from "@/types/crm"
+
+const inputClass = "border-[rgba(13,148,136,0.08)] rounded-[6px] text-[#0c1a1e] placeholder:text-[#93b0b4] focus:border-[#0d9488] focus:ring-[#0d9488]/20"
+const labelClass = "text-[12px] font-medium text-[#0c1a1e]"
 
 const initialColumns: KanbanColumn[] = [
   {
@@ -181,9 +183,9 @@ export default function CRMPage() {
         <Button
           variant="ghost"
           size="icon"
-          className="h-9 w-9 rounded-lg transition-all hover:scale-110"
+          className="h-9 w-9 rounded-[6px] text-[#5a7d82] hover:text-[#0c1a1e] hover:bg-[rgba(0,0,0,0.02)] transition-all"
         >
-          <Plus className="h-4 w-4" />
+          <Plus className="h-4 w-4" strokeWidth={1.5} />
           <span className="sr-only">Add New Lead</span>
         </Button>
       </DialogTrigger>
@@ -196,48 +198,61 @@ export default function CRMPage() {
         </DialogHeader>
         <div className="space-y-4 py-4">
           <div className="space-y-2">
-            <Label htmlFor="name">Name</Label>
+            <Label htmlFor="name" className={labelClass}>Name</Label>
             <Input
               id="name"
               placeholder="John Doe"
               value={newLead.name}
               onChange={(e) => setNewLead({ ...newLead, name: e.target.value })}
+              className={inputClass}
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
+            <Label htmlFor="email" className={labelClass}>Email</Label>
             <Input
               id="email"
               type="email"
               placeholder="john@example.com"
               value={newLead.email}
               onChange={(e) => setNewLead({ ...newLead, email: e.target.value })}
+              className={inputClass}
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="source">Source</Label>
+            <Label htmlFor="source" className={labelClass}>Source</Label>
             <Input
               id="source"
               placeholder="Instagram, Website, Referral..."
               value={newLead.source}
               onChange={(e) => setNewLead({ ...newLead, source: e.target.value })}
+              className={inputClass}
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="notes">Notes</Label>
+            <Label htmlFor="notes" className={labelClass}>Notes</Label>
             <Textarea
               id="notes"
               placeholder="Add any relevant notes..."
               value={newLead.notes}
               onChange={(e) => setNewLead({ ...newLead, notes: e.target.value })}
+              className={inputClass}
             />
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+          <Button
+            variant="outline"
+            onClick={() => setIsDialogOpen(false)}
+            className="border-[rgba(13,148,136,0.08)] text-[#5a7d82] hover:bg-[rgba(0,0,0,0.02)]"
+          >
             Cancel
           </Button>
-          <Button onClick={handleAddLead}>Add Lead</Button>
+          <Button
+            onClick={handleAddLead}
+            className="bg-[#0d9488] hover:bg-[#0d9488]/90 text-white"
+          >
+            Add Lead
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -256,44 +271,40 @@ export default function CRMPage() {
         {/* Kanban Board */}
         <div className="grid gap-4 lg:grid-cols-4">
           {columns.map((column) => (
-            <Card
+            <div
               key={column.id}
               className="flex flex-col"
               onDragOver={handleDragOver}
               onDrop={(e) => handleDrop(e, column.stage)}
             >
-              <CardHeader>
-                <CardTitle className="flex items-center justify-between text-base">
-                  <span>{column.title}</span>
-                  <span className="flex h-6 w-6 items-center justify-center rounded-md bg-muted text-xs font-medium">
-                    {column.leads.length}
-                  </span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="flex-1 space-y-3">
+              <div className="flex items-center justify-between pb-3 border-b border-[rgba(13,148,136,0.08)] mb-3">
+                <h3 className="text-[13.5px] font-semibold text-[#0c1a1e]">{column.title}</h3>
+                <span className="flex h-6 min-w-6 items-center justify-center rounded-[4px] bg-[rgba(13,148,136,0.05)] px-1.5 text-[11px] font-medium text-[#0d9488] font-mono-display">
+                  {column.leads.length}
+                </span>
+              </div>
+              <div className="flex-1 space-y-3">
                 {column.leads.length === 0 ? (
-                  <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
+                  <div className="flex items-center justify-center py-8 text-sm text-[#93b0b4]">
                     No leads yet
                   </div>
                 ) : (
                   column.leads.map((lead) => <LeadCard key={lead.id} lead={lead} onDragStart={handleDragStart} />)
                 )}
-              </CardContent>
-            </Card>
+              </div>
+            </div>
           ))}
         </div>
 
         {/* Stats Summary */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {columns.map((column) => (
-            <Card key={`stat-${column.id}`}>
-              <CardContent className="pt-6">
-                <div className="text-center">
-                  <p className="text-sm text-muted-foreground">{column.title}</p>
-                  <p className="mt-2 text-3xl font-bold">{column.leads.length}</p>
-                </div>
-              </CardContent>
-            </Card>
+            <div key={`stat-${column.id}`} className="bg-white rounded-[6px] p-5">
+              <div className="text-center">
+                <p className="text-[10px] font-medium uppercase tracking-[0.06em] text-[#93b0b4]">{column.title}</p>
+                <p className="mt-2 text-[28px] font-bold font-mono-display text-[#0c1a1e] leading-tight tracking-[-0.02em]">{column.leads.length}</p>
+              </div>
+            </div>
           ))}
         </div>
       </div>

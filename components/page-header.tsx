@@ -19,15 +19,15 @@ export function PageHeader({
       {backHref && (
         <Link
           href={backHref}
-          className="text-muted-foreground hover:text-foreground transition-colors"
+          className="text-[#93b0b4] hover:text-[#5a7d82] transition-colors"
         >
-          <ArrowLeft className="h-5 w-5" />
+          <ArrowLeft className="h-5 w-5" strokeWidth={1.5} />
         </Link>
       )}
       <div className="flex-1 min-w-0">
-        <h1 className="text-xl font-semibold tracking-tight truncate">{title}</h1>
+        <h1 className="text-xl font-semibold tracking-tight truncate text-[#0c1a1e]">{title}</h1>
         {description && (
-          <p className="text-sm text-muted-foreground truncate">{description}</p>
+          <p className="text-sm text-[#5a7d82] truncate">{description}</p>
         )}
       </div>
       {actions && <div className="flex gap-2 pr-20 flex-shrink-0">{actions}</div>}
