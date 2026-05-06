@@ -1050,7 +1050,7 @@ Clicking a card navigates to a detail page which fires its own fetch (e.g. `GET 
 
 **Implement**:
 - Extend data fetch for `exercise_logs` within period.
-- Extend prompt with compact per-exercise summary block. For completed/partial sessions, include exercise names and per-set actuals from `ExerciseLog.sets[]` (reps, weight, optional RPE). Summarize when there are many sets — don't enumerate every set if it blows the context budget. For skipped sessions, the skip notes from Session 6.2's per-event detail are sufficient — no exercise-level data exists.
+- Extend prompt with compact per-exercise summary block. For completed/partial sessions, include exercise names and a **summary line per exercise** (e.g., "Bench Press — 3 sets, top 105×8 @ RPE 9"). Aggregate from `ExerciseLog.sets[]` rather than enumerating every set; per-set detail is available if a specific summary metric needs it but is too verbose for the prompt by default. For skipped sessions, the skip notes from Session 6.2's per-event detail are sufficient — no exercise-level data exists.
 - Respect 25s timeout per CONVENTIONS section 11.
 
 **Do NOT**: Swap AI providers. Do not change `ai_insights` JSONB shape.
