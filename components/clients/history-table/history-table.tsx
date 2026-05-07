@@ -32,6 +32,8 @@ type HistoryTableProps<TRow = Record<string, unknown>> = {
   isLoading: boolean;
   emptyMessage?: string;
   onColumnClick?: (columnKey: string) => void;
+  onRowClick?: (row: TRow) => void;
+  isRowClickable?: (row: TRow) => boolean;
 };
 
 export function HistoryTable<TRow extends Record<string, unknown>>({
@@ -43,6 +45,8 @@ export function HistoryTable<TRow extends Record<string, unknown>>({
   isLoading,
   emptyMessage = "No data available",
   onColumnClick,
+  onRowClick,
+  isRowClickable,
 }: HistoryTableProps<TRow>) {
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
@@ -90,15 +94,22 @@ export function HistoryTable<TRow extends Record<string, unknown>>({
               </TableCell>
             </TableRow>
           ) : (
-            data.map((row, rowIdx) => (
-              <TableRow key={rowIdx}>
-                {columns.map((col) => (
-                  <TableCell key={col.key}>
-                    {col.render(row[col.key as keyof TRow], row)}
-                  </TableCell>
-                ))}
-              </TableRow>
-            ))
+            data.map((row, rowIdx) => {
+              const clickable = onRowClick && (!isRowClickable || isRowClickable(row));
+              return (
+                <TableRow
+                  key={rowIdx}
+                  className={clickable ? "cursor-pointer hover:bg-muted/50" : undefined}
+                  onClick={clickable ? () => onRowClick(row) : undefined}
+                >
+                  {columns.map((col) => (
+                    <TableCell key={col.key}>
+                      {col.render(row[col.key as keyof TRow], row)}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              );
+            })
           )}
         </TableBody>
       </Table>

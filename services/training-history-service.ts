@@ -62,7 +62,7 @@ export async function getTrainingHistory(
   // Query B: All completions for this client
   const { data: completions, error: compError } = await supabaseAdmin
     .from("session_logs")
-    .select("training_session_id, week_start_date, completion_quality, notes")
+    .select("id, training_session_id, week_start_date, completion_quality, notes")
     .eq("client_id", clientId);
 
   if (compError) {
@@ -70,10 +70,11 @@ export async function getTrainingHistory(
   }
 
   // Build completion lookup: key = "sessionId_weekStart"
-  const completionMap = new Map<string, { completion_quality: string | null; notes: string | null }>();
+  const completionMap = new Map<string, { id: string; completion_quality: string | null; notes: string | null }>();
   for (const c of completions || []) {
     const key = `${c.training_session_id}_${c.week_start_date}`;
     completionMap.set(key, {
+      id: c.id,
       completion_quality: c.completion_quality,
       notes: c.notes,
     });
@@ -92,6 +93,7 @@ export async function getTrainingHistory(
     const isAlt = td?.isAlternativeSession ?? false;
 
     let completionQuality: TrainingHistoryRow["completion_quality"] = null;
+    let sessionLogId: string | null = null;
 
     if (sessionId) {
       const weekStart = getTrainingWeekStart(log.date, checkInDay);
@@ -99,6 +101,7 @@ export async function getTrainingHistory(
       const match = completionMap.get(key);
       if (match) {
         completionQuality = (match.completion_quality as TrainingHistoryRow["completion_quality"]) ?? null;
+        sessionLogId = match.id;
         matchedKeys.add(key);
       }
     }
@@ -109,6 +112,7 @@ export async function getTrainingHistory(
       is_alternative: isAlt,
       completion_quality: completionQuality,
       notes: log.notes || null,
+      session_log_id: sessionLogId,
     });
 
     if (sessionId) {
@@ -158,6 +162,7 @@ export async function getTrainingHistory(
         // Merge completion data into the existing primary row
         if (quality) primaryRows[primaryIdx].completion_quality = quality;
         if (c.notes) primaryRows[primaryIdx].notes = c.notes;
+        primaryRows[primaryIdx].session_log_id = c.id;
       } else {
         orphanedRows.push({
           date: derivedDate,
@@ -165,6 +170,7 @@ export async function getTrainingHistory(
           is_alternative: false,
           completion_quality: quality,
           notes: c.notes || null,
+          session_log_id: c.id,
         });
       }
     }

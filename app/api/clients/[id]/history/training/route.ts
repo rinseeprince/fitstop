@@ -33,6 +33,7 @@ function mapScheduleDayToRow(day: ScheduleDay): TrainingHistoryRow {
     completion_quality: day.completionQuality,
     notes: day.notes,
     is_logged: isLogged,
+    session_log_id: day.sessionLogId ?? null,
   };
 }
 

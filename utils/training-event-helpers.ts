@@ -67,14 +67,14 @@ export function mapEventsToScheduleDays(
         completionQuality: null,
         isAlternative: false,
         notes: null,
+        sessionLogId: null,
       };
     }
 
-    let { status, completionQuality, loggedSessionName } = resolveEventStatus(
-      event,
-      date,
-      today
-    );
+    const resolved = resolveEventStatus(event, date, today);
+    let status = resolved.status;
+    const completionQuality = resolved.completionQuality;
+    let loggedSessionName = resolved.loggedSessionName;
     let isAlternative = false;
     let notes: string | null = null;
 
@@ -105,6 +105,7 @@ export function mapEventsToScheduleDays(
       completionQuality,
       isAlternative,
       notes,
+      sessionLogId: event.sessionLogId ?? null,
     };
   });
 
@@ -129,6 +130,7 @@ export function mapEventsToScheduleDays(
         day.completionQuality = quality;
         day.isAlternative = true;
         day.notes = log.notes;
+        day.sessionLogId = log.id;
       } else if (day.status === "rest") {
         // Rest day but client trained anyway
         day.status = "rest_trained";
@@ -136,6 +138,7 @@ export function mapEventsToScheduleDays(
         day.completionQuality = quality;
         day.isAlternative = true;
         day.notes = log.notes;
+        day.sessionLogId = log.id;
       }
       // Skip if day already completed/partial — don't overwrite
     }

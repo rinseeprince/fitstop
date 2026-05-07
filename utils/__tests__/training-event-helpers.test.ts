@@ -35,6 +35,7 @@ describe("mapEventsToScheduleDays", () => {
       completionQuality: "full",
       loggedSessionName: "Push Day",
       isAlternative: false,
+      sessionLogId: null,
     });
   });
 
@@ -116,6 +117,7 @@ describe("mapEventsToScheduleDays", () => {
       plannedSessionName: null,
       loggedSessionName: null,
       completionQuality: null,
+      sessionLogId: null,
     });
   });
 
@@ -199,6 +201,68 @@ describe("mapEventsToScheduleDays", () => {
       loggedSessionName: "Push Day",
       plannedSessionName: "Push Day",
     });
+  });
+
+  it("threads sessionLogId from a completed event", () => {
+    const dates = ["2026-04-06"];
+    const events = [
+      createMockTrainingEvent({
+        date: "2026-04-06",
+        sessionName: "Push Day",
+        status: "completed",
+        sessionLogId: "log-123",
+      }),
+    ];
+
+    const result = mapEventsToScheduleDays(dates, events);
+
+    expect(result[0].sessionLogId).toBe("log-123");
+  });
+
+  it("sets sessionLogId from unlinked log when merged into missed day", () => {
+    const dates = ["2026-04-06"];
+    const events = [
+      createMockTrainingEvent({
+        date: "2026-04-06",
+        sessionName: "Push Day",
+        status: "missed",
+      }),
+    ];
+    const unlinkedLogs = [
+      {
+        id: "unlinked-log-1",
+        training_session_id: "other-session",
+        completed_at: "2026-04-06",
+        completion_quality: "full",
+        notes: null,
+        prescribed_session_snapshot: { name: "Alt Session" },
+      },
+    ];
+
+    const result = mapEventsToScheduleDays(dates, events, unlinkedLogs);
+
+    expect(result[0].sessionLogId).toBe("unlinked-log-1");
+    expect(result[0].status).toBe("completed_swap");
+  });
+
+  it("sets sessionLogId from unlinked log when merged into rest day", () => {
+    const dates = ["2026-04-06"];
+    const events: ReturnType<typeof createMockTrainingEvent>[] = [];
+    const unlinkedLogs = [
+      {
+        id: "rest-log-1",
+        training_session_id: null,
+        completed_at: "2026-04-06",
+        completion_quality: "full",
+        notes: null,
+        prescribed_session_snapshot: { name: "Extra Session" },
+      },
+    ];
+
+    const result = mapEventsToScheduleDays(dates, events, unlinkedLogs);
+
+    expect(result[0].sessionLogId).toBe("rest-log-1");
+    expect(result[0].status).toBe("rest_trained");
   });
 
   it("prefers partial over scheduled when duplicates exist", () => {

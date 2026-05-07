@@ -15,6 +15,7 @@ import { useHistoryData } from "@/hooks/use-history-data";
 import { useTrainingBuilderContext } from "@/contexts/training-builder-context";
 import { SPLIT_TYPE_LABELS } from "@/lib/training-constants";
 import { swrFetcher } from "@/lib/swr-fetcher";
+import { SessionLogDetailDialog } from "@/components/clients/training/session-log-detail-dialog";
 import type { TrainingHistoryRow, TrainingWeekSummary } from "@/types/history";
 
 function formatDate(dateStr: string) {
@@ -89,6 +90,7 @@ export function TrainingHistoryTable({ clientId }: Props) {
   const { plan } = builder;
   const [page, setPage] = useState(0);
   const [chartColumn, setChartColumn] = useState<string | null>(null);
+  const [selectedSessionLogId, setSelectedSessionLogId] = useState<string | null>(null);
 
   const { rows, total, isLoading } = useHistoryData<TrainingHistoryRow>(
     `/api/clients/${clientId}/history/training`,
@@ -97,6 +99,17 @@ export function TrainingHistoryTable({ clientId }: Props) {
   const handleColumnClick = useCallback((key: string) => {
     setChartColumn(key);
   }, []);
+
+  const handleRowClick = useCallback((row: TrainingHistoryRow) => {
+    if (row.session_log_id) {
+      setSelectedSessionLogId(row.session_log_id);
+    }
+  }, []);
+
+  const isRowClickable = useCallback(
+    (row: TrainingHistoryRow) => !!row.session_log_id,
+    [],
+  );
 
   // Week-scoped summary from dedicated endpoint
   const { data: summaryResponse, isLoading: summaryLoading } = useSWR<{ success: boolean; data: TrainingWeekSummary }>(
@@ -288,8 +301,19 @@ export function TrainingHistoryTable({ clientId }: Props) {
           isLoading={isLoading}
           emptyMessage="No training sessions logged yet"
           onColumnClick={handleColumnClick}
+          onRowClick={handleRowClick}
+          isRowClickable={isRowClickable}
         />
       </div>
+
+      <SessionLogDetailDialog
+        clientId={clientId}
+        sessionLogId={selectedSessionLogId}
+        open={selectedSessionLogId !== null}
+        onOpenChange={(open) => {
+          if (!open) setSelectedSessionLogId(null);
+        }}
+      />
 
       <HistoryChartDialog
         open={chartColumn !== null}

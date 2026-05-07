@@ -26,6 +26,7 @@ export type ScheduleDay = {
   completionQuality: "full" | "partial" | "skipped" | null;
   isAlternative: boolean;
   notes: string | null;
+  sessionLogId: string | null;
 };
 
 // --- Nutrition summary types ---

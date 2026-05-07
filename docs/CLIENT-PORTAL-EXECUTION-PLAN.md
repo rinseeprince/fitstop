@@ -42,8 +42,10 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 | 1.3 | Training log API endpoints | 1 | COMPLETE
 | 1.4 | Set tracker UI, read-only skeleton | 1 | COMPLETE
 | 1.5 | Set tracker UI, inputs + save flow | 1 | COMPLETE
-| 1.6 | Coach drill-down dialog | 1 |
+| 1.6 | Coach drill-down dialog | 1 | COMPLETE
 | 1.7 | Attention feed rewire | 1 |
+| 1.8 | Exercise history data layer + API (coach-side) | 1 |
+| 1.9 | Exercise Data tab UI + PR view (coach-side) | 1 |
 | 2.1 | Day summary + program endpoints | 2 Home + nav |
 | 2.2 | Bottom tab bar + client layout restructure | 2 |
 | 2.3 | Home page shell + swipe navigation | 2 |
@@ -54,6 +56,7 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 | 3.1 | Nutrition + wellness endpoints | 3 Detail pages |
 | 3.2 | Nutrition detail page | 3 |
 | 3.3 | Wellness detail page + past-day lock enforcement | 3 |
+| 3.4 | Client exercise history page | 3 |
 | 4.1 | Habits detail page | 4 Habits |
 | 5.1 | Remove old Daily Pulse + deprecated routes + docs sweep | 5 Cleanup |
 | 6.1 | Walkthrough copy/step update | 6 Check-in + onboarding |
@@ -420,7 +423,7 @@ Session 0.1 confirmed no `timezone` column exists on `clients` and all date help
 
 ---
 
-## Session 1.6: Coach drill-down dialog + history-table wiring
+## Session 1.6: Coach drill-down dialog + history-table wiring ✅ COMPLETE
 
 **Commit message**: `feat(coach): add session log detail dialog with prescribed-vs-actual view`
 
@@ -462,6 +465,8 @@ Session 0.1 confirmed no `timezone` column exists on `clients` and all date help
 
 **Verify**: Manual coach test. `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Commit.
 
+**Addendum (design-space protection for Session 1.9)**: When rendering exercise names in the detailed display state, wrap each name in a clickable element (e.g. `<button>` styled as a text link). Do NOT wire navigation yet - the click handler should be a no-op placeholder or `console.debug` that logs the exercise identity (`exerciseId` or `performedName`). Session 1.9 will wire these to navigate to the Exercise Data subtab with the clicked exercise pre-selected. This keeps the scope of 1.6 unchanged while ensuring the UI element exists for 1.9 to connect. If implementing this adds more than ~10 lines to the dialog component, it belongs in 1.9 instead.
+
 ---
 
 ## Session 1.7: Attention feed rewire (training triggers)
@@ -494,6 +499,132 @@ Session 0.1 confirmed no `timezone` column exists on `clients` and all date help
 - `services/attention-feed-service.test.ts`: regression for aggregated feed.
 
 **Verify**: `npx vitest run`. Manual signal test. Commit.
+
+---
+
+## Session 1.8: Exercise history data layer + API (coach-side)
+
+**Commit message**: `feat(training): add exercise history analytics service and coach API endpoint`
+
+**Objective**: Build the service layer and API route that power exercise trend charts. The service must union two exercise identity paths to find all logs for a given exercise: `exercise_logs.exercise_id` (populated for swap/unplanned picks) and `exercise_logs.training_exercise_id -> training_exercises.exercise_id` (for prescribed exercises that were not swapped). Returns time-series metrics and personal records. Session 7.7 (Metrics tab exercise charts) shares this data layer.
+
+**Read first**:
+- `supabase/migrations/090_normalize_set_logs.sql` (schema: `set_logs`, `exercise_logs.exercise_id`, `exercise_logs.performed_name`).
+- `services/training-log-service.ts` (`attachSetLogs`, `mapExerciseLogRow`, `mapSetLogRow` - understand the existing read patterns).
+- `types/training.ts` (`ExerciseLog`, `SetLog`, `TrainingEventDetail`).
+- `docs/ARCHITECTURE.md` "Training Completion Hierarchy" and "Exercise Catalog" sections.
+- `components/clients/training/training-history-table.tsx` (existing summary strip pattern and data fetching - the Exercise Data tab must match this design language).
+- `components/clients/history-table/history-chart-dialog.tsx` (existing Recharts usage - understand the data shape charts consume).
+
+**Plan (report before implementing)**:
+- Exact SQL/query shape for the union of both exercise identity paths. The join: `exercise_logs LEFT JOIN training_exercises ON exercise_logs.training_exercise_id = training_exercises.id`. An exercise_log matches the target exercise when `exercise_logs.exercise_id = targetExerciseId OR training_exercises.exercise_id = targetExerciseId`. For name-based fallback (legacy rows where both FKs are null): `LOWER(exercise_logs.performed_name) = LOWER(targetName)`.
+- How to scope by client: join through `session_logs.client_id`.
+- Service function signatures and return shapes.
+- Whether to add functions to the existing `services/training-log-service.ts` or create `services/exercise-analytics-service.ts`. Decision rule: if `training-log-service.ts` is approaching 300 lines (CONVENTIONS file size limit for services), create a new file.
+
+**Implement**:
+1. **Service** (new `services/exercise-analytics-service.ts` or extend `training-log-service.ts`):
+   - `getClientExerciseList(clientId: string): Promise<ExerciseListItem[]>` - returns all exercises the client has logged, ordered by frequency. Groups by `COALESCE(exercise_logs.exercise_id::text, training_exercises.exercise_id::text, LOWER(exercise_logs.performed_name))`. Returns `{ exerciseId: string | null, name: string, logCount: number, lastLoggedDate: string }`. The `name` is `MAX(performed_name)` within each group (most recent wins for display).
+   - `getExerciseProgressionSeries(clientId: string, params: { exerciseId?: string, exerciseName?: string, sessionCount?: number }): Promise<ExerciseProgressionPoint[]>` - returns an ordered array of `{ date: string, sessionLogId: string, topSetWeight: number | null, topSetReps: number | null, estimatedOneRepMax: number | null, totalVolume: number | null, topSetRpe: number | null, prescribedSets: number | null, actualSets: number, prescribedRepsMin: number | null, prescribedRepsMax: number | null }`. Each point is one session where the client logged this exercise. Joins `exercise_logs -> set_logs` and aggregates: `topSetWeight = MAX(set_logs.weight)`, `topSetReps = reps from the set with max weight` (tiebreak: highest reps), `totalVolume = SUM(set_logs.reps * set_logs.weight)`, `topSetRpe = RPE from the top-weight set`. Estimated 1RM via Epley formula: `weight * (1 + reps / 30)` applied to the best set (highest estimated 1RM across all sets in that session, not just the heaviest). Prescribed data comes from `prescribed_exercise_snapshot` JSONB on the matching exercise_log. Ordered by `session_logs.completed_at ASC`. When `sessionCount` is provided, returns only the most recent N sessions.
+   - `getExercisePRs(clientId: string, params: { exerciseId?: string, exerciseName?: string }): Promise<ExercisePR[]>` - returns the best weight per distinct rep count across all set_logs for the exercise: `{ reps: number, weight: number, date: string, isRecent: boolean }`. A PR is "recent" if set within the last 28 days. Only includes rep counts the client has actually logged (no padding for 1/3/5/8/10 if they never hit those). Ordered by reps ascending.
+2. **Types**: add to `types/training.ts`:
+   - `ExerciseListItem`, `ExerciseProgressionPoint`, `ExercisePR`.
+3. **API route**: `GET /api/clients/[id]/training/exercise-history` (coach-side). `coachApiRateLimit` + `getAuthenticatedCoachId` + IDOR ownership check. Query params: `exerciseId` (UUID, optional), `exerciseName` (string, optional, fallback when no exerciseId), `sessionCount` (number, optional, default 12), `metric` (enum: `list | progression | prs`). Returns `{ success: true, data: ExerciseListItem[] | ExerciseProgressionPoint[] | ExercisePR[] }` depending on `metric`. `Cache-Control: no-store`.
+
+**Do NOT**: Build UI (Session 1.9). Create client-facing API routes yet (Session 3.4 adds those). Modify existing service functions in `training-log-service.ts`. Duplicate the Epley formula if it already exists in `utils/` - search first and reuse.
+
+**Tests to write**:
+- `services/exercise-analytics-service.test.ts`:
+  - `getClientExerciseList`: returns exercises ordered by log count; groups by `exercise_id` when present, falls back to `LOWER(performed_name)` when null; empty history returns empty array.
+  - `getExerciseProgressionSeries`: returns chronological points with correct `topSetWeight` (MAX across sets), correct `estimatedOneRepMax` (Epley on best-e1RM set, not just heaviest), correct `totalVolume` (SUM of reps*weight). Respects `sessionCount` limit. Handles sessions with only partial set data (some sets have null weight).
+  - `getExercisePRs`: returns best weight per rep count; `isRecent` is true for PRs within 28 days, false otherwise; no entries for rep counts the client never logged; empty data returns empty array.
+  - Both identity paths work: finds logs via `exercise_logs.exercise_id` and via `training_exercises.exercise_id`.
+- API route test: 200 with `metric=list`; 200 with `metric=progression`; 200 with `metric=prs`; 403 IDOR; 400 when neither `exerciseId` nor `exerciseName` provided for progression/prs metrics.
+
+**Verify**: `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Commit.
+
+---
+
+## Session 1.9: Exercise Data tab UI + PR view (coach-side)
+
+**Commit message**: `feat(coach): add Exercise Data subtab with trend charts and PR view`
+
+**Objective**: Add "Exercise Data" as the third subtab in the Training tab's segmented control (after Data and Plans). The page has an exercise search/select dropdown, a metric toggle, session-count picker, and chart display. Coaches can view weight trends, estimated 1RM, volume, RPE, compliance, and personal records for any exercise the client has logged. Wire the Session 1.6 drill-down dialog exercise names to navigate here with the clicked exercise pre-selected.
+
+**Read first**:
+- `components/clients/training/builder/training-plan-builder.tsx` (the subtab segmented control at lines 166-180, `subtab` URL param logic at lines 44-49 - this is where "Exercise Data" is added as a third option).
+- `components/clients/training/training-history-table.tsx` (the dark summary strip pattern at lines 177-270 and table card pattern - Exercise Data must match this design language exactly).
+- `components/clients/history-table/history-chart-dialog.tsx` (existing Recharts patterns: `ResponsiveContainer`, `LineChart`/`BarChart`, axis styling, tooltip format).
+- `components/clients/metrics/metric-chart-card.tsx` (the `AreaChart` with gradient fill pattern - another reference for chart styling).
+- `components/ui/chart.tsx` (base chart utilities - `ChartContainer`, `ChartTooltip`).
+- Output of Session 1.8 (API shape and types).
+- `components/clients/training/session-log-detail-dialog.tsx` (the drill-down dialog from Session 1.6 - wire clickable exercise names here).
+- `lib/client-tabs.ts` (tab registration - no changes needed; Exercise Data is a subtab within Training, not a top-level tab).
+- `CONVENTIONS.md` component size limits (250 lines per component).
+
+**Plan (report before implementing)**:
+- Component breakdown respecting the 250-line limit. Likely split:
+  - `exercise-data-view.tsx` - main container with exercise picker + metric toggle + chart area.
+  - `exercise-search-select.tsx` - search/select dropdown for exercise selection (SWR fetch of exercise list from `metric=list` endpoint).
+  - `exercise-trend-chart.tsx` - the chart renderer (switches between Line and Bar based on metric).
+  - `exercise-pr-view.tsx` - the PR card grid (rendered when "PRs" metric is selected).
+- How the subtab URL param extends: `subtab=data|plans|exercise-data`. When navigating from the drill-down dialog, the URL includes `subtab=exercise-data&exerciseId=<uuid>` (or `&exerciseName=<name>` as fallback).
+- SWR key structure for the exercise history fetch.
+
+**Implement**:
+1. **Extend the segmented control** in `training-plan-builder.tsx`:
+   - Add `"exercise-data"` as a third option in the subtab type and segmented control buttons. Label: "Exercise Data".
+   - When `subtab === "exercise-data"`, render the new `ExerciseDataView` component.
+   - Read `exerciseId` and `exerciseName` from search params to support deep-linking from the drill-down dialog.
+
+2. **`components/clients/training/exercise-data/exercise-data-view.tsx`** (new directory):
+   - **Exercise picker**: dropdown/combobox at top. Fetches exercise list via `GET /api/clients/[id]/training/exercise-history?metric=list` (SWR). Shows exercise name + log count. Searchable. Pre-selects when `exerciseId` or `exerciseName` URL param is present.
+   - **Metric segmented control**: Weight / e1RM / Volume / RPE / Compliance / PRs. Horizontal, same styling as the Data/Plans/Exercise Data control. Default selection: Weight.
+   - **Session-count picker**: 8 / 12 / 24 / All. Rendered as small pill buttons below the metric toggle. Default: 12 for Weight/e1RM/RPE, 8 for Volume/Compliance. Not shown for PRs (PRs are all-time by definition).
+   - **Date subtitle**: below the chart, shows the actual time span covered (e.g. "Oct 14 - Jan 6") derived from the first and last data points.
+   - Fetches progression data via `GET /api/clients/[id]/training/exercise-history?metric=progression&exerciseId=...&sessionCount=...` (SWR, keyed on exercise + session count).
+   - Fetches PR data via `GET /api/clients/[id]/training/exercise-history?metric=prs&exerciseId=...` (SWR, separate key, only when PRs metric is selected).
+
+3. **`components/clients/training/exercise-data/exercise-trend-chart.tsx`**:
+   - Renders one chart at a time based on the selected metric. Uses Recharts (matching existing patterns):
+     - **Weight**: `LineChart` with dots. Y-axis: weight (with unit label). X-axis: session date (short format). Tooltip shows date + weight + reps.
+     - **e1RM**: `LineChart`, same layout. Tooltip shows date + e1RM value + the set it was derived from.
+     - **Volume**: `BarChart` (not line - sparse bars look intentional, sparse dots on a line look broken). Y-axis: total volume. Tooltip shows date + volume.
+     - **RPE**: `LineChart`. Y-axis: RPE (1-10 scale, inverted isn't needed but cap at 10). Conditionally rendered only when RPE data exists in the dataset. When no RPE data, show a centered message: "No RPE data recorded for this exercise."
+     - **Compliance**: Grouped bar chart or stat card. Per session: prescribed sets/reps vs actual sets/reps. Summary stat at top: "Hit prescribed reps in 9/12 sessions." When prescribed data is unavailable (unplanned exercises), show "No prescribed data available" message.
+   - Empty state when fewer than 2 data points: "Not enough data yet. Log at least 2 sessions to see trends."
+
+4. **`components/clients/training/exercise-data/exercise-pr-view.tsx`**:
+   - Card grid of PRs for the selected exercise. Each card: rep count label (e.g. "5 rep max"), weight with unit, date set, "New" badge if `isRecent` is true.
+   - Cards ordered by rep count ascending (1RM first if it exists, then 3RM, 5RM, etc.).
+   - Empty state: "No personal records yet. Log sets with weight to start tracking PRs."
+
+5. **Wire drill-down dialog**: Update `session-log-detail-dialog.tsx` from Session 1.6. Replace the no-op click handlers on exercise names (from the 1.6 addendum) with actual navigation: `router.replace(\`/clients/${clientId}?tab=training&subtab=exercise-data&exerciseId=${exerciseId}\`)` (or `&exerciseName=...` when exerciseId is null). The dialog should close on navigation.
+
+**Do NOT**: Show all charts stacked vertically - one chart at a time via the segmented control. Add a day-based date picker (exercise data is sparse; session-count picker is the right model). Build client-facing UI (Session 3.4). Introduce a new charting library - use Recharts. Create a separate top-level tab in `lib/client-tabs.ts` - Exercise Data is a subtab within Training.
+
+**Tests to write**:
+- `exercise-data-view.test.tsx`:
+  - Exercise picker renders list from fixture; selecting an exercise triggers data fetch.
+  - Metric toggle switches between Weight/e1RM/Volume/RPE/Compliance/PRs.
+  - Session-count picker defaults to 12 for Weight; changes refetch data.
+  - Date subtitle renders the correct span from data points.
+  - Deep-link via `exerciseId` URL param pre-selects the exercise.
+  - Empty exercise list shows appropriate empty state.
+- `exercise-trend-chart.test.tsx`:
+  - Line chart renders for Weight metric with correct data points.
+  - Bar chart renders for Volume metric.
+  - RPE chart hidden when no RPE data exists.
+  - Empty state renders when fewer than 2 data points.
+- `exercise-pr-view.test.tsx`:
+  - PR cards render for fixture data with correct rep/weight/date.
+  - "New" badge renders when `isRecent` is true.
+  - Cards ordered by rep count ascending.
+  - Empty state renders when no PRs exist.
+- `session-log-detail-dialog.test.tsx` (extend from Session 1.6):
+  - Exercise name click navigates to Exercise Data subtab with correct exerciseId param.
+
+**Verify**: Manual: open a client with logged exercise data; switch to Exercise Data subtab; select an exercise; toggle between metrics; verify charts render. Click an exercise name in the drill-down dialog; confirm navigation to Exercise Data with exercise pre-selected. Verify session-count picker rescopes data. Check the PR view. `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Commit.
 
 ---
 
@@ -894,6 +1025,69 @@ Clicking a card navigates to a detail page which fires its own fetch (e.g. `GET 
 - `locked-day-notice.test.tsx`: correct copy renders for each `reason` value.
 
 **Verify**: Happy + lock + future for both pages. `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Commit.
+
+---
+
+## Session 3.4: Client exercise history page
+
+**Commit message**: `feat(client-portal): add exercise history page with weight trends and PR callouts`
+
+**Objective**: Build `/client/exercise-history` so clients can view their own lift trends and personal records. Simpler than the coach-side Exercise Data tab (Session 1.9) - motivational framing, fewer metrics, prominent PR callouts. Uses the same underlying data service from Session 1.8 via a new client-facing API route.
+
+**Prerequisites**: Session 1.8 (exercise analytics service), Session 2.2 (bottom tab bar + client layout - the page must render inside the client layout chrome), Session 3.1 (shared day-log helpers - not strictly required, but the session ordering ensures the client portal detail page infrastructure is in place).
+
+**Read first**:
+- `services/exercise-analytics-service.ts` (or wherever Session 1.8 landed the service - `getClientExerciseList`, `getExerciseProgressionSeries`, `getExercisePRs`).
+- `types/training.ts` (`ExerciseListItem`, `ExerciseProgressionPoint`, `ExercisePR`).
+- `components/client-portal/training/` (existing client-portal training components for design patterns).
+- `app/client/training/page.tsx` (client training detail page - reference for page structure).
+- `docs/newdesignsystem.md` (client-side visual patterns).
+- `components/clients/training/exercise-data/` (coach-side Exercise Data tab from Session 1.9 - reuse the chart component if it can be extracted to a shared location, otherwise build a client-specific one matching the same Recharts patterns).
+- `CONVENTIONS.md` component audience conventions (this goes in `components/client-portal/`, not `components/clients/`).
+
+**Plan (report before implementing)**:
+- API route shape. The client-facing route must use `clientApiRateLimit` + `getAuthenticatedClientId` and scope queries to the authed client. No IDOR chain needed (client reads own data).
+- Component breakdown. Likely:
+  - `app/client/exercise-history/page.tsx` - page shell with exercise picker.
+  - `components/client-portal/exercise-history/exercise-history-view.tsx` - main view container.
+  - `components/client-portal/exercise-history/pr-callout-card.tsx` - individual PR card.
+- Whether the chart component from Session 1.9 can be shared (placed in `components/ui/` or a shared `components/charts/` directory) or needs a client-specific version. If the coach-side chart is audience-neutral (no coach-specific data or styling), share it. If it contains coach-specific affordances, build a simpler client version.
+- Navigation entry point: how does the client reach this page? Options: (a) link from the training detail page after logging a workout ("View your Bench Press history"), (b) link from the home summary card, (c) dedicated entry in the Program page. Decide based on what feels most natural.
+
+**Implement**:
+1. **Client API route**: `GET /api/client/training/exercise-history` (new). `clientApiRateLimit` + `getAuthenticatedClientId`. Query params: `metric` (enum: `list | progression | prs`), `exerciseId` (optional), `exerciseName` (optional), `sessionCount` (optional, default 12). Calls the same service functions from Session 1.8, scoped to the authed client's ID. Returns `{ success: true, data: ... }`. `Cache-Control: no-store`.
+
+2. **`app/client/exercise-history/page.tsx`**:
+   - Exercise picker at top (search/select, same UX as coach-side but simpler styling matching client portal design language).
+   - Reads optional `exerciseId` or `exerciseName` query param for deep-linking from the training detail page.
+
+3. **`components/client-portal/exercise-history/exercise-history-view.tsx`**:
+   - **Weight progression chart**: `LineChart` (Recharts). Session-count picker: 12 / 24 / All (fewer options than coach-side; clients don't need 8-session granularity). Default: 12. Date subtitle below chart showing the time span. Motivational framing: chart title "Your Progress" rather than "Top Set Weight."
+   - **PR callout cards**: prominent section below the chart. Each card: exercise name context ("Bench Press"), rep count ("5 rep max"), weight with unit, date ("Dec 12"), "New PR" badge if `isRecent`. Cards are visually prominent - not a data table, not buried. If no PRs exist: "Keep logging to track your personal records."
+   - **Consistency stat**: a single line below the PR cards: "You've logged [exercise name] [N] times in the last 12 weeks." Derived from the exercise list's `logCount` filtered to the last 12 weeks (or approximate from progression data point count). This is more motivating than a volume chart for most clients.
+   - No metric toggle (unlike coach-side). Clients see weight progression + PRs + consistency. No e1RM, volume, RPE, or compliance views - those are coach-level analytics.
+
+4. **`components/client-portal/exercise-history/pr-callout-card.tsx`**:
+   - Single PR card component. Props: `reps`, `weight`, `weightUnit`, `date`, `isRecent`.
+   - Styled prominently: large weight number, rep count label, date, optional "New PR" badge with accent color.
+
+5. **Navigation link from training detail page**: After a client logs a workout (Session 1.5's set tracker), if any of the logged exercises have history (more than 1 prior session), show a subtle link at the bottom of the logged exercise block: "View [exercise name] history". Links to `/client/exercise-history?exerciseId=<id>` (or `exerciseName` fallback). This is a convenience link, not a primary navigation path. If implementing this touch to the training detail page exceeds 15 lines of changes, defer it to a follow-up and just ship the page with URL-based navigation.
+
+**Do NOT**: Build the full coach-side metric toggle (Weight/e1RM/Volume/RPE/Compliance/PRs) - clients get a simplified view. Show RPE or compliance data to clients. Add this page to the bottom tab bar (it's a drill-down, not a top-level destination). Overwhelm with charts - one chart plus PR cards plus one stat is enough. Create a separate service layer - reuse Session 1.8's service functions directly.
+
+**Tests to write**:
+- API route test: 200 with `metric=list` returns exercise list scoped to authed client; 200 with `metric=progression`; 200 with `metric=prs`; 401 unauthenticated.
+- `exercise-history-view.test.tsx`:
+  - Weight chart renders with fixture data points.
+  - Session-count picker defaults to 12; changing it refetches data.
+  - Date subtitle renders correct time span.
+  - PR cards render from fixture data with correct weight/reps/date.
+  - "New PR" badge renders when `isRecent` is true.
+  - Consistency stat renders with correct count.
+  - Empty states: no exercise selected shows picker prompt; exercise with no data shows encouragement message; no PRs shows "keep logging" message.
+- `pr-callout-card.test.tsx`: renders weight, reps, date; "New PR" badge present when `isRecent` true, absent when false.
+
+**Verify**: Manual: as a client, navigate to exercise history; select an exercise; verify chart renders with correct data; verify PR cards are prominent and accurate; verify consistency stat. Test with an exercise that has no history (empty state). Test deep-link from training detail page. `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Commit.
 
 ---
 
@@ -1377,7 +1571,11 @@ Commit.
 
 **Objective**: Expose the `exercise_logs` data (written starting in Session 1.5) as longitudinal charts on the Metrics tab. Top-set weight × date per exercise is the primary lens; optional volume chart as a secondary view. Honors the phase filter from Session 7.5 automatically.
 
+**Shared data layer (Session 1.8)**: The analytics service functions (`getClientExerciseList`, `getExerciseProgressionSeries`, `getExercisePRs`) and the API route (`GET /api/clients/[id]/training/exercise-history`) were built in Session 1.8. This session reuses them - do NOT rebuild analytics queries. The `phaseId` filter param was designed to support this use case. If Session 1.8's service functions need a `phaseId` parameter that was not included, extend them here rather than duplicating. The chart components from Session 1.9 (`exercise-trend-chart.tsx`) may also be reusable if they were built audience-neutral.
+
 **Read first**:
+- `services/exercise-analytics-service.ts` (Session 1.8 - the shared data layer; confirm it supports `phaseId` filtering).
+- `components/clients/training/exercise-data/` (Session 1.9 - chart components to potentially reuse).
 - `components/clients/metrics/metrics-tab-content.tsx` (after Session 7.5's phase filter is in place).
 - `components/clients/metrics/hooks/use-metrics-data.ts` (reference for the data hook pattern).
 - `supabase/migrations/090_normalize_set_logs.sql` (per-set actuals via `set_logs`; `exercise_logs.exercise_id` global catalog FK; `exercise_logs.performed_name` canonical display name).
@@ -1392,18 +1590,16 @@ Commit.
 - Empty states: no `exercise_logs` for any exercise in range; fewer than 2 data points for an exercise (chart would be a single dot — show "not enough data yet").
 
 **Implement**:
-1. **Service**: new read functions in `services/training-log-service.ts` (or a dedicated `services/exercise-analytics-service.ts` if the file is getting large):
-   - `getMostLoggedExercises(clientId, phaseId?, limit)` — returns ordered list of `{ exerciseId | null, name, logCount }`. Group by `COALESCE(exercise_id::text, LOWER(performed_name))`.
-   - `getExerciseProgressionSeries(clientId, exerciseIdOrName, phaseId?)` — returns ordered `[{ date, topSetWeight, volume, avgRpe, unit }]`. Joins `exercise_logs → set_logs` per session_log + exercise filter; aggregates as described above.
-2. **Read route**: `GET /api/clients/[id]/training/progression?exerciseId=...&phaseId=...` or similar. Standard coach middleware + IDOR. Accepts optional `phaseId` param.
-3. **UI section** on Metrics tab: new "Exercise progression" section. Renders the N most-logged exercises as small multiples (one chart each) by default. Toggle between "Top set", "Volume", and (optional) "Intensity (RPE)" views. Empty states per chart when data is thin. Phase filter from Session 7.5 is read from the same context/state as body metrics + wellness charts.
-4. **Chart components**: reuse whatever charting primitives the Metrics tab already uses for body metrics — do NOT introduce a new charting library.
+1. **Service**: reuse Session 1.8's `getClientExerciseList` and `getExerciseProgressionSeries` from `services/exercise-analytics-service.ts`. If these functions do not yet accept a `phaseId` parameter, extend them here (add optional `phaseId` that constrains `session_logs.completed_at` to the phase's date range via a join to `phases`). Do NOT create duplicate query functions.
+2. **Read route**: reuse Session 1.8's `GET /api/clients/[id]/training/exercise-history` endpoint. If it does not yet accept a `phaseId` query param, extend it here. Do NOT create a separate `/api/clients/[id]/training/progression` route.
+3. **UI section** on Metrics tab: new "Exercise progression" section. Renders the N most-logged exercises (N=5-8) as small multiples (one chart each) by default. Toggle between "Top set", "Volume", and (optional) "Intensity (RPE)" views. Empty states per chart when data is thin. Phase filter from Session 7.5 is read from the same context/state as body metrics + wellness charts.
+4. **Chart components**: reuse the `exercise-trend-chart.tsx` from Session 1.9 if it was built audience-neutral. If it contains Exercise Data tab-specific affordances, extract the pure chart renderer into a shared component under `components/clients/training/exercise-data/` and import from both surfaces. Do NOT introduce a new charting library.
 
-**Do NOT**: Add prescribed-vs-actual comparison here (that belongs to the session-log-detail dialog from Session 1.6). Add predicted-next-session weight or stall detection (deferred attention-feed territory). Introduce a new charting library. Chart every exercise by default — cap at N most-logged. Use the dropped `actual_*` scalar columns — they're gone post-090.
+**Do NOT**: Rebuild analytics query functions that already exist in Session 1.8's service. Add prescribed-vs-actual comparison here (that belongs to the session-log-detail dialog from Session 1.6). Add predicted-next-session weight or stall detection (deferred attention-feed territory). Introduce a new charting library. Chart every exercise by default - cap at N most-logged. Use the dropped `actual_*` scalar columns - they're gone post-090. Create a new API route if Session 1.8's route already supports the needed params.
 
 **Tests to write**:
-- Service tests: `getMostLoggedExercises` orders by log count, groups by `exercise_id` when present and falls back to `LOWER(performed_name)` when null. `getExerciseProgressionSeries` returns chronological series with correct top-set-max and volume-sum aggregates from joined `set_logs`. Both respect `phaseId` when passed and gracefully handle empty results.
-- Route test: 200 with expected shape; 403 IDOR; 400 missing required params.
+- Service tests (only if extending Session 1.8's functions): `phaseId` param constrains results to the phase date range; null `phaseId` returns all-time data.
+- Route test (only if extending Session 1.8's route): `phaseId` param accepted and passed through; existing tests still pass.
 - UI test: charts render for fixture data; toggle between top-set and volume works; empty state renders when no data; phase-filter change rescopes charts.
 
 **Verify**: As coach, open a client with logged exercise data across multiple phases; switch phase filter; confirm charts rescope. Switch top-set/volume toggle. Check empty-state rendering. `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Commit.

@@ -63,6 +63,7 @@ export type TrainingHistoryRow = {
   completion_quality: "full" | "partial" | "skipped" | null;
   notes: string | null;
   is_logged?: boolean;
+  session_log_id?: string | null;
 };
 
 export type TrainingWeekSummary = {
