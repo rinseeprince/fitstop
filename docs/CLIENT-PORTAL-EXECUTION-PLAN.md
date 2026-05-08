@@ -46,7 +46,7 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 | 1.7 | Attention feed rewire | 1 | COMPLETE
 | 1.8 | Exercise history data layer + API (coach-side) | 1 | COMPLETE
 | 1.9 | Exercise Data tab UI + PR view (coach-side) | 1 | COMPLETE
-| 2.1 | Day summary + program endpoints | 2 Home + nav |
+| 2.1 | Day summary + program endpoints | 2 Home + nav | COMPLETE
 | 2.2 | Bottom tab bar + client layout restructure | 2 |
 | 2.3 | Home page shell + swipe navigation | 2 |
 | 2.4 | Summary cards + phase banner | 2 |
@@ -628,6 +628,8 @@ Session 0.1 confirmed no `timezone` column exists on `clients` and all date help
 ---
 
 ## Session 2.1: Day summary + program endpoints
+
+**Status**: COMPLETE
 
 **Commit message**: `feat(api): add client day-summary and program endpoints`
 

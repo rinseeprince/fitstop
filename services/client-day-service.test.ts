@@ -1,0 +1,261 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+vi.mock("./training-event-service", () => ({
+  getEventSummariesForDate: vi.fn(),
+}));
+
+vi.mock("./nutrition-event-service", () => ({
+  getNutritionEventForDate: vi.fn(),
+}));
+
+vi.mock("./daily-logs-service", () => ({
+  getTodayLog: vi.fn(),
+}));
+
+vi.mock("./daily-habits-service", () => ({
+  getClientHabits: vi.fn(),
+  getTodayHabitLogs: vi.fn(),
+}));
+
+import { getDaySummary } from "./client-day-service";
+import { getEventSummariesForDate } from "./training-event-service";
+import { getNutritionEventForDate } from "./nutrition-event-service";
+import { getTodayLog } from "./daily-logs-service";
+import { getClientHabits, getTodayHabitLogs } from "./daily-habits-service";
+
+const CLIENT_ID = "client-1";
+const DATE = "2026-05-08";
+
+const mockTrainingSummaries = vi.mocked(getEventSummariesForDate);
+const mockNutrition = vi.mocked(getNutritionEventForDate);
+const mockTodayLog = vi.mocked(getTodayLog);
+const mockHabits = vi.mocked(getClientHabits);
+const mockHabitLogs = vi.mocked(getTodayHabitLogs);
+
+function setDefaults() {
+  mockTrainingSummaries.mockResolvedValue([]);
+  mockNutrition.mockResolvedValue(null);
+  mockTodayLog.mockResolvedValue(null);
+  mockHabits.mockResolvedValue([]);
+  mockHabitLogs.mockResolvedValue([]);
+}
+
+describe("client-day-service", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setDefaults();
+  });
+
+  // ---- Empty day ----
+
+  it("returns empty summaries for a day with no data", async () => {
+    const result = await getDaySummary(CLIENT_ID, DATE);
+
+    expect(result).toEqual({
+      training: [],
+      nutrition: null,
+      wellness: { hasLog: false },
+      habits: { totalCount: 0, loggedCount: 0 },
+    });
+  });
+
+  // ---- Training: unlogged ----
+
+  it("returns completionQuality null for unlogged event", async () => {
+    mockTrainingSummaries.mockResolvedValue([
+      {
+        eventId: "e1",
+        sessionName: "Push Day",
+        sessionFocus: "chest",
+        completionQuality: null,
+        loggedExerciseCount: 0,
+        prescribedExerciseCount: 4,
+      },
+    ]);
+
+    const result = await getDaySummary(CLIENT_ID, DATE);
+
+    expect(result.training).toHaveLength(1);
+    expect(result.training[0].completionQuality).toBeNull();
+    expect(result.training[0].loggedExerciseCount).toBe(0);
+    expect(result.training[0].prescribedExerciseCount).toBe(4);
+  });
+
+  // ---- Training: quick-logged ----
+
+  it("returns completionQuality set with loggedExerciseCount 0 for quick-logged event", async () => {
+    mockTrainingSummaries.mockResolvedValue([
+      {
+        eventId: "e1",
+        sessionName: "Push Day",
+        sessionFocus: null,
+        completionQuality: "full",
+        loggedExerciseCount: 0,
+        prescribedExerciseCount: 4,
+      },
+    ]);
+
+    const result = await getDaySummary(CLIENT_ID, DATE);
+
+    expect(result.training[0].completionQuality).toBe("full");
+    expect(result.training[0].loggedExerciseCount).toBe(0);
+  });
+
+  // ---- Training: detailed-logged ----
+
+  it("returns loggedExerciseCount > 0 for detailed-logged event", async () => {
+    mockTrainingSummaries.mockResolvedValue([
+      {
+        eventId: "e1",
+        sessionName: "Push Day",
+        sessionFocus: "chest",
+        completionQuality: "partial",
+        loggedExerciseCount: 3,
+        prescribedExerciseCount: 5,
+      },
+    ]);
+
+    const result = await getDaySummary(CLIENT_ID, DATE);
+
+    expect(result.training[0].completionQuality).toBe("partial");
+    expect(result.training[0].loggedExerciseCount).toBe(3);
+  });
+
+  // ---- Training: multiple sessions ----
+
+  it("returns array for multiple training sessions", async () => {
+    mockTrainingSummaries.mockResolvedValue([
+      {
+        eventId: "e1",
+        sessionName: "Push Day",
+        sessionFocus: null,
+        completionQuality: "full",
+        loggedExerciseCount: 4,
+        prescribedExerciseCount: 4,
+      },
+      {
+        eventId: "e2",
+        sessionName: "Cardio",
+        sessionFocus: "conditioning",
+        completionQuality: null,
+        loggedExerciseCount: 0,
+        prescribedExerciseCount: 2,
+      },
+    ]);
+
+    const result = await getDaySummary(CLIENT_ID, DATE);
+
+    expect(result.training).toHaveLength(2);
+    expect(result.training[0].sessionName).toBe("Push Day");
+    expect(result.training[1].sessionName).toBe("Cardio");
+  });
+
+  // ---- Nutrition: event exists but not logged ----
+
+  it("returns hasLog false when nutrition event exists but is not logged", async () => {
+    mockNutrition.mockResolvedValue({
+      id: "n1",
+      clientId: CLIENT_ID,
+      nutritionPlanId: "np1",
+      date: DATE,
+      dayOfWeek: "thursday",
+      baselineCalories: 2000,
+      trainingBurnCalories: 300,
+      proteinG: 150,
+      carbG: 200,
+      fatG: 60,
+      dietType: "balanced",
+      isTrainingDay: true,
+      calorieSurplusPercentage: null,
+      status: "scheduled",
+      createdAt: "2026-05-01T00:00:00Z",
+      updatedAt: "2026-05-01T00:00:00Z",
+    } as any);
+
+    const result = await getDaySummary(CLIENT_ID, DATE);
+
+    expect(result.nutrition).toEqual({ hasLog: false });
+  });
+
+  // ---- Nutrition: logged ----
+
+  it("returns hasLog true when nutrition event is logged", async () => {
+    mockNutrition.mockResolvedValue({
+      id: "n1",
+      status: "logged",
+    } as any);
+
+    const result = await getDaySummary(CLIENT_ID, DATE);
+
+    expect(result.nutrition).toEqual({ hasLog: true });
+  });
+
+  // ---- Nutrition: no event ----
+
+  it("returns null when no nutrition event exists", async () => {
+    mockNutrition.mockResolvedValue(null);
+
+    const result = await getDaySummary(CLIENT_ID, DATE);
+
+    expect(result.nutrition).toBeNull();
+  });
+
+  // ---- Wellness: spine exists but no wellness fields ----
+
+  it("returns hasLog false when daily log exists but wellness fields are empty", async () => {
+    mockTodayLog.mockResolvedValue({
+      id: "dl1",
+      clientId: CLIENT_ID,
+      date: DATE,
+      mood: undefined,
+      energy: undefined,
+      sleep: undefined,
+      stress: undefined,
+      caloriesConsumed: 2100,
+      createdAt: "2026-05-08T00:00:00Z",
+      updatedAt: "2026-05-08T00:00:00Z",
+    } as any);
+
+    const result = await getDaySummary(CLIENT_ID, DATE);
+
+    expect(result.wellness).toEqual({ hasLog: false });
+  });
+
+  // ---- Wellness: fields present ----
+
+  it("returns hasLog true when any wellness field is present", async () => {
+    mockTodayLog.mockResolvedValue({
+      id: "dl1",
+      clientId: CLIENT_ID,
+      date: DATE,
+      mood: 4,
+      energy: undefined,
+      sleep: undefined,
+      stress: undefined,
+      createdAt: "2026-05-08T00:00:00Z",
+      updatedAt: "2026-05-08T00:00:00Z",
+    } as any);
+
+    const result = await getDaySummary(CLIENT_ID, DATE);
+
+    expect(result.wellness).toEqual({ hasLog: true });
+  });
+
+  // ---- Habits: filters for completed only ----
+
+  it("counts only completed habit logs", async () => {
+    mockHabits.mockResolvedValue([
+      { id: "h1", name: "Water" },
+      { id: "h2", name: "Walk" },
+      { id: "h3", name: "Read" },
+    ] as any);
+    mockHabitLogs.mockResolvedValue([
+      { dailyHabitId: "h1", completed: true },
+      { dailyHabitId: "h2", completed: false },
+    ] as any);
+
+    const result = await getDaySummary(CLIENT_ID, DATE);
+
+    expect(result.habits).toEqual({ totalCount: 3, loggedCount: 1 });
+  });
+});

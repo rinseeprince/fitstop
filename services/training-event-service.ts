@@ -1,5 +1,5 @@
 import { supabaseAdmin } from "./supabase-admin";
-import type { TrainingEvent, TrainingEventStatus } from "@/types/training";
+import type { TrainingEvent, TrainingEventStatus, TrainingEventSummary } from "@/types/training";
 import type { SessionCompletionQuality } from "@/types/check-in";
 import type { TrainingEventRow, TrainingEventInsert } from "@/lib/database-helpers";
 import { getTodayDateString, getDateString, DAY_NUM } from "@/lib/date-helpers";
@@ -422,4 +422,86 @@ export async function linkSessionLogToEvent(
     .eq("id", eventId);
 
   if (error) throw error;
+}
+
+// --- Day-summary helper ---
+
+function mapStatusToCompletionQuality(
+  status: TrainingEventStatus
+): "full" | "partial" | "skipped" | null {
+  if (status === "completed") return "full";
+  if (status === "partial") return "partial";
+  if (status === "skipped") return "skipped";
+  return null;
+}
+
+/**
+ * Lightweight summaries for the client day-summary endpoint.
+ * Returns enriched training events with exercise counts and completion quality.
+ * At most 3 queries regardless of how many events exist on the day.
+ */
+export async function getEventSummariesForDate(
+  clientId: string,
+  date: string
+): Promise<TrainingEventSummary[]> {
+  const events = await getEventsForDateRange(clientId, date, date);
+  if (events.length === 0) return [];
+
+  // Batch-count logged exercises per session_log_id
+  const sessionLogIds = events
+    .map((e) => e.sessionLogId)
+    .filter((id): id is string => id !== null);
+
+  const loggedCountMap = new Map<string, number>();
+  if (sessionLogIds.length > 0) {
+    const { data: logCounts, error: logErr } = await supabaseAdmin
+      .from("exercise_logs")
+      .select("session_log_id")
+      .in("session_log_id", sessionLogIds);
+    if (logErr) throw logErr;
+    for (const row of logCounts ?? []) {
+      loggedCountMap.set(
+        row.session_log_id,
+        (loggedCountMap.get(row.session_log_id) ?? 0) + 1
+      );
+    }
+  }
+
+  // Batch-count prescribed (active) exercises per training_session_id
+  const sessionIds = [
+    ...new Set(
+      events
+        .map((e) => e.trainingSessionId)
+        .filter((id): id is string => id !== null)
+    ),
+  ];
+
+  const prescribedCountMap = new Map<string, number>();
+  if (sessionIds.length > 0) {
+    const { data: exerciseRows, error: exErr } = await supabaseAdmin
+      .from("training_exercises")
+      .select("session_id")
+      .in("session_id", sessionIds)
+      .eq("is_active", true);
+    if (exErr) throw exErr;
+    for (const row of exerciseRows ?? []) {
+      prescribedCountMap.set(
+        row.session_id,
+        (prescribedCountMap.get(row.session_id) ?? 0) + 1
+      );
+    }
+  }
+
+  return events.map((e) => ({
+    eventId: e.id,
+    sessionName: e.sessionName,
+    sessionFocus: e.sessionFocus,
+    completionQuality: mapStatusToCompletionQuality(e.status),
+    loggedExerciseCount: e.sessionLogId
+      ? (loggedCountMap.get(e.sessionLogId) ?? 0)
+      : 0,
+    prescribedExerciseCount: e.trainingSessionId
+      ? (prescribedCountMap.get(e.trainingSessionId) ?? 0)
+      : 0,
+  }));
 }

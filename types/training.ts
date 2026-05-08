@@ -146,6 +146,16 @@ export type TrainingEvent = {
   updatedAt: string;
 };
 
+// Lightweight summary for day-summary endpoint (home screen card)
+export type TrainingEventSummary = {
+  eventId: string;
+  sessionName: string;
+  sessionFocus: string | null;
+  completionQuality: "full" | "partial" | "skipped" | null;
+  loggedExerciseCount: number;
+  prescribedExerciseCount: number;
+};
+
 // AI generation input
 export type AITrainingPlanInput = {
   coachPrompt: string;
