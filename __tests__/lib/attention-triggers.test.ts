@@ -4,12 +4,14 @@ import {
   evaluateLoggingGap,
   evaluateNutritionMisses,
   evaluateTrainingMisses,
+  evaluatePartialTrainingPattern,
   evaluateHighStress,
   evaluateHabitDropoff,
   evaluateActivityCalMismatch
 } from '@/lib/attention-triggers'
 import type { DailyLog } from '@/types/daily-log'
 import type { DailyHabit, DailyHabitLog } from '@/types/daily-habit'
+import type { TrainingEventRow } from '@/lib/attention-feed-helpers'
 
 describe('attention-triggers', () => {
   describe('evaluateMoodEnergyDrop', () => {
@@ -324,160 +326,131 @@ describe('attention-triggers', () => {
   })
 
   describe('evaluateActivityCalMismatch', () => {
-    it('should detect when client eats as if they completed skipped activities', () => {
-      // Use recent dates within 28-day window
+    it('should detect when client eats at target despite uncompleted training events', () => {
       const today = new Date()
       const date1 = new Date(today)
       date1.setDate(today.getDate() - 10)
       const date2 = new Date(today)
       date2.setDate(today.getDate() - 5)
-      
+      const date1Str = date1.toISOString().split('T')[0]
+      const date2Str = date2.toISOString().split('T')[0]
+
       const logs: DailyLog[] = [
-        {
-          id: '1',
-          clientId: 'c1',
-          date: date1.toISOString().split('T')[0],
-          caloriesConsumed: 2400,  // Ate full target despite skipping activity
-          targetCalories: 2400,    // Target includes all planned activities
-          trainingData: {
-            sessionCompleted: true,
-            trainingSessionId: 's1',
-            trainingSessionName: 'Session 1',
-            isAlternativeSession: false,
-            activityStatuses: {
-              'a1': { completed: false, activityName: 'Running', estimatedCalories: 400 },
-              'a2': { completed: true, activityName: 'Walking', estimatedCalories: 100 }
-            },
-            unplannedActivities: []
-          },
-          createdAt: '',
-          updatedAt: ''
-        },
-        {
-          id: '2',
-          clientId: 'c1',
-          date: date2.toISOString().split('T')[0],
-          caloriesConsumed: 2500,  // Ate full target despite skipping activity
-          targetCalories: 2500,    // Target includes all planned activities
-          trainingData: {
-            sessionCompleted: true,
-            trainingSessionId: 's1',
-            trainingSessionName: 'Session 1',
-            isAlternativeSession: false,
-            activityStatuses: {
-              'a1': { completed: false, activityName: 'Running', estimatedCalories: 500 },
-            },
-            unplannedActivities: []
-          },
-          createdAt: '',
-          updatedAt: ''
-        }
+        { id: '1', clientId: 'c1', date: date1Str, caloriesConsumed: 2400, targetCalories: 2400, createdAt: '', updatedAt: '' },
+        { id: '2', clientId: 'c1', date: date2Str, caloriesConsumed: 2500, targetCalories: 2500, createdAt: '', updatedAt: '' },
+      ]
+      const events: TrainingEventRow[] = [
+        { client_id: 'c1', date: date1Str, status: 'skipped', estimated_calories: 400 },
+        { client_id: 'c1', date: date2Str, status: 'scheduled', estimated_calories: 500 },
       ]
 
-      const result = evaluateActivityCalMismatch(logs)
-      
+      const result = evaluateActivityCalMismatch(logs, events)
+
       expect(result).not.toBeNull()
       expect(result?.type).toBe('activity_cal_mismatch')
       expect(result?.severity).toBe('high')
       expect(result?.affectedDays).toHaveLength(2)
     })
 
-    it('should properly read .completed field, not use object as truthy check', () => {
+    it('should not trigger when events are completed', () => {
+      const today = new Date()
+      const date1 = new Date(today)
+      date1.setDate(today.getDate() - 5)
+      const date1Str = date1.toISOString().split('T')[0]
+
       const logs: DailyLog[] = [
-        {
-          id: '1',
-          clientId: 'c1',
-          date: '2024-01-01',
-          caloriesConsumed: 2000,
-          targetCalories: 2000,
-          trainingData: {
-            sessionCompleted: true,
-            trainingSessionId: 's1',
-            trainingSessionName: 'Session 1',
-            isAlternativeSession: false,
-            activityStatuses: {
-              // This object exists but completed is false
-              'a1': { completed: false, activityName: 'Running', estimatedCalories: 400 },
-            },
-            unplannedActivities: []
-          },
-          createdAt: '',
-          updatedAt: ''
-        }
+        { id: '1', clientId: 'c1', date: date1Str, caloriesConsumed: 2400, targetCalories: 2400, createdAt: '', updatedAt: '' },
+      ]
+      const events: TrainingEventRow[] = [
+        { client_id: 'c1', date: date1Str, status: 'completed', estimated_calories: 400 },
       ]
 
-      // Client ate exactly their target, didn't account for skipped activity
-      // This should NOT trigger because they didn't overeat
-      const result = evaluateActivityCalMismatch(logs)
+      const result = evaluateActivityCalMismatch(logs, events)
       expect(result).toBeNull()
     })
 
-    it('should not trigger for less than 2 days', () => {
+    it('should not trigger for less than 2 mismatch days', () => {
+      const today = new Date()
+      const date1 = new Date(today)
+      date1.setDate(today.getDate() - 5)
+      const date1Str = date1.toISOString().split('T')[0]
+
       const logs: DailyLog[] = [
-        {
-          id: '1',
-          clientId: 'c1',
-          date: '2024-01-01',
-          caloriesConsumed: 2500,
-          targetCalories: 2000,
-          trainingData: {
-            sessionCompleted: true,
-            trainingSessionId: 's1',
-            trainingSessionName: 'Session 1',
-            isAlternativeSession: false,
-            activityStatuses: {
-              'a1': { completed: false, activityName: 'Running', estimatedCalories: 400 },
-            },
-            unplannedActivities: []
-          },
-          createdAt: '',
-          updatedAt: ''
-        }
+        { id: '1', clientId: 'c1', date: date1Str, caloriesConsumed: 2500, targetCalories: 2000, createdAt: '', updatedAt: '' },
+      ]
+      const events: TrainingEventRow[] = [
+        { client_id: 'c1', date: date1Str, status: 'skipped', estimated_calories: 400 },
       ]
 
-      const result = evaluateActivityCalMismatch(logs)
+      const result = evaluateActivityCalMismatch(logs, events)
+      expect(result).toBeNull()
+    })
+
+    it('should not trigger when mismatches are old (none in last 7 days)', () => {
+      const now = new Date('2024-01-25')
+      const logs: DailyLog[] = [
+        { id: '1', clientId: 'c1', date: '2024-01-05', caloriesConsumed: 2500, targetCalories: 2500, createdAt: '', updatedAt: '' },
+        { id: '2', clientId: 'c1', date: '2024-01-06', caloriesConsumed: 2500, targetCalories: 2500, createdAt: '', updatedAt: '' },
+        { id: '3', clientId: 'c1', date: '2024-01-07', caloriesConsumed: 2500, targetCalories: 2500, createdAt: '', updatedAt: '' },
+        // Recent log with no mismatch (event completed)
+        { id: '4', clientId: 'c1', date: '2024-01-24', caloriesConsumed: 2200, targetCalories: 2500, createdAt: '', updatedAt: '' },
+      ]
+      const events: TrainingEventRow[] = [
+        { client_id: 'c1', date: '2024-01-05', status: 'skipped', estimated_calories: 300 },
+        { client_id: 'c1', date: '2024-01-06', status: 'missed', estimated_calories: 250 },
+        { client_id: 'c1', date: '2024-01-07', status: 'scheduled', estimated_calories: 200 },
+        { client_id: 'c1', date: '2024-01-24', status: 'completed', estimated_calories: 300 },
+      ]
+
+      const result = evaluateActivityCalMismatch(logs, events, now)
+      expect(result).toBeNull()
+    })
+
+    it('should trigger when at least one mismatch is in last 7 days', () => {
+      const now = new Date('2024-01-25')
+      const logs: DailyLog[] = [
+        { id: '1', clientId: 'c1', date: '2024-01-05', caloriesConsumed: 2500, targetCalories: 2500, createdAt: '', updatedAt: '' },
+        { id: '2', clientId: 'c1', date: '2024-01-06', caloriesConsumed: 2500, targetCalories: 2500, createdAt: '', updatedAt: '' },
+        { id: '3', clientId: 'c1', date: '2024-01-20', caloriesConsumed: 2500, targetCalories: 2500, createdAt: '', updatedAt: '' },
+      ]
+      const events: TrainingEventRow[] = [
+        { client_id: 'c1', date: '2024-01-05', status: 'skipped', estimated_calories: 300 },
+        { client_id: 'c1', date: '2024-01-06', status: 'missed', estimated_calories: 250 },
+        { client_id: 'c1', date: '2024-01-20', status: 'scheduled', estimated_calories: 200 },
+      ]
+
+      const result = evaluateActivityCalMismatch(logs, events, now)
+      expect(result).not.toBeNull()
+      expect(result?.type).toBe('activity_cal_mismatch')
+      expect(result?.severity).toBe('high')
+      expect(result?.affectedDays).toHaveLength(2)
+    })
+
+    it('should not count events with 0 or null estimated_calories', () => {
+      const now = new Date('2024-01-25')
+      const logs: DailyLog[] = [
+        { id: '1', clientId: 'c1', date: '2024-01-20', caloriesConsumed: 2500, targetCalories: 2500, createdAt: '', updatedAt: '' },
+      ]
+      const events: TrainingEventRow[] = [
+        { client_id: 'c1', date: '2024-01-20', status: 'skipped', estimated_calories: null },
+        { client_id: 'c1', date: '2024-01-20', status: 'skipped', estimated_calories: 0 },
+      ]
+
+      const result = evaluateActivityCalMismatch(logs, events, now)
       expect(result).toBeNull()
     })
   })
 
   describe('evaluateTrainingMisses', () => {
     it('should detect 2+ missed training sessions in current week', () => {
-      // Use a fixed Wednesday so both "today" and "yesterday" are in the same Mon-Sun week
+      // Wednesday — Mon and Tue events are past, both still scheduled
       const now = new Date('2026-04-01T12:00:00') // Wednesday
-      const logs: DailyLog[] = [
-        {
-          id: '1',
-          clientId: 'c1',
-          date: '2026-04-01', // Wednesday (today)
-          trainingData: {
-            sessionCompleted: false,
-            trainingSessionId: 's1',
-            trainingSessionName: 'Session 1',
-            isAlternativeSession: false,
-            activityStatuses: {},
-            unplannedActivities: []
-          },
-          createdAt: '',
-          updatedAt: ''
-        },
-        {
-          id: '2',
-          clientId: 'c1',
-          date: '2026-03-31', // Tuesday (yesterday)
-          trainingData: {
-            sessionCompleted: false,
-            trainingSessionId: 's2',
-            trainingSessionName: 'Session 2',
-            isAlternativeSession: false,
-            activityStatuses: {},
-            unplannedActivities: []
-          },
-          createdAt: '',
-          updatedAt: ''
-        }
+      const events: TrainingEventRow[] = [
+        { client_id: 'c1', date: '2026-03-30', status: 'scheduled', estimated_calories: 300 }, // Monday
+        { client_id: 'c1', date: '2026-03-31', status: 'scheduled', estimated_calories: 300 }, // Tuesday
       ]
 
-      const result = evaluateTrainingMisses(logs, 3, now) // 3 sessions planned per week
+      const result = evaluateTrainingMisses(events, now)
 
       expect(result).not.toBeNull()
       expect(result?.type).toBe('training_missed')
@@ -487,289 +460,169 @@ describe('attention-triggers', () => {
 
     it('should not trigger for 1 missed session', () => {
       const now = new Date('2026-04-01T12:00:00') // Wednesday
-      const logs: DailyLog[] = [
-        {
-          id: '1',
-          clientId: 'c1',
-          date: '2026-04-01',
-          trainingData: {
-            sessionCompleted: false,
-            trainingSessionId: 's1',
-            trainingSessionName: 'Session 1',
-            isAlternativeSession: false,
-            activityStatuses: {},
-            unplannedActivities: []
-          },
-          createdAt: '',
-          updatedAt: ''
-        }
+      const events: TrainingEventRow[] = [
+        { client_id: 'c1', date: '2026-03-31', status: 'scheduled', estimated_calories: 300 }, // Tuesday
       ]
 
-      const result = evaluateTrainingMisses(logs, 3, now)
+      const result = evaluateTrainingMisses(events, now)
       expect(result).toBeNull()
     })
 
-    it('should only count sessions with trainingSessionId set', () => {
+    it('should not count completed events as missed', () => {
       const now = new Date('2026-04-01T12:00:00') // Wednesday
-      const logs: DailyLog[] = [
-        {
-          id: '1',
-          clientId: 'c1',
-          date: '2026-04-01',
-          trainingData: {
-            sessionCompleted: false,
-            trainingSessionId: null, // No session was scheduled
-            trainingSessionName: null,
-            isAlternativeSession: false,
-            activityStatuses: {},
-            unplannedActivities: []
-          },
-          createdAt: '',
-          updatedAt: ''
-        }
+      const events: TrainingEventRow[] = [
+        { client_id: 'c1', date: '2026-03-30', status: 'completed', estimated_calories: 300 },
+        { client_id: 'c1', date: '2026-03-31', status: 'completed', estimated_calories: 300 },
       ]
 
-      const result = evaluateTrainingMisses(logs, 3, now)
+      const result = evaluateTrainingMisses(events, now)
+      expect(result).toBeNull()
+    })
+
+    it('should not count partial as missed — client showed up', () => {
+      const now = new Date('2026-04-01T12:00:00') // Wednesday
+      const events: TrainingEventRow[] = [
+        { client_id: 'c1', date: '2026-03-30', status: 'partial', estimated_calories: 300 },
+        { client_id: 'c1', date: '2026-03-31', status: 'partial', estimated_calories: 300 },
+      ]
+
+      const result = evaluateTrainingMisses(events, now)
+      expect(result).toBeNull()
+    })
+
+    it('should count skipped as missed — client chose not to do it', () => {
+      const now = new Date('2026-04-01T12:00:00') // Wednesday
+      const events: TrainingEventRow[] = [
+        { client_id: 'c1', date: '2026-03-30', status: 'skipped', estimated_calories: 300 },
+        { client_id: 'c1', date: '2026-03-31', status: 'missed', estimated_calories: 300 },
+      ]
+
+      const result = evaluateTrainingMisses(events, now)
+      expect(result).not.toBeNull()
+      expect(result?.affectedDays).toHaveLength(2)
+    })
+
+    it('should exclude today — client may still train later', () => {
+      const now = new Date('2026-04-01T12:00:00') // Wednesday
+      const events: TrainingEventRow[] = [
+        { client_id: 'c1', date: '2026-03-31', status: 'scheduled', estimated_calories: 300 }, // Tuesday (past)
+        { client_id: 'c1', date: '2026-04-01', status: 'scheduled', estimated_calories: 300 }, // Today (excluded)
+      ]
+
+      // Only 1 past missed event — below threshold of 2
+      const result = evaluateTrainingMisses(events, now)
       expect(result).toBeNull()
     })
 
     it('should use check-in day for week boundary when provided', () => {
       // Wednesday check-in -> training week starts Thursday
-      // Set "now" to a Monday (2026-03-30)
+      // Set "now" to Monday 2026-03-30
       const now = new Date('2026-03-30T12:00:00')
-      // Logs on Friday and Saturday (within Thu-Wed week starting 2026-03-26)
-      const logs: DailyLog[] = [
-        {
-          id: '1',
-          clientId: 'c1',
-          date: '2026-03-27', // Friday
-          trainingData: {
-            sessionCompleted: false,
-            trainingSessionId: 's1',
-            trainingSessionName: 'Session 1',
-            isAlternativeSession: false,
-            activityStatuses: {},
-            unplannedActivities: []
-          },
-          createdAt: '',
-          updatedAt: ''
-        },
-        {
-          id: '2',
-          clientId: 'c1',
-          date: '2026-03-28', // Saturday
-          trainingData: {
-            sessionCompleted: false,
-            trainingSessionId: 's2',
-            trainingSessionName: 'Session 2',
-            isAlternativeSession: false,
-            activityStatuses: {},
-            unplannedActivities: []
-          },
-          createdAt: '',
-          updatedAt: ''
-        }
+      const events: TrainingEventRow[] = [
+        { client_id: 'c1', date: '2026-03-27', status: 'scheduled', estimated_calories: 300 }, // Friday
+        { client_id: 'c1', date: '2026-03-28', status: 'scheduled', estimated_calories: 300 }, // Saturday
       ]
 
-      // With Wednesday checkInDay, these are in the current week (Thu Mar 26 - Wed Apr 1)
-      const result = evaluateTrainingMisses(logs, 3, now, 'wednesday')
+      // With Wednesday checkInDay, week is Thu Mar 26 - Wed Apr 1
+      // Both Fri/Sat events are in the current week and past
+      const result = evaluateTrainingMisses(events, now, 'wednesday')
       expect(result).not.toBeNull()
       expect(result?.type).toBe('training_missed')
       expect(result?.affectedDays).toHaveLength(2)
 
       // Without checkInDay (default Mon-Sun), week starts Mon Mar 30
-      // so those Fri/Sat logs are in the PREVIOUS week and not counted
-      const resultDefault = evaluateTrainingMisses(logs, 3, now)
+      // Fri/Sat events are in the PREVIOUS week
+      const resultDefault = evaluateTrainingMisses(events, now)
       expect(resultDefault).toBeNull()
     })
   })
 
-  describe('evaluateActivityCalMismatch', () => {
-    it('should not trigger when mismatches are old (none in last 7 days)', () => {
-      const now = new Date('2024-01-25')
-      const logs: DailyLog[] = [
-        // Old mismatches 15+ days ago
-        {
-          id: '1',
-          clientId: 'c1',
-          date: '2024-01-05',
-          caloriesConsumed: 2500,
-          targetCalories: 2500,
-          trainingData: {
-            sessionCompleted: false,
-            trainingSessionId: 'session1',
-            trainingSessionName: 'Upper Body',
-            isAlternativeSession: false,
-            activityStatuses: {
-              'activity1': { completed: false, activityName: 'Activity 1', estimatedCalories: 300 }
-            },
-            unplannedActivities: []
-          },
-          createdAt: '',
-          updatedAt: ''
-        },
-        {
-          id: '2',
-          clientId: 'c1',
-          date: '2024-01-06',
-          caloriesConsumed: 2500,
-          targetCalories: 2500,
-          trainingData: {
-            sessionCompleted: false,
-            trainingSessionId: 'session2',
-            trainingSessionName: 'Lower Body',
-            isAlternativeSession: false,
-            activityStatuses: {
-              'activity1': { completed: false, activityName: 'Activity 1', estimatedCalories: 250 }
-            },
-            unplannedActivities: []
-          },
-          createdAt: '',
-          updatedAt: ''
-        },
-        {
-          id: '3',
-          clientId: 'c1',
-          date: '2024-01-07',
-          caloriesConsumed: 2500,
-          targetCalories: 2500,
-          trainingData: {
-            sessionCompleted: false,
-            trainingSessionId: 'session3',
-            trainingSessionName: 'Core',
-            isAlternativeSession: false,
-            activityStatuses: {
-              'activity1': { completed: false, activityName: 'Activity 1', estimatedCalories: 200 }
-            },
-            unplannedActivities: []
-          },
-          createdAt: '',
-          updatedAt: ''
-        },
-        // Recent logs with no mismatches
-        {
-          id: '4',
-          clientId: 'c1',
-          date: '2024-01-24',
-          caloriesConsumed: 2200,
-          targetCalories: 2500,
-          trainingData: {
-            sessionCompleted: true,
-            trainingSessionId: 'session4',
-            trainingSessionName: 'Upper Body',
-            isAlternativeSession: false,
-            activityStatuses: {
-              'activity1': { completed: true, activityName: 'Activity 1', estimatedCalories: 300 }
-            },
-            unplannedActivities: []
-          },
-          createdAt: '',
-          updatedAt: ''
-        }
+  describe('evaluatePartialTrainingPattern', () => {
+    it('should detect 3+ partials in last 9 resolved events', () => {
+      const events: TrainingEventRow[] = [
+        { client_id: 'c1', date: '2026-03-20', status: 'completed', estimated_calories: 300 },
+        { client_id: 'c1', date: '2026-03-21', status: 'partial', estimated_calories: 300 },
+        { client_id: 'c1', date: '2026-03-22', status: 'completed', estimated_calories: 300 },
+        { client_id: 'c1', date: '2026-03-23', status: 'partial', estimated_calories: 300 },
+        { client_id: 'c1', date: '2026-03-24', status: 'completed', estimated_calories: 300 },
+        { client_id: 'c1', date: '2026-03-25', status: 'completed', estimated_calories: 300 },
+        { client_id: 'c1', date: '2026-03-26', status: 'completed', estimated_calories: 300 },
+        { client_id: 'c1', date: '2026-03-27', status: 'partial', estimated_calories: 300 },
+        { client_id: 'c1', date: '2026-03-28', status: 'completed', estimated_calories: 300 },
       ]
 
-      const result = evaluateActivityCalMismatch(logs, now)
+      const result = evaluatePartialTrainingPattern(events)
+
+      expect(result).not.toBeNull()
+      expect(result?.type).toBe('partial_training_pattern')
+      expect(result?.severity).toBe('medium')
+      expect(result?.affectedDays).toHaveLength(3)
+    })
+
+    it('should not fire for 2 partials (below threshold)', () => {
+      const events: TrainingEventRow[] = [
+        { client_id: 'c1', date: '2026-03-20', status: 'completed', estimated_calories: 300 },
+        { client_id: 'c1', date: '2026-03-21', status: 'partial', estimated_calories: 300 },
+        { client_id: 'c1', date: '2026-03-22', status: 'completed', estimated_calories: 300 },
+        { client_id: 'c1', date: '2026-03-23', status: 'completed', estimated_calories: 300 },
+        { client_id: 'c1', date: '2026-03-24', status: 'completed', estimated_calories: 300 },
+        { client_id: 'c1', date: '2026-03-25', status: 'completed', estimated_calories: 300 },
+        { client_id: 'c1', date: '2026-03-26', status: 'completed', estimated_calories: 300 },
+        { client_id: 'c1', date: '2026-03-27', status: 'partial', estimated_calories: 300 },
+        { client_id: 'c1', date: '2026-03-28', status: 'completed', estimated_calories: 300 },
+      ]
+
+      const result = evaluatePartialTrainingPattern(events)
       expect(result).toBeNull()
     })
 
-    it('should trigger when at least one mismatch is in last 7 days', () => {
-      const now = new Date('2024-01-25')
-      const logs: DailyLog[] = [
-        // Old mismatch
-        {
-          id: '1',
-          clientId: 'c1',
-          date: '2024-01-05',
-          caloriesConsumed: 2500,
-          targetCalories: 2500,
-          trainingData: {
-            sessionCompleted: false,
-            trainingSessionId: 'session1',
-            trainingSessionName: 'Upper Body',
-            isAlternativeSession: false,
-            activityStatuses: {
-              'activity1': { completed: false, activityName: 'Activity 1', estimatedCalories: 300 }
-            },
-            unplannedActivities: []
-          },
-          createdAt: '',
-          updatedAt: ''
-        },
-        // Another old mismatch
-        {
-          id: '2',
-          clientId: 'c1',
-          date: '2024-01-06',
-          caloriesConsumed: 2500,
-          targetCalories: 2500,
-          trainingData: {
-            sessionCompleted: false,
-            trainingSessionId: 'session2',
-            trainingSessionName: 'Lower Body',
-            isAlternativeSession: false,
-            activityStatuses: {
-              'activity1': { completed: false, activityName: 'Activity 1', estimatedCalories: 250 }
-            },
-            unplannedActivities: []
-          },
-          createdAt: '',
-          updatedAt: ''
-        },
-        // Recent mismatch (within last 7 days)
-        {
-          id: '3',
-          clientId: 'c1',
-          date: '2024-01-20',
-          caloriesConsumed: 2500,
-          targetCalories: 2500,
-          trainingData: {
-            sessionCompleted: false,
-            trainingSessionId: 'session3',
-            trainingSessionName: 'Core',
-            isAlternativeSession: false,
-            activityStatuses: {
-              'activity1': { completed: false, activityName: 'Activity 1', estimatedCalories: 200 }
-            },
-            unplannedActivities: []
-          },
-          createdAt: '',
-          updatedAt: ''
-        }
+    it('should not fire with fewer than 9 resolved events (sparse data guard)', () => {
+      const events: TrainingEventRow[] = [
+        { client_id: 'c1', date: '2026-03-20', status: 'partial', estimated_calories: 300 },
+        { client_id: 'c1', date: '2026-03-21', status: 'partial', estimated_calories: 300 },
+        { client_id: 'c1', date: '2026-03-22', status: 'partial', estimated_calories: 300 },
+        { client_id: 'c1', date: '2026-03-23', status: 'completed', estimated_calories: 300 },
+        { client_id: 'c1', date: '2026-03-24', status: 'completed', estimated_calories: 300 },
       ]
 
-      const result = evaluateActivityCalMismatch(logs, now)
-      expect(result).not.toBeNull()
-      expect(result?.type).toBe('activity_cal_mismatch')
-      expect(result?.severity).toBe('high')
-      expect(result?.affectedDays).toHaveLength(2) // Limited by ACTIVITY_CAL_MISMATCH_DAY_COUNT
+      const result = evaluatePartialTrainingPattern(events)
+      expect(result).toBeNull()
     })
 
-    it('should check the completed field correctly', () => {
-      const now = new Date('2024-01-25')
-      const logs: DailyLog[] = [
-        {
-          id: '1',
-          clientId: 'c1',
-          date: '2024-01-20',
-          caloriesConsumed: 2500,
-          targetCalories: 2500,
-          trainingData: {
-            sessionCompleted: false,
-            trainingSessionId: 'session1',
-            trainingSessionName: 'Upper Body',
-            isAlternativeSession: false,
-            activityStatuses: {
-              'activity1': { completed: true, activityName: 'Activity 1', estimatedCalories: 300 }, // Completed - no mismatch
-              'activity2': { completed: false, activityName: 'Activity 2', estimatedCalories: 0 } // Skipped but 0 calories
-            },
-            unplannedActivities: []
-          },
-          createdAt: '',
-          updatedAt: ''
-        }
+    it('should not fire when no partial events exist', () => {
+      const events: TrainingEventRow[] = [
+        { client_id: 'c1', date: '2026-03-20', status: 'completed', estimated_calories: 300 },
+        { client_id: 'c1', date: '2026-03-21', status: 'completed', estimated_calories: 300 },
+        { client_id: 'c1', date: '2026-03-22', status: 'completed', estimated_calories: 300 },
+        { client_id: 'c1', date: '2026-03-23', status: 'completed', estimated_calories: 300 },
+        { client_id: 'c1', date: '2026-03-24', status: 'completed', estimated_calories: 300 },
+        { client_id: 'c1', date: '2026-03-25', status: 'completed', estimated_calories: 300 },
+        { client_id: 'c1', date: '2026-03-26', status: 'missed', estimated_calories: 300 },
+        { client_id: 'c1', date: '2026-03-27', status: 'skipped', estimated_calories: 300 },
+        { client_id: 'c1', date: '2026-03-28', status: 'completed', estimated_calories: 300 },
       ]
 
-      const result = evaluateActivityCalMismatch(logs, now)
+      const result = evaluatePartialTrainingPattern(events)
+      expect(result).toBeNull()
+    })
+
+    it('should exclude future/today scheduled events from lookback', () => {
+      // 7 resolved + 2 scheduled = only 7 resolved, below 9 threshold
+      const events: TrainingEventRow[] = [
+        { client_id: 'c1', date: '2026-03-20', status: 'partial', estimated_calories: 300 },
+        { client_id: 'c1', date: '2026-03-21', status: 'partial', estimated_calories: 300 },
+        { client_id: 'c1', date: '2026-03-22', status: 'partial', estimated_calories: 300 },
+        { client_id: 'c1', date: '2026-03-23', status: 'completed', estimated_calories: 300 },
+        { client_id: 'c1', date: '2026-03-24', status: 'completed', estimated_calories: 300 },
+        { client_id: 'c1', date: '2026-03-25', status: 'completed', estimated_calories: 300 },
+        { client_id: 'c1', date: '2026-03-26', status: 'completed', estimated_calories: 300 },
+        // These are scheduled (future/today) — should be excluded from resolved count
+        { client_id: 'c1', date: '2026-05-10', status: 'scheduled', estimated_calories: 300 },
+        { client_id: 'c1', date: '2026-05-11', status: 'scheduled', estimated_calories: 300 },
+      ]
+
+      // Only 7 resolved events, below 9 threshold — should not fire
+      const result = evaluatePartialTrainingPattern(events)
       expect(result).toBeNull()
     })
   })

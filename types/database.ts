@@ -39,6 +39,48 @@ export type Database = {
   }
   public: {
     Tables: {
+      attention_dismissals: {
+        Row: {
+          alert_type: string
+          client_id: string
+          coach_id: string
+          created_at: string
+          dismissed_at: string
+          id: string
+        }
+        Insert: {
+          alert_type: string
+          client_id: string
+          coach_id: string
+          created_at?: string
+          dismissed_at?: string
+          id?: string
+        }
+        Update: {
+          alert_type?: string
+          client_id?: string
+          coach_id?: string
+          created_at?: string
+          dismissed_at?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "attention_dismissals_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "attention_dismissals_coach_id_fkey"
+            columns: ["coach_id"]
+            isOneToOne: false
+            referencedRelation: "coaches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       body_metrics: {
         Row: {
           bmr: number | null
@@ -1480,47 +1522,6 @@ export type Database = {
           },
         ]
       }
-      set_logs: {
-        Row: {
-          created_at: string
-          exercise_log_id: string
-          id: string
-          reps: number | null
-          rpe: number | null
-          set_number: number
-          updated_at: string
-          weight: number | null
-        }
-        Insert: {
-          created_at?: string
-          exercise_log_id: string
-          id?: string
-          reps?: number | null
-          rpe?: number | null
-          set_number: number
-          updated_at?: string
-          weight?: number | null
-        }
-        Update: {
-          created_at?: string
-          exercise_log_id?: string
-          id?: string
-          reps?: number | null
-          rpe?: number | null
-          set_number?: number
-          updated_at?: string
-          weight?: number | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "set_logs_exercise_log_id_fkey"
-            columns: ["exercise_log_id"]
-            isOneToOne: false
-            referencedRelation: "exercise_logs"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       exercises: {
         Row: {
           aliases: string[] | null
@@ -2204,6 +2205,47 @@ export type Database = {
             columns: ["training_session_id"]
             isOneToOne: false
             referencedRelation: "training_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      set_logs: {
+        Row: {
+          created_at: string
+          exercise_log_id: string
+          id: string
+          reps: number | null
+          rpe: number | null
+          set_number: number
+          updated_at: string
+          weight: number | null
+        }
+        Insert: {
+          created_at?: string
+          exercise_log_id: string
+          id?: string
+          reps?: number | null
+          rpe?: number | null
+          set_number: number
+          updated_at?: string
+          weight?: number | null
+        }
+        Update: {
+          created_at?: string
+          exercise_log_id?: string
+          id?: string
+          reps?: number | null
+          rpe?: number | null
+          set_number?: number
+          updated_at?: string
+          weight?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "set_logs_exercise_log_id_fkey"
+            columns: ["exercise_log_id"]
+            isOneToOne: false
+            referencedRelation: "exercise_logs"
             referencedColumns: ["id"]
           },
         ]

@@ -46,7 +46,7 @@ export default function DashboardPage() {
 
   return (
     <AppLayout pageHeader={pageHeader}>
-      <div className="space-y-6 max-w-7xl mx-auto">
+      <div className="space-y-6">
         {/* Pending Onboarding Banner */}
         <PendingIntakeBanner />
 

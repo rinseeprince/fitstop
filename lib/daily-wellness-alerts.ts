@@ -1,5 +1,6 @@
 import type { DailyLog } from "@/types/daily-log"
 import type { WellnessAlert } from "@/types/attention-feed"
+import type { TrainingEventRow } from "./attention-feed-helpers"
 import {
   evaluateMoodEnergyDrop,
   evaluateLoggingGap,
@@ -13,9 +14,10 @@ import { getDateString } from "@/lib/date-helpers"
  * Detects wellness alerts based on patterns in daily logs
  * @param dailyLogs Array of daily logs sorted by date (newest first)
  * @param now Optional current date for testing (defaults to today)
+ * @param trainingEvents Optional training events for training-missed detection
  * @returns Array of detected alerts
  */
-export function detectAlerts(dailyLogs: DailyLog[], now: Date = new Date()): WellnessAlert[] {
+export function detectAlerts(dailyLogs: DailyLog[], now: Date = new Date(), trainingEvents: TrainingEventRow[] = []): WellnessAlert[] {
   if (!dailyLogs || dailyLogs.length === 0) {
     return []
   }
@@ -70,10 +72,8 @@ export function detectAlerts(dailyLogs: DailyLog[], now: Date = new Date()): Wel
     })
   }
   
-  // 5. Check for training missed
-  // Note: plannedSessionCount would need to be passed in for full implementation
-  // For backward compatibility, using a default of 3 sessions per week
-  const trainingMissedResult = evaluateTrainingMisses(dailyLogs, 3, now)
+  // 5. Check for training missed (reads from training_events)
+  const trainingMissedResult = evaluateTrainingMisses(trainingEvents, now)
   if (trainingMissedResult) {
     alerts.push({
       type: trainingMissedResult.type,

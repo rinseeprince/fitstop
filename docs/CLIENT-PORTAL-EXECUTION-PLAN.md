@@ -43,7 +43,7 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 | 1.4 | Set tracker UI, read-only skeleton | 1 | COMPLETE
 | 1.5 | Set tracker UI, inputs + save flow | 1 | COMPLETE
 | 1.6 | Coach drill-down dialog | 1 | COMPLETE
-| 1.7 | Attention feed rewire | 1 |
+| 1.7 | Attention feed rewire | 1 | COMPLETE
 | 1.8 | Exercise history data layer + API (coach-side) | 1 |
 | 1.9 | Exercise Data tab UI + PR view (coach-side) | 1 |
 | 2.1 | Day summary + program endpoints | 2 Home + nav |
@@ -423,7 +423,9 @@ Session 0.1 confirmed no `timezone` column exists on `clients` and all date help
 
 ---
 
-## Session 1.6: Coach drill-down dialog + history-table wiring ✅ COMPLETE
+## Session 1.6: Coach drill-down dialog + history-table wiring
+
+**Status**: COMPLETE (commit `0805f83`)
 
 **Commit message**: `feat(coach): add session log detail dialog with prescribed-vs-actual view`
 
@@ -469,36 +471,29 @@ Session 0.1 confirmed no `timezone` column exists on `clients` and all date help
 
 ---
 
-## Session 1.7: Attention feed rewire (training triggers)
+## Session 1.7: Attention feed rewire (training triggers) + alert dismissal
+
+**Status**: COMPLETE
 
 **Commit message**: `refactor(attention-feed): read training completion from training_events`
 
 **Objective**: Switch "training missed" and "activity-calorie mismatch" triggers to read `training_events.status` directly.
 
-**Read first**:
-- `lib/tracking-triggers.ts`, `lib/activity-triggers.ts`.
-- `services/attention-feed-service.ts`.
-- Existing signal logic.
-
-**Plan (report before implementing)**:
-- Which trigger functions change.
-- Whether a new batch query is needed.
-- Test fixtures to update.
-
-**Implement**:
-- Replace `training_logs.trained` reads with `training_events.status='completed'`.
-- If new batch query added, follow existing admin-client pattern with justifying comment.
-- Update tests.
+**Implemented**:
+- Rewired `evaluateTrainingMisses` and `evaluateActivityCalMismatch` to read from `TrainingEventRow[]` instead of `DailyLog.trainingData`.
+- Status classification for missed: `scheduled || missed || skipped` (partial does NOT count). Today's events excluded.
+- Added `evaluatePartialTrainingPattern` — cycle-agnostic, event-count-based (3+ partials in last 9 resolved events).
+- Added `TrainingEventRow` type and `trainingEvents` field on `ClientData` in `attention-feed-helpers.ts`.
+- Expanded training_events query to include `date`, `status`, `estimated_calories`.
+- Added `partial_training_pattern` to `AlertType` union and UI switch cases.
+- Added alert dismissal: migration `091_add_attention_dismissals.sql`, `filterDismissedAlerts` in helpers, POST `/api/dashboard/attention-feed/dismiss` route with IDOR check, X dismiss button in `needs-attention-feed.tsx`.
+- Dismissals auto-resurface when `MAX(affectedDays) > dismissed_at`.
 
 **Do NOT**: Remove the `training_logs.trained` column. Do not refactor `attention-feed-service.ts` beyond necessary.
 
-**Tests to write**:
-- `lib/tracking-triggers.test.ts` + `lib/activity-triggers.test.ts`:
-  - Both signals fire when no events completed.
-  - Neither fires when events completed.
-- `services/attention-feed-service.test.ts`: regression for aggregated feed.
+**Tests**: 821 total passing — trigger rewire, dismissal filtering, dismiss API route, service regression.
 
-**Verify**: `npx vitest run`. Manual signal test. Commit.
+**Verify**: `npx tsc --noEmit && npx eslint . && npx vitest run`. Manual signal test. Commit.
 
 ---
 

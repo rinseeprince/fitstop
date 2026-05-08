@@ -12,6 +12,7 @@ import {
   evaluateLoggingGap,
   evaluateNutritionMisses,
   evaluateTrainingMisses,
+  evaluatePartialTrainingPattern,
   evaluateHighStress,
   evaluateHabitDropoff,
   evaluateActivityCalMismatch,
@@ -33,6 +34,13 @@ export type DailyLogRow = {
   trained: boolean | null; training_session_id: string | null; training_data: unknown;
 }
 
+export type TrainingEventRow = {
+  client_id: string
+  date: string
+  status: string
+  estimated_calories: number | null
+}
+
 type DailyHabitRow = Database["public"]["Tables"]["daily_habits"]["Row"]
 type DailyHabitLogRow = Database["public"]["Tables"]["daily_habit_logs"]["Row"]
 
@@ -41,6 +49,7 @@ export type ClientData = {
   logs: DailyLog[]
   habits: DailyHabit[]
   habitLogs: DailyHabitLog[]
+  trainingEvents: TrainingEventRow[]
   plannedSessionCount: number
   checkInDay: string | null
 }
@@ -51,7 +60,7 @@ export function groupClientData(
   allLogs: DailyLogRow[] | null,
   allHabits: DailyHabitRow[] | null,
   allHabitLogs: DailyHabitLogRow[] | null,
-  eventRows: { client_id: string }[] | null,
+  eventRows: TrainingEventRow[] | null,
 ): Map<string, ClientData> {
   const clientDataMap = new Map<string, ClientData>()
 
@@ -62,6 +71,7 @@ export function groupClientData(
       logs: [],
       habits: [],
       habitLogs: [],
+      trainingEvents: [],
       plannedSessionCount: 0,
       checkInDay: client.expected_check_in_day ?? null,
     })
@@ -148,17 +158,16 @@ export function groupClientData(
     })
   }
 
-  // Count training events per client
+  // Group training events per client
   if (eventRows) {
-    const countMap = new Map<string, number>()
     for (const row of eventRows) {
-      countMap.set(row.client_id, (countMap.get(row.client_id) ?? 0) + 1)
-    }
-    for (const [cid, count] of countMap) {
-      const clientData = clientDataMap.get(cid)
+      const clientData = clientDataMap.get(row.client_id)
       if (clientData) {
-        clientData.plannedSessionCount = count
+        clientData.trainingEvents.push(row)
       }
+    }
+    for (const [_, clientData] of clientDataMap) {
+      clientData.plannedSessionCount = clientData.trainingEvents.length
     }
   }
 
@@ -186,10 +195,11 @@ export function evaluateAndSortTriggers(
       evaluateMoodEnergyDrop(data.logs, "energy"),
       evaluateLoggingGap(data.logs, dateRange),
       evaluateNutritionMisses(data.logs),
-      evaluateTrainingMisses(data.logs, data.plannedSessionCount, undefined, data.checkInDay),
+      evaluateTrainingMisses(data.trainingEvents, undefined, data.checkInDay),
+      evaluatePartialTrainingPattern(data.trainingEvents),
       evaluateHighStress(data.logs),
       evaluateHabitDropoff(data.habitLogs, data.habits),
-      evaluateActivityCalMismatch(data.logs)
+      evaluateActivityCalMismatch(data.logs, data.trainingEvents)
     ]
 
     // Convert trigger results to alerts
@@ -236,4 +246,37 @@ export function evaluateAndSortTriggers(
   })
 
   return clientsWithAlerts
+}
+
+export type DismissalRow = {
+  client_id: string
+  alert_type: string
+  dismissed_at: string
+}
+
+/** Filters out alerts that were dismissed before the most recent affected day */
+export function filterDismissedAlerts(
+  clients: ClientWithAlerts[],
+  dismissals: DismissalRow[] | null
+): ClientWithAlerts[] {
+  if (!dismissals || dismissals.length === 0) return clients
+
+  const dismissalMap = new Map<string, string>()
+  for (const d of dismissals) {
+    dismissalMap.set(`${d.client_id}:${d.alert_type}`, d.dismissed_at)
+  }
+
+  const filtered: ClientWithAlerts[] = []
+  for (const client of clients) {
+    const remainingAlerts = client.alerts.filter(alert => {
+      const dismissedAt = dismissalMap.get(`${client.clientId}:${alert.type}`)
+      if (!dismissedAt) return true
+      const maxAffectedDay = alert.affectedDays.reduce((max, day) => day > max ? day : max, "")
+      return maxAffectedDay > dismissedAt
+    })
+    if (remainingAlerts.length > 0) {
+      filtered.push({ ...client, alerts: remainingAlerts })
+    }
+  }
+  return filtered
 }

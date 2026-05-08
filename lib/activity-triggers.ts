@@ -1,6 +1,7 @@
 import type { DailyLog } from "@/types/daily-log"
 import type { DailyHabit, DailyHabitLog } from "@/types/daily-habit"
 import type { TriggerResult } from "./attention-triggers"
+import type { TrainingEventRow } from "./attention-feed-helpers"
 import {
   HABIT_DROPOFF_THRESHOLD_PERCENT,
   HABIT_DROPOFF_DAYS_IN_WEEK,
@@ -75,58 +76,59 @@ export function evaluateHabitDropoff(
 }
 
 /**
- * Evaluates if client ate as if they completed activities they actually skipped
+ * Evaluates if client ate as if they completed activities they actually skipped.
+ * Reads training completion from training_events — sums estimated_calories from
+ * uncompleted events on each log date to determine skipped activity calories.
  */
 export function evaluateActivityCalMismatch(
   logs: DailyLog[],
+  events: TrainingEventRow[],
   now: Date = new Date()
 ): TriggerResult | null {
   // Only look at logs within the window
   const windowStart = new Date(now)
   windowStart.setDate(windowStart.getDate() - ACTIVITY_CAL_MISMATCH_WINDOW_DAYS)
-  
+
   const recentLogs = logs.filter(log => {
     const logDate = new Date(log.date + 'T00:00:00')
     return logDate >= windowStart
   })
-  
+
   const mismatchDays: string[] = []
   const metricData: Array<{ date: string; value: number }> = []
-  
+
   for (const log of recentLogs) {
-    if (!log.trainingData?.activityStatuses || !log.caloriesConsumed || !log.targetCalories) {
+    if (!log.caloriesConsumed || !log.targetCalories) {
       continue
     }
-    
-    // Calculate calories from skipped activities
+
+    // Sum estimated calories from uncompleted training events on this date
     let skippedActivityCalories = 0
-    for (const [_, activity] of Object.entries(log.trainingData.activityStatuses)) {
-      // Check the .completed field, not the object itself
-      if (!activity.completed && activity.estimatedCalories) {
-        skippedActivityCalories += activity.estimatedCalories
+    for (const event of events) {
+      if (event.date === log.date && event.status !== "completed" && event.estimated_calories && event.estimated_calories > 0) {
+        skippedActivityCalories += event.estimated_calories
       }
     }
-    
-    // Check if client ate calories that included skipped activities
+
     // Target calories already includes planned activities, so if they skipped activities
     // but still ate the full target amount, they overate relative to what they actually did
-    if (skippedActivityCalories > 0 && 
+    if (skippedActivityCalories > 0 &&
         log.caloriesConsumed >= log.targetCalories) {
       mismatchDays.push(log.date)
       metricData.push({ date: log.date, value: log.caloriesConsumed })
     }
   }
-  
+
   // Check if we have enough mismatches AND at least one is recent (last 7 days)
   if (mismatchDays.length >= ACTIVITY_CAL_MISMATCH_DAY_COUNT) {
     const sevenDaysAgo = new Date(now)
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
-    
+
     const hasRecentMismatch = mismatchDays.some(day => {
       const dayDate = new Date(day + 'T00:00:00')
       return dayDate >= sevenDaysAgo
     })
-    
+
     if (hasRecentMismatch) {
       return {
         type: "activity_cal_mismatch",
@@ -137,6 +139,6 @@ export function evaluateActivityCalMismatch(
       }
     }
   }
-  
+
   return null
 }

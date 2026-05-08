@@ -12,6 +12,7 @@ export type AlertType =
   | "high_stress"
   | "habit_dropoff"
   | "activity_cal_mismatch"
+  | "partial_training_pattern"
 
 export interface WellnessAlert {
   type: AlertType

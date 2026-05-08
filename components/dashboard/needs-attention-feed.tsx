@@ -3,9 +3,54 @@
 import { useState } from "react"
 import Link from "next/link"
 import { motion } from "framer-motion"
-import { CheckCircle } from "lucide-react"
+import { CheckCircle, ChevronDown, ChevronUp, X } from "lucide-react"
 import useSWR from "swr"
-import type { AttentionFeedResponse, AttentionAlert } from "@/types/attention-feed"
+import type { AttentionFeedResponse, AttentionAlert, AlertType } from "@/types/attention-feed"
+
+const alertTabMap: Record<AlertType, string> = {
+  mood_drop: "wellness",
+  energy_drop: "wellness",
+  high_stress: "wellness",
+  no_log_gap: "wellness",
+  nutrition_missed: "nutrition",
+  activity_cal_mismatch: "nutrition",
+  training_missed: "training",
+  partial_training_pattern: "training",
+  habit_dropoff: "daily-habits",
+}
+
+function AlertRow({ clientId, alert, onDismiss }: {
+  clientId: string
+  alert: AttentionAlert
+  onDismiss: (clientId: string, alertType: string) => void
+}) {
+  return (
+    <div className="flex items-center justify-between py-1.5">
+      <div className="flex items-center gap-2 flex-1 min-w-0">
+        <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+          alert.severity === "high" ? "bg-[#b91c1c]" : "bg-[#d97706]"
+        }`} />
+        <span className="text-xs text-[#5a7d82] truncate">
+          {alert.message}
+        </span>
+      </div>
+      <div className="flex items-center gap-2 flex-shrink-0">
+        <Link
+          href={`/clients/${clientId}?tab=${alertTabMap[alert.type]}`}
+          className="text-xs text-[#0d9488] hover:text-[#0f766e]"
+        >
+          View
+        </Link>
+        <button
+          onClick={() => onDismiss(clientId, alert.type)}
+          className="text-[#93b0b4] hover:text-[#0c1a1e]"
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    </div>
+  )
+}
 
 const fetcher = async (url: string) => {
   const response = await fetch(url, { cache: "no-store" })
@@ -17,7 +62,7 @@ const fetcher = async (url: string) => {
 }
 
 export function NeedsAttentionFeed() {
-  const { data, error, isLoading } = useSWR(
+  const { data, error, isLoading, mutate } = useSWR(
     "/api/dashboard/attention-feed",
     fetcher,
     {
@@ -32,6 +77,30 @@ export function NeedsAttentionFeed() {
   )
 
   const [showAll, setShowAll] = useState(false)
+  const [expandedClients, setExpandedClients] = useState<Set<string>>(new Set())
+
+  const toggleExpanded = (clientId: string) => {
+    setExpandedClients(prev => {
+      const next = new Set(prev)
+      if (next.has(clientId)) next.delete(clientId)
+      else next.add(clientId)
+      return next
+    })
+  }
+
+  const handleDismiss = async (clientId: string, alertType: string) => {
+    try {
+      const res = await fetch("/api/dashboard/attention-feed/dismiss", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId, alertType }),
+      })
+      if (!res.ok) throw new Error("Failed to dismiss")
+      void mutate()
+    } catch (err) {
+      console.error("Failed to dismiss alert:", err)
+    }
+  }
 
   // Helper functions for formatting
   const getShortAlertText = (alert: AttentionAlert): string => {
@@ -56,6 +125,8 @@ export function NeedsAttentionFeed() {
       }
       case "activity_cal_mismatch":
         return "Overeating on rest days"
+      case "partial_training_pattern":
+        return `${days} sessions partial`
       default:
         return alert.message
     }
@@ -90,6 +161,8 @@ export function NeedsAttentionFeed() {
         return alert.message
       case "activity_cal_mismatch":
         return "Calorie intake matched activities despite skipping them"
+      case "partial_training_pattern":
+        return `${days} of recent sessions only partially completed`
       default:
         return alert.message
     }
@@ -167,52 +240,64 @@ export function NeedsAttentionFeed() {
         /* Populated content: priority client + compact list */
         <>
           {/* Priority client section */}
-          {priorityClient && (
-            <div className="bg-[rgba(245,158,11,0.07)] rounded-[6px] p-3 mb-3">
-              <div className="flex items-start gap-3">
-                {/* Avatar */}
-                <div
-                  className="w-10 h-10 rounded-[6px] flex items-center justify-center flex-shrink-0 text-white text-xs font-bold"
-                  style={{ background: "linear-gradient(135deg, #0d9488, #0f766e)" }}
-                >
-                  {priorityClient.clientAvatar ? (
-                    <img
-                      src={priorityClient.clientAvatar}
-                      alt={priorityClient.clientName}
-                      className="w-full h-full rounded-[6px] object-cover"
-                    />
-                  ) : (
-                    <span>
-                      {priorityClient.clientName.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2)}
-                    </span>
-                  )}
-                </div>
-
-                {/* Content */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-sm font-semibold text-[#0c1a1e]">{priorityClient.clientName}</h4>
-                    <Link
-                      href={`/clients/${priorityClient.clientId}`}
-                      className="text-sm text-[#0d9488] hover:text-[#0f766e] font-medium"
-                    >
-                      View
-                    </Link>
-                  </div>
-                  <p className="text-xs text-[#5a7d82] mt-1">
-                    {getPriorityAlertText(
-                      priorityClient.alerts.find(a => a.severity === "high") || priorityClient.alerts[0]
+          {priorityClient && (() => {
+            const topAlert = priorityClient.alerts.find(a => a.severity === "high") || priorityClient.alerts[0]
+            const isExpanded = expandedClients.has(priorityClient.clientId)
+            return (
+              <div className="bg-[rgba(245,158,11,0.07)] rounded-[6px] p-3 mb-3">
+                <div className="flex items-start gap-3">
+                  {/* Avatar */}
+                  <div
+                    className="w-10 h-10 rounded-[6px] flex items-center justify-center flex-shrink-0 text-white text-xs font-bold"
+                    style={{ background: "linear-gradient(135deg, #0d9488, #0f766e)" }}
+                  >
+                    {priorityClient.clientAvatar ? (
+                      <img
+                        src={priorityClient.clientAvatar}
+                        alt={priorityClient.clientName}
+                        className="w-full h-full rounded-[6px] object-cover"
+                      />
+                    ) : (
+                      <span>
+                        {priorityClient.clientName.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2)}
+                      </span>
                     )}
-                  </p>
-                  {priorityClient.alerts.length > 1 && (
-                    <p className="text-xs text-[#93b0b4] mt-1">
-                      +{priorityClient.alerts.length - 1} more alert{priorityClient.alerts.length > 2 ? 's' : ''}
+                  </div>
+
+                  {/* Content */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-semibold text-[#0c1a1e]">{priorityClient.clientName}</h4>
+                    </div>
+                    <p className="text-xs text-[#5a7d82] mt-1">
+                      {getPriorityAlertText(topAlert)}
                     </p>
-                  )}
+                    {priorityClient.alerts.length > 1 && (
+                      <button
+                        onClick={() => toggleExpanded(priorityClient.clientId)}
+                        className="flex items-center gap-1 text-xs text-[#93b0b4] hover:text-[#5a7d82] mt-1"
+                      >
+                        {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                        {isExpanded ? "Hide" : `+${priorityClient.alerts.length - 1} more`} alert{priorityClient.alerts.length > 2 ? "s" : ""}
+                      </button>
+                    )}
+                    {isExpanded && (
+                      <div className="mt-2 border-t border-[rgba(13,148,136,0.1)] pt-1.5">
+                        {priorityClient.alerts.map(alert => (
+                          <AlertRow
+                            key={alert.type}
+                            clientId={priorityClient.clientId}
+                            alert={alert}
+                            onDismiss={handleDismiss}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
+            )
+          })()}
 
           {/* Compact list */}
           {visibleCompactClients.length > 0 && (
@@ -221,31 +306,52 @@ export function NeedsAttentionFeed() {
                 const highAlerts = client.alerts.filter(a => a.severity === "high").length
                 const hasOnlyMedium = highAlerts === 0 && client.alerts.some(a => a.severity === "medium")
                 const mostUrgentAlert = client.alerts.find(a => a.severity === "high") || client.alerts[0]
+                const isExpanded = expandedClients.has(client.clientId)
 
                 return (
-                  <div key={client.clientId} className="py-2 flex items-center justify-between">
-                    <div className="flex items-center gap-2 flex-1 min-w-0">
-                      <span className="text-sm text-[#0c1a1e]">{client.clientName}</span>
-                      {client.alerts.length > 0 && (
-                        <span className={`${
-                          hasOnlyMedium
-                            ? "bg-[rgba(245,158,11,0.07)] text-[#d97706]"
-                            : "bg-[rgba(185,28,28,0.08)] text-[#b91c1c]"
-                        } text-xs font-medium px-1.5 py-0.5 rounded-[4px] font-mono-display`}>
-                          {client.alerts.length}
+                  <div key={client.clientId} className="py-2">
+                    <div className="flex items-center justify-between">
+                      <button
+                        onClick={() => toggleExpanded(client.clientId)}
+                        className="flex items-center gap-2 flex-1 min-w-0 text-left"
+                      >
+                        <span className="text-sm text-[#0c1a1e]">{client.clientName}</span>
+                        {client.alerts.length > 0 && (
+                          <span className={`${
+                            hasOnlyMedium
+                              ? "bg-[rgba(245,158,11,0.07)] text-[#d97706]"
+                              : "bg-[rgba(185,28,28,0.08)] text-[#b91c1c]"
+                          } text-xs font-medium px-1.5 py-0.5 rounded-[4px] font-mono-display`}>
+                            {client.alerts.length}
+                          </span>
+                        )}
+                        <span className="text-xs text-[#5a7d82] truncate">
+                          {getShortAlertText(mostUrgentAlert)}
+                          {!isExpanded && client.alerts.length > 1 && ` +${client.alerts.length - 1}`}
                         </span>
-                      )}
-                      <span className="text-xs text-[#5a7d82] truncate">
-                        {getShortAlertText(mostUrgentAlert)}
-                        {client.alerts.length > 1 && ` +${client.alerts.length - 1}`}
-                      </span>
+                      </button>
+                      <button
+                        onClick={() => toggleExpanded(client.clientId)}
+                        className="text-[#93b0b4] hover:text-[#5a7d82] flex-shrink-0"
+                      >
+                        {isExpanded
+                          ? <ChevronUp className="w-4 h-4" />
+                          : <ChevronDown className="w-4 h-4" />
+                        }
+                      </button>
                     </div>
-                    <Link
-                      href={`/clients/${client.clientId}`}
-                      className="text-sm text-[#0d9488] hover:text-[#0f766e] flex-shrink-0"
-                    >
-                      View
-                    </Link>
+                    {isExpanded && (
+                      <div className="ml-0 mt-1 pl-2 border-l-2 border-[rgba(13,148,136,0.1)]">
+                        {client.alerts.map(alert => (
+                          <AlertRow
+                            key={alert.type}
+                            clientId={client.clientId}
+                            alert={alert}
+                            onDismiss={handleDismiss}
+                          />
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )
               })}

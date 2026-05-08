@@ -33,6 +33,8 @@ export const LOGGING_GAP_THRESHOLD_DAYS = 3;
 export const NUTRITION_MISSED_CONSECUTIVE_DAYS = 3;
 
 export const TRAINING_MISSED_WEEKLY_THRESHOLD = 2; // Sessions per week
+export const PARTIAL_TRAINING_LOOKBACK_EVENTS = 9;
+export const PARTIAL_TRAINING_THRESHOLD = 3;
 
 export const HIGH_STRESS_THRESHOLD = 8; // Stress level
 export const HIGH_STRESS_CONSECUTIVE_DAYS = 3;

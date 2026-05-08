@@ -1,9 +1,12 @@
 import type { DailyLog } from "@/types/daily-log"
 import type { TriggerResult } from "./attention-triggers"
+import type { TrainingEventRow } from "./attention-feed-helpers"
 import {
   LOGGING_GAP_THRESHOLD_DAYS,
   NUTRITION_MISSED_CONSECUTIVE_DAYS,
   TRAINING_MISSED_WEEKLY_THRESHOLD,
+  PARTIAL_TRAINING_LOOKBACK_EVENTS,
+  PARTIAL_TRAINING_THRESHOLD,
 } from "@/lib/constants"
 import { getDateString, getTrainingWeekStart } from "@/lib/date-helpers"
 
@@ -107,35 +110,67 @@ export function evaluateNutritionMisses(logs: DailyLog[]): TriggerResult | null 
 /**
  * Evaluates if training sessions have been missed this week.
  * Week boundaries are based on the client's check-in day (defaults to Mon-Sun).
+ * Reads from training_events directly — a past event is "missed" if its status
+ * is scheduled, missed, or skipped. Partial counts as attended (client showed up).
+ * Today's events are excluded — the client may still train later today.
  */
 export function evaluateTrainingMisses(
-  logs: DailyLog[],
-  plannedSessionCount: number,
+  events: TrainingEventRow[],
   now: Date = new Date(),
   checkInDay?: string | null
 ): TriggerResult | null {
-  // Get current week's logs based on client's check-in day
-  const today = now
-  const todayStr = getDateString(today)
+  const todayStr = getDateString(now)
   const weekStartStr = getTrainingWeekStart(todayStr, checkInDay)
-  const startOfWeek = new Date(weekStartStr + 'T00:00:00')
-  const weekLogs = logs.filter(log => {
-    const logDate = new Date(log.date + 'T00:00:00')
-    return logDate >= startOfWeek
-  })
-  const missedSessions: string[] = []
-  for (const log of weekLogs) {
-    // Check if there was a scheduled training session that wasn't completed
-    if (log.trainingData?.trainingSessionId && !log.trainingData?.sessionCompleted) {
-      missedSessions.push(log.date)
+
+  // Past events in the current training week (strictly before today)
+  const weekEvents = events.filter(e => e.date >= weekStartStr && e.date < todayStr)
+
+  const missedDates: string[] = []
+  for (const event of weekEvents) {
+    if (event.status === "scheduled" || event.status === "missed" || event.status === "skipped") {
+      missedDates.push(event.date)
     }
   }
-  if (missedSessions.length >= TRAINING_MISSED_WEEKLY_THRESHOLD) {
+
+  if (missedDates.length >= TRAINING_MISSED_WEEKLY_THRESHOLD) {
     return {
       type: "training_missed",
       severity: "high",
-      message: `${missedSessions.length} training sessions missed this week`,
-      affectedDays: missedSessions,
+      message: `${missedDates.length} training sessions missed this week`,
+      affectedDays: missedDates,
+      metricData: []
+    }
+  }
+  return null
+}
+
+/**
+ * Evaluates if a client consistently logs partial completions.
+ * Uses event-count-based lookback (not calendar windows) to stay cycle-agnostic —
+ * training cycles (e.g. PPL+Rest = 4 days) don't align to 7-day weeks.
+ */
+export function evaluatePartialTrainingPattern(
+  events: TrainingEventRow[]
+): TriggerResult | null {
+  // Only consider resolved events (exclude future/today scheduled events)
+  const resolved = events
+    .filter(e => e.status === "completed" || e.status === "partial" || e.status === "missed" || e.status === "skipped")
+    .sort((a, b) => b.date.localeCompare(a.date))
+
+  // Sparse data guard — need enough events to evaluate
+  if (resolved.length < PARTIAL_TRAINING_LOOKBACK_EVENTS) {
+    return null
+  }
+
+  const lookback = resolved.slice(0, PARTIAL_TRAINING_LOOKBACK_EVENTS)
+  const partialEvents = lookback.filter(e => e.status === "partial")
+
+  if (partialEvents.length >= PARTIAL_TRAINING_THRESHOLD) {
+    return {
+      type: "partial_training_pattern",
+      severity: "medium",
+      message: `${partialEvents.length} of last ${PARTIAL_TRAINING_LOOKBACK_EVENTS} training sessions only partially completed`,
+      affectedDays: partialEvents.map(e => e.date),
       metricData: []
     }
   }

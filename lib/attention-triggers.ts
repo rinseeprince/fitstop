@@ -21,5 +21,5 @@ export interface TriggerResult {
 
 // Re-export all trigger functions from split files
 export { evaluateMoodEnergyDrop, evaluateHighStress } from "./wellness-triggers"
-export { evaluateLoggingGap, evaluateNutritionMisses, evaluateTrainingMisses } from "./tracking-triggers"
+export { evaluateLoggingGap, evaluateNutritionMisses, evaluateTrainingMisses, evaluatePartialTrainingPattern } from "./tracking-triggers"
 export { evaluateHabitDropoff, evaluateActivityCalMismatch } from "./activity-triggers"

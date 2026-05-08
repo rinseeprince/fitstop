@@ -13,7 +13,7 @@ import { supabaseAdmin } from "./supabase-admin"
 import type { Database } from "@/types/database"
 import type { ClientWithAlerts } from "@/types/attention-feed"
 import { getDateDaysAgo, getTodayDateString } from "@/lib/date-helpers"
-import { groupClientData, evaluateAndSortTriggers } from "@/lib/attention-feed-helpers"
+import { groupClientData, evaluateAndSortTriggers, filterDismissedAlerts } from "@/lib/attention-feed-helpers"
 import type { DailyLogRow } from "@/lib/attention-feed-helpers"
 
 type ClientRow = Database["public"]["Tables"]["clients"]["Row"]
@@ -89,10 +89,10 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
     console.error("Error fetching habit logs:", habitLogsError)
   }
 
-  // 5. Count training events per client in the 28-day window
+  // 5. Batch query training events per client in the 28-day window
   const { data: eventRows, error: eventsError } = await supabaseAdmin
     .from("training_events")
-    .select("client_id")
+    .select("client_id, date, status, estimated_calories")
     .in("client_id", clientIds)
     .gte("date", startDate)
     .lte("date", endDate)
@@ -113,5 +113,13 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
   // Evaluate triggers and sort
   const clientsWithAlerts = evaluateAndSortTriggers(clientDataMap, dateRange)
 
-  return { clients: clientsWithAlerts, totalClientCount }
+  // 6. Filter out dismissed alerts that haven't resurfaced
+  const { data: dismissals } = await supabaseAdmin
+    .from("attention_dismissals")
+    .select("client_id, alert_type, dismissed_at")
+    .eq("coach_id", coachId)
+
+  const filteredClients = filterDismissedAlerts(clientsWithAlerts, dismissals)
+
+  return { clients: filteredClients, totalClientCount }
 }

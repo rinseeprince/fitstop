@@ -200,126 +200,61 @@ describe('detectAlerts', () => {
   })
 
   describe('Training missed detection', () => {
-    it('detects 2+ missed training sessions in current week', () => {
+    it('detects 2+ missed training events in current week', () => {
       // Mock today as a Wednesday (2024-01-10)
       const mockedToday = new Date('2024-01-10T12:00:00Z') // Wednesday
 
       const logs: DailyLog[] = [
-        // Week starts Monday (2024-01-08)
-        createLog({ 
-          date: '2024-01-08', 
-          trainingData: {
-            sessionCompleted: false,
-            trainingSessionId: 'session-1',
-            trainingSessionName: 'Upper Body',
-            isAlternativeSession: false,
-            activityStatuses: {},
-            unplannedActivities: []
-          }
-        }),
-        createLog({ 
-          date: '2024-01-09', 
-          trainingData: {
-            sessionCompleted: false,
-            trainingSessionId: 'session-2',
-            trainingSessionName: 'Lower Body',
-            isAlternativeSession: false,
-            activityStatuses: {},
-            unplannedActivities: []
-          }
-        }),
-        createLog({ 
-          date: '2024-01-10', 
-          trainingData: {
-            sessionCompleted: true,
-            trainingSessionId: 'session-3',
-            trainingSessionName: 'Core',
-            isAlternativeSession: false,
-            activityStatuses: {},
-            unplannedActivities: []
-          }
-        }),
+        createLog({ date: '2024-01-08' }),
+        createLog({ date: '2024-01-09' }),
       ]
-      
-      const alerts = detectAlerts(logs, mockedToday)
+
+      // Two past scheduled events = 2 misses (today's event excluded)
+      const trainingEvents = [
+        { client_id: 'c1', date: '2024-01-08', status: 'scheduled', estimated_calories: 300 },
+        { client_id: 'c1', date: '2024-01-09', status: 'scheduled', estimated_calories: 300 },
+        { client_id: 'c1', date: '2024-01-10', status: 'completed', estimated_calories: 300 },
+      ]
+
+      const alerts = detectAlerts(logs, mockedToday, trainingEvents)
       const trainingAlert = alerts.find(a => a.type === 'training_missed')
-      
+
       expect(trainingAlert).toBeDefined()
       expect(trainingAlert?.severity).toBe('high')
       expect(trainingAlert?.affectedDays).toEqual(['2024-01-08', '2024-01-09'])
-      
     })
 
     it('does not trigger training missed for only 1 missed session', () => {
-      // Mock today as a Wednesday (2024-01-10)
       const mockedToday = new Date('2024-01-10T12:00:00Z') // Wednesday
 
       const logs: DailyLog[] = [
-        createLog({ 
-          date: '2024-01-08', 
-          trainingData: {
-            sessionCompleted: false,
-            trainingSessionId: 'session-1',
-            trainingSessionName: 'Upper Body',
-            isAlternativeSession: false,
-            activityStatuses: {},
-            unplannedActivities: []
-          }
-        }),
-        createLog({ 
-          date: '2024-01-09', 
-          trainingData: {
-            sessionCompleted: true,
-            trainingSessionId: 'session-2',
-            trainingSessionName: 'Lower Body',
-            isAlternativeSession: false,
-            activityStatuses: {},
-            unplannedActivities: []
-          }
-        }),
+        createLog({ date: '2024-01-08' }),
+        createLog({ date: '2024-01-09' }),
       ]
-      
-      const alerts = detectAlerts(logs, mockedToday)
+
+      const trainingEvents = [
+        { client_id: 'c1', date: '2024-01-08', status: 'scheduled', estimated_calories: 300 },
+        { client_id: 'c1', date: '2024-01-09', status: 'completed', estimated_calories: 300 },
+      ]
+
+      const alerts = detectAlerts(logs, mockedToday, trainingEvents)
       const trainingAlert = alerts.find(a => a.type === 'training_missed')
-      
+
       expect(trainingAlert).toBeUndefined()
-      
     })
 
-    it('does not trigger for sessions without trainingSessionId', () => {
-      // Mock today as a Wednesday (2024-01-10)
+    it('does not trigger when no training events exist', () => {
       const mockedToday = new Date('2024-01-10T12:00:00Z') // Wednesday
 
       const logs: DailyLog[] = [
-        createLog({ 
-          date: '2024-01-08', 
-          trainingData: {
-            sessionCompleted: false,
-            trainingSessionId: null, // No scheduled session
-            trainingSessionName: null,
-            isAlternativeSession: false,
-            activityStatuses: {},
-            unplannedActivities: []
-          }
-        }),
-        createLog({ 
-          date: '2024-01-09', 
-          trainingData: {
-            sessionCompleted: false,
-            trainingSessionId: null, // No scheduled session
-            trainingSessionName: null,
-            isAlternativeSession: false,
-            activityStatuses: {},
-            unplannedActivities: []
-          }
-        }),
+        createLog({ date: '2024-01-08' }),
+        createLog({ date: '2024-01-09' }),
       ]
-      
-      const alerts = detectAlerts(logs, mockedToday)
+
+      const alerts = detectAlerts(logs, mockedToday, [])
       const trainingAlert = alerts.find(a => a.type === 'training_missed')
-      
+
       expect(trainingAlert).toBeUndefined()
-      
     })
   })
 
