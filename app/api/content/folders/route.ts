@@ -102,7 +102,7 @@ export async function POST(request: NextRequest) {
     const duplicateExists = existingFolders.some(
       folder => 
         folder.name.toLowerCase() === name.toLowerCase() &&
-        folder.parentFolderId === (parentFolderId || null)
+        folder.parentFolderId === (parentFolderId || undefined)
     );
 
     if (duplicateExists) {

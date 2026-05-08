@@ -61,7 +61,7 @@ function ChartContainer({
         {...props}
       >
         <ChartStyle id={chartId} config={config} />
-        <RechartsPrimitive.ResponsiveContainer>
+        <RechartsPrimitive.ResponsiveContainer minWidth={0}>
           {children}
         </RechartsPrimitive.ResponsiveContainer>
       </div>
@@ -395,8 +395,8 @@ function Sparkline({
   }))
 
   return (
-    <div className={cn('h-12 w-full', className)}>
-      <RechartsPrimitive.ResponsiveContainer width="100%" height="100%">
+    <div className={cn('h-12 w-full min-w-0', className)}>
+      <RechartsPrimitive.ResponsiveContainer width="100%" height="100%" minWidth={0}>
         <RechartsPrimitive.LineChart data={chartData}>
           <defs>
             {showGradient && (

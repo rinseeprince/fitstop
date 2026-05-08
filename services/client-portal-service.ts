@@ -50,11 +50,7 @@ export async function getClientForCurrentUser(): Promise<Client | null> {
     .eq("active", true)
     .single();
 
-  if (error) {
-    throw new Error("Failed to fetch client for current user");
-  }
-
-  if (!data) return null;
+  if (error || !data) return null;
 
   return mapClientRow(data);
 }

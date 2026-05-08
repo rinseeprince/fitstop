@@ -63,7 +63,7 @@ export function FolderDialog({
     // Check for duplicate names at the same level
     const duplicateExists = folders.some((f) => 
       f.name.toLowerCase() === name.trim().toLowerCase() &&
-      f.parentFolderId === (parentFolderId || null) &&
+      f.parentFolderId === (parentFolderId || undefined) &&
       (!isEditing || f.id !== folder.id)
     );
 
