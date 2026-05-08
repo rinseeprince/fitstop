@@ -45,6 +45,17 @@ describe("ExerciseSearchSelect", () => {
     expect(screen.getByText("Select exercise...")).toBeInTheDocument();
   });
 
+  it("renders 'EXERCISE' label on the card", () => {
+    render(
+      <ExerciseSearchSelect
+        {...defaultProps}
+        exercises={[makeExercise()]}
+      />,
+    );
+
+    expect(screen.getByText("Exercise")).toBeInTheDocument();
+  });
+
   it("renders selected exercise name from list match", () => {
     render(
       <ExerciseSearchSelect
@@ -55,6 +66,18 @@ describe("ExerciseSearchSelect", () => {
     );
 
     expect(screen.getByText("Bench Press")).toBeInTheDocument();
+  });
+
+  it("renders log count pill when exercise is selected", () => {
+    render(
+      <ExerciseSearchSelect
+        {...defaultProps}
+        exercises={[makeExercise({ exerciseId: "ex-1", logCount: 10 })]}
+        selectedExerciseId="ex-1"
+      />,
+    );
+
+    expect(screen.getByText("10 logs")).toBeInTheDocument();
   });
 
   it("renders selectedExerciseName when list has not loaded", () => {
@@ -92,9 +115,7 @@ describe("ExerciseSearchSelect", () => {
     await user.click(screen.getByRole("combobox"));
 
     expect(screen.getByText("Bench Press")).toBeInTheDocument();
-    expect(screen.getByText("12 logs")).toBeInTheDocument();
     expect(screen.getByText("Squat")).toBeInTheDocument();
-    expect(screen.getByText("8 logs")).toBeInTheDocument();
   });
 
   it("calls onSelect when an exercise is clicked", async () => {
@@ -114,18 +135,5 @@ describe("ExerciseSearchSelect", () => {
     await user.click(screen.getByText("Bench Press"));
 
     expect(onSelect).toHaveBeenCalledWith(exercises[0]);
-  });
-
-  it("renders singular 'log' for logCount of 1", async () => {
-    const user = userEvent.setup();
-    const exercises = [makeExercise({ logCount: 1 })];
-
-    render(
-      <ExerciseSearchSelect {...defaultProps} exercises={exercises} />,
-    );
-
-    await user.click(screen.getByRole("combobox"));
-
-    expect(screen.getByText("1 log")).toBeInTheDocument();
   });
 });

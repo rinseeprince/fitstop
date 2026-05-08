@@ -59,9 +59,10 @@ export const CalendarWeekRow = memo(function CalendarWeekRow({
 
   return (
     <div className="flex gap-1">
-      {/* Kebab menu column (replaces W1/W2 label) */}
+      {/* Kebab menu column — only rendered in edit mode */}
+      {editMode && (
       <div className="w-10 flex-shrink-0 flex flex-col items-center pt-1">
-        {editMode && showWeekKebab ? (
+        {showWeekKebab ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button className="p-0.5 rounded hover:bg-[rgba(13,148,136,0.05)] transition-colors">
@@ -98,7 +99,7 @@ export const CalendarWeekRow = memo(function CalendarWeekRow({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-        ) : editMode && weekActionDisabledReason ? (
+        ) : weekActionDisabledReason ? (
           <span
             className="text-[10px] text-[#93b0b4] cursor-help"
             title={weekActionDisabledReason}
@@ -107,6 +108,7 @@ export const CalendarWeekRow = memo(function CalendarWeekRow({
           </span>
         ) : null}
       </div>
+      )}
 
       {/* Day cells */}
       <div className="flex-1 grid grid-cols-7 gap-1">

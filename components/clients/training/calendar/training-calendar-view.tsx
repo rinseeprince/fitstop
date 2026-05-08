@@ -475,7 +475,7 @@ export function TrainingCalendarView({
 
         {/* Day headers */}
         <div className="flex gap-1">
-          <div className="w-10 flex-shrink-0" />
+          {editMode && <div className="w-10 flex-shrink-0" />}
           <div className="flex-1 grid grid-cols-7 gap-1">
             {DAY_LABELS.map((label) => (
               <div key={label} className="text-center text-[10px] uppercase tracking-[0.06em] text-[#93b0b4] font-medium py-1">

@@ -120,7 +120,6 @@ function setupSWR(options: {
 describe("ExerciseDataView", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Reset search params
     mockSearchParams.delete("exerciseId");
     mockSearchParams.delete("exerciseName");
   });
@@ -140,11 +139,10 @@ describe("ExerciseDataView", () => {
 
     render(<ExerciseDataView clientId="client-1" />);
 
-    // The combobox trigger should be present
     expect(screen.getByRole("combobox")).toBeInTheDocument();
   });
 
-  it("renders metric segmented control after exercise is selected", () => {
+  it("renders underlined tab navigation after exercise is selected", () => {
     mockSearchParams.set("exerciseId", "ex-1");
     mockSearchParams.set("exerciseName", "Bench Press");
 
@@ -166,48 +164,40 @@ describe("ExerciseDataView", () => {
     expect(screen.getByText("PRs")).toBeInTheDocument();
   });
 
-  it("renders session count picker (hidden for PRs)", async () => {
+  it("renders filter row with LAST label and session count", () => {
+    mockSearchParams.set("exerciseId", "ex-1");
+    mockSearchParams.set("exerciseName", "Bench Press");
+
+    setupSWR({
+      list: [makeListItem()],
+      progression: [makePoint(), makePoint({ date: "2026-03-08" })],
+    });
+
+    render(<ExerciseDataView clientId="client-1" />);
+
+    expect(screen.getByText("Last")).toBeInTheDocument();
+    expect(screen.getByText("sessions")).toBeInTheDocument();
+  });
+
+  it("hides filter row and KPI strip for PRs tab", async () => {
     const user = userEvent.setup();
     mockSearchParams.set("exerciseId", "ex-1");
     mockSearchParams.set("exerciseName", "Bench Press");
 
     setupSWR({
       list: [makeListItem()],
-      progression: [
-        makePoint({ date: "2026-03-01" }),
-        makePoint({ date: "2026-03-08" }),
-      ],
+      progression: [makePoint(), makePoint({ date: "2026-03-08" })],
       prs: [makePR()],
     });
 
     render(<ExerciseDataView clientId="client-1" />);
 
-    // Session count picker should be visible for Weight
-    expect(screen.getByText("Sessions")).toBeInTheDocument();
+    expect(screen.getByText("Last")).toBeInTheDocument();
 
-    // Click PRs
     await user.click(screen.getByText("PRs"));
 
-    // Session count picker should be hidden
-    expect(screen.queryByText("Sessions")).not.toBeInTheDocument();
-  });
-
-  it("renders date span subtitle from progression data", () => {
-    mockSearchParams.set("exerciseId", "ex-1");
-    mockSearchParams.set("exerciseName", "Bench Press");
-
-    setupSWR({
-      list: [makeListItem()],
-      progression: [
-        makePoint({ date: "2026-03-01T00:00:00Z" }),
-        makePoint({ date: "2026-03-15T00:00:00Z" }),
-        makePoint({ date: "2026-04-01T00:00:00Z" }),
-      ],
-    });
-
-    render(<ExerciseDataView clientId="client-1" />);
-
-    expect(screen.getByText("Mar 1 to Apr 1")).toBeInTheDocument();
+    expect(screen.queryByText("Last")).not.toBeInTheDocument();
+    expect(screen.queryByText("sessions")).not.toBeInTheDocument();
   });
 
   it("pre-selects exercise from exerciseId URL param", () => {
@@ -221,9 +211,7 @@ describe("ExerciseDataView", () => {
 
     render(<ExerciseDataView clientId="client-1" />);
 
-    // The combobox should display the selected exercise name
     expect(screen.getByText("Bench Press")).toBeInTheDocument();
-    // Metric controls should be visible (meaning exercise is selected)
     expect(screen.getByText("Weight")).toBeInTheDocument();
   });
 });

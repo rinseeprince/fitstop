@@ -3,7 +3,7 @@ import { render, screen } from "@testing-library/react";
 import { ExerciseTrendChart } from "./exercise-trend-chart";
 import type { ExerciseProgressionPoint } from "@/types/training";
 
-// Recharts needs ResizeObserver in jsdom
+// Recharts needs ResizeObserver
 class ResizeObserverMock {
   observe() {}
   unobserve() {}
@@ -74,45 +74,35 @@ describe("ExerciseTrendChart", () => {
     ).toBeInTheDocument();
   });
 
-  it("renders chart container for weight metric with sufficient data", () => {
+  it("renders chart card with title for weight metric", () => {
     const data = [
       makePoint({ date: "2026-03-01", topSetWeight: 80 }),
       makePoint({ date: "2026-03-08", topSetWeight: 85 }),
       makePoint({ date: "2026-03-15", topSetWeight: 87.5 }),
     ];
 
-    const { container } = render(
-      <ExerciseTrendChart
-        data={data}
-        metric="weight"
-        isLoading={false}
-      />,
+    render(
+      <ExerciseTrendChart data={data} metric="weight" isLoading={false} />,
     );
 
-    // Recharts renders an SVG inside a ResponsiveContainer
-    const chartContainer = container.querySelector(".recharts-responsive-container");
-    expect(chartContainer).toBeInTheDocument();
+    expect(screen.getByText("Top set weight over time")).toBeInTheDocument();
+    expect(screen.getByText("Heaviest weight lifted per session")).toBeInTheDocument();
   });
 
-  it("renders chart container for volume metric (bar chart)", () => {
+  it("renders chart card with title for volume metric", () => {
     const data = [
       makePoint({ date: "2026-03-01", totalVolume: 2400 }),
       makePoint({ date: "2026-03-08", totalVolume: 2600 }),
     ];
 
-    const { container } = render(
-      <ExerciseTrendChart
-        data={data}
-        metric="volume"
-        isLoading={false}
-      />,
+    render(
+      <ExerciseTrendChart data={data} metric="volume" isLoading={false} />,
     );
 
-    const chartContainer = container.querySelector(".recharts-responsive-container");
-    expect(chartContainer).toBeInTheDocument();
+    expect(screen.getByText("Session volume")).toBeInTheDocument();
   });
 
-  it("renders compliance summary stat", () => {
+  it("renders compliance summary as chart subtitle", () => {
     const data = [
       makePoint({ date: "2026-03-01", prescribedSets: 3, actualSets: 3 }),
       makePoint({ date: "2026-03-08", prescribedSets: 3, actualSets: 2 }),
@@ -120,11 +110,7 @@ describe("ExerciseTrendChart", () => {
     ];
 
     render(
-      <ExerciseTrendChart
-        data={data}
-        metric="compliance"
-        isLoading={false}
-      />,
+      <ExerciseTrendChart data={data} metric="compliance" isLoading={false} />,
     );
 
     expect(
@@ -139,15 +125,25 @@ describe("ExerciseTrendChart", () => {
     ];
 
     render(
-      <ExerciseTrendChart
-        data={data}
-        metric="compliance"
-        isLoading={false}
-      />,
+      <ExerciseTrendChart data={data} metric="compliance" isLoading={false} />,
     );
 
     expect(
       screen.getByText(/No prescribed data available/),
     ).toBeInTheDocument();
+  });
+
+  it("renders compliance legend items", () => {
+    const data = [
+      makePoint({ date: "2026-03-01", prescribedSets: 3, actualSets: 3 }),
+      makePoint({ date: "2026-03-08", prescribedSets: 3, actualSets: 3 }),
+    ];
+
+    render(
+      <ExerciseTrendChart data={data} metric="compliance" isLoading={false} />,
+    );
+
+    expect(screen.getByText("Prescribed")).toBeInTheDocument();
+    expect(screen.getByText("Completed")).toBeInTheDocument();
   });
 });

@@ -14,11 +14,11 @@ function makePR(overrides: Partial<ExercisePR> = {}): ExercisePR {
 }
 
 describe("ExercisePrView", () => {
-  it("renders PR cards ordered by reps ascending", () => {
+  it("renders PR cards sorted by recency (newest first)", () => {
     const data = [
-      makePR({ reps: 5, weight: 100 }),
-      makePR({ reps: 1, weight: 120 }),
-      makePR({ reps: 3, weight: 110 }),
+      makePR({ reps: 5, weight: 100, date: "2026-02-01T00:00:00Z" }),
+      makePR({ reps: 1, weight: 120, date: "2026-04-01T00:00:00Z" }),
+      makePR({ reps: 3, weight: 110, date: "2026-03-01T00:00:00Z" }),
     ];
 
     render(<ExercisePrView data={data} isLoading={false} />);
@@ -62,12 +62,13 @@ describe("ExercisePrView", () => {
     expect(skeletons.length).toBe(4);
   });
 
-  it("renders correct weight and date", () => {
+  it("renders correct weight with unit and date", () => {
     const data = [makePR({ reps: 1, weight: 120, date: "2026-03-15T00:00:00Z" })];
 
     render(<ExercisePrView data={data} isLoading={false} />);
 
     expect(screen.getByText("120")).toBeInTheDocument();
+    expect(screen.getByText("kg")).toBeInTheDocument();
     expect(screen.getByText("Mar 15, 2026")).toBeInTheDocument();
   });
 });
