@@ -485,3 +485,36 @@ export type TrainingEventDetail = {
   sessionLog: SessionLog | null;
   exerciseLogs: ExerciseLog[];
 };
+
+// =============================================================================
+// Exercise analytics types (Session 1.8)
+// Used by exercise-analytics-service and exercise-history API route.
+// =============================================================================
+
+export type ExerciseListItem = {
+  exerciseId: string | null;
+  name: string;
+  logCount: number;
+  lastLoggedDate: string;
+};
+
+export type ExerciseProgressionPoint = {
+  date: string;
+  sessionLogId: string;
+  topSetWeight: number | null;
+  topSetReps: number | null;
+  estimatedOneRepMax: number | null;
+  totalVolume: number | null;
+  topSetRpe: number | null;
+  prescribedSets: number | null;
+  actualSets: number;
+  prescribedRepsMin: number | null;
+  prescribedRepsMax: number | null;
+};
+
+export type ExercisePR = {
+  reps: number;
+  weight: number;
+  date: string;
+  isRecent: boolean;
+};

@@ -499,6 +499,8 @@ Session 0.1 confirmed no `timezone` column exists on `clients` and all date help
 
 ## Session 1.8: Exercise history data layer + API (coach-side)
 
+**Status**: COMPLETE
+
 **Commit message**: `feat(training): add exercise history analytics service and coach API endpoint`
 
 **Objective**: Build the service layer and API route that power exercise trend charts. The service must union two exercise identity paths to find all logs for a given exercise: `exercise_logs.exercise_id` (populated for swap/unplanned picks) and `exercise_logs.training_exercise_id -> training_exercises.exercise_id` (for prescribed exercises that were not swapped). Returns time-series metrics and personal records. Session 7.7 (Metrics tab exercise charts) shares this data layer.
