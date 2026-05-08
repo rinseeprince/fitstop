@@ -105,11 +105,11 @@ export const addSession = async (
     .insert({
       plan_id: planId,
       name: session.name,
-      day_of_week: session.dayOfWeek || null,
+      day_of_week: session.dayOfWeek ?? null,
       order_index: nextOrderIndex,
-      focus: session.focus || null,
-      notes: session.notes || null,
-      estimated_duration_minutes: session.estimatedDurationMinutes || null,
+      focus: session.focus ?? null,
+      notes: session.notes ?? null,
+      estimated_duration_minutes: session.estimatedDurationMinutes ?? null,
     })
     .select()
     .single();

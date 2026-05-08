@@ -2,6 +2,10 @@ import type {
   SavedPlan,
   SavedSession,
   SavedExercise,
+  SavedPlanStatus,
+  SavedPlanSource,
+  SavedSessionType,
+  TrainingSplitType,
 } from "@/types/training";
 import type {
   CoachSavedPlanRow,
@@ -56,7 +60,7 @@ export function mapSavedSessionRow(
     estimatedDurationMinutes: row.estimated_duration_minutes ?? null,
     calorieSurplusPercentage: row.calorie_surplus_percentage ?? null,
     notes: row.notes ?? null,
-    sessionType: "training",
+    sessionType: row.session_type as SavedSessionType,
     exercises,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -72,15 +76,15 @@ export function mapSavedPlanRow(
     coachId: row.coach_id,
     name: row.name,
     description: row.description ?? null,
-    splitType: row.split_type ?? null,
+    splitType: (row.split_type ?? null) as TrainingSplitType | null,
     frequencyPerWeek: row.frequency_per_week ?? null,
-    status: row.status as "draft" | "saved",
+    status: row.status as SavedPlanStatus,
     cycleLength: row.cycle_length ?? null,
     restPattern: row.rest_pattern ?? [],
     defaultSurplusPercentage: row.default_surplus_percentage
       ? Number(row.default_surplus_percentage)
       : null,
-    source: row.source ?? "manual",
+    source: (row.source ?? "manual") as SavedPlanSource,
     coachPrompt: row.coach_prompt ?? null,
     programDurationWeeks: row.program_duration_weeks ?? null,
     sessions,

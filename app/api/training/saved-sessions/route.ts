@@ -6,6 +6,7 @@ import {
   getStandaloneSessions,
   createStandaloneSession,
 } from "@/services/coach-saved-session-service";
+import { createStandaloneSessionSchema } from "@/lib/validations/training";
 
 // GET - List standalone sessions for the authenticated coach
 export async function GET(request: NextRequest) {
@@ -13,7 +14,7 @@ export async function GET(request: NextRequest) {
   if (rateLimitResult) return rateLimitResult;
 
   try {
-    const coachId = await getAuthenticatedCoachId();
+    const coachId = await getAuthenticatedCoachId(request);
     if (!coachId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -35,24 +36,25 @@ export async function POST(request: NextRequest) {
   if (csrfError) return csrfError;
 
   try {
-    const coachId = await getAuthenticatedCoachId();
+    const coachId = await getAuthenticatedCoachId(request);
     if (!coachId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const body = await request.json();
 
-    if (!body.name || typeof body.name !== "string" || !body.name.trim()) {
-      return NextResponse.json({ error: "Session name is required" }, { status: 400 });
-    }
-    if (!Array.isArray(body.exercises) || body.exercises.length === 0) {
-      return NextResponse.json({ error: "At least one exercise is required" }, { status: 400 });
+    const parsed = createStandaloneSessionSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { success: false, error: parsed.error.issues[0]?.message || "Invalid input" },
+        { status: 400 }
+      );
     }
 
     const sessionId = await createStandaloneSession(coachId, {
-      name: body.name.trim(),
-      focus: body.focus,
-      exercises: body.exercises,
+      name: parsed.data.name,
+      focus: parsed.data.focus,
+      exercises: parsed.data.exercises,
     });
 
     return NextResponse.json({ success: true, sessionId }, { status: 201 });

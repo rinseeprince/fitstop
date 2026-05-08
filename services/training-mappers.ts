@@ -2,6 +2,8 @@ import type {
   TrainingPlan,
   TrainingSession,
   TrainingExercise,
+  TrainingPlanStatus,
+  TrainingSplitType,
 } from "@/types/training";
 import type { TrainingExerciseRow, TrainingSessionRow, TrainingPlanRow } from "@/lib/database-helpers";
 
@@ -21,7 +23,7 @@ export const mapExerciseRow = (row: TrainingExerciseRow): TrainingExercise => ({
   restSeconds: row.rest_seconds ?? undefined,
   notes: row.notes ?? undefined,
   supersetGroup: row.superset_group ?? undefined,
-  isWarmup: row.is_warmup || false,
+  isWarmup: row.is_warmup ?? false,
   exerciseId: row.exercise_id ?? null,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
@@ -52,10 +54,10 @@ export const mapPlanRow = (row: TrainingPlanRow, sessions: TrainingSession[] = [
   coachId: row.coach_id,
   name: row.name,
   description: row.description ?? undefined,
-  status: row.status as "draft" | "active" | "archived",
+  status: row.status as TrainingPlanStatus,
   coachPrompt: row.coach_prompt ?? undefined,
   aiResponseRaw: row.ai_response_raw ?? undefined,
-  splitType: row.split_type as "push_pull_legs" | "upper_lower" | "full_body" | "bro_split" | "push_pull" | "custom",
+  splitType: row.split_type as TrainingSplitType,
   frequencyPerWeek: row.frequency_per_week,
   programDurationWeeks: row.program_duration_weeks ?? undefined,
   clientWeightKg: row.client_weight_kg ?? undefined,

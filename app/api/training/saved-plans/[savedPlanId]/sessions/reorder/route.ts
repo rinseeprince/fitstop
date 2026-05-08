@@ -3,6 +3,7 @@ import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { reorderSavedSessions } from "@/services/coach-saved-session-service";
+import { reorderSavedSessionsSchema } from "@/lib/validations/training";
 
 // PATCH - Bulk reorder sessions within a plan
 export async function PATCH(
@@ -16,7 +17,7 @@ export async function PATCH(
   if (csrfError) return csrfError;
 
   try {
-    const coachId = await getAuthenticatedCoachId();
+    const coachId = await getAuthenticatedCoachId(request);
     if (!coachId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -24,15 +25,18 @@ export async function PATCH(
     const { savedPlanId } = await params;
     const body = await request.json();
 
-    if (!Array.isArray(body.order) || body.order.length === 0) {
-      return NextResponse.json({ error: "Order array is required" }, { status: 400 });
+    const parsed = reorderSavedSessionsSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { success: false, error: parsed.error.issues[0]?.message || "Invalid input" },
+        { status: 400 }
+      );
     }
 
-    await reorderSavedSessions(savedPlanId, coachId, body.order);
+    await reorderSavedSessions(savedPlanId, coachId, parsed.data.order);
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to reorder sessions";
     console.error("Error reordering sessions:", error);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: "Failed to reorder sessions" }, { status: 500 });
   }
 }

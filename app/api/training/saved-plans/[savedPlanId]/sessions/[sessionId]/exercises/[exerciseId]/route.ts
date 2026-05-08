@@ -6,6 +6,7 @@ import {
   updateSavedExercise,
   removeSavedExercise,
 } from "@/services/coach-saved-session-service";
+import { updateSavedExerciseSchema } from "@/lib/validations/training";
 
 type Params = {
   params: Promise<{ savedPlanId: string; sessionId: string; exerciseId: string }>;
@@ -20,7 +21,7 @@ export async function PATCH(request: NextRequest, { params }: Params) {
   if (csrfError) return csrfError;
 
   try {
-    const coachId = await getAuthenticatedCoachId();
+    const coachId = await getAuthenticatedCoachId(request);
     if (!coachId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -28,12 +29,19 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     const { exerciseId } = await params;
     const body = await request.json();
 
-    await updateSavedExercise(exerciseId, coachId, body);
+    const parsed = updateSavedExerciseSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { success: false, error: parsed.error.issues[0]?.message || "Invalid input" },
+        { status: 400 }
+      );
+    }
+
+    await updateSavedExercise(exerciseId, coachId, parsed.data);
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to update exercise";
     console.error("Error updating exercise:", error);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: "Failed to update exercise" }, { status: 500 });
   }
 }
 
@@ -46,7 +54,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
   if (csrfError) return csrfError;
 
   try {
-    const coachId = await getAuthenticatedCoachId();
+    const coachId = await getAuthenticatedCoachId(request);
     if (!coachId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

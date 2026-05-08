@@ -6,6 +6,7 @@ import {
   updateSavedSession,
   removeSavedSession,
 } from "@/services/coach-saved-session-service";
+import { updateSavedSessionSchema } from "@/lib/validations/training";
 
 type Params = { params: Promise<{ savedPlanId: string; sessionId: string }> };
 
@@ -18,7 +19,7 @@ export async function PATCH(request: NextRequest, { params }: Params) {
   if (csrfError) return csrfError;
 
   try {
-    const coachId = await getAuthenticatedCoachId();
+    const coachId = await getAuthenticatedCoachId(request);
     if (!coachId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -26,12 +27,19 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     const { sessionId } = await params;
     const body = await request.json();
 
-    await updateSavedSession(sessionId, coachId, body);
+    const parsed = updateSavedSessionSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { success: false, error: parsed.error.issues[0]?.message || "Invalid input" },
+        { status: 400 }
+      );
+    }
+
+    await updateSavedSession(sessionId, coachId, parsed.data);
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to update session";
     console.error("Error updating session:", error);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: "Failed to update session" }, { status: 500 });
   }
 }
 
@@ -44,7 +52,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
   if (csrfError) return csrfError;
 
   try {
-    const coachId = await getAuthenticatedCoachId();
+    const coachId = await getAuthenticatedCoachId(request);
     if (!coachId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

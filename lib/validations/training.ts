@@ -78,6 +78,123 @@ export const reorderSessionSchema = z.object({
 export const reorderSessionsSchema = z.array(reorderSessionSchema);
 
 // =============================================================================
+// Coach library (saved-plan / saved-session) mutation schemas
+// =============================================================================
+
+export const savedExerciseInputSchema = z.object({
+  name: z.string().min(1).max(200),
+  exerciseId: z.string().uuid().nullish(),
+  orderIndex: z.number().int().min(0),
+  sets: z.number().int().min(1).max(20),
+  repsMin: z.number().int().min(0).max(100).nullish(),
+  repsMax: z.number().int().min(0).max(100).nullish(),
+  repsTarget: z.string().max(20).nullish(),
+  rpeTarget: z.number().min(0).max(10).nullish(),
+  percentage1rm: z.number().min(0).max(100).nullish(),
+  tempo: z.string().max(20).nullish(),
+  restSeconds: z.number().int().min(0).max(600).nullish(),
+  notes: z.string().max(500).nullish(),
+  supersetGroup: z.string().max(10).nullish(),
+  isWarmup: z.boolean().optional(),
+});
+
+export const savedSessionInputSchema = z.object({
+  name: z.string().min(1).max(100),
+  focus: z.string().max(200).nullish(),
+  orderIndex: z.number().int().min(0),
+  isRest: z.boolean(),
+  estimatedDurationMinutes: z.number().int().min(0).max(480).nullish(),
+  calorieSurplusPercentage: z.number().min(0).max(100).nullish(),
+  notes: z.string().max(1000).nullish(),
+  sessionType: z.string().max(50).nullish(),
+  exercises: z.array(savedExerciseInputSchema),
+});
+
+export const updateSavedPlanSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  description: z.string().max(500).nullish(),
+  splitType: splitTypeSchema.nullish(),
+  frequencyPerWeek: z.number().int().min(1).max(7).nullish(),
+  cycleLength: z.number().int().min(1).max(52).nullish(),
+  restPattern: z.array(z.number().int()).optional(),
+  defaultSurplusPercentage: z.number().min(0).max(100).nullish(),
+  programDurationWeeks: z.number().int().min(1).max(52).nullish(),
+});
+
+export const createSavedPlanSchema = z.object({
+  name: z.string().min(1).max(100),
+  splitType: splitTypeSchema,
+  sessions: z.array(z.object({
+    tempId: z.string().optional(),
+    name: z.string().min(1).max(100),
+    dayOfWeek: z.string().optional(),
+    focus: z.string().max(200).optional(),
+    isRest: z.boolean().optional(),
+    exercises: z.array(z.object({
+      tempId: z.string().optional(),
+      name: z.string().min(1).max(200),
+      sets: z.number().int().min(1).max(20),
+      repsTarget: z.string().max(20).optional(),
+      rpeTarget: z.number().min(0).max(10).optional(),
+      restSeconds: z.number().int().min(0).max(600).optional(),
+      notes: z.string().max(500).optional(),
+    })),
+  })),
+});
+
+export const createStandaloneSessionSchema = z.object({
+  name: z.string().min(1).max(100),
+  focus: z.string().max(200).optional(),
+  exercises: z.array(z.object({
+    name: z.string().min(1).max(200),
+    sets: z.number().int().min(1).max(20),
+    repsTarget: z.string().max(20).optional(),
+    rpeTarget: z.number().min(0).max(10).optional(),
+    restSeconds: z.number().int().min(0).max(600).optional(),
+    notes: z.string().max(500).optional(),
+  })),
+});
+
+export const overwriteSavedPlanSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  description: z.string().max(500).nullish(),
+  defaultSurplusPercentage: z.number().min(0).max(100).nullish(),
+  sessions: z.array(savedSessionInputSchema),
+});
+
+export const updateSavedSessionSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  focus: z.string().max(200).nullish(),
+  isRest: z.boolean().optional(),
+  estimatedDurationMinutes: z.number().int().min(0).max(480).nullish(),
+  calorieSurplusPercentage: z.number().min(0).max(100).nullish(),
+  notes: z.string().max(1000).nullish(),
+  sessionType: z.string().max(50).optional(),
+});
+
+export const updateSavedExerciseSchema = z.object({
+  name: z.string().min(1).max(200).optional(),
+  sets: z.number().int().min(1).max(20).optional(),
+  repsMin: z.number().int().min(0).max(100).nullish(),
+  repsMax: z.number().int().min(0).max(100).nullish(),
+  repsTarget: z.string().max(20).nullish(),
+  rpeTarget: z.number().min(0).max(10).nullish(),
+  percentage1rm: z.number().min(0).max(100).nullish(),
+  tempo: z.string().max(20).nullish(),
+  restSeconds: z.number().int().min(0).max(600).nullish(),
+  notes: z.string().max(500).nullish(),
+  supersetGroup: z.string().max(10).nullish(),
+  isWarmup: z.boolean().optional(),
+});
+
+export const reorderSavedSessionsSchema = z.object({
+  order: z.array(z.object({
+    sessionId: z.string().uuid(),
+    orderIndex: z.number().int().min(0),
+  })).min(1),
+});
+
+// =============================================================================
 // Event-keyed training log schemas (Session 1.1)
 // Quick log = { completionQuality, notes? } — no exercises array.
 // Detailed log = same plus an exercises array of per-exercise performance.

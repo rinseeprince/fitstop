@@ -11,7 +11,7 @@ export interface ClientNotification {
   timestamp: string;
   actionUrl: string;
   read: boolean;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 interface ClientNotifications {

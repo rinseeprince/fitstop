@@ -39,7 +39,7 @@ export const createContentItem = async (
     .single();
 
   if (error) {
-    throw new Error(`Failed to create content item: ${error.message}`);
+    throw new Error("Failed to create content item");
   }
 
   return mapContentItemFromDatabase(data);
@@ -49,7 +49,7 @@ export const updateContentItem = async (
   contentId: string,
   input: UpdateContentItemInput,
 ): Promise<ContentItem> => {
-  const updateData: any = {
+  const raw: Record<string, unknown> = {
     folder_id: input.folderId,
     title: input.title,
     description: input.description,
@@ -61,11 +61,9 @@ export const updateContentItem = async (
   };
 
   // Remove undefined values to avoid updating with null
-  Object.keys(updateData).forEach((key) => {
-    if (updateData[key] === undefined) {
-      delete updateData[key];
-    }
-  });
+  const updateData = Object.fromEntries(
+    Object.entries(raw).filter(([, v]) => v !== undefined)
+  );
 
   const { data, error } = await supabaseAdmin
     .from("content_items")
@@ -75,7 +73,7 @@ export const updateContentItem = async (
     .single();
 
   if (error) {
-    throw new Error(`Failed to update content item: ${error.message}`);
+    throw new Error("Failed to update content item");
   }
 
   return mapContentItemFromDatabase(data);
@@ -103,7 +101,7 @@ export const deleteContentItem = async (contentId: string): Promise<void> => {
     .eq("id", contentId);
 
   if (error) {
-    throw new Error(`Failed to delete content item: ${error.message}`);
+    throw new Error("Failed to delete content item");
   }
 };
 
@@ -118,7 +116,7 @@ export const getCoachContent = async (
     .order("created_at", { ascending: false });
 
   if (error) {
-    throw new Error(`Failed to fetch content: ${error.message}`);
+    throw new Error("Failed to fetch content");
   }
 
   return data.map(mapContentItemFromDatabase);
@@ -134,7 +132,7 @@ export const getContentById = async (
     .single();
 
   if (error) {
-    throw new Error(`Failed to fetch content: ${error.message}`);
+    throw new Error("Failed to fetch content");
   }
 
   return mapContentItemFromDatabase(data);

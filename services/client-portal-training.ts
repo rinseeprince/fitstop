@@ -1,5 +1,6 @@
 import type { TrainingPlan, TrainingSession, TrainingExercise } from "@/types/training";
 import type { TrainingSessionRow, TrainingExerciseRow, SessionLogRow } from "@/lib/database-helpers";
+import type { Json } from "@/types/database";
 // Imported directly from lib/supabase-server (not re-exported via
 // client-portal-service) to avoid a circular import:
 // client-portal-service ↔ client-portal-training. Aliased so call sites stay
@@ -60,20 +61,20 @@ export async function getClientTrainingPlan(
 
   // Filter to active sessions and sort by order_index
   const sessionList = ((planData.training_sessions || []) as SessionRowWithExercises[])
-    .filter((s) => (s as unknown as { is_active: boolean }).is_active !== false)
+    .filter((s) => s.is_active !== false)
     .sort((a, b) => a.order_index - b.order_index);
 
   // Map sessions and exercises to the expected format
   const sessions: TrainingSession[] = sessionList.map((session) => {
     // Filter to active exercises and sort by order_index within each session
     const exerciseList = (session.training_exercises || [])
-      .filter((e) => (e as unknown as { is_active: boolean }).is_active !== false)
+      .filter((e) => e.is_active !== false)
       .sort((a, b) => a.order_index - b.order_index);
 
     const exercises: TrainingExercise[] = exerciseList.map((ex) => ({
       id: ex.id,
       sessionId: ex.session_id,
-      exerciseId: (ex as unknown as { exercise_id: string | null }).exercise_id ?? null,
+      exerciseId: ex.exercise_id ?? null,
       name: ex.name,
       orderIndex: ex.order_index,
       sets: ex.sets,
@@ -176,7 +177,7 @@ export async function markSessionComplete(
   const supabase = await createPortalClient();
 
   // Build snapshot from the training session for history preservation
-  let snapshot: Record<string, unknown> | null = null;
+  let snapshot: Json | null = null;
   const { data: sessionData } = await supabase
     .from("training_sessions")
     .select("name, day_of_week, focus, estimated_duration_minutes, estimated_calories")
@@ -186,7 +187,6 @@ export async function markSessionComplete(
     snapshot = sessionData;
   }
 
-  // prescribed_session_snapshot not yet in generated types
   const upsertPayload = {
     client_id: clientId,
     training_session_id: trainingSessionId,
@@ -199,7 +199,7 @@ export async function markSessionComplete(
 
   const { data, error } = await supabase
     .from("session_logs")
-    .upsert(upsertPayload as never, {
+    .upsert(upsertPayload, {
       onConflict: "client_id,training_session_id,week_start_date",
     })
     .select()

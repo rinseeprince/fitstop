@@ -16,7 +16,7 @@ export async function POST(
   if (csrfError) return csrfError;
 
   try {
-    const coachId = await getAuthenticatedCoachId();
+    const coachId = await getAuthenticatedCoachId(request);
     if (!coachId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -40,8 +40,7 @@ export async function POST(
 
     return NextResponse.json({ success: true, sessionId }, { status: 201 });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to add session";
     console.error("Error adding session:", error);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: "Failed to add session" }, { status: 500 });
   }
 }

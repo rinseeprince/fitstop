@@ -91,7 +91,8 @@ export async function getCoachClientIds(
   const { data: clients, error } = await supabaseAdmin
     .from("clients")
     .select("id")
-    .eq("coach_id", coachId);
+    .eq("coach_id", coachId)
+    .eq("active", true);
 
   if (error) {
     throw new Error("Failed to fetch coach clients");

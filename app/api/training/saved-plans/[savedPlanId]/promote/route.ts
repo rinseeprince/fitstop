@@ -16,7 +16,7 @@ export async function POST(
   if (csrfError) return csrfError;
 
   try {
-    const coachId = await getAuthenticatedCoachId();
+    const coachId = await getAuthenticatedCoachId(request);
     if (!coachId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -39,7 +39,7 @@ export async function POST(
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to promote plan";
+    const message = error instanceof Error ? error.message : "";
     if (message === "Plan not found" || message === "Access denied") {
       return NextResponse.json({ error: message }, { status: 403 });
     }

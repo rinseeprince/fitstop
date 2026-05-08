@@ -5,7 +5,7 @@ import { deleteFutureEventsForPlan } from "./training-event-service";
 import { validatePhaseBounds } from "./training-event-calendar-service";
 import { getDateString } from "@/lib/date-helpers";
 import { captureApiError } from "@/lib/error-handler";
-import type { TrainingEventInsert } from "@/lib/database-helpers";
+import type { TrainingEventInsert, CoachSavedExerciseRow } from "@/lib/database-helpers";
 import type { SavedSession, SavedExercise } from "@/types/training";
 
 // --- Shape used by both DB-backed and inline (in-memory) placements ---
@@ -271,27 +271,26 @@ export async function placeSessionOnCalendar(params: {
 
   // 4. Clone exercises
   const exercises = (savedSession.coach_saved_exercises ?? []).sort(
-    (a: { order_index: number }, b: { order_index: number }) => a.order_index - b.order_index
+    (a: CoachSavedExerciseRow, b: CoachSavedExerciseRow) => a.order_index - b.order_index
   );
 
   if (exercises.length > 0) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const exerciseInserts = exercises.map((ex: any) => ({
+    const exerciseInserts = exercises.map((ex: CoachSavedExerciseRow) => ({
       session_id: clonedSession.id,
-      name: ex.name as string,
-      exercise_id: (ex.exercise_id as string | null) ?? null,
-      order_index: ex.order_index as number,
-      sets: ex.sets as number,
-      reps_min: (ex.reps_min as number | null) ?? null,
-      reps_max: (ex.reps_max as number | null) ?? null,
-      reps_target: (ex.reps_target as string | null) ?? null,
-      rpe_target: (ex.rpe_target as number | null) ?? null,
-      percentage_1rm: (ex.percentage_1rm as number | null) ?? null,
-      tempo: (ex.tempo as string | null) ?? null,
-      rest_seconds: (ex.rest_seconds as number | null) ?? null,
-      notes: (ex.notes as string | null) ?? null,
-      superset_group: (ex.superset_group as string | null) ?? null,
-      is_warmup: (ex.is_warmup as boolean) ?? false,
+      name: ex.name,
+      exercise_id: ex.exercise_id ?? null,
+      order_index: ex.order_index,
+      sets: ex.sets,
+      reps_min: ex.reps_min ?? null,
+      reps_max: ex.reps_max ?? null,
+      reps_target: ex.reps_target ?? null,
+      rpe_target: ex.rpe_target ?? null,
+      percentage_1rm: ex.percentage_1rm ?? null,
+      tempo: ex.tempo ?? null,
+      rest_seconds: ex.rest_seconds ?? null,
+      notes: ex.notes ?? null,
+      superset_group: ex.superset_group ?? null,
+      is_warmup: ex.is_warmup ?? false,
       is_active: true,
     }));
 

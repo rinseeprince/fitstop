@@ -3,6 +3,11 @@ import type {
   ContentItem,
   ContentAssignment,
 } from "@/types/content";
+import type {
+  ContentFolderRow,
+  ContentItemRow,
+  ContentAssignmentRow,
+} from "@/lib/database-helpers";
 
 /**
  * Pure row-to-domain mappers for the content library tables. Shared across
@@ -12,41 +17,37 @@ import type {
  * getClientAssignedContent cross the line).
  */
 
-// Using any for the Supabase row shape: the content_* tables currently live
-// outside the generated Database types. Once types/database.ts is regenerated
-// these can tighten to the real row types.
-
-export const mapFolderFromDatabase = (row: any): ContentFolder => ({
+export const mapFolderFromDatabase = (row: ContentFolderRow): ContentFolder => ({
   id: row.id,
   coachId: row.coach_id,
   name: row.name,
-  parentFolderId: row.parent_folder_id,
-  sortOrder: row.sort_order,
+  parentFolderId: row.parent_folder_id ?? undefined,
+  sortOrder: row.sort_order ?? 0,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
 });
 
-export const mapContentItemFromDatabase = (row: any): ContentItem => ({
+export const mapContentItemFromDatabase = (row: ContentItemRow): ContentItem => ({
   id: row.id,
   coachId: row.coach_id,
-  folderId: row.folder_id,
+  folderId: row.folder_id ?? undefined,
   title: row.title,
-  description: row.description,
+  description: row.description ?? undefined,
   type: row.type,
-  url: row.url,
-  storagePath: row.storage_path,
-  fileName: row.file_name,
-  fileSize: row.file_size,
-  mimeType: row.mime_type,
-  thumbnailUrl: row.thumbnail_url,
-  metadata: row.metadata || {},
-  isLibrary: row.is_library,
-  sortOrder: row.sort_order,
+  url: row.url ?? undefined,
+  storagePath: row.storage_path ?? undefined,
+  fileName: row.file_name ?? undefined,
+  fileSize: row.file_size ?? undefined,
+  mimeType: row.mime_type ?? undefined,
+  thumbnailUrl: row.thumbnail_url ?? undefined,
+  metadata: (row.metadata ?? {}) as Record<string, any>,
+  isLibrary: row.is_library ?? false,
+  sortOrder: row.sort_order ?? 0,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
 });
 
-export const mapAssignmentFromDatabase = (row: any): ContentAssignment => ({
+export const mapAssignmentFromDatabase = (row: ContentAssignmentRow): ContentAssignment => ({
   id: row.id,
   contentId: row.content_id,
   clientId: row.client_id,

@@ -6,6 +6,8 @@ import {
   getSavedPlans,
   createSavedPlanManual,
 } from "@/services/coach-saved-plan-service";
+import { createSavedPlanSchema } from "@/lib/validations/training";
+import type { ManualSessionDraft } from "@/types/training";
 
 // GET - List saved plans for the authenticated coach
 export async function GET(request: NextRequest) {
@@ -13,7 +15,7 @@ export async function GET(request: NextRequest) {
   if (rateLimitResult) return rateLimitResult;
 
   try {
-    const coachId = await getAuthenticatedCoachId();
+    const coachId = await getAuthenticatedCoachId(request);
     if (!coachId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -35,28 +37,26 @@ export async function POST(request: NextRequest) {
   if (csrfError) return csrfError;
 
   try {
-    const coachId = await getAuthenticatedCoachId();
+    const coachId = await getAuthenticatedCoachId(request);
     if (!coachId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const body = await request.json();
 
-    if (!body.name || typeof body.name !== "string" || !body.name.trim()) {
-      return NextResponse.json({ error: "Plan name is required" }, { status: 400 });
-    }
-    if (!body.splitType || typeof body.splitType !== "string") {
-      return NextResponse.json({ error: "Split type is required" }, { status: 400 });
-    }
-    if (!Array.isArray(body.sessions) || body.sessions.length === 0) {
-      return NextResponse.json({ error: "At least one session is required" }, { status: 400 });
+    const parsed = createSavedPlanSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { success: false, error: parsed.error.issues[0]?.message || "Invalid input" },
+        { status: 400 }
+      );
     }
 
     const planId = await createSavedPlanManual(
       coachId,
-      body.name.trim(),
-      body.splitType,
-      body.sessions
+      parsed.data.name,
+      parsed.data.splitType,
+      parsed.data.sessions as ManualSessionDraft[]
     );
 
     return NextResponse.json({ success: true, planId }, { status: 201 });

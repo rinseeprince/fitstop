@@ -1,8 +1,8 @@
 import { createServerSupabaseClient } from "@/lib/supabase-server";
-import type { Client, CheckIn, DietType, UnitPreference } from "@/types/check-in";
+import type { Client, DietType, UnitPreference } from "@/types/check-in";
 import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
 import { buildDailyTargetsFromPlan } from "@/utils/build-daily-targets";
-import { mapClientRow, mapCheckInRow } from "@/lib/mappers";
+import { mapClientRow } from "@/lib/mappers";
 import { getClientTrainingPlan } from "./client-portal-training";
 import { getEventsForDateRange } from "./training-event-service";
 import { getTrainingWeekStart, getTrainingWeekEnd, getTodayDateString } from "@/lib/date-helpers";
@@ -50,47 +50,13 @@ export async function getClientForCurrentUser(): Promise<Client | null> {
     .eq("active", true)
     .single();
 
-  if (error || !data) return null;
+  if (error) {
+    throw new Error("Failed to fetch client for current user");
+  }
+
+  if (!data) return null;
 
   return mapClientRow(data);
-}
-
-// Get check-in history for a client
-export async function getClientCheckIns(
-  clientId: string,
-  options?: { limit?: number; offset?: number }
-): Promise<CheckIn[]> {
-  const supabase = await createPortalClient();
-  const limit = options?.limit ?? 20;
-  const offset = options?.offset ?? 0;
-
-  const { data, error } = await supabase
-    .from("check_ins")
-    .select("*")
-    .eq("client_id", clientId)
-    .order("created_at", { ascending: false })
-    .range(offset, offset + limit - 1);
-
-  if (error || !data) return [];
-
-  return data.map(mapCheckInRow);
-}
-
-// Get a single check-in by ID
-export async function getClientCheckInById(
-  checkInId: string
-): Promise<CheckIn | null> {
-  const supabase = await createPortalClient();
-
-  const { data, error } = await supabase
-    .from("check_ins")
-    .select("*")
-    .eq("id", checkInId)
-    .single();
-
-  if (error || !data) return null;
-
-  return mapCheckInRow(data);
 }
 
 // Get nutrition targets for a client with daily breakdown

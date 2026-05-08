@@ -17,7 +17,7 @@ export const uploadContentFile = async (
     });
 
   if (error) {
-    throw new Error(`Failed to upload file: ${error.message}`);
+    throw new Error("Failed to upload file");
   }
 
   return data.path;
@@ -32,7 +32,7 @@ export const getContentFileSignedUrl = async (
     .createSignedUrl(filePath, expiresIn);
 
   if (error) {
-    throw new Error(`Failed to get signed URL: ${error.message}`);
+    throw new Error("Failed to get signed URL");
   }
 
   return data.signedUrl;
@@ -44,6 +44,6 @@ export const deleteContentFile = async (filePath: string): Promise<void> => {
     .remove([filePath]);
 
   if (error) {
-    throw new Error(`Failed to delete file: ${error.message}`);
+    throw new Error("Failed to delete file");
   }
 };

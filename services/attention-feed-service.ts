@@ -37,8 +37,7 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
     .eq("onboarding_status", "active")
 
   if (clientsError || !clients) {
-    console.error("Error fetching clients:", clientsError)
-    return { clients: [], totalClientCount: 0 }
+    throw new Error("Failed to fetch clients for attention feed")
   }
 
   if (clients.length === 0) {
@@ -62,8 +61,7 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
     .order("date" as never, { ascending: true }) as unknown as { data: DailyLogRow[] | null; error: { message: string } | null }
 
   if (logsError) {
-    console.error("Error fetching daily logs:", logsError)
-    return { clients: [], totalClientCount }
+    throw new Error("Failed to fetch daily logs for attention feed")
   }
 
   // 3. Batch query all habits for all clients

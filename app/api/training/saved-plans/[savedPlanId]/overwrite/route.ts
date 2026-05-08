@@ -6,6 +6,7 @@ import {
   overwriteSavedPlan,
   type OverwriteSavedPlanInput,
 } from "@/services/coach-saved-plan-service";
+import { overwriteSavedPlanSchema } from "@/lib/validations/training";
 
 /**
  * POST - Replace a saved plan's sessions + exercises with a new working-copy
@@ -27,28 +28,27 @@ export async function POST(
   if (csrfError) return csrfError;
 
   try {
-    const coachId = await getAuthenticatedCoachId();
+    const coachId = await getAuthenticatedCoachId(request);
     if (!coachId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const { savedPlanId } = await params;
-    const body = (await request.json()) as OverwriteSavedPlanInput;
+    const body = await request.json();
 
-    if (!body || !Array.isArray(body.sessions)) {
+    const parsed = overwriteSavedPlanSchema.safeParse(body);
+    if (!parsed.success) {
       return NextResponse.json(
-        { error: "sessions array is required" },
+        { success: false, error: parsed.error.issues[0]?.message || "Invalid input" },
         { status: 400 },
       );
     }
 
-    await overwriteSavedPlan(savedPlanId, coachId, body);
+    await overwriteSavedPlan(savedPlanId, coachId, parsed.data as OverwriteSavedPlanInput);
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Failed to overwrite plan";
     console.error("Error overwriting saved plan:", error);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: "Failed to overwrite plan" }, { status: 500 });
   }
 }

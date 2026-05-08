@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
     if (error) {
       console.error("Error fetching phase completion:", error);
       return NextResponse.json(
-        { error: "Failed to fetch phase completion" },
+        { success: false, error: "Failed to fetch phase completion" },
         { status: 500 }
       );
     }
@@ -101,7 +101,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("Error fetching phase completion:", error);
     return NextResponse.json(
-      { error: "Failed to fetch phase completion" },
+      { success: false, error: "Failed to fetch phase completion" },
       { status: 500 }
     );
   }
@@ -133,7 +133,7 @@ export async function POST(request: NextRequest) {
     if (error) {
       console.error("Error marking phase completion as seen:", error);
       return NextResponse.json(
-        { error: "Failed to mark completion as seen" },
+        { success: false, error: "Failed to mark completion as seen" },
         { status: 500 }
       );
     }
@@ -142,7 +142,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("Error marking phase completion as seen:", error);
     return NextResponse.json(
-      { error: "Failed to mark completion as seen" },
+      { success: false, error: "Failed to mark completion as seen" },
       { status: 500 }
     );
   }

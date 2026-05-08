@@ -16,7 +16,7 @@ export async function POST(
   if (csrfError) return csrfError;
 
   try {
-    const coachId = await getAuthenticatedCoachId();
+    const coachId = await getAuthenticatedCoachId(request);
     if (!coachId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -48,8 +48,7 @@ export async function POST(
 
     return NextResponse.json({ success: true, exerciseId }, { status: 201 });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to add exercise";
     console.error("Error adding exercise:", error);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: "Failed to add exercise" }, { status: 500 });
   }
 }

@@ -85,7 +85,7 @@ export const getClientAssignedContent = async (
     return [];
   }
 
-  const contentIds = assignmentData.map((a: any) => a.content_id);
+  const contentIds = assignmentData.map((a) => a.content_id);
 
   // Then get the actual content items
   const { data: contentData, error: contentError } = await supabaseAdmin

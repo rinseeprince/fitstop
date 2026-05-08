@@ -21,7 +21,7 @@ export const createContentFolder = async (
     .single();
 
   if (error) {
-    throw new Error(`Failed to create folder: ${error.message}`);
+    throw new Error("Failed to create folder");
   }
 
   return mapFolderFromDatabase(data);
@@ -43,7 +43,7 @@ export const updateContentFolder = async (
     .single();
 
   if (error) {
-    throw new Error(`Failed to update folder: ${error.message}`);
+    throw new Error("Failed to update folder");
   }
 
   return mapFolderFromDatabase(data);
@@ -56,7 +56,7 @@ export const deleteContentFolder = async (folderId: string): Promise<void> => {
     .eq("id", folderId);
 
   if (error) {
-    throw new Error(`Failed to delete folder: ${error.message}`);
+    throw new Error("Failed to delete folder");
   }
 };
 
@@ -71,7 +71,7 @@ export const getCoachFolders = async (
     .order("name", { ascending: true });
 
   if (error) {
-    throw new Error(`Failed to fetch folders: ${error.message}`);
+    throw new Error("Failed to fetch folders");
   }
 
   return data.map(mapFolderFromDatabase);

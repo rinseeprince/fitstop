@@ -351,19 +351,21 @@ export type ManualExerciseDraft = {
 // --- Coach Library Types ---
 
 export type SavedPlanStatus = 'draft' | 'saved';
+export type SavedPlanSource = 'ai' | 'manual';
+export type SavedSessionType = 'training';
 
 export type SavedPlan = {
   id: string;
   coachId: string;
   name: string;
   description: string | null;
-  splitType: string | null;
+  splitType: TrainingSplitType | null;
   frequencyPerWeek: number | null;
   status: SavedPlanStatus;
   cycleLength: number | null;
   restPattern: number[];
   defaultSurplusPercentage: number | null;
-  source: string;
+  source: SavedPlanSource;
   coachPrompt: string | null;
   programDurationWeeks: number | null;
   sessions: SavedSession[];
@@ -382,7 +384,7 @@ export type SavedSession = {
   estimatedDurationMinutes: number | null;
   calorieSurplusPercentage: number | null;
   notes: string | null;
-  sessionType: string;
+  sessionType: SavedSessionType;
   exercises: SavedExercise[];
   createdAt: string;
   updatedAt: string;
