@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useCallback } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { HistoryTable, type ColumnDef } from "@/components/clients/history-table/history-table";
 import { HistoryChartDialog } from "@/components/clients/history-table/history-chart-dialog";
@@ -88,9 +89,27 @@ type Props = {
 export function TrainingHistoryTable({ clientId }: Props) {
   const builder = useTrainingBuilderContext();
   const { plan } = builder;
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [page, setPage] = useState(0);
   const [chartColumn, setChartColumn] = useState<string | null>(null);
   const [selectedSessionLogId, setSelectedSessionLogId] = useState<string | null>(null);
+
+  const handleExerciseDrillDown = useCallback(
+    (exerciseId: string | null, exerciseName: string) => {
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("subtab", "exercise-data");
+      if (exerciseId) {
+        params.set("exerciseId", exerciseId);
+      } else {
+        params.delete("exerciseId");
+      }
+      params.set("exerciseName", exerciseName);
+      setSelectedSessionLogId(null);
+      router.replace(`?${params.toString()}`, { scroll: false });
+    },
+    [searchParams, router],
+  );
 
   const { rows, total, isLoading } = useHistoryData<TrainingHistoryRow>(
     `/api/clients/${clientId}/history/training`,
@@ -313,6 +332,7 @@ export function TrainingHistoryTable({ clientId }: Props) {
         onOpenChange={(open) => {
           if (!open) setSelectedSessionLogId(null);
         }}
+        onExerciseDrillDown={handleExerciseDrillDown}
       />
 
       <HistoryChartDialog

@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Check } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import type { SessionLog, ExerciseLog } from "@/types/training";
 
@@ -21,6 +22,7 @@ type SessionLogDetailDialogProps = {
   sessionLogId: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onExerciseDrillDown?: (exerciseId: string | null, exerciseName: string) => void;
 };
 
 type SessionLogDetailResponse = {
@@ -88,7 +90,13 @@ function rpeColor(actual: number, prescribedRpe: number | null): string {
 // ExerciseLogCard
 // ---------------------------------------------------------------------------
 
-function ExerciseLogCard({ log }: { log: ExerciseLog }) {
+function ExerciseLogCard({
+  log,
+  onExerciseDrillDown,
+}: {
+  log: ExerciseLog;
+  onExerciseDrillDown?: (exerciseId: string | null, exerciseName: string) => void;
+}) {
   const snapshot = log.prescribedExerciseSnapshot;
   const prescribedName = snapshotString(snapshot, "name");
   const displayName = log.performedName ?? prescribedName ?? "Unknown exercise";
@@ -133,9 +141,16 @@ function ExerciseLogCard({ log }: { log: ExerciseLog }) {
       {/* Card header: name left, prescribed right */}
       <div className="flex items-baseline justify-between px-4 pt-3 pb-2">
         <div>
-          <p className="text-[14px] font-semibold text-[#0c1a1e]">
+          <button
+            type="button"
+            onClick={() => onExerciseDrillDown?.(log.exerciseId ?? null, displayName)}
+            className={cn(
+              "text-[14px] font-semibold text-[#0c1a1e] text-left",
+              onExerciseDrillDown && "hover:text-[#0d9488] cursor-pointer transition-colors",
+            )}
+          >
             {displayName}
-          </p>
+          </button>
           {wasSwapped && (
             <p className="text-[11px] text-[#93b0b4] mt-0.5">
               Prescribed {prescribedName} · Performed {log.performedName}
@@ -223,6 +238,7 @@ export function SessionLogDetailDialog({
   sessionLogId,
   open,
   onOpenChange,
+  onExerciseDrillDown,
 }: SessionLogDetailDialogProps) {
   const { data, isLoading, error } = useSWR<SessionLogDetailResponse>(
     open && sessionLogId
@@ -339,7 +355,7 @@ export function SessionLogDetailDialog({
                 </p>
                 <div className="flex flex-col gap-[10px]">
                   {exerciseLogs.map((log) => (
-                    <ExerciseLogCard key={log.id} log={log} />
+                    <ExerciseLogCard key={log.id} log={log} onExerciseDrillDown={onExerciseDrillDown} />
                   ))}
                 </div>
               </div>

@@ -10,6 +10,7 @@ import { TrainingBuilderRightPanel } from "./training-builder-right-panel";
 import { TrainingPlanBuilderOverlay } from "./training-plan-builder-overlay";
 import { TrainingHistoryTable } from "../training-history-table";
 import { TrainingPlanHistory } from "../training-plan-history";
+import { ExerciseDataView } from "../exercise-data/exercise-data-view";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { EditModeButton, getPhaseGoalProgress, getGoalWeightDisplay } from "./training-plan-helpers";
 import { Sparkles, Loader2, AlertTriangle, Trash2 } from "lucide-react";
@@ -41,8 +42,12 @@ export function TrainingPlanBuilder({
   const searchParams = useSearchParams();
   const router = useRouter();
 
-  const subtab = searchParams.get("subtab") === "plans" ? "plans" : "data";
-  const setSubtab = (tab: "data" | "plans") => {
+  const rawSubtab = searchParams.get("subtab");
+  const subtab: "data" | "plans" | "exercise-data" =
+    rawSubtab === "plans" ? "plans"
+    : rawSubtab === "exercise-data" ? "exercise-data"
+    : "data";
+  const setSubtab = (tab: "data" | "plans" | "exercise-data") => {
     const params = new URLSearchParams(searchParams.toString());
     params.set("subtab", tab);
     router.replace(`?${params.toString()}`, { scroll: false });
@@ -65,6 +70,10 @@ export function TrainingPlanBuilder({
         {subtab === "data" ? (
           <div className="space-y-4">
             <TrainingHistoryTable clientId={client.id} />
+          </div>
+        ) : subtab === "exercise-data" ? (
+          <div className="space-y-4">
+            <ExerciseDataView clientId={client.id} />
           </div>
         ) : (
           <div className="space-y-4">
@@ -95,8 +104,8 @@ function TopContentBar({
   onOpenGenerator,
   client,
 }: {
-  subtab: "data" | "plans";
-  setSubtab: (tab: "data" | "plans") => void;
+  subtab: "data" | "plans" | "exercise-data";
+  setSubtab: (tab: "data" | "plans" | "exercise-data") => void;
   onOpenGenerator: () => void;
   client: Client;
 }) {
@@ -164,20 +173,23 @@ function TopContentBar({
     <div className="flex items-center gap-4 mb-5 flex-wrap">
       {/* Segmented control */}
       <div className="bg-[rgba(13,148,136,0.05)] rounded-[6px] p-[2px] inline-flex">
-        {(["data", "plans"] as const).map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setSubtab(tab)}
-            className={cn(
-              "px-4 py-1.5 text-[12.5px] font-medium rounded-[4px] transition-all",
-              subtab === tab
-                ? "bg-white text-[#0c1a1e] shadow-[0_1px_3px_rgba(0,0,0,0.05)]"
-                : "text-[#5a7d82] hover:text-[#0c1a1e]"
-            )}
-          >
-            {tab === "data" ? "Data" : "Plans"}
-          </button>
-        ))}
+        {(["data", "plans", "exercise-data"] as const).map((tab) => {
+          const label = tab === "data" ? "Data" : tab === "plans" ? "Plans" : "Exercise Data";
+          return (
+            <button
+              key={tab}
+              onClick={() => setSubtab(tab)}
+              className={cn(
+                "px-4 py-1.5 text-[12.5px] font-medium rounded-[4px] transition-all",
+                subtab === tab
+                  ? "bg-white text-[#0c1a1e] shadow-[0_1px_3px_rgba(0,0,0,0.05)]"
+                  : "text-[#5a7d82] hover:text-[#0c1a1e]"
+              )}
+            >
+              {label}
+            </button>
+          );
+        })}
       </div>
 
       {showPhaseInfo && (

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { SessionLogDetailDialog } from "./session-log-detail-dialog";
 import type { SessionLog, ExerciseLog, SetLog } from "@/types/training";
 
@@ -258,5 +259,57 @@ describe("SessionLogDetailDialog", () => {
     render(<SessionLogDetailDialog {...defaultProps} />);
 
     expect(screen.getByText(/failed to load session details/i)).toBeInTheDocument();
+  });
+
+  it("calls onExerciseDrillDown with exerciseId and name when exercise name is clicked", async () => {
+    const user = userEvent.setup();
+    const onDrillDown = vi.fn();
+
+    setupSWR({
+      exerciseLogs: [
+        makeExerciseLog({
+          exerciseId: "ex-1",
+          performedName: null,
+          prescribedExerciseSnapshot: { name: "Bench Press" },
+        }),
+      ],
+    });
+
+    render(
+      <SessionLogDetailDialog
+        {...defaultProps}
+        onExerciseDrillDown={onDrillDown}
+      />,
+    );
+
+    await user.click(screen.getByText("Bench Press"));
+
+    expect(onDrillDown).toHaveBeenCalledWith("ex-1", "Bench Press");
+  });
+
+  it("calls onExerciseDrillDown with null exerciseId when exerciseId is null", async () => {
+    const user = userEvent.setup();
+    const onDrillDown = vi.fn();
+
+    setupSWR({
+      exerciseLogs: [
+        makeExerciseLog({
+          exerciseId: null,
+          performedName: "Custom Exercise",
+          prescribedExerciseSnapshot: null,
+        }),
+      ],
+    });
+
+    render(
+      <SessionLogDetailDialog
+        {...defaultProps}
+        onExerciseDrillDown={onDrillDown}
+      />,
+    );
+
+    await user.click(screen.getByText("Custom Exercise"));
+
+    expect(onDrillDown).toHaveBeenCalledWith(null, "Custom Exercise");
   });
 });
