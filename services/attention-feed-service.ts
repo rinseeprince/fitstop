@@ -49,54 +49,80 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
 
   const clientIds = clients.map(c => c.id)
 
-  // 2. Batch query all daily logs for all clients (28-day window)
-  // Uses daily_logs_full view (cross-domain: needs wellness + nutrition + training)
-  const { data: allLogs, error: logsError } = await supabaseAdmin
-    // daily_logs_full is a DB view not in generated types — cast required until types are regenerated
-    .from("daily_logs_full" as never)
-    .select("*")
-    .in("client_id" as never, clientIds as never)
-    .gte("date" as never, startDate as never)
-    .lte("date" as never, endDate as never)
-    .order("date" as never, { ascending: true }) as unknown as { data: DailyLogRow[] | null; error: { message: string } | null }
+  // Fetch all data sources in parallel (Q2-Q6 are independent after Q1)
+  // Uses Promise.allSettled to preserve graceful degradation: logs are required,
+  // but habits/events/dismissals degrade gracefully if they fail
+  const [logsResult, habitsResult, habitLogsResult, eventsResult, dismissalsResult] = await Promise.allSettled([
+    // 2. Daily logs (cross-domain view, required for core triggers)
+    supabaseAdmin
+      .from("daily_logs_full" as never)
+      .select("*")
+      .in("client_id" as never, clientIds as never)
+      .gte("date" as never, startDate as never)
+      .lte("date" as never, endDate as never)
+      .order("date" as never, { ascending: true }) as unknown as Promise<{ data: DailyLogRow[] | null; error: { message: string } | null }>,
+    // 3. Habit definitions (graceful degradation)
+    supabaseAdmin
+      .from("daily_habits")
+      .select("*")
+      .in("client_id", clientIds)
+      .eq("is_active", true),
+    // 4. Habit logs (graceful degradation)
+    supabaseAdmin
+      .from("daily_habit_logs")
+      .select("*")
+      .in("client_id", clientIds)
+      .gte("date", startDate)
+      .lte("date", endDate),
+    // 5. Training events (graceful degradation)
+    supabaseAdmin
+      .from("training_events")
+      .select("client_id, date, status, estimated_calories")
+      .in("client_id", clientIds)
+      .gte("date", startDate)
+      .lte("date", endDate),
+    // 6. Dismissed alerts (graceful degradation)
+    supabaseAdmin
+      .from("attention_dismissals")
+      .select("client_id, alert_type, dismissed_at")
+      .eq("coach_id", coachId),
+  ])
 
+  // Extract results, preserving original error semantics:
+  // logs are required (throw), others degrade gracefully (log and continue)
+  if (logsResult.status === "rejected") {
+    throw new Error("Failed to fetch daily logs for attention feed")
+  }
+  const { data: allLogs, error: logsError } = logsResult.value
   if (logsError) {
     throw new Error("Failed to fetch daily logs for attention feed")
   }
 
-  // 3. Batch query all habits for all clients
-  const { data: allHabits, error: habitsError } = await supabaseAdmin
-    .from("daily_habits")
-    .select("*")
-    .in("client_id", clientIds)
-    .eq("is_active", true)
-
-  if (habitsError) {
-    console.error("Error fetching habits:", habitsError)
+  let allHabits = null
+  if (habitsResult.status === "fulfilled") {
+    if (habitsResult.value.error) {
+      console.error("Error fetching habits:", habitsResult.value.error)
+    } else {
+      allHabits = habitsResult.value.data
+    }
   }
 
-  // 4. Batch query all habit logs for all clients (28-day window)
-  const { data: allHabitLogs, error: habitLogsError } = await supabaseAdmin
-    .from("daily_habit_logs")
-    .select("*")
-    .in("client_id", clientIds)
-    .gte("date", startDate)
-    .lte("date", endDate)
-
-  if (habitLogsError) {
-    console.error("Error fetching habit logs:", habitLogsError)
+  let allHabitLogs = null
+  if (habitLogsResult.status === "fulfilled") {
+    if (habitLogsResult.value.error) {
+      console.error("Error fetching habit logs:", habitLogsResult.value.error)
+    } else {
+      allHabitLogs = habitLogsResult.value.data
+    }
   }
 
-  // 5. Batch query training events per client in the 28-day window
-  const { data: eventRows, error: eventsError } = await supabaseAdmin
-    .from("training_events")
-    .select("client_id, date, status, estimated_calories")
-    .in("client_id", clientIds)
-    .gte("date", startDate)
-    .lte("date", endDate)
-
-  if (eventsError) {
-    console.error("Error fetching training events:", eventsError)
+  let eventRows = null
+  if (eventsResult.status === "fulfilled") {
+    if (eventsResult.value.error) {
+      console.error("Error fetching training events:", eventsResult.value.error)
+    } else {
+      eventRows = eventsResult.value.data
+    }
   }
 
   // Group all query results by client
@@ -111,11 +137,11 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
   // Evaluate triggers and sort
   const clientsWithAlerts = evaluateAndSortTriggers(clientDataMap, dateRange)
 
-  // 6. Filter out dismissed alerts that haven't resurfaced
-  const { data: dismissals } = await supabaseAdmin
-    .from("attention_dismissals")
-    .select("client_id, alert_type, dismissed_at")
-    .eq("coach_id", coachId)
+  // Filter out dismissed alerts that haven't resurfaced
+  let dismissals = null
+  if (dismissalsResult.status === "fulfilled" && !dismissalsResult.value.error) {
+    dismissals = dismissalsResult.value.data
+  }
 
   const filteredClients = filterDismissedAlerts(clientsWithAlerts, dismissals)
 

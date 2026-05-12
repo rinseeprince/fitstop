@@ -168,48 +168,49 @@ export const getClientCheckIns = async (
   };
 };
 
-// Enrich check-ins with daily log counts for each check-in period
+// Enrich check-ins with daily log counts for each check-in period.
+// Runs all COUNT queries in parallel since each period's date range is
+// pre-computable from the sorted checkIns array (no inter-query dependency).
 async function enrichWithDailyLogCounts(
   checkIns: CheckIn[],
   clientId: string
 ): Promise<CheckInWithDailyLogCounts[]> {
-  const results: CheckInWithDailyLogCounts[] = [];
+  const results = await Promise.all(
+    checkIns.map(async (currentCheckIn, i) => {
+      const previousCheckIn = i < checkIns.length - 1 ? checkIns[i + 1] : null;
 
-  for (let i = 0; i < checkIns.length; i++) {
-    const currentCheckIn = checkIns[i];
-    const previousCheckIn = i < checkIns.length - 1 ? checkIns[i + 1] : null;
+      const endDate = new Date(currentCheckIn.createdAt);
+      let startDate: Date;
 
-    const endDate = new Date(currentCheckIn.createdAt);
-    let startDate: Date;
+      if (previousCheckIn) {
+        startDate = new Date(previousCheckIn.createdAt);
+        startDate.setDate(startDate.getDate() + 1);
+      } else {
+        startDate = new Date(endDate);
+        startDate.setDate(startDate.getDate() - 6);
+      }
 
-    if (previousCheckIn) {
-      startDate = new Date(previousCheckIn.createdAt);
-      startDate.setDate(startDate.getDate() + 1);
-    } else {
-      startDate = new Date(endDate);
-      startDate.setDate(startDate.getDate() - 6);
-    }
+      const startDateStr = getDateString(startDate);
+      const endDateStr = getDateString(endDate);
 
-    const startDateStr = getDateString(startDate);
-    const endDateStr = getDateString(endDate);
+      const { count: dailyLogsCount } = await supabaseAdmin
+        .from("daily_logs")
+        .select("*", { count: "exact", head: true })
+        .eq("client_id", clientId)
+        .gte("date", startDateStr)
+        .lte("date", endDateStr);
 
-    const { count: dailyLogsCount } = await supabaseAdmin
-      .from("daily_logs")
-      .select("*", { count: "exact", head: true })
-      .eq("client_id", clientId)
-      .gte("date", startDateStr)
-      .lte("date", endDateStr);
+      const daysDiff = Math.floor(
+        (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
+      ) + 1;
 
-    const daysDiff = Math.floor(
-      (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
-    ) + 1;
-
-    results.push({
-      ...currentCheckIn,
-      dailyLogsCount: dailyLogsCount || 0,
-      expectedDays: Math.max(daysDiff, 1),
-    });
-  }
+      return {
+        ...currentCheckIn,
+        dailyLogsCount: dailyLogsCount || 0,
+        expectedDays: Math.max(daysDiff, 1),
+      };
+    })
+  );
 
   return results;
 }

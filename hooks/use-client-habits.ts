@@ -38,7 +38,7 @@ export function useClientHabits(clientId: string | null, includeInactive = false
     }
   );
 
-  // Fetch stats for all habits
+  // Fetch stats for all habits in a single batch request
   useEffect(() => {
     if (!habits || habits.length === 0) {
       setHabitsWithStats([]);
@@ -48,27 +48,20 @@ export function useClientHabits(clientId: string | null, includeInactive = false
     const fetchAllStats = async () => {
       setIsLoadingStats(true);
       try {
-        const statsPromises = habits.map(async (habit) => {
-          try {
-            const response = await fetch(
-              `/api/clients/${clientId}/habits/stats?habitId=${habit.id}&days=30`
-            );
-            if (response.ok) {
-              const data = await response.json();
-              return { habitId: habit.id, stats: data.data as HabitStats };
-            }
-            return { habitId: habit.id, stats: undefined };
-          } catch {
-            return { habitId: habit.id, stats: undefined };
-          }
-        });
+        const habitIds = habits.map(h => h.id).join(",");
+        const response = await fetch(
+          `/api/clients/${clientId}/habits/stats?habitIds=${habitIds}&days=30`
+        );
 
-        const allStats = await Promise.all(statsPromises);
-        const statsMap = new Map(allStats.map(s => [s.habitId, s.stats]));
+        let statsMap: Record<string, HabitStats> = {};
+        if (response.ok) {
+          const data = await response.json();
+          statsMap = (data.data || {}) as Record<string, HabitStats>;
+        }
 
         const habitsWithStatsData: HabitWithStats[] = habits.map(habit => ({
           ...habit,
-          stats: statsMap.get(habit.id),
+          stats: statsMap[habit.id],
         }));
 
         setHabitsWithStats(habitsWithStatsData);

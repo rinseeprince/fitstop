@@ -310,36 +310,35 @@ export function NeedsAttentionFeed() {
 
                 return (
                   <div key={client.clientId} className="py-2">
-                    <div className="flex items-center justify-between">
-                      <button
-                        onClick={() => toggleExpanded(client.clientId)}
-                        className="flex items-center gap-2 flex-1 min-w-0 text-left"
-                      >
-                        <span className="text-sm text-[#0c1a1e]">{client.clientName}</span>
-                        {client.alerts.length > 0 && (
-                          <span className={`${
-                            hasOnlyMedium
-                              ? "bg-[rgba(245,158,11,0.07)] text-[#d97706]"
-                              : "bg-[rgba(185,28,28,0.08)] text-[#b91c1c]"
-                          } text-xs font-medium px-1.5 py-0.5 rounded-[4px] font-mono-display`}>
-                            {client.alerts.length}
-                          </span>
-                        )}
-                        <span className="text-xs text-[#5a7d82] truncate">
+                    <button
+                      onClick={() => toggleExpanded(client.clientId)}
+                      className="flex items-start justify-between w-full text-left"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-semibold text-[#0c1a1e]">{client.clientName}</span>
+                          {client.alerts.length > 0 && (
+                            <span className={`${
+                              hasOnlyMedium
+                                ? "bg-[rgba(245,158,11,0.07)] text-[#d97706]"
+                                : "bg-[rgba(185,28,28,0.08)] text-[#b91c1c]"
+                            } text-xs font-medium px-1.5 py-0.5 rounded-[4px] font-mono-display`}>
+                              {client.alerts.length}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-[#5a7d82] mt-1">
                           {getShortAlertText(mostUrgentAlert)}
                           {!isExpanded && client.alerts.length > 1 && ` +${client.alerts.length - 1}`}
-                        </span>
-                      </button>
-                      <button
-                        onClick={() => toggleExpanded(client.clientId)}
-                        className="text-[#93b0b4] hover:text-[#5a7d82] flex-shrink-0"
-                      >
+                        </p>
+                      </div>
+                      <span className="text-[#93b0b4] hover:text-[#5a7d82] flex-shrink-0 mt-0.5">
                         {isExpanded
                           ? <ChevronUp className="w-4 h-4" />
                           : <ChevronDown className="w-4 h-4" />
                         }
-                      </button>
-                    </div>
+                      </span>
+                    </button>
                     {isExpanded && (
                       <div className="ml-0 mt-1 pl-2 border-l-2 border-[rgba(13,148,136,0.1)]">
                         {client.alerts.map(alert => (

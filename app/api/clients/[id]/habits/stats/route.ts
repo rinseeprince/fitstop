@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { apiRateLimit } from "@/lib/rate-limit";
-import { getHabitStats } from "@/services/daily-habits-service";
+import { getHabitStats, getAllHabitStats } from "@/services/daily-habits-service";
 import { getClientById } from "@/services/client-service";
 
 async function verifyClientOwnership(
@@ -40,20 +40,35 @@ export async function GET(
 
     const { searchParams } = new URL(request.url);
     const habitId = searchParams.get("habitId");
+    const habitIds = searchParams.get("habitIds");
     const daysParam = searchParams.get("days");
 
-    if (!habitId) {
+    const days = daysParam ? parseInt(daysParam, 10) : 30;
+
+    if (isNaN(days) || days < 1 || days > 365) {
       return NextResponse.json(
-        { success: false, error: "habitId parameter is required" },
+        { success: false, error: "days parameter must be between 1 and 365" },
         { status: 400 }
       );
     }
 
-    const days = daysParam ? parseInt(daysParam, 10) : 30;
-    
-    if (isNaN(days) || days < 1 || days > 365) {
+    // Batch mode: return stats for all requested habits in one query
+    if (habitIds) {
+      const ids = habitIds.split(",").filter(Boolean);
+      if (ids.length === 0) {
+        return NextResponse.json(
+          { success: false, error: "habitIds must contain at least one ID" },
+          { status: 400 }
+        );
+      }
+      const stats = await getAllHabitStats(clientId, ids, days);
+      return NextResponse.json({ success: true, data: stats });
+    }
+
+    // Single habit mode (backward compatible)
+    if (!habitId) {
       return NextResponse.json(
-        { success: false, error: "days parameter must be between 1 and 365" },
+        { success: false, error: "habitId or habitIds parameter is required" },
         { status: 400 }
       );
     }
