@@ -5,6 +5,8 @@ export type ClientProgram = {
     id: string;
     name: string;
     longTermGoal: string | null;
+    goalWeight: number | null;
+    goalBodyFatPercentage: number | null;
     status: string;
     startedAt: string | null;
     targetEndDate: string | null;
@@ -19,7 +21,15 @@ export type ClientProgram = {
     startDate: string | null;
     endDate: string | null;
     durationWeeks: number | null;
+    phaseGoalWeight: number | null;
+    phaseGoalBodyFatPercentage: number | null;
+    coachReflection: string | null;
     milestones: Milestone[];
   }[];
   activePhaseId: string | null;
+  weightUnit: "lbs" | "kg";
+  metrics: {
+    startingWeight: number | null;
+    currentWeight: number | null;
+  };
 };

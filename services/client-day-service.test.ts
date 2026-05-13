@@ -285,6 +285,8 @@ describe("client-day-service", () => {
         id: "r1",
         name: "Roadmap",
         longTermGoal: null,
+        goalWeight: null,
+        goalBodyFatPercentage: null,
         status: "active",
         startedAt: null,
         targetEndDate: null,
@@ -300,10 +302,15 @@ describe("client-day-service", () => {
           startDate: "2026-04-01",
           endDate: null,
           durationWeeks: 8,
+          phaseGoalWeight: null,
+          phaseGoalBodyFatPercentage: null,
+          coachReflection: null,
           milestones: [],
         },
       ],
       activePhaseId: "p1",
+      weightUnit: "lbs",
+      metrics: { startingWeight: null, currentWeight: null },
     });
 
     const result = await getDaySummary(CLIENT_ID, "2026-04-15");
@@ -325,6 +332,8 @@ describe("client-day-service", () => {
         id: "r1",
         name: "Roadmap",
         longTermGoal: null,
+        goalWeight: null,
+        goalBodyFatPercentage: null,
         status: "active",
         startedAt: null,
         targetEndDate: null,
@@ -340,10 +349,15 @@ describe("client-day-service", () => {
           startDate: null,
           endDate: null,
           durationWeeks: null,
+          phaseGoalWeight: null,
+          phaseGoalBodyFatPercentage: null,
+          coachReflection: null,
           milestones: [],
         },
       ],
       activePhaseId: "p1",
+      weightUnit: "lbs",
+      metrics: { startingWeight: null, currentWeight: null },
     });
 
     const result = await getDaySummary(CLIENT_ID, DATE);
@@ -365,6 +379,8 @@ describe("client-day-service", () => {
         id: "r1",
         name: "Roadmap",
         longTermGoal: null,
+        goalWeight: null,
+        goalBodyFatPercentage: null,
         status: "active",
         startedAt: null,
         targetEndDate: null,
@@ -380,6 +396,9 @@ describe("client-day-service", () => {
           startDate: "2026-03-01",
           endDate: "2026-04-30",
           durationWeeks: 8,
+          phaseGoalWeight: null,
+          phaseGoalBodyFatPercentage: null,
+          coachReflection: null,
           milestones: [],
         },
         {
@@ -392,10 +411,15 @@ describe("client-day-service", () => {
           startDate: null,
           endDate: null,
           durationWeeks: 6,
+          phaseGoalWeight: null,
+          phaseGoalBodyFatPercentage: null,
+          coachReflection: null,
           milestones: [],
         },
       ],
       activePhaseId: null,
+      weightUnit: "lbs",
+      metrics: { startingWeight: null, currentWeight: null },
     });
 
     const result = await getDaySummary(CLIENT_ID, DATE);

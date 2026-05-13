@@ -2,6 +2,19 @@
 
 Companion to `CLIENT-PORTAL-REDESIGN.md`. This file breaks the redesign into session-sized prompts that a fresh Claude Code session can execute directly.
 
+## Context: why this web phase exists
+
+The execution plan below rebuilds the client portal as a Next.js web app, but the web app is **not the shipped product**. It exists as a testing harness for the client-side logic and API endpoints. The shipped product will be a React Native iOS/Android app, built fresh after this plan completes; the web frontend code is throwaway.
+
+What this means for how to work through these sessions:
+
+- **Functional correctness, API design, and data flow are first-class.** Endpoints, service contracts, validation schemas, and the state machine for each feature all carry forward to the RN app unchanged. Bugs here become bugs in the shipped product.
+- **Visual polish is deferred.** Pixel-level CSS, hover states, gradient shades, and other web-specific styling will be rewritten in NativeWind / RN primitives. Do not invest time perfecting them in this phase.
+- **Design decisions still carry forward** as a spec, even though the code does not. Information architecture (what is shown where, what is tappable, what is hidden behind a tap) and component composition decisions made here become the reference for the RN rebuild. Capture meaningful design decisions in `DESIGNSYSTEM.md`, not only in component code.
+- **Manual smoke testing verifies flows, not visuals.** If a layout is confusing enough to bias UX feedback, fix it. If it is merely ugly, leave it for the RN rebuild.
+
+If the plan changes and the web app becomes a shipped surface, revisit this section.
+
 ## How to use
 
 1. Sessions are ordered. Do not start Session N+1 until Session N is merged.
@@ -50,9 +63,11 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 | 2.2 | Bottom tab bar + client layout restructure | 2 | COMPLETE
 | 2.3 | Home page shell + swipe navigation | 2 | COMPLETE
 | 2.4 | Summary cards + phase banner | 2 | COMPLETE
-| 2.5 | Program page + phase completion card relocation | 2 |
+| 2.5 | Program page + phase completion card relocation | 2 | COMPLETE
 | 2.6 | Settings page + settings endpoint | 2 |
 | 2.7 | Client check-in hub (submission + history) | 2 |
+| 2.8 | Training plan overview card + sessions drill-in | 2 |
+| 2.9 | Nutrition plan overview card + drill-in | 2 |
 | 3.1 | Nutrition + wellness endpoints | 3 Detail pages |
 | 3.2 | Nutrition detail page | 3 |
 | 3.3 | Wellness detail page + past-day lock enforcement | 3 |
@@ -823,7 +838,21 @@ Clicking a card navigates to a detail page which fires its own fetch (e.g. `GET 
 
 ## Session 2.5: Program page + phase completion card relocation
 
+**Status**: COMPLETE
+
 **Commit message**: `feat(client-portal): add program page and relocate phase completion card`
+
+**Deviations from plan** (worth knowing for downstream sessions):
+- **Plan refinements vs initial draft**: dropped the `<Suspense>` wrapper on `/client/program` (no suspending hook in use; SWR's `isLoading` already drives the skeleton). Future phases stay static rather than tap-to-expand (spec wording at REDESIGN doc line 67/268 grants "collapsible" to past only; planned milestones are all `completed: false` so revealing them adds nothing). Phase list uses `<div className="flex flex-col gap-2">` to match sibling `client-portal/day/` pattern rather than a semantic `<ul>`. No client-side `phases.sort()` since `services/client-program-service.ts:29` already orders by `order_index`.
+- **Surface coach-visible data shipped as a same-session extension.** Original Session 2.5 scope was relocation + read-only roadmap view. Extended mid-session per user directive ("everything the coachside can see, the client should see") to surface phase numeric goals, per-phase coach reflection, roadmap numeric goals + `targetEndDate`, weight unit, and a roadmap stats grid (start / current / goal). `ClientProgram` widened in `types/client-program.ts`; `services/client-program-service.ts` grew a third query against the `clients` table for `weight_unit`/`starting_weight`/`current_weight`. New light-themed `RoadmapSummaryStrip` component built; `PhaseListItem` extended with `weightUnit` prop + goal chip (Target icon, `weightFromKg`) + coach reflection italicized at top of expanded body. Three additional consumer fixtures updated (`client-program-service.test.ts`, `__tests__/api/client/program.test.ts`, `client-day-service.test.ts`).
+- **Roadmap stats grid (start / current / goal) renders raw `clients.*_weight` without conversion.** Matches coach `RoadmapSummaryStrip` behaviour (see `components/clients/roadmap/roadmap-tab-content.tsx:102-104`). Smoke-test discovery: flipping `clients.weight_unit` via SQL leaves the stored numbers untouched, so the displayed values are wrong after a flip. This is a pre-existing data-storage gotcha on both coach and client sides (`clients.starting_weight` etc. are stored in whatever unit was current at write time; there is no canonical kg storage for these fields). Proper fix lives in Phase 8 ("viewer-relative units", sessions 8.1-8.3). In production, real users do not change their unit preference, so this is invisible until 8.x lands. Only `phases.phase_goal_weight` is canonically kg-stored and runs `weightFromKg` on display.
+- **ESLint cleanup landed in the same branch.** `npx eslint --fix` swept 25 redundant `as <Type>` assertions in `services/training-*.ts` files; manual fixes for a stale `let` in `services/check-in-context-service.ts` (`prefer-const`) and a floating-promise `setTimeout(() => searchCatalog(...))` in `components/clients/training/sessions/add-exercise-dialog.tsx` (`no-misused-promises`). Net: 29 errors to 2. The remaining 2 are pre-existing `await-thenable` in `services/schedule-data-service.ts` (lines 109, 186) which touch Supabase type-casting hacks; deferred to whoever owns that service.
+- **Doc additions in the same session.** Added a "Context: why this web phase exists" section at the top of this execution plan to codify the testing-harness intent (visual polish deferred to the RN rebuild; functional correctness, API design, IA decisions are first-class). Scheduled Sessions 2.8 (Training plan overview card + sessions drill-in) and 2.9 (Nutrition plan overview card + drill-in) to surface the active phase's training plan and nutrition plan on `/client/program`. Both deferred; full session prompts already written below.
+
+**Known tech debt (out of scope, recorded for follow-up)**:
+- `PhaseCompletionCard.handleDismiss` (lines 87-89 of the relocated file) silently swallows fetch errors. Retry-on-next-load is the baseline; a toast on confirmed failure would be more honest. Surface in a future hardening pass.
+- Relocated card retains its `daily-pulse/`-era hex palette (`#0d9488` / `#0c1a1e` / `#93b0b4`); matches the celebratory accent but diverges from neighboring `client-portal/day/` Tailwind tokens. Theme migration deferred.
+- ARCHITECTURE.md line 181 still references the pre-relocation path `components/daily-pulse/phase-completion-card.tsx`. One-line doc fix pending.
 
 **Objective**: Build `/client/program` read-only roadmap view. Relocate `PhaseCompletionCard` from Daily Pulse to new home.
 
@@ -936,6 +965,85 @@ Clicking a card navigates to a detail page which fires its own fetch (e.g. `GET 
   - Past row click navigates to the detail route.
 
 **Verify**: Manually open/close window via test client; confirm both states render. Reach detail page from a past row. `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Commit.
+
+---
+
+## Session 2.8: Training plan overview card + sessions drill-in
+
+**Commit message**: `feat(client-portal): add training plan overview card on program page with sessions drill-in`
+
+**Objective**: Surface the client's active training plan structure on `/client/program` as a read-only card below the phase list. The card shows the cycle sequence as horizontal chips (e.g. "Push · Pull · Rest · Legs · Rest"). Tapping the card navigates to a new sub-page `/client/program/training` that lists each session in cycle order, each row expandable to reveal the prescribed exercises (sets / reps / RPE / tempo / rest).
+
+**Read first**:
+- `services/client-program-service.ts` (existing client-facing program reader; mirror its file-isolation pattern).
+- `services/training-service.ts` and `services/training-session-service.ts` (existing coach-side training-plan reads; identify the helpers worth reusing vs the ones too coach-coupled to call from a client route).
+- `types/training.ts` (`TrainingSession`, `TrainingExercise` shapes).
+- `types/roadmap.ts` (`Phase` shape; how `training_plans.phase_id` links).
+- `components/clients/roadmap/phase-card.tsx` and the existing coach-side training plan view (visual reference, do not import).
+- `components/client-portal/program/phase-list-item.tsx` (style baseline for the new card; light Tailwind tokens, `font-mono-display` for numbers).
+- ARCHITECTURE.md, sections "Coach Library" (cycle_length, rest_pattern, order_index) and "Roadmap/Phase Architecture" (how training_plans link via phase_id).
+- `docs/CLIENT-PORTAL-REDESIGN.md` (any sections on program-page composition).
+
+**Implement**:
+- New service: `services/client-training-plan-service.ts` exporting `getClientTrainingPlan(clientId: string): Promise<ClientTrainingPlan | null>`. Resolution: find the active phase (via `getClientProgram(clientId)` or a direct query), then the training plan linked to that phase (`training_plans.phase_id = phaseId`). If no active phase or no plan, return `null`. Read sessions ordered by `order_index`, including each session's exercises (also ordered).
+- New type `types/client-training-plan.ts` defining `ClientTrainingPlan` (planId, planName, cycleLength, restPattern, sessions[]; each session: id, name, focus, orderIndex, isRest, estimatedDurationMinutes, exercises[]; each exercise: id, name, orderIndex, sets, repsMin/repsMax/repsTarget, rpeTarget, tempo, restSeconds, isWarmup, supersetGroup).
+- New API route `app/api/client/training-plan/route.ts` (GET): full auth chain per CONVENTIONS §8 (rate limit + auth + service call wrapped in try/catch). Response shape `{ success, data: ClientTrainingPlan | null }` with `Cache-Control: no-store`.
+- New page `app/client/program/training/page.tsx`: SWR fetch from `/api/client/training-plan`; same skeleton/error/empty patterns as `/client/program`. Renders the plan name as `<h1>`, then a list of `<TrainingSessionRow>` components ordered by `orderIndex`. Each row expands inline on click.
+- New component `components/client-portal/program/training-plan-card.tsx`: renders on `/client/program` below the phase list. Header line: plan name + session count. Body: horizontal chip row of the cycle sequence (rest slots render with a different chip style). Wrap the whole card in a `<Link href="/client/program/training">`.
+- New component `components/client-portal/program/training-session-row.tsx`: row with name + focus + duration + chevron. Local `useState` for expanded. Expanded body lists exercises with sets/reps/RPE; reuse the marker/typography conventions from `phase-list-item.tsx`.
+- Update `app/client/program/page.tsx` to fetch (independent SWR call) and render `<TrainingPlanCard />` below the existing `<PhaseListItem />` list.
+- Verify all consumers of `getClientProgram` if the resolution helper is moved or refactored (per CONVENTIONS §10 "API changes cascade"). The expected consumers as of Session 2.5 extension are: `app/client/program/page.tsx`, `services/client-day-service.ts:24`, `app/api/client/program/route.ts`.
+
+**Do NOT**: Build any editing or activation UI (clients are read-only). Do not surface calendar events (that's the home page's job). Do not duplicate the coach-side `phase-card.tsx` styling; use light Tailwind tokens per CONVENTIONS §3 + ARCHITECTURE.md line 357. Do not change the calendar source of truth.
+
+**Tests to write**:
+- `services/client-training-plan-service.test.ts`: returns the plan with sessions and exercises when an active plan exists for an active phase; returns `null` when no active phase; returns `null` when an active phase has no linked plan.
+- `app/api/client/training-plan/route.test.ts`: 200 with data, 200 with null, 401 unauthenticated.
+- `components/client-portal/program/training-plan-card.test.tsx`: renders the cycle sequence chips in order; rest chips render with the "Rest" label even when the underlying session has a placeholder name.
+- `components/client-portal/program/training-session-row.test.tsx`: collapsed renders name + chevron; expanded reveals exercises with sets/reps; click toggles `aria-expanded`.
+- `app/client/program/training/page.test.tsx`: renders skeleton while loading; renders empty state when API returns null; renders sessions list when data is present.
+
+**Verify**: `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Manual: as a client with an active PPL+Rest plan, visit `/client/program`, confirm the card shows the cycle, tap into `/client/program/training`, expand each row to confirm exercises render with prescribed numbers. Confirm a client with no active plan sees the empty state on the drill-in page and no card on the program page. Commit.
+
+---
+
+## Session 2.9: Nutrition plan overview card + drill-in
+
+**Commit message**: `feat(client-portal): add nutrition plan overview card on program page with day-type drill-in`
+
+**Objective**: Surface the client's active nutrition plan on `/client/program` as a read-only card below the training plan card. The card shows at a glance: rest-day macro target and training-day macro target (calculated via the existing percentage-surplus model). Tapping the card navigates to `/client/program/nutrition` showing per-day-type detail (calories, protein, carbs, fat, diet type, surplus percentage source).
+
+**Read first**:
+- `services/nutrition-plan-service.ts` and `services/nutrition-event-service.ts` (current plan + event reads).
+- `services/training-event-service.ts` (how training events drive surplus on a given date).
+- `utils/nutrition-helpers.ts` (`calculateDailyMacros`, `weightFromKg`, `DailyNutritionTargets`).
+- `types/nutrition.ts` (or the nearest equivalent for plan + event shapes).
+- ARCHITECTURE.md, section "Nutrition & Training Events", especially the percentage-surplus model and the "Display total: baseline * (1 + surplus/100)" rule.
+- `app/client/nutrition/page.tsx` (existing per-day nutrition view). Do NOT duplicate its day-detail logic; this card is plan-level, not day-level.
+- `components/client-portal/program/training-plan-card.tsx` (built in Session 2.8; style baseline).
+- `docs/CLIENT-PORTAL-REDESIGN.md` (any sections on nutrition surfacing for clients).
+
+**Plan (report before implementing)**:
+- How to compute a representative "training day" target without picking a specific date. Options: (a) use the active phase's nutrition plan baseline plus the highest `calorie_surplus_percentage` across its linked training sessions, (b) use the plan's `default_surplus_percentage`, (c) compute an average across the cycle. Pick one and document the choice in the prompt response before coding. Recommendation: use the highest non-null `calorie_surplus_percentage` from any training session linked to the active phase's training plan, since that represents the upper-bound target the client will see during the cycle. If no training plan or no surplus values exist, omit the training-day block from the card.
+- Whether to expose `include_activity_burn` to the client. The toggle exists per-client; the display value depends on it. For v1, read the client's existing toggle value and reflect it; do not surface a UI control.
+
+**Implement**:
+- New service: `services/client-nutrition-plan-service.ts` exporting `getClientNutritionPlan(clientId: string): Promise<ClientNutritionPlan | null>`. Resolution: find the active phase, then the nutrition plan linked to that phase, then compute `restDayTargets` from the plan's baseline and `trainingDayTargets` from the chosen surplus value via `calculateDailyMacros`. Honor the client's `include_activity_burn` flag for the display total.
+- New type `types/client-nutrition-plan.ts` defining `ClientNutritionPlan` (planId, planName, dietType, restDayTargets: { calories, proteinG, carbsG, fatG }, trainingDayTargets: same shape or null, surplusPercentage: number | null, includeActivityBurn: boolean).
+- New API route `app/api/client/nutrition-plan/route.ts` (GET): same auth chain as Session 2.8. Response `{ success, data: ClientNutritionPlan | null }` with `Cache-Control: no-store`.
+- New page `app/client/program/nutrition/page.tsx`: SWR fetch; renders plan name, diet type, and two side-by-side blocks for Rest day vs Training day with calorie + macro values (use `font-mono-display` for numbers).
+- New component `components/client-portal/program/nutrition-plan-card.tsx`: card on `/client/program` showing plan name + compact two-line macro preview (Rest: 2400 kcal · 180p / 240c / 80f, Training: 2700 kcal · 180p / 300c / 90f). Wrap in `<Link href="/client/program/nutrition">`.
+- Update `app/client/program/page.tsx` to fetch (independent SWR call) and render `<NutritionPlanCard />` below the training plan card.
+
+**Do NOT**: Surface per-day events on the plan page (that is `/client/nutrition` for the day). Do not allow editing. Do not duplicate the macro math; call `calculateDailyMacros` from `utils/nutrition-helpers.ts`. Do not introduce a new percentage-surplus model; read the existing field.
+
+**Tests to write**:
+- `services/client-nutrition-plan-service.test.ts`: returns plan with both rest-day and training-day targets when an active plan plus training plan with surplus exist; returns plan with `trainingDayTargets: null` when no training surplus is set; returns `null` when no active phase or no nutrition plan.
+- `app/api/client/nutrition-plan/route.test.ts`: 200 with data, 200 with null, 401 unauthenticated.
+- `components/client-portal/program/nutrition-plan-card.test.tsx`: renders both day-type blocks when both targets present; renders only rest-day block when training-day is null.
+- `app/client/program/nutrition/page.test.tsx`: skeleton, empty state, populated state with macros visible.
+
+**Verify**: `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Manual: as a client on a percentage-surplus plan, confirm the card shows realistic rest plus training macros, tap into `/client/program/nutrition`, confirm the detail page renders the same numbers and diet type. Toggle the client's `include_activity_burn` flag (via coach view or DB) and confirm the displayed training-day total changes accordingly without regenerating events. Commit.
 
 ---
 

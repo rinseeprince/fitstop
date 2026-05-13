@@ -10,7 +10,7 @@ import { NutritionSection } from "./nutrition-section";
 import { WeeklyNutritionProgress } from "./weekly-nutrition-progress";
 import { HabitsSection } from "./habits-section";
 import { DailyPulseLoggedView } from "./daily-pulse-logged-view";
-import { PhaseCompletionCard } from "./phase-completion-card";
+import { PhaseCompletionCard } from "@/components/client-portal/day/phase-completion-card";
 import type { DailyLog } from "@/types/daily-log";
 import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
 import type { TrainingSession } from "@/types/training";

@@ -35,6 +35,8 @@ describe("GET /api/client/program", () => {
         id: "r1",
         name: "Strength Block",
         longTermGoal: "Get stronger",
+        goalWeight: null,
+        goalBodyFatPercentage: null,
         status: "active",
         startedAt: "2026-04-01",
         targetEndDate: "2026-07-01",
@@ -50,10 +52,15 @@ describe("GET /api/client/program", () => {
           startDate: "2026-04-01",
           endDate: null,
           durationWeeks: 4,
+          phaseGoalWeight: null,
+          phaseGoalBodyFatPercentage: null,
+          coachReflection: null,
           milestones: [],
         },
       ],
       activePhaseId: "p1",
+      weightUnit: "lbs",
+      metrics: { startingWeight: null, currentWeight: null },
     });
 
     const res = await GET(createRequest());

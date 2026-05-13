@@ -1,6 +1,6 @@
 import { supabaseAdmin } from "./supabase-admin";
 import type { ClientProgram } from "@/types/client-program";
-import type { PhaseStatus, Milestone, RoadmapRow, PhaseRow } from "@/types/roadmap";
+import type { PhaseStatus, Milestone } from "@/types/roadmap";
 
 /**
  * Client-facing program read.
@@ -32,6 +32,16 @@ export async function getClientProgram(
     throw new Error(`Failed to fetch phases: ${phaseErr.message}`);
   }
 
+  const { data: clientRow, error: clientErr } = await supabaseAdmin
+    .from("clients")
+    .select("weight_unit, starting_weight, current_weight")
+    .eq("id", clientId)
+    .maybeSingle();
+
+  if (clientErr) {
+    throw new Error(`Failed to fetch client metrics: ${clientErr.message}`);
+  }
+
   const phases = (phaseRows ?? []).map((row) => ({
     id: row.id,
     name: row.name,
@@ -42,21 +52,34 @@ export async function getClientProgram(
     startDate: row.start_date ?? null,
     endDate: row.end_date ?? null,
     durationWeeks: row.duration_weeks ?? null,
+    phaseGoalWeight: row.phase_goal_weight ?? null,
+    phaseGoalBodyFatPercentage: row.phase_goal_body_fat_percentage ?? null,
+    coachReflection: row.coach_reflection ?? null,
     milestones: (row.milestones as unknown as Milestone[]) ?? [],
   }));
 
   const activePhase = phases.find((p) => p.status === "active");
+
+  const weightUnit: "lbs" | "kg" =
+    clientRow?.weight_unit === "kg" ? "kg" : "lbs";
 
   return {
     roadmap: {
       id: roadmapRow.id,
       name: roadmapRow.name,
       longTermGoal: roadmapRow.long_term_goal ?? null,
+      goalWeight: roadmapRow.goal_weight ?? null,
+      goalBodyFatPercentage: roadmapRow.goal_body_fat_percentage ?? null,
       status: roadmapRow.status,
       startedAt: roadmapRow.started_at ?? null,
       targetEndDate: roadmapRow.target_end_date ?? null,
     },
     phases,
     activePhaseId: activePhase?.id ?? null,
+    weightUnit,
+    metrics: {
+      startingWeight: clientRow?.starting_weight ?? null,
+      currentWeight: clientRow?.current_weight ?? null,
+    },
   };
 }
