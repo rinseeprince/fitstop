@@ -729,7 +729,8 @@ Session 0.1 confirmed no `timezone` column exists on `clients` and all date help
 
 **Commit message**: `feat(client-portal): add day-centric home with URL-param date navigation`
 
-**Objective**: Build `app/client/page.tsx` as the new landing, with date navigation (arrow buttons + horizontal swipe), URL-param-driven date state, loading + error shells.
+**Objective**: Build `app/client/page.tsx` as the new landing, with date navigation (
+  arrow buttons + horizontal swipe), URL-param-driven date state, loading + error shells.
 
 **Read first**:
 - Output of Session 2.2 (bottom tab bar in place).
@@ -818,6 +819,8 @@ Clicking a card navigates to a detail page which fires its own fetch (e.g. `GET 
 - `components/clients/roadmap/roadmap-tab-content.tsx` (coach reference).
 - `docs/CLIENT-PORTAL-REDESIGN.md` (Program view).
 - `GET /api/client/phase-completion` (existing).
+
+**Pre-existing finding from Session 2.3 verification**: `/client/program` currently 404s on tab click and on Next.js RSC prefetch (the bottom tab bar's `<Link href="/client/program">` from Session 2.2 prefetches in the background). Creating `app/client/program/page.tsx` in this session resolves both — no separate fix needed.
 
 **Implement**:
 - `app/client/program/page.tsx`: fetches `GET /api/client/program`; renders roadmap + phase list (current highlighted; past collapsed; future with start dates). Read-only.
