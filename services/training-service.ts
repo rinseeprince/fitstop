@@ -301,7 +301,7 @@ export const createTrainingPlanAtomic = async (params: {
     throw new Error(`Failed to create training plan atomically: ${rpcError?.message || "No data returned"}`);
   }
 
-  return newPlanId as string;
+  return newPlanId;
 };
 
 /**

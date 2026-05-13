@@ -52,7 +52,7 @@ const SENSITIVE_KEYS = new Set([
   "energy_level",
 ]);
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 export function scrubHealthData<T>(obj: T, depth = 0): T {
   // Prevent infinite recursion on deeply nested objects
   if (depth > 10 || obj == null || typeof obj !== "object") return obj;

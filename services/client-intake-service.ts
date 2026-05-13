@@ -106,7 +106,7 @@ export async function getIntakeByToken(
 
   if (invError || !invitation) return null;
 
-  return getIntake(invitation.client_id as string);
+  return getIntake(invitation.client_id);
 }
 
 /**

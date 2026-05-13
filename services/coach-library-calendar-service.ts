@@ -67,7 +67,7 @@ export async function savePlanFromCalendar(
       (e: { is_active: boolean }) => e.is_active
     );
     if (activeExercises.length > 0) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       const exerciseRows: CoachSavedExerciseInsert[] = activeExercises.map(
         (e: any, idx: number) => ({
           saved_session_id: savedSession.id,
@@ -130,7 +130,7 @@ export async function saveSessionFromCalendar(
     (e: { is_active: boolean }) => e.is_active
   );
   if (activeExercises.length > 0) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const exerciseRows: CoachSavedExerciseInsert[] = activeExercises.map(
       (e: any, idx: number) => ({
         saved_session_id: savedSession.id,

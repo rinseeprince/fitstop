@@ -81,10 +81,8 @@ export const getCheckInNutritionContext = async (
   ]);
   const includeActivityBurn = clientRow?.include_activity_burn !== false;
 
-  let weeklyTargets: Array<{ day: DayOfWeek; dayLabel: string; isTrainingDay: boolean; calories: number; proteinG: number; carbsG: number; fatG: number }>;
-
   // Use event-based targets (all available events for the week)
-  weeklyTargets = events.slice(0, 7).map((event) => {
+  const weeklyTargets: Array<{ day: DayOfWeek; dayLabel: string; isTrainingDay: boolean; calories: number; proteinG: number; carbsG: number; fatG: number }> = events.slice(0, 7).map((event) => {
     const display = mapNutritionEventToDisplayTarget(event, includeActivityBurn);
     return {
       day: display.day as DayOfWeek,

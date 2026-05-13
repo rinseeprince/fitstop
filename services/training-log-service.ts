@@ -103,7 +103,7 @@ function mapExerciseLogRow(row: ExerciseLogRow): ExerciseLog {
     completed: row.completed ?? false,
     // weight_unit is nullable in the DB schema but writers always send "lbs"|"kg".
     // Default to "lbs" defensively for any historical row that's null.
-    weightUnit: ((row.weight_unit as "lbs" | "kg" | null) ?? "lbs") as "lbs" | "kg",
+    weightUnit: ((row.weight_unit as "lbs" | "kg" | null) ?? "lbs"),
     notes: row.notes,
     performedName: row.performed_name,
     prescribedExerciseSnapshot:

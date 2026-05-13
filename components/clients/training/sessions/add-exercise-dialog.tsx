@@ -97,7 +97,9 @@ export function AddExerciseDialog({
     setFormData((prev) => ({ ...prev, name: value }));
     setShowSuggestions(true);
     if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
-    searchTimeoutRef.current = setTimeout(() => searchCatalog(value), 300);
+    searchTimeoutRef.current = setTimeout(() => {
+      void searchCatalog(value);
+    }, 300);
   }, [searchCatalog]);
 
   const handleSelectExercise = useCallback((exercise: CatalogExercise) => {
