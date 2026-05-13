@@ -7,7 +7,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DailyPulse } from "@/components/daily-pulse/daily-pulse";
 import { GuidedWalkthrough } from "@/components/client/walkthrough/guided-walkthrough";
-import { ClientWaitingState } from "@/components/client/walkthrough/client-waiting-state";
 import {
   Dumbbell,
   ClipboardCheck,
@@ -91,14 +90,8 @@ export default function ClientDashboardPage() {
     fetchData();
   }, []);  
 
-  // Redirect pending_intake clients to onboarding, show walkthrough for new active clients
   useEffect(() => {
     if (loading || !clientProfile) return;
-
-    if (clientProfile.onboardingStatus === "pending_intake") {
-      router.push("/client/onboarding");
-      return;
-    }
 
     if (clientProfile.onboardingStatus === "active" && !clientProfile.walkthroughCompletedAt) {
       setShowWalkthrough(true);
@@ -119,16 +112,6 @@ export default function ClientDashboardPage() {
         </div>
       </div>
     );
-  }
-
-  // Client still needs to complete intake — show nothing while redirect fires
-  if (clientProfile && clientProfile.onboardingStatus === "pending_intake") {
-    return null;
-  }
-
-  // Client not yet activated by coach — show waiting state
-  if (clientProfile && clientProfile.onboardingStatus !== "active") {
-    return <ClientWaitingState onboardingStatus={clientProfile.onboardingStatus} />;
   }
 
   const hasActivePlan = plan !== null;

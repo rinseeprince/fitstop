@@ -47,7 +47,7 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 | 1.8 | Exercise history data layer + API (coach-side) | 1 | COMPLETE
 | 1.9 | Exercise Data tab UI + PR view (coach-side) | 1 | COMPLETE
 | 2.1 | Day summary + program endpoints | 2 Home + nav | COMPLETE
-| 2.2 | Bottom tab bar + client layout restructure | 2 |
+| 2.2 | Bottom tab bar + client layout restructure | 2 | COMPLETE
 | 2.3 | Home page shell + swipe navigation | 2 |
 | 2.4 | Summary cards + phase banner | 2 |
 | 2.5 | Program page + phase completion card relocation | 2 |
@@ -674,6 +674,17 @@ Session 0.1 confirmed no `timezone` column exists on `clients` and all date help
 
 ## Session 2.2: Bottom tab bar + client layout restructure
 
+**Status**: COMPLETE
+
+**Deviations from plan** (worth knowing for downstream sessions):
+- **Onboarding gate moved into the layout.** Plan said to "preserve all existing auth gating … as-is" on the assumption the gate was already in `app/client/layout.tsx`. It wasn't — the `pending_intake` redirect and `<ClientWaitingState>` render lived in `app/client/dashboard/page.tsx` only, so the new tab bar would have wrapped non-active clients with chrome on every non-dashboard route. The gate moved into the layout; dashboard's now-dead branches and the `ClientWaitingState` import were removed.
+- **Top bar stays visible during the waiting state.** Plan said waiting state renders "full-screen, no nav." Without the top bar a non-active client has no way to sign out between this session and 2.6. The bottom nav is hidden as planned, but the top bar (and its sign-out affordance) stays.
+- **Avatar is a `DropdownMenu` trigger, not a `Link` to `/client/settings`.** The settings page doesn't exist yet; pointing the avatar at it would 404. The avatar wraps a `DropdownMenu` with a single "Sign out" item (`logout()` + `router.push("/login")`). Session 2.6 should add "Settings" as a menu item above "Sign out" — see the note in 2.6.
+- **`ClientNotificationsDropdown` stays in the top bar.** Plan implied a strictly "minimal top bar (logo + avatar trigger)." Removing the existing notifications dropdown would have silently dropped a working UX surface. Top bar layout is `[logo] … [ClientNotificationsDropdown] [Avatar]`.
+- **Detail routes leave the bottom bar with no active tab.** Active predicates are strict `startsWith` of each tab's own href. On `/client/training`, `/client/nutrition` (and future siblings `/client/wellness`, `/client/habits`, `/client/exercise-history` from 3.x/4.x) no tab lights up — the iOS subscreen pattern. The Program tab is not the parent of training/nutrition; do not extend its predicate to cover them in later sessions.
+- **Added `app/client/layout.test.tsx`** alongside the planned `client-nav.test.tsx`. Eight assertions cover every branch of the gate ladder (auth-loading, unauthenticated, onboarding-route, client-loading, SWR-error, `pending_intake`, non-active, active). This is the regression surface 2.6 (avatar dropdown gains "Settings") and 5.1 (dashboard removal) are most likely to disturb.
+- **Doc typo to fix later**: this plan references `components/client/onboarding/client-waiting-state.tsx`; the actual path is `components/client/walkthrough/client-waiting-state.tsx`. Not blocking; flagging for the next doc sweep.
+
 **Commit message**: `feat(client-portal): add bottom tab bar with Home/Check-in/Program/Content nav`
 
 **Objective**: Restructure `app/client/layout.tsx` to render a persistent bottom tab bar with Home, Check-in, Program, Content destinations, plus a top-right avatar button that will open Settings (built in Session 2.6). This lays the chrome that every other client page renders inside.
@@ -697,7 +708,7 @@ Session 0.1 confirmed no `timezone` column exists on `clients` and all date help
 **Implement**:
 - `components/client-portal/nav/client-nav.tsx`: single file containing the bottom tab bar (4 tabs: Home → `/client`, Check-in → `/client/check-in`, Program → `/client/program`, Content → `/client/resources`) plus the top-right avatar button linking to `/client/settings`. Lucide icons; active-state highlight; fixed positioning; safe-area padding. Only split into separate files if it exceeds the 250-line component limit.
 - Rewrite `app/client/layout.tsx`:
-  - Preserve all existing auth gating and role redirects as-is; confirm by diffing.
+  - Preserve all existing auth gating and role redirects as-is; confirm by diffing.e
   - Preserve the onboarding-state path that renders `client-waiting-state.tsx`; this renders full-screen without the new nav chrome.
   - When the client is activated: render minimal top bar (logo + avatar trigger), children, bottom tab bar.
   - Body padding (or layout wrapper) so page content doesn't hide behind the tab bar.
@@ -832,6 +843,8 @@ Clicking a card navigates to a detail page which fires its own fetch (e.g. `GET 
 **Commit message**: `feat(client-portal): add client settings page with unit and reminder preferences`
 
 **Objective**: Build `/client/settings` with editable weight unit, unit preference, reminder preferences, timezone (if added in 0.3), plus read-only profile info and a sign-out button. Add `PATCH /api/client/settings` mutation.
+
+**Note from Session 2.2**: The avatar in `components/client-portal/nav/client-nav.tsx` is already a `DropdownMenu` trigger with a "Sign out" item. This session should add "Settings" as a menu item above "Sign out" (a `<Link href="/client/settings">` wrapped in a `DropdownMenuItem`) — no chrome rewrite needed. The settings page itself can keep an in-page sign-out button for users who land on `/client/settings` directly.
 
 **Read first**:
 - `types/check-in.ts` (find `Client` type, `ReminderPreferences`).
