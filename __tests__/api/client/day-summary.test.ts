@@ -5,10 +5,6 @@ vi.mock("@/lib/require-client-auth", () => ({
   requireClientAuth: vi.fn(),
 }));
 
-vi.mock("@/lib/validation-helpers", () => ({
-  validateDateParameter: vi.fn().mockReturnValue(null),
-}));
-
 vi.mock("@/services/client-day-service", () => ({
   getDaySummary: vi.fn(),
 }));
@@ -16,11 +12,9 @@ vi.mock("@/services/client-day-service", () => ({
 import { GET } from "@/app/api/client/day-summary/route";
 import { requireClientAuth } from "@/lib/require-client-auth";
 import { getDaySummary } from "@/services/client-day-service";
-import { validateDateParameter } from "@/lib/validation-helpers";
 
 const mockAuth = vi.mocked(requireClientAuth);
 const mockGetDaySummary = vi.mocked(getDaySummary);
-const mockValidateDate = vi.mocked(validateDateParameter);
 
 function createRequest(date?: string) {
   const url = date
@@ -33,8 +27,8 @@ describe("GET /api/client/day-summary", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockAuth.mockResolvedValue({ ok: true, clientId: "client-1" });
-    mockValidateDate.mockReturnValue(null);
     mockGetDaySummary.mockResolvedValue({
+      phase: null,
       training: [],
       nutrition: null,
       wellness: { hasLog: false },
@@ -44,6 +38,7 @@ describe("GET /api/client/day-summary", () => {
 
   it("returns 200 with correct shape", async () => {
     mockGetDaySummary.mockResolvedValue({
+      phase: null,
       training: [
         {
           eventId: "e1",
@@ -69,6 +64,24 @@ describe("GET /api/client/day-summary", () => {
     expect(body.data.wellness).toEqual({ hasLog: true });
     expect(body.data.habits).toEqual({ totalCount: 3, loggedCount: 2 });
     expect(res.headers.get("Cache-Control")).toBe("no-store");
+  });
+
+  it("returns 200 for a future date (view-only timeline, no future-bound rejection)", async () => {
+    // Far future. The day-summary route must accept this — write-side
+    // enforcement (canEditDay) is Session 3.x territory.
+    const res = await GET(createRequest("2099-01-01"));
+
+    expect(res.status).toBe(200);
+    expect(mockGetDaySummary).toHaveBeenCalledWith("client-1", "2099-01-01");
+  });
+
+  it("returns 200 for a date more than 30 days in the past (no past-bound rejection)", async () => {
+    // The legacy validateDateParameter capped at 30 days back. The new
+    // day-summary endpoint must allow the full timeline.
+    const res = await GET(createRequest("2020-01-01"));
+
+    expect(res.status).toBe(200);
+    expect(mockGetDaySummary).toHaveBeenCalledWith("client-1", "2020-01-01");
   });
 
   it("returns 401 when not authenticated", async () => {
@@ -97,19 +110,30 @@ describe("GET /api/client/day-summary", () => {
     expect(body.error).toContain("date");
   });
 
-  it("returns 400 when date format is invalid", async () => {
-    const { NextResponse } = await import("next/server");
-    mockValidateDate.mockReturnValue(
-      NextResponse.json(
-        { success: false, error: "Invalid date format. Use YYYY-MM-DD" },
-        { status: 400 }
-      )
-    );
-
+  it("returns 400 when date does not match YYYY-MM-DD shape", async () => {
     const res = await GET(createRequest("not-a-date"));
     const body = await res.json();
 
     expect(res.status).toBe(400);
     expect(body.success).toBe(false);
+    expect(body.error).toContain("YYYY-MM-DD");
+  });
+
+  it("returns 400 when date passes shape but is semantically invalid (month 13)", async () => {
+    const res = await GET(createRequest("2026-13-01"));
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.success).toBe(false);
+    expect(body.error).toBe("Invalid date");
+  });
+
+  it("returns 400 when date passes shape but rolls over (Feb 30)", async () => {
+    const res = await GET(createRequest("2026-02-30"));
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.success).toBe(false);
+    expect(body.error).toBe("Invalid date");
   });
 });

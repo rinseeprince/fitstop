@@ -5,6 +5,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 
 import { DayHeader } from "@/components/client-portal/day/day-header";
+import { PhaseBanner } from "@/components/client-portal/day/phase-banner";
+import { TrainingCardSummary } from "@/components/client-portal/day/training-card-summary";
+import { NutritionCardSummary } from "@/components/client-portal/day/nutrition-card-summary";
+import { WellnessCardSummary } from "@/components/client-portal/day/wellness-card-summary";
+import { HabitsCardSummary } from "@/components/client-portal/day/habits-card-summary";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { swrFetcher } from "@/lib/swr-fetcher";
@@ -36,7 +41,7 @@ function ClientHomePageInner() {
     [searchParams],
   );
 
-  const { error, isLoading, mutate } = useSWR<{
+  const { data, error, isLoading, mutate } = useSWR<{
     success: boolean;
     data: DaySummary;
   }>(`/api/client/day-summary?date=${date}`, swrFetcher, {
@@ -100,12 +105,20 @@ function ClientHomePageInner() {
 
   return (
     <div onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+      <PhaseBanner phase={data?.data.phase ?? null} />
       <DayHeader date={date} onPrev={onPrev} onNext={onNext} onToday={onToday} />
 
       {error ? (
         <DayLoadError onRetry={() => mutate()} />
+      ) : isLoading || !data ? (
+        <PlaceholderGrid loading />
       ) : (
-        <PlaceholderGrid loading={isLoading} />
+        <div className="flex flex-col gap-3 pb-6">
+          <TrainingCardSummary events={data.data.training} date={date} />
+          <NutritionCardSummary nutrition={data.data.nutrition} date={date} />
+          <WellnessCardSummary wellness={data.data.wellness} date={date} />
+          <HabitsCardSummary habits={data.data.habits} date={date} />
+        </div>
       )}
     </div>
   );

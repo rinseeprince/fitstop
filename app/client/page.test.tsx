@@ -112,6 +112,34 @@ describe("ClientHomePage", () => {
     expect(skeletons).toHaveLength(4);
   });
 
+  it("renders summary cards and phase name when SWR returns day data with an active phase", () => {
+    setSWR({
+      data: {
+        success: true,
+        data: {
+          phase: {
+            id: "p1",
+            name: "Strength Block",
+            weekInPhase: 3,
+            goal: "Build base",
+            state: "active",
+          },
+          training: [],
+          nutrition: null,
+          wellness: { hasLog: false },
+          habits: { totalCount: 0, loggedCount: 0 },
+        },
+      },
+    });
+    render(<ClientHomePage />);
+
+    expect(screen.getByText("Strength Block")).toBeInTheDocument();
+    expect(screen.getByText("Training")).toBeInTheDocument();
+    expect(screen.getByText("Nutrition")).toBeInTheDocument();
+    expect(screen.getByText("Wellness")).toBeInTheDocument();
+    expect(screen.getByText("Habits")).toBeInTheDocument();
+  });
+
   it("renders an error message with a Try again button when the fetch fails", async () => {
     const mutate = vi.fn();
     setSWR({ error: new Error("boom"), mutate });
