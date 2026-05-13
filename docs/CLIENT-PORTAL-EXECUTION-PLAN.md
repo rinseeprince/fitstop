@@ -48,8 +48,8 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 | 1.9 | Exercise Data tab UI + PR view (coach-side) | 1 | COMPLETE
 | 2.1 | Day summary + program endpoints | 2 Home + nav | COMPLETE
 | 2.2 | Bottom tab bar + client layout restructure | 2 | COMPLETE
-| 2.3 | Home page shell + swipe navigation | 2 |
-| 2.4 | Summary cards + phase banner | 2 |
+| 2.3 | Home page shell + swipe navigation | 2 | COMPLETE
+| 2.4 | Summary cards + phase banner | 2 | COMPLETE
 | 2.5 | Program page + phase completion card relocation | 2 |
 | 2.6 | Settings page + settings endpoint | 2 |
 | 2.7 | Client check-in hub (submission + history) | 2 |
@@ -59,6 +59,9 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 | 3.4 | Client exercise history page | 3 |
 | 4.1 | Habits detail page | 4 Habits |
 | 5.1 | Remove old Daily Pulse + deprecated routes + docs sweep | 5 Cleanup |
+| 5.2 | Align session_logs identity with event-keyed architecture | 5 |
+| 5.3 | Alternative session logging: write path + matcher + coach surfacing | 5 |
+| 5.4 | Alternative session logging: client UI | 5 |
 | 6.1 | Walkthrough copy/step update | 6 Check-in + onboarding |
 | 6.2 | Check-in context: session-keyed to event-keyed | 6 |
 | 6.3 | Check-in AI summary enrichment (optional) | 6 |
@@ -727,6 +730,8 @@ Session 0.1 confirmed no `timezone` column exists on `clients` and all date help
 
 ## Session 2.3: Home page shell + swipe navigation
 
+**Status**: COMPLETE
+
 **Commit message**: `feat(client-portal): add day-centric home with URL-param date navigation`
 
 **Objective**: Build `app/client/page.tsx` as the new landing, with date navigation (
@@ -769,7 +774,15 @@ The legacy Daily Pulse dashboard fires ~24 parallel GETs on fresh login (notific
 
 ## Session 2.4: Summary cards + phase banner
 
+**Status**: COMPLETE
+
 **Commit message**: `feat(client-portal): wire home summary cards and phase banner`
+
+**Deviations from plan** (worth knowing for downstream sessions):
+- **`ds-card-summary.tsx` is two exports, not one.** The plan implied a single primitive; implementation split into `DsCardSummary` (presentational frame: title + body) and `DsCardSummaryRow` (clickable/static row primitive). Cleaner separation — the frame is consumer-agnostic; clickability is per-row. Both live in `components/client-portal/ds-card-summary.tsx`.
+- **Single-row card copy adjusted to avoid title-duplication.** Original draft put `leadingText="Wellness"`/`"Nutrition"`/`"Habits"` inside the row of a card whose title already said the same word. Spotted via a `getByText` collision in the page test; also poor UX. Single-row cards now use the state itself as `leadingText` (`"Logged"` / `"Not logged yet"` / `"X of N logged"`). Training rows keep two-line layout because they have a meaningful session name as leadingText.
+- **Empty-state copy asymmetry between Training and Nutrition is deliberate**, per `services/training-event-service.ts:73-75` and ARCHITECTURE.md:213,230: training events skip rest days (no row written), so `events: []` is dominantly a real rest day → "Rest day / No training scheduled". Nutrition events always exist per date including rest days, so `nutrition: null` is never a rest day → neutral "No nutrition target today". See the architectural justification in the User-confirmed design choices subsection below.
+- **Day-summary route's `validateDateParameter` rejected future dates with 400.** Surfaced when smoke-testing forward swipe. Replaced the `validateDateParameter` call in `app/api/client/day-summary/route.ts` with inline YYYY-MM-DD format + Date-validity + round-trip check mirroring `app/client/page.tsx:23-29`. Past/future bounds belong to write-side enforcement via `canEditDay` (Session 3.x), not the read path. Test file rewritten to drop the validator mock and assert future + far-past dates return 200. See Session 3.3 (which gained the explicit future-day view-only scope in the same pass).
 
 **Objective**: Replace home placeholder slots with real summary cards (training, nutrition, wellness, habits). Add phase banner at top.
 
@@ -1020,11 +1033,13 @@ Clicking a card navigates to a detail page which fires its own fetch (e.g. `GET 
 
 ---
 
-## Session 3.3: Wellness detail page + past-day lock enforcement
+## Session 3.3: Wellness detail page + past-day lock enforcement + future-day view-only
 
-**Commit message**: `feat(client-portal): add wellness detail page with past-day lock UX`
+**Commit message**: `feat(client-portal): add wellness detail page with past-day lock and future-day view-only UX`
 
-**Objective**: Build `/client/wellness` with mood/energy/sleep/stress inputs. Solidify the date-rule UX pattern used across detail pages.
+**Objective**: Build `/client/wellness` with mood/energy/sleep/stress inputs. Solidify the date-rule UX pattern used across detail pages — both past-day lock (logged days display-only) AND future-day view-only (can see the plan, cannot log). The `canEditDay` helper from Session 3.1 returns false for both cases; `locked-day-notice.tsx`'s `reason` prop discriminates the copy (`past-logged` / `future` / `today-no-plan`).
+
+**Background**: The day-summary route already accepts past + today + future dates without bounds (no past-cap, no future-rejection — write-side bounds belong to `canEditDay`, not the read path). Session 2.4 final fix enforced this read-side openness. Session 3.3 is where the write-side and UI-side enforcement land, with `canEditDay` as the single source of truth used by every detail page.
 
 **Read first**:
 - Output of Sessions 3.1 + 3.2.
@@ -1174,9 +1189,214 @@ Clicking a card navigates to a detail page which fires its own fetch (e.g. `GET 
 
 **Do NOT**: Drop `upsert_daily_log_atomic()` from DB (separate schema work). Change `CONVENTIONS.md` beyond what the pre-Phase-1 doc sweep already did.
 
+**Note on legacy JSONB readers**: Sessions 5.2/5.3/5.4 (alternative session logging) plug into the event-keyed swap detection (`utils/training-event-helpers.ts:82-145`) — not the legacy `training_data.isAlternativeSession` JSONB path. Three consumers still read that JSONB after this session: `services/schedule-data-service.ts:108-118`, `utils/ai-daily-context-patterns.ts:39`, and `services/training-history-service.ts:90-93` (the no-active-phase fallback). They degrade gracefully (return `false`/empty) because nothing writes the JSONB post-Daily-Pulse-retirement. They're not blockers for 5.2/5.3 but are candidates for a future cleanup once verified unused at runtime.
+
 **Tests to write**: None. Remove tests for deleted code.
 
 **Verify**: `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Manual smoke across client portal: login lands on `/client`, every tab works, no 404s. Read ARCHITECTURE.md end to end to confirm the rewrite is complete and no stale references remain. Commit.
+
+---
+
+## Session 5.2: Align session_logs identity with event-keyed architecture
+
+**Commit message**: `feat(training): align session_logs identity with event-keyed architecture`
+
+**Objective**: Migrate `session_logs` from session-week identity to event-keyed identity. Foundation for alternative-session logging (Sessions 5.3 and 5.4) and a side-effect fix for the cycle-plan data-loss bug where two events with the same `training_session_id` in one week silently overwrite each other on the existing `(client_id, training_session_id, week_start_date)` unique constraint.
+
+**Why this comes after 5.1**: Pre-5.1, three writers target the existing constraint: `services/training-log-service.ts`, `app/api/client/session-completions/route.ts`, `services/client-portal-training.ts:markSessionComplete`. 5.1 deletes the latter two. Doing the migration before 5.1 means updating soon-to-be-deleted files. After 5.1, only `services/training-log-service.ts` writes session_logs — one file to update.
+
+**Read first**:
+- `docs/ARCHITECTURE.md` Training Completion Hierarchy section.
+- `CONVENTIONS.md` §8 Database (migration workflow).
+- `services/training-log-service.ts` (current upsert at line 366; orphan-event retry branch at line 327; composite-key fallback at line 581).
+- `services/training-event-service.ts:410-425` (`linkSessionLogToEvent`).
+- `services/training-log-service.test.ts` (lines 848 and 1290 specifically — explicit dependencies on the existing key).
+- `supabase/migrations/027_add_session_completion_tracking.sql` (source of the current unique constraint).
+- `supabase/migrations/055_rename_and_protect_training_history.sql` (where the indexed constraint was renamed).
+
+**Plan (report before implementing)**:
+- Migration shape:
+  - `ALTER TABLE session_logs ADD COLUMN training_event_id UUID NULL REFERENCES training_events(id) ON DELETE SET NULL;`
+  - Backfill from event side: `UPDATE session_logs sl SET training_event_id = te.id FROM training_events te WHERE te.session_log_id = sl.id;`
+  - `DROP INDEX session_logs_client_session_week_key;`
+  - `CREATE UNIQUE INDEX session_logs_training_event_id_key ON session_logs(training_event_id) WHERE training_event_id IS NOT NULL;`
+- Service rewrite: replace upsert on `(client_id, training_session_id, week_start_date)` with: "if `event.session_log_id IS NOT NULL`, UPDATE the linked log row by id; else INSERT new row with `training_event_id = event.id`." Generalises the existing orphan-event retry branch (line 327) into the primary write path.
+- `linkSessionLogToEvent` extension: write both directions of the link in one call (event.session_log_id + session_log.training_event_id + event.status). Atomic enough for pre-launch; future hardening can wrap in a Postgres function if needed.
+- Composite-key fallback at `getTrainingEventDetail` (line 581-606): replaced by direct lookup via `event.session_log_id` (which is always set after a successful log write). Remove the composite-key branch entirely.
+
+**Implement**:
+- New migration `supabase/migrations/0XX_session_logs_event_keyed.sql` with the four steps above. Number sequentially after the current tip.
+- `services/training-log-service.ts`: refactor `logTrainingEvent` step 5 (line 315 onward) to use event-keyed upsert. Refactor step 6 read fallback (line 581) to drop composite-key path.
+- `services/training-event-service.ts:linkSessionLogToEvent`: extend signature to also update the log row's `training_event_id`. Both writes in one function; sequenced UPDATE statements (event row then log row) — caller treats as atomic.
+- Regenerate `types/database.ts` per CONVENTIONS §8 migration workflow.
+- Update `lib/database-helpers.ts` if `SessionLogInsert`/`SessionLogUpdate` need explicit type adjustment (likely auto-flows from regeneration).
+- `types/training.ts`: add `trainingEventId: string | null` to `SessionLog` type (line 433-446).
+- Update `docs/ARCHITECTURE.md` "Training Completion Hierarchy" section (lines 262-275): document the new `training_event_id` column on `session_logs`, the new partial unique index, the event-keyed write semantics, and note that the old `(client_id, training_session_id, week_start_date)` unique constraint has been dropped. Per the doc's own convention ("Update it when shipping migrations"), this lands in the same commit as the migration.
+
+**Do NOT**:
+- Touch `session_logs.training_session_id` semantics — it still records the performed session (currently always matches the event's prescribed session; after 5.3, may diverge for swaps).
+- Drop the `training_logs` table or `upsert_daily_log_atomic()` RPC — separate schema cleanup, both write-dead post-6.4.
+- Change anything in the read paths beyond the composite-key fallback removal.
+- Touch `prescribed_session_snapshot` writing logic — 5.3 will extend that for the rest-day-with-no-event case.
+
+**Tests to write**:
+- `services/training-log-service.test.ts`:
+  - Update existing test [16] (line 848 area) — assertion on `onConflict` key changes from `client_id,training_session_id,week_start_date` to UPDATE-by-id behavior.
+  - Rewrite test [17] (line 1290) "composite-key fallback" — becomes "log fetched directly via `event.session_log_id`" since the composite-key branch is removed.
+  - Other tests with `week_start_date` in fixtures (lines 1242, 1341, 1412, 1465, 1521, 1636): no changes needed; the column still exists, just isn't part of the unique key.
+- Migration smoke test (manual): apply migration to local DB, verify `session_logs_training_event_id_key` exists, old index dropped, backfill populated existing rows.
+
+**Verify**: `npx supabase db push` clean. `npx supabase gen types typescript --linked > types/database.ts`. Diff the generated types file — should show `training_event_id` added to session_logs. `npx tsc --noEmit` clean. `npx eslint .` clean. `npx vitest run` all green. Commit migration + regenerated types + service changes in the same commit per CONVENTIONS §8.
+
+---
+
+## Session 5.3: Alternative session logging — write path + matcher + coach surfacing
+
+**Commit message**: `feat(training): alternative session logging with matcher and prescribed-vs-performed coach view`
+
+**Objective**: Enable a client to log a different session than what was prescribed for a given day (planned-day swap) or log training on a rest day. Server-side: extend the log payload, implement a matcher that links the log to a prescribed event when possible, write the rest-day-trained endpoint. Coach-side: render the alt-session badge in the training history table (column already computes `is_alternative`) and add a session-level "Prescribed X · Performed Y" header to the drill-down dialog.
+
+**Why this comes after 5.2**: 5.2's event-keyed identity is what makes the matcher implementation clean — the log carries `training_event_id` directly. Pre-5.2, this work would require maintaining two identity paths.
+
+**Read first**:
+- Output of Session 5.2.
+- `services/training-log-service.ts` (the writer post-5.2 refactor).
+- `utils/training-event-helpers.ts:82-145` (existing swap detection — comparing event.training_session_id vs session_log.training_session_id).
+- `lib/validations/training.ts:logTrainingEventSchema` (current schema).
+- `app/api/clients/[id]/training/session-logs/[sessionLogId]/route.ts` (coach drill-down API).
+- `components/clients/training/training-history-table.tsx` (rows render around line 175-200; `is_alternative` column already returned by the API but unused).
+- `components/clients/training/session-log-detail-dialog.tsx:236-300` (header area where session-level swap renders).
+- `docs/ARCHITECTURE.md` Training Completion Hierarchy + Training → Nutrition cascade sections.
+
+**Plan (report before implementing)**:
+- **Schema additions**:
+  - `lib/validations/training.ts`: add `performedSessionId: z.string().uuid().optional()` to `logTrainingEventSchema`. When present, the log is for an alternative session.
+- **Matcher rule** (pure function in `services/training-log-service.ts`):
+  - Input: `{ clientId, weekStart, performedSessionId, completedAt }`.
+  - Returns: `eventId | null`.
+  - Match priority:
+    1. Unlinked event with same `training_session_id` as `performedSessionId`, earliest date in week. Catches "missed Tuesday's Pull, did it Wednesday" cleanly.
+    2. Unlinked event on the same date as `completedAt`, regardless of session_id. Catches planned-day swap (Monday Push event matched by date).
+    3. Any unlinked event of same `training_session_id` in week (no date proximity). Catches "did Pull early before its prescribed day."
+    4. NULL — no candidate. Log stays unmatched; surfaces as truly-extra rest-day training.
+  - "Unlinked" means `session_log_id IS NULL` AND `status IN ('scheduled','missed','skipped')`. Excludes already-completed/partial events.
+- **Snapshot semantics for swap (Option A, decided in design)**:
+  - `session_log.prescribed_session_snapshot`: derived from the **event's** `training_session_id` if an event is matched. Captures what the calendar prescribed.
+  - When no event matched (truly-extra rest-day): snapshot derived from `payload.performedSessionId`. Captures what the client chose to do.
+  - `exercise_logs[].prescribed_exercise_snapshot`: always derived from the chosen session's exercises (the `trainingExerciseId`s in the payload). Captures the prescription for what was performed.
+- **Two write paths sharing internals**:
+  - Existing: `POST /api/client/training/events/[eventId]/log` (event-keyed; client tapped an event card).
+  - New: `POST /api/client/training/session-logs` (event-less; client picked from rest-day picker). Body includes `date`, `performedSessionId`, plus the existing log payload fields. Internally runs the matcher; if a match is found, the log gets linked + event status flipped; if not, log stays unmatched.
+  - Both routes call shared service internals for snapshot writing, exercise_logs/set_logs writing, and `linkSessionLogToEvent`.
+- **Session-fetch endpoint for detailed-mode**:
+  - New: `GET /api/client/training/sessions/[sessionId]` returning the session + active exercises (`is_active = true` filter on exercises). Powers the detailed-mode refetch in 5.4's UI when the client swaps or picks a rest-day session.
+- **Coach-side surfacing**:
+  - `components/clients/training/training-history-table.tsx`: render an "Alternative" badge in the Session column when `row.is_alternative === true`. Small visual marker, no new column.
+  - `app/api/clients/[id]/training/session-logs/[sessionLogId]/route.ts`: include `performedSessionName: string | null` in the response (join `training_sessions` on `session_log.training_session_id` and return the live name).
+  - `components/clients/training/session-log-detail-dialog.tsx`: when `performedSessionName` is present and differs from `prescribedSessionSnapshot.name`, render a "Prescribed {prescribed} · Performed {performed}" line in the header below the date.
+
+**Implement**:
+- `lib/validations/training.ts`: add `performedSessionId` (optional UUID).
+- `services/training-log-service.ts`:
+  - Extract a private `writeSessionLog(params)` from the current `logTrainingEvent`. Params include `eventId | null`, `performedSessionId`, `payload`. Centralises snapshot derivation, log upsert, exercise/set log writes.
+  - Wire `logTrainingEvent` (event-keyed) to call `writeSessionLog` with `eventId = event.id` and `performedSessionId = payload.performedSessionId ?? event.training_session_id`.
+  - New `logTrainingSessionForDate(clientId, date, payload)` (event-less): runs matcher, calls `writeSessionLog` with `eventId = matchedEventId | null` and `performedSessionId = payload.performedSessionId`.
+  - New `findMatchingEvent(clientId, weekStart, performedSessionId, completedAt)` pure function per the matcher rule above.
+- New API route `app/api/client/training/session-logs/route.ts` (POST): `clientApiRateLimit` + CSRF + `getAuthenticatedClientId` + schema validation + `logTrainingSessionForDate`.
+- New API route `app/api/client/training/sessions/[sessionId]/route.ts` (GET): `clientApiRateLimit` + auth + ownership check (session belongs to the client's **active** plan — return 404 if it belongs to an archived/draft plan to keep the picker scoped to currently-prescribed work) + returns session + active exercises.
+- Extend `app/api/clients/[id]/training/session-logs/[sessionLogId]/route.ts`: response now includes `performedSessionName`.
+- `services/training-event-service.ts:linkSessionLogToEvent`: no change beyond Session 5.2's extension.
+- `components/clients/training/training-history-table.tsx`: render alt-session badge.
+- `components/clients/training/session-log-detail-dialog.tsx`: render session-level "Prescribed X · Performed Y" header conditionally.
+- Update `docs/ARCHITECTURE.md`: add a subsection (under "Training Completion Hierarchy" or after "Nutrition & Training Events") documenting the matcher rule, the alt-session signal (`session_log.training_session_id != event.training_session_id` for swap; `session_log.training_event_id IS NULL` for truly-extra rest-day-trained), and the snapshot semantics (session snapshot from event for matched logs, from chosen session for unmatched extras; exercise snapshots always from chosen session). Lands in the same commit as the service changes.
+
+**Do NOT**:
+- Build any client portal UI (Session 5.4 owns that).
+- Cascade nutrition on log writes — matches the existing Session 1.2 deferral. Day's nutrition target stays based on the prescribed event's surplus%. Actual nutrition logging captures reality independently.
+- Touch the existing exercise-level swap from Session 1.5 (`performed_name`, `exercise_id` on exercise_logs). Session-level swap is a separate signal at the log row level; coexists cleanly.
+- Change adherence math anywhere — Session 6.2 covers that with a note (see 6.2's revised text).
+- Build a freehand session creator. Picker offers active-plan sessions only.
+
+**Tests to write**:
+- `services/training-log-service.test.ts`:
+  - Matcher unit tests: 4 scenarios (preferred match by session_id; same-date fallback; any-in-week fallback; no match returns null).
+  - `logTrainingEvent` with `performedSessionId` differing from event.training_session_id: writes log with performed id, snapshot from event's session id, event.status flips to completed.
+  - `logTrainingSessionForDate` happy path with match: writes log linked to matched event, event status flips.
+  - `logTrainingSessionForDate` no match: writes log with `training_event_id = NULL`, no event update.
+  - Snapshot for rest-day-no-match: `prescribed_session_snapshot` derived from `performedSessionId`'s session.
+- `app/api/client/training/session-logs/route.test.ts`: 201 valid, 400 malformed, 401 unauthenticated, CSRF rejection.
+- `app/api/client/training/sessions/[sessionId]/route.test.ts`: 200 happy, 404 not found, 404 belongs to another client (collapsed for IDOR per CONVENTIONS), 401 unauthenticated.
+- `app/api/clients/[id]/training/session-logs/[sessionLogId]/route.test.ts`: extend existing tests to assert `performedSessionName` in response.
+- `components/clients/training/training-history-table.test.tsx`: badge renders when `is_alternative: true`.
+- `components/clients/training/session-log-detail-dialog.test.tsx`: session-level swap header renders when `performedSessionName` differs from snapshot name.
+
+**Verify**: `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Manual coach test: log an alt-session as a client (via curl until 5.4 lands the UI), verify coach training history shows the badge and the drill-down dialog shows "Prescribed X · Performed Y." Commit.
+
+---
+
+## Session 5.4: Alternative session logging — client UI
+
+**Commit message**: `feat(client-portal): client UI for alternative session and rest-day logging`
+
+**Objective**: Wire the client portal UI for both alternative-session flows: (1) planned-day swap (client taps a planned event, chooses to do a different session); (2) rest-day training (client taps a rest-day card, picks a session from the active plan). Reuses the existing Session 1.5 tracker for detailed-mode logging.
+
+**Read first**:
+- Output of Session 5.3 (new endpoints, payload shape).
+- `app/client/page.tsx` (home).
+- `components/client-portal/day/training-card-summary.tsx` (rest-day card is currently non-clickable).
+- `app/client/training/page.tsx` (detail page; currently requires `eventId`).
+- `components/client-portal/training/set-tracker.tsx` (the tracker from Session 1.5).
+- `components/daily-pulse/session-picker.tsx` for reference (legacy — DO NOT import; reimplement mobile-first).
+
+**Plan (report before implementing)**:
+- **Rest-day card click target**: when `events: []` for the day, the card row becomes clickable. Routes to `/client/training?date=YYYY-MM-DD` (no `eventId`). Update `TrainingCardSummary` to render the rest-day row as a link.
+- **Detail page two-mode handling** (`app/client/training/page.tsx`):
+  - With `eventId` query param: existing flow (Session 1.4/1.5). Plus a new "Do a different session" button near the top of the tracker.
+  - Without `eventId` but with `date`: picker is the entry point. After picking, render the same tracker bound to the picked session.
+- **Picker component** (`components/client-portal/training/session-picker.tsx`):
+  - Mobile-first, full-screen overlay or sheet pattern. Lists active-plan sessions with session name and focus.
+  - Submit calls `onSelect(sessionId)`. The detail page then fetches `GET /api/client/training/sessions/[sessionId]` and binds the tracker.
+- **Day-view option B trained-for line**:
+  - When a `session_log.completed_at = D1` is linked to a `training_event` on date `D2` and `D1 ≠ D2`, the day-view for `D1` should show a small line: "Trained for {weekday of D2} {session.name}." Restores the "where I actually trained" signal without confusing the calendar.
+  - Add a slim sub-line to the training summary card on the home day-view, rendered conditionally.
+  - Data: day-summary endpoint can expose `loggedForOtherDate` per-event (or via a new field) — simplest is to extend the `TrainingEventSummary` shape returned by day-summary to include `loggedFor: { date: string, sessionName: string } | null`, populated when the day's events have logs whose `completed_at` differs from the day. Decide at impl time whether to extend day-summary or compute client-side.
+- **Save payload**:
+  - With `eventId`: existing endpoint `POST /api/client/training/events/[eventId]/log`. New optional field `performedSessionId` in body when swap was used.
+  - Without `eventId`: new endpoint `POST /api/client/training/session-logs` with `date`, `performedSessionId`, plus the standard log fields.
+
+**Implement**:
+- `components/client-portal/day/training-card-summary.tsx`: rest-day row becomes a link to `/client/training?date={date}`. Keep the existing "Rest day" / "No training scheduled" copy.
+- New `components/client-portal/training/session-picker.tsx`: mobile-first picker, fetches active-plan sessions (existing client-side data from day-summary or new endpoint — pick the cheaper path at impl time).
+- `app/client/training/page.tsx`: handle missing `eventId`. When missing, render the picker. When present and tracker is shown, surface the "Do a different session" button that opens the picker.
+- `components/client-portal/training/set-tracker.tsx`:
+  - Accept optional `performedSessionId` prop (overrides the event's session for exercise list + payload field).
+  - On performed-session change (swap), refetch via `GET /api/client/training/sessions/[sessionId]` to populate detailed-mode exercise list. The unchanged save flow handles the rest.
+- Day-view option B: add the "Trained for {day} {session}" line to the home training card. Conditional on the trained-for-elsewhere signal being present.
+- All new mobile interactions follow the existing client-portal styling (border-radius 6px, brand teal hover lift).
+
+**Do NOT**:
+- Reimplement the tracker — reuse 1.5's component.
+- Touch coach-side code — Session 5.3 covered that.
+- Build a freehand session creator — picker offers active-plan sessions only.
+- Build a "session library" picker for non-plan sessions — out of scope.
+- Block the user from picking a session that's already prescribed on another day — the matcher handles it.
+- Cascade nutrition on swap from the client side — server doesn't cascade per Session 5.3 plan; UI just reflects what the server does.
+
+**Tests to write**:
+- `components/client-portal/training/session-picker.test.tsx`: renders active-plan sessions; tap fires onSelect; cancel closes.
+- `components/client-portal/day/training-card-summary.test.tsx`: rest-day row is a link with correct href when events: [].
+- `app/client/training/page.test.tsx`: renders picker when eventId is missing; renders tracker when eventId present; clicking "Do a different session" opens picker; selecting a session refetches exercises and renders tracker.
+- `components/client-portal/training/set-tracker.test.tsx` (extend): save payload includes `performedSessionId` when swap was used; detailed-mode exercises come from the picked session, not the event's session.
+- Day-view "Trained for" line: home page test that the line renders when log.completed_at differs from event.date.
+
+**Verify**: `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Manual end-to-end:
+1. Plan with Push Monday, Pull Tuesday, rest Wed-Sun. Log Push Monday as prescribed → verify Monday card shows complete, no swap signal.
+2. On Tuesday, swap Pull for Legs (suppose Legs is in the plan elsewhere) → verify save succeeds, coach training history shows "Alternative" badge on Tuesday, drill-down dialog shows "Prescribed Pull · Performed Legs."
+3. On Wednesday (rest day), tap rest-day card → picker opens → pick Pull → log → verify (a) Tuesday's Pull event flips to completed (the matcher caught up the missed Pull), (b) Wednesday card shows "Trained for Tuesday Pull Day" line.
+4. On Saturday (rest day), tap rest-day card → pick Push (already done Monday) → log → verify log stays unmatched (no available event), Saturday's day-view does NOT show a "Trained for" line (no matched event), adherence count unchanged (already 100%).
+5. DevTools Console: no console errors. Network: no 404s on built routes.
+
+Commit.
 
 ---
 
@@ -1193,6 +1413,7 @@ Clicking a card navigates to a detail page which fires its own fetch (e.g. `GET 
 
 **Implement**:
 - Walkthrough steps: bottom tab bar tour, home summary, tap card to log, swipe days, program banner, settings via avatar.
+- Add a brief mention of alternative-session logging from Sessions 5.3/5.4: a one-sentence callout that clients can tap a rest-day card to log a workout or use "Do a different session" on a planned day. Sits alongside the "tap card to log" step.
 - Split if over size limit (currently 266 lines).
 - Client-friendly copy per CONVENTIONS.
 
@@ -1224,6 +1445,8 @@ Clicking a card navigates to a detail page which fires its own fetch (e.g. `GET 
 - Update `check-in-context-service.ts` to count `training_events.status='completed'` for the period.
 - **Add per-event detail to the AI context**: fetch training events for the check-in period, left-join `session_logs` (via `training_events.session_log_id`). For each event, include: `sessionName`, `status` (completed/partial/skipped/not logged), and `session_log.notes` when status is skipped. Events with no session_log are "not logged" (the client never interacted with the event — treat as incomplete). Events with a session_log where `completion_quality = 'skipped'` are explicitly skipped and may have notes explaining why. The AI must be able to distinguish these so it can say e.g. "Skipped Shoulder Day (shoulder was sore). Arm Day and Back Day were not logged."
 - Preserve form's response shape.
+
+**Interaction with Sessions 5.2/5.3/5.4 (alternative session logging)**: counting `training_events.status='completed'` is the right rule even with alt-session in place. Events flipped to `completed` by the 5.3 matcher (planned-day swap, or rest-day-trained that matched an unlinked event) count toward adherence. Truly-extra rest-day-trained logs that found no match (`session_log.training_event_id IS NULL`) are intentionally NOT counted — they're surplus training and don't affect "did the client do what was prescribed." If the AI prompt should mention extras, that's a separate enrichment in Session 6.3.
 
 **Do NOT**: Change submission flow or AI invocation.
 
@@ -1262,6 +1485,7 @@ Clicking a card navigates to a detail page which fires its own fetch (e.g. `GET 
 **Implement**:
 - Extend data fetch for `exercise_logs` within period.
 - Extend prompt with compact per-exercise summary block. For completed/partial sessions, include exercise names and a **summary line per exercise** (e.g., "Bench Press — 3 sets, top 105×8 @ RPE 9"). Aggregate from `ExerciseLog.sets[]` rather than enumerating every set; per-set detail is available if a specific summary metric needs it but is too verbose for the prompt by default. For skipped sessions, the skip notes from Session 6.2's per-event detail are sufficient — no exercise-level data exists.
+- **Alt-session swap signal (optional polish on top of polish)**: when a `session_log` exists where `training_session_id` differs from the linked `event.training_session_id` (a swap, post-Session-5.3), include the performed session name alongside the prescribed name in the per-event header line so the AI can comment on the choice (e.g., "Monday: Prescribed Push Day · Performed Pull Day — 4 exercises logged"). Reads cleanly from data already fetched for the per-exercise block; no extra query.
 - Respect 25s timeout per CONVENTIONS section 11.
 
 **Do NOT**: Swap AI providers. Do not change `ai_insights` JSONB shape.
@@ -1287,7 +1511,9 @@ Clicking a card navigates to a detail page which fires its own fetch (e.g. `GET 
 
 **What is out of scope** (stays as-is): body metrics (weight, body fat, measurements — live in the separate `body_metrics` event log), photos (storage), qualitative reflection (went well / challenges / goals — genuinely unique to the check-in). These have no daily-log equivalent.
 
-**Prerequisites**: Session 3.1 (`lib/daily-log-permissions.ts` with `canEditDay`), Session 1.3 (training event log POST endpoint), Session 6.2 (context service reads from `training_events.status`).
+**Interaction with Sessions 5.2/5.3/5.4 (alternative session logging)**: the training session checklist loads `training_events` for the period — it does NOT surface truly-extra rest-day-trained logs that didn't match a prescribed event (`session_log.training_event_id IS NULL` cases). Those are visible only from the home day-view per Session 5.4, by design — the check-in form's purpose is "did the prescribed sessions get done." Events flipped to `completed` via 5.3's matcher (planned-day swap, or rest-day-trained that caught up an unlinked event) render as locked + completed in this form. The session-level swap detail (Prescribed X · Performed Y) appears in the coach drill-down dialog, not in the check-in form rows themselves; this form shows the prescribed `event.session_name` only and `status`. No special handling is required in this session — alt-session is transparent to the form because completion data still flows through `training_events.status`.
+
+**Prerequisites**: Session 3.1 (`lib/daily-log-permissions.ts` with `canEditDay`), Session 1.3 (training event log POST endpoint), Session 6.2 (context service reads from `training_events.status`), Sessions 5.2/5.3/5.4 (alt-session — already in scope; matcher and write paths exist by the time 6.4 lands).
 
 **Read first**:
 - `services/check-in-context-service.ts` (post-Session-6.2 state).

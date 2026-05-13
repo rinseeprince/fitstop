@@ -187,6 +187,43 @@ These snapshots preserve history when plans are replaced or exercises deleted. T
 
 Replaces the chart-only `HistoryChartDialog`. Shows prescribed vs actual per exercise, set-by-set, plus client notes and status. Reads from the live row when available, snapshot when orphaned.
 
+### Alternative session logging
+
+Clients sometimes train differently from what the coach prescribed: doing a different session on a planned day (a swap), or training on a prescribed rest day. The legacy Daily Pulse supported this via a session picker that wrote a flag in `training_logs.training_data` JSONB. The new event-keyed architecture supports the same behavior natively, without the JSONB cache.
+
+**Two scenarios, one rule:**
+
+- **Planned-day swap.** Monday is Push Day in the plan; the client decides to do Pull Day instead. They open the training detail page (the prescribed Push event) and tap "Do a different session" → picker shows other active-plan sessions → they pick Pull. The detailed-mode tracker rebinds to Pull's prescribed exercises; the save submits `performedSessionId = Pull.id` against Monday's event.
+- **Rest-day training.** Wednesday is a rest day in the plan; the client wants to train anyway. They tap the rest-day card on home → picker shows active-plan sessions → they pick Pull. The detail page renders the tracker bound to Pull. Save submits to an event-less endpoint with `date` and `performedSessionId`.
+
+**The matcher.** Every `session_log` write attempts to link to a prescribed `training_event` in the same training week:
+
+1. Unlinked event with the same `training_session_id` as `performedSessionId`, earliest date in week. Catches "missed Tuesday's Pull, did it Wednesday" — Tuesday's event flips to `completed` via Wednesday's log.
+2. Unlinked event on the same date as `completed_at`, regardless of session_id. Catches planned-day swap — Monday's Push event flips to `completed` via Monday's Pull log.
+3. Any unlinked event of same `training_session_id` in the week. Catches "did Pull early before Tuesday."
+4. No match. The log stays with `training_event_id IS NULL` — a truly-extra session that doesn't affect prescribed-completion counts.
+
+An event is matchable when `status IN ('scheduled','missed','skipped')` and `session_log_id IS NULL`. `completed` and `partial` events are already linked and not re-matched.
+
+**Snapshot semantics for swap (Option A).** Two snapshot fields carry different sources to preserve both stories:
+
+- `session_log.prescribed_session_snapshot`: derived from the **matched event's** `training_session_id` (the calendar prescription — Push in the swap case). For unmatched extras, derived from the chosen session.
+- `exercise_logs[].prescribed_exercise_snapshot`: always derived from the **chosen session's** exercises (Pull's prescription for each exercise the client performed).
+
+The coach drill-down reads both: "Prescribed Push Day on Monday. Client performed Pull Day. Here's Pull's prescription per exercise vs. their actual sets."
+
+**Day-view affordance (option B).** When `session_log.completed_at` differs from the linked `training_event.date` (e.g. rest-day-trained that caught up Tuesday's missed Pull on Wednesday), the day-view for the day the client actually trained shows a slim "Trained for {weekday} {session.name}" line. Restores the "where I physically trained" signal without confusing the calendar.
+
+**Picker scope.** Active-plan sessions only. No freehand entries, no library browsing, no externally-defined workouts. Mobile-first picker under `components/client-portal/training/session-picker.tsx`.
+
+**What does NOT change:**
+
+- **The calendar (coach-side).** Pure `training_events` reader. Coach prescriptions are not mutated by client logging — only the event `status` field changes as logs land, exactly as it does today for prescribed-as-planned completions.
+- **Adherence math.** Counts `training_events.status='completed'` in the period. Swaps and rest-day-trained-that-matched both flip status to completed, so both count. Truly-extra rest-day logs (no match) do not count — they are surplus training, not prescribed completion.
+- **Nutrition cascade on log writes.** Still not fired, matching the existing Session 1.2 deferral. The day's prescribed nutrition target stays based on the prescribed event's surplus%. The client's actual nutrition logging captures reality independently.
+
+**Coach surfacing.** The data tab (training history table) renders an "Alternative" badge on rows where `is_alternative = true` (the column is already computed and returned by the API; just unused in the current UI). The session-log detail dialog adds a session-level "Prescribed X · Performed Y" header above the existing per-exercise prescribed-vs-performed view. Neither the calendar nor any other coach surface changes.
+
 ---
 
 ## Nutrition logging (scope)
