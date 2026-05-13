@@ -56,7 +56,7 @@ export async function middleware(request: NextRequest) {
         .eq("user_id", user.id)
         .single()
 
-      const redirectTo = profile?.role === "client" ? "/client/dashboard" : "/dashboard"
+      const redirectTo = profile?.role === "client" ? "/client" : "/dashboard"
       return NextResponse.redirect(new URL(redirectTo, request.url))
     }
 
@@ -137,8 +137,8 @@ export async function middleware(request: NextRequest) {
 
   // Role-based access control
   if (isClient && isTrainerRoute) {
-    // Client trying to access trainer routes -> redirect to client dashboard
-    return NextResponse.redirect(new URL("/client/dashboard", request.url))
+    // Client trying to access trainer routes -> redirect to client home
+    return NextResponse.redirect(new URL("/client", request.url))
   }
 
   if (isTrainer && isClientRoute) {

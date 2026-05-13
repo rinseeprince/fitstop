@@ -74,7 +74,7 @@ export async function GET(request: NextRequest) {
 
     // Already onboarded client
     return NextResponse.redirect(
-      new URL("/client/dashboard", requestUrl.origin)
+      new URL("/client", requestUrl.origin)
     )
   }
 
@@ -89,7 +89,7 @@ export async function GET(request: NextRequest) {
 
   if (profile?.role === "client") {
     return NextResponse.redirect(
-      new URL("/client/dashboard", requestUrl.origin)
+      new URL("/client", requestUrl.origin)
     )
   }
 

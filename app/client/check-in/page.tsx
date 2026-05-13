@@ -105,8 +105,8 @@ export default function ClientCheckInPage() {
             <p className="text-muted-foreground">
               Your next check-in opens on your scheduled day. Check back then!
             </p>
-            <Button variant="outline" onClick={() => router.push("/client/dashboard")}>
-              Back to Dashboard
+            <Button variant="outline" onClick={() => router.push("/client")}>
+              Back to home
             </Button>
           </CardContent>
         </Card>
@@ -125,8 +125,8 @@ export default function ClientCheckInPage() {
             <p className="text-muted-foreground">
               You've already submitted your check-in for this week. Great job!
             </p>
-            <Button variant="outline" onClick={() => router.push("/client/dashboard")}>
-              Back to Dashboard
+            <Button variant="outline" onClick={() => router.push("/client")}>
+              Back to home
             </Button>
           </CardContent>
         </Card>

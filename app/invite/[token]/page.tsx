@@ -163,8 +163,8 @@ export default function InvitePage() {
 
       toast.success("Account created successfully! Welcome to CoachHub.")
       
-      // Redirect to client dashboard (smart router handles onboarding vs walkthrough)
-      router.push("/client/dashboard")
+      // Redirect to client home (smart router handles onboarding vs walkthrough)
+      router.push("/client")
 
     } catch (error) {
       console.error("Error during signup:", error)
@@ -392,7 +392,7 @@ export default function InvitePage() {
             <p className="text-center text-sm text-muted-foreground mt-3">
               Already have an account?{" "}
               <a
-                href={`/login?redirectTo=/client/dashboard`}
+                href={`/login?redirectTo=/client`}
                 className="text-primary hover:underline font-medium"
               >
                 Sign in

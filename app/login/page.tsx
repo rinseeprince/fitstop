@@ -33,7 +33,7 @@ export default function LoginPage() {
       const role = await login(data.email, data.password);
 
       // Redirect based on role
-      const redirectTo = role === "client" ? "/client/dashboard" : "/dashboard";
+      const redirectTo = role === "client" ? "/client" : "/dashboard";
       router.push(redirectTo);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "Invalid email or password";
