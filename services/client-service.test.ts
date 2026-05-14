@@ -34,6 +34,7 @@ import {
   deleteClient,
   permanentlyDeleteClient,
   updateClientCheckInConfig,
+  updateClientSettings,
 } from './client-service'
 
 // Helper to create a chainable mock query
@@ -565,6 +566,76 @@ describe('Client Service', () => {
       await expect(permanentlyDeleteClient('client-123')).rejects.toThrow(
         'Failed to permanently delete client'
       )
+    })
+  })
+
+  describe('updateClientSettings', () => {
+    it("derives weight_unit='kg' when unitPreference is 'metric'", async () => {
+      const mockQuery = createMockQuery({
+        data: createMockClientRow({ unit_preference: 'metric', weight_unit: 'kg' }),
+        error: null,
+      })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+
+      await updateClientSettings('client-123', { unitPreference: 'metric' })
+
+      const updateCall = mockQuery.update.mock.calls[0][0]
+      expect(updateCall.unit_preference).toBe('metric')
+      expect(updateCall.weight_unit).toBe('kg')
+      expect(updateCall.updated_at).toBeDefined()
+    })
+
+    it("derives weight_unit='lbs' when unitPreference is 'imperial'", async () => {
+      const mockQuery = createMockQuery({
+        data: createMockClientRow({ unit_preference: 'imperial', weight_unit: 'lbs' }),
+        error: null,
+      })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+
+      await updateClientSettings('client-123', { unitPreference: 'imperial' })
+
+      const updateCall = mockQuery.update.mock.calls[0][0]
+      expect(updateCall.unit_preference).toBe('imperial')
+      expect(updateCall.weight_unit).toBe('lbs')
+    })
+
+    it('writes only timezone when only timezone is supplied', async () => {
+      const mockQuery = createMockQuery({
+        data: createMockClientRow({ timezone: 'America/Los_Angeles' }),
+        error: null,
+      })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+
+      await updateClientSettings('client-123', { timezone: 'America/Los_Angeles' })
+
+      const updateCall = mockQuery.update.mock.calls[0][0]
+      expect(updateCall.timezone).toBe('America/Los_Angeles')
+      expect(updateCall.unit_preference).toBeUndefined()
+      expect(updateCall.weight_unit).toBeUndefined()
+    })
+
+    it('scopes the UPDATE by client id', async () => {
+      const mockQuery = createMockQuery({
+        data: createMockClientRow(),
+        error: null,
+      })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+
+      await updateClientSettings('client-123', { unitPreference: 'metric' })
+
+      expect(mockQuery.eq).toHaveBeenCalledWith('id', 'client-123')
+    })
+
+    it('throws when supabase returns an error', async () => {
+      const mockQuery = createMockQuery({
+        data: null,
+        error: { message: 'connection lost' },
+      })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+
+      await expect(
+        updateClientSettings('client-123', { unitPreference: 'metric' }),
+      ).rejects.toThrow('Failed to update client settings')
     })
   })
 

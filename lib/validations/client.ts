@@ -85,7 +85,18 @@ export const sendReminderSchema = z.object({
   reminderType: z.enum(["overdue", "checkin", "general"]).default("overdue"),
 });
 
+// Schema for PATCH /api/client/settings (client-controlled preferences)
+// Kept separate from updateClientSchema (coach-facing) so client and coach
+// surfaces can evolve independently without one loosening the other.
+export const updateSettingsSchema = z
+  .object({
+    unitPreference: z.enum(["metric", "imperial"]).optional(),
+    timezone: z.string().min(1).optional(),
+  })
+  .refine((v) => Object.keys(v).length > 0, { message: "No fields to update" });
+
 // Type exports
 export type CreateClientInput = z.infer<typeof createClientSchema>;
 export type UpdateClientInput = z.infer<typeof updateClientSchema>;
 export type UpdateCheckInConfigInput = z.infer<typeof updateCheckInConfigSchema>;
+export type UpdateSettingsInput = z.infer<typeof updateSettingsSchema>;

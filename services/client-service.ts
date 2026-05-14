@@ -1,6 +1,11 @@
 import { supabaseAdmin } from "./supabase-admin";
 import type { Client } from "@/types/check-in";
-import type { CreateClientInput, UpdateClientInput, UpdateCheckInConfigInput } from "@/lib/validations/client";
+import type {
+  CreateClientInput,
+  UpdateClientInput,
+  UpdateCheckInConfigInput,
+  UpdateSettingsInput,
+} from "@/lib/validations/client";
 import type { ClientRow } from "@/lib/database-helpers";
 import { mapClientRow } from "@/lib/mappers";
 import { createIntake } from "@/services/client-intake-service";
@@ -281,6 +286,41 @@ export const permanentlyDeleteClient = async (clientId: string): Promise<void> =
     console.error("Failed to permanently delete client:", error);
     throw new Error("Failed to permanently delete client");
   }
+};
+
+// Update client-controlled settings (PATCH /api/client/settings)
+// Writes only the fields supplied. weight_unit is derived from unit_preference
+// in the same UPDATE so the two columns stay in sync.
+export const updateClientSettings = async (
+  clientId: string,
+  settings: UpdateSettingsInput
+): Promise<Client> => {
+  const updateData: Record<string, unknown> = {
+    updated_at: new Date().toISOString(),
+  };
+
+  if (settings.unitPreference !== undefined) {
+    updateData.unit_preference = settings.unitPreference;
+    updateData.weight_unit = settings.unitPreference === "metric" ? "kg" : "lbs";
+  }
+
+  if (settings.timezone !== undefined) {
+    updateData.timezone = settings.timezone;
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("clients")
+    .update(updateData)
+    .eq("id", clientId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error("Failed to update client settings:", error);
+    throw new Error("Failed to update client settings");
+  }
+
+  return mapClientRow(data);
 };
 
 // Update client check-in configuration

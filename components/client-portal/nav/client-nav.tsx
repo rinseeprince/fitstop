@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Home, ClipboardCheck, Dumbbell, BookOpen, LogOut } from "lucide-react";
+import { Home, ClipboardCheck, Dumbbell, BookOpen, LogOut, Settings } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
 
 import { cn } from "@/lib/utils";
@@ -72,6 +72,12 @@ export function ClientTopBar({ client, user }: ClientTopBarProps) {
               </Avatar>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              <DropdownMenuItem asChild>
+                <Link href="/client/settings">
+                  <Settings className="mr-2 h-4 w-4" strokeWidth={1.5} />
+                  Settings
+                </Link>
+              </DropdownMenuItem>
               <DropdownMenuItem onSelect={handleSignOut}>
                 <LogOut className="mr-2 h-4 w-4" strokeWidth={1.5} />
                 Sign out
