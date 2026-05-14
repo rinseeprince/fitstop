@@ -64,7 +64,7 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 | 2.3 | Home page shell + swipe navigation | 2 | COMPLETE
 | 2.4 | Summary cards + phase banner | 2 | COMPLETE
 | 2.5 | Program page + phase completion card relocation | 2 | COMPLETE
-| 2.6 | Settings page + settings endpoint | 2 |
+| 2.6 | Settings page + settings endpoint | 2 | COMPLETE
 | 2.7 | Client check-in hub (submission + history) | 2 |
 | 2.8 | Training plan overview card + sessions drill-in | 2 |
 | 2.9 | Nutrition plan overview card + drill-in | 2 |
@@ -885,7 +885,16 @@ Clicking a card navigates to a detail page which fires its own fetch (e.g. `GET 
 
 ## Session 2.6: Settings page + settings endpoint
 
-**Commit message**: `feat(client-portal): add client settings page with unit and reminder preferences`
+**Status**: COMPLETE (commit `7f08054`)
+
+**Mid-session deviations from spec**:
+- **Reminder switch dropped from scope.** The `reminder_preferences` UI was cut after grepping the consumers: `services/reminder-service.ts:sendAutomatedReminders` reads the fields, but no cron invokes it and the email send is a `TODO` stub at `reminder-service.ts:61-63`. Toggling would have written to a column nothing reads. Re-introduce alongside the cron + email work, not before.
+- **Migration 092 added (out-of-scope discovery).** While building the form, hit a silent submit failure traced to `clients.reminder_preferences` JSONB containing snake_case keys (`auto_send`, `send_before_hours`) from migration 008's seed default, while every TS consumer (`ReminderPreferences` type, cron's `autoSend` guard, the new form's zodResolver) expected camelCase. Migration 092 rewrites all rows in place via `jsonb_build_object` + `COALESCE` and changes the column default. Same shape mismatch was making `services/reminder-service.ts:129` silently skip every client (latent — cron isn't live).
+- **In-page sign-out button removed.** Avatar dropdown's "Sign out" item already covers it; an in-page duplicate added clutter for no gain.
+- **Single Imperial/Metric toggle (not two).** Per `docs/CLIENT-PORTAL-REDESIGN.md` §8 lines 338-342: server derives `weight_unit` from `unit_preference` (`metric → kg`, `imperial → lbs`) and writes both columns in the same UPDATE. Client never sends `weightUnit`.
+- **Timezone Combobox split out.** `app/client/settings/page.tsx` was approaching the §4 250-line component limit, so the IANA Combobox lives at `components/client-portal/settings/timezone-combobox.tsx`. `'UTC'` is treated as the unset sentinel — when stored is `'UTC'` and `Intl.DateTimeFormat().resolvedOptions().timeZone` differs, an inline "Use detected: …" button appears. No silent overwrites.
+
+**Commit message**: `feat(client-portal): add client settings page with unit and timezone preferences`
 
 **Objective**: Build `/client/settings` with editable weight unit, unit preference, reminder preferences, timezone (if added in 0.3), plus read-only profile info and a sign-out button. Add `PATCH /api/client/settings` mutation.
 
