@@ -112,10 +112,10 @@ export async function fetchTrainingDataForPeriod(
       .eq("client_id" as never, clientId as never)
       .eq("trained" as never, true as never)
       .gte("date" as never, periodStart as never)
-      .lte("date" as never, periodEnd as never) as unknown as {
+      .lte("date" as never, periodEnd as never) as unknown as Promise<{
         data: Array<{ date: string; training_session_id: string | null; training_data: unknown }> | null;
         error: { message: string } | null;
-      },
+      }>,
   ]);
 
   if (plansResult.error) throw new Error(`Failed to fetch training plans: ${plansResult.error.message}`);
@@ -188,10 +188,10 @@ export async function fetchNutritionDataForPeriod(
       .select("date, calories_consumed, protein_g, carbs_g, fat_g, target_calories, target_protein_g, target_carbs_g, target_fat_g")
       .eq("client_id" as never, clientId as never)
       .gte("date" as never, periodStart as never)
-      .lte("date" as never, periodEnd as never) as unknown as {
+      .lte("date" as never, periodEnd as never) as unknown as Promise<{
         data: Array<{ date: string; calories_consumed: number | null; protein_g: number | null; carbs_g: number | null; fat_g: number | null; target_calories: number | null; target_protein_g: number | null; target_carbs_g: number | null; target_fat_g: number | null }> | null;
         error: { message: string } | null;
-      },
+      }>,
   ]);
 
   if (plansResult.error) throw new Error(`Failed to fetch nutrition plans: ${plansResult.error.message}`);

@@ -31,6 +31,7 @@ export function useClientCheckIn() {
   const [contextData, setContextData] = useState<CheckInContextData | null>(null);
   const [isLoadingContext, setIsLoadingContext] = useState(true);
   const [contextError, setContextError] = useState<string | null>(null);
+  const [nextDueDate, setNextDueDate] = useState<string | null>(null);
 
   // Fetch check-in context on mount
   useEffect(() => {
@@ -43,6 +44,7 @@ export function useClientCheckIn() {
       try {
         setIsLoadingContext(true);
         setContextError(null);
+        setNextDueDate(null);
 
         const response = await fetch("/api/client/check-in-context");
         const result = await response.json();
@@ -51,6 +53,9 @@ export function useClientCheckIn() {
           // Surface specific gating error codes so the page can show friendly messages
           if (result.error === "not_due" || result.error === "completed") {
             setContextError(result.error);
+            if (typeof result.nextDueDate === "string") {
+              setNextDueDate(result.nextDueDate);
+            }
             return;
           }
           throw new Error(result.error || "Failed to fetch check-in context");
@@ -102,6 +107,7 @@ export function useClientCheckIn() {
     contextData,
     isLoadingContext,
     contextError,
+    nextDueDate,
     submitCheckIn,
   };
 }

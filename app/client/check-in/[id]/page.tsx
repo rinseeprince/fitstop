@@ -43,7 +43,7 @@ export default function CheckInDetailPage() {
       try {
         const response = await fetch(`/api/client/check-ins/${params.id}`);
         if (!response.ok) throw new Error("Failed to fetch check-in");
-        
+
         const data = await response.json();
         setCheckIn(data.data);
       } catch (err) {
@@ -57,6 +57,23 @@ export default function CheckInDetailPage() {
       fetchCheckIn();
     }
   }, [params.id]);
+
+  // Deep-link-safe back: only call router.back() when the previous entry was
+  // same-origin. window.history.length is unreliable (Chrome's new-tab page
+  // counts as an entry), so we check document.referrer instead — empty or
+  // cross-origin means the user landed here directly (paste, email, share)
+  // and back() would drop them outside the app.
+  const handleBack = () => {
+    const sameOriginReferrer =
+      typeof document !== "undefined" &&
+      document.referrer !== "" &&
+      document.referrer.startsWith(window.location.origin);
+    if (sameOriginReferrer) {
+      router.back();
+    } else {
+      router.push("/client/check-in");
+    }
+  };
 
   if (loading) {
     return (
@@ -75,13 +92,9 @@ export default function CheckInDetailPage() {
       <Card>
         <CardContent className="py-8 text-center">
           <p className="text-muted-foreground">{error || "Check-in not found"}</p>
-          <Button
-            variant="outline"
-            className="mt-4"
-            onClick={() => router.push("/client/progress")}
-          >
+          <Button variant="outline" className="mt-4" onClick={handleBack}>
             <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to Progress
+            Back
           </Button>
         </CardContent>
       </Card>
@@ -100,11 +113,7 @@ export default function CheckInDetailPage() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center gap-4">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => router.push("/client/progress")}
-        >
+        <Button variant="ghost" size="sm" onClick={handleBack}>
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back
         </Button>
@@ -144,7 +153,7 @@ export default function CheckInDetailPage() {
                 <span className="font-medium">{checkIn.bodyFatPercentage}%</span>
               </div>
             )}
-            
+
             {(checkIn.waist || checkIn.hips || checkIn.chest || checkIn.arms || checkIn.thighs) && (
               <>
                 <Separator className="my-4" />
@@ -263,7 +272,7 @@ export default function CheckInDetailPage() {
                   <span className="font-medium">{checkIn.nutritionDaysOnTarget}/7 days</span>
                 </div>
               )}
-              
+
               {checkIn.prs && (
                 <>
                   <Separator className="my-4" />
@@ -273,7 +282,7 @@ export default function CheckInDetailPage() {
                   </div>
                 </>
               )}
-              
+
               {checkIn.challenges && (
                 <>
                   <Separator className="my-4" />
