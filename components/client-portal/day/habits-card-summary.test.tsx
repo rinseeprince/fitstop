@@ -2,8 +2,13 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
 
 import { HabitsCardSummary } from "./habits-card-summary";
+import { getDateDaysFrom, getTodayDateString } from "@/lib/date-helpers";
 
 const DATE = "2026-05-08";
+const FUTURE_DATE = getDateDaysFrom(
+  new Date(getTodayDateString() + "T00:00:00"),
+  1,
+);
 
 describe("HabitsCardSummary", () => {
   beforeEach(() => cleanup());
@@ -50,5 +55,19 @@ describe("HabitsCardSummary", () => {
       "href",
       `/client/habits?date=${DATE}`,
     );
+  });
+
+  it("renders future-date row as info-only with no link and no hint", () => {
+    render(
+      <HabitsCardSummary
+        habits={{ totalCount: 3, loggedCount: 1 }}
+        date={FUTURE_DATE}
+      />,
+    );
+
+    expect(screen.getByText("1 of 3 logged")).toBeInTheDocument();
+    expect(screen.queryByRole("link")).toBeNull();
+    expect(screen.queryByText("Tap to log")).toBeNull();
+    expect(screen.queryByText("Tap to view")).toBeNull();
   });
 });

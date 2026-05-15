@@ -3,8 +3,13 @@ import { render, screen, cleanup } from "@testing-library/react";
 
 import { TrainingCardSummary } from "./training-card-summary";
 import type { TrainingEventSummary } from "@/types/training";
+import { getDateDaysFrom, getTodayDateString } from "@/lib/date-helpers";
 
 const DATE = "2026-05-08";
+const FUTURE_DATE = getDateDaysFrom(
+  new Date(getTodayDateString() + "T00:00:00"),
+  1,
+);
 
 function event(overrides: Partial<TrainingEventSummary> = {}): TrainingEventSummary {
   return {
@@ -116,5 +121,15 @@ describe("TrainingCardSummary", () => {
     );
     expect(screen.getByText("Push")).toBeInTheDocument();
     expect(screen.getByText("Cardio")).toBeInTheDocument();
+  });
+
+  it("renders future-date events as info-only with no link and no hint", () => {
+    render(<TrainingCardSummary events={[event()]} date={FUTURE_DATE} />);
+
+    expect(screen.getByText("Push Day A")).toBeInTheDocument();
+    expect(screen.getByText("Not logged yet")).toBeInTheDocument();
+    expect(screen.queryByRole("link")).toBeNull();
+    expect(screen.queryByText("Tap to log")).toBeNull();
+    expect(screen.queryByText("Tap to view")).toBeNull();
   });
 });

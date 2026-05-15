@@ -2,6 +2,7 @@ import {
   DsCardSummary,
   DsCardSummaryRow,
 } from "@/components/client-portal/ds-card-summary";
+import { getTodayDateString } from "@/lib/date-helpers";
 
 type Props = {
   habits: { totalCount: number; loggedCount: number };
@@ -17,6 +18,7 @@ export function HabitsCardSummary({ habits, date }: Props) {
     );
   }
 
+  const isFuture = date > getTodayDateString();
   const leadingText = `${habits.loggedCount} of ${habits.totalCount} logged`;
   const hint =
     habits.loggedCount === habits.totalCount ? "Tap to view" : "Tap to log";
@@ -24,10 +26,10 @@ export function HabitsCardSummary({ habits, date }: Props) {
   return (
     <DsCardSummary title="Habits">
       <DsCardSummaryRow
-        href={`/client/habits?date=${date}`}
+        href={isFuture ? undefined : `/client/habits?date=${date}`}
         prefetch={false}
         leadingText={leadingText}
-        hint={hint}
+        hint={isFuture ? undefined : hint}
         ariaLabel={`Habits — ${leadingText}`}
       />
     </DsCardSummary>

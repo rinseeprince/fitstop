@@ -4,6 +4,7 @@ import {
   DsCardSummary,
   DsCardSummaryRow,
 } from "@/components/client-portal/ds-card-summary";
+import { getTodayDateString } from "@/lib/date-helpers";
 
 type Props = {
   events: TrainingEventSummary[];
@@ -11,6 +12,8 @@ type Props = {
 };
 
 export function TrainingCardSummary({ events, date }: Props) {
+  const isFuture = date > getTodayDateString();
+
   if (events.length === 0) {
     return (
       <DsCardSummary title="Training">
@@ -27,10 +30,14 @@ export function TrainingCardSummary({ events, date }: Props) {
       {events.map((event) => (
         <DsCardSummaryRow
           key={event.eventId}
-          href={`/client/training?eventId=${event.eventId}&date=${date}`}
+          href={
+            isFuture
+              ? undefined
+              : `/client/training?eventId=${event.eventId}&date=${date}`
+          }
           leadingText={event.sessionName}
           trailingText={formatEventState(event)}
-          hint={hintFor(event)}
+          hint={isFuture ? undefined : hintFor(event)}
           ariaLabel={`${event.sessionName} — ${formatEventState(event)}`}
         />
       ))}

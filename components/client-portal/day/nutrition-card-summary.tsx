@@ -2,6 +2,7 @@ import {
   DsCardSummary,
   DsCardSummaryRow,
 } from "@/components/client-portal/ds-card-summary";
+import { getTodayDateString } from "@/lib/date-helpers";
 
 type Props = {
   nutrition: { hasLog: boolean } | null;
@@ -17,16 +18,17 @@ export function NutritionCardSummary({ nutrition, date }: Props) {
     );
   }
 
+  const isFuture = date > getTodayDateString();
   const leadingText = nutrition.hasLog ? "Logged" : "Not logged yet";
   const hint = nutrition.hasLog ? "Tap to view" : "Tap to log";
 
   return (
     <DsCardSummary title="Nutrition">
       <DsCardSummaryRow
-        href={`/client/nutrition?date=${date}`}
+        href={isFuture ? undefined : `/client/nutrition?date=${date}`}
         prefetch={false}
         leadingText={leadingText}
-        hint={hint}
+        hint={isFuture ? undefined : hint}
         ariaLabel={`Nutrition — ${leadingText}`}
       />
     </DsCardSummary>

@@ -2,8 +2,13 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
 
 import { WellnessCardSummary } from "./wellness-card-summary";
+import { getDateDaysFrom, getTodayDateString } from "@/lib/date-helpers";
 
 const DATE = "2026-05-08";
+const FUTURE_DATE = getDateDaysFrom(
+  new Date(getTodayDateString() + "T00:00:00"),
+  1,
+);
 
 describe("WellnessCardSummary", () => {
   beforeEach(() => cleanup());
@@ -28,5 +33,14 @@ describe("WellnessCardSummary", () => {
       "href",
       `/client/wellness?date=${DATE}`,
     );
+  });
+
+  it("renders future-date row as info-only with no link and no hint", () => {
+    render(<WellnessCardSummary wellness={{ hasLog: false }} date={FUTURE_DATE} />);
+
+    expect(screen.getByText("Not logged yet")).toBeInTheDocument();
+    expect(screen.queryByRole("link")).toBeNull();
+    expect(screen.queryByText("Tap to log")).toBeNull();
+    expect(screen.queryByText("Tap to view")).toBeNull();
   });
 });
