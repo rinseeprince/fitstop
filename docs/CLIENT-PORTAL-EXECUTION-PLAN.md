@@ -65,7 +65,7 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 | 2.4 | Summary cards + phase banner | 2 | COMPLETE
 | 2.5 | Program page + phase completion card relocation | 2 | COMPLETE
 | 2.6 | Settings page + settings endpoint | 2 | COMPLETE
-| 2.7 | Client check-in hub (submission + history) | 2 |
+| 2.7 | Client check-in hub (submission + history) | 2 | COMPLETE
 | 2.8 | Training plan overview card + sessions drill-in | 2 |
 | 2.9 | Nutrition plan overview card + drill-in | 2 |
 | 3.1 | Nutrition + wellness endpoints | 3 Detail pages |
@@ -938,6 +938,17 @@ Clicking a card navigates to a detail page which fires its own fetch (e.g. `GET 
 ---
 
 ## Session 2.7: Client check-in hub (submission + history)
+
+**Status**: COMPLETE (commit `61fef83`)
+
+**Mid-session deviations from spec**:
+- **Detail back-button rewritten mid-verification.** First pass used `window.history.length > 1` to decide between `router.back()` and `router.push("/client/check-in")`. Manual deep-link test (new tab → paste URL → click Back) revealed Chrome counts the new-tab page as a history entry, so `length` was 2 and back() dumped the user on the Google new-tab screen. Rewrote to check `document.referrer.startsWith(window.location.origin)` instead — empty or cross-origin referrer means a direct/email/share entry, fall back to `router.push`. Same-origin entries use `router.back()` as before.
+- **Components placed under `components/client-portal/check-in/`, not `components/client/`.** Pre-implementation default was to match the existing `components/client/progress/*` siblings on the progress page, but CONVENTIONS §6 marks `components/client/` as pre-activation. Check-in hub is post-activation, so `CheckInCard` and `PastCheckInsSection` live under `components/client-portal/check-in/`. The legacy `components/client/progress/*` files are technically misplaced per the same rule but are out of scope for this session.
+- **`PastCheckInsSection` extracted alongside `CheckInCard`.** Original plan inlined the past-list rendering in the hub page; that would have pushed `app/client/check-in/page.tsx` past CONVENTIONS §4's 300-line split threshold. Lifting the section out keeps the hub at ~270 lines (cohesive: header + submission-switch + section render) and gives the section a single testable responsibility. Section file exports `PAST_CHECK_INS_SWR_KEY` so the hub can `mutate(KEY)` after a successful submit — no callback prop, no `onDataChange` useEffect (CONVENTIONS §3).
+- **SWR replaces fetch+useState for past-list data.** First plan mirrored `/client/progress`'s legacy fetch pattern; reviewer flagged this against CONVENTIONS §7 (use SWR for all new data fetching). Sections now match `app/client/program/page.tsx` and `app/client/settings/page.tsx`: `useSWR(KEY, swrFetcher, { revalidateOnFocus: false, errorRetryCount: 3, errorRetryInterval: 1000 })`. `/client/progress` itself stays on its legacy pattern — migrating it is out of scope.
+- **`hooks/use-client-check-in.ts` extended to surface `nextDueDate`.** The check-in context API was already returning `nextDueDate` in its `not_due` / `completed` error responses (`app/api/client/check-in-context/route.ts:73,85`); the hook was discarding it. Added a `nextDueDate: string | null` return field so the hub can render "Next check-in opens on Wednesday, May 22". No change to the gating logic — only response-field surfacing.
+- **`/client/progress` not retired.** Page has goals, body/wellness metric charts, habits, and a stats grid in addition to check-in history, so it is NOT a candidate for the Session 5.1 retirement list. Only the inline `CheckInCard` was lifted out; the surrounding page keeps its current pattern.
+- **Bundled `await-thenable` fix in `services/schedule-data-service.ts`.** During the Session 2.7 CI-gate verification, `npx eslint .` reported 2 errors at `services/schedule-data-service.ts:109,186` blocking §13's commit-ready checklist. `git stash` confirmed they were pre-existing on `main` (introduced in commit `7de1987` as part of the pre-CE-1 checkpoint). Root cause: the Supabase query chain was cast `as unknown as { data, error }`, which strips the `PromiseLike` nature so `Promise.all` sees a non-thenable type. Fix (2 lines): wrap the asserted result type in `Promise<…>`. Runtime is unchanged — Supabase query builders are real thenables; only the type-level cast was lying. Bundled into the feature commit per user direction rather than a separate commit.
 
 **Commit message**: `feat(client-portal): turn check-in page into a hub with submission and past history`
 
