@@ -3,7 +3,7 @@ import { requireClientAuth } from "@/lib/require-client-auth";
 import { dailyLogSchema } from "@/lib/validations/daily-log";
 import { upsertDailyLog, getDailyLogs } from "@/services/daily-logs-service";
 import { getTodaysNutritionTarget } from "@/services/daily-context-service";
-import { getClientTrainingPlan } from "@/services/client-portal-training";
+import { getActiveTrainingPlan } from "@/services/training-service";
 import { calculateUnplannedActivityCalories, calculateAdjustedDayTarget, calculateAdjustedMacros } from "@/utils/nutrition-tracking-helpers";
 import { getTodayDateString, getDateDaysAgo } from "@/lib/date-helpers";
 import type { IntensityLevel } from "@/types/daily-pulse";
@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
     
     // Get nutrition targets and training data for the log's date to calculate adjusted targets
     const nutritionTarget = await getTodaysNutritionTarget(clientId, data.date);
-    const trainingPlan = await getClientTrainingPlan(clientId);
+    const trainingPlan = await getActiveTrainingPlan(clientId);
 
     let adjustedTargets = {
       targetCalories: nutritionTarget?.calories,

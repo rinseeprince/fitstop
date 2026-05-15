@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireClientAuth } from "@/lib/require-client-auth";
-import { getClientTrainingPlan } from "@/services/client-portal-training";
+import { getActiveTrainingPlan } from "@/services/training-service";
 
 // GET /api/client/training - Get client's active training plan
 export async function GET(request: NextRequest) {
@@ -8,7 +8,7 @@ export async function GET(request: NextRequest) {
   if (!auth.ok) return auth.response;
 
   try {
-    const plan = await getClientTrainingPlan(auth.clientId);
+    const plan = await getActiveTrainingPlan(auth.clientId);
 
     return NextResponse.json({
       success: true,

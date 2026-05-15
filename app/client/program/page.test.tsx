@@ -22,12 +22,20 @@ function setSWR({
   data?: unknown;
   mutate?: () => unknown;
 } = {}) {
-  swrCall.mockImplementation(() => ({
-    data: data ?? undefined,
-    error,
-    isLoading,
-    mutate,
-  }));
+  // Program page now makes two SWR calls (program + training-plan). The
+  // training-plan call defaults to no-data / no-loading so legacy tests keep
+  // passing without setting it explicitly.
+  swrCall.mockImplementation((key: string) => {
+    if (key === "/api/client/training-plan") {
+      return { data: undefined, error: undefined, isLoading: false, mutate: vi.fn() };
+    }
+    return {
+      data: data ?? undefined,
+      error,
+      isLoading,
+      mutate,
+    };
+  });
 }
 
 function makeProgram(overrides: Partial<ClientProgram> = {}): ClientProgram {

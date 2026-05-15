@@ -26,10 +26,6 @@ vi.mock('./client-portal-service', () => ({
   getClientNutritionTargets: vi.fn(),
 }));
 
-vi.mock('./client-portal-training', () => ({
-  getClientTrainingPlan: vi.fn(),
-}));
-
 vi.mock('./training-event-service', () => ({
   getEventForDate: vi.fn(),
 }));
@@ -39,7 +35,6 @@ vi.mock('./nutrition-event-service', () => ({
 }));
 
 import { supabaseAdmin } from './supabase-admin';
-import { getClientTrainingPlan } from './client-portal-training';
 import { getEventForDate } from './training-event-service';
 import { getNutritionEventForDate } from './nutrition-event-service';
 

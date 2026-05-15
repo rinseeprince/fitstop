@@ -4,11 +4,17 @@ import useSWR from "swr";
 
 import { PhaseListItem } from "@/components/client-portal/program/phase-list-item";
 import { RoadmapSummaryStrip } from "@/components/client-portal/program/roadmap-summary-strip";
+import { TrainingPlanCard } from "@/components/client-portal/program/training-plan-card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import type { ClientProgram } from "@/types/client-program";
+import type { ClientTrainingPlan } from "@/types/client-training-plan";
 
 type ProgramResponse = { success: boolean; data: ClientProgram | null };
+type TrainingPlanResponse = {
+  success: boolean;
+  data: ClientTrainingPlan | null;
+};
 
 function ProgramSkeleton() {
   return (
@@ -59,6 +65,20 @@ export default function ProgramPage() {
     },
   );
 
+  const {
+    data: trainingPlanData,
+    error: trainingPlanError,
+    isLoading: trainingPlanLoading,
+  } = useSWR<TrainingPlanResponse>(
+    "/api/client/training-plan",
+    swrFetcher,
+    {
+      revalidateOnFocus: false,
+      errorRetryCount: 3,
+      errorRetryInterval: 1000,
+    },
+  );
+
   if (error) return <ProgramLoadError onRetry={() => mutate()} />;
   if (isLoading || !data) return <ProgramSkeleton />;
 
@@ -66,6 +86,7 @@ export default function ProgramPage() {
   if (!program) return <EmptyRoadmap />;
 
   const { roadmap, phases, activePhaseId, weightUnit, metrics } = program;
+  const trainingPlan = trainingPlanData?.data ?? null;
 
   return (
     <div>
@@ -90,6 +111,12 @@ export default function ProgramPage() {
             weightUnit={weightUnit}
           />
         ))}
+        {trainingPlanLoading && !trainingPlanData && (
+          <Skeleton className="h-20 w-full" />
+        )}
+        {!trainingPlanError && trainingPlan && (
+          <TrainingPlanCard plan={trainingPlan} />
+        )}
       </div>
     </div>
   );

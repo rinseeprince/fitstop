@@ -66,7 +66,7 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 | 2.5 | Program page + phase completion card relocation | 2 | COMPLETE
 | 2.6 | Settings page + settings endpoint | 2 | COMPLETE
 | 2.7 | Client check-in hub (submission + history) | 2 | COMPLETE
-| 2.8 | Training plan overview card + sessions drill-in | 2 |
+| 2.8 | Training plan overview card + sessions drill-in | 2 | COMPLETE
 | 2.9 | Nutrition plan overview card + drill-in | 2 |
 | 3.1 | Nutrition + wellness endpoints | 3 Detail pages |
 | 3.2 | Nutrition detail page | 3 |
@@ -989,6 +989,14 @@ Clicking a card navigates to a detail page which fires its own fetch (e.g. `GET 
 ---
 
 ## Session 2.8: Training plan overview card + sessions drill-in
+
+**Status**: COMPLETE
+
+**Mid-session deviations from spec**:
+- **Phase coupling dropped after manual verification failed.** Initial service implementation followed the task spec's resolution ("find the active phase, then `training_plans` where `phase_id = phaseId`"). Manual test on a real test client (Samuel James, active PPL+Rest plan placed from library) hit the empty state — root cause: `training_plans.phase_id` is **nullable** per `docs/ARCHITECTURE.md:29,33,59`. Plans placed via the current UI (`/api/clients/[id]/training/place-from-library`) accept `phaseId` as optional and Samuel James's plan had `phase_id = NULL`. The placement service (`library-placement-service.ts::calculatePlacementEndDate`) already caps the cycle at the client's containing-phase end date regardless of the column link, so the link is essentially redundant metadata for the calendar-as-SOT model. Fix: drop the `phase-service` import and the `phase_id` filter; resolve by `client_id + status='active' + deleted_at IS NULL + effective_until IS NULL` ordered by `created_at DESC, LIMIT 1` (mirrors `getActiveTrainingPlan`'s resolution). Service tests simplified to drop the `phase-service` mock; the obsolete "returns null when no active phase exists" case was deleted.
+- **Legacy `getClientTrainingPlan` retired and 3 consumers retargeted (bundled scope per user direction, Option 3).** The original spec named the new service's exported function `getClientTrainingPlan`, which would have collided with `services/client-portal-training.ts::getClientTrainingPlan` (a session-scoped legacy reader that pre-dated CONVENTIONS §8 Shape B). Per user direction, the legacy was deleted instead of coexisting. Consumers retargeted to `getActiveTrainingPlan` from `services/training-service.ts`: `app/api/client/training/route.ts`, `app/api/client/daily-logs/route.ts`, `services/client-portal-service.ts` (the nutrition-target cascade). The legacy file's three completion helpers (`getWeeklyCompletions`, `markSessionComplete`, `removeSessionCompletion`) are preserved alongside `createPortalClient` — only `getClientTrainingPlan` was removed. A stale `vi.mock('./client-portal-training')` block in `services/daily-logs-service.test.ts` was verified-dead (no `vi.mocked(getClientTrainingPlan).mockResolvedValue(...)` call sites) and removed.
+- **`effective_until` filter shift (Decision 4 in plan).** The replacement `getActiveTrainingPlan` adds `effective_until IS NULL` to the active-plan query — tighter than the legacy filter, which only checked `status='active' AND deleted_at IS NULL`. The two are equivalent in any consistent DB state (`status='active' AND effective_until IS NOT NULL` is an invariant violation that the writers in `promoteTrainingPlanIfReady` and `createTrainingPlanAtomic` never produce). Accepted as a defensive tightening. A one-line SQL smoke (`SELECT COUNT(*) FROM training_plans WHERE status='active' AND effective_until IS NOT NULL AND deleted_at IS NULL`) was added to the verification checklist.
+- **Defense-in-depth user-ownership re-check removed.** The legacy `getClientTrainingPlan` did an inline `user_id`-based ownership check (`supabase.auth.getUser()` + `clients.eq("user_id", user.id)`) before fetching the plan. The replacement does not — `requireClientAuth` already produces `auth.clientId` from the verified JWT join per §8 Shape B, so the in-service re-check was redundant.
 
 **Commit message**: `feat(client-portal): add training plan overview card on program page with sessions drill-in`
 

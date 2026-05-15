@@ -3,7 +3,7 @@ import type { Client, DietType, UnitPreference } from "@/types/check-in";
 import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
 import { buildDailyTargetsFromPlan } from "@/utils/build-daily-targets";
 import { mapClientRow } from "@/lib/mappers";
-import { getClientTrainingPlan } from "./client-portal-training";
+import { getActiveTrainingPlan } from "./training-service";
 import { getEventsForDateRange } from "./training-event-service";
 import { getTrainingWeekStart, getTrainingWeekEnd, getTodayDateString } from "@/lib/date-helpers";
 import { promoteNutritionPlanIfReady } from "./nutrition-plan-service";
@@ -102,7 +102,7 @@ export async function getClientNutritionTargets(
   const weekEnd = getTrainingWeekEnd(today);
 
   const [trainingPlan, trainingEvents] = await Promise.all([
-    getClientTrainingPlan(clientId),
+    getActiveTrainingPlan(clientId),
     getEventsForDateRange(clientId, weekStart, weekEnd),
   ]);
   const dietType = (plan.diet_type as DietType) || "balanced";
