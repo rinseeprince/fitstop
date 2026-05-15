@@ -2,6 +2,7 @@
 
 import useSWR from "swr";
 
+import { NutritionPlanCard } from "@/components/client-portal/program/nutrition-plan-card";
 import { PhaseListItem } from "@/components/client-portal/program/phase-list-item";
 import { RoadmapSummaryStrip } from "@/components/client-portal/program/roadmap-summary-strip";
 import { TrainingPlanCard } from "@/components/client-portal/program/training-plan-card";
@@ -9,11 +10,16 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import type { ClientProgram } from "@/types/client-program";
 import type { ClientTrainingPlan } from "@/types/client-training-plan";
+import type { NutritionTargets } from "@/services/client-portal-service";
 
 type ProgramResponse = { success: boolean; data: ClientProgram | null };
 type TrainingPlanResponse = {
   success: boolean;
   data: ClientTrainingPlan | null;
+};
+type NutritionPlanResponse = {
+  success: boolean;
+  data: NutritionTargets | null;
 };
 
 function ProgramSkeleton() {
@@ -79,6 +85,20 @@ export default function ProgramPage() {
     },
   );
 
+  const {
+    data: nutritionPlanData,
+    error: nutritionPlanError,
+    isLoading: nutritionPlanLoading,
+  } = useSWR<NutritionPlanResponse>(
+    "/api/client/nutrition-plan",
+    swrFetcher,
+    {
+      revalidateOnFocus: false,
+      errorRetryCount: 3,
+      errorRetryInterval: 1000,
+    },
+  );
+
   if (error) return <ProgramLoadError onRetry={() => mutate()} />;
   if (isLoading || !data) return <ProgramSkeleton />;
 
@@ -87,6 +107,7 @@ export default function ProgramPage() {
 
   const { roadmap, phases, activePhaseId, weightUnit, metrics } = program;
   const trainingPlan = trainingPlanData?.data ?? null;
+  const nutritionPlan = nutritionPlanData?.data ?? null;
 
   return (
     <div>
@@ -112,11 +133,15 @@ export default function ProgramPage() {
           />
         ))}
         {trainingPlanLoading && !trainingPlanData && (
-          <Skeleton className="h-20 w-full" />
+          <Skeleton className="h-12 w-full" />
         )}
         {!trainingPlanError && trainingPlan && (
           <TrainingPlanCard plan={trainingPlan} />
         )}
+        {nutritionPlanLoading && !nutritionPlanData && (
+          <Skeleton className="h-12 w-full" />
+        )}
+        {!nutritionPlanError && nutritionPlan && <NutritionPlanCard />}
       </div>
     </div>
   );

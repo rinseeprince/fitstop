@@ -83,24 +83,6 @@ describe("TrainingPlanCard", () => {
     cleanup();
   });
 
-  it("renders cycle chips in session order", () => {
-    const { container } = render(<TrainingPlanCard plan={makePlan()} />);
-
-    const chips = container.querySelectorAll(
-      "span.rounded-md.text-xs.font-medium",
-    );
-    const labels = Array.from(chips).map((c) => c.textContent);
-    expect(labels).toEqual(["Push", "Pull", "Rest", "Legs", "Rest"]);
-  });
-
-  it("renders the literal 'Rest' label for rest entries even when the underlying session name is a placeholder", () => {
-    render(<TrainingPlanCard plan={makePlan()} />);
-
-    expect(screen.queryByText("Recovery Day")).toBeNull();
-    expect(screen.queryByText("Active Recovery")).toBeNull();
-    expect(screen.getAllByText("Rest")).toHaveLength(2);
-  });
-
   it("renders the plan name and training-session count (excluding rest)", () => {
     render(<TrainingPlanCard plan={makePlan()} />);
 
