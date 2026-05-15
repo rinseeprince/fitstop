@@ -797,7 +797,12 @@ The legacy Daily Pulse dashboard fires ~24 parallel GETs on fresh login (notific
 - **`ds-card-summary.tsx` is two exports, not one.** The plan implied a single primitive; implementation split into `DsCardSummary` (presentational frame: title + body) and `DsCardSummaryRow` (clickable/static row primitive). Cleaner separation — the frame is consumer-agnostic; clickability is per-row. Both live in `components/client-portal/ds-card-summary.tsx`.
 - **Single-row card copy adjusted to avoid title-duplication.** Original draft put `leadingText="Wellness"`/`"Nutrition"`/`"Habits"` inside the row of a card whose title already said the same word. Spotted via a `getByText` collision in the page test; also poor UX. Single-row cards now use the state itself as `leadingText` (`"Logged"` / `"Not logged yet"` / `"X of N logged"`). Training rows keep two-line layout because they have a meaningful session name as leadingText.
 - **Empty-state copy asymmetry between Training and Nutrition is deliberate**, per `services/training-event-service.ts:73-75` and ARCHITECTURE.md:213,230: training events skip rest days (no row written), so `events: []` is dominantly a real rest day → "Rest day / No training scheduled". Nutrition events always exist per date including rest days, so `nutrition: null` is never a rest day → neutral "No nutrition target today". See the architectural justification in the User-confirmed design choices subsection below.
-- **Day-summary route's `validateDateParameter` rejected future dates with 400.** Surfaced when smoke-testing forward swipe. Replaced the `validateDateParameter` call in `app/api/client/day-summary/route.ts` with inline YYYY-MM-DD format + Date-validity + round-trip check mirroring `app/client/page.tsx:23-29`. Past/future bounds belong to write-side enforcement via `canEditDay` (Session 3.x), not the read path. Test file rewritten to drop the validator mock and assert future + far-past dates return 200. See Session 3.3 (which gained the explicit future-day view-only scope in the same pass).
+- **Day-summary route's `validateDateParameter` rejected future dates with 400.** Surfaced when smoke-testing forward swipe. Replaced the `validateDateParameter` call in `app/api/client/day-summary/route.ts` with inline YYYY-MM-DD format + Date-validity + round-trip check mirroring `app/client/page.tsx:23-29`. Past/future bounds belong to write-side enforcement via `canEditDay` (Session 3.x), not the read path. Test file rewritten to drop the validator mock and assert future + far-past dates return 200. See the Post-merge follow-up below — the read path stays open, but the navigation surface is what gates future-date writes.
+
+**Post-merge follow-up: future-date navigation block** (commit `a376a65`):
+- **Architectural decision.** Home day-view summary cards are the single navigation surface to logging. Future-date cards are non-clickable; this is the SOT for future-date write blocking. Past + today remain clickable (past-logged days still need detail-page lock UX for view-history reasons). To see future training structure, clients use `/client/program` (the read-only program tab; the training plan card from Session 2.8 already covers this, and Session 2.9 will add the nutrition plan card).
+- **Implementation.** Each of the four cards computes `const isFuture = date > getTodayDateString();` and passes `href: undefined` + `hint: undefined` to `DsCardSummaryRow` when true. `leadingText` / `trailingText` / `ariaLabel` stay so the row reads as info-only. `DsCardSummaryRow` already renders a plain `<div>` when `href` is omitted (no primitive change needed). Inline string comparison is safe (YYYY-MM-DD is lexicographically ordered) and the helper extraction would be premature abstraction per CONVENTIONS §3.
+- **Downstream simplification.** Sessions 3.2 / 3.3 / 4.1 / 5.4 no longer carry future-day view-only UI scope — the navigation block prevents reaching those pages for future dates. Server-side `assertCanEdit({ resourceType: 'training', ... })` stays in Session 5.3 as defense-in-depth for direct API callers (§8 Shape B perimeter), not as primary protection. The product owner's principle: *"For future days, you shouldn't be able to click into the cards. That should be the future date blocking implementation. Period."*
 
 **Objective**: Replace home placeholder slots with real summary cards (training, nutrition, wellness, habits). Add phase banner at top.
 
@@ -1099,7 +1104,7 @@ Clicking a card navigates to a detail page which fires its own fetch (e.g. `GET 
 
 1. **`lib/daily-log-permissions.ts`** (new):
    - `canEditDay(date, loggedStatus, clientTimezone): boolean` — pure function, client-safe (no Supabase imports). Returns true for today + past-unlogged; false for past-logged + future. Imported by UI detail pages to drive disabled state.
-   - `assertCanEdit({ clientId, date, resourceType }): Promise<void>` — server-side wrapper. Loads the client's timezone and current log state for the resource, calls `canEditDay`, throws a typed error (e.g. `DayLockedError`) on violation. Route handlers catch and return 403.
+   - `assertCanEdit({ clientId, date, resourceType }): Promise<void>` where `resourceType: 'nutrition' | 'wellness' | 'habit' | 'training'` — server-side wrapper. Loads the client's timezone and current log state for the resource, calls `canEditDay`, throws a typed error (e.g. `DayLockedError`) on violation. Route handlers catch and return 403. The `'training'` variant is reserved for Session 5.3's writer — defense-in-depth for direct API callers, since the Session 2.4 post-merge follow-up makes the home day-view card-blocking the primary protection.
 
 2. **`resolvePlanContextForDate(clientId, date): { phaseId, nutritionPlanId, trainingPlanId }`** — shared helper used by every per-card write to populate `daily_logs.phase_id` and child `*_plan_id` links. Lives in an existing plan-adjacent service (decided in planning step). Every write calls it once; no endpoint reimplements the lookup.
 
@@ -1152,30 +1157,29 @@ Clicking a card navigates to a detail page which fires its own fetch (e.g. `GET 
 - Four numeric inputs (kcal, protein, carbs, fat).
 - Vs-target progress display.
 - Save to `PATCH /api/client/daily-logs/[date]/nutrition`.
-- Loading, error, locked (past-logged), and view-only (future) states.
+- Loading, error, and locked (past-logged) states. **No future-day view-only state** — the Session 2.4 post-merge follow-up makes the home day-view cards non-clickable for future dates, so this page is unreachable for future dates via the UI navigation surface.
 - **Import `canEditDay` from `lib/daily-log-permissions.ts`** (Session 3.1) to derive `isLocked` for the UI. Do not compute the rule locally with date math — single source of truth.
 
-**Do NOT**: Add meal or food logging. Reimplement the date-edit rule; always import from the shared helper.
+**Do NOT**: Add meal or food logging. Reimplement the date-edit rule; always import from the shared helper. Add future-day view-only UI (the navigation block from Session 2.4 covers it; server-side `assertCanEdit` covers direct API callers).
 
 **Tests to write**:
 - `app/client/nutrition/page.test.tsx`:
   - Renders with existing log values prefilled.
   - Save submits correct payload.
   - Locked state disables inputs and shows notice.
-  - Future-day state disables inputs with different copy.
   - Error toast on save rejection.
 
-**Verify**: Happy path + lock path + future-day path. `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Commit.
+**Verify**: Happy path + lock path. `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Commit.
 
 ---
 
-## Session 3.3: Wellness detail page + past-day lock enforcement + future-day view-only
+## Session 3.3: Wellness detail page + past-day lock enforcement
 
-**Commit message**: `feat(client-portal): add wellness detail page with past-day lock and future-day view-only UX`
+**Commit message**: `feat(client-portal): add wellness detail page with past-day lock`
 
-**Objective**: Build `/client/wellness` with mood/energy/sleep/stress inputs. Solidify the date-rule UX pattern used across detail pages — both past-day lock (logged days display-only) AND future-day view-only (can see the plan, cannot log). The `canEditDay` helper from Session 3.1 returns false for both cases; `locked-day-notice.tsx`'s `reason` prop discriminates the copy (`past-logged` / `future` / `today-no-plan`).
+**Objective**: Build `/client/wellness` with mood/energy/sleep/stress inputs. Solidify the past-day lock UX pattern used across detail pages (logged days display-only). The `canEditDay` helper from Session 3.1 returns false for past-logged; `locked-day-notice.tsx`'s `reason` prop discriminates the copy (`past-logged` / `today-no-plan`).
 
-**Background**: The day-summary route already accepts past + today + future dates without bounds (no past-cap, no future-rejection — write-side bounds belong to `canEditDay`, not the read path). Session 2.4 final fix enforced this read-side openness. Session 3.3 is where the write-side and UI-side enforcement land, with `canEditDay` as the single source of truth used by every detail page.
+**Background**: The day-summary route already accepts past + today + future dates without bounds (no past-cap, no future-rejection — write-side bounds belong to `canEditDay`, not the read path). Session 2.4 final fix enforced this read-side openness; the Session 2.4 post-merge follow-up made the home day-view cards non-clickable for future dates, so future-date detail pages are unreachable via the UI navigation surface. Session 3.3 is where the past-day write-side and UI-side enforcement land, with `canEditDay` as the single source of truth used by every detail page.
 
 **Read first**:
 - Output of Sessions 3.1 + 3.2.
@@ -1186,13 +1190,13 @@ Clicking a card navigates to a detail page which fires its own fetch (e.g. `GET 
 - `app/client/wellness/page.tsx` with mood/energy/sleep/stress inputs (reuse primitives).
 - Save to `PATCH /api/client/daily-logs/[date]/wellness`.
 - Import `canEditDay` from `lib/daily-log-permissions.ts` (Session 3.1) for `isLocked` state. Do not duplicate date math in the page.
-- `components/client-portal/day/locked-day-notice.tsx`: **single component** with a `reason: 'past-logged' | 'future' | 'today-no-plan'` prop that switches copy. Do NOT create separate variant components. Reuse in nutrition page.
+- `components/client-portal/day/locked-day-notice.tsx`: **single component** with a `reason: 'past-logged' | 'today-no-plan'` prop that switches copy. Do NOT create separate variant components. Reuse in nutrition page.
 
 **Tests to write**:
-- Wellness page: renders with values, save correct payload, locked/future states.
+- Wellness page: renders with values, save correct payload, locked state.
 - `locked-day-notice.test.tsx`: correct copy renders for each `reason` value.
 
-**Verify**: Happy + lock + future for both pages. `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Commit.
+**Verify**: Happy + lock for both pages. `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Commit.
 
 ---
 
@@ -1273,16 +1277,17 @@ Clicking a card navigates to a detail page which fires its own fetch (e.g. `GET 
 **Implement**:
 - `app/client/habits/page.tsx` renders per-habit toggles for selected date.
 - Writes via existing habit-log endpoint.
-- Import `canEditDay` from `lib/daily-log-permissions.ts` (Session 3.1) for the `isLocked` UI state.
-- Past-day lock + future-day rejection on server-side habit endpoint if not already present. If missing, add by calling `assertCanEdit` from Session 3.1 — do NOT reimplement the rule. If present, audit it against `assertCanEdit` and replace any inline date-rule logic with the shared helper.
+- Import `canEditDay` from `lib/daily-log-permissions.ts` (Session 3.1) for the `isLocked` UI state (past-logged → locked).
+- Server-side past-day lock on the habit endpoint if not already present. If missing, add by calling `assertCanEdit({ resourceType: 'habit', ... })` from Session 3.1 — do NOT reimplement the rule. If present, audit it against `assertCanEdit` and replace any inline date-rule logic with the shared helper.
+- **No future-day UI handling.** The Session 2.4 post-merge follow-up makes the home day-view cards non-clickable for future dates, so this page is unreachable for future dates via the UI navigation surface. The `assertCanEdit` server-side rejection still covers direct API callers (defense-in-depth).
 
-**Do NOT**: Add new habit-log endpoints. Modify habit CRUD. Duplicate date-rule logic.
+**Do NOT**: Add new habit-log endpoints. Modify habit CRUD. Duplicate date-rule logic. Add future-day view-only UI.
 
 **Tests to write**:
-- Habits page: one toggle per habit; toggle fires correct POST; locked and future states render notice.
-- Server-side lock if added: 403 on locked/future day.
+- Habits page: one toggle per habit; toggle fires correct POST; locked state renders notice.
+- Server-side lock if added: 403 on past-logged day (and on future-date direct API call, as defense-in-depth).
 
-**Verify**: Toggle across days; rules honored. `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Commit.
+**Verify**: Toggle across days; past-day lock honored. `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Commit.
 
 ---
 
@@ -1424,6 +1429,7 @@ Clicking a card navigates to a detail page which fires its own fetch (e.g. `GET 
   - Existing: `POST /api/client/training/events/[eventId]/log` (event-keyed; client tapped an event card).
   - New: `POST /api/client/training/session-logs` (event-less; client picked from rest-day picker). Body includes `date`, `performedSessionId`, plus the existing log payload fields. Internally runs the matcher; if a match is found, the log gets linked + event status flipped; if not, log stays unmatched.
   - Both routes call shared service internals for snapshot writing, exercise_logs/set_logs writing, and `linkSessionLogToEvent`.
+  - **Both routes call `assertCanEdit({ resourceType: 'training', clientId, date })` from Session 3.1 before the matcher / write.** This is **defense-in-depth**, not primary protection. The Session 2.4 post-merge follow-up makes the home day-view card-blocking the primary surface for future-date rejection (UI navigation prevents reaching the log flow); `assertCanEdit` is the §8 Shape B perimeter for direct API callers that bypass the UI.
 - **Session-fetch endpoint for detailed-mode**:
   - New: `GET /api/client/training/sessions/[sessionId]` returning the session + active exercises (`is_active = true` filter on exercises). Powers the detailed-mode refetch in 5.4's UI when the client swaps or picks a rest-day session.
 - **Coach-side surfacing**:
@@ -1485,7 +1491,7 @@ Clicking a card navigates to a detail page which fires its own fetch (e.g. `GET 
 - `components/daily-pulse/session-picker.tsx` for reference (legacy — DO NOT import; reimplement mobile-first).
 
 **Plan (report before implementing)**:
-- **Rest-day card click target**: when `events: []` for the day, the card row becomes clickable. Routes to `/client/training?date=YYYY-MM-DD` (no `eventId`). Update `TrainingCardSummary` to render the rest-day row as a link.
+- **Rest-day card click target**: when `events: []` for the day, the card row becomes clickable. Routes to `/client/training?date=YYYY-MM-DD` (no `eventId`). Update `TrainingCardSummary` to render the rest-day row as a link. **The card-level `isFuture` check from the Session 2.4 post-merge follow-up still applies** — the rest-day row is clickable for today/past only, never for future dates (the existing `isFuture = date > getTodayDateString()` gating already covers this card; just don't unconditionally render the rest-day row as a link).
 - **Detail page two-mode handling** (`app/client/training/page.tsx`):
   - With `eventId` query param: existing flow (Session 1.4/1.5). Plus a new "Do a different session" button near the top of the tracker.
   - Without `eventId` but with `date`: picker is the entry point. After picking, render the same tracker bound to the picked session.
@@ -1507,6 +1513,7 @@ Clicking a card navigates to a detail page which fires its own fetch (e.g. `GET 
 - `components/client-portal/training/set-tracker.tsx`:
   - Accept optional `performedSessionId` prop (overrides the event's session for exercise list + payload field).
   - On performed-session change (swap), refetch via `GET /api/client/training/sessions/[sessionId]` to populate detailed-mode exercise list. The unchanged save flow handles the rest.
+  - **No future-day disabled-state handling.** The Session 2.4 post-merge follow-up makes the home day-view cards non-clickable for future dates, so the tracker is unreachable for future dates via the UI navigation surface. Past-logged lock UX stays (driven by `canEditDay`); server-side `assertCanEdit` from Session 5.3 covers direct API callers as defense-in-depth.
 - Day-view option B: add the "Trained for {day} {session}" line to the home training card. Conditional on the trained-for-elsewhere signal being present.
 - All new mobile interactions follow the existing client-portal styling (border-radius 6px, brand teal hover lift).
 
