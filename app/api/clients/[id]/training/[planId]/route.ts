@@ -5,7 +5,7 @@ import {
   updateTrainingPlan,
   archiveTrainingPlan,
 } from "@/services/training-service";
-import { cancelFutureScheduledEvents } from "@/services/training-event-service";
+import { cancelFutureEventsForPlan } from "@/services/training-event-service";
 import { regenerateFutureNutritionEvents } from "@/services/nutrition-event-service";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
@@ -130,7 +130,7 @@ export async function DELETE(
     const today = getTodayDateString();
 
     await archiveTrainingPlan(planId);
-    await cancelFutureScheduledEvents(planId, today);
+    await cancelFutureEventsForPlan(planId, today);
 
     // Cascade: nutrition burn estimates depend on training events, so regenerate
     // future nutrition events for any active/planned nutrition plan the client has.

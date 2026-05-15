@@ -105,13 +105,20 @@ export async function generateTrainingEvents(
 // --- Cancel future events (no regeneration) ---
 
 /**
- * Delete future scheduled events for a plan without regenerating. Used when a plan
- * is archived and the coach wants the calendar cleared of upcoming sessions while
- * preserving completed/missed history.
+ * Delete future events for a plan without regenerating. Used when a plan is
+ * archived via "Clear plan" and the coach wants the calendar wiped of
+ * upcoming sessions. Past events (date < fromDate) are preserved as history.
+ *
+ * Deletes ALL future events for the plan regardless of status. An earlier
+ * version filtered on `status = 'scheduled'` to preserve completed/missed
+ * history, but those statuses only make sense on past events anyway — and
+ * if a future-dated event somehow ended up non-scheduled (a test fixture
+ * logging into the future, a UI bug, etc.), the old filter left it behind
+ * and the forward calendar showed orphan rows from the cleared plan.
  *
  * @param effectiveFrom - Date from which to delete (defaults to today).
  */
-export async function cancelFutureScheduledEvents(
+export async function cancelFutureEventsForPlan(
   planId: string,
   effectiveFrom?: string
 ): Promise<void> {
@@ -121,8 +128,7 @@ export async function cancelFutureScheduledEvents(
     .from("training_events")
     .delete()
     .eq("training_plan_id", planId)
-    .gte("date", fromDate)
-    .eq("status", "scheduled");
+    .gte("date", fromDate);
 
   if (error) throw error;
 }
