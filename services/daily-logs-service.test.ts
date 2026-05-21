@@ -8,6 +8,7 @@ import {
   getDailyLogs,
   getTodayLog,
   calculateStreaks,
+  mapRowToDailyLog,
 } from './daily-logs-service';
 import {
   getTodaysTrainingSession,
@@ -240,6 +241,57 @@ describe('Daily Logs Service - Database Functions', () => {
       await expect(
         upsertDailyLog('client-456', { date: '2024-01-15' })
       ).rejects.toThrow('Failed to upsert daily log: Database error');
+    });
+  });
+
+  describe('mapRowToDailyLog', () => {
+    it('maps a daily_logs_full row to camelCase and null → undefined', () => {
+      const row = {
+        id: 'log-1',
+        client_id: 'c-1',
+        date: '2026-05-21',
+        notes: null,
+        phase_id: 'phase-1',
+        created_at: '2026-05-21T10:00:00Z',
+        updated_at: '2026-05-21T11:00:00Z',
+        mood: 4,
+        energy: null,
+        sleep: 7,
+        stress: null,
+        calories_consumed: 2000,
+        protein_g: 150,
+        carbs_g: null,
+        fat_g: 60,
+        target_calories: 2100,
+        target_protein_g: 160,
+        target_carbs_g: null,
+        target_fat_g: null,
+        nutrition_adherence: 'partial',
+        calorie_surplus_deficit: -100,
+        trained: true,
+        training_session_id: 'sess-1',
+        training_data: null,
+      };
+
+      const log = mapRowToDailyLog(row as never);
+
+      expect(log.id).toBe('log-1');
+      expect(log.clientId).toBe('c-1');
+      expect(log.date).toBe('2026-05-21');
+      expect(log.mood).toBe(4);
+      expect(log.energy).toBeUndefined();
+      expect(log.sleep).toBe(7);
+      expect(log.caloriesConsumed).toBe(2000);
+      expect(log.carbsG).toBeUndefined();
+      expect(log.targetCalories).toBe(2100);
+      expect(log.targetCarbsG).toBeUndefined();
+      expect(log.nutritionAdherence).toBe('partial');
+      expect(log.calorieSurplusDeficit).toBe(-100);
+      expect(log.trained).toBe(true);
+      expect(log.trainingSessionId).toBe('sess-1');
+      expect(log.notes).toBeUndefined();
+      expect(log.createdAt).toBe('2026-05-21T10:00:00Z');
+      expect(log.updatedAt).toBe('2026-05-21T11:00:00Z');
     });
   });
 

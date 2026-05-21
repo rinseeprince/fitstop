@@ -3,6 +3,7 @@ import type { DailyLog, DailyLogInput, NutritionAdherenceStatus } from "@/types/
 import type { DayOfWeek } from "@/types/check-in";
 import { getTodayDateString, getDateString, getDateDaysAgo } from "@/lib/date-helpers";
 import { NUTRITION_ADHERENCE_HIT_THRESHOLD, NUTRITION_ADHERENCE_PARTIAL_THRESHOLD } from "@/lib/constants";
+import type { Json } from "@/types/database";
 
 // Shape returned by the daily_logs_full view (not yet in generated types)
 type DailyLogFullRow = {
@@ -121,7 +122,7 @@ export const getDayOfWeekLowercase = (date: Date): DayOfWeek => {
   return days[date.getDay()];
 };
 
-const mapViewRowToDailyLog = (row: DailyLogFullRow): DailyLog => ({
+export const mapRowToDailyLog = (row: DailyLogFullRow): DailyLog => ({
   id: row.id,
   clientId: row.client_id,
   date: row.date,
@@ -161,11 +162,11 @@ export const upsertDailyLog = async (
   );
 
   // Build domain-specific JSONB params for the atomic RPC
-  const wellnessData = (data.mood != null || data.energy != null || data.sleep != null || data.stress != null)
+  const wellnessData: Json = (data.mood != null || data.energy != null || data.sleep != null || data.stress != null)
     ? { mood: data.mood ?? null, energy: data.energy ?? null, sleep: data.sleep ?? null, stress: data.stress ?? null }
     : null;
 
-  const nutritionData = (data.caloriesConsumed != null || data.targetCalories != null)
+  const nutritionData: Json = (data.caloriesConsumed != null || data.targetCalories != null)
     ? {
         calories_consumed: data.caloriesConsumed ?? null,
         protein_g: data.proteinG ?? null,
@@ -180,42 +181,44 @@ export const upsertDailyLog = async (
       }
     : null;
 
-  const trainingData = (data.trained != null)
+  const trainingData: Json = (data.trained != null)
     ? {
         trained: data.trained ?? false,
         training_session_id: data.trainingSessionId ?? null,
-        training_data: data.trainingData ?? null,
+        training_data: (data.trainingData ?? null) as Json,
       }
     : null;
 
-  const { data: logId, error: rpcError } = await supabaseAdmin
-    .rpc("upsert_daily_log_atomic" as never, {
-      p_client_id: clientId,
-      p_date: data.date,
-      p_notes: data.notes ?? null,
-      p_wellness: wellnessData,
-      p_nutrition: nutritionData,
-      p_training: trainingData,
-      p_nutrition_plan_id: data.nutritionPlanId ?? null,
-      p_training_plan_id: data.trainingPlanId ?? null,
-    } as never) as unknown as { data: string | null; error: { message: string } | null };
+  const { data: logId, error: rpcError } = await supabaseAdmin.rpc("upsert_daily_log_atomic", {
+    p_client_id: clientId,
+    p_date: data.date,
+    // Generated overload types p_notes as non-null, but the SQL column is nullable TEXT.
+    // Pass null through (writes NULL) — narrow via `string`, not `as never`.
+    p_notes: (data.notes ?? null) as string,
+    p_wellness: wellnessData,
+    p_nutrition: nutritionData,
+    p_training: trainingData,
+    // Optional params: undefined omits them so the SQL DEFAULT NULL applies.
+    p_nutrition_plan_id: data.nutritionPlanId ?? undefined,
+    p_training_plan_id: data.trainingPlanId ?? undefined,
+  });
 
   if (rpcError || !logId) {
     throw new Error(`Failed to upsert daily log: ${rpcError?.message ?? "No log ID returned"}`);
   }
 
   // Fetch the full row from the view for the response
-  const { data: fullRow, error: fetchError } = await supabaseAdmin
-    .from("daily_logs_full" as never)
+  const { data: fullRow, error: fetchError } = (await supabaseAdmin
+    .from("daily_logs_full")
     .select("*")
-    .eq("id" as never, logId as never)
-    .single() as unknown as { data: DailyLogFullRow | null; error: { message: string } | null };
+    .eq("id", logId)
+    .single()) as unknown as { data: DailyLogFullRow | null; error: { message: string } | null };
 
   if (fetchError || !fullRow) {
     throw new Error(`Failed to fetch daily log after upsert: ${fetchError?.message ?? "No data"}`);
   }
 
-  return mapViewRowToDailyLog(fullRow);
+  return mapRowToDailyLog(fullRow);
 };
 
 export const getDailyLogs = async (
@@ -223,19 +226,19 @@ export const getDailyLogs = async (
   startDate: string,
   endDate: string
 ): Promise<DailyLog[]> => {
-  const { data, error } = await supabaseAdmin
-    .from("daily_logs_full" as never)
+  const { data, error } = (await supabaseAdmin
+    .from("daily_logs_full")
     .select("*")
-    .eq("client_id" as never, clientId as never)
-    .gte("date" as never, startDate as never)
-    .lte("date" as never, endDate as never)
-    .order("date" as never, { ascending: true }) as unknown as { data: DailyLogFullRow[] | null; error: { message: string } | null };
+    .eq("client_id", clientId)
+    .gte("date", startDate)
+    .lte("date", endDate)
+    .order("date", { ascending: true })) as unknown as { data: DailyLogFullRow[] | null; error: { message: string } | null };
 
   if (error) {
     throw new Error(`Failed to fetch daily logs: ${error.message}`);
   }
 
-  return (data || []).map(mapViewRowToDailyLog);
+  return (data || []).map(mapRowToDailyLog);
 };
 
 export const getWeeklyLogs = async (
@@ -265,18 +268,18 @@ export const getWeeklyLogs = async (
 export const getTodayLog = async (clientId: string, date?: string): Promise<DailyLog | null> => {
   const targetDate = date || getTodayDateString();
 
-  const { data, error } = await supabaseAdmin
-    .from("daily_logs_full" as never)
+  const { data, error } = (await supabaseAdmin
+    .from("daily_logs_full")
     .select("*")
-    .eq("client_id" as never, clientId as never)
-    .eq("date" as never, targetDate as never)
-    .single() as unknown as { data: DailyLogFullRow | null; error: { message: string } | null };
+    .eq("client_id", clientId)
+    .eq("date", targetDate)
+    .single()) as unknown as { data: DailyLogFullRow | null; error: { message: string } | null };
 
   if (error || !data) {
     return null;
   }
 
-  return mapViewRowToDailyLog(data);
+  return mapRowToDailyLog(data);
 };
 
 export const calculateStreaks = async (clientId: string): Promise<StreakResult> => {

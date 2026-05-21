@@ -69,6 +69,7 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 | 2.8 | Training plan overview card + sessions drill-in | 2 | COMPLETE
 | 2.9 | Nutrition plan overview card + drill-in | 2 | COMPLETE
 | 3.1 | Nutrition + wellness endpoints | 3 Detail pages |
+| 3.1B | No-plan gating: client home cards + coach activation gate | 3 |
 | 3.2 | Nutrition detail page | 3 |
 | 3.3 | Wellness detail page + past-day lock enforcement | 3 |
 | 3.4 | Client exercise history page | 3 |
@@ -1152,6 +1153,55 @@ Clicking a card navigates to a detail page which fires its own fetch (e.g. `GET 
 
 ---
 
+## Session 3.1B: No-plan gating — client home cards + coach activation gate
+
+**Commit message**: `feat(client-portal): gate no-plan logging — home cards + coach activation`
+
+**Objective**: Make it impossible for a client to log when they have no active plan, so the coach never sees orphaned logs (logs with null `phase_id`/`nutrition_plan_id`/`target_*` — these show null adherence in the attention feed and are excluded from phase reviews). Two prongs:
+1. **Client-side** (covers every "no active plan" case — coach completed a phase with no next phase, roadmap fully completed, intentional rest/off-plan weeks, or a not-yet-planned client): on the home page, render the four day cards greyed-out / non-clickable (same treatment as future days) with "No active plan" text, so there is no path into the detail/log pages.
+2. **Coach-side** (root-cause fix for the activation case): block `POST /api/clients/[id]/activate` until the client has an active phase + plans, and disable the Activate button in the coach UI until then.
+
+**Background / why now**: Found during Session 3.1 planning. `POST /api/clients/[id]/activate` sets `onboarding_status = "active"` with **no** plan check; `activation-readiness` is advisory only (the activation dialog shows a checklist but still lets the coach activate, warning "you can still activate"). Separately, an already-active client can go off-plan (phase complete with no next, roadmap complete, rest weeks) → `DaySummary.phase` becomes `null`, yet the home still links into the loggable detail pages. Session 3.1's per-card writers stamp `phase_id`/`nutrition_plan_id` via `resolvePlanContextForDate` (with an active-plan fallback), but with genuinely no active plan those come back null and the log is orphaned. Gating at the UI (client) and at activation (coach) closes both holes. The off-plan/roadmap-complete case needs **no coach-side work** — the client simply can't log, so the coach sees no logs.
+
+**Prerequisites**: Session 2.4 (summary cards + phase banner), Session 2.1 (`/api/client/day-summary` + `DaySummary`), Session 3.1 (shared helpers — for label/lock-state symmetry; not strictly required).
+
+**Read first**:
+- `app/client/page.tsx` (home; renders the 4 card summaries from `DaySummary`; note `data.data.phase`).
+- `types/client-day.ts` (`DaySummary.phase: PhaseSummary | null` — `null` = no active phase; `state: "active" | "transitioning"`).
+- `components/client-portal/day/{training,nutrition,wellness,habits}-card-summary.tsx` (each computes `isFuture = date > getTodayDateString()` and passes `href={isFuture ? undefined : ...}` / hides the hint — reuse this exact non-clickable pattern, do not invent a second disabled style).
+- `components/client-portal/ds-card-summary.tsx` (`DsCardSummary` / `DsCardSummaryRow` props: `href`, `leadingText`, `hint`, `ariaLabel`).
+- `components/client-portal/day/phase-banner.tsx` (already hides when no active phase — the "no active plan" signal).
+- Coach side: `app/api/clients/[id]/activate/route.ts`, `app/api/clients/[id]/activation-readiness/route.ts`, `components/coach/client-activation-dialog.tsx`, `components/clients/client-activation-banner.tsx`.
+
+**Plan (report before implementing)**:
+- The "no active plan" signal. Recommended: `DaySummary.phase === null`. Confirm `getDaySummary` returns the *current* active phase (a `"transitioning"` phase still counts as on-plan). If a finer distinction is needed (active phase but no plans), add a boolean to `DaySummary` (e.g. `hasActivePlan`) computed in `services/client-day-service.ts` rather than inferring in the component.
+- The required-to-activate set. Recommended: `hasActivePhase && hasNutritionPlan && hasTrainingPlan` (events are generated when plans are placed, so plan presence implies events). Habits stays "recommended," not required. Confirm whether both plans are mandatory or at least one.
+- Whether to also guard the detail pages (`/client/nutrition`, `/client/wellness`) against direct-URL access with no plan, or rely on the home-card gate + Session 3.1 server behavior. Recommended: a lightweight "No active plan" locked state reusing `locked-day-notice.tsx` (Session 3.3) with a new `reason: 'no-active-plan'` — keep minimal.
+
+**Implement**:
+
+*Client-side (home cards):*
+1. In `app/client/page.tsx`, derive `hasActivePlan = data?.data.phase !== null` (or the `hasActivePlan` flag if added to `DaySummary`). When false, render the four cards in a disabled "No active plan" state.
+2. Add a `disabled?: boolean` + `emptyText?: string` (or `disabledReason?: "future" | "no-active-plan"`) prop path to the card-summary components so a card can render greyed-out, non-clickable (`href={undefined}`, no `hint`) with `leadingText="No active plan"`. Reuse the existing `isFuture` treatment; keep the muted styling consistent across all four cards.
+3. `PhaseBanner` already hides with no active phase; ensure the "No active plan" cards read coherently beneath it (optional single explanatory line, copy TBD, e.g. "Your coach hasn't set an active plan yet.").
+
+*Coach-side (activation gate):*
+4. Extract the readiness computation (currently inline in `activation-readiness/route.ts`) into a shared helper, e.g. `services/client-service.ts` → `getActivationReadiness(clientId)` returning the same flags, so the readiness route and the activate route share one source of truth.
+5. In `POST /api/clients/[id]/activate`, call `getActivationReadiness` and **reject** (HTTP 422, or 400 to match repo convention; `{ success: false, error: "..." }`) when the required set is unmet (active phase + nutrition plan + training plan). Keep existing auth/CSRF/ownership/validation. Already-active clients are unaffected.
+6. In `components/coach/client-activation-dialog.tsx`, **disable** the Activate button when required plans are missing; replace the soft `hasMissingPlans` "you can still activate" warning with a blocking message ("Add a nutrition plan, training plan, and active phase before activating."). Move "Active phase" out of the "Recommended" group into the required checklist.
+
+**Do NOT**: Implement any coach-side handling for the off-plan / roadmap-complete case (the client-side card gate prevents logging; the coach just sees no logs). Add a second disabled-card visual style (reuse the future-day treatment). Block the day-summary *read* endpoint or the swipe timeline (reads stay open per Session 2.4). Change the per-card write endpoints from Session 3.1 (they already fall back to the active plan).
+
+**Tests to write**:
+- `app/client/page.test.tsx` (extend): when `DaySummary.phase === null`, all four cards render the "No active plan" state and are non-clickable (no `href`); when `phase !== null`, cards link normally.
+- Card-summary tests: disabled/"No active plan" state renders no link + the empty text (per card, or a shared prop test).
+- `app/api/clients/[id]/activate/route.test.ts`: rejection when readiness incomplete (missing nutrition/training plan or no active phase); 200 when complete; 401 unauth; 403 not-owner. Assert the rejection uses the shared `getActivationReadiness`, not inline logic.
+- `client-activation-dialog.test.tsx`: Activate button disabled when plans missing; enabled when complete; blocking copy renders.
+
+**Verify**: Manual: (a) as a coach, activating a client with no plan is blocked with a clear message; adding plans then succeeds. (b) As a client whose coach completed the roadmap (no active phase), the home cards are greyed with "No active plan," none clickable; if the detail-page guard was added, a direct `/client/nutrition?date=today` shows the locked state. `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Commit.
+
+---
+
 ## Session 3.2: Nutrition detail page
 
 **Commit message**: `feat(client-portal): add nutrition detail page with macro entry`
@@ -1166,7 +1216,7 @@ Clicking a card navigates to a detail page which fires its own fetch (e.g. `GET 
 **Implement**:
 - `app/client/nutrition/page.tsx` with `date` query param.
 - Four numeric inputs (kcal, protein, carbs, fat).
-- Vs-target progress display.
+- Vs-target progress display.D
 - Save to `PATCH /api/client/daily-logs/[date]/nutrition`.
 - Loading, error, and locked (past-logged) states. **No future-day view-only state** — the Session 2.4 post-merge follow-up makes the home day-view cards non-clickable for future dates, so this page is unreachable for future dates via the UI navigation surface.
 - **Import `canEditDay` from `lib/daily-log-permissions.ts`** (Session 3.1) to derive `isLocked` for the UI. Do not compute the rule locally with date math — single source of truth.

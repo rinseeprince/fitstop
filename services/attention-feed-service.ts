@@ -55,12 +55,12 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
   const [logsResult, habitsResult, habitLogsResult, eventsResult, dismissalsResult] = await Promise.allSettled([
     // 2. Daily logs (cross-domain view, required for core triggers)
     supabaseAdmin
-      .from("daily_logs_full" as never)
+      .from("daily_logs_full")
       .select("*")
-      .in("client_id" as never, clientIds as never)
-      .gte("date" as never, startDate as never)
-      .lte("date" as never, endDate as never)
-      .order("date" as never, { ascending: true }) as unknown as Promise<{ data: DailyLogRow[] | null; error: { message: string } | null }>,
+      .in("client_id", clientIds)
+      .gte("date", startDate)
+      .lte("date", endDate)
+      .order("date", { ascending: true }) as unknown as Promise<{ data: DailyLogRow[] | null; error: { message: string } | null }>,
     // 3. Habit definitions (graceful degradation)
     supabaseAdmin
       .from("daily_habits")

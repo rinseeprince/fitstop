@@ -107,12 +107,12 @@ export async function fetchTrainingDataForPeriod(
 
     // 3. Training logs for isAlternativeSession detection
     supabaseAdmin
-      .from("daily_logs_full" as never)
+      .from("daily_logs_full")
       .select("date, training_session_id, training_data")
-      .eq("client_id" as never, clientId as never)
-      .eq("trained" as never, true as never)
-      .gte("date" as never, periodStart as never)
-      .lte("date" as never, periodEnd as never) as unknown as Promise<{
+      .eq("client_id", clientId)
+      .eq("trained", true)
+      .gte("date", periodStart)
+      .lte("date", periodEnd) as unknown as Promise<{
         data: Array<{ date: string; training_session_id: string | null; training_data: unknown }> | null;
         error: { message: string } | null;
       }>,
@@ -184,11 +184,11 @@ export async function fetchNutritionDataForPeriod(
 
     // Nutrition logs in the period (includes stored targets with activity burn)
     supabaseAdmin
-      .from("nutrition_logs" as never)
+      .from("nutrition_logs")
       .select("date, calories_consumed, protein_g, carbs_g, fat_g, target_calories, target_protein_g, target_carbs_g, target_fat_g")
-      .eq("client_id" as never, clientId as never)
-      .gte("date" as never, periodStart as never)
-      .lte("date" as never, periodEnd as never) as unknown as Promise<{
+      .eq("client_id", clientId)
+      .gte("date", periodStart)
+      .lte("date", periodEnd) as unknown as Promise<{
         data: Array<{ date: string; calories_consumed: number | null; protein_g: number | null; carbs_g: number | null; fat_g: number | null; target_calories: number | null; target_protein_g: number | null; target_carbs_g: number | null; target_fat_g: number | null }> | null;
         error: { message: string } | null;
       }>,

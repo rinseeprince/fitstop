@@ -17,6 +17,47 @@ export const getTodayDateString = (): string => {
 };
 
 /**
+ * Validates an IANA time zone string, returning it if usable or "UTC" otherwise.
+ * Guards against bad/unknown zones (e.g. "Mars/Olympus") a client could set
+ * manually pre-launch — `Intl.DateTimeFormat` throws RangeError on those.
+ */
+export const safeTimeZone = (timeZone: string | null | undefined): string => {
+  if (!timeZone) return "UTC";
+  try {
+    new Intl.DateTimeFormat("en-CA", { timeZone });
+    return timeZone;
+  } catch {
+    return "UTC";
+  }
+};
+
+/**
+ * Returns "today" as a YYYY-MM-DD string in the given IANA time zone.
+ * Uses Intl so the DST offset in effect at `now` is applied correctly; falls back
+ * to UTC for invalid/unknown zones (never throws). `now` is injectable for testing.
+ *
+ * @param {string} timeZone - IANA zone, e.g. "America/Los_Angeles"
+ * @param {Date} [now] - the instant to resolve (defaults to new Date())
+ * @returns {string} The client-local date in YYYY-MM-DD format
+ */
+export const getTodayDateStringInTimezone = (
+  timeZone: string,
+  now: Date = new Date()
+): string => {
+  const zone = safeTimeZone(timeZone);
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: zone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const year = parts.find((p) => p.type === "year")?.value ?? "1970";
+  const month = parts.find((p) => p.type === "month")?.value ?? "01";
+  const day = parts.find((p) => p.type === "day")?.value ?? "01";
+  return `${year}-${month}-${day}`;
+};
+
+/**
  * Returns tomorrow's date as a YYYY-MM-DD string in local timezone.
  * Uses midnight-anchored Date to avoid DST edge cases.
  */

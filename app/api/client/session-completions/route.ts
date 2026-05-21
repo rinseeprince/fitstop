@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
     };
     const { data: result, error } = await supabaseAdmin
       .from("session_logs")
-      .upsert(upsertPayload as never, {
+      .upsert(upsertPayload, {
         onConflict: "client_id,training_session_id,week_start_date",
       })
       .select()

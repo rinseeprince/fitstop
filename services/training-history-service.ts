@@ -45,12 +45,12 @@ export async function getTrainingHistory(
   // Query A: Primary source - training_logs where trained = true
   // Uses daily_logs_full view to also get notes from spine
   const { data: dailyLogs, error: logsError } = await supabaseAdmin
-    .from("daily_logs_full" as never)
+    .from("daily_logs_full")
     .select("date, training_data, training_session_id, notes")
-    .eq("client_id" as never, clientId as never)
-    .eq("trained" as never, true as never)
-    .not("training_data" as never, "is", null)
-    .order("date" as never, { ascending: false }) as unknown as {
+    .eq("client_id", clientId)
+    .eq("trained", true)
+    .not("training_data", "is", null)
+    .order("date", { ascending: false }) as unknown as {
       data: Array<{ date: string; training_data: unknown; training_session_id: string | null; notes: string | null }> | null;
       error: { message: string } | null;
     };

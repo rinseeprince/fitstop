@@ -9,6 +9,8 @@ import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
 import { getEventForDate } from "./training-event-service";
 import { getTodayDateString } from "@/lib/date-helpers";
 import { getNutritionEventForDate } from "./nutrition-event-service";
+import { getActivePhase } from "./phase-service";
+import { getActiveNutritionPlanId } from "./nutrition-plan-service";
 import { getTotalCalories, mapNutritionEventToDisplayTarget } from "@/utils/nutrition-event-helpers";
 
 type TodaysTrainingSession = {
@@ -43,7 +45,7 @@ export const getTodaysNutritionTarget = async (clientId: string, date?: string):
 
 /**
  * Find the plan that was active on a specific date and return its daily target.
- * Tries nutrition_events first (accurate per-date burns), falls back to template.
+ * Resolves from the date's nutrition_event; returns null when there is no event (no template fallback exists yet).
  * Optional includeActivityBurn avoids repeated clients table queries when called in a loop.
  */
 export type PlanDayTarget = {
@@ -77,4 +79,111 @@ export const getPlanTargetForDate = async (
     fatG: event.fatG,
     isTrainingDay: event.isTrainingDay,
   };
+};
+
+// ---------------------------------------------------------------------------
+// Per-card write context + nutrition GET resolver (Session 3.1)
+// ---------------------------------------------------------------------------
+
+export type PlanContextForDate = {
+  phaseId: string | null;
+  nutritionPlanId: string | null;
+  trainingPlanId: string | null;
+};
+
+/**
+ * Single resolver every per-card write calls to populate `daily_logs.phase_id` and the
+ * child `*_plan_id` links. Each id prefers the date-accurate event, then falls back to
+ * the client's active plan, so the link is populated even on a no-event day.
+ */
+export const resolvePlanContextForDate = async (
+  clientId: string,
+  date: string
+): Promise<PlanContextForDate> => {
+  const [phase, nutritionEvent, trainingEvent] = await Promise.all([
+    getActivePhase(clientId),
+    getNutritionEventForDate(clientId, date),
+    getEventForDate(clientId, date),
+  ]);
+
+  // Currently-active phase, not phase-as-of-date. The only divergence (a past-unlogged
+  // backfill that crosses a phase boundary) is gated out by no-plan gating + daily logging.
+  const phaseId = phase?.id ?? null;
+
+  // nutrition_plan_id is written by upsertNutritionLog, so fall back to the active plan
+  // when the day has no nutrition event.
+  const nutritionPlanId =
+    nutritionEvent?.nutritionPlanId ?? (await getActiveNutritionPlanId(clientId));
+
+  // From the date's training event only. Nothing in Session 3.1 writes training_plan_id;
+  // the active-plan fallback is deferred to Session 5.3's training writer (getActiveTrainingPlan
+  // loads sessions+exercises — too heavy to call on every per-card write here).
+  const trainingPlanId = trainingEvent?.trainingPlanId ?? null;
+
+  return { phaseId, nutritionPlanId, trainingPlanId };
+};
+
+export type NutritionForDate = {
+  consumed: { calories: number | null; proteinG: number | null; carbsG: number | null; fatG: number | null } | null;
+  target: { calories: number; proteinG: number | null; carbsG: number | null; fatG: number | null } | null;
+  source: "log" | "event" | null;
+};
+
+/**
+ * Resolve the nutrition card for a date by the ARCHITECTURE three-level priority:
+ *   1. Logged day  → the snapshot in `nutrition_logs` (authoritative).
+ *   2. Unlogged + event → the `nutrition_event` target (via getPlanTargetForDate).
+ *   3. Unlogged + no event → null (level-3 template fallback is unbuilt — ARCHITECTURE:258).
+ * A `nutrition_logs` row existing = "logged" regardless of values (distinguishes absent vs
+ * empty, which the daily_logs_full view cannot).
+ */
+export const getNutritionForDate = async (
+  clientId: string,
+  date: string
+): Promise<NutritionForDate> => {
+  const { data: logRow } = await supabaseAdmin
+    .from("nutrition_logs")
+    .select(
+      "calories_consumed, protein_g, carbs_g, fat_g, target_calories, target_protein_g, target_carbs_g, target_fat_g"
+    )
+    .eq("client_id", clientId)
+    .eq("date", date)
+    .maybeSingle();
+
+  if (logRow) {
+    return {
+      consumed: {
+        calories: logRow.calories_consumed,
+        proteinG: logRow.protein_g,
+        carbsG: logRow.carbs_g,
+        fatG: logRow.fat_g,
+      },
+      target:
+        logRow.target_calories != null
+          ? {
+              calories: logRow.target_calories,
+              proteinG: logRow.target_protein_g,
+              carbsG: logRow.target_carbs_g,
+              fatG: logRow.target_fat_g,
+            }
+          : null,
+      source: "log",
+    };
+  }
+
+  const planTarget = await getPlanTargetForDate(clientId, date);
+  if (planTarget) {
+    return {
+      consumed: null,
+      target: {
+        calories: planTarget.calories,
+        proteinG: planTarget.proteinG,
+        carbsG: planTarget.carbsG,
+        fatG: planTarget.fatG,
+      },
+      source: "event",
+    };
+  }
+
+  return { consumed: null, target: null, source: null };
 };

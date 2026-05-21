@@ -60,11 +60,11 @@ export async function GET(
     // Uses supabaseAdmin: coach querying client data (RLS exception 3)
     // Direct query on wellness_logs
     const { data, error } = await supabaseAdmin
-      .from("wellness_logs" as never)
+      .from("wellness_logs")
       .select("mood, energy, sleep, stress")
-      .eq("client_id" as never, clientId as never)
-      .or("mood.not.is.null,energy.not.is.null,sleep.not.is.null,stress.not.is.null" as never)
-      .gte("date" as never, sinceDateStr as never) as unknown as { data: Array<{ mood: number | null; energy: number | null; sleep: number | null; stress: number | null }> | null; error: { message: string } | null };
+      .eq("client_id", clientId)
+      .or("mood.not.is.null,energy.not.is.null,sleep.not.is.null,stress.not.is.null")
+      .gte("date", sinceDateStr) as unknown as { data: Array<{ mood: number | null; energy: number | null; sleep: number | null; stress: number | null }> | null; error: { message: string } | null };
 
     if (error) {
       console.error("Error fetching wellness summary:", error);

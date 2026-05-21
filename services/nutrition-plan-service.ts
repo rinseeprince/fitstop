@@ -226,3 +226,28 @@ export async function promoteNutritionPlanIfReady(
 
   return { promoted: true, newPlanId: plannedPlan.id };
 }
+
+/**
+ * Returns the id of the client's currently active nutrition plan, or null.
+ *
+ * Pure read — no promotion side-effect (callers that need lazy promotion call
+ * `promoteNutritionPlanIfReady` first). Mirrors the active-plan resolution inlined in
+ * `client-portal-service` and the activation-readiness route. Used by
+ * `resolvePlanContextForDate` to stamp `nutrition_logs.nutrition_plan_id` on days with
+ * no nutrition event.
+ */
+export async function getActiveNutritionPlanId(clientId: string): Promise<string | null> {
+  const { data, error } = await supabaseAdmin
+    .from("nutrition_plans")
+    .select("id")
+    .eq("client_id", clientId)
+    .eq("status", "active")
+    .order("effective_from", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to fetch active nutrition plan: ${error.message}`);
+  }
+  return data?.id ?? null;
+}

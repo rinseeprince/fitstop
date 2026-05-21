@@ -115,9 +115,6 @@
   - Error: `toast({ title: "Error", description: "What went wrong", variant: "destructive" })`
   - Import via `const { toast } = useToast()`
 
-  ### Writing style
-  - Never use em dashes in code comments, UI copy, or documentation. Use hyphens or "to" instead.
-
   ## 4. File Size Limits
   - Components: Max 250 lines (split at 300)
   - Services: Max 300 lines (split at 400)
@@ -445,7 +442,7 @@
 
   ## 16. References
   - **docs/ARCHITECTURE.md**: Database schema diagrams, table hierarchies, JSONB conventions. Evolves with migrations - update when shipping schema changes.
-  - **docs/CLIENT-PORTAL-REDESIGN.md** + **docs/CLIENT-PORTAL-EXECUTION-PLAN.md**: Active redesign replacing Daily Pulse with a day-centric, event-driven client portal. These are the source of truth for any client-portal work. Read both before modifying anything under `app/client/**` or `components/client-portal/**`.
+  - **docs/CLIENT-PORTAL-REDESIGN.md** + **docs/CLIENT-PORTAL-EXECUTION-PLAN.md**: Active redesign replacing Daily Pulse with a day-centric, event-driven client portal. These are the source of truth for any client-portal work. Read both before modifying anything under `app/client/**` or `components/client-portal/**`. Where ARCHITECTURE.md and these docs disagree about a client-portal write path or data flow (for example the monolithic `upsert_daily_log_atomic()` write under ARCHITECTURE's "Daily Logs" section), these redesign docs win; ARCHITECTURE describes the legacy path until Session 5.1's doc sweep rewrites it.
   - **DESIGNSYSTEM.md**: Visual patterns, colour tokens, spacing, component styling conventions. This is the authoritative source for all visual tokens and takes precedence over any inline references in other sections.
   - **TECHNICAL-DEBT.md**: Known gaps between conventions and current implementation.
 

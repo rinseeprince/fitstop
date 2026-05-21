@@ -71,11 +71,11 @@ export async function GET(
       // Fetch wellness logs for the full range
       // Uses supabaseAdmin: coach querying client data (RLS exception 3)
       const { data: wellnessLogs, error: wellnessError } = await supabaseAdmin
-        .from("wellness_logs" as never)
+        .from("wellness_logs")
         .select(WELLNESS_COLUMNS)
-        .eq("client_id" as never, clientId as never)
-        .gte("date" as never, phaseStartDate as never)
-        .lte("date" as never, today as never) as unknown as {
+        .eq("client_id", clientId)
+        .gte("date", phaseStartDate)
+        .lte("date", today) as unknown as {
           data: Array<{ date: string; mood: number | null; energy: number | null; sleep: number | null; stress: number | null }> | null;
           error: { message: string } | null;
         };
@@ -113,11 +113,11 @@ export async function GET(
     // Fallback: no active phase, use existing logged-only behavior
     // Uses supabaseAdmin: coach querying client data (RLS exception 3)
     const { data, error, count } = await supabaseAdmin
-      .from("wellness_logs" as never)
+      .from("wellness_logs")
       .select(WELLNESS_COLUMNS, { count: "exact" })
-      .eq("client_id" as never, clientId as never)
-      .or("mood.not.is.null,energy.not.is.null,sleep.not.is.null,stress.not.is.null" as never)
-      .order("date" as never, { ascending: false })
+      .eq("client_id", clientId)
+      .or("mood.not.is.null,energy.not.is.null,sleep.not.is.null,stress.not.is.null")
+      .order("date", { ascending: false })
       .range(offset, offset + limit - 1) as unknown as { data: unknown[] | null; error: { message: string } | null; count: number | null };
 
     if (error) {

@@ -195,7 +195,7 @@ daily_logs (spine)         -- id, client_id, date, notes, phase_id
   ├── training_logs        -- trained, training_session_id, training_data JSONB (1:1 via daily_log_id FK)
   └── daily_habit_logs     -- per-habit completion (1:many, FK to daily_habits)
 ```
-- **Writes** go through the `upsert_daily_log_atomic()` RPC function which upserts spine + child tables in a single transaction
+- **Writes**: per-card independent writes. Each per-card endpoint (`PATCH /api/client/daily-logs/[date]/nutrition`, `/wellness`, and similar) ensures the day's `daily_logs` spine row exists (setting `phase_id`) and upserts only its own child table. (The legacy monolithic `upsert_daily_log_atomic()` RPC is being retired and must not be used for new writes; it and the old `/api/client/daily-logs` POST are removed in Session 5.1.)
 - **Domain-specific reads** query child tables directly (e.g. wellness history queries `wellness_logs`, not the view)
 - **Cross-domain reads** use the `daily_logs_full` view (e.g. attention feed, AI summary generation)
 - Each child table has `client_id` and `date` columns for direct querying without joining the spine

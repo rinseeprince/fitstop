@@ -40,12 +40,12 @@ export async function upsertWeeklySummary(
   const daysInWeek = Math.round((endMs - startMs) / (1000 * 60 * 60 * 24)) + 1;
 
   const { data: rows, error: fetchError } = await supabaseAdmin
-    .from("nutrition_logs" as never)
+    .from("nutrition_logs")
     .select(NUTRITION_LOG_SELECT)
-    .eq("client_id" as never, clientId as never)
-    .gte("date" as never, effectiveStart as never)
-    .lte("date" as never, effectiveEnd as never)
-    .order("date" as never, { ascending: true }) as unknown as { data: NutritionRow[] | null; error: { message: string } | null };
+    .eq("client_id", clientId)
+    .gte("date", effectiveStart)
+    .lte("date", effectiveEnd)
+    .order("date", { ascending: true }) as unknown as { data: NutritionRow[] | null; error: { message: string } | null };
 
   if (fetchError) {
     console.error("Failed to fetch nutrition logs for weekly summary:", fetchError.message);
@@ -159,12 +159,12 @@ export async function getNutritionSummaryForPeriod(
   endDate: string
 ): Promise<WeeklyNutritionSummary | null> {
   const { data: rows, error } = await supabaseAdmin
-    .from("nutrition_logs" as never)
+    .from("nutrition_logs")
     .select(NUTRITION_LOG_SELECT)
-    .eq("client_id" as never, clientId as never)
-    .gte("date" as never, startDate as never)
-    .lte("date" as never, endDate as never)
-    .order("date" as never, { ascending: true }) as unknown as { data: NutritionRow[] | null; error: { message: string } | null };
+    .eq("client_id", clientId)
+    .gte("date", startDate)
+    .lte("date", endDate)
+    .order("date", { ascending: true }) as unknown as { data: NutritionRow[] | null; error: { message: string } | null };
 
   if (error) {
     console.error("Failed to fetch nutrition logs for period summary:", error.message);
@@ -238,12 +238,12 @@ export async function getCoachingWeekSummaryLive(
   const daysInWeek = Math.round((endMs - startMs) / (1000 * 60 * 60 * 24)) + 1;
 
   const { data: rows, error } = await supabaseAdmin
-    .from("nutrition_logs" as never)
+    .from("nutrition_logs")
     .select(NUTRITION_LOG_SELECT)
-    .eq("client_id" as never, clientId as never)
-    .gte("date" as never, effectiveStart as never)
-    .lte("date" as never, weekEnd as never)
-    .order("date" as never, { ascending: true }) as unknown as { data: NutritionRow[] | null; error: { message: string } | null };
+    .eq("client_id", clientId)
+    .gte("date", effectiveStart)
+    .lte("date", weekEnd)
+    .order("date", { ascending: true }) as unknown as { data: NutritionRow[] | null; error: { message: string } | null };
 
   if (error) {
     console.error("Failed to fetch nutrition logs for coaching week summary:", error.message);

@@ -44,12 +44,12 @@ export async function GET(
     // Uses supabaseAdmin: coach querying client data (RLS exception 3)
     // Direct query on nutrition_logs
     const { data, error } = await supabaseAdmin
-      .from("nutrition_logs" as never)
+      .from("nutrition_logs")
       .select("calories_consumed, protein_g, carbs_g, fat_g")
-      .eq("client_id" as never, clientId as never)
-      .not("calories_consumed" as never, "is", null)
-      .gte("date" as never, effectiveStart as never)
-      .lte("date" as never, weekEnd as never) as unknown as { data: Array<{ calories_consumed: number | null; protein_g: number | null; carbs_g: number | null; fat_g: number | null }> | null; error: { message: string } | null };
+      .eq("client_id", clientId)
+      .not("calories_consumed", "is", null)
+      .gte("date", effectiveStart)
+      .lte("date", weekEnd) as unknown as { data: Array<{ calories_consumed: number | null; protein_g: number | null; carbs_g: number | null; fat_g: number | null }> | null; error: { message: string } | null };
 
     if (error) {
       console.error("Error fetching nutrition summary:", error);
