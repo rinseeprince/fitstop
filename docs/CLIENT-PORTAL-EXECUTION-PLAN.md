@@ -671,7 +671,7 @@ Session 0.1 confirmed no `timezone` column exists on `clients` and all date help
   - Per nutrition: log exists yes/no.
   - Per wellness: log exists yes/no.
   - Per habits: total habit count + count with log for date.
-- `services/client-program-service.ts` (new file): `getClientProgram(clientId)` returning roadmap + phases. **Kept separate from the existing roadmap service** because that file uses `supabaseAdmin` for coach cross-client queries; this client-side read must use session-scoped Supabase (RLS). Separate file prevents accidentally grabbing the admin helper.
+- `services/client-program-service.ts` (new file): `getClientProgram(clientId)` returning roadmap + phases. **Kept in a separate file from the existing roadmap service** for file isolation — keeping a single-client read out of the file full of coach cross-client queries so the wrong query can't be grabbed by accident. Per CONVENTIONS §8 (Shape B), this service uses `supabaseAdmin` scoped to the `requireClientAuth`-verified `clientId` — **not** session-scoped RLS. *(An earlier draft of this plan said "session-scoped Supabase (RLS)"; that predates Shape B. The shipped service correctly uses `supabaseAdmin`.)*
 - `app/api/client/day-summary/route.ts` (GET, `clientApiRateLimit`, `Cache-Control: no-store`).
 - `app/api/client/program/route.ts` (GET).
 
@@ -1191,6 +1191,7 @@ Clicking a card navigates to a detail page which fires its own fetch (e.g. `GET 
 4. Extract the readiness computation (currently inline in `activation-readiness/route.ts`) into a shared helper, e.g. `services/client-service.ts` → `getActivationReadiness(clientId)` returning the same flags, so the readiness route and the activate route share one source of truth.
 5. In `POST /api/clients/[id]/activate`, call `getActivationReadiness` and **reject** (HTTP 422, or 400 to match repo convention; `{ success: false, error: "..." }`) when the required set is unmet (active phase + nutrition plan + training plan). Keep existing auth/CSRF/ownership/validation. Already-active clients are unaffected.
 6. In `components/coach/client-activation-dialog.tsx`, **disable** the Activate button when required plans are missing; replace the soft `hasMissingPlans` "you can still activate" warning with a blocking message ("Add a nutrition plan, training plan, and active phase before activating."). Move "Active phase" out of the "Recommended" group into the required checklist.
+7. **Update `docs/ARCHITECTURE.md` "Activation Flow"**: move `hasActivePhase` (plus the now-required plans) from "Recommended" into a "Required" list, and remove the "⚠️ Scheduled change (Session 3.1B)" note now that the change has landed.
 
 **Do NOT**: Implement any coach-side handling for the off-plan / roadmap-complete case (the client-side card gate prevents logging; the coach just sees no logs). Add a second disabled-card visual style (reuse the future-day treatment). Block the day-summary *read* endpoint or the swipe timeline (reads stay open per Session 2.4). Change the per-card write endpoints from Session 3.1 (they already fall back to the active plan).
 
@@ -1651,6 +1652,7 @@ Commit.
 - Update `check-in-context-service.ts` to count `training_events.status='completed'` for the period.
 - **Add per-event detail to the AI context**: fetch training events for the check-in period, left-join `session_logs` (via `training_events.session_log_id`). For each event, include: `sessionName`, `status` (completed/partial/skipped/not logged), and `session_log.notes` when status is skipped. Events with no session_log are "not logged" (the client never interacted with the event — treat as incomplete). Events with a session_log where `completion_quality = 'skipped'` are explicitly skipped and may have notes explaining why. The AI must be able to distinguish these so it can say e.g. "Skipped Shoulder Day (shoulder was sore). Arm Day and Back Day were not logged."
 - Preserve form's response shape.
+- **Update `docs/ARCHITECTURE.md` "Check-in System"**: document that training-completion counting now reads `training_events.status='completed'` for the period; remove the portion of the "⚠️ Scheduled change (Phase 6)" note that 6.2 covers. Leave the 6.4 portion until 6.4 lands.
 
 **Interaction with Sessions 5.2/5.3/5.4 (alternative session logging)**: counting `training_events.status='completed'` is the right rule even with alt-session in place. Events flipped to `completed` by the 5.3 matcher (planned-day swap, or rest-day-trained that matched an unlinked event) count toward adherence. Truly-extra rest-day-trained logs that found no match (`session_log.training_event_id IS NULL`) are intentionally NOT counted — they're surplus training and don't affect "did the client do what was prescribed." If the AI prompt should mention extras, that's a separate enrichment in Session 6.3.
 
@@ -1768,6 +1770,7 @@ Commit.
    - No data preservation — pre-launch, no users, any dev-seeded rows are disposable.
 6. **RLS policy file cleanup**:
    - Note in the commit message that migration 017's table creation + migrations 026/052's policy rules for this table are logically superseded. Do NOT edit prior migrations in-place (migrations are append-only per CONVENTIONS §8); the DROP TABLE handles it at runtime.
+7. **Update `docs/ARCHITECTURE.md` "Check-in System"**: rewrite it to the daily-logs-as-SOT model (form is a daily-logs viewer; edits route through the per-card endpoints; `check_in_session_completions` dropped). Remove the remaining "⚠️ Scheduled change (Phase 6)" note.
 
 **Do NOT**:
 - Add a new check-in-scoped write table. The existing per-card endpoints are the only write path.

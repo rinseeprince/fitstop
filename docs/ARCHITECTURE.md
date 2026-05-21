@@ -2,6 +2,16 @@
 
 This file documents the platform architecture, database schema, and data flow patterns. Unlike CONVENTIONS.md (which contains stable coding rules), this file evolves with the schema. **Update it when shipping migrations.**
 
+> ⚠️ **Legacy-section map — read before trusting any section below.** A client-portal redesign is in flight (`docs/CLIENT-PORTAL-REDESIGN.md` + `docs/CLIENT-PORTAL-EXECUTION-PLAN.md`). Several sections here describe patterns that are already retired or scheduled to change. **Precedence rules:** where this file and the redesign docs disagree about a client-portal write path or data flow, **the redesign docs win**; where this file and **CONVENTIONS.md** disagree about a coding/auth rule, **CONVENTIONS.md wins** (it is the stable rule-of-record; this file lags it).
+>
+> | Section | Status | Authoritative source |
+> |---------|--------|----------------------|
+> | Auth Model → "Database clients" | **Legacy** — described the old session-scoped-default model. The codebase is on **Shape B**: services default to `supabaseAdmin`, the route layer is the security perimeter, RLS is defense-in-depth. Corrected inline below. | **CONVENTIONS.md §8** |
+> | "Client Portal Architecture" (Daily Pulse) | **Retired** — has its own STOP banner; rewritten in Session 5.1. | redesign docs |
+> | Platform Overview client bullet · "JSONB Conventions" (`training_data`/`activityStatuses`) · Phase Transition card path | **Legacy** Daily Pulse references; corrected inline below. | redesign docs |
+> | "Daily Logs" write path | **Superseded** — per-card writes, not `upsert_daily_log_atomic()`. | redesign docs |
+> | "Activation Flow" · "Check-in System" · "Training Completion Hierarchy" (`session_logs` identity) | **Accurate today but scheduled to change** — see the inline ⚠️ notes pointing at the owning session. | this file, until that session lands |
+
 ---
 
 ## Platform Overview
@@ -9,7 +19,7 @@ This file documents the platform architecture, database schema, and data flow pa
 CoachHub is a fitness coaching platform built with Next.js 14 (App Router). It connects two user types:
 
 - **Coaches** (role: `trainer`) - manage clients, create training/nutrition plans, review check-ins, monitor wellness alerts. Dashboard at `/dashboard`.
-- **Clients** (role: `client`) - track daily health metrics via Daily Pulse, log workouts, manage nutrition, complete weekly check-ins. Dashboard at `/client/dashboard`.
+- **Clients** (role: `client`) - track daily wellness, log workouts (per-set), manage nutrition, and complete weekly check-ins via the day-centric client portal. Home at `/client` (date-driven day view). *(Legacy: the old Daily Pulse at `/client/dashboard` is being retired in Session 5.1; nothing routes there post-Session 2.3.)*
 
 **Tech stack:** Next.js 14, Supabase (PostgreSQL + RLS + Auth), SWR (coach-side), Upstash Redis (rate limiting), OpenAI GPT-4o / GPT-4o-mini (AI summaries, training generation), Vitest, Tailwind CSS, shadcn/ui, Lucide icons, Framer Motion.
 
@@ -178,7 +188,7 @@ When a coach completes a phase, the transition follows this sequence:
 
 ### 3. Client completion card
 
-`PhaseCompletionCard` (`components/daily-pulse/phase-completion-card.tsx`):
+`PhaseCompletionCard` (`components/client-portal/day/phase-completion-card.tsx`, relocated from `components/daily-pulse/` in Session 2.5):
 - Fetches via SWR from `GET /api/client/phase-completion` (queries phases where `status='completed'`, `phase_summary IS NOT NULL`, `completion_seen=false`)
 - Displays: phase name, coach reflection, summary stats (training %, nutrition %, weight change), next phase name
 - On dismiss: `POST /api/client/phase-completion` sets `completion_seen = true`
@@ -470,20 +480,29 @@ Wellness/tracking/activity triggers evaluate across all coach's clients:
 - `getAuthenticatedCoachId()`: validates JWT via `supabase.auth.getUser()`, queries `coaches` table, returns coach ID or null
 - `getAuthenticatedClientId()`: same pattern against `clients` table
 
-### Database clients
+### Database clients (Shape B — see CONVENTIONS.md §8 for the authoritative rule)
 
-- `createServerSupabaseClient()` (`lib/supabase-server.ts`): session-scoped, respects RLS. Default for all authenticated routes.
-- `supabaseAdmin` (`services/supabase-admin.ts`): bypasses RLS. Only used when:
-  1. Unauthenticated context (e.g. token-based check-in submission)
-  2. Cross-client queries (e.g. coach aggregation, attention feed)
-  3. System-level writes (e.g. phase transition RPC, background upserts)
+CoachHub runs **backend-mediated (Shape B)**: the browser calls Next.js API routes; the route authenticates the user, verifies ownership (the IDOR chain), then calls service functions scoped by an explicit `clientId`/`coachId`; services read/write through `supabaseAdmin`. **The route layer is the security perimeter.** RLS exists as defense-in-depth only.
+
+- `supabaseAdmin` (`services/supabase-admin.ts`): uses the `service_role` key, which **bypasses RLS entirely**. This is the **default client for the service layer** — not an exception. Services trust their caller-verified scope and filter on it (`.eq("client_id", clientId)`).
+- `createServerSupabaseClient()` (`lib/supabase-server.ts`): session-scoped, respects RLS. **Rarely needed** — only when you genuinely require `auth.uid()` in-database to satisfy an RLS policy doing real work. A few legacy callers remain (tracked in `TECHNICAL-DEBT.md → Auth Architecture Hygiene`); do not add new ones without the justification in CONVENTIONS §8.
+
+**Why Shape B for this app:** heavy coach-side cross-client aggregation (attention feed, library, roadmap, metrics rollups), two audiences sharing the same tables, and server-only / no-session contexts (OpenAI, Resend, Stripe, token-based check-in, phase-transition RPCs) all make RLS-as-primary awkward and slow. Route-level checks in TypeScript are simpler, faster, and testable.
+
+**Why this is unambiguous:** because `supabaseAdmin` bypasses RLS, RLS *cannot* be the primary access control for the service files that use it — a query that bypasses RLS is, by definition, not guarded by RLS. The only coherent reading is "the route layer enforces access," i.e. Shape B.
+
+**How safety is ensured (there is no RLS net):** the mandatory route auth chain (CONVENTIONS §8/§9: rate limit → CSRF → authentication → **authorization/IDOR** → validation → logic), standardized via `requireClientAuth` for steps 1–3 (the caller still performs the resource-ownership step), an IDOR-rejection test per route, and RLS kept deny-by-default as a backstop for the "wrong client object used" bug. The cost of Shape B: a forgotten ownership check is a real hole with no second line of defense — so step 4 (authorization) is non-optional. Auth proves identity, not permission.
 
 ### IDOR prevention
 
-Every coach API route manually verifies the ownership chain:
+Because the route layer is the perimeter (Shape B), every authenticated route manually verifies the ownership chain before calling a service. Auth proves identity, not permission — never skip the ownership step because authentication succeeded.
+
+**Coach routes** (`/api/clients/[id]/*`):
 1. **Auth**: `getAuthenticatedCoachId()` - returns 401 if not authenticated
 2. **Client ownership**: `client.coachId === coachId` - returns 403/404 if mismatch
 3. **Resource ownership**: `resource.clientId === clientId` - returns 404 if mismatch
+
+**Client routes** (`/api/client/*`): use `requireClientAuth(request)` (`lib/require-client-auth.ts`) for rate-limit → CSRF → auth, then verify the resource's `client_id === authedClientId` (return 404 to avoid leaking existence). The helper returns the authed `clientId` but does **not** perform the resource-ownership step — the caller still must.
 
 ---
 
@@ -581,6 +600,8 @@ Pre-onboarding clients (created before the intake feature shipped) default to `a
 
 Uses `Promise.all` with `safeQuery()` wrapper for partial failure tolerance. The coach sees the `ClientActivationBanner` component which shows required vs recommended status.
 
+> ⚠️ **Scheduled change (Session 3.1B).** Today `activation-readiness` is advisory — `POST /api/clients/[id]/activate` does not enforce it, and `hasActivePhase` is "recommended." Session 3.1B makes **active phase + nutrition plan + training plan required**: the activate route rejects until they exist, the coach Activate button disables, and `hasActivePhase` moves into the required set. Update this section when 3.1B lands.
+
 ---
 
 ## API Route Structure
@@ -616,9 +637,8 @@ Status codes: 200 (success), 201 (created), 400 (validation), 401 (auth), 403 (f
 
 ## JSONB Conventions
 
-- See Daily Pulse README for `training_data` and `activityStatuses` shape documentation
-- `activityStatuses` is `Record<string, { completed, activityName, estimatedCalories }>` - always read `.completed` field, never use the object as a truthy check
-- `training_data` JSONB on `training_logs` is a **UI restore cache** for the Daily Pulse. It preserves the exact training state at save time so the UI can restore without cross-referencing. The **source of truth** for training completion is `session_logs` + `exercise_logs` + `set_logs` (post migration 090; per-set actuals were inline scalars on `exercise_logs` before).
+- **`training_data` / `activityStatuses` are legacy (Daily Pulse).** `training_data` JSONB on `training_logs` was the Daily Pulse UI restore cache; `activityStatuses` (`Record<string, { completed, activityName, estimatedCalories }>`) was its per-activity completion map. Both are **write-dead** post-Daily-Pulse retirement — do **not** write to them in new code. A few readers still degrade gracefully off `training_data` (see the Session 5.1 note in the execution plan); they return `false`/empty because nothing writes it. The `DAILY-PULSE-README.md` that documented their shapes is deleted in Session 5.1.
+- The **source of truth** for training completion is `training_events.status` + `session_logs` + `exercise_logs` + `set_logs` (post migration 090; per-set actuals were inline scalars on `exercise_logs` before).
 
 ### phase_goals_snapshot
 
@@ -656,6 +676,8 @@ Written to `phases.phase_summary` during phase transition. Captures completion m
 ---
 
 ## Check-in System
+
+> ⚠️ **Scheduled change (Phase 6).** This section describes the current parallel-entry model. Session 6.2 switches training-completion counting from session-keyed `session_logs` to `training_events.status='completed'`; Session 6.4 makes daily logs the single source of truth (the check-in form becomes a daily-logs viewer that routes edits through the per-card endpoints) and **drops the `check_in_session_completions` table**. Update this section when 6.2/6.4 land.
 
 ### Submission flow
 

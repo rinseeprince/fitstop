@@ -400,7 +400,7 @@ Phase 8 in `CLIENT-PORTAL-EXECUTION-PLAN.md`:
 
 Settings form: starts as a single `app/client/settings/page.tsx`. A `components/client-portal/settings/` subdirectory is only created if the page blows past the 250-line limit. No speculative form component splits.
 
-Client program data (`getClientProgram`): lives in a new `services/client-program-service.ts`. This reverses the earlier "put in existing roadmap service" call. The existing roadmap service likely uses `supabaseAdmin` for coach cross-client reads; client-side reads must use session-scoped Supabase (RLS). Keeping access contexts in separate files prevents accidental use of the wrong client and the data leak risk that comes with it.
+Client program data (`getClientProgram`): lives in a new `services/client-program-service.ts`. This reverses the earlier "put in existing roadmap service" call. The split is for **file isolation** — keeping a single-client read out of the file full of coach cross-client queries so the wrong query can't be grabbed by accident. Per CONVENTIONS §8 (Shape B), both the client read and the coach reads use `supabaseAdmin`; access is enforced by the route layer passing a verified scope (`clientId` for the client read, `coachId` for coach reads), **not** by session-scoped RLS. *(An earlier draft said client-side reads "must use session-scoped Supabase (RLS)"; that predates Shape B and is superseded by CONVENTIONS §8.)*
 
 No `useClientDay` hook. `useSWR` is called directly in the page. Only create a wrapper hook if it grows actual reusable logic (retries, transforms, dependent fetches).
 
