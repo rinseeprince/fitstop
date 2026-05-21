@@ -68,7 +68,7 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 | 2.7 | Client check-in hub (submission + history) | 2 | COMPLETE
 | 2.8 | Training plan overview card + sessions drill-in | 2 | COMPLETE
 | 2.9 | Nutrition plan overview card + drill-in | 2 | COMPLETE
-| 3.1 | Nutrition + wellness endpoints | 3 Detail pages |
+| 3.1 | Nutrition + wellness endpoints | 3 Detail pages | COMPLETE
 | 3.1B | No-plan gating: client home cards + coach activation gate | 3 |
 | 3.2 | Nutrition detail page | 3 |
 | 3.3 | Wellness detail page + past-day lock enforcement | 3 |
@@ -1093,6 +1093,8 @@ Clicking a card navigates to a detail page which fires its own fetch (e.g. `GET 
 ---
 
 ## Session 3.1: Shared day-log helpers + nutrition/wellness endpoints
+
+**Status**: COMPLETE (commit `22a4328`)
 
 **Commit message**: `feat(api): add day-log permission helpers, plan-context resolver, nutrition and wellness endpoints`
 
