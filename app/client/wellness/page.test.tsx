@@ -178,6 +178,12 @@ describe("Wellness log page", () => {
     // Returns home and refreshes the day-summary so the home card updates.
     await waitFor(() => expect(pushMock).toHaveBeenCalled());
     expect(pushMock.mock.calls[0][0]).toMatch(/^\/client/);
+    // The stale detail cache is dropped so re-entering refetches the saved values.
+    expect(globalMutateMock).toHaveBeenCalledWith(
+      `/api/client/daily-logs/${TODAY}/wellness`,
+      undefined,
+      { revalidate: false },
+    );
     expect(globalMutateMock).toHaveBeenCalledWith(
       `/api/client/day-summary?date=${TODAY}`,
     );

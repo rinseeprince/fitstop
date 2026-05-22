@@ -198,8 +198,13 @@ function TrainingLogForm({
         return;
       }
       toast({ title: "Workout logged" });
-      // Refresh the home day-summary so the training card updates, then return home.
+      // Drop the stale detail cache so re-entering the workout refetches the logged sets/status —
+      // the form only seeds defaultValues once per mount. Matters most for a quick-log, whose only
+      // signal is sessionLog.completionQuality. Then refresh the home day-summary, and return home.
       const loggedDate = date ?? detail.event.date;
+      void globalMutate(`/api/client/training/events/${eventId}`, undefined, {
+        revalidate: false,
+      });
       void globalMutate(`/api/client/day-summary?date=${loggedDate}`);
       router.push(
         loggedDate === getTodayDateString() ? "/client" : `/client?date=${loggedDate}`,

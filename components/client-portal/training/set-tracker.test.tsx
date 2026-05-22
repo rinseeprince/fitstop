@@ -32,6 +32,7 @@ if (!Element.prototype.scrollIntoView) {
 
 const mockEvent = vi.fn();
 const mockMe = vi.fn();
+const mockGlobalMutate = vi.fn();
 vi.mock("swr", () => ({
   default: (key: string | null) => {
     if (key === null)
@@ -41,7 +42,7 @@ vi.mock("swr", () => ({
     if (key === "/api/client/me") return mockMe();
     throw new Error(`Unmocked SWR key: ${String(key)}`);
   },
-  mutate: vi.fn(),
+  mutate: (...args: unknown[]) => mockGlobalMutate(...args),
 }));
 
 const mockToast = vi.fn();
@@ -159,6 +160,7 @@ describe("SetTracker", () => {
     mockEvent.mockReset();
     mockMe.mockReset();
     mockToast.mockReset();
+    mockGlobalMutate.mockReset();
     setMe("lbs");
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
@@ -213,6 +215,15 @@ describe("SetTracker", () => {
     await user.click(screen.getByTestId("save-button"));
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
     expect(getLastFetchPayload()).toEqual({ completionQuality: "full" });
+    // The event detail cache is dropped so re-entering refetches the logged status
+    // (a quick-log's only signal is sessionLog.completionQuality).
+    await waitFor(() =>
+      expect(mockGlobalMutate).toHaveBeenCalledWith(
+        "/api/client/training/events/evt-1",
+        undefined,
+        { revalidate: false },
+      ),
+    );
   });
 
   // ---- 2. Quick log partial ------------------------------------------------

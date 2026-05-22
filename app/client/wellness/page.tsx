@@ -149,7 +149,12 @@ function WellnessLogInner() {
       }
 
       toast({ title: "Wellness saved" });
-      // Refresh the home day-summary so its wellness card reflects the new log, then return home.
+      // Drop the stale detail cache so re-entering the page refetches the saved values — the
+      // once-per-mount form seed would otherwise show the pre-save snapshot. Then refresh the
+      // home day-summary so its wellness card reflects the new log, and return home.
+      void globalMutate(`/api/client/daily-logs/${date}/wellness`, undefined, {
+        revalidate: false,
+      });
       void globalMutate(`/api/client/day-summary?date=${date}`);
       router.push(date === getTodayDateString() ? "/client" : `/client?date=${date}`);
     } catch (err) {
