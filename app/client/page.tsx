@@ -16,29 +16,20 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import {
   getDateDaysFrom,
-  getDateString,
   getTodayDateString,
+  parseDateParamOrToday,
 } from "@/lib/date-helpers";
 import type { DaySummary } from "@/types/client-day";
 
-const DATE_SHAPE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const SWIPE_PX = 50;
 const SWIPE_AXIS_RATIO = 1.5;
 const CARD_LABELS = ["Training", "Nutrition", "Wellness", "Habits"] as const;
-
-function parseDateOrToday(raw: string | null): string {
-  if (!raw || !DATE_SHAPE_RE.test(raw)) return getTodayDateString();
-  const parsed = new Date(raw + "T00:00:00");
-  if (Number.isNaN(parsed.getTime())) return getTodayDateString();
-  if (getDateString(parsed) !== raw) return getTodayDateString();
-  return raw;
-}
 
 function ClientHomePageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const date = useMemo(
-    () => parseDateOrToday(searchParams?.get("date") ?? null),
+    () => parseDateParamOrToday(searchParams?.get("date") ?? null),
     [searchParams],
   );
 

@@ -43,6 +43,7 @@
   - If two components need the same data, lift the fetch to a shared parent or shared hook - don't fetch the same endpoint twice.
   - If duplicating logic across client and coach components, extract to a shared utility in `/utils` or `/lib`.
   - When 3+ functions share the same structural pattern (e.g. fetch/error/toast/mutate, try/catch/validate/respond, query/auth-check/error-handle), extract a shared helper. Prefer one well-tested helper over duplicated try/catch blocks. Helpers should live close to their consumers - in the same file for hook-specific helpers, or in `/lib` or `/utils` for cross-cutting patterns.
+  - Extracting logic you're about to duplicate may mean editing a file outside the task at hand. That's allowed - it's not a scope violation - as long as you surface it per "Don't silently change working code," and verify the touched file's tests still pass.
 
   ### Don't assume success
   - Don't say "all done, everything works" without verifying. Show proof: terminal output, build results, or explain what was tested.
