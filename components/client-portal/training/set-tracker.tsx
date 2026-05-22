@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import useSWR from "swr";
+import useSWR, { mutate as globalMutate } from "swr";
+import { useRouter } from "next/navigation";
 import { useFieldArray, useForm, useWatch } from "react-hook-form";
 import { ChevronDown, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -13,6 +14,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { swrFetcher } from "@/lib/swr-fetcher";
+import { getTodayDateString } from "@/lib/date-helpers";
 import { useToast } from "@/hooks/use-toast";
 import { logTrainingEventSchema } from "@/lib/validations/training";
 import type { Client } from "@/types/check-in";
@@ -123,6 +125,7 @@ function TrainingLogForm({
   weightUnit: "lbs" | "kg";
 }) {
   const { toast } = useToast();
+  const router = useRouter();
   const [detailOpen, setDetailOpen] = useState(false);
 
   const header = normalizeSessionHeader(detail.session, detail.event);
@@ -195,6 +198,12 @@ function TrainingLogForm({
         return;
       }
       toast({ title: "Workout logged" });
+      // Refresh the home day-summary so the training card updates, then return home.
+      const loggedDate = date ?? detail.event.date;
+      void globalMutate(`/api/client/day-summary?date=${loggedDate}`);
+      router.push(
+        loggedDate === getTodayDateString() ? "/client" : `/client?date=${loggedDate}`,
+      );
     } catch {
       toast({
         title: "Couldn't save workout",

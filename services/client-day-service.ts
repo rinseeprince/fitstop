@@ -1,5 +1,5 @@
 import { getEventSummariesForDate } from "./training-event-service";
-import { getNutritionEventForDate } from "./nutrition-event-service";
+import { getNutritionForDate } from "./daily-context-service";
 import { getTodayLog } from "./daily-logs-service";
 import { getClientHabits, getTodayHabitLogs } from "./daily-habits-service";
 import { getClientProgram } from "./client-program-service";
@@ -14,10 +14,10 @@ export async function getDaySummary(
   clientId: string,
   date: string
 ): Promise<DaySummary> {
-  const [trainingEvents, nutritionEvent, dailyLog, habits, habitLogs, program] =
+  const [trainingEvents, nutrition, dailyLog, habits, habitLogs, program] =
     await Promise.all([
       getEventSummariesForDate(clientId, date),
-      getNutritionEventForDate(clientId, date),
+      getNutritionForDate(clientId, date),
       getTodayLog(clientId, date),
       getClientHabits(clientId),
       getTodayHabitLogs(clientId, date),
@@ -27,9 +27,16 @@ export async function getDaySummary(
   return {
     phase: derivePhaseSummary(program, date),
     training: trainingEvents,
-    nutrition: nutritionEvent !== null
-      ? { hasLog: nutritionEvent.status === "logged" }
-      : null,
+    // Log-authoritative: a nutrition_logs row (source "log") means logged, even if the
+    // nutrition_event status was never flipped. consumed/target drive the home card numbers.
+    nutrition:
+      nutrition.source !== null
+        ? {
+            hasLog: nutrition.source === "log",
+            caloriesConsumed: nutrition.consumed?.calories ?? null,
+            targetCalories: nutrition.target?.calories ?? null,
+          }
+        : null,
     wellness: {
       hasLog:
         dailyLog != null &&

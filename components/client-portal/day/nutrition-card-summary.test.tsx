@@ -20,12 +20,15 @@ describe("NutritionCardSummary", () => {
     expect(screen.queryByRole("link")).toBeNull();
   });
 
-  it("renders Not logged yet + Tap to log + link to detail when hasLog is false", () => {
+  it("shows the target calories + Tap to log + link when not logged", () => {
     render(
-      <NutritionCardSummary nutrition={{ hasLog: false }} date={DATE} />,
+      <NutritionCardSummary
+        nutrition={{ hasLog: false, caloriesConsumed: null, targetCalories: 1735 }}
+        date={DATE}
+      />,
     );
 
-    expect(screen.getByText("Not logged yet")).toBeInTheDocument();
+    expect(screen.getByText("Target 1,735 kcal")).toBeInTheDocument();
     expect(screen.getByText("Tap to log")).toBeInTheDocument();
     expect(screen.getByRole("link")).toHaveAttribute(
       "href",
@@ -33,10 +36,15 @@ describe("NutritionCardSummary", () => {
     );
   });
 
-  it("renders Logged + Tap to view + link to detail when hasLog is true", () => {
-    render(<NutritionCardSummary nutrition={{ hasLog: true }} date={DATE} />);
+  it("shows consumed vs target + Tap to view + link when logged", () => {
+    render(
+      <NutritionCardSummary
+        nutrition={{ hasLog: true, caloriesConsumed: 1735, targetCalories: 1735 }}
+        date={DATE}
+      />,
+    );
 
-    expect(screen.getByText("Logged")).toBeInTheDocument();
+    expect(screen.getByText("1,735 / 1,735 kcal")).toBeInTheDocument();
     expect(screen.getByText("Tap to view")).toBeInTheDocument();
     expect(screen.getByRole("link")).toHaveAttribute(
       "href",
@@ -47,12 +55,12 @@ describe("NutritionCardSummary", () => {
   it("renders future-date row as info-only with no link and no hint", () => {
     render(
       <NutritionCardSummary
-        nutrition={{ hasLog: false }}
+        nutrition={{ hasLog: false, caloriesConsumed: null, targetCalories: 1735 }}
         date={FUTURE_DATE}
       />,
     );
 
-    expect(screen.getByText("Not logged yet")).toBeInTheDocument();
+    expect(screen.getByText("Target 1,735 kcal")).toBeInTheDocument();
     expect(screen.queryByRole("link")).toBeNull();
     expect(screen.queryByText("Tap to log")).toBeNull();
     expect(screen.queryByText("Tap to view")).toBeNull();

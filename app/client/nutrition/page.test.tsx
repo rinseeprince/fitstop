@@ -8,6 +8,7 @@ import { getTodayDateStringInTimezone } from "@/lib/date-helpers";
 const pushMock = vi.fn();
 const toastMock = vi.fn();
 const mutateMock = vi.fn();
+const globalMutateMock = vi.fn();
 const swrCall = vi.fn();
 let mockSearchParam: string | null = null;
 
@@ -21,6 +22,8 @@ vi.mock("next/navigation", () => ({
 vi.mock("swr", () => ({
   __esModule: true,
   default: (key: unknown, _fetcher: unknown, _opts: unknown) => swrCall(key),
+  // Lazy wrapper: a direct reference would run at hoist time, before the const exists.
+  mutate: (...args: unknown[]) => globalMutateMock(...args),
 }));
 
 // canEditDay reads the client timezone from here; pin it to UTC so "today" is deterministic.
@@ -97,6 +100,7 @@ describe("Nutrition log page", () => {
     pushMock.mockReset();
     toastMock.mockReset();
     mutateMock.mockReset();
+    globalMutateMock.mockReset();
     swrCall.mockReset();
     mockSearchParam = TODAY;
     setSWR();
@@ -151,6 +155,12 @@ describe("Nutrition log page", () => {
     await waitFor(() =>
       expect(toastMock).toHaveBeenCalledWith({ title: "Nutrition saved" }),
     );
+    // Returns to home and refreshes the day-summary so the home card updates.
+    await waitFor(() => expect(pushMock).toHaveBeenCalled());
+    expect(pushMock.mock.calls[0][0]).toMatch(/^\/client/);
+    expect(globalMutateMock).toHaveBeenCalledWith(
+      `/api/client/day-summary?date=${TODAY}`,
+    );
   });
 
   it("locks a past, already-logged day: inputs disabled, notice shown, no save", () => {
@@ -188,6 +198,7 @@ describe("Nutrition log page", () => {
         }),
       ),
     );
+    expect(pushMock).not.toHaveBeenCalled();
   });
 
   it("renders a loading skeleton while SWR is loading", () => {

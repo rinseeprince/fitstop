@@ -4,8 +4,8 @@ vi.mock("./training-event-service", () => ({
   getEventSummariesForDate: vi.fn(),
 }));
 
-vi.mock("./nutrition-event-service", () => ({
-  getNutritionEventForDate: vi.fn(),
+vi.mock("./daily-context-service", () => ({
+  getNutritionForDate: vi.fn(),
 }));
 
 vi.mock("./daily-logs-service", () => ({
@@ -23,7 +23,7 @@ vi.mock("./client-program-service", () => ({
 
 import { getDaySummary } from "./client-day-service";
 import { getEventSummariesForDate } from "./training-event-service";
-import { getNutritionEventForDate } from "./nutrition-event-service";
+import { getNutritionForDate } from "./daily-context-service";
 import { getTodayLog } from "./daily-logs-service";
 import { getClientHabits, getTodayHabitLogs } from "./daily-habits-service";
 import { getClientProgram } from "./client-program-service";
@@ -32,7 +32,7 @@ const CLIENT_ID = "client-1";
 const DATE = "2026-05-08";
 
 const mockTrainingSummaries = vi.mocked(getEventSummariesForDate);
-const mockNutrition = vi.mocked(getNutritionEventForDate);
+const mockNutrition = vi.mocked(getNutritionForDate);
 const mockTodayLog = vi.mocked(getTodayLog);
 const mockHabits = vi.mocked(getClientHabits);
 const mockHabitLogs = vi.mocked(getTodayHabitLogs);
@@ -40,7 +40,7 @@ const mockProgram = vi.mocked(getClientProgram);
 
 function setDefaults() {
   mockTrainingSummaries.mockResolvedValue([]);
-  mockNutrition.mockResolvedValue(null);
+  mockNutrition.mockResolvedValue({ consumed: null, target: null, source: null });
   mockTodayLog.mockResolvedValue(null);
   mockHabits.mockResolvedValue([]);
   mockHabitLogs.mockResolvedValue([]);
@@ -158,50 +158,46 @@ describe("client-day-service", () => {
     expect(result.training[1].sessionName).toBe("Cardio");
   });
 
-  // ---- Nutrition: event exists but not logged ----
+  // ---- Nutrition: target exists but not logged ----
 
-  it("returns hasLog false when nutrition event exists but is not logged", async () => {
+  it("returns hasLog false with the target calories when an event target exists but no log", async () => {
     mockNutrition.mockResolvedValue({
-      id: "n1",
-      clientId: CLIENT_ID,
-      nutritionPlanId: "np1",
-      date: DATE,
-      dayOfWeek: "thursday",
-      baselineCalories: 2000,
-      trainingBurnCalories: 300,
-      proteinG: 150,
-      carbG: 200,
-      fatG: 60,
-      dietType: "balanced",
-      isTrainingDay: true,
-      calorieSurplusPercentage: null,
-      status: "scheduled",
-      createdAt: "2026-05-01T00:00:00Z",
-      updatedAt: "2026-05-01T00:00:00Z",
-    } as any);
+      consumed: null,
+      target: { calories: 2000, proteinG: 150, carbsG: 200, fatG: 60 },
+      source: "event",
+    });
 
     const result = await getDaySummary(CLIENT_ID, DATE);
 
-    expect(result.nutrition).toEqual({ hasLog: false });
+    expect(result.nutrition).toEqual({
+      hasLog: false,
+      caloriesConsumed: null,
+      targetCalories: 2000,
+    });
   });
 
   // ---- Nutrition: logged ----
 
-  it("returns hasLog true when nutrition event is logged", async () => {
+  it("returns hasLog true with consumed + target calories when a log exists", async () => {
     mockNutrition.mockResolvedValue({
-      id: "n1",
-      status: "logged",
-    } as any);
+      consumed: { calories: 1900, proteinG: 150, carbsG: 190, fatG: 60 },
+      target: { calories: 2000, proteinG: 150, carbsG: 200, fatG: 60 },
+      source: "log",
+    });
 
     const result = await getDaySummary(CLIENT_ID, DATE);
 
-    expect(result.nutrition).toEqual({ hasLog: true });
+    expect(result.nutrition).toEqual({
+      hasLog: true,
+      caloriesConsumed: 1900,
+      targetCalories: 2000,
+    });
   });
 
-  // ---- Nutrition: no event ----
+  // ---- Nutrition: no log and no event ----
 
-  it("returns null when no nutrition event exists", async () => {
-    mockNutrition.mockResolvedValue(null);
+  it("returns null when there is no nutrition log or event", async () => {
+    mockNutrition.mockResolvedValue({ consumed: null, target: null, source: null });
 
     const result = await getDaySummary(CLIENT_ID, DATE);
 

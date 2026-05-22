@@ -49,7 +49,7 @@ describe("GET /api/client/day-summary", () => {
           prescribedExerciseCount: 4,
         },
       ],
-      nutrition: { hasLog: true },
+      nutrition: { hasLog: true, caloriesConsumed: 1900, targetCalories: 2000 },
       wellness: { hasLog: true },
       habits: { totalCount: 3, loggedCount: 2 },
     });
@@ -60,7 +60,7 @@ describe("GET /api/client/day-summary", () => {
     expect(res.status).toBe(200);
     expect(body.success).toBe(true);
     expect(body.data.training).toHaveLength(1);
-    expect(body.data.nutrition).toEqual({ hasLog: true });
+    expect(body.data.nutrition).toEqual({ hasLog: true, caloriesConsumed: 1900, targetCalories: 2000 });
     expect(body.data.wellness).toEqual({ hasLog: true });
     expect(body.data.habits).toEqual({ totalCount: 3, loggedCount: 2 });
     expect(res.headers.get("Cache-Control")).toBe("no-store");

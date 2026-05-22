@@ -41,11 +41,16 @@ vi.mock("swr", () => ({
     if (key === "/api/client/me") return mockMe();
     throw new Error(`Unmocked SWR key: ${String(key)}`);
   },
+  mutate: vi.fn(),
 }));
 
 const mockToast = vi.fn();
 vi.mock("@/hooks/use-toast", () => ({
   useToast: () => ({ toast: mockToast }),
+}));
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn() }),
 }));
 
 const ISO = "2026-05-01T00:00:00.000Z";

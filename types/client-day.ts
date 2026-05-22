@@ -11,7 +11,11 @@ export type PhaseSummary = {
 export type DaySummary = {
   phase: PhaseSummary | null;
   training: TrainingEventSummary[];
-  nutrition: { hasLog: boolean } | null; // null = no nutrition event for this day
+  nutrition: {
+    hasLog: boolean;
+    caloriesConsumed: number | null;
+    targetCalories: number | null;
+  } | null; // null = no nutrition target (log or event) for this day
   wellness: { hasLog: boolean };
   habits: { totalCount: number; loggedCount: number };
 };

@@ -2,9 +2,8 @@
 
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import useSWR from "swr";
+import useSWR, { mutate as globalMutate } from "swr";
 import {
-  ArrowLeft,
   Beef,
   Droplets,
   Flame,
@@ -20,7 +19,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useClientProfile } from "@/hooks/use-client-profile";
 import { useToast } from "@/hooks/use-toast";
 import { canEditDay } from "@/lib/daily-log-permissions";
-import { parseDateParamOrToday } from "@/lib/date-helpers";
+import { getTodayDateString, parseDateParamOrToday } from "@/lib/date-helpers";
 import { swrFetcher } from "@/lib/swr-fetcher";
 
 type NutrientValues = {
@@ -183,8 +182,9 @@ function NutritionLogInner() {
       }
 
       toast({ title: "Nutrition saved" });
-      seededDate.current = null;
-      void mutate();
+      // Refresh the home day-summary so its nutrition card reflects the new log, then return home.
+      void globalMutate(`/api/client/day-summary?date=${date}`);
+      router.push(date === getTodayDateString() ? "/client" : `/client?date=${date}`);
     } catch (err) {
       console.error("[nutrition-log] save failed:", err);
       toast({
@@ -197,47 +197,27 @@ function NutritionLogInner() {
     }
   }
 
-  const backLink = (
-    <button
-      type="button"
-      onClick={() => router.push(`/client?date=${date}`)}
-      className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-    >
-      <ArrowLeft className="h-4 w-4" strokeWidth={1.5} />
-      Back
-    </button>
-  );
-
   if (error) {
     return (
-      <div>
-        <div className="mb-3">{backLink}</div>
-        <div className="flex flex-col items-center gap-4 py-12 text-center">
-          <p className="text-destructive">We couldn&apos;t load your nutrition.</p>
-          <button
-            type="button"
-            onClick={() => mutate()}
-            className="text-sm text-primary underline"
-          >
-            Try again
-          </button>
-        </div>
+      <div className="flex flex-col items-center gap-4 py-12 text-center">
+        <p className="text-destructive">We couldn&apos;t load your nutrition.</p>
+        <button
+          type="button"
+          onClick={() => mutate()}
+          className="text-sm text-primary underline"
+        >
+          Try again
+        </button>
       </div>
     );
   }
 
   if (isLoading || !nutrition) {
-    return (
-      <div>
-        <div className="mb-3">{backLink}</div>
-        <NutritionLogSkeleton />
-      </div>
-    );
+    return <NutritionLogSkeleton />;
   }
 
   return (
     <div>
-      <div className="mb-3">{backLink}</div>
       <h1 className="text-base font-semibold text-foreground">Log nutrition</h1>
       <p className="mt-1 text-sm text-muted-foreground">{formatHeading(date)}</p>
 
