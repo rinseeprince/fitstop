@@ -2,7 +2,7 @@
 
 import { TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { KpiCard } from "./exercise-insight";
+import type { KpiCard } from "@/components/training/exercise-data/exercise-insight";
 
 type ExerciseKpiStripProps = {
   kpis: KpiCard[];

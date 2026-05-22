@@ -15,11 +15,11 @@ import {
 import type { CheckIn } from "@/types/check-in";
 import type { ProgressData } from "@/services/client-portal-progress";
 import type { DailyHabit, DailyHabitLog } from "@/types/daily-habit";
-import { GoalsSection } from "@/components/client/progress/goals-section";
-import { DateRangeSelector } from "@/components/client/progress/date-range-selector";
-import { MetricChartCard } from "@/components/clients/metrics/metric-chart-card";
+import { GoalsSection } from "@/components/client-portal/metrics/goals-section";
+import { DateRangeSelector } from "@/components/client-portal/metrics/date-range-selector";
+import { MetricChartCard } from "@/components/metrics/metric-chart-card";
 import { useClientProgressMetrics } from "@/hooks/use-client-progress-metrics";
-import { HabitsSection } from "@/components/client/progress/habits-section";
+import { HabitsSection } from "@/components/client-portal/metrics/habits-section";
 import { CheckInCard } from "@/components/client-portal/check-in/check-in-card";
 import { getDateString, getTodayDateString } from "@/lib/date-helpers";
 

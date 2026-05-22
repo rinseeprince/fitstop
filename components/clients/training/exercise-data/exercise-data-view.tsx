@@ -6,10 +6,10 @@ import useSWR from "swr";
 import { cn } from "@/lib/utils";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import { ExerciseSearchSelect } from "./exercise-search-select";
-import { ExerciseTrendChart } from "./exercise-trend-chart";
-import { ExercisePrView } from "./exercise-pr-view";
+import { ExerciseTrendChart } from "@/components/training/exercise-data/exercise-trend-chart";
+import { ExercisePrView } from "@/components/training/exercise-data/exercise-pr-view";
 import { ExerciseKpiStrip } from "./exercise-kpi-strip";
-import { computeKpis } from "./exercise-insight";
+import { computeKpis } from "@/components/training/exercise-data/exercise-insight";
 import type {
   ExerciseListItem,
   ExerciseProgressionPoint,

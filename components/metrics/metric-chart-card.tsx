@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { ArrowDown, ArrowUp, ArrowLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { TrendDirection } from "@/types/check-in";
-import type { DateRangeFilter } from "./hooks/use-metrics-data";
+import type { DateRangeFilter } from "@/components/clients/metrics/hooks/use-metrics-data";
 
 const DATE_RANGE_OPTIONS: { value: DateRangeFilter; label: string }[] = [
   { value: "7d", label: "Last 7 days" },

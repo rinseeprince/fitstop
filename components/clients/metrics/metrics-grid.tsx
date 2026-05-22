@@ -1,7 +1,7 @@
 "use client";
 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { MetricChartCard } from "./metric-chart-card";
+import { MetricChartCard } from "@/components/metrics/metric-chart-card";
 import type { MetricData, DateRangeFilter } from "./hooks/use-metrics-data";
 
 type MetricsGridProps = {
