@@ -73,6 +73,12 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 | 3.2 | Nutrition detail page | 3 | COMPLETE
 | 3.3 | Wellness detail page + past-day lock enforcement | 3 | COMPLETE
 | 3.4 | Client exercise history page | 3 |
+| 3.5 | Scale test fixtures + performance baseline | 3 Scale hardening |
+| 3.6 | Exercise analytics: SQL aggregation + windowing + indexes | 3 Scale hardening |
+| 3.7 | Read-path hot spots: streak, check-in counts, check-in context | 3 Scale hardening |
+| 3.8 | Per-request auth resolution caching | 3 Scale hardening |
+| 3.9 | Render-ready API payloads + bounded-by-default contract | 3 Scale hardening |
+| 3.10 | Re-key client rate limiting from IP to client identity | 3 Scale hardening |
 | 4.1 | Habits detail page | 4 Habits |
 | 5.1 | Remove old Daily Pulse + deprecated routes + docs sweep | 5 Cleanup |
 | 5.2 | Align session_logs identity with event-keyed architecture | 5 |
@@ -102,6 +108,7 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 | 9.8 | API versioning policy + Client-Version header gate | 9 |
 | 9.9 | TECHNICAL-DEBT.md sweep (mark resolved items) | 9 |
 | 9.10 | Root-level doc rewrite (README) + CLIENT-APP-REFERENCE.md audit | 9 |
+| 9.11 | Production query/performance observability | 9 |
 
 ---
 
@@ -1328,6 +1335,212 @@ Clicking a card navigates to a detail page which fires its own fetch (e.g. `GET 
 - `pr-callout-card.test.tsx`: renders weight, reps, date; "New PR" badge present when `isRecent` true, absent when false.
 
 **Verify**: Manual: as a client, navigate to exercise history; select an exercise; verify chart renders with correct data; verify PR cards are prominent and accurate; verify consistency stat. Test with an exercise that has no history (empty state). Test deep-link from training detail page. `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Commit.
+
+---
+
+## Phase 3 Scale hardening (3.5–3.10): why these exist
+
+The web app is a logic/API test harness; the React-Native app is the real client. So these sessions harden the layer native actually depends on — the services, the queries, the indexes, and the API payloads — and explicitly do NOT invest in web render performance (lazy-mounting, memoization, chart animations, list virtualization, Recharts pinning, polling visibility-gates), which dies with the harness. Transport-level mobile contract (response-shape consistency, `Cache-Control`, bearer-token auth, API versioning) is owned by Phase 9 "Mobile prep" (9.5–9.8); these sessions are the data-shape and data-volume complement. Per product-owner direction, where a CONVENTIONS rule blocks a needed performance change, the change wins and the deviation is flagged in the session (e.g. §2's "no caching unless requested"). Scope is the **client app only**; coach-platform scale is a separate audit.
+
+---
+
+## Session 3.5: Scale test fixtures + performance baseline
+
+**Commit message**: `test(client-portal): add year-scale client seed + query performance baseline`
+
+**Objective**: Measure before optimizing. Add a repeatable seed that loads a representative year+ of one client's data and capture a baseline of the hot client read paths (rows fetched, payload bytes, wall-clock) so Sessions 3.6–3.10 can prove improvement and guard regressions. The measurement target is the API/service/DB layer, not web render.
+
+**Read first**:
+- `services/exercise-analytics-service.ts`, `services/client-portal-progress.ts`, `services/daily-logs-service.ts`, `services/daily-habits-service.ts` (the hot read paths to baseline).
+- `supabase/migrations/` (shapes for session_logs, exercise_logs, set_logs, check_ins, daily_logs, daily_habit_logs).
+- `scripts/` (existing script conventions); `vitest.config.ts`.
+
+**Plan (report before implementing)**:
+- Where the seed lives (`scripts/seed-scale-client.ts` or a guarded SQL file) and its params (clientId, months of history, sessions/week).
+- Year-scale target volumes (e.g. ~200 sessions, ~1,200 exercise_logs, ~5,000 set_logs, ~52 check-ins, ~365 daily logs, N habits × 365 logs).
+- How baselines are captured and where committed (`docs/perf-baseline.md`): rows-fetched + duration + serialized bytes per hot function.
+- Whether budgets become assertions now or after 3.6 sets the new ceiling (recommend: record now, assert from 3.6).
+
+**Implement**:
+1. Idempotent seed (clean + reseed) for a target test client at year-scale volumes; guarded to a non-prod project.
+2. Measurement harness (script or `*.perf.test.ts`) recording, per hot path (`getClientExerciseList`, `getExerciseProgressionSeries`, `getExercisePRs`, `getClientProgressData`, `calculateStreaks`, `getHabitLogs`): rows fetched, duration, payload bytes.
+3. Commit `docs/perf-baseline.md` as the "before" snapshot.
+
+**Do NOT**: Optimize anything yet (3.6+). Run the seed against production. Add any web-render perf work.
+
+**Tests to write**:
+- The harness is the deliverable; assert it runs and emits numbers. No business-logic tests here.
+
+**Verify**: Seed the linked test project, run the harness, confirm `docs/perf-baseline.md` captures before-numbers. `npx tsc --noEmit`, `npx eslint .`. Commit.
+
+---
+
+## Session 3.6: Exercise analytics — SQL aggregation + windowing + indexes
+
+**Commit message**: `perf(training): push exercise analytics aggregation into SQL with windowed reads`
+
+**Objective**: Remove the dominant scale risk. `exercise-analytics-service` pulls a client's entire history (session_logs + exercise_logs + set_logs) into Node then aggregates/sorts/`.slice(-12)`s in memory. Rewrite the three functions to push GROUP BY / windowed LIMIT / MAX-aggregates into Postgres so reads are bounded by the result, not by career history. Shared with coach Sessions 1.8/1.9 and future 7.7 — return types must stay identical.
+
+**Read first**:
+- `services/exercise-analytics-service.ts` (`fetchExerciseLogsForClient` unbounded read; `.slice(-limit)` at the tail).
+- `utils/exercise-analytics-helpers.ts` (Epley + identity resolution — reuse).
+- `types/training.ts` (`ExerciseListItem`, `ExerciseProgressionPoint`, `ExercisePR` — the frozen contract).
+- `supabase/migrations/` (confirm index coverage); CONVENTIONS §8 (migration workflow).
+- `docs/perf-baseline.md` (Session 3.5 before-numbers).
+
+**Plan (report before implementing)**:
+- Confirm current index coverage (`supabase migration list` + grep) and the gaps. Likely add `exercise_logs(session_log_id)` (if absent) and `exercise_logs(exercise_id) WHERE exercise_id IS NOT NULL`; verify `session_logs(client_id, completed_at DESC)` and `set_logs(exercise_log_id)` exist.
+- SQL design per function: **list** → aggregate over the client's logs (`GROUP BY` resolved identity, `COUNT(*)`, `MAX(completed_at)`, most-recent `performed_name`); **progression** → resolve target exercise → most-recent N sessions (`ORDER BY completed_at DESC LIMIT N`) → fetch set_logs only for those → aggregate per session; **PRs** → `MAX(weight) … GROUP BY reps` over the target's set_logs.
+- Postgres functions via `supabase.rpc(...)` (recommended for the multi-join aggregates) vs tightened PostgREST queries; RPC return types flow into `types/database.ts` via `gen types`.
+- Preserve the dual identity union (`exercise_id` / `training_exercise → exercise_id` / `LOWER(performed_name)` fallback) in SQL.
+
+**Implement**:
+1. Migration: index gaps + RPC function(s) for list/progression/prs. Follow §8 (next migration number → `db push` → `gen types` → commit migration + types together).
+2. Rewrite the three service functions to call the RPCs/windowed queries and map to the existing return types (Epley/identity helpers applied to the bounded result).
+3. Confirm both routes (`/api/clients/[id]/training/exercise-history`, `/api/client/training/exercise-history`) are unchanged at the contract level.
+
+**Do NOT**: Change the three return-type shapes (both audiences depend on them). Hand-edit `types/database.ts`. Leave any in-memory full-history fetch in place. Touch web-render code.
+
+**Tests to write**:
+- `services/exercise-analytics-service.test.ts` (extend): the Session 1.8 behavioral assertions (ordering, Epley on best-e1RM set, top-set, PR-by-reps, dual identity, `isRecent`, sessionCount window) now passing against the SQL-backed implementation; mock the RPC/Supabase per the test-layer boundary.
+- Perf-budget (3.5 harness on the seeded client): progression fetches ≤ N sessions' set_logs regardless of history; list/PRs don't pull full history. Update `docs/perf-baseline.md` with after-numbers.
+
+**Verify**: Run the 3.5 harness on the year-scale client; confirm rows-fetched + payload drop to result-bounded. `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Commit.
+
+---
+
+## Session 3.7: Read-path hot spots — streak, check-in counts, check-in context
+
+**Commit message**: `perf(client-portal): aggregate streak + check-in counts, trim check-in context reads`
+
+**Objective**: Remove the remaining unbounded / N+1 / multi-call client read paths from the audit: `daily-logs-service.calculateStreaks` scans a full year + nested `.some()` loop (O(D²)); `check-in-service.enrichWithDailyLogCounts` fires one COUNT per check-in (N+1); `GET /api/client/check-in-context` fans out to ~5 sequential/parallel DB calls on the check-in form open. Replace the first two with bounded SQL and consolidate/streamline the third.
+
+**Read first**:
+- `services/daily-logs-service.ts` (`calculateStreaks`), `services/check-in-service.ts` (`enrichWithDailyLogCounts`).
+- `app/api/client/check-in-context/route.ts` (the ~5-call fan-out) + the context services it calls.
+- `app/api/client/daily-logs/streak/route.ts`, `app/api/client/check-ins/route.ts` (consumers).
+- `docs/perf-baseline.md`.
+
+**Plan (report before implementing)**:
+- Streak: SQL gaps-and-islands for current + longest in one bounded query (preferred); maintained `clients.current_streak`/`longest_streak` columns noted as the escalation only if still hot.
+- Check-in counts: one grouped query for the page's check-ins instead of N COUNTs.
+- check-in-context: which of the ~5 calls can be merged, parallelized further, or short-TTL cached (training/nutrition context rarely changes intra-week). Decide consolidate-vs-cache; do not regress gating correctness.
+- Confirm `daily_logs(client_id, date)` index exists.
+
+**Implement**:
+1. Rewrite `calculateStreaks` to one bounded SQL computation (no full-year in-memory loop).
+2. Rewrite `enrichWithDailyLogCounts` to a single grouped query for the batch.
+3. Trim `check-in-context` fan-out (merge/parallelize, optional short-TTL cache for the slowly-changing context pieces).
+4. Keep all response shapes identical (consumers unchanged).
+
+**Do NOT**: Change response shapes. Pre-build a write-path streak trigger (note as escalation only). Weaken check-in gating correctness for fewer calls. Touch web-render.
+
+**Tests to write**:
+- `services/daily-logs-service.test.ts` (extend): streak — no logs, single day, broken streak, current vs longest, year boundary.
+- `services/check-in-service.test.ts` (extend): counts correct across varying periods; one query issued, not N (assert mock call count).
+- `app/api/client/check-in-context/route.test.ts` (extend): gating statuses unchanged after consolidation; fewer DB round-trips.
+- Perf-budget: streak no longer year-scans in Node; check-in list issues O(1) count queries; context call-count reduced. Update baseline.
+
+**Verify**: 3.5 harness; `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Commit.
+
+> Bundles three cohesive read-path fixes in one commit; if check-in-context consolidation grows large, split it into its own commit within the session.
+
+---
+
+## Session 3.8: Per-request auth resolution caching
+
+**Commit message**: `perf(auth): cache user→client resolution to drop redundant per-request lookups`
+
+**Objective**: Every client API request runs `getAuthenticatedClientId`, which validates the JWT via `supabase.auth.getUser()` (kept) **and** does a `clients` lookup to map `user_id → client_id`. Across a multi-request page that's N redundant lookups. Cache the mapping so the per-request DB hit goes away — without weakening auth.
+
+**Read first**:
+- `lib/auth-helpers.ts` (`getAuthenticatedClientId`), `lib/require-client-auth.ts`.
+- `lib/rate-limit.ts` (existing Upstash Redis — reuse the infra).
+- CONVENTIONS §9 (getUser mandatory; never getSession).
+
+**Plan (report before implementing)**:
+- Cache layer: short-TTL Upstash keyed by `user_id`. Note: each App-Router route is a separate request, so per-request memo doesn't help across the page's parallel calls — a short-TTL shared cache is the lever.
+- Invalidation: TTL-only (the mapping effectively never changes); document it.
+- `getUser()` stays on every request — only the `clients` row lookup is cached.
+
+**Implement**:
+1. Cached `user_id → client_id` resolver (Upstash get/set + TTL) used by `getAuthenticatedClientId`.
+2. Leave the `getUser()` call unchanged.
+
+**Do NOT**: Replace `getUser()` with `getSession()` (§9 — security). Cache the JWT/auth result itself. Touch web-render.
+
+**Tests to write**:
+- `lib/auth-helpers.test.ts` (extend): second call returns cached client id without a second DB lookup (assert via mock); cache miss falls back to DB; null user → null (unchanged).
+
+**Verify**: `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Commit.
+
+> **CONVENTIONS override (authorized):** §2 "don't add caching strategies unless explicitly requested" — explicitly requested for scale. §9's `getUser()` requirement is **honored**, not overridden.
+
+---
+
+## Session 3.9: Render-ready API payloads + bounded-by-default contract
+
+**Commit message**: `refactor(api): return render-ready client payloads + codify bounded-by-default contract`
+
+**Objective**: Native should be a thin renderer. Today some shaping happens in web React (e.g. `useClientProgressMetrics` builds chart series in the browser). Move that aggregation server-side so the API returns small, render-ready, bounded payloads both the web harness and native consume identically. Audit every client list/history endpoint is bounded, and codify the conventions so future sessions stay scale-safe.
+
+**Read first**:
+- `hooks/use-client-progress-metrics.ts` (the transform to move server-side).
+- `services/client-portal-progress.ts`, `app/api/client/progress/route.ts`.
+- The Phase-3 scale audit's bounded-or-not table for `/api/client/**`.
+- `docs/CLIENT-PORTAL-REDESIGN.md` (where conventions live).
+- Phase 9 sessions 9.5–9.8 (avoid overlap: shape consistency / no-store / bearer auth / versioning).
+
+**Plan (report before implementing)**:
+- Which transforms move server-side now (progress metric series is the clear one) vs stay client-side. Decide `/api/client/progress` returns chart-ready `{ bodyMetrics, wellnessMetrics }` so native doesn't reimplement the hook.
+- Per-endpoint bounded sweep: confirm each client list/history endpoint has limit/window/cursor; bound any that still return everything (most already do — closing sweep).
+- The three conventions to document: bounded-by-default reads; server-side aggregation / render-ready payloads; index-with-the-query.
+
+**Implement**:
+1. Move progress metric-shaping into the service; `/api/client/progress` returns render-ready series. Update the web consumer (`useClientProgressMetrics` becomes a thin reader or is removed) and its tests — per §10 API-cascade.
+2. Bound any remaining unbounded client list/history endpoint from the audit.
+3. Document the three scale conventions in `docs/CLIENT-PORTAL-REDESIGN.md`.
+
+**Do NOT**: Re-do transport/versioning/bearer auth (owned by 9.5–9.8). Break web consumers without updating them (§10). Add web-render perf work.
+
+**Tests to write**:
+- `services/client-portal-progress.test.ts` (extend): returns render-ready series with correct unit + values (builds on the shipped unit-resolution fix).
+- API test for any newly-bounded endpoint asserts the limit/window applies.
+- Update web consumer tests affected by the shape change.
+
+**Verify**: `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Manual: web metrics hub still renders from the new payload. Commit.
+
+---
+
+## Session 3.10: Re-key client rate limiting from IP to client identity
+
+**Commit message**: `fix(security): key client rate limits to client identity (carrier-NAT safe)`
+
+**Objective**: `clientApiRateLimit` is IP-keyed (30 req/10s). On cellular, thousands of legitimate users sit behind the same carrier-grade NAT IP, so IP-based limiting will falsely throttle real mobile users sharing an egress IP. Re-key client portal rate limiting to the authenticated client identity so the limit is per-user, not per-IP. This is a correctness-at-scale fix, not just perf — it directly affects real mobile traffic.
+
+**Read first**:
+- `lib/rate-limit.ts` (`clientApiRateLimit`, keying strategy, Upstash/in-memory fallback).
+- `lib/require-client-auth.ts`, `lib/auth-helpers.ts` (the chain runs rate-limit FIRST, before auth — so the client id is not known yet at limit time).
+- CONVENTIONS §9 (rate limiting mandatory + first check) and §8 Shape B auth-chain ordering.
+
+**Plan (report before implementing)**:
+- The ordering problem: §9 mandates rate-limit as the first check, but the client id is only known after `getAuthenticatedClientId`. Decide: (a) two-tier — a generous IP-keyed burst guard first (DoS protection), then a tight per-client limit applied immediately after auth resolves; or (b) key on a stable client-derivable token available pre-DB-lookup. Recommend (a).
+- Where the per-client check slots into `require-client-auth` without breaking the documented chain.
+- Limits: ~30/10s per client; set the IP burst guard high enough that shared carrier IPs never trip it under normal use.
+
+**Implement**:
+1. Per-client rate-limit helper (Upstash, keyed by client id), applied in `require-client-auth` immediately after `getAuthenticatedClientId` resolves.
+2. Retune the existing IP-keyed `clientApiRateLimit` to a generous abuse-only burst guard.
+3. Document the two-tier model in `docs/CLIENT-PORTAL-REDESIGN.md`.
+
+**Do NOT**: Remove rate limiting (§9). Replace `getUser()` with `getSession()` (§9). Apply the per-client limit before auth resolves (id isn't known yet). Touch web-render.
+
+**Tests to write**:
+- `lib/rate-limit.test.ts` / `lib/require-client-auth.test.ts` (extend): same client over the limit → 429; two different clients sharing one IP do NOT throttle each other (the carrier-NAT case); unauthenticated flood still hits the IP guard.
+
+**Verify**: `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Commit.
+
+> Cross-references Phase 9's 9.7 (bearer-token native auth): when native auth lands, confirm the client-id keying still derives correctly from the bearer path.
 
 ---
 
@@ -2566,5 +2779,36 @@ Sessions 9.1–9.4 are prod blockers. Sessions 9.5–9.8 are mobile blockers. Se
 - `grep -rln "CHECK_IN_SETUP\|CLIENT-ONBOARDING-README\|MISSED_CHECKIN_TRACKING_PLAN\|CLIENT-APP-REFERENCE"` (the last only if deleted) — no stale references remain in code, configs, or other docs.
 - `npx tsc --noEmit`, `npx vitest run` (no behavioural change so all pass).
 - Commit.
+
+---
+
+## Session 9.11: Production query/performance observability
+
+**Commit message**: `feat(observability): add slow-query + API latency instrumentation for client read paths`
+
+**Objective**: The Phase 3 scale hardening (3.5–3.10) is verified in dev against seeded data; this session adds the production-side safety net so scale regressions surface from telemetry, not customer complaints. Instrument the hot client read paths and heaviest API routes with latency / slow-query capture via the existing Sentry setup, with alert thresholds tied to the Session 3.5 budgets.
+
+**Read first**:
+- `lib/error-handler.ts` (`captureApiError`, Sentry wrapper); `sentry.server.config.ts` (trace sample rate).
+- Session 9.3 (Sentry capture on background tasks) — reuse its patterns, don't duplicate.
+- `docs/perf-baseline.md` (Session 3.5 budgets — the thresholds to alert against).
+- The hot read paths hardened in 3.6/3.7 + the heaviest routes (`/api/client/progress`, `/api/client/training/exercise-history`, `/api/client/day-summary`, `/api/client/check-in-context`).
+
+**Plan (report before implementing)**:
+- What to instrument: Sentry transaction spans on the heaviest client GETs; a slow-threshold event (exceeds the 3.5 budget) carrying the route/query + hashed client context (no PII per §17).
+- Sampling: align with the existing trace rate for the fast path, but capture slow-path events at 100% (sample fast, always capture slow).
+- Where the helper lives (extend `lib/error-handler.ts` or a new `lib/perf-trace.ts`).
+
+**Implement**:
+1. A small perf-trace helper that times a route/service call and emits a Sentry event when it exceeds the 3.5 budget.
+2. Apply it to the heaviest client GET routes + the analytics service entry points.
+3. Document thresholds + where alerts land in `docs/perf-baseline.md`.
+
+**Do NOT**: Log PII (§17 — hash client identifiers). Add a new APM vendor (reuse Sentry). Re-instrument what 9.3 already covers. Touch web-render.
+
+**Tests to write**:
+- `lib/perf-trace.test.ts` (or extend the error-handler test): emits a Sentry event when the timed call exceeds the threshold; stays silent under it; never includes raw PII.
+
+**Verify**: `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Manual: trigger a slow path against the seeded year-scale client; confirm a Sentry event fires. Commit.
 
 
