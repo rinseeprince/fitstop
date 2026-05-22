@@ -18,6 +18,7 @@
   ### Scope discipline
   - Implement exactly what's asked, not what you think might be needed later.
   - Don't add optimistic updates, caching strategies, or performance optimizations unless explicitly requested.
+    - **Authorized exception (client scale only):** Sessions 3.5–3.10 of `docs/CLIENT-PORTAL-EXECUTION-PLAN.md` are an explicitly-requested performance/scale workstream for the client app. Within those sessions (and only those), caching and perf work are in-scope: short-TTL context cache (3.7), Upstash `user_id → client_id` auth-resolution cache (3.8), SQL aggregation, keyset pagination, and rate-limit re-keying. Per product-owner direction, where this rule blocks a needed scale change in those sessions, the change wins and the deviation is flagged in the session. Everywhere else, this rule stands.
   - Simple and working beats clever and fragile.
   - One fix per change. Don't fix a bug AND refactor the component AND update the styling in the same edit. If something breaks, you can't tell which change caused it.
 
@@ -271,6 +272,12 @@
   - `.maybeSingle()` - Use when expecting zero or one row. Returns `null` if no row found, no error.
   - No suffix - Returns an array of rows.
 
+  ### Client read scaling (client-portal reads)
+  These codify the Phase-3 scale contract (Sessions 3.6 / 3.7 / 3.9); full rationale lives in `docs/CLIENT-PORTAL-REDESIGN.md`. They override the generic "copy the nearest pattern" guidance (§3) where existing client code still uses offset.
+  - **Bounded AND keyset by default.** Client list/history reads page on a cursor (e.g. `(completed_at, id)` for sessions, `(created_at, id)` for check-ins), never `OFFSET` / `.range()`. Offset cost grows with how deep the client scrolls into a multi-year history; keyset stays flat. Add the matching keyset index *with* the query (e.g. `session_logs(client_id, completed_at DESC, id DESC)`).
+  - **Sparse fieldsets.** Select only the columns a row needs — never `select('*')`, and never embed a dictionary inside a row list. Fetch dictionaries (e.g. the exercise catalog) once via their own endpoint; history rows carry IDs (`exercise_id`, with `performed_name` as fallback) and the client joins locally.
+  - **Aggregate server-side.** Push GROUP BY / windowed aggregates into Postgres (RPCs) so payloads are render-ready and bounded by the result, not by history size. Native is a thin renderer.
+
   ### Soft deletes
   - User-created data uses soft delete, never hard delete
   - **is_active pattern**: Training sessions, exercises, and daily habits use `is_active = false`. Always filter by `.eq("is_active", true)` in read queries
@@ -333,6 +340,8 @@
 
   ### Rate Limiting Requirements
   **ALL new API routes MUST implement rate limiting as the first operation in every handler function.**
+
+  > **Client-portal two-tier exception (Session 3.10).** Client routes are keyed per *client identity*, but the client id isn't known until auth resolves. So client-portal routes run **two tiers**: a generous IP-keyed burst guard stays the mandatory *first* operation (DoS / carrier-NAT safe), and a tight **per-client** limit is applied immediately *after* `getAuthenticatedClientId()` resolves. This is the one sanctioned place a rate-limit check runs post-auth; the first-operation rule still holds for the IP guard.
 
   #### Rate Limit Types:
   - `authRateLimit`: Auth/invitation routes (5 requests per 15 minutes)
@@ -428,11 +437,11 @@
   5. `grep -rn "TODO\|FIXME\|HACK\|DEBUG" [changed files]` - no leftover markers
 
   ## 14. Performance
-  - Database queries: Indexes on foreign keys, frequently queried fields
-  - API responses: <200ms target, pagination for lists >20 items
+  - Database queries: Indexes on foreign keys, frequently queried fields. Index *with* the query — add the keyset index alongside the read it serves (see §8 "Client read scaling").
+  - API responses: <200ms target. Client list/history reads are **keyset-paginated and bounded by default** (§8), not offset.
   - Images: Optimize/compress before upload, use WebP
-  - Caching: Redis (Upstash) for rate limiting
-  - Lazy loading: Components below fold, infinite scroll for feeds
+  - Caching: Redis (Upstash) for rate limiting, plus the client-scale caches authorized in §2 (auth-resolution + short-TTL context, Sessions 3.7 / 3.8).
+  - Lazy loading / infinite scroll: a **web-render** concern. The client web app is a throwaway test harness (the real client is React Native), so web-render perf — lazy-mount, memoization, virtualization, chart animations — is explicitly **out of scope** for the client portal; invest scale work in the data/API/DB layer instead. (Coach-side web perf is unaffected by this note.)
 
   ## 15. Documentation
   - API endpoints: Request/response examples, error codes

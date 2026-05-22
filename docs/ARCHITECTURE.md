@@ -482,16 +482,10 @@ Wellness/tracking/activity triggers evaluate across all coach's clients:
 
 ### Database clients (Shape B — see CONVENTIONS.md §8 for the authoritative rule)
 
-CoachHub runs **backend-mediated (Shape B)**: the browser calls Next.js API routes; the route authenticates the user, verifies ownership (the IDOR chain), then calls service functions scoped by an explicit `clientId`/`coachId`; services read/write through `supabaseAdmin`. **The route layer is the security perimeter.** RLS exists as defense-in-depth only.
+> The authoritative rule is **CONVENTIONS §8 ("Auth & data-access architecture (Shape B)")** — read it first; this is a summary, and §8 wins on any disagreement.
 
-- `supabaseAdmin` (`services/supabase-admin.ts`): uses the `service_role` key, which **bypasses RLS entirely**. This is the **default client for the service layer** — not an exception. Services trust their caller-verified scope and filter on it (`.eq("client_id", clientId)`).
-- `createServerSupabaseClient()` (`lib/supabase-server.ts`): session-scoped, respects RLS. **Rarely needed** — only when you genuinely require `auth.uid()` in-database to satisfy an RLS policy doing real work. A few legacy callers remain (tracked in `TECHNICAL-DEBT.md → Auth Architecture Hygiene`); do not add new ones without the justification in CONVENTIONS §8.
-
-**Why Shape B for this app:** heavy coach-side cross-client aggregation (attention feed, library, roadmap, metrics rollups), two audiences sharing the same tables, and server-only / no-session contexts (OpenAI, Resend, Stripe, token-based check-in, phase-transition RPCs) all make RLS-as-primary awkward and slow. Route-level checks in TypeScript are simpler, faster, and testable.
-
-**Why this is unambiguous:** because `supabaseAdmin` bypasses RLS, RLS *cannot* be the primary access control for the service files that use it — a query that bypasses RLS is, by definition, not guarded by RLS. The only coherent reading is "the route layer enforces access," i.e. Shape B.
-
-**How safety is ensured (there is no RLS net):** the mandatory route auth chain (CONVENTIONS §8/§9: rate limit → CSRF → authentication → **authorization/IDOR** → validation → logic), standardized via `requireClientAuth` for steps 1–3 (the caller still performs the resource-ownership step), an IDOR-rejection test per route, and RLS kept deny-by-default as a backstop for the "wrong client object used" bug. The cost of Shape B: a forgotten ownership check is a real hole with no second line of defense — so step 4 (authorization) is non-optional. Auth proves identity, not permission.
+- `supabaseAdmin` (`services/supabase-admin.ts`): bypasses RLS. **This is the service-layer default**, used with an explicit caller-verified scope (`clientId` / `coachId`). Most DB traffic goes through it — authenticated client/coach reads, cross-client coach aggregation, token-based contexts, and system writes alike.
+- `createServerSupabaseClient()` (`lib/supabase-server.ts`): session-scoped, respects RLS. Used to **validate the session** (the auth helpers call `getUser()` through it), and otherwise only in the rare case where an RLS policy doing real work needs `auth.uid()` in-database and the admin-plus-scope pattern genuinely doesn't fit (see §8 "When to use createServerSupabaseClient()").
 
 ### IDOR prevention
 
@@ -637,8 +631,9 @@ Status codes: 200 (success), 201 (created), 400 (validation), 401 (auth), 403 (f
 
 ## JSONB Conventions
 
-- **`training_data` / `activityStatuses` are legacy (Daily Pulse).** `training_data` JSONB on `training_logs` was the Daily Pulse UI restore cache; `activityStatuses` (`Record<string, { completed, activityName, estimatedCalories }>`) was its per-activity completion map. Both are **write-dead** post-Daily-Pulse retirement — do **not** write to them in new code. A few readers still degrade gracefully off `training_data` (see the Session 5.1 note in the execution plan); they return `false`/empty because nothing writes it. The `DAILY-PULSE-README.md` that documented their shapes is deleted in Session 5.1.
-- The **source of truth** for training completion is `training_events.status` + `session_logs` + `exercise_logs` + `set_logs` (post migration 090; per-set actuals were inline scalars on `exercise_logs` before).
+- `training_data` / `activityStatuses` shapes were documented in the Daily Pulse README (removed with Daily Pulse, Sessions 5.1 / 9.10); they persist only on legacy `training_logs` rows
+- `activityStatuses` is `Record<string, { completed, activityName, estimatedCalories }>` - always read `.completed` field, never use the object as a truthy check
+- `training_data` JSONB on `training_logs` is a **UI restore cache** for the Daily Pulse. It preserves the exact training state at save time so the UI can restore without cross-referencing. The **source of truth** for training completion is `session_logs` + `exercise_logs` + `set_logs` (post migration 090; per-set actuals were inline scalars on `exercise_logs` before).
 
 ### phase_goals_snapshot
 
