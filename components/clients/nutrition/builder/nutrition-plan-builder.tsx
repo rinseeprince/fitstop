@@ -112,33 +112,41 @@ function TopContentBar({
         ))}
       </div>
 
-      {showPhaseInfo && (
+      {builder.hasPlan && (
         <>
-          {/* Vertical divider */}
-          <div className="w-px h-6 bg-[rgba(13,148,136,0.08)]" />
+          {/* Phase info — only when the client has a live phase. The Regenerate
+              action below renders whenever a plan exists, roadmap/phase or not. */}
+          {activePhase && (
+            <>
+              {/* Vertical divider */}
+              <div className="w-px h-6 bg-[rgba(13,148,136,0.08)]" />
 
-          {/* Phase info */}
-          <div className="flex items-center gap-3">
-            <span className="text-[13px] font-semibold text-[#0c1a1e]">{activePhase.name}</span>
-            {phaseDateRange && (
-              <span className="text-[12px] text-[#93b0b4]">{phaseDateRange}</span>
-            )}
-            {goalWeightDisplay && (
-              <span className="text-[12px] text-[#5a7d82]">{goalWeightDisplay}</span>
-            )}
-            {phaseGoalProgress && (
-              <span className="text-[10.5px] font-semibold text-[#d97706] bg-[rgba(245,158,11,0.07)] px-1.5 py-0.5 rounded-[3px]">
-                {phaseGoalProgress}
-              </span>
-            )}
-          </div>
+              {/* Phase info */}
+              <div className="flex items-center gap-3">
+                <span className="text-[13px] font-semibold text-[#0c1a1e]">{activePhase.name}</span>
+                {phaseDateRange && (
+                  <span className="text-[12px] text-[#93b0b4]">{phaseDateRange}</span>
+                )}
+                {goalWeightDisplay && (
+                  <span className="text-[12px] text-[#5a7d82]">{goalWeightDisplay}</span>
+                )}
+                {phaseGoalProgress && (
+                  <span className="text-[10.5px] font-semibold text-[#d97706] bg-[rgba(245,158,11,0.07)] px-1.5 py-0.5 rounded-[3px]">
+                    {phaseGoalProgress}
+                  </span>
+                )}
+              </div>
+            </>
+          )}
 
           {/* Right side */}
           <div className="ml-auto flex items-center gap-3">
-            <span className="flex items-center gap-1.5 text-xs font-medium text-[#0d9488]">
-              <span className="w-[5px] h-[5px] rounded-full bg-[#0d9488]" />
-              Active
-            </span>
+            {activePhase && (
+              <span className="flex items-center gap-1.5 text-xs font-medium text-[#0d9488]">
+                <span className="w-[5px] h-[5px] rounded-full bg-[#0d9488]" />
+                Active
+              </span>
+            )}
             <button
               onClick={onOpenSettings}
               className="inline-flex items-center px-3 py-1.5 text-[12.5px] font-medium text-[#5a7d82] bg-white border border-[rgba(13,148,136,0.08)] rounded-[6px] hover:bg-[#f0f5f4] transition-colors"
