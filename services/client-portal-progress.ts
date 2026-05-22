@@ -77,7 +77,7 @@ export async function getClientProgressData(
     .gte("created_at", startDate.toISOString())
     .order("created_at", { ascending: true });
 
-  const { data: clientData } = await supabase
+  const { data: clientData, error: clientError } = await supabase
     .from("clients")
     .select(`
       current_streak,
@@ -89,10 +89,31 @@ export async function getClientProgressData(
       current_weight,
       current_body_fat_percentage,
       weight_unit,
-      measurement_unit
+      unit_preference
     `)
     .eq("id", clientId)
     .single();
+
+  // Surface a failed client fetch instead of swallowing it. A silent failure
+  // here is exactly what made every weight/measurement default to lbs/in for
+  // metric clients: the previous query selected `measurement_unit`, which does
+  // not exist on `clients` (it lives on `check_ins`), so PostgREST rejected the
+  // whole query and `clientData` came back null. The weight unit lives on
+  // `clients.weight_unit`; metric-vs-imperial (cm/in) is derived from
+  // `clients.unit_preference`.
+  if (clientError) {
+    console.error(
+      `Failed to load client unit/goal fields for ${clientId}:`,
+      clientError.message,
+    );
+  }
+
+  const measurementUnit: "in" | "cm" | undefined =
+    clientData?.unit_preference === "metric"
+      ? "cm"
+      : clientData?.unit_preference === "imperial"
+        ? "in"
+        : undefined;
 
   const weightHistory: ProgressDataPoint[] = [];
   const bodyFatHistory: ProgressDataPoint[] = [];
@@ -166,14 +187,14 @@ export async function getClientProgressData(
     currentStreak: clientData?.current_streak ?? 0,
     adherenceRate: clientData?.check_in_adherence_rate ?? 0,
     client: {
-      goalWeight: clientData?.goal_weight,
-      goalBodyFatPercentage: clientData?.goal_body_fat_percentage,
-      startingWeight: clientData?.starting_weight,
-      startingBodyFatPercentage: clientData?.starting_body_fat_percentage,
-      currentWeight: clientData?.current_weight,
-      currentBodyFatPercentage: clientData?.current_body_fat_percentage,
-      weightUnit: clientData?.weight_unit,
-      measurementUnit: clientData?.measurement_unit,
+      goalWeight: clientData?.goal_weight ?? undefined,
+      goalBodyFatPercentage: clientData?.goal_body_fat_percentage ?? undefined,
+      startingWeight: clientData?.starting_weight ?? undefined,
+      startingBodyFatPercentage: clientData?.starting_body_fat_percentage ?? undefined,
+      currentWeight: clientData?.current_weight ?? undefined,
+      currentBodyFatPercentage: clientData?.current_body_fat_percentage ?? undefined,
+      weightUnit: (clientData?.weight_unit ?? undefined) as "lbs" | "kg" | undefined,
+      measurementUnit,
     },
   };
 }
