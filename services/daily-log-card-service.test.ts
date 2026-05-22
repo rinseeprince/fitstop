@@ -20,7 +20,7 @@ const spineQuery = (id = "spine-1") => ({
   single: vi.fn().mockResolvedValue({ data: { id }, error: null }),
 });
 const childQuery = (error: { message: string } | null = null) => ({
-  upsert: vi.fn(() => Promise.resolve({ data: null, error })),
+  upsert: vi.fn().mockResolvedValue({ data: null, error }),
 });
 
 beforeEach(() => {
