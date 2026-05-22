@@ -12,6 +12,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
+import { LockedDayNotice } from "@/components/client-portal/day/locked-day-notice";
 import { NutrientRow } from "@/components/client-portal/nutrition/nutrient-row";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -221,14 +222,7 @@ function NutritionLogInner() {
       <h1 className="text-base font-semibold text-foreground">Log nutrition</h1>
       <p className="mt-1 text-sm text-muted-foreground">{formatHeading(date)}</p>
 
-      {isLocked ? (
-        <div
-          role="status"
-          className="mt-4 rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground"
-        >
-          This day&apos;s log is locked and can&apos;t be edited.
-        </div>
-      ) : null}
+      {isLocked ? <LockedDayNotice reason="past-logged" /> : null}
 
       <Card className="mt-4">
         <CardContent className="space-y-6 py-6">

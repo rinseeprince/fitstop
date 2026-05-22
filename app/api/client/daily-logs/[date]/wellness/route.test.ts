@@ -63,7 +63,14 @@ describe("GET /api/client/daily-logs/[date]/wellness", () => {
     const res = await GET(getReq(), params("2026-05-21"));
     const json = await res.json();
     expect(res.status).toBe(200);
-    expect(json.data).toEqual({ mood: 4, energy: 7, sleep: null, stress: null, editable: true });
+    expect(json.data).toEqual({
+      mood: 4,
+      energy: 7,
+      sleep: null,
+      stress: null,
+      editable: true,
+      loggedStatus: "logged",
+    });
   });
 
   it("returns nulls when there is no wellness log", async () => {
@@ -78,6 +85,7 @@ describe("GET /api/client/daily-logs/[date]/wellness", () => {
     const json = await res.json();
     expect(json.data.mood).toBeNull();
     expect(json.data.editable).toBe(true);
+    expect(json.data.loggedStatus).toBe("never-logged");
   });
 
   it("401 when unauthenticated", async () => {
