@@ -71,7 +71,7 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 | 3.1 | Nutrition + wellness endpoints | 3 Detail pages | COMPLETE
 | 3.1B | No-plan gating: client home cards + coach activation gate | 3 |
 | 3.2 | Nutrition detail page | 3 | COMPLETE
-| 3.3 | Wellness detail page + past-day lock enforcement | 3 |
+| 3.3 | Wellness detail page + past-day lock enforcement | 3 | COMPLETE
 | 3.4 | Client exercise history page | 3 |
 | 4.1 | Habits detail page | 4 Habits |
 | 5.1 | Remove old Daily Pulse + deprecated routes + docs sweep | 5 Cleanup |
@@ -1240,6 +1240,8 @@ Clicking a card navigates to a detail page which fires its own fetch (e.g. `GET 
 ---
 
 ## Session 3.3: Wellness detail page + past-day lock enforcement
+
+**Status**: COMPLETE (commit `0096421`; detail-page cache-staleness fix in `aa9ce3b`)
 
 **Commit message**: `feat(client-portal): add wellness detail page with past-day lock`
 
