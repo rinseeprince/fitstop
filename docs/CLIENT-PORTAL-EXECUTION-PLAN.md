@@ -72,12 +72,12 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 | 3.1B | No-plan gating: client home cards + coach activation gate | 3 |
 | 3.2 | Nutrition detail page | 3 | COMPLETE
 | 3.3 | Wellness detail page + past-day lock enforcement | 3 | COMPLETE
-| 3.4 | Client exercise history page | 3 |
+| 3.4 | Client metrics hub + Performance view + nav swap | 3 | COMPLETE
 | 3.5 | Scale test fixtures + performance baseline | 3 Scale hardening |
 | 3.6 | Exercise analytics: SQL aggregation + windowing + indexes | 3 Scale hardening |
 | 3.7 | Read-path hot spots: streak, check-in counts, check-in context | 3 Scale hardening |
 | 3.8 | Per-request auth resolution caching | 3 Scale hardening |
-| 3.9 | Render-ready API payloads + bounded-by-default contract | 3 Scale hardening |
+| 3.9 | Render-ready payloads + bounded/keyset contract + exercise catalog delta-sync | 3 Scale hardening |
 | 3.10 | Re-key client rate limiting from IP to client identity | 3 Scale hardening |
 | 4.1 | Habits detail page | 4 Habits |
 | 5.1 | Remove old Daily Pulse + deprecated routes + docs sweep | 5 Cleanup |
@@ -109,6 +109,8 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 | 9.9 | TECHNICAL-DEBT.md sweep (mark resolved items) | 9 |
 | 9.10 | Root-level doc rewrite (README) + CLIENT-APP-REFERENCE.md audit | 9 |
 | 9.11 | Production query/performance observability | 9 |
+| 9.12 | Media/image transform contract (progress photos) | 9 | DEFERRED
+| 9.13 | Connection pooling + native resiliency decision note | 9 |
 
 ---
 
@@ -1275,66 +1277,29 @@ Clicking a card navigates to a detail page which fires its own fetch (e.g. `GET 
 
 ---
 
-## Session 3.4: Client exercise history page
+## Session 3.4: Client metrics hub + Performance view + nav swap
 
-**Commit message**: `feat(client-portal): add exercise history page with weight trends and PR callouts`
+**Status**: COMPLETE (commits `0343aef`, `c3f3013`, `5d17874`, `c2bc944`)
 
-**Objective**: Build `/client/exercise-history` so clients can view their own lift trends and personal records. Simpler than the coach-side Exercise Data tab (Session 1.9) - motivational framing, fewer metrics, prominent PR callouts. Uses the same underlying data service from Session 1.8 via a new client-facing API route.
+**Commit message**: `feat(client-portal): add client exercise-analytics API + performance view` (lead commit; see list below)
 
-**Prerequisites**: Session 1.8 (exercise analytics service), Session 2.2 (bottom tab bar + client layout - the page must render inside the client layout chrome), Session 3.1 (shared day-log helpers - not strictly required, but the session ordering ensures the client portal detail page infrastructure is in place).
+**What shipped vs. the original plan**: The original 3.4 spec was a standalone `/client/exercise-history` page with a single weight chart + PR callout cards. What actually shipped is broader and supersedes that page: a **client metrics hub** at `/client/metrics` (Embla swipe between 4 tabs) whose **Performance** tab carries the client-facing exercise analytics the standalone page would have held. The original API deliverable landed unchanged; the page wrapper became a hub tab. There is **no** standalone `/client/exercise-history` route — do not build one.
 
-**Read first**:
-- `services/exercise-analytics-service.ts` (or wherever Session 1.8 landed the service - `getClientExerciseList`, `getExerciseProgressionSeries`, `getExercisePRs`).
-- `types/training.ts` (`ExerciseListItem`, `ExerciseProgressionPoint`, `ExercisePR`).
-- `components/client-portal/training/` (existing client-portal training components for design patterns).
-- `app/client/training/page.tsx` (client training detail page - reference for page structure).
-- `docs/newdesignsystem.md` (client-side visual patterns).
-- `components/clients/training/exercise-data/` (coach-side Exercise Data tab from Session 1.9 - reuse the chart component if it can be extracted to a shared location, otherwise build a client-specific one matching the same Recharts patterns).
-- `CONVENTIONS.md` component audience conventions (this goes in `components/client-portal/`, not `components/clients/`).
+**Shipped (4 commits)**:
+- `0343aef` — **Client exercise-analytics API** `GET /api/client/training/exercise-history` (`clientApiRateLimit` + `getAuthenticatedClientId`, scoped to the authed client, `Cache-Control: no-store`, `metric=list|progression|prs`) reusing the Session 1.8 service functions directly — no new service layer. Plus the **Performance view** that consumes it.
+- `c3f3013` — **`/client/metrics` hub**: Embla-swipe shell with 4 tabs (Performance among them). **Nav swap** (Check-in → Metrics in the bottom tab bar) and a home **"Weekly check-in"** card so check-in stays one tap away after losing its tab slot.
+- `5d17874` — **unit-resolution fix**: `getClientProgressData` was selecting a non-existent `clients.measurement_unit`, silently nulling units/goals so all kg clients saw "lbs". Now reads `weight_unit` + derives the measurement unit from `unit_preference`. (Session 3.9 builds its render-ready-series work on top of this fix.)
+- `c2bc944` — **chart-viz relocation** to a neutral tier (`components/training/exercise-data/`, `components/metrics/`, `components/client-portal/metrics/`) so coach and client surfaces share one chart implementation instead of forking it.
 
-**Plan (report before implementing)**:
-- API route shape. The client-facing route must use `clientApiRateLimit` + `getAuthenticatedClientId` and scope queries to the authed client. No IDOR chain needed (client reads own data).
-- Component breakdown. Likely:
-  - `app/client/exercise-history/page.tsx` - page shell with exercise picker.
-  - `components/client-portal/exercise-history/exercise-history-view.tsx` - main view container.
-  - `components/client-portal/exercise-history/pr-callout-card.tsx` - individual PR card.
-- Whether the chart component from Session 1.9 can be shared (placed in `components/ui/` or a shared `components/charts/` directory) or needs a client-specific version. If the coach-side chart is audience-neutral (no coach-specific data or styling), share it. If it contains coach-specific affordances, build a simpler client version.
-- Navigation entry point: how does the client reach this page? Options: (a) link from the training detail page after logging a workout ("View your Bench Press history"), (b) link from the home summary card, (c) dedicated entry in the Program page. Decide based on what feels most natural.
+**Carried-forward design decisions** (still the RN reference):
+- Client analytics are **motivational-framed and reduced** vs. coach-side: weight progression + PRs + consistency only — **no** e1RM / volume / RPE / compliance toggle (coach-level analytics).
+- The hub is the destination; per-exercise history is reached **inside** the Performance tab, not via a separate top-level route or bottom-tab entry.
 
-**Implement**:
-1. **Client API route**: `GET /api/client/training/exercise-history` (new). `clientApiRateLimit` + `getAuthenticatedClientId`. Query params: `metric` (enum: `list | progression | prs`), `exerciseId` (optional), `exerciseName` (optional), `sessionCount` (optional, default 12). Calls the same service functions from Session 1.8, scoped to the authed client's ID. Returns `{ success: true, data: ... }`. `Cache-Control: no-store`.
+**Do NOT** (still binding): Build a standalone `/client/exercise-history` page or add it to the bottom tab bar. Re-expose coach-only metrics (e1RM/volume/RPE/compliance) to clients. Fork a second client chart component — the neutral-tier viz from `c2bc944` is shared.
 
-2. **`app/client/exercise-history/page.tsx`**:
-   - Exercise picker at top (search/select, same UX as coach-side but simpler styling matching client portal design language).
-   - Reads optional `exerciseId` or `exerciseName` query param for deep-linking from the training detail page.
+**Tests**: API route (`metric=list|progression|prs` scoped to authed client, 401), Performance view render + empty states, and the unit-resolution regression all shipped green with the commits above.
 
-3. **`components/client-portal/exercise-history/exercise-history-view.tsx`**:
-   - **Weight progression chart**: `LineChart` (Recharts). Session-count picker: 12 / 24 / All (fewer options than coach-side; clients don't need 8-session granularity). Default: 12. Date subtitle below chart showing the time span. Motivational framing: chart title "Your Progress" rather than "Top Set Weight."
-   - **PR callout cards**: prominent section below the chart. Each card: exercise name context ("Bench Press"), rep count ("5 rep max"), weight with unit, date ("Dec 12"), "New PR" badge if `isRecent`. Cards are visually prominent - not a data table, not buried. If no PRs exist: "Keep logging to track your personal records."
-   - **Consistency stat**: a single line below the PR cards: "You've logged [exercise name] [N] times in the last 12 weeks." Derived from the exercise list's `logCount` filtered to the last 12 weeks (or approximate from progression data point count). This is more motivating than a volume chart for most clients.
-   - No metric toggle (unlike coach-side). Clients see weight progression + PRs + consistency. No e1RM, volume, RPE, or compliance views - those are coach-level analytics.
-
-4. **`components/client-portal/exercise-history/pr-callout-card.tsx`**:
-   - Single PR card component. Props: `reps`, `weight`, `weightUnit`, `date`, `isRecent`.
-   - Styled prominently: large weight number, rep count label, date, optional "New PR" badge with accent color.
-
-5. **Navigation link from training detail page**: After a client logs a workout (Session 1.5's set tracker), if any of the logged exercises have history (more than 1 prior session), show a subtle link at the bottom of the logged exercise block: "View [exercise name] history". Links to `/client/exercise-history?exerciseId=<id>` (or `exerciseName` fallback). This is a convenience link, not a primary navigation path. If implementing this touch to the training detail page exceeds 15 lines of changes, defer it to a follow-up and just ship the page with URL-based navigation.
-
-**Do NOT**: Build the full coach-side metric toggle (Weight/e1RM/Volume/RPE/Compliance/PRs) - clients get a simplified view. Show RPE or compliance data to clients. Add this page to the bottom tab bar (it's a drill-down, not a top-level destination). Overwhelm with charts - one chart plus PR cards plus one stat is enough. Create a separate service layer - reuse Session 1.8's service functions directly.
-
-**Tests to write**:
-- API route test: 200 with `metric=list` returns exercise list scoped to authed client; 200 with `metric=progression`; 200 with `metric=prs`; 401 unauthenticated.
-- `exercise-history-view.test.tsx`:
-  - Weight chart renders with fixture data points.
-  - Session-count picker defaults to 12; changing it refetches data.
-  - Date subtitle renders correct time span.
-  - PR cards render from fixture data with correct weight/reps/date.
-  - "New PR" badge renders when `isRecent` is true.
-  - Consistency stat renders with correct count.
-  - Empty states: no exercise selected shows picker prompt; exercise with no data shows encouragement message; no PRs shows "keep logging" message.
-- `pr-callout-card.test.tsx`: renders weight, reps, date; "New PR" badge present when `isRecent` true, absent when false.
-
-**Verify**: Manual: as a client, navigate to exercise history; select an exercise; verify chart renders with correct data; verify PR cards are prominent and accurate; verify consistency stat. Test with an exercise that has no history (empty state). Test deep-link from training detail page. `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Commit.
+**Verify**: shipped green at each commit (`tsc`, `eslint`, `vitest`). Manual: client opens `/client/metrics`, swipes to Performance, sees own trends + PRs in the correct unit.
 
 ---
 
@@ -1389,8 +1354,9 @@ The web app is a logic/API test harness; the React-Native app is the real client
 - `docs/perf-baseline.md` (Session 3.5 before-numbers).
 
 **Plan (report before implementing)**:
-- Confirm current index coverage (`supabase migration list` + grep) and the gaps. Likely add `exercise_logs(session_log_id)` (if absent) and `exercise_logs(exercise_id) WHERE exercise_id IS NOT NULL`; verify `session_logs(client_id, completed_at DESC)` and `set_logs(exercise_log_id)` exist.
+- Confirm current index coverage (`supabase migration list` + grep) and the gaps. Likely add `exercise_logs(session_log_id)` (if absent), `exercise_logs(exercise_id) WHERE exercise_id IS NOT NULL`, and a **session-grain keyset index** `session_logs(client_id, completed_at DESC, id DESC)` (extends the existing `session_logs(client_id, completed_at DESC)` with an `id` tiebreak so cursor reads are stable when two sessions share a `completed_at`); verify `set_logs(exercise_log_id)` exists.
 - SQL design per function: **list** → aggregate over the client's logs (`GROUP BY` resolved identity, `COUNT(*)`, `MAX(completed_at)`, most-recent `performed_name`); **progression** → resolve target exercise → most-recent N sessions (`ORDER BY completed_at DESC LIMIT N`) → fetch set_logs only for those → aggregate per session; **PRs** → `MAX(weight) … GROUP BY reps` over the target's set_logs.
+- Exercise/session **history pagination is keyset, not offset**: page on the cursor `(completed_at, id)` against the keyset index above, never `.range()`/`OFFSET`. Offset cost grows with how deep the client scrolls into a multi-year history; keyset stays flat. The most-recent-N window above is the first keyset page; "load older" pages from the last `(completed_at, id)` seen. (Mirrors the check-in keyset conversion in Session 3.7 and the bounded-AND-keyset contract in Session 3.9.)
 - Postgres functions via `supabase.rpc(...)` (recommended for the multi-join aggregates) vs tightened PostgREST queries; RPC return types flow into `types/database.ts` via `gen types`.
 - Preserve the dual identity union (`exercise_id` / `training_exercise → exercise_id` / `LOWER(performed_name)` fallback) in SQL.
 
@@ -1413,32 +1379,37 @@ The web app is a logic/API test harness; the React-Native app is the real client
 
 **Commit message**: `perf(client-portal): aggregate streak + check-in counts, trim check-in context reads`
 
-**Objective**: Remove the remaining unbounded / N+1 / multi-call client read paths from the audit: `daily-logs-service.calculateStreaks` scans a full year + nested `.some()` loop (O(D²)); `check-in-service.enrichWithDailyLogCounts` fires one COUNT per check-in (N+1); `GET /api/client/check-in-context` fans out to ~5 sequential/parallel DB calls on the check-in form open. Replace the first two with bounded SQL and consolidate/streamline the third.
+**Objective**: Remove the remaining unbounded / N+1 / multi-call client read paths from the audit: `daily-logs-service.calculateStreaks` scans a full year + nested `.some()` loop (O(D²)); `check-in-service.enrichWithDailyLogCounts` fires one COUNT per check-in (N+1); `GET /api/client/check-in-context` fans out to ~5 sequential/parallel DB calls on the check-in form open. Replace the first two with bounded SQL and consolidate/streamline the third. Also convert `check-in-service.getClientCheckIns` from **offset (`.range()`) to keyset** pagination so the mobile history list pages on a stable cursor.
+
+> **Judgment note on the check-in keyset conversion**: check-ins are low-cardinality (roughly weekly), so a client's list is dozens of rows, not thousands — offset is not actually hot here. This conversion is mainly **mobile-contract consistency** (every client history list pages the same keyset way, matching Sessions 3.6 and 3.9), not a performance fix. Worth doing for a uniform native contract, but don't frame it as a P0 hot-path win.
 
 **Read first**:
-- `services/daily-logs-service.ts` (`calculateStreaks`), `services/check-in-service.ts` (`enrichWithDailyLogCounts`).
+- `services/daily-logs-service.ts` (`calculateStreaks`), `services/check-in-service.ts` (`enrichWithDailyLogCounts`, `getClientCheckIns` — the `.range(offset, …)` at ~line 148).
 - `app/api/client/check-in-context/route.ts` (the ~5-call fan-out) + the context services it calls.
-- `app/api/client/daily-logs/streak/route.ts`, `app/api/client/check-ins/route.ts` (consumers).
+- `app/api/client/daily-logs/streak/route.ts`, `app/api/client/check-ins/route.ts` (consumers; the check-ins route is the keyset cursor's caller).
 - `docs/perf-baseline.md`.
 
 **Plan (report before implementing)**:
 - Streak: SQL gaps-and-islands for current + longest in one bounded query (preferred); maintained `clients.current_streak`/`longest_streak` columns noted as the escalation only if still hot.
 - Check-in counts: one grouped query for the page's check-ins instead of N COUNTs.
 - check-in-context: which of the ~5 calls can be merged, parallelized further, or short-TTL cached (training/nutrition context rarely changes intra-week). Decide consolidate-vs-cache; do not regress gating correctness.
+- Check-in keyset: add index `check_ins(client_id, created_at DESC, id DESC)`; page on the cursor `(created_at, id)` and convert `getClientCheckIns`'s `.range(offset, …)` to a keyset predicate (`WHERE (created_at, id) < (cursorCreatedAt, cursorId)` for "older", `LIMIT n`). Decide the cursor wire format (opaque base64 of the tuple vs. two params) and keep it consistent with the 3.6 progression cursor. *(Per the judgment note above: consistency-driven, not a hot fix.)*
 - Confirm `daily_logs(client_id, date)` index exists.
 
 **Implement**:
 1. Rewrite `calculateStreaks` to one bounded SQL computation (no full-year in-memory loop).
 2. Rewrite `enrichWithDailyLogCounts` to a single grouped query for the batch.
 3. Trim `check-in-context` fan-out (merge/parallelize, optional short-TTL cache for the slowly-changing context pieces).
-4. Keep all response shapes identical (consumers unchanged).
+4. Convert `getClientCheckIns` from `.range()` offset to keyset on `(created_at, id)` with the new index; update the `/api/client/check-ins` route to accept/emit the cursor instead of an offset/page param.
+5. Keep all response shapes identical apart from the check-ins pagination param swapping offset→cursor (consumers updated per §10 API-cascade).
 
-**Do NOT**: Change response shapes. Pre-build a write-path streak trigger (note as escalation only). Weaken check-in gating correctness for fewer calls. Touch web-render.
+**Do NOT**: Change response shapes (other than the documented check-ins offset→cursor pagination swap). Pre-build a write-path streak trigger (note as escalation only). Weaken check-in gating correctness for fewer calls. Touch web-render.
 
 **Tests to write**:
 - `services/daily-logs-service.test.ts` (extend): streak — no logs, single day, broken streak, current vs longest, year boundary.
-- `services/check-in-service.test.ts` (extend): counts correct across varying periods; one query issued, not N (assert mock call count).
+- `services/check-in-service.test.ts` (extend): counts correct across varying periods; one query issued, not N (assert mock call count); `getClientCheckIns` keyset — first page returns newest N, a follow-up cursor returns the next-older page with no overlap/gap, and same-`created_at` rows are split deterministically by the `id` tiebreak.
 - `app/api/client/check-in-context/route.test.ts` (extend): gating statuses unchanged after consolidation; fewer DB round-trips.
+- `app/api/client/check-ins/route.test.ts` (extend): route pages by cursor and returns the next cursor.
 - Perf-budget: streak no longer year-scans in Node; check-in list issues O(1) count queries; context call-count reduced. Update baseline.
 
 **Verify**: 3.5 harness; `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Commit.
@@ -1478,37 +1449,43 @@ The web app is a logic/API test harness; the React-Native app is the real client
 
 ---
 
-## Session 3.9: Render-ready API payloads + bounded-by-default contract
+## Session 3.9: Render-ready payloads + bounded/keyset contract + exercise catalog delta-sync
 
-**Commit message**: `refactor(api): return render-ready client payloads + codify bounded-by-default contract`
+**Commit message**: `refactor(api): render-ready client payloads + bounded/keyset contract + exercise catalog delta-sync`
 
-**Objective**: Native should be a thin renderer. Today some shaping happens in web React (e.g. `useClientProgressMetrics` builds chart series in the browser). Move that aggregation server-side so the API returns small, render-ready, bounded payloads both the web harness and native consume identically. Audit every client list/history endpoint is bounded, and codify the conventions so future sessions stay scale-safe.
+**Objective**: Native should be a thin renderer. Today some shaping happens in web React (e.g. `useClientProgressMetrics` builds chart series in the browser). Move that aggregation server-side so the API returns small, render-ready, bounded payloads both the web harness and native consume identically. Audit every client list/history endpoint is bounded AND keyset, add an exercise-catalog delta-sync endpoint so native caches the dictionary locally and history rows carry IDs not embedded dictionaries, and codify the conventions so future sessions stay scale-safe.
 
 **Read first**:
 - `hooks/use-client-progress-metrics.ts` (the transform to move server-side).
 - `services/client-portal-progress.ts`, `app/api/client/progress/route.ts`.
+- `services/exercise-analytics-service.ts` + the exercise-history routes (the ID-first-history change lands on their row shape) and the `exercises` catalog table (`id, name, muscle_group, category, equipment, aliases, coach_id, updated_at`).
 - The Phase-3 scale audit's bounded-or-not table for `/api/client/**`.
 - `docs/CLIENT-PORTAL-REDESIGN.md` (where conventions live).
 - Phase 9 sessions 9.5–9.8 (avoid overlap: shape consistency / no-store / bearer auth / versioning).
 
 **Plan (report before implementing)**:
 - Which transforms move server-side now (progress metric series is the clear one) vs stay client-side. Decide `/api/client/progress` returns chart-ready `{ bodyMetrics, wellnessMetrics }` so native doesn't reimplement the hook.
-- Per-endpoint bounded sweep: confirm each client list/history endpoint has limit/window/cursor; bound any that still return everything (most already do — closing sweep).
-- The three conventions to document: bounded-by-default reads; server-side aggregation / render-ready payloads; index-with-the-query.
+- Per-endpoint bounded sweep: confirm each client list/history endpoint has limit/window/**cursor (keyset)**; bound any that still return everything and re-key any offset pager to keyset (most already do — closing sweep, building on 3.6/3.7).
+- **Exercise catalog delta-sync**: design `GET /api/client/exercises/catalog?since=<ISO|updated_at cursor>` returning the lean dictionary rows `{ id, name, muscle_group, equipment, updated_at }` changed since `since` (omit `since` → full dictionary for first sync). Native caches this locally and refreshes by delta. Pairs with **ID-first history**: exercise/session history rows return `exercise_id` (native joins to its cached catalog) and keep `performed_name` only as a fallback for legacy/freehand rows — history rows never embed the catalog dictionary.
+- **Sparse fieldsets**: history/list endpoints select only the columns the row needs (never `select('*')`, never an embedded dictionary join inside a row list). RPC rowtypes stay narrow — the catalog dictionary is fetched once via the catalog endpoint, not re-sent per history row.
+- The conventions to document: **bounded AND keyset by default** (was "bounded-by-default"); server-side aggregation / render-ready payloads; index-with-the-query; ID-first rows + client-side dictionary (catalog delta-sync); sparse fieldsets / narrow RPC rowtypes.
 
 **Implement**:
 1. Move progress metric-shaping into the service; `/api/client/progress` returns render-ready series. Update the web consumer (`useClientProgressMetrics` becomes a thin reader or is removed) and its tests — per §10 API-cascade.
-2. Bound any remaining unbounded client list/history endpoint from the audit.
-3. Document the three scale conventions in `docs/CLIENT-PORTAL-REDESIGN.md`.
+2. Bound/keyset any remaining unbounded or offset-paged client list/history endpoint from the audit.
+3. Add the `GET /api/client/exercises/catalog?since=` delta-sync endpoint (lean dictionary, `clientApiRateLimit` + `getAuthenticatedClientId`, `Cache-Control: no-store`) and switch exercise/session history rows to ID-first (`exercise_id` + `performed_name` fallback, no embedded dictionary).
+4. Document the scale conventions (bounded **AND keyset** by default; render-ready payloads; index-with-the-query; ID-first rows + catalog delta-sync; sparse fieldsets / narrow RPC rowtypes) in `docs/CLIENT-PORTAL-REDESIGN.md`.
 
-**Do NOT**: Re-do transport/versioning/bearer auth (owned by 9.5–9.8). Break web consumers without updating them (§10). Add web-render perf work.
+**Do NOT**: Re-do transport/versioning/bearer auth (owned by 9.5–9.8). Break web consumers without updating them (§10). `select('*')` or embed the exercise dictionary inside a history-row list. Add web-render perf work. **Specify RN client-side data patterns here** — TanStack Query + MMKV persistence, FlashList + `React.memo` + `react-freeze`, etc. live in the **mobile repo**, not this plan; this session only fixes the *server* contract those patterns consume.
 
 **Tests to write**:
 - `services/client-portal-progress.test.ts` (extend): returns render-ready series with correct unit + values (builds on the shipped unit-resolution fix).
-- API test for any newly-bounded endpoint asserts the limit/window applies.
+- API test for any newly-bounded/keyset endpoint asserts the limit/window/cursor applies.
+- `app/api/client/exercises/catalog/route.test.ts` (new): full sync (no `since`) returns the dictionary; delta (`since=`) returns only rows with `updated_at > since`; 401 unauthenticated; rows carry only the lean fields.
+- Exercise-history row test: rows expose `exercise_id` with `performed_name` fallback and do not embed the dictionary.
 - Update web consumer tests affected by the shape change.
 
-**Verify**: `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Manual: web metrics hub still renders from the new payload. Commit.
+**Verify**: `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Manual: web metrics hub still renders from the new payload; catalog endpoint returns a delta for a recent `since`. Commit.
 
 ---
 
@@ -2429,7 +2406,7 @@ Commit.
 
 These sessions are not part of the client portal redesign itself but are blockers identified during the pre-Phase-1 audit. None block resuming the redesign work, but **all must complete before pushing to production**, and a subset (9.5–9.8) must complete before the iOS/Android build begins.
 
-Sessions 9.1–9.4 are prod blockers. Sessions 9.5–9.8 are mobile blockers. Session 9.9 is hygiene.
+Sessions 9.1–9.4 are prod blockers. Sessions 9.5–9.8 are mobile blockers. Session 9.9 is hygiene. Sessions 9.10–9.11 are docs/observability. Sessions 9.12–9.13 are decision/contract notes (9.12 is **DEFERRED** until progress photos are built; 9.13 is doc-only).
 
 ---
 
@@ -2810,5 +2787,65 @@ Sessions 9.1–9.4 are prod blockers. Sessions 9.5–9.8 are mobile blockers. Se
 - `lib/perf-trace.test.ts` (or extend the error-handler test): emits a Sentry event when the timed call exceeds the threshold; stays silent under it; never includes raw PII.
 
 **Verify**: `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Manual: trigger a slow path against the seeded year-scale client; confirm a Sentry event fires. Commit.
+
+---
+
+## Session 9.12: Media/image transform contract (progress photos)
+
+> **DEFERRED** until progress photos are actually built (product owner: "leave photos for now"). This is a contract stub so the delivery decision isn't relitigated when photos land — **do not implement now**. It also requires Supabase **Pro** (image transformations are a Pro-tier feature); confirm the project is on Pro before un-deferring.
+
+**Commit message**: `docs(client-portal): record media/image transform contract for progress photos (deferred)`
+
+**Objective**: Lock the image-delivery contract for progress photos before any are built, so the native app never downloads full-resolution originals into a list. Progress photos live in a **private** Supabase Storage bucket; the app renders thumbnails in feeds and the full image only on tap.
+
+**Read first**:
+- `services/storage-service.ts` (the storage home — where signed-URL helpers belong).
+- Supabase Storage docs: `createSignedUrl(path, ttl, { transform })` and the image-transformation Pro requirement.
+- `docs/CLIENT-PORTAL-REDESIGN.md` (where the media contract is recorded).
+
+**Plan (report before implementing)** *(when un-deferred)*:
+- Bucket: a **private** bucket for progress photos; no public URLs — every read goes through a short-TTL signed URL scoped to the owning client.
+- Two render sizes via `createSignedUrl(path, ttl, { transform })`: **thumbnail** (~240px, q~60) in feeds/lists; **full** (~1080px) on tap. Never sign or serve the original in a list.
+- Where the signed-URL helpers live (`services/storage-service.ts`) and the TTL choice.
+- Confirm the project is on Supabase Pro before relying on transforms; document the fallback if not.
+
+**Implement** *(when un-deferred — not now)*:
+1. Private progress-photos bucket + RLS/ownership scoping.
+2. `services/storage-service.ts` helpers returning thumbnail and full signed URLs via the `transform` option.
+3. Feed/list surfaces request thumbnails; detail/tap requests full.
+4. Document the contract (sizes, TTL, private-bucket rule, Pro requirement) in `docs/CLIENT-PORTAL-REDESIGN.md`.
+
+**Do NOT**: Implement now (deferred). Put photos in a public bucket. Load originals in any list/feed. Rely on the transform feature before confirming Supabase Pro.
+
+**Tests to write** *(when un-deferred)*: `services/storage-service.test.ts` — thumbnail vs full produce distinct transform params; signed URLs scope to the owning client; TTL applied.
+
+**Verify** *(when un-deferred)*: `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Manual: a feed renders thumbnails, tap loads full, no original is fetched in the list.
+
+---
+
+## Session 9.13: Connection pooling + native resiliency decision note
+
+**Commit message**: `docs(client-portal): record connection-pooling + native-resiliency decision`
+
+**Objective**: Record the decision (no code change today) on database connection pooling and where native client resiliency lives, so a future backend or RN build doesn't rediscover it. Today the app reaches Postgres exclusively through **supabase-js (PostgREST over HTTP)**, which rides Supabase's managed connection pool — there is no raw-connection path to exhaust, so no pooler work is needed now.
+
+**Read first**:
+- `services/supabase-admin.ts` and `lib/supabase-server.ts` (confirm all DB access goes through supabase-js / PostgREST — no direct `pg`/Drizzle).
+- Supabase docs on Supavisor (transaction pooler: port 6543, `pgbouncer=true`, `prepared_statements=false`).
+- `docs/ARCHITECTURE.md` (where the decision is recorded).
+
+**Plan (report before implementing)**:
+- State the current posture: supabase-js / PostgREST → managed pool → no raw-connection exhaustion today; **no Supavisor change required**.
+- Define the trigger that flips this: **if/when a direct-`pg`/Drizzle path is added** (a dedicated backend service, a migration runner, a queue worker), route it through the **Supavisor transaction pooler** (port 6543, `pgbouncer=true`, `prepared_statements=false`) — transaction-mode pooling can't keep session state, so the client must disable prepared statements.
+- Note that **RN client resiliency** (exponential backoff + jitter, retry-not-on-4xx, `refetchOnReconnect`, offline cache) is a **mobile-repo** concern — record the pointer so it isn't forgotten, but it is not a server change and does not belong in this plan.
+
+**Implement**:
+1. Write the decision note (current posture; the Supavisor trigger + exact settings; the mobile-repo resiliency pointer) into `docs/ARCHITECTURE.md`. No code.
+
+**Do NOT**: Add Supavisor config or a direct-`pg`/Drizzle path now (no current need). Implement RN retry/backoff/offline logic here (mobile repo). Change the supabase-js client setup.
+
+**Tests to write**: None (doc/decision session).
+
+**Verify**: `npx tsc --noEmit` clean (doc-only). Commit.
 
 
