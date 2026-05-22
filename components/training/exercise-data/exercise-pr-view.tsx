@@ -7,9 +7,15 @@ import type { ExercisePR } from "@/types/training";
 type ExercisePrViewProps = {
   data: ExercisePR[] | undefined;
   isLoading: boolean;
+  /** Display unit for the weight value. Defaults to "kg" for the coach caller. */
+  weightUnit?: string;
 };
 
-export function ExercisePrView({ data, isLoading }: ExercisePrViewProps) {
+export function ExercisePrView({
+  data,
+  isLoading,
+  weightUnit = "kg",
+}: ExercisePrViewProps) {
   if (isLoading) {
     return (
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-[10px]">
@@ -50,7 +56,7 @@ export function ExercisePrView({ data, isLoading }: ExercisePrViewProps) {
           </p>
           <p className="text-[20px] font-medium text-[#0c1a1e] mt-1 font-mono-display tabular-nums leading-tight">
             {pr.weight}
-            <span className="text-[12px] text-[#93b0b4] ml-1">kg</span>
+            <span className="text-[12px] text-[#93b0b4] ml-1">{weightUnit}</span>
           </p>
           <p className="text-[11px] text-[#93b0b4] mt-1 leading-tight">
             {format(new Date(pr.date), "MMM d, yyyy")}

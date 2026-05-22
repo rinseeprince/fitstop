@@ -25,6 +25,12 @@ type ExerciseTrendChartProps = {
   data: ExerciseProgressionPoint[] | undefined;
   metric: TrendMetric;
   isLoading: boolean;
+  /**
+   * Whether to render the trend-commentary insight footer. Defaults to true
+   * (coach view). The client view passes false: the insight copy is coach-style
+   * analytics and hardcodes "kg", so it's suppressed there.
+   */
+  showInsight?: boolean;
 };
 
 const METRIC_COLORS: Record<TrendMetric, string> = {
@@ -170,6 +176,7 @@ export function ExerciseTrendChart({
   data,
   metric,
   isLoading,
+  showInsight = true,
 }: ExerciseTrendChartProps) {
   const gradientId = `exercise-trend-${metric}`;
 
@@ -193,8 +200,8 @@ export function ExerciseTrendChart({
   }, [metric, filteredData]);
 
   const insight = useMemo(
-    () => (data ? computeInsight(metric, data) : null),
-    [metric, data],
+    () => (showInsight && data ? computeInsight(metric, data) : null),
+    [metric, data, showInsight],
   );
 
   if (isLoading) {
