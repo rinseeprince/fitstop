@@ -87,12 +87,13 @@ describe("ClientBottomTabBar", () => {
     cleanup();
   });
 
-  it("renders all four tabs with correct hrefs", () => {
+  it("renders all four tabs with correct hrefs (Metrics replaces Check-in)", () => {
     render(<ClientBottomTabBar />);
     expect(screen.getByRole("link", { name: /home/i })).toHaveAttribute("href", "/client");
-    expect(screen.getByRole("link", { name: /check-in/i })).toHaveAttribute("href", "/client/check-in");
+    expect(screen.getByRole("link", { name: /metrics/i })).toHaveAttribute("href", "/client/metrics");
     expect(screen.getByRole("link", { name: /program/i })).toHaveAttribute("href", "/client/program");
     expect(screen.getByRole("link", { name: /content/i })).toHaveAttribute("href", "/client/resources");
+    expect(screen.queryByRole("link", { name: /check-in/i })).toBeNull();
   });
 
   it("marks Home tab active on exact /client", () => {
@@ -101,20 +102,20 @@ describe("ClientBottomTabBar", () => {
     expect(screen.getByRole("link", { name: /home/i })).toHaveAttribute("data-active", "true");
   });
 
-  it("does not mark Home tab active on /client/check-in", () => {
-    mockPathname = "/client/check-in";
+  it("does not mark Home tab active on /client/metrics", () => {
+    mockPathname = "/client/metrics";
     render(<ClientBottomTabBar />);
     expect(screen.getByRole("link", { name: /home/i })).toHaveAttribute("data-active", "false");
   });
 
-  it("marks Check-in tab active on /client/check-in and nested routes", () => {
-    mockPathname = "/client/check-in";
+  it("marks Metrics tab active on /client/metrics and nested routes", () => {
+    mockPathname = "/client/metrics";
     const { rerender } = render(<ClientBottomTabBar />);
-    expect(screen.getByRole("link", { name: /check-in/i })).toHaveAttribute("data-active", "true");
+    expect(screen.getByRole("link", { name: /metrics/i })).toHaveAttribute("data-active", "true");
 
-    mockPathname = "/client/check-in/abc";
+    mockPathname = "/client/metrics/abc";
     rerender(<ClientBottomTabBar />);
-    expect(screen.getByRole("link", { name: /check-in/i })).toHaveAttribute("data-active", "true");
+    expect(screen.getByRole("link", { name: /metrics/i })).toHaveAttribute("data-active", "true");
   });
 
   it("marks Program tab active on /client/program and nested routes", () => {

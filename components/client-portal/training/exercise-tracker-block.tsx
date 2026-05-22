@@ -10,7 +10,8 @@ import {
   type UseFormRegister,
   type UseFormSetValue,
 } from "react-hook-form";
-import { Plus, Repeat, Trash2, X } from "lucide-react";
+import Link from "next/link";
+import { LineChart, Plus, Repeat, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
@@ -288,6 +289,14 @@ function FormModeBlock({
               </button>
             </div>
           )}
+          <Link
+            href={`/client/metrics?tab=performance&exerciseName=${encodeURIComponent(liveName)}`}
+            prefetch={false}
+            className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-[#5a7d82] transition-colors hover:text-[#0d9488]"
+          >
+            <LineChart className="h-3 w-3" />
+            View history
+          </Link>
         </div>
         <div className="flex shrink-0 items-center gap-3">
           <label className="flex items-center gap-2 whitespace-nowrap text-[12px] text-[#5a7d82]">

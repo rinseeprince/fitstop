@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Home, ClipboardCheck, Dumbbell, BookOpen, LogOut, Settings } from "lucide-react";
+import { Home, BarChart3, Dumbbell, BookOpen, LogOut, Settings } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
 
 import { cn } from "@/lib/utils";
@@ -92,7 +92,7 @@ export function ClientTopBar({ client, user }: ClientTopBarProps) {
 
 // --- Bottom tab bar ---
 
-type TabValue = "home" | "check-in" | "program" | "content";
+type TabValue = "home" | "metrics" | "program" | "content";
 
 type TabConfig = {
   value: TabValue;
@@ -111,11 +111,11 @@ const TABS: readonly TabConfig[] = [
     isActive: (pathname) => pathname === "/client",
   },
   {
-    value: "check-in",
-    label: "Check-in",
-    href: "/client/check-in",
-    icon: ClipboardCheck,
-    isActive: (pathname) => pathname.startsWith("/client/check-in"),
+    value: "metrics",
+    label: "Metrics",
+    href: "/client/metrics",
+    icon: BarChart3,
+    isActive: (pathname) => pathname.startsWith("/client/metrics"),
   },
   {
     value: "program",

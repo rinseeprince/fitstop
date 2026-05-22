@@ -21,6 +21,12 @@ vi.mock("swr", () => ({
   default: (key: unknown, _fetcher: unknown, _opts: unknown) => swrCall(key),
 }));
 
+// The home's weekly check-in card fetches its own status and is unit-tested
+// separately; stub it here so it doesn't add to the shared SWR mock or skeletons.
+vi.mock("@/components/client-portal/day/check-in-card-summary", () => ({
+  CheckInCardSummary: () => null,
+}));
+
 const today = getTodayDateString();
 const todayMidnight = new Date(today + "T00:00:00");
 const yesterday = getDateDaysFrom(todayMidnight, -1);

@@ -7,6 +7,7 @@ import useSWR from "swr";
 import { DayHeader } from "@/components/client-portal/day/day-header";
 import { PhaseBanner } from "@/components/client-portal/day/phase-banner";
 import { PhaseCompletionCard } from "@/components/client-portal/day/phase-completion-card";
+import { CheckInCardSummary } from "@/components/client-portal/day/check-in-card-summary";
 import { TrainingCardSummary } from "@/components/client-portal/day/training-card-summary";
 import { NutritionCardSummary } from "@/components/client-portal/day/nutrition-card-summary";
 import { WellnessCardSummary } from "@/components/client-portal/day/wellness-card-summary";
@@ -100,6 +101,10 @@ function ClientHomePageInner() {
       <PhaseCompletionCard />
       <PhaseBanner phase={data?.data.phase ?? null} />
       <DayHeader date={date} onPrev={onPrev} onNext={onNext} onToday={onToday} />
+
+      <div className="pb-3">
+        <CheckInCardSummary />
+      </div>
 
       {error ? (
         <DayLoadError onRetry={() => mutate()} />
