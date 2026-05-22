@@ -294,7 +294,7 @@ The client portal redesign (Phase 1 Session 1.7) rewires the attention feed's tr
 
 | # | Issue | File(s) | Details | Status |
 |---|-------|---------|---------|--------|
-| 1 | Retire `training_logs.trained` column | `training_logs` table; `services/training-history-service.ts:45` (primary reader) | Once Phase 7 of the client portal redesign ships and `training_events.status` is the single source of truth for training completion, `training_logs.trained` has no consumers. Write a migration that (a) audits for any remaining readers via grep, (b) drops the column, (c) updates `types/database.ts`. Do NOT do this before Phase 7 completes — the attention feed rewire in Session 1.7 intentionally leaves the column in place for backward compat during the transition. | Open |
+| 1 | Retire `training_logs.trained` column | `training_logs` table; remaining readers: `services/schedule-data-service.ts:113`, `utils/daily-logs-aggregation.ts:65` | Once Phase 7 of the client portal redesign ships and `training_events.status` is the single source of truth for training completion, `training_logs.trained` has no consumers. Write a migration that (a) audits for any remaining readers via grep, (b) drops the column, (c) updates `types/database.ts`. Do NOT do this before Phase 7 completes — the attention feed rewire in Session 1.7 intentionally leaves the column in place for backward compat during the transition. **Update 2026-05-22:** the former primary reader `services/training-history-service.ts` was **deleted** when the coach training-history route unified on the event path (roadmaps are opt-in). Two readers remain, both on the `daily_logs`/spine side. | Open |
 
 ### Documentation Updates Needed
 

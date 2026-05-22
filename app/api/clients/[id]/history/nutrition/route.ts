@@ -10,20 +10,6 @@ import type { NutritionHistoryRow } from "@/types/history";
 import type { NutritionDay } from "@/types/schedule";
 import { getNutritionEventsForDateRange } from "@/services/nutrition-event-service";
 
-const NUTRITION_COLUMNS = `
-  date,
-  calories_consumed,
-  target_calories,
-  protein_g,
-  target_protein_g,
-  carbs_g,
-  target_carbs_g,
-  fat_g,
-  target_fat_g,
-  calorie_surplus_deficit,
-  nutrition_adherence
-`.replace(/\s+/g, " ").trim();
-
 function generateDateRange(start: string, end: string): string[] {
   const dates: string[] = [];
   const cursor = new Date(start + "T00:00:00");
@@ -60,6 +46,39 @@ function mapNutritionDayToRow(day: NutritionDay): NutritionHistoryRow {
   };
 }
 
+/**
+ * Earliest date the client has any nutrition activity — the earliest of their
+ * first logged nutrition_log and first nutrition_event. Used to bound the
+ * history range for clients with no active phase (roadmaps are opt-in, so
+ * no-phase is a normal state). Returns null when the client has no logs and no
+ * events.
+ */
+async function getEarliestNutritionActivityDate(clientId: string): Promise<string | null> {
+  const [logRes, eventRes] = await Promise.all([
+    supabaseAdmin
+      .from("nutrition_logs")
+      .select("date")
+      .eq("client_id", clientId)
+      .not("calories_consumed", "is", null)
+      .order("date", { ascending: true })
+      .limit(1)
+      .maybeSingle(),
+    supabaseAdmin
+      .from("nutrition_events")
+      .select("date")
+      .eq("client_id", clientId)
+      .order("date", { ascending: true })
+      .limit(1)
+      .maybeSingle(),
+  ]);
+
+  const candidates: string[] = [];
+  if (logRes.data?.date) candidates.push(logRes.data.date.substring(0, 10));
+  if (eventRes.data?.date) candidates.push(eventRes.data.date.substring(0, 10));
+  if (candidates.length === 0) return null;
+  return candidates.sort()[0];
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -84,7 +103,12 @@ export async function GET(
 
     const { limit, offset } = pagination;
 
-    // Check for active phase
+    // Determine the start of the history range. With an active phase, bound by
+    // the phase start (unchanged). Otherwise — roadmaps are opt-in, so no-phase
+    // is a normal state — derive the start from the client's earliest
+    // nutrition_log / nutrition_event so no-phase clients get the same
+    // event-based day-by-day summary as phase clients (real `date` throughout),
+    // instead of the logged-days-only nutrition_logs read.
     // Uses supabaseAdmin: coach querying client data (RLS exception 2)
     const { data: phase } = await supabaseAdmin
       .from("phases")
@@ -93,50 +117,31 @@ export async function GET(
       .eq("status", "active")
       .maybeSingle();
 
-    const phaseStartDate = phase?.start_date as string | null;
+    const phaseStartDate = (phase?.start_date as string | null) ?? null;
+    const rangeStart = phaseStartDate ?? (await getEarliestNutritionActivityDate(clientId));
 
-    if (phaseStartDate) {
-      const today = getTodayDateString();
-      const dates = generateDateRange(phaseStartDate, today);
-      const total = dates.length;
-
-      const [nutritionData, trainingData, nutritionEvents] = await Promise.all([
-        fetchNutritionDataForPeriod(clientId, phaseStartDate, today),
-        fetchTrainingDataForPeriod(clientId, phaseStartDate, today),
-        getNutritionEventsForDateRange(clientId, phaseStartDate, today),
-      ]);
-      const summary = buildNutritionSummary(dates, nutritionData.plans, nutritionData.nutritionLogs, trainingData.plans, nutritionEvents);
-
-      // Reverse for newest-first, then paginate
-      const reversed = summary.reverse();
-      const paged = reversed.slice(offset, offset + limit);
-      const rows = paged.map(mapNutritionDayToRow);
-
-      return NextResponse.json({ rows, total }, { status: 200 });
+    // No phase and no activity at all → nothing to show.
+    if (!rangeStart) {
+      return NextResponse.json({ rows: [], total: 0 }, { status: 200 });
     }
 
-    // Fallback: no active phase, use existing logged-only behavior
-    // Uses supabaseAdmin: coach querying client data (RLS exception 3)
-    const { data, error, count } = await supabaseAdmin
-      .from("nutrition_logs")
-      .select(NUTRITION_COLUMNS, { count: "exact" })
-      .eq("client_id", clientId)
-      .not("calories_consumed", "is", null)
-      .order("date", { ascending: false })
-      .range(offset, offset + limit - 1) as unknown as { data: unknown[] | null; error: { message: string } | null; count: number | null };
+    const today = getTodayDateString();
+    const dates = generateDateRange(rangeStart, today);
+    const total = dates.length;
 
-    if (error) {
-      console.error("Error fetching nutrition history:", error);
-      return NextResponse.json(
-        { error: "Failed to fetch nutrition history" },
-        { status: 500 }
-      );
-    }
+    const [nutritionData, trainingData, nutritionEvents] = await Promise.all([
+      fetchNutritionDataForPeriod(clientId, rangeStart, today),
+      fetchTrainingDataForPeriod(clientId, rangeStart, today),
+      getNutritionEventsForDateRange(clientId, rangeStart, today),
+    ]);
+    const summary = buildNutritionSummary(dates, nutritionData.plans, nutritionData.nutritionLogs, trainingData.plans, nutritionEvents);
 
-    return NextResponse.json(
-      { rows: data || [], total: count || 0 },
-      { status: 200 }
-    );
+    // Reverse for newest-first, then paginate
+    const reversed = summary.reverse();
+    const paged = reversed.slice(offset, offset + limit);
+    const rows = paged.map(mapNutritionDayToRow);
+
+    return NextResponse.json({ rows, total }, { status: 200 });
   } catch (error) {
     console.error("Error fetching nutrition history:", error);
     return NextResponse.json(
