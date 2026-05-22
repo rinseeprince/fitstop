@@ -70,7 +70,7 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 | 2.9 | Nutrition plan overview card + drill-in | 2 | COMPLETE
 | 3.1 | Nutrition + wellness endpoints | 3 Detail pages | COMPLETE
 | 3.1B | No-plan gating: client home cards + coach activation gate | 3 |
-| 3.2 | Nutrition detail page | 3 |
+| 3.2 | Nutrition detail page | 3 | COMPLETE
 | 3.3 | Wellness detail page + past-day lock enforcement | 3 |
 | 3.4 | Client exercise history page | 3 |
 | 4.1 | Habits detail page | 4 Habits |
@@ -1206,6 +1206,8 @@ Clicking a card navigates to a detail page which fires its own fetch (e.g. `GET 
 ---
 
 ## Session 3.2: Nutrition detail page
+
+**Status**: COMPLETE (commit `9863963`)
 
 **Commit message**: `feat(client-portal): add nutrition detail page with macro entry`
 
