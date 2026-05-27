@@ -22,6 +22,7 @@ import {
   getTodayDateString,
   getDateString,
   getDateDaysAgo,
+  getDateDaysFrom,
 } from "@/lib/date-helpers";
 import {
   PERF_COACH_ID,
@@ -863,6 +864,10 @@ async function insertTrainingEvents(
   months: number
 ) {
   console.log("Inserting training_events via generateTrainingEvents()...");
+  // Extend 8 weeks into the future so the current Mon-Sun week always has all
+  // 4 sessions present — otherwise "this week's nutrition" shows fewer training
+  // days as time advances past the day the seed was last run. Matches the
+  // 8-week buffer used by scripts/backfill-training-events.ts.
   await generateTrainingEvents(
     PERF_CLIENT_ID,
     PERF_PLAN_ID,
@@ -874,7 +879,7 @@ async function insertTrainingEvents(
       estimatedCalories: 400,
     })),
     getDateDaysAgo(months * 30),
-    getTodayDateString()
+    getDateDaysFrom(new Date(), 8 * 7)
   );
 }
 
