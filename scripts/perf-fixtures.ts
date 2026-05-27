@@ -23,3 +23,4 @@ export const PERF_COACH_EMAIL = "perf-coach@fixture.local";
 export const PERF_COACH_NAME = "Perf Fixture Coach";
 export const PERF_CLIENT_EMAIL = "perf-client@fixture.local";
 export const PERF_CLIENT_NAME = "Perf Fixture Client";
+export const PERF_CLIENT_PASSWORD = "12345678";

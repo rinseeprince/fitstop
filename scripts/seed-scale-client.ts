@@ -34,6 +34,7 @@ import {
   PERF_COACH_NAME,
   PERF_CLIENT_EMAIL,
   PERF_CLIENT_NAME,
+  PERF_CLIENT_PASSWORD,
 } from "./perf-fixtures";
 
 // ---------------------------------------------------------------------------
@@ -142,6 +143,7 @@ async function main() {
 
   await cleanExistingFixtures(args.fullReset);
   await insertCoachAndClient();
+  await ensureClientAuthUser();
   const exerciseIds = await pickGlobalExercises();
   await insertClientGoal();
   await insertNutritionPlan();
@@ -236,6 +238,47 @@ async function insertCoachAndClient() {
       { onConflict: "id", ignoreDuplicates: true }
     );
   if (clientErr) throw new Error(`Client upsert: ${clientErr.message}`);
+}
+
+// ---------------------------------------------------------------------------
+// Auth user for the perf client (so you can actually log in as them)
+// Idempotent: if the user already exists, reuse it. Always re-links the
+// clients.user_id at the end so a --full-reset that recreated the client
+// row picks the link back up.
+// ---------------------------------------------------------------------------
+
+async function ensureClientAuthUser() {
+  console.log("Ensuring auth user for perf client...");
+
+  const { data: list, error: listErr } = await supabaseAdmin.auth.admin.listUsers({
+    perPage: 1000,
+  });
+  if (listErr) throw new Error(`auth listUsers: ${listErr.message}`);
+
+  const existing = list.users.find((u) => u.email === PERF_CLIENT_EMAIL);
+  let userId: string;
+
+  if (existing) {
+    userId = existing.id;
+    console.log(`  found existing auth user (id=${userId})`);
+  } else {
+    const { data, error } = await supabaseAdmin.auth.admin.createUser({
+      email: PERF_CLIENT_EMAIL,
+      password: PERF_CLIENT_PASSWORD,
+      email_confirm: true,
+    });
+    if (error) throw new Error(`auth createUser: ${error.message}`);
+    if (!data.user) throw new Error("auth createUser returned no user");
+    userId = data.user.id;
+    console.log(`  created auth user (id=${userId})`);
+  }
+
+  const { error: linkErr } = await supabaseAdmin
+    .from("clients")
+    .update({ user_id: userId })
+    .eq("id", PERF_CLIENT_ID);
+  if (linkErr) throw new Error(`clients.user_id link: ${linkErr.message}`);
+  console.log(`  linked clients.user_id → ${PERF_CLIENT_EMAIL}`);
 }
 
 // ---------------------------------------------------------------------------
