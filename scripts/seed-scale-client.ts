@@ -242,9 +242,13 @@ async function insertCoachAndClient() {
 
 // ---------------------------------------------------------------------------
 // Auth user for the perf client (so you can actually log in as them)
-// Idempotent: if the user already exists, reuse it. Always re-links the
-// clients.user_id at the end so a --full-reset that recreated the client
-// row picks the link back up.
+//
+// Migration 025's on_auth_user_created trigger reads
+// raw_user_meta_data->>'role' (defaults to 'trainer') and creates BOTH a
+// profiles row AND — for trainers — a coaches row. We pass role='client'
+// on creation, then force-correct the profile and remove the spurious
+// coaches row in case a previous run (or the trigger default) misclassified.
+// Idempotent: looks up by email; safe to re-run.
 // ---------------------------------------------------------------------------
 
 async function ensureClientAuthUser() {
@@ -266,12 +270,31 @@ async function ensureClientAuthUser() {
       email: PERF_CLIENT_EMAIL,
       password: PERF_CLIENT_PASSWORD,
       email_confirm: true,
+      user_metadata: { role: "client", name: PERF_CLIENT_NAME },
     });
     if (error) throw new Error(`auth createUser: ${error.message}`);
     if (!data.user) throw new Error("auth createUser returned no user");
     userId = data.user.id;
     console.log(`  created auth user (id=${userId})`);
   }
+
+  // Force profile.role = 'client'. The trigger may have defaulted to 'trainer'
+  // for users created before this seed passed role metadata.
+  const { error: profileErr } = await supabaseAdmin
+    .from("profiles")
+    .upsert({ user_id: userId, role: "client" }, { onConflict: "user_id" });
+  if (profileErr) throw new Error(`profiles upsert: ${profileErr.message}`);
+  console.log(`  set profiles.role = client`);
+
+  // Drop any spurious coaches row the default-trainer trigger created for
+  // this auth user. The real perf-fixture coach uses PERF_COACH_ID and is
+  // unaffected (it has no user_id link).
+  const { error: spuriousErr } = await supabaseAdmin
+    .from("coaches")
+    .delete()
+    .eq("user_id", userId);
+  if (spuriousErr) throw new Error(`spurious coach cleanup: ${spuriousErr.message}`);
+  console.log(`  cleaned any spurious coaches row for this user_id`);
 
   const { error: linkErr } = await supabaseAdmin
     .from("clients")
