@@ -592,9 +592,7 @@ Pre-onboarding clients (created before the intake feature shipped) default to `a
 - `hasRoadmap` - an active roadmap exists
 - `hasActivePhase` - roadmap has an active phase (with name/startDate)
 
-Uses `Promise.all` with `safeQuery()` wrapper for partial failure tolerance. The coach sees the `ClientActivationBanner` component which shows required vs recommended status.
-
-> ⚠️ **Scheduled change (Session 3.1B).** Today `activation-readiness` is advisory — `POST /api/clients/[id]/activate` does not enforce it, and `hasActivePhase` is "recommended." Session 3.1B makes **active phase + nutrition plan + training plan required**: the activate route rejects until they exist, the coach Activate button disables, and `hasActivePhase` moves into the required set. Update this section when 3.1B lands.
+Uses `Promise.all` with `safeQuery()` wrapper for partial failure tolerance. The coach sees the `ClientActivationBanner` component which shows required vs recommended status. `activation-readiness` is advisory — `POST /api/clients/[id]/activate` does not enforce it. The orphan-log perimeter that prevents no-plan clients from creating null-stamped logs lives at the per-card writers instead (see `assertHasActivePlan` in `services/daily-context-service.ts`).
 
 ---
 

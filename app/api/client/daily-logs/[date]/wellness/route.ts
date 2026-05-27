@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireClientAuth } from "@/lib/require-client-auth";
 import { isValidDateParam, wellnessCardSchema } from "@/lib/validations/daily-log-cards";
-import { resolvePlanContextForDate } from "@/services/daily-context-service";
+import {
+  resolvePlanContextForDate,
+  assertHasActivePlan,
+  NoActivePlanError,
+} from "@/services/daily-context-service";
 import { getTodayLog } from "@/services/daily-logs-service";
 import { getDayEditState, assertCanEdit } from "@/services/daily-log-permissions-service";
 import { upsertWellnessLog } from "@/services/daily-log-card-service";
@@ -91,6 +95,7 @@ export async function PATCH(
       resourceType: "wellness",
     });
     const ctx = await resolvePlanContextForDate(auth.clientId, date);
+    assertHasActivePlan(ctx, "wellness");
     const dailyLog = await upsertWellnessLog(auth.clientId, date, result.data, {
       phaseId: ctx.phaseId,
     });
@@ -103,6 +108,12 @@ export async function PATCH(
       return NextResponse.json(
         { success: false, error: error.message },
         { status: 403 }
+      );
+    }
+    if (error instanceof NoActivePlanError) {
+      return NextResponse.json(
+        { success: false, error: error.message },
+        { status: 422 }
       );
     }
     console.error("Error saving wellness log:", error);

@@ -123,6 +123,43 @@ export const resolvePlanContextForDate = async (
   return { phaseId, nutritionPlanId, trainingPlanId };
 };
 
+/** Per-card resource whose plan-id presence we assert before writing a log. */
+export type PlanGatedResource = "nutrition" | "wellness" | "training";
+
+/**
+ * Thrown by `assertHasActivePlan` when the plan id we'd stamp onto the log row is null.
+ * Routes translate `instanceof NoActivePlanError` into a 422 — perimeter guard against
+ * orphan logs (null `phase_id` / `*_plan_id`) that surface as null adherence in the
+ * attention feed and are excluded from phase reviews. Sibling to `DayLockedError`.
+ */
+export class NoActivePlanError extends Error {
+  readonly resource: PlanGatedResource;
+
+  constructor(resource: PlanGatedResource) {
+    super(`No active plan for ${resource}`);
+    this.name = "NoActivePlanError";
+    this.resource = resource;
+  }
+}
+
+/**
+ * Reject the write when the field we'd stamp would be null. Per-resource because each
+ * writer stamps a different id: nutrition → `nutrition_plan_id`, wellness → `phase_id`
+ * (no plan id, links via phase), training → `training_plan_id` (Session 5.3).
+ */
+export const assertHasActivePlan = (
+  ctx: PlanContextForDate,
+  resource: PlanGatedResource
+): void => {
+  const id =
+    resource === "nutrition"
+      ? ctx.nutritionPlanId
+      : resource === "training"
+        ? ctx.trainingPlanId
+        : ctx.phaseId;
+  if (id == null) throw new NoActivePlanError(resource);
+};
+
 export type NutritionForDate = {
   consumed: { calories: number | null; proteinG: number | null; carbsG: number | null; fatG: number | null } | null;
   target: { calories: number; proteinG: number | null; carbsG: number | null; fatG: number | null } | null;

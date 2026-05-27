@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireClientAuth } from "@/lib/require-client-auth";
 import { isValidDateParam, nutritionCardSchema } from "@/lib/validations/daily-log-cards";
-import { getNutritionForDate, resolvePlanContextForDate } from "@/services/daily-context-service";
+import {
+  getNutritionForDate,
+  resolvePlanContextForDate,
+  assertHasActivePlan,
+  NoActivePlanError,
+} from "@/services/daily-context-service";
 import { getDayEditState, assertCanEdit } from "@/services/daily-log-permissions-service";
 import { upsertNutritionLog } from "@/services/daily-log-card-service";
 import { DayLockedError } from "@/lib/daily-log-permissions";
@@ -78,6 +83,7 @@ export async function PATCH(
       resourceType: "nutrition",
     });
     const ctx = await resolvePlanContextForDate(auth.clientId, date);
+    assertHasActivePlan(ctx, "nutrition");
     const dailyLog = await upsertNutritionLog(auth.clientId, date, result.data, {
       phaseId: ctx.phaseId,
       nutritionPlanId: ctx.nutritionPlanId,
@@ -91,6 +97,12 @@ export async function PATCH(
       return NextResponse.json(
         { success: false, error: error.message },
         { status: 403 }
+      );
+    }
+    if (error instanceof NoActivePlanError) {
+      return NextResponse.json(
+        { success: false, error: error.message },
+        { status: 422 }
       );
     }
     console.error("Error saving nutrition log:", error);

@@ -11,7 +11,12 @@ import { getActivePhase } from "./phase-service";
 import { getNutritionEventForDate } from "./nutrition-event-service";
 import { getEventForDate } from "./training-event-service";
 import { getActiveNutritionPlanId } from "./nutrition-plan-service";
-import { resolvePlanContextForDate, getNutritionForDate } from "./daily-context-service";
+import {
+  resolvePlanContextForDate,
+  getNutritionForDate,
+  assertHasActivePlan,
+  NoActivePlanError,
+} from "./daily-context-service";
 
 beforeEach(() => vi.clearAllMocks());
 
@@ -47,6 +52,45 @@ describe("resolvePlanContextForDate", () => {
     const ctx = await resolvePlanContextForDate("c1", "2026-05-21");
 
     expect(ctx).toEqual({ phaseId: null, nutritionPlanId: null, trainingPlanId: null });
+  });
+});
+
+describe("assertHasActivePlan", () => {
+  const ctx = (overrides: Partial<Parameters<typeof assertHasActivePlan>[0]> = {}) => ({
+    phaseId: "phase-1",
+    nutritionPlanId: "np-1",
+    trainingPlanId: "tp-1",
+    ...overrides,
+  });
+
+  it("nutrition: throws when nutritionPlanId is null, no-ops when populated", () => {
+    expect(() => assertHasActivePlan(ctx({ nutritionPlanId: null }), "nutrition")).toThrow(
+      NoActivePlanError
+    );
+    expect(() => assertHasActivePlan(ctx(), "nutrition")).not.toThrow();
+  });
+
+  it("wellness: throws when phaseId is null, no-ops when populated", () => {
+    expect(() => assertHasActivePlan(ctx({ phaseId: null }), "wellness")).toThrow(NoActivePlanError);
+    expect(() => assertHasActivePlan(ctx(), "wellness")).not.toThrow();
+  });
+
+  it("training: throws when trainingPlanId is null, no-ops when populated", () => {
+    expect(() => assertHasActivePlan(ctx({ trainingPlanId: null }), "training")).toThrow(
+      NoActivePlanError
+    );
+    expect(() => assertHasActivePlan(ctx(), "training")).not.toThrow();
+  });
+
+  it("the thrown error carries the resource discriminator", () => {
+    try {
+      assertHasActivePlan(ctx({ phaseId: null }), "wellness");
+      throw new Error("expected throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(NoActivePlanError);
+      expect((err as NoActivePlanError).resource).toBe("wellness");
+      expect((err as NoActivePlanError).message).toBe("No active plan for wellness");
+    }
   });
 });
 
