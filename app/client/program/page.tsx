@@ -49,12 +49,12 @@ function ProgramLoadError({ onRetry }: { onRetry: () => void }) {
   );
 }
 
-function EmptyRoadmap() {
+function EmptyProgram() {
   return (
     <div className="flex flex-col items-center gap-2 py-12 text-center">
-      <p className="text-base font-semibold text-foreground">No roadmap yet</p>
+      <p className="text-base font-semibold text-foreground">No program yet</p>
       <p className="max-w-sm text-sm text-muted-foreground">
-        Your coach hasn&apos;t set up your program roadmap. Check back soon.
+        Your coach hasn&apos;t set up your program. Check back soon.
       </p>
     </div>
   );
@@ -103,33 +103,43 @@ export default function ProgramPage() {
   if (isLoading || !data) return <ProgramSkeleton />;
 
   const program = data.data;
-  if (!program) return <EmptyRoadmap />;
-
-  const { roadmap, phases, activePhaseId, weightUnit, metrics } = program;
   const trainingPlan = trainingPlanData?.data ?? null;
   const nutritionPlan = nutritionPlanData?.data ?? null;
 
+  // Per the roadmaps-opt-in design (2026-05-22), no-phase is first-class —
+  // a client without a roadmap should still see their training + nutrition
+  // plan cards. Only fall back to EmptyProgram when nothing is set up at all
+  // and the secondary fetches have resolved.
+  const stillLoadingSecondary =
+    (trainingPlanLoading && !trainingPlanData) ||
+    (nutritionPlanLoading && !nutritionPlanData);
+  if (!program && !trainingPlan && !nutritionPlan && !stillLoadingSecondary) {
+    return <EmptyProgram />;
+  }
+
   return (
     <div>
-      <RoadmapSummaryStrip
-        roadmapName={roadmap.name}
-        longTermGoal={roadmap.longTermGoal}
-        goalWeight={roadmap.goalWeight}
-        goalBodyFatPercentage={roadmap.goalBodyFatPercentage}
-        targetEndDate={roadmap.targetEndDate}
-        startedAt={roadmap.startedAt}
-        startingWeight={metrics.startingWeight}
-        currentWeight={metrics.currentWeight}
-        weightUnit={weightUnit}
-        phases={phases}
-      />
+      {program && (
+        <RoadmapSummaryStrip
+          roadmapName={program.roadmap.name}
+          longTermGoal={program.roadmap.longTermGoal}
+          goalWeight={program.roadmap.goalWeight}
+          goalBodyFatPercentage={program.roadmap.goalBodyFatPercentage}
+          targetEndDate={program.roadmap.targetEndDate}
+          startedAt={program.roadmap.startedAt}
+          startingWeight={program.metrics.startingWeight}
+          currentWeight={program.metrics.currentWeight}
+          weightUnit={program.weightUnit}
+          phases={program.phases}
+        />
+      )}
       <div className="mt-4 flex flex-col gap-2 pb-6">
-        {phases.map((phase) => (
+        {program?.phases.map((phase) => (
           <PhaseListItem
             key={phase.id}
             phase={phase}
-            isActive={phase.id === activePhaseId}
-            weightUnit={weightUnit}
+            isActive={phase.id === program.activePhaseId}
+            weightUnit={program.weightUnit}
           />
         ))}
         {trainingPlanLoading && !trainingPlanData && (
