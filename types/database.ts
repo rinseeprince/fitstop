@@ -3033,10 +3033,6 @@ export type Database = {
             }
             Returns: string
           }
-      generate_weekly_nutrition_goals: {
-        Args: { p_client_id: string; p_week_start_date: string }
-        Returns: undefined
-      }
       transition_phase_atomic: {
         Args: {
           p_archive_habits: boolean

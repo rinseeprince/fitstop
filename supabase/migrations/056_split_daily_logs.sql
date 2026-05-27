@@ -5,6 +5,15 @@
 -- =============================================================================
 
 -- =============================================================================
+-- STEP 0: Ensure training_data column exists on daily_logs.
+-- On dev, this column was added via Studio after the original CREATE; no
+-- migration file ever captured the ALTER. This catch-up keeps the chain
+-- replayable on a fresh DB (where 030 doesn't create the column).
+-- =============================================================================
+
+ALTER TABLE daily_logs ADD COLUMN IF NOT EXISTS training_data JSONB;
+
+-- =============================================================================
 -- STEP 1: Formalize UNIQUE constraint + add phase_id to spine
 -- =============================================================================
 

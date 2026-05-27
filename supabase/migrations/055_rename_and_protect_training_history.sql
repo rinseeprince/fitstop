@@ -208,11 +208,13 @@ WHERE el.training_exercise_id = te.id
 
 -- =============================================================================
 -- PART E: Soft-delete columns on training_sessions and training_exercises
--- Migration 054 was rolled back - add is_active to both tables fresh
+-- Migrations 053 and 054 were never persisted as files (Studio drift); on dev
+-- training_sessions.is_active was added directly in Studio. IF NOT EXISTS makes
+-- this replayable on any DB regardless of which path got it there.
 -- =============================================================================
 
--- training_sessions.is_active already exists from migration 054 (not rolled back)
-ALTER TABLE training_exercises ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE training_sessions ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE training_exercises ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true;
 
 CREATE INDEX idx_training_sessions_active
   ON training_sessions(plan_id, order_index) WHERE is_active = true;

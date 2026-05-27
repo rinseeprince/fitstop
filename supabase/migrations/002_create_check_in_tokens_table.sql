@@ -19,26 +19,14 @@ CREATE INDEX idx_check_in_tokens_client_id ON check_in_tokens(client_id);
 CREATE INDEX idx_check_in_tokens_expires_at ON check_in_tokens(expires_at);
 
 -- Enable Row Level Security (RLS)
+-- Note: this permissive baseline policy is replaced by migration 003 with
+-- specific SELECT/INSERT policies for authenticated users.
 ALTER TABLE check_in_tokens ENABLE ROW LEVEL SECURITY;
 
--- RLS Policies:
--- Note: Service role (used by API routes) automatically bypasses RLS
--- These policies apply to authenticated coaches using the anon key
-
--- Allow authenticated users to read tokens
--- TODO: When coach-client relationship table is added, filter by: coach_id = auth.uid()
-CREATE POLICY "Authenticated users can view tokens" ON check_in_tokens
-  FOR SELECT
-  USING (auth.role() = 'authenticated');
-
--- Allow authenticated users to create tokens (for generating check-in links)
--- TODO: When coach-client relationship table is added, ensure: coach owns the client
-CREATE POLICY "Authenticated users can create tokens" ON check_in_tokens
-  FOR INSERT
-  WITH CHECK (auth.role() = 'authenticated');
-
--- Block anonymous access
--- Token validation and marking as used are handled by API routes using service role
+CREATE POLICY "Enable all operations for authenticated users" ON check_in_tokens
+  FOR ALL
+  USING (true)
+  WITH CHECK (true);
 
 -- Function to clean up expired tokens (can be called via cron job)
 CREATE OR REPLACE FUNCTION clean_expired_tokens()
