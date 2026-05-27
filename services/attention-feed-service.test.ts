@@ -94,8 +94,9 @@ describe("attention-feed-service", () => {
 
       const result = evaluateAndSortTriggers(clientDataMap, dateRange)
 
-      if (dayOfWeek >= 3) {
-        // Wed-Sat: both past events are in the current Mon-Sun week
+      if (dayOfWeek >= 4) {
+        // Thu-Sat: both past events (today-2, today-3) are in the current Mon-Sun week.
+        // (On Wed today-3 lands on Sun of the previous week, so the trigger does not fire.)
         expect(result.length).toBeGreaterThanOrEqual(1)
         const c1Alerts = result.find((c) => c.clientId === "c1")
         expect(c1Alerts).toBeDefined()
