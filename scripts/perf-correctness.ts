@@ -1,14 +1,20 @@
 /**
- * Correctness fixture for the migration-094 RPCs (Session 3.6).
+ * Correctness fixture for the migration-094 RPCs (Session 3.6) and the
+ * migration-095 streak RPC + check-in keyset cursor (Session 3.7).
  *
- * Seeds a small deterministic fixture (separate from PERF_CLIENT_ID) and
- * asserts exact RPC outputs covering: identity-union merging, legacy
- * name-fallback, list ordering on completed_at-tie, PR-date oldest-on-tie,
- * SQL window cap at p_session_count, and the COALESCE default guard against
- * LIMIT NULL.
+ * Seeds small deterministic fixtures (separate from PERF_CLIENT_ID) and
+ * asserts exact outputs the unit tests can no longer cover, because they mock
+ * Supabase and therefore never execute the real SQL / PostgREST filter:
+ *   - 094 RPCs: identity-union merging, legacy name-fallback, list ordering on
+ *     completed_at-tie, PR-date oldest-on-tie, SQL window cap at
+ *     p_session_count, COALESCE default guard against LIMIT NULL.
+ *   - 095 get_client_streak: gaps-and-islands current/longest, the "run must end
+ *     today or yesterday" rule (incl. the isolated-older-log → current 0 edge),
+ *     and the empty window.
+ *   - check-in keyset: the (created_at, id) `.or()` cursor predicate against real
+ *     PostgREST, including a same-created_at tie split across a page boundary.
  *
- * Each assertion targets one SQL semantic the unit tests can no longer cover
- * (since the unit tests mock the RPC). A failure here is a real SQL bug.
+ * A failure here is a real SQL / PostgREST bug.
  *
  *   npx tsx scripts/perf-correctness.ts
  *
@@ -17,6 +23,7 @@
 import "./env-bootstrap";
 
 import { supabaseAdmin } from "@/services/supabase-admin";
+import { getClientCheckIns } from "@/services/check-in-service";
 import { PERF_COACH_ID } from "./perf-fixtures";
 
 // ---------------------------------------------------------------------------
@@ -72,6 +79,29 @@ function weekStart(dateStr: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Session 3.7 fixtures — streak RPC (migration 095) + check-in keyset cursor.
+// Its own client so cleanup stays scoped; same "5ca1ec0" prefix as above.
+// "today" is passed to the RPC explicitly, so the fixture is date-independent.
+// ---------------------------------------------------------------------------
+
+const S37_CLIENT_ID = "5ca1ec0c-0000-4000-8000-000000000002";
+
+// Streak: a 5-day run (May 10–14) + a 3-day run ending May 28, gap between.
+const STREAK_DATES = [
+  "2026-05-10", "2026-05-11", "2026-05-12", "2026-05-13", "2026-05-14", // longest run = 5
+  "2026-05-26", "2026-05-27", "2026-05-28",                              // recent run = 3
+];
+
+// Check-ins: 5 rows; CI_TIE_HI and CI_TIE_LO share created_at 2026-05-06 to
+// exercise the (created_at, id) tiebreak. CI_TIE_HI has the larger id, so under
+// id DESC it sorts first — the cursor must split the tie across a page boundary.
+const CI_1 = "5ca1ec0c-0000-4000-8005-000000000001";      // 2026-05-20
+const CI_2 = "5ca1ec0c-0000-4000-8005-000000000002";      // 2026-05-13
+const CI_TIE_HI = "5ca1ec0c-0000-4000-8005-0000000000a2"; // 2026-05-06 (sorts first)
+const CI_TIE_LO = "5ca1ec0c-0000-4000-8005-0000000000a1"; // 2026-05-06 (sorts second)
+const CI_5 = "5ca1ec0c-0000-4000-8005-000000000005";      // 2026-04-29
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -87,6 +117,7 @@ async function main() {
   await seedClient();
   await seedPlanAndExercises();
   await seedSessionsAndLogs();
+  await seedStreakAndCheckin();
 
   const failures: string[] = [];
 
@@ -96,6 +127,8 @@ async function main() {
   await assertProgressionWindowCap(failures);
   await assertProgressionCoalesceDefault(failures);
   await assertLegacyNameFallback(failures);
+  await assertStreak(failures);
+  await assertCheckinCursor(failures);
 
   if (failures.length > 0) {
     console.error("");
@@ -126,6 +159,14 @@ async function clean() {
   // Catalog exercises: scoped by fixture UUIDs only
   await del("exercises (catalog)",
     supabaseAdmin.from("exercises").delete().in("id", [BENCH_ID, SQUAT_ID, OHP_ID]));
+
+  // Session 3.7 fixture — delete children before the client row.
+  await del("daily_logs (3.7)",
+    supabaseAdmin.from("daily_logs").delete().eq("client_id", S37_CLIENT_ID));
+  await del("check_ins (3.7)",
+    supabaseAdmin.from("check_ins").delete().eq("client_id", S37_CLIENT_ID));
+  await del("clients (3.7)",
+    supabaseAdmin.from("clients").delete().eq("id", S37_CLIENT_ID));
 }
 
 async function del(label: string, op: { error: { message: string } | null } | PromiseLike<{ error: { message: string } | null }>) {
@@ -367,6 +408,50 @@ function makeUUID(grp: string, idx: number): string {
 }
 
 // ---------------------------------------------------------------------------
+// Session 3.7 seed — its own client with daily_logs (streak) + check_ins (cursor)
+// ---------------------------------------------------------------------------
+
+async function seedStreakAndCheckin() {
+  console.log("Seeding 3.7 streak daily_logs + keyset check_ins...");
+
+  const { error: cErr } = await supabaseAdmin.from("clients").insert({
+    id: S37_CLIENT_ID,
+    coach_id: PERF_COACH_ID,
+    name: "Perf 3.7 Client",
+    email: "perf-3-7@fixture.local",
+    active: true,
+    weight_unit: "lbs",
+    unit_preference: "imperial",
+  });
+  if (cErr) throw new Error(`3.7 client seed: ${cErr.message}`);
+
+  const dlRows = STREAK_DATES.map((date, i) => ({
+    id: makeUUID("0d00", i),
+    client_id: S37_CLIENT_ID,
+    date,
+  }));
+  const { error: dlErr } = await supabaseAdmin.from("daily_logs").insert(dlRows);
+  if (dlErr) throw new Error(`3.7 daily_logs seed: ${dlErr.message}`);
+
+  // created_at set explicitly (overriding DEFAULT now()) to control the ordering
+  // and the same-created_at tie. client_id is TEXT on check_ins (migration 023).
+  const ciRows = [
+    { id: CI_1, client_id: String(S37_CLIENT_ID), status: "reviewed", created_at: at9("2026-05-20") },
+    { id: CI_2, client_id: String(S37_CLIENT_ID), status: "reviewed", created_at: at9("2026-05-13") },
+    { id: CI_TIE_HI, client_id: String(S37_CLIENT_ID), status: "reviewed", created_at: at9("2026-05-06") },
+    { id: CI_TIE_LO, client_id: String(S37_CLIENT_ID), status: "reviewed", created_at: at9("2026-05-06") },
+    { id: CI_5, client_id: String(S37_CLIENT_ID), status: "reviewed", created_at: at9("2026-04-29") },
+  ];
+  // Dynamic-shape rows in a seed script — widen at the insert call, same as
+  // the exercise_logs/set_logs inserts above. Not a production-path type escape.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error: ciErr } = await (supabaseAdmin.from("check_ins").insert as any)(ciRows);
+  if (ciErr) throw new Error(`3.7 check_ins seed: ${ciErr.message}`);
+
+  console.log(`  inserted ${dlRows.length} daily_logs + ${ciRows.length} check_ins for the 3.7 client`);
+}
+
+// ---------------------------------------------------------------------------
 // Assertions
 // ---------------------------------------------------------------------------
 
@@ -528,6 +613,73 @@ async function assertLegacyNameFallback(failures: string[]) {
     return;
   }
   expect(rows[0], "prs-legacy[0]", { reps: 3, weight: 200 }, failures);
+}
+
+async function assertStreak(failures: string[]) {
+  console.log("Asserting get_client_streak (gaps-and-islands, migration 095)...");
+
+  // "today" is a parameter, so each case fixes it explicitly against the same logs.
+  const cases = [
+    { today: "2026-05-28", start: "2026-01-01", current: 3, longest: 5, note: "run ends today" },
+    { today: "2026-05-29", start: "2026-01-01", current: 3, longest: 5, note: "run ends yesterday (grace)" },
+    { today: "2026-05-30", start: "2026-01-01", current: 0, longest: 5, note: "most-recent log 2d ago → current 0 (the edge mocks can't prove)" },
+    { today: "2026-06-02", start: "2026-06-01", current: 0, longest: 0, note: "empty window" },
+  ];
+
+  for (const c of cases) {
+    const { data, error } = await supabaseAdmin.rpc("get_client_streak", {
+      p_client_id: S37_CLIENT_ID,
+      p_today: c.today,
+      p_start_date: c.start,
+    });
+    if (error) {
+      failures.push(`streak[p_today=${c.today}]: rpc error ${error.message}`);
+      continue;
+    }
+    const row = (data ?? [])[0] ?? { current_streak: 0, longest_streak: 0 };
+    expect(
+      row,
+      `streak[p_today=${c.today}] (${c.note})`,
+      { current_streak: c.current, longest_streak: c.longest },
+      failures
+    );
+  }
+}
+
+async function assertCheckinCursor(failures: string[]) {
+  console.log("Asserting check-in keyset cursor (.or (created_at,id) tiebreak, real PostgREST)...");
+
+  // Page 1 (no cursor): newest 3, DESC by (created_at, id). CI_TIE_HI is the
+  // last row here, so the tie is poised to split across the page boundary.
+  const page1 = await getClientCheckIns(S37_CLIENT_ID, { limit: 3, keyset: true });
+  const ids1 = page1.checkIns.map((c) => c.id);
+  if (JSON.stringify(ids1) !== JSON.stringify([CI_1, CI_2, CI_TIE_HI])) {
+    failures.push(`cursor page1: expected [CI_1, CI_2, CI_TIE_HI], got ${JSON.stringify(ids1)}`);
+  }
+  if (!page1.nextCursor) {
+    failures.push("cursor page1: expected a nextCursor (2 more rows exist), got null");
+    return;
+  }
+
+  // Page 2 (cursor on CI_TIE_HI): the id-DESC tiebreak must continue with
+  // CI_TIE_LO (same created_at, smaller id) — not skip it, not re-emit CI_TIE_HI.
+  const page2 = await getClientCheckIns(S37_CLIENT_ID, { limit: 3, cursor: page1.nextCursor });
+  const ids2 = page2.checkIns.map((c) => c.id);
+  if (JSON.stringify(ids2) !== JSON.stringify([CI_TIE_LO, CI_5])) {
+    failures.push(`cursor page2: expected [CI_TIE_LO, CI_5] (tie split by id, none skipped), got ${JSON.stringify(ids2)}`);
+  }
+
+  const overlap = ids2.filter((id) => ids1.includes(id));
+  if (overlap.length > 0) {
+    failures.push(`cursor: page2 overlaps page1 on ${overlap.join(",")} — id tiebreak failed (would duplicate across pages)`);
+  }
+  const all = new Set([...ids1, ...ids2]);
+  if (all.size !== 5) {
+    failures.push(`cursor: expected 5 distinct rows across pages (no gap), got ${all.size}`);
+  }
+  if (page2.nextCursor !== null) {
+    failures.push(`cursor page2: expected nextCursor null (last page), got ${JSON.stringify(page2.nextCursor)}`);
+  }
 }
 
 // ---------------------------------------------------------------------------

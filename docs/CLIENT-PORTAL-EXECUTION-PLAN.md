@@ -75,7 +75,7 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 | 3.4 | Client metrics hub + Performance view + nav swap | 3 | COMPLETE
 | 3.5 | Scale test fixtures + performance baseline | 3 Scale hardening |
 | 3.6 | Exercise analytics: SQL aggregation + windowing + indexes | 3 Scale hardening | COMPLETE
-| 3.7 | Read-path hot spots: streak, check-in counts, check-in context | 3 Scale hardening |
+| 3.7 | Read-path hot spots: streak, check-in counts, check-in context | 3 Scale hardening | COMPLETE
 | 3.8 | Per-request auth resolution caching | 3 Scale hardening |
 | 3.9 | Render-ready payloads + bounded/keyset contract + exercise catalog delta-sync | 3 Scale hardening |
 | 3.10 | Re-key client rate limiting from IP to client identity | 3 Scale hardening |
@@ -1370,6 +1370,8 @@ The web app is a logic/API test harness; the React-Native app is the real client
 ---
 
 ## Session 3.7: Read-path hot spots — streak, check-in counts, check-in context
+
+**Status**: COMPLETE
 
 **Commit message**: `perf(client-portal): aggregate streak + check-in counts, trim check-in context reads`
 

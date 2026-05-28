@@ -317,8 +317,8 @@ function buildMarkdown(baselines: FunctionBaseline[], fixtures: FixtureCounts): 
   lines.push(`- **\`createPortalClient()\` consolidation candidate (CONVENTIONS §8).** \`services/client-portal-progress.ts\` uses a session-scoped Supabase client when most service functions default to \`supabaseAdmin\` with explicit scoping. Phase 9 tech-debt sweep should reconcile — services should default to \`supabaseAdmin\`; session-scoped is the rare case.`);
   lines.push(`- **\`getClientProgressData\` reads legacy denormalized columns on \`clients\` (\`goal_weight\`, \`starting_weight\`, \`current_weight\`) rather than the \`client_goals\` / \`body_metrics\` tables ARCHITECTURE.md describes as the preferred post-migration source.** Consolidation candidate alongside the \`createPortalClient()\` one.`);
   lines.push(`- **\`check_ins.client_id\` is TEXT, not UUID.** Migration 023 artifact; everywhere else UUID. Worth a typed-FK migration eventually.`);
-  lines.push(`- **\`daily_logs_full\` is a view.** \`calculateStreaks\` reads it directly. Captured wall-time includes view overhead; Session 3.7 should consider materialization or denormalization.`);
   lines.push(`- **3.6 resolved:** \`getClientExerciseList\` / \`getExerciseProgressionSeries\` / \`getExercisePRs\` now go through SQL aggregation RPCs (migration 094) — reads are result-bounded, not history-bounded. The prior \`PostgREST 1000-row cap\` followup is gone with the multi-call fetch pattern.`);
+  lines.push(`- **3.7 resolved:** \`calculateStreaks\` no longer reads the \`daily_logs_full\` view + runs an O(D²) Node loop; it now calls the \`get_client_streak\` gaps-and-islands RPC (migration 095) over the \`daily_logs\` spine via the \`(client_id, date DESC)\` index, returning two integers (result-bounded, not history-bounded).`);
   lines.push("");
 
   return lines.join("\n");

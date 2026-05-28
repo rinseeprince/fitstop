@@ -3043,11 +3043,7 @@ export type Database = {
         }[]
       }
       get_client_streak: {
-        Args: {
-          p_client_id: string
-          p_start_date: string
-          p_today: string
-        }
+        Args: { p_client_id: string; p_start_date: string; p_today: string }
         Returns: {
           current_streak: number
           longest_streak: number
@@ -3262,4 +3258,3 @@ export const Constants = {
     },
   },
 } as const
-
