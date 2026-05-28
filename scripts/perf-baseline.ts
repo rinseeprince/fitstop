@@ -5,8 +5,8 @@
  *
  * Patches the `supabaseAdmin` singleton with a telemetry-wrapped version,
  * runs each of the 6 service functions with 1 cold + 5 warm invocations,
- * and writes `docs/perf-baseline.md`. No optimization is applied to any
- * service — this captures the "before" snapshot for Sessions 3.6–3.10.
+ * and writes `docs/perf-baseline.md`. Re-run after each scale session to
+ * refresh numbers; the file is a moving snapshot, not a frozen baseline.
  *
  * `getClientProgressData` is the one exception: its production implementation
  * uses `createPortalClient()` (cookie-bound, Next.js-request-only), so we
@@ -286,7 +286,7 @@ function buildMarkdown(baselines: FunctionBaseline[], fixtures: FixtureCounts): 
   lines.push(`# Client portal — perf baseline`);
   lines.push("");
   lines.push(`**Captured:** ${captured} · **Git SHA:** ${sha} · **Target:** ${host}`);
-  lines.push(`**Node:** ${process.version} · **No optimization applied** — this is the "before" snapshot for Sessions 3.6–3.10.`);
+  lines.push(`**Node:** ${process.version} · Moving snapshot — re-run after each scale session (3.6+) to refresh.`);
   lines.push("");
   lines.push(`## Fixture`);
   lines.push("");
@@ -317,8 +317,8 @@ function buildMarkdown(baselines: FunctionBaseline[], fixtures: FixtureCounts): 
   lines.push(`- **\`createPortalClient()\` consolidation candidate (CONVENTIONS §8).** \`services/client-portal-progress.ts\` uses a session-scoped Supabase client when most service functions default to \`supabaseAdmin\` with explicit scoping. Phase 9 tech-debt sweep should reconcile — services should default to \`supabaseAdmin\`; session-scoped is the rare case.`);
   lines.push(`- **\`getClientProgressData\` reads legacy denormalized columns on \`clients\` (\`goal_weight\`, \`starting_weight\`, \`current_weight\`) rather than the \`client_goals\` / \`body_metrics\` tables ARCHITECTURE.md describes as the preferred post-migration source.** Consolidation candidate alongside the \`createPortalClient()\` one.`);
   lines.push(`- **\`check_ins.client_id\` is TEXT, not UUID.** Migration 023 artifact; everywhere else UUID. Worth a typed-FK migration eventually.`);
-  lines.push(`- **PostgREST 1000-row default cap.** Year-scale \`getClientExerciseList\` fetches >1,000 exercise_logs in a single \`.in(...)\` query — may be silently truncated. The numbers above will expose if so.`);
-  lines.push(`- **\`daily_logs_full\` is a view.** \`calculateStreaks\` reads it directly. Captured wall-time includes view overhead; 3.6 should consider materialization or denormalization.`);
+  lines.push(`- **\`daily_logs_full\` is a view.** \`calculateStreaks\` reads it directly. Captured wall-time includes view overhead; Session 3.7 should consider materialization or denormalization.`);
+  lines.push(`- **3.6 resolved:** \`getClientExerciseList\` / \`getExerciseProgressionSeries\` / \`getExercisePRs\` now go through SQL aggregation RPCs (migration 094) — reads are result-bounded, not history-bounded. The prior \`PostgREST 1000-row cap\` followup is gone with the multi-call fetch pattern.`);
   lines.push("");
 
   return lines.join("\n");

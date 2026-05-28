@@ -3033,6 +3033,46 @@ export type Database = {
             }
             Returns: string
           }
+      get_client_exercise_list: {
+        Args: { p_client_id: string }
+        Returns: {
+          exercise_id: string
+          last_logged_date: string
+          log_count: number
+          name: string
+        }[]
+      }
+      get_exercise_progression_window: {
+        Args: {
+          p_client_id: string
+          p_exercise_id?: string
+          p_exercise_name?: string
+          p_session_count?: number
+        }
+        Returns: {
+          completed_at: string
+          exercise_log_id: string
+          prescribed_exercise_snapshot: Json
+          reps: number
+          rpe: number
+          session_log_id: string
+          set_id: string
+          set_number: number
+          weight: number
+        }[]
+      }
+      get_exercise_prs: {
+        Args: {
+          p_client_id: string
+          p_exercise_id?: string
+          p_exercise_name?: string
+        }
+        Returns: {
+          date: string
+          reps: number
+          weight: number
+        }[]
+      }
       transition_phase_atomic: {
         Args: {
           p_archive_habits: boolean
@@ -3211,3 +3251,4 @@ export const Constants = {
     },
   },
 } as const
+

@@ -74,7 +74,7 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 | 3.3 | Wellness detail page + past-day lock enforcement | 3 | COMPLETE
 | 3.4 | Client metrics hub + Performance view + nav swap | 3 | COMPLETE
 | 3.5 | Scale test fixtures + performance baseline | 3 Scale hardening |
-| 3.6 | Exercise analytics: SQL aggregation + windowing + indexes | 3 Scale hardening |
+| 3.6 | Exercise analytics: SQL aggregation + windowing + indexes | 3 Scale hardening | COMPLETE
 | 3.7 | Read-path hot spots: streak, check-in counts, check-in context | 3 Scale hardening |
 | 3.8 | Per-request auth resolution caching | 3 Scale hardening |
 | 3.9 | Render-ready payloads + bounded/keyset contract + exercise catalog delta-sync | 3 Scale hardening |
@@ -1333,6 +1333,8 @@ The web app is a logic/API test harness; the React-Native app is the real client
 ---
 
 ## Session 3.6: Exercise analytics — SQL aggregation + windowing + indexes
+
+**Status**: COMPLETE
 
 **Commit message**: `perf(training): push exercise analytics aggregation into SQL with windowed reads`
 
