@@ -7,6 +7,7 @@ import { triggerAISummaryGeneration, updateClientMetricsFromCheckIn } from "@/se
 import { updateClientAdherenceStats } from "@/services/check-in-adherence-service";
 import { clientSubmitCheckInSchema } from "@/lib/validations/check-in";
 import { calculateCheckInPeriod } from "@/lib/date-helpers";
+import { decodeCursor, encodeCursor } from "@/lib/cursor";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { generateAndSaveCheckInSnapshot } from "@/services/check-in-snapshot-service";
 import { captureApiError } from "@/lib/error-handler";
@@ -17,36 +18,19 @@ import type { SubmitCheckInResponse } from "@/types/check-in";
  * 
  * Retrieves the check-in history for an authenticated client with pagination.
  * 
+ * Keyset is the default mode (the native contract): the whole list pages on a
+ * stable (created_at, id) cursor.
+ *   - First page:  `?limit=10`               → `{ ..., nextCursor, hasMore }`
+ *   - Next pages:  `?limit=10&cursor=<opaque>`→ `{ ..., nextCursor, hasMore }`
+ *   - Legacy offset (explicit opt-in only): `?offset=N` → `{ ..., offset, total }`
+ *
  * @param request - The Next.js request object with optional query params:
- *   - limit: Number of check-ins to return (default: 20)
- *   - offset: Number of check-ins to skip (default: 0)
+ *   - limit: Number of check-ins to return (default: 20, max 100)
+ *   - cursor: Opaque keyset cursor for the next page
+ *   - offset: Legacy offset mode (only honored when explicitly present)
  * @returns Promise<NextResponse> - JSON response with check-in history and pagination
- * 
- * @example
- * ```typescript
- * // Request: GET /api/client/check-ins?limit=10&offset=0
- * // Response format
- * {
- *   success: true,
- *   data: [
- *     {
- *       id: "checkin-123",
- *       createdAt: "2024-01-01T00:00:00Z",
- *       mood: 4,
- *       energy: 7,
- *       weight: 180,
- *       // ... other check-in fields
- *     }
- *   ],
- *   pagination: {
- *     limit: 10,
- *     offset: 0,
- *     count: 10,
- *     total: 25
- *   }
- * }
- * ```
- * 
+ *
+ * @throws {400} Invalid cursor
  * @throws {401} Unauthorized - Client not authenticated
  * @throws {500} Server error during check-in retrieval
  */
@@ -57,18 +41,48 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const limit = Math.min(Math.max(parseInt(searchParams.get("limit") || "20", 10) || 20, 1), 100);
-    const offset = Math.max(parseInt(searchParams.get("offset") || "0", 10) || 0, 0);
+    const offsetParam = searchParams.get("offset");
 
-    const result = await getClientCheckIns(auth.clientId, { limit, offset });
+    // Legacy offset mode — only when explicitly requested.
+    if (offsetParam !== null) {
+      const offset = Math.max(parseInt(offsetParam, 10) || 0, 0);
+      const result = await getClientCheckIns(auth.clientId, { limit, offset });
+
+      return NextResponse.json({
+        success: true,
+        data: result.checkIns,
+        pagination: {
+          limit,
+          offset,
+          count: result.checkIns.length,
+          total: result.total,
+        },
+      });
+    }
+
+    // Keyset mode (default). cursor is absent on the first page, present thereafter.
+    const cursorParam = searchParams.get("cursor");
+    let cursor;
+    if (cursorParam !== null) {
+      cursor = decodeCursor(cursorParam);
+      if (!cursor) {
+        return NextResponse.json(
+          { success: false, error: "Invalid cursor" },
+          { status: 400 }
+        );
+      }
+    }
+
+    const result = await getClientCheckIns(auth.clientId, { limit, keyset: true, cursor });
 
     return NextResponse.json({
       success: true,
       data: result.checkIns,
       pagination: {
         limit,
-        offset,
         count: result.checkIns.length,
-        total: result.total,
+        nextCursor: result.nextCursor ? encodeCursor(result.nextCursor) : null,
+        hasMore: result.nextCursor !== null,
       },
     });
   } catch (error) {

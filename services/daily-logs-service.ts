@@ -1,7 +1,7 @@
 import { supabaseAdmin } from "./supabase-admin";
 import type { DailyLog, DailyLogInput, NutritionAdherenceStatus } from "@/types/daily-log";
 import type { DayOfWeek } from "@/types/check-in";
-import { getTodayDateString, getDateString, getDateDaysAgo } from "@/lib/date-helpers";
+import { getTodayDateString, getDateString, getDateDaysAgo, dateStringToDayNumber } from "@/lib/date-helpers";
 import { NUTRITION_ADHERENCE_HIT_THRESHOLD, NUTRITION_ADHERENCE_PARTIAL_THRESHOLD } from "@/lib/constants";
 import type { Json } from "@/types/database";
 
@@ -68,6 +68,20 @@ export const calculateCalorieSurplusDeficit = (
   return caloriesConsumed - targetCalories;
 };
 
+/**
+ * Reference implementation of the streak semantics, kept as the unit-test oracle
+ * that the `get_client_streak` RPC must match. Production reads go through the RPC
+ * (services/daily-logs-service.ts `calculateStreaks`), not this function.
+ *
+ * - Current streak = the consecutive run ending today (if logged) or yesterday
+ *   (if today is not yet logged), else 0.
+ * - Longest streak = the longest run of consecutive days among the provided logs.
+ *
+ * BEHAVIOR CHANGE (session 3.7 bugfix): a leading gap now correctly resets the
+ * current streak to 0. The prior loop reported the first logged run found scanning
+ * backward as "current" — so e.g. a single log 5 days ago counted as a current
+ * streak of 1. O(D log D) via a day-number Set + one sort (was O(D²)).
+ */
 export const calculateStreakFromLogs = (
   logs: DailyLog[],
   today: Date = new Date()
@@ -76,42 +90,25 @@ export const calculateStreakFromLogs = (
     return { currentStreak: 0, longestStreak: 0 };
   }
 
-  const sortedLogs = [...logs].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  const dayNums = new Set(logs.map((log) => dateStringToDayNumber(log.date)));
+  const todayNum = dateStringToDayNumber(getDateString(today));
 
+  // Current streak: walk backward from today (if logged) or yesterday.
+  let anchor = dayNums.has(todayNum) ? todayNum : todayNum - 1;
   let currentStreak = 0;
-  let longestStreak = 0;
-  let tempStreak = 0;
-  const checkDate = new Date(today);
-  let isCalculatingCurrent = true;
-
-  const todayDate = getDateString(checkDate);
-  const hasLogToday = sortedLogs.some(log => log.date === todayDate);
-
-  if (!hasLogToday) {
-    checkDate.setDate(checkDate.getDate() - 1);
+  while (dayNums.has(anchor)) {
+    currentStreak++;
+    anchor--;
   }
 
-  while (checkDate.getFullYear() >= today.getFullYear() - 1) {
-    const logDate = getDateString(checkDate);
-    const hasLogForDate = sortedLogs.some(log => log.date === logDate);
-
-    if (hasLogForDate) {
-      tempStreak++;
-      if (isCalculatingCurrent) {
-        currentStreak = tempStreak;
-      }
-    } else {
-      longestStreak = Math.max(longestStreak, tempStreak);
-      if (isCalculatingCurrent && tempStreak > 0) {
-        isCalculatingCurrent = false;
-      }
-      tempStreak = 0;
-    }
-
-    checkDate.setDate(checkDate.getDate() - 1);
+  // Longest streak: longest run of consecutive day numbers.
+  const sorted = [...dayNums].sort((a, b) => a - b);
+  let longestStreak = 1;
+  let run = 1;
+  for (let i = 1; i < sorted.length; i++) {
+    run = sorted[i] === sorted[i - 1] + 1 ? run + 1 : 1;
+    if (run > longestStreak) longestStreak = run;
   }
-
-  longestStreak = Math.max(longestStreak, tempStreak);
 
   return { currentStreak, longestStreak };
 };
@@ -283,10 +280,27 @@ export const getTodayLog = async (clientId: string, date?: string): Promise<Dail
 };
 
 export const calculateStreaks = async (clientId: string): Promise<StreakResult> => {
-  const endDate = getTodayDateString();
+  // "today" and the 365-day window are computed here (server-local, matching the
+  // prior in-Node behavior) and passed to the RPC — never CURRENT_DATE / a SQL
+  // DEFAULT (supabase-js sends explicit null for undefined keys, which a DEFAULT
+  // would not catch). The RPC does a bounded index-only scan over daily_logs and
+  // returns the two streak integers — no daily_logs_full view scan, no O(D²) loop.
+  const today = getTodayDateString();
   const startDate = getDateDaysAgo(365);
 
-  const logs = await getDailyLogs(clientId, startDate, endDate);
+  const { data, error } = await supabaseAdmin.rpc("get_client_streak", {
+    p_client_id: clientId,
+    p_today: today,
+    p_start_date: startDate,
+  });
 
-  return calculateStreakFromLogs(logs);
+  if (error) {
+    throw new Error(`Failed to calculate streaks: ${error.message}`);
+  }
+
+  const row = data?.[0];
+  return {
+    currentStreak: row?.current_streak ?? 0,
+    longestStreak: row?.longest_streak ?? 0,
+  };
 };

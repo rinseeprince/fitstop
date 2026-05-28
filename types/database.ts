@@ -3042,6 +3042,17 @@ export type Database = {
           name: string
         }[]
       }
+      get_client_streak: {
+        Args: {
+          p_client_id: string
+          p_start_date: string
+          p_today: string
+        }
+        Returns: {
+          current_streak: number
+          longest_streak: number
+        }[]
+      }
       get_exercise_progression_window: {
         Args: {
           p_client_id: string

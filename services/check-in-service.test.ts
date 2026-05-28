@@ -21,6 +21,9 @@ function createMockQuery(result: { data: unknown; error: unknown }) {
     delete: vi.fn().mockReturnThis(),
     eq: vi.fn().mockReturnThis(),
     lt: vi.fn().mockReturnThis(),
+    gte: vi.fn().mockReturnThis(),
+    lte: vi.fn().mockReturnThis(),
+    or: vi.fn().mockReturnThis(),
     order: vi.fn().mockReturnThis(),
     limit: vi.fn().mockReturnThis(),
     range: vi.fn().mockReturnThis(),
@@ -385,6 +388,176 @@ describe('Check-in Service', () => {
 
       // eq should be called twice - once for client_id, once for status
       expect(mockQuery.eq).toHaveBeenCalledTimes(2)
+    })
+
+    it('keyset first page (no cursor) fetches limit+1 and returns a nextCursor when more exist', async () => {
+      // 3 rows returned for limit 2 → a further page exists.
+      const rows = [
+        { id: '11111111-1111-4111-8111-111111111111', client_id: 'c', status: 'reviewed', created_at: '2024-01-15T00:00:00Z', updated_at: '2024-01-15T00:00:00Z' },
+        { id: '22222222-2222-4222-8222-222222222222', client_id: 'c', status: 'reviewed', created_at: '2024-01-08T00:00:00Z', updated_at: '2024-01-08T00:00:00Z' },
+        { id: '33333333-3333-4333-8333-333333333333', client_id: 'c', status: 'reviewed', created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z' },
+      ]
+      const mockQuery = {
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        or: vi.fn().mockReturnThis(),
+        order: vi.fn().mockReturnThis(),
+        limit: vi.fn().mockReturnThis(),
+        then: (resolve: (value: unknown) => void) =>
+          Promise.resolve({ data: rows, error: null }).then(resolve),
+      }
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+
+      const { getClientCheckIns } = await import('./check-in-service')
+      const result = await getClientCheckIns('c', { limit: 2, keyset: true })
+
+      expect(mockQuery.or).not.toHaveBeenCalled() // first page has no predicate
+      expect(mockQuery.limit).toHaveBeenCalledWith(3) // limit + 1
+      expect(result.checkIns).toHaveLength(2) // extra row trimmed
+      expect(result.checkIns.map((c) => c.id)).toEqual([
+        '11111111-1111-4111-8111-111111111111',
+        '22222222-2222-4222-8222-222222222222',
+      ])
+      // nextCursor points at the last RETURNED row, not the peeked extra.
+      expect(result.nextCursor).toEqual({
+        createdAt: '2024-01-08T00:00:00Z',
+        id: '22222222-2222-4222-8222-222222222222',
+      })
+    })
+
+    it('keyset follow-up applies the (created_at,id) predicate and ends with nextCursor null', async () => {
+      const rows = [
+        { id: '44444444-4444-4444-8444-444444444444', client_id: 'c', status: 'reviewed', created_at: '2023-12-25T00:00:00Z', updated_at: '2023-12-25T00:00:00Z' },
+      ]
+      const mockQuery = {
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        or: vi.fn().mockReturnThis(),
+        order: vi.fn().mockReturnThis(),
+        limit: vi.fn().mockReturnThis(),
+        then: (resolve: (value: unknown) => void) =>
+          Promise.resolve({ data: rows, error: null }).then(resolve),
+      }
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+
+      const { getClientCheckIns } = await import('./check-in-service')
+      const cursor = { createdAt: '2024-01-01T00:00:00Z', id: '33333333-3333-4333-8333-333333333333' }
+      const result = await getClientCheckIns('c', { limit: 2, cursor })
+
+      // Exact .or string: created_at < cursor OR (created_at = cursor AND id < cursor.id)
+      expect(mockQuery.or).toHaveBeenCalledWith(
+        'created_at.lt.2024-01-01T00:00:00Z,and(created_at.eq.2024-01-01T00:00:00Z,id.lt.33333333-3333-4333-8333-333333333333)'
+      )
+      expect(result.checkIns).toHaveLength(1)
+      expect(result.nextCursor).toBeNull() // fewer than limit+1 rows → no further page
+    })
+
+    it('pages across a created_at tie, splitting by id with no overlap (simulated DB ordering)', async () => {
+      const { getClientCheckIns } = await import('./check-in-service')
+
+      // Page 1: two rows sharing the same created_at, newest id first (limit 2, peek 1 extra).
+      const page1 = [
+        { id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', client_id: 'c', status: 'reviewed', created_at: '2024-02-01T10:00:00Z', updated_at: '2024-02-01T10:00:00Z' },
+        { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', client_id: 'c', status: 'reviewed', created_at: '2024-02-01T10:00:00Z', updated_at: '2024-02-01T10:00:00Z' },
+        { id: '99999999-9999-4999-8999-999999999999', client_id: 'c', status: 'reviewed', created_at: '2024-02-01T10:00:00Z', updated_at: '2024-02-01T10:00:00Z' },
+      ]
+      const q1 = {
+        select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(), or: vi.fn().mockReturnThis(),
+        order: vi.fn().mockReturnThis(), limit: vi.fn().mockReturnThis(),
+        then: (r: (v: unknown) => void) => Promise.resolve({ data: page1, error: null }).then(r),
+      }
+      vi.mocked(supabaseAdmin.from).mockReturnValue(q1 as any)
+      const r1 = await getClientCheckIns('c', { limit: 2, keyset: true })
+      expect(r1.checkIns.map((c) => c.id)).toEqual([
+        'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      ])
+      expect(r1.nextCursor).toEqual({ createdAt: '2024-02-01T10:00:00Z', id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' })
+
+      // Page 2 with that cursor: the id-tiebreak predicate excludes the page-1 ids.
+      const page2 = [
+        { id: '99999999-9999-4999-8999-999999999999', client_id: 'c', status: 'reviewed', created_at: '2024-02-01T10:00:00Z', updated_at: '2024-02-01T10:00:00Z' },
+      ]
+      const q2 = {
+        select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(), or: vi.fn().mockReturnThis(),
+        order: vi.fn().mockReturnThis(), limit: vi.fn().mockReturnThis(),
+        then: (r: (v: unknown) => void) => Promise.resolve({ data: page2, error: null }).then(r),
+      }
+      vi.mocked(supabaseAdmin.from).mockReturnValue(q2 as any)
+      const r2 = await getClientCheckIns('c', { limit: 2, cursor: r1.nextCursor! })
+
+      expect(q2.or).toHaveBeenCalledWith(
+        'created_at.lt.2024-02-01T10:00:00Z,and(created_at.eq.2024-02-01T10:00:00Z,id.lt.aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa)'
+      )
+      // No overlap with page 1.
+      const page1Ids = new Set(r1.checkIns.map((c) => c.id))
+      expect(r2.checkIns.some((c) => page1Ids.has(c.id))).toBe(false)
+      expect(r2.checkIns.map((c) => c.id)).toEqual(['99999999-9999-4999-8999-999999999999'])
+    })
+  })
+
+  describe('enrichWithDailyLogCounts (via getClientCheckIns includeDailyLogCounts)', () => {
+    // Returns a chainable mock that resolves to `result` and records nothing.
+    function chainable(result: unknown) {
+      const m: Record<string, unknown> = {}
+      for (const k of ['select', 'eq', 'gte', 'lte', 'or', 'order', 'limit', 'range']) {
+        m[k] = vi.fn().mockReturnValue(m)
+      }
+      m.then = (resolve: (v: unknown) => void) => Promise.resolve(result).then(resolve)
+      return m
+    }
+
+    it('counts logs per period with ONE daily_logs query (not one per check-in)', async () => {
+      const checkInRows = [
+        { id: 'a1111111-1111-4111-8111-111111111111', client_id: 'c', status: 'reviewed', created_at: '2024-01-15T12:00:00Z', updated_at: '2024-01-15T12:00:00Z' },
+        { id: 'a2222222-2222-4222-8222-222222222222', client_id: 'c', status: 'reviewed', created_at: '2024-01-08T12:00:00Z', updated_at: '2024-01-08T12:00:00Z' },
+        { id: 'a3333333-3333-4333-8333-333333333333', client_id: 'c', status: 'reviewed', created_at: '2024-01-01T12:00:00Z', updated_at: '2024-01-01T12:00:00Z' },
+      ]
+      // Periods (newest first): [01-09,01-15], [01-02,01-08], [2023-12-26,2024-01-01].
+      const dailyLogDates = [
+        { date: '2024-01-15' }, { date: '2024-01-14' }, { date: '2024-01-10' }, // → period 0 (3)
+        { date: '2024-01-05' },                                                  // → period 1 (1)
+        { date: '2023-12-28' }, { date: '2023-12-26' },                          // → period 2 (2)
+      ]
+
+      let dailyLogsCalls = 0
+      vi.mocked(supabaseAdmin.from).mockImplementation(((table: string) => {
+        if (table === 'daily_logs') {
+          dailyLogsCalls++
+          return chainable({ data: dailyLogDates, error: null }) as any
+        }
+        return chainable({ data: checkInRows, error: null, count: 3 }) as any
+      }) as any)
+
+      const { getClientCheckIns } = await import('./check-in-service')
+      const result = await getClientCheckIns('c', { includeDailyLogCounts: true })
+
+      expect(dailyLogsCalls).toBe(1) // single bucketed query, not N
+      const enriched = result.checkIns as Array<{ dailyLogsCount: number; expectedDays: number }>
+      expect(enriched.map((c) => c.dailyLogsCount)).toEqual([3, 1, 2])
+      expect(enriched.map((c) => c.expectedDays)).toEqual([7, 7, 7])
+    })
+
+    it('handles same-day check-ins: inverted period counts 0, no double-count', async () => {
+      const checkInRows = [
+        { id: 'b1111111-1111-4111-8111-111111111111', client_id: 'c', status: 'reviewed', created_at: '2024-01-15T14:00:00Z', updated_at: '2024-01-15T14:00:00Z' },
+        { id: 'b2222222-2222-4222-8222-222222222222', client_id: 'c', status: 'reviewed', created_at: '2024-01-15T09:00:00Z', updated_at: '2024-01-15T09:00:00Z' },
+      ]
+      // period 0 (newer): start = 01-15 + 1 = 01-16, end = 01-15 → inverted → 0.
+      // period 1 (older): start = 01-15 - 6 = 01-09, end = 01-15 → counts both logs.
+      const dailyLogDates = [{ date: '2024-01-15' }, { date: '2024-01-12' }]
+
+      vi.mocked(supabaseAdmin.from).mockImplementation(((table: string) =>
+        table === 'daily_logs'
+          ? (chainable({ data: dailyLogDates, error: null }) as any)
+          : (chainable({ data: checkInRows, error: null, count: 2 }) as any)) as any)
+
+      const { getClientCheckIns } = await import('./check-in-service')
+      const result = await getClientCheckIns('c', { includeDailyLogCounts: true })
+
+      const enriched = result.checkIns as Array<{ dailyLogsCount: number; expectedDays: number }>
+      expect(enriched.map((c) => c.dailyLogsCount)).toEqual([0, 2])
+      expect(enriched.map((c) => c.expectedDays)).toEqual([1, 7])
     })
   })
 

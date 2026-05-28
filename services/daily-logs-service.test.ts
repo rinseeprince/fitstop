@@ -155,10 +155,46 @@ describe('Daily Logs Service - Pure Functions', () => {
         { date: '2024-01-10', id: '4' } as DailyLog,
         { date: '2024-01-09', id: '5' } as DailyLog,
       ];
-      
+
       const result = calculateStreakFromLogs(logs, today);
       expect(result.currentStreak).toBe(1);
       expect(result.longestStreak).toBe(4);
+    });
+
+    // Bugfix (session 3.7): a leading gap resets the current streak to 0. Previously
+    // a single isolated older log was reported as a current streak of 1 because the
+    // backward scan latched onto the first run it found. These cases were uncovered.
+    it('reports current streak 0 when the only log is two days ago', () => {
+      const logs: DailyLog[] = [
+        { date: '2024-01-13', id: '1' } as DailyLog, // two days before today (01-15)
+      ];
+
+      const result = calculateStreakFromLogs(logs, today);
+      expect(result.currentStreak).toBe(0);
+      expect(result.longestStreak).toBe(1);
+    });
+
+    it('reports current streak 0 when the only log is five days ago', () => {
+      const logs: DailyLog[] = [
+        { date: '2024-01-10', id: '1' } as DailyLog, // five days before today
+      ];
+
+      const result = calculateStreakFromLogs(logs, today);
+      expect(result.currentStreak).toBe(0);
+      expect(result.longestStreak).toBe(1);
+    });
+
+    it('crosses a year boundary without breaking a real streak', () => {
+      const result = calculateStreakFromLogs(
+        [
+          { date: '2026-01-01', id: '1' } as DailyLog,
+          { date: '2025-12-31', id: '2' } as DailyLog,
+          { date: '2025-12-30', id: '3' } as DailyLog,
+        ],
+        new Date('2026-01-01'),
+      );
+      expect(result.currentStreak).toBe(3);
+      expect(result.longestStreak).toBe(3);
     });
   });
 
@@ -456,21 +492,36 @@ describe('Daily Logs Service - Database Functions', () => {
   });
 
   describe('calculateStreaks', () => {
-    it('fetches logs and calculates streaks', async () => {
-      const mockLogs = [
-        { date: '2024-01-15', id: '1' } as DailyLog,
-        { date: '2024-01-14', id: '2' } as DailyLog,
-      ];
-
-      const mockQuery = createMockQuery({ data: mockLogs, error: null });
-      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any);
+    it('calls the get_client_streak RPC with explicit today + 365-day window and maps the result', async () => {
+      vi.mocked(supabaseAdmin.rpc).mockResolvedValue({
+        data: [{ current_streak: 4, longest_streak: 9 }],
+        error: null,
+      } as any);
 
       const result = await calculateStreaks('client-123');
-      
-      expect(result.currentStreak).toBeGreaterThanOrEqual(0);
-      expect(result.longestStreak).toBeGreaterThanOrEqual(0);
-      expect(mockQuery.gte).toHaveBeenCalled();
-      expect(mockQuery.lte).toHaveBeenCalled();
+
+      expect(result).toEqual({ currentStreak: 4, longestStreak: 9 });
+      expect(supabaseAdmin.rpc).toHaveBeenCalledWith('get_client_streak', {
+        p_client_id: 'client-123',
+        p_today: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        p_start_date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      });
+    });
+
+    it('returns 0/0 when the RPC yields no row', async () => {
+      vi.mocked(supabaseAdmin.rpc).mockResolvedValue({ data: [], error: null } as any);
+
+      const result = await calculateStreaks('client-123');
+      expect(result).toEqual({ currentStreak: 0, longestStreak: 0 });
+    });
+
+    it('throws when the RPC errors', async () => {
+      vi.mocked(supabaseAdmin.rpc).mockResolvedValue({
+        data: null,
+        error: { message: 'boom' },
+      } as any);
+
+      await expect(calculateStreaks('client-123')).rejects.toThrow('Failed to calculate streaks: boom');
     });
   });
 });

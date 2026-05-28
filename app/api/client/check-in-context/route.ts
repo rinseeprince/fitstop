@@ -25,8 +25,20 @@ export async function GET(request: NextRequest) {
   if (!auth.ok) return auth.response;
 
   try {
-    // Fetch client info
-    const client = await getClientById(auth.clientId);
+    // Client info + last check-in run in parallel: both key only on the
+    // authenticated client id, and gating still short-circuits below before any
+    // of the heavy context fan-out runs.
+    const supabase = await createServerSupabaseClient();
+    const [client, lastCheckInResult] = await Promise.all([
+      getClientById(auth.clientId),
+      supabase
+        .from("check_ins")
+        .select("period_end, created_at")
+        .eq("client_id", auth.clientId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
 
     if (!client) {
       return NextResponse.json(
@@ -35,18 +47,11 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // --- Fetch last check-in for gating + period calculation ---
+    // --- Gating + period calculation ---
     const expectedDay = client.expectedCheckInDay;
     let checkInGateStatus: CheckInGateStatus = "available";
 
-    const supabase = await createServerSupabaseClient();
-    const { data: lastCheckIn } = await supabase
-      .from("check_ins")
-      .select("period_end, created_at")
-      .eq("client_id", client.id)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    const lastCheckIn = lastCheckInResult.data;
 
     const lastCheckInPeriodEnd = lastCheckIn?.period_end
       ?? (lastCheckIn?.created_at
@@ -118,9 +123,12 @@ export async function GET(request: NextRequest) {
       / 86_400_000
     ) + 1;
 
-    // Fetch coach info, context in parallel
+    // Coach info, context, and daily logs in parallel — all depend only on the
+    // client and the already-computed period, so daily logs no longer needs its own
+    // serial round-trip. (Runs only after gating, so a gated request never reaches
+    // getCheckInNutritionContext and its plan-promotion side effect.)
     // supabaseAdmin required: no client-facing SELECT RLS policy exists on coaches table
-    const [coachResult, trainingContext, nutritionContext, trainingPeriodStats] = await Promise.all([
+    const [coachResult, trainingContext, nutritionContext, trainingPeriodStats, dailyLogs] = await Promise.all([
       supabaseAdmin
         .from("coaches")
         .select("name")
@@ -129,12 +137,10 @@ export async function GET(request: NextRequest) {
       getCheckInTrainingContext(client.id),
       getCheckInNutritionContext(client.id),
       getCheckInTrainingPeriodStats(client.id, periodStart, periodEnd),
+      getDailyLogs(client.id, periodStart, periodEnd),
     ]);
 
     const coach = coachResult.data;
-
-    // Fetch daily logs for the calculated period
-    const dailyLogs = await getDailyLogs(client.id, periodStart, periodEnd);
 
     const response: Omit<ValidateCheckInTokenResponse, "valid"> & {
       periodStart: string;

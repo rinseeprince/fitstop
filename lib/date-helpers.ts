@@ -81,6 +81,18 @@ export const getDateString = (date: Date): string => {
 };
 
 /**
+ * Convert a YYYY-MM-DD string to an integer day number (days since the Unix epoch),
+ * UTC-anchored so it is timezone/DST-neutral and safe to compare or subtract.
+ * Used for streak gaps-and-islands and check-in period bucketing.
+ * @param {string} dateStr - a YYYY-MM-DD calendar date
+ * @returns {number} the day number (e.g. 0 for 1970-01-01)
+ */
+export const dateStringToDayNumber = (dateStr: string): number => {
+  const [year, month, day] = dateStr.split("-").map(Number);
+  return Math.floor(Date.UTC(year, month - 1, day) / 86_400_000);
+};
+
+/**
  * Parses a `?date=` query-param value into a safe YYYY-MM-DD string, falling back
  * to today (local) when the value is missing, malformed, or not a real calendar date.
  * The round-trip check (`getDateString(parsed) === raw`) rejects values that pass the
