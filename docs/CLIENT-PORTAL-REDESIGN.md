@@ -253,6 +253,8 @@ The rule above lives in one file — `lib/daily-log-permissions.ts` — as pure 
 
 Both are imported by every surface that cares (UI detail pages for disabled/notice state; every write endpoint for hard rejection). Neither UI nor server reimplements the date math, so they cannot disagree about whether a day is editable (which matters around client-local midnight).
 
+**Habits lock per-habit, not per-day.** Nutrition/wellness are saved as one day record, so "logged" is the existence of any child row that day. Habits are toggled individually (each toggle is its own write), so `assertCanEdit`/`getDayEditState` accept an optional `habitId` that narrows the "logged" check to a single habit. This keeps the documented "past day, never logged: editable" backfill working for habits (fill in a missed day habit-by-habit), while each habit still locks once recorded. The pure `canEditDay` rule is unchanged; only what counts as "logged" is narrowed.
+
 Same pattern for plan context: `resolvePlanContextForDate(clientId, date): { phaseId, nutritionPlanId, trainingPlanId }` is the single function every write endpoint calls to populate `daily_logs.phase_id` and `*_plan_id` links. Do not duplicate this query per endpoint.
 
 ---

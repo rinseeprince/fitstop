@@ -43,6 +43,32 @@ function mockFrom(opts: { timezone?: string | null; childRow?: { id: string } | 
       : childQuery(opts.childRow ?? null)) as never);
 }
 
+/**
+ * Child-row query for the habit resource whose result depends on the queried
+ * `daily_habit_id`: returns a row only when it matches `loggedId`. This lets a test prove
+ * the per-habit narrowing — same day, one habit "logged", another "never-logged".
+ */
+function habitChildQuery(loggedId: string) {
+  let queriedHabitId: string | undefined;
+  const builder = {
+    select: vi.fn(() => builder),
+    eq: vi.fn((col: string, val: string) => {
+      if (col === "daily_habit_id") queriedHabitId = val;
+      return builder;
+    }),
+    limit: vi.fn(() => builder),
+    maybeSingle: vi.fn(() =>
+      Promise.resolve({ data: queriedHabitId === loggedId ? { id: "hl1" } : null, error: null }),
+    ),
+  };
+  return builder;
+}
+
+function mockHabitFrom(loggedId: string, timezone = "UTC") {
+  vi.mocked(supabaseAdmin.from).mockImplementation(((table: string) =>
+    table === "clients" ? clientsQuery(timezone) : habitChildQuery(loggedId)) as never);
+}
+
 describe("getDayEditState / assertCanEdit", () => {
   beforeEach(() => vi.clearAllMocks());
 
@@ -94,5 +120,36 @@ describe("getDayEditState / assertCanEdit", () => {
     mockFrom({ timezone: "Mars/Olympus", childRow: { id: "n1" } });
     const state = await getDayEditState("c1", today, "nutrition");
     expect(state.editable).toBe(true); // today is editable; bad tz falls back to UTC
+  });
+
+  it("locks a past day per-habit: the recorded habit is locked, an unrecorded one stays editable", async () => {
+    const past = daysAgo(3);
+
+    mockHabitFrom("logged-habit");
+    const locked = await getDayEditState("c1", past, "habit", { habitId: "logged-habit" });
+    expect(locked.loggedStatus).toBe("logged");
+    expect(locked.editable).toBe(false);
+
+    mockHabitFrom("logged-habit");
+    const open = await getDayEditState("c1", past, "habit", { habitId: "missed-habit" });
+    expect(open.loggedStatus).toBe("never-logged");
+    expect(open.editable).toBe(true);
+
+    mockHabitFrom("logged-habit");
+    await expect(
+      assertCanEdit({ clientId: "c1", date: past, resourceType: "habit", habitId: "logged-habit" }),
+    ).rejects.toBeInstanceOf(DayLockedError);
+
+    mockHabitFrom("logged-habit");
+    await expect(
+      assertCanEdit({ clientId: "c1", date: past, resourceType: "habit", habitId: "missed-habit" }),
+    ).resolves.toEqual({ loggedStatus: "never-logged" });
+  });
+
+  it("queries daily_habit_logs for the habit resource", async () => {
+    const fromSpy = vi.mocked(supabaseAdmin.from);
+    mockHabitFrom("logged-habit");
+    await getDayEditState("c1", today, "habit", { habitId: "h1" });
+    expect(fromSpy).toHaveBeenCalledWith("daily_habit_logs");
   });
 });

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireClientAuth } from "@/lib/require-client-auth";
 import { dailyHabitLogSchema } from "@/lib/validations/daily-habit";
 import { logHabit } from "@/services/daily-habits-service";
+import { assertCanEdit } from "@/services/daily-log-permissions-service";
+import { DayLockedError } from "@/lib/daily-log-permissions";
 
 // IDOR: the dailyHabitId comes from the request body; logHabit() verifies the
 // habit belongs to clientId before writing a log row.
@@ -32,6 +34,16 @@ export async function POST(request: NextRequest) {
     }
 
     const data = validationResult.data;
+
+    // Shared past-day lock (Session 3.1). Habits lock per-habit: a missed past day can
+    // still be backfilled habit-by-habit, but a habit already recorded that day is locked.
+    await assertCanEdit({
+      clientId: auth.clientId,
+      date: data.date,
+      resourceType: "habit",
+      habitId: data.dailyHabitId,
+    });
+
     const log = await logHabit(
       data.dailyHabitId,
       auth.clientId,
@@ -45,6 +57,12 @@ export async function POST(request: NextRequest) {
       data: log,
     });
   } catch (error) {
+    if (error instanceof DayLockedError) {
+      return NextResponse.json(
+        { success: false, error: error.message },
+        { status: 403 }
+      );
+    }
     console.error("Error logging habit:", error);
     const statusCode = error instanceof Error && error.message.includes("not found") ? 404 : 500;
     return NextResponse.json(

@@ -5,6 +5,12 @@
  * pure `canEditDay` rule. Lives in `services/` (imports `supabaseAdmin`) so the pure
  * rule in `lib/daily-log-permissions.ts` stays client-safe. Route handlers import
  * `assertCanEdit` from here and translate `DayLockedError` into a 403.
+ *
+ * Granularity: nutrition/wellness/training lock per-DAY (any child row that day ⇒
+ * "logged"), since each is saved as one day record. Habits are toggled individually,
+ * so the `habit` resource accepts an optional `habitId` that narrows the "logged"
+ * check to a single habit — letting a missed past day be backfilled habit-by-habit
+ * while each habit still locks once recorded. The pure `canEditDay` rule is unchanged.
  */
 
 import { supabaseAdmin } from "@/services/supabase-admin";
@@ -17,7 +23,9 @@ import {
 
 /**
  * Each resource's "logged" state is the existence of a row in its own child table
- * for (client_id, date). All four tables carry client_id + date.
+ * for (client_id, date). All four tables carry client_id + date. `daily_habit_logs`
+ * additionally carries daily_habit_id, which the habit resource filters on for
+ * per-habit locking (see module docstring).
  */
 const RESOURCE_TABLE = {
   nutrition: "nutrition_logs",
@@ -45,7 +53,8 @@ export type DayEditState = {
 export async function getDayEditState(
   clientId: string,
   date: string,
-  resourceType: DailyLogResourceType
+  resourceType: DailyLogResourceType,
+  opts?: { habitId?: string }
 ): Promise<DayEditState> {
   const { data: clientRow } = await supabaseAdmin
     .from("clients")
@@ -54,13 +63,17 @@ export async function getDayEditState(
     .single();
   const clientTimezone = clientRow?.timezone ?? "UTC";
 
-  const { data: childRow } = await supabaseAdmin
+  let childQuery = supabaseAdmin
     .from(RESOURCE_TABLE[resourceType])
     .select("id")
     .eq("client_id", clientId)
-    .eq("date", date)
-    .limit(1)
-    .maybeSingle();
+    .eq("date", date);
+  // Habits lock per-habit, not per-day: narrow the existence check to this habit so a
+  // missed past day stays backfillable one habit at a time (see module docstring).
+  if (resourceType === "habit" && opts?.habitId) {
+    childQuery = childQuery.eq("daily_habit_id", opts.habitId);
+  }
+  const { data: childRow } = await childQuery.limit(1).maybeSingle();
 
   const loggedStatus: DayLogStatus = childRow ? "logged" : "never-logged";
 
@@ -81,9 +94,13 @@ export async function assertCanEdit(params: {
   clientId: string;
   date: string;
   resourceType: DailyLogResourceType;
+  /** Habit resource only: narrows the lock to this specific habit (see module docstring). */
+  habitId?: string;
 }): Promise<{ loggedStatus: DayLogStatus }> {
-  const { clientId, date, resourceType } = params;
-  const { editable, loggedStatus } = await getDayEditState(clientId, date, resourceType);
+  const { clientId, date, resourceType, habitId } = params;
+  const { editable, loggedStatus } = await getDayEditState(clientId, date, resourceType, {
+    habitId,
+  });
   if (!editable) {
     throw new DayLockedError(date, resourceType);
   }
