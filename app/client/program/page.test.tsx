@@ -139,7 +139,7 @@ describe("ProgramPage", () => {
     setSWR({ data: { success: true, data: null } });
     const { container } = render(<ProgramPage />);
 
-    expect(screen.getByText("No roadmap yet")).toBeInTheDocument();
+    expect(screen.getByText("No program yet")).toBeInTheDocument();
     expect(container.querySelector('[data-active="true"]')).toBeNull();
   });
 
