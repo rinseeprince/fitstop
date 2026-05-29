@@ -13,10 +13,13 @@ export async function GET(request: NextRequest) {
 
     const progressData = await getClientProgressData(auth.clientId, days);
 
-    return NextResponse.json({
-      success: true,
-      data: progressData,
-    });
+    return NextResponse.json(
+      {
+        success: true,
+        data: progressData,
+      },
+      { headers: { "Cache-Control": "no-store" } },
+    );
   } catch (error) {
     console.error("Error fetching progress data:", error);
     return NextResponse.json(

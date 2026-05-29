@@ -45,18 +45,41 @@ vi.mock("next/navigation", () => ({
 }));
 
 const progressData = {
+  // Raw history arrays kept for the stat tiles / goals section that read them
+  // directly (lastWeight / lastBodyFat).
   weightHistory: [
     { date: "2026-05-01", weight: 80 },
     { date: "2026-05-08", weight: 79 },
   ],
   bodyFatHistory: [],
   bodyMeasurements: {},
-  wellnessMetrics: {
-    moodHistory: [{ date: "2026-05-01", mood: 4 }],
-    energyHistory: [],
-    sleepHistory: [],
-    stressHistory: [],
-  },
+  // Render-ready series the API now emits (ISO dates on the wire); the hub's
+  // thin hook just reads these. The card formats the ISO date at render.
+  bodyMetrics: [
+    {
+      id: "weight",
+      name: "Weight",
+      currentValue: 79,
+      unit: "lbs",
+      percentChange: -1.25,
+      trend: "down",
+      chartData: [
+        { date: "2026-05-01", value: 80 },
+        { date: "2026-05-08", value: 79 },
+      ],
+    },
+  ],
+  wellnessMetrics: [
+    {
+      id: "mood",
+      name: "Mood",
+      currentValue: 4,
+      unit: "/5",
+      percentChange: null,
+      trend: "stable",
+      chartData: [{ date: "2026-05-01", value: 4 }],
+    },
+  ],
   client: { weightUnit: "lbs" },
   currentStreak: 3,
   adherenceRate: 90,

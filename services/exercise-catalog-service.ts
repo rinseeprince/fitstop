@@ -230,6 +230,54 @@ export async function getExercisesForCoach(
   return (data ?? []).map(mapExerciseCatalogRow);
 }
 
+// --- Catalog delta-sync (Session 3.9) ---
+
+// Lean, sparse fieldset for the native client's incremental catalog sync —
+// only the columns the client renderer needs (NOT SELECT *). updated_at is the
+// delta cursor.
+export type ExerciseCatalogDeltaRow = {
+  id: string;
+  name: string;
+  muscle_group: string | null;
+  equipment: string | null;
+  updated_at: string;
+};
+
+/**
+ * Delta-sync feed for the exercise catalog visible to a coach (global +
+ * coach-specific), ordered by updated_at ASC. When `since` is provided, returns
+ * only rows changed strictly after it (`updated_at > since`), so the native
+ * client can fetch just what changed since its last sync.
+ *
+ * UPSERT-ONLY: hard-deletes and coach_id scope-changes are invisible to a delta;
+ * the client reconciles those via a periodic FULL resync (omit `since`). See
+ * docs/CLIENT-PORTAL-REDESIGN.md (ID-first rows + catalog delta-sync).
+ *
+ * Same trust model as getExercisesForCoach: the `.or()` union is interpolated
+ * with a coachId resolved server-side from the authed session, and `since` must
+ * be validated upstream (isValidIsoTimestamp) before reaching this query.
+ */
+export async function getExerciseCatalogDelta(
+  coachId: string,
+  since?: string,
+): Promise<ExerciseCatalogDeltaRow[]> {
+  let query = supabaseAdmin
+    .from("exercises")
+    .select("id, name, muscle_group, equipment, updated_at")
+    .or(`coach_id.eq.${coachId},coach_id.is.null`)
+    .order("updated_at", { ascending: true });
+
+  if (since) {
+    query = query.gt("updated_at", since);
+  }
+
+  const { data, error } = await query;
+
+  if (error) throw new Error(`Failed to fetch exercise catalog: ${error.message}`);
+
+  return (data ?? []) as ExerciseCatalogDeltaRow[];
+}
+
 /**
  * Creates a coach-specific exercise.
  */

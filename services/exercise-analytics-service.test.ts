@@ -123,6 +123,42 @@ describe("getClientExerciseList", () => {
       /Failed to fetch exercise list: boom/
     );
   });
+
+  it("is ID-first: the row exposes exerciseId and never embeds catalog dictionary fields", async () => {
+    // ID-first contract: history/list rows carry exercise_id (+ performed name
+    // fallback), NOT the dictionary. Catalog fields (muscle_group, equipment,
+    // aliases, category) are synced separately via the catalog delta endpoint,
+    // so they must not leak onto an ExerciseListItem.
+    mockRpcResolve([
+      {
+        exercise_id: EXERCISE_ID,
+        name: "Bench Press",
+        log_count: 3,
+        last_logged_date: "2026-04-08T00:00:00+00:00",
+        // Even if a future RPC over-selected these, the mapper must not pass
+        // them through.
+        muscle_group: "chest",
+        equipment: "barbell",
+        aliases: ["bp"],
+        category: "compound",
+      },
+    ]);
+
+    const result = await getClientExerciseList(CLIENT_ID);
+    const row = result[0];
+
+    expect(row.exerciseId).toBe(EXERCISE_ID);
+    expect(Object.keys(row).sort()).toEqual([
+      "exerciseId",
+      "lastLoggedDate",
+      "logCount",
+      "name",
+    ]);
+    expect(row).not.toHaveProperty("muscle_group");
+    expect(row).not.toHaveProperty("equipment");
+    expect(row).not.toHaveProperty("aliases");
+    expect(row).not.toHaveProperty("category");
+  });
 });
 
 // =============================================================================

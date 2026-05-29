@@ -1,5 +1,7 @@
 "use client";
 
+import { useMemo } from "react";
+import { format, parseISO } from "date-fns";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -49,6 +51,10 @@ const METRIC_COLORS: Record<string, { stroke: string; fill: string; gradient: st
 
 const DEFAULT_COLOR = { stroke: "#8b5cf6", fill: "#8b5cf6", gradient: "violet" };
 
+// Matches a raw ISO date (the server-shaped client-portal series). Coach-side
+// labels are pre-formatted ("MMM d") and won't match, so they pass through.
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}/;
+
 const getMetricColor = (metricId: string) => {
   return METRIC_COLORS[metricId] || DEFAULT_COLOR;
 };
@@ -91,6 +97,22 @@ export const MetricChartCard = ({
   const colors = getMetricColor(id);
   const trendDisplay = getTrendDisplay(trend, id);
   const gradientId = `gradient-${id}`;
+
+  // The client-portal series now arrives with RAW ISO dates (YYYY-MM-DD) — the
+  // server emits locale-neutral data and the axis/tooltip label is formatted to
+  // "MMM d" here, at render. The coach-side hook still pre-formats its own
+  // "MMM d" labels, so anything that is not a parseable ISO date is passed
+  // through unchanged (identical visual output for both callers).
+  const displayData = useMemo(
+    () =>
+      chartData.map((point) => ({
+        ...point,
+        date: ISO_DATE.test(point.date)
+          ? format(parseISO(point.date), "MMM d")
+          : point.date,
+      })),
+    [chartData],
+  );
 
   return (
     <Card
@@ -157,7 +179,7 @@ export const MetricChartCard = ({
           {hasData ? (
             <div className={cn("w-full -mx-2", expanded ? "h-[400px]" : "h-[140px]")}>
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData} margin={{ top: 10, right: 10, bottom: 0, left: expanded ? 0 : 10 }}>
+                <AreaChart data={displayData} margin={{ top: 10, right: 10, bottom: 0, left: expanded ? 0 : 10 }}>
                   <defs>
                     <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor={colors.fill} stopOpacity={0.3} />

@@ -435,7 +435,7 @@ Before Phase 1:
 - **Mid-phase transition**: phase banner handles no-roadmap, active-phase, current-completed-plus-next-pending, and current-completed-plus-next-activating states.
 - **Brand-new client**: pre-activation uses existing `client-waiting-state.tsx`. Post-activation with no plans yet: empty states per card ("Your coach is preparing this").
 - **Weight unit**: `preferred_weight_unit` column on `clients`; UI seeds input in preferred unit but `exercise_logs.weight_unit` stores actual unit entered.
-- **Rate limits**: `clientApiRateLimit` is 30 req / 10s. Bulk-replace save pattern keeps realistic workouts well under this. No per-set writes.
+- **Rate limits**: two-tier (Session 3.10). Tier 1 is a loose IP burst guard (~1000 req / 10s, abuse-only) that runs first; tier 2 is a tight per-client limit (30 req / 10s, keyed by client id, applied post-auth). Bulk-replace save pattern keeps realistic workouts well under the per-client tier. No per-set writes. See "Scale conventions → Two-tier rate limiting" below and CONVENTIONS §9.
 - **Coach drill-down payload**: a large workout is around 40 `exercise_logs` rows. Fine at this scale.
 
 ---
@@ -506,6 +506,50 @@ Two systems are partially coupled to the old model and get addressed in Phase 6.
 **Weekly check-in system**: the context API already reads events for targets but uses session-keyed `session_logs` for completion counts and `daily_logs_full` for 7-day wellness/nutrition history. Since wellness plus nutrition keep writing to the `daily_logs` spine (per-card, not monolithic), `daily_logs_full` keeps working. Training writes move to event-keyed, which fixes the ambiguous "X of Y completed" count for cloned sessions. Phase 6 scope: switch the completion count query from `session_logs` to `training_events.status`, optionally enrich the AI summary with `exercise_logs` data, UX refresh if desired.
 
 **Needs-attention feed**: 7 of 8 signals derive from the `daily_logs` spine (wellness, nutrition adherence, logging gap, habit dropoff, logging metadata). These survive unchanged. The "training missed" signal already reads `training_events`. The "activity-calorie mismatch" signal currently reads `training_logs.trained`. The rewire happens as part of Phase 1 (no denormalized flag ever; Phase 7 removed).
+
+---
+
+## Scale conventions (Sessions 3.8-3.10)
+
+The data/API layer is where scale work is invested (the web app is a test harness; the native client is the real consumer). These conventions emerged across Sessions 3.8-3.10.
+
+### Bounded AND keyset by default
+
+Scoped to **paginated, time-ordered "load older" history streams** — not a blanket mandate to bolt a cursor onto every small full-return set. The keyset contract (opaque base64url `{createdAt, id}` via `lib/cursor.ts`, established Session 3.7) is the right tool when a list is genuinely unbounded and deep-paged. Per-endpoint judgment, with the calls actually made:
+
+- `/api/client/habits` — a client's small set of assigned habits. **Full return**; no cursor.
+- `/api/client/training/completions` — a fixed 1-week window. **Bounded by the window**; no cursor.
+- `getClientExerciseList` — a frequency-sorted, distinct `GROUP BY` over a client's logged exercises, bounded by exercise *variety* (not history depth). **Left as a bounded full return.** Convert to keyset only if a genuinely unbounded/deep-paged list appears here; none did.
+- `/api/client/check-ins` — the one genuinely deep history stream: keyset-default, `?offset=` legacy.
+
+### Render-ready payloads / server-side aggregation
+
+The API emits **display-ready, locale-neutral series**: ISO dates on the wire (`YYYY-MM-DD`), the client formats at render (e.g. date-fns `"MMM d"` in the chart card). Aggregation/trend/percent-change math is computed server-side (or in a shared pure helper, `utils/metric-shaping.ts`); the browser transform hooks (`use-client-progress-metrics`) are **thin readers** of the already-shaped arrays. This keeps the native client free of duplicated transform logic and locale assumptions.
+
+### Index-with-the-query
+
+Every keyset/delta read ships its index in the **same migration** that introduces the read: 094 (exercise analytics window), 095 (check-in keyset index + streak RPC), 096 (exercises `updated_at` trigger + `idx_exercises_updated_at` for the catalog delta).
+
+### ID-first rows + catalog delta-sync
+
+History/list rows carry `exercise_id` (+ a `performed_name` fallback for legacy name-only rows), **never** the catalog dictionary (`muscle_group`, `equipment`, `aliases`, `category`). The dictionary is synced separately via `GET /api/client/exercises/catalog?since=`, keyed on `updated_at`.
+
+**Removal contract.** The delta is **UPSERT-ONLY** (`updated_at > since`). Hard-deletes (`ON DELETE CASCADE` when a coach is removed) and `coach_id` scope-changes (a row leaving a client's visible set) are **invisible to a delta** — there is no row to carry a newer `updated_at`. The native client therefore reconciles deletions/scope-exits by doing a periodic **FULL resync** (omit `since`): on cold start and/or every N days. Tombstones (a `deleted_at` column returned in the delta) are the documented escalation **if/when** deletes become frequent enough that the periodic full resync is too coarse.
+
+### Sparse fieldsets / narrow RPC rowtypes
+
+Select only the columns the renderer needs. The catalog delta returns **5 columns** (`id, name, muscle_group, equipment, updated_at`), not `SELECT *`. RPC rowtypes are likewise narrowed to the post-aggregate shape the caller consumes.
+
+### Two-tier rate limiting (Session 3.10)
+
+- **Tier 1** — a loose IP burst guard (~1000 req / 10s, abuse-only). Mandatory first operation in the auth chain; it exists to absorb obvious flooding, not to shape normal usage. **It is a coarse pre-auth backstop, not a tuned DoS control.** Primary throttling is Tier 2; real volumetric/DoS protection is deferred upstream (the Vercel/Cloudflare edge). The cap is a starting point and is **tunable at scale**: if thousands of legitimate users ever sit behind a single carrier-grade NAT IP, ~1000/10s will begin clipping them, and the correct fix is upstream edge protection plus raising (or removing) this cap — **do not read the number as a precise security control.**
+- **Tier 2** — a tight per-client limit (30 req / 10s), keyed by **client id**, applied **post-auth** in `require-client-auth` (the client id is only known after `getAuthenticatedClientId`). This is the real per-user throttle. The per-client tier **composes on top of** any first-tier override.
+
+Cross-ref CONVENTIONS §9.
+
+### Auth-resolution cache (Session 3.8)
+
+A short-TTL (60s) Upstash cache of `user_id -> client id`. `getUser()` still runs **every request** (only the `clients` lookup is cached, not the Supabase session verification). Invalidation is **TTL-only**. The `{id, checkInDay}` variant is also cached, with a benign `<=60s` propagation delay if a coach changes the client's check-in day — that only shifts a *computed* training/nutrition week boundary; **no submission or gating route depends on it**, so the staleness is safe.
 
 ---
 

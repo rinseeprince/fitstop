@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import { format } from "date-fns";
+import { getTrend, calculatePercentChange } from "@/utils/metric-shaping";
 import type { CheckIn, TrendDirection } from "@/types/check-in";
 
 export type DateRangeFilter = "7d" | "30d" | "90d" | "all";
@@ -52,18 +53,6 @@ const filterByDateRange = (checkIns: CheckIn[], range: DateRangeFilter): CheckIn
   const days = range === "7d" ? 7 : range === "30d" ? 30 : 90;
   const cutoff = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
   return checkIns.filter((ci) => new Date(ci.createdAt) >= cutoff);
-};
-
-const getTrend = (current: number | null, previous: number | null): TrendDirection => {
-  if (current === null || previous === null) return "stable";
-  const diff = current - previous;
-  if (Math.abs(diff) < 0.5) return "stable";
-  return diff > 0 ? "up" : "down";
-};
-
-const calculatePercentChange = (current: number | null, previous: number | null): number | null => {
-  if (current === null || previous === null || previous === 0) return null;
-  return Number((((current - previous) / previous) * 100).toFixed(1));
 };
 
 export const useMetricsData = (

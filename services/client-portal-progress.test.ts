@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("./client-portal-service", () => ({ createPortalClient: vi.fn() }));
 
 import { getClientProgressData } from "./client-portal-progress";
+import type { ClientMetricSeries } from "./client-portal-progress";
 import { createPortalClient } from "./client-portal-service";
 
 // Minimal fake of the supabase chains getClientProgressData uses:
@@ -77,5 +78,107 @@ describe("getClientProgressData unit resolution", () => {
     expect(result.client.weightUnit).toBeUndefined();
     expect(spy).toHaveBeenCalled();
     spy.mockRestore();
+  });
+});
+
+// Two check-ins a week apart with weight + mood, so the Weight series has a
+// computed percentChange/trend and the date column can be asserted as raw ISO.
+const TWO_WEIGHT_CHECK_INS = [
+  { created_at: "2026-05-01T08:00:00+00:00", weight: 80, mood: 4 },
+  { created_at: "2026-05-08T08:00:00+00:00", weight: 79, mood: 3 },
+];
+
+describe("getClientProgressData render-ready series", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  function findSeries(
+    series: ClientMetricSeries[],
+    id: string,
+  ): ClientMetricSeries {
+    const found = series.find((s) => s.id === id);
+    if (!found) throw new Error(`series ${id} not found`);
+    return found;
+  }
+
+  it("builds a Weight series: current = last point, computed change/trend, ISO chartData dates", async () => {
+    vi.mocked(createPortalClient).mockResolvedValue(
+      fakeSupabase({
+        checkIns: TWO_WEIGHT_CHECK_INS,
+        client: { weight_unit: "lbs", unit_preference: "imperial" },
+      }) as never,
+    );
+
+    const result = await getClientProgressData("c1");
+    const weight = findSeries(result.bodyMetrics, "weight");
+
+    expect(weight.name).toBe("Weight");
+    expect(weight.unit).toBe("lbs");
+    expect(weight.currentValue).toBe(79); // last point
+    // (79 - 80) / 80 * 100 = -1.25, rounded to 1dp by the helper -> -1.3
+    expect(weight.percentChange).toBe(-1.3);
+    expect(weight.trend).toBe("down");
+    expect(weight.chartData).toHaveLength(2);
+    // Raw ISO date (YYYY-MM-DD), NOT a "MMM d" render label.
+    expect(weight.chartData[1].date).toBe("2026-05-08");
+    expect(weight.chartData[0]).toEqual({ date: "2026-05-01", value: 80 });
+  });
+
+  it("resolves metric units: Weight 'kg' + measurement series 'cm' for a metric client", async () => {
+    vi.mocked(createPortalClient).mockResolvedValue(
+      fakeSupabase({
+        checkIns: [
+          { created_at: "2026-05-01T08:00:00+00:00", weight: 80, waist: 90 },
+        ],
+        client: { weight_unit: "kg", unit_preference: "metric" },
+      }) as never,
+    );
+
+    const result = await getClientProgressData("c1");
+
+    expect(findSeries(result.bodyMetrics, "weight").unit).toBe("kg");
+    expect(findSeries(result.bodyMetrics, "waist").unit).toBe("cm");
+  });
+
+  it("returns every series present with empty defaults when there is no history", async () => {
+    vi.mocked(createPortalClient).mockResolvedValue(
+      fakeSupabase({ checkIns: [], client: { weight_unit: "lbs", unit_preference: "imperial" } }) as never,
+    );
+
+    const result = await getClientProgressData("c1");
+
+    expect(result.bodyMetrics.map((s) => s.id)).toEqual([
+      "weight",
+      "bodyFat",
+      "waist",
+      "hips",
+      "chest",
+      "arms",
+      "thighs",
+    ]);
+    expect(result.wellnessMetrics.map((s) => s.id)).toEqual([
+      "mood",
+      "energy",
+      "sleep",
+      "stress",
+    ]);
+    for (const s of [...result.bodyMetrics, ...result.wellnessMetrics]) {
+      expect(s.currentValue).toBeNull();
+      expect(s.chartData).toEqual([]);
+      expect(s.trend).toBe("stable");
+      expect(s.percentChange).toBeNull();
+    }
+  });
+
+  it("assigns the wellness units the hook used (mood /5, energy/sleep/stress /10)", async () => {
+    vi.mocked(createPortalClient).mockResolvedValue(
+      fakeSupabase({ checkIns: [], client: null }) as never,
+    );
+
+    const result = await getClientProgressData("c1");
+
+    expect(findSeries(result.wellnessMetrics, "mood").unit).toBe("/5");
+    expect(findSeries(result.wellnessMetrics, "energy").unit).toBe("/10");
+    expect(findSeries(result.wellnessMetrics, "sleep").unit).toBe("/10");
+    expect(findSeries(result.wellnessMetrics, "stress").unit).toBe("/10");
   });
 });

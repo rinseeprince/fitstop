@@ -1,4 +1,20 @@
 import { createPortalClient } from "./client-portal-service";
+import { getTrend, calculatePercentChange } from "@/utils/metric-shaping";
+import type { TrendDirection } from "@/types/check-in";
+
+// Render-ready, locale-neutral metric series emitted by the API. `chartData[].date`
+// is the RAW ISO date (YYYY-MM-DD) from each history point — the client formats it
+// at render (date-fns "MMM d"). This is the source of truth for the series type;
+// the browser transform hook re-exports it for back-compat.
+export type ClientMetricSeries = {
+  id: string;
+  name: string;
+  currentValue: number | null;
+  unit: string;
+  percentChange: number | null;
+  trend: TrendDirection;
+  chartData: Array<{ date: string; value: number }>;
+};
 
 // Progress data for charts
 export type ProgressDataPoint = {
@@ -26,12 +42,13 @@ export type ProgressData = {
     armsHistory: ProgressDataPoint[];
     thighsHistory: ProgressDataPoint[];
   };
-  wellnessMetrics: {
-    moodHistory: ProgressDataPoint[];
-    energyHistory: ProgressDataPoint[];
-    sleepHistory: ProgressDataPoint[];
-    stressHistory: ProgressDataPoint[];
-  };
+  // Render-ready series built server-side from the raw history arrays above. The
+  // browser hook is a thin reader of these. The flat body raw arrays + goals
+  // remain for the stat tiles / goals section that read them directly. The
+  // wellness raw container is superseded by `wellnessMetrics` (its only reader
+  // was the transform hook, now collapsed), so it is no longer carried.
+  bodyMetrics: ClientMetricSeries[];
+  wellnessMetrics: ClientMetricSeries[];
   checkInCount: number;
   currentStreak: number;
   adherenceRate: number;
@@ -46,6 +63,41 @@ export type ProgressData = {
     measurementUnit?: "in" | "cm";
   };
 };
+
+// Build one render-ready series from an already-assembled history array.
+// `chartData[].date` is the raw ISO date string from each point — NOT formatted.
+function buildMetricSeries(
+  history: ProgressDataPoint[],
+  metricKey: keyof ProgressDataPoint,
+  id: string,
+  name: string,
+  unit: string,
+): ClientMetricSeries {
+  const chartData = history.map((point) => ({
+    date: point.date,
+    value: point[metricKey] as number,
+  }));
+
+  const latestPoint = history[history.length - 1];
+  const previousPoint = history[history.length - 2];
+
+  const currentValue = latestPoint
+    ? (latestPoint[metricKey] as number)
+    : null;
+  const previousValue = previousPoint
+    ? (previousPoint[metricKey] as number)
+    : null;
+
+  return {
+    id,
+    name,
+    currentValue,
+    unit,
+    percentChange: calculatePercentChange(currentValue, previousValue),
+    trend: getTrend(currentValue, previousValue),
+    chartData,
+  };
+}
 
 // Get progress data for charts
 export async function getClientProgressData(
@@ -167,6 +219,29 @@ export async function getClientProgressData(
     }
   }
 
+  // Render-ready series. Match the unit defaults + metric set/names the browser
+  // hook used verbatim so nothing renders differently: weight defaults to lbs,
+  // measurements to in; wellness units are fixed strings.
+  const weightUnit: string = clientData?.weight_unit ?? "lbs";
+  const measurementUnitLabel: string = measurementUnit ?? "in";
+
+  const bodyMetrics: ClientMetricSeries[] = [
+    buildMetricSeries(weightHistory, "weight", "weight", "Weight", weightUnit),
+    buildMetricSeries(bodyFatHistory, "bodyFatPercentage", "bodyFat", "Body Fat", "%"),
+    buildMetricSeries(waistHistory, "waist", "waist", "Waist", measurementUnitLabel),
+    buildMetricSeries(hipsHistory, "hips", "hips", "Hips", measurementUnitLabel),
+    buildMetricSeries(chestHistory, "chest", "chest", "Chest", measurementUnitLabel),
+    buildMetricSeries(armsHistory, "arms", "arms", "Arms", measurementUnitLabel),
+    buildMetricSeries(thighsHistory, "thighs", "thighs", "Thighs", measurementUnitLabel),
+  ];
+
+  const wellnessMetrics: ClientMetricSeries[] = [
+    buildMetricSeries(moodHistory, "mood", "mood", "Mood", "/5"),
+    buildMetricSeries(energyHistory, "energy", "energy", "Energy", "/10"),
+    buildMetricSeries(sleepHistory, "sleep", "sleep", "Sleep", "/10"),
+    buildMetricSeries(stressHistory, "stress", "stress", "Stress", "/10"),
+  ];
+
   return {
     weightHistory,
     bodyFatHistory,
@@ -177,12 +252,8 @@ export async function getClientProgressData(
       armsHistory,
       thighsHistory,
     },
-    wellnessMetrics: {
-      moodHistory,
-      energyHistory,
-      sleepHistory,
-      stressHistory,
-    },
+    bodyMetrics,
+    wellnessMetrics,
     checkInCount: checkIns?.length ?? 0,
     currentStreak: clientData?.current_streak ?? 0,
     adherenceRate: clientData?.check_in_adherence_rate ?? 0,

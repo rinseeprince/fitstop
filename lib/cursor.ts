@@ -17,6 +17,17 @@ export type CheckInCursor = {
 // so a *validated* cursor cannot smuggle filter syntax into the keyset predicate.
 const ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:?\d{2})?$/;
 
+/**
+ * True when `value` is a PostgREST-safe ISO-8601 timestamp. Reuses the cursor's
+ * ISO_TIMESTAMP charset, which contains none of `,` `(` `)` — the structural
+ * characters of a PostgREST `.or()`/filter string — so a value that passes here
+ * cannot smuggle filter syntax into an interpolated predicate (e.g. the
+ * catalog delta's `updated_at > since`).
+ */
+export function isValidIsoTimestamp(value: string): boolean {
+  return ISO_TIMESTAMP.test(value);
+}
+
 export function encodeCursor(cursor: CheckInCursor): string {
   return Buffer.from(JSON.stringify(cursor), "utf8").toString("base64url");
 }
