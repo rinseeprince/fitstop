@@ -249,9 +249,9 @@ describe("client-day-service", () => {
 
   it("counts only completed habit logs", async () => {
     mockHabits.mockResolvedValue([
-      { id: "h1", name: "Water" },
-      { id: "h2", name: "Walk" },
-      { id: "h3", name: "Read" },
+      { id: "h1", name: "Water", effectiveDate: "2026-01-01" },
+      { id: "h2", name: "Walk", effectiveDate: "2026-01-01" },
+      { id: "h3", name: "Read", effectiveDate: "2026-01-01" },
     ] as any);
     mockHabitLogs.mockResolvedValue([
       { dailyHabitId: "h1", completed: true },
@@ -261,6 +261,20 @@ describe("client-day-service", () => {
     const result = await getDaySummary(CLIENT_ID, DATE);
 
     expect(result.habits).toEqual({ totalCount: 3, loggedCount: 1 });
+  });
+
+  it("excludes habits not yet effective on the date from totalCount", async () => {
+    // h2 became effective after DATE — it can't be logged yet, so the home card's
+    // totalCount must not count it (otherwise it disagrees with the detail page).
+    mockHabits.mockResolvedValue([
+      { id: "h1", name: "Water", effectiveDate: "2026-01-01" },
+      { id: "h2", name: "New Habit", effectiveDate: "2026-06-01" },
+    ] as any);
+    mockHabitLogs.mockResolvedValue([{ dailyHabitId: "h1", completed: true }] as any);
+
+    const result = await getDaySummary(CLIENT_ID, DATE);
+
+    expect(result.habits).toEqual({ totalCount: 1, loggedCount: 1 });
   });
 
   // ---- Phase: no program ----

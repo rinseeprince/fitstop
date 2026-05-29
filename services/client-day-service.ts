@@ -45,8 +45,12 @@ export async function getDaySummary(
           dailyLog.sleep != null ||
           dailyLog.stress != null),
     },
+    // Only count habits that had become effective by `date` — mirrors the
+    // /client/habits detail page's `effectiveDate <= date` filter so the home card's
+    // "X of N" agrees with the toggles the page renders (a habit can't be logged for a
+    // date before it existed, so loggedCount is already within this set).
     habits: {
-      totalCount: habits.length,
+      totalCount: habits.filter((h) => h.effectiveDate <= date).length,
       loggedCount: habitLogs.filter((l) => l.completed).length,
     },
   };
