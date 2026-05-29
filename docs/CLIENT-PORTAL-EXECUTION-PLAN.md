@@ -76,9 +76,9 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 | 3.5 | Scale test fixtures + performance baseline | 3 Scale hardening |
 | 3.6 | Exercise analytics: SQL aggregation + windowing + indexes | 3 Scale hardening | COMPLETE
 | 3.7 | Read-path hot spots: streak, check-in counts, check-in context | 3 Scale hardening | COMPLETE
-| 3.8 | Per-request auth resolution caching | 3 Scale hardening |
-| 3.9 | Render-ready payloads + bounded/keyset contract + exercise catalog delta-sync | 3 Scale hardening |
-| 3.10 | Re-key client rate limiting from IP to client identity | 3 Scale hardening |
+| 3.8 | Per-request auth resolution caching | 3 Scale hardening | COMPLETE
+| 3.9 | Render-ready payloads + bounded/keyset contract + exercise catalog delta-sync | 3 Scale hardening | COMPLETE
+| 3.10 | Re-key client rate limiting from IP to client identity | 3 Scale hardening | COMPLETE
 | 4.1 | Habits detail page | 4 Habits |
 | 5.1 | Remove old Daily Pulse + deprecated routes + docs sweep | 5 Cleanup |
 | 5.2 | Align session_logs identity with event-keyed architecture | 5 |
@@ -1416,6 +1416,8 @@ The web app is a logic/API test harness; the React-Native app is the real client
 
 ## Session 3.8: Per-request auth resolution caching
 
+**Status**: COMPLETE
+
 **Commit message**: `perf(auth): cache user→client resolution to drop redundant per-request lookups`
 
 **Objective**: Every client API request runs `getAuthenticatedClientId`, which validates the JWT via `supabase.auth.getUser()` (kept) **and** does a `clients` lookup to map `user_id → client_id`. Across a multi-request page that's N redundant lookups. Cache the mapping so the per-request DB hit goes away — without weakening auth.
@@ -1446,6 +1448,8 @@ The web app is a logic/API test harness; the React-Native app is the real client
 ---
 
 ## Session 3.9: Render-ready payloads + bounded/keyset contract + exercise catalog delta-sync
+
+**Status**: COMPLETE
 
 **Commit message**: `refactor(api): render-ready client payloads + bounded/keyset contract + exercise catalog delta-sync`
 
@@ -1486,6 +1490,8 @@ The web app is a logic/API test harness; the React-Native app is the real client
 ---
 
 ## Session 3.10: Re-key client rate limiting from IP to client identity
+
+**Status**: COMPLETE
 
 **Commit message**: `fix(security): key client rate limits to client identity (carrier-NAT safe)`
 
