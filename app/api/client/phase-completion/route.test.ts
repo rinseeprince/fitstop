@@ -4,6 +4,7 @@ import { GET, POST } from "./route";
 
 vi.mock("@/lib/rate-limit", () => ({
   clientApiRateLimit: vi.fn().mockResolvedValue(null),
+  clientPerClientRateLimit: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock("@/lib/csrf-protection", () => ({

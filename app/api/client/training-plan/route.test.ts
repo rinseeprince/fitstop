@@ -5,6 +5,7 @@ import type { ClientTrainingPlan } from "@/types/client-training-plan";
 
 vi.mock("@/lib/rate-limit", () => ({
   clientApiRateLimit: vi.fn().mockResolvedValue(null),
+  clientPerClientRateLimit: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock("@/lib/auth-helpers", () => ({

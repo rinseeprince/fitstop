@@ -5,6 +5,7 @@ import {
   authRateLimit,
   checkInRateLimit,
   clientApiRateLimit,
+  clientPerClientRateLimit,
 } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import {
@@ -38,6 +39,10 @@ export type ClientAuthWithCheckInDayResult = AuthOkWithCheckInDay | AuthFail;
  * params or request body. Auth proves identity, not permission.
  *
  * Defaults to clientApiRateLimit. Override via `{ rateLimit: "ai" | ... }`.
+ *
+ * The tight per-client tier (clientPerClientRateLimit) ALWAYS composes on top
+ * of any `options.rateLimit` override — the override only swaps the pre-auth
+ * (first) tier; it never replaces the post-auth per-client control.
  */
 export async function requireClientAuth(
   request: NextRequest,
@@ -52,12 +57,19 @@ export async function requireClientAuth(
   const clientId = await getAuthenticatedClientId(request);
   if (!clientId) return { ok: false, response: unauthorized() };
 
+  const perClient = await clientPerClientRateLimit(request, clientId);
+  if (perClient) return { ok: false, response: perClient };
+
   return { ok: true, clientId };
 }
 
 /**
  * Variant that also returns the client's expected check-in day.
  * Used by training-related routes that compute week boundaries from it.
+ *
+ * The tight per-client tier (clientPerClientRateLimit) ALWAYS composes on top
+ * of any `options.rateLimit` override — the override only swaps the pre-auth
+ * (first) tier; it never replaces the post-auth per-client control.
  */
 export async function requireClientAuthWithCheckInDay(
   request: NextRequest,
@@ -71,6 +83,9 @@ export async function requireClientAuthWithCheckInDay(
 
   const authed = await getAuthenticatedClientWithCheckInDay(request);
   if (!authed) return { ok: false, response: unauthorized() };
+
+  const perClient = await clientPerClientRateLimit(request, authed.clientId);
+  if (perClient) return { ok: false, response: perClient };
 
   return { ok: true, clientId: authed.clientId, checkInDay: authed.checkInDay };
 }

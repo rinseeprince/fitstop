@@ -1,0 +1,68 @@
+import { getRedisClient } from "@/lib/rate-limit";
+
+/**
+ * Short-TTL read-through cache for auth resolution (Session 3.8).
+ *
+ * The user -> client-id mapping is effectively immutable for the lifetime of an
+ * account, so we use TTL-only invalidation rather than active eviction. A 60s
+ * window absorbs the burst of auth lookups a single page render fans out across
+ * its data fetches while keeping any staleness window trivially small.
+ */
+const AUTH_CACHE_TTL_SECONDS = 60; // mapping effectively immutable; TTL-only invalidation; 60s absorbs a page's burst
+
+/**
+ * Generic read-through cache core. On a cache miss (or when Redis is
+ * unavailable) it runs `loader`, caching any non-null result for the TTL.
+ *
+ * @upstash/redis `get<T>`/`set` serialize JSON automatically, so caching the
+ * object wrapper round-trips cleanly. Null/undefined results are never cached.
+ */
+async function getCachedAuthValue<T>(
+  key: string,
+  loader: () => Promise<T | null>,
+): Promise<T | null> {
+  const redis = getRedisClient();
+  if (!redis) return loader();
+
+  try {
+    const hit = await redis.get<T>(key);
+    if (hit !== null && hit !== undefined) return hit as T;
+  } catch {
+    /* swallow, fall through */
+  }
+
+  const fresh = await loader();
+  if (fresh !== null && fresh !== undefined) {
+    try {
+      await redis.set(key, fresh as unknown as string, { ex: AUTH_CACHE_TTL_SECONDS });
+    } catch {
+      /* swallow */
+    }
+  }
+  return fresh;
+}
+
+/**
+ * Read-through cache for the user -> client-id mapping.
+ */
+export async function getCachedClientId(
+  userId: string,
+  loader: () => Promise<string | null>,
+): Promise<string | null> {
+  return getCachedAuthValue("authmap:client:" + userId, loader);
+}
+
+export type CachedClientWithCheckInDay = {
+  clientId: string;
+  checkInDay: string | null;
+};
+
+/**
+ * Read-through cache for the user -> { client-id, check-in day } mapping.
+ */
+export async function getCachedClientWithCheckInDay(
+  userId: string,
+  loader: () => Promise<CachedClientWithCheckInDay | null>,
+): Promise<CachedClientWithCheckInDay | null> {
+  return getCachedAuthValue("authmap:clientcid:" + userId, loader);
+}

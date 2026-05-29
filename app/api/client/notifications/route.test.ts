@@ -20,6 +20,7 @@ vi.mock('@/services/check-in-tracking-service', () => ({
 vi.mock('@/lib/rate-limit', () => ({
   apiRateLimit: vi.fn(),
   clientApiRateLimit: vi.fn(),
+  clientPerClientRateLimit: vi.fn().mockResolvedValue(null),
 }))
 
 import { getAuthenticatedClientId } from '@/lib/auth-helpers'

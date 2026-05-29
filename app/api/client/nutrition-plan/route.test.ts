@@ -5,6 +5,7 @@ import type { NutritionTargets } from "@/services/client-portal-service";
 
 vi.mock("@/lib/rate-limit", () => ({
   clientApiRateLimit: vi.fn().mockResolvedValue(null),
+  clientPerClientRateLimit: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock("@/lib/auth-helpers", () => ({

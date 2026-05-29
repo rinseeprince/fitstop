@@ -16,7 +16,7 @@ type RateLimitConfig = {
 let redis: Redis | null = null;
 let redisInitialized = false;
 
-function getRedisClient(): Redis | null {
+export function getRedisClient(): Redis | null {
   if (redisInitialized) {
     return redis;
   }
@@ -206,13 +206,17 @@ export async function apiRateLimit(request: NextRequest): Promise<NextResponse |
 }
 
 /**
- * More permissive rate limit for authenticated client API endpoints
- * Allows for burst traffic during page navigation while still preventing abuse
+ * Loose, abuse-only volumetric burst guard for the pre-auth client-portal
+ * surface. The ceiling is deliberately set far above any plausible legitimate
+ * carrier-NAT (CGNAT) aggregate so shared-IP mobile users never trip it. This
+ * is NOT the per-user control — that is clientPerClientRateLimit, applied
+ * post-auth and keyed by client id. Tune this with production telemetry; real
+ * DoS protection belongs at the edge (Vercel / Cloudflare).
  */
 export async function clientApiRateLimit(request: NextRequest): Promise<NextResponse | null> {
   return rateLimit(request, {
     windowMs: 10 * 1000, // 10 seconds
-    maxRequests: 30, // 30 requests per 10 seconds
+    maxRequests: 1000, // loose IP burst guard, above any plausible CGNAT aggregate
   });
 }
 
@@ -280,6 +284,59 @@ export async function aiRateLimit(request: NextRequest, userId?: string): Promis
     return null;
   } catch (error) {
     console.error("AI rate limiting error, falling back to in-memory:", error instanceof Error ? error.message : "Unknown error");
+    const fallbackResult = inMemoryRateLimit(rateLimitKey, config.maxRequests, config.windowMs);
+    if (!fallbackResult.success) {
+      return NextResponse.json(
+        { error: "Too many requests", message: "Rate limit exceeded. Please try again later.", retryAfter: fallbackResult.retryAfter },
+        { status: 429, headers: { "Retry-After": fallbackResult.retryAfter.toString() } }
+      );
+    }
+    return null;
+  }
+}
+/**
+ * Per-client rate limit for authenticated client-portal routes (Session 3.10).
+ * Always keyed on the resolved client id (no IP fallback), so it composes on
+ * top of the loose IP-keyed clientApiRateLimit burst guard as the tight,
+ * per-user tier applied immediately after auth resolves.
+ */
+export async function clientPerClientRateLimit(request: NextRequest, clientId: string): Promise<NextResponse | null> {
+  const config: RateLimitConfig = { windowMs: 10 * 1000, maxRequests: 30 };
+  const redisClient = getRedisClient();
+
+  // Always key on the resolved client identity (no IP fallback)
+  const rateLimitKey = `client:${clientId}`;
+
+  if (!redisClient) {
+    const result = inMemoryRateLimit(rateLimitKey, config.maxRequests, config.windowMs);
+    if (!result.success) {
+      return NextResponse.json(
+        { error: "Too many requests", message: "Rate limit exceeded. Please try again later.", retryAfter: result.retryAfter },
+        { status: 429, headers: { "Retry-After": result.retryAfter.toString() } }
+      );
+    }
+    return null;
+  }
+
+  const ratelimit = new Ratelimit({
+    redis: redisClient,
+    limiter: Ratelimit.slidingWindow(config.maxRequests, `${config.windowMs} ms`),
+    prefix: "ratelimit:client",
+    analytics: true,
+  });
+
+  try {
+    const { success, limit, remaining, reset } = await ratelimit.limit(rateLimitKey);
+    if (!success) {
+      const retryAfter = Math.ceil((reset - Date.now()) / 1000);
+      return NextResponse.json(
+        { error: "Too many requests", message: "Rate limit exceeded. Please try again later.", retryAfter },
+        { status: 429, headers: { "Retry-After": retryAfter.toString(), "X-RateLimit-Limit": limit.toString(), "X-RateLimit-Remaining": remaining.toString(), "X-RateLimit-Reset": reset.toString() } }
+      );
+    }
+    return null;
+  } catch (error) {
+    console.error("Per-client rate limiting error, falling back to in-memory:", error instanceof Error ? error.message : "Unknown error");
     const fallbackResult = inMemoryRateLimit(rateLimitKey, config.maxRequests, config.windowMs);
     if (!fallbackResult.success) {
       return NextResponse.json(

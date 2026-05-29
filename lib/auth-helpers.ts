@@ -1,6 +1,10 @@
 import { createHash } from "crypto";
 import type { NextRequest } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
+import {
+  getCachedClientId,
+  getCachedClientWithCheckInDay,
+} from "@/lib/auth-cache";
 
 type AuthFailureReason =
   | "missing_session"
@@ -123,25 +127,30 @@ export async function getAuthenticatedClientId(
       return null;
     }
 
-    // Use maybeSingle() to avoid throwing PGRST116 when no client found
-    const { data: client, error } = await supabase
-      .from("clients")
-      .select("id")
-      .eq("user_id", user.id)
-      .maybeSingle();
+    const clientId = await getCachedClientId(user.id, async () => {
+      // Use maybeSingle() to avoid throwing PGRST116 when no client found
+      const { data: client, error } = await supabase
+        .from("clients")
+        .select("id")
+        .eq("user_id", user.id)
+        .maybeSingle();
 
-    if (error) {
-      console.error("Error fetching client:", error.message);
-      logAuthFailure({ role: "client", reason: "db_error", request });
-      return null;
-    }
+      if (error) {
+        console.error("Error fetching client:", error.message);
+        logAuthFailure({ role: "client", reason: "db_error", request });
+        return null;
+      }
 
-    if (!client?.id) {
-      logAuthFailure({ role: "client", reason: "client_profile_not_found", request });
-      return null;
-    }
+      if (!client?.id) {
+        logAuthFailure({ role: "client", reason: "client_profile_not_found", request });
+        return null;
+      }
 
-    return client.id;
+      return client.id;
+    });
+
+    if (!clientId) return null;
+    return clientId;
   } catch (error) {
     console.error("Unexpected error in getAuthenticatedClientId:", error);
     return null;
@@ -177,27 +186,29 @@ export async function getAuthenticatedClientWithCheckInDay(
       return null;
     }
 
-    const { data: client, error } = await supabase
-      .from("clients")
-      .select("id, expected_check_in_day")
-      .eq("user_id", user.id)
-      .maybeSingle();
+    return await getCachedClientWithCheckInDay(user.id, async () => {
+      const { data: client, error } = await supabase
+        .from("clients")
+        .select("id, expected_check_in_day")
+        .eq("user_id", user.id)
+        .maybeSingle();
 
-    if (error) {
-      console.error("Error fetching client:", error.message);
-      logAuthFailure({ role: "client", reason: "db_error", request });
-      return null;
-    }
+      if (error) {
+        console.error("Error fetching client:", error.message);
+        logAuthFailure({ role: "client", reason: "db_error", request });
+        return null;
+      }
 
-    if (!client?.id) {
-      logAuthFailure({ role: "client", reason: "client_profile_not_found", request });
-      return null;
-    }
+      if (!client?.id) {
+        logAuthFailure({ role: "client", reason: "client_profile_not_found", request });
+        return null;
+      }
 
-    return {
-      clientId: client.id,
-      checkInDay: client.expected_check_in_day ?? null,
-    };
+      return {
+        clientId: client.id,
+        checkInDay: client.expected_check_in_day ?? null,
+      };
+    });
   } catch (error) {
     console.error("Unexpected error in getAuthenticatedClientWithCheckInDay:", error);
     return null;

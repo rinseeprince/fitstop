@@ -347,7 +347,7 @@
   - `authRateLimit`: Auth/invitation routes (5 requests per 15 minutes)
   - `apiRateLimit`: General API endpoints (60 requests per minute)
   - `coachApiRateLimit`: Coach-side client routes (30 requests per 10 seconds, allows burst traffic)
-  - `clientApiRateLimit`: Client portal routes (30 requests per 10 seconds, allows burst traffic)
+  - `clientApiRateLimit`: Client portal routes (first tier) — a loose, abuse-only IP burst guard (~1000 req/10s) set above any plausible carrier-NAT aggregate. Paired with a tight **per-client** limit (`clientPerClientRateLimit`, 30 req/10s, keyed by client id) applied post-auth. The per-client tier composes on top of any first-tier override; it is never replaced by one.
   - `checkInRateLimit`: Public check-in endpoints (30 requests per minute)
   - `aiRateLimit`: AI-powered endpoints using OpenAI (10 requests per minute) - prevents cost abuse
 

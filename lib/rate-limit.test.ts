@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { NextRequest } from 'next/server'
-import { rateLimit, authRateLimit, apiRateLimit, checkInRateLimit } from './rate-limit'
+import { rateLimit, authRateLimit, apiRateLimit, checkInRateLimit, clientApiRateLimit, clientPerClientRateLimit } from './rate-limit'
 
 // Mock Upstash dependencies
 vi.mock('@upstash/redis', () => ({
@@ -230,4 +230,46 @@ describe('Rate Limit Utilities', () => {
       })
     })
   })
+  describe('clientPerClientRateLimit', () => {
+    it('allows 30 requests then 429s the 31st for one client (fallback mode)', async () => {
+      const request = createMockRequest('203.0.113.10')
+      const clientId = 'client-percl-a'
+
+      for (let i = 0; i < 30; i++) {
+        const result = await clientPerClientRateLimit(request, clientId)
+        expect(result).toBeNull()
+      }
+
+      const blocked = await clientPerClientRateLimit(request, clientId)
+      expect(blocked).not.toBeNull()
+      expect(blocked?.status).toBe(429)
+    })
+
+    it('keys on client id, not IP: a second client is unaffected (carrier-NAT safety)', async () => {
+      // Same shared IP for both clients to prove the key is the client id.
+      const request = createMockRequest('203.0.113.20')
+      const limited = 'client-percl-b'
+      const other = 'client-percl-c'
+
+      for (let i = 0; i < 30; i++) {
+        expect(await clientPerClientRateLimit(request, limited)).toBeNull()
+      }
+      expect((await clientPerClientRateLimit(request, limited))?.status).toBe(429)
+
+      // The other client behind the same IP is untouched.
+      expect(await clientPerClientRateLimit(request, other)).toBeNull()
+    })
+  })
+
+  describe('clientApiRateLimit ceiling', () => {
+    it('tolerates a burst well above the old 30-300 range (locks the 1000 ceiling)', async () => {
+      const request = createMockRequest('198.51.100.5')
+
+      for (let i = 0; i < 500; i++) {
+        const result = await clientApiRateLimit(request)
+        expect(result).toBeNull()
+      }
+    })
+  })
+
 })

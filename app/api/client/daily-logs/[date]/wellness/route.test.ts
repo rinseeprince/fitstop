@@ -7,6 +7,7 @@ vi.mock("@/lib/rate-limit", () => ({
   authRateLimit: vi.fn().mockResolvedValue(null),
   checkInRateLimit: vi.fn().mockResolvedValue(null),
   clientApiRateLimit: vi.fn().mockResolvedValue(null),
+  clientPerClientRateLimit: vi.fn().mockResolvedValue(null),
 }));
 vi.mock("@/lib/csrf-protection", () => ({
   requireCSRFProtection: vi.fn().mockResolvedValue(null),

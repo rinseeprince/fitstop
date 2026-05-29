@@ -4,6 +4,7 @@ import type { CheckInGateStatus } from "@/lib/date-helpers";
 
 vi.mock("@/lib/rate-limit", () => ({
   clientApiRateLimit: vi.fn().mockResolvedValue(null),
+  clientPerClientRateLimit: vi.fn().mockResolvedValue(null),
   apiRateLimit: vi.fn().mockResolvedValue(null),
   authRateLimit: vi.fn().mockResolvedValue(null),
   checkInRateLimit: vi.fn().mockResolvedValue(null),
