@@ -21,6 +21,7 @@ function createMockQuery<T = unknown>(result: {
     eq: vi.fn().mockReturnThis(),
     neq: vi.fn().mockReturnThis(),
     or: vi.fn().mockReturnThis(),
+    gt: vi.fn().mockReturnThis(),
     ilike: vi.fn().mockReturnThis(),
     order: vi.fn().mockReturnThis(),
     limit: vi.fn().mockReturnThis(),
@@ -42,6 +43,7 @@ import {
   resolveExercise,
   resolveExercises,
   normalizeExerciseName,
+  getExerciseCatalogDelta,
 } from "./exercise-catalog-service";
 
 const mockFrom = vi.mocked(supabaseAdmin.from);
@@ -280,6 +282,142 @@ describe("exercise-catalog-service", () => {
 
       expect(result.size).toBe(0);
       expect(mockFrom).not.toHaveBeenCalled();
+    });
+  });
+
+  // =========================================================================
+  // getExerciseCatalogDelta (delta-sync, internal keyset paging)
+  // =========================================================================
+
+  describe("getExerciseCatalogDelta", () => {
+    const coachId = "coach-1";
+
+    it("returns a single short page without paging again", async () => {
+      const rows = [
+        { id: "ex-1", name: "Bench", muscle_group: "chest", equipment: "barbell", updated_at: "2026-05-01T00:00:00+00:00" },
+        { id: "ex-2", name: "Row", muscle_group: "back", equipment: "barbell", updated_at: "2026-05-02T00:00:00+00:00" },
+      ];
+      const q = createMockQuery({ data: rows, error: null });
+      mockFrom.mockReturnValue(q as any);
+
+      const result = await getExerciseCatalogDelta(coachId);
+
+      expect(result).toEqual(rows);
+      expect(mockFrom).toHaveBeenCalledTimes(1); // short page -> no second fetch
+      // First page scopes to coach + global and applies no cursor / `since` filter.
+      expect(q.or).toHaveBeenCalledTimes(1);
+      expect(q.or).toHaveBeenCalledWith("coach_id.eq.coach-1,coach_id.is.null");
+      expect(q.gt).not.toHaveBeenCalled();
+    });
+
+    it("pages past the 1000-row cap with a tie-safe (updated_at, id) cursor", async () => {
+      // Every row shares one timestamp, so paging on updated_at alone would skip
+      // or loop — the (updated_at, id) tiebreak is what makes this correct.
+      const SAME_TS = "2026-01-01T00:00:00+00:00";
+      const page1 = Array.from({ length: 1000 }, (_, i) => ({
+        id: `id-${String(i).padStart(4, "0")}`,
+        name: `E${i}`,
+        muscle_group: null,
+        equipment: null,
+        updated_at: SAME_TS,
+      }));
+      const page2 = [
+        { id: "id-1000", name: "E1000", muscle_group: null, equipment: null, updated_at: SAME_TS },
+      ];
+      const q1 = createMockQuery({ data: page1, error: null });
+      const q2 = createMockQuery({ data: page2, error: null });
+      mockFrom.mockReturnValueOnce(q1 as any).mockReturnValueOnce(q2 as any);
+
+      const result = await getExerciseCatalogDelta(coachId);
+
+      expect(result).toHaveLength(1001); // complete, NOT truncated at 1000
+      expect(new Set(result.map((r) => r.id)).size).toBe(1001); // no duplicates
+      expect(mockFrom).toHaveBeenCalledTimes(2); // paged exactly twice
+
+      // Page 1: coach scope only. Page 2: coach scope + the keyset advance from
+      // page-1's last row (id-0999), tie-broken within the shared timestamp.
+      expect(q1.or).toHaveBeenCalledTimes(1);
+      expect(q2.or).toHaveBeenCalledTimes(2);
+      expect(q2.or).toHaveBeenLastCalledWith(
+        `updated_at.gt.${SAME_TS},and(updated_at.eq.${SAME_TS},id.gt.id-0999)`,
+      );
+    });
+
+    it("with `since`, pages multiple times and keeps every later page above the watermark", async () => {
+      // The load-bearing invariant: `.gt(since)` applies ONLY to page 1; page 2+
+      // drop it and rely on the keyset advance, which stays > since because the
+      // page-1 tail already did. Mixed timestamps (tail at a distinct MAX_TS)
+      // also prove the cursor tracks the LAST row's (updated_at, id), not the bulk.
+      const since = "2026-01-01T00:00:00+00:00";
+      const BULK_TS = "2026-02-15T00:00:00+00:00";
+      const MAX_TS = "2026-03-01T00:00:00+00:00";
+      const page1 = Array.from({ length: 1000 }, (_, i) => ({
+        id: `id-${String(i).padStart(4, "0")}`,
+        name: `E${i}`,
+        muscle_group: null,
+        equipment: null,
+        updated_at: i < 998 ? BULK_TS : MAX_TS, // tail (id-0998, id-0999) at MAX_TS
+      }));
+      const page2 = [
+        { id: "id-1000", name: "E1000", muscle_group: null, equipment: null, updated_at: "2026-03-02T00:00:00+00:00" },
+        { id: "id-1001", name: "E1001", muscle_group: null, equipment: null, updated_at: "2026-03-03T00:00:00+00:00" },
+      ];
+      const q1 = createMockQuery({ data: page1, error: null });
+      const q2 = createMockQuery({ data: page2, error: null });
+      mockFrom.mockReturnValueOnce(q1 as any).mockReturnValueOnce(q2 as any);
+
+      const result = await getExerciseCatalogDelta(coachId, since);
+
+      expect(result).toHaveLength(1002); // complete across the page boundary
+      expect(new Set(result.map((r) => r.id)).size).toBe(1002); // no duplicates
+      expect(result.every((r) => r.updated_at > since)).toBe(true); // never re-admits <= since
+      // Page 1 applies the strict `since` filter and coach scope only.
+      expect(q1.gt).toHaveBeenCalledWith("updated_at", since);
+      expect(q1.or).toHaveBeenCalledTimes(1);
+      // Page 2 must NOT re-apply `since`; it advances via the keyset cursor built
+      // from page-1's LAST row (MAX_TS, id-0999), not the bulk timestamp.
+      expect(q2.gt).not.toHaveBeenCalled();
+      expect(q2.or).toHaveBeenCalledTimes(2);
+      expect(q2.or).toHaveBeenLastCalledWith(
+        `updated_at.gt.${MAX_TS},and(updated_at.eq.${MAX_TS},id.gt.id-0999)`,
+      );
+    });
+
+    it("terminates on an empty trailing page when size is an exact multiple of the page", async () => {
+      // 1000 rows -> page 1 is full -> loop does NOT break -> fetches page 2 ->
+      // empty -> 0 < 1000 -> break (without dereferencing an empty page's tail).
+      const page1 = Array.from({ length: 1000 }, (_, i) => ({
+        id: `id-${String(i).padStart(4, "0")}`,
+        name: `E${i}`,
+        muscle_group: null,
+        equipment: null,
+        updated_at: "2026-01-01T00:00:00+00:00",
+      }));
+      const q1 = createMockQuery({ data: page1, error: null });
+      const q2 = createMockQuery({ data: [], error: null });
+      mockFrom.mockReturnValueOnce(q1 as any).mockReturnValueOnce(q2 as any);
+
+      const result = await getExerciseCatalogDelta(coachId);
+
+      expect(result).toHaveLength(1000);
+      expect(mockFrom).toHaveBeenCalledTimes(2); // full page forces one more fetch
+    });
+
+    it("applies `since` as a strict updated_at filter on the first page", async () => {
+      const since = "2026-05-01T00:00:00+00:00";
+      const q = createMockQuery({ data: [], error: null });
+      mockFrom.mockReturnValue(q as any);
+
+      await getExerciseCatalogDelta(coachId, since);
+
+      expect(q.gt).toHaveBeenCalledWith("updated_at", since);
+    });
+
+    it("throws when the query errors", async () => {
+      const q = createMockQuery({ data: null, error: { message: "boom" } });
+      mockFrom.mockReturnValue(q as any);
+
+      await expect(getExerciseCatalogDelta(coachId)).rejects.toThrow(/boom/);
     });
   });
 });

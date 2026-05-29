@@ -536,6 +536,8 @@ History/list rows carry `exercise_id` (+ a `performed_name` fallback for legacy 
 
 **Removal contract.** The delta is **UPSERT-ONLY** (`updated_at > since`). Hard-deletes (`ON DELETE CASCADE` when a coach is removed) and `coach_id` scope-changes (a row leaving a client's visible set) are **invisible to a delta** — there is no row to carry a newer `updated_at`. The native client therefore reconciles deletions/scope-exits by doing a periodic **FULL resync** (omit `since`): on cold start and/or every N days. Tombstones (a `deleted_at` column returned in the delta) are the documented escalation **if/when** deletes become frequent enough that the periodic full resync is too coarse.
 
+**Complete by construction (1000-row cap).** PostgREST caps a single response at ~1000 rows, and the visible catalog (globals + coach) already exceeds it (1512 rows on the scale fixture — the first cut of this endpoint silently dropped ~500). So `getExerciseCatalogDelta` **pages internally** on a tie-safe keyset cursor `(updated_at, id)` and concatenates until a short page ends it; the returned delta is always complete regardless of size, and the client contract stays the simple `?since=<ISO>` (the dictionary is a full-return set, not a cursor-streamed history). The `id` tiebreak is **required**: the catalog is seeded in batches that share an `updated_at`, so paging on `updated_at` alone would skip tied rows (strict `>`) or loop forever (`>=`).
+
 ### Sparse fieldsets / narrow RPC rowtypes
 
 Select only the columns the renderer needs. The catalog delta returns **5 columns** (`id, name, muscle_group, equipment, updated_at`), not `SELECT *`. RPC rowtypes are likewise narrowed to the post-aggregate shape the caller consumes.

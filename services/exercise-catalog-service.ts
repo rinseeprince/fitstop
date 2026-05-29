@@ -243,11 +243,29 @@ export type ExerciseCatalogDeltaRow = {
   updated_at: string;
 };
 
+// PostgREST caps a single response at ~1000 rows, so the catalog read pages
+// internally to this size and concatenates until a short page signals the end.
+const CATALOG_PAGE_SIZE = 1000;
+
 /**
  * Delta-sync feed for the exercise catalog visible to a coach (global +
- * coach-specific), ordered by updated_at ASC. When `since` is provided, returns
- * only rows changed strictly after it (`updated_at > since`), so the native
- * client can fetch just what changed since its last sync.
+ * coach-specific), ordered by (updated_at, id) ASC. When `since` is provided,
+ * returns only rows changed strictly after it (`updated_at > since`), so the
+ * native client fetches just what changed since its last sync watermark.
+ *
+ * COMPLETE BY CONSTRUCTION: a catalog larger than PostgREST's ~1000-row cap
+ * (globals can exceed it) would silently truncate a full sync, so we page
+ * internally on a tie-safe keyset cursor `(updated_at, id)` and concatenate —
+ * the returned delta is always complete regardless of size. The `id` tiebreak is
+ * REQUIRED, not cosmetic: the catalog is seeded in batches that share an
+ * `updated_at`, and paging on `updated_at` alone would either skip tied rows
+ * (strict `>`) or loop forever (`>=`).
+ *
+ * The "no skips, no repeats" guarantee is for a STATIC snapshot. Because the
+ * sort key mutates (the migration-096 trigger bumps `updated_at` to NOW() on
+ * UPDATE), a row edited *between* page round-trips during a large full sync can
+ * re-enter the keyset window and appear twice — never skipped, only repeated.
+ * The ID-first client upsert makes that idempotent, so it is harmless.
  *
  * UPSERT-ONLY: hard-deletes and coach_id scope-changes are invisible to a delta;
  * the client reconciles those via a periodic FULL resync (omit `since`). See
@@ -261,21 +279,42 @@ export async function getExerciseCatalogDelta(
   coachId: string,
   since?: string,
 ): Promise<ExerciseCatalogDeltaRow[]> {
-  let query = supabaseAdmin
-    .from("exercises")
-    .select("id, name, muscle_group, equipment, updated_at")
-    .or(`coach_id.eq.${coachId},coach_id.is.null`)
-    .order("updated_at", { ascending: true });
+  const out: ExerciseCatalogDeltaRow[] = [];
+  let cursor: { updatedAt: string; id: string } | null = null;
 
-  if (since) {
-    query = query.gt("updated_at", since);
+  for (;;) {
+    let query = supabaseAdmin
+      .from("exercises")
+      .select("id, name, muscle_group, equipment, updated_at")
+      .or(`coach_id.eq.${coachId},coach_id.is.null`)
+      .order("updated_at", { ascending: true })
+      .order("id", { ascending: true })
+      .limit(CATALOG_PAGE_SIZE);
+
+    if (cursor) {
+      // Subsequent pages: strict keyset advance on (updated_at, id) so rows that
+      // share an `updated_at` are paged without skips or repeats. (Page-2 rows
+      // are necessarily still `> since` too, since the page-1 tail was.)
+      query = query.or(
+        `updated_at.gt.${cursor.updatedAt},and(updated_at.eq.${cursor.updatedAt},id.gt.${cursor.id})`,
+      );
+    } else if (since) {
+      // First page: preserve delta semantics — strictly newer than the watermark.
+      query = query.gt("updated_at", since);
+    }
+
+    const { data, error } = await query;
+    if (error) throw new Error(`Failed to fetch exercise catalog: ${error.message}`);
+
+    const rows = (data ?? []) as ExerciseCatalogDeltaRow[];
+    out.push(...rows);
+
+    if (rows.length < CATALOG_PAGE_SIZE) break;
+    const last = rows[rows.length - 1];
+    cursor = { updatedAt: last.updated_at, id: last.id };
   }
 
-  const { data, error } = await query;
-
-  if (error) throw new Error(`Failed to fetch exercise catalog: ${error.message}`);
-
-  return (data ?? []) as ExerciseCatalogDeltaRow[];
+  return out;
 }
 
 /**
