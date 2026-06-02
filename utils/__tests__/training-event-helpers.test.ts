@@ -265,6 +265,77 @@ describe("mapEventsToScheduleDays", () => {
     expect(result[0].status).toBe("rest_trained");
   });
 
+  it("event-linked swap shows the PERFORMED session name, not the prescribed snapshot", () => {
+    const dates = ["2026-04-06"];
+    const events = [
+      createMockTrainingEvent({
+        date: "2026-04-06",
+        sessionName: "Chest Day",
+        status: "completed",
+        trainingSessionId: "chest",
+        sessionLogId: "log-1",
+      }),
+    ];
+    const sessionLogMap = new Map([
+      [
+        "log-1",
+        {
+          id: "log-1",
+          training_session_id: "back", // performed differs from prescribed (chest)
+          completed_at: "2026-04-06",
+          completion_quality: "full" as const,
+          notes: null,
+          prescribed_session_snapshot: { name: "Chest Day" }, // prescribed snapshot
+        },
+      ],
+    ]);
+    const performedSessionNames = new Map([["back", "Back Day"]]);
+
+    const result = mapEventsToScheduleDays(
+      dates,
+      events,
+      [],
+      sessionLogMap,
+      performedSessionNames
+    );
+
+    expect(result[0].status).toBe("completed_swap");
+    expect(result[0].isAlternative).toBe(true);
+    expect(result[0].loggedSessionName).toBe("Back Day"); // performed, not "Chest Day"
+    expect(result[0].plannedSessionName).toBe("Chest Day"); // prescribed still surfaced
+  });
+
+  it("event-linked swap falls back to the snapshot name when no performed name is provided", () => {
+    const dates = ["2026-04-06"];
+    const events = [
+      createMockTrainingEvent({
+        date: "2026-04-06",
+        sessionName: "Chest Day",
+        status: "completed",
+        trainingSessionId: "chest",
+        sessionLogId: "log-1",
+      }),
+    ];
+    const sessionLogMap = new Map([
+      [
+        "log-1",
+        {
+          id: "log-1",
+          training_session_id: "back",
+          completed_at: "2026-04-06",
+          completion_quality: "full" as const,
+          notes: null,
+          prescribed_session_snapshot: { name: "Chest Day" },
+        },
+      ],
+    ]);
+
+    const result = mapEventsToScheduleDays(dates, events, [], sessionLogMap);
+
+    expect(result[0].isAlternative).toBe(true);
+    expect(result[0].loggedSessionName).toBe("Chest Day"); // snapshot fallback
+  });
+
   it("prefers partial over scheduled when duplicates exist", () => {
     const dates = ["2026-04-06"];
     const events = [

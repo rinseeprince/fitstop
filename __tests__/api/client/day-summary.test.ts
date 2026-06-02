@@ -46,6 +46,7 @@ describe("GET /api/client/day-summary", () => {
           sessionName: "Push",
           sessionFocus: null,
           completionQuality: "full",
+          isAlternative: false,
           loggedExerciseCount: 4,
           prescribedExerciseCount: 4,
         },

@@ -141,7 +141,33 @@ export async function GET(
       (log) => !linkedLogIds.has(log.id)
     );
 
-    const schedule = mapEventsToScheduleDays(dates, events, unlinkedLogs, sessionLogMap);
+    // Resolve performed session names so a swap shows what the client actually
+    // did (the log's training_session_id), not the prescribed snapshot.
+    const performedSessionIds = [
+      ...new Set(
+        (sessionLogs ?? [])
+          .map((l) => l.training_session_id)
+          .filter((id): id is string => id !== null)
+      ),
+    ];
+    const performedSessionNames = new Map<string, string>();
+    if (performedSessionIds.length > 0) {
+      const { data: sessionRows } = await supabaseAdmin
+        .from("training_sessions")
+        .select("id, name")
+        .in("id", performedSessionIds);
+      for (const row of sessionRows ?? []) {
+        performedSessionNames.set(row.id, row.name);
+      }
+    }
+
+    const schedule = mapEventsToScheduleDays(
+      dates,
+      events,
+      unlinkedLogs,
+      sessionLogMap,
+      performedSessionNames
+    );
 
     // Reverse for newest-first, then paginate
     const reversed = schedule.reverse();

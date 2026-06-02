@@ -18,6 +18,8 @@ function createMockQuery<T = unknown>(result: { data: T | null; error: { message
     upsert: vi.fn().mockReturnThis(),
     eq: vi.fn().mockReturnThis(),
     neq: vi.fn().mockReturnThis(),
+    in: vi.fn().mockReturnThis(),
+    is: vi.fn().mockReturnThis(),
     gt: vi.fn().mockReturnThis(),
     gte: vi.fn().mockReturnThis(),
     lt: vi.fn().mockReturnThis(),
@@ -47,6 +49,7 @@ import {
   countEventsInRange,
   linkSessionLogToEvent,
   findMatchingEvent,
+  getEventSummariesForDate,
 } from "./training-event-service";
 import type { SessionInput } from "./training-event-service";
 
@@ -566,6 +569,85 @@ describe("training-event-service", () => {
       mockFrom.mockReturnValue(matcherQuery([]) as never);
       const match = await findMatchingEvent(args);
       expect(match).toBeNull();
+    });
+  });
+
+  // =========================================================================
+  // getEventSummariesForDate — performed-session display for swaps
+  // =========================================================================
+  describe("getEventSummariesForDate", () => {
+    function routeByTable(byTable: Record<string, ReturnType<typeof createMockQuery>>) {
+      mockFrom.mockImplementation(((table: string) => byTable[table]) as never);
+    }
+
+    it("shows the PERFORMED session name + its exercise count for a swap", async () => {
+      // Prescribed "Chest Day" (chest), but the linked log was performed as "Back Day" (back).
+      const eventRow = createMockTrainingEventRow({
+        id: "ev-1",
+        trainingSessionId: "chest",
+        sessionName: "Chest Day",
+        date: "2026-05-08",
+        status: "completed",
+        sessionLogId: "log-1",
+      });
+      routeByTable({
+        training_events: createMockQuery({ data: [eventRow], error: null }),
+        exercise_logs: createMockQuery({
+          data: [{ session_log_id: "log-1" }, { session_log_id: "log-1" }],
+          error: null,
+        }),
+        session_logs: createMockQuery({
+          data: [{ id: "log-1", training_session_id: "back" }],
+          error: null,
+        }),
+        training_exercises: createMockQuery({
+          data: [{ session_id: "back" }, { session_id: "back" }],
+          error: null,
+        }),
+        training_sessions: createMockQuery({
+          data: [{ id: "back", name: "Back Day" }],
+          error: null,
+        }),
+      });
+
+      const result = await getEventSummariesForDate("c1", "2026-05-08");
+
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatchObject({
+        sessionName: "Back Day", // performed, not the prescribed "Chest Day"
+        isAlternative: true,
+        loggedExerciseCount: 2,
+        prescribedExerciseCount: 2, // against Back's prescription, not Chest's
+      });
+    });
+
+    it("is not alternative and keeps the prescribed name when no swap", async () => {
+      const eventRow = createMockTrainingEventRow({
+        id: "ev-1",
+        trainingSessionId: "chest",
+        sessionName: "Chest Day",
+        date: "2026-05-08",
+        status: "completed",
+        sessionLogId: "log-1",
+      });
+      routeByTable({
+        training_events: createMockQuery({ data: [eventRow], error: null }),
+        exercise_logs: createMockQuery({ data: [{ session_log_id: "log-1" }], error: null }),
+        session_logs: createMockQuery({
+          data: [{ id: "log-1", training_session_id: "chest" }], // same as prescribed
+          error: null,
+        }),
+        training_exercises: createMockQuery({ data: [{ session_id: "chest" }], error: null }),
+        training_sessions: createMockQuery({
+          data: [{ id: "chest", name: "Chest Day" }],
+          error: null,
+        }),
+      });
+
+      const result = await getEventSummariesForDate("c1", "2026-05-08");
+
+      expect(result[0].isAlternative).toBe(false);
+      expect(result[0].sessionName).toBe("Chest Day");
     });
   });
 });

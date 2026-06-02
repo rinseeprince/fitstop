@@ -528,61 +528,104 @@ export async function getEventSummariesForDate(
   const events = await getEventsForDateRange(clientId, date, date);
   if (events.length === 0) return [];
 
-  // Batch-count logged exercises per session_log_id
   const sessionLogIds = events
     .map((e) => e.sessionLogId)
     .filter((id): id is string => id !== null);
 
+  // Logged-exercise count per session_log_id, and the PERFORMED session of each
+  // linked log (its training_session_id) — for planned-day swaps.
   const loggedCountMap = new Map<string, number>();
+  const performedByLogId = new Map<string, string | null>();
   if (sessionLogIds.length > 0) {
-    const { data: logCounts, error: logErr } = await supabaseAdmin
-      .from("exercise_logs")
-      .select("session_log_id")
-      .in("session_log_id", sessionLogIds);
-    if (logErr) throw logErr;
-    for (const row of logCounts ?? []) {
+    const [logCountsRes, logRowsRes] = await Promise.all([
+      supabaseAdmin
+        .from("exercise_logs")
+        .select("session_log_id")
+        .in("session_log_id", sessionLogIds),
+      supabaseAdmin
+        .from("session_logs")
+        .select("id, training_session_id")
+        .in("id", sessionLogIds),
+    ]);
+    if (logCountsRes.error) throw logCountsRes.error;
+    if (logRowsRes.error) throw logRowsRes.error;
+    for (const row of logCountsRes.data ?? []) {
       loggedCountMap.set(
         row.session_log_id,
         (loggedCountMap.get(row.session_log_id) ?? 0) + 1
       );
     }
+    for (const row of logRowsRes.data ?? []) {
+      performedByLogId.set(row.id, row.training_session_id);
+    }
   }
 
-  // Batch-count prescribed (active) exercises per training_session_id
-  const sessionIds = [
+  // The session to DISPLAY per event = the performed session when the linked log
+  // is for a different session (swap), else the prescribed one.
+  const displaySessionIdByEvent = new Map<string, string | null>();
+  for (const e of events) {
+    const performed = e.sessionLogId
+      ? performedByLogId.get(e.sessionLogId) ?? null
+      : null;
+    displaySessionIdByEvent.set(e.id, performed ?? e.trainingSessionId);
+  }
+
+  // Prescribed-exercise count + live name keyed on the DISPLAY session id, so a
+  // swap's "X/Y" and label reflect the performed session.
+  const displaySessionIds = [
     ...new Set(
-      events
-        .map((e) => e.trainingSessionId)
-        .filter((id): id is string => id !== null)
+      [...displaySessionIdByEvent.values()].filter(
+        (id): id is string => id !== null
+      )
     ),
   ];
 
   const prescribedCountMap = new Map<string, number>();
-  if (sessionIds.length > 0) {
-    const { data: exerciseRows, error: exErr } = await supabaseAdmin
-      .from("training_exercises")
-      .select("session_id")
-      .in("session_id", sessionIds)
-      .eq("is_active", true);
-    if (exErr) throw exErr;
-    for (const row of exerciseRows ?? []) {
+  const sessionNameById = new Map<string, string>();
+  if (displaySessionIds.length > 0) {
+    const [exerciseRes, sessionRes] = await Promise.all([
+      supabaseAdmin
+        .from("training_exercises")
+        .select("session_id")
+        .in("session_id", displaySessionIds)
+        .eq("is_active", true),
+      supabaseAdmin
+        .from("training_sessions")
+        .select("id, name")
+        .in("id", displaySessionIds),
+    ]);
+    if (exerciseRes.error) throw exerciseRes.error;
+    if (sessionRes.error) throw sessionRes.error;
+    for (const row of exerciseRes.data ?? []) {
       prescribedCountMap.set(
         row.session_id,
         (prescribedCountMap.get(row.session_id) ?? 0) + 1
       );
     }
+    for (const row of sessionRes.data ?? []) {
+      sessionNameById.set(row.id, row.name);
+    }
   }
 
-  return events.map((e) => ({
-    eventId: e.id,
-    sessionName: e.sessionName,
-    sessionFocus: e.sessionFocus,
-    completionQuality: mapStatusToCompletionQuality(e.status),
-    loggedExerciseCount: e.sessionLogId
-      ? (loggedCountMap.get(e.sessionLogId) ?? 0)
-      : 0,
-    prescribedExerciseCount: e.trainingSessionId
-      ? (prescribedCountMap.get(e.trainingSessionId) ?? 0)
-      : 0,
-  }));
+  return events.map((e) => {
+    const displayId = displaySessionIdByEvent.get(e.id) ?? null;
+    const isAlternative =
+      displayId !== null &&
+      e.trainingSessionId !== null &&
+      displayId !== e.trainingSessionId;
+    return {
+      eventId: e.id,
+      sessionName:
+        (displayId ? sessionNameById.get(displayId) : null) ?? e.sessionName,
+      sessionFocus: e.sessionFocus,
+      completionQuality: mapStatusToCompletionQuality(e.status),
+      isAlternative,
+      loggedExerciseCount: e.sessionLogId
+        ? (loggedCountMap.get(e.sessionLogId) ?? 0)
+        : 0,
+      prescribedExerciseCount: displayId
+        ? (prescribedCountMap.get(displayId) ?? 0)
+        : 0,
+    };
+  });
 }

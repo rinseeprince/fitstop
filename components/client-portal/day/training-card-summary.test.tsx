@@ -17,6 +17,7 @@ function event(overrides: Partial<TrainingEventSummary> = {}): TrainingEventSumm
     sessionName: "Push Day A",
     sessionFocus: null,
     completionQuality: null,
+    isAlternative: false,
     loggedExerciseCount: 0,
     prescribedExerciseCount: 6,
     ...overrides,

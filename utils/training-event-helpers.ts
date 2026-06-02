@@ -30,7 +30,10 @@ export function mapEventsToScheduleDays(
   dates: string[],
   events: TrainingEvent[],
   unlinkedLogs?: UnlinkedSessionLog[],
-  sessionLogMap?: Map<string, UnlinkedSessionLog>
+  sessionLogMap?: Map<string, UnlinkedSessionLog>,
+  // Live names keyed by the log's performed training_session_id. Lets a swap
+  // show the session the client actually did, not the prescribed snapshot.
+  performedSessionNames?: Map<string, string>
 ): ScheduleDay[] {
   // When multiple events exist on the same date (e.g. from backfill across plan versions),
   // prefer the most informative: completed > partial > skipped > missed > scheduled
@@ -88,9 +91,17 @@ export function mapEventsToScheduleDays(
       if (linkedLog && linkedLog.training_session_id !== event.trainingSessionId) {
         status = "completed_swap";
         isAlternative = true;
+        // Show the PERFORMED session's live name (the log's training_session_id),
+        // not the prescribed snapshot. The snapshot here is the prescribed
+        // session (event's session), so it would mislabel the swap.
         const snapshot = linkedLog.prescribed_session_snapshot as Record<string, unknown> | null;
+        const performedName = linkedLog.training_session_id
+          ? performedSessionNames?.get(linkedLog.training_session_id)
+          : undefined;
         loggedSessionName =
-          (typeof snapshot?.name === "string" ? snapshot.name : null) ?? loggedSessionName;
+          performedName ??
+          (typeof snapshot?.name === "string" ? snapshot.name : null) ??
+          loggedSessionName;
         notes = linkedLog.notes;
       }
     }
