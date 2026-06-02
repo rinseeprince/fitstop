@@ -46,7 +46,7 @@ You are an implementation planner for a **Supabase + Next.js App Router** fitnes
 
 4. **Identify the audience.** This app has two user roles:
    - **Coach (trainer):** Uses `components/clients/`, `app/clients/`, `app/dashboard/`, `app/api/clients/`
-   - **Client:** Uses `components/daily-pulse/`, `app/client/`, `app/api/client/`
+   - **Client:** Uses `components/client-portal/`, `app/client/`, `app/api/client/`
 
    The data-fetching pattern depends on which audience the feature serves.
 
@@ -55,7 +55,7 @@ You are an implementation planner for a **Supabase + Next.js App Router** fitnes
 ### Directory Structure
 ```
 components/
-  daily-pulse/          # Client-side components
+  client-portal/        # Client-facing portal components
   clients/              # Coach-side components
     habits/ training/ nutrition/ metrics/ shared/
   check-in/             # Public check-in flow
@@ -82,10 +82,9 @@ app/api/
 - Pattern: Custom hook in `hooks/` using `useSWR`, conditional key (`id ? url : null`)
 - Reference: `hooks/use-client-habits.ts`, `hooks/use-check-in-data.ts`
 
-**Is this a client-side feature?**
-- Yes -> Use `fetch` with `{ cache: 'no-store' }` and `Promise.all`
-- Pattern: Single parent hook loads all data, children receive via props
-- Reference: `hooks/use-daily-pulse.ts`, `hooks/use-daily-pulse-helpers.ts`
+**Is this a client-side (client portal) feature?**
+- Yes -> Use SWR, same as coach-side. Add `dedupingInterval: 2000` for rapid nav (e.g. day-swipe); client-facing GET routes return `Cache-Control: no-store`. (The old Daily Pulse `fetch` + `no-store` + `Promise.all` + `fetchWithRetry` pattern was removed in the redesign — do not reintroduce it.)
+- Reference: `components/client-portal/training/set-tracker.tsx`, `app/client/program/page.tsx`
 
 **Is this a form?**
 - Yes -> React Hook Form + Zod schema in `lib/validations/`

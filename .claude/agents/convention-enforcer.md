@@ -22,7 +22,7 @@ You are a convention enforcer for a **Supabase + Next.js App Router** fitness co
 
 ```
 components/
-  daily-pulse/          # Client-side Daily Pulse components
+  client-portal/        # Client-facing post-activation portal (home, detail pages, nav, settings)
   clients/              # Coach-side components
     daily-pulse/        # Coach wellness view
     habits/             # Coach habit analytics
@@ -53,7 +53,7 @@ utils/                  # Shared utility functions
 contexts/               # React Context providers
 ```
 
-Coach-side components go in `components/clients/`. Client-side go in `components/daily-pulse/` or `components/`. **Never mix coach and client components in the same directory.**
+Coach-side components go in `components/clients/`. Client-side go in `components/client-portal/` or `components/`. **Never mix coach and client components in the same directory.**
 
 ## Rules to Enforce
 
@@ -75,20 +75,14 @@ const { data, error, isLoading, mutate } = useSWR<Type>(
 );
 ```
 
-**Client-side (any file under `components/daily-pulse/`, `app/client/`, hooks used by client pages):**
-- MUST use `fetch` with `{ cache: 'no-store' }` — NOT SWR
-- Initial data loads MUST use a single `Promise.all` in the parent
-- Child components MUST NOT fetch their own data
-- Use `fetchWithRetry` helper (from `hooks/use-daily-pulse-helpers.ts`) for 429 handling
-- Use `AbortController` for cancellation on navigation
+**Client-side (any file under `components/client-portal/`, `app/client/`, hooks used by client pages):**
+- MUST use SWR — same as coach-side. (The old Daily Pulse `fetch` + `{ cache: 'no-store' }` + `Promise.all` + `fetchWithRetry` pattern was removed with the client portal redesign; do NOT reintroduce it.)
+- Add `dedupingInterval: 2000` where the user can trigger rapid navigation (e.g. day-swipe on the portal home)
+- Client-facing GET API routes MUST return `Cache-Control: no-store` headers (caching is disabled at the API boundary, not via a client fetch flag)
 
-Reference pattern from `hooks/use-daily-pulse.ts`:
+Reference pattern from `components/client-portal/training/set-tracker.tsx` (SWR read + `globalMutate` write):
 ```typescript
-const results = await Promise.all([
-  fetchWithRetry("/api/client/daily-logs/today"),
-  fetchWithRetry("/api/client/training"),
-  // ...
-]);
+const { data } = useSWR(eventId ? `/api/client/training/events/${eventId}` : null, fetcher);
 ```
 
 **Violations to flag:**
