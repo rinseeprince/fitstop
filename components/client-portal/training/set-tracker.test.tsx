@@ -32,6 +32,7 @@ if (!Element.prototype.scrollIntoView) {
 
 const mockEvent = vi.fn();
 const mockMe = vi.fn();
+const mockSession = vi.fn();
 const mockGlobalMutate = vi.fn();
 vi.mock("swr", () => ({
   default: (key: string | null) => {
@@ -39,6 +40,8 @@ vi.mock("swr", () => ({
       return { data: undefined, error: undefined, isLoading: false };
     if (typeof key === "string" && key.startsWith("/api/client/training/events/"))
       return mockEvent();
+    if (typeof key === "string" && key.startsWith("/api/client/training/sessions/"))
+      return mockSession();
     if (key === "/api/client/me") return mockMe();
     throw new Error(`Unmocked SWR key: ${String(key)}`);
   },
@@ -159,6 +162,8 @@ describe("SetTracker", () => {
   beforeEach(() => {
     mockEvent.mockReset();
     mockMe.mockReset();
+    mockSession.mockReset();
+    mockSession.mockReturnValue({ data: undefined, error: undefined, isLoading: false });
     mockToast.mockReset();
     mockGlobalMutate.mockReset();
     setMe("lbs");
@@ -966,6 +971,9 @@ describe("SetTracker", () => {
 
   it("[restore] pre-populates form from existing sessionLog + exerciseLogs", async () => {
     const detail = baseFixture();
+    // A logged day is editable only when it's "today" (past logged days lock),
+    // and this test re-saves — so anchor the event to today.
+    detail.event = { ...detail.event, date: new Date().toISOString().slice(0, 10) };
     detail.sessionLog = {
       id: "log-1",
       clientId: "c-1",
@@ -1084,5 +1092,93 @@ describe("SetTracker", () => {
       { reps: 10, weight: 105, rpe: 8 },
       { reps: 8, weight: 105, rpe: 9 },
     ]);
+  });
+
+  it("[swap-edit] re-entering a logged swap loads the PERFORMED session and saves with its id", async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const detail = baseFixture(); // prescribed session s-1
+    detail.event = { ...detail.event, date: today };
+    detail.sessionLog = {
+      id: "log-1",
+      clientId: "c-1",
+      trainingSessionId: "s-2", // performed a DIFFERENT session (swap)
+      trainingEventId: "evt-1",
+      completedAt: today,
+      completionQuality: "full",
+      notes: null,
+      weekStartDate: "2026-05-04",
+      prescribedSessionSnapshot: null,
+      createdAt: ISO,
+      updatedAt: ISO,
+    };
+    detail.exerciseLogs = [];
+    setEventReady(detail);
+    // The performed session s-2 (its own exercises) is fetched for editing.
+    mockSession.mockReturnValue({
+      data: {
+        success: true,
+        data: {
+          session: {
+            id: "s-2",
+            planId: "p-1",
+            name: "Back Day",
+            orderIndex: 1,
+            focus: "Back",
+            estimatedDurationMinutes: 45,
+            calorieSurplusPercentage: null,
+            exercises: [
+              {
+                id: REAL_UUID_B,
+                sessionId: "s-2",
+                exerciseId: null,
+                name: "Barbell Row",
+                orderIndex: 0,
+                sets: 3,
+                isWarmup: false,
+                createdAt: ISO,
+                updatedAt: ISO,
+              },
+            ],
+            createdAt: ISO,
+            updatedAt: ISO,
+          },
+        },
+      },
+      error: undefined,
+      isLoading: false,
+    });
+    const user = userEvent.setup();
+    render(<SetTracker eventId="evt-1" />);
+
+    // Header shows the PERFORMED session (Back Day), not the prescribed one.
+    expect(await screen.findByText("Back Day")).toBeInTheDocument();
+
+    await user.click(screen.getByTestId("quick-log-full"));
+    await user.click(screen.getByTestId("save-button"));
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    const body = getLastFetchPayload() as { performedSessionId?: string };
+    expect(body.performedSessionId).toBe("s-2");
+  });
+
+  it("[locked] a past logged day is read-only (banner shown, save disabled)", () => {
+    const detail = baseFixture(); // event.date 2026-05-06 (a past date)
+    detail.sessionLog = {
+      id: "log-1",
+      clientId: "c-1",
+      trainingSessionId: "s-1",
+      trainingEventId: null,
+      completedAt: "2026-05-06",
+      completionQuality: "full",
+      notes: null,
+      weekStartDate: "2026-05-04",
+      prescribedSessionSnapshot: null,
+      createdAt: ISO,
+      updatedAt: ISO,
+    };
+    setEventReady(detail);
+    render(<SetTracker eventId="evt-1" />);
+
+    expect(screen.getByTestId("locked-banner")).toBeInTheDocument();
+    expect(screen.getByTestId("save-button")).toBeDisabled();
   });
 });

@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/collapsible";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import { getTodayDateString } from "@/lib/date-helpers";
+import { canEditDay } from "@/lib/daily-log-permissions";
 import { useToast } from "@/hooks/use-toast";
 import { logTrainingEventSchema } from "@/lib/validations/training";
 import type { Client } from "@/types/check-in";
@@ -91,7 +92,11 @@ function EventModeTracker({
   eventId: string;
   date?: string;
 }) {
-  const [swapSessionId, setSwapSessionId] = useState<string | null>(null);
+  // undefined = not chosen (use the logged swap, if any); null = forced back to
+  // the prescribed session; string = a session the user picked.
+  const [userSwapSessionId, setUserSwapSessionId] = useState<
+    string | null | undefined
+  >(undefined);
   const [showPicker, setShowPicker] = useState(false);
 
   const {
@@ -114,19 +119,34 @@ function EventModeTracker({
     { revalidateOnFocus: false },
   );
 
-  // When swapped, fetch the chosen session's exercises (active-plan scoped).
-  const { data: swapData, isLoading: swapLoading } = useSWR<SessionDetailResponse>(
-    swapSessionId ? `/api/client/training/sessions/${swapSessionId}` : null,
-    swrFetcher,
-    SWR_OPTS,
-  );
+  // The performed session of the existing log when it's a swap (≠ the event's
+  // prescribed session) — so re-entering a logged swap edits what was done.
+  const loggedSwap =
+    eventData?.data?.sessionLog &&
+    eventData.data.sessionLog.trainingSessionId !==
+      eventData.data.event.trainingSessionId
+      ? eventData.data.sessionLog.trainingSessionId
+      : null;
+  const boundSessionId =
+    userSwapSessionId !== undefined ? userSwapSessionId : loggedSwap;
+
+  // When bound to a non-prescribed session (logged swap or user pick), fetch
+  // that session's exercises (active-plan scoped).
+  const { data: swapData, isLoading: swapLoading } =
+    useSWR<SessionDetailResponse>(
+      boundSessionId
+        ? `/api/client/training/sessions/${boundSessionId}`
+        : null,
+      swrFetcher,
+      SWR_OPTS,
+    );
 
   if (showPicker) {
     return (
       <SessionPicker
         title="Do a different session"
         onSelect={(id) => {
-          setSwapSessionId(id);
+          setUserSwapSessionId(id);
           setShowPicker(false);
         }}
         onCancel={() => setShowPicker(false)}
@@ -134,33 +154,53 @@ function EventModeTracker({
     );
   }
 
-  if (eventLoading || meLoading || (swapSessionId && swapLoading)) {
+  if (eventLoading || meLoading || (boundSessionId && swapLoading)) {
     return <TrackerSkeleton />;
   }
   if (eventError || !eventData) return <LoadFailed />;
 
   const weightUnit: "lbs" | "kg" = meData?.data?.weightUnit ?? "lbs";
 
-  // Use the prescribed event detail, or the swapped session's detail.
+  // Date-edit lock (client mirror of the server rule): past + logged → read-only.
+  const editable = canEditDay(
+    eventData.data.event.date,
+    eventData.data.sessionLog ? "logged" : "never-logged",
+    meData?.data?.timezone ?? "UTC",
+  );
+
+  // Bind to the prescribed session, or to the swapped/edited session.
   let detail = eventData.data;
   let save: SaveStrategy = { kind: "event", eventId };
-  if (swapSessionId && swapData?.data?.session) {
+  if (boundSessionId && swapData?.data?.session) {
+    // Pre-fill from the existing log only when we're editing the very session
+    // that was logged (so the logged sets match this session's exercises).
+    const editingLoggedSession =
+      boundSessionId === eventData.data.sessionLog?.trainingSessionId;
     detail = syntheticDetailFromSession(
       swapData.data.session,
       eventData.data.event,
+      editingLoggedSession
+        ? {
+            sessionLog: eventData.data.sessionLog,
+            exerciseLogs: eventData.data.exerciseLogs,
+          }
+        : undefined,
     );
-    save = { kind: "event", eventId, performedSessionId: swapSessionId };
+    save = { kind: "event", eventId, performedSessionId: boundSessionId };
   }
 
   return (
     <TrainingLogForm
-      key={swapSessionId ?? "prescribed"}
+      key={boundSessionId ?? "prescribed"}
       detail={detail}
       date={date}
       weightUnit={weightUnit}
       save={save}
+      editable={editable}
       onChangeSession={() => setShowPicker(true)}
-      onResetSwap={swapSessionId ? () => setSwapSessionId(null) : undefined}
+      onResetSwap={
+        boundSessionId ? () => setUserSwapSessionId(null) : undefined
+      }
     />
   );
 }
@@ -205,6 +245,12 @@ function SessionModeTracker({
     session,
     syntheticEvent(session, date),
   );
+  // Fresh rest-day log: locked only when the date is in the future.
+  const editable = canEditDay(
+    date,
+    "never-logged",
+    meData?.data?.timezone ?? "UTC",
+  );
 
   return (
     <TrainingLogForm
@@ -212,6 +258,7 @@ function SessionModeTracker({
       date={date}
       weightUnit={weightUnit}
       save={{ kind: "session", date, performedSessionId: sessionId }}
+      editable={editable}
       onChangeSession={onChangeSession}
     />
   );
@@ -222,6 +269,7 @@ function TrainingLogForm({
   date,
   weightUnit,
   save,
+  editable = true,
   onChangeSession,
   onResetSwap,
 }: {
@@ -229,6 +277,7 @@ function TrainingLogForm({
   date: string | undefined;
   weightUnit: "lbs" | "kg";
   save: SaveStrategy;
+  editable?: boolean;
   onChangeSession?: () => void;
   onResetSwap?: () => void;
 }) {
@@ -274,6 +323,7 @@ function TrainingLogForm({
   });
 
   const onSubmit = async (values: LogFormValues) => {
+    if (!editable) return; // locked day — server also rejects with 403
     const base = buildLogPayload(values);
     const parsed = logTrainingEventSchema.safeParse(base);
     if (!parsed.success) {
@@ -371,7 +421,15 @@ function TrainingLogForm({
           )}
           {formattedDate && <span>{formattedDate}</span>}
         </div>
-        {onChangeSession && (
+        {!editable && (
+          <p
+            data-testid="locked-banner"
+            className="rounded-[6px] bg-[rgba(13,148,136,0.06)] px-3 py-2 text-[12px] text-[#5a7d82]"
+          >
+            This day is locked — past workouts can&apos;t be edited once logged.
+          </p>
+        )}
+        {onChangeSession && editable && (
           <div className="flex items-center gap-3 pt-1">
             <button
               type="button"
@@ -395,7 +453,11 @@ function TrainingLogForm({
         )}
       </header>
 
-      <LogWorkoutButton control={control} isSubmitting={isSubmitting} />
+      <LogWorkoutButton
+        control={control}
+        isSubmitting={isSubmitting}
+        editable={editable}
+      />
 
       <QuickLogControls
         control={control}
@@ -471,6 +533,13 @@ function TrainingLogForm({
 function syntheticDetailFromSession(
   session: TrainingSession,
   event: TrainingEvent,
+  // When editing the session that was actually logged, carry the existing log
+  // so the form pre-fills the logged sets (the logs' trainingExerciseIds match
+  // this session's exercises).
+  logged?: {
+    sessionLog: TrainingEventDetail["sessionLog"];
+    exerciseLogs: TrainingEventDetail["exerciseLogs"];
+  },
 ): TrainingEventDetail {
   return {
     event,
@@ -479,8 +548,8 @@ function syntheticDetailFromSession(
       source: "live",
       exercise,
     })),
-    sessionLog: null,
-    exerciseLogs: [],
+    sessionLog: logged?.sessionLog ?? null,
+    exerciseLogs: logged?.exerciseLogs ?? [],
   };
 }
 
@@ -606,12 +675,14 @@ function formatTrainingDate(value: string | undefined): string | null {
 function LogWorkoutButton({
   control,
   isSubmitting,
+  editable,
 }: {
   control: import("react-hook-form").Control<LogFormValues>;
   isSubmitting: boolean;
+  editable: boolean;
 }) {
   const completionQuality = useWatch({ control, name: "completionQuality" });
-  const canSave = completionQuality !== "" && !isSubmitting;
+  const canSave = editable && completionQuality !== "" && !isSubmitting;
   return (
     <div className="flex justify-end">
       <Button

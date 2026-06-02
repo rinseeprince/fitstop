@@ -6,15 +6,14 @@ import {
   assertHasActivePlan,
   NoActivePlanError,
 } from "@/services/daily-context-service";
-import { assertCanEdit } from "@/services/daily-log-permissions-service";
 import { DayLockedError } from "@/lib/daily-log-permissions";
 import { logTrainingSessionForDate } from "@/services/training-log-service";
 
 /**
  * Event-less training log (Session 5.3/5.4): the client trained on a day with
  * no tapped event (rest-day training / rest-day picker). The service runs the
- * matcher to link a prescribed event when possible, and is idempotent on
- * (client, performed session, date).
+ * matcher to link a prescribed event when possible, and keeps one log per rest
+ * day — a second pick for the same date EDITS the existing log.
  *
  * Uses requireClientAuth (NOT WithCheckInDay): the week math lives in the
  * service, which self-fetches the check-in day like logTrainingEvent — so the
@@ -45,11 +44,10 @@ export async function POST(request: NextRequest) {
   const { date } = parsed.data;
 
   try {
-    // Date-edit rule — defense-in-depth for direct API callers (UI navigation
-    // blocking future dates is the primary surface). Future/locked → 403.
-    await assertCanEdit({ clientId: auth.clientId, date, resourceType: "training" });
-
     // Orphan-log guard: refuse to write a training log with a null plan link.
+    // The date-edit lock (today editable; past+logged or future → 403) is
+    // enforced inside logTrainingSessionForDate via assertCanEditTrainingDay,
+    // which reads real session_logs state (not the training_logs spine).
     const ctx = await resolvePlanContextForDate(auth.clientId, date);
     assertHasActivePlan(ctx, "training");
 

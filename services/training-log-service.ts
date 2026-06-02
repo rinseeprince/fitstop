@@ -8,6 +8,7 @@ import {
   getTrainingWeekStart,
   getTrainingWeekEnd,
 } from "@/lib/date-helpers";
+import { assertCanEditTrainingDay } from "./daily-log-permissions-service";
 import type {
   ExerciseLogInsert,
   ExerciseLogRow,
@@ -395,12 +396,15 @@ async function writeSessionLog(params: {
     }
   }
 
-  // 6. Detailed mode: preserve existing exercise_logs snapshots, then replace.
-  // STRICT ORDER: SELECT existing → build map → DELETE → INSERT. Do NOT
-  // parallelize the SELECT and DELETE — the SELECT must complete first or
-  // the preservation map will be empty when the inserts go in.
+  // 6. Reconcile exercise_logs. Every save FULLY REPLACES the log's
+  // exercise_logs (and set_logs via FK CASCADE): the DELETE always runs, so a
+  // quick re-log (no exercises) clears any prior detailed/swapped rows instead
+  // of leaving them stale. The snapshot-preservation SELECT and the INSERT run
+  // only when the payload carries exercises.
+  // STRICT ORDER: SELECT existing → build map → DELETE → INSERT.
+  const existingSnapshotMap = new Map<string, Record<string, unknown>>();
   if (isDetailedMode) {
-    // 6a. Snapshot-preservation prefetch.
+    // 6a. Snapshot-preservation prefetch (only needed before a re-insert).
     const { data: existingRows, error: existingErr } = await supabaseAdmin
       .from("exercise_logs")
       .select("training_exercise_id, prescribed_exercise_snapshot")
@@ -410,8 +414,6 @@ async function writeSessionLog(params: {
         `Failed to read existing exercise logs for snapshot preservation: ${existingErr.message}`,
       );
     }
-
-    const existingSnapshotMap = new Map<string, Record<string, unknown>>();
     for (const r of existingRows ?? []) {
       // Free-form rows (NULL training_exercise_id) have no stable cross-write
       // identity; intentionally NOT preserved. See test 12d.
@@ -422,18 +424,21 @@ async function writeSessionLog(params: {
         );
       }
     }
+  }
 
-    // 6b. Delete after the preservation map is built.
-    const { error: deleteErr } = await supabaseAdmin
-      .from("exercise_logs")
-      .delete()
-      .eq("session_log_id", sessionLogId);
-    if (deleteErr) {
-      throw new Error(
-        `Failed to clear exercise logs before re-insert: ${deleteErr.message}`,
-      );
-    }
+  // 6b. Delete existing exercise_logs — ALWAYS (full replace). set_logs are
+  // removed via FK CASCADE.
+  const { error: deleteErr } = await supabaseAdmin
+    .from("exercise_logs")
+    .delete()
+    .eq("session_log_id", sessionLogId);
+  if (deleteErr) {
+    throw new Error(
+      `Failed to clear exercise logs before re-insert: ${deleteErr.message}`,
+    );
+  }
 
+  if (isDetailedMode) {
     // 6c. Insert with fresh-or-preserved snapshots.
     // For free-form exercises (no trainingExerciseId, no prior snapshot),
     // capture the user-supplied name into prescribed_exercise_snapshot so
@@ -560,6 +565,15 @@ export async function logTrainingEvent(params: {
     throw new Error(`Training event not found: ${eventId}`);
   }
 
+  // Date-edit lock: today is editable; a past day that already has a log is
+  // read-only (throws DayLockedError → 403). loggedStatus comes from the event's
+  // existing link — no extra query.
+  await assertCanEditTrainingDay(
+    clientId,
+    eventRow.date,
+    eventRow.session_log_id ? "logged" : "never-logged",
+  );
+
   const checkInDay = await getClientCheckInDay(clientId);
   const weekStartDate = getTrainingWeekStart(eventRow.date, checkInDay);
 
@@ -603,14 +617,14 @@ export async function logTrainingSessionForDate(params: {
   const weekStartDate = getTrainingWeekStart(date, checkInDay);
   const weekEndDate = getTrainingWeekEnd(date, checkInDay);
 
-  // Idempotency: reuse an existing log for the same performed session on the
-  // same day. completed_at is TIMESTAMPTZ — match the day via the house range
-  // pattern (a bare = date would miss any NOW()-defaulted legacy row).
+  // One log per rest day: reuse the existing event-less log for this day
+  // REGARDLESS of which session was picked, so a second pick EDITS the first
+  // instead of inserting a duplicate. completed_at is TIMESTAMPTZ — match the
+  // day via the house range pattern.
   const { data: existing, error: existingErr } = await supabaseAdmin
     .from("session_logs")
     .select("id, training_event_id")
     .eq("client_id", clientId)
-    .eq("training_session_id", performedSessionId)
     .gte("completed_at", `${date}T00:00:00`)
     .lte("completed_at", `${date}T23:59:59`)
     .order("created_at", { ascending: true })
@@ -621,6 +635,14 @@ export async function logTrainingSessionForDate(params: {
       `Failed to look up existing session log: ${existingErr.message}`,
     );
   }
+
+  // Date-edit lock: today is editable; a past day that already has a log is
+  // read-only (throws DayLockedError → 403).
+  await assertCanEditTrainingDay(
+    clientId,
+    date,
+    existing ? "logged" : "never-logged",
+  );
 
   if (existing) {
     const sessionLogId = await writeSessionLog({

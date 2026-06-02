@@ -154,7 +154,7 @@ describe("logTrainingEvent", () => {
   // -------------------------------------------------------------------------
   // 1. Quick log (no exercises)
   // -------------------------------------------------------------------------
-  it("[1] quick log: writes session_log + snapshot, skips exercise_logs, links event with mapped status", async () => {
+  it("[1] quick log: writes session_log + snapshot, clears exercise_logs (full replace), links event with mapped status", async () => {
     const eventQ = createMockQuery({ data: eventRow(), error: null });
     const clientQ = createMockQuery({
       data: { expected_check_in_day: "sunday" },
@@ -165,6 +165,7 @@ describe("logTrainingEvent", () => {
       error: null,
     });
     const upsertQ = createMockQuery({ data: { id: SESSION_LOG_ID }, error: null });
+    const exQ = createMockQuery({ data: null, error: null });
     const linkQ = createMockQuery({ data: null, error: null });
 
     installRouter({
@@ -172,6 +173,7 @@ describe("logTrainingEvent", () => {
       clients: clientQ,
       training_sessions: sessionSnapQ,
       session_logs: upsertQ,
+      exercise_logs: exQ,
     });
 
     const result = await logTrainingEvent({
@@ -195,8 +197,11 @@ describe("logTrainingEvent", () => {
       prescribed_session_snapshot: SESSION_PRESCRIPTION,
     });
 
-    // exercise_logs untouched.
-    expect(mockFrom).not.toHaveBeenCalledWith("exercise_logs");
+    // Full replace: exercise_logs are cleared (DELETE), nothing inserted for a
+    // quick log, no set_logs written.
+    expect(exQ.delete).toHaveBeenCalledTimes(1);
+    expect(exQ.insert).not.toHaveBeenCalled();
+    expect(mockFrom).not.toHaveBeenCalledWith("set_logs");
 
     // training_events update fired with status='completed' (full→completed).
     expect(linkQ.update).toHaveBeenCalledTimes(1);
@@ -209,7 +214,7 @@ describe("logTrainingEvent", () => {
   // -------------------------------------------------------------------------
   // 2. Quick log with exercises: []
   // -------------------------------------------------------------------------
-  it("[2] empty exercises array is treated as quick-log (no exercise_logs delete/insert)", async () => {
+  it("[2] empty exercises array is a quick-log: clears exercise_logs, inserts none", async () => {
     const eventQ = createMockQuery({ data: eventRow(), error: null });
     const clientQ = createMockQuery({
       data: { expected_check_in_day: "sunday" },
@@ -220,6 +225,7 @@ describe("logTrainingEvent", () => {
       error: null,
     });
     const upsertQ = createMockQuery({ data: { id: SESSION_LOG_ID }, error: null });
+    const exQ = createMockQuery({ data: null, error: null });
     const linkQ = createMockQuery({ data: null, error: null });
 
     installRouter({
@@ -227,6 +233,7 @@ describe("logTrainingEvent", () => {
       clients: clientQ,
       training_sessions: sessionSnapQ,
       session_logs: upsertQ,
+      exercise_logs: exQ,
     });
 
     await logTrainingEvent({
@@ -235,7 +242,10 @@ describe("logTrainingEvent", () => {
       payload: { completionQuality: "partial", exercises: [] },
     });
 
-    expect(mockFrom).not.toHaveBeenCalledWith("exercise_logs");
+    // Full replace: cleared, nothing inserted, no set_logs.
+    expect(exQ.delete).toHaveBeenCalledTimes(1);
+    expect(exQ.insert).not.toHaveBeenCalled();
+    expect(mockFrom).not.toHaveBeenCalledWith("set_logs");
     // Status maps from quick-log completionQuality.
     expect(linkQ.update.mock.calls[0][0].status).toBe("partial");
   });
@@ -1159,6 +1169,34 @@ describe("logTrainingEvent", () => {
     // training_events update was NOT called (status link is step 7, after step 6).
     expect(linkQ.update).not.toHaveBeenCalled();
   });
+
+  it("[14] lock: a PAST event already logged throws DayLockedError before writing", async () => {
+    const eventQ = createMockQuery({
+      data: eventRow({ date: "2026-05-01", session_log_id: SESSION_LOG_ID }),
+      error: null,
+    });
+    const clientQ = createMockQuery({
+      data: { expected_check_in_day: null, timezone: "UTC" },
+      error: null,
+    });
+    const writeSpy = createMockQuery({ data: { id: SESSION_LOG_ID }, error: null });
+
+    installRouter({
+      training_events: eventQ,
+      clients: clientQ,
+      session_logs: writeSpy,
+    });
+
+    await expect(
+      logTrainingEvent({
+        eventId: EVENT_ID,
+        clientId: CLIENT_ID,
+        payload: { completionQuality: "full" },
+      }),
+    ).rejects.toThrow(/locked/i);
+    expect(writeSpy.insert).not.toHaveBeenCalled();
+    expect(writeSpy.update).not.toHaveBeenCalled();
+  });
 });
 
 describe("getTrainingEventDetail", () => {
@@ -1860,6 +1898,65 @@ describe("logTrainingSessionForDate", () => {
     expect(updateQ.insert).not.toHaveBeenCalled();
     // The matcher read was never reached (the second training_events query is untouched).
     expect(matcherSpy.select).not.toHaveBeenCalled();
+  });
+
+  it("[s4] one log per rest day: a DIFFERENT session on the same date EDITS the existing log (no second row)", async () => {
+    const clientQ = createMockQuery({ data: { expected_check_in_day: null }, error: null });
+    // Existing unmatched rest-day log (a different session was logged earlier).
+    const idemQ = createMockQuery({
+      data: { id: SESSION_LOG_ID, training_event_id: null },
+      error: null,
+    });
+    const sessionSnapQ = createMockQuery({ data: SESSION_PRESCRIPTION, error: null });
+    const updateQ = createMockQuery({ data: { id: SESSION_LOG_ID }, error: null });
+    const exQ = createMockQuery({ data: null, error: null });
+    const matcherSpy = createMockQuery({ data: [], error: null });
+
+    installRouter({
+      clients: clientQ,
+      training_events: [matcherSpy],
+      training_sessions: sessionSnapQ,
+      session_logs: [idemQ, updateQ],
+      exercise_logs: exQ,
+    });
+
+    const result = await logTrainingSessionForDate({
+      clientId: CLIENT_ID,
+      date: DATE,
+      payload: { date: DATE, performedSessionId: "a-different-session", completionQuality: "full" },
+    });
+
+    expect(result).toEqual({ sessionLogId: SESSION_LOG_ID });
+    expect(updateQ.update).toHaveBeenCalled(); // edited in place
+    expect(updateQ.insert).not.toHaveBeenCalled(); // no second row
+    expect(matcherSpy.select).not.toHaveBeenCalled(); // existing found → matcher skipped
+  });
+
+  it("[s5] lock: a PAST day that already has a log throws DayLockedError before writing", async () => {
+    const clientQ = createMockQuery({
+      data: { expected_check_in_day: null, timezone: "UTC" },
+      error: null,
+    });
+    const idemQ = createMockQuery({
+      data: { id: SESSION_LOG_ID, training_event_id: null },
+      error: null,
+    });
+    const writeSpy = createMockQuery({ data: { id: SESSION_LOG_ID }, error: null });
+
+    installRouter({
+      clients: clientQ,
+      session_logs: [idemQ, writeSpy],
+    });
+
+    await expect(
+      logTrainingSessionForDate({
+        clientId: CLIENT_ID,
+        date: "2026-05-01", // past (today = 2026-05-08)
+        payload: { date: "2026-05-01", performedSessionId: PERFORMED, completionQuality: "full" },
+      }),
+    ).rejects.toThrow(/locked/i);
+    expect(writeSpy.update).not.toHaveBeenCalled();
+    expect(writeSpy.insert).not.toHaveBeenCalled();
   });
 });
 

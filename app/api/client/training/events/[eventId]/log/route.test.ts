@@ -28,6 +28,7 @@ import { clientApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { getAuthenticatedClientId } from "@/lib/auth-helpers";
 import { logTrainingEvent } from "@/services/training-log-service";
+import { DayLockedError } from "@/lib/daily-log-permissions";
 
 const EVENT_ID = "11111111-1111-1111-1111-111111111111";
 const CLIENT_ID = "22222222-2222-2222-2222-222222222222";
@@ -146,6 +147,19 @@ describe("POST /api/client/training/events/[eventId]/log", () => {
 
     expect(response.status).toBe(404);
     expect(data).toEqual({ success: false, error: "Event not found" });
+  });
+
+  it("returns 403 when the day is locked (service throws DayLockedError)", async () => {
+    vi.mocked(getAuthenticatedClientId).mockResolvedValue(CLIENT_ID);
+    vi.mocked(logTrainingEvent).mockRejectedValue(
+      new DayLockedError("2026-05-01", "training"),
+    );
+
+    const response = await POST(makeRequest(validBody), {
+      params: Promise.resolve({ eventId: EVENT_ID }),
+    });
+
+    expect(response.status).toBe(403);
   });
 
   it("returns 500 when service throws an unexpected error", async () => {

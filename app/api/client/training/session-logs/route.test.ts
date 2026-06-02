@@ -29,7 +29,7 @@ const { NoActivePlanError, DayLockedError } = vi.hoisted(() => {
     }
   }
   class DayLockedError extends Error {
-    constructor(date: string) {
+    constructor(date: string, _resourceType?: string) {
       super(`Day ${date} is locked`);
       this.name = "DayLockedError";
     }
@@ -41,10 +41,6 @@ vi.mock("@/services/daily-context-service", () => ({
   resolvePlanContextForDate: vi.fn(),
   assertHasActivePlan: vi.fn(),
   NoActivePlanError,
-}));
-
-vi.mock("@/services/daily-log-permissions-service", () => ({
-  assertCanEdit: vi.fn(),
 }));
 
 vi.mock("@/lib/daily-log-permissions", () => ({ DayLockedError }));
@@ -60,7 +56,6 @@ import {
   resolvePlanContextForDate,
   assertHasActivePlan,
 } from "@/services/daily-context-service";
-import { assertCanEdit } from "@/services/daily-log-permissions-service";
 import { logTrainingSessionForDate } from "@/services/training-log-service";
 
 const CLIENT_ID = "22222222-2222-2222-2222-222222222222";
@@ -94,7 +89,6 @@ describe("POST /api/client/training/session-logs", () => {
       trainingPlanId: "tp-1",
     });
     vi.mocked(assertHasActivePlan).mockReturnValue(undefined);
-    vi.mocked(assertCanEdit).mockResolvedValue({ loggedStatus: "never-logged" });
   });
 
   it("returns 201 with sessionLogId on success", async () => {
@@ -136,11 +130,12 @@ describe("POST /api/client/training/session-logs", () => {
     expect(logTrainingSessionForDate).not.toHaveBeenCalled();
   });
 
-  it("returns 403 when the day is locked", async () => {
-    vi.mocked(assertCanEdit).mockRejectedValue(new DayLockedError("2026-05-08"));
+  it("returns 403 when the day is locked (service throws DayLockedError)", async () => {
+    vi.mocked(logTrainingSessionForDate).mockRejectedValue(
+      new DayLockedError("2026-05-08", "training"),
+    );
     const res = await POST(makeRequest(validBody));
     expect(res.status).toBe(403);
-    expect(logTrainingSessionForDate).not.toHaveBeenCalled();
   });
 
   it("returns the CSRF rejection verbatim", async () => {

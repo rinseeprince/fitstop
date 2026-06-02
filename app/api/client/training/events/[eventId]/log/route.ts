@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireClientAuth } from "@/lib/require-client-auth";
 import { logTrainingEventSchema } from "@/lib/validations/training";
 import { logTrainingEvent } from "@/services/training-log-service";
+import { DayLockedError } from "@/lib/daily-log-permissions";
 
 export async function POST(
   request: NextRequest,
@@ -45,6 +46,13 @@ export async function POST(
       { status: 201 },
     );
   } catch (error) {
+    // Past day already logged (or future) → locked.
+    if (error instanceof DayLockedError) {
+      return NextResponse.json(
+        { success: false, error: error.message },
+        { status: 403 },
+      );
+    }
     const message = error instanceof Error ? error.message : "";
     // Service collapses missing-event and wrong-client into one throw.
     // Return 404 for both — the alternative (403 on wrong client) leaks

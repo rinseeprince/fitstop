@@ -106,3 +106,27 @@ export async function assertCanEdit(params: {
   }
   return { loggedStatus };
 }
+
+/**
+ * Training-specific date-edit lock. The "logged" signal for training is NOT the
+ * `training_logs` spine (session logging never writes it) — it comes from real
+ * `session_logs` / `training_events` state, which the caller already has, so it
+ * passes `loggedStatus` directly. Applies the same pure `canEditDay` rule (today
+ * editable; past + logged → locked; future → locked) and throws `DayLockedError`
+ * → 403 when not editable.
+ */
+export async function assertCanEditTrainingDay(
+  clientId: string,
+  date: string,
+  loggedStatus: DayLogStatus,
+): Promise<void> {
+  const { data: clientRow } = await supabaseAdmin
+    .from("clients")
+    .select("timezone")
+    .eq("id", clientId)
+    .single();
+  const clientTimezone = clientRow?.timezone ?? "UTC";
+  if (!canEditDay(date, loggedStatus, clientTimezone)) {
+    throw new DayLockedError(date, "training");
+  }
+}
