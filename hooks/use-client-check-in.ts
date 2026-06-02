@@ -7,6 +7,7 @@ import type {
   CheckInClientInfo,
   CheckInTrainingContext,
   CheckInNutritionContext,
+  CheckInTrainingEventDetail,
 } from "@/types/check-in";
 import type { DailyLog } from "@/types/daily-log";
 
@@ -20,6 +21,9 @@ type CheckInContextData = {
   trainingContext?: CheckInTrainingContext;
   nutritionContext?: CheckInNutritionContext;
   trainingPeriodStats?: TrainingPeriodStats;
+  // Per-event training detail (Session 6.2+), drives the editable/locked rows in
+  // the check-in form's training section (Session 6.4).
+  trainingEventDetails?: CheckInTrainingEventDetail[];
   dailyLogs?: DailyLog[];
   periodStart?: string;
   periodEnd?: string;

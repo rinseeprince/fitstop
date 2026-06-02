@@ -20,6 +20,8 @@ type CheckInFormProps = {
   token: string;
   clientInfo: CheckInClientInfo;
   trainingContext?: CheckInTrainingContext;
+  // Still accepted from the token page, but unused since 6.4 (training is the
+  // only editable section and it's read-only in this unauthenticated flow).
   nutritionContext?: CheckInNutritionContext;
 };
 
@@ -29,7 +31,6 @@ export const CheckInForm = ({
   token,
   clientInfo,
   trainingContext,
-  nutritionContext,
 }: CheckInFormProps) => {
   const {
     currentStep,
@@ -133,13 +134,18 @@ export const CheckInForm = ({
         )}
 
         {currentStep === 4 && (
+          // Legacy unauthenticated magic-link flow: it can't satisfy
+          // requireClientAuth, so it can't call the per-card training log
+          // endpoint. Training renders read-only here (no events, no-op writer).
           <StepTraining
             data={formData}
             onChange={updateFormData}
             trainingContext={trainingContext}
-            nutritionContext={nutritionContext}
+            trainingEventDetails={[]}
+            onLogEvent={() =>
+              Promise.reject(new Error("Training editing is unavailable in this flow."))
+            }
             weightUnit={formData.weightUnit || "lbs"}
-            frequencyDays={clientInfo.checkInFrequencyDays}
           />
         )}
       </div>

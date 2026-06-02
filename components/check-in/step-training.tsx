@@ -1,18 +1,16 @@
 "use client";
 
 import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
-import { Slider } from "@/components/ui/slider";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { TrainingSessionChecklist } from "./training-session-checklist";
-import { NutritionAdherenceSection } from "./nutrition-adherence-section";
 import { ExerciseHighlightsSection } from "./exercise-highlights-section";
 import { DailyLogsTrainingSummary } from "./daily-logs-training-summary";
 import type {
   EnhancedTrainingMetrics,
   CheckInTrainingContext,
-  CheckInNutritionContext,
+  CheckInTrainingEventDetail,
+  SessionCompletionQuality,
 } from "@/types/check-in";
 import type { DailyLog } from "@/types/daily-log";
 
@@ -25,12 +23,18 @@ type StepTrainingProps = {
   data: Partial<EnhancedTrainingMetrics>;
   onChange: (data: Partial<EnhancedTrainingMetrics>) => void;
   trainingContext?: CheckInTrainingContext;
-  nutritionContext?: CheckInNutritionContext;
+  // Per-event training detail for the period — drives the editable/locked
+  // training rows (Session 6.4). Source of truth: training_events + session_logs.
+  trainingEventDetails?: CheckInTrainingEventDetail[];
+  clientTimezone?: string;
+  // Fill-gap log writer (registers an in-flight POST the page flushes pre-submit).
+  onLogEvent: (
+    eventId: string,
+    payload: { completionQuality: SessionCompletionQuality; notes?: string }
+  ) => Promise<void>;
   trainingPeriodStats?: TrainingPeriodStats;
   periodDays?: number;
-  clientWeightKg?: number;
   weightUnit?: "lbs" | "kg";
-  frequencyDays?: number;
   dailyLogs?: DailyLog[];
 };
 
@@ -38,166 +42,60 @@ export const StepTraining = ({
   data,
   onChange,
   trainingContext,
-  nutritionContext,
+  trainingEventDetails = [],
+  clientTimezone = "UTC",
+  onLogEvent,
   trainingPeriodStats,
   periodDays,
-  clientWeightKg,
   weightUnit = "lbs",
-  frequencyDays = 7,
   dailyLogs = [],
 }: StepTrainingProps) => {
   const hasActivePlan = trainingContext?.hasActivePlan ?? false;
-  const hasNutritionPlan = nutritionContext?.hasNutritionPlan ?? false;
-  const hasDailyLogs = dailyLogs && dailyLogs.length > 0;
-
-  // Legacy adherence color for fallback slider
-  const adherenceColor =
-    !data.adherencePercentage || data.adherencePercentage < 50
-      ? "text-destructive"
-      : data.adherencePercentage < 75
-      ? "text-warning"
-      : data.adherencePercentage < 90
-      ? "text-warning"
-      : "text-success";
 
   return (
     <div className="space-y-8">
       <div>
         <h3 className="text-lg font-semibold mb-1">Training & Nutrition</h3>
         <p className="text-sm text-muted-foreground">
-          How did this week go? Be honest - it helps your coach help you!
+          Your training is logged from your daily logs. Fill in any sessions you
+          missed logging below.
         </p>
       </div>
 
-      {/* Training Sessions Section */}
-      {hasDailyLogs ? (
-        // Show auto-calculated summary from daily logs
-        <DailyLogsTrainingSummary
-          dailyLogs={dailyLogs}
-          trainingContext={trainingContext}
-          trainingPeriodStats={trainingPeriodStats}
-          periodDays={periodDays}
-        />
-      ) : hasActivePlan && trainingContext && trainingContext.sessions.length > 0 ? (
-        <TrainingSessionChecklist
-          sessions={trainingContext.sessions}
-          completions={data.sessionCompletions || []}
-          onChange={(sessionCompletions) =>
-            onChange({ ...data, sessionCompletions })
-          }
-          frequencyDays={frequencyDays}
-        />
-      ) : (
-        <div className="space-y-3">
-          <Label htmlFor="workouts">Workouts Completed This Week</Label>
-          <Input
-            id="workouts"
-            type="number"
-            min="0"
-            max="20"
-            placeholder="e.g., 5"
-            value={data.workoutsCompleted || ""}
-            onChange={(e) =>
-              onChange({
-                ...data,
-                workoutsCompleted: parseInt(e.target.value) || undefined,
-              })
-            }
-          />
-          <p className="text-xs text-muted-foreground">
-            Include all training sessions, not just gym workouts
-          </p>
-        </div>
-      )}
+      {/* Training Sessions — editable/locked viewer over the period's events.
+          Daily logs are the source of truth (Session 6.4). */}
+      <TrainingSessionChecklist
+        events={trainingEventDetails}
+        clientTimezone={clientTimezone}
+        onLogEvent={onLogEvent}
+      />
 
-      {/* Only show separator if NOT using daily logs (daily logs summary includes nutrition) */}
-      {!hasDailyLogs && <Separator />}
+      <Separator />
 
-      {/* Nutrition Adherence Section - Only show manual entry if no daily logs */}
-      {!hasDailyLogs && (
-        hasNutritionPlan ? (
-          <NutritionAdherenceSection
-            nutritionContext={nutritionContext}
-            adherence={data.nutritionAdherence || {}}
-            onChange={(nutritionAdherence) =>
-              onChange({ ...data, nutritionAdherence })
-            }
-            frequencyDays={frequencyDays}
-          />
-        ) : (
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <Label>Nutrition Plan Adherence</Label>
-              <span className={`text-sm font-semibold ${adherenceColor}`}>
-                {data.adherencePercentage || 50}%
-              </span>
-            </div>
-            <Slider
-              value={[data.adherencePercentage || 50]}
-              onValueChange={(value) =>
-                onChange({ ...data, adherencePercentage: value[0] })
-              }
-              min={0}
-              max={100}
-              step={5}
-              className="w-full"
-            />
-            <div className="flex justify-between text-xs text-muted-foreground">
-              <span>0% (Didn&apos;t follow)</span>
-              <span>100% (Perfect)</span>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              How well did you stick to your nutrition goals?
-            </p>
-          </div>
-        )
-      )}
-
-      {/* Additional nutrition question when using daily logs */}
-      {hasDailyLogs && (
-        <div className="space-y-3">
-          <Label htmlFor="nutrition-factors">Anything that affected your nutrition this week?</Label>
-          <Textarea
-            id="nutrition-factors"
-            placeholder="Examples:
-• Travel made it tough to track
-• Social events affected targets
-• Felt extra hungry after hard training
-• Dealing with stress eating"
-            value={data.nutritionAdherence?.notes || ""}
-            onChange={(e) => 
-              onChange({ 
-                ...data, 
-                nutritionAdherence: { 
-                  ...data.nutritionAdherence,
-                  notes: e.target.value 
-                }
-              })
-            }
-            rows={4}
-            className="resize-none"
-          />
-          <p className="text-xs text-muted-foreground">
-            Optional: Help your coach understand any nutrition challenges
-          </p>
-        </div>
-      )}
+      {/* Nutrition — read-only summary derived from daily logs. */}
+      <DailyLogsTrainingSummary
+        dailyLogs={dailyLogs}
+        trainingContext={trainingContext}
+        trainingPeriodStats={trainingPeriodStats}
+        periodDays={periodDays}
+      />
 
       <Separator />
 
       {/* Exercise Highlights (Collapsible) */}
       {hasActivePlan && trainingContext && (
-        <ExerciseHighlightsSection
-          exercises={trainingContext.sessions.map((s) => s.exercises)}
-          highlights={data.exerciseHighlights || []}
-          onChange={(exerciseHighlights) =>
-            onChange({ ...data, exerciseHighlights })
-          }
-          weightUnit={weightUnit}
-        />
+        <>
+          <ExerciseHighlightsSection
+            exercises={trainingContext.sessions.map((s) => s.exercises)}
+            highlights={data.exerciseHighlights || []}
+            onChange={(exerciseHighlights) =>
+              onChange({ ...data, exerciseHighlights })
+            }
+            weightUnit={weightUnit}
+          />
+          <Separator />
+        </>
       )}
-
-      <Separator />
 
       {/* Other Wins */}
       <div className="space-y-3">

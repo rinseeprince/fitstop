@@ -92,7 +92,7 @@ export type CheckInTrainingEventDetail = {
 export type CheckInSessionCompletion = {
   id?: string;
   checkInId?: string;
-  trainingSessionId: string;
+  trainingSessionId: string | null; // API/UI shape; DERIVED from training_events.status + session_logs (no backing table)
   sessionName: string;
   dayOfWeek?: DayOfWeek;
   completed: boolean;
@@ -453,6 +453,9 @@ export type CheckInClientInfo = {
   coachName: string;
   checkInFrequencyDays?: number; // 7 for weekly, 14 for bi-weekly, etc.
   lastCheckInDate?: string; // ISO date string (YYYY-MM-DD) of last check-in
+  // Client's IANA timezone — used by the check-in form to compute "today" for
+  // canEditDay (Session 6.4). Optional for back-compat with the legacy token flow.
+  timezone?: string;
 };
 
 // Request/Response types for API

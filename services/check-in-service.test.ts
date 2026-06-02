@@ -10,7 +10,49 @@ vi.mock('./supabase-admin', () => ({
   },
 }))
 
+// Session 6.4: submitCheckIn now DERIVES its snapshot columns from the spine.
+// Mock those service dependencies so the submit tests assert the derived values
+// (and that the exercise-highlights writer is the only related-data write left —
+// the session-completions writer was deleted with its dropped table).
+const getClientByIdMock = vi.fn()
+const getCheckInTrainingPeriodStatsMock = vi.fn()
+const getNutritionSummaryForPeriodMock = vi.fn()
+const getDailyLogsMock = vi.fn()
+const insertExerciseHighlightsMock = vi.fn()
+const calculateCheckInPeriodMock = vi.fn()
+
+vi.mock('./client-service', () => ({
+  getClientById: (...args: unknown[]) => getClientByIdMock(...args),
+}))
+vi.mock('./check-in-context-service', () => ({
+  getCheckInTrainingPeriodStats: (...args: unknown[]) => getCheckInTrainingPeriodStatsMock(...args),
+}))
+vi.mock('./weekly-nutrition-service', () => ({
+  getNutritionSummaryForPeriod: (...args: unknown[]) => getNutritionSummaryForPeriodMock(...args),
+}))
+vi.mock('./daily-logs-service', () => ({
+  getDailyLogs: (...args: unknown[]) => getDailyLogsMock(...args),
+}))
+vi.mock('./check-in-details-service', () => ({
+  insertExerciseHighlights: (...args: unknown[]) => insertExerciseHighlightsMock(...args),
+  // deriveSessionCompletionsForCheckIn / getCheckInWithDetails / getCheckInExerciseHighlights
+  // are re-exported but unused by these tests; stub to keep the module mock total.
+  deriveSessionCompletionsForCheckIn: vi.fn(),
+  getCheckInWithDetails: vi.fn(),
+  getCheckInExerciseHighlights: vi.fn(),
+}))
+
 import { supabaseAdmin } from './supabase-admin'
+
+// We mock the whole date-helpers module elsewhere is risky (the service uses
+// several helpers), so instead we spy on calculateCheckInPeriod via partial mock.
+vi.mock('@/lib/date-helpers', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/date-helpers')>()
+  return {
+    ...actual,
+    calculateCheckInPeriod: (...args: unknown[]) => calculateCheckInPeriodMock(...args),
+  }
+})
 
 // Helper to create a chainable mock query
 function createMockQuery(result: { data: unknown; error: unknown }) {
@@ -221,71 +263,117 @@ describe('Check-in Service', () => {
     })
   })
 
-  describe('submitCheckIn', () => {
-    it('submits a basic check-in successfully', async () => {
+  describe('submitCheckIn (Session 6.4 spine derivation)', () => {
+    function mockInsert(result: { data: unknown; error: unknown }) {
       const mockInsertQuery = {
         select: vi.fn().mockReturnThis(),
         insert: vi.fn().mockReturnThis(),
-        single: vi.fn().mockResolvedValue({
-          data: { id: 'new-check-in-id' },
-          error: null,
-        }),
+        single: vi.fn().mockResolvedValue(result),
       }
-
       vi.mocked(supabaseAdmin.from).mockReturnValue(mockInsertQuery as any)
+      return mockInsertQuery
+    }
+
+    beforeEach(() => {
+      getClientByIdMock.mockReset()
+      getCheckInTrainingPeriodStatsMock.mockReset()
+      getNutritionSummaryForPeriodMock.mockReset()
+      getDailyLogsMock.mockReset()
+      insertExerciseHighlightsMock.mockReset()
+      calculateCheckInPeriodMock.mockReset()
+      // Default happy-path period + client.
+      getClientByIdMock.mockResolvedValue({ expectedCheckInDay: 'sunday' })
+      calculateCheckInPeriodMock.mockReturnValue({ periodStart: '2026-05-08', periodEnd: '2026-05-14' })
+      getCheckInTrainingPeriodStatsMock.mockResolvedValue({ sessionsCompleted: 0, sessionsPlanned: 0 })
+      getNutritionSummaryForPeriodMock.mockResolvedValue(null)
+      getDailyLogsMock.mockResolvedValue([])
+    })
+
+    it('submits a basic check-in successfully', async () => {
+      const q = mockInsert({ data: { id: 'new-check-in-id' }, error: null })
 
       const { submitCheckIn } = await import('./check-in-service')
-      const result = await submitCheckIn('client-123', {
-        mood: 4,
-        energy: 7,
-        sleep: 8,
-        stress: 3,
-        weight: 180,
-        weightUnit: 'lbs',
-      })
+      const result = await submitCheckIn('client-123', { weight: 180, weightUnit: 'lbs' })
 
       expect(result).toBe('new-check-in-id')
       expect(supabaseAdmin.from).toHaveBeenCalledWith('check_ins')
+      expect(q.insert).toHaveBeenCalled()
     })
 
-    it('calculates adherence from nutrition days on target', async () => {
-      const mockInsertQuery = {
-        select: vi.fn().mockReturnThis(),
-        insert: vi.fn().mockReturnThis(),
-        single: vi.fn().mockResolvedValue({
-          data: { id: 'check-in-id' },
-          error: null,
-        }),
-      }
+    it('DERIVES snapshot columns from the spine, not the form body', async () => {
+      getCheckInTrainingPeriodStatsMock.mockResolvedValue({ sessionsCompleted: 4, sessionsPlanned: 5 })
+      getNutritionSummaryForPeriodMock.mockResolvedValue({ daysOnTarget: 5, adherencePercentage: 71.4 })
+      getDailyLogsMock.mockResolvedValue([
+        { date: '2026-05-08', mood: 4, energy: 8, sleep: 7, stress: 3 },
+        { date: '2026-05-09', mood: 2, energy: 6, sleep: 5, stress: 5 },
+      ])
 
-      vi.mocked(supabaseAdmin.from).mockReturnValue(mockInsertQuery as any)
+      const q = mockInsert({ data: { id: 'ci' }, error: null })
+
+      const { submitCheckIn } = await import('./check-in-service')
+      // Form body carries bogus session/nutrition/mood values that MUST be ignored.
+      await submitCheckIn('client-123', {
+        mood: 99,
+        energy: 99,
+        sleep: 99,
+        stress: 99,
+        workoutsCompleted: 99,
+        adherencePercentage: 99,
+        sessionCompletions: [{ trainingSessionId: 's', sessionName: 'x', completed: true }],
+        nutritionAdherence: { daysOnTarget: 99 },
+        notes: 'reflection',
+      } as any)
+
+      const inserted = q.insert.mock.calls[0][0]
+      expect(inserted.workouts_completed).toBe(4) // from training stats, not 99
+      expect(inserted.nutrition_days_on_target).toBe(5) // from nutrition summary, not 99
+      expect(inserted.adherence_percentage).toBe(71) // rounded, capped 0-100
+      // Wellness averaged via calculateMetricAverages over the period rows.
+      expect(inserted.mood).toBe(3) // round((4+2)/2)
+      expect(inserted.energy).toBe(7) // round((8+6)/2)
+      expect(inserted.sleep).toBe(6) // round((7+5)/2)
+      expect(inserted.stress).toBe(4) // round((3+5)/2)
+      // The qualitative reflection is preserved.
+      expect(inserted.notes).toBe('reflection')
+      // Period persisted.
+      expect(inserted.period_start).toBe('2026-05-08')
+      expect(inserted.period_end).toBe('2026-05-14')
+      // Reuses getNutritionSummaryForPeriod (Pin 1) and getDailyLogs (Pin 2).
+      expect(getNutritionSummaryForPeriodMock).toHaveBeenCalledWith('client-123', '2026-05-08', '2026-05-14')
+      expect(getDailyLogsMock).toHaveBeenCalledWith('client-123', '2026-05-08', '2026-05-14')
+    })
+
+    it('caps adherence_percentage at 100', async () => {
+      getNutritionSummaryForPeriodMock.mockResolvedValue({ daysOnTarget: 7, adherencePercentage: 142 })
+      const q = mockInsert({ data: { id: 'ci' }, error: null })
+
+      const { submitCheckIn } = await import('./check-in-service')
+      await submitCheckIn('client-123', {})
+
+      expect(q.insert.mock.calls[0][0].adherence_percentage).toBe(100)
+    })
+
+    it('writes only exercise highlights as related data (the session-completions writer is gone)', async () => {
+      mockInsert({ data: { id: 'ci' }, error: null })
 
       const { submitCheckIn } = await import('./check-in-service')
       await submitCheckIn('client-123', {
-        nutritionAdherence: {
-          daysOnTarget: 5,
-        },
-      })
+        exerciseHighlights: [
+          { exerciseName: 'Squat', highlightType: 'pr' },
+        ],
+      } as any)
 
-      // With 5 days on target out of 7, adherence should be ~71%
-      expect(mockInsertQuery.insert).toHaveBeenCalled()
+      // No session-completions writer exists anymore — assert the highlights one
+      // is the only related-data write.
+      expect(insertExerciseHighlightsMock).toHaveBeenCalledTimes(1)
     })
 
     it('throws error when submission fails', async () => {
-      const mockInsertQuery = {
-        select: vi.fn().mockReturnThis(),
-        insert: vi.fn().mockReturnThis(),
-        single: vi.fn().mockResolvedValue({
-          data: null,
-          error: { message: 'Insert failed' },
-        }),
-      }
-
-      vi.mocked(supabaseAdmin.from).mockReturnValue(mockInsertQuery as any)
+      mockInsert({ data: null, error: { message: 'Insert failed' } })
 
       const { submitCheckIn } = await import('./check-in-service')
 
-      await expect(submitCheckIn('client-123', { mood: 4 })).rejects.toThrow(
+      await expect(submitCheckIn('client-123', {})).rejects.toThrow(
         'Failed to submit check-in: Insert failed'
       )
     })

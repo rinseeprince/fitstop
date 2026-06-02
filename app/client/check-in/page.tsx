@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSWRConfig } from "swr";
 import { ArrowLeft, ArrowRight, Send, CalendarCheck, Clock } from "lucide-react";
@@ -19,7 +19,7 @@ import {
 import { useCheckInForm } from "@/hooks/use-check-in-form";
 import { useClientCheckIn } from "@/hooks/use-client-check-in";
 import { toast } from "sonner";
-import { aggregateDailyLogs } from "@/utils/daily-logs-aggregation";
+import type { SessionCompletionQuality } from "@/types/check-in";
 
 const stepLabels = ["Feeling", "Metrics", "Photos", "Training"];
 
@@ -51,28 +51,52 @@ export default function ClientCheckInPage() {
   const [isSuccess, setIsSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Pin 3: training fill-gap logging is fire-and-flush. Each per-event POST
+  // registers its promise here; handleSubmit FLUSHES + AWAITS all of them before
+  // calling the check-in submit, so the server's submit-time derivation reads
+  // already-updated training_events.
+  const pendingTrainingPosts = useRef<Set<Promise<void>>>(new Set());
+
+  const logTrainingEvent = async (
+    eventId: string,
+    payload: { completionQuality: SessionCompletionQuality; notes?: string }
+  ): Promise<void> => {
+    const post = (async () => {
+      const response = await fetch(`/api/client/training/events/${eventId}/log`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+        throw new Error(result.error || "Failed to log session");
+      }
+    })();
+
+    pendingTrainingPosts.current.add(post);
+    try {
+      await post;
+    } finally {
+      pendingTrainingPosts.current.delete(post);
+    }
+  };
+
   const handleSubmit = async () => {
     setIsSubmitting(true);
     setError(null);
 
     try {
-      const enrichedFormData = { ...formData };
-
-      if (contextData?.dailyLogs && contextData.dailyLogs.length > 0) {
-        const aggregated = aggregateDailyLogs(contextData.dailyLogs);
-
-        if (!enrichedFormData.nutritionAdherence) {
-          enrichedFormData.nutritionAdherence = {};
-        }
-        enrichedFormData.nutritionAdherence.daysOnTarget = aggregated.nutritionHitDays;
-
-        if (!enrichedFormData.workoutsCompleted && !enrichedFormData.sessionCompletions?.length) {
-          enrichedFormData.workoutsCompleted = contextData.trainingPeriodStats?.sessionsCompleted
-            ?? aggregated.sessionsCompleted;
-        }
+      // Flush + await any in-flight training fill-gap POSTs so the server's
+      // submit-time workouts_completed derivation reads updated training_events.
+      // allSettled: a failed per-event log already surfaced inline on its row;
+      // it must not block the check-in submit.
+      if (pendingTrainingPosts.current.size > 0) {
+        await Promise.allSettled(Array.from(pendingTrainingPosts.current));
       }
 
-      const result = await submitCheckIn(enrichedFormData);
+      // The server DERIVES sessionCompletions / nutrition adherence / mood…stress
+      // from the spine — the form only sends the qualitative fields it owns.
+      const result = await submitCheckIn(formData);
 
       if (!result.success) {
         throw new Error(result.error || "Failed to submit check-in");
@@ -196,11 +220,12 @@ export default function ClientCheckInPage() {
                   data={formData}
                   onChange={updateFormData}
                   trainingContext={contextData.trainingContext}
-                  nutritionContext={contextData.nutritionContext}
+                  trainingEventDetails={contextData.trainingEventDetails}
+                  clientTimezone={contextData.clientInfo.timezone}
+                  onLogEvent={logTrainingEvent}
                   trainingPeriodStats={contextData.trainingPeriodStats}
                   periodDays={contextData.periodDays}
                   weightUnit={formData.weightUnit || "lbs"}
-                  frequencyDays={contextData.clientInfo.checkInFrequencyDays}
                   dailyLogs={contextData.dailyLogs}
                 />
               )}

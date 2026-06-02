@@ -27,7 +27,6 @@ export type SetLogInsert = Database["public"]["Tables"]["set_logs"]["Insert"];
 export type SetLogUpdate = Database["public"]["Tables"]["set_logs"]["Update"];
 /** @deprecated Use SessionLogRow */
 export type ClientSessionCompletionRow = SessionLogRow;
-export type CheckInSessionCompletionRow = Database["public"]["Tables"]["check_in_session_completions"]["Row"];
 export type CheckInExerciseHighlightRow = Database["public"]["Tables"]["check_in_exercise_highlights"]["Row"];
 
 // Additional helper types for insert/update operations

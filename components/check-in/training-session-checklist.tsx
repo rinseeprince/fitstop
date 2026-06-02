@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo } from "react";
-import { Checkbox } from "@/components/ui/checkbox";
+import { useState } from "react";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -10,199 +10,221 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Dumbbell, Calendar } from "lucide-react";
+import { Dumbbell, Calendar, Lock } from "lucide-react";
+import { canEditDay } from "@/lib/daily-log-permissions";
 import type {
-  CheckInSessionCompletion,
-  CheckInTrainingContext,
+  CheckInTrainingEventDetail,
+  SessionCompletionQuality,
 } from "@/types/check-in";
 
-type ExpandedSession = CheckInTrainingContext["sessions"][0] & {
-  weekNumber?: number;
-  displayName: string;
+// Map a completionQuality back to its UI status label. A completed event with no
+// logged quality (e.g. marked complete elsewhere) shows as "full".
+const statusLabel = (
+  detail: CheckInTrainingEventDetail
+): "full" | "partial" | "skipped" | "not_logged" => {
+  if (detail.logStatus === "not_logged") return "not_logged";
+  return detail.completionQuality ?? "full";
+};
+
+const QUALITY_OPTIONS: { value: SessionCompletionQuality; label: string }[] = [
+  { value: "full", label: "Completed" },
+  { value: "partial", label: "Partial" },
+  { value: "skipped", label: "Skipped" },
+];
+
+const formatDay = (date: string) => {
+  const d = new Date(`${date}T12:00:00`);
+  return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
 };
 
 type TrainingSessionChecklistProps = {
-  sessions: CheckInTrainingContext["sessions"];
-  completions: CheckInSessionCompletion[];
-  onChange: (completions: CheckInSessionCompletion[]) => void;
-  frequencyDays?: number;
+  /** Per-event training detail for the period (Session 6.2+ shape). */
+  events: CheckInTrainingEventDetail[];
+  /** Client IANA timezone — drives canEditDay's "today" computation. */
+  clientTimezone: string;
+  /**
+   * Fill-gap log writer. Registers an in-flight POST so the page can flush+await
+   * all pending writes before submitting the check-in (Pin 3). Resolves when the
+   * write completes; rejects on failure (surfaced inline on the row).
+   */
+  onLogEvent: (
+    eventId: string,
+    payload: { completionQuality: SessionCompletionQuality; notes?: string }
+  ) => Promise<void>;
 };
 
-const DAY_LABELS: Record<string, string> = {
-  monday: "Mon",
-  tuesday: "Tue",
-  wednesday: "Wed",
-  thursday: "Thu",
-  friday: "Fri",
-  saturday: "Sat",
-  sunday: "Sun",
-};
-
+/**
+ * Training section of the check-in form (Session 6.4).
+ *
+ * Daily logs are the source of truth — this is a VIEWER over the period's
+ * training_events. Each row is either:
+ *   - locked (display-only) when canEditDay(date, loggedStatus, tz) === false —
+ *     i.e. a future day, or a past day that was already logged; OR
+ *   - editable (quick mark complete/partial/skipped + optional notes) which
+ *     POSTs to /api/client/training/events/[eventId]/log via onLogEvent.
+ *
+ * canEditDay is the ONLY lock rule. loggedStatus comes from logStatus
+ * ("logged" when the event has a session_log, else "never-logged").
+ */
 export const TrainingSessionChecklist = ({
-  sessions,
-  completions,
-  onChange,
-  frequencyDays = 7,
+  events,
+  clientTimezone,
+  onLogEvent,
 }: TrainingSessionChecklistProps) => {
-  // Expand sessions for multi-week frequencies (round to nearest week)
-  const expandedSessions = useMemo((): ExpandedSession[] => {
-    const weeks = Math.round(frequencyDays / 7);
-    if (weeks <= 1) {
-      return sessions.map((s) => ({ ...s, displayName: s.name }));
-    }
+  // Local optimistic state per editable row (status + notes + saving/error).
+  const [rowState, setRowState] = useState<
+    Record<string, { quality?: SessionCompletionQuality; notes: string; saving: boolean; error?: string }>
+  >({});
 
-    const expanded: ExpandedSession[] = [];
-    for (let week = 1; week <= weeks; week++) {
-      for (const session of sessions) {
-        expanded.push({
-          ...session,
-          id: `${session.id}_week${week}`,
-          weekNumber: week,
-          displayName: `Week ${week}: ${session.name}`,
-        });
-      }
-    }
-    return expanded;
-  }, [sessions, frequencyDays]);
+  const completedCount = events.filter((e) => e.status === "completed").length;
 
-  const getCompletion = (sessionId: string) => {
-    return completions.find((c) => c.trainingSessionId === sessionId);
-  };
+  const setRow = (
+    eventId: string,
+    patch: Partial<{ quality: SessionCompletionQuality; notes: string; saving: boolean; error?: string }>
+  ) =>
+    setRowState((prev) => {
+      const base = prev[eventId] ?? { notes: "", saving: false };
+      return {
+        ...prev,
+        [eventId]: { ...base, ...patch },
+      };
+    });
 
-  const handleToggle = (session: ExpandedSession) => {
-    const existing = getCompletion(session.id);
-
-    if (existing) {
-      // Toggle off - remove from list
-      if (existing.completed) {
-        onChange(
-          completions.map((c) =>
-            c.trainingSessionId === session.id ? { ...c, completed: false } : c
-          )
-        );
-      } else {
-        // Toggle on
-        onChange(
-          completions.map((c) =>
-            c.trainingSessionId === session.id
-              ? { ...c, completed: true, completionQuality: "full" }
-              : c
-          )
-        );
-      }
-    } else {
-      // Add new completion
-      onChange([
-        ...completions,
-        {
-          trainingSessionId: session.id,
-          sessionName: session.displayName,
-          dayOfWeek: session.dayOfWeek,
-          completed: true,
-          completionQuality: "full",
-        },
-      ]);
-    }
-  };
-
-  const handleQualityChange = (
-    sessionId: string,
-    quality: "full" | "partial" | "skipped"
+  const saveRow = async (
+    eventId: string,
+    quality: SessionCompletionQuality,
+    notes: string
   ) => {
-    onChange(
-      completions.map((c) =>
-        c.trainingSessionId === sessionId
-          ? { ...c, completionQuality: quality, completed: quality !== "skipped" }
-          : c
-      )
-    );
+    setRow(eventId, { quality, notes, saving: true, error: undefined });
+    try {
+      await onLogEvent(eventId, { completionQuality: quality, notes: notes || undefined });
+      setRow(eventId, { saving: false });
+    } catch (err) {
+      setRow(eventId, {
+        saving: false,
+        error: err instanceof Error ? err.message : "Failed to save",
+      });
+    }
   };
-
-  const completedCount = completions.filter((c) => c.completed).length;
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <Label className="text-base font-medium">Training Sessions</Label>
         <span className="text-sm text-muted-foreground">
-          {completedCount}/{expandedSessions.length} completed
+          {completedCount}/{events.length} completed
         </span>
       </div>
 
-      <div className="space-y-3">
-        {expandedSessions.map((session) => {
-          const completion = getCompletion(session.id);
-          const isCompleted = completion?.completed ?? false;
-          const quality = completion?.completionQuality;
+      {events.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          No training sessions were scheduled this period.
+        </p>
+      ) : (
+        <div className="space-y-3">
+          {events.map((event) => {
+            const loggedStatus = event.logStatus === "logged" ? "logged" : "never-logged";
+            const editable = canEditDay(event.date, loggedStatus, clientTimezone);
+            const label = statusLabel(event);
+            const isCompleted = event.status === "completed";
+            const local = rowState[event.eventId];
+            const displayName = event.performedSessionName ?? event.sessionName;
 
-          return (
-            <div
-              key={session.id}
-              className={`p-3 rounded-lg border transition-colors ${
-                isCompleted
-                  ? "bg-success/10 border-success/30"
-                  : "bg-muted/30 border-border"
-              }`}
-            >
-              <div className="flex items-start gap-3">
-                <Checkbox
-                  id={`session-${session.id}`}
-                  checked={isCompleted}
-                  onCheckedChange={() => handleToggle(session)}
-                  className="mt-0.5"
-                />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <Dumbbell className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                    <label
-                      htmlFor={`session-${session.id}`}
-                      className="text-sm font-medium cursor-pointer"
-                    >
-                      {session.displayName}
-                    </label>
-                  </div>
-                  <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
-                    {session.dayOfWeek && (
+            return (
+              <div
+                key={event.eventId}
+                className={`p-3 rounded-lg border transition-colors ${
+                  isCompleted
+                    ? "bg-success/10 border-success/30"
+                    : "bg-muted/30 border-border"
+                }`}
+              >
+                <div className="flex items-start gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <Dumbbell className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                      <span className="text-sm font-medium">{displayName}</span>
+                      {!editable && (
+                        <Lock className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
                       <span className="flex items-center gap-1">
                         <Calendar className="h-3 w-3" />
-                        {DAY_LABELS[session.dayOfWeek] || session.dayOfWeek}
+                        {formatDay(event.date)}
                       </span>
+                    </div>
+
+                    {/* Display-only status for locked rows; logged notes shown read-only. */}
+                    {!editable && (
+                      <div className="mt-2 text-xs text-muted-foreground">
+                        {label === "not_logged" ? (
+                          <span>Not logged</span>
+                        ) : (
+                          <span className="capitalize">{label}</span>
+                        )}
+                        {event.notes && (
+                          <p className="mt-1 italic">&ldquo;{event.notes}&rdquo;</p>
+                        )}
+                      </div>
                     )}
-                    {session.focus && (
-                      <span className="truncate">• {session.focus}</span>
+
+                    {/* Editable quick inputs for never-logged editable days. */}
+                    {editable && (
+                      <div className="mt-2 space-y-2">
+                        <Select
+                          value={local?.quality ?? (label === "not_logged" ? undefined : label)}
+                          onValueChange={(v) =>
+                            saveRow(
+                              event.eventId,
+                              v as SessionCompletionQuality,
+                              local?.notes ?? event.notes ?? ""
+                            )
+                          }
+                        >
+                          <SelectTrigger className="w-36 h-8 text-xs">
+                            <SelectValue placeholder="Mark status" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {QUALITY_OPTIONS.map((o) => (
+                              <SelectItem key={o.value} value={o.value}>
+                                {o.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Textarea
+                          placeholder="Notes (optional)"
+                          value={local?.notes ?? event.notes ?? ""}
+                          onChange={(e) =>
+                            setRow(event.eventId, { notes: e.target.value })
+                          }
+                          onBlur={() => {
+                            const q = local?.quality;
+                            if (q) void saveRow(event.eventId, q, local?.notes ?? "");
+                          }}
+                          rows={2}
+                          className="resize-none text-xs"
+                        />
+                        {local?.saving && (
+                          <p className="text-xs text-muted-foreground">Saving…</p>
+                        )}
+                        {local?.error && (
+                          <p className="text-xs text-destructive">{local.error}</p>
+                        )}
+                      </div>
                     )}
                   </div>
                 </div>
-
-                {completion && (
-                  <Select
-                    value={quality || "full"}
-                    onValueChange={(v) =>
-                      handleQualityChange(
-                        session.id,
-                        v as "full" | "partial" | "skipped"
-                      )
-                    }
-                  >
-                    <SelectTrigger className="w-24 h-8 text-xs">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="full">Full</SelectItem>
-                      <SelectItem value="partial">Partial</SelectItem>
-                      <SelectItem value="skipped">Skipped</SelectItem>
-                    </SelectContent>
-                  </Select>
-                )}
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
 
       <p className="text-xs text-muted-foreground">
-        Check off sessions you completed and indicate if you did the full
-        workout or only part of it.
+        Days you already logged are locked. You can still fill in any sessions you
+        missed logging.
       </p>
     </div>
   );

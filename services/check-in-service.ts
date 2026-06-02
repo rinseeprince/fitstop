@@ -7,12 +7,14 @@ import type {
   AICheckInSummary,
 } from "@/types/check-in";
 import { mapCheckInRow } from "@/lib/mappers";
-import { getDateString, dateStringToDayNumber } from "@/lib/date-helpers";
+import { getDateString, dateStringToDayNumber, calculateCheckInPeriod } from "@/lib/date-helpers";
 import type { CheckInCursor } from "@/lib/cursor";
-import {
-  insertSessionCompletions,
-  insertExerciseHighlights,
-} from "./check-in-details-service";
+import { insertExerciseHighlights } from "./check-in-details-service";
+import { getCheckInTrainingPeriodStats } from "./check-in-context-service";
+import { getNutritionSummaryForPeriod } from "./weekly-nutrition-service";
+import { getDailyLogs } from "./daily-logs-service";
+import { calculateMetricAverages } from "@/utils/daily-logs-aggregation";
+import { getClientById } from "./client-service";
 
 // Re-export split modules so existing imports continue to work
 export {
@@ -26,35 +28,86 @@ export {
 } from "./check-in-token-service";
 
 export {
-  getCheckInSessionCompletions,
+  deriveSessionCompletionsForCheckIn,
   getCheckInExerciseHighlights,
   getCheckInWithDetails,
 } from "./check-in-details-service";
 
-// Submit a check-in
+// Submit a check-in.
+//
+// Session 6.4: daily logs are the single source of truth. The check-in's weekly
+// snapshot columns (workouts_completed, nutrition_days_on_target,
+// adherence_percentage, mood/energy/sleep/stress) are DERIVED server-side from
+// the spine for the check-in's period — never read from the form body. These
+// columns stay populated so the AI's previous-check-in trend
+// (utils/ai-prompt-builder.ts) keeps working. The form no longer sends
+// sessionCompletions / nutritionAdherence / mood…stress; any such fields on
+// formData are ignored.
 export const submitCheckIn = async (
   clientId: string,
   formData: CheckInFormData
 ): Promise<string> => {
-  // Calculate legacy fields from enhanced data for backward compatibility
-  const workoutsCompleted = formData.sessionCompletions?.length
-    ? formData.sessionCompletions.filter((s) => s.completed).length
-    : formData.workoutsCompleted;
-  // Cap at 100% to satisfy database constraint
-  const adherencePercentage = formData.nutritionAdherence?.daysOnTarget !== undefined
-    ? Math.min(100, Math.round((formData.nutritionAdherence.daysOnTarget / 7) * 100))
-    : formData.adherencePercentage;
+  // Resolve the period for THIS check-in. The route also persists these to
+  // period_start/period_end (kept consistent here so the snapshot derivation and
+  // the stored period agree). Falls back to undefined when the client has no
+  // expected check-in day — derivation then degrades gracefully.
+  let periodStart: string | undefined;
+  let periodEnd: string | undefined;
+  const client = await getClientById(clientId);
+  if (client?.expectedCheckInDay) {
+    const period = calculateCheckInPeriod(new Date(), client.expectedCheckInDay);
+    periodStart = period.periodStart;
+    periodEnd = period.periodEnd;
+  }
+
+  // Derive snapshot columns from the spine for the period. Pin 1: reuse
+  // getNutritionSummaryForPeriod so submit-path and AI-path numbers match. Pin 2:
+  // read wellness rows from the consolidated daily_logs_full (mood/energy/sleep/
+  // stress live in wellness_logs, not the bare daily_logs spine).
+  let workoutsCompleted: number | undefined;
+  let nutritionDaysOnTarget: number | undefined;
+  let adherencePercentage: number | undefined;
+  let mood: number | undefined;
+  let energy: number | undefined;
+  let sleep: number | undefined;
+  let stress: number | undefined;
+
+  if (periodStart && periodEnd) {
+    const [trainingStats, nutritionSummary, wellnessLogs] = await Promise.all([
+      getCheckInTrainingPeriodStats(clientId, periodStart, periodEnd),
+      getNutritionSummaryForPeriod(clientId, periodStart, periodEnd),
+      getDailyLogs(clientId, periodStart, periodEnd),
+    ]);
+
+    workoutsCompleted = trainingStats.sessionsCompleted;
+
+    if (nutritionSummary) {
+      nutritionDaysOnTarget = nutritionSummary.daysOnTarget;
+      adherencePercentage =
+        nutritionSummary.adherencePercentage != null
+          ? Math.max(0, Math.min(100, Math.round(nutritionSummary.adherencePercentage)))
+          : undefined;
+    }
+
+    if (wellnessLogs.length > 0) {
+      const averages = calculateMetricAverages(wellnessLogs);
+      mood = averages.mood;
+      energy = averages.energy;
+      sleep = averages.sleep;
+      stress = averages.stress;
+    }
+  }
 
   const { data, error } = await supabaseAdmin
     .from("check_ins")
     .insert({
       client_id: clientId,
       status: "pending",
-      // Subjective metrics
-      mood: formData.mood,
-      energy: formData.energy,
-      sleep: formData.sleep,
-      stress: formData.stress,
+      // Subjective metrics (DERIVED from wellness_logs over the period)
+      mood,
+      energy,
+      sleep,
+      stress,
       notes: formData.notes,
       // Body metrics
       weight: formData.weight,
@@ -70,14 +123,19 @@ export const submitCheckIn = async (
       photo_front: formData.photoFront,
       photo_side: formData.photoSide,
       photo_back: formData.photoBack,
-      // Training metrics (legacy)
+      // Training metrics (DERIVED from training_events.status='completed')
       workouts_completed: workoutsCompleted,
       adherence_percentage: adherencePercentage,
       prs: formData.prs,
       challenges: formData.challenges,
-      // Enhanced nutrition tracking
-      nutrition_days_on_target: formData.nutritionAdherence?.daysOnTarget,
-      nutrition_notes: formData.nutritionAdherence?.notes,
+      // Enhanced nutrition tracking (DERIVED from nutrition_logs over the period).
+      // There's no separate nutrition-notes field anymore — the single reflection
+      // textarea maps to `notes` above.
+      nutrition_days_on_target: nutritionDaysOnTarget,
+      nutrition_notes: null,
+      // Persist the resolved period so detail readers derive the exact window.
+      period_start: periodStart ?? null,
+      period_end: periodEnd ?? null,
     })
     .select("id")
     .single();
@@ -88,11 +146,9 @@ export const submitCheckIn = async (
 
   const checkInId = data.id;
 
-  // Insert related data - errors here shouldn't fail the entire check-in
+  // Exercise highlights remain a real backing table (OUT OF SCOPE for 6.4).
+  // Errors here shouldn't fail the entire check-in.
   try {
-    if (formData.sessionCompletions?.length) {
-      await insertSessionCompletions(checkInId, formData.sessionCompletions);
-    }
     if (formData.exerciseHighlights?.length) {
       await insertExerciseHighlights(checkInId, formData.exerciseHighlights);
     }

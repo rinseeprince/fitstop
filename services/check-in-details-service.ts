@@ -1,39 +1,88 @@
 import { supabaseAdmin } from "./supabase-admin";
 import type {
+  CheckIn,
   CheckInSessionCompletion,
   CheckInExerciseHighlight,
   CheckInWithDetails,
+  DayOfWeek,
 } from "@/types/check-in";
-import type {
-  CheckInSessionCompletionRow,
-  CheckInExerciseHighlightRow,
-} from "@/lib/database-helpers";
+import type { CheckInExerciseHighlightRow } from "@/lib/database-helpers";
 import { getCheckInById } from "./check-in-service";
+import { getTrainingEventDetailsForPeriod } from "./check-in-context-service";
+import { calculateCheckInPeriod } from "@/lib/date-helpers";
+import { getClientById } from "./client-service";
 
-// Row type for session completions with joined training_sessions
-type SessionCompletionWithSession = CheckInSessionCompletionRow & {
-  training_sessions: { name: string; day_of_week: string | null } | null;
+const DAY_OF_WEEK_BY_INDEX: DayOfWeek[] = [
+  "sunday",
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+];
+
+// Derive the day-of-week label from a YYYY-MM-DD date string. Parsed at local
+// noon so the day is stable across DST boundaries (the same convention used
+// elsewhere in the check-in UI for period day rendering).
+const dayOfWeekFromDate = (date: string): DayOfWeek => {
+  const d = new Date(`${date}T12:00:00`);
+  return DAY_OF_WEEK_BY_INDEX[d.getDay()];
 };
 
-// Get session completions for a check-in (public, with joined session name)
-export const getCheckInSessionCompletions = async (
-  checkInId: string
-): Promise<SessionCompletionWithSession[]> => {
-  const { data, error } = await supabaseAdmin
-    .from("check_in_session_completions")
-    .select(`
-      *,
-      training_sessions!inner(name, day_of_week)
-    `)
-    .eq("check_in_id", checkInId)
-    .order("created_at", { ascending: true });
+/**
+ * Derive per-session training completions for a check-in directly from the spine
+ * (`training_events` + `session_logs`) — the legacy completions table was dropped
+ * in Session 6.4 (migration 098); there is no backing table anymore. The window
+ * is the check-in's STORED `period_start`/`period_end` (migration 038); only legacy
+ * pre-038 rows (both null) fall back to recomputing the period from the client's
+ * expected check-in day. We NEVER recompute a today-relative window for a
+ * historical check-in.
+ *
+ * The returned shape is the PRESERVED `CheckInSessionCompletion` (camelCase) the
+ * UI already reads. `trainingSessionId` may be null (an alt-session swap or an
+ * event without a linked session); React keys use `id`/`eventId` instead.
+ */
+export const deriveSessionCompletionsForCheckIn = async (
+  checkIn: CheckIn
+): Promise<CheckInSessionCompletion[]> => {
+  let periodStart = checkIn.periodStart;
+  let periodEnd = checkIn.periodEnd;
 
-  if (error) {
-    console.error("Error fetching session completions:", error.message);
+  // Legacy fallback ONLY when the stored period is missing (pre-038 rows). The
+  // window is derived from the check-in's OWN createdAt date, never "today".
+  if (!periodStart || !periodEnd) {
+    const client = await getClientById(checkIn.clientId);
+    if (client?.expectedCheckInDay) {
+      const period = calculateCheckInPeriod(
+        new Date(checkIn.createdAt),
+        client.expectedCheckInDay
+      );
+      periodStart = period.periodStart;
+      periodEnd = period.periodEnd;
+    }
+  }
+
+  if (!periodStart || !periodEnd) {
     return [];
   }
 
-  return (data as SessionCompletionWithSession[]) || [];
+  const details = await getTrainingEventDetailsForPeriod(
+    checkIn.clientId,
+    periodStart,
+    periodEnd
+  );
+
+  return details.map((d) => ({
+    id: d.eventId,
+    checkInId: checkIn.id,
+    trainingSessionId: d.trainingSessionId,
+    sessionName: d.performedSessionName ?? d.sessionName,
+    dayOfWeek: dayOfWeekFromDate(d.date),
+    completed: d.status === "completed",
+    completionQuality: d.completionQuality,
+    notes: d.notes,
+  }));
 };
 
 // Get exercise highlights for a check-in (public)
@@ -52,28 +101,6 @@ export const getCheckInExerciseHighlights = async (
   }
 
   return data || [];
-};
-
-// Insert session completions for a check-in
-export const insertSessionCompletions = async (
-  checkInId: string,
-  completions: CheckInSessionCompletion[]
-): Promise<void> => {
-  const rows = completions.map((c) => ({
-    check_in_id: checkInId,
-    training_session_id: c.trainingSessionId,
-    completed: c.completed,
-    completion_quality: c.completionQuality ?? null,
-    notes: c.notes ?? null,
-  }));
-
-  const { error } = await supabaseAdmin
-    .from("check_in_session_completions")
-    .insert(rows);
-
-  if (error) {
-    throw new Error(`Failed to insert session completions: ${error.message}`);
-  }
 };
 
 // Insert exercise highlights for a check-in
@@ -101,20 +128,6 @@ export const insertExerciseHighlights = async (
   }
 };
 
-// Map internal row to domain type for session completions
-const mapSessionCompletion = (
-  row: SessionCompletionWithSession
-): CheckInSessionCompletion => ({
-  id: row.id,
-  checkInId: row.check_in_id,
-  trainingSessionId: row.training_session_id,
-  sessionName: row.training_sessions?.name || "Unknown Session",
-  dayOfWeek: row.training_sessions?.day_of_week as CheckInSessionCompletion["dayOfWeek"],
-  completed: row.completed,
-  completionQuality: row.completion_quality as CheckInSessionCompletion["completionQuality"],
-  notes: row.notes ?? undefined,
-});
-
 // Map internal row to domain type for exercise highlights
 const mapExerciseHighlight = (
   row: CheckInExerciseHighlightRow
@@ -137,14 +150,14 @@ export const getCheckInWithDetails = async (
   const checkIn = await getCheckInById(checkInId);
   if (!checkIn) return null;
 
-  const [sessionRows, highlightRows] = await Promise.all([
-    getCheckInSessionCompletions(checkInId),
+  const [sessionCompletions, highlightRows] = await Promise.all([
+    deriveSessionCompletionsForCheckIn(checkIn),
     getCheckInExerciseHighlights(checkInId),
   ]);
 
   return {
     ...checkIn,
-    sessionCompletions: sessionRows.map(mapSessionCompletion),
+    sessionCompletions,
     exerciseHighlights: highlightRows.map(mapExerciseHighlight),
   };
 };

@@ -159,6 +159,9 @@ export async function GET(request: NextRequest) {
         email: client.email,
         coachName: coach?.name ?? "Your Coach",
         checkInFrequencyDays: 7,
+        // Session 6.4: needed client-side so canEditDay computes "today" in the
+        // client's IANA zone for the editable/locked training rows.
+        timezone: client.timezone,
       },
       trainingContext,
       nutritionContext,

@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireClientAuth } from "@/lib/require-client-auth";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import {
-  getCheckInSessionCompletions,
+  deriveSessionCompletionsForCheckIn,
   getCheckInExerciseHighlights,
 } from "@/services/check-in-service";
+import { mapCheckInRow } from "@/lib/mappers";
 
 // GET /api/client/check-ins/[id] - Get specific check-in details for authenticated client
 export async function GET(
@@ -35,9 +36,12 @@ export async function GET(
       throw error;
     }
 
-    // Fetch related data
+    // Fetch related data. Session completions are DERIVED from the spine
+    // (training_events + session_logs) for the check-in's stored period — there
+    // is no backing table. The IDOR guard above (eq client_id) already scoped
+    // this row to the authenticated client.
     const [sessionCompletions, exerciseHighlights] = await Promise.all([
-      getCheckInSessionCompletions(id),
+      deriveSessionCompletionsForCheckIn(mapCheckInRow(checkIn)),
       getCheckInExerciseHighlights(id),
     ]);
 

@@ -3,7 +3,7 @@ import { supabaseAdmin } from "@/services/supabase-admin";
 import { mapCheckInRow } from "@/lib/mappers";
 import type { CheckInRow } from "@/lib/database-helpers";
 import {
-  getCheckInSessionCompletions,
+  deriveSessionCompletionsForCheckIn,
   getCheckInExerciseHighlights,
 } from "@/services/check-in-service";
 import { apiRateLimit } from "@/lib/rate-limit";
@@ -62,9 +62,12 @@ export async function GET(
     // Use mapper function to transform database row to application type
     const checkIn = mapCheckInRow(checkInData);
 
-    // Fetch related data
+    // Fetch related data. Session completions are DERIVED from the spine
+    // (training_events + session_logs) for the check-in's stored period — there
+    // is no backing table. Pass the mapped check-in (carries clientId, period,
+    // createdAt) so the derivation resolves the correct historical window.
     const [sessionCompletions, exerciseHighlights] = await Promise.all([
-      getCheckInSessionCompletions(id),
+      deriveSessionCompletionsForCheckIn(checkIn),
       getCheckInExerciseHighlights(id),
     ]);
 
