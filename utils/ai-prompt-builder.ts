@@ -1,4 +1,4 @@
-import type { CheckInWithDetails, CheckIn } from "@/types/check-in";
+import type { CheckInWithDetails, CheckIn, CheckInTrainingEventDetail } from "@/types/check-in";
 import type { DailyLog } from "@/types/daily-log";
 import type { HabitLogWithDetails } from "@/types/daily-habit";
 import type { WeeklyNutritionSummary } from "@/types/weekly-nutrition";
@@ -18,7 +18,8 @@ export function buildCheckInAnalysisPrompt(
   startDate?: Date,
   endDate?: Date,
   weeklySummary?: WeeklyNutritionSummary | null,
-  periodSnapshot?: PeriodSnapshot | null
+  periodSnapshot?: PeriodSnapshot | null,
+  trainingEventDetails?: CheckInTrainingEventDetail[]
 ): string {
   let prompt = `Analyze this check-in for ${sanitizeForAIPrompt(clientName)}:\n\n`;
 
@@ -42,16 +43,28 @@ export function buildCheckInAnalysisPrompt(
   }
 
   prompt += "\nTraining:\n";
-  if (current.sessionCompletions?.length) {
-    const completed = current.sessionCompletions.filter((s) => s.completed).length;
-    const total = current.sessionCompletions.length;
+  // Source of truth (Session 6.2): per-event detail derived from training_events
+  // (status) left-joined to session_logs (notes/quality). Falls back to the
+  // legacy free-text workout count when no event detail is available.
+  if (trainingEventDetails?.length) {
+    const completed = trainingEventDetails.filter((d) => d.status === "completed").length;
+    const total = trainingEventDetails.length;
     prompt += `- Sessions: ${completed}/${total} completed\n`;
-    current.sessionCompletions.forEach((s) => {
-      const status = s.completed
-        ? s.completionQuality === "partial" ? "(partial)" : "(full)"
-        : "(skipped)";
-      prompt += `  - ${sanitizeForAIPrompt(s.sessionName)}: ${status}\n`;
-      if (s.notes) prompt += `    Note: ${sanitizeForAIPrompt(s.notes)}\n`;
+    trainingEventDetails.forEach((d) => {
+      let status: string;
+      if (d.status === "skipped") {
+        status = d.notes
+          ? `Skipped (reason: ${sanitizeForAIPrompt(d.notes)})`
+          : "Skipped";
+      } else if (d.logStatus === "not_logged") {
+        status = `(${d.status}, not logged)`;
+      } else {
+        status = `(${d.status})`;
+      }
+      prompt += `  - ${sanitizeForAIPrompt(d.sessionName)}: ${status}\n`;
+      if (d.status !== "skipped" && d.notes) {
+        prompt += `    Note: ${sanitizeForAIPrompt(d.notes)}\n`;
+      }
     });
   } else if (current.workoutsCompleted) {
     prompt += `- Workouts Completed: ${current.workoutsCompleted}\n`;

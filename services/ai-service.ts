@@ -3,6 +3,7 @@ import type {
   CheckIn,
   CheckInWithDetails,
   AICheckInSummary,
+  CheckInTrainingEventDetail,
 } from "@/types/check-in";
 import type { DailyLog } from "@/types/daily-log";
 import type { HabitLogWithDetails } from "@/types/daily-habit";
@@ -45,7 +46,8 @@ export const generateCheckInSummary = async (
   startDate?: Date,
   endDate?: Date,
   weeklySummary?: WeeklyNutritionSummary | null,
-  periodSnapshot?: PeriodSnapshot | null
+  periodSnapshot?: PeriodSnapshot | null,
+  trainingEventDetails?: CheckInTrainingEventDetail[]
 ): Promise<AICheckInSummary> => {
   try {
     const prompt = buildCheckInAnalysisPrompt(
@@ -57,7 +59,8 @@ export const generateCheckInSummary = async (
       startDate,
       endDate,
       weeklySummary,
-      periodSnapshot
+      periodSnapshot,
+      trainingEventDetails
     );
 
     const completion = await openai.chat.completions.create({
@@ -88,7 +91,8 @@ export const regenerateAISummary = async (
   habitLogs?: HabitLogWithDetails[],
   startDate?: Date,
   endDate?: Date,
-  weeklySummary?: WeeklyNutritionSummary | null
+  weeklySummary?: WeeklyNutritionSummary | null,
+  trainingEventDetails?: CheckInTrainingEventDetail[]
 ): Promise<AICheckInSummary> => {
   try {
     const focusInstructions = {
@@ -100,7 +104,8 @@ export const regenerateAISummary = async (
     const instruction = focus ? focusInstructions[focus] : "";
     const prompt = buildCheckInAnalysisPrompt(
       checkIn, previousCheckIns, clientName,
-      dailyLogs, habitLogs, startDate, endDate, weeklySummary
+      dailyLogs, habitLogs, startDate, endDate, weeklySummary,
+      undefined, trainingEventDetails
     );
     const modifiedPrompt = instruction ? `${instruction}\n\n${prompt}` : prompt;
 

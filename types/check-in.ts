@@ -1,5 +1,6 @@
 import type { DailyLog } from "./daily-log";
 import type { OnboardingStatus } from "./client-intake";
+import type { TrainingEventStatus } from "@/types/training";
 
 // Check-in status types
 export type CheckInStatus = "pending" | "ai_processed" | "reviewed";
@@ -66,6 +67,23 @@ export type TrainingMetrics = {
 // Enhanced check-in tracking types
 
 export type SessionCompletionQuality = "full" | "partial" | "skipped";
+
+// Whether a training_event has an associated session_log (Session 6.2).
+// Single-source per-event detail keyed on training_events (the SOT for
+// completion counting), left-joined to its session_log for notes/quality.
+export type TrainingEventLogStatus = "logged" | "not_logged";
+
+export type CheckInTrainingEventDetail = {
+  eventId: string;
+  date: string;
+  sessionName: string;
+  status: TrainingEventStatus;
+  logStatus: TrainingEventLogStatus;
+  notes?: string;
+  completionQuality?: SessionCompletionQuality;
+  trainingSessionId: string | null;
+  performedSessionName?: string | null;
+};
 
 export type CheckInSessionCompletion = {
   id?: string;

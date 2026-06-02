@@ -30,6 +30,10 @@ vi.mock('./weekly-nutrition-service', () => ({
   getWeeklySummaries: vi.fn(),
 }))
 
+vi.mock('@/services/check-in-context-service', () => ({
+  getTrainingEventDetailsForPeriod: vi.fn(),
+}))
+
 vi.mock('./client-service', () => ({
   getClientById: vi.fn(),
   updateClient: vi.fn(),
@@ -54,6 +58,7 @@ import {
 import { getDailyLogs } from './daily-logs-service'
 import { getHabitLogs } from './daily-habits-service'
 import { getWeeklySummaries } from './weekly-nutrition-service'
+import { getTrainingEventDetailsForPeriod } from '@/services/check-in-context-service'
 import { getClientById, updateClient } from './client-service'
 import { updateClientBMR } from './bmr-service'
 import { supabaseAdmin } from './supabase-admin'
@@ -105,6 +110,7 @@ describe('Client Check-in Service', () => {
       vi.mocked(getDailyLogs).mockResolvedValue([])
       vi.mocked(getHabitLogs).mockResolvedValue([])
       vi.mocked(getWeeklySummaries).mockResolvedValue([])
+      vi.mocked(getTrainingEventDetailsForPeriod).mockResolvedValue([])
 
       // Act
       await triggerAISummaryGeneration(mockCheckInId, mockClientId, mockClientName)
@@ -121,7 +127,10 @@ describe('Client Check-in Service', () => {
         expect.any(Date),
         expect.any(Date),
         null,
-        null
+        null,
+        // trainingEventDetails: the daily-tracking fetch throws (getNutritionSummaryForPeriod
+        // is unmocked), so the catch sets this to the [] default.
+        []
       )
       expect(updateCheckInAISummary).toHaveBeenCalledWith(
         mockCheckInId,
@@ -171,7 +180,8 @@ describe('Client Check-in Service', () => {
         expect.any(Date),
         expect.any(Date),
         null,
-        null
+        null,
+        []
       )
     })
 
@@ -237,7 +247,8 @@ describe('Client Check-in Service', () => {
         expect.any(Date),
         expect.any(Date),
         null,
-        null
+        null,
+        []
       )
     })
   })

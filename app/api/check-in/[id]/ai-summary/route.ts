@@ -8,6 +8,7 @@ import { generateCheckInSummary, regenerateAISummary } from "@/services/ai-servi
 import { getDailyLogs } from "@/services/daily-logs-service";
 import { getHabitLogs } from "@/services/daily-habits-service";
 import { getNutritionSummaryForPeriod } from "@/services/weekly-nutrition-service";
+import { getTrainingEventDetailsForPeriod } from "@/services/check-in-context-service";
 import { calculateCheckInPeriod, getDateString } from "@/lib/date-helpers";
 import type { GenerateAISummaryResponse } from "@/types/check-in";
 import { aiRateLimit } from "@/lib/rate-limit";
@@ -77,23 +78,29 @@ export async function POST(
     const startDateStr = getDateString(startDate);
     const endDateStr = getDateString(endDate);
 
-    // Fetch daily tracking context and weekly nutrition summary for the period
+    // Fetch daily tracking context, weekly nutrition summary, and per-event
+    // training detail for the period. trainingEventDetails defaults to [] on
+    // failure so the AI training block degrades to the legacy workout count.
     let dailyLogs, habitLogs, weeklySummary;
+    let trainingEventDetails: Awaited<ReturnType<typeof getTrainingEventDetailsForPeriod>> = [];
     try {
-      const [logs, habits, periodSummary] = await Promise.all([
+      const [logs, habits, periodSummary, eventDetails] = await Promise.all([
         getDailyLogs(currentCheckIn.clientId, startDateStr, endDateStr),
         getHabitLogs(currentCheckIn.clientId, startDateStr, endDateStr),
         getNutritionSummaryForPeriod(currentCheckIn.clientId, startDateStr, endDateStr),
+        getTrainingEventDetailsForPeriod(currentCheckIn.clientId, startDateStr, endDateStr),
       ]);
       dailyLogs = logs;
       habitLogs = habits;
       weeklySummary = periodSummary;
+      trainingEventDetails = eventDetails;
     } catch (error) {
       // If daily tracking fetch fails, continue without it
       console.error('Error fetching daily tracking data:', error instanceof Error ? error.message : 'Unknown error');
       dailyLogs = undefined;
       habitLogs = undefined;
       weeklySummary = null;
+      trainingEventDetails = [];
     }
 
     // Generate or regenerate AI summary
@@ -107,7 +114,8 @@ export async function POST(
           habitLogs,
           startDate,
           endDate,
-          weeklySummary
+          weeklySummary,
+          trainingEventDetails
         )
       : await generateCheckInSummary(
           currentCheckIn,
@@ -117,7 +125,9 @@ export async function POST(
           habitLogs,
           startDate,
           endDate,
-          weeklySummary
+          weeklySummary,
+          undefined,
+          trainingEventDetails
         );
 
     // Update check-in with new AI summary (v2 format)

@@ -16,6 +16,7 @@ import { supabaseAdmin } from "@/services/supabase-admin";
 import { getDailyLogs } from "@/services/daily-logs-service";
 import { getHabitLogs } from "@/services/daily-habits-service";
 import { getNutritionSummaryForPeriod } from "@/services/weekly-nutrition-service";
+import { getTrainingEventDetailsForPeriod } from "@/services/check-in-context-service";
 import { calculateCheckInPeriod, getDateString } from "@/lib/date-helpers";
 import type { SubmitCheckInRequest, CheckInFormData, Client } from "@/types/check-in";
 import type { PeriodSnapshot } from "@/types/schedule";
@@ -72,23 +73,29 @@ export async function triggerAISummaryGeneration(
     const startDateStr = getDateString(startDate);
     const endDateStr = getDateString(endDate);
     
-    // Fetch daily tracking context and weekly nutrition summary for the period
+    // Fetch daily tracking context, weekly nutrition summary, and per-event
+    // training detail for the period. trainingEventDetails defaults to [] on
+    // failure so the AI training block degrades to the legacy workout count.
     let dailyLogs, habitLogs, weeklySummary;
+    let trainingEventDetails: Awaited<ReturnType<typeof getTrainingEventDetailsForPeriod>> = [];
     try {
-      const [logs, habits, periodSummary] = await Promise.all([
+      const [logs, habits, periodSummary, eventDetails] = await Promise.all([
         getDailyLogs(clientId, startDateStr, endDateStr),
         getHabitLogs(clientId, startDateStr, endDateStr),
         getNutritionSummaryForPeriod(clientId, startDateStr, endDateStr),
+        getTrainingEventDetailsForPeriod(clientId, startDateStr, endDateStr),
       ]);
       dailyLogs = logs;
       habitLogs = habits;
       weeklySummary = periodSummary;
+      trainingEventDetails = eventDetails;
     } catch (error) {
       // If daily tracking fetch fails, continue without it
       console.error('Error fetching daily tracking data:', error instanceof Error ? error.message : 'Unknown error');
       dailyLogs = undefined;
       habitLogs = undefined;
       weeklySummary = null;
+      trainingEventDetails = [];
     }
 
     // Read period snapshot if it was generated during submission
@@ -104,7 +111,8 @@ export async function triggerAISummaryGeneration(
       startDate,
       endDate,
       weeklySummary,
-      periodSnapshot
+      periodSnapshot,
+      trainingEventDetails
     );
 
     // Update check-in with AI summary (v2 format)

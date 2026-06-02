@@ -13,6 +13,7 @@ vi.mock('@/services/check-in-context-service', () => ({
   getCheckInTrainingContext: vi.fn(),
   getCheckInNutritionContext: vi.fn(),
   getCheckInTrainingPeriodStats: vi.fn(),
+  getTrainingEventDetailsForPeriod: vi.fn(),
 }));
 
 vi.mock('@/services/daily-logs-service', () => ({
@@ -47,6 +48,7 @@ import {
   getCheckInTrainingContext,
   getCheckInNutritionContext,
   getCheckInTrainingPeriodStats,
+  getTrainingEventDetailsForPeriod,
 } from '@/services/check-in-context-service';
 import { getDailyLogs } from '@/services/daily-logs-service';
 import { createServerSupabaseClient } from '@/lib/supabase-server';
@@ -86,6 +88,7 @@ describe('GET /api/client/check-in-context', () => {
     vi.mocked(getCheckInTrainingContext).mockResolvedValue({ hasActivePlan: false, sessions: [] } as any);
     vi.mocked(getCheckInNutritionContext).mockResolvedValue({ hasNutritionPlan: false } as any);
     vi.mocked(getCheckInTrainingPeriodStats).mockResolvedValue({ sessionsCompleted: 1, sessionsPlanned: 3 } as any);
+    vi.mocked(getTrainingEventDetailsForPeriod).mockResolvedValue([] as any);
     vi.mocked(getDailyLogs).mockResolvedValue([] as any);
   });
 
@@ -111,6 +114,7 @@ describe('GET /api/client/check-in-context', () => {
         'periodEnd',
         'periodStart',
         'trainingContext',
+        'trainingEventDetails',
         'trainingPeriodStats',
       ].sort(),
     );
@@ -142,6 +146,7 @@ describe('GET /api/client/check-in-context', () => {
     expect(getCheckInTrainingContext).not.toHaveBeenCalled();
     expect(getCheckInNutritionContext).not.toHaveBeenCalled();
     expect(getCheckInTrainingPeriodStats).not.toHaveBeenCalled();
+    expect(getTrainingEventDetailsForPeriod).not.toHaveBeenCalled();
     expect(getDailyLogs).not.toHaveBeenCalled();
   });
 

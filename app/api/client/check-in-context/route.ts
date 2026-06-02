@@ -4,6 +4,7 @@ import {
   getCheckInTrainingContext,
   getCheckInNutritionContext,
   getCheckInTrainingPeriodStats,
+  getTrainingEventDetailsForPeriod,
 } from "@/services/check-in-context-service";
 import { getClientById } from "@/services/client-service";
 import { getDailyLogs } from "@/services/daily-logs-service";
@@ -11,7 +12,7 @@ import { supabaseAdmin } from "@/services/supabase-admin";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { calculateCheckInPeriod, getCheckInStatus, formatDateISO, getDateString } from "@/lib/date-helpers";
 import type { CheckInGateStatus } from "@/lib/date-helpers";
-import type { ValidateCheckInTokenResponse } from "@/types/check-in";
+import type { ValidateCheckInTokenResponse, CheckInTrainingEventDetail } from "@/types/check-in";
 
 /**
  * GET /api/client/check-in-context
@@ -128,7 +129,7 @@ export async function GET(request: NextRequest) {
     // serial round-trip. (Runs only after gating, so a gated request never reaches
     // getCheckInNutritionContext and its plan-promotion side effect.)
     // supabaseAdmin required: no client-facing SELECT RLS policy exists on coaches table
-    const [coachResult, trainingContext, nutritionContext, trainingPeriodStats, dailyLogs] = await Promise.all([
+    const [coachResult, trainingContext, nutritionContext, trainingPeriodStats, dailyLogs, trainingEventDetails] = await Promise.all([
       supabaseAdmin
         .from("coaches")
         .select("name")
@@ -138,6 +139,7 @@ export async function GET(request: NextRequest) {
       getCheckInNutritionContext(client.id),
       getCheckInTrainingPeriodStats(client.id, periodStart, periodEnd),
       getDailyLogs(client.id, periodStart, periodEnd),
+      getTrainingEventDetailsForPeriod(client.id, periodStart, periodEnd),
     ]);
 
     const coach = coachResult.data;
@@ -147,6 +149,9 @@ export async function GET(request: NextRequest) {
       periodEnd: string;
       periodDays: number;
       trainingPeriodStats: { sessionsCompleted: number; sessionsPlanned: number };
+      // Additive (Session 6.2): per-event training detail, single-sourced from
+      // training_events. Optional so existing RN clients stay back-compatible.
+      trainingEventDetails?: CheckInTrainingEventDetail[];
     } = {
       clientInfo: {
         id: client.id,
@@ -159,6 +164,7 @@ export async function GET(request: NextRequest) {
       nutritionContext,
       trainingPeriodStats,
       dailyLogs,
+      trainingEventDetails,
       periodStart,
       periodEnd,
       periodDays,

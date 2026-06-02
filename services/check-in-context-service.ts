@@ -1,12 +1,14 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { getActiveTrainingPlan } from "./training-service";
-import { countEventsInRange } from "./training-event-service";
+import { countEventsInRange, getEventsForDateRange } from "./training-event-service";
 import { getNutritionEventsForDateRange } from "./nutrition-event-service";
 import { mapNutritionEventToDisplayTarget } from "@/utils/nutrition-event-helpers";
 import { getTodayDateString, getTrainingWeekStart, getTrainingWeekEnd } from "@/lib/date-helpers";
 import type {
   CheckInTrainingContext,
   CheckInNutritionContext,
+  CheckInTrainingEventDetail,
+  SessionCompletionQuality,
   DayOfWeek,
 } from "@/types/check-in";
 import { promoteNutritionPlanIfReady } from "./nutrition-plan-service";
@@ -119,33 +121,100 @@ export type CheckInTrainingPeriodStats = {
 };
 
 /**
- * Get training session stats for the check-in period using session_logs
- * (same source of truth as the coach-side training hero).
+ * Get training session stats for the check-in period using training_events
+ * (the source of truth for completion — same as the coach-side adherence count).
+ * Only events with status='completed' count toward sessionsCompleted; partial,
+ * skipped and missed do not. sessionsPlanned is every event in the window.
  */
 export const getCheckInTrainingPeriodStats = async (
   clientId: string,
   periodStart: string,
   periodEnd: string
 ): Promise<CheckInTrainingPeriodStats> => {
-  // Count completed sessions and planned events in parallel
+  // Count completed events and planned events in parallel
   const [{ count, error }, sessionsPlanned] = await Promise.all([
-    // completed_at is the date the session was completed (YYYY-MM-DD)
-    // supabaseAdmin: client portal reading own session_logs (RLS exception 3)
+    // date is the prescribed event date (YYYY-MM-DD)
+    // supabaseAdmin: client portal reading own training_events (RLS exception 3)
     supabaseAdmin
-      .from("session_logs")
+      .from("training_events")
       .select("id", { count: "exact", head: true })
       .eq("client_id", clientId)
-      .eq("completion_quality", "full")
-      .gte("completed_at", periodStart)
-      .lte("completed_at", periodEnd),
+      .eq("status", "completed")
+      .gte("date", periodStart)
+      .lte("date", periodEnd),
     countEventsInRange(clientId, periodStart, periodEnd),
   ]);
 
   if (error) {
-    console.error("Error fetching session_logs for check-in:", error.message);
+    console.error("Error fetching training_events for check-in:", error.message);
   }
 
   const sessionsCompleted = count ?? 0;
 
   return { sessionsCompleted, sessionsPlanned };
 };
+
+/**
+ * Single-source per-event training detail for the check-in period (Session 6.2).
+ *
+ * `training_events` is the source of truth for completion; each event is
+ * LEFT-JOINed (in JS) to its linked `session_log` for notes + completion
+ * quality. This MUST be the only place check-in code derives per-event training
+ * detail — later sessions (6.3/6.4) reuse it and enrich it (e.g. the performed
+ * session name for swaps, currently left undefined).
+ *
+ * At most two queries regardless of event count: one range read of events, one
+ * batched read of the referenced session_logs.
+ */
+export async function getTrainingEventDetailsForPeriod(
+  clientId: string,
+  periodStart: string,
+  periodEnd: string
+): Promise<CheckInTrainingEventDetail[]> {
+  const events = await getEventsForDateRange(clientId, periodStart, periodEnd);
+  if (events.length === 0) return [];
+
+  const sessionLogIds = events
+    .map((e) => e.sessionLogId)
+    .filter((id): id is string => id !== null);
+
+  // LEFT-JOIN map: session_log_id -> { notes, completion_quality }
+  const logById = new Map<
+    string,
+    { notes: string | null; completionQuality: SessionCompletionQuality }
+  >();
+  if (sessionLogIds.length > 0) {
+    // supabaseAdmin: client portal reading own session_logs (RLS exception 3)
+    const { data, error } = await supabaseAdmin
+      .from("session_logs")
+      .select("id, notes, completion_quality, training_session_id")
+      .in("id", sessionLogIds);
+    if (error) {
+      console.error("Error fetching session_logs for check-in detail:", error.message);
+    }
+    for (const row of data ?? []) {
+      logById.set(row.id, {
+        notes: row.notes,
+        completionQuality: row.completion_quality as SessionCompletionQuality,
+      });
+    }
+  }
+
+  // events are already ordered by date ascending (getEventsForDateRange).
+  return events.map((e) => {
+    const log = e.sessionLogId ? logById.get(e.sessionLogId) : undefined;
+    const detail: CheckInTrainingEventDetail = {
+      eventId: e.id,
+      date: e.date,
+      sessionName: e.sessionName,
+      status: e.status,
+      logStatus: e.sessionLogId ? "logged" : "not_logged",
+      trainingSessionId: e.trainingSessionId,
+    };
+    if (log) {
+      if (log.notes) detail.notes = log.notes;
+      detail.completionQuality = log.completionQuality;
+    }
+    return detail;
+  });
+}
