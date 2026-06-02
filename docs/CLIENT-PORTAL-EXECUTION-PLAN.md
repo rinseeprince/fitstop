@@ -79,8 +79,8 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 | 3.8 | Per-request auth resolution caching | 3 Scale hardening | COMPLETE
 | 3.9 | Render-ready payloads + bounded/keyset contract + exercise catalog delta-sync | 3 Scale hardening | COMPLETE
 | 3.10 | Re-key client rate limiting from IP to client identity | 3 Scale hardening | COMPLETE
-| 4.1 | Habits detail page | 4 Habits |
-| 5.1 | Remove old Daily Pulse + deprecated routes + docs sweep | 5 Cleanup |
+| 4.1 | Habits detail page | 4 Habits | COMPLETE
+| 5.1 | Remove old Daily Pulse + deprecated routes + docs sweep | 5 Cleanup | COMPLETE
 | 5.2 | Align session_logs identity with event-keyed architecture | 5 |
 | 5.3 | Alternative session logging: write path + matcher + coach surfacing | 5 |
 | 5.4 | Alternative session logging: client UI | 5 |
@@ -1525,6 +1525,8 @@ The web app is a logic/API test harness; the React-Native app is the real client
 
 ## Session 4.1: Habits detail page
 
+**Status**: COMPLETE (commit `fbee171`)
+
 **Commit message**: `feat(client-portal): add habits detail page with per-habit toggle`
 
 **Objective**: Build `/client/habits` using existing habit-log endpoints.
@@ -1552,6 +1554,8 @@ The web app is a logic/API test harness; the React-Native app is the real client
 ---
 
 ## Session 5.1: Remove old Daily Pulse + deprecated routes + docs sweep
+
+**Status**: COMPLETE (commit `bd6dd45`; agent-doc follow-up `593cb0f`)
 
 **Commit message**: `chore: remove legacy Daily Pulse, deprecated routes, and refresh architecture doc`
 
