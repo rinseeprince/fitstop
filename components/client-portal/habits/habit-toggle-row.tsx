@@ -19,8 +19,7 @@ interface HabitToggleRowProps {
 
 /**
  * Presentational habit row for the client-portal habits page (controlled — "props down,
- * callbacks up" per CONVENTIONS). Owned by client-portal rather than reused from
- * `components/daily-pulse/`, which Session 5.1 deletes.
+ * callbacks up" per CONVENTIONS).
  */
 export function HabitToggleRow({
   habit,

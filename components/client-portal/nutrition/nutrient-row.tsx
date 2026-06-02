@@ -29,7 +29,7 @@ export interface NutrientRowProps {
  * A single nutrient input (calories or a macro) with a vs-target progress bar.
  * Presentational only — the parent owns the value and the save flow. The shadcn
  * Progress primitive hardcodes a teal indicator, so the bar is a colored div to
- * carry the per-macro colour (matching components/daily-pulse/weekly-nutrition-progress.tsx).
+ * carry the per-macro colour.
  */
 export function NutrientRow({
   id,

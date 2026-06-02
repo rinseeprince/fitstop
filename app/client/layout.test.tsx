@@ -85,7 +85,7 @@ describe("ClientLayout gate ladder", () => {
     replaceMock.mockReset();
     cleanup();
 
-    usePathnameMock.mockReturnValue("/client/dashboard");
+    usePathnameMock.mockReturnValue("/client");
     setClientProfile();
   });
 
@@ -147,7 +147,7 @@ describe("ClientLayout gate ladder", () => {
 
   it("redirects pending_intake clients to /client/onboarding when on another route", async () => {
     setAuth();
-    usePathnameMock.mockReturnValue("/client/dashboard");
+    usePathnameMock.mockReturnValue("/client");
     setClientProfile({ client: makeClient({ onboardingStatus: "pending_intake" }) });
 
     render(<ClientLayout>page</ClientLayout>);

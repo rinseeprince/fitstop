@@ -1,9 +1,8 @@
 import { supabaseAdmin } from "./supabase-admin";
-import type { DailyLog, DailyLogInput, NutritionAdherenceStatus } from "@/types/daily-log";
+import type { DailyLog, NutritionAdherenceStatus } from "@/types/daily-log";
 import type { DayOfWeek } from "@/types/check-in";
 import { getTodayDateString, getDateString, getDateDaysAgo, dateStringToDayNumber } from "@/lib/date-helpers";
 import { NUTRITION_ADHERENCE_HIT_THRESHOLD, NUTRITION_ADHERENCE_PARTIAL_THRESHOLD } from "@/lib/constants";
-import type { Json } from "@/types/database";
 
 // Shape returned by the daily_logs_full view (not yet in generated types)
 type DailyLogFullRow = {
@@ -31,15 +30,6 @@ type DailyLogFullRow = {
   trained: boolean | null;
   training_session_id: string | null;
   training_data: unknown;
-};
-
-type DailyLogInputWithTargets = DailyLogInput & {
-  targetCalories?: number;
-  targetProteinG?: number;
-  targetCarbsG?: number;
-  targetFatG?: number;
-  nutritionPlanId?: string;
-  trainingPlanId?: string;
 };
 
 type StreakResult = {
@@ -145,79 +135,6 @@ export const mapRowToDailyLog = (row: DailyLogFullRow): DailyLog => ({
   updatedAt: row.updated_at,
 });
 
-export const upsertDailyLog = async (
-  clientId: string,
-  data: DailyLogInputWithTargets
-): Promise<DailyLog> => {
-  const nutritionAdherence = calculateNutritionAdherence(
-    data.caloriesConsumed,
-    data.targetCalories
-  );
-  const calorieSurplusDeficit = calculateCalorieSurplusDeficit(
-    data.caloriesConsumed,
-    data.targetCalories
-  );
-
-  // Build domain-specific JSONB params for the atomic RPC
-  const wellnessData: Json = (data.mood != null || data.energy != null || data.sleep != null || data.stress != null)
-    ? { mood: data.mood ?? null, energy: data.energy ?? null, sleep: data.sleep ?? null, stress: data.stress ?? null }
-    : null;
-
-  const nutritionData: Json = (data.caloriesConsumed != null || data.targetCalories != null)
-    ? {
-        calories_consumed: data.caloriesConsumed ?? null,
-        protein_g: data.proteinG ?? null,
-        carbs_g: data.carbsG ?? null,
-        fat_g: data.fatG ?? null,
-        target_calories: data.targetCalories ?? null,
-        target_protein_g: data.targetProteinG ?? null,
-        target_carbs_g: data.targetCarbsG ?? null,
-        target_fat_g: data.targetFatG ?? null,
-        nutrition_adherence: nutritionAdherence,
-        calorie_surplus_deficit: calorieSurplusDeficit,
-      }
-    : null;
-
-  const trainingData: Json = (data.trained != null)
-    ? {
-        trained: data.trained ?? false,
-        training_session_id: data.trainingSessionId ?? null,
-        training_data: (data.trainingData ?? null) as Json,
-      }
-    : null;
-
-  const { data: logId, error: rpcError } = await supabaseAdmin.rpc("upsert_daily_log_atomic", {
-    p_client_id: clientId,
-    p_date: data.date,
-    // Generated overload types p_notes as non-null, but the SQL column is nullable TEXT.
-    // Pass null through (writes NULL) — narrow via `string`, not `as never`.
-    p_notes: (data.notes ?? null) as string,
-    p_wellness: wellnessData,
-    p_nutrition: nutritionData,
-    p_training: trainingData,
-    // Optional params: undefined omits them so the SQL DEFAULT NULL applies.
-    p_nutrition_plan_id: data.nutritionPlanId ?? undefined,
-    p_training_plan_id: data.trainingPlanId ?? undefined,
-  });
-
-  if (rpcError || !logId) {
-    throw new Error(`Failed to upsert daily log: ${rpcError?.message ?? "No log ID returned"}`);
-  }
-
-  // Fetch the full row from the view for the response
-  const { data: fullRow, error: fetchError } = (await supabaseAdmin
-    .from("daily_logs_full")
-    .select("*")
-    .eq("id", logId)
-    .single()) as unknown as { data: DailyLogFullRow | null; error: { message: string } | null };
-
-  if (fetchError || !fullRow) {
-    throw new Error(`Failed to fetch daily log after upsert: ${fetchError?.message ?? "No data"}`);
-  }
-
-  return mapRowToDailyLog(fullRow);
-};
-
 export const getDailyLogs = async (
   clientId: string,
   startDate: string,
@@ -236,30 +153,6 @@ export const getDailyLogs = async (
   }
 
   return (data || []).map(mapRowToDailyLog);
-};
-
-export const getWeeklyLogs = async (
-  clientId: string,
-  startDate: string,
-  endDate: string
-): Promise<Pick<DailyLog, "date" | "id">[]> => {
-  // Queries spine only - no view needed
-  const { data, error } = await supabaseAdmin
-    .from("daily_logs")
-    .select("id, date")
-    .eq("client_id", clientId)
-    .gte("date", startDate)
-    .lte("date", endDate)
-    .order("date", { ascending: true });
-
-  if (error) {
-    throw new Error(`Failed to fetch weekly logs: ${error.message}`);
-  }
-
-  return (data || []).map((row) => ({
-    id: row.id,
-    date: row.date,
-  }));
 };
 
 export const getTodayLog = async (clientId: string, date?: string): Promise<DailyLog | null> => {

@@ -5,43 +5,11 @@
  */
 
 import { supabaseAdmin } from "./supabase-admin";
-import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
 import { getEventForDate } from "./training-event-service";
-import { getTodayDateString } from "@/lib/date-helpers";
 import { getNutritionEventForDate } from "./nutrition-event-service";
 import { getActivePhase } from "./phase-service";
 import { getActiveNutritionPlanId } from "./nutrition-plan-service";
-import { getTotalCalories, mapNutritionEventToDisplayTarget } from "@/utils/nutrition-event-helpers";
-
-type TodaysTrainingSession = {
-  sessionId: string;
-  sessionName: string;
-  estimatedCalories: number;
-} | null;
-
-export const getTodaysTrainingSession = async (clientId: string, date?: string): Promise<TodaysTrainingSession> => {
-  const dateStr = date ?? getTodayDateString();
-  const event = await getEventForDate(clientId, dateStr);
-  if (!event) return null;
-  return {
-    sessionId: event.trainingSessionId ?? event.id,
-    sessionName: event.sessionName,
-    estimatedCalories: event.estimatedCalories ?? 0,
-  };
-};
-
-export const getTodaysNutritionTarget = async (clientId: string, date?: string): Promise<DailyNutritionTargets | null> => {
-  const dateStr = date ?? getTodayDateString();
-  const event = await getNutritionEventForDate(clientId, dateStr);
-
-  if (!event) return null;
-
-  const { data: clientRow } = await supabaseAdmin
-    .from("clients").select("include_activity_burn").eq("id", clientId).single();
-  const includeActivityBurn = clientRow?.include_activity_burn !== false;
-  const target = mapNutritionEventToDisplayTarget(event, includeActivityBurn);
-  return { ...target, planId: event.nutritionPlanId, includeActivityBurn };
-};
+import { getTotalCalories } from "@/utils/nutrition-event-helpers";
 
 /**
  * Find the plan that was active on a specific date and return its daily target.

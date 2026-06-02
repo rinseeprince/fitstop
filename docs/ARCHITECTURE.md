@@ -7,9 +7,7 @@ This file documents the platform architecture, database schema, and data flow pa
 > | Section | Status | Authoritative source |
 > |---------|--------|----------------------|
 > | Auth Model → "Database clients" | **Legacy** — described the old session-scoped-default model. The codebase is on **Shape B**: services default to `supabaseAdmin`, the route layer is the security perimeter, RLS is defense-in-depth. Corrected inline below. | **CONVENTIONS.md §8** |
-> | "Client Portal Architecture" (Daily Pulse) | **Retired** — has its own STOP banner; rewritten in Session 5.1. | redesign docs |
-> | Platform Overview client bullet · "JSONB Conventions" (`training_data`/`activityStatuses`) · Phase Transition card path | **Legacy** Daily Pulse references; corrected inline below. | redesign docs |
-> | "Daily Logs" write path | **Superseded** — per-card writes, not `upsert_daily_log_atomic()`. | redesign docs |
+> | "JSONB Conventions" (`training_data`/`activityStatuses`) | **Orphaned cache** — legacy `training_logs` rows only; no active read/write path. | redesign docs |
 > | "Activation Flow" · "Check-in System" · "Training Completion Hierarchy" (`session_logs` identity) | **Accurate today but scheduled to change** — see the inline ⚠️ notes pointing at the owning session. | this file, until that session lands |
 
 ---
@@ -19,7 +17,7 @@ This file documents the platform architecture, database schema, and data flow pa
 CoachHub is a fitness coaching platform built with Next.js 14 (App Router). It connects two user types:
 
 - **Coaches** (role: `trainer`) - manage clients, create training/nutrition plans, review check-ins, monitor wellness alerts. Dashboard at `/dashboard`.
-- **Clients** (role: `client`) - track daily wellness, log workouts (per-set), manage nutrition, and complete weekly check-ins via the day-centric client portal. Home at `/client` (date-driven day view). *(Legacy: the old Daily Pulse at `/client/dashboard` is being retired in Session 5.1; nothing routes there post-Session 2.3.)*
+- **Clients** (role: `client`) - track daily wellness, log workouts (per-set), manage nutrition, and complete weekly check-ins via the day-centric client portal. Home at `/client` (date-driven day view; see Client Portal Architecture).
 
 **Tech stack:** Next.js 14, Supabase (PostgreSQL + RLS + Auth), SWR (coach-side), Upstash Redis (rate limiting), OpenAI GPT-4o / GPT-4o-mini (AI summaries, training generation), Vitest, Tailwind CSS, shadcn/ui, Lucide icons, Framer Motion.
 
@@ -188,7 +186,7 @@ When a coach completes a phase, the transition follows this sequence:
 
 ### 3. Client completion card
 
-`PhaseCompletionCard` (`components/client-portal/day/phase-completion-card.tsx`, relocated from `components/daily-pulse/` in Session 2.5):
+`PhaseCompletionCard` (`components/client-portal/day/phase-completion-card.tsx`):
 - Fetches via SWR from `GET /api/client/phase-completion` (queries phases where `status='completed'`, `phase_summary IS NOT NULL`, `completion_seen=false`)
 - Displays: phase name, coach reflection, summary stats (training %, nutrition %, weight change), next phase name
 - On dismiss: `POST /api/client/phase-completion` sets `completion_seen = true`
@@ -202,10 +200,10 @@ Daily tracking data is split into a spine table and domain-specific child tables
 daily_logs (spine)         -- id, client_id, date, notes, phase_id
   ├── wellness_logs        -- mood, energy, sleep, stress (1:1 via daily_log_id FK)
   ├── nutrition_logs       -- consumed, targets, adherence (1:1 via daily_log_id FK)
-  ├── training_logs        -- trained, training_session_id, training_data JSONB (1:1 via daily_log_id FK)
+  ├── training_logs        -- trained, training_session_id, training_data JSONB (legacy/orphaned) (1:1 via daily_log_id FK)
   └── daily_habit_logs     -- per-habit completion (1:many, FK to daily_habits)
 ```
-- **Writes**: per-card independent writes. Each per-card endpoint (`PATCH /api/client/daily-logs/[date]/nutrition`, `/wellness`, and similar) ensures the day's `daily_logs` spine row exists (setting `phase_id`) and upserts only its own child table. (The legacy monolithic `upsert_daily_log_atomic()` RPC is being retired and must not be used for new writes; it and the old `/api/client/daily-logs` POST are removed in Session 5.1.)
+- **Writes**: per-card independent writes. Each per-card endpoint (`PATCH /api/client/daily-logs/[date]/nutrition`, `/wellness`, and similar) ensures the day's `daily_logs` spine row exists (setting `phase_id`) and upserts only its own child table. (The old monolithic `/api/client/daily-logs` POST and its `today`/`streak`/`nutrition-target`/`week` siblings were removed in Session 5.1; the `upsert_daily_log_atomic()` RPC remains in the DB as an unused function — its removal is separate schema work — and must not be used for new writes.)
 - **Domain-specific reads** query child tables directly (e.g. wellness history queries `wellness_logs`, not the view)
 - **Cross-domain reads** use the `daily_logs_full` view (e.g. attention feed, AI summary generation)
 - Each child table has `client_id` and `date` columns for direct querying without joining the spine
@@ -364,46 +362,62 @@ EL-1 (not currently in scope) specifies a cron that deletes draft plans older th
 
 ## Client Portal Architecture
 
-> ⚠️ **STOP — read this before using the section below.** The content that follows describes **Daily Pulse**, which is being replaced by the client portal redesign currently in flight. When building or modifying client portal work (`app/client/**`, `components/client-portal/**`, new `/api/client/*` endpoints), **do not follow the patterns described here**. Use `docs/CLIENT-PORTAL-REDESIGN.md` and `docs/CLIENT-PORTAL-EXECUTION-PLAN.md` as the source of truth. This section remains for historical context only until Session 5.1 of the execution plan deletes the Daily Pulse code and rewrites this section.
-
-Daily Pulse is the client's daily tracking interface at `/client/dashboard`. Clients log wellness (mood, energy, sleep, stress), training completion, nutrition intake, and habits each day.
+The client portal at `/client` is a day-centric, event-driven interface: the client picks a date and sees that day's prescribed training, nutrition, wellness, and habits, then logs each independently. It mirrors the coach-side event model (`training_events` / `nutrition_events` as the source of truth for date-specific targets). The web app is a **test harness** for this surface; React Native is the real client, and the `/api/client/**` subset is the RN contract. Build to the contract, not the web rendering.
 
 ### Core principles
 
-1. **Lifted state** - `daily-pulse.tsx` owns ALL state. Child components are controlled/presentational. Props down, callbacks up.
-2. **Single source of truth** - The `training_data` JSONB column on `training_logs` stores the complete training UI state. On page load, everything restores from this column, not from cross-referencing other tables.
-3. **Cache busting** - All fetches use `{ cache: 'no-store' }`. All GET API routes return `Cache-Control: no-store` headers.
-4. **Historical snapshots** - Training and nutrition targets are snapshotted at save time. Coach-side views always read saved values, never the current plan.
-5. **Date-aware saves** - The server-side save flow uses the log's `date` field (not today's date) when looking up nutrition targets and planned activities.
+1. **Day-centric, URL-driven.** Home is `/client?date=YYYY-MM-DD` (today by default). Date lives in the URL so back/forward and deep links work. Prev/next via arrows + horizontal swipe on touch.
+2. **Event-keyed, not session-keyed.** Training reads/writes key on `training_events.id`, not `training_session_id`. This fixes the edited-clone bleed that gave the check-in an ambiguous "sessions completed" count.
+3. **Per-card independent saves.** No monolithic "Log Day" button. Each detail page saves only its own domain. The old Daily Pulse "lifted state / no auto-save / single atomic write" rule is retired.
+4. **Spine writes preserved.** Wellness, nutrition, and habits still write to the `daily_logs` spine children so `daily_logs_full` (read by the attention feed and check-in context) stays intact.
+5. **Render-ready payloads.** The API emits display-ready, locale-neutral data (ISO dates on the wire, server-side aggregation/summaries). Clients render weights in the user's own unit preference via `formatWeight(weightKg, unitPreference)` (`utils/nutrition-helpers.ts`), a client-side display formatter. (Viewer-relative per-record weight units — a stored `weight_unit` + conversion at the API boundary — are planned Phase 8 work, not yet shipped.)
 
-### Data fetching
+### Page / navigation structure
 
-`use-daily-pulse.ts` fires a single `Promise.all` on date change:
-```
-GET /api/client/daily-logs/today?date={selectedDate}
-GET /api/client/daily-logs/streak
-GET /api/client/daily-logs/nutrition-target?date={selectedDate}
-GET /api/client/training
-GET /api/client/habits
-GET /api/client/habits/logs/today?date={selectedDate}
-```
-- All fetches use `fetchWithRetry` (handles 429 rate limits with 1500ms retry)
-- `AbortController` cancels previous requests on date change
-- Single `isLoading` flag is true until all resolve
+A persistent bottom tab bar (`components/client-portal/nav/client-nav.tsx`, `ClientBottomTabBar`) has four tabs: **Home** (`/client`), **Metrics** (`/client/metrics`), **Program** (`/client/program`), **Content** (`/client/resources`). The top bar (`ClientTopBar`) holds the logo, a notifications dropdown, and an avatar menu → **Settings** (`/client/settings`) + Sign out. Layout in `app/client/layout.tsx` (also owns the `pending_intake` onboarding gate). Check-in is **not** a tab.
 
-### Save flow
+- **Home** (`app/client/page.tsx`): phase banner (hidden with no active roadmap) + day-summary cards (training, nutrition, wellness, habits) and a check-in summary card. Training renders a list when multiple sessions are prescribed. `PhaseCompletionCard` surfaces on first open after a phase transition.
+- **Detail pages** (each fetches only its own data): `/client/training?date=X&eventId=Y`, `/client/nutrition?date=X`, `/client/wellness?date=X`, `/client/habits?date=X`. Back returns to home with the date preserved.
+- **Metrics** (`/client/metrics`, `components/client-portal/metrics/metrics-hub.tsx`): progress hub — body metrics, habit progress + streaks, and trends.
+- **Program** (`/client/program`): read-only roadmap + phases. Roadmaps are opt-in — no-phase is a first-class state and the banner/program view simply hide when no active roadmap exists.
+- **Check-in** (`/client/check-in`): reached from the Home check-in card (`components/client-portal/day/check-in-card-summary.tsx`) and from notifications (`actionUrl: "/client/check-in"`), not a bottom tab. The hub shows the in-window submission form (gated by `clients.expected_check_in_day` + `calculateCheckInPeriod()`) plus a newest-first history list drilling into `/client/check-in/[id]`.
 
-`handleSave()` in `daily-pulse-handlers.ts`:
-1. Builds `training_data` JSONB payload (trainingSessionId, trainingSessionName, activityStatuses, unplannedActivities)
-2. POSTs to `/api/client/daily-logs` with wellness, nutrition, training data
-3. Server calls `upsert_daily_log_atomic()` RPC
+### Data model
 
-### Restore flow
+Reads/writes the existing day-keyed tables — no portal-specific schema:
+- **Targets (read):** `training_events` (one row per session per date), `nutrition_events` (one per client per date).
+- **Daily-logs spine + children (write):** `daily_logs` → `wellness_logs`, `nutrition_logs`, `training_logs`, `daily_habit_logs`.
+- **Training completion:** `training_logs` → `session_logs` → `exercise_logs` → `set_logs` (per-set actuals). `prescribed_session_snapshot` / `prescribed_exercise_snapshot` JSONB preserve history when plans change.
 
-When a saved log exists for the selected date:
-1. Restores wellness from log fields
-2. Restores nutrition from log fields (including snapshotted targets)
-3. Reads `training_data` JSONB: matches session IDs to current plan, handles orphaned sessions (plan changed since save) via `trainingSessionName` fallback
+### API surface
+
+**Reads:** `GET /api/client/day-summary?date=` (home payload `{ phase, training[], nutrition, wellness, habits }`, `no-store`) · `GET /api/client/training/events/[eventId]` · `GET /api/client/daily-logs/[date]/{wellness,nutrition,habits}` · `GET /api/client/program` · `GET /api/client/training/exercise-history` (bounded full return) · `GET /api/client/check-ins` (**keyset-default**, opaque base64url `{createdAt,id}` cursor via `lib/cursor.ts`; legacy `?offset=` opt-in).
+
+**Writes:** `POST /api/client/training/events/[eventId]/log` (bulk-replace `session_logs` + `exercise_logs` with snapshots; updates `training_events.status`) · `PATCH /api/client/daily-logs/[date]/{wellness,nutrition}` · `PATCH /api/client/settings` (`weight_unit`, `unit_preference`, `reminder_preferences`, `timezone` — IANA-validated).
+
+Every write resolves plan context once via `resolvePlanContextForDate(clientId, date)` to stamp `daily_logs.phase_id` + `*_plan_id`, and enforces the past-day lock server-side.
+
+### Workout logging (progressive disclosure)
+
+Two modes, client's choice per session, no coach config — both hit the same endpoint/save button (`components/client-portal/training/`):
+- **Quick log (default):** complete / partial / skipped + optional notes → `session_logs` with the chosen `completion_quality`, no `exercise_logs`.
+- **Detailed log (collapsed disclosure):** per-set reps/weight/optional RPE, "Copy previous set", "Add exercise" (unplanned), "Skip exercise" → `session_logs` + one `exercise_logs` row per logged exercise with snapshots. Unlogged prescribed exercises count as skipped; mixed → `partial`. Save is a single bulk-replace (no per-set auto-save).
+
+### Alternative-session handling
+
+Clients can swap on a planned day or train on a rest day via the active-plan session picker. On write, each `session_log` links to an unlinked, matchable `training_event` (`status IN ('scheduled','missed','skipped')`, `session_log_id IS NULL`) in the same week — by performed session id, then date, then session id in-week; no match leaves `training_event_id NULL` as a surplus session. Snapshots (Option A): `prescribed_session_snapshot` from the **matched event** (calendar story); `prescribed_exercise_snapshot` from the **chosen session** (what they did). Adherence counts only `training_events.status='completed'`; the coach calendar is unchanged.
+
+### Date-edit permissions
+
+One rule in `lib/daily-log-permissions.ts` (pure, client-safe): today always editable; past-never-logged editable (backfill); past-logged locked; future view-only. `canEditDay(date, loggedStatus, clientTimezone)` drives UI disabled state; the server wrapper `assertCanEdit()` (`services/daily-log-permissions-service.ts`) throws `DayLockedError` → 403. Habits lock per-habit (optional `habitId` narrows the "logged" check), not per-day.
+
+### Timezone model
+
+"Today" is client-local. `clients.timezone` (TEXT, IANA, NOT NULL default `"UTC"`, migration 089) is the source. Permission helpers and every portal endpoint derive today via `getTodayDateStringInTimezone()` in `lib/date-helpers.ts` (the only surface owning `Intl.DateTimeFormat` math). Legacy/`UTC` rows fall back to UTC safely.
+
+### Scale / payload contracts
+
+Keyset-by-default is scoped to paginated, time-ordered "load older" history (check-ins). Small bounded sets return in full with no cursor (habits, a 1-week completions window, the exercise list). History rows are ID-first (`exercise_id` + `performed_name` fallback), never the catalog dictionary; the dictionary syncs separately via `GET /api/client/exercises/catalog?since=` (UPSERT-only delta on `updated_at`, internally paged past the ~1000-row PostgREST cap; periodic full resync catches deletes). Weight is rendered client-side in the user's unit preference via `formatWeight(weightKg, unitPreference)` (no `formatWeight` calls in `app/api/client/**`); viewer-relative per-record units (stored `weight_unit` + conversion at the API boundary) are Phase 8, not yet built.
 
 ### Coach-side wellness strip
 
@@ -629,9 +643,9 @@ Status codes: 200 (success), 201 (created), 400 (validation), 401 (auth), 403 (f
 
 ## JSONB Conventions
 
-- `training_data` / `activityStatuses` shapes were documented in the Daily Pulse README (removed with Daily Pulse, Sessions 5.1 / 9.10); they persist only on legacy `training_logs` rows
-- `activityStatuses` is `Record<string, { completed, activityName, estimatedCalories }>` - always read `.completed` field, never use the object as a truthy check
-- `training_data` JSONB on `training_logs` is a **UI restore cache** for the Daily Pulse. It preserves the exact training state at save time so the UI can restore without cross-referencing. The **source of truth** for training completion is `session_logs` + `exercise_logs` + `set_logs` (post migration 090; per-set actuals were inline scalars on `exercise_logs` before).
+- `training_data` / `activityStatuses` were the Daily Pulse training UI cache (now deleted). These shapes are no longer written; they persist only as dead data on legacy `training_logs` rows.
+- (Legacy shape, for anyone inspecting old rows) `activityStatuses` is `Record<string, { completed, activityName, estimatedCalories }>` — read the `.completed` field, never use the object as a truthy check.
+- `training_data` JSONB on `training_logs` was the Daily Pulse UI restore cache; it is now **orphaned** — no current code reads or writes it. The **source of truth** for training completion is `session_logs` + `exercise_logs` + `set_logs` (post migration 090; per-set actuals were inline scalars on `exercise_logs` before).
 
 ### phase_goals_snapshot
 

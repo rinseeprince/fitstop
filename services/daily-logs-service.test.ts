@@ -4,16 +4,11 @@ import {
   calculateCalorieSurplusDeficit,
   calculateStreakFromLogs,
   getDayOfWeekLowercase,
-  upsertDailyLog,
   getDailyLogs,
   getTodayLog,
   calculateStreaks,
   mapRowToDailyLog,
 } from './daily-logs-service';
-import {
-  getTodaysTrainingSession,
-  getTodaysNutritionTarget,
-} from './daily-context-service';
 import type { DailyLog } from '@/types/daily-log';
 
 vi.mock('./supabase-admin', () => ({
@@ -27,17 +22,7 @@ vi.mock('./client-portal-service', () => ({
   getClientNutritionTargets: vi.fn(),
 }));
 
-vi.mock('./training-event-service', () => ({
-  getEventForDate: vi.fn(),
-}));
-
-vi.mock('./nutrition-event-service', () => ({
-  getNutritionEventForDate: vi.fn(),
-}));
-
 import { supabaseAdmin } from './supabase-admin';
-import { getEventForDate } from './training-event-service';
-import { getNutritionEventForDate } from './nutrition-event-service';
 
 function createMockQuery(result: { data: unknown; error: unknown }) {
   const mockQuery = {
@@ -213,73 +198,6 @@ describe('Daily Logs Service - Database Functions', () => {
     vi.clearAllMocks();
   });
 
-  describe('upsertDailyLog', () => {
-    it('upserts log via RPC and returns full row from view', async () => {
-      const mockViewRow = {
-        id: 'log-123',
-        client_id: 'client-456',
-        date: '2024-01-15',
-        notes: null,
-        phase_id: null,
-        mood: 4,
-        energy: null,
-        sleep: null,
-        stress: null,
-        calories_consumed: 2000,
-        protein_g: null,
-        carbs_g: null,
-        fat_g: null,
-        target_calories: 2100,
-        target_protein_g: null,
-        target_carbs_g: null,
-        target_fat_g: null,
-        nutrition_adherence: 'partial',
-        calorie_surplus_deficit: -100,
-        trained: null,
-        training_session_id: null,
-        training_data: null,
-        created_at: '2024-01-15T10:00:00Z',
-        updated_at: '2024-01-15T10:00:00Z',
-      };
-
-      // Mock RPC call
-      vi.mocked(supabaseAdmin.rpc).mockResolvedValue({ data: 'log-123', error: null } as any);
-      // Mock view fetch after RPC
-      const mockQuery = createMockQuery({ data: mockViewRow, error: null });
-      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any);
-
-      const input = {
-        date: '2024-01-15',
-        caloriesConsumed: 2000,
-        targetCalories: 2100,
-        mood: 4,
-      } as any;
-
-      const result = await upsertDailyLog('client-456', input);
-
-      expect(result.id).toBe('log-123');
-      expect(result.calorieSurplusDeficit).toBe(-100);
-      expect(supabaseAdmin.rpc).toHaveBeenCalledWith(
-        'upsert_daily_log_atomic',
-        expect.objectContaining({
-          p_client_id: 'client-456',
-          p_date: '2024-01-15',
-        })
-      );
-    });
-
-    it('throws error on RPC failure', async () => {
-      vi.mocked(supabaseAdmin.rpc).mockResolvedValue({
-        data: null,
-        error: { message: 'Database error' },
-      } as any);
-
-      await expect(
-        upsertDailyLog('client-456', { date: '2024-01-15' })
-      ).rejects.toThrow('Failed to upsert daily log: Database error');
-    });
-  });
-
   describe('mapRowToDailyLog', () => {
     it('maps a daily_logs_full row to camelCase and null → undefined', () => {
       const row = {
@@ -381,112 +299,6 @@ describe('Daily Logs Service - Database Functions', () => {
       vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any);
 
       const result = await getTodayLog('client-123');
-      expect(result).toBeNull();
-    });
-  });
-
-  describe('getTodaysTrainingSession', () => {
-    it('returns training session when event exists for today', async () => {
-      vi.mocked(getEventForDate).mockResolvedValue({
-        id: 'event-1',
-        clientId: 'client-123',
-        trainingPlanId: 'plan-1',
-        trainingSessionId: 'session-1',
-        date: '2024-01-15',
-        sessionName: 'Upper Body',
-        sessionFocus: null,
-        estimatedCalories: 300,
-        status: 'scheduled',
-        sessionLogId: null,
-        isModified: false,
-        calorieSurplusPercentage: null,
-        createdAt: '2024-01-01T00:00:00Z',
-        updatedAt: '2024-01-01T00:00:00Z',
-      });
-
-      const result = await getTodaysTrainingSession('client-123', '2024-01-15');
-
-      expect(result).toEqual({
-        sessionId: 'session-1',
-        sessionName: 'Upper Body',
-        estimatedCalories: 300,
-      });
-    });
-
-    it('returns null when no event exists for today', async () => {
-      vi.mocked(getEventForDate).mockResolvedValue(null);
-
-      const result = await getTodaysTrainingSession('client-123', '2024-01-15');
-      expect(result).toBeNull();
-    });
-
-    it('uses event id as sessionId when trainingSessionId is null', async () => {
-      vi.mocked(getEventForDate).mockResolvedValue({
-        id: 'event-1',
-        clientId: 'client-123',
-        trainingPlanId: 'plan-1',
-        trainingSessionId: null,
-        date: '2024-01-15',
-        sessionName: 'Custom Session',
-        sessionFocus: null,
-        estimatedCalories: null,
-        status: 'scheduled',
-        sessionLogId: null,
-        isModified: false,
-        calorieSurplusPercentage: null,
-        createdAt: '2024-01-01T00:00:00Z',
-        updatedAt: '2024-01-01T00:00:00Z',
-      });
-
-      const result = await getTodaysTrainingSession('client-123', '2024-01-15');
-
-      expect(result).toEqual({
-        sessionId: 'event-1',
-        sessionName: 'Custom Session',
-        estimatedCalories: 0,
-      });
-    });
-  });
-
-  describe('getTodaysNutritionTarget', () => {
-    it('returns event-based target when nutrition event exists', async () => {
-      const mockEvent = {
-        id: 'ne-1',
-        clientId: 'client-123',
-        nutritionPlanId: 'plan-1',
-        date: '2024-01-15',
-        dayOfWeek: 'monday',
-        baselineCalories: 2000,
-        trainingBurnCalories: 200,
-        proteinG: 160,
-        carbG: 220,
-        fatG: 70,
-        dietType: 'balanced',
-        isTrainingDay: true,
-        calorieSurplusPercentage: null,
-        status: 'scheduled' as const,
-        createdAt: '',
-        updatedAt: '',
-      };
-
-      vi.mocked(getNutritionEventForDate).mockResolvedValue(mockEvent);
-
-      const mockQuery = createMockQuery({ data: { include_activity_burn: true }, error: null });
-      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any);
-
-      const result = await getTodaysNutritionTarget('client-123', '2024-01-15');
-
-      expect(result).not.toBeNull();
-      expect(result!.planId).toBe('plan-1');
-      expect(result!.includeActivityBurn).toBe(true);
-      expect(result!.isTrainingDay).toBe(true);
-      expect(getNutritionEventForDate).toHaveBeenCalledWith('client-123', '2024-01-15');
-    });
-
-    it('returns null when no nutrition event exists', async () => {
-      vi.mocked(getNutritionEventForDate).mockResolvedValue(null);
-
-      const result = await getTodaysNutritionTarget('client-123');
       expect(result).toBeNull();
     });
   });
