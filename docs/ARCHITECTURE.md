@@ -695,7 +695,7 @@ Written to `phases.phase_summary` during phase transition. Captures completion m
 
 > ⚠️ **Scheduled change (Phase 6).** This section describes the current parallel-entry model. Session 6.4 makes daily logs the single source of truth (the check-in form becomes a daily-logs viewer that routes edits through the per-card endpoints) and **drops the `check_in_session_completions` table**. Update this section when 6.4 lands.
 
-Training-completion counting reads `training_events.status='completed'` (the same source of truth as coach-side adherence); only `completed` counts toward `sessionsCompleted` (`getCheckInTrainingPeriodStats`). Per-event training detail for the AI prompt comes from `getTrainingEventDetailsForPeriod()` (`services/check-in-context-service.ts`) — events left-joined to their `session_logs` for notes/quality — so the AI training block no longer reads `check_in_session_completions`.
+Training-completion counting reads `training_events.status='completed'` (the same source of truth as coach-side adherence); only `completed` counts toward `sessionsCompleted` (`getCheckInTrainingPeriodStats`). Per-event training detail for the AI prompt comes from `getTrainingEventDetailsForPeriod()` (`services/check-in-context-service.ts`) — events left-joined to their `session_logs` for notes/quality — so the AI training block no longer reads `check_in_session_completions`. For each logged session, `getExerciseSummariesForPeriod()` appends compact per-exercise top-set lines (heaviest set, RPE when present) walked from the `exercise_logs`→`set_logs` chain, plus an alt-session swap signal (prescribed vs performed session name) — additive enrichment that degrades to the per-event detail if the chain read fails.
 
 ### Submission flow
 

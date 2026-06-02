@@ -82,6 +82,10 @@ export type CheckInTrainingEventDetail = {
   notes?: string;
   completionQuality?: SessionCompletionQuality;
   trainingSessionId: string | null;
+  // The linked session_log id (null when the event was never logged). Used by
+  // the AI prompt to join per-exercise top-set lines (keyed by session_log_id)
+  // back to each event (Session 6.3).
+  sessionLogId: string | null;
   performedSessionName?: string | null;
 };
 

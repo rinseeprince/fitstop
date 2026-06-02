@@ -19,7 +19,8 @@ export function buildCheckInAnalysisPrompt(
   endDate?: Date,
   weeklySummary?: WeeklyNutritionSummary | null,
   periodSnapshot?: PeriodSnapshot | null,
-  trainingEventDetails?: CheckInTrainingEventDetail[]
+  trainingEventDetails?: CheckInTrainingEventDetail[],
+  exerciseSummaries?: Map<string, string[]>
 ): string {
   let prompt = `Analyze this check-in for ${sanitizeForAIPrompt(clientName)}:\n\n`;
 
@@ -64,6 +65,30 @@ export function buildCheckInAnalysisPrompt(
       prompt += `  - ${sanitizeForAIPrompt(d.sessionName)}: ${status}\n`;
       if (d.status !== "skipped" && d.notes) {
         prompt += `    Note: ${sanitizeForAIPrompt(d.notes)}\n`;
+      }
+
+      // Session 6.3 enrichment: per-exercise top-set lines + alt-session swap
+      // signal. Only logged completed/partial events carry an exercise block;
+      // skipped / not-logged events keep their 6.2 line only.
+      if (d.status === "completed" || d.status === "partial") {
+        const exerciseLines = d.sessionLogId
+          ? exerciseSummaries?.get(d.sessionLogId)
+          : undefined;
+        // Alt-session swap header: prescribed vs performed session name.
+        if (
+          d.performedSessionName &&
+          d.performedSessionName !== d.sessionName
+        ) {
+          const k = exerciseLines?.length ?? 0;
+          prompt += `    Prescribed ${sanitizeForAIPrompt(d.sessionName)} · Performed ${sanitizeForAIPrompt(d.performedSessionName)} — ${k} exercises logged\n`;
+        }
+        if (exerciseLines?.length) {
+          exerciseLines.forEach((line) => {
+            // Lines are pre-sanitized in the service (names) but contain a
+            // composed em-dash format string; re-sanitizing would strip it.
+            prompt += `      ${line}\n`;
+          });
+        }
       }
     });
   } else if (current.workoutsCompleted) {

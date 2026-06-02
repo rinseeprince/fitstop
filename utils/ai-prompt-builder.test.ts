@@ -36,6 +36,7 @@ describe("buildCheckInAnalysisPrompt — training block (Session 6.2)", () => {
         notes: "felt strong",
         completionQuality: "full",
         trainingSessionId: "sess-1",
+        sessionLogId: "log-1",
       },
       {
         eventId: "ev-2",
@@ -46,6 +47,7 @@ describe("buildCheckInAnalysisPrompt — training block (Session 6.2)", () => {
         notes: "sick",
         completionQuality: "skipped",
         trainingSessionId: "sess-2",
+        sessionLogId: "log-2",
       },
       {
         eventId: "ev-3",
@@ -54,6 +56,7 @@ describe("buildCheckInAnalysisPrompt — training block (Session 6.2)", () => {
         status: "scheduled",
         logStatus: "not_logged",
         trainingSessionId: "sess-3",
+        sessionLogId: null,
       },
     ];
 
@@ -95,6 +98,7 @@ describe("buildCheckInAnalysisPrompt — training block (Session 6.2)", () => {
         logStatus: "logged",
         completionQuality: "skipped",
         trainingSessionId: "sess-1",
+        sessionLogId: "log-1",
       },
     ];
 
@@ -142,5 +146,149 @@ describe("buildCheckInAnalysisPrompt — training block (Session 6.2)", () => {
 
     expect(training).toContain("- Workouts Completed: 2");
     expect(training).not.toContain("Sessions:");
+  });
+});
+
+describe("buildCheckInAnalysisPrompt — exercise enrichment (Session 6.3)", () => {
+  function build(
+    details: CheckInTrainingEventDetail[],
+    exerciseSummaries?: Map<string, string[]>,
+  ): string {
+    return trainingSection(
+      buildCheckInAnalysisPrompt(
+        checkIn(),
+        [],
+        "Jane",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        null,
+        null,
+        details,
+        exerciseSummaries,
+      ),
+    );
+  }
+
+  it("emits the per-exercise lines for a completed session from the fixture Map", () => {
+    const details: CheckInTrainingEventDetail[] = [
+      {
+        eventId: "ev-1",
+        date: "2026-04-07",
+        sessionName: "Push Day",
+        status: "completed",
+        logStatus: "logged",
+        completionQuality: "full",
+        trainingSessionId: "sess-1",
+        sessionLogId: "log-1",
+      },
+    ];
+    const summaries = new Map<string, string[]>([
+      [
+        "log-1",
+        ["Bench Press — 4 sets, top 100x5 @ RPE 8", "Overhead Press — 3 sets, top 60x6"],
+      ],
+    ]);
+
+    const training = build(details, summaries);
+
+    expect(training).toContain("Push Day: (completed)");
+    expect(training).toContain("Bench Press — 4 sets, top 100x5 @ RPE 8");
+    expect(training).toContain("Overhead Press — 3 sets, top 60x6");
+  });
+
+  it("renders the swap header when performed differs from prescribed", () => {
+    const details: CheckInTrainingEventDetail[] = [
+      {
+        eventId: "ev-1",
+        date: "2026-04-07",
+        sessionName: "Push Day",
+        status: "completed",
+        logStatus: "logged",
+        completionQuality: "full",
+        trainingSessionId: "sess-1",
+        sessionLogId: "log-1",
+        performedSessionName: "Pull Day",
+      },
+    ];
+    const summaries = new Map<string, string[]>([
+      ["log-1", ["Pull-up — 4 sets, top 0x10", "Row — 3 sets, top 80x8"]],
+    ]);
+
+    const training = build(details, summaries);
+
+    // "Prescribed X · Performed Y — k exercises logged" with k = line count.
+    expect(training).toContain("Prescribed Push Day · Performed Pull Day — 2 exercises logged");
+  });
+
+  it("does NOT render a swap header when performed equals prescribed", () => {
+    const details: CheckInTrainingEventDetail[] = [
+      {
+        eventId: "ev-1",
+        date: "2026-04-07",
+        sessionName: "Push Day",
+        status: "completed",
+        logStatus: "logged",
+        completionQuality: "full",
+        trainingSessionId: "sess-1",
+        sessionLogId: "log-1",
+        performedSessionName: "Push Day",
+      },
+    ];
+
+    const training = build(details, new Map([["log-1", ["Bench — 3 sets, top 100x5"]]]));
+
+    expect(training).not.toContain("Prescribed");
+    expect(training).not.toContain("Performed");
+    expect(training).toContain("Bench — 3 sets, top 100x5");
+  });
+
+  it("renders the skip reason and NO exercise block for a skipped event", () => {
+    const details: CheckInTrainingEventDetail[] = [
+      {
+        eventId: "ev-1",
+        date: "2026-04-07",
+        sessionName: "Leg Day",
+        status: "skipped",
+        logStatus: "logged",
+        notes: "sick",
+        completionQuality: "skipped",
+        trainingSessionId: "sess-1",
+        sessionLogId: "log-1",
+      },
+    ];
+    // A Map entry exists for the skipped session, but it must be ignored.
+    const summaries = new Map<string, string[]>([
+      ["log-1", ["Squat — 5 sets, top 140x5"]],
+    ]);
+
+    const training = build(details, summaries);
+
+    expect(training).toContain("Leg Day: Skipped (reason: sick)");
+    expect(training).not.toContain("Squat — 5 sets, top 140x5");
+  });
+
+  it("composes gracefully with an empty Map (no exercise lines, 6.2 detail intact)", () => {
+    const details: CheckInTrainingEventDetail[] = [
+      {
+        eventId: "ev-1",
+        date: "2026-04-07",
+        sessionName: "Push Day",
+        status: "completed",
+        logStatus: "logged",
+        completionQuality: "full",
+        trainingSessionId: "sess-1",
+        sessionLogId: "log-1",
+      },
+    ];
+
+    const training = build(details, new Map());
+
+    expect(training).toContain("- Sessions: 1/1 completed");
+    expect(training).toContain("Push Day: (completed)");
+    // No exercise lines and no swap header.
+    expect(training).not.toContain("top ");
+    expect(training).not.toContain("Prescribed");
   });
 });

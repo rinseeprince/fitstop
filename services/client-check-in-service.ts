@@ -16,7 +16,10 @@ import { supabaseAdmin } from "@/services/supabase-admin";
 import { getDailyLogs } from "@/services/daily-logs-service";
 import { getHabitLogs } from "@/services/daily-habits-service";
 import { getNutritionSummaryForPeriod } from "@/services/weekly-nutrition-service";
-import { getTrainingEventDetailsForPeriod } from "@/services/check-in-context-service";
+import {
+  getExerciseSummariesForPeriod,
+  getTrainingEventDetailsForPeriod,
+} from "@/services/check-in-context-service";
 import { calculateCheckInPeriod, getDateString } from "@/lib/date-helpers";
 import type { SubmitCheckInRequest, CheckInFormData, Client } from "@/types/check-in";
 import type { PeriodSnapshot } from "@/types/schedule";
@@ -78,6 +81,10 @@ export async function triggerAISummaryGeneration(
     // failure so the AI training block degrades to the legacy workout count.
     let dailyLogs, habitLogs, weeklySummary;
     let trainingEventDetails: Awaited<ReturnType<typeof getTrainingEventDetailsForPeriod>> = [];
+    // Session 6.3: per-exercise top-set lines, keyed by session_log_id. Derived
+    // from the logged events' session_log ids; defaults to an empty Map so the
+    // prompt degrades to per-event detail on any failure (non-blocking).
+    let exerciseSummaries: Map<string, string[]> = new Map();
     try {
       const [logs, habits, periodSummary, eventDetails] = await Promise.all([
         getDailyLogs(clientId, startDateStr, endDateStr),
@@ -89,6 +96,12 @@ export async function triggerAISummaryGeneration(
       habitLogs = habits;
       weeklySummary = periodSummary;
       trainingEventDetails = eventDetails;
+
+      const loggedSessionLogIds = eventDetails
+        .filter((d) => d.logStatus === "logged")
+        .map((d) => d.sessionLogId)
+        .filter((id): id is string => Boolean(id));
+      exerciseSummaries = await getExerciseSummariesForPeriod(loggedSessionLogIds);
     } catch (error) {
       // If daily tracking fetch fails, continue without it
       console.error('Error fetching daily tracking data:', error instanceof Error ? error.message : 'Unknown error');
@@ -96,6 +109,7 @@ export async function triggerAISummaryGeneration(
       habitLogs = undefined;
       weeklySummary = null;
       trainingEventDetails = [];
+      exerciseSummaries = new Map();
     }
 
     // Read period snapshot if it was generated during submission
@@ -112,7 +126,8 @@ export async function triggerAISummaryGeneration(
       endDate,
       weeklySummary,
       periodSnapshot,
-      trainingEventDetails
+      trainingEventDetails,
+      exerciseSummaries
     );
 
     // Update check-in with AI summary (v2 format)

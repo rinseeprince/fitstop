@@ -8,7 +8,10 @@ import { generateCheckInSummary, regenerateAISummary } from "@/services/ai-servi
 import { getDailyLogs } from "@/services/daily-logs-service";
 import { getHabitLogs } from "@/services/daily-habits-service";
 import { getNutritionSummaryForPeriod } from "@/services/weekly-nutrition-service";
-import { getTrainingEventDetailsForPeriod } from "@/services/check-in-context-service";
+import {
+  getExerciseSummariesForPeriod,
+  getTrainingEventDetailsForPeriod,
+} from "@/services/check-in-context-service";
 import { calculateCheckInPeriod, getDateString } from "@/lib/date-helpers";
 import type { GenerateAISummaryResponse } from "@/types/check-in";
 import { aiRateLimit } from "@/lib/rate-limit";
@@ -83,6 +86,10 @@ export async function POST(
     // failure so the AI training block degrades to the legacy workout count.
     let dailyLogs, habitLogs, weeklySummary;
     let trainingEventDetails: Awaited<ReturnType<typeof getTrainingEventDetailsForPeriod>> = [];
+    // Session 6.3: per-exercise top-set lines, keyed by session_log_id (see the
+    // submit path in client-check-in-service for the contract). Empty Map on any
+    // failure so the prompt degrades to per-event detail (non-blocking).
+    let exerciseSummaries: Map<string, string[]> = new Map();
     try {
       const [logs, habits, periodSummary, eventDetails] = await Promise.all([
         getDailyLogs(currentCheckIn.clientId, startDateStr, endDateStr),
@@ -94,6 +101,12 @@ export async function POST(
       habitLogs = habits;
       weeklySummary = periodSummary;
       trainingEventDetails = eventDetails;
+
+      const loggedSessionLogIds = eventDetails
+        .filter((d) => d.logStatus === "logged")
+        .map((d) => d.sessionLogId)
+        .filter((id): id is string => Boolean(id));
+      exerciseSummaries = await getExerciseSummariesForPeriod(loggedSessionLogIds);
     } catch (error) {
       // If daily tracking fetch fails, continue without it
       console.error('Error fetching daily tracking data:', error instanceof Error ? error.message : 'Unknown error');
@@ -101,6 +114,7 @@ export async function POST(
       habitLogs = undefined;
       weeklySummary = null;
       trainingEventDetails = [];
+      exerciseSummaries = new Map();
     }
 
     // Generate or regenerate AI summary
@@ -115,7 +129,8 @@ export async function POST(
           startDate,
           endDate,
           weeklySummary,
-          trainingEventDetails
+          trainingEventDetails,
+          exerciseSummaries
         )
       : await generateCheckInSummary(
           currentCheckIn,
@@ -127,7 +142,8 @@ export async function POST(
           endDate,
           weeklySummary,
           undefined,
-          trainingEventDetails
+          trainingEventDetails,
+          exerciseSummaries
         );
 
     // Update check-in with new AI summary (v2 format)

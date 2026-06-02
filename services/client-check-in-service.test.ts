@@ -32,6 +32,7 @@ vi.mock('./weekly-nutrition-service', () => ({
 
 vi.mock('@/services/check-in-context-service', () => ({
   getTrainingEventDetailsForPeriod: vi.fn(),
+  getExerciseSummariesForPeriod: vi.fn(),
 }))
 
 vi.mock('./client-service', () => ({
@@ -130,7 +131,9 @@ describe('Client Check-in Service', () => {
         null,
         // trainingEventDetails: the daily-tracking fetch throws (getNutritionSummaryForPeriod
         // is unmocked), so the catch sets this to the [] default.
-        []
+        [],
+        // exerciseSummaries (Session 6.3): empty Map default from the same catch.
+        expect.any(Map)
       )
       expect(updateCheckInAISummary).toHaveBeenCalledWith(
         mockCheckInId,
@@ -181,7 +184,8 @@ describe('Client Check-in Service', () => {
         expect.any(Date),
         null,
         null,
-        []
+        [],
+        expect.any(Map)
       )
     })
 
@@ -248,7 +252,8 @@ describe('Client Check-in Service', () => {
         expect.any(Date),
         null,
         null,
-        []
+        [],
+        expect.any(Map)
       )
     })
   })

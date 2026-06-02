@@ -47,7 +47,8 @@ export const generateCheckInSummary = async (
   endDate?: Date,
   weeklySummary?: WeeklyNutritionSummary | null,
   periodSnapshot?: PeriodSnapshot | null,
-  trainingEventDetails?: CheckInTrainingEventDetail[]
+  trainingEventDetails?: CheckInTrainingEventDetail[],
+  exerciseSummaries?: Map<string, string[]>
 ): Promise<AICheckInSummary> => {
   try {
     const prompt = buildCheckInAnalysisPrompt(
@@ -60,7 +61,8 @@ export const generateCheckInSummary = async (
       endDate,
       weeklySummary,
       periodSnapshot,
-      trainingEventDetails
+      trainingEventDetails,
+      exerciseSummaries
     );
 
     const completion = await openai.chat.completions.create({
@@ -92,7 +94,8 @@ export const regenerateAISummary = async (
   startDate?: Date,
   endDate?: Date,
   weeklySummary?: WeeklyNutritionSummary | null,
-  trainingEventDetails?: CheckInTrainingEventDetail[]
+  trainingEventDetails?: CheckInTrainingEventDetail[],
+  exerciseSummaries?: Map<string, string[]>
 ): Promise<AICheckInSummary> => {
   try {
     const focusInstructions = {
@@ -105,7 +108,7 @@ export const regenerateAISummary = async (
     const prompt = buildCheckInAnalysisPrompt(
       checkIn, previousCheckIns, clientName,
       dailyLogs, habitLogs, startDate, endDate, weeklySummary,
-      undefined, trainingEventDetails
+      undefined, trainingEventDetails, exerciseSummaries
     );
     const modifiedPrompt = instruction ? `${instruction}\n\n${prompt}` : prompt;
 
