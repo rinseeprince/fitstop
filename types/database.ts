@@ -242,51 +242,6 @@ export type Database = {
           },
         ]
       }
-      check_in_session_completions: {
-        Row: {
-          check_in_id: string
-          completed: boolean
-          completion_quality: string | null
-          created_at: string
-          id: string
-          notes: string | null
-          training_session_id: string
-        }
-        Insert: {
-          check_in_id: string
-          completed?: boolean
-          completion_quality?: string | null
-          created_at?: string
-          id?: string
-          notes?: string | null
-          training_session_id: string
-        }
-        Update: {
-          check_in_id?: string
-          completed?: boolean
-          completion_quality?: string | null
-          created_at?: string
-          id?: string
-          notes?: string | null
-          training_session_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "check_in_session_completions_check_in_id_fkey"
-            columns: ["check_in_id"]
-            isOneToOne: false
-            referencedRelation: "check_ins"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "check_in_session_completions_training_session_id_fkey"
-            columns: ["training_session_id"]
-            isOneToOne: false
-            referencedRelation: "training_sessions"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       check_in_tokens: {
         Row: {
           check_in_id: string | null
