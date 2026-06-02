@@ -50,6 +50,7 @@ export async function GET(request: NextRequest) {
       expectedDay,
       lastCheckInPeriodEnd,
       new Date(),
+      client.startDate,
     );
 
     return NextResponse.json(

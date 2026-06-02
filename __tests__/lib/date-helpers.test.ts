@@ -1,5 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { getTrainingWeekStart, getTrainingWeekEnd } from "@/lib/date-helpers";
+import {
+  getTrainingWeekStart,
+  getTrainingWeekEnd,
+  resolveCheckInWindow,
+  getCheckInStatus,
+} from "@/lib/date-helpers";
+
+// Local noon keeps getDay()/getDateString stable regardless of the runner's TZ.
+const at = (d: string) => new Date(d + "T12:00:00");
 
 describe("getTrainingWeekStart", () => {
   it("defaults to Monday when checkInDay is null", () => {
@@ -64,5 +72,57 @@ describe("getTrainingWeekEnd", () => {
     expect(getTrainingWeekEnd("2026-03-30", null)).toBe("2026-04-05");
     // Thursday start (Wednesday check-in) -> Wednesday end
     expect(getTrainingWeekEnd("2026-04-02", "wednesday")).toBe("2026-04-08");
+  });
+});
+
+describe("resolveCheckInWindow", () => {
+  it("established client -> full 7-day window ending on the check-in day", () => {
+    // 2024-01-15 is a Monday.
+    expect(resolveCheckInWindow(at("2024-01-15"), "monday", "2023-01-01")).toEqual({
+      periodStart: "2024-01-09",
+      periodEnd: "2024-01-15",
+    });
+  });
+
+  it("mid-week activation -> start clamped to the activation date (partial week)", () => {
+    expect(resolveCheckInWindow(at("2024-01-15"), "monday", "2024-01-12")).toEqual({
+      periodStart: "2024-01-12",
+      periodEnd: "2024-01-15",
+    });
+  });
+
+  it("logging late keeps the window anchored to the most recent check-in day", () => {
+    // Wednesday 2024-01-17, check-in day Monday -> window still ends 2024-01-15.
+    expect(resolveCheckInWindow(at("2024-01-17"), "monday", "2023-01-01")).toEqual({
+      periodStart: "2024-01-09",
+      periodEnd: "2024-01-15",
+    });
+  });
+
+  it("no check-in day -> trailing 7 days ending today", () => {
+    expect(resolveCheckInWindow(at("2024-01-15"), null, "2023-01-01")).toEqual({
+      periodStart: "2024-01-09",
+      periodEnd: "2024-01-15",
+    });
+  });
+});
+
+describe("getCheckInStatus — activation-aware first-check-in gating", () => {
+  it("brand-new, missed first check-in whose window post-dates activation -> overdue (loggable)", () => {
+    // Wed 2024-01-17, check-in Monday -> periodEnd 2024-01-15; activated 2024-01-10 (before).
+    expect(getCheckInStatus("monday", null, at("2024-01-17"), "2024-01-10").status).toBe("overdue");
+  });
+
+  it("brand-new whose window ended before activation -> not_due (pushed to next week)", () => {
+    // periodEnd 2024-01-15 predates activation 2024-01-16 -> nothing to check in for.
+    expect(getCheckInStatus("monday", null, at("2024-01-17"), "2024-01-16").status).toBe("not_due");
+  });
+
+  it("on the check-in day -> available", () => {
+    expect(getCheckInStatus("monday", null, at("2024-01-15"), "2024-01-10").status).toBe("available");
+  });
+
+  it("established client missing a check-in stays overdue (unchanged)", () => {
+    expect(getCheckInStatus("monday", "2024-01-08", at("2024-01-17"), "2023-01-01").status).toBe("overdue");
   });
 });

@@ -20,6 +20,7 @@ const getNutritionSummaryForPeriodMock = vi.fn()
 const getDailyLogsMock = vi.fn()
 const insertExerciseHighlightsMock = vi.fn()
 const calculateCheckInPeriodMock = vi.fn()
+const resolveCheckInWindowMock = vi.fn()
 
 vi.mock('./client-service', () => ({
   getClientById: (...args: unknown[]) => getClientByIdMock(...args),
@@ -51,6 +52,7 @@ vi.mock('@/lib/date-helpers', async (importOriginal) => {
   return {
     ...actual,
     calculateCheckInPeriod: (...args: unknown[]) => calculateCheckInPeriodMock(...args),
+    resolveCheckInWindow: (...args: unknown[]) => resolveCheckInWindowMock(...args),
   }
 })
 
@@ -281,9 +283,10 @@ describe('Check-in Service', () => {
       getDailyLogsMock.mockReset()
       insertExerciseHighlightsMock.mockReset()
       calculateCheckInPeriodMock.mockReset()
+      resolveCheckInWindowMock.mockReset()
       // Default happy-path period + client.
-      getClientByIdMock.mockResolvedValue({ expectedCheckInDay: 'sunday' })
-      calculateCheckInPeriodMock.mockReturnValue({ periodStart: '2026-05-08', periodEnd: '2026-05-14' })
+      getClientByIdMock.mockResolvedValue({ expectedCheckInDay: 'sunday', startDate: '2026-01-01' })
+      resolveCheckInWindowMock.mockReturnValue({ periodStart: '2026-05-08', periodEnd: '2026-05-14' })
       getCheckInTrainingPeriodStatsMock.mockResolvedValue({ sessionsCompleted: 0, sessionsPlanned: 0 })
       getNutritionSummaryForPeriodMock.mockResolvedValue(null)
       getDailyLogsMock.mockResolvedValue([])
@@ -592,6 +595,7 @@ describe('Check-in Service', () => {
         m[k] = vi.fn().mockReturnValue(m)
       }
       m.then = (resolve: (v: unknown) => void) => Promise.resolve(result).then(resolve)
+      m.maybeSingle = () => Promise.resolve(result)
       return m
     }
 
@@ -646,6 +650,28 @@ describe('Check-in Service', () => {
       const enriched = result.checkIns as Array<{ dailyLogsCount: number; expectedDays: number }>
       expect(enriched.map((c) => c.dailyLogsCount)).toEqual([0, 2])
       expect(enriched.map((c) => c.expectedDays)).toEqual([1, 7])
+    })
+
+    it('clamps the oldest check-in period to the activation date (partial first week)', async () => {
+      const checkInRows = [
+        { id: 'c1111111-1111-4111-8111-111111111111', client_id: 'c', status: 'reviewed', created_at: '2024-01-15T12:00:00Z', updated_at: '2024-01-15T12:00:00Z' },
+      ]
+      // Oldest (only) check-in: period is normally [2024-01-09 .. 2024-01-15] = 7 days.
+      // Activated 2024-01-12 → clamp the start forward → [2024-01-12 .. 2024-01-15] = 4 days.
+      const dailyLogDates = [{ date: '2024-01-13' }, { date: '2024-01-14' }, { date: '2024-01-15' }]
+
+      vi.mocked(supabaseAdmin.from).mockImplementation(((table: string) => {
+        if (table === 'daily_logs') return chainable({ data: dailyLogDates, error: null }) as any
+        if (table === 'clients') return chainable({ data: { start_date: '2024-01-12' }, error: null }) as any
+        return chainable({ data: checkInRows, error: null, count: 1 }) as any
+      }) as any)
+
+      const { getClientCheckIns } = await import('./check-in-service')
+      const result = await getClientCheckIns('c', { includeDailyLogCounts: true })
+
+      const enriched = result.checkIns as Array<{ dailyLogsCount: number; expectedDays: number }>
+      expect(enriched.map((c) => c.expectedDays)).toEqual([4]) // partial first week, not 7
+      expect(enriched.map((c) => c.dailyLogsCount)).toEqual([3])
     })
   })
 

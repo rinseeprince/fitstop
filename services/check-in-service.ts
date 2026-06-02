@@ -7,7 +7,7 @@ import type {
   AICheckInSummary,
 } from "@/types/check-in";
 import { mapCheckInRow } from "@/lib/mappers";
-import { getDateString, dateStringToDayNumber, calculateCheckInPeriod } from "@/lib/date-helpers";
+import { getDateString, dateStringToDayNumber, resolveCheckInWindow } from "@/lib/date-helpers";
 import type { CheckInCursor } from "@/lib/cursor";
 import { insertExerciseHighlights } from "./check-in-details-service";
 import { getCheckInTrainingPeriodStats } from "./check-in-context-service";
@@ -47,18 +47,16 @@ export const submitCheckIn = async (
   clientId: string,
   formData: CheckInFormData
 ): Promise<string> => {
-  // Resolve the period for THIS check-in. The route also persists these to
-  // period_start/period_end (kept consistent here so the snapshot derivation and
-  // the stored period agree). Falls back to undefined when the client has no
-  // expected check-in day — derivation then degrades gracefully.
-  let periodStart: string | undefined;
-  let periodEnd: string | undefined;
+  // Resolve the period for THIS check-in via the shared helper, so the stored
+  // period_start/period_end match what the check-in form/route showed (and the 6.4
+  // coach-detail derivation reads). The window ends on the check-in day, clamped
+  // forward to the activation date for a partial first week.
   const client = await getClientById(clientId);
-  if (client?.expectedCheckInDay) {
-    const period = calculateCheckInPeriod(new Date(), client.expectedCheckInDay);
-    periodStart = period.periodStart;
-    periodEnd = period.periodEnd;
-  }
+  const { periodStart, periodEnd } = resolveCheckInWindow(
+    new Date(),
+    client?.expectedCheckInDay,
+    client?.startDate
+  );
 
   // Derive snapshot columns from the spine for the period. Pin 1: reuse
   // getNutritionSummaryForPeriod so submit-path and AI-path numbers match. Pin 2:
@@ -287,6 +285,17 @@ async function enrichWithDailyLogCounts(
   checkIns: CheckIn[],
   clientId: string
 ): Promise<CheckInWithDailyLogCounts[]> {
+  // Activation date: clamps the oldest check-in's period to a partial first week so
+  // its denominator matches the check-in form (never counts pre-activation days).
+  const { data: clientRow } = await supabaseAdmin
+    .from("clients")
+    .select("start_date")
+    .eq("id", clientId)
+    .maybeSingle();
+  const activationMs = clientRow?.start_date
+    ? new Date(clientRow.start_date + "T00:00:00").getTime()
+    : null;
+
   const periods = checkIns.map((currentCheckIn, i) => {
     const previousCheckIn = i < checkIns.length - 1 ? checkIns[i + 1] : null;
 
@@ -299,6 +308,10 @@ async function enrichWithDailyLogCounts(
     } else {
       startDate = new Date(endDate);
       startDate.setDate(startDate.getDate() - 6);
+    }
+    // Partial first week: never reach before the client was activated.
+    if (activationMs != null && startDate.getTime() < activationMs) {
+      startDate = new Date(activationMs);
     }
 
     const daysDiff = Math.floor(

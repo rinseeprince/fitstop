@@ -10,7 +10,7 @@ import { getClientById } from "@/services/client-service";
 import { getDailyLogs } from "@/services/daily-logs-service";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
-import { calculateCheckInPeriod, getCheckInStatus, formatDateISO, getDateString } from "@/lib/date-helpers";
+import { getCheckInStatus, getDateString, resolveCheckInWindow } from "@/lib/date-helpers";
 import type { CheckInGateStatus } from "@/lib/date-helpers";
 import type { ValidateCheckInTokenResponse, CheckInTrainingEventDetail } from "@/types/check-in";
 
@@ -59,14 +59,13 @@ export async function GET(request: NextRequest) {
         ? getDateString(new Date(lastCheckIn.created_at))
         : null);
 
-    const isFirstCheckIn = !lastCheckIn;
-
     if (expectedDay) {
       const today = new Date();
       const { status, nextDueDate } = getCheckInStatus(
         expectedDay,
         lastCheckInPeriodEnd,
-        today
+        today,
+        client.startDate
       );
       checkInGateStatus = status;
 
@@ -96,26 +95,12 @@ export async function GET(request: NextRequest) {
     }
 
     // --- Calculate period ---
-    // First check-in: start_date to today
-    // Subsequent check-ins: 7-day window based on expected check-in day
+    // The check-in covers the fixed 7-day window ending on the client's check-in
+    // day, clamped forward to their activation date for a partial first week (a
+    // mid-week-activated client sees [start_date .. check-in day], not a full 7).
+    // Shared with submitCheckIn so the displayed and stored periods agree.
     const today = new Date();
-    let periodStart: string;
-    let periodEnd: string;
-
-    if (isFirstCheckIn && client.startDate) {
-      periodStart = client.startDate;
-      periodEnd = formatDateISO(today);
-    } else if (expectedDay) {
-      const period = calculateCheckInPeriod(today, expectedDay);
-      periodStart = period.periodStart;
-      periodEnd = period.periodEnd;
-    } else {
-      // Fallback for clients without an expected day: use last 7 days
-      const startDate = new Date(today);
-      startDate.setDate(startDate.getDate() - 6);
-      periodStart = formatDateISO(startDate);
-      periodEnd = formatDateISO(today);
-    }
+    const { periodStart, periodEnd } = resolveCheckInWindow(today, expectedDay, client.startDate);
 
     // Math.round avoids off-by-one when dates straddle a DST transition
     // (e.g. GMT→BST on Mar 29 steals 1 hour, making Math.floor short by 1 day)

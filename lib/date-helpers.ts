@@ -378,6 +378,38 @@ export function calculateCheckInPeriod(
   };
 }
 
+/**
+ * Resolve the daily-log window a check-in form/summary and the submitted check-in
+ * should cover. Shared by the check-in-context route and submitCheckIn so the
+ * displayed period and the stored period_start/period_end always agree.
+ *
+ * The window is the fixed 7-day period ending on the client's check-in day
+ * (`calculateCheckInPeriod`), with `periodStart` clamped forward to the activation
+ * date (`clients.start_date`) for a **partial first week** — the same
+ * `effectiveStart` clamp the coach-side history summaries use. One formula covers
+ * both cases:
+ * - Established client: `start_date` ≪ the window start → no clamp → most-recent
+ *   7-day window (older history is never back-filled into a late first check-in).
+ * - Mid-week activation: `start_date` falls inside the window → clamp → partial
+ *   window running from activation to the check-in day (e.g. "3/3", not "3/7").
+ * - No check-in day (edge/misconfig): trailing 7 days ending today.
+ */
+export function resolveCheckInWindow(
+  today: Date,
+  checkInDay: DayOfWeek | null | undefined,
+  startDate: string | null | undefined
+): { periodStart: string; periodEnd: string } {
+  if (checkInDay) {
+    const { periodStart: weekStart, periodEnd } = calculateCheckInPeriod(today, checkInDay);
+    const start = startDate ? startDate.slice(0, 10) : null; // normalise to YYYY-MM-DD
+    return { periodStart: start && start > weekStart ? start : weekStart, periodEnd };
+  }
+  const periodEnd = formatDateISO(today);
+  const startObj = new Date(today);
+  startObj.setDate(startObj.getDate() - 6);
+  return { periodStart: formatDateISO(startObj), periodEnd };
+}
+
 export type CheckInGateStatus = "available" | "completed" | "not_due" | "overdue";
 
 /**
@@ -391,7 +423,8 @@ export type CheckInGateStatus = "available" | "completed" | "not_due" | "overdue
 export function getCheckInStatus(
   expectedCheckInDay: DayOfWeek,
   lastCheckInPeriodEnd: string | null,
-  today: Date
+  today: Date,
+  startDate?: string | null
 ): { status: CheckInGateStatus; periodStart: string; periodEnd: string; nextDueDate: string } {
   const { periodStart, periodEnd } = calculateCheckInPeriod(today, expectedCheckInDay);
 
@@ -401,11 +434,19 @@ export function getCheckInStatus(
 
   const todayStr = formatDateISO(today);
 
-  // Brand-new client with no prior check-ins who is past their due day:
-  // push to next week. If today IS the due day, fall through to "available".
+  // Brand-new client with no prior check-ins who is past their due day. Only push
+  // to next week when this period's check-in day predates activation (a pre-activation
+  // window — there was nothing to check in for). Otherwise the client simply missed
+  // their first check-in and can still log it late (overdue) until the next check-in
+  // day, like any other check-in. Default (no start date supplied) preserves the
+  // legacy "push to next week" behavior.
   if (!lastCheckInPeriodEnd && todayStr > periodEnd) {
-    const nextDueDate = getNextPeriodEnd(periodEnd);
-    return { status: "not_due", periodStart, periodEnd, nextDueDate };
+    const pushToNextWeek = startDate ? periodEnd < startDate.slice(0, 10) : true;
+    if (pushToNextWeek) {
+      const nextDueDate = getNextPeriodEnd(periodEnd);
+      return { status: "not_due", periodStart, periodEnd, nextDueDate };
+    }
+    // else: missed first check-in — fall through to the available/overdue logic below
   }
 
   if (todayStr < periodEnd) {

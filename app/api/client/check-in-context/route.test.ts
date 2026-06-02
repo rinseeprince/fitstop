@@ -103,6 +103,8 @@ describe('GET /api/client/check-in-context', () => {
     expect(res.status).toBe(200);
     expect(body.success).toBe(true);
     expect(body.data.checkInStatus).toBe('available');
+    // First check-in (no expected day) → bounded trailing-7 window, not start_date→today.
+    expect(body.data.periodDays).toBe(7);
     // Byte-identical success shape: all the documented top-level fields are present.
     expect(Object.keys(body.data).sort()).toEqual(
       [
