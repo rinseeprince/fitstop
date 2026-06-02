@@ -84,10 +84,10 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 | 5.2 | Align session_logs identity with event-keyed architecture | 5 | COMPLETE
 | 5.3 | Alternative session logging: write path + matcher + coach surfacing | 5 | COMPLETE
 | 5.4 | Alternative session logging: client UI | 5 | COMPLETE
-| 6.1 | Walkthrough copy/step update | 6 Check-in + onboarding |
-| 6.2 | Check-in context: session-keyed to event-keyed | 6 |
-| 6.3 | Check-in AI summary enrichment (optional) | 6 |
-| 6.4 | Daily logs as SOT for check-in + drop check_in_session_completions | 6 |
+| 6.1 | Walkthrough copy/step update | 6 Check-in + onboarding | COMPLETE
+| 6.2 | Check-in context: session-keyed to event-keyed | 6 | COMPLETE
+| 6.3 | Check-in AI summary enrichment (optional) | 6 | COMPLETE
+| 6.4 | Daily logs as SOT for check-in + drop check_in_session_completions | 6 | COMPLETE
 | 7.1 | Coach roadmap end-and-replace UI | 7 Coach-side fixes |
 | 7.2 | Coach phase edit unlock for active phases | 7 |
 | 7.3 | Coach archived-roadmap browsing | 7 |
@@ -1815,6 +1815,8 @@ Commit.
 
 ## Session 6.1: Walkthrough copy/step update
 
+**Status**: COMPLETE (commit `6df9d14`)
+
 **Commit message**: `feat(onboarding): update guided walkthrough for day-centric portal`
 
 **Objective**: Rework `components/client/walkthrough/guided-walkthrough.tsx` for new clients.
@@ -1840,6 +1842,8 @@ Commit.
 ---
 
 ## Session 6.2: Check-in context, session-keyed to event-keyed
+
+**Status**: COMPLETE (commit `5049e45`)
 
 **Commit message**: `refactor(check-in): read training completion from training_events`
 
@@ -1880,6 +1884,8 @@ Commit.
 
 ## Session 6.3: Check-in AI summary enrichment with exercise_logs (optional polish)
 
+**Status**: COMPLETE (commit `8331465`)
+
 **Commit message**: `feat(check-in): enrich AI summary with exercise-level completion data`
 
 **Optional**: This session is nice-to-have polish, not MOAT-load-bearing. The MOAT work is Session 6.2 (event-keyed completion counts + per-event detail). If launch timing is tight, defer 6.3 and ship without it. Auto-populated check-in already works with the event-keyed switch alone.
@@ -1916,6 +1922,8 @@ Commit.
 ---
 
 ## Session 6.4: Daily logs as source of truth for check-in; retire check_in_session_completions
+
+**Status**: COMPLETE (commits `43bd491`, types regen `0bcf6a6`; migration `098` pushed)
 
 **Commit message**: `refactor(check-in): daily logs as source of truth; drop check_in_session_completions`
 

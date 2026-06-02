@@ -8,7 +8,7 @@ This file documents the platform architecture, database schema, and data flow pa
 > |---------|--------|----------------------|
 > | Auth Model → "Database clients" | **Legacy** — described the old session-scoped-default model. The codebase is on **Shape B**: services default to `supabaseAdmin`, the route layer is the security perimeter, RLS is defense-in-depth. Corrected inline below. | **CONVENTIONS.md §8** |
 > | "JSONB Conventions" (`training_data`/`activityStatuses`) | **Orphaned cache** — legacy `training_logs` rows only; no active read/write path. | redesign docs |
-> | "Activation Flow" · "Training Completion Hierarchy" (`session_logs` identity) | **Accurate today but scheduled to change** — see the inline ⚠️ notes pointing at the owning session. | this file, until that session lands |
+> | "Activation Flow" · "Training Completion Hierarchy" (`session_logs` identity) | **Accurate / landed** — `session_logs` event-keyed identity shipped (migration 097, Session 5.2); the onboarding walkthrough was reworked for the day-centric portal (Session 6.1). | this file |
 
 ---
 
@@ -558,10 +558,13 @@ Coach activates client
   -> walkthrough_completed_at remains NULL until first login
 
 Client first login post-activation
-  -> Guided walkthrough renders (covers nutrition / training / habits / how it works)
+  -> Guided walkthrough renders (day-centric portal tour: bottom tabs, home day-cards,
+     tap-a-card-to-log + alt-session callout, swipe days, program/phase banner, settings via avatar)
   -> walkthrough_completed_at timestamp set on completion
   -> Client lands on the day-centric portal home (see Client Portal Architecture)
 ```
+
+> Note: the walkthrough component was reworked for the day-centric portal (Session 6.1) but is **not currently mounted** in the web shell (`components/client/walkthrough/guided-walkthrough.tsx` has no caller) — re-mounting is a separate concern (likely the RN client), so the "renders on first login" step above is prospective.
 
 ### `client_intake` table
 
@@ -718,9 +721,9 @@ After submission, `triggerAISummaryGeneration()` (`services/client-check-in-serv
 
 ### Check-in period gating
 
-- `clients.expected_check_in_day` controls when check-ins are available
-- `calculateCheckInPeriod()` computes the 7-day window (period_start, period_end) based on the expected day
-- Clients can only submit during their designated period
+- `clients.expected_check_in_day` controls the cadence; `clients.start_date` (set at activation) anchors the first window.
+- **`resolveCheckInWindow()`** (`lib/date-helpers.ts`) computes the window: the fixed 7-day period ending on the check-in day (`calculateCheckInPeriod`), with `period_start` clamped forward to `start_date` for a **partial first week** — a mid-week-activated client's first check-in covers `[start_date … check-in day]`, not a full 7. Shared by the form, `submitCheckIn` (stored period), and the coach history-list denominators (`enrichWithDailyLogCounts`) so they agree.
+- **`getCheckInStatus()`** is activation-aware: a check-in is available on its check-in day and stays **overdue (still loggable) until the day before the next check-in day**, then the window rolls. A missed *first* check-in is loggable the same way — unless its window predated activation, in which case it's pushed to the next period. Established-client behavior is unchanged.
 
 ### Metrics dual-write on check-in
 
