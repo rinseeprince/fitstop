@@ -13,7 +13,23 @@ describe("aggregateDailyLogs", () => {
     expect(result.sessionsCompleted).toBe(0);
     expect(result.totalPlannedSessions).toBe(0);
     expect(result.nutritionHitDays).toBe(0);
+    expect(result.nutritionLoggedDays).toBe(0);
     expect(result.totalLoggedDays).toBe(0);
+  });
+
+  it("counts nutritionLoggedDays (calories present) separately from nutritionHitDays (on target)", () => {
+    const logs: Partial<DailyLog>[] = [
+      { id: "1", date: "2024-01-01", caloriesConsumed: 2400, nutritionAdherence: "hit" },
+      { id: "2", date: "2024-01-02", caloriesConsumed: 2900, nutritionAdherence: "missed" },
+      { id: "3", date: "2024-01-03", caloriesConsumed: 2380, nutritionAdherence: "hit" },
+      { id: "4", date: "2024-01-04" }, // logged the day, no nutrition entered
+    ];
+
+    const result = aggregateDailyLogs(logs as DailyLog[]);
+
+    expect(result.nutritionLoggedDays).toBe(3); // days with calories logged
+    expect(result.nutritionHitDays).toBe(2);    // days on target — must differ from "logged"
+    expect(result.totalLoggedDays).toBe(4);
   });
 
   it("correctly aggregates wellness metrics with mixed data", () => {

@@ -101,6 +101,13 @@ export const DailyLogsTrainingSummary = ({ dailyLogs, trainingContext, trainingP
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">Days Logged</span>
+            <span className="text-sm font-semibold">
+              {aggregated.nutritionLoggedDays}/{periodDays ?? 7} days
+            </span>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-muted-foreground">Days On Target</span>
             <span className={`text-sm font-semibold ${getNutritionColor(aggregated.nutritionHitDays, periodDays ?? 7)}`}>
               {aggregated.nutritionHitDays}/{periodDays ?? 7} days
             </span>
