@@ -46,8 +46,28 @@ import {
   getEventForDate,
   countEventsInRange,
   linkSessionLogToEvent,
+  findMatchingEvent,
 } from "./training-event-service";
 import type { SessionInput } from "./training-event-service";
+
+// Mock query for findMatchingEvent: a single chained read resolving to `rows`.
+// Rows must be supplied in the query's sort order (date asc, created_at asc).
+function matcherQuery(
+  rows: Array<{
+    id: string;
+    training_session_id: string | null;
+    date: string;
+    created_at: string;
+  }>,
+) {
+  const q: Record<string, unknown> = {};
+  for (const m of ["select", "eq", "is", "in", "gte", "lte", "order"]) {
+    q[m] = vi.fn(() => q);
+  }
+  q.then = (resolve: (v: { data: typeof rows; error: null }) => unknown) =>
+    Promise.resolve({ data: rows, error: null }).then(resolve);
+  return q;
+}
 
 const mockFrom = vi.mocked(supabaseAdmin.from);
 
@@ -495,6 +515,57 @@ describe("training-event-service", () => {
         })
       );
       expect(mockQuery.eq).toHaveBeenCalledWith("id", "event-1");
+    });
+  });
+
+  // =========================================================================
+  // findMatchingEvent (Session 5.3 matcher)
+  // =========================================================================
+  describe("findMatchingEvent", () => {
+    const args = {
+      clientId: "c1",
+      performedSessionId: "pull",
+      completedAt: "2026-05-08",
+      weekStart: "2026-05-04",
+      weekEnd: "2026-05-10",
+    };
+
+    it("[m1] prefers an unlinked same-session event, earliest date in week", async () => {
+      mockFrom.mockReturnValue(
+        matcherQuery([
+          { id: "ev-tue", training_session_id: "pull", date: "2026-05-05", created_at: "t1" },
+          { id: "ev-wed", training_session_id: "push", date: "2026-05-06", created_at: "t2" },
+          { id: "ev-thu", training_session_id: "pull", date: "2026-05-07", created_at: "t3" },
+        ]) as never,
+      );
+      const match = await findMatchingEvent(args);
+      expect(match?.id).toBe("ev-tue");
+    });
+
+    it("[m2] falls back to a same-date event (any session) when no same-session match", async () => {
+      mockFrom.mockReturnValue(
+        matcherQuery([
+          { id: "ev-legs", training_session_id: "legs", date: "2026-05-08", created_at: "t1" },
+        ]) as never,
+      );
+      const match = await findMatchingEvent(args);
+      expect(match?.id).toBe("ev-legs");
+    });
+
+    it("[m3] matches a same-session event on a different day when there's no same-date event", async () => {
+      mockFrom.mockReturnValue(
+        matcherQuery([
+          { id: "ev-mon", training_session_id: "pull", date: "2026-05-04", created_at: "t1" },
+        ]) as never,
+      );
+      const match = await findMatchingEvent(args);
+      expect(match?.id).toBe("ev-mon");
+    });
+
+    it("[m4] returns null when there is no candidate", async () => {
+      mockFrom.mockReturnValue(matcherQuery([]) as never);
+      const match = await findMatchingEvent(args);
+      expect(match).toBeNull();
     });
   });
 });

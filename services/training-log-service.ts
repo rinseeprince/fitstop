@@ -1,9 +1,13 @@
 import { supabaseAdmin } from "./supabase-admin";
 import {
+  findMatchingEvent,
   linkSessionLogToEvent,
   mapCompletionQualityToEventStatus,
 } from "./training-event-service";
-import { getTodayDateString, getTrainingWeekStart } from "@/lib/date-helpers";
+import {
+  getTrainingWeekStart,
+  getTrainingWeekEnd,
+} from "@/lib/date-helpers";
 import type {
   ExerciseLogInsert,
   ExerciseLogRow,
@@ -17,6 +21,7 @@ import type {
 } from "@/lib/database-helpers";
 import type { Json } from "@/types/database";
 import type {
+  LogSessionForDateInput,
   LogTrainingEventInput,
   SetPerformanceInput,
 } from "@/lib/validations/training";
@@ -83,6 +88,7 @@ function mapSessionLogRow(row: SessionLogRow): SessionLog {
     id: row.id,
     clientId: row.client_id,
     trainingSessionId: row.training_session_id,
+    trainingEventId: row.training_event_id,
     completedAt: row.completed_at,
     completionQuality: (row.completion_quality ?? "full") as SessionCompletionQuality,
     notes: row.notes,
@@ -194,46 +200,47 @@ function mapExerciseRow(row: TrainingExerciseRow): TrainingExercise {
 }
 
 // =============================================================================
-// logTrainingEvent
+// writeSessionLog (shared internals: event-keyed + event-less logging)
 // =============================================================================
 
-export async function logTrainingEvent(params: {
-  eventId: string;
+/**
+ * Core write shared by logTrainingEvent (event-keyed) and
+ * logTrainingSessionForDate (event-less). Writes the session_logs row, the
+ * detailed-mode exercise_logs/set_logs, and — when an event is linked — both
+ * directions of the event link.
+ *
+ * Identity (Session 5.2): session_logs is keyed by training_event_id. When
+ * `existingLogId` is known (the event already has a session_log_id, or the
+ * event-less find-or-update matched a row) we UPDATE by id; otherwise we
+ * INSERT, stamping training_event_id = eventId. A 23505 on the partial unique
+ * index means a log already claims this event (concurrent submit or a
+ * half-failed prior link) — recover by updating it, never duplicate.
+ *
+ * session_logs.training_session_id holds the PERFORMED session
+ * (performedSessionId); prescribed_session_snapshot is captured from
+ * snapshotSessionId (the prescribed side). completed_at is the attribution date
+ * (event.date for event-keyed, the logged date for event-less).
+ */
+async function writeSessionLog(params: {
   clientId: string;
+  eventId: string | null;
+  existingLogId: string | null;
+  performedSessionId: string | null;
+  snapshotSessionId: string | null;
+  completedAt: string;
+  weekStartDate: string;
   payload: LogTrainingEventInput;
-}): Promise<LogTrainingEventResponse> {
-  const { eventId, clientId, payload } = params;
-
-  // 1. Fetch event scoped on clientId.
-  const { data: eventRow, error: eventErr } = await supabaseAdmin
-    .from("training_events")
-    .select("id, training_session_id, date, session_log_id")
-    .eq("id", eventId)
-    .eq("client_id", clientId)
-    .maybeSingle();
-
-  if (eventErr) {
-    throw new Error(`Failed to load training event: ${eventErr.message}`);
-  }
-  if (!eventRow) {
-    throw new Error(`Training event not found: ${eventId}`);
-  }
-
-  const trainingSessionId = eventRow.training_session_id;
-  const eventDate = eventRow.date;
-  const existingLogId = eventRow.session_log_id;
-
-  // 2. Resolve weekStartDate from the client's check-in day.
-  const { data: clientRow, error: clientErr } = await supabaseAdmin
-    .from("clients")
-    .select("expected_check_in_day")
-    .eq("id", clientId)
-    .maybeSingle();
-  if (clientErr) {
-    throw new Error(`Failed to load client check-in day: ${clientErr.message}`);
-  }
-  const checkInDay = clientRow?.expected_check_in_day ?? null;
-  const weekStartDate = getTrainingWeekStart(eventDate, checkInDay);
+}): Promise<string> {
+  const {
+    clientId,
+    eventId,
+    existingLogId,
+    performedSessionId,
+    snapshotSessionId,
+    completedAt,
+    weekStartDate,
+    payload,
+  } = params;
 
   // 3. Fresh session-prescription snapshot.
   // NOTE: Do NOT filter by is_active here. A coach soft-deleting a session
@@ -242,11 +249,11 @@ export async function logTrainingEvent(params: {
   // on the *read* path (getTrainingEventDetail's "live" classification), not
   // the snapshot-capture path.
   let sessionSnapshot: SessionSnapshot | null = null;
-  if (trainingSessionId !== null) {
+  if (snapshotSessionId !== null) {
     const { data: sessionRow, error: sessionErr } = await supabaseAdmin
       .from("training_sessions")
       .select("name, day_of_week, focus, estimated_duration_minutes, estimated_calories")
-      .eq("id", trainingSessionId)
+      .eq("id", snapshotSessionId)
       .maybeSingle();
     if (sessionErr) {
       throw new Error(
@@ -312,31 +319,29 @@ export async function logTrainingEvent(params: {
   // signal mid-workout, etc.), so per-exercise data does not override the tap.
   const derivedQuality: SessionCompletionQuality = payload.completionQuality;
 
-  // 5. Write session_logs. Branch on orphan-event retry vs normal.
+  // 5. Write session_logs (event-keyed, Session 5.2). training_session_id holds
+  // the PERFORMED session. completed_at is the attribution date.
   const baseRow = {
     client_id: clientId,
-    training_session_id: trainingSessionId,
-    completed_at: getTodayDateString(),
+    training_session_id: performedSessionId,
+    completed_at: completedAt,
     completion_quality: derivedQuality,
     notes: payload.notes ?? null,
     week_start_date: weekStartDate,
     updated_at: new Date().toISOString(),
   };
 
-  let sessionLogId: string;
-  if (trainingSessionId === null && existingLogId !== null) {
-    // Orphan-event retry. NULL training_session_id means the upsert UNIQUE key
-    // (NULL is distinct in PG) won't dedupe — would insert a duplicate row.
-    // Target the linked row directly.
-    //
-    // Snapshot preservation: omit prescribed_session_snapshot from the payload
-    // when the fresh value is null, so the existing column value is preserved.
-    // (PG only updates columns present in the SET clause.)
-    const updateRow: SessionLogUpdate =
-      sessionSnapshot !== null
-        ? { ...baseRow, prescribed_session_snapshot: sessionSnapshot as unknown as Json }
-        : { ...baseRow };
+  // On UPDATE, omit prescribed_session_snapshot when the fresh value is null so
+  // the existing column value is preserved (PG only updates columns in SET).
+  const updateRow: SessionLogUpdate =
+    sessionSnapshot !== null
+      ? { ...baseRow, prescribed_session_snapshot: sessionSnapshot as unknown as Json }
+      : { ...baseRow };
 
+  let sessionLogId: string;
+  if (existingLogId !== null) {
+    // Known target row (event already linked, or the event-less find-or-update
+    // matched). UPDATE by id; training_event_id is left untouched (preserved).
     const { data: updated, error: updateErr } = await supabaseAdmin
       .from("session_logs")
       .update(updateRow)
@@ -345,38 +350,49 @@ export async function logTrainingEvent(params: {
       .single();
     if (updateErr || !updated) {
       throw new Error(
-        `Failed to update session log on orphan-event retry: ${
-          updateErr?.message ?? "no row returned"
-        }`,
+        `Failed to update session log: ${updateErr?.message ?? "no row returned"}`,
       );
     }
     sessionLogId = updated.id;
   } else {
-    // Normal path. If we're here, training_session_id is non-null.
-    // (Note: a coach soft-deleting the session does NOT null event.training_session_id —
-    // only hard delete does that via FK SET NULL. So sessionSnapshot may still be null
-    // here if the row was hard-deleted between the fetch in step 1 and the snapshot
-    // fetch in step 3, or if the row was soft-deleted. The upsert is the first write,
-    // so there's no prior column value to clobber.)
-    const upsertRow: SessionLogInsert = {
+    // Fresh INSERT, keyed to the event when present (null = unmatched extra).
+    const insertRow: SessionLogInsert = {
       ...baseRow,
+      training_event_id: eventId,
       prescribed_session_snapshot: sessionSnapshot as unknown as Json | null,
     };
-    const { data: upserted, error: upsertErr } = await supabaseAdmin
+    const { data: inserted, error: insertErr } = await supabaseAdmin
       .from("session_logs")
-      .upsert(upsertRow, {
-        onConflict: "client_id,training_session_id,week_start_date",
-      })
+      .insert(insertRow)
       .select("id")
       .single();
-    if (upsertErr || !upserted) {
-      throw new Error(
-        `Failed to upsert session log: ${
-          upsertErr?.message ?? "no row returned"
-        }`,
-      );
+    if (insertErr || !inserted) {
+      // 23505 on session_logs_training_event_id_key: a log already claims this
+      // event (concurrent submit, or a half-failed prior link). Recover by
+      // updating that row — never write a duplicate / phantom surplus.
+      if (eventId !== null && insertErr?.code === "23505") {
+        const { data: recovered, error: recErr } = await supabaseAdmin
+          .from("session_logs")
+          .update(updateRow)
+          .eq("training_event_id", eventId)
+          .select("id")
+          .single();
+        if (recErr || !recovered) {
+          throw new Error(
+            `Failed to recover session log on unique conflict: ${
+              recErr?.message ?? "no row returned"
+            }`,
+          );
+        }
+        sessionLogId = recovered.id;
+      } else {
+        throw new Error(
+          `Failed to insert session log: ${insertErr?.message ?? "no row returned"}`,
+        );
+      }
+    } else {
+      sessionLogId = inserted.id;
     }
-    sessionLogId = upserted.id;
   }
 
   // 6. Detailed mode: preserve existing exercise_logs snapshots, then replace.
@@ -492,10 +508,153 @@ export async function logTrainingEvent(params: {
     }
   }
 
-  // 7. Update event status — single status writer pattern.
-  const eventStatus = mapCompletionQualityToEventStatus(derivedQuality);
-  await linkSessionLogToEvent(eventId, sessionLogId, eventStatus);
+  // 7. Link the event + write its status — only when an event is linked.
+  // linkSessionLogToEvent writes both directions (event.session_log_id + status,
+  // and session_log.training_event_id).
+  if (eventId !== null) {
+    const eventStatus = mapCompletionQualityToEventStatus(derivedQuality);
+    await linkSessionLogToEvent(eventId, sessionLogId, eventStatus);
+  }
 
+  return sessionLogId;
+}
+
+// =============================================================================
+// getClientCheckInDay (shared)
+// =============================================================================
+
+async function getClientCheckInDay(clientId: string): Promise<string | null> {
+  const { data, error } = await supabaseAdmin
+    .from("clients")
+    .select("expected_check_in_day")
+    .eq("id", clientId)
+    .maybeSingle();
+  if (error) {
+    throw new Error(`Failed to load client check-in day: ${error.message}`);
+  }
+  return data?.expected_check_in_day ?? null;
+}
+
+// =============================================================================
+// logTrainingEvent (event-keyed) + logTrainingSessionForDate (event-less)
+// =============================================================================
+
+export async function logTrainingEvent(params: {
+  eventId: string;
+  clientId: string;
+  payload: LogTrainingEventInput;
+}): Promise<LogTrainingEventResponse> {
+  const { eventId, clientId, payload } = params;
+
+  // Fetch the event, scoped on clientId (collapses missing + wrong-client).
+  const { data: eventRow, error: eventErr } = await supabaseAdmin
+    .from("training_events")
+    .select("id, training_session_id, date, session_log_id")
+    .eq("id", eventId)
+    .eq("client_id", clientId)
+    .maybeSingle();
+  if (eventErr) {
+    throw new Error(`Failed to load training event: ${eventErr.message}`);
+  }
+  if (!eventRow) {
+    throw new Error(`Training event not found: ${eventId}`);
+  }
+
+  const checkInDay = await getClientCheckInDay(clientId);
+  const weekStartDate = getTrainingWeekStart(eventRow.date, checkInDay);
+
+  // Performed session: the swap target when provided, else the prescribed one.
+  // Prescribed snapshot is always captured from the event's session.
+  const performedSessionId =
+    payload.performedSessionId ?? eventRow.training_session_id;
+
+  const sessionLogId = await writeSessionLog({
+    clientId,
+    eventId: eventRow.id,
+    existingLogId: eventRow.session_log_id,
+    performedSessionId,
+    snapshotSessionId: eventRow.training_session_id,
+    completedAt: eventRow.date,
+    weekStartDate,
+    payload,
+  });
+
+  return { sessionLogId };
+}
+
+/**
+ * Event-less logging (Session 5.3): the client trained on a day with no tapped
+ * event (rest-day training / the rest-day picker). The idempotent
+ * find-or-update on (client, performed session, date) runs BEFORE the matcher,
+ * so a retry or double-tap updates the existing row instead of inserting a
+ * duplicate — and the matched-then-retried phantom is killed too (the first
+ * call links the matched event; a retry finds the existing log here and never
+ * re-runs the matcher).
+ */
+export async function logTrainingSessionForDate(params: {
+  clientId: string;
+  date: string;
+  payload: LogSessionForDateInput;
+}): Promise<LogTrainingEventResponse> {
+  const { clientId, date, payload } = params;
+  const performedSessionId = payload.performedSessionId;
+
+  const checkInDay = await getClientCheckInDay(clientId);
+  const weekStartDate = getTrainingWeekStart(date, checkInDay);
+  const weekEndDate = getTrainingWeekEnd(date, checkInDay);
+
+  // Idempotency: reuse an existing log for the same performed session on the
+  // same day. completed_at is TIMESTAMPTZ — match the day via the house range
+  // pattern (a bare = date would miss any NOW()-defaulted legacy row).
+  const { data: existing, error: existingErr } = await supabaseAdmin
+    .from("session_logs")
+    .select("id, training_event_id")
+    .eq("client_id", clientId)
+    .eq("training_session_id", performedSessionId)
+    .gte("completed_at", `${date}T00:00:00`)
+    .lte("completed_at", `${date}T23:59:59`)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (existingErr) {
+    throw new Error(
+      `Failed to look up existing session log: ${existingErr.message}`,
+    );
+  }
+
+  if (existing) {
+    const sessionLogId = await writeSessionLog({
+      clientId,
+      eventId: existing.training_event_id,
+      existingLogId: existing.id,
+      performedSessionId,
+      snapshotSessionId: performedSessionId,
+      completedAt: date,
+      weekStartDate,
+      payload,
+    });
+    return { sessionLogId };
+  }
+
+  // No existing log — run the matcher to link a prescribed event when possible.
+  const match = await findMatchingEvent({
+    clientId,
+    performedSessionId,
+    completedAt: date,
+    weekStart: weekStartDate,
+    weekEnd: weekEndDate,
+  });
+
+  const sessionLogId = await writeSessionLog({
+    clientId,
+    eventId: match?.id ?? null,
+    existingLogId: null,
+    performedSessionId,
+    snapshotSessionId: match?.trainingSessionId ?? performedSessionId,
+    completedAt: date,
+    weekStartDate,
+    payload,
+  });
   return { sessionLogId };
 }
 
@@ -565,8 +724,9 @@ export async function getTrainingEventDetail(
     }
   }
 
-  // Resolve session_log: by event.session_log_id if linked, else composite key.
-  // Fallback covers legacy non-blocking link failures from the check-ins route.
+  // Resolve session_log directly via event.session_log_id (Session 5.2 made the
+  // link the single source of truth — always set after a successful log write,
+  // so the old composite-key fallback is gone).
   let sessionLogRow: SessionLogRow | null = null;
   if (event.sessionLogId) {
     const { data, error } = await supabaseAdmin
@@ -576,32 +736,6 @@ export async function getTrainingEventDetail(
       .maybeSingle();
     if (error) {
       throw new Error(`Failed to load session log: ${error.message}`);
-    }
-    sessionLogRow = data;
-  } else if (event.trainingSessionId !== null) {
-    const { data: clientRow, error: clientErr } = await supabaseAdmin
-      .from("clients")
-      .select("expected_check_in_day")
-      .eq("id", clientId)
-      .maybeSingle();
-    if (clientErr) {
-      throw new Error(
-        `Failed to load client check-in day: ${clientErr.message}`,
-      );
-    }
-    const checkInDay = clientRow?.expected_check_in_day ?? null;
-    const weekStart = getTrainingWeekStart(event.date, checkInDay);
-    const { data, error } = await supabaseAdmin
-      .from("session_logs")
-      .select("*")
-      .eq("client_id", clientId)
-      .eq("training_session_id", event.trainingSessionId)
-      .eq("week_start_date", weekStart)
-      .maybeSingle();
-    if (error) {
-      throw new Error(
-        `Failed to load session log via composite key: ${error.message}`,
-      );
     }
     sessionLogRow = data;
   }
@@ -688,7 +822,11 @@ export async function getTrainingEventDetail(
 
 export async function getSessionLogDetail(
   sessionLogId: string,
-): Promise<{ sessionLog: SessionLog; exerciseLogs: ExerciseLog[] } | null> {
+): Promise<{
+  sessionLog: SessionLog;
+  exerciseLogs: ExerciseLog[];
+  performedSessionName: string | null;
+} | null> {
   const { data: row, error: logErr } = await supabaseAdmin
     .from("session_logs")
     .select("*")
@@ -712,8 +850,28 @@ export async function getSessionLogDetail(
     (exerciseRows ?? []).map((r) => mapExerciseLogRow(r as ExerciseLogRow)),
   );
 
+  // The live name of the session the client actually PERFORMED (the log's
+  // training_session_id). The coach dialog renders a session-level
+  // "Prescribed X · Performed Y" line when this differs from the prescribed
+  // snapshot name. Null if the performed session was hard-deleted.
+  let performedSessionName: string | null = null;
+  if (row.training_session_id) {
+    const { data: sessionRow, error: sessionErr } = await supabaseAdmin
+      .from("training_sessions")
+      .select("name")
+      .eq("id", row.training_session_id)
+      .maybeSingle();
+    if (sessionErr) {
+      throw new Error(
+        `Failed to load performed session name: ${sessionErr.message}`,
+      );
+    }
+    performedSessionName = sessionRow?.name ?? null;
+  }
+
   return {
     sessionLog: mapSessionLogRow(row as SessionLogRow),
     exerciseLogs,
+    performedSessionName,
   };
 }

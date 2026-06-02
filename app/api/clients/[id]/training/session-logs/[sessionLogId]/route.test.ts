@@ -44,6 +44,7 @@ const mockSessionLog = {
   id: SESSION_LOG_ID,
   clientId: CLIENT_ID,
   trainingSessionId: "session-1",
+  trainingEventId: null,
   completedAt: "2026-01-01T00:00:00Z",
   completionQuality: "full" as const,
   notes: null,
@@ -56,6 +57,7 @@ const mockSessionLog = {
 const mockResult = {
   sessionLog: mockSessionLog,
   exerciseLogs: [],
+  performedSessionName: null,
 };
 
 describe("GET /api/clients/[id]/training/session-logs/[sessionLogId]", () => {
@@ -139,6 +141,7 @@ describe("GET /api/clients/[id]/training/session-logs/[sessionLogId]", () => {
     vi.mocked(getSessionLogDetail).mockResolvedValue({
       sessionLog: { ...mockSessionLog, clientId: OTHER_CLIENT_ID },
       exerciseLogs: [],
+      performedSessionName: null,
     });
 
     const response = await GET(makeRequest(), {

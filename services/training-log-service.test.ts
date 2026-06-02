@@ -40,7 +40,11 @@ function createMockQuery<T = unknown>(result: {
 }
 
 import { supabaseAdmin } from "./supabase-admin";
-import { logTrainingEvent, getTrainingEventDetail } from "./training-log-service";
+import {
+  logTrainingEvent,
+  getTrainingEventDetail,
+  logTrainingSessionForDate,
+} from "./training-log-service";
 
 const mockFrom = vi.mocked(supabaseAdmin.from);
 
@@ -178,12 +182,15 @@ describe("logTrainingEvent", () => {
 
     expect(result).toEqual({ sessionLogId: SESSION_LOG_ID });
 
-    // session_logs.upsert was called with the session snapshot.
-    expect(upsertQ.upsert).toHaveBeenCalledTimes(1);
-    const upsertArg = upsertQ.upsert.mock.calls[0][0];
+    // session_logs INSERT (fresh log) carried the snapshot + event key, and
+    // completed_at is the attribution date (event.date), not "today".
+    expect(upsertQ.insert).toHaveBeenCalledTimes(1);
+    const upsertArg = upsertQ.insert.mock.calls[0][0];
     expect(upsertArg).toMatchObject({
       client_id: CLIENT_ID,
       training_session_id: SESSION_ID,
+      training_event_id: EVENT_ID,
+      completed_at: "2026-05-04",
       completion_quality: "full",
       prescribed_session_snapshot: SESSION_PRESCRIPTION,
     });
@@ -364,7 +371,7 @@ describe("logTrainingEvent", () => {
       },
     });
 
-    expect(upsertQ.upsert.mock.calls[0][0].completion_quality).toBe("full");
+    expect(upsertQ.insert.mock.calls[0][0].completion_quality).toBe("full");
     expect(linkQ.update.mock.calls[0][0].status).toBe("completed");
   });
 
@@ -411,7 +418,7 @@ describe("logTrainingEvent", () => {
       },
     });
 
-    expect(upsertQ.upsert.mock.calls[0][0].completion_quality).toBe("skipped");
+    expect(upsertQ.insert.mock.calls[0][0].completion_quality).toBe("skipped");
     expect(linkQ.update.mock.calls[0][0].status).toBe("skipped");
     // All-skipped: no set_logs rows written.
     expect(setLogsInsertQ.insert).not.toHaveBeenCalled();
@@ -461,7 +468,7 @@ describe("logTrainingEvent", () => {
       },
     });
 
-    expect(upsertQ.upsert.mock.calls[0][0].completion_quality).toBe("full");
+    expect(upsertQ.insert.mock.calls[0][0].completion_quality).toBe("full");
     expect(linkQ.update.mock.calls[0][0].status).toBe("completed");
   });
 
@@ -761,7 +768,7 @@ describe("logTrainingEvent", () => {
       },
     });
 
-    const sessionSnap = upsertQ.upsert.mock.calls[0][0].prescribed_session_snapshot;
+    const sessionSnap = upsertQ.insert.mock.calls[0][0].prescribed_session_snapshot;
     expect(Object.keys(sessionSnap).sort()).toEqual(
       [
         "day_of_week",
@@ -795,7 +802,7 @@ describe("logTrainingEvent", () => {
   // -------------------------------------------------------------------------
   // 11. Re-run idempotency on normal (non-orphan) path
   // -------------------------------------------------------------------------
-  it("[11] re-run uses upsert (idempotent on UNIQUE) and replaces exercise_logs", async () => {
+  it("[11] event-keyed insert replaces exercise_logs (delete-then-insert)", async () => {
     const eventQ = createMockQuery({ data: eventRow(), error: null });
     const clientQ = createMockQuery({
       data: { expected_check_in_day: null },
@@ -842,10 +849,11 @@ describe("logTrainingEvent", () => {
       },
     });
 
-    expect(upsertQ.upsert).toHaveBeenCalledTimes(1);
-    const upsertOpts = upsertQ.upsert.mock.calls[0][1];
-    expect(upsertOpts).toEqual({
-      onConflict: "client_id,training_session_id,week_start_date",
+    // Fresh event-keyed INSERT (no prior session_log_id), keyed by event id;
+    // exercise_logs are then replaced via delete-then-insert.
+    expect(upsertQ.insert).toHaveBeenCalledTimes(1);
+    expect(upsertQ.insert.mock.calls[0][0]).toMatchObject({
+      training_event_id: EVENT_ID,
     });
     expect(deleteExQ.delete).toHaveBeenCalledTimes(1);
     expect(insertExQ.insert).toHaveBeenCalledTimes(1);
@@ -857,7 +865,7 @@ describe("logTrainingEvent", () => {
   // -------------------------------------------------------------------------
   // 12. event.training_session_id null, single call (first orphan log)
   // -------------------------------------------------------------------------
-  it("[12] first call on orphan event (training_session_id null, session_log_id null): upsert path, snapshot null, no exercise prefetch", async () => {
+  it("[12] first call on orphan event (training_session_id null, session_log_id null): insert path, snapshot null, no exercise prefetch", async () => {
     const orphanRow = eventRow({
       training_session_id: null,
       session_log_id: null,
@@ -885,7 +893,7 @@ describe("logTrainingEvent", () => {
 
     expect(mockFrom).not.toHaveBeenCalledWith("training_sessions");
     expect(mockFrom).not.toHaveBeenCalledWith("training_exercises");
-    const upsertArg = upsertQ.upsert.mock.calls[0][0];
+    const upsertArg = upsertQ.insert.mock.calls[0][0];
     expect(upsertArg.training_session_id).toBeNull();
     expect(upsertArg.prescribed_session_snapshot).toBeNull();
   });
@@ -918,9 +926,11 @@ describe("logTrainingEvent", () => {
       payload: { completionQuality: "partial" },
     });
 
-    expect(updateQ.update).toHaveBeenCalledTimes(1);
+    // Two updates on session_logs: the row write, then linkSessionLogToEvent
+    // stamping training_event_id back onto the same row. Never an upsert.
+    expect(updateQ.update).toHaveBeenCalledTimes(2);
     expect(updateQ.upsert).not.toHaveBeenCalled();
-    // Targeted by id, not composite key.
+    // Both target by id, never by composite key.
     expect(updateQ.eq).toHaveBeenCalledWith("id", SESSION_LOG_ID);
   });
 
@@ -1098,7 +1108,7 @@ describe("logTrainingEvent", () => {
   // 13. Transaction integrity: exercise_logs INSERT failure throws after
   //     session_log was already written; retry is safe via idempotency rules.
   // -------------------------------------------------------------------------
-  it("[13] exercise_logs insert failure: throws; session_log row already written; retry is safe by upsert/delete-then-insert convergence", async () => {
+  it("[13] exercise_logs insert failure: throws; session_log row already written; retry is safe by event-keyed UPDATE/delete-then-insert convergence", async () => {
     const eventQ = createMockQuery({ data: eventRow(), error: null });
     const clientQ = createMockQuery({
       data: { expected_check_in_day: null },
@@ -1144,8 +1154,8 @@ describe("logTrainingEvent", () => {
       }),
     ).rejects.toThrow(/Failed to insert exercise logs.*boom/);
 
-    // session_log was successfully upserted before the failure.
-    expect(upsertQ.upsert).toHaveBeenCalledTimes(1);
+    // session_log was successfully inserted before the failure.
+    expect(upsertQ.insert).toHaveBeenCalledTimes(1);
     // training_events update was NOT called (status link is step 7, after step 6).
     expect(linkQ.update).not.toHaveBeenCalled();
   });
@@ -1285,9 +1295,10 @@ describe("getTrainingEventDetail", () => {
   });
 
   // -------------------------------------------------------------------------
-  // 17. Composite-key fallback when event.session_log_id is null
+  // 17. No composite-key fallback (removed in Session 5.2): the log is resolved
+  //     only via event.session_log_id, so an unlinked event has a null log.
   // -------------------------------------------------------------------------
-  it("[17] composite-key fallback: event.session_log_id null but session_log exists by (client_id, training_session_id, week_start_date)", async () => {
+  it("[17] no composite-key fallback: event.session_log_id null yields sessionLog null", async () => {
     const eventQ = createMockQuery({
       data: {
         id: EVENT_ID,
@@ -1326,37 +1337,18 @@ describe("getTrainingEventDetail", () => {
       },
       error: null,
     });
-    const clientQ = createMockQuery({
-      data: { expected_check_in_day: null },
-      error: null,
-    });
-    const compositeLogQ = createMockQuery({
-      data: {
-        id: SESSION_LOG_ID,
-        client_id: CLIENT_ID,
-        training_session_id: SESSION_ID,
-        completed_at: "2026-05-04",
-        completion_quality: "full",
-        notes: null,
-        week_start_date: "2026-05-04",
-        prescribed_session_snapshot: null,
-        created_at: "2026-05-04T12:00:00Z",
-        updated_at: "2026-05-04T12:00:00Z",
-      },
-      error: null,
-    });
-    const exerciseLogsQ = createMockQuery({ data: [], error: null });
 
     installRouter({
       training_events: eventQ,
       training_sessions: sessionQ,
-      clients: clientQ,
-      session_logs: compositeLogQ,
-      exercise_logs: exerciseLogsQ,
     });
 
     const result = await getTrainingEventDetail(EVENT_ID, CLIENT_ID);
-    expect(result?.sessionLog?.id).toBe(SESSION_LOG_ID);
+    expect(result).not.toBeNull();
+    expect(result?.sessionLog).toBeNull();
+    // The composite-key lookup is gone — session_logs is never queried for an
+    // unlinked event.
+    expect(mockFrom).not.toHaveBeenCalledWith("session_logs");
   });
 
   // -------------------------------------------------------------------------
@@ -1753,3 +1745,126 @@ describe("getTrainingEventDetail", () => {
     expect(result?.session.source).toBe("live");
   });
 });
+
+// ===========================================================================
+// logTrainingSessionForDate (event-less, Session 5.3)
+// ===========================================================================
+describe("logTrainingSessionForDate", () => {
+  const DATE = "2026-05-08";
+  const PERFORMED = "pull-session";
+  const MATCHED_EVENT = "ev-matched";
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-08T12:00:00Z"));
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it("[s1] match: writes a log linked to the matched event and flips its status", async () => {
+    const clientQ = createMockQuery({ data: { expected_check_in_day: null }, error: null });
+    const idemQ = createMockQuery({ data: null, error: null }); // no existing log
+    const matcherQ = createMockQuery({
+      data: [{ id: MATCHED_EVENT, training_session_id: PERFORMED, date: "2026-05-06", created_at: "t1" }],
+      error: null,
+    });
+    const sessionSnapQ = createMockQuery({ data: SESSION_PRESCRIPTION, error: null });
+    const insertQ = createMockQuery({ data: { id: SESSION_LOG_ID }, error: null });
+    const linkBackQ = createMockQuery({ data: null, error: null });
+    const linkEventQ = createMockQuery({ data: null, error: null });
+
+    installRouter({
+      clients: clientQ,
+      training_events: [matcherQ, linkEventQ],
+      training_sessions: sessionSnapQ,
+      session_logs: [idemQ, insertQ, linkBackQ],
+    });
+
+    const result = await logTrainingSessionForDate({
+      clientId: CLIENT_ID,
+      date: DATE,
+      payload: { date: DATE, performedSessionId: PERFORMED, completionQuality: "full" },
+    });
+
+    expect(result).toEqual({ sessionLogId: SESSION_LOG_ID });
+    // Fresh INSERT keyed to the matched event, performed session in the column,
+    // completed_at = the logged date.
+    expect(insertQ.insert).toHaveBeenCalledTimes(1);
+    expect(insertQ.insert.mock.calls[0][0]).toMatchObject({
+      training_event_id: MATCHED_EVENT,
+      training_session_id: PERFORMED,
+      completed_at: DATE,
+    });
+    // Event status flipped to completed.
+    expect(linkEventQ.update.mock.calls[0][0]).toMatchObject({ status: "completed" });
+  });
+
+  it("[s2] no match: writes an unmatched extra (training_event_id null), no event update", async () => {
+    const clientQ = createMockQuery({ data: { expected_check_in_day: null }, error: null });
+    const idemQ = createMockQuery({ data: null, error: null });
+    const matcherQ = createMockQuery({ data: [], error: null }); // no candidates
+    const sessionSnapQ = createMockQuery({ data: SESSION_PRESCRIPTION, error: null });
+    const insertQ = createMockQuery({ data: { id: SESSION_LOG_ID }, error: null });
+
+    installRouter({
+      clients: clientQ,
+      training_events: [matcherQ],
+      training_sessions: sessionSnapQ,
+      session_logs: [idemQ, insertQ],
+    });
+
+    const result = await logTrainingSessionForDate({
+      clientId: CLIENT_ID,
+      date: DATE,
+      payload: { date: DATE, performedSessionId: PERFORMED, completionQuality: "full" },
+    });
+
+    expect(result).toEqual({ sessionLogId: SESSION_LOG_ID });
+    expect(insertQ.insert.mock.calls[0][0]).toMatchObject({
+      training_event_id: null,
+      training_session_id: PERFORMED,
+    });
+    // matcher ran but no link/status update fired (only the one matcher read).
+    expect(linkEventNotCalled(matcherQ)).toBe(true);
+  });
+
+  it("[s3] idempotent: an existing log for the same (client, session, date) is UPDATED, matcher skipped", async () => {
+    const clientQ = createMockQuery({ data: { expected_check_in_day: null }, error: null });
+    const idemQ = createMockQuery({
+      data: { id: SESSION_LOG_ID, training_event_id: MATCHED_EVENT },
+      error: null,
+    });
+    const sessionSnapQ = createMockQuery({ data: SESSION_PRESCRIPTION, error: null });
+    const updateQ = createMockQuery({ data: { id: SESSION_LOG_ID }, error: null });
+    const linkBackQ = createMockQuery({ data: null, error: null });
+    const linkEventQ = createMockQuery({ data: null, error: null });
+    const matcherSpy = createMockQuery({ data: [], error: null });
+
+    installRouter({
+      clients: clientQ,
+      // Only the link hits training_events — the matcher must NOT run.
+      training_events: [linkEventQ, matcherSpy],
+      training_sessions: sessionSnapQ,
+      session_logs: [idemQ, updateQ, linkBackQ],
+    });
+
+    const result = await logTrainingSessionForDate({
+      clientId: CLIENT_ID,
+      date: DATE,
+      payload: { date: DATE, performedSessionId: PERFORMED, completionQuality: "partial" },
+    });
+
+    expect(result).toEqual({ sessionLogId: SESSION_LOG_ID });
+    // UPDATE by id (no duplicate INSERT).
+    expect(updateQ.update).toHaveBeenCalled();
+    expect(updateQ.insert).not.toHaveBeenCalled();
+    // The matcher read was never reached (the second training_events query is untouched).
+    expect(matcherSpy.select).not.toHaveBeenCalled();
+  });
+});
+
+// True when the given matcher query was the only training_events interaction
+// that produced no status update (it has no `.update` calls).
+function linkEventNotCalled(matcherQ: ReturnType<typeof createMockQuery>): boolean {
+  return matcherQ.update.mock.calls.length === 0;
+}

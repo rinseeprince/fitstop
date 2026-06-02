@@ -21,6 +21,7 @@ function makeSessionLog(overrides: Partial<SessionLog> = {}): SessionLog {
     id: "sl-1",
     clientId: "client-1",
     trainingSessionId: "ts-1",
+    trainingEventId: null,
     completedAt: "2026-04-06T08:00:00Z",
     completionQuality: "full",
     notes: null,

@@ -176,8 +176,20 @@ export function TrainingHistoryTable({ clientId }: Props) {
         label: "Session",
         render: (_v, row) =>
           row.session_name ? (
-            <span className={row.is_logged === false ? "text-[#b8cfd3]" : "text-[#0c1a1e]"}>
+            <span
+              className={`inline-flex items-center gap-1.5 ${
+                row.is_logged === false ? "text-[#b8cfd3]" : "text-[#0c1a1e]"
+              }`}
+            >
               {row.session_name}
+              {row.is_alternative && (
+                <span
+                  title="Client logged a different session than prescribed"
+                  className="rounded-[4px] bg-[#e3edee] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#4a7d84]"
+                >
+                  Alt
+                </span>
+              )}
             </span>
           ) : (
             renderDash()

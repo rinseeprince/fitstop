@@ -26,12 +26,35 @@ function event(overrides: Partial<TrainingEventSummary> = {}): TrainingEventSumm
 describe("TrainingCardSummary", () => {
   beforeEach(() => cleanup());
 
-  it("renders Rest day with no link when there are 0 events", () => {
+  it("renders Rest day as a link to the picker for today/past", () => {
     render(<TrainingCardSummary events={[]} date={DATE} />);
 
     expect(screen.getByText("Rest day")).toBeInTheDocument();
     expect(screen.getByText("No training scheduled")).toBeInTheDocument();
+    expect(screen.getByRole("link")).toHaveAttribute(
+      "href",
+      `/client/training?date=${DATE}`,
+    );
+  });
+
+  it("renders Rest day with no link for a future date", () => {
+    render(<TrainingCardSummary events={[]} date={FUTURE_DATE} />);
+
+    expect(screen.getByText("Rest day")).toBeInTheDocument();
     expect(screen.queryByRole("link")).toBeNull();
+  });
+
+  it("renders a 'Trained for' line when trainedFor is present", () => {
+    render(
+      <TrainingCardSummary
+        events={[]}
+        date={DATE}
+        trainedFor={[{ date: "2026-05-05", sessionName: "Pull Day" }]}
+      />,
+    );
+
+    expect(screen.getByText(/Trained for/)).toBeInTheDocument();
+    expect(screen.getByText("Pull Day")).toBeInTheDocument();
   });
 
   it("renders an unlogged event with Tap to log and link to detail", () => {

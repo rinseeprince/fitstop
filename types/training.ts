@@ -435,6 +435,10 @@ export type SessionLog = {
   id: string;
   clientId: string;
   trainingSessionId: string | null;
+  // The prescribed training_event this log is keyed to (Session 5.2 event-keyed
+  // identity). null for legacy logs never linked to an event, or truly-extra
+  // rest-day training that found no matching prescribed event.
+  trainingEventId: string | null;
   completedAt: string;
   completionQuality: 'full' | 'partial' | 'skipped';
   notes: string | null;

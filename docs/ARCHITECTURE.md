@@ -271,16 +271,25 @@ Events are the **source of truth for date-specific targets**. Plan templates (`n
 
 ```
 training_logs            -- did the client train today? (1:1 per day, child of daily_logs)
-  └── session_logs       -- per-session-per-week completion details (renamed from client_session_completions)
+  └── session_logs       -- one row per logged session, keyed to a training_event (renamed from client_session_completions)
         └── exercise_logs    -- per-exercise metadata (renamed from client_exercise_completions)
               └── set_logs   -- per-set actuals (added in migration 090)
 ```
-- `session_logs.training_session_id` is SET NULL on delete (nullable). When a training plan is replaced, old completion records are preserved via `prescribed_session_snapshot` JSONB
+### Event-keyed identity (migration 097, Session 5.2)
+- `session_logs` is keyed by **`training_event_id`** (FK → `training_events`, `ON DELETE SET NULL`), with a partial unique index `session_logs_training_event_id_key ON (training_event_id) WHERE training_event_id IS NOT NULL`. The old session-week composite `UNIQUE(client_id, training_session_id, week_start_date)` is **dropped** — it silently overwrote two cycle-plan events that shared a session in one week.
+- Write semantics (`services/training-log-service.ts:writeSessionLog`): if the event already has a `session_log_id` → UPDATE that row by id; else INSERT, stamping `training_event_id = event.id`. A `23505` on the partial index (concurrent submit / half-failed prior link) recovers by updating the conflicting row — never a duplicate. `linkSessionLogToEvent` writes both directions (`event.session_log_id` + status, and `session_log.training_event_id`).
+- `completed_at` is the **attribution date** — `event.date` for event-keyed logs (NOT the entry day), the logged date for event-less. A late backfill therefore attributes to the prescribed day.
+- `session_logs.training_session_id` holds the **performed** session. `prescribed_session_snapshot` captures the **prescribed** session (the event's session for matched logs; the chosen session for unmatched extras). Both SET NULL on delete; history preserved via the snapshot JSONB.
+
+### Alternative-session logging (Session 5.3/5.4)
+- A client can log a **different** session than prescribed (planned-day swap) or train on a **rest day** (event-less). Event-less writes go through `POST /api/client/training/session-logs` → `logTrainingSessionForDate`, which is idempotent on `(client, performed session, completed_at::date)` (range-matched) **before** running the matcher, killing retry/double-tap and matched-then-retried phantom dupes.
+- **Matcher** (`findMatchingEvent`): links an event-less log to a prescribed event among unlinked events (`session_log_id IS NULL AND status IN scheduled/missed/skipped`) in the log's week — priority (1) same `training_session_id`, earliest date; (2) same date as the log, any session; (3) none. Deterministic tie-break: earliest date, then `created_at`.
+- **Signals:** swap = `session_log.training_session_id != event.training_session_id`; truly-extra rest-day-trained = `session_log.training_event_id IS NULL`. The coach history table renders an "Alt" badge (`is_alternative`); the drill-down dialog shows a session-level "Prescribed X · Performed Y" line. The client day-view shows a "Trained for {weekday} {session}" line (`DaySummary.trainedFor`) when a log dated D links to an event on D2≠D.
 - `exercise_logs.training_exercise_id` is SET NULL on delete (nullable). History preserved via `prescribed_exercise_snapshot` JSONB
 - Snapshots are written at completion time and backfilled for existing data
 - `set_logs` (migration 090) holds per-set actuals: `(set_number, reps, weight, rpe)`. Replaces the legacy scalar aggregates `actual_sets`/`actual_reps`(csv)/`actual_weight` that lived on `exercise_logs` before 090. ON DELETE CASCADE from `exercise_logs`.
 - `exercise_logs.exercise_id` (added in 090) is a nullable FK to the global `exercises` catalog. Populated when the client picked an exercise from the typeahead picker (Add unplanned, Swap). NULL for prescribed-without-swap (catalog identity is reachable via `training_exercise_id → training_exercises.exercise_id`) and for freehand entries.
-- `exercise_logs.performed_name` (added in 090) is the canonical display name for the logged exercise. Differs from `prescribed_exercise_snapshot.name` when the client swapped a prescribed exercise or added a freehand unplanned one. Display rule: `performed_name ?? prescribed_exercise_snapshot?.name ?? "Unknown exercise"`.
+- `exercise_logs.performed_name` (added in 090) is the canonical display name for the logged exercise. Differs from `prescribed_exercise_snapshot.name` when the client swapped a prescribed exercise or added a freehand unplanned one. Display rule: `performed_name ?? prescribed_exercise_snapshot?.name ?? "Unknown exercise"`. This is the per-**exercise** swap (Session 1.5), independent of the per-**session** swap above.
 - Session-level status: `training_events.status` maps directly from `payload.completionQuality` (full→completed / partial / skipped). Per-exercise data does NOT override the client's tap — clients have legitimate reasons to mark "complete" with partial set data.
 
 ---

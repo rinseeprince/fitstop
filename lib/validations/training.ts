@@ -229,11 +229,29 @@ export const logTrainingEventSchema = z.object({
   completionQuality: completionQualitySchema,
   notes: z.string().max(1000).optional(),
   exercises: z.array(exercisePerformanceSchema).optional(),
+  // Session-level swap: the session the client actually performed, when it
+  // differs from what was prescribed (planned-day swap or rest-day training).
+  // Absent on a normal prescribed log — the writer defaults it to the event's
+  // training_session_id. Recorded into session_logs.training_session_id.
+  performedSessionId: z.string().uuid().optional(),
+});
+
+// Event-less log: client trained on a day with no tapped event (rest-day
+// training, or picking a session from the rest-day picker). `date` is the day
+// trained; `performedSessionId` is required (the picker always supplies one).
+// The service runs the matcher to link it to a prescribed event when possible.
+export const logSessionForDateSchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD"),
+  performedSessionId: z.string().uuid(),
+  completionQuality: completionQualitySchema,
+  notes: z.string().max(1000).optional(),
+  exercises: z.array(exercisePerformanceSchema).optional(),
 });
 
 export type SetPerformanceInput = z.infer<typeof setPerformanceSchema>;
 export type ExercisePerformanceInput = z.infer<typeof exercisePerformanceSchema>;
 export type LogTrainingEventInput = z.infer<typeof logTrainingEventSchema>;
+export type LogSessionForDateInput = z.infer<typeof logSessionForDateSchema>;
 
 // Validation function to ensure client has basic data for training plan
 export function validateClientForTraining(client: {

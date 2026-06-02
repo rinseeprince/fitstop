@@ -9,6 +9,7 @@ import { getEventForDate } from "./training-event-service";
 import { getNutritionEventForDate } from "./nutrition-event-service";
 import { getActivePhase } from "./phase-service";
 import { getActiveNutritionPlanId } from "./nutrition-plan-service";
+import { getActiveTrainingPlanId } from "./training-service";
 import { getTotalCalories } from "@/utils/nutrition-event-helpers";
 
 /**
@@ -83,10 +84,12 @@ export const resolvePlanContextForDate = async (
   const nutritionPlanId =
     nutritionEvent?.nutritionPlanId ?? (await getActiveNutritionPlanId(clientId));
 
-  // From the date's training event only. Nothing in Session 3.1 writes training_plan_id;
-  // the active-plan fallback is deferred to Session 5.3's training writer (getActiveTrainingPlan
-  // loads sessions+exercises — too heavy to call on every per-card write here).
-  const trainingPlanId = trainingEvent?.trainingPlanId ?? null;
+  // training_plan_id prefers the date's event, then falls back to the active
+  // plan so the per-card training write (Session 5.3) links even on a no-event
+  // day. Uses the lightweight id-only getActiveTrainingPlanId (NOT the heavy
+  // getActiveTrainingPlan, which loads sessions+exercises).
+  const trainingPlanId =
+    trainingEvent?.trainingPlanId ?? (await getActiveTrainingPlanId(clientId));
 
   return { phaseId, nutritionPlanId, trainingPlanId };
 };

@@ -5,12 +5,14 @@ vi.mock("./phase-service", () => ({ getActivePhase: vi.fn() }));
 vi.mock("./nutrition-event-service", () => ({ getNutritionEventForDate: vi.fn() }));
 vi.mock("./training-event-service", () => ({ getEventForDate: vi.fn() }));
 vi.mock("./nutrition-plan-service", () => ({ getActiveNutritionPlanId: vi.fn() }));
+vi.mock("./training-service", () => ({ getActiveTrainingPlanId: vi.fn() }));
 
 import { supabaseAdmin } from "./supabase-admin";
 import { getActivePhase } from "./phase-service";
 import { getNutritionEventForDate } from "./nutrition-event-service";
 import { getEventForDate } from "./training-event-service";
 import { getActiveNutritionPlanId } from "./nutrition-plan-service";
+import { getActiveTrainingPlanId } from "./training-service";
 import {
   resolvePlanContextForDate,
   getNutritionForDate,
@@ -30,17 +32,20 @@ describe("resolvePlanContextForDate", () => {
 
     expect(ctx).toEqual({ phaseId: "phase-1", nutritionPlanId: "np-1", trainingPlanId: "tp-1" });
     expect(getActiveNutritionPlanId).not.toHaveBeenCalled();
+    // Date-accurate event present → no active-plan fallback for training either.
+    expect(getActiveTrainingPlanId).not.toHaveBeenCalled();
   });
 
-  it("falls back to the active nutrition plan when there is no event; null phase/training", async () => {
+  it("falls back to the active nutrition AND training plans when there is no event", async () => {
     vi.mocked(getActivePhase).mockResolvedValue(null);
     vi.mocked(getNutritionEventForDate).mockResolvedValue(null);
     vi.mocked(getEventForDate).mockResolvedValue(null);
     vi.mocked(getActiveNutritionPlanId).mockResolvedValue("np-active");
+    vi.mocked(getActiveTrainingPlanId).mockResolvedValue("tp-active");
 
     const ctx = await resolvePlanContextForDate("c1", "2026-05-21");
 
-    expect(ctx).toEqual({ phaseId: null, nutritionPlanId: "np-active", trainingPlanId: null });
+    expect(ctx).toEqual({ phaseId: null, nutritionPlanId: "np-active", trainingPlanId: "tp-active" });
   });
 
   it("returns all-null when there is no plan at all", async () => {
@@ -48,6 +53,7 @@ describe("resolvePlanContextForDate", () => {
     vi.mocked(getNutritionEventForDate).mockResolvedValue(null);
     vi.mocked(getEventForDate).mockResolvedValue(null);
     vi.mocked(getActiveNutritionPlanId).mockResolvedValue(null);
+    vi.mocked(getActiveTrainingPlanId).mockResolvedValue(null);
 
     const ctx = await resolvePlanContextForDate("c1", "2026-05-21");
 

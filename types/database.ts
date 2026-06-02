@@ -2164,6 +2164,7 @@ export type Database = {
           id: string
           notes: string | null
           prescribed_session_snapshot: Json | null
+          training_event_id: string | null
           training_session_id: string | null
           updated_at: string
           week_start_date: string
@@ -2176,6 +2177,7 @@ export type Database = {
           id?: string
           notes?: string | null
           prescribed_session_snapshot?: Json | null
+          training_event_id?: string | null
           training_session_id?: string | null
           updated_at?: string
           week_start_date: string
@@ -2188,6 +2190,7 @@ export type Database = {
           id?: string
           notes?: string | null
           prescribed_session_snapshot?: Json | null
+          training_event_id?: string | null
           training_session_id?: string | null
           updated_at?: string
           week_start_date?: string
@@ -2198,6 +2201,13 @@ export type Database = {
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "session_logs_training_event_id_fkey"
+            columns: ["training_event_id"]
+            isOneToOne: false
+            referencedRelation: "training_events"
             referencedColumns: ["id"]
           },
           {

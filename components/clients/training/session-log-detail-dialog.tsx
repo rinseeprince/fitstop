@@ -30,6 +30,7 @@ type SessionLogDetailResponse = {
   data: {
     sessionLog: SessionLog;
     exerciseLogs: ExerciseLog[];
+    performedSessionName: string | null;
   };
 };
 
@@ -257,6 +258,7 @@ export function SessionLogDetailDialog({
 
   const sessionLog = data?.data?.sessionLog;
   const exerciseLogs = data?.data?.exerciseLogs ?? [];
+  const performedSessionName: string | null = data?.data?.performedSessionName ?? null;
 
   const sessionSnapshot = sessionLog?.prescribedSessionSnapshot as Record<string, unknown> | null;
   const sessionName =
@@ -295,6 +297,21 @@ export function SessionLogDetailDialog({
               )}
             </p>
           )}
+          {/* Session-level swap: the client performed a different session than
+              prescribed. Distinct from the per-exercise swap shown in the body. */}
+          {!isLoading &&
+            sessionLog &&
+            performedSessionName &&
+            performedSessionName !== sessionName && (
+              <p className="text-[13px] mt-1.5">
+                <span className="text-[#93b0b4]">Prescribed </span>
+                <span className="font-medium text-[#0c1a1e]">{sessionName}</span>
+                <span className="text-[#93b0b4]"> · Performed </span>
+                <span className="font-medium text-[#0c1a1e]">
+                  {performedSessionName}
+                </span>
+              </p>
+            )}
         </DialogHeader>
 
         {/* Hairline divider */}

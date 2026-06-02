@@ -30,6 +30,7 @@ describe("GET /api/client/day-summary", () => {
     mockGetDaySummary.mockResolvedValue({
       phase: null,
       training: [],
+      trainedFor: [],
       nutrition: null,
       wellness: { hasLog: false },
       habits: { totalCount: 0, loggedCount: 0 },
@@ -49,6 +50,7 @@ describe("GET /api/client/day-summary", () => {
           prescribedExerciseCount: 4,
         },
       ],
+      trainedFor: [],
       nutrition: { hasLog: true, caloriesConsumed: 1900, targetCalories: 2000 },
       wellness: { hasLog: true },
       habits: { totalCount: 3, loggedCount: 2 },

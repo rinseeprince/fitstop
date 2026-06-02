@@ -411,23 +411,98 @@ export async function countEventsInRange(
 }
 
 /**
- * Link a session log to an event and update its status.
+ * Link a session log to an event, writing BOTH directions of the event-keyed
+ * relationship (Session 5.2): the event's session_log_id + status, and the
+ * session_log's training_event_id back-reference. Sequenced UPDATEs treated as
+ * atomic for pre-launch — this is the final step of a log write. Stamping the
+ * log side here also heals any legacy row whose training_event_id was null.
  */
 export async function linkSessionLogToEvent(
   eventId: string,
   sessionLogId: string,
   status: "completed" | "partial" | "skipped"
 ): Promise<void> {
-  const { error } = await supabaseAdmin
+  const now = new Date().toISOString();
+
+  const { error: eventErr } = await supabaseAdmin
     .from("training_events")
     .update({
       session_log_id: sessionLogId,
       status,
-      updated_at: new Date().toISOString(),
+      updated_at: now,
     })
     .eq("id", eventId);
+  if (eventErr) throw eventErr;
 
-  if (error) throw error;
+  const { error: logErr } = await supabaseAdmin
+    .from("session_logs")
+    .update({ training_event_id: eventId, updated_at: now })
+    .eq("id", sessionLogId);
+  if (logErr) throw logErr;
+}
+
+/**
+ * Session 5.3 matcher: for an event-less log (rest-day training), find the
+ * prescribed training_event it should link to, if any. "Unlinked" means the
+ * event has no session_log yet and is not already completed/partial
+ * (session_log_id IS NULL AND status IN scheduled/missed/skipped). Priority:
+ *   1. an unlinked event with the same training_session_id as the performed
+ *      session, earliest date in the week (covers "missed Tuesday's Pull, did
+ *      it Wednesday" and "did Pull early before its prescribed day").
+ *   2. an unlinked event on the same date as the log, any session (planned-day
+ *      swap). For an event-less log this normally can't fire (a true rest day
+ *      has no event), but it's kept for completeness and determinism.
+ *   3. null — no candidate; the log stays unmatched (truly-extra training).
+ * Tie-breaks are deterministic: earliest date, then earliest created_at.
+ */
+export async function findMatchingEvent(params: {
+  clientId: string;
+  performedSessionId: string;
+  completedAt: string;
+  weekStart: string;
+  weekEnd: string;
+}): Promise<{ id: string; trainingSessionId: string | null; date: string } | null> {
+  const { clientId, performedSessionId, completedAt, weekStart, weekEnd } = params;
+
+  const { data, error } = await supabaseAdmin
+    .from("training_events")
+    .select("id, training_session_id, date, created_at")
+    .eq("client_id", clientId)
+    .is("session_log_id", null)
+    .in("status", ["scheduled", "missed", "skipped"])
+    .gte("date", weekStart)
+    .lte("date", weekEnd)
+    .order("date", { ascending: true })
+    .order("created_at", { ascending: true });
+  if (error) {
+    throw new Error(`Failed to load candidate events for matcher: ${error.message}`);
+  }
+  const candidates = data ?? [];
+
+  // 1. Same performed session, earliest date in week (ordering guarantees it).
+  const sameSession = candidates.find(
+    (e) => e.training_session_id === performedSessionId
+  );
+  if (sameSession) {
+    return {
+      id: sameSession.id,
+      trainingSessionId: sameSession.training_session_id,
+      date: sameSession.date,
+    };
+  }
+
+  // 2. Same date as the log, any session (planned-day swap).
+  const sameDate = candidates.find((e) => e.date === completedAt);
+  if (sameDate) {
+    return {
+      id: sameDate.id,
+      trainingSessionId: sameDate.training_session_id,
+      date: sameDate.date,
+    };
+  }
+
+  // 3. No candidate — log stays unmatched.
+  return null;
 }
 
 // --- Day-summary helper ---

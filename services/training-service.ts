@@ -178,6 +178,34 @@ export const getActiveTrainingPlan = async (clientId: string): Promise<TrainingP
   return mapPlanRow(planRow, sessions);
 };
 
+/**
+ * Lightweight active-plan id lookup — id only, no sessions/exercises. Mirrors
+ * getActiveNutritionPlanId. Used by resolvePlanContextForDate's training
+ * fallback (Session 5.3), which runs on every per-card write and must not pay
+ * for getActiveTrainingPlan's fetchSessionsWithExercises. Same active-plan
+ * filters as getActiveTrainingPlan, but .maybeSingle() (NOT .single()) so a
+ * client with no active plan resolves to null → clean 422, not a 500.
+ */
+export const getActiveTrainingPlanId = async (
+  clientId: string
+): Promise<string | null> => {
+  const { data, error } = await supabaseAdmin
+    .from("training_plans")
+    .select("id")
+    .eq("client_id", clientId)
+    .eq("status", "active")
+    .is("deleted_at", null)
+    .is("effective_until", null)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to fetch active training plan id: ${error.message}`);
+  }
+  return data?.id ?? null;
+};
+
 // Get training plan that was active on a specific date
 export const getTrainingPlanForDate = async (
   clientId: string,

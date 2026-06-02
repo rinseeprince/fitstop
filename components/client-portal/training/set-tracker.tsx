@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import useSWR, { mutate as globalMutate } from "swr";
 import { useRouter } from "next/navigation";
 import { useFieldArray, useForm, useWatch } from "react-hook-form";
-import { ChevronDown, Loader2 } from "lucide-react";
+import { ChevronDown, Loader2, Repeat } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -23,6 +23,7 @@ import type {
   ResolvedSession,
   TrainingEvent,
   TrainingEventDetail,
+  TrainingSession,
 } from "@/types/training";
 import {
   ExerciseTrackerBlock,
@@ -31,6 +32,7 @@ import {
 } from "./exercise-tracker-block";
 import { QuickLogControls } from "./quick-log-controls";
 import { AddExerciseRow } from "./add-exercise-row";
+import { SessionPicker } from "./session-picker";
 import {
   buildLogPayload,
   seedDefaultValues,
@@ -39,26 +41,68 @@ import {
 } from "./log-form-types";
 
 type EventDetailResponse = { success: boolean; data: TrainingEventDetail };
+type SessionDetailResponse = { success: boolean; data: { session: TrainingSession } };
 type ClientMeResponse = { success: boolean; data: Client };
 
+// How a logged workout is saved + which session was performed.
+type SaveStrategy =
+  | { kind: "event"; eventId: string; performedSessionId?: string }
+  | { kind: "session"; date: string; performedSessionId: string };
+
+const SWR_OPTS = {
+  revalidateOnFocus: false,
+  errorRetryCount: 3,
+  errorRetryInterval: 1000,
+  dedupingInterval: 2000,
+} as const;
+
 type SetTrackerProps = {
-  eventId: string;
+  /** Event-keyed mode: the client tapped a scheduled event. */
+  eventId?: string;
   date?: string;
+  /** Event-less mode: a session picked on a rest day (no event). */
+  sessionId?: string;
+  /** Event-less mode: return to the picker to choose a different session. */
+  onChangeSession?: () => void;
 };
 
-export function SetTracker({ eventId, date }: SetTrackerProps) {
+export function SetTracker(props: SetTrackerProps) {
+  if (props.eventId) {
+    return <EventModeTracker eventId={props.eventId} date={props.date} />;
+  }
+  if (props.sessionId && props.date) {
+    return (
+      <SessionModeTracker
+        sessionId={props.sessionId}
+        date={props.date}
+        onChangeSession={props.onChangeSession}
+      />
+    );
+  }
+  return <LoadFailed />;
+}
+
+// --- Event-keyed mode (tapped a scheduled event), with optional session swap ---
+
+function EventModeTracker({
+  eventId,
+  date,
+}: {
+  eventId: string;
+  date?: string;
+}) {
+  const [swapSessionId, setSwapSessionId] = useState<string | null>(null);
+  const [showPicker, setShowPicker] = useState(false);
+
   const {
     data: eventData,
     error: eventError,
     isLoading: eventLoading,
   } = useSWR<EventDetailResponse>(
-    eventId ? `/api/client/training/events/${eventId}` : null,
+    `/api/client/training/events/${eventId}`,
     swrFetcher,
     {
-      revalidateOnFocus: false,
-      errorRetryCount: 3,
-      errorRetryInterval: 1000,
-      dedupingInterval: 2000,
+      ...SWR_OPTS,
       onError: (err) =>
         console.error("[set-tracker] event detail fetch failed:", err),
     },
@@ -67,62 +111,126 @@ export function SetTracker({ eventId, date }: SetTrackerProps) {
   const { data: meData, isLoading: meLoading } = useSWR<ClientMeResponse>(
     "/api/client/me",
     swrFetcher,
-    {
-      revalidateOnFocus: false,
-      onError: (err) =>
-        console.error("[set-tracker] /api/client/me fetch failed:", err),
-    },
+    { revalidateOnFocus: false },
   );
 
-  if (eventLoading || meLoading) {
+  // When swapped, fetch the chosen session's exercises (active-plan scoped).
+  const { data: swapData, isLoading: swapLoading } = useSWR<SessionDetailResponse>(
+    swapSessionId ? `/api/client/training/sessions/${swapSessionId}` : null,
+    swrFetcher,
+    SWR_OPTS,
+  );
+
+  if (showPicker) {
     return (
-      <div data-testid="set-tracker-skeleton" className="space-y-4">
-        <div className="space-y-2">
-          <Skeleton className="h-6 w-48" />
-          <Skeleton className="h-4 w-64" />
-        </div>
-        {Array.from({ length: 3 }, (_, i) => (
-          <Skeleton key={i} className="h-40 w-full rounded-[6px]" />
-        ))}
-      </div>
+      <SessionPicker
+        title="Do a different session"
+        onSelect={(id) => {
+          setSwapSessionId(id);
+          setShowPicker(false);
+        }}
+        onCancel={() => setShowPicker(false)}
+      />
     );
   }
 
-  if (eventError || !eventData) {
-    return (
-      <Card>
-        <CardContent className="py-12 text-center">
-          <p className="font-medium text-[#0c1a1e]">Failed to load workout</p>
-          <p className="mt-2 text-[13px] text-[#5a7d82]">
-            Please refresh the page or try again in a moment.
-          </p>
-        </CardContent>
-      </Card>
-    );
+  if (eventLoading || meLoading || (swapSessionId && swapLoading)) {
+    return <TrackerSkeleton />;
   }
+  if (eventError || !eventData) return <LoadFailed />;
 
   const weightUnit: "lbs" | "kg" = meData?.data?.weightUnit ?? "lbs";
 
+  // Use the prescribed event detail, or the swapped session's detail.
+  let detail = eventData.data;
+  let save: SaveStrategy = { kind: "event", eventId };
+  if (swapSessionId && swapData?.data?.session) {
+    detail = syntheticDetailFromSession(
+      swapData.data.session,
+      eventData.data.event,
+    );
+    save = { kind: "event", eventId, performedSessionId: swapSessionId };
+  }
+
   return (
     <TrainingLogForm
-      eventId={eventId}
+      key={swapSessionId ?? "prescribed"}
+      detail={detail}
       date={date}
-      detail={eventData.data}
       weightUnit={weightUnit}
+      save={save}
+      onChangeSession={() => setShowPicker(true)}
+      onResetSwap={swapSessionId ? () => setSwapSessionId(null) : undefined}
+    />
+  );
+}
+
+// --- Event-less mode (rest-day training): a picked session, no event ---
+
+function SessionModeTracker({
+  sessionId,
+  date,
+  onChangeSession,
+}: {
+  sessionId: string;
+  date: string;
+  onChangeSession?: () => void;
+}) {
+  const {
+    data: sessionData,
+    error: sessionError,
+    isLoading: sessionLoading,
+  } = useSWR<SessionDetailResponse>(
+    `/api/client/training/sessions/${sessionId}`,
+    swrFetcher,
+    {
+      ...SWR_OPTS,
+      onError: (err) =>
+        console.error("[set-tracker] session fetch failed:", err),
+    },
+  );
+
+  const { data: meData, isLoading: meLoading } = useSWR<ClientMeResponse>(
+    "/api/client/me",
+    swrFetcher,
+    { revalidateOnFocus: false },
+  );
+
+  if (sessionLoading || meLoading) return <TrackerSkeleton />;
+  if (sessionError || !sessionData?.data?.session) return <LoadFailed />;
+
+  const weightUnit: "lbs" | "kg" = meData?.data?.weightUnit ?? "lbs";
+  const session = sessionData.data.session;
+  const detail = syntheticDetailFromSession(
+    session,
+    syntheticEvent(session, date),
+  );
+
+  return (
+    <TrainingLogForm
+      detail={detail}
+      date={date}
+      weightUnit={weightUnit}
+      save={{ kind: "session", date, performedSessionId: sessionId }}
+      onChangeSession={onChangeSession}
     />
   );
 }
 
 function TrainingLogForm({
-  eventId,
-  date,
   detail,
+  date,
   weightUnit,
+  save,
+  onChangeSession,
+  onResetSwap,
 }: {
-  eventId: string;
-  date: string | undefined;
   detail: TrainingEventDetail;
+  date: string | undefined;
   weightUnit: "lbs" | "kg";
+  save: SaveStrategy;
+  onChangeSession?: () => void;
+  onResetSwap?: () => void;
 }) {
   const { toast } = useToast();
   const router = useRouter();
@@ -166,8 +274,8 @@ function TrainingLogForm({
   });
 
   const onSubmit = async (values: LogFormValues) => {
-    const payload = buildLogPayload(values);
-    const parsed = logTrainingEventSchema.safeParse(payload);
+    const base = buildLogPayload(values);
+    const parsed = logTrainingEventSchema.safeParse(base);
     if (!parsed.success) {
       toast({
         title: "Couldn't save workout",
@@ -176,38 +284,59 @@ function TrainingLogForm({
       });
       return;
     }
+
+    // Branch on save strategy: event-keyed vs event-less endpoint + body.
+    const url =
+      save.kind === "event"
+        ? `/api/client/training/events/${save.eventId}/log`
+        : `/api/client/training/session-logs`;
+    const body =
+      save.kind === "event"
+        ? save.performedSessionId
+          ? { ...parsed.data, performedSessionId: save.performedSessionId }
+          : parsed.data
+        : {
+            ...parsed.data,
+            date: save.date,
+            performedSessionId: save.performedSessionId,
+          };
+    const loggedDate =
+      save.kind === "session" ? save.date : date ?? detail.event.date;
+
     try {
-      const res = await fetch(
-        `/api/client/training/events/${eventId}/log`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify(parsed.data),
-        },
-      );
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(body),
+      });
       if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as
+        const errBody = (await res.json().catch(() => null)) as
           | { error?: string }
           | null;
         toast({
           title: "Couldn't save workout",
-          description: body?.error ?? "Please try again in a moment.",
+          description: errBody?.error ?? "Please try again in a moment.",
           variant: "destructive",
         });
         return;
       }
       toast({ title: "Workout logged" });
-      // Drop the stale detail cache so re-entering the workout refetches the logged sets/status —
-      // the form only seeds defaultValues once per mount. Matters most for a quick-log, whose only
-      // signal is sessionLog.completionQuality. Then refresh the home day-summary, and return home.
-      const loggedDate = date ?? detail.event.date;
-      void globalMutate(`/api/client/training/events/${eventId}`, undefined, {
-        revalidate: false,
-      });
+      // Drop the stale event-detail cache so re-entering refetches logged
+      // sets/status (the form seeds defaultValues once per mount). Event mode
+      // only — there's no event-detail cache in event-less mode.
+      if (save.kind === "event") {
+        void globalMutate(
+          `/api/client/training/events/${save.eventId}`,
+          undefined,
+          { revalidate: false },
+        );
+      }
       void globalMutate(`/api/client/day-summary?date=${loggedDate}`);
       router.push(
-        loggedDate === getTodayDateString() ? "/client" : `/client?date=${loggedDate}`,
+        loggedDate === getTodayDateString()
+          ? "/client"
+          : `/client?date=${loggedDate}`,
       );
     } catch {
       toast({
@@ -222,6 +351,8 @@ function TrainingLogForm({
     append(exercise);
     setDetailOpen(true);
   };
+
+  const swapped = save.kind === "event" && save.performedSessionId != null;
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
@@ -240,12 +371,31 @@ function TrainingLogForm({
           )}
           {formattedDate && <span>{formattedDate}</span>}
         </div>
+        {onChangeSession && (
+          <div className="flex items-center gap-3 pt-1">
+            <button
+              type="button"
+              onClick={onChangeSession}
+              data-testid="change-session"
+              className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[#0d9488] transition-colors hover:text-[#0b7c72]"
+            >
+              <Repeat className="h-3.5 w-3.5" />
+              Do a different session
+            </button>
+            {swapped && onResetSwap && (
+              <button
+                type="button"
+                onClick={onResetSwap}
+                className="text-[12px] text-[#5a7d82] underline-offset-2 hover:underline"
+              >
+                Back to prescribed
+              </button>
+            )}
+          </div>
+        )}
       </header>
 
-      <LogWorkoutButton
-        control={control}
-        isSubmitting={isSubmitting}
-      />
+      <LogWorkoutButton control={control} isSubmitting={isSubmitting} />
 
       <QuickLogControls
         control={control}
@@ -316,6 +466,73 @@ function TrainingLogForm({
   );
 }
 
+// --- Synthetic detail builders for the event-less / swapped flows ---
+
+function syntheticDetailFromSession(
+  session: TrainingSession,
+  event: TrainingEvent,
+): TrainingEventDetail {
+  return {
+    event,
+    session: { source: "live", session },
+    exercises: session.exercises.map((exercise) => ({
+      source: "live",
+      exercise,
+    })),
+    sessionLog: null,
+    exerciseLogs: [],
+  };
+}
+
+// A minimal event carrying just the fields TrainingLogForm reads (date, name,
+// focus) for the event-less header. Never persisted — the save goes through the
+// event-less /session-logs endpoint.
+function syntheticEvent(session: TrainingSession, date: string): TrainingEvent {
+  return {
+    id: "",
+    clientId: "",
+    trainingPlanId: session.planId,
+    trainingSessionId: session.id,
+    date,
+    sessionName: session.name,
+    sessionFocus: session.focus ?? null,
+    estimatedCalories: session.estimatedCalories ?? null,
+    status: "scheduled",
+    sessionLogId: null,
+    isModified: false,
+    calorieSurplusPercentage: session.calorieSurplusPercentage,
+    createdAt: "",
+    updatedAt: "",
+  };
+}
+
+function TrackerSkeleton() {
+  return (
+    <div data-testid="set-tracker-skeleton" className="space-y-4">
+      <div className="space-y-2">
+        <Skeleton className="h-6 w-48" />
+        <Skeleton className="h-4 w-64" />
+      </div>
+      {Array.from({ length: 3 }, (_, i) => (
+        <Skeleton key={i} className="h-40 w-full rounded-[6px]" />
+      ))}
+    </div>
+  );
+}
+
+function LoadFailed() {
+  return (
+    <Card>
+      <CardContent className="py-12 text-center">
+        <p className="font-medium text-[#0c1a1e]">Failed to load workout</p>
+        <p className="mt-2 text-[13px] text-[#5a7d82]">
+          Please refresh the page or try again in a moment.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
 function normalizeExercise(
   resolved: ResolvedExercise,
   index: number,
@@ -366,8 +583,7 @@ function normalizeSessionHeader(
   const s = resolved.snapshot;
   return {
     name: (s.name as string | undefined) ?? event.sessionName,
-    focus:
-      (s.focus as string | undefined) ?? event.sessionFocus ?? undefined,
+    focus: (s.focus as string | undefined) ?? event.sessionFocus ?? undefined,
     estimatedDurationMinutes: s.estimatedDurationMinutes as number | undefined,
   };
 }
