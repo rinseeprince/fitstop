@@ -81,9 +81,9 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 | 3.10 | Re-key client rate limiting from IP to client identity | 3 Scale hardening | COMPLETE
 | 4.1 | Habits detail page | 4 Habits | COMPLETE
 | 5.1 | Remove old Daily Pulse + deprecated routes + docs sweep | 5 Cleanup | COMPLETE
-| 5.2 | Align session_logs identity with event-keyed architecture | 5 |
-| 5.3 | Alternative session logging: write path + matcher + coach surfacing | 5 |
-| 5.4 | Alternative session logging: client UI | 5 |
+| 5.2 | Align session_logs identity with event-keyed architecture | 5 | COMPLETE
+| 5.3 | Alternative session logging: write path + matcher + coach surfacing | 5 | COMPLETE
+| 5.4 | Alternative session logging: client UI | 5 | COMPLETE
 | 6.1 | Walkthrough copy/step update | 6 Check-in + onboarding |
 | 6.2 | Check-in context: session-keyed to event-keyed | 6 |
 | 6.3 | Check-in AI summary enrichment (optional) | 6 |
@@ -1604,6 +1604,8 @@ The web app is a logic/API test harness; the React-Native app is the real client
 
 ## Session 5.2: Align session_logs identity with event-keyed architecture
 
+**Status**: COMPLETE (commit `9453294`)
+
 **Commit message**: `feat(training): align session_logs identity with event-keyed architecture`
 
 **Objective**: Migrate `session_logs` from session-week identity to event-keyed identity. Foundation for alternative-session logging (Sessions 5.3 and 5.4) and a side-effect fix for the cycle-plan data-loss bug where two events with the same `training_session_id` in one week silently overwrite each other on the existing `(client_id, training_session_id, week_start_date)` unique constraint.
@@ -1656,6 +1658,8 @@ The web app is a logic/API test harness; the React-Native app is the real client
 ---
 
 ## Session 5.3: Alternative session logging — write path + matcher + coach surfacing
+
+**Status**: COMPLETE (commit `9453294`)
 
 **Commit message**: `feat(training): alternative session logging with matcher and prescribed-vs-performed coach view`
 
@@ -1741,6 +1745,8 @@ The web app is a logic/API test harness; the React-Native app is the real client
 ---
 
 ## Session 5.4: Alternative session logging — client UI
+
+**Status**: COMPLETE (commit `9453294`)
 
 **Commit message**: `feat(client-portal): client UI for alternative session and rest-day logging`
 
