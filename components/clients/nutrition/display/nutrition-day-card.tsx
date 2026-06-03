@@ -174,12 +174,9 @@ function NutritionDayTooltip({ dayTarget }: NutritionDayTooltipProps) {
         <div className="px-4 py-3 space-y-1">
           <p className="text-xs font-medium text-[#93b0b4] mb-1">Activities:</p>
           {dayTarget.trainingSessions?.map((session, idx) => (
-            <div key={`training-${idx}`} className="flex justify-between text-xs text-[#0d9488]">
-              <span className="flex items-center gap-1">
-                <Dumbbell className="h-3 w-3" />
-                {session.name}
-              </span>
-              <span>+{session.calories} cal</span>
+            <div key={`training-${idx}`} className="flex items-center gap-1 text-xs text-[#0d9488]">
+              <Dumbbell className="h-3 w-3" />
+              {session.name}
             </div>
           ))}
         </div>
