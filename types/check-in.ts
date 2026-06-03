@@ -222,19 +222,40 @@ export type EnhancedAIData = {
   clientHighlights?: string[];
 };
 
-// AI summary data structure
-export type AICheckInSummary = {
+// --- Check-in review (v3 AI output) ---
+
+export type WatchItemType = "win" | "risk" | "trend" | "flag";
+
+export type CheckInWatchItem = {
+  type: WatchItemType;
+  text: string;
+};
+
+export type CoachActionPriority = "high" | "medium" | "low";
+
+export type CheckInCoachAction = {
+  priority: CoachActionPriority;
+  text: string;
+};
+
+// The four-block coach review produced by the AI pass. Plain text, no markdown:
+// summary (what happened), watchItems + themes (what to watch), coachActions
+// (what to do) and clientMessage (what to say).
+export type CheckInReview = {
   summary: string;
-  insights: AIInsight[];
-  recommendations: AIRecommendation[];
-  responseDraft: string;
-  // Enhanced fields (optional for backward compat with old check-ins)
-  nutritionInsight?: AINutritionInsight;
-  notesIntelligence?: AINotesIntelligence;
-  trainingInsight?: AITrainingInsight;
-  wellnessInsight?: AIWellnessInsight;
-  coachActions?: AICoachAction[];
-  clientHighlights?: string[];
+  watchItems: CheckInWatchItem[];
+  themes: string[];
+  coachActions: CheckInCoachAction[];
+  clientMessage: string;
+};
+
+// v3 enhanced data stored in the ai_insights JSONB column. summary and
+// clientMessage live in their own columns (ai_summary, ai_response_draft).
+export type EnhancedAIDataV3 = {
+  _version: 3;
+  watchItems: CheckInWatchItem[];
+  themes: string[];
+  coachActions: CheckInCoachAction[];
 };
 
 // Complete check-in record (database row)
@@ -280,7 +301,7 @@ export type CheckIn = {
 
   // AI fields
   aiSummary?: string;
-  aiInsights?: AIInsight[] | EnhancedAIData;
+  aiInsights?: AIInsight[] | EnhancedAIData | EnhancedAIDataV3;
   aiRecommendations?: AIRecommendation[];
   aiResponseDraft?: string;
   aiProcessedAt?: string;
@@ -495,7 +516,7 @@ export type GenerateAISummaryRequest = {
 
 export type GenerateAISummaryResponse = {
   success: boolean;
-  summary?: AICheckInSummary;
+  summary?: CheckInReview;
   errorMessage?: string;
 };
 
@@ -544,6 +565,8 @@ export type ProgressChartData = {
   adherence: ChartDataPoint[];
   mood: ChartDataPoint[];
   energy: ChartDataPoint[];
+  sleep: ChartDataPoint[];
+  stress: ChartDataPoint[];
 };
 
 // Check-in reminder record
@@ -711,6 +734,10 @@ export type CheckInComparison = {
   timeBetweenCheckIns?: number; // days
 };
 
+// Pace-aware goal status: whether the rate required to hit the goal by the
+// deadline is within a safe weekly ceiling.
+export type GoalPaceStatus = "on_track" | "behind_pace" | "unrealistic";
+
 // Goal progress tracking
 export type GoalProgress = {
   weight?: {
@@ -724,6 +751,10 @@ export type GoalProgress = {
     projectedCompletionDate?: string;
     avgWeeklyChange?: number;
     weeksToGoal?: number;
+    // Pace check vs deadline (undefined when there is no deadline / current weight).
+    paceStatus?: GoalPaceStatus;
+    requiredRate?: number;
+    safeCeiling?: number;
   };
   bodyFat?: {
     current: number;

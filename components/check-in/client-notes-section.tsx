@@ -17,20 +17,20 @@ export const ClientNotesSection = ({ checkIn }: ClientNotesSectionProps) => {
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.2, delay: 0.12 }}
-      className="bg-card border border-border rounded-lg p-5"
+      className="bg-white border border-[rgba(13,148,136,0.08)] rounded-[6px] p-5"
     >
-      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-4 flex items-center gap-2">
-        <MessageSquare className="w-4 h-4" />
+      <div className="text-xs font-semibold uppercase tracking-[0.06em] text-[#5a7d82] mb-4 flex items-center gap-2">
+        <MessageSquare className="w-4 h-4" strokeWidth={1.5} />
         Client Notes
       </div>
 
       <div className="flex flex-col gap-3">
         {checkIn.notes && (
           <div>
-            <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground mb-1">
+            <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-[#93b0b4] mb-1">
               Reflection
             </div>
-            <div className="pl-3.5 border-l-2 border-border text-sm text-foreground leading-relaxed">
+            <div className="pl-3.5 border-l-2 border-[rgba(13,148,136,0.15)] text-sm text-[#0c1a1e] leading-relaxed">
               {checkIn.notes}
             </div>
           </div>
@@ -38,10 +38,10 @@ export const ClientNotesSection = ({ checkIn }: ClientNotesSectionProps) => {
 
         {checkIn.prs && (
           <div>
-            <div className="text-xs font-semibold text-muted-foreground mb-1">
+            <div className="text-xs font-semibold text-[#5a7d82] mb-1">
               Wins
             </div>
-            <div className="text-sm text-foreground leading-relaxed">
+            <div className="text-sm text-[#0c1a1e] leading-relaxed">
               {checkIn.prs}
             </div>
           </div>
@@ -49,10 +49,10 @@ export const ClientNotesSection = ({ checkIn }: ClientNotesSectionProps) => {
 
         {checkIn.challenges && (
           <div>
-            <div className="text-xs font-semibold text-muted-foreground mb-1">
+            <div className="text-xs font-semibold text-[#5a7d82] mb-1">
               Challenges
             </div>
-            <div className="text-sm text-foreground leading-relaxed">
+            <div className="text-sm text-[#0c1a1e] leading-relaxed">
               {checkIn.challenges}
             </div>
           </div>

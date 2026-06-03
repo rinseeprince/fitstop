@@ -1,211 +1,191 @@
 "use client";
 
-import { Card } from "@/components/ui/card";
-import { ProgressCharts } from "./progress-charts";
+import { TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { TrendSparkline } from "./trend-sparkline";
 import type { CheckInComparison, ProgressChartData, MetricChange } from "@/types/check-in";
-import { Minus, TrendingUp, TrendingDown } from "lucide-react";
+import type { SessionSummary } from "@/lib/check-in/adherence";
 
 type CheckInComparisonViewProps = {
   comparison: CheckInComparison;
   chartData: ProgressChartData;
+  // Shared training adherence (completed / prescribed) so the figure here is
+  // identical to the hero card. Historical points use the stored snapshots.
+  adherence: SessionSummary;
 };
 
-// Helper to format change value
-const formatChange = (change?: number, unit?: string): string => {
-  if (change === undefined) return "—";
-  const sign = change > 0 ? "+" : "";
-  return `${sign}${change}${unit || ""}`;
-};
+const values = (points: { value: number }[]): number[] => points.map((p) => p.value);
 
-// Helper to format percent change
-const formatPercentChange = (percentChange?: number): string => {
-  if (percentChange === undefined) return "";
-  const sign = percentChange > 0 ? "+" : "";
-  return `(${sign}${percentChange}%)`;
-};
+// Delta colour, Teal Summit two-colour: good direction -> teal, bad -> amber.
+function deltaColor(change: MetricChange | undefined, inverse: boolean): string {
+  if (!change || change.previous === undefined) return "text-[#93b0b4]";
+  if (change.trend === "down") return inverse ? "text-[#0d9488]" : "text-[#d97706]";
+  if (change.trend === "up") return inverse ? "text-[#d97706]" : "text-[#0d9488]";
+  return "text-[#93b0b4]";
+}
 
-// Metric row component
-const MetricRow = ({
+function DeltaText({ change, unit, inverse }: { change?: MetricChange; unit?: string; inverse?: boolean }) {
+  if (!change || change.previous === undefined || change.change === undefined) return null;
+  const Icon = change.trend === "up" ? TrendingUp : change.trend === "down" ? TrendingDown : Minus;
+  return (
+    <div className={`text-xs flex items-center gap-1 justify-end font-mono-display ${deltaColor(change, !!inverse)}`}>
+      <Icon className="h-3 w-3" strokeWidth={1.5} />
+      <span>
+        {change.change > 0 ? "+" : ""}
+        {change.change}
+        {unit || ""}
+      </span>
+    </div>
+  );
+}
+
+// Delta-only row, used for body measurements (no trend series available).
+function MetricRow({
   label,
-  metric,
+  change,
   unit = "",
-  inverse = false, // if true, down is good (like weight loss)
+  inverse = false,
 }: {
   label: string;
-  metric?: MetricChange;
+  change?: MetricChange;
   unit?: string;
   inverse?: boolean;
-}) => {
-  if (!metric || metric.current === undefined) return null;
-
-  const hasComparison = metric.previous !== undefined;
-  const changeColor = !hasComparison
-    ? "text-muted-foreground"
-    : inverse
-    ? metric.trend === "down"
-      ? "text-success"
-      : metric.trend === "up"
-      ? "text-destructive"
-      : "text-muted-foreground"
-    : metric.trend === "up"
-    ? "text-success"
-    : metric.trend === "down"
-    ? "text-destructive"
-    : "text-muted-foreground";
-
+}) {
+  if (!change || change.current === undefined) return null;
   return (
-    <div className="flex items-center justify-between py-2 border-b border-border/50 last:border-0">
-      <span className="text-sm font-medium text-muted-foreground">{label}</span>
-      <div className="flex items-center gap-3">
-        <div className="text-right">
-          <div className="font-semibold">
-            {metric.current}
-            {unit}
-          </div>
-          {hasComparison && (
-            <div className={`text-xs flex items-center gap-1 justify-end ${changeColor}`}>
-              {inverse ? (
-                metric.trend === "down" ? (
-                  <TrendingDown className="h-3 w-3" />
-                ) : metric.trend === "up" ? (
-                  <TrendingUp className="h-3 w-3" />
-                ) : (
-                  <Minus className="h-3 w-3" />
-                )
-              ) : metric.trend === "up" ? (
-                <TrendingUp className="h-3 w-3" />
-              ) : metric.trend === "down" ? (
-                <TrendingDown className="h-3 w-3" />
-              ) : (
-                <Minus className="h-3 w-3" />
-              )}
-              <span>
-                {formatChange(metric.change, unit)} {formatPercentChange(metric.percentChange)}
-              </span>
-            </div>
-          )}
+    <div className="flex items-center justify-between py-2 border-b border-[rgba(13,148,136,0.06)] last:border-0">
+      <span className="text-sm font-medium text-[#5a7d82]">{label}</span>
+      <div className="text-right">
+        <div className="font-semibold font-mono-display text-[#0c1a1e]">
+          {change.current}
+          {unit}
         </div>
+        <DeltaText change={change} unit={unit} inverse={inverse} />
       </div>
     </div>
   );
-};
+}
 
-export const CheckInComparisonView = ({
-  comparison,
-  chartData: _chartData,
-}: CheckInComparisonViewProps) => {
+// Reading + week-over-week delta + trend sparkline (ghosted on a first check-in).
+function MetricTrendRow({
+  label,
+  current,
+  unit = "",
+  change,
+  series,
+  inverse = false,
+}: {
+  label: string;
+  current?: number;
+  unit?: string;
+  change?: MetricChange;
+  series: number[];
+  inverse?: boolean;
+}) {
+  if (current === undefined || current === null) return null;
+  return (
+    <div className="flex items-center gap-3 py-2 border-b border-[rgba(13,148,136,0.06)] last:border-0">
+      <span className="text-sm font-medium text-[#5a7d82] flex-1">{label}</span>
+      <TrendSparkline values={series} />
+      <div className="text-right w-20">
+        <div className="font-semibold font-mono-display text-[#0c1a1e]">
+          {current}
+          {unit}
+        </div>
+        <DeltaText change={change} unit={unit} inverse={inverse} />
+      </div>
+    </div>
+  );
+}
+
+const cardClass = "bg-white border border-[rgba(13,148,136,0.08)] rounded-[6px] p-4";
+const headingClass = "font-semibold mb-3 text-[#0c1a1e]";
+
+export const CheckInComparisonView = ({ comparison, chartData, adherence }: CheckInComparisonViewProps) => {
   const { current, previous, changes, timeBetweenCheckIns } = comparison;
-
   const hasPreviousCheckIn = previous !== null;
+  const weightUnit = current.weightUnit || "kg";
+  const measurementUnit = current.measurementUnit || "in";
 
-  // Reconstruct check-ins array for ProgressCharts
-  const checkIns = [current, ...(previous ? [previous] : [])];
+  // Use the shared (recomputed) adherence for the latest series point so the
+  // sparkline and the displayed value agree with the hero card.
+  const adherenceSeries = values(chartData.adherence);
+  if (adherenceSeries.length > 0 && adherence.pct !== null) {
+    adherenceSeries[adherenceSeries.length - 1] = adherence.pct;
+  }
+
+  const hasWellbeing =
+    changes.mood?.current !== undefined ||
+    changes.energy?.current !== undefined ||
+    changes.sleep?.current !== undefined ||
+    changes.stress?.current !== undefined;
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="space-y-2">
-        <h3 className="text-lg font-semibold">Progress Comparison</h3>
-        {hasPreviousCheckIn && timeBetweenCheckIns && (
-          <p className="text-sm text-muted-foreground">
-            Comparing with check-in from {timeBetweenCheckIns} days ago
-          </p>
-        )}
-        {!hasPreviousCheckIn && (
-          <p className="text-sm text-muted-foreground">
-            This is the first check-in. No comparison data available.
-          </p>
-        )}
+      <div className="space-y-1">
+        <h3 className="text-lg font-semibold text-[#0c1a1e]">
+          {hasPreviousCheckIn ? "Progress comparison" : "Baseline established"}
+        </h3>
+        <p className="text-sm text-[#93b0b4]">
+          {hasPreviousCheckIn && timeBetweenCheckIns
+            ? `Comparing with the check-in from ${timeBetweenCheckIns} days ago`
+            : "This is the first check-in. 1 data point, trends build next week."}
+        </p>
       </div>
 
-      {/* Body Metrics */}
-      <Card className="p-4">
-        <h4 className="font-semibold mb-4 flex items-center gap-2">
-          <span className="text-blue-600 dark:text-blue-400">📊</span>
-          Body Metrics
-        </h4>
+      {/* Body */}
+      <div className={cardClass}>
+        <h4 className={headingClass}>Body</h4>
         <div className="space-y-1">
-          <MetricRow
+          <MetricTrendRow
             label="Weight"
-            metric={changes.weight}
-            unit={` ${current.weightUnit || "lbs"}`}
+            current={changes.weight?.current}
+            unit={` ${weightUnit}`}
+            change={changes.weight}
+            series={values(chartData.weight)}
             inverse
           />
-          <MetricRow
-            label="Body Fat %"
-            metric={changes.bodyFatPercentage}
+          <MetricTrendRow
+            label="Body Fat"
+            current={changes.bodyFatPercentage?.current}
             unit="%"
+            change={changes.bodyFatPercentage}
+            series={values(chartData.bodyFat)}
             inverse
           />
-          <MetricRow
-            label="Waist"
-            metric={changes.waist}
-            unit={` ${current.measurementUnit || "in"}`}
-            inverse
-          />
-          <MetricRow
-            label="Hips"
-            metric={changes.hips}
-            unit={` ${current.measurementUnit || "in"}`}
-          />
-          <MetricRow
-            label="Chest"
-            metric={changes.chest}
-            unit={` ${current.measurementUnit || "in"}`}
-          />
-          <MetricRow
-            label="Arms"
-            metric={changes.arms}
-            unit={` ${current.measurementUnit || "in"}`}
-          />
-          <MetricRow
-            label="Thighs"
-            metric={changes.thighs}
-            unit={` ${current.measurementUnit || "in"}`}
-          />
+          <MetricRow label="Waist" change={changes.waist} unit={` ${measurementUnit}`} inverse />
+          <MetricRow label="Hips" change={changes.hips} unit={` ${measurementUnit}`} />
+          <MetricRow label="Chest" change={changes.chest} unit={` ${measurementUnit}`} />
+          <MetricRow label="Arms" change={changes.arms} unit={` ${measurementUnit}`} />
+          <MetricRow label="Thighs" change={changes.thighs} unit={` ${measurementUnit}`} />
         </div>
-      </Card>
-
-      {/* Performance Metrics */}
-      <Card className="p-4">
-        <h4 className="font-semibold mb-4 flex items-center gap-2">
-          <span className="text-green-600 dark:text-green-400">💪</span>
-          Performance Metrics
-        </h4>
-        <div className="space-y-1">
-          <MetricRow
-            label="Workouts Completed"
-            metric={changes.workoutsCompleted}
-          />
-          <MetricRow
-            label="Adherence"
-            metric={changes.adherencePercentage}
-            unit="%"
-          />
-        </div>
-      </Card>
-
-      {/* Subjective Metrics */}
-      {(changes.mood || changes.energy || changes.sleep || changes.stress) && (
-        <Card className="p-4">
-          <h4 className="font-semibold mb-4 flex items-center gap-2">
-            <span className="text-purple-600 dark:text-purple-400">🧘</span>
-            Wellbeing Metrics
-          </h4>
-          <div className="space-y-1">
-            <MetricRow label="Mood" metric={changes.mood} unit="/5" />
-            <MetricRow label="Energy" metric={changes.energy} unit="/10" />
-            <MetricRow label="Sleep Quality" metric={changes.sleep} unit="/10" />
-            <MetricRow label="Stress Level" metric={changes.stress} unit="/10" inverse />
-          </div>
-        </Card>
-      )}
-
-      {/* Progress Charts */}
-      <div>
-        <h4 className="font-semibold mb-4">Historical Trends</h4>
-        <ProgressCharts checkIns={checkIns} />
       </div>
+
+      {/* Performance */}
+      <div className={cardClass}>
+        <h4 className={headingClass}>Performance</h4>
+        <div className="space-y-1">
+          <MetricRow label="Workouts completed" change={changes.workoutsCompleted} />
+          <MetricTrendRow
+            label="Adherence"
+            current={adherence.pct ?? undefined}
+            unit="%"
+            series={adherenceSeries}
+          />
+        </div>
+      </div>
+
+      {/* Wellbeing */}
+      {hasWellbeing && (
+        <div className={cardClass}>
+          <h4 className={headingClass}>Wellbeing</h4>
+          <div className="space-y-1">
+            <MetricTrendRow label="Mood" current={changes.mood?.current} unit="/5" change={changes.mood} series={values(chartData.mood)} />
+            <MetricTrendRow label="Energy" current={changes.energy?.current} unit="/10" change={changes.energy} series={values(chartData.energy)} />
+            <MetricTrendRow label="Sleep" current={changes.sleep?.current} unit="/10" change={changes.sleep} series={values(chartData.sleep)} />
+            <MetricTrendRow label="Stress" current={changes.stress?.current} unit="/10" change={changes.stress} series={values(chartData.stress)} inverse />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

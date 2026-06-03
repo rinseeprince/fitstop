@@ -68,10 +68,10 @@ export const WellnessSection = ({
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.2, delay: 0.05 }}
-      className="bg-card border border-border rounded-lg p-5"
+      className="bg-white border border-[rgba(13,148,136,0.08)] rounded-[6px] p-5"
     >
-      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-4 flex items-center gap-2">
-        <Heart className="w-4 h-4" />
+      <div className="text-xs font-semibold uppercase tracking-[0.06em] text-[#5a7d82] mb-4 flex items-center gap-2">
+        <Heart className="w-4 h-4" strokeWidth={1.5} />
         Wellness
       </div>
       <div className="grid grid-cols-4 gap-4">
@@ -94,13 +94,13 @@ export const WellnessSection = ({
 
           return (
             <div key={metric.key} className="text-center">
-              <div className="text-xs font-medium text-muted-foreground mb-2">
+              <div className="text-xs font-medium text-[#93b0b4] mb-2">
                 {metric.label}
               </div>
-              <div className="text-2xl font-bold tracking-tight">
+              <div className="text-2xl font-bold tracking-tight font-mono-display text-[#0c1a1e]">
                 {avg}
               </div>
-              <div className="text-[11px] text-muted-foreground">
+              <div className="text-[11px] text-[#93b0b4]">
                 {metric.scale}
               </div>
               <MiniBarSparkline

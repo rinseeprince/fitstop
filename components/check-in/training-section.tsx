@@ -1,52 +1,52 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Dumbbell, Check, Trophy } from "lucide-react";
-import type { DailyLog } from "@/types/daily-log";
-import type { CheckIn } from "@/types/check-in";
-import type { CheckInExerciseHighlightRow } from "@/lib/database-helpers";
+import { Dumbbell, CheckCircle2, CircleDashed, XCircle, Trophy } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import type { CheckInWithDetails, CheckInSessionCompletion } from "@/types/check-in";
+import type { SessionStatus, SessionSummary } from "@/lib/check-in/adherence";
+import { classifySession } from "@/lib/check-in/adherence";
 
 type TrainingSectionProps = {
-  dailyLogs: DailyLog[];
-  checkIn: CheckIn;
-  contextStartDate: Date;
-  contextEndDate: Date;
+  checkIn: CheckInWithDetails;
+  // Shared training adherence so the panel header matches the hero card exactly.
+  adherence: SessionSummary;
 };
 
-type SessionRow = {
-  dayAbbrev: string;
-  sessionName: string;
-  completed: boolean;
-  hasPR: boolean;
-  date: string;
+const DAY_LABEL: Record<string, string> = {
+  monday: "Mon",
+  tuesday: "Tue",
+  wednesday: "Wed",
+  thursday: "Thu",
+  friday: "Fri",
+  saturday: "Sat",
+  sunday: "Sun",
 };
 
-function getDayAbbrev(dateStr: string): string {
-  const d = new Date(dateStr + "T00:00:00");
-  return d.toLocaleDateString("en-US", { weekday: "short" }).slice(0, 3);
+// Teal Summit two-colour status: teal completed, amber partial, muted missed (no red).
+const STATUS_META: Record<SessionStatus, { label: string; icon: LucideIcon; pill: string }> = {
+  completed: { label: "Completed", icon: CheckCircle2, pill: "bg-[rgba(13,148,136,0.08)] text-[#0d9488]" },
+  partial: { label: "Partial", icon: CircleDashed, pill: "bg-[rgba(245,158,11,0.07)] text-[#d97706]" },
+  missed: { label: "Missed", icon: XCircle, pill: "bg-[rgba(13,148,136,0.04)] text-[#93b0b4]" },
+};
+
+// Detail line built only from fields already on the check-in payload (status +
+// logged quality). No exercise/set counts are fetched.
+function detailLine(session: CheckInSessionCompletion, status: SessionStatus): string {
+  if (status === "completed") {
+    return session.completionQuality === "full" ? "Logged in full" : "Marked complete";
+  }
+  if (status === "partial") {
+    return "Stopped early";
+  }
+  return session.completionQuality === "skipped" ? "Skipped" : "Not logged";
 }
 
-export const TrainingSection = ({
-  dailyLogs,
-  checkIn,
-}: TrainingSectionProps) => {
-  // Build session rows from daily logs
-  const sessions: SessionRow[] = dailyLogs
-    .filter((log) => log.trainingData?.trainingSessionId)
-    .sort((a, b) => a.date.localeCompare(b.date))
-    .map((log) => ({
-      dayAbbrev: getDayAbbrev(log.date),
-      sessionName: log.trainingData?.trainingSessionName || "Training Session",
-      completed: log.trainingData?.sessionCompleted ?? false,
-      hasPR: false,
-      date: log.date,
-    }));
-
-  // Check for exercise highlights (PRs) from the check-in
-  // API returns snake_case rows from the database directly
-  const exerciseHighlights: CheckInExerciseHighlightRow[] =
-    (checkIn as Record<string, unknown>).exerciseHighlights as CheckInExerciseHighlightRow[] ?? [];
-  const prHighlights = exerciseHighlights.filter((h) => h.highlight_type === "pr");
+export const TrainingSection = ({ checkIn, adherence }: TrainingSectionProps) => {
+  const sessions = checkIn.sessionCompletions ?? [];
+  const prHighlights = (checkIn.exerciseHighlights ?? []).filter(
+    (h) => h.highlightType === "pr"
+  );
 
   if (sessions.length === 0 && prHighlights.length === 0) return null;
 
@@ -55,47 +55,74 @@ export const TrainingSection = ({
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.2, delay: 0.1 }}
-      className="bg-card border border-border rounded-lg p-5"
+      className="bg-white border border-[rgba(13,148,136,0.08)] rounded-[6px] p-5"
     >
-      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-4 flex items-center gap-2">
-        <Dumbbell className="w-4 h-4" />
-        Training
+      <div className="flex items-center justify-between mb-4">
+        <div className="text-xs font-semibold uppercase tracking-[0.06em] text-[#5a7d82] flex items-center gap-2">
+          <Dumbbell className="w-4 h-4" strokeWidth={1.5} />
+          Training
+        </div>
+        {adherence.prescribed > 0 && (
+          <span className="text-xs font-medium text-[#5a7d82]">
+            <span className="font-mono-display text-[#0c1a1e]">
+              {adherence.completed} of {adherence.prescribed}
+            </span>{" "}
+            completed
+          </span>
+        )}
       </div>
 
       {sessions.length > 0 && (
         <div className="flex flex-col gap-2">
-          {sessions.map((session, i) => (
-            <div
-              key={`${session.date}-${i}`}
-              className="flex items-center gap-3 px-3 py-2.5 bg-muted/50 rounded-md text-sm"
-            >
-              <span className="text-[11px] font-semibold text-muted-foreground uppercase w-8 shrink-0">
-                {session.dayAbbrev}
-              </span>
-              <span className="flex-1 font-medium">{session.sessionName}</span>
-              {session.completed && (
-                <span className="text-success">
-                  <Check className="w-4 h-4" />
+          {sessions.map((session, i) => {
+            const status = classifySession(session);
+            const meta = STATUS_META[status];
+            const Icon = meta.icon;
+            const day = session.dayOfWeek ? DAY_LABEL[session.dayOfWeek] : undefined;
+            return (
+              <div
+                key={session.id ?? `${session.sessionName}-${i}`}
+                className="flex items-center gap-3 px-3 py-2.5 bg-[rgba(13,148,136,0.03)] rounded-[6px]"
+              >
+                {day && (
+                  <span className="text-[11px] font-semibold text-[#93b0b4] uppercase w-8 shrink-0">
+                    {day}
+                  </span>
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium truncate text-[#0c1a1e]">{session.sessionName}</div>
+                  <div className="text-xs text-[#93b0b4]">{detailLine(session, status)}</div>
+                  {session.notes && (
+                    <div className="text-xs text-[#93b0b4] italic truncate">
+                      &ldquo;{session.notes}&rdquo;
+                    </div>
+                  )}
+                </div>
+                <span
+                  className={`inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full shrink-0 ${meta.pill}`}
+                >
+                  <Icon className="w-3 h-3" />
+                  {meta.label}
                 </span>
-              )}
-            </div>
-          ))}
+              </div>
+            );
+          })}
         </div>
       )}
 
-      {/* PR Highlight Callout - only for structured exercise PRs */}
+      {/* PR highlight strip - structured exercise PRs flagged this week */}
       {prHighlights.length > 0 && (
-        <div className="mt-3 p-3 bg-warning/5 border-l-[3px] border-l-warning rounded-md flex items-center gap-2.5">
-          <Trophy className="w-5 h-5 text-warning shrink-0" />
-          <div className="text-sm font-medium">
+        <div className="mt-3 p-3 bg-[rgba(13,148,136,0.05)] border-l-[3px] border-l-[#0d9488] rounded-[6px] flex items-center gap-2.5">
+          <Trophy className="w-5 h-5 text-[#0d9488] shrink-0" strokeWidth={1.5} />
+          <div className="text-sm font-medium text-[#0c1a1e]">
             {prHighlights.map((pr, i) => (
-              <span key={i}>
-                {pr.exercise_name}
-                {(pr.weight_value || pr.reps) && (
-                  <span className="font-bold text-warning">
+              <span key={pr.id ?? i}>
+                {pr.exerciseName}
+                {(pr.weightValue || pr.reps) && (
+                  <span className="font-bold font-mono-display text-[#0d9488]">
                     {" "}
-                    {pr.weight_value && `${pr.weight_value}${pr.weight_unit || "kg"}`}
-                    {pr.weight_value && pr.reps && " x "}
+                    {pr.weightValue && `${pr.weightValue}${pr.weightUnit || "kg"}`}
+                    {pr.weightValue && pr.reps && " x "}
                     {pr.reps && `${pr.reps} reps`}
                   </span>
                 )}

@@ -62,18 +62,18 @@ export const HabitsSection = ({
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.2, delay: 0.14 }}
-      className="bg-card border border-border rounded-lg p-5"
+      className="bg-white border border-[rgba(13,148,136,0.08)] rounded-[6px] p-5"
     >
-      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-4 flex items-center gap-2">
-        <RotateCw className="w-4 h-4" />
+      <div className="text-xs font-semibold uppercase tracking-[0.06em] text-[#5a7d82] mb-4 flex items-center gap-2">
+        <RotateCw className="w-4 h-4" strokeWidth={1.5} />
         Habits
       </div>
 
       <div className="flex gap-6 flex-wrap">
         {habits.map((habit) => (
           <div key={habit.name} className="flex items-center gap-2">
-            <span className="text-sm font-medium">{habit.name}</span>
-            <span className="text-xs font-semibold text-success">
+            <span className="text-sm font-medium text-[#0c1a1e]">{habit.name}</span>
+            <span className="text-xs font-semibold font-mono-display text-[#0d9488]">
               {habit.completed}/{habit.total}
             </span>
             <span className="flex gap-0.5">
@@ -81,7 +81,7 @@ export const HabitsSection = ({
                 <span
                   key={i}
                   className={`w-2 h-2 rounded-full ${
-                    done ? "bg-success" : "bg-muted"
+                    done ? "bg-[#0d9488]" : "bg-[rgba(13,148,136,0.12)]"
                   }`}
                 />
               ))}

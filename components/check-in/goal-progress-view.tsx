@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { Card } from "@/components/ui/card";
 import type { GoalProgress, CheckInComparison } from "@/types/check-in";
 import { Target } from "lucide-react";
 import { GoalDeadlineCard } from "./goal-deadline-card";
@@ -30,6 +29,19 @@ export const GoalProgressView = ({
   const hasBodyFatGoal = goalProgress.bodyFat !== undefined;
   const hasDeadline = goalProgress.deadline !== undefined;
 
+  // Honest, pace-aware progress note: when the required rate is unsafe, recommend
+  // moving the date rather than asserting the goal is on track.
+  const weight = goalProgress.weight;
+  const progressNote = !weight
+    ? null
+    : weight.paceStatus === "behind_pace"
+    ? { cls: "text-[#d97706]", text: "Behind pace. Consider extending the deadline or easing the weekly target." }
+    : weight.paceStatus === "unrealistic"
+    ? { cls: "text-[#d97706]", text: "The deadline looks unrealistic at a safe pace. Recommend moving the target date." }
+    : weight.paceStatus === "on_track" || weight.isOnTrack
+    ? { cls: "text-[#0d9488]", text: "On track to meet the goal by the deadline." }
+    : { cls: "text-[#d97706]", text: "Consider adjusting the approach to stay on track." };
+
   const handleRegenerateNutrition = () => {
     setIsRegenerating(true);
     try {
@@ -54,17 +66,17 @@ export const GoalProgressView = ({
     return (
       <div className="space-y-6">
         <div className="space-y-2">
-          <h3 className="text-lg font-semibold">Goal Progress</h3>
-          <p className="text-sm text-muted-foreground">
+          <h3 className="text-lg font-semibold text-[#0c1a1e]">Goal Progress</h3>
+          <p className="text-sm text-[#93b0b4]">
             No goals have been set for {clientName} yet.
           </p>
         </div>
-        <Card className="p-8 text-center">
-          <Target className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-          <p className="text-muted-foreground">
+        <div className="bg-white border border-[rgba(13,148,136,0.08)] rounded-[6px] p-8 text-center">
+          <Target className="h-12 w-12 mx-auto mb-4 text-[#93b0b4]" strokeWidth={1.5} />
+          <p className="text-[#93b0b4]">
             Set goals in the client profile to track progress here.
           </p>
-        </Card>
+        </div>
       </div>
     );
   }
@@ -73,8 +85,8 @@ export const GoalProgressView = ({
     <div className="space-y-6">
       {/* Header */}
       <div className="space-y-2">
-        <h3 className="text-lg font-semibold">Goal Progress</h3>
-        <p className="text-sm text-muted-foreground">
+        <h3 className="text-lg font-semibold text-[#0c1a1e]">Goal Progress</h3>
+        <p className="text-sm text-[#93b0b4]">
           Tracking {clientName}'s progress towards their goals
         </p>
       </div>
@@ -104,19 +116,22 @@ export const GoalProgressView = ({
       {hasBodyFatGoal && <BodyFatGoalCard bodyFatGoal={goalProgress.bodyFat!} />}
 
       {/* Summary Card */}
-      <Card className="p-4 bg-primary/5 border border-primary/15">
+      <div className="rounded-[6px] p-4 bg-[rgba(13,148,136,0.05)] border border-[rgba(13,148,136,0.15)]">
         <div className="space-y-2">
-          <h4 className="font-semibold flex items-center gap-2">
-            <Target className="h-5 w-5 text-primary" />
+          <h4 className="font-semibold flex items-center gap-2 text-[#0c1a1e]">
+            <Target className="h-5 w-5 text-[#0d9488]" strokeWidth={1.5} />
             Progress Summary
           </h4>
-          <div className="text-sm space-y-1">
+          <div className="text-sm space-y-1 text-[#0c1a1e]">
             {hasWeightGoal && (
               <p>
                 <span className="font-medium">Weight:</span>{" "}
-                {Math.abs(goalProgress.weight!.remaining)}{goalProgress.weight!.unit} to go
+                <span className="font-mono-display">
+                  {Math.abs(goalProgress.weight!.remaining)}{goalProgress.weight!.unit}
+                </span>{" "}
+                to go
                 {goalProgress.weight!.weeksToGoal && (
-                  <span className="text-muted-foreground">
+                  <span className="text-[#93b0b4]">
                     {" "}• ~{Math.round(goalProgress.weight!.weeksToGoal)} weeks remaining
                   </span>
                 )}
@@ -125,22 +140,18 @@ export const GoalProgressView = ({
             {hasBodyFatGoal && (
               <p>
                 <span className="font-medium">Body Fat:</span>{" "}
-                {Math.abs(goalProgress.bodyFat!.remaining)}% to go
+                <span className="font-mono-display">
+                  {Math.abs(goalProgress.bodyFat!.remaining)}%
+                </span>{" "}
+                to go
               </p>
             )}
-            {hasWeightGoal && goalProgress.weight!.isOnTrack && (
-              <p className="text-success font-medium">
-                ✓ Progress is on track to meet goals
-              </p>
-            )}
-            {hasWeightGoal && !goalProgress.weight!.isOnTrack && (
-              <p className="text-warning font-medium">
-                ⚠ Consider adjusting approach to stay on track
-              </p>
+            {progressNote && (
+              <p className={`${progressNote.cls} font-medium`}>{progressNote.text}</p>
             )}
           </div>
         </div>
-      </Card>
+      </div>
     </div>
   );
 };

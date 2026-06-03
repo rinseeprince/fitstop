@@ -4,7 +4,7 @@ import type {
   CheckInFormData,
   CheckInStatus,
   CheckInWithDailyLogCounts,
-  AICheckInSummary,
+  CheckInReview,
 } from "@/types/check-in";
 import { mapCheckInRow } from "@/lib/mappers";
 import { getDateString, dateStringToDayNumber, resolveCheckInWindow } from "@/lib/date-helpers";
@@ -31,6 +31,7 @@ export {
   deriveSessionCompletionsForCheckIn,
   getCheckInExerciseHighlights,
   getCheckInWithDetails,
+  mapExerciseHighlight,
 } from "./check-in-details-service";
 
 // Submit a check-in.
@@ -407,29 +408,28 @@ export const updateCheckInStatus = async (
   }
 };
 
-// Update check-in with AI summary (v2 format stores enhanced data in ai_insights JSONB)
+// Update check-in with the AI review (v3 format). summary and clientMessage are
+// stored in their own columns; watchItems/themes/coachActions go in ai_insights.
 export const updateCheckInAISummary = async (
   checkInId: string,
-  summary: AICheckInSummary
+  review: CheckInReview
 ): Promise<void> => {
   const enhancedInsights = {
-    _version: 2 as const,
-    insights: summary.insights,
-    nutritionInsight: summary.nutritionInsight,
-    notesIntelligence: summary.notesIntelligence,
-    trainingInsight: summary.trainingInsight,
-    wellnessInsight: summary.wellnessInsight,
-    coachActions: summary.coachActions,
-    clientHighlights: summary.clientHighlights,
+    _version: 3 as const,
+    watchItems: review.watchItems,
+    themes: review.themes,
+    coachActions: review.coachActions,
   };
 
   const { error } = await supabaseAdmin
     .from("check_ins")
     .update({
-      ai_summary: summary.summary,
+      ai_summary: review.summary,
       ai_insights: enhancedInsights,
-      ai_recommendations: summary.recommendations,
-      ai_response_draft: summary.responseDraft,
+      // coachActions share the { priority, text } shape with the legacy
+      // ai_recommendations column, so any pre-v3 reader still resolves.
+      ai_recommendations: review.coachActions,
+      ai_response_draft: review.clientMessage,
       ai_processed_at: new Date().toISOString(),
       status: "ai_processed",
     })

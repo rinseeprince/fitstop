@@ -13,29 +13,24 @@ type MiniBarSparklineProps = {
   maxValue: number;
 };
 
+// Teal Summit two-colour status: teal good, amber attention (no red); no-data muted.
 function getBarColorClass(metric: WellnessMetric, value: number | null): string {
-  if (value === null) return "bg-muted";
+  if (value === null) return "bg-[rgba(13,148,136,0.12)]";
 
   switch (metric) {
     case "mood":
-      if (value >= 4) return "bg-success";
-      if (value === 3) return "bg-warning";
-      return "bg-destructive";
+      return value >= 4 ? "bg-[#0d9488]" : "bg-[#d97706]";
 
     case "energy":
     case "sleep":
-      if (value >= 7) return "bg-success";
-      if (value >= 4) return "bg-warning";
-      return "bg-destructive";
+      return value >= 7 ? "bg-[#0d9488]" : "bg-[#d97706]";
 
     case "stress":
       // Inverted: lower is better
-      if (value <= 3) return "bg-success";
-      if (value <= 6) return "bg-warning";
-      return "bg-destructive";
+      return value <= 3 ? "bg-[#0d9488]" : "bg-[#d97706]";
 
     default:
-      return "bg-muted";
+      return "bg-[rgba(13,148,136,0.12)]";
   }
 }
 
@@ -60,7 +55,7 @@ export const MiniBarSparkline = ({ data, metric, maxValue }: MiniBarSparklinePro
         {data.map((bar, i) => (
           <div
             key={i}
-            className="w-2 text-center text-[8px] text-muted-foreground"
+            className="w-2 text-center text-[8px] text-[#93b0b4]"
           >
             {bar.dayLabel}
           </div>

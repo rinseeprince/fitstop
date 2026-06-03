@@ -94,10 +94,10 @@ export const NutritionSection = ({
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.2, delay: 0.08 }}
-      className="bg-card border border-border rounded-lg p-5"
+      className="bg-white border border-[rgba(13,148,136,0.08)] rounded-[6px] p-5"
     >
-      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-4 flex items-center gap-2">
-        <Utensils className="w-4 h-4" />
+      <div className="text-xs font-semibold uppercase tracking-[0.06em] text-[#5a7d82] mb-4 flex items-center gap-2">
+        <Utensils className="w-4 h-4" strokeWidth={1.5} />
         Nutrition
       </div>
       <div className="grid grid-cols-2 gap-4">
@@ -105,56 +105,53 @@ export const NutritionSection = ({
         <div className="flex flex-col gap-2">
           <div className="flex justify-between items-baseline">
             <div>
-              <div className="text-[28px] font-bold tracking-tight">
+              <div className="text-[28px] font-bold tracking-tight font-mono-display text-[#0c1a1e]">
                 {stats.totalCals.toLocaleString()}
               </div>
-              <div className="text-xs text-muted-foreground">
+              <div className="text-xs text-[#93b0b4]">
                 of {effectiveTargetCals.toLocaleString()} kcal target
               </div>
             </div>
             <span
-              className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded ${
+              className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-[4px] ${
                 adherence === "HIT"
-                  ? "bg-success/10 text-success"
-                  : adherence === "PARTIAL"
-                  ? "bg-warning/10 text-warning"
-                  : "bg-destructive/10 text-destructive"
+                  ? "bg-[rgba(13,148,136,0.08)] text-[#0d9488]"
+                  : "bg-[rgba(245,158,11,0.07)] text-[#d97706]"
               }`}
             >
-              {adherence === "HIT" && "✓ "}
               {adherence} · {stats.daysLogged}/{daysDiff}
             </span>
           </div>
-          <div className="h-2 bg-muted rounded-full overflow-hidden">
+          <div className="h-2 bg-[rgba(13,148,136,0.06)] rounded-full overflow-hidden">
             <div
-              className="h-full bg-success rounded-full transition-all duration-500"
+              className="h-full bg-[#0d9488] rounded-full transition-all duration-500"
               style={{ width: `${fillPct}%` }}
             />
           </div>
-          <div className="text-[11px] text-muted-foreground italic">
+          <div className="text-[11px] text-[#93b0b4] italic">
             Avg {dailyAvgCal.toLocaleString()} kcal / day (full week)
           </div>
         </div>
 
         {/* Right: Macros */}
         <div className="flex flex-col gap-2.5">
-          <div className="text-xs font-medium text-muted-foreground mb-0.5">
+          <div className="text-xs font-medium text-[#5a7d82] mb-0.5">
             Avg macros / day (full week)
           </div>
           {macros.map((macro) => {
             const pct = macro.target > 0 ? Math.min((macro.actual / macro.target) * 100, 100) : 0;
             return (
               <div key={macro.label} className="flex items-center gap-2.5">
-                <div className="text-xs font-medium text-muted-foreground w-14 shrink-0">
+                <div className="text-xs font-medium text-[#5a7d82] w-14 shrink-0">
                   {macro.label}
                 </div>
-                <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                <div className="flex-1 h-1.5 bg-[rgba(13,148,136,0.06)] rounded-full overflow-hidden">
                   <div
                     className={`h-full rounded-full ${macro.colorClass}`}
                     style={{ width: `${pct}%` }}
                   />
                 </div>
-                <div className="text-xs text-muted-foreground w-20 text-right shrink-0">
+                <div className="text-xs text-[#93b0b4] w-20 text-right shrink-0 font-mono-display">
                   {macro.actual}g / {macro.target}g
                 </div>
               </div>

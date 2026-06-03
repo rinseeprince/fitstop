@@ -17,6 +17,7 @@ vi.mock("@/services/supabase-admin", () => ({
 vi.mock("@/services/check-in-service", () => ({
   deriveSessionCompletionsForCheckIn: vi.fn(),
   getCheckInExerciseHighlights: vi.fn(),
+  mapExerciseHighlight: (row: unknown) => row,
 }));
 
 vi.mock("@/lib/mappers", () => ({

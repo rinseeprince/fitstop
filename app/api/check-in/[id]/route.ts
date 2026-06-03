@@ -5,6 +5,7 @@ import type { CheckInRow } from "@/lib/database-helpers";
 import {
   deriveSessionCompletionsForCheckIn,
   getCheckInExerciseHighlights,
+  mapExerciseHighlight,
 } from "@/services/check-in-service";
 import { apiRateLimit } from "@/lib/rate-limit";
 import { requireCoachOwnsCheckIn } from "@/lib/require-coach-auth";
@@ -66,7 +67,7 @@ export async function GET(
     // (training_events + session_logs) for the check-in's stored period — there
     // is no backing table. Pass the mapped check-in (carries clientId, period,
     // createdAt) so the derivation resolves the correct historical window.
-    const [sessionCompletions, exerciseHighlights] = await Promise.all([
+    const [sessionCompletions, highlightRows] = await Promise.all([
       deriveSessionCompletionsForCheckIn(checkIn),
       getCheckInExerciseHighlights(id),
     ]);
@@ -75,7 +76,9 @@ export async function GET(
       checkIn: {
         ...checkIn,
         sessionCompletions,
-        exerciseHighlights,
+        // Map to the camelCase domain type so the payload matches the declared
+        // CheckInWithDetails shape (and getCheckInWithDetails), not raw DB rows.
+        exerciseHighlights: highlightRows.map(mapExerciseHighlight),
       },
       client: checkInData.clients || null,
     });

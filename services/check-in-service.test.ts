@@ -706,15 +706,18 @@ describe('Check-in Service', () => {
         'check-in-123',
         {
           summary: 'Great progress!',
-          insights: [{ type: 'strength', text: 'Good sleep' }],
-          recommendations: [{ priority: 'high', text: 'Keep it up' }],
-          responseDraft: 'Draft response',
+          watchItems: [{ type: 'win', text: 'Slept well all week' }],
+          themes: ['sleep', 'consistency'],
+          coachActions: [{ priority: 'high', text: 'Keep it up' }],
+          clientMessage: 'Draft message',
         }
       )
 
       expect(mockQuery.update).toHaveBeenCalled()
       const updateCall = mockQuery.update.mock.calls[0][0]
       expect(updateCall.ai_summary).toBe('Great progress!')
+      expect(updateCall.ai_response_draft).toBe('Draft message')
+      expect(updateCall.ai_insights._version).toBe(3)
       expect(updateCall.status).toBe('ai_processed')
     })
   })

@@ -179,6 +179,22 @@ describe('Check-in Utilities', () => {
       expect(result.adherence).toEqual([])
       expect(result.mood).toEqual([])
       expect(result.energy).toEqual([])
+      expect(result.sleep).toEqual([])
+      expect(result.stress).toEqual([])
+    })
+
+    it('prepares sleep and stress chart data', () => {
+      const checkIns = [
+        createMockCheckIn({ sleep: 7, stress: 3, createdAt: '2024-01-01T00:00:00Z' }),
+        createMockCheckIn({ sleep: 8, stress: 2, createdAt: '2024-01-08T00:00:00Z' }),
+      ]
+
+      const result = prepareChartData(checkIns)
+
+      expect(result.sleep).toHaveLength(2)
+      expect(result.sleep[0].label).toBe('7/10')
+      expect(result.stress).toHaveLength(2)
+      expect(result.stress[1].value).toBe(2)
     })
 
     it('prepares weight chart data', () => {

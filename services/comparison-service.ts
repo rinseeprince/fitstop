@@ -3,6 +3,7 @@ import { getClientById } from "./client-service";
 import { supabaseAdmin } from "./supabase-admin";
 import { prepareChartData } from "@/lib/check-in-utils";
 import { calculateMetricChange, calculateDaysBetween, calculateGoalProgress } from "@/utils/comparison-utils";
+import { computeGoalPace } from "@/lib/check-in/goal-pace";
 import { getBodyMetricsHistory } from "./body-metrics-service";
 import { getCurrentGoals } from "./client-goals-service";
 import type {
@@ -64,6 +65,13 @@ export const getCheckInComparison = async (
   const goalBodyFatPercentage = currentGoals?.goalBodyFatPercentage ?? client.goalBodyFatPercentage;
   const earliestWeight = earliestMetrics[0]?.weight ?? client.startingWeight;
   const earliestBodyFat = earliestMetrics[0]?.bodyFatPercentage ?? client.startingBodyFatPercentage;
+
+  // Goal deadline, used by both the weight pace check and the deadline card.
+  const goalDeadline = activePlan?.goal_deadline ?? clientRow?.goal_deadline ?? undefined;
+  const daysRemaining = goalDeadline
+    ? Math.ceil((new Date(goalDeadline).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+    : null;
+  const weeksRemaining = daysRemaining !== null ? daysRemaining / 7 : null;
 
   // Calculate time between check-ins
   const timeBetweenCheckIns = previousCheckIn
@@ -203,6 +211,21 @@ export const getCheckInComparison = async (
       weeksToGoal: progress.weeksToGoal,
     };
 
+    // Pace check: is the rate required to hit the goal by the deadline safe?
+    const pace =
+      weeksRemaining !== null
+        ? computeGoalPace({
+            remainingKg: progress.remaining,
+            weeksRemaining,
+            currentWeightKg: currentCheckIn.weight,
+          })
+        : null;
+    if (pace) {
+      goalProgress.weight.paceStatus = pace.status;
+      goalProgress.weight.requiredRate = pace.requiredRate;
+      goalProgress.weight.safeCeiling = pace.safeCeiling;
+    }
+
     // Calculate projected completion date
     if (avgWeeklyWeightChange && progress.weeksToGoal) {
       const projectedDate = new Date();
@@ -243,15 +266,8 @@ export const getCheckInComparison = async (
     };
   }
 
-  // Deadline progress
-  const goalDeadline = activePlan?.goal_deadline ?? clientRow?.goal_deadline;
-  if (goalDeadline) {
-    const deadline = new Date(goalDeadline);
-    const now = new Date();
-    const daysRemaining = Math.ceil(
-      (deadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
-    );
-
+  // Deadline progress (reuses the hoisted goalDeadline / daysRemaining).
+  if (goalDeadline && daysRemaining !== null) {
     goalProgress.deadline = {
       date: goalDeadline,
       daysRemaining,

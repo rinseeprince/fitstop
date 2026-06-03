@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import type { CheckIn, GetCheckInComparisonResponse } from "@/types/check-in";
+import type { CheckInWithDetails, GetCheckInComparisonResponse } from "@/types/check-in";
 import type { DailyLog } from "@/types/daily-log";
 import type { HabitLogWithDetails } from "@/types/daily-habit";
 
@@ -13,7 +13,9 @@ export type FullWeekTarget = {
 };
 
 type CheckInWithClient = {
-  checkIn: CheckIn;
+  // The /api/check-in/[id] route returns the check-in enriched with
+  // sessionCompletions + exerciseHighlights (CheckInWithDetails).
+  checkIn: CheckInWithDetails;
   client: {
     id: string;
     name: string;
@@ -49,7 +51,6 @@ export function useCheckInDetailData({
   const [contextStartDate, setContextStartDate] = useState<Date | null>(null);
   const [contextEndDate, setContextEndDate] = useState<Date | null>(null);
   const [fullWeekTarget, setFullWeekTarget] = useState<FullWeekTarget | null>(null);
-  const [trainingPeriodStats, setTrainingPeriodStats] = useState<{ sessionsCompleted: number; sessionsPlanned: number } | null>(null);
 
   // Fetch check-in + comparison data
   useEffect(() => {
@@ -101,7 +102,6 @@ export function useCheckInDetailData({
       setContextStartDate(null);
       setContextEndDate(null);
       setFullWeekTarget(null);
-      setTrainingPeriodStats(null);
       return;
     }
 
@@ -130,17 +130,13 @@ export function useCheckInDetailData({
         const startDateStr = toDateStr(startDate);
         const endDateStr = toDateStr(endDate);
 
-        const [logsResponse, habitsResponse, trainingStatsResponse] = await Promise.all([
+        const [logsResponse, habitsResponse] = await Promise.all([
           fetch(
             `/api/clients/${clientId}/daily-logs?startDate=${startDateStr}&endDate=${endDateStr}`,
             { cache: 'no-store' }
           ),
           fetch(
             `/api/clients/${clientId}/habits/logs?startDate=${startDateStr}&endDate=${endDateStr}`,
-            { cache: 'no-store' }
-          ),
-          fetch(
-            `/api/clients/${clientId}/training/period-stats?start=${startDateStr}&end=${endDateStr}`,
             { cache: 'no-store' }
           ),
         ]);
@@ -155,11 +151,6 @@ export function useCheckInDetailData({
         if (habitsResponse.ok) {
           const habitsData = await habitsResponse.json();
           setHabitLogs(habitsData.data || []);
-        }
-
-        if (trainingStatsResponse.ok) {
-          const statsData = await trainingStatsResponse.json();
-          setTrainingPeriodStats(statsData.data || null);
         }
 
         // Compute full-week target
@@ -251,7 +242,6 @@ export function useCheckInDetailData({
     contextStartDate,
     contextEndDate,
     fullWeekTarget,
-    trainingPeriodStats,
     handleResponseSent,
   };
 }

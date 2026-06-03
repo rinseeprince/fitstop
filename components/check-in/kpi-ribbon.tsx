@@ -1,8 +1,8 @@
 "use client";
 
-import { motion } from "framer-motion";
 import type { CheckIn, GetCheckInComparisonResponse, MetricChange } from "@/types/check-in";
 import type { DailyLog } from "@/types/daily-log";
+import type { SessionSummary } from "@/lib/check-in/adherence";
 
 type FullWeekTarget = {
   calories: number;
@@ -18,27 +18,58 @@ type KPIRibbonProps = {
   contextStartDate: Date;
   contextEndDate: Date;
   fullWeekTarget?: FullWeekTarget | null;
-  trainingPeriodStats?: { sessionsCompleted: number; sessionsPlanned: number } | null;
+  adherence: SessionSummary;
 };
+
+type Accent = "success" | "warning" | "destructive" | "neutral";
+
+type DeltaInfo = { text: string; type: "positive" | "negative" | "neutral" };
 
 type KPICardData = {
   label: string;
   value: string;
   unit?: string;
-  delta?: { text: string; type: "positive" | "negative" | "neutral" };
+  // When true the value is a muted placeholder (e.g. "Not tracked"), not a metric.
+  valueMuted?: boolean;
+  delta?: DeltaInfo;
   subText?: string;
-  borderColor: string;
+  // Semantic top accent: a colour read before the coach reads the number.
+  accent: Accent;
 };
 
-function formatDelta(change?: MetricChange, invert = false): KPICardData["delta"] {
-  if (!change?.change) return undefined;
-  const val = change.change;
-  const isPositive = invert ? val < 0 : val > 0;
-  const sign = val > 0 ? "+" : "";
+// Semantic colour dot per cell - a colour read before the number. Teal Summit is
+// a two-colour status system (teal good, amber attention); there is no red.
+const dotClass: Record<Accent, string> = {
+  success: "bg-[#0d9488]",
+  warning: "bg-[#d97706]",
+  destructive: "bg-[#d97706]",
+  neutral: "bg-[rgba(255,255,255,0.25)]",
+};
+
+// Delta text colour on the dark strip.
+function deltaTextClass(type: DeltaInfo["type"]): string {
+  if (type === "positive") return "text-[#0d9488]";
+  if (type === "negative") return "text-[#d97706]";
+  return "text-[rgba(255,255,255,0.4)]";
+}
+
+function formatDeltaValue(val: number, invert: boolean): DeltaInfo {
+  const rounded = Number(val.toFixed(1));
+  const sign = rounded > 0 ? "+" : "";
+  const isPositive = invert ? rounded < 0 : rounded > 0;
   return {
-    text: `${sign}${val % 1 === 0 ? val : val.toFixed(1)}`,
-    type: val === 0 ? "neutral" : isPositive ? "positive" : "negative",
+    text: `${sign}${rounded % 1 === 0 ? rounded : rounded.toFixed(1)}`,
+    type: rounded === 0 ? "neutral" : isPositive ? "positive" : "negative",
   };
+}
+
+// Accent for a progress metric: good direction -> success, bad -> warning,
+// no comparison -> neutral grey.
+function accentFromDelta(comparison: { delta: DeltaInfo } | null): Accent {
+  if (!comparison) return "neutral";
+  if (comparison.delta.type === "positive") return "success";
+  if (comparison.delta.type === "negative") return "warning";
+  return "neutral";
 }
 
 export const KPIRibbon = ({
@@ -48,10 +79,29 @@ export const KPIRibbon = ({
   contextStartDate,
   contextEndDate,
   fullWeekTarget,
-  trainingPeriodStats,
+  adherence,
 }: KPIRibbonProps) => {
   const changes = comparisonData?.comparison?.changes;
+  const hasPreviousCheckIn = comparisonData?.comparison?.previous != null;
   const daysDiff = Math.floor((contextEndDate.getTime() - contextStartDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+
+  // Comparison line for a progress metric: a real week-over-week delta when a
+  // prior check-in exists, otherwise the change from the starting value on a
+  // first check-in. Returns null when neither is available.
+  const buildComparison = (
+    current: number | undefined,
+    change: MetricChange | undefined,
+    startingValue: number | undefined,
+    invert: boolean
+  ): { label: string; delta: DeltaInfo } | null => {
+    if (hasPreviousCheckIn && change?.change !== undefined) {
+      return { label: "vs previous week", delta: formatDeltaValue(change.change, invert) };
+    }
+    if (!hasPreviousCheckIn && current !== undefined && startingValue !== undefined) {
+      return { label: "vs start", delta: formatDeltaValue(current - startingValue, invert) };
+    }
+    return null;
+  };
 
   // Calorie calculations
   const calStats = dailyLogs.reduce(
@@ -75,30 +125,40 @@ export const KPIRibbon = ({
     calStats.daysLogged === 0 ? null :
     dailyDiff <= 50 ? "HIT" :
     dailyDiff <= 150 ? "PARTIAL" : "MISSED";
+  const caloriesAccent: Accent =
+    adherenceLabel === null ? "neutral" :
+    adherenceLabel === "HIT" ? "success" :
+    adherenceLabel === "PARTIAL" ? "warning" : "destructive";
 
-  // Training calculations - prefer server-side period stats from session_logs
-  const trainingStats = trainingPeriodStats
-    ? { completed: trainingPeriodStats.sessionsCompleted, total: trainingPeriodStats.sessionsPlanned }
-    : dailyLogs.reduce(
-        (acc, log) => {
-          if (log.trainingData?.trainingSessionId) {
-            acc.total++;
-            if (log.trainingData.sessionCompleted) acc.completed++;
-          }
-          return acc;
-        },
-        { total: 0, completed: 0 }
-      );
+  // Training adherence comes from the shared helper (completed / prescribed) so
+  // the hero matches the prescription panel and the comparison tab exactly.
+  const trainingPct = adherence.pct;
+  const trainingValue =
+    adherence.prescribed > 0
+      ? `${adherence.completed}/${adherence.prescribed}`
+      : checkIn.workoutsCompleted
+      ? String(checkIn.workoutsCompleted)
+      : "--";
+  const trainingAccent: Accent =
+    trainingPct === null ? "neutral" :
+    trainingPct >= 80 ? "success" :
+    trainingPct >= 50 ? "warning" : "destructive";
 
-  const trainingPct = trainingStats.total > 0
-    ? Math.round((trainingStats.completed / trainingStats.total) * 100)
-    : null;
+  const weightComparison = buildComparison(
+    checkIn.weight,
+    changes?.weight,
+    comparisonData?.goalProgress?.weight?.startingWeight,
+    true
+  );
 
-  // Mood average
-  // Mood average normalized to full week (unlogged days count as 0)
-  const moodVals = dailyLogs.filter((l) => l.mood != null).map((l) => l.mood!);
-  const avgMood = moodVals.length > 0
-    ? (moodVals.reduce((a, b) => a + b, 0) / daysDiff).toFixed(1)
+  const hasBodyFat = checkIn.bodyFatPercentage !== undefined && checkIn.bodyFatPercentage !== null;
+  const bodyFatComparison = hasBodyFat
+    ? buildComparison(
+        checkIn.bodyFatPercentage,
+        changes?.bodyFatPercentage,
+        comparisonData?.goalProgress?.bodyFat?.startingBodyFat,
+        true
+      )
     : null;
 
   const cards: KPICardData[] = [
@@ -106,91 +166,85 @@ export const KPIRibbon = ({
       label: "Weight",
       value: checkIn.weight ? String(checkIn.weight) : "--",
       unit: checkIn.weightUnit || "kg",
-      delta: changes?.weight ? formatDelta(changes.weight, true) : undefined,
-      subText: changes?.weight ? "vs previous week" : undefined,
-      borderColor: "before:bg-success",
+      delta: weightComparison?.delta,
+      subText: weightComparison?.label,
+      accent: checkIn.weight ? accentFromDelta(weightComparison) : "neutral",
     },
     {
       label: "Body Fat",
-      value: checkIn.bodyFatPercentage ? String(checkIn.bodyFatPercentage) : "--",
-      unit: "%",
-      delta: changes?.bodyFatPercentage ? formatDelta(changes.bodyFatPercentage, true) : undefined,
-      subText: changes?.bodyFatPercentage ? "vs previous week" : undefined,
-      borderColor: "before:bg-success",
+      value: hasBodyFat ? String(checkIn.bodyFatPercentage) : "Not tracked",
+      unit: hasBodyFat ? "%" : undefined,
+      valueMuted: !hasBodyFat,
+      delta: bodyFatComparison?.delta,
+      subText: bodyFatComparison?.label,
+      accent: hasBodyFat ? accentFromDelta(bodyFatComparison) : "neutral",
     },
     {
       label: "Calories",
       value: calStats.daysLogged > 0 ? avgConsumed.toLocaleString() : "No data",
       unit: calStats.daysLogged > 0 ? `/ ${avgTarget.toLocaleString()} avg/day` : undefined,
+      valueMuted: calStats.daysLogged === 0,
       delta: adherenceLabel ? {
-        text: `${adherenceLabel}`,
+        text: adherenceLabel,
         type: adherenceLabel === "HIT" ? "positive" : adherenceLabel === "PARTIAL" ? "neutral" : "negative",
       } : undefined,
       subText: calStats.daysLogged > 0 ? `${calStats.daysLogged}/${daysDiff} days logged` : "No nutrition logs",
-      borderColor: "before:bg-success",
+      accent: caloriesAccent,
     },
     {
       label: "Training",
-      value: trainingStats.total > 0 ? `${trainingStats.completed}/${trainingStats.total}` : checkIn.workoutsCompleted ? String(checkIn.workoutsCompleted) : "--",
+      value: trainingValue,
       delta: trainingPct !== null ? {
         text: `${trainingPct}%`,
         type: trainingPct >= 80 ? "positive" : trainingPct >= 50 ? "neutral" : "negative",
       } : undefined,
       subText: "adherence",
-      borderColor: "before:bg-success",
-    },
-    {
-      label: "Avg Mood",
-      value: avgMood || (checkIn.mood ? String(checkIn.mood) : "--"),
-      unit: "/5",
-      delta: changes?.mood ? formatDelta(changes.mood) : undefined,
-      subText: changes?.mood ? "vs previous week" : undefined,
-      borderColor: "before:bg-primary",
+      accent: trainingAccent,
     },
   ];
 
   return (
-    <div className="grid grid-cols-5 gap-3">
+    <div className="bg-[#0f2027] rounded-[6px] p-5 grid grid-cols-4 animate-card-in">
       {cards.map((card, i) => (
-        <motion.div
+        <div
           key={card.label}
-          initial={{ opacity: 0, y: 6 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: i * 0.03, duration: 0.2, ease: "easeOut" }}
-          className={`bg-card border border-border rounded-lg p-4 relative overflow-hidden before:absolute before:top-0 before:left-0 before:right-0 before:h-[3px] ${card.borderColor}`}
+          className={
+            i < cards.length - 1
+              ? "flex flex-col pl-5 pr-5 border-r border-[rgba(255,255,255,0.07)]"
+              : "flex flex-col pl-5"
+          }
         >
-          <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground mb-1.5">
-            {card.label}
-          </div>
-          <div className="flex items-baseline gap-1.5">
-            <span className="text-[22px] font-bold tracking-tight">
-              {card.value}
+          <div className="flex items-center gap-1.5">
+            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotClass[card.accent]}`} />
+            <span className="text-[10px] uppercase tracking-[0.06em] text-[rgba(255,255,255,0.35)] font-medium">
+              {card.label}
             </span>
-            {card.unit && (
-              <span className="text-sm text-muted-foreground font-normal">
-                {card.unit}
+          </div>
+          <div className="flex items-baseline gap-1 mt-1">
+            {card.valueMuted ? (
+              <span className="text-[13px] text-[rgba(255,255,255,0.3)]">{card.value}</span>
+            ) : (
+              <span className="text-[22px] font-bold font-mono-display text-white leading-tight">
+                {card.value}
               </span>
+            )}
+            {card.unit && (
+              <span className="text-[10px] text-[rgba(255,255,255,0.3)]">{card.unit}</span>
             )}
           </div>
           {(card.delta || card.subText) && (
-            <div className="text-xs text-muted-foreground mt-1 flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 mt-1">
               {card.delta && (
-                <span
-                  className={`text-xs font-medium px-1.5 py-px rounded ${
-                    card.delta.type === "positive"
-                      ? "bg-success/10 text-success"
-                      : card.delta.type === "negative"
-                      ? "bg-destructive/10 text-destructive"
-                      : "bg-muted text-muted-foreground"
-                  }`}
-                >
+                <span className={`text-[11px] font-mono-display font-medium ${deltaTextClass(card.delta.type)}`}>
                   {card.delta.text}
                 </span>
               )}
-              {card.subText && <span>{card.subText}</span>}
+              {card.subText && (
+                <span className="text-[10px] text-[rgba(255,255,255,0.3)]">{card.subText}</span>
+              )}
             </div>
           )}
-        </motion.div>
+        </div>
       ))}
     </div>
   );

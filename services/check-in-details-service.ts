@@ -129,7 +129,7 @@ export const insertExerciseHighlights = async (
 };
 
 // Map internal row to domain type for exercise highlights
-const mapExerciseHighlight = (
+export const mapExerciseHighlight = (
   row: CheckInExerciseHighlightRow
 ): CheckInExerciseHighlight => ({
   id: row.id,

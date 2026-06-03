@@ -2,7 +2,7 @@ import OpenAI from "openai";
 import type {
   CheckIn,
   CheckInWithDetails,
-  AICheckInSummary,
+  CheckInReview,
   CheckInTrainingEventDetail,
 } from "@/types/check-in";
 import type { DailyLog } from "@/types/daily-log";
@@ -10,32 +10,11 @@ import type { HabitLogWithDetails } from "@/types/daily-habit";
 import type { WeeklyNutritionSummary } from "@/types/weekly-nutrition";
 import type { PeriodSnapshot } from "@/types/schedule";
 import { AI_SYSTEM_PROMPT, buildCheckInAnalysisPrompt } from "@/utils/ai-prompt-builder";
-import { parseAIResponse } from "@/utils/ai-response-parser";
+import { parseCheckInReview } from "@/lib/validations/check-in-review";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
-
-// Populate rawNotes from daily logs into the parsed AI response.
-// Trust boundary: rawNotes are rendered in JSX (React escapes HTML) — safe for display.
-// Do NOT re-interpolate rawNotes into AI prompts without sanitizeForAIPrompt().
-function attachRawNotes(summary: AICheckInSummary, dailyLogs?: DailyLog[]): AICheckInSummary {
-  if (!summary.notesIntelligence || !dailyLogs) return summary;
-  const rawNotes = dailyLogs
-    .filter((l) => l.notes)
-    .sort((a, b) => a.date.localeCompare(b.date))
-    .map((l) => {
-      const date = new Date(l.date);
-      return {
-        date: date.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }),
-        note: l.notes!,
-      };
-    });
-  return {
-    ...summary,
-    notesIntelligence: { ...summary.notesIntelligence, rawNotes },
-  };
-}
 
 export const generateCheckInSummary = async (
   currentCheckIn: CheckInWithDetails,
@@ -49,7 +28,7 @@ export const generateCheckInSummary = async (
   periodSnapshot?: PeriodSnapshot | null,
   trainingEventDetails?: CheckInTrainingEventDetail[],
   exerciseSummaries?: Map<string, string[]>
-): Promise<AICheckInSummary> => {
+): Promise<CheckInReview> => {
   try {
     const prompt = buildCheckInAnalysisPrompt(
       currentCheckIn,
@@ -73,11 +52,11 @@ export const generateCheckInSummary = async (
       ],
       temperature: 0.7,
       max_tokens: 2000,
+      response_format: { type: "json_object" },
     }, { timeout: 25000 });
 
     const responseText = completion.choices[0]?.message?.content || "";
-    const parsed = parseAIResponse(responseText);
-    return attachRawNotes(parsed, dailyLogs);
+    return parseCheckInReview(responseText);
   } catch (error) {
     console.error("Error generating AI summary:", error instanceof Error ? error.message : "Unknown error");
     throw new Error("Failed to generate AI summary", { cause: error });
@@ -96,7 +75,7 @@ export const regenerateAISummary = async (
   weeklySummary?: WeeklyNutritionSummary | null,
   trainingEventDetails?: CheckInTrainingEventDetail[],
   exerciseSummaries?: Map<string, string[]>
-): Promise<AICheckInSummary> => {
+): Promise<CheckInReview> => {
   try {
     const focusInstructions = {
       positive: "Focus on positive aspects and wins. Be extra encouraging.",
@@ -123,11 +102,11 @@ export const regenerateAISummary = async (
       ],
       temperature: 0.7,
       max_tokens: 2000,
+      response_format: { type: "json_object" },
     }, { timeout: 25000 });
 
     const responseText = completion.choices[0]?.message?.content || "";
-    const parsed = parseAIResponse(responseText);
-    return attachRawNotes(parsed, dailyLogs);
+    return parseCheckInReview(responseText);
   } catch (error) {
     console.error("Error regenerating AI summary:", error instanceof Error ? error.message : "Unknown error");
     throw new Error("Failed to regenerate AI summary", { cause: error });
