@@ -257,9 +257,26 @@ describe("/api/clients/[id]/roadmap/phases/[phaseId]", () => {
       });
     });
 
-    it("returns 400 when updating goal on active phase (status guard)", async () => {
+    it("updates phase goal fields on an active phase", async () => {
+      vi.mocked(updatePhase).mockResolvedValue({
+        ...mockPhase,
+        phaseGoalWeight: 80,
+      });
+
+      const response = await PUT(
+        createMockRequest("PUT", { phaseGoalWeight: 80 }),
+        mockParams
+      );
+      const data = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(data.success).toBe(true);
+      expect(data.data.phaseGoalWeight).toBe(80);
+    });
+
+    it("returns 400 when updating goal on a locked phase (status guard)", async () => {
       vi.mocked(updatePhase).mockRejectedValue(
-        new Error("Phase goals can only be edited while the phase is in planned status")
+        new Error("Phase goals can only be edited while the phase is planned or active")
       );
 
       const response = await PUT(
@@ -270,7 +287,7 @@ describe("/api/clients/[id]/roadmap/phases/[phaseId]", () => {
 
       expect(response.status).toBe(400);
       expect(data.success).toBe(false);
-      expect(data.error).toBe("Phase goals can only be edited while the phase is in planned status");
+      expect(data.error).toBe("Phase goals can only be edited while the phase is planned or active");
     });
 
     it("clears goal override with null on a planned phase", async () => {

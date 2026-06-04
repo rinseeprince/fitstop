@@ -373,13 +373,25 @@ describe('Phase Service', () => {
       expect(result.phaseGoalBodyFatPercentage).toBe(15);
     });
 
-    it('throws when editing goals on an active phase', async () => {
+    it('allows goal edits when phase status is active', async () => {
       const statusQuery = createMockQuery({ data: { status: 'active' }, error: null });
-      vi.mocked(supabaseAdmin.from).mockReturnValueOnce(statusQuery as never);
+      const updateResult = createMockPhaseRow({
+        id: 'phase-1',
+        phaseGoalWeight: 80,
+        phaseGoalBodyFatPercentage: 14,
+      });
+      const updateQuery = createMockQuery({ data: updateResult, error: null });
+      vi.mocked(supabaseAdmin.from)
+        .mockReturnValueOnce(statusQuery as never)
+        .mockReturnValueOnce(updateQuery as never);
 
-      await expect(
-        updatePhase('phase-1', 'client-1', { phaseGoalWeight: 75 })
-      ).rejects.toThrow('Phase goals can only be edited while the phase is in planned status');
+      const result = await updatePhase('phase-1', 'client-1', {
+        phaseGoalWeight: 80,
+        phaseGoalBodyFatPercentage: 14,
+      });
+
+      expect(result.phaseGoalWeight).toBe(80);
+      expect(result.phaseGoalBodyFatPercentage).toBe(14);
     });
 
     it('throws when editing goals on a completed phase', async () => {
@@ -388,7 +400,16 @@ describe('Phase Service', () => {
 
       await expect(
         updatePhase('phase-1', 'client-1', { phaseGoalBodyFatPercentage: 12 })
-      ).rejects.toThrow('Phase goals can only be edited while the phase is in planned status');
+      ).rejects.toThrow('Phase goals can only be edited while the phase is planned or active');
+    });
+
+    it('throws when editing goals on a skipped phase', async () => {
+      const statusQuery = createMockQuery({ data: { status: 'skipped' }, error: null });
+      vi.mocked(supabaseAdmin.from).mockReturnValueOnce(statusQuery as never);
+
+      await expect(
+        updatePhase('phase-1', 'client-1', { phaseGoalWeight: 70 })
+      ).rejects.toThrow('Phase goals can only be edited while the phase is planned or active');
     });
 
     it('allows non-goal field updates on active phases (guard only applies to goal fields)', async () => {
@@ -402,13 +423,13 @@ describe('Phase Service', () => {
       expect(supabaseAdmin.from).toHaveBeenCalledTimes(1);
     });
 
-    it('rejects entire mixed payload (goal + non-goal fields) on active phase', async () => {
-      const statusQuery = createMockQuery({ data: { status: 'active' }, error: null });
+    it('rejects entire mixed payload (goal + non-goal fields) on a completed phase', async () => {
+      const statusQuery = createMockQuery({ data: { status: 'completed' }, error: null });
       vi.mocked(supabaseAdmin.from).mockReturnValueOnce(statusQuery as never);
 
       await expect(
         updatePhase('phase-1', 'client-1', { name: 'Updated', phaseGoalWeight: 75 })
-      ).rejects.toThrow('Phase goals can only be edited while the phase is in planned status');
+      ).rejects.toThrow('Phase goals can only be edited while the phase is planned or active');
     });
   });
 

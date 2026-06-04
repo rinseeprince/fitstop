@@ -24,7 +24,7 @@ export const PhaseGoalFields = ({
     <Label className="text-sm font-medium">Phase Goals (optional)</Label>
     {disabled ? (
       <p className="text-xs text-muted-foreground">
-        Goals cannot be changed after a phase has started
+        Goals are locked once a phase is completed or skipped
       </p>
     ) : (
       <p className="text-xs text-muted-foreground">

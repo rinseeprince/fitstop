@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Loader2 } from "lucide-react";
+import { Loader2, AlertCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { weightToKg, weightFromKg } from "@/utils/nutrition-helpers";
 import type { Phase, Milestone } from "@/types/roadmap";
@@ -47,7 +47,23 @@ export const EditPhaseDialog = ({
   const [milestones, setMilestones] = useState<Milestone[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const goalsDisabled = phase.status !== "planned";
+  const goalsDisabled = !["planned", "active"].includes(phase.status);
+
+  // Show a warning when a goal is being changed on an ACTIVE phase, since the
+  // nutrition plan is not auto-recalculated. Compare against the values the form
+  // was initialized to (derived the same way as the open effect below).
+  const initialGoalWeight =
+    phase.phaseGoalWeight != null
+      ? weightFromKg(phase.phaseGoalWeight, weightUnit).toFixed(1)
+      : "";
+  const initialGoalBodyFat =
+    phase.phaseGoalBodyFatPercentage != null
+      ? phase.phaseGoalBodyFatPercentage.toString()
+      : "";
+  const goalsChanged =
+    phaseGoalWeight !== initialGoalWeight ||
+    phaseGoalBodyFatPercentage !== initialGoalBodyFat;
+  const showActiveGoalWarning = phase.status === "active" && goalsChanged;
 
   // Sync form fields when the dialog opens or a different phase is passed
   useEffect(() => {
@@ -193,6 +209,16 @@ export const EditPhaseDialog = ({
             disabled={goalsDisabled}
             idPrefix="edit-phase"
           />
+
+          {showActiveGoalWarning && (
+            <div className="flex items-start gap-2 p-3 bg-amber-50 dark:bg-amber-950/30 rounded-lg">
+              <AlertCircle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
+              <p className="text-xs text-foreground">
+                This phase is active — changing its goal won&apos;t automatically
+                recalculate the nutrition plan. Regenerate it manually if needed.
+              </p>
+            </div>
+          )}
         </div>
 
         <DialogFooter>

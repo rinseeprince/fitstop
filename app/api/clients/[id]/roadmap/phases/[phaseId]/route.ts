@@ -127,7 +127,7 @@ export async function PUT(
         { status: 404 }
       );
     }
-    if (message === "Phase goals can only be edited while the phase is in planned status") {
+    if (message === "Phase goals can only be edited while the phase is planned or active") {
       return NextResponse.json(
         { success: false, error: message },
         { status: 400 }

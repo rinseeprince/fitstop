@@ -229,7 +229,9 @@ export const updatePhase = async (
     milestones?: Milestone[];
   }
 ): Promise<Phase> => {
-  // Phase goals can only be edited while phase is in planned status
+  // Phase goals are editable while the phase is planned OR active; once it is
+  // completed or skipped they lock. Whitelist (deny-by-default) so any future
+  // status stays locked unless explicitly allowed.
   const hasGoalEdits =
     data.phaseGoalWeight !== undefined ||
     data.phaseGoalBodyFatPercentage !== undefined;
@@ -240,9 +242,9 @@ export const updatePhase = async (
       .eq("id", phaseId)
       .eq("client_id", clientId)
       .single();
-    if (phase?.status !== "planned") {
+    if (!phase || !["planned", "active"].includes(phase.status)) {
       throw new Error(
-        "Phase goals can only be edited while the phase is in planned status"
+        "Phase goals can only be edited while the phase is planned or active"
       );
     }
   }
