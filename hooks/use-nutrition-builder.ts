@@ -25,7 +25,6 @@ export type NutritionSettings = {
   workActivityLevel: ActivityLevel;
   proteinTargetGPerKg: number;
   dietType: DietType;
-  goalDeadline: string;
 };
 
 export type CustomMacros = {
@@ -66,7 +65,6 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
     workActivityLevel: "sedentary",
     proteinTargetGPerKg: 2.0,
     dietType: "balanced",
-    goalDeadline: "",
   });
   const [settingsChanged, setSettingsChanged] = useState(false);
 
@@ -173,7 +171,9 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
           workActivityLevel: settings.workActivityLevel,
           proteinTargetGPerKg: settings.proteinTargetGPerKg,
           dietType: settings.dietType,
-          goalDeadline: settings.goalDeadline || undefined,
+          // goalDeadline is no longer sent: the deadline is owned by the goal
+          // scope (active phase or client_goals), resolved server-side. The
+          // builder's dead deadline input was replaced by a read-only Goal line.
           phaseId: phaseId || undefined,
           ...(coachNotes.trim() ? { coachNotes: coachNotes.trim() } : {}),
           ...(effectiveFrom ? { effectiveFrom } : {}),

@@ -10,6 +10,7 @@ function mapClientGoalRow(row: ClientGoalRow): ClientGoal {
     goalWeight: row.goal_weight ?? undefined,
     goalBodyFatPercentage: row.goal_body_fat_percentage ?? undefined,
     goalDeadline: row.goal_deadline ?? undefined,
+    goalStartDate: row.goal_start_date ?? undefined,
     primaryGoal: row.primary_goal ?? undefined,
     setBy: row.set_by,
     notes: row.notes ?? undefined,
@@ -42,9 +43,10 @@ export const updateGoals = async (
   clientId: string,
   goals: {
     goalWeight?: number;
-    goalBodyFatPercentage?: number;
-    goalDeadline?: string;
-    primaryGoal?: string;
+    goalBodyFatPercentage?: number | null;
+    goalDeadline?: string | null;
+    goalStartDate?: string | null;
+    primaryGoal?: string | null;
   },
   setBy: string
 ): Promise<ClientGoal> => {
@@ -69,15 +71,28 @@ export const updateGoals = async (
     }
   }
 
-  // Merge: new values override, unchanged fields carry forward
+  // Presence-based per-field merge: a key PRESENT in the payload wins (even when
+  // it is explicit null → clears the column); a key ABSENT carries the existing
+  // value forward. Plain `??` could never clear a field — passing null fell
+  // through to the existing value. `goalWeight` is never cleared (required field).
+  const has = (key: keyof typeof goals) =>
+    Object.prototype.hasOwnProperty.call(goals, key);
   const merged = {
-    goal_weight: goals.goalWeight ?? existing?.goalWeight ?? null,
-    goal_body_fat_percentage:
-      goals.goalBodyFatPercentage ??
-      existing?.goalBodyFatPercentage ??
-      null,
-    goal_deadline: goals.goalDeadline ?? existing?.goalDeadline ?? null,
-    primary_goal: goals.primaryGoal ?? existing?.primaryGoal ?? null,
+    goal_weight: has("goalWeight")
+      ? goals.goalWeight ?? null
+      : existing?.goalWeight ?? null,
+    goal_body_fat_percentage: has("goalBodyFatPercentage")
+      ? goals.goalBodyFatPercentage ?? null
+      : existing?.goalBodyFatPercentage ?? null,
+    goal_deadline: has("goalDeadline")
+      ? goals.goalDeadline ?? null
+      : existing?.goalDeadline ?? null,
+    goal_start_date: has("goalStartDate")
+      ? goals.goalStartDate ?? null
+      : existing?.goalStartDate ?? null,
+    primary_goal: has("primaryGoal")
+      ? goals.primaryGoal ?? null
+      : existing?.primaryGoal ?? null,
   };
 
   const { data, error } = await supabaseAdmin

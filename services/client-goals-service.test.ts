@@ -171,6 +171,67 @@ describe('Client Goals Service', () => {
       expect(insertCallArgs.primary_goal).toBe('muscle_gain');
     });
 
+    it('clears goalDeadline when explicit null is passed (presence-based merge)', async () => {
+      const existingRow = createMockClientGoalsRow({
+        clientId: 'client-1',
+        goalWeight: 170,
+        goalDeadline: '2026-06-01',
+      });
+      const newRow = createMockClientGoalsRow({ clientId: 'client-1', goalWeight: 170, goalDeadline: null });
+
+      const getCurrentQuery = createMockQuery({ data: existingRow, error: null });
+      const supersedeQuery = createMockQuery({ data: null, error: null });
+      const insertQuery = createMockQuery({ data: newRow, error: null });
+      const clientUpdateQuery = createMockQuery({ data: null, error: null });
+
+      let callCount = 0;
+      vi.mocked(supabaseAdmin.from).mockImplementation((table: string) => {
+        if (table === 'client_goals') {
+          callCount++;
+          if (callCount === 1) return getCurrentQuery as never;
+          if (callCount === 2) return supersedeQuery as never;
+          if (callCount === 3) return insertQuery as never;
+        }
+        if (table === 'clients') return clientUpdateQuery as never;
+        return createMockQuery({ data: null, error: null }) as never;
+      });
+
+      await updateGoals('client-1', { goalDeadline: null }, 'coach-1');
+
+      const insertCallArgs = insertQuery.insert.mock.calls[0][0];
+      // null wins over the existing date — `??` would have carried '2026-06-01' forward.
+      expect(insertCallArgs.goal_deadline).toBeNull();
+      // weight (absent from the payload) carries forward.
+      expect(insertCallArgs.goal_weight).toBe(170);
+    });
+
+    it('persists goalStartDate', async () => {
+      const existingRow = createMockClientGoalsRow({ clientId: 'client-1', goalWeight: 170 });
+      const newRow = createMockClientGoalsRow({ clientId: 'client-1', goalWeight: 170, goalStartDate: '2026-02-01' });
+
+      const getCurrentQuery = createMockQuery({ data: existingRow, error: null });
+      const supersedeQuery = createMockQuery({ data: null, error: null });
+      const insertQuery = createMockQuery({ data: newRow, error: null });
+      const clientUpdateQuery = createMockQuery({ data: null, error: null });
+
+      let callCount = 0;
+      vi.mocked(supabaseAdmin.from).mockImplementation((table: string) => {
+        if (table === 'client_goals') {
+          callCount++;
+          if (callCount === 1) return getCurrentQuery as never;
+          if (callCount === 2) return supersedeQuery as never;
+          if (callCount === 3) return insertQuery as never;
+        }
+        if (table === 'clients') return clientUpdateQuery as never;
+        return createMockQuery({ data: null, error: null }) as never;
+      });
+
+      await updateGoals('client-1', { goalStartDate: '2026-02-01' }, 'coach-1');
+
+      const insertCallArgs = insertQuery.insert.mock.calls[0][0];
+      expect(insertCallArgs.goal_start_date).toBe('2026-02-01');
+    });
+
     it('handles first-ever goal set (no existing row)', async () => {
       const newRow = createMockClientGoalsRow({
         clientId: 'client-1',

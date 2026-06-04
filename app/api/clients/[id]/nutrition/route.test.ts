@@ -290,7 +290,9 @@ describe('Nutrition Route POST - phase goal resolution', () => {
     expect(data.goalSource).toBe('phase')
   })
 
-  it('falls back to client goal when phaseGoalWeight is null (goalSource: client)', async () => {
+  it('uses phase maintenance when phaseGoalWeight is null (goalSource: phase, no client fallback)', async () => {
+    // Session 7.8 phase-is-king: an active phase with a NULL weight is maintenance.
+    // It does NOT fall back to the client goal, and the deadline is the phase's.
     vi.mocked(requirePhaseSelection).mockResolvedValue({
       ok: true as const,
       phaseId: 'phase-1',
@@ -321,17 +323,18 @@ describe('Nutrition Route POST - phase goal resolution', () => {
       updatedAt: '2024-01-01T00:00:00Z',
     })
 
+    // Body deadline is supplied but MUST be ignored — the phase scope owns it.
     const request = makeRequest({ ...mockBody, goalDeadline: '2024-12-01' })
     const response = await POST(request, { params: Promise.resolve({ id: 'client-1' }) })
     const data = await response.json()
 
-    // Client goal weight (165 lbs) converted via weightToKg
-    expect(weightToKg).toHaveBeenCalledWith(165, 'lbs')
-    // Body deadline used, not phase endDate
+    // Client goal weight (165) is NOT converted — no fallback while a phase is active.
+    expect(weightToKg).not.toHaveBeenCalledWith(165, 'lbs')
+    // Maintenance (null weight) + the PHASE deadline, not the request body deadline.
     expect(createNutritionPlan).toHaveBeenCalledWith(
-      expect.objectContaining({ goalDeadline: '2024-12-01' })
+      expect.objectContaining({ goalWeightKg: null, goalDeadline: '2024-06-01' })
     )
-    expect(data.goalSource).toBe('client')
+    expect(data.goalSource).toBe('phase')
   })
 
   it('falls back to client goal when no roadmap (phaseGoalWeight undefined)', async () => {

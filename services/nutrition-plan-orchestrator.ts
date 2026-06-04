@@ -15,6 +15,7 @@ import type { GenerateNutritionPlanRequest, DietType } from "@/types/check-in";
 import { deleteFutureNutritionEventsForPlan, regenerateFutureNutritionEvents } from "@/services/nutrition-event-service";
 import { captureApiError } from "@/lib/error-handler";
 import { getTodayDateString } from "@/lib/date-helpers";
+import { resolveEffectiveGoal } from "@/lib/goals/resolve-effective-goal";
 
 export class NutritionPlanError extends Error {
   constructor(
@@ -29,6 +30,7 @@ export class NutritionPlanError extends Error {
 interface PhaseCheckOk {
   phaseId: string | undefined;
   phaseGoalWeight?: number | null;
+  phaseGoalBodyFatPercentage?: number | null;
   phaseEndDate?: string | null;
   phaseStartDate?: string | null;
   phaseStatus?: string;
@@ -99,25 +101,38 @@ export async function orchestrateNutritionPlanCreation(
   const weightUnit = (latestMetrics?.weightUnit ?? client.weightUnit ?? "lbs") as "lbs" | "kg";
   const bmr = latestMetrics?.bmr ?? client.bmr;
   const tdeeValue = latestMetrics?.tdee ?? client.tdee;
-  const goalWeight = currentGoals?.goalWeight ?? client.goalWeight;
 
-  // Phase goal overrides: use phase-specific goal if set, otherwise fall back to client goal
-  const effectiveGoalWeightKg =
-    phase.phaseGoalWeight != null
-      ? phase.phaseGoalWeight // Already in kg, no conversion needed
-      : goalWeight
-        ? weightToKg(goalWeight, weightUnit)
-        : null;
-  const effectiveGoalDeadline =
-    phase.phaseGoalWeight != null
-      ? phase.phaseEndDate ?? null
-      : body.goalDeadline || null;
-  const effectiveStartDate =
-    phase.phaseGoalWeight != null
-      ? phase.phaseStartDate ?? null
-      : null;
-  const goalSource: "phase" | "client" =
-    phase.phaseGoalWeight != null ? "phase" : "client";
+  // Phase-is-king (Session 7.8): an active phase ALWAYS drives — its target +
+  // dates, and a NULL phase weight is maintenance with NO fallback to the client
+  // goal. With no phase, the long-term client goal drives. The resolver also
+  // performs the single display→kg normalization (client goal weight is display
+  // units; phase weight is already kg). The orchestrator already guarantees any
+  // present phase is active (the status guard above), so a present phaseId is the
+  // active phase. The deadline now comes from this single scope — never the
+  // request body (the old `body.goalDeadline` was the cross-scope source).
+  const effective = resolveEffectiveGoal({
+    weightUnit,
+    activePhase: phase.phaseId
+      ? {
+          goalWeightKg: phase.phaseGoalWeight ?? null,
+          goalBodyFatPercentage: phase.phaseGoalBodyFatPercentage ?? null,
+          startDate: phase.phaseStartDate ?? null,
+          endDate: phase.phaseEndDate ?? null,
+        }
+      : null,
+    clientGoal: {
+      goalWeight: currentGoals?.goalWeight ?? client.goalWeight ?? null,
+      goalBodyFatPercentage:
+        currentGoals?.goalBodyFatPercentage ?? client.goalBodyFatPercentage ?? null,
+      deadline: currentGoals?.goalDeadline ?? client.goalDeadline ?? null,
+      startDate: currentGoals?.goalStartDate ?? null,
+    },
+    today: getTodayDateString(),
+  });
+  const effectiveGoalWeightKg = effective.goalWeightKg;
+  const effectiveGoalDeadline = effective.deadline;
+  const effectiveStartDate = effective.startDate;
+  const goalSource = effective.source;
 
   // Handle custom macros
   if (body.customMacrosEnabled) {
@@ -249,7 +264,8 @@ async function handleCalculatedPlan(
   bmr: number | null | undefined,
   effectiveGoalWeightKg: number | null,
   effectiveGoalDeadline: string | null,
-  effectiveStartDate: string | null,
+  // Always a concrete date — resolveEffectiveGoal falls back to `today`.
+  effectiveStartDate: string,
   goalSource: "phase" | "client",
   validatedData: { coachNotes?: string }
 ): Promise<NutritionPlanResult> {

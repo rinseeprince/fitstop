@@ -5,6 +5,7 @@ import { useToast } from "@/hooks/use-toast";
 import type { Client, UnitPreference, DietType } from "@/types/check-in";
 import type { TrainingPlan } from "@/types/training";
 import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
+import type { GoalDrift } from "@/lib/goals/detect-goal-drift";
 import {
   getWeightChange as getWeightChangeUtil,
   formatWeight as formatWeightUtil,
@@ -41,6 +42,7 @@ type NutritionTargetsData = {
   effectiveFrom?: string;
   upcomingPlan?: UpcomingPlanData | null;
   dailyTargets?: DailyNutritionTargets[];
+  goalChanged?: GoalDrift;
 };
 
 export function useNutritionPlan({ client, onUpdate }: UseNutritionPlanProps) {

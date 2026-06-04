@@ -1,6 +1,5 @@
 "use client";
 
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Info } from "lucide-react";
 import { useNutritionBuilderContext } from "@/contexts/nutrition-builder-context";
@@ -10,7 +9,8 @@ import { NutritionTrainingCaloriesDisplay } from "./nutrition-training-calories-
 import { CalorieSkewingSection } from "./calorie-skewing-section";
 import { UnitToggle } from "../../shared/unit-toggle";
 import { PhaseSelector } from "../../shared/phase-selector";
-import { getTodayDateString } from "@/lib/date-helpers";
+import { ClientGoalEditor } from "../../client-goal-editor";
+import { NutritionGoalChangedBanner } from "../nutrition-goal-changed-banner";
 
 function Divider() {
   return <div className="h-px bg-[rgba(13,148,136,0.08)]" />;
@@ -72,27 +72,18 @@ export function DrawerFormBody() {
               activeOnly
             />
 
-            {/* Goal Deadline */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <label className="text-[10.5px] uppercase tracking-[0.07em] font-semibold text-[#93b0b4]">
-                  Goal Deadline
-                </label>
-                <span className="text-[10px] text-[#93b0b4]">Optional</span>
-              </div>
-              <Input
-                id="goal-deadline"
-                type="date"
-                value={builder.settings.goalDeadline}
-                onChange={(e) => builder.handleSettingsChange({ goalDeadline: e.target.value })}
-                min={getTodayDateString()}
-                placeholder="dd / mm / yyyy"
-                className="w-full px-3.5 py-2.5 bg-white border border-[rgba(13,148,136,0.08)] rounded-[6px] text-[13px] font-medium text-[#0c1a1e] focus:border-[rgba(13,148,136,0.25)] focus:shadow-[0_0_0_3px_rgba(13,148,136,0.06)] focus:ring-0 focus:outline-none transition-all"
-              />
-              <p className="text-[11px] text-[#93b0b4] leading-[1.4]">
-                Target date to reach goal weight (affects calorie deficit/surplus)
-              </p>
-            </div>
+            {/* Goal changed since this plan was built → prompt regenerate. */}
+            <NutritionGoalChangedBanner
+              drift={builder.nutritionData?.goalChanged}
+              unitPreference={builder.unitPreference}
+            />
+
+            {/* Goal (read-only summary + Edit). The deadline lives on the goal
+                scope now (active phase or client_goals), not a per-plan input. */}
+            <ClientGoalEditor
+              clientId={builder.client.id}
+              unit={builder.client.weightUnit || "lbs"}
+            />
           </div>
         </AnimatedGroup>
 

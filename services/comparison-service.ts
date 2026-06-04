@@ -6,6 +6,10 @@ import { calculateMetricChange, calculateDaysBetween, calculateGoalProgress } fr
 import { computeGoalPace } from "@/lib/check-in/goal-pace";
 import { getBodyMetricsHistory } from "./body-metrics-service";
 import { getCurrentGoals } from "./client-goals-service";
+import { getActiveRoadmap } from "./roadmap-service";
+import { resolveEffectiveGoal } from "@/lib/goals/resolve-effective-goal";
+import { weightFromKg } from "@/utils/nutrition-helpers";
+import { getTodayDateString } from "@/lib/date-helpers";
 import type {
   CheckInComparison,
   GoalProgress,
@@ -40,34 +44,61 @@ export const getCheckInComparison = async (
   // Fetch all check-ins for chart data (last 10), first check-in for starting values,
   // active nutrition plan for base weight and created date, goal_deadline from clients table,
   // earliest body_metrics for starting values, and current goals from client_goals
-  const [{ checkIns }, firstCheckIn, { data: activePlan }, { data: clientRow }, earliestMetrics, currentGoals] = await Promise.all([
+  const [{ checkIns }, firstCheckIn, { data: activePlan }, earliestMetrics, currentGoals, roadmap] = await Promise.all([
     getClientCheckIns(currentCheckIn.clientId, { limit: 10 }),
     getFirstCheckIn(currentCheckIn.clientId),
     supabaseAdmin
       .from("nutrition_plans")
-      .select("base_weight_kg, created_at, goal_deadline")
+      .select("base_weight_kg, created_at")
       .eq("client_id", currentCheckIn.clientId)
       .eq("status", "active")
       .order("effective_from", { ascending: false })
       .limit(1)
       .maybeSingle(),
-    supabaseAdmin
-      .from("clients")
-      .select("goal_deadline")
-      .eq("id", currentCheckIn.clientId)
-      .single(),
     getBodyMetricsHistory(currentCheckIn.clientId, { limit: 1, ascending: true }),
     getCurrentGoals(currentCheckIn.clientId),
+    getActiveRoadmap(currentCheckIn.clientId),
   ]);
 
-  // Prefer new services, fall back to client.* for pre-migration clients
-  const goalWeight = currentGoals?.goalWeight ?? client.goalWeight;
-  const goalBodyFatPercentage = currentGoals?.goalBodyFatPercentage ?? client.goalBodyFatPercentage;
+  // Single-scope effective goal (Session 7.8): phase-is-king, else the live client
+  // goal. Weight AND deadline come from ONE scope — fixing the cross-scope
+  // "Deadline unrealistic" false alarm (the old code paired the client-scope goal
+  // weight with the active nutrition plan's deadline). Displayed in the client's unit.
+  const weightUnit = client.weightUnit ?? "lbs";
+  const activePhase = roadmap?.phases.find((p) => p.status === "active");
+  const effectiveGoal = resolveEffectiveGoal({
+    weightUnit,
+    activePhase: activePhase
+      ? {
+          goalWeightKg: activePhase.phaseGoalWeight ?? null,
+          goalBodyFatPercentage: activePhase.phaseGoalBodyFatPercentage ?? null,
+          startDate: activePhase.startDate ?? null,
+          endDate: activePhase.endDate ?? null,
+        }
+      : null,
+    clientGoal: {
+      goalWeight: currentGoals?.goalWeight ?? client.goalWeight ?? null,
+      goalBodyFatPercentage:
+        currentGoals?.goalBodyFatPercentage ?? client.goalBodyFatPercentage ?? null,
+      deadline: currentGoals?.goalDeadline ?? client.goalDeadline ?? null,
+      startDate: currentGoals?.goalStartDate ?? null,
+    },
+    today: getTodayDateString(),
+  });
+
+  // Effective goal in DISPLAY units so the displayed goal and the pace share scope.
+  // Round to 1 decimal (display precision) to kill kg↔display float round-trip noise.
+  const goalWeight =
+    effectiveGoal.goalWeightKg != null
+      ? Math.round(weightFromKg(effectiveGoal.goalWeightKg, weightUnit) * 10) / 10
+      : undefined;
+  const goalBodyFatPercentage = effectiveGoal.goalBodyFatPercentage ?? undefined;
   const earliestWeight = earliestMetrics[0]?.weight ?? client.startingWeight;
   const earliestBodyFat = earliestMetrics[0]?.bodyFatPercentage ?? client.startingBodyFatPercentage;
 
-  // Goal deadline, used by both the weight pace check and the deadline card.
-  const goalDeadline = activePlan?.goal_deadline ?? clientRow?.goal_deadline ?? undefined;
+  // Goal deadline, used by both the weight pace check and the deadline card —
+  // from the SAME scope as goalWeight above (no cross-scope mismatch).
+  const goalDeadline = effectiveGoal.deadline ?? undefined;
   const daysRemaining = goalDeadline
     ? Math.ceil((new Date(goalDeadline).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
     : null;
@@ -87,7 +118,7 @@ export const getCheckInComparison = async (
       name: client.name,
       goalWeight,
       goalBodyFatPercentage,
-      goalDeadline: activePlan?.goal_deadline ?? clientRow?.goal_deadline ?? undefined,
+      goalDeadline,
       currentWeight: client.currentWeight,
       currentBodyFatPercentage: client.currentBodyFatPercentage,
       weightUnit: client.weightUnit,

@@ -17,13 +17,11 @@ type NutritionSettingsFormProps = {
     workActivityLevel?: ActivityLevel;
     proteinTargetGPerKg?: number;
     dietType?: DietType;
-    goalDeadline?: string;
   };
   onSettingsChange: (settings: {
     workActivityLevel: ActivityLevel;
     proteinTargetGPerKg: number;
     dietType: DietType;
-    goalDeadline?: string;
   }) => void;
 };
 

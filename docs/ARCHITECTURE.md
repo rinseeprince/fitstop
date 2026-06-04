@@ -97,15 +97,17 @@ roadmaps              -- long-term goal container, one active per client
 - `milestones` JSONB — array of milestone objects scoped to the phase (`{id, text, completed, completed_at}`)
 - `completion_seen` (boolean) tracks whether the client has dismissed the completion card
 
-### Phase goal overrides
+### Phase goals — phase-is-king (Session 7.8)
 
-Phases can have optional goal overrides (`phase_goal_weight`, `phase_goal_body_fat_percentage`) that replace the client's overall goal for nutrition plan calculation. When NULL, the system falls back to the client's `client_goals` record.
+A single pure resolver, `resolveEffectiveGoal()` (`lib/goals/resolve-effective-goal.ts`), decides which goal drives a client at any moment. **While a phase is active it ALWAYS drives** nutrition + pace — its target weight and its start/end dates. A **NULL phase weight means maintenance**; the system does **NOT** fall back to the client's long-term goal while a phase is active. With no active phase, the long-term `client_goals` record drives (a NULL client weight is likewise maintenance).
 
-**Resolution flow** in `app/api/clients/[id]/nutrition/route.ts`:
-1. `requirePhaseSelection()` returns the matched phase's goal data alongside `phaseId`
-2. If `phaseGoalWeight` is set, it's used directly as `effectiveGoalWeightKg` (already in kg, no conversion) and `phaseEndDate` becomes the goal deadline
-3. If NULL/undefined, falls back to `currentGoals.goalWeight` with `weightToKg()` conversion and `body.goalDeadline`
-4. Response includes `goalSource: "phase" | "client"` so the UI knows which source was used
+The resolver is the **one** place display-unit weights are normalized to kg (`client_goals.goal_weight` and `body_metrics.weight` are display units; `phase_goal_weight` is already kg and passes through). Maintenance / "zero active goal" is represented purely by `goalWeightKg: null` — there is no third `source` value; `source` stays `'phase' | 'client'`.
+
+**Resolution flow** (`resolveEffectiveGoal({ weightUnit, activePhase, clientGoal, today })`):
+1. Active phase present → `source: 'phase'`, weight = `phase_goal_weight` (kg; null = maintenance), deadline = phase `end_date`, start = phase `start_date ?? today`.
+2. No active phase → `source: 'client'`, weight = `weightToKg(client_goals.goal_weight)` (null = maintenance), deadline = `client_goals.goal_deadline`, start = `client_goals.goal_start_date ?? today`.
+
+Callers: `services/nutrition-plan-orchestrator.ts` (plan creation — the active-phase guard means a present phase is the active one) and `services/comparison-service.ts` (the check-in weight pace — weight **and** deadline now come from one scope, fixing the cross-scope "Deadline unrealistic" false alarm). The nutrition response still includes `goalSource: "phase" | "client"`. `client_goals.goal_start_date` (migration 104) anchors the long-term pace window.
 
 **Status guard**: Phase goals can only be edited while `status = 'planned'`. The guard in `updatePhase()` rejects the entire request (including non-goal fields in the same payload) if goal fields are present and the phase is not planned.
 

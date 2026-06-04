@@ -19,6 +19,10 @@ import {
   NutritionPlanError,
 } from "@/services/nutrition-plan-orchestrator";
 import { promoteNutritionPlanIfReady } from "@/services/nutrition-plan-service";
+import { getActiveRoadmap } from "@/services/roadmap-service";
+import { getCurrentGoals } from "@/services/client-goals-service";
+import { resolveEffectiveGoal } from "@/lib/goals/resolve-effective-goal";
+import { detectGoalDrift } from "@/lib/goals/detect-goal-drift";
 
 /**
  * GET: Return the active nutrition plan + daily targets for the coach view.
@@ -138,6 +142,39 @@ export async function GET(
       };
     }
 
+    // Goal-drift flag (Session 7.8): does the goal that drives the client NOW
+    // (effective-goal resolver) differ from the snapshot this active plan was
+    // built against? Surfaced as "Goal changed — regenerate", distinct from the
+    // weight-delta banner (which compares current weight vs the plan base weight).
+    const [driftRoadmap, driftGoals] = await Promise.all([
+      getActiveRoadmap(clientId),
+      getCurrentGoals(clientId),
+    ]);
+    const driftActivePhase = driftRoadmap?.phases.find((p) => p.status === "active");
+    const effectiveGoal = resolveEffectiveGoal({
+      weightUnit: client.weightUnit ?? "lbs",
+      activePhase: driftActivePhase
+        ? {
+            goalWeightKg: driftActivePhase.phaseGoalWeight ?? null,
+            goalBodyFatPercentage: driftActivePhase.phaseGoalBodyFatPercentage ?? null,
+            startDate: driftActivePhase.startDate ?? null,
+            endDate: driftActivePhase.endDate ?? null,
+          }
+        : null,
+      clientGoal: {
+        goalWeight: driftGoals?.goalWeight ?? client.goalWeight ?? null,
+        goalBodyFatPercentage:
+          driftGoals?.goalBodyFatPercentage ?? client.goalBodyFatPercentage ?? null,
+        deadline: driftGoals?.goalDeadline ?? client.goalDeadline ?? null,
+        startDate: driftGoals?.goalStartDate ?? null,
+      },
+      today,
+    });
+    const goalChanged = detectGoalDrift(
+      { goalWeightKg: plan.goal_weight_kg ?? null, deadline: plan.goal_deadline ?? null },
+      effectiveGoal
+    );
+
     return NextResponse.json({
       calorieTarget: plan.custom_macros_enabled && plan.custom_calories ? plan.custom_calories : plan.baseline_calories,
       proteinTargetG: plan.protein_target_g,
@@ -154,6 +191,7 @@ export async function GET(
       effectiveFrom: plan.effective_from,
       dailyTargets,
       upcomingPlan,
+      goalChanged,
     });
   } catch (error) {
     console.error("Error fetching nutrition plan:", error instanceof Error ? error.message : "Unknown error");
