@@ -95,6 +95,11 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 | 7.5 | Coach metrics page phase filter | 7 |
 | 7.6 | Coach client overview tab as pre-session brief | 7 |
 | 7.7 | Coach exercise progression charts on Metrics tab | 7 |
+| 7.8 | Goal resolver foundation + unit normalization + nutrition/pace rewire | 7 Goal & roadmap lifecycle |
+| 7.9 | Goal outcome lifecycle (finishable goals) | 7 |
+| 7.10 | Roadmap completion (status + summary) + client completion card | 7 |
+| 7.11 | Roadmap-creation goal prompt + complete→create-next chain | 7 |
+| 7.12 | BRAINSTORM: notify coach of phases/roadmaps ending | 7 | BRAINSTORM
 | 8.1 | Coach unit preference column + viewer-resolver foundation | 8 Viewer-relative units |
 | 8.2 | Render-path sweep for viewer-relative weight display | 8 |
 | 8.3 | Coach + client unit preference settings + form write paths | 8 |
@@ -2027,6 +2032,8 @@ Commit.
 
 **Objective**: Backend CRUD for roadmap archive + create-new already exists. Expose a coach-side workflow: "End roadmap" confirmation, archive via existing endpoint, then open `create-roadmap-dialog.tsx`.
 
+> **Added requirement (from the Goal & Roadmap lifecycle work, 7.8–7.11):** the replace flow MUST resolve the **active** phase (skip or complete it) before/while archiving. Verified gap: neither `archiveRoadmap` (`services/roadmap-service.ts`) nor the RPC's `archive_roadmap` branch closes an *active* phase — they only skip `planned` phases. A dangling active phase would hijack the new roadmap's nutrition under phase-is-king. This also means the create call in this flow must send `goalMode` (see 7.11), authoring via mode-a (supersede, no abandon). This blocks 7.11's after-replace correctness.
+
 **Read first**:
 - `app/api/clients/[id]/roadmap/route.ts` (existing POST/PATCH/DELETE).
 - `components/clients/roadmap/roadmap-tab-content.tsx` (where the button goes).
@@ -2092,6 +2099,8 @@ Commit.
 **Commit message**: `feat(coach): add archived roadmap browsing to client roadmap tab`
 
 **Objective**: Today coaches can archive a roadmap but cannot view archived ones afterward. Add a read-only browser on the roadmap tab that lists the client's archived roadmaps and lets the coach open any one to inspect its phases, goals, reflections, and summaries. No edit flows.
+
+> **Scope bump (from the Goal & Roadmap lifecycle work, 7.10/7.11):** 7.10 adds a real `completed` roadmap status (distinct from `archived`/ended-early). This browser must list **both** `completed` and `archived` programs, labelling `completed` ones with achievement framing (e.g. "Completed ✓ — goal achieved", reading `roadmap_summary`). Also add a status-agnostic `getLatestRoadmap` reader (status-agnostic, newest-first) here — `getActiveRoadmap` filters to `active` only — which 7.11's "build next roadmap" CTA consumes.
 
 **Read first**:
 - `components/clients/roadmap/roadmap-tab-content.tsx` (current active-roadmap rendering).
@@ -2269,6 +2278,204 @@ Commit.
 - UI test: charts render for fixture data; toggle between top-set and volume works; empty state renders when no data; phase-filter change rescopes charts.
 
 **Verify**: As coach, open a client with logged exercise data across multiple phases; switch phase filter; confirm charts rescope. Switch top-set/volume toggle. Check empty-state rendering. `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Commit.
+
+---
+
+## Session 7.8: Goal resolver foundation + unit normalization + nutrition/pace rewire
+
+**Commit message**: `feat(goals): single effective-goal resolver + persisted deadline + nutrition/pace rewire`
+
+> **Plain terms:** Goals finally work. There's a real Goals screen; the deadline sticks and drives nutrition on every regenerate; the check-in "Deadline unrealistic" false alarm is gone; the dead deadline box is removed from the nutrition builder. This is the foundation 7.9–7.11 build on.
+
+**Objective**: Establish the single source-of-truth for "what is this client's goal right now" and make the goal deadline real. Today the goal weight and the goal deadline are read from different scopes (the check-in pairs the client/roadmap goal weight with the active phase's end date → false "Deadline unrealistic"); `client_goals.goal_deadline` is written but never read by nutrition; and non-roadmap clients silently fall to maintenance calories because the only deadline input lives (session-only) in the nutrition builder. Add ONE pure resolver + ONE kg-normalization point, make the deadline persist and drive calories, fix the check-in pace bug, and add a proper coach Goals editor.
+
+**The locked model** (applies to 7.8–7.11): a client always has one long-term goal (`client_goals`: target weight required, body fat optional, deadline). A roadmap is optional and always has a phase; **while a phase is active it ALWAYS drives nutrition & training** (phase target + dates; a NULL phase weight = recomp/maintenance, NO fallback to the client weight). When there is no active phase, nutrition follows the long-term goal. Weights: `client_goals.goal_weight` and `body_metrics.weight` are stored in DISPLAY units; `phase_goal_weight` is kg — normalize in ONE place.
+
+**Read first**:
+- `services/nutrition-plan-orchestrator.ts` (~98–120: effective goal/deadline selection; reads `latestMetrics.weight` as DISPLAY units, converts via `weightToKg`).
+- `services/comparison-service.ts` (~64–76: goal weight from `getCurrentGoals`, deadline from `activePlan.goal_deadline` — the cross-scope bug).
+- `services/client-goals-service.ts` (`getCurrentGoals`, `updateGoals`), `lib/require-phase-selection.ts`.
+- `utils/nutrition-helpers.ts` (`weightToKg`, `formatWeight`).
+- `components/clients/nutrition/builder/drawer-form-body.tsx` (dead `goalDeadline` date input), `hooks/use-nutrition-builder.ts`.
+- `lib/check-in/goal-pace.ts`, `components/check-in/goal-progress-view.tsx`, `weight-goal-card.tsx`, `kpi-ribbon.tsx`.
+- `lib/validations/client.ts` (`updateGoalsSchema`), `app/api/clients/[id]/goals/route.ts` (the orphaned coach PUT), `docs/ARCHITECTURE.md` "Phase goal overrides".
+
+**Plan (report before implementing)**:
+- Resolver contract: `resolveEffectiveGoal(client) → { goalWeightKg, goalBodyFatPercentage, deadline, startDate, source: 'phase'|'client' }`. Active phase → phase target (NULL weight = maintenance, no client fallback), deadline = phase `end_date`; else live client goal (NULL = maintenance), deadline = `client_goals.goal_deadline`, startDate = `goal_start_date ?? today`.
+- The single kg-normalization rule and where it lives (inside the resolver).
+- Deadline-clearable change: presence-based merge so `null` clears (today `??` coalesce can never clear) + a future-date guard.
+- Stale-vs-goal banner: compare the active plan's snapshot vs the resolver result → "Goal changed — regenerate" (distinct from the existing weight-delta banner).
+- Goals editor placement (`components/clients/`) and fields (weight required, body fat optional, deadline, start date).
+
+**Implement**:
+1. `lib/goals/resolve-effective-goal.ts` — the pure resolver above; one `weightToKg(weight, client.weightUnit)` normalization; phase weight passed through as kg.
+2. `lib/goals/outcome.ts` — `GoalOutcome = 'achieved'|'not_achieved'|'inconclusive'`; `WEIGHT_TOLERANCE_KG` (`max(1.0 kg, 1.5%)`) + `BODY_FAT_TOLERANCE_PP` (1.0); `evaluateGoalOutcome()` (reused by 7.9/7.10). Pure, unit-tested.
+3. **Migration 099** `add_goal_start_date.sql` — `client_goals.goal_start_date DATE NULL`.
+4. `updateGoalsSchema`: `goalDeadline` `.nullable()` + future-date refine; add `goalStartDate`. `updateGoals`: presence-based per-field merge (not `??`), persist start date.
+5. Rewire `nutrition-plan-orchestrator.ts` to `resolveEffectiveGoal`; drop reading `body.goalDeadline`; normalize current weight to kg in the compare path.
+6. Rewire `comparison-service.ts` pace path to `resolveEffectiveGoal` (weight + deadline from one scope); audit `goal-progress-view` / `weight-goal-card` / `kpi-ribbon` for shape changes.
+7. Stale-vs-goal banner server flag + UI surfacing.
+8. Coach Goals editor UI → existing `PUT /api/clients/[id]/goals`; remove the `goalDeadline` input from `drawer-form-body.tsx` (replace with a read-only "Goal: X by Y" line + an Edit link).
+9. Update `docs/ARCHITECTURE.md` "Phase goal overrides" to phase-is-king / null=maintenance.
+
+**Do NOT**: Touch roadmap-completion status, goal-outcome columns, or any client-portal card (7.9/7.10). Build the `asOf` historical resolver (deferred). Canonicalize unit storage broadly (Phase 8). Re-resolve effective goal for historical check-ins. Let the long-term goal drive nutrition while a phase is active.
+
+**Tests to write**:
+- `resolve-effective-goal.test.ts`: active-phase-with-weight; active-phase-null-weight (maintenance); no-roadmap; zero-active-goal; kg normalization for lbs AND kg clients.
+- `outcome.test.ts`: cut/bulk/maintenance/no-metric/combined verdicts at the tolerance boundary.
+- `updateGoals`: deadline clears on `null`; past-date rejected.
+- `comparison-service` pace: phase pair vs client pair, no cross-source; the reported case reads on-track/aggressive, not "unrealistic".
+
+**Verify**: As coach, set a goal + deadline for a no-roadmap client, regenerate nutrition twice → real deficit both times (not maintenance). Open a phase client's check-in → no false "unrealistic". `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Commit.
+
+---
+
+## Session 7.9: Goal outcome lifecycle (finishable goals)
+
+**Commit message**: `feat(goals): terminal goal outcome (completed/achieved) coexisting with edit-versioning`
+
+> **Plain terms:** A goal can be *finished* — marked achieved or not achieved and kept in history — instead of just being overwritten. A coach can mark a no-roadmap client's goal achieved. Works for clients who never use roadmaps.
+
+**Objective**: Give `client_goals` a terminal outcome (completed → achieved / not_achieved / inconclusive) kept as history, working for no-roadmap clients and producing a first-class "zero active goals" state. Completing is a DISTINCT event from editing (which still versions).
+
+**Read first**:
+- `services/client-goals-service.ts` (`getCurrentGoals` `.is('superseded_at',null).maybeSingle()` ~26–31; `updateGoals` supersede UPDATE ~58–62).
+- `supabase/migrations/060_create_client_goals.sql` (`idx_client_goals_active_unique`, partial on `superseded_at IS NULL`).
+- `lib/goals/resolve-effective-goal.ts`, `lib/goals/outcome.ts` (from 7.8).
+- wherever the latest body-metric weight is read (display units → convert).
+- `app/api/clients/[id]/goals/route.ts` (pattern for the new complete endpoint), `lib/validations/`, `types/roadmap.ts` (`ClientGoal`/`ClientGoalRow`).
+
+**Plan (report before implementing)**:
+- Two-axis model: keep the supersede axis (edit) untouched; add an orthogonal outcome axis (`lifecycle_state` active|completed|abandoned + `outcome`). Live goal = `superseded_at IS NULL AND lifecycle_state='active'`.
+- The index swap (the keystone) and why `getCurrentGoals` SELECT **and** `updateGoals` supersede-UPDATE must BOTH gain `.eq('lifecycle_state','active')` in the same change-set (split = an edit can supersede a completed row).
+- Completion = in-place stamp (no new row, no supersede), idempotent guard.
+- Standalone direction fallback when `goal_start_date` is null.
+- Grading (decision #2): weight required; body fat optional; both set → conjunctive; weight-only → weight decides; no weight target → `inconclusive`.
+
+**Implement**:
+1. **Migration 100** `goal_outcome_lifecycle.sql`: add `lifecycle_state TEXT NOT NULL DEFAULT 'active' CHECK(...)`, `outcome TEXT NULL CHECK(...)`, `CHECK (lifecycle_state <> 'completed' OR outcome IS NOT NULL)`, `completed_at`, `completion_source`, `completing_roadmap_id UUID NULL REFERENCES roadmaps(id)`, `goal_outcome_snapshot JSONB`, `completion_seen BOOLEAN DEFAULT false`; DROP + recreate `idx_client_goals_active_unique` as partial on `(client_id) WHERE superseded_at IS NULL AND lifecycle_state='active'`; add `idx_client_goals_outcome (client_id, lifecycle_state, completed_at DESC)`. `db push` + `gen types` + commit together.
+2. `client-goals-service.ts`: add `.eq('lifecycle_state','active')` to BOTH the `getCurrentGoals` SELECT and the `updateGoals` supersede UPDATE (never split).
+3. `evaluateAndCompleteGoal(clientId, { source, completingRoadmapId?, presetVerdict? })`: fetch the live row (none → no-op); use `presetVerdict` if given (roadmap path) else compute via `evaluateGoalOutcome` (kg-normalized current weight; standalone direction fallback to the earliest body metric overall when no start date); in-place UPDATE `WHERE id=… AND lifecycle_state='active'` (idempotent) stamping outcome + frozen `goal_outcome_snapshot`. Add `abandonGoal(clientId)` → `lifecycle_state='abandoned'`.
+4. New coach endpoint `POST /api/clients/[id]/goals/complete` (Shape B chain: rate-limit → CSRF → `getAuthenticatedCoachId` → ownership → validate) → `evaluateAndCompleteGoal({source:'coach_manual'})`; optional `outcomeOverride`. Warn/disallow when an active roadmap exists (decision #5).
+5. `types/roadmap.ts`: `ClientGoal` outcome fields + `GoalOutcome` / `GoalOutcomeSnapshot`.
+
+**Do NOT**: Overload `superseded_at` to mean completion. Re-resolve a second verdict on the roadmap path (accept `presetVerdict` from 7.10). Add any `/api/client/**` (manual-complete is coach-side). Auto-complete on a roadmap path here (7.10 invokes `evaluateAndCompleteGoal`). Split the `.eq('lifecycle_state','active')` across commits.
+
+**Tests to write**:
+- Index/migration: a completed goal vacates the active slot; a fresh active goal can coexist with a completed one.
+- `evaluateAndCompleteGoal`: in-place stamp; idempotent re-call; standalone fallback; conjunctive vs weight-only; `inconclusive` for no-weight.
+- `getCurrentGoals`/`updateGoals` ignore completed rows (resolver → zero-active → maintenance).
+- Complete endpoint: 200 happy; 403 IDOR; warn/disallow with an active roadmap.
+
+**Verify**: For a no-roadmap client at goal, mark the goal complete → it shows achieved in history; the resolver returns maintenance afterward; setting a new goal creates a fresh active record with the old one preserved. `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Commit.
+
+---
+
+## Session 7.10: Roadmap completion (status + summary) + client completion card
+
+**Commit message**: `feat(roadmap): completed status + summary + client program-complete card`
+
+> **Plain terms:** The coach can truly "Complete program" (vs "End early / replace"); the system judges whether the goal was hit (coach can override); the client gets a "Program complete!" card with a per-phase mini-timeline.
+
+> **Coordination notes (from the shipped 7.1–7.4 batch — DO NOT MISS):**
+> 1. **Migration numbers shifted.** The 7.1–7.4 batch shipped `099_archive_roadmap_atomic.sql`. The hard-coded `099`/`100`/`101` in 7.8/7.9/7.10 are now stale — at build time renumber 7.8→`100`, 7.9→`101`, 7.10→`102` (plus 7.6's `add_coach_client_views`), continuing from the highest applied number. Never reuse `099`.
+> 2. **`ended_at` must also be set in `archive_roadmap_atomic`.** This session adds `ended_at` and sets it in `transition_phase_atomic`'s archive branch — but there is now a SECOND archive path: `archive_roadmap_atomic(p_roadmap_id)` (migration 099), called by the roadmap-tab "End roadmap" button. `CREATE OR REPLACE` it here to also stamp `ended_at = CURRENT_DATE`, or end-and-replace archives sort with a NULL `ended_at` in the 7.3 "Past roadmaps" browser.
+> 3. **The two early-end paths must stay semantically identical.** The 7.1 "End roadmap" header button (→ `archive_roadmap_atomic`) and this session's drawer "End early / replace" (→ `transition_phase_atomic` archive branch) must both mean: active+planned phases → `skipped`, roadmap → `archived`, **no** summary, **no** goal-achieved stamp. The `'completed'` `RoadmapStatus` union member already exists (added in 7.3); 7.10 only adds the DB CHECK-constraint value plus the completion writes.
+
+**Objective**: Add a terminal `completed` roadmap status (distinct from `archived`/ended-early) with a frozen `roadmap_summary`; on completion compute ONE shared achieved verdict and hand it to 7.9's goal stamp; suppress the double completion card; and ship the client-portal completion card.
+
+**Read first**:
+- `supabase/migrations/062_create_roadmaps_and_phases.sql` (roadmap status CHECK, `idx_roadmaps_active_unique`), `067_phase_transition_support.sql` (`transition_phase_atomic` RPC + `phase_summary`/`completion_seen`).
+- `services/phase-transition-service.ts` (`transitionPhase`, `getPhaseReviewData`, the RPC call ~290–300, the 2-value `nextAction` union).
+- `components/clients/roadmap/phase-review-drawer.tsx`, `roadmap-summary-strip.tsx` (a `RoadmapStatus` consumer).
+- `app/api/client/phase-completion/route.ts` + `components/client-portal/day/phase-completion-card.tsx` (THE pattern to mirror), `app/client/page.tsx` (mount point ~101).
+- `lib/goals/outcome.ts`, `lib/goals/resolve-effective-goal.ts`, `services/client-goals-service.ts` `evaluateAndCompleteGoal` (7.9).
+- `types/roadmap.ts` (`RoadmapStatus`, `RoadmapRow`, `mapRoadmapRow`).
+
+**Plan (report before implementing)**:
+- `complete_roadmap` vs `archive_roadmap`; the `roadmap_summary` shape including the per-phase array (decision #7) + the goal verdict; ALL weights kg (do NOT trust `phase_summary.metricsSnapshot` as kg — verified display units).
+- Verdict computed ONCE in the service BEFORE the RPC (phase still active → resolver returns the phase target), then passed to `evaluateAndCompleteGoal` as `presetVerdict` AFTER.
+- Double-card suppression at the data layer (RPC sets the final phase `completion_seen=true`).
+- New RPC param added at the END (named args) so existing branches/callers don't break; consumer + mock updates.
+- Client card outcome→display mapping (achieved=celebratory; not_achieved/inconclusive=neutral "Program complete").
+
+**Implement**:
+1. **Migration 101** `roadmap_completion.sql`: relax `roadmaps_status_check` to add `'completed'` (verify the auto-name via `\d roadmaps`); add `ended_at DATE`, `completion_seen BOOLEAN DEFAULT false`, `roadmap_summary JSONB`; `idx_roadmaps_client_completion (client_id, ended_at DESC) WHERE status='completed' AND completion_seen=false`; `CREATE OR REPLACE transition_phase_atomic` adding `p_roadmap_summary JSONB` at the end + a `complete_roadmap` branch (roadmap → completed/`ended_at`/summary, skip stray planned phases, set the final phase `completion_seen=true`) and `ended_at=CURRENT_DATE` in the archive branch. Existing branches byte-for-byte. `db push` + `gen types` + commit together.
+2. `phase-transition-service.ts`: widen `nextAction` to `'activate_next'|'archive_roadmap'|'complete_roadmap'`; build `roadmap_summary` in TS (kg-normalized head/tail metrics + per-phase array + adherence rollup); compute the verdict via `evaluateGoalOutcome` against `resolveEffectiveGoal` BEFORE the RPC; pass `p_roadmap_summary`; AFTER the RPC call `evaluateAndCompleteGoal({source:'roadmap_completion', completingRoadmapId, presetVerdict})`. Guard phase-still-active.
+3. Update the RPC call site + `phase-transition-service.test.ts` + `roadmap-service.test.ts` mocks.
+4. `types/roadmap.ts`: `RoadmapStatus += 'completed'`; Roadmap/RoadmapRow + `mapRoadmapRow` gain `ended_at`/`completion_seen`/`roadmap_summary`; add `RoadmapSummary` type. Audit `roadmap-summary-strip.tsx` (+ the 7.3 browser) to render `completed` with achievement framing.
+5. Coach transition drawer: "Complete program" vs "End early / replace"; optional achieved override flowing into both `roadmap_summary.goal` and the goal stamp.
+6. `GET/POST /api/client/roadmap-completion` mirroring `phase-completion` (`requireClientAuth`, `supabaseAdmin` scoped, `no-store`, render-ready payload, IDOR-safe POST).
+7. `components/client-portal/day/roadmap-completion-card.tsx` mounted ABOVE `PhaseCompletionCard`; per-phase mini-timeline; `weightFromKg` display; outcome→badge mapping.
+
+**Do NOT**: Put goal/unit math inside the plpgsql RPC (stays in TS). Mark a goal achieved on the archive/early-end path (no summary, no card). Compute the verdict twice. Couple the two cards in the UI (suppress at the data layer).
+
+**Tests to write**:
+- RPC/service: `complete_roadmap` sets status/summary/`ended_at` + the final phase `completion_seen`; archive path unchanged + `ended_at` set; verdict computed once + handed to the goal stamp.
+- Route: roadmap-completion GET returns only completed+unseen; POST IDOR-safe.
+- Card: achieved vs neutral rendering; per-phase timeline; only ONE card when phase + roadmap complete together.
+
+**Verify**: As coach, complete the final phase via "Complete program" → roadmap shows completed + the goal shows achieved/not; as the client, see ONE "Program complete!" card with the per-phase timeline; dismiss it. `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Commit.
+
+---
+
+## Session 7.11: Roadmap-creation goal prompt + complete→create-next chain
+
+**Commit message**: `feat(roadmap): goal-handling choice at create/replace + build-next-roadmap chain`
+
+> **Plain terms:** When creating (or replacing) a roadmap, the coach is asked whether to **update the client's long-term goal** or **keep it** — purely about the destination record. Phases always drive nutrition either way; this is NOT a "what drives nutrition" toggle. Finishing a program then prompts "build the next roadmap".
+
+**Objective**: Add the goal-handling choice at roadmap create and the 7.1 replace flow, and close the finish → judge → create-next loop.
+
+**Read first**:
+- `app/api/clients/[id]/roadmap/route.ts` (POST ~68–73: snapshots from `getClientById` BEFORE any write — the bug to fix in mode-a), `services/roadmap-service.ts` (`createRoadmap`, `getActiveRoadmap` status='active' filter, the new `getLatestRoadmap` from 7.3).
+- `lib/validations/roadmap.ts` (`createRoadmapSchema`), `lib/validations/client.ts` (`updateGoalsSchema`), `services/client-goals-service.ts` (`updateGoals`).
+- `components/clients/roadmap/create-roadmap-dialog.tsx`, `roadmap-tab-content.tsx`, `phase-goal-fields.tsx` (sub-component extraction pattern).
+
+**Plan (report before implementing)**:
+- `goalMode: 'update_long_term' | 'override_only'` (required) + an optional goal block (refine: ≥1 of weight/bodyfat/deadline) used only in update mode.
+- Mode-a orchestration: `updateGoals` FIRST → RE-FETCH → snapshot into `createRoadmap` (fixes the pre-write snapshot bug). Mode-b: snapshot current, no goal write.
+- The replace decision: replace = mode-a authoring (supersede, NO abandon) — exactly one writer; `abandonGoal` is NOT called on replace.
+- Framing: NEVER a "what drives nutrition" toggle — phases always drive nutrition; this only sets the destination record.
+
+**Implement**:
+1. `lib/validations/roadmap.ts`: add `goalMode` + the optional goal block to `createRoadmapSchema`.
+2. `app/api/clients/[id]/roadmap/route.ts` POST: mode-a → `updateGoals` then re-fetch then `createRoadmap`; mode-b → snapshot current, no goal write. Two scoped service calls in the perimeter (Shape B).
+3. `create-roadmap-dialog.tsx`: segmented control — "Set a new long-term goal" (prefilled from `GET /goals`, display units) vs "Keep current goal — phases override per block" (read-only current-goal line). Extract `<RoadmapGoalChoice/>` if over size limits.
+4. Pin the 7.1 replace path to mode-a authoring (no abandon).
+5. "Program complete — build next roadmap" CTA on the roadmap tab (consume `getLatestRoadmap` from 7.3) opening the dialog with the goal prompt.
+6. Soft warning in mode-b when the client has no long-term goal (program would be all-maintenance unless phases set targets) — do not block.
+
+**Do NOT**: Add a new goal-write path or migration (compose existing `updateGoals` + `createRoadmap`). Convert mode-a goal fields to kg before writing (store display). Frame the choice as a "what drives nutrition" toggle. Call `abandonGoal` on the replace path.
+
+**Tests to write**:
+- Route: mode-a updates the goal + snapshots the fresh value (re-fetch); mode-b leaves the goal untouched; replace uses mode-a (no abandon).
+- Dialog: segmented-control state; prefill; mode-b read-only line; no-goal warning.
+
+**Verify**: Create a roadmap with "set new goal" → `client_goals` updated + roadmap snapshot matches; create with "keep current" → goal untouched, phases drive nutrition; complete a program → the "build next roadmap" CTA appears and opens the prompt. `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Commit.
+
+---
+
+## Session 7.12: BRAINSTORM — notify the coach of phases/roadmaps ending
+
+> **This is a brainstorm / reservation, NOT a build session.** Plan the approach; no implementation, no migration, no commit. It exists so the need isn't forgotten.
+
+**Problem**: Nothing proactively tells a coach that a client's phase (`phases.end_date`) or roadmap (`roadmaps.target_end_date`) is approaching or past its end, so transitions/completions get missed. We want a low-friction nudge built on existing surfaces.
+
+**Existing surfaces (verified) to weigh**:
+- **Needs-attention feed (recommended home).** Add trigger(s) `phase_ending_soon` / `roadmap_ending_soon` alongside the existing 9 in `lib/wellness-triggers.ts` / `lib/tracking-triggers.ts` / `lib/activity-triggers.ts`, invoked in `evaluateAndSortTriggers()` (`lib/attention-feed-helpers.ts`); extend `services/attention-feed-service.ts` to also fetch each client's active phase + roadmap; add `AlertType`s in `types/attention-feed.ts`; thresholds in `lib/constants.ts`; reuse the `TriggerResult` shape + dismissal/auto-resurface; severity by days-remaining.
+- **Check-in review** contextual banner ("phase ends in 3 days — consider completing") in `components/check-in/check-in-review-rail.tsx`.
+- **Phase review drawer / phase card** warning when ending today / overdue.
+- **No coach notification/inbox system exists** (the notifications dropdown is client-side); **no cron exists** (everything is request-time on dashboard load). An out-of-app push/email digest would need new scheduled-job infra.
+
+**Open questions for the brainstorm**:
+- Lead time(s) — 3 / 7 / 14 days? Different for phase vs roadmap?
+- Past-due handling / escalation severity.
+- Dedupe so phase-ending and roadmap-ending don't double-fire near a program's end.
+- Does the alert deep-link straight to the transition drawer?
+- Is an out-of-app nudge (email digest) worth new scheduled-job infra pre-launch? (Likely no.)
+
+**Do NOT** (until promoted to a build session): implement triggers, schema, or notifications.
 
 ---
 
