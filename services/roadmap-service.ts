@@ -181,6 +181,55 @@ export const getRoadmap = async (
   return { ...roadmap, phases };
 };
 
+export const getArchivedRoadmaps = async (
+  clientId: string
+): Promise<RoadmapWithPhases[]> => {
+  const { data, error } = await supabaseAdmin
+    .from("roadmaps")
+    .select("*")
+    .eq("client_id", clientId)
+    .in("status", ["archived", "completed"])
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error("Failed to fetch archived roadmaps:", error);
+    throw new Error(`Failed to fetch archived roadmaps: ${error.message}`);
+  }
+
+  return Promise.all(
+    (data || []).map(async (row) => {
+      const roadmap = mapRoadmapRow(row);
+      const phases = await fetchPhasesForRoadmap(roadmap.id);
+      return { ...roadmap, phases };
+    })
+  );
+};
+
+// Status-agnostic, newest-first. Consumed by the "build next roadmap" CTA.
+export const getLatestRoadmap = async (
+  clientId: string
+): Promise<RoadmapWithPhases | null> => {
+  const { data, error } = await supabaseAdmin
+    .from("roadmaps")
+    .select("*")
+    .eq("client_id", clientId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error("Failed to fetch latest roadmap:", error);
+    throw new Error(`Failed to fetch latest roadmap: ${error.message}`);
+  }
+
+  if (!data) return null;
+
+  const roadmap = mapRoadmapRow(data);
+  const phases = await fetchPhasesForRoadmap(roadmap.id);
+
+  return { ...roadmap, phases };
+};
+
 export const updateRoadmap = async (
   roadmapId: string,
   data: {

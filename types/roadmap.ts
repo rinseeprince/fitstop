@@ -1,5 +1,5 @@
 // Roadmap status
-export type RoadmapStatus = "active" | "archived" | "draft";
+export type RoadmapStatus = "active" | "archived" | "draft" | "completed";
 
 // Phase status
 export type PhaseStatus = "planned" | "active" | "completed" | "skipped";

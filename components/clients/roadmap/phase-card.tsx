@@ -36,6 +36,7 @@ type PhaseCardProps = {
   onUpdate: () => void;
   defaultExpanded?: boolean;
   index?: number;
+  isReadOnly?: boolean;
 };
 
 export const PhaseCard = ({
@@ -46,6 +47,7 @@ export const PhaseCard = ({
   onUpdate,
   defaultExpanded,
   index = 0,
+  isReadOnly = false,
 }: PhaseCardProps) => {
   const { toast } = useToast();
   const [expanded, setExpanded] = useState(defaultExpanded ?? false);
@@ -80,7 +82,7 @@ export const PhaseCard = ({
     }
   };
 
-  const showActivate = phase.status === "planned";
+  const showActivate = phase.status === "planned" && !isReadOnly;
   const activateDisabled = hasActivePhase || isActivating;
 
   const msPerDay = 24 * 60 * 60 * 1000;
@@ -162,15 +164,16 @@ export const PhaseCard = ({
               </span>
             )}
 
-            {(phase.status === "planned" || phase.status === "active") && (
-              <button
-                onClick={() => setEditOpen(true)}
-                className="p-1.5 rounded-[6px] text-[#93b0b4] hover:text-[#5a7d82] hover:bg-[rgba(13,148,136,0.05)] transition-colors"
-                title="Edit phase"
-              >
-                <Pencil className="h-4 w-4" />
-              </button>
-            )}
+            {!isReadOnly &&
+              (phase.status === "planned" || phase.status === "active") && (
+                <button
+                  onClick={() => setEditOpen(true)}
+                  className="p-1.5 rounded-[6px] text-[#93b0b4] hover:text-[#5a7d82] hover:bg-[rgba(13,148,136,0.05)] transition-colors"
+                  title="Edit phase"
+                >
+                  <Pencil className="h-4 w-4" />
+                </button>
+              )}
 
             {showActivate && (
               <Button
@@ -193,7 +196,7 @@ export const PhaseCard = ({
               </Button>
             )}
 
-            {phase.status === "active" && (
+            {!isReadOnly && phase.status === "active" && (
               <Button
                 variant="outline"
                 size="sm"
@@ -229,6 +232,7 @@ export const PhaseCard = ({
             clientId={clientId}
             weightUnit={weightUnit}
             onMutate={onUpdate}
+            isReadOnly={isReadOnly}
           />
         )}
       </div>

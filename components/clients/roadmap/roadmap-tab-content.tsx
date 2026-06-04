@@ -19,6 +19,7 @@ import { CreateRoadmapDialog } from "./create-roadmap-dialog";
 import { PhaseCard } from "./phase-card";
 import { AddPhaseDialog } from "./add-phase-dialog";
 import { RoadmapSummaryStrip } from "./roadmap-summary-strip";
+import { PastRoadmapsSection } from "./past-roadmaps-section";
 import { Skeleton } from "@/components/ui/skeleton";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import { useToast } from "@/hooks/use-toast";
@@ -120,6 +121,10 @@ export const RoadmapTabContent = ({ client }: RoadmapTabContentProps) => {
           open={createOpen}
           onOpenChange={setCreateOpen}
           onSuccess={() => mutate()}
+        />
+        <PastRoadmapsSection
+          clientId={client.id}
+          weightUnit={client.weightUnit || "lbs"}
         />
       </>
     );
@@ -260,6 +265,8 @@ export const RoadmapTabContent = ({ client }: RoadmapTabContentProps) => {
         onOpenChange={setCreateOpen}
         onSuccess={() => mutate()}
       />
+
+      <PastRoadmapsSection clientId={client.id} weightUnit={weightUnit} />
     </>
   );
 };

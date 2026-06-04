@@ -3,6 +3,8 @@ import {
   createRoadmap,
   getActiveRoadmap,
   getRoadmap,
+  getArchivedRoadmaps,
+  getLatestRoadmap,
   updateRoadmap,
   archiveRoadmap,
   deleteRoadmap,
@@ -28,6 +30,7 @@ function createMockQuery(result: { data: unknown; error: unknown }) {
     update: vi.fn().mockReturnThis(),
     delete: vi.fn().mockReturnThis(),
     eq: vi.fn().mockReturnThis(),
+    in: vi.fn().mockReturnThis(),
     order: vi.fn().mockReturnThis(),
     limit: vi.fn().mockReturnThis(),
     single: vi.fn().mockResolvedValue(result),
@@ -165,6 +168,80 @@ describe('Roadmap Service', () => {
 
       expect(result.id).toBe(mockRoadmap.id);
       expect(result.phases).toHaveLength(1);
+    });
+  });
+
+  describe('getArchivedRoadmaps', () => {
+    it('returns archived and completed roadmaps (newest-first) with phases', async () => {
+      const completed = createMockRoadmapRow({ id: 'r-2', status: 'completed' });
+      const archived = createMockRoadmapRow({ id: 'r-1', status: 'archived' });
+      const roadmapsQuery = createMockQuery({
+        data: [completed, archived],
+        error: null,
+      });
+      const phasesQuery = createMockQuery({
+        data: [createMockPhaseRow({ roadmapId: 'r-1' })],
+        error: null,
+      });
+
+      vi.mocked(supabaseAdmin.from).mockImplementation((table: string) => {
+        if (table === 'roadmaps') return roadmapsQuery as never;
+        if (table === 'phases') return phasesQuery as never;
+        return createMockQuery({ data: null, error: null }) as never;
+      });
+
+      const result = await getArchivedRoadmaps('client-1');
+
+      expect(roadmapsQuery.in).toHaveBeenCalledWith('status', [
+        'archived',
+        'completed',
+      ]);
+      expect(roadmapsQuery.order).toHaveBeenCalledWith('created_at', {
+        ascending: false,
+      });
+      expect(result).toHaveLength(2);
+      expect(result[0].phases).toHaveLength(1);
+    });
+
+    it('returns an empty array when there are no past roadmaps', async () => {
+      const roadmapsQuery = createMockQuery({ data: [], error: null });
+      vi.mocked(supabaseAdmin.from).mockReturnValue(roadmapsQuery as never);
+
+      const result = await getArchivedRoadmaps('client-1');
+
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe('getLatestRoadmap', () => {
+    it('returns the newest roadmap regardless of status, with phases', async () => {
+      const latest = createMockRoadmapRow({ id: 'r-9', status: 'archived' });
+      const roadmapQuery = createMockQuery({ data: latest, error: null });
+      const phasesQuery = createMockQuery({
+        data: [createMockPhaseRow({ roadmapId: 'r-9' })],
+        error: null,
+      });
+
+      vi.mocked(supabaseAdmin.from).mockImplementation((table: string) => {
+        if (table === 'roadmaps') return roadmapQuery as never;
+        if (table === 'phases') return phasesQuery as never;
+        return createMockQuery({ data: null, error: null }) as never;
+      });
+
+      const result = await getLatestRoadmap('client-1');
+
+      expect(result).not.toBeNull();
+      expect(result!.id).toBe('r-9');
+      expect(result!.phases).toHaveLength(1);
+    });
+
+    it('returns null when the client has no roadmaps', async () => {
+      const roadmapQuery = createMockQuery({ data: null, error: null });
+      vi.mocked(supabaseAdmin.from).mockReturnValue(roadmapQuery as never);
+
+      const result = await getLatestRoadmap('client-1');
+
+      expect(result).toBeNull();
     });
   });
 

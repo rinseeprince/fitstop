@@ -14,6 +14,7 @@ type PhaseExpandedContentProps = {
   clientId: string;
   weightUnit: "lbs" | "kg";
   onMutate: () => void;
+  isReadOnly?: boolean;
 };
 
 type WeeklyDataResponse = {
@@ -26,6 +27,7 @@ export const PhaseExpandedContent = ({
   clientId,
   weightUnit,
   onMutate,
+  isReadOnly = false,
 }: PhaseExpandedContentProps) => {
   const { toast } = useToast();
   const { data: weeklyResponse, isLoading: weeklyLoading } =
@@ -127,8 +129,12 @@ export const PhaseExpandedContent = ({
             {localMilestones.map((m) => (
               <li
                 key={m.id}
-                className="flex items-start gap-2 cursor-pointer group"
-                onClick={() => handleToggleMilestone(m.id)}
+                className={`flex items-start gap-2 ${
+                  isReadOnly ? "" : "cursor-pointer group"
+                }`}
+                onClick={
+                  isReadOnly ? undefined : () => handleToggleMilestone(m.id)
+                }
               >
                 {m.completed ? (
                   <CheckCircle2 className="h-4 w-4 shrink-0 text-[#0d9488] mt-0.5" />
