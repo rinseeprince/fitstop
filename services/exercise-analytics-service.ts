@@ -13,10 +13,16 @@ import type {
 // ---------------------------------------------------------------------------
 
 export async function getClientExerciseList(
-  clientId: string
+  clientId: string,
+  opts: { startDate?: string; endDate?: string } = {}
 ): Promise<ExerciseListItem[]> {
+  // Omitting (undefined) the date params falls through to the RPC's DEFAULT NULL
+  // bounds (migration 102) → unbounded. No cast needed: `string | undefined`
+  // matches the gen-types optional param exactly.
   const { data, error } = await supabaseAdmin.rpc("get_client_exercise_list", {
     p_client_id: clientId,
+    p_start_date: opts.startDate,
+    p_end_date: opts.endDate,
   });
   if (error) {
     throw new Error(`Failed to fetch exercise list: ${error.message}`);
@@ -31,7 +37,13 @@ export async function getClientExerciseList(
 
 export async function getExerciseProgressionSeries(
   clientId: string,
-  opts: { exerciseId?: string; exerciseName?: string; sessionCount?: number }
+  opts: {
+    exerciseId?: string;
+    exerciseName?: string;
+    sessionCount?: number;
+    startDate?: string;
+    endDate?: string;
+  }
 ): Promise<ExerciseProgressionPoint[]> {
   const { data, error } = await supabaseAdmin.rpc(
     "get_exercise_progression_window",
@@ -39,7 +51,13 @@ export async function getExerciseProgressionSeries(
       p_client_id: clientId,
       p_exercise_id: opts.exerciseId,
       p_exercise_name: opts.exerciseName,
-      p_session_count: opts.sessionCount ?? 12,
+      // Omitting p_session_count (undefined) is load-bearing: the RPC's
+      // DEFAULT NULL (migration 103) lets the window-aware COALESCE own the cap —
+      // no window → floors to 12; a date window → uncapped within the window.
+      // Passing 12 here would silently re-cap every phase/program chart.
+      p_session_count: opts.sessionCount,
+      p_start_date: opts.startDate,
+      p_end_date: opts.endDate,
     }
   );
   if (error) {

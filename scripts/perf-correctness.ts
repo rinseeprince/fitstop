@@ -126,6 +126,8 @@ async function main() {
   await assertProgressionBench(failures);
   await assertProgressionWindowCap(failures);
   await assertProgressionCoalesceDefault(failures);
+  await assertProgressionWindowUncapped(failures);
+  await assertListWindow(failures);
   await assertLegacyNameFallback(failures);
   await assertStreak(failures);
   await assertCheckinCursor(failures);
@@ -595,6 +597,62 @@ async function assertProgressionCoalesceDefault(failures: string[]) {
       `Probable regression: LIMIT p_session_count without COALESCE → LIMIT NULL → unbounded.`
     );
   }
+}
+
+async function assertProgressionWindowUncapped(failures: string[]) {
+  console.log("Asserting OHP progression is UNCAPPED within a date window (Session 7.7)...");
+  // OHP has 14 weekly sessions (F1=2026-02-01 .. F14=2026-05-03). A window that
+  // spans all of them with NO p_session_count must return all 14 (>12): the
+  // 12-session floor applies ONLY all-time, never within a window. A regression
+  // that re-caps at 12 (SQL CASE wrong, or service sending p_session_count=12)
+  // silently truncates every phase/program chart.
+  const { data, error } = await supabaseAdmin.rpc("get_exercise_progression_window", {
+    p_client_id: FIXTURE_CLIENT_ID,
+    p_exercise_id: OHP_ID,
+    p_start_date: "2026-01-01",
+    p_end_date: "2026-06-01",
+    // p_session_count omitted → COALESCE(NULL, CASE …window not null… END) = NULL → unbounded
+  });
+  if (error) {
+    failures.push(`progression-window-uncapped: rpc error ${error.message}`);
+    return;
+  }
+  const rows = data ?? [];
+  const distinctSessions = new Set(rows.map((r) => r.session_log_id));
+  if (distinctSessions.size !== 14) {
+    failures.push(
+      `progression-window-uncapped: expected all 14 in-window sessions (>12), got ${distinctSessions.size}. ` +
+      `Probable regression: window-aware LIMIT re-capped at 12, or service sent p_session_count=12.`
+    );
+  }
+  const dates = rows.map((r) => r.completed_at?.slice(0, 10));
+  if (!dates.includes("2026-02-01")) {
+    failures.push(
+      "progression-window-uncapped: F1 (2026-02-01) must appear within the window — the 12-cap that excludes it must NOT apply when bounded."
+    );
+  }
+}
+
+async function assertListWindow(failures: string[]) {
+  console.log("Asserting get_client_exercise_list honours a date window (Session 7.7)...");
+  // [2026-02-01, 2026-02-20] covers only OHP F1/F2/F3 (02-01, 02-08, 02-15);
+  // F4 (02-22) and every May A–E bench/squat log fall outside, so the window
+  // returns exactly one exercise (OHP) with log_count 3.
+  const { data, error } = await supabaseAdmin.rpc("get_client_exercise_list", {
+    p_client_id: FIXTURE_CLIENT_ID,
+    p_start_date: "2026-02-01",
+    p_end_date: "2026-02-20",
+  });
+  if (error) {
+    failures.push(`list-window: rpc error ${error.message}`);
+    return;
+  }
+  const rows = data ?? [];
+  if (rows.length !== 1) {
+    failures.push(`list-window: expected exactly 1 in-window exercise (OHP), got ${rows.length}`);
+    return;
+  }
+  expect(rows[0], "list-window[0]", { exercise_id: OHP_ID, log_count: 3 }, failures);
 }
 
 async function assertLegacyNameFallback(failures: string[]) {

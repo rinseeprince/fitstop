@@ -54,6 +54,21 @@ describe("getClientExerciseList", () => {
     expect(result).toEqual([]);
     expect(mockRpc).toHaveBeenCalledWith("get_client_exercise_list", {
       p_client_id: CLIENT_ID,
+      p_start_date: undefined,
+      p_end_date: undefined,
+    });
+  });
+
+  it("passes the date window through to the RPC (Session 7.7)", async () => {
+    mockRpcResolve([]);
+    await getClientExerciseList(CLIENT_ID, {
+      startDate: "2026-01-01",
+      endDate: "2026-03-31",
+    });
+    expect(mockRpc).toHaveBeenCalledWith("get_client_exercise_list", {
+      p_client_id: CLIENT_ID,
+      p_start_date: "2026-01-01",
+      p_end_date: "2026-03-31",
     });
   });
 
@@ -175,11 +190,16 @@ describe("getExerciseProgressionSeries", () => {
       exerciseId: EXERCISE_ID,
     });
     expect(result).toEqual([]);
+    // Session 7.7: no sessionCount → p_session_count omitted (undefined), NOT 12,
+    // so the SQL window-aware COALESCE (DEFAULT NULL, migration 103) owns the cap;
+    // omitted date bounds = all-time.
     expect(mockRpc).toHaveBeenCalledWith("get_exercise_progression_window", {
       p_client_id: CLIENT_ID,
       p_exercise_id: EXERCISE_ID,
       p_exercise_name: undefined,
-      p_session_count: 12,
+      p_session_count: undefined,
+      p_start_date: undefined,
+      p_end_date: undefined,
     });
   });
 
@@ -194,6 +214,27 @@ describe("getExerciseProgressionSeries", () => {
       p_exercise_id: EXERCISE_ID,
       p_exercise_name: undefined,
       p_session_count: 7,
+      p_start_date: undefined,
+      p_end_date: undefined,
+    });
+  });
+
+  it("passes a date window with no sessionCount when scoped (Session 7.7)", async () => {
+    mockRpcResolve([]);
+    await getExerciseProgressionSeries(CLIENT_ID, {
+      exerciseId: EXERCISE_ID,
+      startDate: "2026-02-01",
+      endDate: "2026-04-30",
+    });
+    // Windowed call omits sessionCount → undefined → DEFAULT NULL → uncapped
+    // within the window (the SQL CASE returns NULL when a bound is present).
+    expect(mockRpc).toHaveBeenCalledWith("get_exercise_progression_window", {
+      p_client_id: CLIENT_ID,
+      p_exercise_id: EXERCISE_ID,
+      p_exercise_name: undefined,
+      p_session_count: undefined,
+      p_start_date: "2026-02-01",
+      p_end_date: "2026-04-30",
     });
   });
 

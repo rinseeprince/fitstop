@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { MetricsSidebar } from "./metrics-sidebar";
 import { MetricsGrid } from "./metrics-grid";
 import { BodyMetricsHistoryTable } from "./body-metrics-history-table";
+import { ExerciseProgressionSection } from "./exercise-progression-section";
 import { TimeScopeSelector } from "./time-scope-selector";
 import { useMetricsData, type MetricCategory } from "./hooks/use-metrics-data";
 import { useAllClientCheckIns } from "@/hooks/use-check-in-data";
@@ -151,6 +152,8 @@ export const MetricsTabContent = ({ client }: MetricsTabContentProps) => {
         startingWeight={client.startingWeight ?? null}
         weightUnit={client.weightUnit ?? "lbs"}
       />
+      {/* Same resolved window as the metric grid above — one scope, both families. */}
+      <ExerciseProgressionSection clientId={client.id} window={scopeWindow} />
     </div>
   );
 };

@@ -8,6 +8,7 @@ import {
 } from "@/services/exercise-analytics-service";
 
 const VALID_METRICS = new Set(["list", "progression", "prs"]);
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 export async function GET(
   request: NextRequest,
@@ -32,8 +33,24 @@ export async function GET(
       );
     }
 
+    // Optional date window (Session 7.7) — applies to list + progression, ignored
+    // for prs (PRs stay all-time). Drives the coach metrics-tab time-scope charts.
+    const startDate = searchParams.get("startDate") ?? undefined;
+    const endDate = searchParams.get("endDate") ?? undefined;
+    for (const [name, value] of [
+      ["startDate", startDate],
+      ["endDate", endDate],
+    ] as const) {
+      if (value !== undefined && !ISO_DATE.test(value)) {
+        return NextResponse.json(
+          { success: false, error: `${name} must be an ISO date (YYYY-MM-DD)` },
+          { status: 400 }
+        );
+      }
+    }
+
     if (metric === "list") {
-      const data = await getClientExerciseList(clientId);
+      const data = await getClientExerciseList(clientId, { startDate, endDate });
       return NextResponse.json(
         { success: true, data },
         { status: 200, headers: { "Cache-Control": "no-store" } }
@@ -76,6 +93,8 @@ export async function GET(
       exerciseId,
       exerciseName,
       sessionCount,
+      startDate,
+      endDate,
     });
     return NextResponse.json(
       { success: true, data },

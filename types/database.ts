@@ -3036,7 +3036,11 @@ export type Database = {
             Returns: string
           }
       get_client_exercise_list: {
-        Args: { p_client_id: string }
+        Args: {
+          p_client_id: string
+          p_end_date?: string
+          p_start_date?: string
+        }
         Returns: {
           exercise_id: string
           last_logged_date: string
@@ -3054,9 +3058,11 @@ export type Database = {
       get_exercise_progression_window: {
         Args: {
           p_client_id: string
+          p_end_date?: string
           p_exercise_id?: string
           p_exercise_name?: string
           p_session_count?: number
+          p_start_date?: string
         }
         Returns: {
           completed_at: string

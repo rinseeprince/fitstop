@@ -58,7 +58,10 @@ describe("GET /api/clients/[id]/training/exercise-history", () => {
     expect(res.status).toBe(200);
     expect(body.success).toBe(true);
     expect(body.data).toEqual(mockData);
-    expect(getClientExerciseList).toHaveBeenCalledWith(CLIENT_ID);
+    expect(getClientExerciseList).toHaveBeenCalledWith(CLIENT_ID, {
+      startDate: undefined,
+      endDate: undefined,
+    });
   });
 
   it("returns 200 with metric=progression", async () => {
@@ -92,6 +95,8 @@ describe("GET /api/clients/[id]/training/exercise-history", () => {
       exerciseId: "ex-1",
       exerciseName: undefined,
       sessionCount: 10,
+      startDate: undefined,
+      endDate: undefined,
     });
   });
 
@@ -181,7 +186,67 @@ describe("GET /api/clients/[id]/training/exercise-history", () => {
       exerciseId: undefined,
       exerciseName: "Bench Press",
       sessionCount: undefined,
+      startDate: undefined,
+      endDate: undefined,
     });
+  });
+
+  it("passes the date window through for metric=list (Session 7.7)", async () => {
+    await GET(
+      makeRequest(`${BASE_URL}?metric=list&startDate=2026-02-01&endDate=2026-04-30`),
+      makeParams()
+    );
+    expect(getClientExerciseList).toHaveBeenCalledWith(CLIENT_ID, {
+      startDate: "2026-02-01",
+      endDate: "2026-04-30",
+    });
+  });
+
+  it("passes the date window through for metric=progression (Session 7.7)", async () => {
+    await GET(
+      makeRequest(
+        `${BASE_URL}?metric=progression&exerciseId=ex-1&startDate=2026-02-01&endDate=2026-04-30`
+      ),
+      makeParams()
+    );
+    expect(getExerciseProgressionSeries).toHaveBeenCalledWith(CLIENT_ID, {
+      exerciseId: "ex-1",
+      exerciseName: undefined,
+      sessionCount: undefined,
+      startDate: "2026-02-01",
+      endDate: "2026-04-30",
+    });
+  });
+
+  it("ignores the date window for metric=prs (PRs stay all-time)", async () => {
+    await GET(
+      makeRequest(`${BASE_URL}?metric=prs&exerciseId=ex-1&startDate=2026-02-01&endDate=2026-04-30`),
+      makeParams()
+    );
+    expect(getExercisePRs).toHaveBeenCalledWith(CLIENT_ID, {
+      exerciseId: "ex-1",
+      exerciseName: undefined,
+    });
+  });
+
+  it("returns 400 for a non-ISO startDate", async () => {
+    const res = await GET(
+      makeRequest(`${BASE_URL}?metric=list&startDate=04/01/2026`),
+      makeParams()
+    );
+    const body = await res.json();
+    expect(res.status).toBe(400);
+    expect(body.error).toContain("startDate");
+  });
+
+  it("returns 400 for a non-ISO endDate", async () => {
+    const res = await GET(
+      makeRequest(`${BASE_URL}?metric=progression&exerciseId=ex-1&endDate=not-a-date`),
+      makeParams()
+    );
+    const body = await res.json();
+    expect(res.status).toBe(400);
+    expect(body.error).toContain("endDate");
   });
 
   it("sets Cache-Control: no-store header", async () => {
