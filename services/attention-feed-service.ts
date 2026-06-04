@@ -11,7 +11,7 @@
 
 import { supabaseAdmin } from "./supabase-admin"
 import type { Database } from "@/types/database"
-import type { ClientWithAlerts } from "@/types/attention-feed"
+import type { ClientWithAlerts, AttentionAlert } from "@/types/attention-feed"
 import { getDateDaysAgo, getTodayDateString } from "@/lib/date-helpers"
 import { groupClientData, evaluateAndSortTriggers, filterDismissedAlerts } from "@/lib/attention-feed-helpers"
 import type { DailyLogRow } from "@/lib/attention-feed-helpers"
@@ -146,4 +146,85 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
   const filteredClients = filterDismissedAlerts(clientsWithAlerts, dismissals)
 
   return { clients: filteredClients, totalClientCount }
+}
+
+/**
+ * Single-client attention alerts for the overview brief (Session 7.6).
+ *
+ * Scopes the same 28-day window + trigger evaluation as evaluateAllClientTriggers
+ * to ONE client, reusing the pure groupClientData / evaluateAndSortTriggers /
+ * filterDismissedAlerts helpers. The caller (the brief service) has already
+ * verified the coach owns this client. Returns [] when the client has no alerts.
+ */
+export async function evaluateSingleClientAlerts(
+  coachId: string,
+  clientId: string
+): Promise<AttentionAlert[]> {
+  const startDate = getDateDaysAgo(28)
+  const endDate = getTodayDateString()
+  const dateRange = { start: startDate, end: endDate }
+
+  const { data: client, error: clientError } = await supabaseAdmin
+    .from("clients")
+    .select("id, name, avatar_url, expected_check_in_day")
+    .eq("id", clientId)
+    .eq("coach_id", coachId)
+    .maybeSingle()
+
+  if (clientError || !client) return []
+
+  const [logsResult, habitsResult, habitLogsResult, eventsResult, dismissalsResult] =
+    await Promise.allSettled([
+      supabaseAdmin
+        .from("daily_logs_full")
+        .select("*")
+        .eq("client_id", clientId)
+        .gte("date", startDate)
+        .lte("date", endDate)
+        .order("date", { ascending: true }) as unknown as Promise<{ data: DailyLogRow[] | null; error: { message: string } | null }>,
+      supabaseAdmin.from("daily_habits").select("*").eq("client_id", clientId).eq("is_active", true),
+      supabaseAdmin
+        .from("daily_habit_logs")
+        .select("*")
+        .eq("client_id", clientId)
+        .gte("date", startDate)
+        .lte("date", endDate),
+      supabaseAdmin
+        .from("training_events")
+        .select("client_id, date, status, estimated_calories")
+        .eq("client_id", clientId)
+        .gte("date", startDate)
+        .lte("date", endDate),
+      supabaseAdmin
+        .from("attention_dismissals")
+        .select("client_id, alert_type, dismissed_at")
+        .eq("coach_id", coachId)
+        .eq("client_id", clientId),
+    ])
+
+  // Logs are required for the core triggers; without them there are no alerts.
+  if (logsResult.status !== "fulfilled" || logsResult.value.error) return []
+  const allLogs = logsResult.value.data
+
+  const allHabits =
+    habitsResult.status === "fulfilled" && !habitsResult.value.error ? habitsResult.value.data : null
+  const allHabitLogs =
+    habitLogsResult.status === "fulfilled" && !habitLogsResult.value.error ? habitLogsResult.value.data : null
+  const eventRows =
+    eventsResult.status === "fulfilled" && !eventsResult.value.error ? eventsResult.value.data : null
+  const dismissals =
+    dismissalsResult.status === "fulfilled" && !dismissalsResult.value.error
+      ? dismissalsResult.value.data
+      : null
+
+  const clientDataMap = groupClientData(
+    [client] as ClientInfoWithCheckIn[],
+    allLogs,
+    allHabits,
+    allHabitLogs,
+    eventRows,
+  )
+  const withAlerts = evaluateAndSortTriggers(clientDataMap, dateRange)
+  const filtered = filterDismissedAlerts(withAlerts, dismissals)
+  return filtered[0]?.alerts ?? []
 }

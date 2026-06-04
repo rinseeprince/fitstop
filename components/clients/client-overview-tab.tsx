@@ -1,12 +1,14 @@
 "use client"
 
+import { Loader2 } from "lucide-react"
 import { ClientActivationBanner } from "@/components/clients/client-activation-banner"
 import { OverviewContextBar } from "@/components/clients/overview/overview-context-bar"
 import { ClientScheduleCard } from "@/components/clients/overview/client-schedule-card"
 import { ClientStatusCard } from "@/components/clients/overview/client-status-card"
 import { DailyWellnessStrip } from "@/components/clients/daily-pulse/daily-wellness-strip"
-import { OverviewEmptySection } from "@/components/clients/overview/overview-empty-section"
-import { BarChart3, ImageIcon, ClipboardList } from "lucide-react"
+import { WaitingOnYouSection } from "@/components/clients/overview/waiting-on-you-section"
+import { SinceLastVisitSection } from "@/components/clients/overview/since-last-visit-section"
+import { useOverviewBrief } from "@/hooks/use-overview-brief"
 import type { ClientTab } from "@/lib/client-tabs"
 import type { Client, CheckIn } from "@/types/check-in"
 
@@ -29,6 +31,8 @@ export function ClientOverviewTab({
   onClientUpdated,
   onTabChange,
 }: ClientOverviewTabProps) {
+  const { brief, isLoading: briefLoading } = useOverviewBrief(client.id)
+
   return (
     <div className="space-y-6">
       {/* Activation Banner */}
@@ -40,11 +44,34 @@ export function ClientOverviewTab({
         />
       )}
 
-      {/* Header */}
+      {/* Pre-session brief: what's waiting + what changed (Session 7.6) */}
+      {briefLoading && !brief ? (
+        <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Building brief...
+        </div>
+      ) : (
+        brief && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <WaitingOnYouSection
+              clientName={client.name}
+              unreviewedCheckIn={brief.waitingOnYou.unreviewedCheckIn}
+              attentionAlerts={brief.waitingOnYou.attentionAlerts}
+              onReviewCheckIns={() => onTabChange?.("check-ins")}
+            />
+            <SinceLastVisitSection
+              lastViewedAt={brief.lastViewedAt}
+              deltas={brief.sinceLastVisit}
+            />
+          </div>
+        )
+      )}
+
+      {/* Current context: active phase, goal, weeks (reused) */}
       <OverviewContextBar clientId={client.id} client={client} />
 
-      {/* Two-card grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-[5fr_8fr] gap-4 mb-6">
+      {/* Demoted: quick cards + 28-day wellness strip */}
+      <div className="grid grid-cols-1 lg:grid-cols-[5fr_8fr] gap-4">
         <ClientScheduleCard
           client={client}
           onClientUpdated={onClientUpdated}
@@ -56,30 +83,7 @@ export function ClientOverviewTab({
         />
       </div>
 
-      {/* Daily Wellness */}
       <DailyWellnessStrip clientId={client.id} />
-
-      {/* Empty state sections */}
-      <OverviewEmptySection
-        title="Progress Tracking"
-        primaryMessage="No progress tracking data yet"
-        secondaryMessage="Progress data will appear here as check-ins are submitted"
-        icon={BarChart3}
-      />
-
-      <OverviewEmptySection
-        title="Progress Photos"
-        primaryMessage="No progress photos yet"
-        secondaryMessage="Photos will appear here when uploaded through check-ins"
-        icon={ImageIcon}
-      />
-
-      <OverviewEmptySection
-        title="Check-In History"
-        primaryMessage="No check-ins submitted yet"
-        secondaryMessage="Check-in history will appear here as the client submits weekly check-ins"
-        icon={ClipboardList}
-      />
     </div>
   )
 }

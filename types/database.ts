@@ -835,6 +835,39 @@ export type Database = {
           },
         ]
       }
+      coach_client_views: {
+        Row: {
+          client_id: string
+          coach_id: string
+          last_viewed_at: string
+        }
+        Insert: {
+          client_id: string
+          coach_id: string
+          last_viewed_at?: string
+        }
+        Update: {
+          client_id?: string
+          coach_id?: string
+          last_viewed_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "coach_client_views_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "coach_client_views_coach_id_fkey"
+            columns: ["coach_id"]
+            isOneToOne: false
+            referencedRelation: "coaches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       coach_saved_exercises: {
         Row: {
           created_at: string
