@@ -9,10 +9,10 @@ export const createPhase = async (
   roadmapId: string,
   data: {
     name: string;
-    description?: string;
-    objectives?: string;
-    startDate?: string;
-    endDate?: string;
+    description?: string | null;
+    objectives?: string | null;
+    startDate?: string | null;
+    endDate?: string | null;
     durationWeeks?: number;
     orderIndex?: number;
     phaseGoalWeight?: number | null;
@@ -218,10 +218,10 @@ export const updatePhase = async (
   clientId: string,
   data: {
     name?: string;
-    description?: string;
-    objectives?: string;
-    startDate?: string;
-    endDate?: string;
+    description?: string | null;
+    objectives?: string | null;
+    startDate?: string | null;
+    endDate?: string | null;
     durationWeeks?: number;
     orderIndex?: number;
     phaseGoalWeight?: number | null;

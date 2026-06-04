@@ -306,6 +306,32 @@ describe("/api/clients/[id]/roadmap/phases/[phaseId]", () => {
       expect(data.success).toBe(true);
       expect(updatePhase).toHaveBeenCalledWith("phase-1", "client-1", { phaseGoalWeight: null });
     });
+
+    it("accepts the full edit-dialog payload with null description/objectives (regression)", async () => {
+      // The edit dialog sends null (not undefined) for emptied optional fields so
+      // the service can clear them. updatePhaseSchema must accept null for the
+      // string/date fields, not just the goal fields — previously this 400'd with
+      // "Invalid input" whenever a phase was saved with an empty description.
+      vi.mocked(updatePhase).mockResolvedValue(mockPhase);
+
+      const body = {
+        name: "2 Week Recomp",
+        description: null,
+        objectives: null,
+        startDate: "2026-06-04",
+        endDate: "2026-06-17",
+        milestones: [],
+        phaseGoalWeight: 89,
+        phaseGoalBodyFatPercentage: null,
+      };
+
+      const response = await PUT(createMockRequest("PUT", body), mockParams);
+      const data = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(data.success).toBe(true);
+      expect(updatePhase).toHaveBeenCalledWith("phase-1", "client-1", body);
+    });
   });
 
   describe("DELETE", () => {

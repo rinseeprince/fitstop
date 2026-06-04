@@ -139,12 +139,15 @@ export const EditPhaseDialog = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-[425px] max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>Edit Phase</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4 py-4">
+        {/* Only the form body scrolls; header/footer stay pinned with their padding.
+            -mx-6 px-6 keeps the scrollbar at the dialog edge while preserving 24px
+            of inner padding so input focus-rings aren't clipped by the scroll box. */}
+        <div className="space-y-4 py-4 overflow-y-auto flex-1 min-h-0 -mx-6 px-6">
           <div className="space-y-2">
             <Label htmlFor="edit-phase-name">Name</Label>
             <Input

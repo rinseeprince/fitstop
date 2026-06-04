@@ -33,10 +33,13 @@ export const milestoneSchema = z.object({
  */
 export const createPhaseSchema = z.object({
   name: z.string().min(1, "Name is required").max(200),
-  description: z.string().max(2000).optional(),
-  objectives: z.string().max(2000).optional(),
-  startDate: z.string().regex(dateRegex, dateMessage).optional(),
-  endDate: z.string().regex(dateRegex, dateMessage).optional(),
+  // nullable so the edit dialog can clear a previously-set value: it sends null
+  // (not undefined) for emptied fields, and updatePhase's presence-based merge
+  // writes that null to clear the column. Matches the goal fields below.
+  description: z.string().max(2000).nullable().optional(),
+  objectives: z.string().max(2000).nullable().optional(),
+  startDate: z.string().regex(dateRegex, dateMessage).nullable().optional(),
+  endDate: z.string().regex(dateRegex, dateMessage).nullable().optional(),
   durationWeeks: z.number().int().min(1).max(104).optional(),
   orderIndex: z.number().int().min(0).optional(),
   phaseGoalWeight: z.number().min(20).max(700).nullable().optional(),

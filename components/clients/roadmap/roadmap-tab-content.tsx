@@ -138,47 +138,50 @@ export const RoadmapTabContent = ({ client }: RoadmapTabContentProps) => {
   // Prefer roadmap snapshot (frozen at creation), fall back to client table for pre-migration roadmaps
   const goalWeightDisplay = roadmap.goalWeight ?? client.goalWeight ?? null;
 
+  const endRoadmapButton = (
+    <AlertDialog open={endOpen} onOpenChange={setEndOpen}>
+      <AlertDialogTrigger asChild>
+        <button
+          type="button"
+          className="text-[10.5px] uppercase tracking-[0.07em] font-semibold text-[#93b0b4] hover:text-[#c06060] transition-colors whitespace-nowrap"
+        >
+          End roadmap
+        </button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>End this roadmap?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This archives &ldquo;{roadmap.name}&rdquo; and ends its current
+            phase. You can build a new roadmap next.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={isEnding}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={(e) => {
+              e.preventDefault();
+              void handleEndRoadmap();
+            }}
+            disabled={isEnding}
+          >
+            {isEnding ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              "End roadmap"
+            )}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+
   return (
     <>
-      {/* Header actions */}
-      <div className="flex items-center justify-end">
-        <AlertDialog open={endOpen} onOpenChange={setEndOpen}>
-          <AlertDialogTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              className="bg-white border-[rgba(13,148,136,0.08)] text-[#5a7d82] hover:text-[#0d9488] hover:border-[#0d9488]"
-            >
-              End roadmap
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>End this roadmap?</AlertDialogTitle>
-              <AlertDialogDescription>
-                This archives &ldquo;{roadmap.name}&rdquo; and ends its current
-                phase. You can build a new roadmap next.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={isEnding}>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={(e) => {
-                  e.preventDefault();
-                  void handleEndRoadmap();
-                }}
-                disabled={isEnding}
-              >
-                {isEnding ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  "End roadmap"
-                )}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </div>
+      {/* With no phases there's no action row below, so keep End roadmap top-right */}
+      {phases.length === 0 && (
+        <div className="flex items-center justify-end">{endRoadmapButton}</div>
+      )}
 
       {/* Summary strip */}
       <RoadmapSummaryStrip
@@ -214,24 +217,26 @@ export const RoadmapTabContent = ({ client }: RoadmapTabContentProps) => {
         </div>
       ) : (
         <>
-          <div className="flex items-center justify-between mt-4">
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] uppercase tracking-[0.06em] font-semibold text-[#93b0b4]">
-                Phases
-              </span>
-              <span className="text-[10px] font-semibold bg-[rgba(13,148,136,0.05)] text-[#0d9488] px-1.5 py-0.5 rounded-[6px]">
-                {phases.length}
-              </span>
+          {/* Section divider header (matches the WELLNESS LOG / TRAINING LOG style):
+              label · count · line · minimal text actions, End roadmap rightmost */}
+          <div className="flex items-center gap-3 mt-4">
+            <span className="text-[10.5px] uppercase tracking-[0.07em] text-[#93b0b4] font-semibold whitespace-nowrap">
+              Phases
+            </span>
+            <span className="text-[10px] font-semibold bg-[rgba(13,148,136,0.05)] text-[#0d9488] px-1.5 py-0.5 rounded-[6px]">
+              {phases.length}
+            </span>
+            <div className="flex-1 h-px bg-[rgba(13,148,136,0.08)]" />
+            <div className="flex items-center gap-3 whitespace-nowrap">
+              <button
+                type="button"
+                onClick={() => setAddPhaseOpen(true)}
+                className="text-[10.5px] uppercase tracking-[0.07em] font-semibold text-[#93b0b4] hover:text-[#0d9488] transition-colors"
+              >
+                Add phase
+              </button>
+              {endRoadmapButton}
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setAddPhaseOpen(true)}
-              className="bg-white border-[rgba(13,148,136,0.08)] text-[#5a7d82] hover:text-[#0d9488] hover:border-[#0d9488]"
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Add Phase
-            </Button>
           </div>
           <div className="space-y-2">
             {phases.map((phase, index) => (
