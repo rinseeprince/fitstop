@@ -88,10 +88,10 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 | 6.2 | Check-in context: session-keyed to event-keyed | 6 | COMPLETE
 | 6.3 | Check-in AI summary enrichment (optional) | 6 | COMPLETE
 | 6.4 | Daily logs as SOT for check-in + drop check_in_session_completions | 6 | COMPLETE
-| 7.1 | Coach roadmap end-and-replace UI | 7 Coach-side fixes |
-| 7.2 | Coach phase edit unlock for active phases | 7 |
-| 7.3 | Coach archived-roadmap browsing | 7 |
-| 7.4 | Coach per-client Check-ins tab | 7 |
+| 7.1 | Coach roadmap end-and-replace UI | 7 Coach-side fixes | COMPLETE
+| 7.2 | Coach phase edit unlock for active phases | 7 | COMPLETE
+| 7.3 | Coach archived-roadmap browsing | 7 | COMPLETE
+| 7.4 | Coach per-client Check-ins tab | 7 | COMPLETE
 | 7.5 | Coach metrics page phase filter | 7 |
 | 7.6 | Coach client overview tab as pre-session brief | 7 |
 | 7.7 | Coach exercise progression charts on Metrics tab | 7 |
@@ -2028,6 +2028,8 @@ Commit.
 
 ## Session 7.1: Coach roadmap end-and-replace UI
 
+**Status**: COMPLETE (migration `099` / RPC `db1e75b`, UI `279218e`; batch review fixes `7453fe1`)
+
 **Commit message**: `feat(coach): add roadmap end-and-replace workflow`
 
 **Objective**: Backend CRUD for roadmap archive + create-new already exists. Expose a coach-side workflow: "End roadmap" confirmation, archive via existing endpoint, then open `create-roadmap-dialog.tsx`.
@@ -2063,6 +2065,8 @@ Commit.
 
 ## Session 7.2: Coach phase edit unlock for active phases
 
+**Status**: COMPLETE (commit `4b1eca9`; batch review fixes `7453fe1`; phase-edit validation/UI follow-up `f890202`)
+
 **Commit message**: `feat(coach): allow phase edits on active phases with warning`
 
 **Objective**: Today phase goal fields lock once `phase.status !== 'planned'`. Loosen to allow edits on `planned` and `active` phases. Completed and skipped stay read-only.
@@ -2095,6 +2099,8 @@ Commit.
 ---
 
 ## Session 7.3: Coach archived-roadmap browsing
+
+**Status**: COMPLETE (commit `f4dc076`; batch review fixes `7453fe1`)
 
 **Commit message**: `feat(coach): add archived roadmap browsing to client roadmap tab`
 
@@ -2131,6 +2137,8 @@ Commit.
 ---
 
 ## Session 7.4: Coach per-client Check-ins tab
+
+**Status**: COMPLETE (commit `f740f0b`; batch review fixes `7453fe1`; metrics check-in-history fix `83955ae`)
 
 **Commit message**: `feat(coach): add per-client Check-ins tab to client detail page`
 
