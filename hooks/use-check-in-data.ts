@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import useSWR from "swr";
 import useSWRInfinite from "swr/infinite";
 import type {
@@ -13,6 +14,18 @@ import { swrFetcher } from "@/lib/swr-fetcher";
 import { CLIENT_CHECKINS_PAGE_SIZE } from "@/lib/constants";
 
 const fetcher = swrFetcher;
+
+// Shared SWRInfinite key builder for the offset-paginated coach check-ins reads
+// (the "Load older" tab and the Metrics full-history fetch).
+const buildCheckInsPageKey =
+  (clientId: string) =>
+  (pageIndex: number, previousPageData: GetCheckInsResponse | null) => {
+    if (!clientId) return null;
+    // Stop once a page comes back empty.
+    if (previousPageData && previousPageData.checkIns.length === 0) return null;
+    const offset = pageIndex * CLIENT_CHECKINS_PAGE_SIZE;
+    return `/api/clients/${clientId}/check-ins?limit=${CLIENT_CHECKINS_PAGE_SIZE}&offset=${offset}`;
+  };
 
 // Hook to fetch check-ins for a client
 export const useCheckInData = (
@@ -53,19 +66,8 @@ export const useCheckInData = (
 // Hook for the coach per-client check-ins tab: offset-paginated "Load older"
 // over the full history (no row cap). Pages accumulate into one flat list.
 export const useClientCheckInsInfinite = (clientId: string) => {
-  const getKey = (
-    pageIndex: number,
-    previousPageData: GetCheckInsResponse | null
-  ) => {
-    if (!clientId) return null;
-    // Stop once a page comes back empty.
-    if (previousPageData && previousPageData.checkIns.length === 0) return null;
-    const offset = pageIndex * CLIENT_CHECKINS_PAGE_SIZE;
-    return `/api/clients/${clientId}/check-ins?limit=${CLIENT_CHECKINS_PAGE_SIZE}&offset=${offset}`;
-  };
-
   const { data, error, size, setSize, isLoading, mutate } =
-    useSWRInfinite<GetCheckInsResponse>(getKey, fetcher, {
+    useSWRInfinite<GetCheckInsResponse>(buildCheckInsPageKey(clientId), fetcher, {
       revalidateOnFocus: false,
       revalidateFirstPage: false,
     });
@@ -88,6 +90,35 @@ export const useClientCheckInsInfinite = (clientId: string) => {
     size,
     setSize,
     mutate,
+  };
+};
+
+// Eagerly pages through a client's ENTIRE check-in history (offset/total
+// contract) so trend charts aren't silently capped at the default page size.
+export const useAllClientCheckIns = (clientId: string) => {
+  const { data, error, size, setSize, isLoading } =
+    useSWRInfinite<GetCheckInsResponse>(buildCheckInsPageKey(clientId), fetcher, {
+      revalidateOnFocus: false,
+      revalidateFirstPage: false,
+    });
+
+  const checkIns = data ? data.flatMap((page) => page.checkIns) : [];
+  const total = data?.[0]?.total ?? 0;
+  const lastPageLoaded = !data || typeof data[size - 1] !== "undefined";
+  const hasMore = Boolean(data) && checkIns.length < total;
+
+  // Auto-advance until the full history is loaded.
+  useEffect(() => {
+    if (hasMore && lastPageLoaded) {
+      void setSize((s) => s + 1);
+    }
+  }, [hasMore, lastPageLoaded, setSize]);
+
+  return {
+    checkIns,
+    total,
+    isLoading: isLoading || hasMore,
+    isError: error,
   };
 };
 

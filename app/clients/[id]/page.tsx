@@ -35,7 +35,7 @@ export default function ClientProfilePage() {
   const initialTab: ClientTab = tabParam && VALID_TABS.has(tabParam as ClientTab) ? (tabParam as ClientTab) : "overview"
 
   const { client, isLoading: clientLoading, isError: clientError, mutate: mutateClient } = useClient(clientId)
-  const { checkIns, isLoading: checkInsLoading } = useCheckInData(clientId, {
+  const { checkIns } = useCheckInData(clientId, {
     includeDailyLogCounts: true
   })
   const [selectedCheckInId, setSelectedCheckInId] = useState<string | null>(null)
@@ -136,11 +136,7 @@ export default function ClientProfilePage() {
 
             {/* Metrics Tab */}
             <TabsContent value="metrics" className="space-y-6 mt-0">
-              <MetricsTabContent
-                checkIns={checkIns}
-                client={client}
-                isLoading={checkInsLoading}
-              />
+              <MetricsTabContent client={client} />
             </TabsContent>
 
             {/* Training Plan Tab */}
