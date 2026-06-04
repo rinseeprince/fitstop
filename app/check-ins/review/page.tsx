@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { CheckInDetailModal } from "@/components/check-in/check-in-detail-modal";
 import { useUnreviewedCheckIns } from "@/hooks/use-check-in-data";
-import { stripInlineMarkdown } from "@/lib/check-in/markdown";
+import { getAiPreview } from "@/lib/check-in-helpers";
 import { AlertCircle, CheckCircle } from "lucide-react";
 import Link from "next/link";
 import { format, differenceInHours } from "date-fns";
@@ -47,13 +47,6 @@ export default function ReviewCheckInsPage() {
   const getUrgencyBorder = (createdAt: string) => {
     const hours = differenceInHours(new Date(), new Date(createdAt));
     return hours > 24 ? "border-l-4 border-l-[#d97706]" : "border-l-4 border-l-[#0d9488]";
-  };
-
-  const getAiPreview = (aiSummary?: string) => {
-    const clean = stripInlineMarkdown(aiSummary);
-    if (!clean) return null;
-    const firstSentence = clean.split(/[.!?]\s/)[0];
-    return firstSentence.length > 120 ? firstSentence.slice(0, 120) + "..." : firstSentence;
   };
 
   const pageHeader = (

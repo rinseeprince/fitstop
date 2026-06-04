@@ -14,6 +14,7 @@ import { MetricsTabContent } from "@/components/clients/metrics/metrics-tab-cont
 import { ClientOverviewTab } from "@/components/clients/client-overview-tab"
 import { MetricSaveDialog } from "@/components/clients/check-in/metric-save-dialog"
 import { HabitsTabContent } from "@/components/clients/habits/habits-tab-content"
+import { CheckInsTabContent } from "@/components/clients/check-ins/check-ins-tab-content"
 import { RoadmapTabContent } from "@/components/clients/roadmap/roadmap-tab-content"
 import { WellnessTabContent } from "@/components/clients/wellness/wellness-tab-content"
 import { useCheckInData, useClient } from "@/hooks/use-check-in-data"
@@ -22,7 +23,7 @@ import { useClientMetrics } from "@/hooks/use-client-metrics"
 import { type ClientTab } from "@/lib/client-tabs"
 import { AlertCircle } from "lucide-react"
 
-const VALID_TABS = new Set<ClientTab>(["overview", "roadmap", "metrics", "training", "nutrition", "wellness", "daily-habits", "notes"])
+const VALID_TABS = new Set<ClientTab>(["overview", "roadmap", "metrics", "training", "nutrition", "wellness", "daily-habits", "check-ins", "notes"])
 
 export default function ClientProfilePage() {
   const params = useParams()
@@ -166,6 +167,11 @@ export default function ClientProfilePage() {
                 client={client}
                 onUpdate={() => mutateClient()}
               />
+            </TabsContent>
+
+            {/* Check-ins Tab */}
+            <TabsContent value="check-ins" className="space-y-6 mt-0">
+              <CheckInsTabContent client={client} />
             </TabsContent>
 
             {/* Notes Tab */}

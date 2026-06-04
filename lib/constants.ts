@@ -23,6 +23,9 @@ export const WEEKLY_NUTRITION_PARTIAL_PER_DAY = 143;
 // Date limits
 export const MAX_DATE_LOOKBACK_DAYS = 30;
 
+// Pagination
+export const CLIENT_CHECKINS_PAGE_SIZE = 20; // "Load older" page size for the coach per-client check-ins tab
+
 // Trigger thresholds for attention alerts
 export const MOOD_ENERGY_DROP_THRESHOLD = 2; // Points below average
 export const MOOD_ENERGY_DROP_CONSECUTIVE_DAYS = 3;
