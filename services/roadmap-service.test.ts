@@ -15,6 +15,7 @@ import {
 vi.mock('./supabase-admin', () => ({
   supabaseAdmin: {
     from: vi.fn(),
+    rpc: vi.fn(),
   },
 }));
 
@@ -186,20 +187,34 @@ describe('Roadmap Service', () => {
   });
 
   describe('archiveRoadmap', () => {
-    it('sets status to archived without deleting phases', async () => {
+    it('calls archive_roadmap_atomic then returns the archived roadmap', async () => {
       const mockRow = createMockRoadmapRow({
         id: 'roadmap-1',
         status: 'archived',
       });
-      const mockQuery = createMockQuery({ data: mockRow, error: null });
-      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as never);
+      vi.mocked(supabaseAdmin.rpc).mockResolvedValue({
+        data: null,
+        error: null,
+      } as never);
+      const selectQuery = createMockQuery({ data: mockRow, error: null });
+      vi.mocked(supabaseAdmin.from).mockReturnValue(selectQuery as never);
 
       const result = await archiveRoadmap('roadmap-1');
 
+      // Atomicity (phase closure + roadmap archive) is delegated to the RPC.
+      expect(supabaseAdmin.rpc).toHaveBeenCalledWith('archive_roadmap_atomic', {
+        p_roadmap_id: 'roadmap-1',
+      });
       expect(result.status).toBe('archived');
-      // Verify only roadmaps table was touched, not phases
-      expect(supabaseAdmin.from).toHaveBeenCalledWith('roadmaps');
-      expect(supabaseAdmin.from).not.toHaveBeenCalledWith('phases');
+    });
+
+    it('throws when the archive RPC fails', async () => {
+      vi.mocked(supabaseAdmin.rpc).mockResolvedValue({
+        data: null,
+        error: { message: 'rpc boom' },
+      } as never);
+
+      await expect(archiveRoadmap('roadmap-1')).rejects.toThrow('rpc boom');
     });
   });
 

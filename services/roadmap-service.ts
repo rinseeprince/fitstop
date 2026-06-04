@@ -224,19 +224,27 @@ export const updateRoadmap = async (
 export const archiveRoadmap = async (
   roadmapId: string
 ): Promise<Roadmap> => {
+  // Atomic (migration 099): archives the roadmap AND closes its active+planned
+  // phases to 'skipped' in one transaction, so no active phase outlives its
+  // archived roadmap (which would hijack phase-is-king nutrition resolution).
+  const { error: rpcError } = await supabaseAdmin.rpc("archive_roadmap_atomic", {
+    p_roadmap_id: roadmapId,
+  });
+
+  if (rpcError) {
+    console.error("Failed to archive roadmap:", rpcError);
+    throw new Error(`Failed to archive roadmap: ${rpcError.message}`);
+  }
+
   const { data, error } = await supabaseAdmin
     .from("roadmaps")
-    .update({
-      status: "archived",
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", roadmapId)
     .select()
+    .eq("id", roadmapId)
     .single();
 
   if (error) {
-    console.error("Failed to archive roadmap:", error);
-    throw new Error(`Failed to archive roadmap: ${error.message}`);
+    console.error("Failed to read archived roadmap:", error);
+    throw new Error(`Failed to read archived roadmap: ${error.message}`);
   }
 
   return mapRoadmapRow(data);

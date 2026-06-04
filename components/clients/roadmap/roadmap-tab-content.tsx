@@ -2,14 +2,26 @@
 
 import { useState } from "react";
 import useSWR from "swr";
-import { Plus, Target } from "lucide-react";
+import { Plus, Target, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { CreateRoadmapDialog } from "./create-roadmap-dialog";
 import { PhaseCard } from "./phase-card";
 import { AddPhaseDialog } from "./add-phase-dialog";
 import { RoadmapSummaryStrip } from "./roadmap-summary-strip";
 import { Skeleton } from "@/components/ui/skeleton";
 import { swrFetcher } from "@/lib/swr-fetcher";
+import { useToast } from "@/hooks/use-toast";
 import type { Client } from "@/types/check-in";
 import type { Roadmap, Phase } from "@/types/roadmap";
 
@@ -25,14 +37,45 @@ type RoadmapTabContentProps = {
 };
 
 export const RoadmapTabContent = ({ client }: RoadmapTabContentProps) => {
+  const { toast } = useToast();
   const [createOpen, setCreateOpen] = useState(false);
   const [addPhaseOpen, setAddPhaseOpen] = useState(false);
+  const [endOpen, setEndOpen] = useState(false);
+  const [isEnding, setIsEnding] = useState(false);
 
   const { data, error, isLoading, mutate } = useSWR<RoadmapResponse>(
     `/api/clients/${client.id}/roadmap`,
     swrFetcher,
     { revalidateOnFocus: false }
   );
+
+  // End-and-replace: archive the active roadmap (which atomically closes its
+  // active+planned phases server-side), then open the create dialog.
+  const handleEndRoadmap = async () => {
+    setIsEnding(true);
+    try {
+      const res = await fetch(`/api/clients/${client.id}/roadmap/archive`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || "Failed to end roadmap");
+      }
+      toast({ title: "Roadmap ended" });
+      setEndOpen(false);
+      await mutate();
+      setCreateOpen(true);
+    } catch (err) {
+      toast({
+        title: "Error",
+        description:
+          err instanceof Error ? err.message : "Failed to end roadmap",
+        variant: "destructive",
+      });
+    } finally {
+      setIsEnding(false);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -92,6 +135,46 @@ export const RoadmapTabContent = ({ client }: RoadmapTabContentProps) => {
 
   return (
     <>
+      {/* Header actions */}
+      <div className="flex items-center justify-end">
+        <AlertDialog open={endOpen} onOpenChange={setEndOpen}>
+          <AlertDialogTrigger asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              className="bg-white border-[rgba(13,148,136,0.08)] text-[#5a7d82] hover:text-[#0d9488] hover:border-[#0d9488]"
+            >
+              End roadmap
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>End this roadmap?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This archives &ldquo;{roadmap.name}&rdquo; and ends its current
+                phase. You can build a new roadmap next.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={isEnding}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => {
+                  e.preventDefault();
+                  void handleEndRoadmap();
+                }}
+                disabled={isEnding}
+              >
+                {isEnding ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  "End roadmap"
+                )}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
+
       {/* Summary strip */}
       <RoadmapSummaryStrip
         roadmapName={roadmap.name}
@@ -167,6 +250,14 @@ export const RoadmapTabContent = ({ client }: RoadmapTabContentProps) => {
         weightUnit={weightUnit}
         open={addPhaseOpen}
         onOpenChange={setAddPhaseOpen}
+        onSuccess={() => mutate()}
+      />
+
+      {/* Mounted here too so it can open right after ending the roadmap */}
+      <CreateRoadmapDialog
+        clientId={client.id}
+        open={createOpen}
+        onOpenChange={setCreateOpen}
         onSuccess={() => mutate()}
       />
     </>
