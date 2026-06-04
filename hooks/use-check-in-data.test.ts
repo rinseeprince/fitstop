@@ -46,6 +46,22 @@ describe("useAllClientCheckIns", () => {
     expect(setSize).toHaveBeenCalled();
   });
 
+  it("surfaces the error and stops 'loading' when a page fails mid-stream", () => {
+    // page 0 loaded (20 of 50), page 1 errored — must not spin forever.
+    mockUseSWRInfinite.mockReturnValue({
+      data: [{ checkIns: new Array(20).fill({ id: "x" }), total: 50 }],
+      error: new Error("boom"),
+      size: 2,
+      setSize: vi.fn(),
+      isLoading: false,
+    });
+
+    const { result } = renderHook(() => useAllClientCheckIns("client-1"));
+
+    expect(result.current.isError).toBeTruthy();
+    expect(result.current.isLoading).toBe(false);
+  });
+
   it("stops paging once the full history is loaded", () => {
     const setSize = vi.fn();
     mockUseSWRInfinite.mockReturnValue({

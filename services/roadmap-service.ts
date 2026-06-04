@@ -205,7 +205,8 @@ export const getArchivedRoadmaps = async (
   );
 };
 
-// Status-agnostic, newest-first. Consumed by the "build next roadmap" CTA.
+// Status-agnostic, newest-first. Forward-compat reader added in 7.3 per spec;
+// 7.11's "build next roadmap" CTA will consume it — not yet wired to a caller.
 export const getLatestRoadmap = async (
   clientId: string
 ): Promise<RoadmapWithPhases | null> => {

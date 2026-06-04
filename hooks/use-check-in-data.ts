@@ -117,7 +117,10 @@ export const useAllClientCheckIns = (clientId: string) => {
   return {
     checkIns,
     total,
-    isLoading: isLoading || hasMore,
+    // Don't report "loading" once a page errors — otherwise hasMore stays true
+    // forever (the failed page never loads) and the consumer is stuck on a
+    // spinner instead of reaching its error state.
+    isLoading: !error && (isLoading || hasMore),
     isError: error,
   };
 };
