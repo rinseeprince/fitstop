@@ -2795,6 +2795,10 @@ export type Database = {
       }
     }
     Functions: {
+      archive_roadmap_atomic: {
+        Args: { p_roadmap_id: string }
+        Returns: undefined
+      }
       calculate_age: { Args: { date_of_birth: string }; Returns: number }
       calculate_client_adherence_stats: {
         Args: { client_uuid: string }
