@@ -5,8 +5,14 @@ import { format } from "date-fns";
 import { getTrend, calculatePercentChange } from "@/utils/metric-shaping";
 import type { CheckIn, TrendDirection } from "@/types/check-in";
 
+// Retained for the shared MetricChartCard (also consumed by the client portal's
+// metrics-hub). The coach metrics tab no longer drives charts by this enum — it
+// uses the resolved time-scope window below (Session 7.5).
 export type DateRangeFilter = "7d" | "30d" | "90d" | "all";
 export type MetricCategory = "body" | "wellness";
+
+/** Resolved time-scope window. `null` = unbounded on that side (Session 7.5). */
+export type MetricsWindow = { start: string | null; end: string | null };
 
 export type MetricData = {
   id: string;
@@ -47,22 +53,28 @@ const METRIC_DEFINITIONS: MetricDefinition[] = [
   { id: "stress", name: "Stress", key: "stress", category: "wellness", getUnit: () => "/10", domain: [1, 10] },
 ];
 
-const filterByDateRange = (checkIns: CheckIn[], range: DateRangeFilter): CheckIn[] => {
-  if (range === "all") return checkIns;
-  const now = new Date();
-  const days = range === "7d" ? 7 : range === "30d" ? 30 : 90;
-  const cutoff = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
-  return checkIns.filter((ci) => new Date(ci.createdAt) >= cutoff);
+// Filter check-ins to the resolved window. The end bound is inclusive-by-date
+// (compare the createdAt date part), so a check-in submitted on a phase's final
+// day still counts. Null bounds skip that side.
+const filterByWindow = (checkIns: CheckIn[], scopeWindow: MetricsWindow): CheckIn[] => {
+  const { start, end } = scopeWindow;
+  if (!start && !end) return checkIns;
+  return checkIns.filter((ci) => {
+    const date = ci.createdAt.slice(0, 10);
+    if (start && date < start) return false;
+    if (end && date > end) return false;
+    return true;
+  });
 };
 
 export const useMetricsData = (
   checkIns: CheckIn[],
-  dateRange: DateRangeFilter,
+  scopeWindow: MetricsWindow,
   weightUnit?: string,
   measurementUnit?: string
 ): { bodyMetrics: MetricData[]; wellnessMetrics: MetricData[]; isLoading: boolean } => {
   return useMemo(() => {
-    const filteredCheckIns = filterByDateRange(checkIns, dateRange);
+    const filteredCheckIns = filterByWindow(checkIns, scopeWindow);
     const sortedCheckIns = [...filteredCheckIns].sort(
       (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
     );
@@ -105,5 +117,5 @@ export const useMetricsData = (
       wellnessMetrics: allMetrics.filter((m) => m.category === "wellness"),
       isLoading: false,
     };
-  }, [checkIns, dateRange, weightUnit, measurementUnit]);
+  }, [checkIns, scopeWindow, weightUnit, measurementUnit]);
 };
