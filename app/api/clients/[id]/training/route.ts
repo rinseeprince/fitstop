@@ -88,7 +88,7 @@ export async function GET(
     // Promote planned plan if its effective date has arrived
     await promoteTrainingPlanIfReady(clientId);
 
-    const plan = await getActiveTrainingPlan(clientId);
+    const activePlan = await getActiveTrainingPlan(clientId);
 
     // Check for a planned (upcoming) plan
     const { data: plannedPlanRow } = await supabaseAdmin
@@ -98,30 +98,39 @@ export async function GET(
       .eq("status", "planned")
       .maybeSingle();
 
-    let upcomingPlan: {
-      id: string;
-      effectiveFrom: string;
-      name: string;
-      splitType: string;
-      frequencyPerWeek: number;
-      sessions: NonNullable<Awaited<ReturnType<typeof getActiveTrainingPlan>>>["sessions"];
-    } | null = null;
+    const plannedFullPlan = plannedPlanRow
+      ? await getTrainingPlanById(plannedPlanRow.id)
+      : null;
 
-    if (plannedPlanRow) {
-      const plannedFullPlan = await getTrainingPlanById(plannedPlanRow.id);
-      if (plannedFullPlan) {
-        upcomingPlan = {
-          id: plannedFullPlan.id,
-          effectiveFrom: plannedPlanRow.effective_from,
-          name: plannedFullPlan.name,
-          splitType: plannedFullPlan.splitType,
-          frequencyPerWeek: plannedFullPlan.frequencyPerWeek,
-          sessions: plannedFullPlan.sessions,
-        };
-      }
-    }
+    // With no active plan, the scheduled plan IS the coach's working plan:
+    // it's returned as `plan` (editable in the builder) with `scheduledFor`
+    // marking the start date. `upcomingPlan` only describes a planned plan
+    // queued BEHIND an active one.
+    const upcomingPlan =
+      activePlan && plannedPlanRow && plannedFullPlan
+        ? {
+            id: plannedFullPlan.id,
+            effectiveFrom: plannedPlanRow.effective_from,
+            name: plannedFullPlan.name,
+            splitType: plannedFullPlan.splitType,
+            frequencyPerWeek: plannedFullPlan.frequencyPerWeek,
+            sessions: plannedFullPlan.sessions,
+          }
+        : null;
 
-    return NextResponse.json({ success: true, plan, upcomingPlan }, { status: 200 });
+    return NextResponse.json(
+      {
+        success: true,
+        plan: activePlan ?? plannedFullPlan,
+        upcomingPlan,
+        scheduledFor:
+          !activePlan && plannedPlanRow && plannedFullPlan
+            ? plannedPlanRow.effective_from
+            : null,
+        clientTimezone: client.timezone,
+      },
+      { status: 200 }
+    );
   } catch (error) {
     console.error("Error fetching training plan:", error);
     return NextResponse.json(

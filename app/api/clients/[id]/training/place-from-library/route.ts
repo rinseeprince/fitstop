@@ -5,6 +5,7 @@ import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { placePlanOnCalendar, placeSessionOnCalendar } from "@/services/library-placement-service";
+import { getClientTodayString } from "@/services/today-service";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { regenerateFutureNutritionEvents } from "@/services/nutrition-event-service";
 import { recordAuditEvent } from "@/services/audit-log-service";
@@ -66,6 +67,18 @@ export async function POST(
     const data = validation.data;
 
     if (data.type === "plan") {
+      // Judge "past" against the client's local today (same anchor as the
+      // placement RPC's p_today), not the coach's device or server UTC.
+      const clientToday = await getClientTodayString(clientId);
+      if (data.startDate < clientToday) {
+        return NextResponse.json(
+          {
+            error: `Start date ${data.startDate} has already passed for this client (their local date is ${clientToday}).`,
+          },
+          { status: 400 }
+        );
+      }
+
       const result = await placePlanOnCalendar({
         savedPlanId: data.savedPlanId,
         coachId,

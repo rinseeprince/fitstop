@@ -15,6 +15,8 @@ export function useTrainingPlan({ clientId, onUpdate }: UseTrainingPlanProps) {
   const { toast } = useToast();
   const [plan, setPlan] = useState<TrainingPlan | null>(null);
   const [upcomingPlan, setUpcomingPlan] = useState<UpcomingTrainingPlan | null>(null);
+  const [scheduledFor, setScheduledFor] = useState<string | null>(null);
+  const [clientTimezone, setClientTimezone] = useState<string | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -38,6 +40,8 @@ export function useTrainingPlan({ clientId, onUpdate }: UseTrainingPlanProps) {
       if (data.success) {
         setPlan(data.plan || null);
         setUpcomingPlan((data.upcomingPlan as UpcomingTrainingPlan) || null);
+        setScheduledFor(data.scheduledFor ?? null);
+        setClientTimezone(data.clientTimezone);
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Failed to load training plan";
@@ -120,6 +124,8 @@ export function useTrainingPlan({ clientId, onUpdate }: UseTrainingPlanProps) {
     clientId,
     plan,
     upcomingPlan,
+    scheduledFor,
+    clientTimezone,
     isLoading,
     isGenerating,
     loadError,

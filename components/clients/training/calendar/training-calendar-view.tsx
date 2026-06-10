@@ -35,6 +35,7 @@ type TrainingCalendarViewProps = {
   plan: TrainingPlan | null;
   phases: Phase[];
   editMode: boolean;
+  clientTimezone?: string;
   onUpdate: () => void;
 };
 
@@ -75,6 +76,7 @@ export function TrainingCalendarView({
   plan,
   phases,
   editMode,
+  clientTimezone,
   onUpdate,
 }: TrainingCalendarViewProps) {
   const { toast } = useToast();
@@ -669,6 +671,7 @@ export function TrainingCalendarView({
             onOpenChange={(open) => { if (!open) setApplyFromDrop(null); }}
             savedPlan={dropPlan}
             preselectedClientId={clientId}
+            clientTimezone={clientTimezone}
             onSuccess={() => {
               setApplyFromDrop(null);
               void mutate();

@@ -354,6 +354,8 @@ const getTrainingPlanApiResponseSchema = z.object({
   success: z.boolean(),
   plan: trainingPlanResponseSchema.nullable().optional(),
   upcomingPlan: z.unknown().optional(),
+  scheduledFor: z.string().nullable().optional(),
+  clientTimezone: z.string().optional(),
   errorMessage: z.string().optional(),
 });
 
@@ -393,6 +395,9 @@ export type GetPlanApiResponse = {
   success: boolean;
   plan?: TrainingPlan | null;
   upcomingPlan?: UpcomingTrainingPlan | null;
+  /** Set only when there is no active plan and the returned `plan` is a scheduled (planned) one. */
+  scheduledFor?: string | null;
+  clientTimezone?: string;
   errorMessage?: string;
 };
 

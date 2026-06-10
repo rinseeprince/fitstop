@@ -418,6 +418,33 @@ describe('Training Validation Schemas', () => {
         const result = parseGetPlanResponse(data)
         expect(result).toBeNull()
       })
+
+      it('passes through scheduledFor and clientTimezone', () => {
+        const data = {
+          success: true,
+          plan: {
+            id: '123',
+            clientId: '456',
+            coachId: '789',
+            name: 'Scheduled Plan',
+            status: 'planned',
+            coachPrompt: 'Test prompt',
+            splitType: 'push_pull_legs',
+            frequencyPerWeek: 4,
+            sessions: [],
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-01T00:00:00Z',
+          },
+          upcomingPlan: null,
+          scheduledFor: '2026-01-19',
+          clientTimezone: 'Europe/London',
+        }
+
+        const result = parseGetPlanResponse(data)
+        expect(result).not.toBeNull()
+        expect(result?.scheduledFor).toBe('2026-01-19')
+        expect(result?.clientTimezone).toBe('Europe/London')
+      })
     })
 
     describe('parseGeneratePlanResponse', () => {

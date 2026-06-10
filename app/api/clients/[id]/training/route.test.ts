@@ -81,7 +81,9 @@ import { generateTrainingPlanAI } from '@/services/training-ai-service'
 import { createSavedPlanFromAI } from '@/services/coach-saved-plan-service'
 import { getLatestBodyMetrics } from '@/services/body-metrics-service'
 import { getCurrentGoals } from '@/services/client-goals-service'
-import { POST } from './route'
+import { getActiveTrainingPlan, getTrainingPlanById } from '@/services/training-service'
+import { supabaseAdmin } from '@/services/supabase-admin'
+import { POST, GET } from './route'
 
 const mockClient = {
   id: 'client-1',
@@ -190,5 +192,129 @@ describe('Training Route POST - read-switch behavior', () => {
         }),
       })
     )
+  })
+})
+
+// --- GET: scheduled-plan-as-working-plan semantics ---
+
+const activePlan = {
+  id: 'plan-active',
+  clientId: 'client-1',
+  name: 'Active Plan',
+  status: 'active',
+  splitType: 'upper_lower',
+  frequencyPerWeek: 4,
+  sessions: [],
+}
+
+const plannedFullPlan = {
+  id: 'plan-planned',
+  clientId: 'client-1',
+  name: 'Scheduled Plan',
+  status: 'planned',
+  splitType: 'full_body',
+  frequencyPerWeek: 3,
+  sessions: [],
+}
+
+// Fixed past date: assertions only echo it back, so it can never collide
+// with the host clock.
+const plannedRow = {
+  id: 'plan-planned',
+  effective_from: '2026-01-19',
+  name: 'Scheduled Plan',
+  split_type: 'full_body',
+  frequency_per_week: 3,
+}
+
+function mockPlannedPlanRow(row: typeof plannedRow | null): void {
+  const chain: Record<string, unknown> = {}
+  chain.select = vi.fn().mockReturnValue(chain)
+  chain.eq = vi.fn().mockReturnValue(chain)
+  chain.maybeSingle = vi.fn().mockResolvedValue({ data: row })
+  vi.mocked(supabaseAdmin.from).mockReturnValue(chain as never)
+}
+
+function makeGetRequest(): NextRequest {
+  return new NextRequest('http://localhost/api/clients/client-1/training')
+}
+
+describe('Training Route GET - scheduled plan semantics', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(getClientById).mockResolvedValue({
+      ...mockClient,
+      timezone: 'Europe/London',
+    } as never)
+  })
+
+  it('planned-only: returns the planned plan as plan with scheduledFor set', async () => {
+    vi.mocked(getActiveTrainingPlan).mockResolvedValue(null)
+    vi.mocked(getTrainingPlanById).mockResolvedValue(plannedFullPlan as never)
+    mockPlannedPlanRow(plannedRow)
+
+    const response = await GET(makeGetRequest(), {
+      params: Promise.resolve({ id: 'client-1' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(data.success).toBe(true)
+    expect(data.plan.id).toBe('plan-planned')
+    expect(data.scheduledFor).toBe('2026-01-19')
+    expect(data.upcomingPlan).toBeNull()
+    expect(data.clientTimezone).toBe('Europe/London')
+  })
+
+  it('active + planned: returns the active plan with upcomingPlan set and no scheduledFor', async () => {
+    vi.mocked(getActiveTrainingPlan).mockResolvedValue(activePlan as never)
+    vi.mocked(getTrainingPlanById).mockResolvedValue(plannedFullPlan as never)
+    mockPlannedPlanRow(plannedRow)
+
+    const response = await GET(makeGetRequest(), {
+      params: Promise.resolve({ id: 'client-1' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(data.plan.id).toBe('plan-active')
+    expect(data.upcomingPlan).toMatchObject({
+      id: 'plan-planned',
+      effectiveFrom: '2026-01-19',
+      name: 'Scheduled Plan',
+    })
+    expect(data.scheduledFor).toBeNull()
+  })
+
+  it('no plans at all: plan, upcomingPlan and scheduledFor are all null', async () => {
+    vi.mocked(getActiveTrainingPlan).mockResolvedValue(null)
+    vi.mocked(getTrainingPlanById).mockResolvedValue(null)
+    mockPlannedPlanRow(null)
+
+    const response = await GET(makeGetRequest(), {
+      params: Promise.resolve({ id: 'client-1' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(data.plan).toBeNull()
+    expect(data.upcomingPlan).toBeNull()
+    expect(data.scheduledFor).toBeNull()
+    expect(data.clientTimezone).toBe('Europe/London')
+  })
+
+  it('planned row exists but full fetch fails: no phantom scheduledFor', async () => {
+    vi.mocked(getActiveTrainingPlan).mockResolvedValue(null)
+    vi.mocked(getTrainingPlanById).mockResolvedValue(null)
+    mockPlannedPlanRow(plannedRow)
+
+    const response = await GET(makeGetRequest(), {
+      params: Promise.resolve({ id: 'client-1' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(data.plan).toBeNull()
+    expect(data.scheduledFor).toBeNull()
   })
 })

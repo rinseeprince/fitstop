@@ -24,7 +24,12 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { swrFetcher } from "@/lib/swr-fetcher";
-import { getDateString } from "@/lib/date-helpers";
+import { format } from "date-fns";
+import {
+  getDateString,
+  getTodayDateString,
+  getTodayDateStringInTimezone,
+} from "@/lib/date-helpers";
 import type { SavedPlan } from "@/types/training";
 
 type ApplyToClientDialogProps = {
@@ -32,12 +37,15 @@ type ApplyToClientDialogProps = {
   onOpenChange: (open: boolean) => void;
   savedPlan: SavedPlan;
   preselectedClientId?: string;
+  /** Timezone of the preselected client (the client list isn't fetched in that path). */
+  clientTimezone?: string;
   onSuccess?: (clientId: string) => void;
 };
 
 type ClientOption = {
   id: string;
   name: string;
+  timezone?: string;
 };
 
 type PhaseOption = {
@@ -61,6 +69,7 @@ export function ApplyToClientDialog({
   onOpenChange,
   savedPlan,
   preselectedClientId,
+  clientTimezone,
   onSuccess,
 }: ApplyToClientDialogProps) {
   const { toast } = useToast();
@@ -107,6 +116,24 @@ export function ApplyToClientDialog({
     savedPlan.cycleLength ?? savedPlan.sessions.filter((s) => !s.isRest).length;
   const trainingDays = savedPlan.sessions.filter((s) => !s.isRest).length;
   const restDays = cycleLength - trainingDays;
+
+  // Mirror the server guard's anchor (getClientTodayString): a real synced
+  // client timezone wins; the 'UTC' never-synced sentinel falls back to the
+  // coach's device (= stored coach tz). Unknown timezone → no min, the server
+  // guard backstops.
+  const selectedClientTimezone = preselectedClientId
+    ? clientTimezone
+    : clients.find((c) => c.id === clientId)?.timezone;
+  const selectedClientName = preselectedClientId
+    ? null
+    : (clients.find((c) => c.id === clientId)?.name ?? null);
+  const deviceToday = getTodayDateString();
+  const clientLocalToday =
+    selectedClientTimezone && selectedClientTimezone !== "UTC"
+      ? getTodayDateStringInTimezone(selectedClientTimezone)
+      : null;
+  const minStartDate =
+    clientLocalToday ?? (selectedClientTimezone ? deviceToday : undefined);
 
   const handleSubmit = async () => {
     if (!clientId) {
@@ -200,8 +227,15 @@ export function ApplyToClientDialog({
               id="start-date"
               type="date"
               value={startDate}
+              min={minStartDate}
               onChange={(e) => setStartDate(e.target.value)}
             />
+            {clientLocalToday && clientLocalToday !== deviceToday && (
+              <p className="text-[10px] text-muted-foreground">
+                {selectedClientName ?? "This client"}&apos;s local date is{" "}
+                {format(new Date(clientLocalToday + "T00:00:00"), "d MMMM")}.
+              </p>
+            )}
           </div>
 
           {/* Cycle info */}
