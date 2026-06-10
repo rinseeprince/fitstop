@@ -1,7 +1,7 @@
 import { supabaseAdmin } from "./supabase-admin";
 import type { DailyHabit, DailyHabitInput, DailyHabitLog, HabitLogWithDetails } from "@/types/daily-habit";
 import type { Database } from "@/types/database";
-import { getTodayDateString } from "@/lib/date-helpers";
+import { getClientTodayString } from "./today-service";
 import { mapArrayIndexToSortOrder } from "./daily-habits-logic";
 import {
   mapHabitRow, mapHabitLogRow, mapHabitLogWithDetailsRow,
@@ -55,8 +55,9 @@ export const createHabit = async (
     throw new Error("Coach does not own this client");
   }
 
-  // Resolve effective_date from the phase's start_date (if assigned to a phase)
-  let effectiveDate = getTodayDateString();
+  // Resolve effective_date from the phase's start_date (if assigned to a phase).
+  // Default is the CLIENT's local today — the habit lives on their calendar.
+  let effectiveDate = await getClientTodayString(clientId);
   if (data.phaseId) {
     const { data: phase } = await supabaseAdmin
       .from("phases")
@@ -294,7 +295,7 @@ export const getHabitLogs = async (
 };
 
 export const getTodayHabitLogs = async (clientId: string, date?: string): Promise<HabitLogWithDetails[]> => {
-  const targetDate = date || getTodayDateString();
+  const targetDate = date || (await getClientTodayString(clientId));
 
   const { data, error } = await supabaseAdmin
     .from("daily_habit_logs")

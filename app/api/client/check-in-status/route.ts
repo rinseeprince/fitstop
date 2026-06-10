@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireClientAuth } from "@/lib/require-client-auth";
 import { getClientById } from "@/services/client-service";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
-import { getCheckInStatus, getDateString } from "@/lib/date-helpers";
+import { getCheckInStatus, getDateString, getTodayInTimezone } from "@/lib/date-helpers";
 import type { CheckInGateStatus } from "@/lib/date-helpers";
 
 /**
@@ -46,10 +46,11 @@ export async function GET(request: NextRequest) {
       lastCheckIn?.period_end ??
       (lastCheckIn?.created_at ? getDateString(new Date(lastCheckIn.created_at)) : null);
 
+    // Client-local today: the gate opens/rolls on the client's day.
     const { status, nextDueDate } = getCheckInStatus(
       expectedDay,
       lastCheckInPeriodEnd,
-      new Date(),
+      getTodayInTimezone(client.timezone),
       client.startDate,
     );
 

@@ -10,7 +10,7 @@ import { getClientById } from "@/services/client-service";
 import { getDailyLogs } from "@/services/daily-logs-service";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
-import { getCheckInStatus, getDateString, resolveCheckInWindow } from "@/lib/date-helpers";
+import { getCheckInStatus, getDateString, getTodayInTimezone, resolveCheckInWindow } from "@/lib/date-helpers";
 import type { CheckInGateStatus } from "@/lib/date-helpers";
 import type { ValidateCheckInTokenResponse, CheckInTrainingEventDetail } from "@/types/check-in";
 
@@ -60,7 +60,9 @@ export async function GET(request: NextRequest) {
         : null);
 
     if (expectedDay) {
-      const today = new Date();
+      // Client-local today: the check-in window opens/rolls on the CLIENT's
+      // day, not the server's UTC day.
+      const today = getTodayInTimezone(client.timezone);
       const { status, nextDueDate } = getCheckInStatus(
         expectedDay,
         lastCheckInPeriodEnd,
@@ -99,7 +101,7 @@ export async function GET(request: NextRequest) {
     // day, clamped forward to their activation date for a partial first week (a
     // mid-week-activated client sees [start_date .. check-in day], not a full 7).
     // Shared with submitCheckIn so the displayed and stored periods agree.
-    const today = new Date();
+    const today = getTodayInTimezone(client.timezone);
     const { periodStart, periodEnd } = resolveCheckInWindow(today, expectedDay, client.startDate);
 
     // Math.round avoids off-by-one when dates straddle a DST transition

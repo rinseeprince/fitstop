@@ -58,6 +58,20 @@ export const getTodayDateStringInTimezone = (
 };
 
 /**
+ * Returns "today" in the given IANA zone as a local-midnight Date, for the
+ * injectable-Date helpers (getCheckInStatus / resolveCheckInWindow /
+ * calculateCheckInPeriod) whose internal math uses local getters
+ * (.getDay() / formatDateISO). Deliberately NOT parseISODate: that parses
+ * bare YYYY-MM-DD as UTC midnight, which is off by one day west of UTC when
+ * read back through local getters. The "T00:00:00" suffix forces local
+ * parsing — the established codebase idiom.
+ */
+export const getTodayInTimezone = (
+  timeZone: string,
+  now: Date = new Date()
+): Date => new Date(getTodayDateStringInTimezone(timeZone, now) + "T00:00:00");
+
+/**
  * Returns the device's IANA time zone, or undefined when it can't be resolved
  * (older runtimes, locked-down environments). Lives here so date-helpers stays
  * the only owner of Intl — the timezone auto-sync hooks import this instead of

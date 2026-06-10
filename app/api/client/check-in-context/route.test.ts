@@ -174,4 +174,39 @@ describe('GET /api/client/check-in-context', () => {
     expect(res.status).toBe(404);
     expect(getCheckInNutritionContext).not.toHaveBeenCalled();
   });
+
+  it("anchors the gate and the displayed period to the CLIENT's local today (London 23:30Z boundary)", async () => {
+    // 23:30 UTC Tue June 9 = 00:30 BST Wed June 10. Wednesday is the check-in
+    // day: the gate must see Wednesday and the displayed window must end on
+    // 06-10 — under server UTC both would still be anchored to Tuesday.
+    // (Suite is pinned to TZ=UTC, so a regression fails on any host.)
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-06-09T23:30:00Z'));
+      vi.mocked(getClientById).mockResolvedValue({
+        ...baseClient,
+        expectedCheckInDay: 'wednesday',
+        timezone: 'Europe/London',
+      } as any);
+      mockServerSupabase(null);
+      vi.mocked(getCheckInStatus).mockReturnValue({
+        status: 'available',
+        nextDueDate: '2026-06-10',
+      } as any);
+
+      const res = await GET(req());
+      const body = await res.json();
+
+      expect(res.status).toBe(200);
+      // resolveCheckInWindow is REAL here (only getCheckInStatus is mocked):
+      // the stored/displayed period ends on the client-local Wednesday.
+      expect(body.data.periodStart).toBe('2026-06-04');
+      expect(body.data.periodEnd).toBe('2026-06-10');
+      // The gate received the client-local today (June 10), not UTC June 9.
+      const gateToday = vi.mocked(getCheckInStatus).mock.calls[0][2];
+      expect(gateToday?.getDate()).toBe(10);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

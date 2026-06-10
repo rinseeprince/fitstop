@@ -60,6 +60,22 @@ vi.mock('./roadmap-service', () => ({
   getActiveRoadmap: vi.fn().mockResolvedValue(null),
 }))
 
+// The real promoteNutritionPlanIfReady runs in these tests; it now resolves
+// the client-local today through today-service before touching the DB.
+vi.mock('./today-service', () => ({
+  getClientTodayString: vi.fn().mockResolvedValue('2026-01-15'),
+}))
+
+// Passthrough spy: real resolver behavior, observable arguments.
+const { resolveEffectiveGoalSpy } = vi.hoisted(() => ({
+  resolveEffectiveGoalSpy: vi.fn(),
+}))
+vi.mock('@/lib/goals/resolve-effective-goal', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/goals/resolve-effective-goal')>()
+  resolveEffectiveGoalSpy.mockImplementation(actual.resolveEffectiveGoal)
+  return { resolveEffectiveGoal: resolveEffectiveGoalSpy }
+})
+
 import { getCheckInById, getClientCheckIns } from './check-in-service'
 import { getClientById } from './client-service'
 import { getBodyMetricsHistory } from './body-metrics-service'
@@ -302,6 +318,29 @@ describe('Comparison Service - read-switch behavior', () => {
       expect(w.unit).toBe('lbs')
       // Display-unit pace is sensible; a kg/lbs mix would falsely read "unrealistic".
       expect(w.paceStatus).toBe('on_track')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("passes the CLIENT's local today to resolveEffectiveGoal (Kiritimati boundary)", async () => {
+    // UTC+14: at 12:00 UTC June 9 the client is already on June 10. Suite is
+    // pinned to TZ=UTC, so a regression to the server clock fails anywhere.
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date('2026-06-09T12:00:00Z'))
+      vi.mocked(getClientById).mockResolvedValue({
+        ...mockClient,
+        timezone: 'Pacific/Kiritimati',
+      } as never)
+      vi.mocked(getBodyMetricsHistory).mockResolvedValue([])
+      vi.mocked(getCurrentGoals).mockResolvedValue(null)
+
+      await getCheckInComparison('ci-1')
+
+      expect(resolveEffectiveGoalSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ today: '2026-06-10' }),
+      )
     } finally {
       vi.useRealTimers()
     }

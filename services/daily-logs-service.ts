@@ -1,7 +1,8 @@
 import { supabaseAdmin } from "./supabase-admin";
 import type { DailyLog, NutritionAdherenceStatus } from "@/types/daily-log";
 import type { DayOfWeek } from "@/types/check-in";
-import { getTodayDateString, getDateString, getDateDaysAgo, dateStringToDayNumber } from "@/lib/date-helpers";
+import { getDateString, getDateDaysFrom, dateStringToDayNumber } from "@/lib/date-helpers";
+import { getClientTodayString } from "./today-service";
 import { NUTRITION_ADHERENCE_HIT_THRESHOLD, NUTRITION_ADHERENCE_PARTIAL_THRESHOLD } from "@/lib/constants";
 
 // Shape returned by the daily_logs_full view (not yet in generated types)
@@ -156,7 +157,7 @@ export const getDailyLogs = async (
 };
 
 export const getTodayLog = async (clientId: string, date?: string): Promise<DailyLog | null> => {
-  const targetDate = date || getTodayDateString();
+  const targetDate = date || (await getClientTodayString(clientId));
 
   const { data, error } = (await supabaseAdmin
     .from("daily_logs_full")
@@ -173,13 +174,13 @@ export const getTodayLog = async (clientId: string, date?: string): Promise<Dail
 };
 
 export const calculateStreaks = async (clientId: string): Promise<StreakResult> => {
-  // "today" and the 365-day window are computed here (server-local, matching the
-  // prior in-Node behavior) and passed to the RPC — never CURRENT_DATE / a SQL
-  // DEFAULT (supabase-js sends explicit null for undefined keys, which a DEFAULT
+  // "today" (client-local) and the 365-day window anchored to it are computed
+  // here and passed to the RPC — never CURRENT_DATE / a SQL DEFAULT
+  // (supabase-js sends explicit null for undefined keys, which a DEFAULT
   // would not catch). The RPC does a bounded index-only scan over daily_logs and
   // returns the two streak integers — no daily_logs_full view scan, no O(D²) loop.
-  const today = getTodayDateString();
-  const startDate = getDateDaysAgo(365);
+  const today = await getClientTodayString(clientId);
+  const startDate = getDateDaysFrom(new Date(today + "T00:00:00"), -365);
 
   const { data, error } = await supabaseAdmin.rpc("get_client_streak", {
     p_client_id: clientId,

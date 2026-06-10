@@ -7,7 +7,7 @@ import type {
   CheckInReview,
 } from "@/types/check-in";
 import { mapCheckInRow } from "@/lib/mappers";
-import { getDateString, dateStringToDayNumber, resolveCheckInWindow } from "@/lib/date-helpers";
+import { getDateString, dateStringToDayNumber, getTodayInTimezone, resolveCheckInWindow } from "@/lib/date-helpers";
 import type { CheckInCursor } from "@/lib/cursor";
 import { insertExerciseHighlights } from "./check-in-details-service";
 import { getCheckInTrainingPeriodStats } from "./check-in-context-service";
@@ -53,8 +53,10 @@ export const submitCheckIn = async (
   // coach-detail derivation reads). The window ends on the check-in day, clamped
   // forward to the activation date for a partial first week.
   const client = await getClientById(clientId);
+  // Client-local today: the stored period must agree with the gate/form, which
+  // both resolve the window on the client's day.
   const { periodStart, periodEnd } = resolveCheckInWindow(
-    new Date(),
+    getTodayInTimezone(client?.timezone ?? "UTC"),
     client?.expectedCheckInDay,
     client?.startDate
   );

@@ -9,7 +9,7 @@ import { getCurrentGoals } from "./client-goals-service";
 import { getActiveRoadmap } from "./roadmap-service";
 import { resolveEffectiveGoal } from "@/lib/goals/resolve-effective-goal";
 import { weightFromKg } from "@/utils/nutrition-helpers";
-import { getTodayDateString } from "@/lib/date-helpers";
+import { getTodayDateStringInTimezone } from "@/lib/date-helpers";
 import type {
   CheckInComparison,
   GoalProgress,
@@ -83,7 +83,9 @@ export const getCheckInComparison = async (
       deadline: currentGoals?.goalDeadline ?? client.goalDeadline ?? null,
       startDate: currentGoals?.goalStartDate ?? null,
     },
-    today: getTodayDateString(),
+    // Client-local today: the pace window is on the client's calendar. The
+    // client record is already in scope, so resolve their zone directly.
+    today: getTodayDateStringInTimezone(client.timezone),
   });
 
   // Effective goal in DISPLAY units so the displayed goal and the pace share scope.

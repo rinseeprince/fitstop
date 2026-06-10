@@ -6,7 +6,6 @@ import { submitCheckIn, getClientCheckIns } from "@/services/check-in-service";
 import { triggerAISummaryGeneration, updateClientMetricsFromCheckIn } from "@/services/client-check-in-service";
 import { updateClientAdherenceStats } from "@/services/check-in-adherence-service";
 import { clientSubmitCheckInSchema } from "@/lib/validations/check-in";
-import { calculateCheckInPeriod } from "@/lib/date-helpers";
 import { decodeCursor, encodeCursor } from "@/lib/cursor";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { generateAndSaveCheckInSnapshot } from "@/services/check-in-snapshot-service";
@@ -235,21 +234,22 @@ export async function POST(request: NextRequest) {
       nutritionAdherence: body.nutritionAdherence,
     });
 
-    // Store check-in period based on client's expectedCheckInDay
+    // Freeze the period snapshot over the period submitCheckIn STORED
+    // (client-local, activation-clamped). Do not recompute the window here:
+    // an earlier version re-derived it from the server clock with
+    // calculateCheckInPeriod and UPDATE'd the row, silently overwriting the
+    // client-local period — which broke the "completed" gate right after
+    // submitting (duplicate same-week check-ins at the midnight boundary) and
+    // froze the snapshot over the wrong week.
     const client = await getClientById(clientId);
-    if (client?.expectedCheckInDay) {
-      const { periodStart, periodEnd } = calculateCheckInPeriod(
-        new Date(),
-        client.expectedCheckInDay
-      );
-      // TODO: Replace with server client once a scoped UPDATE RLS policy exists for check_ins
-      await supabaseAdmin
-        .from("check_ins")
-        .update({ period_start: periodStart, period_end: periodEnd })
-        .eq("id", checkInId);
-
-      // Generate and freeze period snapshot (awaited so AI can use it)
-      await generateAndSaveCheckInSnapshot(checkInId, clientId, periodStart, periodEnd)
+    const { data: storedPeriod } = await supabaseAdmin
+      .from("check_ins")
+      .select("period_start, period_end")
+      .eq("id", checkInId)
+      .single();
+    if (storedPeriod?.period_start && storedPeriod.period_end) {
+      // Awaited so AI can use it
+      await generateAndSaveCheckInSnapshot(checkInId, clientId, storedPeriod.period_start, storedPeriod.period_end)
         .catch((err) => captureApiError(err, { action: "check-in-snapshot-generation", checkInId, clientId }));
     }
 

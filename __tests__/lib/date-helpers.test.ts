@@ -5,7 +5,31 @@ import {
   resolveCheckInWindow,
   getCheckInStatus,
   getDeviceTimeZone,
+  getTodayInTimezone,
+  formatDateISO,
 } from "@/lib/date-helpers";
+
+describe("getTodayInTimezone", () => {
+  it("returns a local-midnight Date for the zone's today (east of UTC)", () => {
+    // 23:30 UTC June 9 is already 00:30 BST June 10 in London.
+    const d = getTodayInTimezone("Europe/London", new Date("2026-06-09T23:30:00Z"));
+    expect(formatDateISO(d)).toBe("2026-06-10");
+    // 2026-06-10 is a Wednesday — .getDay() must agree with the date above
+    // (the UTC-midnight pitfall this helper exists to avoid).
+    expect(d.getDay()).toBe(3);
+  });
+
+  it("returns the previous day west of UTC", () => {
+    // 00:30 UTC June 10 is still 17:30 June 9 in Los Angeles.
+    const d = getTodayInTimezone("America/Los_Angeles", new Date("2026-06-10T00:30:00Z"));
+    expect(formatDateISO(d)).toBe("2026-06-09");
+  });
+
+  it("falls back to UTC for an invalid zone", () => {
+    const d = getTodayInTimezone("Mars/Olympus", new Date("2026-06-09T23:30:00Z"));
+    expect(formatDateISO(d)).toBe("2026-06-09");
+  });
+});
 
 describe("getDeviceTimeZone", () => {
   afterEach(() => {

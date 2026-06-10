@@ -3,7 +3,8 @@ import { getActiveTrainingPlan } from "./training-service";
 import { countEventsInRange, getEventsForDateRange } from "./training-event-service";
 import { getNutritionEventsForDateRange } from "./nutrition-event-service";
 import { mapNutritionEventToDisplayTarget } from "@/utils/nutrition-event-helpers";
-import { getTodayDateString, getTrainingWeekStart, getTrainingWeekEnd } from "@/lib/date-helpers";
+import { getTrainingWeekStart, getTrainingWeekEnd } from "@/lib/date-helpers";
+import { getClientTodayString } from "./today-service";
 import { sanitizeForAIPrompt } from "@/utils/ai-prompt-sanitizer";
 import type {
   CheckInTrainingContext,
@@ -57,8 +58,14 @@ export const getCheckInTrainingContext = async (
 export const getCheckInNutritionContext = async (
   clientId: string
 ): Promise<CheckInNutritionContext> => {
+  // Client-local today: the check-in form's "current week" targets must agree
+  // with the gate/period (also client-local) — at 00:30 local just past a UTC
+  // week rollover, server-UTC today would show last week's targets. Resolved
+  // once and shared with the promotion check below.
+  const today = await getClientTodayString(clientId);
+
   // Promote planned plan if its effective date has arrived
-  await promoteNutritionPlanIfReady(clientId);
+  await promoteNutritionPlanIfReady(clientId, today);
 
   const { data: nutritionPlan, error } = await supabaseAdmin
     .from("nutrition_plans")
@@ -74,7 +81,6 @@ export const getCheckInNutritionContext = async (
   }
 
   // Try event-based targets for the current week
-  const today = getTodayDateString();
   const weekStart = getTrainingWeekStart(today);
   const weekEnd = getTrainingWeekEnd(today);
 

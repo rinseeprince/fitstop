@@ -62,8 +62,13 @@ export async function POST(
 
     const dayCalorieOverrides = parseResult.data as DayCalorieOverrides;
 
+    // Client-local today: this route stamps a new plan's effective_from
+    // directly (it bypasses the atomic RPC), so it must anchor the same way.
+    // Resolved once and shared with the promotion check below.
+    const today = await getClientTodayString(clientId);
+
     // Promote planned plan if its effective date has arrived
-    await promoteNutritionPlanIfReady(clientId);
+    await promoteNutritionPlanIfReady(clientId, today);
 
     // Get the current active plan
     const { data: currentPlan, error: planError } = await supabaseAdmin
@@ -82,9 +87,6 @@ export async function POST(
       );
     }
 
-    // Client-local today: this route stamps a new plan's effective_from
-    // directly (it bypasses the atomic RPC), so it must anchor the same way.
-    const today = await getClientTodayString(clientId);
     const yesterdayDate = new Date(today + "T00:00:00");
     yesterdayDate.setDate(yesterdayDate.getDate() - 1);
     const yesterday = getDateString(yesterdayDate);

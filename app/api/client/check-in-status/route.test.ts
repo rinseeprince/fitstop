@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 import type { CheckInGateStatus } from "@/lib/date-helpers";
+import { formatDateISO } from "@/lib/date-helpers";
 
 vi.mock("@/lib/rate-limit", () => ({
   clientApiRateLimit: vi.fn().mockResolvedValue(null),
@@ -93,6 +94,35 @@ describe("GET /api/client/check-in-status", () => {
     expect(response.status).toBe(200);
     expect(body.data).toEqual({ status: "available", nextDueDate: null });
     expect(getCheckInStatus).not.toHaveBeenCalled();
+  });
+
+  it("gates on the CLIENT's local today, not server UTC (London 23:30Z boundary)", async () => {
+    // 23:30 UTC June 9 = 00:30 BST June 10: the client's check-in day may
+    // already have arrived even though the server is still on June 9. (The
+    // suite is pinned to TZ=UTC, so a regression to the server clock fails
+    // deterministically on any host.)
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-06-09T23:30:00Z"));
+      vi.mocked(getClientById).mockResolvedValue({
+        id: CLIENT_ID,
+        expectedCheckInDay: "wednesday",
+        timezone: "Europe/London",
+      } as never);
+      vi.mocked(getCheckInStatus).mockReturnValue({
+        status: "available",
+        nextDueDate: "2026-06-10",
+        periodStart: "2026-06-04",
+        periodEnd: "2026-06-10",
+      });
+
+      await GET(request());
+
+      const todayArg = vi.mocked(getCheckInStatus).mock.calls[0][2];
+      expect(formatDateISO(todayArg)).toBe("2026-06-10");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("returns 401 when unauthenticated", async () => {

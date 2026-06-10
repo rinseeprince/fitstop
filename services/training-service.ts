@@ -2,7 +2,7 @@ import { supabaseAdmin } from "./supabase-admin";
 import type { TrainingPlan, TrainingSession, TrainingExercise, AIGeneratedPlan, UpdateTrainingPlanRequest } from "@/types/training";
 import type { TrainingPlanUpdate } from "@/lib/database-helpers";
 import { mapExerciseRow, mapSessionRow, mapPlanRow } from "./training-mappers";
-import { getTodayDateString, getDateString } from "@/lib/date-helpers";
+import { getDateString } from "@/lib/date-helpers";
 import { getClientTodayString } from "@/services/today-service";
 import { deleteFutureEventsForPlan, regenerateFutureEvents } from "@/services/training-event-service";
 import { captureApiError } from "@/lib/error-handler";
@@ -346,9 +346,14 @@ export const createTrainingPlanAtomic = async (params: {
  * supabaseAdmin: system-level write for plan lifecycle management.
  */
 export async function promoteTrainingPlanIfReady(
-  clientId: string
+  clientId: string,
+  clientToday?: string
 ): Promise<{ promoted: boolean; newPlanId?: string }> {
-  const today = getTodayDateString();
+  // Client-local today: a plan effective "today" must promote when the
+  // CLIENT's day arrives, not the server's UTC day. Also the anchor for the
+  // delete/regen pair below. Callers that already resolved the client-local
+  // today pass it in to avoid a redundant fetch.
+  const today = clientToday ?? (await getClientTodayString(clientId));
 
   const { data: plannedPlan, error } = await supabaseAdmin
     .from("training_plans")

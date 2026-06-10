@@ -22,7 +22,12 @@ vi.mock('./client-portal-service', () => ({
   getClientNutritionTargets: vi.fn(),
 }));
 
+vi.mock('./today-service', () => ({
+  getClientTodayString: vi.fn().mockResolvedValue('2026-04-08'),
+}));
+
 import { supabaseAdmin } from './supabase-admin';
+import { getClientTodayString } from './today-service';
 
 function createMockQuery(result: { data: unknown; error: unknown }) {
   const mockQuery = {
@@ -275,11 +280,11 @@ describe('Daily Logs Service - Database Functions', () => {
   });
 
   describe('getTodayLog', () => {
-    it('returns today\'s log when exists', async () => {
+    it("returns today's log when exists, querying the client-local today", async () => {
       const mockData = {
         id: 'log-today',
         client_id: 'client-123',
-        date: new Date().toISOString().split('T')[0],
+        date: '2026-04-08', // the mocked client-local today
         mood: 5,
         created_at: '2024-01-15T10:00:00Z',
         updated_at: '2024-01-15T10:00:00Z',
@@ -289,9 +294,12 @@ describe('Daily Logs Service - Database Functions', () => {
       vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any);
 
       const result = await getTodayLog('client-123');
-      
+
       expect(result?.id).toBe('log-today');
       expect(result?.mood).toBe(5);
+      // The default date is the CLIENT's local today, not the host clock.
+      expect(getClientTodayString).toHaveBeenCalledWith('client-123');
+      expect(mockQuery.eq).toHaveBeenCalledWith('date', '2026-04-08');
     });
 
     it('returns null when no log today', async () => {
@@ -304,7 +312,10 @@ describe('Daily Logs Service - Database Functions', () => {
   });
 
   describe('calculateStreaks', () => {
-    it('calls the get_client_streak RPC with explicit today + 365-day window and maps the result', async () => {
+    it('calls the get_client_streak RPC with the client-local today + a 365-day window anchored to it', async () => {
+      // The mocked client-local today (2026-04-08) diverges from the host
+      // clock, so these exact-match assertions fail if the implementation
+      // regresses to server time.
       vi.mocked(supabaseAdmin.rpc).mockResolvedValue({
         data: [{ current_streak: 4, longest_streak: 9 }],
         error: null,
@@ -313,10 +324,11 @@ describe('Daily Logs Service - Database Functions', () => {
       const result = await calculateStreaks('client-123');
 
       expect(result).toEqual({ currentStreak: 4, longestStreak: 9 });
+      expect(getClientTodayString).toHaveBeenCalledWith('client-123');
       expect(supabaseAdmin.rpc).toHaveBeenCalledWith('get_client_streak', {
         p_client_id: 'client-123',
-        p_today: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
-        p_start_date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        p_today: '2026-04-08',
+        p_start_date: '2025-04-08',
       });
     });
 

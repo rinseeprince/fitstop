@@ -303,6 +303,38 @@ describe('Check-in Service', () => {
       expect(q.insert).toHaveBeenCalled()
     })
 
+    it("anchors the STORED period to the client's local today (London 23:30Z boundary)", async () => {
+      // 23:30 UTC June 9 = 00:30 BST June 10. The persisted period_start/end
+      // are read forever by coach-side derivations, so the window passed to
+      // resolveCheckInWindow must be the client-local day. getTodayInTimezone
+      // is real here (the partial date-helpers mock only replaces the two
+      // window fns); the suite is pinned to TZ=UTC so a regression to the
+      // server clock fails on any host.
+      vi.useFakeTimers()
+      try {
+        vi.setSystemTime(new Date('2026-06-09T23:30:00Z'))
+        getClientByIdMock.mockResolvedValue({
+          expectedCheckInDay: 'wednesday',
+          startDate: '2026-01-01',
+          timezone: 'Europe/London',
+        })
+        mockInsert({ data: { id: 'new-check-in-id' }, error: null })
+
+        const { submitCheckIn } = await import('./check-in-service')
+        await submitCheckIn('client-123', { weight: 180, weightUnit: 'lbs' })
+
+        const todayArg = resolveCheckInWindowMock.mock.calls[0][0] as Date
+        expect(todayArg.getDate()).toBe(10)
+        expect(resolveCheckInWindowMock).toHaveBeenCalledWith(
+          expect.any(Date),
+          'wednesday',
+          '2026-01-01',
+        )
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
     it('DERIVES snapshot columns from the spine, not the form body', async () => {
       getCheckInTrainingPeriodStatsMock.mockResolvedValue({ sessionsCompleted: 4, sessionsPlanned: 5 })
       getNutritionSummaryForPeriodMock.mockResolvedValue({ daysOnTarget: 5, adherencePercentage: 71.4 })

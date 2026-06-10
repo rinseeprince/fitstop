@@ -30,6 +30,12 @@ vi.mock("@/services/phase-service", () => ({
   getActivePhase: vi.fn(),
 }));
 
+// The real promoteNutritionPlanIfReady runs in these tests; it now resolves
+// the client-local today through today-service before touching the DB.
+vi.mock("@/services/today-service", () => ({
+  getClientTodayString: vi.fn().mockResolvedValue("2026-01-15"),
+}));
+
 const mockMaybeSingle = vi.fn();
 vi.mock("@/services/supabase-admin", () => ({
   supabaseAdmin: {

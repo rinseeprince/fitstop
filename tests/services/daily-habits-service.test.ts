@@ -7,13 +7,20 @@ vi.mock('../../services/supabase-admin', () => ({
   },
 }))
 
+// Habit defaults resolve the client-local today through today-service.
+vi.mock('../../services/today-service', () => ({
+  getClientTodayString: vi.fn().mockResolvedValue('2026-04-08'),
+}))
+
 import { supabaseAdmin } from '../../services/supabase-admin'
+import { getClientTodayString } from '../../services/today-service'
 import {
   calculateCompletionRate,
   calculateCurrentStreak,
   mapArrayIndexToSortOrder,
   getClientHabits,
   createHabit,
+  getTodayHabitLogs,
   getHabitStats,
 } from '../../services/daily-habits-service'
 import type { DailyHabitLog } from '@/types/daily-habit'
@@ -211,6 +218,76 @@ describe('Daily Habits Service - Database Functions', () => {
         createdAt: '2024-01-01T00:00:00Z',
         updatedAt: '2024-01-01T00:00:00Z',
       }])
+    })
+  })
+
+  describe('getTodayHabitLogs', () => {
+    it("defaults the query date to the CLIENT's local today, not the host clock", async () => {
+      const mockQuery = createMockQuery({ data: [], error: null })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as never)
+
+      await getTodayHabitLogs('client-789')
+
+      // '2026-04-08' is the mocked client-local today — any regression to a
+      // host-clock default fails these exact-match assertions.
+      expect(getClientTodayString).toHaveBeenCalledWith('client-789')
+      expect(mockQuery.eq).toHaveBeenCalledWith('date', '2026-04-08')
+    })
+
+    it('does not resolve a today when an explicit date is given', async () => {
+      const mockQuery = createMockQuery({ data: [], error: null })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as never)
+
+      await getTodayHabitLogs('client-789', '2026-03-01')
+
+      expect(getClientTodayString).not.toHaveBeenCalled()
+      expect(mockQuery.eq).toHaveBeenCalledWith('date', '2026-03-01')
+    })
+  })
+
+  describe('createHabit', () => {
+    it("defaults effective_date to the CLIENT's local today", async () => {
+      const clientQuery = createMockQuery({
+        data: { coach_id: 'coach-1' },
+        error: null,
+      })
+      // daily_habits queries, in call order: inactive-name check (miss),
+      // next-sort-order lookup (none), then the insert itself.
+      const noInactiveQuery = createMockQuery({
+        data: null,
+        error: { message: 'No rows found' },
+      })
+      const sortOrderQuery = createMockQuery({ data: null, error: null })
+      const insertQuery = createMockQuery({
+        data: {
+          id: 'habit-1',
+          client_id: 'client-789',
+          name: 'Walk',
+          is_boolean: true,
+          is_active: true,
+          sort_order: 0,
+          effective_date: '2026-04-08',
+          created_at: '2026-04-08T00:00:00Z',
+          updated_at: '2026-04-08T00:00:00Z',
+        },
+        error: null,
+      })
+
+      let habitCalls = 0
+      vi.mocked(supabaseAdmin.from).mockImplementation(((table: string) => {
+        if (table === 'clients') return clientQuery as never
+        habitCalls++
+        if (habitCalls === 1) return noInactiveQuery as never
+        if (habitCalls === 2) return sortOrderQuery as never
+        return insertQuery as never
+      }) as never)
+
+      await createHabit('coach-1', 'client-789', { name: 'Walk', isBoolean: true })
+
+      expect(getClientTodayString).toHaveBeenCalledWith('client-789')
+      expect(insertQuery.insert).toHaveBeenCalledWith(
+        expect.objectContaining({ effective_date: '2026-04-08' }),
+      )
     })
   })
 })

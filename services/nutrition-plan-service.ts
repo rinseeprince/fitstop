@@ -4,7 +4,7 @@ import type { DietType, DayCalorieOverrides } from "@/types/check-in";
 import type { DayOfWeek } from "@/utils/nutrition-helpers";
 import type { TrainingPlan } from "@/types/training";
 import { recordBodyMetrics } from "@/services/body-metrics-service";
-import { getTodayDateString, getDateString } from "@/lib/date-helpers";
+import { getDateString } from "@/lib/date-helpers";
 import { getClientTodayString } from "@/services/today-service";
 import { deleteFutureNutritionEventsForPlan, regenerateFutureNutritionEvents } from "@/services/nutrition-event-service";
 import { captureApiError } from "@/lib/error-handler";
@@ -172,9 +172,14 @@ export async function createNutritionPlan(params: CreateNutritionPlanParams): Pr
  * supabaseAdmin: system-level write for plan lifecycle management.
  */
 export async function promoteNutritionPlanIfReady(
-  clientId: string
+  clientId: string,
+  clientToday?: string
 ): Promise<{ promoted: boolean; newPlanId?: string }> {
-  const today = getTodayDateString();
+  // Client-local today: a plan effective "today" must promote when the
+  // CLIENT's day arrives, not the server's UTC day. Also the anchor for the
+  // delete/regen pair below. Callers that already resolved the client-local
+  // today pass it in to avoid a redundant fetch.
+  const today = clientToday ?? (await getClientTodayString(clientId));
 
   const { data: plannedPlan, error } = await supabaseAdmin
     .from("nutrition_plans")
