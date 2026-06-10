@@ -23,3 +23,4 @@ export interface TriggerResult {
 export { evaluateMoodEnergyDrop, evaluateHighStress } from "./wellness-triggers"
 export { evaluateLoggingGap, evaluateNutritionMisses, evaluateTrainingMisses, evaluatePartialTrainingPattern } from "./tracking-triggers"
 export { evaluateHabitDropoff, evaluateActivityCalMismatch } from "./activity-triggers"
+export { evaluateNoEngagement } from "./engagement-triggers"

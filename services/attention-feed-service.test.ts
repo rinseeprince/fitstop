@@ -14,6 +14,7 @@ describe("attention-feed-service", () => {
     name: "Test Client",
     avatar_url: null,
     expected_check_in_day: null,
+    start_date: null,
   }
 
   describe("groupClientData", () => {
@@ -57,6 +58,18 @@ describe("attention-feed-service", () => {
 
       expect(result.get("c1")!.trainingEvents).toEqual([])
       expect(result.get("c1")!.plannedSessionCount).toBe(0)
+    })
+
+    it("should carry start_date into ClientData.startDate (null when absent)", () => {
+      expect(groupClientData([baseClient], null, null, null, null).get("c1")!.startDate).toBeNull()
+      const withStart = groupClientData(
+        [{ ...baseClient, start_date: "2026-05-01" }],
+        null,
+        null,
+        null,
+        null,
+      )
+      expect(withStart.get("c1")!.startDate).toBe("2026-05-01")
     })
   })
 
@@ -107,6 +120,37 @@ describe("attention-feed-service", () => {
         // Mon/Tue/Sun: past events may cross week boundary — just verify no crash
         expect(result).toBeDefined()
       }
+    })
+
+    it("surfaces a no_engagement alert for a never-logged client with prescribed training", () => {
+      // Regression: a client with an assigned plan (training events) but zero logs
+      // used to be skipped by the old `data.logs.length === 0` guard and counted as
+      // "on track". They must now surface.
+      const iso = (d: Date) => d.toISOString().split("T")[0]
+      const today = new Date()
+      const start = new Date(today)
+      start.setDate(today.getDate() - 60) // long past the activation grace
+      const oldEvent = new Date(today)
+      oldEvent.setDate(today.getDate() - 30) // prescribed, outside the current training week
+
+      const clients = [{ ...baseClient, start_date: iso(start) }]
+      const events: TrainingEventRow[] = [
+        { client_id: "c1", date: iso(oldEvent), status: "scheduled", estimated_calories: 300 },
+      ]
+      const dateRange = { start: iso(start), end: iso(today) }
+
+      const map = groupClientData(clients, null, null, null, events)
+      const result = evaluateAndSortTriggers(map, dateRange)
+
+      const c1 = result.find((c) => c.clientId === "c1")
+      expect(c1).toBeDefined()
+      expect(c1!.alerts.some((a) => a.type === "no_engagement")).toBe(true)
+    })
+
+    it("skips a client with no logs, no events, no habits, and no habit logs", () => {
+      const map = groupClientData([baseClient], null, null, null, null)
+      const result = evaluateAndSortTriggers(map, { start: "2026-01-01", end: "2026-01-28" })
+      expect(result.find((c) => c.clientId === "c1")).toBeUndefined()
     })
   })
 

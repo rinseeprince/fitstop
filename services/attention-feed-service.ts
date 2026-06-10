@@ -18,7 +18,7 @@ import type { DailyLogRow } from "@/lib/attention-feed-helpers"
 
 type ClientRow = Database["public"]["Tables"]["clients"]["Row"]
 type ClientInfo = Pick<ClientRow, 'id' | 'name' | 'avatar_url'>
-type ClientInfoWithCheckIn = ClientInfo & Pick<ClientRow, 'expected_check_in_day'>
+type ClientInfoWithCheckIn = ClientInfo & Pick<ClientRow, 'expected_check_in_day' | 'start_date'>
 
 /**
  * Evaluates all attention triggers for all of a coach's clients
@@ -31,7 +31,7 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
   // 1. Get all clients for this coach
   const { data: clients, error: clientsError } = await supabaseAdmin
     .from("clients")
-    .select("id, name, avatar_url, expected_check_in_day")
+    .select("id, name, avatar_url, expected_check_in_day, start_date")
     .eq("coach_id", coachId)
     .eq("active", true)
     .eq("onboarding_status", "active")
@@ -166,7 +166,7 @@ export async function evaluateSingleClientAlerts(
 
   const { data: client, error: clientError } = await supabaseAdmin
     .from("clients")
-    .select("id, name, avatar_url, expected_check_in_day")
+    .select("id, name, avatar_url, expected_check_in_day, start_date")
     .eq("id", clientId)
     .eq("coach_id", coachId)
     .maybeSingle()

@@ -39,6 +39,10 @@ export const TRAINING_MISSED_WEEKLY_THRESHOLD = 2; // Sessions per week
 export const PARTIAL_TRAINING_LOOKBACK_EVENTS = 9;
 export const PARTIAL_TRAINING_THRESHOLD = 3;
 
+// No-engagement (disengaged-client) thresholds
+export const NO_ENGAGEMENT_SILENCE_DAYS = 3; // No activity (logs/habits/completed sessions) in this many days
+export const NO_ENGAGEMENT_ACTIVATION_GRACE_DAYS = 3; // Days after start_date before a silent client is flagged
+
 export const HIGH_STRESS_THRESHOLD = 8; // Stress level
 export const HIGH_STRESS_CONSECUTIVE_DAYS = 3;
 

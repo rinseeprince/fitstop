@@ -13,6 +13,7 @@ export type AlertType =
   | "habit_dropoff"
   | "activity_cal_mismatch"
   | "partial_training_pattern"
+  | "no_engagement"
 
 export interface WellnessAlert {
   type: AlertType

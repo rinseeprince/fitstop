@@ -17,6 +17,7 @@ const alertTabMap: Record<AlertType, string> = {
   training_missed: "training",
   partial_training_pattern: "training",
   habit_dropoff: "daily-habits",
+  no_engagement: "training",
 }
 
 function AlertRow({ clientId, alert, onDismiss }: {
@@ -127,6 +128,8 @@ export function NeedsAttentionFeed() {
         return "Overeating on rest days"
       case "partial_training_pattern":
         return `${days} sessions partial`
+      case "no_engagement":
+        return "No recent activity"
       default:
         return alert.message
     }

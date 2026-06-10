@@ -16,12 +16,13 @@ import {
   evaluateHighStress,
   evaluateHabitDropoff,
   evaluateActivityCalMismatch,
+  evaluateNoEngagement,
   type TriggerResult
 } from "@/lib/attention-triggers"
 
 type ClientRow = Database["public"]["Tables"]["clients"]["Row"]
 type ClientInfo = Pick<ClientRow, 'id' | 'name' | 'avatar_url'>
-type ClientInfoWithCheckIn = ClientInfo & Pick<ClientRow, 'expected_check_in_day'>
+type ClientInfoWithCheckIn = ClientInfo & Pick<ClientRow, 'expected_check_in_day' | 'start_date'>
 
 // View row shape - daily_logs_full joins spine + wellness + nutrition + training
 export type DailyLogRow = {
@@ -52,6 +53,7 @@ export type ClientData = {
   trainingEvents: TrainingEventRow[]
   plannedSessionCount: number
   checkInDay: string | null
+  startDate: string | null
 }
 
 /** Groups raw query results into a per-client map of domain objects */
@@ -74,6 +76,7 @@ export function groupClientData(
       trainingEvents: [],
       plannedSessionCount: 0,
       checkInDay: client.expected_check_in_day ?? null,
+      startDate: client.start_date ?? null,
     })
   })
 
@@ -184,8 +187,15 @@ export function evaluateAndSortTriggers(
   for (const [_clientId, data] of clientDataMap) {
     const alerts: AttentionAlert[] = []
 
-    // Skip clients with no logs
-    if (data.logs.length === 0) {
+    // Skip only clients with nothing to evaluate. Event/habit-driven triggers
+    // (training misses, partial pattern, no-engagement) read sources other than
+    // daily_logs, so a client with prescribed work but no logs must NOT be skipped.
+    if (
+      data.logs.length === 0 &&
+      data.trainingEvents.length === 0 &&
+      data.habitLogs.length === 0 &&
+      data.habits.length === 0
+    ) {
       continue
     }
 
@@ -199,7 +209,14 @@ export function evaluateAndSortTriggers(
       evaluatePartialTrainingPattern(data.trainingEvents),
       evaluateHighStress(data.logs),
       evaluateHabitDropoff(data.habitLogs, data.habits),
-      evaluateActivityCalMismatch(data.logs, data.trainingEvents)
+      evaluateActivityCalMismatch(data.logs, data.trainingEvents),
+      evaluateNoEngagement({
+        logs: data.logs,
+        habits: data.habits,
+        habitLogs: data.habitLogs,
+        trainingEvents: data.trainingEvents,
+        startDate: data.startDate,
+      })
     ]
 
     // Convert trigger results to alerts

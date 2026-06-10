@@ -480,8 +480,11 @@ Wellness/tracking/activity triggers evaluate across all coach's clients:
 - `lib/wellness-triggers.ts` - mood/energy drops, stress spikes
 - `lib/tracking-triggers.ts` - logging gaps, nutrition/training misses
 - `lib/activity-triggers.ts` - habit dropoff, activity-calorie mismatch
+- `lib/engagement-triggers.ts` - no-engagement / disengaged-client detection (absence signal)
 - `services/attention-feed-service.ts` - aggregates triggers into prioritized feed
 - `components/dashboard/needs-attention-feed.tsx` - renders on coach dashboard via SWR
+
+The eight wellness/tracking/activity triggers are pattern detectors over existing `daily_logs`, so they can only fire for clients who have logged. `evaluateAndSortTriggers` (`lib/attention-feed-helpers.ts`) therefore evaluates any client with **prescribed work** (training events or habits) even before their first daily log — it skips only clients with nothing logged AND nothing prescribed. `evaluateNoEngagement` is the one *absence* signal: it flags an active client who has prescribed work but no activity across any surface (daily_logs, daily_habit_logs, or completed/partial training_events) within the silence window, past an activation grace period. This is why a never-logged client with an assigned plan now surfaces instead of being silently counted "on track".
 
 ---
 
