@@ -7,6 +7,8 @@ import {
   getPhaseReviewData,
   transitionPhase,
 } from "@/services/phase-transition-service";
+import { recordAuditEvent } from "@/services/audit-log-service";
+import { AUDIT_ACTIONS } from "@/lib/constants";
 import { milestoneSchema } from "@/lib/validations/roadmap";
 
 type RouteParams = { params: Promise<{ id: string; phaseId: string }> };
@@ -82,6 +84,17 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     const result = await transitionPhase(phaseId, clientId, validation.data);
+
+    void recordAuditEvent({
+      actorId: auth.coachId,
+      actorRole: "trainer",
+      action: AUDIT_ACTIONS.PHASE_TRANSITION,
+      targetTable: "phases",
+      targetId: phaseId,
+      clientId,
+      metadata: { nextAction: validation.data.nextAction },
+      request,
+    });
 
     return NextResponse.json(
       { success: true, data: result },

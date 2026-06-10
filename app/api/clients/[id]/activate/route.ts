@@ -7,6 +7,8 @@ import { activateClientSchema } from "@/lib/validations/client-intake";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { sendActivationEmail } from "@/services/email-service";
 import { sendInvitation } from "@/services/invitation-service";
+import { recordAuditEvent } from "@/services/audit-log-service";
+import { AUDIT_ACTIONS } from "@/lib/constants";
 import type { OnboardingStatus } from "@/types/client-intake";
 import type { DayOfWeek } from "@/types/check-in";
 
@@ -78,6 +80,16 @@ export async function POST(
       console.error("Supabase update error:", error.message);
       throw new Error("Failed to activate client");
     }
+
+    void recordAuditEvent({
+      actorId: coachId,
+      actorRole: "trainer",
+      action: AUDIT_ACTIONS.CLIENT_ACTIVATE,
+      targetTable: "clients",
+      targetId: clientId,
+      clientId,
+      request,
+    });
 
     // Send activation email (fire-and-forget)
     fireAndForgetActivationEmail(supabase, clientId, client.email, client.name);

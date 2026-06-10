@@ -23,6 +23,8 @@ import { getActiveRoadmap } from "@/services/roadmap-service";
 import { getCurrentGoals } from "@/services/client-goals-service";
 import { resolveEffectiveGoal } from "@/lib/goals/resolve-effective-goal";
 import { detectGoalDrift } from "@/lib/goals/detect-goal-drift";
+import { recordAuditEvent } from "@/services/audit-log-service";
+import { AUDIT_ACTIONS } from "@/lib/constants";
 
 /**
  * GET: Return the active nutrition plan + daily targets for the coach view.
@@ -229,6 +231,16 @@ export async function POST(
       body,
       { phaseId: validationResult.data.phaseId, coachNotes: validationResult.data.coachNotes }
     );
+
+    void recordAuditEvent({
+      actorId: coachId,
+      actorRole: "trainer",
+      action: AUDIT_ACTIONS.NUTRITION_PLAN_CREATE,
+      targetTable: "nutrition_plans",
+      clientId,
+      metadata: { goalSource: result.goalSource },
+      request,
+    });
 
     return NextResponse.json(result, { status: 200 });
   } catch (error) {

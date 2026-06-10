@@ -19,6 +19,12 @@ vi.mock("@/services/phase-transition-service", () => ({
   transitionPhase: vi.fn(),
 }));
 
+// The route now records an audit event (fire-and-forget). Mock it so the test
+// doesn't load the real supabase-admin client (which throws without env vars).
+vi.mock("@/services/audit-log-service", () => ({
+  recordAuditEvent: vi.fn().mockResolvedValue(undefined),
+}));
+
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";

@@ -4,6 +4,8 @@ import { getClientById } from "@/services/client-service";
 import { apiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { syncMetricsToClient } from "@/services/intake-review-service";
+import { recordAuditEvent } from "@/services/audit-log-service";
+import { AUDIT_ACTIONS } from "@/lib/constants";
 
 export async function POST(
   request: NextRequest,
@@ -31,6 +33,16 @@ export async function POST(
     }
 
     await syncMetricsToClient(clientId);
+
+    void recordAuditEvent({
+      actorId: coachId,
+      actorRole: "trainer",
+      action: AUDIT_ACTIONS.INTAKE_SYNC_METRICS,
+      targetTable: "clients",
+      targetId: clientId,
+      clientId,
+      request,
+    });
 
     return NextResponse.json({ success: true, data: { synced: true } });
   } catch (error) {

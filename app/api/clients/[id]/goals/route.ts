@@ -7,6 +7,8 @@ import {
   updateGoals,
   getGoalsHistory,
 } from "@/services/client-goals-service";
+import { recordAuditEvent } from "@/services/audit-log-service";
+import { AUDIT_ACTIONS } from "@/lib/constants";
 import { updateGoalsSchema } from "@/lib/validations/roadmap";
 
 export async function GET(
@@ -75,6 +77,15 @@ export async function PUT(
     }
 
     const goals = await updateGoals(clientId, validation.data, auth.coachId);
+
+    void recordAuditEvent({
+      actorId: auth.coachId,
+      actorRole: "trainer",
+      action: AUDIT_ACTIONS.GOAL_CREATE,
+      targetTable: "client_goals",
+      clientId,
+      request,
+    });
 
     return NextResponse.json(
       { success: true, data: goals },

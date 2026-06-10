@@ -7,6 +7,8 @@ import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { placePlanOnCalendar, placeSessionOnCalendar } from "@/services/library-placement-service";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { regenerateFutureNutritionEvents } from "@/services/nutrition-event-service";
+import { recordAuditEvent } from "@/services/audit-log-service";
+import { AUDIT_ACTIONS } from "@/lib/constants";
 import { captureApiError } from "@/lib/error-handler";
 import { z } from "zod";
 
@@ -76,6 +78,17 @@ export async function POST(
       // Nutrition cascade
       await cascadeNutritionEvents(clientId, data.startDate);
 
+      void recordAuditEvent({
+        actorId: coachId,
+        actorRole: "trainer",
+        action: AUDIT_ACTIONS.TRAINING_PLAN_PLACE,
+        targetTable: "training_plans",
+        targetId: result.planId,
+        clientId,
+        metadata: { savedPlanId: data.savedPlanId, startDate: data.startDate },
+        request,
+      });
+
       return NextResponse.json(
         {
           success: true,
@@ -103,6 +116,17 @@ export async function POST(
 
     // Nutrition cascade
     await cascadeNutritionEvents(clientId, data.targetDate);
+
+    void recordAuditEvent({
+      actorId: coachId,
+      actorRole: "trainer",
+      action: AUDIT_ACTIONS.TRAINING_PLAN_PLACE,
+      targetTable: "training_sessions",
+      targetId: result.sessionId,
+      clientId,
+      metadata: { savedSessionId: data.savedSessionId, targetDate: data.targetDate },
+      request,
+    });
 
     return NextResponse.json(
       {

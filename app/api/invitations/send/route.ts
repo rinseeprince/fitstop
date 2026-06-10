@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server"
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers"
 import { sendInvitationSchema } from "@/lib/validations/invitation"
 import { sendInvitation } from "@/services/invitation-service"
+import { recordAuditEvent } from "@/services/audit-log-service"
+import { AUDIT_ACTIONS } from "@/lib/constants"
 import { supabaseAdmin } from "@/services/supabase-admin"
 import { authRateLimit } from "@/lib/rate-limit"
 import { requireCSRFProtection } from "@/lib/csrf-protection"
@@ -92,6 +94,15 @@ export async function POST(request: NextRequest) {
         { status: 500 }
       )
     }
+
+    void recordAuditEvent({
+      actorId: coachId,
+      actorRole: "trainer",
+      action: AUDIT_ACTIONS.INVITATION_SEND,
+      targetTable: "client_invitations",
+      clientId,
+      request,
+    })
 
     return NextResponse.json({
       success: true,

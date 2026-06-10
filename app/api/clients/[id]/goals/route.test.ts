@@ -20,6 +20,12 @@ vi.mock("@/services/client-goals-service", () => ({
   getGoalsHistory: vi.fn(),
 }));
 
+// The route now records an audit event (fire-and-forget). Mock it so the test
+// doesn't load the real supabase-admin client (which throws without env vars).
+vi.mock("@/services/audit-log-service", () => ({
+  recordAuditEvent: vi.fn().mockResolvedValue(undefined),
+}));
+
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 import {
   getCurrentGoals,

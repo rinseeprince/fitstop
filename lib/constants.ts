@@ -51,3 +51,20 @@ export const HABIT_DROPOFF_DAYS_IN_WEEK = 5; // Days out of 7
 
 export const ACTIVITY_CAL_MISMATCH_DAY_COUNT = 2; // Days in 28-day window
 export const ACTIVITY_CAL_MISMATCH_WINDOW_DAYS = 28;
+
+// Audit log action keys (see services/audit-log-service.ts + migration 108).
+// Dotted "<entity>.<verb>" convention. Add new keys here as more mutation routes
+// are instrumented.
+export const AUDIT_ACTIONS = {
+  CLIENT_ACTIVATE: "client.activate",
+  GOAL_CREATE: "goal.create",
+  BODY_METRICS_CREATE: "body_metrics.create",
+  INTAKE_SYNC_METRICS: "intake.sync_metrics",
+  NUTRITION_PLAN_CREATE: "nutrition_plan.create",
+  TRAINING_PLAN_PLACE: "training_plan.place",
+  TRAINING_PLAN_CREATE: "training_plan.create",
+  PHASE_TRANSITION: "phase.transition",
+  INVITATION_SEND: "invitation.send",
+} as const;
+
+export type AuditActionKey = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];

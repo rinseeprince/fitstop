@@ -81,6 +81,45 @@ export type Database = {
           },
         ]
       }
+      audit_logs: {
+        Row: {
+          action: string
+          actor_id: string | null
+          actor_role: string | null
+          client_id: string | null
+          created_at: string
+          id: string
+          ip_hash: string | null
+          metadata: Json
+          target_id: string | null
+          target_table: string | null
+        }
+        Insert: {
+          action: string
+          actor_id?: string | null
+          actor_role?: string | null
+          client_id?: string | null
+          created_at?: string
+          id?: string
+          ip_hash?: string | null
+          metadata?: Json
+          target_id?: string | null
+          target_table?: string | null
+        }
+        Update: {
+          action?: string
+          actor_id?: string | null
+          actor_role?: string | null
+          client_id?: string | null
+          created_at?: string
+          id?: string
+          ip_hash?: string | null
+          metadata?: Json
+          target_id?: string | null
+          target_table?: string | null
+        }
+        Relationships: []
+      }
       body_metrics: {
         Row: {
           bmr: number | null
