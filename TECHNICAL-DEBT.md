@@ -1,5 +1,19 @@
 # Technical Debt Tracker
 
+## Pre-launch Security Checklist (from 2026-06-10 audit)
+
+Items deliberately deferred or remaining after the 2026-06-10 security remediation pass (migrations 105–108 + code fixes — see "Known RLS Gaps"). Address before public launch.
+
+- **Invite-accept email match (deferred by owner — intentional).** `acceptInvitationByToken` (`services/invitation-service.ts`) does NOT verify `user.email === invitation.email`, and `POST /api/invitations/accept` (token branch) trusts a body-supplied `userId`. Retained on purpose so fake-email variants can be run through onboarding while Resend is limited to a single verified address pre-domain-registration. **Re-enable** the email check (mirror the legacy `clientId` branch's `getUserById` + email compare, or derive the principal from the server session) once the sending domain is verified. Until then, possession of a valid invite token + a self-signup lets an attacker bind the client record to an account under their own email.
+- **`captureApiError` coverage (~9/144 routes).** Most handled route errors never reach Sentry. Finish via planned sessions 9.3 / 9.9 rather than a separate sweep.
+- **Dependency follow-ups (transitive, non-production-hot-path).** The `next` bump to 16.2.9 cleared the SSRF (8.6) + middleware/route-param bypass highs. `npm audit` still reports: dev-only `vitest`/`@vitest/coverage-v8` (critical — UI server arbitrary file read/exec), `vite`/`fast-uri`/`picomatch`/`ws`/`brace-expansion` (build/test tooling), and `uuid`/`postcss`(bundled under `next`)/`svix` moderates via `resend` + `@sentry`. Run `npm audit fix` opportunistically and re-bump after the next `next`/`resend`/`@sentry` releases.
+- **CSP nonces.** `script-src` still uses `'unsafe-inline' 'unsafe-eval'` (Next.js requirement). Move to nonce-based CSP for production (Production Readiness L #5). `base-uri`/`form-action` were added 2026-06-10.
+- **Upload content sniffing depth.** Magic-byte checks were added for images + PDF (`lib/upload-validation.ts`); office docs (docx/xls) and plain text are gated by the MIME allowlist only (no reliable magic number). Add a dedicated content-type library if richer formats are accepted later.
+- **Backups / restore + uptime alerting.** Supabase-managed; confirm PITR/backup retention and add external uptime + alerting beyond Sentry error capture. (Infra, not code.)
+- **Still open in Auth P0:** account-level lockout (#8) and email verification (#7, blocked on production domain).
+
+---
+
 ## Authentication & Authorization
 
 Reviewed: 2026-03-12
@@ -11,7 +25,7 @@ Reviewed: 2026-03-12
 | 1 | Middleware uses `getSession()` instead of `getUser()` | `middleware.ts:49,90` | `getSession()` reads the JWT from cookies without server-side validation. Supabase docs recommend `getUser()` for security-sensitive route protection as it validates the token server-side. A tampered/expired JWT could pass middleware checks. Violates §1, §9. | Done |
 | 2 | Dangerous default role fallback | `middleware.ts:106` | `const role = profile?.role \|\| "trainer"` - if profile fetch fails (DB error, network issue), user silently gets trainer-level access. Should deny access instead. Violates §3, §9. | Done |
 | 3 | No `requireClientAuth` guard | `lib/require-coach-auth.ts` | Coach routes have a shared `requireCoachAuth()` guard but no equivalent exists for client routes. Each client route implements its own auth check, risking inconsistency. Violates §2 "No duplicate logic". | Open |
-| 4 | Auth callback route missing rate limiting | `app/auth/callback/route.ts` | The OAuth callback endpoint has no rate limiting. All other auth-related routes are properly rate-limited. Violates §9 "Rate limiting: MANDATORY". | Open |
+| 4 | Auth callback route missing rate limiting | `app/auth/callback/route.ts` | The OAuth callback endpoint has no rate limiting. All other auth-related routes are properly rate-limited. Violates §9 "Rate limiting: MANDATORY". | Done (apiRateLimit added, security pass 2026-06-10) |
 | 5 | Invitation token endpoint uses wrong rate limit tier | `app/api/invitations/[token]/route.ts` | Uses `apiRateLimit` (60/min) instead of `authRateLimit` (5/15min). This is a public endpoint that reveals invitation details and could be used for token enumeration. | Done |
 | 6 | Inconsistent password minimum length | `app/reset-password/page.tsx:35`, `lib/validations/auth.ts:30` | Signup and invite signup require 8-char minimum. Password reset allows 6-char minimum. Users can downgrade password strength via the reset flow. | Done |
 | 7 | No email verification enforcement | `contexts/auth-context.tsx` | Users can sign up and immediately access the app without verifying their email. Supabase supports email verification but it's not gated in the auth flow. **Blocked** until production domain is live (Supabase email verification requires verified sender domain). | Open |
@@ -39,7 +53,7 @@ Reviewed: 2026-03-12
 | 2 | `CoachRow` type defined locally | `contexts/auth-context.tsx:37-45` | Should be imported from shared types. Comment says "profiles table not in generated types yet" - indicates database types are stale. Violates §5, §6. | Open |
 | 3 | Pervasive type assertions | `contexts/auth-context.tsx:92,114-116,125,149,174` | Multiple `as unknown as` and `as Record<string, unknown>` casts because `profiles` and `coaches` tables aren't in the generated `Database` type. Fix by regenerating Supabase types. Violates §5. | Open |
 | 4 | `ClientRow` type defined locally | `app/api/invitations/send/route.ts:9-15` | Same issue as #2 - inline type instead of shared from `/types`. | Open |
-| 5 | Deprecated `acceptInvitation` still called | `app/auth/callback/route.ts:59`, `services/invitation-service.ts:364` | Marked `@deprecated` in favor of `acceptInvitationByToken`, but the callback route still uses it. Violates §1. | Open |
+| 5 | Deprecated `acceptInvitation` still called | `app/auth/callback/route.ts`, `services/invitation-service.ts:364` | The unauthenticated `/auth/callback` caller (an account-takeover vector — it linked a URL-supplied `clientId` to the session with no checks) was **removed** in the 2026-06-10 security pass. `acceptInvitation` now has only ONE caller: the legacy `clientId` branch of `POST /api/invitations/accept`, which verifies `invitedUser.email === invitation.email` first. Remaining work is purely cosmetic (delete the deprecated fn + legacy branch). | Partially resolved (takeover path removed) |
 | 6 | Legacy clientId-based acceptance still maintained | `app/api/invitations/accept/route.ts:42-81` | The deprecated code path adds ~40 lines of complexity. If `acceptInvitation` (#5) is migrated, this entire branch can be removed. | Open |
 | 7 | `invitation-service.ts` imports browser client | `services/invitation-service.ts:1` | `getInvitationForClient()` uses the browser Supabase client. If called server-side, this will fail or bypass proper auth. Should use admin or server client. Violates §1. | Open |
 | 8 | Login fetches profile twice | `contexts/auth-context.tsx:384-388` | `login()` calls `initializeUserData()` (which fetches profile) then immediately calls `fetchProfile()` again to return the role. Violates §2 "don't fetch the same endpoint twice". | Open |
@@ -167,8 +181,12 @@ Reviewed: 2026-03-12
 
 ## Known RLS Gaps (Tech Debt)
 
+> ⚠️ **Threat-model correction (2026-06-10).** "RLS is only defense-in-depth because service_role bypasses it" is true for the *app*, but NOT a reason to tolerate permissive policies. The public anon key ships in the browser and a logged-in user holds an `authenticated` JWT, so anyone can call PostgREST (`/rest/v1/...`) **directly**, bypassing the route layer. For any object reachable that way, RLS is the *only* perimeter. The security pass below was a direct consequence.
+
 - **`daily_logs`** - Done. RLS enabled in migration 051. All 8 code paths confirmed to use supabaseAdmin (bypasses RLS). Policies added for defense-in-depth.
-- **`check_ins`** - Done. RLS enabled in migration 050. Policies already existed from migrations 005 + 026 but `ENABLE ROW LEVEL SECURITY` was never executed.
+- **`check_ins`** - Hardened 2026-06-10 (migration **105**). The earlier "Done" note was WRONG: migration 050 enabled RLS but left the permissive `"Authenticated users can view/update check-ins"` policies from migration 003 in place, so any authenticated user could read/update EVERY tenant's health data via the anon-key PostgREST endpoint. Migration 105 drops those; only the client-scoped policies from 026 remain. Coaches read/respond via service_role.
+- **`check_in_tokens`** - Hardened 2026-06-10 (migration **105**). The permissive `"Authenticated users can view tokens"` policy (migration 003) was never dropped — any authenticated user could harvest other clients' magic-link tokens. Dropped in 105; the table is now service_role-only (deny-all otherwise).
+- **`SECURITY DEFINER` atomic RPCs** - Hardened 2026-06-10 (migration **106**). `upsert_daily_log_atomic`, `create_nutrition_plan_atomic`, `create_training_plan_atomic`, `transition_phase_atomic`, `archive_roadmap_atomic` retained Postgres' default `PUBLIC` execute and took caller-supplied ids with no internal authz → cross-tenant writes via `/rest/v1/rpc/`. 106 REVOKEs PUBLIC/anon/authenticated, GRANTs service_role only, and pins `search_path`.
 
 ---
 
@@ -432,3 +450,15 @@ These three files were identified in a codebase-wide bloat audit as genuinely pa
 2. **`components/clients/training/builder/draft-editor.tsx`** — 8 `useState` calls plus inline DnD sensors, form modal, fetch-based mutations, and promote/discard flow. The session mutation cluster (`patchSession`, `patchExercise`, `removeSession`, `removeExercise`) is a self-contained unit that lifts cleanly to a `useSessionMutations()` hook. DnD sensors + `DndContext` wiring lift to `useSessionDragDrop()`. Session form modal becomes `SessionFormDialog`. Target shape: render + promote/discard only, ~400 LOC.
 
 3. **`services/content-service.ts`** — 20+ exports spanning five decoupled concerns: folders, items, assignments, metadata fetching (video/link), and S3 storage (upload/signed URLs). Unlike the training builder, these concerns are genuinely independent — a folder rename does not touch S3. Split into `content-folder-service.ts`, `content-item-service.ts`, `content-assignment-service.ts`, `content-metadata-service.ts`, `content-storage-service.ts`. No prop-drilling risk.
+
+---
+
+## Timezone correctness — deferred tail (after sessions 7.81–7.84)
+
+Logged: 2026-06-10. Sessions 7.81–7.84 (`docs/CLIENT-PORTAL-EXECUTION-PLAN.md`) fix device-synced capture (client + coach), plan placement, promotion, check-in gate, streaks, client home, and coach-side windows to the locked model: *"today" = the device timezone of whoever the date belongs to.* These items are intentionally left for later.
+
+### P2 - Deferred
+- **Reminder email cron is UTC-derived and unwired.** `services/reminder-service.ts` (`sendAutomatedReminders`, `getDaysUntilOrPastDue`) computes overdue tiers off UTC `getTodayDateString()`, with no invoker (no cron). Session 7.84 fixes the live client-facing `app/api/client/notifications/route.ts` consumer but NOT the email path. When the cron is wired, it MUST compute each client's "today" via `getClientTodayString(clientId)` before any reminder fires, or reminders land on the wrong local day.
+
+### P3 - Guardrail (defer until users exist)
+- **No lint rule prevents a new server-side UTC `getTodayDateString()`.** After 7.81–7.84, a fresh `getTodayDateString()` / bare `CURRENT_DATE` in `services/**` or `app/api/**` silently reintroduces the bug. A custom ESLint `no-restricted-syntax` rule banning it server-side (allowing browser/`'use client'` code + `lib/date-helpers.ts`) would prevent regressions. Deferred per "defer tooling until users exist."

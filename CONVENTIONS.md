@@ -416,7 +416,7 @@
   - User-facing errors: Toast notifications with plain language
   - Server-side errors: Use `captureApiError(error, context)` from `lib/error-handler.ts` to log and send to Sentry
   - Client-side errors: Wrap error-prone UI sections with `<ErrorBoundary>` from `components/ui/error-boundary.tsx`
-  - Sentry config: `sentry.client.config.ts` (10% traces, replay with `maskAllText`/`blockAllMedia`) and `sentry.server.config.ts` (10% traces)
+  - Sentry config: `instrumentation-client.ts` (browser — 10% traces, `sendDefaultPii: false`, `scrubHealthData` beforeSend/beforeBreadcrumb, replay with `maskAllText`/`blockAllMedia`), `sentry.server.config.ts` and `sentry.edge.config.ts` (10% traces + `scrubHealthData`). The browser init lives in `instrumentation-client.ts` because under Next 16/Turbopack the legacy `sentry.client.config.ts` no longer loads — there must be exactly one client init.
   - Validation: Zod schemas in `lib/validations/` for all inputs/API payloads. Use `optionalString()`, `optionalNumber()` helpers for null/empty coercion. Use `.refine()` for cross-field validation.
   - Database operations: Transaction rollbacks on failure
   - No empty catch blocks - always log the error or surface it to the user

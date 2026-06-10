@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "./supabase-admin";
+import { safeExtensionFromMime } from "@/lib/upload-validation";
 
 const BUCKET_NAME = "progress-photos";
 
@@ -9,7 +10,8 @@ export const uploadProgressPhoto = async (
   photoType: "front" | "side" | "back"
 ): Promise<string> => {
   const timestamp = Date.now();
-  const fileExt = file.name.split(".").pop();
+  // Derive the extension from the (sanitized) MIME type, not the raw filename.
+  const fileExt = safeExtensionFromMime(file.type);
   const fileName = `${clientId}/${timestamp}-${photoType}.${fileExt}`;
 
   const { data, error } = await supabaseAdmin.storage
@@ -34,7 +36,7 @@ export const uploadProgressPhotoFromBase64 = async (
   mimeType: string = "image/jpeg"
 ): Promise<string> => {
   const timestamp = Date.now();
-  const fileExt = mimeType.split("/")[1] || "jpg";
+  const fileExt = safeExtensionFromMime(mimeType);
   const fileName = `${clientId}/${timestamp}-${photoType}.${fileExt}`;
 
   // Convert base64 to buffer

@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "./supabase-admin";
+import { sanitizeFileName } from "@/lib/upload-validation";
 
 const CONTENT_BUCKET = "content-library";
 
@@ -7,7 +8,8 @@ export const uploadContentFile = async (
   coachId: string,
   contentId: string,
 ): Promise<string> => {
-  const fileName = `${coachId}/${contentId}/${Date.now()}-${file.name}`;
+  // Sanitize the user-controlled filename before composing the object key.
+  const fileName = `${coachId}/${contentId}/${Date.now()}-${sanitizeFileName(file.name)}`;
 
   const { data, error } = await supabaseAdmin.storage
     .from(CONTENT_BUCKET)

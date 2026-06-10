@@ -19,6 +19,9 @@ yarn-error.log*
 # env files
 .env*
 
+# supabase CLI transient metadata (project ref, pooler url, version pins)
+supabase/.temp/
+
 # vercel
 .vercel
 

@@ -112,6 +112,10 @@ export const fetchLinkMetadata = async (
       headers: {
         "User-Agent": "CoachHub-MetadataBot/1.0",
       },
+      // SSRF hardening: do NOT follow redirects. The host was checked against the
+      // allowlist, but a redirect could send us to an internal IP. A 3xx response
+      // is not `.ok`, so we fall through to the safe fallback below.
+      redirect: "manual",
       // Add timeout to prevent hanging requests
       signal: AbortSignal.timeout(10000), // 10 second timeout
     });

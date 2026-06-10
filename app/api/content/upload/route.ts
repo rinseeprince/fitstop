@@ -3,6 +3,7 @@ import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { uploadContentFile } from "@/services/content-storage-service";
 import { createContentItem } from "@/services/content-item-service";
+import { fileSignatureMatches } from "@/lib/upload-validation";
 import type { ContentType } from "@/types/content";
 import { apiRateLimit } from "@/lib/rate-limit";
 
@@ -118,6 +119,23 @@ export async function POST(request: NextRequest) {
       });
       return NextResponse.json(
         { success: false, error: `File type '${file.type}' not supported. Allowed: PDF, images, and documents` },
+        { status: 400 }
+      );
+    }
+
+    // Verify the file's actual leading bytes match the declared type (for
+    // sniffable types) — a client-set Content-Type alone is not trustworthy.
+    const header = new Uint8Array(await file.slice(0, 12).arrayBuffer());
+    if (!fileSignatureMatches(header, file.type)) {
+      console.warn("Upload validation failed - content does not match declared type", {
+        timestamp: new Date().toISOString(),
+        userId: user.id,
+        coachId: coach.id,
+        fileName: file.name,
+        fileType: file.type,
+      });
+      return NextResponse.json(
+        { success: false, error: "File contents do not match the declared file type" },
         { status: 400 }
       );
     }

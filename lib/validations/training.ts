@@ -47,6 +47,46 @@ export const sessionSchema = z.object({
   calorieSurplusPercentage: z.number().min(0).max(100).optional().nullable(),
 });
 
+// Validation for AI-generated training-plan JSON BEFORE it is persisted (the
+// model output is untrusted). `.catch()` coerces a slightly-off scalar to a safe
+// default (replacing the old ad-hoc clamps) so one bad field doesn't reject the
+// whole plan; a structurally broken plan (no sessions) still fails. Field types
+// are `optional` (not `nullable`) to stay assignable to AIGenerated* types.
+export const aiGeneratedExerciseSchema = z.object({
+  name: z.string().min(1).max(200).catch("Exercise"),
+  sets: z.number().int().min(1).max(20).catch(3),
+  repsMin: z.number().int().min(1).max(100).optional().catch(undefined),
+  repsMax: z.number().int().min(1).max(100).optional().catch(undefined),
+  repsTarget: z.string().max(20).optional().catch(undefined),
+  rpeTarget: z.number().min(1).max(10).optional().catch(undefined),
+  percentage1rm: z.number().min(0).max(100).optional().catch(undefined),
+  tempo: z.string().max(20).optional().catch(undefined),
+  restSeconds: z.number().int().min(0).max(600).optional().catch(undefined),
+  notes: z.string().max(500).optional().catch(undefined),
+  supersetGroup: z.string().max(10).optional().catch(undefined),
+  isWarmup: z.boolean().optional().default(false),
+});
+
+export const aiGeneratedSessionSchema = z.object({
+  name: z.string().min(1).max(100).catch("Workout Session"),
+  dayOfWeek: z.string().max(20).optional().catch(undefined),
+  focus: z.string().max(200).optional().catch(undefined),
+  notes: z.string().max(1000).optional().catch(undefined),
+  estimatedDurationMinutes: z.number().int().min(10).max(180).optional().catch(undefined),
+  exercises: z.array(aiGeneratedExerciseSchema).default([]),
+});
+
+export const aiGeneratedPlanSchema = z.object({
+  name: z.string().min(1).max(200).catch("Training Program"),
+  description: z.string().max(1000).catch(""),
+  splitType: splitTypeSchema.catch("custom"),
+  frequencyPerWeek: z.number().int().min(1).max(7).catch(3),
+  programDurationWeeks: z.number().int().min(1).max(52).optional().catch(undefined),
+  cycleLength: z.number().int().min(1).max(14).optional().catch(undefined),
+  restDayPositions: z.array(z.number().int().min(0)).optional().catch(undefined),
+  sessions: z.array(aiGeneratedSessionSchema).min(1, "AI generated plan with no sessions"),
+});
+
 export const generateTrainingPlanSchema = z.object({
   coachPrompt: z
     .string()
