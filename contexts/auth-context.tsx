@@ -12,6 +12,8 @@ import { supabase } from "@/services/supabase-client"
 import type { User, Session } from "@supabase/supabase-js"
 import type { Coach } from "@/types/check-in"
 import type { Profile, ProfileRow, UserRole } from "@/types/auth"
+import type { CoachRow } from "@/lib/database-helpers"
+import { mapCoachRow } from "@/lib/mappers"
 
 interface AuthContextType {
   user: User | null
@@ -31,18 +33,6 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
-
-
-/** Database row type for coaches table */
-type CoachRow = {
-  id: string
-  user_id: string
-  name: string
-  email: string
-  avatar_url: string | null
-  created_at: string
-  updated_at: string
-}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
@@ -125,17 +115,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  /** Convert CoachRow to Coach type */
-  const toCoach = (row: CoachRow): Coach => ({
-    id: row.id,
-    userId: row.user_id,
-    name: row.name,
-    email: row.email,
-    avatarUrl: row.avatar_url ?? undefined,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  })
-
   /** Fetch or create coach profile for trainers */
   const fetchOrCreateCoachProfile = async (authUser: User) => {
     const { data: coachData, error: fetchError } = await supabase
@@ -145,7 +124,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .single()
 
     if (coachData) {
-      setCoach(toCoach(coachData as CoachRow))
+      setCoach(mapCoachRow(coachData as CoachRow))
       return
     }
 
@@ -173,7 +152,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       if (newCoachData) {
-        setCoach(toCoach(newCoachData as CoachRow))
+        setCoach(mapCoachRow(newCoachData as CoachRow))
       }
     } else if (fetchError) {
       console.error("Error fetching coach profile:", fetchError)

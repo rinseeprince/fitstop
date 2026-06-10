@@ -58,6 +58,20 @@ export const getTodayDateStringInTimezone = (
 };
 
 /**
+ * Returns the device's IANA time zone, or undefined when it can't be resolved
+ * (older runtimes, locked-down environments). Lives here so date-helpers stays
+ * the only owner of Intl — the timezone auto-sync hooks import this instead of
+ * touching Intl themselves.
+ */
+export const getDeviceTimeZone = (): string | undefined => {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+/**
  * Returns tomorrow's date as a YYYY-MM-DD string in local timezone.
  * Uses midnight-anchored Date to avoid DST edge cases.
  */

@@ -5,19 +5,14 @@ import userEvent from "@testing-library/user-event";
 import SettingsPage from "./page";
 import type { Client } from "@/types/check-in";
 
-// cmdk (used by the timezone Combobox) needs ResizeObserver + scrollIntoView
+// Radix RadioGroup measures its indicator via @radix-ui/react-use-size, which
+// needs ResizeObserver — jsdom doesn't provide one.
 class ResizeObserverMock {
   observe() {}
   unobserve() {}
   disconnect() {}
 }
 globalThis.ResizeObserver = ResizeObserverMock as unknown as typeof ResizeObserver;
-Element.prototype.scrollIntoView = vi.fn();
-// Radix's Popover positioning hits hasPointerCapture which jsdom doesn't implement.
-const elProto = Element.prototype as unknown as Record<string, unknown>;
-if (!elProto.hasPointerCapture) {
-  elProto.hasPointerCapture = () => false;
-}
 
 const toastMock = vi.fn();
 const swrCall = vi.fn();
@@ -147,38 +142,17 @@ describe("SettingsPage", () => {
     expect(toastMock).toHaveBeenCalledWith({ title: "Settings saved" });
   });
 
-  it("shows the 'Use detected' button when stored timezone is UTC and detected differs", async () => {
-    // Mock detected timezone to be non-UTC
-    const realDateTimeFormat = Intl.DateTimeFormat;
-    vi.spyOn(Intl, "DateTimeFormat").mockImplementation((...args: unknown[]) => {
-      const inst = new realDateTimeFormat(
-        ...(args as Parameters<typeof realDateTimeFormat>),
-      );
-      inst.resolvedOptions = () => ({
-        ...new realDateTimeFormat().resolvedOptions(),
-        timeZone: "America/Los_Angeles",
-      });
-      return inst;
-    });
-
-    setSWR({
-      data: { success: true, data: makeClient({ timezone: "UTC" }) },
-    });
-
+  it("renders the timezone as a read-only device-synced line with no picker", () => {
     render(<SettingsPage />);
 
-    const useDetected = screen.getByRole("button", {
-      name: /use detected: america\/los_angeles/i,
-    });
-    expect(useDetected).toBeInTheDocument();
+    // Read-only display of the stored (device-synced) zone — Session 7.81
+    expect(
+      screen.getByText("America/New_York (synced from your device)"),
+    ).toBeInTheDocument();
 
-    const user = userEvent.setup();
-    await user.click(useDetected);
-
-    // Save becomes enabled after dirtying via the button
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: /^save$/i })).not.toBeDisabled(),
-    );
+    // The manual picker and "Use detected" affordance are gone
+    expect(screen.queryByRole("combobox")).toBeNull();
+    expect(screen.queryByRole("button", { name: /use detected/i })).toBeNull();
   });
 
   it("shows a destructive toast when the server returns an error", async () => {

@@ -424,7 +424,12 @@ One rule in `lib/daily-log-permissions.ts` (pure, client-safe): today always edi
 
 ### Timezone model
 
-"Today" is client-local. `clients.timezone` (TEXT, IANA, NOT NULL default `"UTC"`, migration 089) is the source. Permission helpers and every portal endpoint derive today via `getTodayDateStringInTimezone()` in `lib/date-helpers.ts` (the only surface owning `Intl.DateTimeFormat` math). Legacy/`UTC` rows fall back to UTC safely.
+**Locked model (Sessions 7.81–7.84): "today" is computed in the device timezone of the person whose calendar the date is on — never the server's UTC clock.** A client's day, plan placement, promotion, check-in window, streaks → the **client's** zone. A coach's dashboard windows (attention feed, current-week metrics, history summaries) → the **coach's** zone. The cross-person cases (a coach viewing a client's check-in due/overdue; background reminders) → the **client's** zone. One question decides every site: *whose calendar is this date on?*
+
+- **Storage**: `clients.timezone` (migration 089) and `coaches.timezone` (migration 109), both `TEXT NOT NULL DEFAULT 'UTC'`, IANA.
+- **Capture is device-synced, no manual picker** (Session 7.81 — intentionally reverses Session 2.6's "no silent overwrites"): the shared `useTimezoneSync` hook (`hooks/use-timezone-sync.ts`) compares the device zone against the stored value on every app load and fires a fire-and-forget PATCH on mismatch (client shell → `PATCH /api/client/settings`; coach shell → `PATCH /api/coach/settings`). Travel re-syncs on next open.
+- **Read side**: server code derives "today" via `getTodayDateStringInTimezone()` in `lib/date-helpers.ts` — the only surface owning `Intl.DateTimeFormat` math. (Sanctioned exception: the two settings routes validate input zones with `Intl.supportedValuesOf("timeZone")` — validation, not date math.)
+- A stored `'UTC'` is the "never device-synced" sentinel; coach-initiated placement on a never-synced client's calendar falls back to the coach's zone, then UTC (ships in Session 7.82's `getClientTodayString` — placement still judges against server UTC until then).
 
 ### Scale / payload contracts
 

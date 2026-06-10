@@ -347,6 +347,9 @@ export type Coach = {
   name: string;
   email: string;
   avatarUrl?: string;
+  // IANA time zone for coach-local "today" computation, auto-synced from the
+  // coach's device on app load (Session 7.81). 'UTC' until first sync.
+  timezone: string;
   createdAt: string;
   updatedAt: string;
 };

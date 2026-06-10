@@ -5,6 +5,7 @@ import { CollapsedIconStrip } from "./collapsed-icon-strip"
 import { User, LogOut, ChevronDown } from "lucide-react"
 import { motion } from "framer-motion"
 import { useAuth } from "@/contexts/auth-context"
+import { useTimezoneSync } from "@/hooks/use-timezone-sync"
 import { useRouter, usePathname } from "next/navigation"
 import {
   DropdownMenu,
@@ -34,6 +35,9 @@ export function PersistentSidebar() {
   const pathname = usePathname()
   const { toast } = useToast()
 
+  // Keep the stored coach timezone in sync with the device (Session 7.81).
+  // `coach` is only set for confirmed trainers, so this no-ops for everyone else.
+  useTimezoneSync("coach", coach?.timezone)
 
   // Don't render sidebar on excluded paths
   // Use exact match for "/" and "/client" to avoid false positives:

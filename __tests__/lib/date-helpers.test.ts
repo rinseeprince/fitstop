@@ -1,10 +1,39 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   getTrainingWeekStart,
   getTrainingWeekEnd,
   resolveCheckInWindow,
   getCheckInStatus,
+  getDeviceTimeZone,
 } from "@/lib/date-helpers";
+
+describe("getDeviceTimeZone", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("returns the device's Intl time zone", () => {
+    const expected = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    expect(getDeviceTimeZone()).toBe(expected);
+  });
+
+  it("returns undefined when Intl.DateTimeFormat throws", () => {
+    vi.spyOn(Intl, "DateTimeFormat").mockImplementation(() => {
+      throw new RangeError("unavailable");
+    });
+    expect(getDeviceTimeZone()).toBeUndefined();
+  });
+
+  it("returns undefined when the resolved zone is empty", () => {
+    vi.spyOn(Intl, "DateTimeFormat").mockImplementation(
+      () =>
+        ({
+          resolvedOptions: () => ({ timeZone: "" }),
+        }) as unknown as Intl.DateTimeFormat,
+    );
+    expect(getDeviceTimeZone()).toBeUndefined();
+  });
+});
 
 // Local noon keeps getDay()/getDateString stable regardless of the runner's TZ.
 const at = (d: string) => new Date(d + "T12:00:00");

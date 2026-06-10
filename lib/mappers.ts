@@ -1,6 +1,6 @@
-import type { CheckIn, Client, AIInsight, AIRecommendation, EnhancedAIData, ReminderPreferences } from "@/types/check-in";
+import type { CheckIn, Client, Coach, AIInsight, AIRecommendation, EnhancedAIData, ReminderPreferences } from "@/types/check-in";
 import type { ClientIntake, ClientIntakeRow, OnboardingStatus } from "@/types/client-intake";
-import type { CheckInRow, ClientRow } from "./database-helpers";
+import type { CheckInRow, ClientRow, CoachRow } from "./database-helpers";
 
 /**
  * Map a database check-in row to a CheckIn type
@@ -96,6 +96,22 @@ export function mapClientRow(row: ClientRow): Client {
     walkthroughCompletedAt: row.walkthrough_completed_at ?? undefined,
     startDate: row.start_date ?? undefined,
     timezone: row.timezone,
+  };
+}
+
+/**
+ * Map a database coach row to a Coach type
+ */
+export function mapCoachRow(row: CoachRow): Coach {
+  return {
+    id: row.id,
+    userId: row.user_id ?? undefined,
+    name: row.name,
+    email: row.email,
+    avatarUrl: row.avatar_url ?? undefined,
+    timezone: row.timezone,
+    createdAt: row.created_at ?? new Date().toISOString(),
+    updatedAt: row.updated_at ?? new Date().toISOString(),
   };
 }
 

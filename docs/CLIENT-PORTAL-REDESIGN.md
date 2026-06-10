@@ -559,21 +559,16 @@ A short-TTL (60s) Upstash cache of `user_id -> client id`. `getUser()` still run
 
 ## Timezone handling
 
-### Current state (as of Session 0.1 audit)
+### The locked model (Sessions 7.81–7.84)
 
-- **No client timezone column exists.** The `clients` table has no `timezone` / `time_zone` column in any migration under `supabase/migrations/`, and no `timezone` field appears in `types/`, `lib/mappers.ts`, or the client-service layer.
-- **"Today" is computed in server-local time.** All date helpers in `lib/date-helpers.ts` (`getTodayDateString`, `getTomorrowDateString`, `getDateString`, `getDateDaysAgo`, `getDateDaysFrom`, `calculateCheckInPeriod`, `getCheckInStatus`) derive the current day from `new Date()` using the Node process's local timezone. There is no client-timezone parameter anywhere in the helper signatures.
-- **Check-in period gating uses server day.** `calculateCheckInPeriod()` calls `checkInDate.getDay()` on a server-constructed `Date`, so the 7-day window endpoints collapse to the server's perception of "today." Same for `getCheckInStatus()`.
-- **Downstream impact.** `services/client-check-in-service.ts:50-70` resolves the AI summary period via server-local dates; `daily-logs` reads/writes, training week start (`getTrainingWeekStart`), and the attention feed's "today" comparisons all inherit this.
+**"Today" is always computed in the device timezone of the person whose calendar the date is on — never the server's UTC clock.** Almost always that is the person making the request (a client on their own day; a coach on their own dashboard). The only cross-person cases — a coach viewing a client's check-in due/overdue, and background reminders — use the **client's** timezone. There is no separate "client logic vs coach logic"; the one question is: *whose calendar is this date on?* → read that person's stored, device-synced timezone via `getTodayDateStringInTimezone()`.
 
-In practice, on Vercel (UTC process timezone), "today" rolls over at 00:00 UTC for every client regardless of where they live. A client in PST sees their Sunday check-in close at 4 PM Saturday local; a client in AEDT sees theirs open a day early.
+### Device-synced capture (Session 7.81)
 
-### Decision for the redesign
+Both roles store an IANA zone — `clients.timezone` (migration 089) and `coaches.timezone` (migration 109), both `TEXT NOT NULL DEFAULT 'UTC'` — **auto-synced from the device, with no manual picker**. The shared `useTimezoneSync(scope, storedTimezone)` hook (`hooks/use-timezone-sync.ts`) compares `getDeviceTimeZone()` (the `Intl` wrapper in `lib/date-helpers.ts`) against the stored value on every app load and fires a fire-and-forget PATCH when they differ — so a traveller's zone updates on next open. Mount points: the client shell (`app/client/layout.tsx`) PATCHes `/api/client/settings`; the coach shell (`components/persistent-sidebar.tsx`) PATCHes `/api/coach/settings`.
 
-The redesign's past-day lock (home view, detail-page edits, server-side `assertCanEdit`) requires a stable, client-local definition of "today." Using server UTC would let a client in PST edit "tomorrow" for eight hours after midnight local.
+> **This intentionally reverses Session 2.6's "no silent overwrites" decision.** 2.6 shipped a manual combobox plus an opt-in "Use detected" hint; in practice nobody set it, every client stayed on the `'UTC'` default, and every date feature silently ran on server UTC. The device already knows the right answer — we capture it. The Settings page now shows the zone read-only ("synced from your device").
 
-**Add a `timezone` column (TEXT, IANA zone e.g. `"America/Los_Angeles"`, NOT NULL, default `"UTC"`) to `clients`.** Migration lands in **Session 0.3**. The Settings page (Session 5.x) surfaces a timezone selector. The `canEditDay()` and `assertCanEdit()` helpers in `lib/daily-log-permissions.ts` take `clientTimezone` as an argument; `resolvePlanContextForDate` and every new client portal endpoint read the client's timezone and derive "today" via `Intl.DateTimeFormat(timezone, ...)` rather than `new Date()`.
+A stored `'UTC'` is the "never device-synced" sentinel: server code that must anchor to a client's calendar before that client has ever opened the portal (coach-initiated plan placement) falls back to the **coach's** timezone, then UTC. (That fallback ships in Session 7.82's `getClientTodayString`; until then placement still judges against server UTC.)
 
-Pre-activation fallback: if `clients.timezone IS NULL` (legacy rows before backfill) or defaults to `"UTC"`, the helper uses UTC — acceptable because pre-launch there are no users, and the Settings UI prompts the client to confirm their zone during walkthrough.
-
-No runtime code outside `lib/date-helpers.ts` + the new permission helpers should reconstruct timezone math; they are the only surfaces that own `Intl.DateTimeFormat` calls.
+No runtime code outside `lib/date-helpers.ts` should reconstruct timezone math — it is the only surface that owns `Intl.DateTimeFormat` calls. (Sanctioned exception: the client/coach settings routes call `Intl.supportedValuesOf("timeZone")` for IANA *validation*, which is not date math.)

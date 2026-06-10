@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "13.0.5"
+    PostgrestVersion: "14.5"
   }
   graphql_public: {
     Tables: {
@@ -342,8 +342,6 @@ export type Database = {
           coach_response: string | null
           coach_reviewed_at: string | null
           created_at: string | null
-          daily_logs_end_date: string | null
-          daily_logs_start_date: string | null
           energy: number | null
           hips: number | null
           id: string
@@ -365,7 +363,6 @@ export type Database = {
           stress: number | null
           thighs: number | null
           updated_at: string | null
-          uses_daily_logs: boolean
           waist: number | null
           weight: number | null
           weight_unit: string | null
@@ -386,8 +383,6 @@ export type Database = {
           coach_response?: string | null
           coach_reviewed_at?: string | null
           created_at?: string | null
-          daily_logs_end_date?: string | null
-          daily_logs_start_date?: string | null
           energy?: number | null
           hips?: number | null
           id?: string
@@ -409,7 +404,6 @@ export type Database = {
           stress?: number | null
           thighs?: number | null
           updated_at?: string | null
-          uses_daily_logs?: boolean
           waist?: number | null
           weight?: number | null
           weight_unit?: string | null
@@ -430,8 +424,6 @@ export type Database = {
           coach_response?: string | null
           coach_reviewed_at?: string | null
           created_at?: string | null
-          daily_logs_end_date?: string | null
-          daily_logs_start_date?: string | null
           energy?: number | null
           hips?: number | null
           id?: string
@@ -453,7 +445,6 @@ export type Database = {
           stress?: number | null
           thighs?: number | null
           updated_at?: string | null
-          uses_daily_logs?: boolean
           waist?: number | null
           weight?: number | null
           weight_unit?: string | null
@@ -1120,6 +1111,7 @@ export type Database = {
           email: string
           id: string
           name: string
+          timezone: string
           updated_at: string | null
           user_id: string | null
         }
@@ -1129,6 +1121,7 @@ export type Database = {
           email: string
           id?: string
           name: string
+          timezone?: string
           updated_at?: string | null
           user_id?: string | null
         }
@@ -1138,6 +1131,7 @@ export type Database = {
           email?: string
           id?: string
           name?: string
+          timezone?: string
           updated_at?: string | null
           user_id?: string | null
         }

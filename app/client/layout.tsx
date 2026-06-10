@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 
 import { useAuth } from "@/contexts/auth-context";
 import { useClientProfile } from "@/hooks/use-client-profile";
+import { useTimezoneSync } from "@/hooks/use-timezone-sync";
 import { ClientWaitingState } from "@/components/client/walkthrough/client-waiting-state";
 import {
   ClientTopBar,
@@ -43,6 +44,9 @@ export default function ClientLayout({
   const { client, error, isLoading: clientLoading, mutate } = useClientProfile();
   const pathname = usePathname() ?? "";
   const router = useRouter();
+
+  // Keep the stored timezone in sync with the device (Session 7.81).
+  useTimezoneSync("client", client?.timezone);
 
   useEffect(() => {
     if (!authLoading && !user) {

@@ -1,6 +1,5 @@
 "use client";
 
-import { useMemo } from "react";
 import { Controller, useForm, type FieldErrors } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import useSWR, { type SWRResponse } from "swr";
@@ -16,7 +15,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Skeleton } from "@/components/ui/skeleton";
-import { TimezoneCombobox } from "@/components/client-portal/settings/timezone-combobox";
 import type { Client } from "@/types/check-in";
 
 type MeResponse = { success: boolean; data: Client };
@@ -74,33 +72,17 @@ function SettingsForm({
 }) {
   const { toast } = useToast();
 
-  const detectedTimezone = useMemo(() => {
-    try {
-      return Intl.DateTimeFormat().resolvedOptions().timeZone;
-    } catch {
-      return undefined;
-    }
-  }, []);
-
   const form = useForm<UpdateSettingsInput>({
     resolver: zodResolver(updateSettingsSchema),
     defaultValues: {
       unitPreference: client.unitPreference ?? "imperial",
-      timezone: client.timezone,
     },
   });
-
-  const currentTimezone = form.watch("timezone") ?? "UTC";
-  const showDetectedHint =
-    currentTimezone === "UTC" &&
-    detectedTimezone !== undefined &&
-    detectedTimezone !== "UTC";
 
   const onSubmit = async (values: UpdateSettingsInput) => {
     const dirty = form.formState.dirtyFields;
     const body: Partial<UpdateSettingsInput> = {};
     if (dirty.unitPreference) body.unitPreference = values.unitPreference;
-    if (dirty.timezone) body.timezone = values.timezone;
 
     let res: Response;
     try {
@@ -207,30 +189,13 @@ function SettingsForm({
           <CardHeader>
             <CardTitle className="text-base">Timezone</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2">
-            <Controller
-              control={form.control}
-              name="timezone"
-              render={({ field }) => (
-                <TimezoneCombobox
-                  value={field.value ?? "UTC"}
-                  onChange={(tz) => field.onChange(tz)}
-                />
-              )}
-            />
-            {showDetectedHint && (
-              <button
-                type="button"
-                onClick={() =>
-                  form.setValue("timezone", detectedTimezone, {
-                    shouldDirty: true,
-                  })
-                }
-                className="text-xs text-primary underline"
-              >
-                Use detected: {detectedTimezone}
-              </button>
-            )}
+          <CardContent>
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Timezone</span>
+              <span className="font-medium">
+                {client.timezone} (synced from your device)
+              </span>
+            </div>
           </CardContent>
         </Card>
 
