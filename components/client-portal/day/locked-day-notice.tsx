@@ -8,8 +8,9 @@ export type LockedDayReason = "past-logged" | "today-no-plan";
 
 export interface LockedDayNoticeProps {
   /**
-   * Which situation the notice explains. `today-no-plan` is reserved for surfaces that
-   * require a plan to log against; the nutrition/wellness pages only use `past-logged`.
+   * Which situation the notice explains. `today-no-plan` is reserved for plan-gated
+   * surfaces (nutrition/training; wellness is not plan-gated — Session 3.1C); current
+   * pages only use `past-logged`.
    */
   reason: LockedDayReason;
 }

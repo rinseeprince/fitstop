@@ -70,6 +70,7 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 | 2.9 | Nutrition plan overview card + drill-in | 2 | COMPLETE
 | 3.1 | Nutrition + wellness endpoints | 3 Detail pages | COMPLETE
 | 3.1B | Server-side no-plan rejection in per-card writers | 3 | COMPLETE
+| 3.1C | Remove the wellness phase gate (roadmaps-opt-in reconciliation) | 3 | COMPLETE
 | 3.2 | Nutrition detail page | 3 | COMPLETE
 | 3.3 | Wellness detail page + past-day lock enforcement | 3 | COMPLETE
 | 3.4 | Client metrics hub + Performance view + nav swap | 3 | COMPLETE
@@ -1181,6 +1182,8 @@ Clicking a card navigates to a detail page which fires its own fetch (e.g. `GET 
 
 **Objective**: Stop the per-card writers from creating orphan logs (`phase_id`/`nutrition_plan_id`/`training_plan_id` = null → null adherence in the attention feed, excluded from phase reviews). One root-cause fix at the API perimeter that covers every reachable surface — web harness, RN client, direct API callers — without depending on any UI gate to hold.
 
+> **⚠️ Amended 2026-06-10 — wellness arm removed (see Session 3.1C).** Gating wellness on `phaseId` blocked no-phase clients from logging wellness entirely, contradicting opt-in roadmaps (no-phase is first-class). The nutrition/training plan-id gates below stand unchanged.
+
 **Background / supersedes the original 3.1B (2026-05-27)**: The first draft of 3.1B was a three-prong plan: client home-card UX, coach activation-dialog UX, and an activate-endpoint gate. It's been scoped down because (a) the web app is a test harness, not the real client ([[project_webapp_is_harness_rn_is_real_client]]) — investing in home-card UX before the RN build sets the production navigation surface is premature; (b) the activate-endpoint gate is belt-and-braces on top of a UI fix coaches already comply with via `activation-readiness`; (c) the actual invariant we care about — "no log row exists with null plan ids" — lives at the per-card writers, so gating there once makes the UI prongs optional polish. Today the two writers (nutrition, wellness) call `resolvePlanContextForDate` and pass the nullable ids straight into the upsert with no rejection — so a no-plan client who reaches the endpoint (web direct nav or direct API) creates the exact orphan row the original 3.1B was meant to prevent.
 
 **Prerequisites**: Session 3.1 (`resolvePlanContextForDate` + per-card writers).
@@ -1212,6 +1215,26 @@ Clicking a card navigates to a detail page which fires its own fetch (e.g. `GET 
 - `app/api/client/daily-logs/[date]/wellness/route.test.ts`: same, with `phaseId: null` → 422, `upsertWellnessLog` not called.
 
 **Verify**: `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Manual: as a client with no active phase, POST `/api/client/daily-logs/2026-05-27/nutrition` with any valid body → 422 `No active plan for nutrition`. Commit.
+
+---
+
+## Session 3.1C: Remove the wellness phase gate (roadmaps-opt-in reconciliation)
+
+**Commit message**: `fix(client-portal): allow wellness logging without an active phase`
+
+**Objective**: Let no-phase clients log wellness. 3.1B gated the wellness writer on `ctx.phaseId` because wellness has no plan table — the phase was borrowed as its stand-in "plan". Under opt-in roadmaps (2026-05-22) that made wellness the ONLY resource a no-phase client could never log: the plan-id gates are satisfiable without a phase (`getActiveNutritionPlanId`/`getActiveTrainingPlanId` filter by client + status only), and habits were never gated. Symptom: 422 `No active plan for wellness` on save; also blocked Session 6.1's check-in wellness backfill (same PATCH endpoint).
+
+**Background (why removal, not a replacement gate)**: 3.1B's stated harms never applied to wellness — wellness has no adherence concept, the attention feed reads `daily_logs_full` by client + date window (no `phase_id` filter), and phase reviews scope by date range and don't aggregate wellness at all. The DB already supports the result: `daily_logs.phase_id` is nullable (FK SET NULL; migration 065 nulled all pre-existing values) and `ensureSpine` omits the column when null. Decided 2026-06-10: wellness-over-phase summaries (7.10/7.11 — e.g. energy/sleep across a cut) will pull `wellness_logs` by the phase's `[start_date, end_date]` window, same as `getPhaseReviewData` and the metrics-tab phase scope — never keyed on `daily_logs.phase_id` (unreliable by design: nulled history, no-phase clients, currently-active-phase backfill stamping). A "has any prescription" substitute gate would contradict opt-in roadmaps and protect nothing (habits are ungated; the nutrition/training perimeters survive on their own ids).
+
+**Implemented**:
+1. `services/daily-context-service.ts`: `PlanGatedResource` → `"nutrition" | "training"`; `assertHasActivePlan` drops the `phaseId` arm; JSDoc re-scoped to the nutrition/training plan-id rationale; resolver comment corrected (the day-lock, not the gate, bounds backfill mis-stamping — and only for already-logged days).
+2. `app/api/client/daily-logs/[date]/wellness/route.ts`: gate call, `NoActivePlanError` catch (422 arm), and imports removed. `resolvePlanContextForDate` + `{ phaseId: ctx.phaseId }` pass-through KEPT — phased clients still get the spine stamp; no-phase clients write `phase_id = NULL`.
+3. Tests: wellness route test's 422 case → "201 with `{ phaseId: null }`" (mock shrunk to `resolvePlanContextForDate` only); `daily-context-service.test.ts` wellness cases removed, discriminator test re-keyed to nutrition, new case asserting the gate never reads `phaseId`.
+4. Docs: ARCHITECTURE.md orphan-perimeter sentence re-scoped to nutrition/training; 3.1B amended above; `locked-day-notice.tsx` comment updated (`today-no-plan` stays for nutrition/training surfaces).
+
+**Do NOT**: touch the nutrition gate (`nutrition/route.ts`), the training gate (`training/session-logs/route.ts`), `assertCanEdit`/day-lock, or activation-readiness. Do NOT key any future wellness analytics on `daily_logs.phase_id` — date-window from the phase row.
+
+**Verify**: `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Manual: as a no-phase client, PATCH `/api/client/daily-logs/<today>/wellness` → 201, values persist, spine row has `phase_id IS NULL`; phased client's save still stamps `phase_id`; no-plan client's nutrition save still 422s. Commit.
 
 ---
 

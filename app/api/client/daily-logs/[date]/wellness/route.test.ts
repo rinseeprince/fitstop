@@ -16,33 +16,9 @@ vi.mock("@/lib/auth-helpers", () => ({
   getAuthenticatedClientId: vi.fn(),
   getAuthenticatedClientWithCheckInDay: vi.fn(),
 }));
-vi.mock("@/services/daily-context-service", () => {
-  type Resource = "nutrition" | "wellness" | "training";
-  class NoActivePlanError extends Error {
-    readonly resource: Resource;
-    constructor(resource: Resource) {
-      super(`No active plan for ${resource}`);
-      this.name = "NoActivePlanError";
-      this.resource = resource;
-    }
-  }
-  return {
-    resolvePlanContextForDate: vi.fn(),
-    NoActivePlanError,
-    assertHasActivePlan: (
-      ctx: { phaseId: string | null; nutritionPlanId: string | null; trainingPlanId: string | null },
-      resource: Resource
-    ) => {
-      const id =
-        resource === "nutrition"
-          ? ctx.nutritionPlanId
-          : resource === "training"
-            ? ctx.trainingPlanId
-            : ctx.phaseId;
-      if (id == null) throw new NoActivePlanError(resource);
-    },
-  };
-});
+vi.mock("@/services/daily-context-service", () => ({
+  resolvePlanContextForDate: vi.fn(),
+}));
 vi.mock("@/services/daily-logs-service", () => ({
   getTodayLog: vi.fn(),
 }));
@@ -153,19 +129,23 @@ describe("PATCH /api/client/daily-logs/[date]/wellness", () => {
     expect(res.status).toBe(200);
   });
 
-  it("422 when no active phase (orphan log guard)", async () => {
+  it("201 with a null phaseId when the client has no active phase (wellness is not plan-gated)", async () => {
     vi.mocked(assertCanEdit).mockResolvedValue({ loggedStatus: "never-logged" } as never);
     vi.mocked(resolvePlanContextForDate).mockResolvedValue({
       phaseId: null,
       nutritionPlanId: null,
       trainingPlanId: null,
     } as never);
+    vi.mocked(upsertWellnessLog).mockResolvedValue({ id: "log-1" } as never);
 
     const res = await PATCH(patchReq({ mood: 3 }), params("2026-05-21"));
-    const json = await res.json();
-    expect(res.status).toBe(422);
-    expect(json).toEqual({ success: false, error: "No active plan for wellness" });
-    expect(upsertWellnessLog).not.toHaveBeenCalled();
+    expect(res.status).toBe(201);
+    expect(upsertWellnessLog).toHaveBeenCalledWith(
+      "client-1",
+      "2026-05-21",
+      { mood: 3 },
+      { phaseId: null }
+    );
   });
 
   it("403 (via assertCanEdit) when the day is locked", async () => {

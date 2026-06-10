@@ -623,7 +623,7 @@ Pre-onboarding clients (created before the intake feature shipped) default to `a
 - `hasRoadmap` - an active roadmap exists
 - `hasActivePhase` - roadmap has an active phase (with name/startDate)
 
-Uses `Promise.all` with `safeQuery()` wrapper for partial failure tolerance. The coach sees the `ClientActivationBanner` component which shows required vs recommended status. `activation-readiness` is advisory — `POST /api/clients/[id]/activate` does not enforce it. The orphan-log perimeter that prevents no-plan clients from creating null-stamped logs lives at the per-card writers instead (see `assertHasActivePlan` in `services/daily-context-service.ts`).
+Uses `Promise.all` with `safeQuery()` wrapper for partial failure tolerance. The coach sees the `ClientActivationBanner` component which shows required vs recommended status. `activation-readiness` is advisory — `POST /api/clients/[id]/activate` does not enforce it. The orphan-log perimeter lives at the per-card **nutrition and training** writers instead (see `assertHasActivePlan` in `services/daily-context-service.ts`): each rejects a write whose `*_plan_id` stamp would be null, because those stamps feed adherence reads. Wellness and habits writes are deliberately ungated (Session 3.1C) — wellness has no plan or adherence concept, and `daily_logs.phase_id` is nullable by design for no-roadmap clients (roadmaps are opt-in; all wellness/phase analytics are date-windowed, never `phase_id`-keyed).
 
 ---
 

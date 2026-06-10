@@ -75,8 +75,9 @@ export const resolvePlanContextForDate = async (
     getEventForDate(clientId, date),
   ]);
 
-  // Currently-active phase, not phase-as-of-date. The only divergence (a past-unlogged
-  // backfill that crosses a phase boundary) is gated out by no-plan gating + daily logging.
+  // Currently-active phase, not phase-as-of-date. A past-unlogged backfill can therefore
+  // stamp the current phase onto a day it didn't cover — the day-lock only protects
+  // already-logged days. Tolerable: no reader keys logs on phase_id (all are date-windowed).
   const phaseId = phase?.id ?? null;
 
   // nutrition_plan_id is written by upsertNutritionLog, so fall back to the active plan
@@ -94,14 +95,18 @@ export const resolvePlanContextForDate = async (
   return { phaseId, nutritionPlanId, trainingPlanId };
 };
 
-/** Per-card resource whose plan-id presence we assert before writing a log. */
-export type PlanGatedResource = "nutrition" | "wellness" | "training";
+/**
+ * Per-card resource whose plan-id presence we assert before writing a log. Wellness is
+ * deliberately NOT gated (Session 3.1C): it has no plan, no adherence, and links via the
+ * nullable spine `phase_id` — null is first-class under opt-in roadmaps.
+ */
+export type PlanGatedResource = "nutrition" | "training";
 
 /**
  * Thrown by `assertHasActivePlan` when the plan id we'd stamp onto the log row is null.
  * Routes translate `instanceof NoActivePlanError` into a 422 — perimeter guard against
- * orphan logs (null `phase_id` / `*_plan_id`) that surface as null adherence in the
- * attention feed and are excluded from phase reviews. Sibling to `DayLockedError`.
+ * nutrition/training logs with no plan to score against (their `*_plan_id` stamps feed
+ * the adherence reads). Sibling to `DayLockedError`.
  */
 export class NoActivePlanError extends Error {
   readonly resource: PlanGatedResource;
@@ -114,20 +119,15 @@ export class NoActivePlanError extends Error {
 }
 
 /**
- * Reject the write when the field we'd stamp would be null. Per-resource because each
- * writer stamps a different id: nutrition → `nutrition_plan_id`, wellness → `phase_id`
- * (no plan id, links via phase), training → `training_plan_id` (Session 5.3).
+ * Reject the write when the plan id we'd stamp would be null: nutrition →
+ * `nutrition_plan_id`, training → `training_plan_id` (Session 5.3). Wellness writes are
+ * ungated — a no-phase client logging mood/sleep is valid, not an orphan.
  */
 export const assertHasActivePlan = (
   ctx: PlanContextForDate,
   resource: PlanGatedResource
 ): void => {
-  const id =
-    resource === "nutrition"
-      ? ctx.nutritionPlanId
-      : resource === "training"
-        ? ctx.trainingPlanId
-        : ctx.phaseId;
+  const id = resource === "nutrition" ? ctx.nutritionPlanId : ctx.trainingPlanId;
   if (id == null) throw new NoActivePlanError(resource);
 };
 

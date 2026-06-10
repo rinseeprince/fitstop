@@ -76,11 +76,6 @@ describe("assertHasActivePlan", () => {
     expect(() => assertHasActivePlan(ctx(), "nutrition")).not.toThrow();
   });
 
-  it("wellness: throws when phaseId is null, no-ops when populated", () => {
-    expect(() => assertHasActivePlan(ctx({ phaseId: null }), "wellness")).toThrow(NoActivePlanError);
-    expect(() => assertHasActivePlan(ctx(), "wellness")).not.toThrow();
-  });
-
   it("training: throws when trainingPlanId is null, no-ops when populated", () => {
     expect(() => assertHasActivePlan(ctx({ trainingPlanId: null }), "training")).toThrow(
       NoActivePlanError
@@ -90,13 +85,18 @@ describe("assertHasActivePlan", () => {
 
   it("the thrown error carries the resource discriminator", () => {
     try {
-      assertHasActivePlan(ctx({ phaseId: null }), "wellness");
+      assertHasActivePlan(ctx({ nutritionPlanId: null }), "nutrition");
       throw new Error("expected throw");
     } catch (err) {
       expect(err).toBeInstanceOf(NoActivePlanError);
-      expect((err as NoActivePlanError).resource).toBe("wellness");
-      expect((err as NoActivePlanError).message).toBe("No active plan for wellness");
+      expect((err as NoActivePlanError).resource).toBe("nutrition");
+      expect((err as NoActivePlanError).message).toBe("No active plan for nutrition");
     }
+  });
+
+  it("never gates on phaseId — a no-phase client's plan ids alone decide", () => {
+    expect(() => assertHasActivePlan(ctx({ phaseId: null }), "nutrition")).not.toThrow();
+    expect(() => assertHasActivePlan(ctx({ phaseId: null }), "training")).not.toThrow();
   });
 });
 
