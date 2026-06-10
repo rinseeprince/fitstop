@@ -1,8 +1,10 @@
 "use client";
 
+import { useState } from "react";
 import { Textarea } from "@/components/ui/textarea";
 import { Info } from "lucide-react";
 import { useNutritionBuilderContext } from "@/contexts/nutrition-builder-context";
+import { ApplyDateDialog } from "@/components/ui/apply-date-dialog";
 import { NutritionSettingsForm } from "./nutrition-settings-form";
 import { NutritionCustomMacrosSection } from "./nutrition-custom-macros-section";
 import { NutritionTrainingCaloriesDisplay } from "./nutrition-training-calories-display";
@@ -35,6 +37,7 @@ function AnimatedGroup({
 
 export function DrawerFormBody() {
   const builder = useNutritionBuilderContext();
+  const [showCustomApplyDialog, setShowCustomApplyDialog] = useState(false);
 
   return (
     <div
@@ -95,7 +98,15 @@ export function DrawerFormBody() {
             validationError={builder.customMacrosValidationError}
             showCustomMacros={builder.showCustomMacros}
             setShowCustomMacros={builder.setShowCustomMacros}
-            onSaveCustom={() => builder.generatePlan(true)}
+            onSaveCustom={() => {
+              if (builder.hasPlan) {
+                // Regeneration — same "apply now or later" popup as the footer
+                setShowCustomApplyDialog(true);
+              } else {
+                // First creation — no popup, matches the footer's behavior
+                void builder.generatePlan(true);
+              }
+            }}
             isGenerating={builder.isGenerating}
           />
         </AnimatedGroup>
@@ -169,6 +180,17 @@ export function DrawerFormBody() {
           </div>
         </AnimatedGroup>
       </div>
+
+      {/* Custom-macros effective date — same dialog as the footer's Regenerate.
+          No preserve-calories option: explicit macro overrides ARE the targets. */}
+      <ApplyDateDialog
+        open={showCustomApplyDialog}
+        onOpenChange={setShowCustomApplyDialog}
+        description="The new nutrition plan will replace the current one. Choose when the custom targets should start."
+        onApply={(effectiveFrom) => void builder.generatePlan(true, effectiveFrom)}
+        maxDate={builder.activePhase?.endDate}
+        showPreserveCalories={false}
+      />
     </div>
   );
 }
