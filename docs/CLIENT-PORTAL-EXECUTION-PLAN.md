@@ -97,10 +97,10 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 | 7.6 | Coach client overview tab as pre-session brief | 7 | COMPLETE
 | 7.7 | Coach exercise progression charts on Metrics tab | 7 | COMPLETE
 | 7.8 | Goal resolver foundation + unit normalization + nutrition/pace rewire | 7 Goal & roadmap lifecycle | COMPLETE
-| 7.81 | Timezone: device-synced capture (client + coach) + remove picker | 7 Timezone correctness |
-| 7.82 | Timezone: placement-family dates use client-local (reported bug) | 7 |
-| 7.83 | Timezone: sweep promotion / check-in / streaks / home + docs | 7 |
-| 7.84 | Timezone: coach-side windows + notifications consumer | 7 |
+| 7.81 | Timezone: device-synced capture (client + coach) + remove picker | 7 Timezone correctness | COMPLETE
+| 7.82 | Timezone: placement-family dates use client-local (reported bug) | 7 | COMPLETE
+| 7.83 | Timezone: sweep promotion / check-in / streaks / home + docs | 7 | COMPLETE
+| 7.84 | Timezone: coach-side windows + notifications consumer | 7 | COMPLETE
 | 7.9 | Goal outcome lifecycle (finishable goals) | 7 |
 | 7.10 | Roadmap completion (status + summary) + client completion card | 7 |
 | 7.11 | Roadmap-creation goal prompt + complete→create-next chain | 7 |
@@ -2375,6 +2375,8 @@ Commit.
 
 ## Session 7.81: Timezone — device-synced capture (client + coach) + remove the manual picker
 
+**Status**: COMPLETE (commit `091156e`; migration `109_add_coach_timezone.sql`. `useTimezoneSync` re-arms on logout — the never-unmounting coach sidebar would otherwise block a second login's sync in the same SPA session.)
+
 > **Why 7.81–7.84 (decimal sub-numbers):** a timezone-correctness cluster inserted to sort *before* 7.9 without renumbering the goal/roadmap-lifecycle sessions (7.9–7.12 keep their numbers + cross-refs). **Do these before 7.9/7.10** — those stamp `ended_at` / `completed_at`, which must be computed in the right person's timezone from the start (see the timezone coordination notes added to 7.9 and 7.10).
 
 > **LOCKED TIMEZONE MODEL (applies to 7.81–7.84 + 7.9/7.10):** "today" is always computed in the **device timezone of the person whose calendar the date is on** — never the server's UTC clock. Almost always that is the person making the request (a client on their own day; a coach on their own dashboard). The only cross-person cases — a coach viewing a client's check-in due/overdue, and background reminders — use the **client's** timezone. Each person's device timezone is *remembered* (`clients.timezone`, `coaches.timezone`) purely so server code (which has no device) and the absent-person cases can read it. There is no separate "client logic vs coach logic" — just one question: *whose calendar is this date on?* → read that person's stored, device-synced timezone via `getTodayDateStringInTimezone()`.
@@ -2423,6 +2425,8 @@ Commit.
 
 ## Session 7.82: Timezone — placement-family dates use client-local today (the reported bug)
 
+**Status**: COMPLETE (commit `567e0b2`; migration `110_plan_rpcs_client_local_today.sql` — explicit-signature DROP of all 7 legacy overloads + CREATE + re-applied 106 lockdown; `p_effective_from` default also moved to NULL→`v_today` (same bug, no-date path); applying it required upgrading the supabase CLI from v2.45.5, whose statement splitter could not parse the file. Review pass additionally anchored every delete/regen pair to one explicit date — a dateless pair would split across the UTC/client-local boundary and duplicate the client's local-today event — and pulled the plan-archive DELETE route + skew route forward from 7.84's list, both being placement writes outside the RPC.)
+
 > **Plain terms:** Fixes the bug you hit — and its siblings. Applying a plan, or moving/duplicating a calendar event, "to today" just after midnight (UK) got judged against the server's UTC clock and mis-treated as past/future. After 7.81 we know the client's timezone; this points every "is this date past/future?" placement decision at it.
 
 > **⚠️ Security interaction — migration `106_lock_down_security_definer_rpcs.sql` landed AFTER this plan was written.** It REVOKEs `EXECUTE` from `PUBLIC`/`anon`/`authenticated`, GRANTs only `service_role`, and pins `SET search_path = public` on `create_training_plan_atomic` + `create_nutrition_plan_atomic` (and `transition_phase_atomic`). Two consequences for the `p_today` change: (1) a plain `CREATE OR REPLACE` does **not** carry `SET search_path` to the redefinition, and (2) adding a parameter creates a **new overload** that defaults to PUBLIC-executable — silently re-opening the hole 106 closed. **Therefore: prefer `DROP FUNCTION <old-sig>; CREATE FUNCTION <new-sig>` (one signature, no stale overload), and in the SAME migration re-apply 106's lockdown to the new signature** (`REVOKE EXECUTE ... FROM PUBLIC, anon, authenticated; GRANT EXECUTE ... TO service_role; ALTER FUNCTION ... SET search_path = public;`). The service calls via `supabaseAdmin` (service_role), so it keeps working. Read `106_…sql` before writing the migration.
@@ -2467,6 +2471,8 @@ Commit.
 
 ## Session 7.83: Timezone — sweep promotion / check-in / streaks / client-home to client-local + docs
 
+**Status**: COMPLETE (commit `5b94acf`. Beyond the listed sites, the review pass found and fixed: the check-ins POST route was OVERWRITING submitCheckIn's stored client-local period with a server-UTC recompute (duplicate same-week submissions + wrong snapshot window — the route now snapshots the stored period); `validateDateParameter` rejected an east-of-UTC client's own today as "future" on the habits read path (now format-only, per the day-summary precedent); `getCheckInNutritionContext`'s current-week anchor; and `promote*IfReady` take an optional precomputed today so hot paths resolve the client day once. vitest now pins `TZ=UTC` so the non-UTC boundary tests fail deterministically on any host.)
+
 > **Plain terms:** The same UTC mistake lives in a handful more **client-context** server spots — plan auto-promotion, the check-in due/period window, streak/habit "today", and (the most visible) the client's HOME "today"/week. Same one-line swap to the client's timezone, plus the doc update. Coach-context windows are 7.84.
 
 **Commit message**: `fix: derive server-side "today" from client timezone (promotion, check-in, streaks, home)`
@@ -2506,6 +2512,8 @@ Commit.
 ---
 
 ## Session 7.84: Timezone — coach-side windows + live notifications consumer
+
+**Status**: COMPLETE (commit `2e227b3`, with an approved extension: ALL same-class sites found by audit, not just the named list. Notable deltas: `getCoachingWeekSummaryLive` was RECLASSIFIED to client-tz — its only live consumer is the client portal's weekly-nutrition card, not a coach view; the attention-feed's day-deciding triggers (training misses, habit dropoff, activity mismatch, no-engagement) receive the coach-local window anchor instead of defaulting to the server clock; `transitionPhase` threads the same coach-local today as the GET preview so the persisted phase_summary covers the window the coach reviewed; the session surplus-edit cascade anchors client-tz (client-calendar mutation); nutrition deadline/days-to-goal and check-in adherence stats anchor to the client's day. Accepted behavior change: the due day counts as "due today" — overdue starts the next local day. Reminder cron stays unwired (TECHNICAL-DEBT).)
 
 > **Plain terms:** The coach-facing "today / this week" windows (attention feed, current-week metrics, history summaries) and the client-facing "check-in overdue" badge are still on UTC. With `coaches.timezone` from 7.81, coach windows follow the coach's device; "is this client overdue" follows the **client's**. The reminder **email cron** stays deferred (no invoker yet) — tracked in `TECHNICAL-DEBT.md`.
 
