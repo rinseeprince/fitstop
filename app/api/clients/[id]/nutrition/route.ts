@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getClientById } from "@/services/client-service";
 import { getActiveTrainingPlan } from "@/services/training-service";
 import { getEventsForDateRange } from "@/services/training-event-service";
-import { getTrainingWeekStart, getTrainingWeekEnd, getTodayDateString } from "@/lib/date-helpers";
+import { getTrainingWeekStart, getTrainingWeekEnd } from "@/lib/date-helpers";
+import { getCoachTodayString } from "@/services/today-service";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
@@ -77,8 +78,9 @@ export async function GET(
       .select("*")
       .eq("nutrition_plan_id", plan.id);
 
-    // Fetch training plan + current week's training events for live calorie enrichment
-    const today = getTodayDateString();
+    // Fetch training plan + current week's training events for live calorie
+    // enrichment. Coach-local "current week": this is the coach's view.
+    const today = await getCoachTodayString(coachId);
     const weekStart = getTrainingWeekStart(today);
     const weekEnd = getTrainingWeekEnd(today);
 

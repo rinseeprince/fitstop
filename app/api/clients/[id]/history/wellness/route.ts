@@ -3,7 +3,7 @@ import { parsePaginationParams } from "@/lib/api-utils";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 import { supabaseAdmin } from "@/services/supabase-admin";
-import { getTodayDateString } from "@/lib/date-helpers";
+import { getCoachTodayString } from "@/services/today-service";
 import type { WellnessHistoryRow } from "@/types/history";
 
 const WELLNESS_COLUMNS = `
@@ -64,7 +64,8 @@ export async function GET(
     const phaseStartDate = phase?.start_date as string | null;
 
     if (phaseStartDate) {
-      const today = getTodayDateString();
+      // Coach-local today bounds the history range (coach's view).
+      const today = await getCoachTodayString(auth.coachId);
       const dates = generateDateRange(phaseStartDate, today);
       const total = dates.length;
 

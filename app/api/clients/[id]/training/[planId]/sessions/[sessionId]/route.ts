@@ -6,7 +6,7 @@ import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { updateSessionSchema } from "@/lib/validations/training";
-import { getTodayDateString } from "@/lib/date-helpers";
+import { getClientTodayString } from "@/services/today-service";
 
 // PATCH - Update session
 // Events are NOT regenerated here — the coach triggers regeneration
@@ -62,7 +62,9 @@ export async function PATCH(
     // the new training-day load. Other session fields (name, focus, etc.)
     // don't affect nutrition and don't need this cascade.
     if (validation.data.calorieSurplusPercentage !== undefined) {
-      const today = getTodayDateString();
+      // Client-local today: "future" events live on the CLIENT's calendar, so
+      // the surplus update + nutrition cascade anchor to the client's day.
+      const today = await getClientTodayString(clientId);
       await updateSurplusForFutureEvents(
         sessionId,
         validation.data.calorieSurplusPercentage ?? null,

@@ -245,6 +245,37 @@ describe('Daily Habits Service - Database Functions', () => {
     })
   })
 
+  describe('getHabitStats', () => {
+    it('anchors the lookback window to the supplied (coach-local) end date', async () => {
+      const mockQuery = createMockQuery({ data: [], error: null })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as never)
+
+      // The coach stats route passes the coach-local today. A fixed PAST
+      // anchor that can never equal the host clock makes these exact-match
+      // assertions fail if the implementation regresses to server time.
+      await getHabitStats('client-789', 'habit-1', 7, '2024-04-10')
+
+      expect(mockQuery.gte).toHaveBeenCalledWith('date', '2024-04-04')
+      expect(mockQuery.lte).toHaveBeenCalledWith('date', '2024-04-10')
+    })
+
+    it('walks the streak back from the anchored end day, not the server clock', async () => {
+      // Logs completed on the anchored end day + the day before: under a
+      // server-clock streak anchor (host today is years later) the walk finds
+      // nothing; anchored correctly it counts 2.
+      const logs = [
+        { id: 'l1', daily_habit_id: 'habit-1', client_id: 'client-789', date: '2024-04-10', completed: true, value: null, notes: null, created_at: 'x', updated_at: 'x' },
+        { id: 'l2', daily_habit_id: 'habit-1', client_id: 'client-789', date: '2024-04-09', completed: true, value: null, notes: null, created_at: 'x', updated_at: 'x' },
+      ]
+      const mockQuery = createMockQuery({ data: logs, error: null })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as never)
+
+      const stats = await getHabitStats('client-789', 'habit-1', 7, '2024-04-10')
+
+      expect(stats.currentStreak).toBe(2)
+    })
+  })
+
   describe('createHabit', () => {
     it("defaults effective_date to the CLIENT's local today", async () => {
       const clientQuery = createMockQuery({

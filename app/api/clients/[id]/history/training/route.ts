@@ -5,7 +5,7 @@ import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 import { getEventsForDateRange } from "@/services/training-event-service";
 import { mapEventsToScheduleDays } from "@/utils/training-event-helpers";
 import { supabaseAdmin } from "@/services/supabase-admin";
-import { getTodayDateString } from "@/lib/date-helpers";
+import { getCoachTodayString } from "@/services/today-service";
 import type { TrainingHistoryRow } from "@/types/history";
 import type { ScheduleDay } from "@/types/schedule";
 
@@ -113,7 +113,8 @@ export async function GET(
       return NextResponse.json({ rows: [], total: 0 }, { status: 200 });
     }
 
-    const today = getTodayDateString();
+    // Coach-local today bounds the history range (coach's view).
+    const today = await getCoachTodayString(auth.coachId);
     const dates = generateDateRange(rangeStart, today);
     const total = dates.length;
 

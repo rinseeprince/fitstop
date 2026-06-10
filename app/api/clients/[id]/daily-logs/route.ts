@@ -3,7 +3,8 @@ import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { getDailyLogs } from "@/services/daily-logs-service";
 import { getClientById } from "@/services/client-service";
-import { getTodayDateString, getDateDaysAgo } from "@/lib/date-helpers";
+import { getDateDaysFrom } from "@/lib/date-helpers";
+import { getCoachTodayString } from "@/services/today-service";
 
 async function verifyClientOwnership(
   clientId: string,
@@ -40,10 +41,10 @@ export async function GET(
     }
 
     const { searchParams } = new URL(request.url);
-    
-    // Default to last 30 days if not provided
-    const endDate = searchParams.get("endDate") || getTodayDateString();
-    const startDate = searchParams.get("startDate") || getDateDaysAgo(30);
+
+    // Default to the last 30 days ending on the coach-local today (coach view)
+    const endDate = searchParams.get("endDate") || (await getCoachTodayString(coachId));
+    const startDate = searchParams.get("startDate") || getDateDaysFrom(new Date(endDate + "T00:00:00"), -30);
 
     const logs = await getDailyLogs(clientId, startDate, endDate);
 

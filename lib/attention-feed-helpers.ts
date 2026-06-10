@@ -199,23 +199,28 @@ export function evaluateAndSortTriggers(
       continue
     }
 
-    // Run all trigger evaluations
+    // Run all trigger evaluations. Day-deciding triggers receive a "now"
+    // derived from the feed's window end (the COACH-local today, Session 7.84)
+    // so the whole feed judges days on one anchor — a trigger defaulting to
+    // the server clock would mix UTC days into a coach-local window.
+    const windowNow = new Date(dateRange.end + "T00:00:00")
     const triggers: (TriggerResult | null)[] = [
       evaluateMoodEnergyDrop(data.logs, "mood"),
       evaluateMoodEnergyDrop(data.logs, "energy"),
       evaluateLoggingGap(data.logs, dateRange),
       evaluateNutritionMisses(data.logs),
-      evaluateTrainingMisses(data.trainingEvents, undefined, data.checkInDay),
+      evaluateTrainingMisses(data.trainingEvents, windowNow, data.checkInDay),
       evaluatePartialTrainingPattern(data.trainingEvents),
       evaluateHighStress(data.logs),
-      evaluateHabitDropoff(data.habitLogs, data.habits),
-      evaluateActivityCalMismatch(data.logs, data.trainingEvents),
+      evaluateHabitDropoff(data.habitLogs, data.habits, windowNow),
+      evaluateActivityCalMismatch(data.logs, data.trainingEvents, windowNow),
       evaluateNoEngagement({
         logs: data.logs,
         habits: data.habits,
         habitLogs: data.habitLogs,
         trainingEvents: data.trainingEvents,
         startDate: data.startDate,
+        now: windowNow,
       })
     ]
 

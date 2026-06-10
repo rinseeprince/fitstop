@@ -3,6 +3,7 @@ import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { apiRateLimit } from "@/lib/rate-limit";
 import { getHabitStats, getAllHabitStats } from "@/services/daily-habits-service";
 import { getClientById } from "@/services/client-service";
+import { getCoachTodayString } from "@/services/today-service";
 
 async function verifyClientOwnership(
   clientId: string,
@@ -52,6 +53,9 @@ export async function GET(
       );
     }
 
+    // Coach-local window end: this is the coach's analytics view.
+    const coachToday = await getCoachTodayString(coachId);
+
     // Batch mode: return stats for all requested habits in one query
     if (habitIds) {
       const ids = habitIds.split(",").filter(Boolean);
@@ -61,7 +65,7 @@ export async function GET(
           { status: 400 }
         );
       }
-      const stats = await getAllHabitStats(clientId, ids, days);
+      const stats = await getAllHabitStats(clientId, ids, days, coachToday);
       return NextResponse.json({ success: true, data: stats });
     }
 
@@ -73,7 +77,7 @@ export async function GET(
       );
     }
 
-    const stats = await getHabitStats(clientId, habitId, days);
+    const stats = await getHabitStats(clientId, habitId, days, coachToday);
 
     return NextResponse.json({
       success: true,

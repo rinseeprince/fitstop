@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
-import { getTodayDateString } from "@/lib/date-helpers";
+import { getCoachTodayString } from "@/services/today-service";
 // Uses supabaseAdmin: coach-side cross-table query spanning phases and check_ins
 import { supabaseAdmin } from "@/services/supabase-admin";
 import type { PhaseWeeklyDataRow } from "@/types/roadmap";
@@ -33,7 +33,8 @@ export async function GET(
 
     let weeklyData: PhaseWeeklyDataRow[] = [];
     if (phase && phase.start_date) {
-      const endDate = phase.end_date ?? getTodayDateString();
+      // Open phase: bound the window at the coach-local today (coach's view).
+      const endDate = phase.end_date ?? (await getCoachTodayString(auth.coachId));
 
       const { data: checkIns, error: checkInsError } = await supabaseAdmin
         .from("check_ins")

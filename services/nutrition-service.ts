@@ -33,6 +33,9 @@ export type NutritionCalculationInput = {
   dietType: DietType;
   goalDeadline?: string;
   startDate?: string;
+  // Client-local today (the goal deadline lives on the client's calendar);
+  // server-local midnight is only the fallback.
+  today?: string;
   weightUnit: "lbs" | "kg";
 };
 
@@ -58,7 +61,8 @@ export function calculateBaselineCalories(
   goalWeightKg: number | undefined,
   goalDeadline: string | undefined,
   gender: "male" | "female" | "other",
-  calcStartDate?: string
+  calcStartDate?: string,
+  today?: string
 ): {
   baselineCalories: number;
   requiredDailyDeficit: number;
@@ -79,10 +83,16 @@ export function calculateBaselineCalories(
 
   // Calculate time to goal
   // When a phase starts in the future, count from phase start, not today.
-  // When a phase already started (or no phase), count from today.
-  // Normalize "now" to start of day so time-of-day doesn't skew the day count
-  const now = new Date();
-  now.setHours(0, 0, 0, 0);
+  // When a phase already started (or no phase), count from today — the
+  // CLIENT-local today when the caller provides it (the deadline lives on the
+  // client's calendar); server-local midnight only as fallback.
+  let now: Date;
+  if (today) {
+    now = new Date(today + "T00:00:00");
+  } else {
+    now = new Date();
+    now.setHours(0, 0, 0, 0);
+  }
   const startDate = calcStartDate
     ? new Date(Math.max(new Date(calcStartDate).getTime(), now.getTime()))
     : now;
@@ -302,7 +312,8 @@ export function generateNutritionPlan(
     input.goalWeightKg,
     input.goalDeadline,
     input.gender,
-    input.startDate
+    input.startDate,
+    input.today
   );
 
   warnings.push(...baselineResult.warnings);

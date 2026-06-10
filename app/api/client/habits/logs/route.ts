@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireClientAuth } from "@/lib/require-client-auth";
-import { getDateString, getTodayDateString } from "@/lib/date-helpers";
+import { getDateDaysFrom } from "@/lib/date-helpers";
+import { getClientTodayString } from "@/services/today-service";
 import { getHabitLogs } from "@/services/daily-habits-service";
 
 export async function GET(request: NextRequest) {
@@ -10,11 +11,10 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
 
-    // Default to last 30 days if not provided
-    const endDate = searchParams.get("endDate") || getTodayDateString();
-    const defaultStartDate = new Date();
-    defaultStartDate.setDate(defaultStartDate.getDate() - 30);
-    const startDate = searchParams.get("startDate") || getDateString(defaultStartDate);
+    // Default to the last 30 days ending on the CLIENT's local today. The web
+    // app always passes explicit dates; this default is the RN-contract path.
+    const endDate = searchParams.get("endDate") || (await getClientTodayString(auth.clientId));
+    const startDate = searchParams.get("startDate") || getDateDaysFrom(new Date(endDate + "T00:00:00"), -30);
 
     const logs = await getHabitLogs(auth.clientId, startDate, endDate);
 

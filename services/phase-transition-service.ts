@@ -18,7 +18,10 @@ const ADHERENCE_SCORES: Record<string, number> = {
 
 export const getPhaseReviewData = async (
   phaseId: string,
-  clientId: string
+  clientId: string,
+  // Coach-local today (the review is the coach's dashboard view); falls back
+  // to server UTC when the caller doesn't resolve it.
+  today?: string
 ): Promise<PhaseReviewData> => {
   // Fetch phase first (required for all other queries)
   const { data: phaseRow, error: phaseError } = await supabaseAdmin
@@ -36,7 +39,7 @@ export const getPhaseReviewData = async (
 
   const phase = mapPhaseRow(phaseRow as unknown as PhaseRow);
   const startDate = phase.startDate ?? phase.createdAt;
-  const endDate = phase.endDate ?? getTodayDateString();
+  const endDate = phase.endDate ?? today ?? getTodayDateString();
   const daysInRange = Math.max(
     1,
     Math.round(
@@ -235,9 +238,13 @@ export type TransitionOptions = {
 export const transitionPhase = async (
   phaseId: string,
   clientId: string,
-  options: TransitionOptions
+  options: TransitionOptions,
+  // Coach-local today — MUST match what the GET preview used, or the
+  // persisted phase_summary adherence covers a different window than the
+  // numbers the coach just reviewed.
+  today?: string
 ): Promise<{ resultId: string; reviewData: PhaseReviewData }> => {
-  const reviewData = await getPhaseReviewData(phaseId, clientId);
+  const reviewData = await getPhaseReviewData(phaseId, clientId, today);
 
   // Persist toggled milestones on the phase row before the atomic transition
   if (options.milestones) {

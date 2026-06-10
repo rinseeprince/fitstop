@@ -12,7 +12,8 @@
 import { supabaseAdmin } from "./supabase-admin"
 import type { Database } from "@/types/database"
 import type { ClientWithAlerts, AttentionAlert } from "@/types/attention-feed"
-import { getDateDaysAgo, getTodayDateString } from "@/lib/date-helpers"
+import { getDateDaysFrom } from "@/lib/date-helpers"
+import { getCoachTodayString } from "./today-service"
 import { groupClientData, evaluateAndSortTriggers, filterDismissedAlerts } from "@/lib/attention-feed-helpers"
 import type { DailyLogRow } from "@/lib/attention-feed-helpers"
 
@@ -24,8 +25,10 @@ type ClientInfoWithCheckIn = ClientInfo & Pick<ClientRow, 'expected_check_in_day
  * Evaluates all attention triggers for all of a coach's clients
  */
 export async function evaluateAllClientTriggers(coachId: string): Promise<{ clients: ClientWithAlerts[], totalClientCount: number }> {
-  const startDate = getDateDaysAgo(28)
-  const endDate = getTodayDateString()
+  // Coach-local 28-day window: the feed is the COACH's dashboard view, so its
+  // "today" is the coach's local day (one fetch per request, not per client).
+  const endDate = await getCoachTodayString(coachId)
+  const startDate = getDateDaysFrom(new Date(endDate + "T00:00:00"), -28)
   const dateRange = { start: startDate, end: endDate }
 
   // 1. Get all clients for this coach
@@ -160,8 +163,9 @@ export async function evaluateSingleClientAlerts(
   coachId: string,
   clientId: string
 ): Promise<AttentionAlert[]> {
-  const startDate = getDateDaysAgo(28)
-  const endDate = getTodayDateString()
+  // Coach-local window — see evaluateAllClientTriggers.
+  const endDate = await getCoachTodayString(coachId)
+  const startDate = getDateDaysFrom(new Date(endDate + "T00:00:00"), -28)
   const dateRange = { start: startDate, end: endDate }
 
   const { data: client, error: clientError } = await supabaseAdmin

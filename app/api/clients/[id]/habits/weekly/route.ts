@@ -4,6 +4,7 @@ import { apiRateLimit } from "@/lib/rate-limit";
 import { getClientById } from "@/services/client-service";
 import { getWeeklyHabitsData } from "@/services/habits-weekly-service";
 import { getTrainingWeekStart } from "@/lib/date-helpers";
+import { getCoachTodayString } from "@/services/today-service";
 
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 const MIN_DATE = "2020-01-01";
@@ -84,7 +85,9 @@ export async function GET(
     const data = await getWeeklyHabitsData(
       clientId,
       weekStart,
-      client.expectedCheckInDay
+      client.expectedCheckInDay,
+      // Coach-local today (this is the coach's weekly view).
+      await getCoachTodayString(coachId)
     );
 
     return NextResponse.json({ success: true, data });

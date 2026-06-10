@@ -7,7 +7,7 @@ vi.mock("./supabase-admin", () => ({
 }));
 
 import { supabaseAdmin } from "./supabase-admin";
-import { getClientTodayString } from "./today-service";
+import { getClientTodayString, getCoachTodayString } from "./today-service";
 
 // 23:30 UTC on June 9 — already June 10 in London (BST, UTC+1), still June 9
 // in UTC. The canonical boundary instant for these tests.
@@ -87,5 +87,41 @@ describe("getClientTodayString", () => {
     await expect(
       getClientTodayString("client-1", new Date("2026-06-10T00:30:00Z")),
     ).resolves.toBe("2026-06-09");
+  });
+});
+
+describe("getCoachTodayString", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function mockCoachRow(row: { timezone: string } | null) {
+    const query = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      maybeSingle: vi.fn().mockResolvedValue({ data: row, error: null }),
+    };
+    vi.mocked(supabaseAdmin.from).mockReturnValue(
+      query as unknown as ReturnType<typeof supabaseAdmin.from>,
+    );
+    return query;
+  }
+
+  it("uses the coach's synced timezone (London 23:30Z -> next local day)", async () => {
+    const query = mockCoachRow({ timezone: "Europe/London" });
+
+    await expect(getCoachTodayString("coach-1", BOUNDARY)).resolves.toBe(
+      "2026-06-10",
+    );
+    expect(supabaseAdmin.from).toHaveBeenCalledWith("coaches");
+    expect(query.eq).toHaveBeenCalledWith("id", "coach-1");
+  });
+
+  it("falls back to UTC when the coach row is missing or unsynced", async () => {
+    mockCoachRow(null);
+
+    await expect(getCoachTodayString("missing", BOUNDARY)).resolves.toBe(
+      "2026-06-09",
+    );
   });
 });

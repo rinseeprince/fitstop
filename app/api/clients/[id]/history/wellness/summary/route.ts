@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 import { supabaseAdmin } from "@/services/supabase-admin";
-import { getTrainingWeekStart, getTrainingWeekEnd, getTodayDateString, getDateString } from "@/lib/date-helpers";
+import { getTrainingWeekStart, getTrainingWeekEnd, getDateDaysFrom } from "@/lib/date-helpers";
+import { getCoachTodayString } from "@/services/today-service";
 
 export async function GET(
   request: NextRequest,
@@ -25,6 +26,9 @@ export async function GET(
     let sinceDateStr: string;
     let daysInWindow: number;
 
+    // Coach-local today anchors both window shapes (coach's summary view).
+    const today = await getCoachTodayString(auth.coachId);
+
     if (days === 7) {
       // Use training week boundaries for the default 7-day view
       // Fetch client's check-in day and start date
@@ -37,7 +41,6 @@ export async function GET(
       const checkInDay = clientRow?.expected_check_in_day ?? null;
       const clientStartDate: string | null = clientRow?.start_date ?? null;
 
-      const today = getTodayDateString();
       const weekStart = getTrainingWeekStart(today, checkInDay);
       const weekEnd = getTrainingWeekEnd(today, checkInDay);
 
@@ -50,10 +53,8 @@ export async function GET(
       daysInWindow = Math.round((endMs - startMs) / (1000 * 60 * 60 * 24)) + 1;
       sinceDateStr = effectiveStart;
     } else {
-      // For 14/28-day lookbacks, use calendar days
-      const sinceDate = new Date();
-      sinceDate.setDate(sinceDate.getDate() - (days - 1));
-      sinceDateStr = getDateString(sinceDate);
+      // For 14/28-day lookbacks, use calendar days anchored to the same today
+      sinceDateStr = getDateDaysFrom(new Date(today + "T00:00:00"), -(days - 1));
       daysInWindow = days;
     }
 

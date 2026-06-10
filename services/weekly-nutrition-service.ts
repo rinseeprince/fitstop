@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "./supabase-admin"; // system-level upserts + RLS-free reads
 import type { WeeklyNutritionSummary } from "@/types/weekly-nutrition";
-import { getWeekEnd, getWeekDays, getTrainingWeekStart, getTrainingWeekEnd, getTrainingWeekDays, getTodayDateString } from "@/lib/date-helpers";
+import { getWeekEnd, getWeekDays, getTrainingWeekStart, getTrainingWeekEnd, getTrainingWeekDays } from "@/lib/date-helpers";
+import { getClientTodayString } from "./today-service";
 import { getPlanTargetForDate } from "@/services/daily-context-service";
 import { calculateWeeklySummaryFromLogs, type FullWeekTargets } from "@/utils/weekly-nutrition-helpers";
 import { mapNutritionRowToDailyLog, mapRowToSummary, type NutritionRow } from "@/utils/weekly-nutrition-mappers";
@@ -215,7 +216,9 @@ export async function getCoachingWeekSummaryLive(
   clientId: string,
   checkInDay: string | null
 ): Promise<WeeklyNutritionSummary | null> {
-  const today = getTodayDateString();
+  // Client-local today: the live consumer is the client portal's weekly
+  // nutrition card, so "current week" is the CLIENT's week.
+  const today = await getClientTodayString(clientId);
   const weekStart = getTrainingWeekStart(today, checkInDay);
   const weekEnd = getTrainingWeekEnd(today, checkInDay);
 

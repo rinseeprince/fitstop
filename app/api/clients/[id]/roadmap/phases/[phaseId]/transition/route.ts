@@ -8,6 +8,7 @@ import {
   transitionPhase,
 } from "@/services/phase-transition-service";
 import { recordAuditEvent } from "@/services/audit-log-service";
+import { getCoachTodayString } from "@/services/today-service";
 import { AUDIT_ACTIONS } from "@/lib/constants";
 import { milestoneSchema } from "@/lib/validations/roadmap";
 
@@ -34,7 +35,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const auth = await requireCoachOwnsClient(clientId);
     if (!auth.authorized) return auth.response;
 
-    const reviewData = await getPhaseReviewData(phaseId, clientId);
+    // Coach-local today bounds the adherence window for a still-open phase.
+    const coachToday = await getCoachTodayString(auth.coachId);
+    const reviewData = await getPhaseReviewData(phaseId, clientId, coachToday);
 
     return NextResponse.json(
       { success: true, data: reviewData },
@@ -83,7 +86,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    const result = await transitionPhase(phaseId, clientId, validation.data);
+    // Same coach-local anchor as the GET preview, so the stored summary
+    // covers the window the coach reviewed.
+    const result = await transitionPhase(
+      phaseId,
+      clientId,
+      validation.data,
+      await getCoachTodayString(auth.coachId)
+    );
 
     void recordAuditEvent({
       actorId: auth.coachId,

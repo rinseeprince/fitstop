@@ -1,4 +1,18 @@
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, vi, beforeEach } from "vitest"
+
+vi.mock("@/services/supabase-admin", () => ({
+  supabaseAdmin: {
+    from: vi.fn(),
+  },
+}))
+
+vi.mock("@/services/today-service", () => ({
+  getCoachTodayString: vi.fn().mockResolvedValue("2024-03-27"),
+}))
+
+import { supabaseAdmin } from "@/services/supabase-admin"
+import { getCoachTodayString } from "@/services/today-service"
+import { evaluateAllClientTriggers } from "@/services/attention-feed-service"
 import {
   groupClientData,
   evaluateAndSortTriggers,
@@ -151,6 +165,52 @@ describe("attention-feed-service", () => {
       const map = groupClientData([baseClient], null, null, null, null)
       const result = evaluateAndSortTriggers(map, { start: "2026-01-01", end: "2026-01-28" })
       expect(result.find((c) => c.clientId === "c1")).toBeUndefined()
+    })
+
+    it("anchors day-deciding triggers to the window end, not the server clock (Session 7.84)", () => {
+      // A FIXED past window that can never match the host clock: the
+      // no_engagement trigger's affectedDays must equal the window end —
+      // under a server-clock anchor it would stamp the host's today instead.
+      const clients = [{ ...baseClient, start_date: "2024-01-01" }]
+      const events: TrainingEventRow[] = [
+        { client_id: "c1", date: "2024-02-01", status: "scheduled", estimated_calories: 300 },
+      ]
+      const dateRange = { start: "2024-02-28", end: "2024-03-27" }
+
+      const map = groupClientData(clients, null, null, null, events)
+      const result = evaluateAndSortTriggers(map, dateRange)
+
+      const alert = result
+        .find((c) => c.clientId === "c1")
+        ?.alerts.find((a) => a.type === "no_engagement")
+      expect(alert).toBeDefined()
+      expect(alert!.affectedDays).toEqual(["2024-03-27"])
+    })
+  })
+
+  describe("evaluateAllClientTriggers (window wiring)", () => {
+    beforeEach(() => {
+      vi.clearAllMocks()
+      vi.mocked(getCoachTodayString).mockResolvedValue("2024-03-27")
+    })
+
+    it("resolves the 28-day window from the COACH's local today", async () => {
+      const emptyQuery = {
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        in: vi.fn().mockReturnThis(),
+        gte: vi.fn().mockReturnThis(),
+        lte: vi.fn().mockReturnThis(),
+        order: vi.fn().mockReturnThis(),
+        then: (resolve: (v: { data: unknown[]; error: null }) => void) =>
+          Promise.resolve({ data: [], error: null }).then(resolve),
+      }
+      vi.mocked(supabaseAdmin.from).mockReturnValue(emptyQuery as never)
+
+      const result = await evaluateAllClientTriggers("coach-1")
+
+      expect(getCoachTodayString).toHaveBeenCalledWith("coach-1")
+      expect(result.clients).toEqual([])
     })
   })
 

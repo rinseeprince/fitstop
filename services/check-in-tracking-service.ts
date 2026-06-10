@@ -14,6 +14,7 @@ import {
   differenceInDays,
   parseISODate,
   calculateCheckInPeriod,
+  getTodayInTimezone,
 } from "@/lib/date-helpers";
 import type {
   Client,
@@ -56,7 +57,9 @@ export function calculateNextExpectedCheckIn(client: Client | ClientWithCheckInI
   }
 
   if (client.expectedCheckInDay) {
-    const today = new Date();
+    // The check-in lives on the CLIENT's calendar: "today" is the client's
+    // local day (zero extra fetches — the Client object carries timezone).
+    const today = getTodayInTimezone(client.timezone);
     const { periodEnd } = calculateCheckInPeriod(today, client.expectedCheckInDay);
 
     // Use period_end from the last check-in (accurate) with fallback to created_at
@@ -96,7 +99,7 @@ export function calculateNextExpectedCheckIn(client: Client | ClientWithCheckInI
 
   const frequencyDays = getFrequencyInDays(frequency, client.checkInFrequencyDays);
   let nextDate = addDays(lastCheckInDate, frequencyDays);
-  const today = new Date();
+  const today = getTodayInTimezone(client.timezone);
   while (nextDate < today) {
     nextDate = addDays(nextDate, frequencyDays);
   }
@@ -114,8 +117,13 @@ export function isClientOverdue(client: Client): boolean {
     return false; // No schedule = not overdue
   }
 
-  const now = new Date();
-  return now > nextExpected;
+  // Client-local midnight vs midnight-of-due-day: the due day itself counts
+  // as "due today", and overdue starts the NEXT local day — consistent with
+  // getDaysUntilOrPastDue (0 on the due day) and the notifications copy.
+  // (Previously a wall-clock compare flagged overdue from 00:01 on the due
+  // day; behavior change accepted in Session 7.84.)
+  const today = getTodayInTimezone(client.timezone);
+  return today > nextExpected;
 }
 
 /**
@@ -129,8 +137,8 @@ export function getDaysUntilOrPastDue(client: Client): number {
     return 0;
   }
 
-  const now = new Date();
-  return differenceInDays(now, nextExpected);
+  const today = getTodayInTimezone(client.timezone);
+  return differenceInDays(today, nextExpected);
 }
 
 /**
@@ -210,7 +218,8 @@ export type MissedCheckInPeriod = {
 export async function getMissedCheckInPeriods(
   clientId: string,
   expectedCheckInDay: DayOfWeek,
-  since: Date
+  since: Date,
+  clientTimezone: string
 ): Promise<MissedCheckInPeriod[]> {
   // Get all check-in dates for this client since the given date
   const { data: checkIns, error } = await supabaseAdmin
@@ -239,8 +248,8 @@ export async function getMissedCheckInPeriods(
     }
   }
 
-  // Walk through every expected period from `since` until today
-  const today = new Date();
+  // Walk through every expected period from `since` until the client's today
+  const today = getTodayInTimezone(clientTimezone);
   const missed: MissedCheckInPeriod[] = [];
 
   // Start from the first period that includes `since`

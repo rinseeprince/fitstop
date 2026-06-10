@@ -39,3 +39,21 @@ export async function getClientTodayString(
 
   return getTodayDateStringInTimezone(tz, now);
 }
+
+/**
+ * "Today" for a date on the COACH's calendar (attention feed, current-week
+ * metrics, history summaries). Sibling of getClientTodayString — resolve once
+ * per request, never per client in a loop.
+ */
+export async function getCoachTodayString(
+  coachId: string,
+  now: Date = new Date()
+): Promise<string> {
+  const { data } = await supabaseAdmin
+    .from("coaches")
+    .select("timezone")
+    .eq("id", coachId)
+    .maybeSingle();
+
+  return getTodayDateStringInTimezone(data?.timezone ?? "UTC", now);
+}

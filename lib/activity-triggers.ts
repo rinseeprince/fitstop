@@ -15,12 +15,13 @@ import { getDateString } from "@/lib/date-helpers"
  */
 export function evaluateHabitDropoff(
   habitLogs: DailyHabitLog[],
-  habits: DailyHabit[]
+  habits: DailyHabit[],
+  now: Date = new Date()
 ): TriggerResult | null {
   if (!habits.length || !habitLogs.length) return null
-  
+
   // Get last 7 days
-  const today = new Date()
+  const today = now
   const sevenDaysAgo = new Date(today)
   sevenDaysAgo.setDate(today.getDate() - 6)
   

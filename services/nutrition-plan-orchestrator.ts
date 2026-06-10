@@ -327,6 +327,7 @@ async function handleCalculatedPlan(
       dietType: body.dietType,
       goalDeadline: effectiveGoalDeadline ?? undefined,
       startDate: effectiveStartDate ?? undefined,
+      today: clientToday,
       weightUnit: weightUnit,
     });
     regenerationReason = existingPlan

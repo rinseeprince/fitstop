@@ -4,7 +4,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 vi.mock('@/services/supabase-admin', () => ({ supabaseAdmin: {} }))
 vi.mock('@/services/client-service', () => ({ getClientsForCoach: vi.fn(), getClientById: vi.fn() }))
 
-import { calculateNextExpectedCheckIn } from '@/services/check-in-tracking-service'
+import {
+  calculateNextExpectedCheckIn,
+  isClientOverdue,
+  getDaysUntilOrPastDue,
+} from '@/services/check-in-tracking-service'
 import type { ClientWithCheckInInfo } from '@/types/check-in'
 
 // Helper to build a minimal client for testing
@@ -94,5 +98,49 @@ describe('calculateNextExpectedCheckIn', () => {
 
     const result = calculateNextExpectedCheckIn(client)
     expect(toISO(result)).toBe('2026-03-20')
+  })
+})
+
+describe("overdue detection uses the CLIENT's local today (Session 7.84)", () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('a client whose due day arrived in THEIR zone is due today, not flagged a day early or late', () => {
+    // 12:00 UTC Saturday Mar 14 is already 01:00 Sunday Mar 15 in Auckland
+    // (NZDT, UTC+13). Sunday is the check-in day: the client is DUE TODAY.
+    // Under server-UTC anchoring this read as Saturday -> the current period
+    // ended Mar 8 -> the client was flagged 6 days overdue.
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-03-14T12:00:00Z'))
+
+    const client = makeClient({ timezone: 'Pacific/Auckland' })
+
+    expect(toISO(calculateNextExpectedCheckIn(client))).toBe('2026-03-15')
+    expect(isClientOverdue(client)).toBe(false)
+    expect(getDaysUntilOrPastDue(client)).toBe(0)
+  })
+
+  it('the due day itself counts as due-today, not overdue (accepted 7.84 behavior change)', () => {
+    // Midday on the due day (UTC client): previously the wall-clock compare
+    // (now > midnight-of-due-day) flagged overdue from 00:01; now the day
+    // itself is "due today" and overdue starts the next local day.
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-03-15T12:00:00Z')) // Sunday, the due day
+
+    const client = makeClient()
+
+    expect(isClientOverdue(client)).toBe(false)
+    expect(getDaysUntilOrPastDue(client)).toBe(0)
+  })
+
+  it('overdue starts the day after the due day in the client zone', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-03-16T00:30:00Z')) // Monday, day after
+
+    const client = makeClient()
+
+    expect(isClientOverdue(client)).toBe(true)
+    expect(getDaysUntilOrPastDue(client)).toBe(1)
   })
 })

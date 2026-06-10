@@ -4,7 +4,8 @@ import { coachApiRateLimit } from "@/lib/rate-limit";
 import { getClientById } from "@/services/client-service";
 import { getWeeklySummaries, getLatestWeeklySummary, upsertWeeklySummary } from "@/services/weekly-nutrition-service";
 import { supabaseAdmin } from "@/services/supabase-admin";
-import { getWeekStart, getTodayDateString, getDateDaysAgo } from "@/lib/date-helpers";
+import { getWeekStart, getDateDaysAgo } from "@/lib/date-helpers";
+import { getCoachTodayString } from "@/services/today-service";
 
 const MAX_BACKFILL_WEEKS = 12;
 
@@ -80,7 +81,8 @@ export async function GET(
       // Read existing summary first; only calculate if none exists yet
       let summary = await getLatestWeeklySummary(clientId);
       if (!summary) {
-        const currentWeekStart = getWeekStart(getTodayDateString());
+        // Coach-local current week (this is the coach's metrics view).
+        const currentWeekStart = getWeekStart(await getCoachTodayString(coachId));
         summary = await upsertWeeklySummary(clientId, currentWeekStart);
       }
       return NextResponse.json({ success: true, data: summary });

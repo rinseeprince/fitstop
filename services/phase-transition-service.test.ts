@@ -230,6 +230,48 @@ describe("Phase Transition Service", () => {
 
       expect(result.nutritionAdherence).toBeNull();
     });
+
+    it("bounds an OPEN phase's adherence window at the supplied (coach-local) today", async () => {
+      // endDate null = still-open phase: the window end must come from the
+      // injected coach-local today, not the server clock (a fixed past date
+      // that can never equal the host clock makes this discriminating).
+      const openPhaseRow = createMockPhaseRow({
+        id: PHASE_ID,
+        clientId: CLIENT_ID,
+        status: "active",
+        startDate: "2026-01-01",
+        endDate: null,
+        roadmapId: "roadmap-1",
+      });
+      const phaseQuery = createMockQuery({ data: openPhaseRow, error: null });
+      const trainingQuery = createMockQuery({ data: null, error: null });
+      const sessionLogsQuery = createMockQuery({ data: null, error: null, count: 5 });
+      const nutritionLogsQuery = createMockQuery({ data: [], error: null });
+      const habitsQuery = createMockQuery({ data: [], error: null });
+      const nextPhaseQuery = createMockQuery({ data: null, error: null });
+
+      let phasesCallCount = 0;
+      vi.mocked(supabaseAdmin.from).mockImplementation(((table: string) => {
+        if (table === "phases") {
+          phasesCallCount++;
+          return phasesCallCount === 1 ? phaseQuery : nextPhaseQuery;
+        }
+        if (table === "training_plans") return trainingQuery;
+        if (table === "session_logs") return sessionLogsQuery;
+        if (table === "nutrition_logs") return nutritionLogsQuery;
+        if (table === "daily_habits") return habitsQuery;
+        return createMockQuery({ data: null, error: null });
+      }) as never);
+
+      vi.mocked(getBodyMetricsHistory).mockResolvedValue([]);
+      vi.mocked(getLatestBodyMetrics).mockResolvedValue(null);
+      vi.mocked(getCurrentGoals).mockResolvedValue(null);
+
+      await getPhaseReviewData(PHASE_ID, CLIENT_ID, "2026-01-31");
+
+      expect(sessionLogsQuery.lte).toHaveBeenCalledWith("completed_at", "2026-01-31");
+      expect(nutritionLogsQuery.lte).toHaveBeenCalledWith("date", "2026-01-31");
+    });
   });
 
   describe("transitionPhase", () => {

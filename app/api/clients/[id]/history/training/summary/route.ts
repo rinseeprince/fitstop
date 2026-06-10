@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 import { supabaseAdmin } from "@/services/supabase-admin";
-import { getTrainingWeekStart, getTrainingWeekEnd, getTodayDateString } from "@/lib/date-helpers";
+import { getTrainingWeekStart, getTrainingWeekEnd } from "@/lib/date-helpers";
+import { getCoachTodayString } from "@/services/today-service";
 import { countEventsInRange } from "@/services/training-event-service";
 
 export async function GET(
@@ -28,7 +29,8 @@ export async function GET(
 
     const checkInDay = clientRow?.expected_check_in_day ?? "monday";
 
-    const today = getTodayDateString();
+    // Coach-local "current week": this is the coach's summary view.
+    const today = await getCoachTodayString(auth.coachId);
     const weekStart = getTrainingWeekStart(today, checkInDay);
     const weekEnd = getTrainingWeekEnd(today, checkInDay);
 

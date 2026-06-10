@@ -1,6 +1,6 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { getTrainingWeekDays } from "@/lib/date-helpers";
-import { getTodayDateString, getDateDaysAgo, getDateString } from "@/lib/date-helpers";
+import { getTodayDateString, getDateDaysFrom, getDateString } from "@/lib/date-helpers";
 import type { WeeklyHabitRow, WeeklyHabitDay, WeeklyHabitDayStatus, WeekSummary, WeeklyHabitsResponse } from "@/types/history";
 
 const STREAK_LOOKBACK_DAYS = 90;
@@ -31,10 +31,13 @@ type LogRecord = {
 export async function getWeeklyHabitsData(
   clientId: string,
   weekStart: string,
-  checkInDay?: string | null
+  checkInDay?: string | null,
+  // Viewer-local today (the coach route passes coach-local); marks day
+  // statuses and bounds the streak window. Server UTC is only the fallback.
+  todayAnchor?: string
 ): Promise<WeeklyHabitsResponse> {
   const weekDays = getTrainingWeekDays(weekStart, checkInDay);
-  const today = getTodayDateString();
+  const today = todayAnchor ?? getTodayDateString();
 
   // Query 1: Active habits sorted by sort_order
   const { data: habitsData, error: habitsError } = await supabaseAdmin
@@ -69,8 +72,10 @@ export async function getWeeklyHabitsData(
     throw new Error(`Failed to fetch week logs: ${weekLogsError.message}`);
   }
 
-  // Query 3: Logs for streak calculation (up to 90 days back from today)
-  const streakStart = getDateDaysAgo(STREAK_LOOKBACK_DAYS - 1);
+  // Query 3: Logs for streak calculation (up to 90 days back from today —
+  // anchored to the same viewer-local today as the walk, or a maximal streak
+  // loses its earliest fetched day across a UTC/viewer day boundary)
+  const streakStart = getDateDaysFrom(new Date(today + "T00:00:00"), -(STREAK_LOOKBACK_DAYS - 1));
   const { data: streakLogs, error: streakError } = await supabaseAdmin
     .from("daily_habit_logs")
     .select("date, daily_habit_id, completed, value")

@@ -13,6 +13,7 @@ import {
   addDays,
   differenceInDays,
   parseISODate,
+  getTodayInTimezone,
 } from "@/lib/date-helpers";
 import { getFrequencyInDays } from "./check-in-tracking-service";
 import type { ClientAdherenceStats } from "@/types/check-in";
@@ -44,7 +45,12 @@ export async function calculateCheckInAdherence(clientId: string): Promise<numbe
     return 0;
   }
 
-  const accountAge = differenceInDays(new Date(), parseISODate(client.createdAt));
+  // Client-local today: "days since signup" is a count on the client's
+  // check-in calendar, same anchor as the tracking fns.
+  const accountAge = differenceInDays(
+    getTodayInTimezone(client.timezone),
+    parseISODate(client.createdAt)
+  );
   const frequencyDays = getFrequencyInDays(
     client.checkInFrequency ?? "weekly",
     client.checkInFrequencyDays
@@ -102,7 +108,7 @@ export async function calculateCurrentStreak(clientId: string): Promise<number> 
   }
 
   let streak = 0;
-  let expectedDate = new Date();
+  let expectedDate = getTodayInTimezone(client.timezone);
 
   for (const checkIn of checkIns) {
     const checkInDate = parseISODate(checkIn.created_at!);
@@ -187,7 +193,10 @@ export async function updateClientAdherenceStats(clientId: string): Promise<void
   const longestStreak = await calculateLongestStreak(clientId);
   const actualCount = await getCheckInCount(clientId);
 
-  const accountAge = differenceInDays(new Date(), parseISODate(client.createdAt));
+  const accountAge = differenceInDays(
+    getTodayInTimezone(client.timezone),
+    parseISODate(client.createdAt)
+  );
   const frequencyDays = getFrequencyInDays(
     client.checkInFrequency ?? "weekly",
     client.checkInFrequencyDays

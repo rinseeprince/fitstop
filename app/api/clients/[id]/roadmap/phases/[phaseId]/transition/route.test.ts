@@ -25,6 +25,12 @@ vi.mock("@/services/audit-log-service", () => ({
   recordAuditEvent: vi.fn().mockResolvedValue(undefined),
 }));
 
+// The GET handler resolves the coach-local today for the adherence window
+// (same supabase-admin reason as above).
+vi.mock("@/services/today-service", () => ({
+  getCoachTodayString: vi.fn().mockResolvedValue("2026-06-10"),
+}));
+
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
@@ -86,7 +92,8 @@ describe("/api/clients/[id]/roadmap/phases/[phaseId]/transition", () => {
       expect(response.status).toBe(200);
       expect(data.success).toBe(true);
       expect(data.data.durationDays).toBe(60);
-      expect(getPhaseReviewData).toHaveBeenCalledWith("phase-1", "client-1");
+      // Third arg: the coach-local today bounding an open phase's window.
+      expect(getPhaseReviewData).toHaveBeenCalledWith("phase-1", "client-1", "2026-06-10");
     });
 
     it("returns 401 when not authenticated", async () => {
@@ -128,7 +135,10 @@ describe("/api/clients/[id]/roadmap/phases/[phaseId]/transition", () => {
       expect(transitionPhase).toHaveBeenCalledWith(
         "phase-1",
         "client-1",
-        validBody
+        validBody,
+        // Coach-local today: the stored summary must cover the same window
+        // the GET preview showed.
+        "2026-06-10"
       );
     });
 

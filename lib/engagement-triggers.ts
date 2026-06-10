@@ -51,8 +51,9 @@ export function evaluateNoEngagement({
   const graceCutoff = getDateString(addDays(now, -NO_ENGAGEMENT_ACTIVATION_GRACE_DAYS))
   if (graceCutoff < startDay) return null
 
-  // Any activity within the silence window (matches the feed's getDateDaysAgo
-  // "last N days" convention) across ANY surface clears the alert.
+  // Any activity within the silence window ("last N days" ending on the
+  // feed's coach-local window end, threaded in as `now`) across ANY surface
+  // clears the alert.
   const cutoff = getDateString(addDays(now, -NO_ENGAGEMENT_SILENCE_DAYS))
   const hasActivity =
     logs.some((log) => log.date >= cutoff) ||

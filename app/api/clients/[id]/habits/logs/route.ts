@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
-import { getDateString, getTodayDateString } from "@/lib/date-helpers";
+import { getDateDaysFrom } from "@/lib/date-helpers";
+import { getCoachTodayString } from "@/services/today-service";
 import { getHabitLogs } from "@/services/daily-habits-service";
 import { getClientById } from "@/services/client-service";
 
@@ -40,12 +41,10 @@ export async function GET(
     }
 
     const { searchParams } = new URL(request.url);
-    
-    // Default to last 30 days if not provided
-    const endDate = searchParams.get("endDate") || getTodayDateString();
-    const defaultStartDate = new Date();
-    defaultStartDate.setDate(defaultStartDate.getDate() - 30);
-    const startDate = searchParams.get("startDate") || getDateString(defaultStartDate);
+
+    // Default to the last 30 days ending on the coach-local today (coach view)
+    const endDate = searchParams.get("endDate") || (await getCoachTodayString(coachId));
+    const startDate = searchParams.get("startDate") || getDateDaysFrom(new Date(endDate + "T00:00:00"), -30);
 
     const logs = await getHabitLogs(clientId, startDate, endDate);
 

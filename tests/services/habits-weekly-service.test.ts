@@ -163,6 +163,38 @@ describe('getWeeklyHabitsData', () => {
     expect(row.days[4].status).toBe('future')    // Fri
   })
 
+  it('judges day statuses against the supplied (coach-local) todayAnchor, not the server clock', async () => {
+    // Server clock is mocked to Wed 2024-03-27, but the coach (behind UTC) is
+    // still on Tue 2024-03-26: Wednesday must read "future", and the streak
+    // window must be bounded by the anchor. Session 7.84.
+    const habit = makeHabit('h1', 'Habit')
+    const logs = [makeLog('h1', '2024-03-25', true)]
+
+    const queries: ReturnType<typeof createMockQuery>[] = []
+    const fromMock = supabaseAdmin.from as ReturnType<typeof vi.fn>
+    const results = [
+      { data: [habit], error: null },
+      { data: logs, error: null },
+      { data: logs, error: null },
+    ]
+    let call = 0
+    fromMock.mockImplementation(() => {
+      const q = createMockQuery(results[call] ?? { data: [], error: null })
+      queries.push(q)
+      call++
+      return q
+    })
+
+    const result = await getWeeklyHabitsData(CLIENT_ID, WEEK_START, null, '2024-03-26')
+    const row = result.habits[0]
+
+    expect(row.days[1].status).toBe('pending') // Tue = the anchor's today
+    expect(row.days[2].status).toBe('future')  // Wed: future for the coach, "today" on the server
+    // Streak fetch window is anchor-bounded on both ends (89 days back).
+    expect(queries[2].lte).toHaveBeenCalledWith('date', '2024-03-26')
+    expect(queries[2].gte).toHaveBeenCalledWith('date', '2023-12-28')
+  })
+
   it('handles numeric habit with value', async () => {
     const habit = makeHabit('h1', 'Steps', {
       is_boolean: false,

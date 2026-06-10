@@ -1,7 +1,15 @@
 import { supabaseAdmin } from "./supabase-admin";
 import type { Database } from "@/types/database";
-import { getTodayDateString, getDateDaysAgo } from "@/lib/date-helpers";
+import { getTodayDateString, getDateDaysFrom } from "@/lib/date-helpers";
 import { calculateCompletionRate, calculateCurrentStreak } from "./daily-habits-logic";
+
+// Window end anchor: callers pass the viewer-local today (the coach stats
+// route passes coach-local); server UTC is only the unanchored fallback.
+const resolveWindow = (days: number, endDateAnchor?: string) => {
+  const endDate = endDateAnchor ?? getTodayDateString();
+  const startDate = getDateDaysFrom(new Date(endDate + "T00:00:00"), -(days - 1));
+  return { startDate, endDate };
+};
 
 type DailyHabitLogRow = Database["public"]["Tables"]["daily_habit_logs"]["Row"];
 
@@ -17,11 +25,11 @@ export type HabitStats = {
 export const getHabitStats = async (
   clientId: string,
   habitId: string,
-  days: number
+  days: number,
+  endDateAnchor?: string
 ): Promise<HabitStats> => {
-  const endDate = getTodayDateString();
-  const startDate = getDateDaysAgo(days - 1);
-  
+  const { startDate, endDate } = resolveWindow(days, endDateAnchor);
+
   const { data, error } = await supabaseAdmin
     .from("daily_habit_logs")
     .select("*")
@@ -49,7 +57,10 @@ export const getHabitStats = async (
 
   return {
     completionRate: calculateCompletionRate(logs, days),
-    currentStreak: calculateCurrentStreak(logs),
+    // Streak walks back from the same anchored end day as the fetch window —
+    // a server-clock default would make the streak invisible to a log on the
+    // viewer-local today.
+    currentStreak: calculateCurrentStreak(logs, new Date(endDate + "T00:00:00")),
   };
 };
 
@@ -60,12 +71,12 @@ export const getHabitStats = async (
 export const getAllHabitStats = async (
   clientId: string,
   habitIds: string[],
-  days: number
+  days: number,
+  endDateAnchor?: string
 ): Promise<Record<string, HabitStats>> => {
   if (habitIds.length === 0) return {};
 
-  const endDate = getTodayDateString();
-  const startDate = getDateDaysAgo(days - 1);
+  const { startDate, endDate } = resolveWindow(days, endDateAnchor);
 
   const { data, error } = await supabaseAdmin
     .from("daily_habit_logs")
@@ -105,7 +116,7 @@ export const getAllHabitStats = async (
     }));
     result[habitId] = {
       completionRate: calculateCompletionRate(logs, days),
-      currentStreak: calculateCurrentStreak(logs),
+      currentStreak: calculateCurrentStreak(logs, new Date(endDate + "T00:00:00")),
     };
   }
 
