@@ -1,6 +1,6 @@
 "use client";
 
-import { Flame, Dumbbell } from "lucide-react";
+import { Flame } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import type { TrainingPlan } from "@/types/training";
@@ -38,22 +38,10 @@ export function NutritionTrainingCaloriesDisplay({
     );
   }
 
+  // No plan → no section. Training calories attach to actual training_events
+  // server-side, so there's nothing actionable to show here without a plan.
   if (!trainingPlan) {
-    return (
-      <div className="bg-muted/50 rounded-lg p-5">
-        <div className="flex items-start gap-3">
-          <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
-            <Dumbbell className="h-4 w-4 text-muted-foreground" />
-          </div>
-          <div>
-            <p className="text-sm font-medium text-foreground">No active training plan</p>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Training calories will be calculated automatically when you create a training plan.
-            </p>
-          </div>
-        </div>
-      </div>
-    );
+    return null;
   }
 
   // Check if any daily target uses the percentage model
