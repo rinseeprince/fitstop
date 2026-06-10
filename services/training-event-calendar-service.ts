@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { getEventsForDateRange } from "./training-event-service";
-import { getTodayDateString, getDateString } from "@/lib/date-helpers";
+import { getDateString } from "@/lib/date-helpers";
+import { getClientTodayString } from "@/services/today-service";
 import type { Json } from "@/types/database";
 
 /**
@@ -27,7 +28,7 @@ export async function moveEvent(
     throw new Error("Only scheduled events can be moved");
   }
 
-  const today = getTodayDateString();
+  const today = await getClientTodayString(clientId);
   if (newDate < today) {
     throw new Error("Cannot move event to a past date");
   }
@@ -94,7 +95,7 @@ export async function moveEventAndFuture(
     throw new Error("Only scheduled events can be moved");
   }
 
-  const today = getTodayDateString();
+  const today = await getClientTodayString(clientId);
   if (targetDate < today) {
     throw new Error("Cannot move event to a past date");
   }
@@ -210,7 +211,7 @@ export async function duplicateEvent(
     throw new Error("Event does not belong to this client/plan");
   }
 
-  const today = getTodayDateString();
+  const today = await getClientTodayString(clientId);
   if (targetDate < today) {
     throw new Error("Cannot duplicate event to a past date");
   }
@@ -306,7 +307,7 @@ export async function countModifiedFutureEvents(
   clientId: string,
   planId: string
 ): Promise<number> {
-  const today = getTodayDateString();
+  const today = await getClientTodayString(clientId);
 
   const { count, error } = await supabaseAdmin
     .from("training_events")
@@ -534,7 +535,7 @@ export async function deleteEvent(
     throw new Error("Only scheduled events can be deleted");
   }
 
-  const today = getTodayDateString();
+  const today = await getClientTodayString(clientId);
   if (event.date < today) {
     throw new Error("Cannot delete past events");
   }

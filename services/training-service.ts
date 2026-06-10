@@ -3,6 +3,7 @@ import type { TrainingPlan, TrainingSession, TrainingExercise, AIGeneratedPlan, 
 import type { TrainingPlanUpdate } from "@/lib/database-helpers";
 import { mapExerciseRow, mapSessionRow, mapPlanRow } from "./training-mappers";
 import { getTodayDateString, getDateString } from "@/lib/date-helpers";
+import { getClientTodayString } from "@/services/today-service";
 import { deleteFutureEventsForPlan, regenerateFutureEvents } from "@/services/training-event-service";
 import { captureApiError } from "@/lib/error-handler";
 
@@ -300,6 +301,10 @@ export const createTrainingPlanAtomic = async (params: {
   effectiveFrom?: string;
   savedPlanId?: string;
 }): Promise<string> => {
+  // Client-local today (coach-tz fallback) — computed here, not threaded from
+  // callers, so every placement path judges active-vs-planned correctly.
+  const pToday = await getClientTodayString(params.clientId);
+
   const { data: newPlanId, error: rpcError } = await supabaseAdmin
     .rpc("create_training_plan_atomic" as never, {
       p_client_id: params.clientId,
@@ -323,6 +328,7 @@ export const createTrainingPlanAtomic = async (params: {
       p_phase_id: params.phaseId ?? null,
       p_effective_from: params.effectiveFrom ?? null,
       p_saved_plan_id: params.savedPlanId ?? null,
+      p_today: pToday,
     } as never) as unknown as { data: string | null; error: { message: string } | null };
 
   if (rpcError || !newPlanId) {
@@ -387,13 +393,16 @@ export async function promoteTrainingPlanIfReady(
     })
     .eq("id", plannedPlan.id);
 
-  // Clean up old plan's future events, generate for promoted plan
+  // Clean up old plan's future events, generate for promoted plan. Pass the
+  // SAME anchor date to both: a dateless delete falls back to UTC while a
+  // dateless regen falls back to client-local today, and a mismatched pair
+  // leaves the old plan's local-today event alongside the new plan's.
   if (oldActivePlan) {
-    await deleteFutureEventsForPlan(oldActivePlan.id).catch((err) =>
+    await deleteFutureEventsForPlan(oldActivePlan.id, today).catch((err) =>
       captureApiError(err, { action: "delete-future-training-events-promote", planId: oldActivePlan.id })
     );
   }
-  await regenerateFutureEvents(clientId, plannedPlan.id).catch((err) =>
+  await regenerateFutureEvents(clientId, plannedPlan.id, today).catch((err) =>
     captureApiError(err, { action: "generate-training-events-promote", planId: plannedPlan.id })
   );
 

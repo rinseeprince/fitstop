@@ -8,7 +8,8 @@ import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { DAYS_OF_WEEK } from "@/utils/nutrition-helpers";
 import type { DayCalorieOverrides } from "@/types/check-in";
 import type { Database } from "@/types/database";
-import { getTodayDateString, getDateString } from "@/lib/date-helpers";
+import { getDateString } from "@/lib/date-helpers";
+import { getClientTodayString } from "@/services/today-service";
 import { promoteNutritionPlanIfReady } from "@/services/nutrition-plan-service";
 import { deleteFutureNutritionEventsForPlan, regenerateFutureNutritionEvents } from "@/services/nutrition-event-service";
 import { captureApiError } from "@/lib/error-handler";
@@ -81,7 +82,9 @@ export async function POST(
       );
     }
 
-    const today = getTodayDateString();
+    // Client-local today: this route stamps a new plan's effective_from
+    // directly (it bypasses the atomic RPC), so it must anchor the same way.
+    const today = await getClientTodayString(clientId);
     const yesterdayDate = new Date(today + "T00:00:00");
     yesterdayDate.setDate(yesterdayDate.getDate() - 1);
     const yesterday = getDateString(yesterdayDate);
@@ -170,11 +173,13 @@ export async function POST(
       );
     }
 
-    // Non-blocking: clean up old plan events, generate for new skewed plan
-    await deleteFutureNutritionEventsForPlan(currentPlan.id).catch((err) =>
+    // Non-blocking: clean up old plan events, generate for new skewed plan.
+    // Both share the route's anchor date so the delete/regen pair can't split
+    // across a UTC/client-local day boundary.
+    await deleteFutureNutritionEventsForPlan(currentPlan.id, today).catch((err) =>
       captureApiError(err, { action: "delete-future-nutrition-events-skew", planId: currentPlan.id })
     );
-    await regenerateFutureNutritionEvents(clientId, newPlan.id).catch((err) =>
+    await regenerateFutureNutritionEvents(clientId, newPlan.id, today).catch((err) =>
       captureApiError(err, { action: "generate-nutrition-events-skew", planId: newPlan.id })
     );
 

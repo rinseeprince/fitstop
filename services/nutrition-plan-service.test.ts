@@ -21,13 +21,19 @@ vi.mock('./body-metrics-service', () => ({
   recordBodyMetrics: vi.fn().mockResolvedValue({}),
 }))
 
+vi.mock('./today-service', () => ({
+  getClientTodayString: vi.fn().mockResolvedValue('2024-01-17'),
+}))
+
 import { supabaseAdmin } from './supabase-admin'
 import { recordBodyMetrics } from './body-metrics-service'
+import { getClientTodayString } from './today-service'
 import { createNutritionPlan } from './nutrition-plan-service'
 
 describe('Nutrition Plan Service', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(getClientTodayString).mockResolvedValue('2024-01-17')
   })
 
   describe('createNutritionPlan', () => {
@@ -90,6 +96,30 @@ describe('Nutrition Plan Service', () => {
       await createNutritionPlan({ ...baseParams, tdee: null })
 
       expect(recordBodyMetrics).not.toHaveBeenCalled()
+    })
+
+    it('passes the client-local today to the RPC as p_today', async () => {
+      // London client at 00:30 BST: server UTC day is still 2026-06-09, but
+      // the client-local today (and thus the active/planned anchor) is 06-10.
+      vi.mocked(getClientTodayString).mockResolvedValue('2026-06-10')
+      vi.mocked(supabaseAdmin.rpc).mockResolvedValue({ data: 'plan-123', error: null } as any)
+
+      const updateQuery = {
+        update: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockResolvedValue({ error: null }),
+      }
+      vi.mocked(supabaseAdmin.from).mockReturnValue(updateQuery as any)
+
+      await createNutritionPlan({ ...baseParams, effectiveFrom: '2026-06-10' })
+
+      expect(getClientTodayString).toHaveBeenCalledWith('client-123')
+      expect(supabaseAdmin.rpc).toHaveBeenCalledWith(
+        'create_nutrition_plan_atomic',
+        expect.objectContaining({
+          p_effective_from: '2026-06-10',
+          p_today: '2026-06-10',
+        })
+      )
     })
   })
 })

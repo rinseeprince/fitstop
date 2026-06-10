@@ -5,6 +5,7 @@ import type { DayOfWeek } from "@/utils/nutrition-helpers";
 import type { TrainingPlan } from "@/types/training";
 import { recordBodyMetrics } from "@/services/body-metrics-service";
 import { getTodayDateString, getDateString } from "@/lib/date-helpers";
+import { getClientTodayString } from "@/services/today-service";
 import { deleteFutureNutritionEventsForPlan, regenerateFutureNutritionEvents } from "@/services/nutrition-event-service";
 import { captureApiError } from "@/lib/error-handler";
 export type CreateNutritionPlanParams = {
@@ -96,8 +97,11 @@ export async function createNutritionPlan(params: CreateNutritionPlanParams): Pr
     }
   }
 
+  // Client-local today (coach-tz fallback) — computed here, not threaded from
+  // callers, so every placement path judges active-vs-planned correctly.
+  const pToday = await getClientTodayString(params.clientId);
+
   // Single transactional RPC: archive old plan + insert new plan + insert daily targets
-  // RPC function defined in migration 048 - type will be generated after migration runs
   const { data: newPlanId, error: rpcError } = await supabaseAdmin
     .rpc("create_nutrition_plan_atomic" as never, {
       p_client_id: params.clientId,
@@ -126,6 +130,7 @@ export async function createNutritionPlan(params: CreateNutritionPlanParams): Pr
       p_coach_notes: params.coachNotes || null,
       p_goal_source: params.goalSource || null,
       p_effective_from: params.effectiveFrom || null,
+      p_today: pToday,
     } as never) as unknown as { data: string | null; error: { message: string } | null };
 
   if (rpcError || !newPlanId) {
@@ -214,13 +219,16 @@ export async function promoteNutritionPlanIfReady(
     })
     .eq("id", plannedPlan.id);
 
-  // Clean up old plan's future events, generate for promoted plan
+  // Clean up old plan's future events, generate for promoted plan. Pass the
+  // SAME anchor date to both: a dateless delete falls back to UTC while a
+  // dateless regen falls back to client-local today, and a mismatched pair
+  // anchors the cleanup and the regeneration on different days.
   if (oldActivePlan) {
-    await deleteFutureNutritionEventsForPlan(oldActivePlan.id).catch((err) =>
+    await deleteFutureNutritionEventsForPlan(oldActivePlan.id, today).catch((err) =>
       captureApiError(err, { action: "delete-future-nutrition-events-promote", planId: oldActivePlan.id })
     );
   }
-  await regenerateFutureNutritionEvents(clientId, plannedPlan.id).catch((err) =>
+  await regenerateFutureNutritionEvents(clientId, plannedPlan.id, today).catch((err) =>
     captureApiError(err, { action: "generate-nutrition-events-promote", planId: plannedPlan.id })
   );
 

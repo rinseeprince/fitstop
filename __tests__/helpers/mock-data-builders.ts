@@ -157,6 +157,11 @@ export function createMockCheckInRow(options: MockCheckInOptions = {}): CheckInR
     period_start: null,
     period_end: null,
     period_snapshot: null,
+    // Remote-only drift columns (no migration defines them; no code reads
+    // them) — present in the generated Row type, so the builder must fill them.
+    daily_logs_start_date: null,
+    daily_logs_end_date: null,
+    uses_daily_logs: false,
     created_at: options.createdAt ?? now,
     updated_at: options.updatedAt ?? now,
   }

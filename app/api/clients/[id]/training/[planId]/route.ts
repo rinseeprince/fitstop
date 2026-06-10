@@ -12,7 +12,7 @@ import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { apiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { captureApiError } from "@/lib/error-handler";
-import { getTodayDateString } from "@/lib/date-helpers";
+import { getClientTodayString } from "@/services/today-service";
 import { updateTrainingPlanSchema } from "@/lib/validations/training";
 
 // GET - Get specific training plan
@@ -127,7 +127,9 @@ export async function DELETE(
       return NextResponse.json({ error: "Plan not found" }, { status: 404 });
     }
 
-    const today = getTodayDateString();
+    // Client-local today: "future" events on the client's calendar are
+    // anchored to the client's day, not the server's UTC clock.
+    const today = await getClientTodayString(clientId);
 
     await archiveTrainingPlan(planId);
     await cancelFutureEventsForPlan(planId, today);

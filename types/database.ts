@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.5"
+    PostgrestVersion: "13.0.5"
   }
   graphql_public: {
     Tables: {
@@ -342,6 +342,8 @@ export type Database = {
           coach_response: string | null
           coach_reviewed_at: string | null
           created_at: string | null
+          daily_logs_end_date: string | null
+          daily_logs_start_date: string | null
           energy: number | null
           hips: number | null
           id: string
@@ -363,6 +365,7 @@ export type Database = {
           stress: number | null
           thighs: number | null
           updated_at: string | null
+          uses_daily_logs: boolean
           waist: number | null
           weight: number | null
           weight_unit: string | null
@@ -383,6 +386,8 @@ export type Database = {
           coach_response?: string | null
           coach_reviewed_at?: string | null
           created_at?: string | null
+          daily_logs_end_date?: string | null
+          daily_logs_start_date?: string | null
           energy?: number | null
           hips?: number | null
           id?: string
@@ -404,6 +409,7 @@ export type Database = {
           stress?: number | null
           thighs?: number | null
           updated_at?: string | null
+          uses_daily_logs?: boolean
           waist?: number | null
           weight?: number | null
           weight_unit?: string | null
@@ -424,6 +430,8 @@ export type Database = {
           coach_response?: string | null
           coach_reviewed_at?: string | null
           created_at?: string | null
+          daily_logs_end_date?: string | null
+          daily_logs_start_date?: string | null
           energy?: number | null
           hips?: number | null
           id?: string
@@ -445,6 +453,7 @@ export type Database = {
           stress?: number | null
           thighs?: number | null
           updated_at?: string | null
+          uses_daily_logs?: boolean
           waist?: number | null
           weight?: number | null
           weight_unit?: string | null
@@ -2878,199 +2887,65 @@ export type Database = {
         }[]
       }
       clean_expired_tokens: { Args: never; Returns: undefined }
-      create_nutrition_plan_atomic:
-        | {
-            Args: {
-              p_base_weight_kg: number
-              p_baseline_calories: number
-              p_bmr: number
-              p_carb_target_g: number
-              p_client_id: string
-              p_coach_id: string
-              p_custom_calories: number
-              p_custom_carb_g: number
-              p_custom_fat_g: number
-              p_custom_macros_enabled: boolean
-              p_custom_protein_g: number
-              p_daily_targets: Json
-              p_diet_type: string
-              p_fat_target_g: number
-              p_goal_deadline: string
-              p_goal_weight_kg: number
-              p_protein_target_g: number
-              p_protein_target_g_per_kg: number
-              p_regeneration_reason: string
-              p_tdee: number
-              p_training_volume_hours: string
-              p_work_activity_level: string
-            }
-            Returns: string
-          }
-        | {
-            Args: {
-              p_base_weight_kg: number
-              p_baseline_calories: number
-              p_bmr: number
-              p_carb_target_g: number
-              p_client_id: string
-              p_coach_id: string
-              p_custom_calories: number
-              p_custom_carb_g: number
-              p_custom_fat_g: number
-              p_custom_macros_enabled: boolean
-              p_custom_protein_g: number
-              p_daily_targets: Json
-              p_diet_type: string
-              p_fat_target_g: number
-              p_goal_deadline: string
-              p_goal_weight_kg: number
-              p_phase_id?: string
-              p_protein_target_g: number
-              p_protein_target_g_per_kg: number
-              p_regeneration_reason: string
-              p_tdee: number
-              p_training_volume_hours: string
-              p_work_activity_level: string
-            }
-            Returns: string
-          }
-        | {
-            Args: {
-              p_base_weight_kg: number
-              p_baseline_calories: number
-              p_bmr: number
-              p_carb_target_g: number
-              p_client_id: string
-              p_coach_id: string
-              p_coach_notes?: string
-              p_custom_calories: number
-              p_custom_carb_g: number
-              p_custom_fat_g: number
-              p_custom_macros_enabled: boolean
-              p_custom_protein_g: number
-              p_daily_targets: Json
-              p_diet_type: string
-              p_fat_target_g: number
-              p_goal_deadline: string
-              p_goal_source?: string
-              p_goal_weight_kg: number
-              p_phase_id?: string
-              p_protein_target_g: number
-              p_protein_target_g_per_kg: number
-              p_regeneration_reason: string
-              p_tdee: number
-              p_training_volume_hours: string
-              p_work_activity_level: string
-            }
-            Returns: string
-          }
-        | {
-            Args: {
-              p_base_weight_kg: number
-              p_baseline_calories: number
-              p_bmr: number
-              p_carb_target_g: number
-              p_client_id: string
-              p_coach_id: string
-              p_coach_notes?: string
-              p_custom_calories: number
-              p_custom_carb_g: number
-              p_custom_fat_g: number
-              p_custom_macros_enabled: boolean
-              p_custom_protein_g: number
-              p_daily_targets: Json
-              p_diet_type: string
-              p_effective_from?: string
-              p_fat_target_g: number
-              p_goal_deadline: string
-              p_goal_source?: string
-              p_goal_weight_kg: number
-              p_phase_id?: string
-              p_protein_target_g: number
-              p_protein_target_g_per_kg: number
-              p_regeneration_reason: string
-              p_tdee: number
-              p_training_volume_hours: string
-              p_work_activity_level: string
-            }
-            Returns: string
-          }
-      create_training_plan_atomic:
-        | {
-            Args: {
-              p_ai_response_raw: string
-              p_avg_energy: number
-              p_avg_mood: number
-              p_avg_sleep: number
-              p_avg_stress: number
-              p_client_body_fat_percentage: number
-              p_client_goal_weight_kg: number
-              p_client_id: string
-              p_client_tdee: number
-              p_client_weight_kg: number
-              p_coach_id: string
-              p_coach_prompt: string
-              p_description: string
-              p_frequency_per_week: number
-              p_name: string
-              p_phase_id: string
-              p_program_duration_weeks: number
-              p_recent_adherence_percentage: number
-              p_split_type: string
-            }
-            Returns: string
-          }
-        | {
-            Args: {
-              p_ai_response_raw: string
-              p_avg_energy: number
-              p_avg_mood: number
-              p_avg_sleep: number
-              p_avg_stress: number
-              p_client_body_fat_percentage: number
-              p_client_goal_weight_kg: number
-              p_client_id: string
-              p_client_tdee: number
-              p_client_weight_kg: number
-              p_coach_id: string
-              p_coach_prompt: string
-              p_description: string
-              p_effective_from?: string
-              p_frequency_per_week: number
-              p_name: string
-              p_phase_id: string
-              p_program_duration_weeks: number
-              p_recent_adherence_percentage: number
-              p_split_type: string
-            }
-            Returns: string
-          }
-        | {
-            Args: {
-              p_ai_response_raw: string
-              p_avg_energy: number
-              p_avg_mood: number
-              p_avg_sleep: number
-              p_avg_stress: number
-              p_client_body_fat_percentage: number
-              p_client_goal_weight_kg: number
-              p_client_id: string
-              p_client_tdee: number
-              p_client_weight_kg: number
-              p_coach_id: string
-              p_coach_prompt: string
-              p_description: string
-              p_effective_from?: string
-              p_frequency_per_week: number
-              p_name: string
-              p_phase_id: string
-              p_program_duration_weeks: number
-              p_recent_adherence_percentage: number
-              p_saved_plan_id?: string
-              p_split_type: string
-            }
-            Returns: string
-          }
+      create_nutrition_plan_atomic: {
+        Args: {
+          p_base_weight_kg: number
+          p_baseline_calories: number
+          p_bmr: number
+          p_carb_target_g: number
+          p_client_id: string
+          p_coach_id: string
+          p_coach_notes?: string
+          p_custom_calories: number
+          p_custom_carb_g: number
+          p_custom_fat_g: number
+          p_custom_macros_enabled: boolean
+          p_custom_protein_g: number
+          p_daily_targets: Json
+          p_diet_type: string
+          p_effective_from?: string
+          p_fat_target_g: number
+          p_goal_deadline: string
+          p_goal_source?: string
+          p_goal_weight_kg: number
+          p_phase_id?: string
+          p_protein_target_g: number
+          p_protein_target_g_per_kg: number
+          p_regeneration_reason: string
+          p_tdee: number
+          p_today?: string
+          p_training_volume_hours: string
+          p_work_activity_level: string
+        }
+        Returns: string
+      }
+      create_training_plan_atomic: {
+        Args: {
+          p_ai_response_raw: string
+          p_avg_energy: number
+          p_avg_mood: number
+          p_avg_sleep: number
+          p_avg_stress: number
+          p_client_body_fat_percentage: number
+          p_client_goal_weight_kg: number
+          p_client_id: string
+          p_client_tdee: number
+          p_client_weight_kg: number
+          p_coach_id: string
+          p_coach_prompt: string
+          p_description: string
+          p_effective_from?: string
+          p_frequency_per_week: number
+          p_name: string
+          p_phase_id: string
+          p_program_duration_weeks: number
+          p_recent_adherence_percentage: number
+          p_saved_plan_id?: string
+          p_split_type: string
+          p_today?: string
+        }
+        Returns: string
+      }
       get_client_exercise_list: {
         Args: {
           p_client_id: string

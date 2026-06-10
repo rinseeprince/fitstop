@@ -3,6 +3,7 @@ import type { TrainingEvent, TrainingEventStatus, TrainingEventSummary } from "@
 import type { SessionCompletionQuality } from "@/types/check-in";
 import type { TrainingEventRow, TrainingEventInsert } from "@/lib/database-helpers";
 import { getTodayDateString, getDateString, DAY_NUM } from "@/lib/date-helpers";
+import { getClientTodayString } from "@/services/today-service";
 
 // --- Row mapper ---
 
@@ -122,6 +123,8 @@ export async function cancelFutureEventsForPlan(
   planId: string,
   effectiveFrom?: string
 ): Promise<void> {
+  // UTC fallback only: no clientId in scope to resolve a client-local today,
+  // and the live caller passes an explicit (client-local) date.
   const fromDate = effectiveFrom ?? getTodayDateString();
 
   const { error } = await supabaseAdmin
@@ -148,7 +151,7 @@ export async function regenerateFutureEvents(
   effectiveFrom?: string,
   force?: boolean
 ): Promise<void> {
-  const fromDate = effectiveFrom ?? getTodayDateString();
+  const fromDate = effectiveFrom ?? (await getClientTodayString(clientId));
 
   // Delete scheduled events from effectiveFrom onward.
   // force === false: preserve is_modified events (calendar UI opt-in).
@@ -305,6 +308,8 @@ export async function deleteFutureEventsForPlan(
   planId: string,
   fromDate?: string
 ): Promise<void> {
+  // UTC fallback only: no clientId in scope to resolve a client-local today.
+  // Callers that know the client should pass an explicit date.
   const deleteFrom = fromDate ?? getTodayDateString();
 
   const { error } = await supabaseAdmin

@@ -8,6 +8,12 @@ vi.mock("./supabase-admin", () => ({
   },
 }));
 
+// Client-local today resolution: default to the server clock so the existing
+// (timezone-agnostic) fixtures behave exactly as before.
+vi.mock("./today-service", () => ({
+  getClientTodayString: vi.fn(),
+}));
+
 // Inline query mock helper (avoids importing mock-supabase which has hoisting issues)
 function createMockQuery<T = unknown>(result: { data: T | null; error: { message: string } | null }) {
   const mockQuery = {
@@ -40,6 +46,8 @@ function createMockQuery<T = unknown>(result: { data: T | null; error: { message
 }
 
 import { supabaseAdmin } from "./supabase-admin";
+import { getClientTodayString } from "./today-service";
+import { getTodayDateString } from "@/lib/date-helpers";
 import {
   generateTrainingEvents,
   regenerateFutureEvents,
@@ -52,6 +60,10 @@ import {
   getEventSummariesForDate,
 } from "./training-event-service";
 import type { SessionInput } from "./training-event-service";
+
+vi.mocked(getClientTodayString).mockImplementation(() =>
+  Promise.resolve(getTodayDateString()),
+);
 
 // Mock query for findMatchingEvent: a single chained read resolving to `rows`.
 // Rows must be supplied in the query's sort order (date asc, created_at asc).
@@ -237,6 +249,7 @@ describe("training-event-service", () => {
       expect(deleteQuery.eq).toHaveBeenCalledWith("training_plan_id", "plan-1");
       expect(deleteQuery.gte).toHaveBeenCalledWith("date", "2026-04-08");
       expect(deleteQuery.eq).toHaveBeenCalledWith("status", "scheduled");
+      expect(getClientTodayString).toHaveBeenCalledWith("client-1");
 
       // Verify sessions were fetched
       expect(sessionsQuery.eq).toHaveBeenCalledWith("plan_id", "plan-1");
@@ -247,6 +260,36 @@ describe("training-event-service", () => {
 
       // Verify upsert was called with events
       expect(upsertQuery.upsert).toHaveBeenCalled();
+    });
+
+    it("anchors the dateless fallback at client-local today, not server UTC", async () => {
+      // Server clock says 2026-04-08; the client (west of UTC) is still on
+      // 2026-04-07. The delete window must start at the client's day or the
+      // local-today event from the old generation survives.
+      vi.mocked(getClientTodayString).mockResolvedValueOnce("2026-04-07");
+
+      const callIndex: string[] = [];
+      const deleteQuery = createMockQuery({ data: null, error: null });
+      const sessionsQuery = createMockQuery({ data: [], error: null });
+      const planQuery = createMockQuery({
+        data: { effective_from: "2026-04-01", program_duration_weeks: null, phase_id: null },
+        error: null,
+      });
+      const upsertQuery = createMockQuery({ data: [], error: null });
+
+      mockFrom.mockImplementation((table: string) => {
+        callIndex.push(table);
+        const count = callIndex.filter((t) => t === table).length;
+        if (table === "training_events") return count === 1 ? (deleteQuery as any) : (upsertQuery as any);
+        if (table === "training_sessions") return sessionsQuery as any;
+        if (table === "training_plans") return planQuery as any;
+        return createMockQuery({ data: null, error: null }) as any;
+      });
+
+      await regenerateFutureEvents("client-1", "plan-1");
+
+      expect(getClientTodayString).toHaveBeenCalledWith("client-1");
+      expect(deleteQuery.gte).toHaveBeenCalledWith("date", "2026-04-07");
     });
 
     it("uses start_date + duration_weeks when phase has no end_date", async () => {

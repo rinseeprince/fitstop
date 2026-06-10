@@ -14,6 +14,11 @@ vi.mock("./training-event-service", () => ({
   regenerateFutureEvents: vi.fn(),
 }));
 
+// Mock today-service (the calendar guards judge against client-local today)
+vi.mock("./today-service", () => ({
+  getClientTodayString: vi.fn(),
+}));
+
 // Inline query mock helper
 function createMockQuery<T = unknown>(result: { data: T | null; error: { message: string } | null; count?: number | null }) {
   const mockQuery = {
@@ -42,20 +47,30 @@ function createMockQuery<T = unknown>(result: { data: T | null; error: { message
 
 import { supabaseAdmin } from "./supabase-admin";
 import { getEventsForDateRange } from "./training-event-service";
+import { getClientTodayString } from "./today-service";
+import { getTodayDateString } from "@/lib/date-helpers";
 import {
   duplicateWeek,
   duplicateWeekToRemaining,
   deleteEvent,
+  duplicateEvent,
   moveEvent,
   moveEventAndFuture,
+  countModifiedFutureEvents,
 } from "./training-event-calendar-service";
 
 const mockFrom = vi.mocked(supabaseAdmin.from);
 const mockGetEventsForDateRange = vi.mocked(getEventsForDateRange);
+const mockGetClientTodayString = vi.mocked(getClientTodayString);
 
 describe("training-event-calendar-service", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Default: client-local today equals server today, so the pre-timezone
+    // fixtures (which pin the clock via setSystemTime) behave unchanged.
+    mockGetClientTodayString.mockImplementation(() =>
+      Promise.resolve(getTodayDateString()),
+    );
   });
 
   // =========================================================================
@@ -480,6 +495,71 @@ describe("training-event-calendar-service", () => {
 
       expect(result).toEqual({ sourceDate: "2026-04-27", targetDate: "2026-04-30" });
     });
+
+    it("judges 'past' against client-local today, not server UTC (west-of-UTC boundary)", async () => {
+      // LA client at ~17:30 PDT on 2026-06-09; the server's UTC day is already
+      // 2026-06-10. Under the old UTC guard, moving an event to the client's
+      // *today* (06-09) was rejected as a past date.
+      vi.setSystemTime(new Date("2026-06-10T00:30:00Z"));
+      mockGetClientTodayString.mockResolvedValue("2026-06-09");
+
+      const existingEvent = {
+        id: "event-1",
+        client_id: clientId,
+        training_plan_id: planId,
+        date: "2026-06-12",
+        training_session_id: null,
+        status: "scheduled",
+        session_name: "Push",
+        session_focus: null,
+        estimated_calories: 300,
+        is_modified: false,
+      };
+
+      let fromCallIndex = 0;
+      mockFrom.mockImplementation((table: string) => {
+        if (table === "training_plans") {
+          return createMockQuery({ data: { phase_id: null }, error: null }) as any;
+        }
+        if (table === "training_events") {
+          fromCallIndex++;
+          if (fromCallIndex === 1) {
+            return createMockQuery({ data: existingEvent, error: null }) as any;
+          }
+          return createMockQuery({ data: null, error: null }) as any;
+        }
+        return createMockQuery({ data: null, error: null }) as any;
+      });
+
+      const result = await moveEvent("event-1", "2026-06-09", clientId, planId);
+
+      expect(result).toEqual({ sourceDate: "2026-06-12", targetDate: "2026-06-09" });
+      expect(mockGetClientTodayString).toHaveBeenCalledWith(clientId);
+    });
+
+    it("still rejects dates before the client-local today", async () => {
+      mockGetClientTodayString.mockResolvedValue("2026-06-09");
+
+      const existingEvent = {
+        id: "event-1",
+        client_id: clientId,
+        training_plan_id: planId,
+        date: "2026-06-12",
+        training_session_id: null,
+        status: "scheduled",
+        session_name: "Push",
+        session_focus: null,
+        estimated_calories: 300,
+        is_modified: false,
+      };
+      mockFrom.mockReturnValue(
+        createMockQuery({ data: existingEvent, error: null }) as any,
+      );
+
+      await expect(
+        moveEvent("event-1", "2026-06-08", clientId, planId),
+      ).rejects.toThrow("Cannot move event to a past date");
+    });
   });
 
   // =========================================================================
@@ -700,6 +780,95 @@ describe("training-event-calendar-service", () => {
       await expect(
         moveEventAndFuture("event-1", "2026-04-10", clientId, planId)
       ).rejects.toThrow(/past date/);
+    });
+  });
+
+  // =========================================================================
+  // Client-local "today" anchoring for the remaining guards. Server clock is
+  // 2026-06-10 (UTC); the client (west of UTC) is still on 2026-06-09. Each
+  // guard must judge against the client's day or local-today operations break.
+  // =========================================================================
+
+  describe("client-local today anchoring (west-of-UTC boundary)", () => {
+    const clientId = "client-1";
+    const planId = "plan-1";
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-06-10T00:30:00Z"));
+      mockGetClientTodayString.mockResolvedValue("2026-06-09");
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("deleteEvent allows deleting an event on the client's local today", async () => {
+      mockFrom.mockImplementation((table: string) => {
+        if (table === "training_events") {
+          return createMockQuery({
+            data: {
+              id: "event-1",
+              client_id: clientId,
+              training_plan_id: planId,
+              status: "scheduled",
+              date: "2026-06-09", // client-local today; "past" under UTC
+            },
+            error: null,
+          }) as any;
+        }
+        return createMockQuery({ data: null, error: null }) as any;
+      });
+
+      await expect(deleteEvent("event-1", clientId, planId)).resolves.toBeUndefined();
+      expect(mockGetClientTodayString).toHaveBeenCalledWith(clientId);
+    });
+
+    it("duplicateEvent allows duplicating onto the client's local today", async () => {
+      let eventCalls = 0;
+      mockFrom.mockImplementation((table: string) => {
+        if (table === "training_events") {
+          eventCalls++;
+          if (eventCalls === 1) {
+            // Source fetch. No training_session_id -> conflict check skipped.
+            return createMockQuery({
+              data: {
+                id: "event-1",
+                client_id: clientId,
+                training_plan_id: planId,
+                training_session_id: null,
+                session_name: "Push",
+                session_focus: null,
+                estimated_calories: 300,
+                calorie_surplus_percentage: null,
+                status: "scheduled",
+                date: "2026-06-12",
+              },
+              error: null,
+            }) as any;
+          }
+          // Insert of the duplicate.
+          return createMockQuery({ data: { id: "event-2" }, error: null }) as any;
+        }
+        if (table === "training_plans") {
+          return createMockQuery({ data: { phase_id: null }, error: null }) as any;
+        }
+        return createMockQuery({ data: null, error: null }) as any;
+      });
+
+      await expect(
+        duplicateEvent("event-1", "2026-06-09", clientId, planId),
+      ).resolves.toBe("event-2");
+      expect(mockGetClientTodayString).toHaveBeenCalledWith(clientId);
+    });
+
+    it("countModifiedFutureEvents anchors its window at the client's local today", async () => {
+      const countQuery = createMockQuery({ data: null, error: null, count: 3 });
+      mockFrom.mockReturnValue(countQuery as any);
+
+      await expect(countModifiedFutureEvents(clientId, planId)).resolves.toBe(3);
+      expect(mockGetClientTodayString).toHaveBeenCalledWith(clientId);
+      expect(countQuery.gte).toHaveBeenCalledWith("date", "2026-06-09");
     });
   });
 });

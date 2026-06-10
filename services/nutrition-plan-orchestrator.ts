@@ -14,7 +14,7 @@ import { requirePhaseSelection } from "@/lib/require-phase-selection";
 import type { GenerateNutritionPlanRequest, DietType } from "@/types/check-in";
 import { deleteFutureNutritionEventsForPlan, regenerateFutureNutritionEvents } from "@/services/nutrition-event-service";
 import { captureApiError } from "@/lib/error-handler";
-import { getTodayDateString } from "@/lib/date-helpers";
+import { getClientTodayString } from "@/services/today-service";
 import { resolveEffectiveGoal } from "@/lib/goals/resolve-effective-goal";
 
 export class NutritionPlanError extends Error {
@@ -73,9 +73,14 @@ export async function orchestrateNutritionPlanCreation(
     throw new NutritionPlanError("Nutrition plans can only be created for the active phase", 400);
   }
 
+  // Client-local today (coach-tz fallback): both the past-date validation and
+  // the goal resolver must agree with the RPC's active-vs-planned decision, or
+  // a coach near local midnight gets a spurious "past date" rejection.
+  const clientToday = await getClientTodayString(clientId);
+
   // Validate effectiveFrom date
   if (body.effectiveFrom) {
-    if (body.effectiveFrom < getTodayDateString()) {
+    if (body.effectiveFrom < clientToday) {
       throw new NutritionPlanError("Effective date cannot be in the past", 400);
     }
     if (phase.phaseId && phase.phaseEndDate && body.effectiveFrom > phase.phaseEndDate) {
@@ -127,7 +132,7 @@ export async function orchestrateNutritionPlanCreation(
       deadline: currentGoals?.goalDeadline ?? client.goalDeadline ?? null,
       startDate: currentGoals?.goalStartDate ?? null,
     },
-    today: getTodayDateString(),
+    today: clientToday,
   });
   const effectiveGoalWeightKg = effective.goalWeightKg;
   const effectiveGoalDeadline = effective.deadline;
@@ -139,7 +144,7 @@ export async function orchestrateNutritionPlanCreation(
     return handleCustomMacros(
       clientId, coachId, body, phase, weightUnit, currentWeight,
       bmr, tdeeValue, effectiveGoalWeightKg, effectiveGoalDeadline,
-      goalSource, validatedData
+      goalSource, validatedData, clientToday
     );
   }
 
@@ -147,7 +152,7 @@ export async function orchestrateNutritionPlanCreation(
   return handleCalculatedPlan(
     clientId, coachId, body, client, phase, weightUnit, currentWeight,
     bmr, effectiveGoalWeightKg, effectiveGoalDeadline, effectiveStartDate,
-    goalSource, validatedData
+    goalSource, validatedData, clientToday
   );
 }
 
@@ -163,7 +168,8 @@ async function handleCustomMacros(
   effectiveGoalWeightKg: number | null,
   effectiveGoalDeadline: string | null,
   goalSource: "phase" | "client",
-  validatedData: { coachNotes?: string }
+  validatedData: { coachNotes?: string },
+  clientToday: string
 ): Promise<NutritionPlanResult> {
   if (!body.customProteinG || !body.customCarbG || !body.customFatG || !body.customCalories) {
     throw new NutritionPlanError("Custom macros enabled but values not provided", 400);
@@ -228,13 +234,15 @@ async function handleCustomMacros(
     throw new NutritionPlanError("Failed to create nutrition plan", 500);
   }
 
-  // Non-blocking: clean up old plan's future events, then generate for new plan
+  // Non-blocking: clean up old plan's future events, then generate for new
+  // plan. Both calls share one anchor date (client-local when no explicit
+  // start) — a mismatched delete/regen pair leaves stale same-day events.
   if (existingPlan) {
-    await deleteFutureNutritionEventsForPlan(existingPlan.id, body.effectiveFrom ?? undefined).catch((err) =>
+    await deleteFutureNutritionEventsForPlan(existingPlan.id, body.effectiveFrom ?? clientToday).catch((err) =>
       captureApiError(err, { action: "delete-future-nutrition-events", planId: existingPlan.id })
     );
   }
-  await regenerateFutureNutritionEvents(clientId, newPlanId, body.effectiveFrom ?? undefined).catch((err) =>
+  await regenerateFutureNutritionEvents(clientId, newPlanId, body.effectiveFrom ?? clientToday).catch((err) =>
     captureApiError(err, { action: "generate-nutrition-events", planId: newPlanId })
   );
 
@@ -267,7 +275,8 @@ async function handleCalculatedPlan(
   // Always a concrete date — resolveEffectiveGoal falls back to `today`.
   effectiveStartDate: string,
   goalSource: "phase" | "client",
-  validatedData: { coachNotes?: string }
+  validatedData: { coachNotes?: string },
+  clientToday: string
 ): Promise<NutritionPlanResult> {
   const currentWeightKg = weightToKg(currentWeight!, weightUnit);
 
@@ -359,13 +368,15 @@ async function handleCalculatedPlan(
     throw new NutritionPlanError("Failed to create nutrition plan", 500);
   }
 
-  // Non-blocking: clean up old plan's future events, then generate for new plan
+  // Non-blocking: clean up old plan's future events, then generate for new
+  // plan. Both calls share one anchor date (client-local when no explicit
+  // start) — a mismatched delete/regen pair leaves stale same-day events.
   if (existingPlan) {
-    await deleteFutureNutritionEventsForPlan(existingPlan.id, body.effectiveFrom ?? undefined).catch((err) =>
+    await deleteFutureNutritionEventsForPlan(existingPlan.id, body.effectiveFrom ?? clientToday).catch((err) =>
       captureApiError(err, { action: "delete-future-nutrition-events", planId: existingPlan.id })
     );
   }
-  await regenerateFutureNutritionEvents(clientId, newPlanId, body.effectiveFrom ?? undefined).catch((err) =>
+  await regenerateFutureNutritionEvents(clientId, newPlanId, body.effectiveFrom ?? clientToday).catch((err) =>
     captureApiError(err, { action: "generate-nutrition-events", planId: newPlanId })
   );
 

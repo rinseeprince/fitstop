@@ -3,6 +3,7 @@ import type { NutritionEvent, NutritionEventStatus, DietType } from "@/types/che
 import type { NutritionEventRow, NutritionEventInsert } from "@/lib/database-helpers";
 import type { TrainingPlan } from "@/types/training";
 import { getTodayDateString, getDateString, DAY_NUM } from "@/lib/date-helpers";
+import { getClientTodayString } from "@/services/today-service";
 import { getEventsForDateRange } from "@/services/training-event-service";
 import { getActiveTrainingPlan } from "@/services/training-service";
 import { calculateDailyMacros } from "@/utils/nutrition-helpers";
@@ -169,7 +170,7 @@ export async function regenerateFutureNutritionEvents(
   planId: string,
   effectiveFrom?: string
 ): Promise<void> {
-  const fromDate = effectiveFrom ?? getTodayDateString();
+  const fromDate = effectiveFrom ?? (await getClientTodayString(clientId));
 
   // Delete scheduled events from effectiveFrom onward
   const { error: deleteError } = await supabaseAdmin
@@ -346,6 +347,8 @@ export async function deleteFutureNutritionEventsForPlan(
   planId: string,
   fromDate?: string
 ): Promise<void> {
+  // UTC fallback only: no clientId in scope to resolve a client-local today.
+  // Callers that know the client should pass an explicit date.
   const deleteFrom = fromDate ?? getTodayDateString();
 
   // supabaseAdmin: system-level write for event cleanup

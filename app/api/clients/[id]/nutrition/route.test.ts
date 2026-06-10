@@ -75,6 +75,10 @@ vi.mock('@/lib/require-phase-selection', () => ({
   requirePhaseSelection: vi.fn(),
 }))
 
+vi.mock('@/services/today-service', () => ({
+  getClientTodayString: vi.fn().mockResolvedValue('2026-01-15'),
+}))
+
 import { getClientById } from '@/services/client-service'
 import { generateNutritionPlan, calculateTDEE } from '@/services/nutrition-service'
 import { createNutritionPlan } from '@/services/nutrition-plan-service'
@@ -82,6 +86,7 @@ import { getLatestBodyMetrics } from '@/services/body-metrics-service'
 import { getCurrentGoals } from '@/services/client-goals-service'
 import { weightToKg } from '@/utils/nutrition-helpers'
 import { requirePhaseSelection } from '@/lib/require-phase-selection'
+import { getClientTodayString } from '@/services/today-service'
 import { POST } from './route'
 
 const mockClient = {
@@ -488,5 +493,57 @@ describe('Nutrition Route POST - active phase guard', () => {
     const response = await POST(request, { params: Promise.resolve({ id: 'client-1' }) })
 
     expect(response.status).toBe(200)
+  })
+})
+
+describe('Nutrition Route POST - effectiveFrom judged against client-local today', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(getClientById).mockResolvedValue(mockClient as never)
+    vi.mocked(generateNutritionPlan).mockReturnValue({
+      baselineCalories: 2000,
+      tdee: 2400,
+      calorieTarget: 1800,
+      proteinTargetG: 160,
+      carbTargetG: 200,
+      fatTargetG: 60,
+      adjustedTdee: 2400,
+      weeklyWeightChangeKg: -0.5,
+      requiredDailyDeficit: 500,
+      warnings: [],
+    } as never)
+    vi.mocked(calculateTDEE).mockReturnValue(2400)
+    vi.mocked(requirePhaseSelection).mockResolvedValue({
+      ok: true as const,
+      phaseId: undefined,
+      phaseGoalWeight: undefined,
+      phaseGoalBodyFatPercentage: undefined,
+      phaseStartDate: undefined,
+      phaseEndDate: undefined,
+      phaseStatus: undefined,
+    })
+    vi.mocked(getLatestBodyMetrics).mockResolvedValue(null)
+    vi.mocked(getCurrentGoals).mockResolvedValue(null)
+    // Far-future dates so these tests can ONLY pass/fail via the mocked
+    // client-local comparison — a real-clock UTC comparison would never
+    // reject 2099 dates, so a regression to getTodayDateString() fails both.
+    vi.mocked(getClientTodayString).mockResolvedValue('2099-01-02')
+  })
+
+  it("accepts effectiveFrom equal to the client's local today", async () => {
+    const request = makeRequest({ ...mockBody, effectiveFrom: '2099-01-02' })
+    const response = await POST(request, { params: Promise.resolve({ id: 'client-1' }) })
+
+    expect(response.status).toBe(200)
+    expect(getClientTodayString).toHaveBeenCalledWith('client-1')
+  })
+
+  it('rejects effectiveFrom before the client-local today', async () => {
+    const request = makeRequest({ ...mockBody, effectiveFrom: '2099-01-01' })
+    const response = await POST(request, { params: Promise.resolve({ id: 'client-1' }) })
+    const data = await response.json()
+
+    expect(response.status).toBe(400)
+    expect(data.error).toBe('Effective date cannot be in the past')
   })
 })
