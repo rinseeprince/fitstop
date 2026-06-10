@@ -372,18 +372,34 @@ function buildExerciseInserts(sessionId: string, exercises: ExerciseInput[]) {
 export async function cloneSessionForEvent(
   sessionId: string,
   eventId: string,
+  clientId: string,
   exerciseOverrides?: ExerciseInput[]
 ): Promise<string> {
-  // 1. Fetch source session
+  // 0. Verify the target event belongs to this client BEFORE doing any work, so a
+  //    foreign eventId can't repoint another client's scheduled event (and so the
+  //    attack path doesn't leave an orphan cloned session).
+  const { data: targetEvent } = await supabaseAdmin
+    .from("training_events")
+    .select("id")
+    .eq("id", eventId)
+    .eq("client_id", clientId)
+    .maybeSingle();
+  if (!targetEvent) {
+    throw new Error("Event not found");
+  }
+
+  // 1. Fetch source session, scoped to this client (session -> plan -> client_id)
+  //    so a sessionId from another client/plan can't be cloned.
   const { data: session, error: sessionError } = await supabaseAdmin
     .from("training_sessions")
-    .select("*")
+    .select("*, training_plans!inner(client_id)")
     .eq("id", sessionId)
     .eq("is_active", true)
-    .single();
+    .eq("training_plans.client_id", clientId)
+    .maybeSingle();
 
   if (sessionError || !session) {
-    throw new Error(`Session not found: ${sessionError?.message}`);
+    throw new Error("Session not found");
   }
 
   // 2. Clone session
@@ -448,7 +464,8 @@ export async function cloneSessionForEvent(
     }
   }
 
-  // 4. Update event to point to cloned session
+  // 4. Update event to point to cloned session — scoped to this client (defense
+  //    in depth on top of the step-0 ownership check).
   const { error: eventError } = await supabaseAdmin
     .from("training_events")
     .update({
@@ -456,7 +473,8 @@ export async function cloneSessionForEvent(
       is_modified: true,
       updated_at: new Date().toISOString(),
     })
-    .eq("id", eventId);
+    .eq("id", eventId)
+    .eq("client_id", clientId);
 
   if (eventError) throw new Error(`Failed to update event: ${eventError.message}`);
 

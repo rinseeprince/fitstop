@@ -357,6 +357,13 @@ export async function acceptInvitationByToken(
 
 /**
  * Legacy function: Mark invitation as accepted by clientId (for backward compatibility)
+ *
+ * SECURITY: this performs an UNCHECKED client<->user link (no token, no email
+ * match). Its ONLY safe caller is the legacy clientId branch of
+ * POST /api/invitations/accept, which verifies invitedUser.email ===
+ * invitation.email BEFORE calling it. The unauthenticated /auth/callback caller
+ * was removed (it was an account-takeover vector). Do NOT call this from any path
+ * that has not already proven the userId's email matches the invitation.
  * @deprecated Use acceptInvitationByToken instead
  */
 export async function acceptInvitation(

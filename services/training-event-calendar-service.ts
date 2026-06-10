@@ -271,7 +271,11 @@ export async function duplicateEvent(
 export async function updateEventSurplus(
   eventId: string,
   surplus: number | null,
-): Promise<{ clientId: string; date: string }> {
+  clientId: string,
+): Promise<{ date: string }> {
+  // Scope the UPDATE to the caller's client so a foreign eventId matches zero rows
+  // and is never mutated (previously the row was written first and ownership was
+  // only checked afterwards — a cross-tenant write-then-verify).
   const { data, error } = await supabaseAdmin
     .from("training_events")
     .update({
@@ -280,14 +284,19 @@ export async function updateEventSurplus(
       updated_at: new Date().toISOString(),
     })
     .eq("id", eventId)
-    .select("client_id, date")
-    .single();
+    .eq("client_id", clientId)
+    .select("date")
+    .maybeSingle();
 
-  if (error || !data) {
-    throw new Error(`Failed to update event surplus: ${error?.message ?? "event not found"}`);
+  if (error) {
+    throw new Error(`Failed to update event surplus: ${error.message}`);
+  }
+  if (!data) {
+    // No row matched: unknown event or it belongs to another client.
+    throw new Error("Event not found");
   }
 
-  return { clientId: data.client_id, date: data.date };
+  return { date: data.date };
 }
 
 /**

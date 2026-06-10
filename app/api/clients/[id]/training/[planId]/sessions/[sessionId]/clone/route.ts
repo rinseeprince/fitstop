@@ -60,6 +60,13 @@ export async function POST(
       return NextResponse.json({ error: "Plan not found" }, { status: 404 });
     }
 
+    // Verify the sessionId actually belongs to this plan (mirrors the sibling
+    // sessions/[sessionId] route). Without this, a coach could pass a sessionId
+    // from another plan/client into the clone.
+    if (!plan.sessions.some((s) => s.id === sessionId)) {
+      return NextResponse.json({ error: "Session not found" }, { status: 404 });
+    }
+
     const body = await request.json();
     const validation = cloneSchema.safeParse(body);
     if (!validation.success) {
@@ -86,6 +93,7 @@ export async function POST(
     const newSessionId = await cloneSessionForEvent(
       sessionId,
       validation.data.eventId,
+      clientId,
       exerciseOverrides
     );
 

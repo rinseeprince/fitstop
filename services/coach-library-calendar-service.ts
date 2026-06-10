@@ -99,12 +99,18 @@ export async function saveSessionFromCalendar(
   sourceSessionId: string,
   name: string
 ): Promise<string> {
-  // Fetch session + exercises
+  // Fetch session + exercises, SCOPED to a client owned by this coach.
+  // training_sessions -> training_plans -> clients.coach_id verifies the source
+  // belongs to one of the coach's own clients. Without this, a coach could copy
+  // another coach's client's session (full exercise prescription) into their
+  // library via a known/guessed sourceSessionId — cross-tenant exfiltration.
+  // Mirrors the ownership scoping in savePlanFromCalendar above.
   const { data: source } = await supabaseAdmin
     .from("training_sessions")
-    .select("*, training_exercises(*)")
+    .select("*, training_exercises(*), training_plans!inner(clients!inner(coach_id))")
     .eq("id", sourceSessionId)
-    .single();
+    .eq("training_plans.clients.coach_id", coachId)
+    .maybeSingle();
   if (!source) throw new Error("Session not found");
 
   // Create standalone saved session

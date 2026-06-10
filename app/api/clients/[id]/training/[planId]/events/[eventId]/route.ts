@@ -60,14 +60,13 @@ export async function PATCH(
       );
     }
 
-    const { clientId: eventClientId, date } = await updateEventSurplus(
+    // Ownership is enforced inside the UPDATE (scoped to clientId); a foreign
+    // eventId matches zero rows and throws "Event not found" before any write.
+    const { date } = await updateEventSurplus(
       eventId,
       validation.data.calorieSurplusPercentage,
+      clientId,
     );
-
-    if (eventClientId !== clientId) {
-      return NextResponse.json({ error: "Event does not belong to this client" }, { status: 403 });
-    }
 
     await cascadeNutritionAfterTrainingChange(
       clientId,
@@ -77,6 +76,10 @@ export async function PATCH(
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to update event";
+    if (message.includes("Event not found")) {
+      return NextResponse.json({ error: "Event not found" }, { status: 404 });
+    }
     console.error("Error updating event:", error);
     return NextResponse.json({ error: "Failed to update event" }, { status: 500 });
   }
