@@ -92,10 +92,14 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 | 7.2 | Coach phase edit unlock for active phases | 7 | COMPLETE
 | 7.3 | Coach archived-roadmap browsing | 7 | COMPLETE
 | 7.4 | Coach per-client Check-ins tab | 7 | COMPLETE
-| 7.5 | Coach metrics page phase filter | 7 |
-| 7.6 | Coach client overview tab as pre-session brief | 7 |
-| 7.7 | Coach exercise progression charts on Metrics tab | 7 |
-| 7.8 | Goal resolver foundation + unit normalization + nutrition/pace rewire | 7 Goal & roadmap lifecycle |
+| 7.5 | Coach metrics page phase filter | 7 | COMPLETE
+| 7.6 | Coach client overview tab as pre-session brief | 7 | COMPLETE
+| 7.7 | Coach exercise progression charts on Metrics tab | 7 | COMPLETE
+| 7.8 | Goal resolver foundation + unit normalization + nutrition/pace rewire | 7 Goal & roadmap lifecycle | COMPLETE
+| 7.81 | Timezone: device-synced capture (client + coach) + remove picker | 7 Timezone correctness |
+| 7.82 | Timezone: placement-family dates use client-local (reported bug) | 7 |
+| 7.83 | Timezone: sweep promotion / check-in / streaks / home + docs | 7 |
+| 7.84 | Timezone: coach-side windows + notifications consumer | 7 |
 | 7.9 | Goal outcome lifecycle (finishable goals) | 7 |
 | 7.10 | Roadmap completion (status + summary) + client completion card | 7 |
 | 7.11 | Roadmap-creation goal prompt + complete→create-next chain | 7 |
@@ -2173,6 +2177,8 @@ Commit.
 
 ## Session 7.5: Coach metrics page phase filter
 
+**Status**: COMPLETE (commit `15b39a7` — shipped as a unified time-scope selector merging the date-range + phase scope; `components/clients/metrics/time-scope-selector.tsx`)
+
 **Commit message**: `feat(coach): add phase scope filter to client metrics page`
 
 **Objective**: `MetricsTabContent` today filters by date range (7d/30d/90d/all) and metric category. Add phase scoping so coaches can see body-metric and wellness trends within one phase (e.g. the cut vs the bulk), on top of all-time.
@@ -2206,6 +2212,8 @@ Commit.
 ---
 
 ## Session 7.6: Coach client overview tab as pre-session brief
+
+**Status**: COMPLETE (commit `54e543d`; migration `101_add_coach_client_views.sql`)
 
 **Commit message**: `feat(coach): restructure client overview tab into a pre-session brief`
 
@@ -2250,6 +2258,8 @@ Commit.
 
 ## Session 7.7: Coach exercise progression charts on Metrics tab
 
+**Status**: COMPLETE (commit `6ab77ef`; migrations `102_exercise_analytics_phase_window.sql`, `103_progression_session_count_default_null.sql`)
+
 **Commit message**: `feat(coach): add exercise progression charts to client metrics tab`
 
 **Objective**: Expose the `exercise_logs` data (written starting in Session 1.5) as longitudinal charts on the Metrics tab. Top-set weight × date per exercise is the primary lens; optional volume chart as a secondary view. Honors the phase filter from Session 7.5 automatically.
@@ -2290,6 +2300,8 @@ Commit.
 ---
 
 ## Session 7.8: Goal resolver foundation + unit normalization + nutrition/pace rewire
+
+**Status**: COMPLETE (commit `816ec50`; migration `104_add_goal_start_date.sql`. NOTE: this commit also shipped `lib/goals/outcome.ts` as the foundation **for** 7.9 — 7.9 itself is NOT done yet.)
 
 **Commit message**: `feat(goals): single effective-goal resolver + persisted deadline + nutrition/pace rewire`
 
@@ -2338,11 +2350,178 @@ Commit.
 
 ---
 
+## Session 7.81: Timezone — device-synced capture (client + coach) + remove the manual picker
+
+> **Why 7.81–7.84 (decimal sub-numbers):** a timezone-correctness cluster inserted to sort *before* 7.9 without renumbering the goal/roadmap-lifecycle sessions (7.9–7.12 keep their numbers + cross-refs). **Do these before 7.9/7.10** — those stamp `ended_at` / `completed_at`, which must be computed in the right person's timezone from the start (see the timezone coordination notes added to 7.9 and 7.10).
+
+> **LOCKED TIMEZONE MODEL (applies to 7.81–7.84 + 7.9/7.10):** "today" is always computed in the **device timezone of the person whose calendar the date is on** — never the server's UTC clock. Almost always that is the person making the request (a client on their own day; a coach on their own dashboard). The only cross-person cases — a coach viewing a client's check-in due/overdue, and background reminders — use the **client's** timezone. Each person's device timezone is *remembered* (`clients.timezone`, `coaches.timezone`) purely so server code (which has no device) and the absent-person cases can read it. There is no separate "client logic vs coach logic" — just one question: *whose calendar is this date on?* → read that person's stored, device-synced timezone via `getTodayDateStringInTimezone()`.
+
+> **Plain terms:** The app should know what day it is for whoever's using it — coach or client — automatically, with no timezone picker. The device already knows; we capture it and keep it in sync. This is the keystone: every date feature already shipped (home "today", past-day lock, streaks, check-in window) is silently running in UTC today because every client defaults to `'UTC'` and coaches have no stored zone at all.
+
+**Commit message**: `feat(timezone): auto-sync client + coach timezone from device, remove manual picker`
+
+**Objective**: Make every user's stored timezone reflect their device automatically. `clients.timezone` exists (mig 089) but is captured by a manual Settings picker defaulting to `'UTC'`; coaches have **no** timezone column, so coach-side "today" falls to server UTC. Add a `coaches.timezone` column, auto-sync **both** roles from the device on app load (and on change, for travel), and delete the manual picker. **This reverses the deliberate Session 2.6 "no silent overwrites" decision** — recorded intentionally.
+
+**Read first**:
+- `app/client/settings/page.tsx` (Timezone section + `detectedTimezone` memo + "Use detected" button to remove).
+- `components/client-portal/settings/timezone-combobox.tsx` (picker to delete).
+- `app/api/client/settings/route.ts` + `lib/validations/client.ts` + `services/client-service.ts` `updateClientSettings` (client timezone write path + IANA validation — KEEP; the auto-sync reuses it).
+- `app/client/layout.tsx` (client shell) and the coach dashboard shell/layout (mount points for the two sync effects).
+- `services/coach-service.ts` (or equivalent) + `lib/mappers.ts` (add `coaches.timezone` read/map) + a coach settings write path (add if none exists).
+- `lib/date-helpers.ts` `getTodayDateStringInTimezone` / `safeTimeZone` (read side — no change; add a tiny `getDeviceTimeZone()` here so `Intl` stays owned by date-helpers).
+- `supabase/migrations/089_add_client_timezone.sql` (mirror its shape for the coach column).
+- `docs/CLIENT-PORTAL-REDESIGN.md` "Timezone handling" + `docs/ARCHITECTURE.md` "Timezone model".
+
+**Plan (report before implementing)**:
+- Migration: `coaches.timezone TEXT NOT NULL DEFAULT 'UTC' CHECK(...)` mirroring mig 089. Next available number (verify with `ls supabase/migrations`).
+- `getDeviceTimeZone()` in `lib/date-helpers.ts` wrapping `Intl.DateTimeFormat().resolvedOptions().timeZone` (keeps "only date-helpers owns Intl" literally true; the sync hooks import it).
+- One shared `useTimezoneSync(scope)` pattern: on app load, if `getDeviceTimeZone()` differs from the stored value, PATCH it. Two mounts — client shell → client settings PATCH; coach shell → coach settings PATCH. Fire-and-forget; never blocks render.
+- Sync-on-change for travel: compare device vs stored on every load (not only when stored is `'UTC'`), so a London→NYC traveller updates on next open.
+- Removal scope: the picker, the "Use detected" button, the `detectedTimezone`/`showUseDetected` logic. Optional read-only "Timezone: Europe/London (from your device)" line.
+
+**Implement**:
+1. Migration: add `coaches.timezone` (mirror mig 089). `db push` + `gen types` + commit together (user runs `db push`). Map it in `lib/mappers.ts` + the `Coach` type.
+2. `getDeviceTimeZone()` helper in `lib/date-helpers.ts`.
+3. Client sync effect (client shell) + coach sync effect (coach shell) via the shared hook → PATCH the respective settings endpoint when device ≠ stored. Add a coach settings write path if none exists.
+4. Remove `TimezoneCombobox` + "Use detected" button + detect/condition logic from `app/client/settings/page.tsx`; delete `timezone-combobox.tsx`. (Optional read-only display line.)
+5. Keep the client settings PATCH timezone path + validation.
+6. Doc: record the LOCKED MODEL above in ARCHITECTURE "Timezone model" + REDESIGN "Timezone handling" (device-synced for both roles; reverses 2.6).
+
+**Do NOT**: Build a manual timezone-picker UI for either role (auto only). Reconstruct `Intl` math anywhere outside `lib/date-helpers.ts` (use `getDeviceTimeZone()`). Touch the placement RPC, promotion, or any decision site (7.82–7.84). Block render on the sync PATCH.
+
+**Tests to write**:
+- `getDeviceTimeZone()` returns the `Intl` zone; safe when unavailable.
+- Sync hook: PATCHes when device ≠ stored; no-op when equal; ignores unavailable `Intl`. Both client + coach scopes.
+- Settings page: timezone picker no longer rendered.
+
+**Verify**: As a UK client stored at `UTC`, open the portal → `clients.timezone` becomes `Europe/London` silently; home "today" / past-day lock resolve locally. As a UK coach, open the dashboard → `coaches.timezone` becomes `Europe/London`. `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Commit.
+
+---
+
+## Session 7.82: Timezone — placement-family dates use client-local today (the reported bug)
+
+> **Plain terms:** Fixes the bug you hit — and its siblings. Applying a plan, or moving/duplicating a calendar event, "to today" just after midnight (UK) got judged against the server's UTC clock and mis-treated as past/future. After 7.81 we know the client's timezone; this points every "is this date past/future?" placement decision at it.
+
+**Commit message**: `fix(training,nutrition): judge placement/calendar dates against client-local today, not UTC`
+
+**Objective**: Every "is this date past or future?" decision in the placement family uses UTC (`CURRENT_DATE` / server `getTodayDateString()`): the two atomic plan RPCs decide active-vs-planned (`IF v_effective_from > CURRENT_DATE`); the calendar move/duplicate guards reject "past" dates; the nutrition orchestrator validates "not in the past." Thread the client's local today into all of them. **Anchor (per the locked model):** the **client's** timezone (the plan/event lives on the client's calendar), falling back to the **coach's** timezone (now stored, 7.81) when the client hasn't synced a real zone yet, then UTC.
+
+**Read first**:
+- `supabase/migrations/087_atomic_event_cleanup_on_plan_placement.sql` (live training RPC); `supabase/migrations/080_nutrition_rpc_planned_status.sql` (live nutrition RPC).
+- `services/training-service.ts` `createTrainingPlanAtomic`; `services/nutrition-plan-service.ts` `createNutritionPlan` — the RPC callers.
+- `services/library-placement-service.ts` `placePlaceablePlanOnCalendar`; `app/api/clients/[id]/training/place-from-library/route.ts` (already fetches `client`).
+- `services/training-event-calendar-service.ts` (move/duplicate "past date" guards + cycle anchor — multiple sites).
+- `services/nutrition-plan-orchestrator.ts` (`effectiveFrom < getTodayDateString()` past-date validation + the `today:` it passes to `resolveEffectiveGoal`).
+- `services/training-event-service.ts` / `services/nutrition-event-service.ts` (`effectiveFrom ?? getTodayDateString()` regen fallbacks — audit: after this change all real callers pass an explicit date, so confirm the `??` is dead-code and remove or point at the helper).
+- `services/daily-log-permissions-service.ts` (precedent); Memory: "RPC optional params → DEFAULT NULL + COALESCE".
+
+**Plan (report before implementing)**:
+- Shared helper `getClientTodayString(clientId)` (fetch `clients.timezone` → `getTodayDateStringInTimezone`, fallback coach tz then UTC) — mirrors `daily-log-permissions-service`; reused by 7.83/7.84.
+- RPC change: add `p_today DATE DEFAULT NULL`; `v_today := COALESCE(p_today, CURRENT_DATE)`; compare `v_effective_from > v_today`. (Trailing DEFAULT param + distinct name keeps the PostgREST overload call unambiguous.)
+- The calendar guards + orchestrator validation are the SAME bug class as the RPC — fix together so a coach near local midnight isn't blocked by a spurious "past date" on a move/duplicate/apply.
+- Migration number: next available after 7.81's coach-tz migration (verify with `ls supabase/migrations`).
+
+**Implement**:
+1. Migration: `CREATE OR REPLACE` both plan RPCs adding `p_today DATE DEFAULT NULL` + `v_today := COALESCE(p_today, CURRENT_DATE)`; swap the active/planned comparison to `v_today`. Branches otherwise byte-for-byte. `db push` + `gen types` + commit together.
+2. `getClientTodayString(clientId)` shared helper.
+3. `createTrainingPlanAtomic` / `createNutritionPlan` accept + pass `p_today`; thread the client tz from the placement route/service.
+4. `training-event-calendar-service.ts` move/duplicate past-date guards + cycle anchor → client-tz today.
+5. `nutrition-plan-orchestrator.ts` past-date validation → client-tz today.
+6. Audit the `effectiveFrom ?? getTodayDateString()` regen fallbacks; remove the dead `??` or point at the helper.
+
+**Do NOT**: Drop the `planned` status or the promotion path (fixing the clock is enough; `planned` now only triggers for genuinely future dates). Move the active/planned decision out of the RPC. Use the coach timezone as the *primary* anchor — it's only the fallback when the client hasn't synced.
+
+**Tests to write**:
+- Service: `p_today` is computed from client tz (coach-tz fallback) and passed to the RPC.
+- Boundary (injectable `now`): `Europe/London` at 23:30 UTC (00:30 BST) → effective_from = local today is **active**, not planned; a future date stays planned.
+- Calendar guard: a move to "today" at 00:30 BST is allowed (not rejected as past).
+
+**Verify**: with the test client synced to `Europe/London`, at ~00:30 BST: apply a plan starting "today" → lands active; move an event to today → allowed. `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Commit.
+
+---
+
+## Session 7.83: Timezone — sweep promotion / check-in / streaks / client-home to client-local + docs
+
+> **Plain terms:** The same UTC mistake lives in a handful more **client-context** server spots — plan auto-promotion, the check-in due/period window, streak/habit "today", and (the most visible) the client's HOME "today"/week. Same one-line swap to the client's timezone, plus the doc update. Coach-context windows are 7.84.
+
+**Commit message**: `fix: derive server-side "today" from client timezone (promotion, check-in, streaks, home)`
+
+**Objective**: Sweep the remaining **client-context** server-side `getTodayDateString()` / `new Date()` "today" decisions to client-local via the 7.82 `getClientTodayString` helper. Scoped to day-boundary decisions on the client's calendar; coach-context windows are 7.84; audit timestamps + browser (`'use client'`) code are left alone.
+
+**Read first**:
+- `services/client-portal-service.ts` (the client HOME "today" → `getTrainingWeekStart/End` for the live week — the single most visible client miss; in neither earlier sweep).
+- `services/training-service.ts` `promoteTrainingPlanIfReady`; `services/nutrition-plan-service.ts` `promoteNutritionPlanIfReady`.
+- `app/api/client/check-in-context/route.ts`, `app/api/client/check-in-status/route.ts`, `services/check-in-service.ts` — gate/period via `new Date()` (check-in-context already has `client.timezone` in scope).
+- `lib/date-helpers.ts` `getCheckInStatus` / `resolveCheckInWindow` / `calculateCheckInPeriod` (already accept an injectable today — change the callers, keep `Intl` in date-helpers).
+- `services/daily-logs-service.ts` `calculateStreaks` (passes UTC `p_today` to the mig-095 RPC); `services/daily-habits-service.ts` (createHabit effective_date, getTodayHabitLogs).
+- `services/comparison-service.ts` (the `today` passed to `resolveEffectiveGoal` — pace start-date fallback).
+
+**Plan (report before implementing)**:
+- One swap per site to `getClientTodayString(clientId)` (or pass the client-tz today string into the check-in helpers). Each its own small, reviewable change.
+- These are all **client-context** (the date is on the client's calendar) → client tz. Coach-context windows (attention feed, coach "current week", phase adherence) are **7.84**.
+- Every existing test fixture defaults to `'UTC'`, so they stay green — add an explicit non-UTC fixture/boundary case per fix or the bug goes untested.
+
+**Implement**:
+1. `client-portal-service.ts` home "today" → client-tz.
+2. `promoteTrainingPlanIfReady` / `promoteNutritionPlanIfReady` → client-tz.
+3. Check-in gate/period sites → pass client-tz today into `getCheckInStatus` / `resolveCheckInWindow`.
+4. `calculateStreaks` + habit "today" defaults → client-tz.
+5. `comparison-service.ts` pace start-date fallback → client-tz.
+6. Docs: finish the ARCHITECTURE "Timezone model" rewrite per the locked model (only `Intl` owner remains `lib/date-helpers.ts`).
+
+**Do NOT**: Touch coach-context windows (7.84) or the phase/roadmap completion stamps (handled in the amended 7.9/7.10). Add a lint guardrail banning server `getTodayDateString()` (defer per "defer tooling until users" — note only). Re-derive historical check-in windows.
+
+**Tests to write**:
+- Home: `client-portal-service` resolves the week from client tz (London 00:30 BST → today's week, not yesterday's).
+- Promotion: a plan effective today (client tz) promotes even when server UTC is still yesterday.
+- Check-in gate: a client at 00:30 BST sees the correct gate.
+
+**Verify**: targeted tests + `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Commit.
+
+---
+
+## Session 7.84: Timezone — coach-side windows + live notifications consumer
+
+> **Plain terms:** The coach-facing "today / this week" windows (attention feed, current-week metrics, history summaries) and the client-facing "check-in overdue" badge are still on UTC. With `coaches.timezone` from 7.81, coach windows follow the coach's device; "is this client overdue" follows the **client's**. The reminder **email cron** stays deferred (no invoker yet) — tracked in `TECHNICAL-DEBT.md`.
+
+**Commit message**: `fix(timezone): coach-side today windows + client overdue badge use device timezone`
+
+**Objective**: Finish the sweep for the medium-severity coach-context windows and the one live cross-person consumer, per the locked model: coach-context "now / this week" → coach tz; "is this client overdue / due" → client tz.
+
+**Read first**:
+- `services/check-in-tracking-service.ts` (`calculateNextExpectedCheckIn`, `isClientOverdue`, `getDaysUntilOrPastDue`, `getMissedCheckInPeriods` — takes the `Client`, so client tz is in scope).
+- `app/api/client/notifications/route.ts` (live client-facing "Check-in Overdue" badge consuming the above).
+- `services/attention-feed-service.ts` (coach 28-day window); `services/phase-transition-service.ts` (`endDate ?? getTodayDateString()` adherence-window bound).
+- `app/api/clients/[id]/nutrition/route.ts` + the `history/{training,nutrition,wellness}/summary` routes + `app/api/clients/[id]/weekly-nutrition/route.ts` (coach "current week" anchors).
+- `services/daily-habits-stats.ts` (range-end anchors); `app/api/clients/[id]/history/training/route.ts`.
+
+**Plan (report before implementing)**:
+- "is client overdue / next due / missed periods" → **client** tz (the client's calendar), via `getClientTodayString`.
+- coach "current week / trailing window / now" (attention feed, coach metrics/history current-week, phase adherence) → **coach** tz, via a new `getCoachTodayString(coachId)` helper (mirror of `getClientTodayString`, reading `coaches.timezone`).
+- The reminder email path in `services/reminder-service.ts` has no invoker (cron not wired) → leave; log in `TECHNICAL-DEBT.md`. Only the live `notifications` route is fixed here.
+
+**Implement**:
+1. `getCoachTodayString(coachId)` helper (sibling of `getClientTodayString`).
+2. `check-in-tracking-service.ts`: thread client tz into the 4 fns; `notifications/route.ts` overdue badge uses them (client tz).
+3. `attention-feed-service.ts`, coach current-week routes, `phase-transition-service.ts` adherence window, `daily-habits-stats.ts`, history routes → coach tz.
+
+**Do NOT**: Wire the reminder cron (out of scope; `TECHNICAL-DEBT.md`). Change the placement/promotion/check-in-gate sites (done in 7.82/7.83).
+
+**Tests to write**:
+- Overdue: a client whose due day is "today" in their tz is not flagged overdue a day early when the server is a day ahead in UTC.
+- Coach window: current-week resolves in coach tz.
+
+**Verify**: targeted tests + `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Commit.
+
+---
+
 ## Session 7.9: Goal outcome lifecycle (finishable goals)
 
 **Commit message**: `feat(goals): terminal goal outcome (completed/achieved) coexisting with edit-versioning`
 
 > **Plain terms:** A goal can be *finished* — marked achieved or not achieved and kept in history — instead of just being overwritten. A coach can mark a no-roadmap client's goal achieved. Works for clients who never use roadmaps.
+
+> **Timezone (locked model, from 7.81–7.84) — REQUIRED, not a flag:** the goal `completed_at` / outcome stamp is a date on the **client's** timeline → compute it in the **client's** timezone via `getClientTodayString(clientId)`, never bare `CURRENT_DATE` / `getTodayDateString()`. If stamped inside the RPC/migration, add a `p_today DATE DEFAULT NULL` arg (+ `COALESCE`) and pass it; if in TS, use the helper. Shipping a bare-UTC stamp here re-adds the exact debt 7.81–7.84 removed.
 
 **Objective**: Give `client_goals` a terminal outcome (completed → achieved / not_achieved / inconclusive) kept as history, working for no-roadmap clients and producing a first-class "zero active goals" state. Completing is a DISTINCT event from editing (which still versions).
 
@@ -2389,6 +2568,7 @@ Commit.
 > 1. **Migration numbers shifted.** The 7.1–7.4 batch shipped `099_archive_roadmap_atomic.sql`. The hard-coded `099`/`100`/`101` in 7.8/7.9/7.10 are now stale — at build time renumber 7.8→`100`, 7.9→`101`, 7.10→`102` (plus 7.6's `add_coach_client_views`), continuing from the highest applied number. Never reuse `099`.
 > 2. **`ended_at` must also be set in `archive_roadmap_atomic`.** This session adds `ended_at` and sets it in `transition_phase_atomic`'s archive branch — but there is now a SECOND archive path: `archive_roadmap_atomic(p_roadmap_id)` (migration 099), called by the roadmap-tab "End roadmap" button. `CREATE OR REPLACE` it here to also stamp `ended_at = CURRENT_DATE`, or end-and-replace archives sort with a NULL `ended_at` in the 7.3 "Past roadmaps" browser.
 > 3. **The two early-end paths must stay semantically identical.** The 7.1 "End roadmap" header button (→ `archive_roadmap_atomic`) and this session's drawer "End early / replace" (→ `transition_phase_atomic` archive branch) must both mean: active+planned phases → `skipped`, roadmap → `archived`, **no** summary, **no** goal-achieved stamp. The `'completed'` `RoadmapStatus` union member already exists (added in 7.3); 7.10 only adds the DB CHECK-constraint value plus the completion writes.
+> 4. **Timezone (locked model, from 7.81–7.84) — REQUIRED; supersedes 7.83's "flag, do not decide":** the roadmap `ended_at` and the phase `end_date`/`start_date` stamps are dates on the **client's** timeline → **client timezone**, not bare `CURRENT_DATE`. Amend BOTH RPCs touched here — `transition_phase_atomic` (`complete_roadmap` + archive branches) AND `archive_roadmap_atomic` (note 2) — to take `p_today DATE DEFAULT NULL` and stamp `COALESCE(p_today, CURRENT_DATE)`; the caller passes `getClientTodayString(clientId)`. The `CURRENT_DATE` in note 2 is the *fallback*, not the value to ship. A bare-UTC stamp re-adds the debt 7.81–7.84 removed. (Note: phase completion via mig 100's `transition_phase_atomic` already ships bare `CURRENT_DATE` — fold its fix into this amendment too.)
 
 **Objective**: Add a terminal `completed` roadmap status (distinct from `archived`/ended-early) with a frozen `roadmap_summary`; on completion compute ONE shared achieved verdict and hand it to 7.9's goal stamp; suppress the double completion card; and ship the client-portal completion card.
 
