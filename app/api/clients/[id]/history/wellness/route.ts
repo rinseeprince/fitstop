@@ -52,6 +52,11 @@ export async function GET(
 
     const { limit, offset } = pagination;
 
+    // Coach-local today bounds the history range in BOTH paths (coach's
+    // view) — a client a day ahead of the coach has rows that are still
+    // "tomorrow" from the coach's seat.
+    const today = await getCoachTodayString(auth.coachId);
+
     // Check for active phase
     // Uses supabaseAdmin: coach querying client data (RLS exception 2)
     const { data: phase } = await supabaseAdmin
@@ -64,8 +69,6 @@ export async function GET(
     const phaseStartDate = phase?.start_date as string | null;
 
     if (phaseStartDate) {
-      // Coach-local today bounds the history range (coach's view).
-      const today = await getCoachTodayString(auth.coachId);
       const dates = generateDateRange(phaseStartDate, today);
       const total = dates.length;
 
@@ -117,6 +120,7 @@ export async function GET(
       .from("wellness_logs")
       .select(WELLNESS_COLUMNS, { count: "exact" })
       .eq("client_id", clientId)
+      .lte("date", today)
       .or("mood.not.is.null,energy.not.is.null,sleep.not.is.null,stress.not.is.null")
       .order("date", { ascending: false })
       .range(offset, offset + limit - 1) as unknown as { data: unknown[] | null; error: { message: string } | null; count: number | null };

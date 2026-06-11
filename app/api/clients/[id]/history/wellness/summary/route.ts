@@ -59,13 +59,16 @@ export async function GET(
     }
 
     // Uses supabaseAdmin: coach querying client data (RLS exception 3)
-    // Direct query on wellness_logs
+    // Direct query on wellness_logs. The lte bound matters: a client a day
+    // ahead of the coach has logs that are still "tomorrow" for the coach,
+    // which must not count toward the averages or days_logged.
     const { data, error } = await supabaseAdmin
       .from("wellness_logs")
       .select("mood, energy, sleep, stress")
       .eq("client_id", clientId)
       .or("mood.not.is.null,energy.not.is.null,sleep.not.is.null,stress.not.is.null")
-      .gte("date", sinceDateStr) as unknown as { data: Array<{ mood: number | null; energy: number | null; sleep: number | null; stress: number | null }> | null; error: { message: string } | null };
+      .gte("date", sinceDateStr)
+      .lte("date", today) as unknown as { data: Array<{ mood: number | null; energy: number | null; sleep: number | null; stress: number | null }> | null; error: { message: string } | null };
 
     if (error) {
       console.error("Error fetching wellness summary:", error);
