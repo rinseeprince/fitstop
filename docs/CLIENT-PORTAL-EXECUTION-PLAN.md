@@ -101,6 +101,8 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 | 7.82 | Timezone: placement-family dates use client-local (reported bug) | 7 | COMPLETE
 | 7.83 | Timezone: sweep promotion / check-in / streaks / home + docs | 7 | COMPLETE
 | 7.84 | Timezone: coach-side windows + notifications consumer | 7 | COMPLETE
+| 7.85 | Timezone: audit remediation — write-path day stamps + UTC fallbacks + swallowed-tz-error guards | 7 |
+| 7.86 | Timezone: audit remediation — calendar drag gating, deadline validation, days-remaining anchors | 7 |
 | 7.9 | Goal outcome lifecycle (finishable goals) | 7 |
 | 7.10 | Roadmap completion (status + summary) + client completion card | 7 |
 | 7.11 | Roadmap-creation goal prompt + complete→create-next chain | 7 |
@@ -2545,6 +2547,85 @@ Commit.
 - Coach window: current-week resolves in coach tz.
 
 **Verify**: targeted tests + `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Commit.
+
+---
+
+## Session 7.85: Timezone — audit remediation: write-path day stamps + UTC fallbacks + swallowed-tz-error guards
+
+> **Why 7.85–7.86:** a 5-lens adversarially-verified timezone audit (2026-06-12, after the PGRST201 `getClientTodayString` fix) confirmed 13 remaining wrong-anchor sites the 7.81–7.84 sweeps missed. These two sessions clear them: 7.85 = everything that **persists** a day (stamps, event cleanup, lock guards — includes one migration); 7.86 = read/UI-side anchors. Both follow the LOCKED TIMEZONE MODEL (see 7.81 note + ARCHITECTURE.md "Timezone model").
+
+**Commit message**: `fix(timezone): anchor write-path day stamps + event-cleanup fallbacks + day-lock guards (audit remediation 1/2)`
+
+> **Plain terms:** Completing a phase, dismissing an attention alert, and the "delete this plan's future events" cleanups all still stamp/judge days on the server's UTC clock — an ahead-of-UTC coach completing a phase after their midnight gets it dated *yesterday*, and a dismissed alert can pop straight back. Separately, the day-lock permission service swallows DB errors and silently falls back to UTC — the exact failure mode that hid the PGRST201 bug.
+
+**Objective**: Anchor every remaining server-side **write-path** day decision per the locked model: phase-transition stamps → coach tz (`p_today`, mig-110 pattern); attention-dismissal date → coach tz; the three event-cleanup calls that fall back to UTC-today → the in-scope anchored date; the three `{ data }`-only destructures that silently turn DB errors into UTC day decisions → loud error handling.
+
+**Read first**:
+- `supabase/migrations/100_phase_completion_actual_end_date.sql` (live `transition_phase_atomic`: `end_date = CURRENT_DATE` ~L35; `start_date = COALESCE(start_date, CURRENT_DATE)` ~L66 — NO `p_today` param) + `supabase/migrations/110_plan_rpcs_client_local_today.sql` (the DROP+CREATE + re-applied 106 lockdown template) + `106_lock_down_security_definer_rpcs.sql`.
+- `services/phase-transition-service.ts` (`endDate ?? today ?? getTodayDateString()` UTC fallback ~L42; the `today?: string` param received ~L245 but never passed to the RPC ~L297–307; bare `deleteFutureNutritionEventsForPlan(...)` / `deleteFutureTrainingEventsForPlan(...)` calls ~L321/L326) and `app/api/clients/[id]/roadmap/phases/[phaseId]/transition/route.ts` (already resolves `getCoachTodayString` for the preview — the anchor exists, it's just dropped).
+- `services/training-event-service.ts` / `services/nutrition-event-service.ts` (the `?? getTodayDateString()` fallbacks inside the delete-future helpers, ~L313) and `services/library-placement-service.ts` (bare `deleteFutureEventsForPlan(oldPlannedPlan.id)` ~L119 — `startDate` is in scope and client-local-validated by the route guard).
+- `app/api/dashboard/attention-feed/dismiss/route.ts` (`dismissed_at: new Date().toISOString().split("T")[0]` ~L61) + `lib/attention-feed-helpers.ts` (~L296 dismissed-before-affected-day filter that the UTC skew defeats) + `supabase/migrations/091_add_attention_dismissals.sql` (`DEFAULT CURRENT_DATE`).
+- `services/daily-log-permissions-service.ts` (`{ data: clientRow }` destructures without `error` at ~L59 `getDayEditState` and ~L123 `assertCanEditTrainingDay` → silent `'UTC'` on fetch failure) and `services/check-in-service.ts` (~L293 same pattern on `start_date` → silently un-clamps pre-activation days). Precedent for the fix: `services/today-service.ts` post-58289ef (destructure `{ data, error }`, `console.error`, fall back loudly).
+- `TECHNICAL-DEBT.md` timezone section — its claim "every live caller passes an explicit anchored date" is falsified by the three bare delete-future calls; correct it.
+
+**Plan (report before implementing)**:
+- Migration **111** (re-verify with `ls supabase/migrations`): DROP+CREATE `transition_phase_atomic` adding `p_today DATE DEFAULT NULL`, `v_today := COALESCE(p_today, CURRENT_DATE)`, swap both stamp sites to `v_today`; re-apply 106's lockdown to the new signature (mig-110 is the template — explicit-signature DROP, no stale overload). Optionally migration **112**: `ALTER TABLE attention_dismissals ALTER COLUMN dismissed_at DROP DEFAULT` (defense-in-depth; the route always supplies the value).
+- Service threading is plumbing, not new resolution: the transition route already computes coach-today; the placement route already computes client-today. Pass what's in scope; delete the dead UTC fallbacks rather than re-anchoring them.
+- The swallowed-error fixes follow the today-service pattern exactly — and per the PGRST201 lesson, each gets a test asserting the error path logs (mocked chains can't catch live failures; the loud log is the observable contract).
+
+**Implement**:
+1. Migration 111 (+ optional 112). `db push` + `gen types` + commit together (user runs `db push`).
+2. `phase-transition-service.ts`: pass `p_today` (the coach-today the route already threads) to the RPC; remove the `?? getTodayDateString()` fallback at ~L42 (make the anchored `today` required or resolve `getCoachTodayString` at the boundary); pass the same anchor to both delete-future calls (~L321/L326).
+3. `library-placement-service.ts` ~L119: pass `startDate` to `deleteFutureEventsForPlan`.
+4. `dismiss/route.ts`: `dismissed_at: await getCoachTodayString(coachId)`.
+5. `daily-log-permissions-service.ts` ×2 + `check-in-service.ts` ×1: destructure `{ data, error }`, `console.error` with context on error, keep the existing fallback value but make it loud.
+6. Docs: update TECHNICAL-DEBT's falsified delete-future claim; add phase stamps + dismissals (coach tz) to ARCHITECTURE "Where each anchor applies".
+
+**Do NOT**: Touch the sites TECHNICAL-DEBT lists as deliberately-left-UTC. Re-anchor pure timestamps (`created_at` etc. — not day decisions). Change `transition_phase_atomic` behavior beyond the date anchor (branches byte-for-byte otherwise). Use `CREATE OR REPLACE` for the RPC (overload + lost lockdown — see the 7.82 security note).
+
+**Tests to write** (mock `@/services/today-service`; fixed past dates; TZ=UTC pin is in vitest.config):
+- Transition: the RPC receives `p_today` = the coach-today the route resolved; the persisted `end_date` equals the previewed window end (the preview/persist consistency 7.84 established).
+- Dismissal: row written with coach-local date; the helpers filter (~L296) suppresses the alert for an ahead-of-UTC coach dismissing just after local midnight.
+- Delete-future callers: each passes the in-scope anchored date (assert the helper is called WITH the date, not bare).
+- Error paths: each fixed destructure logs on `{ data: null, error }` and still returns the documented fallback.
+
+**Verify**: as an ahead-of-UTC coach just after local midnight: complete a phase → `end_date` = coach-local today (matches the reviewed summary window); dismiss an attention alert → it stays dismissed. `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Commit (migration + types + code together).
+
+---
+
+## Session 7.86: Timezone — audit remediation: calendar drag gating, deadline validation, days-remaining anchors
+
+**Commit message**: `fix(timezone): client-local calendar gating + coach-local deadline validation + client-local days-remaining (audit remediation 2/2)`
+
+> **Plain terms:** Three read/UI-side leftovers. The coach's calendar decides "can I drag/delete this event?" using the **coach's device** day — so for cross-tz pairs the UI permits drags the server (correctly, since 7.82) rejects, and vice versa. Setting a goal deadline is validated against server UTC (the same class as the fixed habit-log bug). And "days remaining" to a goal deadline counts from the server clock instead of the client's day.
+
+**Objective**: Make the calendar's *gating* decisions client-local while the *visual* "today" ring stays coach-device (two anchors, both per the locked model: the ring frames the coach's view; the gates judge dates on the client's calendar and must agree with the 7.82 server guards). Convert the goal-deadline zod refine to format-only with the day-bound check in the route (the `dailyHabitLogSchema` precedent), and anchor `daysRemaining` to the client's day.
+
+**Read first**:
+- `components/clients/training/calendar/training-calendar-view.tsx` (`todayDate = getTodayDateString()` ~L83; `clientTimezone` prop already exists — added with the scheduled-plan fix — but is only forwarded to the apply dialog), `calendar-week-row.tsx` (`isPast={date < todayDate}` ~L126 → `calendar-day-cell.tsx` `disabled: isPast` ~L61–64), `calendar-event-card.tsx` (`isFutureScheduled = ... event.date >= getTodayDateString()` ~L42 — receives `clientTimezone` at ~L38 but never uses it).
+- `components/clients/training/builder/training-builder-right-panel.tsx` ~L61–63 (the in-component `clientToday` pattern to mirror).
+- `lib/validations/roadmap.ts` (goal-deadline `.refine(... >= getTodayDateString())` ~L83) + every consumer of that schema (grep — the goals PUT route at minimum) + `lib/validations/daily-habit.ts` post-35ec948 (the format-only precedent and its comment).
+- `services/comparison-service.ts` (`daysRemaining` from `Date.now()` ~L104–106; the `Client` is fetched ~L30 so `client.timezone` is in scope) + `services/check-in-tracking-service.ts` ~L140–141 (the `getTodayInTimezone` + `differenceInDays` precedent).
+
+**Plan (report before implementing)**:
+- Calendar: thread `clientTimezone` down `TrainingCalendarView → CalendarWeekRow → CalendarDayCell → CalendarEventCard`; compute `clientToday = clientTimezone ? getTodayDateStringInTimezone(clientTimezone) : todayDate` once in the view and pass the STRING down (don't recompute per cell). Gating sites (`isPast`, `isFutureScheduled`) compare against `clientToday`; the today-ring/highlight keeps `todayDate` (coach device). Unsynced-client fallback = device today, matching the apply-dialog min and the server guard's coach-tz fallback.
+- Deadline validation: schema becomes format-only; the "not in the past" check moves into the route(s) against `getCoachTodayString(auth.coachId)` (the coach is the setter; their local day is the honest bound).
+- `daysRemaining`: whole-day difference from the client's local midnight via `getTodayInTimezone(client.timezone)` — no `Date.now()` ms math across a day boundary.
+
+**Implement**:
+1. Calendar threading + the two gating swaps (visual ring untouched).
+2. `lib/validations/roadmap.ts` → format-only deadline; route-side coach-today check in every consumer of the schema.
+3. `comparison-service.ts` → client-local days-remaining per the tracking-service precedent.
+4. ARCHITECTURE "Where each anchor applies": calendar gating → client tz (ring stays coach view); goal-deadline write bound → coach tz; days-remaining → client tz.
+
+**Do NOT**: Change the calendar's visual today indicator to client tz (coach view window — locked model). Add past/future bounds back into any zod schema (format-only is the house rule; bounds live where the right timezone is in scope). Touch the intake-steps age/deadline refinements (year-scale, accepted).
+
+**Tests to write** (fixed past dates):
+- Gating: with `clientTimezone` a day ahead of the device, an event on the client's today is NOT draggable/deletable even though it's "tomorrow" on the device; with no timezone, behavior unchanged.
+- Deadline: setting a deadline equal to coach-local today passes when server-UTC is already tomorrow (mock `getCoachTodayString`); malformed date → 400.
+- `daysRemaining`: deadline = client-local today → 0, not −1, when server UTC has rolled over.
+
+**Verify**: cross-tz pair (client ahead): coach cannot drag the client's "today" event (matches the server 403/guard); coach behind UTC can set a deadline for their local today. `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`. Commit.
 
 ---
 
