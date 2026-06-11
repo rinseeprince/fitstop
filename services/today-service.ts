@@ -22,11 +22,22 @@ export async function getClientTodayString(
   clientId: string,
   now: Date = new Date()
 ): Promise<string> {
-  const { data } = await supabaseAdmin
+  // The coaches embed MUST name the FK: coach_client_views also relates
+  // clients to coaches, so a bare `coaches(...)` is ambiguous and PostgREST
+  // rejects the whole query (PGRST201) — which the UTC fallback below would
+  // silently absorb for every client.
+  const { data, error } = await supabaseAdmin
     .from("clients")
-    .select("timezone, coaches ( timezone )")
+    .select("timezone, coaches!clients_coach_id_fkey ( timezone )")
     .eq("id", clientId)
     .maybeSingle();
+
+  if (error) {
+    console.error(
+      "getClientTodayString: timezone fetch failed, falling back to UTC",
+      error
+    );
+  }
 
   const clientTz = data?.timezone;
   const coachTz = data?.coaches?.timezone;

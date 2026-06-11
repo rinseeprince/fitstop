@@ -43,6 +43,40 @@ describe("getClientTodayString", () => {
     );
     expect(supabaseAdmin.from).toHaveBeenCalledWith("clients");
     expect(query.eq).toHaveBeenCalledWith("id", "client-1");
+    // The FK hint is load-bearing: coach_client_views creates a second
+    // clients<->coaches relationship, and a bare `coaches(...)` embed makes
+    // PostgREST reject the whole query (PGRST201) — observed live as every
+    // client silently resolving to UTC. The mocked chain can't catch that
+    // failure mode, so pin the exact select string instead.
+    expect(query.select).toHaveBeenCalledWith(
+      "timezone, coaches!clients_coach_id_fkey ( timezone )",
+    );
+  });
+
+  it("logs and falls back to UTC when the timezone query errors", async () => {
+    const query = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      maybeSingle: vi.fn().mockResolvedValue({
+        data: null,
+        error: { code: "PGRST201", message: "ambiguous embed" },
+      }),
+    };
+    vi.mocked(supabaseAdmin.from).mockReturnValue(
+      query as unknown as ReturnType<typeof supabaseAdmin.from>,
+    );
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
+    await expect(getClientTodayString("client-1", BOUNDARY)).resolves.toBe(
+      "2026-06-09",
+    );
+    expect(consoleError).toHaveBeenCalledWith(
+      expect.stringContaining("falling back to UTC"),
+      expect.objectContaining({ code: "PGRST201" }),
+    );
+    consoleError.mockRestore();
   });
 
   it("falls back to the coach's timezone when the client is the unsynced 'UTC' default", async () => {
