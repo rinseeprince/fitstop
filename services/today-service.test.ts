@@ -158,4 +158,30 @@ describe("getCoachTodayString", () => {
       "2026-06-09",
     );
   });
+
+  it("logs and falls back to UTC when the timezone query errors", async () => {
+    const query = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      maybeSingle: vi.fn().mockResolvedValue({
+        data: null,
+        error: { code: "PGRST301", message: "connection failure" },
+      }),
+    };
+    vi.mocked(supabaseAdmin.from).mockReturnValue(
+      query as unknown as ReturnType<typeof supabaseAdmin.from>,
+    );
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
+    await expect(getCoachTodayString("coach-1", BOUNDARY)).resolves.toBe(
+      "2026-06-09",
+    );
+    expect(consoleError).toHaveBeenCalledWith(
+      expect.stringContaining("falling back to UTC"),
+      expect.objectContaining({ code: "PGRST301" }),
+    );
+    consoleError.mockRestore();
+  });
 });

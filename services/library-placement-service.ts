@@ -28,10 +28,12 @@ export async function placePlanOnCalendar(params: {
   coachId: string;
   clientId: string;
   startDate: string;
+  /** Client-local today (the route's guard anchor) — anchors the planned-plan event wipe below. */
+  clientToday: string;
   repeatCycles?: number;
   phaseId?: string;
 }): Promise<{ planId: string; sessionsCreated: number; eventsCreated: number }> {
-  const { savedPlanId, coachId, clientId, startDate, repeatCycles, phaseId } = params;
+  const { savedPlanId, coachId, clientId, startDate, clientToday, repeatCycles, phaseId } = params;
 
   // 1. Fetch saved plan with sessions + exercises
   const savedPlan = await getSavedPlanById(savedPlanId, coachId);
@@ -44,6 +46,7 @@ export async function placePlanOnCalendar(params: {
     coachId,
     clientId,
     startDate,
+    clientToday,
     repeatCycles,
     phaseId,
   });
@@ -55,6 +58,7 @@ async function placePlaceablePlanOnCalendar(params: {
   coachId: string;
   clientId: string;
   startDate: string;
+  clientToday: string;
   repeatCycles?: number;
   phaseId?: string;
 }): Promise<{ planId: string; sessionsCreated: number; eventsCreated: number }> {
@@ -64,6 +68,7 @@ async function placePlaceablePlanOnCalendar(params: {
     coachId,
     clientId,
     startDate,
+    clientToday,
     repeatCycles,
     phaseId,
   } = params;
@@ -115,8 +120,12 @@ async function placePlaceablePlanOnCalendar(params: {
     );
   }
   if (oldPlannedPlan && oldPlannedPlan.id !== newPlanId) {
-    // Planned plans have no past events, so default fromDate=today is safe.
-    await deleteFutureEventsForPlan(oldPlannedPlan.id).catch((err) =>
+    // A never-active plan's prescriptions vanish wholesale: anchoring at
+    // client-local today wipes them all (a planned plan's events lie at/after
+    // the client's today). startDate would no-op here — the RPC's STEP 0
+    // already cleared >= startDate — and orphan the old plan's events in
+    // [its start, startDate) when the new plan starts later.
+    await deleteFutureEventsForPlan(oldPlannedPlan.id, clientToday).catch((err) =>
       captureApiError(err, {
         action: "delete-future-events-placement-planned",
         planId: oldPlannedPlan.id,

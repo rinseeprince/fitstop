@@ -285,5 +285,25 @@ describe("attention-feed-service", () => {
       expect(result).toHaveLength(1)
       expect(result[0].alerts).toHaveLength(1)
     })
+
+    it("suppresses for an ahead-of-UTC coach dismissing just after local midnight", () => {
+      // UTC+13 coach at 2026-06-10T23:30Z: coach-local today is 2026-06-11, so
+      // the dismiss route (7.85) stamps dismissed_at = "2026-06-11". The alert's
+      // newest affected day is the same coach-local day. With the old server-UTC
+      // stamp ("2026-06-10") the alert popped straight back; the coach-local
+      // stamp suppresses it ("2026-06-11" > "2026-06-11" is false).
+      const clients = [makeClient("c1", [makeAlert("training_missed", ["2026-06-10", "2026-06-11"])])]
+      const dismissals: DismissalRow[] = [
+        { client_id: "c1", alert_type: "training_missed", dismissed_at: "2026-06-11" },
+      ]
+
+      expect(filterDismissedAlerts(clients, dismissals)).toHaveLength(0)
+
+      // Regression shape of the bug: the UTC-stamped day fails to suppress.
+      const utcStamped: DismissalRow[] = [
+        { client_id: "c1", alert_type: "training_missed", dismissed_at: "2026-06-10" },
+      ]
+      expect(filterDismissedAlerts(clients, utcStamped)).toHaveLength(1)
+    })
   })
 })

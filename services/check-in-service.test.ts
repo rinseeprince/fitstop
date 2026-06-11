@@ -705,6 +705,34 @@ describe('Check-in Service', () => {
       expect(enriched.map((c) => c.expectedDays)).toEqual([4]) // partial first week, not 7
       expect(enriched.map((c) => c.dailyLogsCount)).toEqual([3])
     })
+
+    it('logs loudly when the start_date fetch errors and keeps the documented un-clamped fallback', async () => {
+      // The loud log is the observable contract (PGRST201 lesson): a swallowed
+      // error here would silently disable the activation clamp.
+      const checkInRows = [
+        { id: 'd1111111-1111-4111-8111-111111111111', client_id: 'c', status: 'reviewed', created_at: '2024-01-15T12:00:00Z', updated_at: '2024-01-15T12:00:00Z' },
+      ]
+      const dailyLogDates = [{ date: '2024-01-13' }, { date: '2024-01-14' }, { date: '2024-01-15' }]
+
+      vi.mocked(supabaseAdmin.from).mockImplementation(((table: string) => {
+        if (table === 'daily_logs') return chainable({ data: dailyLogDates, error: null }) as any
+        if (table === 'clients')
+          return chainable({ data: null, error: { code: 'PGRST301', message: 'connection failure' } }) as any
+        return chainable({ data: checkInRows, error: null, count: 1 }) as any
+      }) as any)
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      const { getClientCheckIns } = await import('./check-in-service')
+      const result = await getClientCheckIns('c', { includeDailyLogCounts: true })
+
+      const enriched = result.checkIns as Array<{ dailyLogsCount: number; expectedDays: number }>
+      expect(enriched.map((c) => c.expectedDays)).toEqual([7]) // clamp disabled, full week
+      expect(consoleError).toHaveBeenCalledWith(
+        expect.stringContaining('enrichWithDailyLogCounts: client start_date fetch failed'),
+        expect.objectContaining({ code: 'PGRST301' })
+      )
+      consoleError.mockRestore()
+    })
   })
 
   describe('updateCheckInStatus', () => {

@@ -21,9 +21,19 @@ vi.mock("./client-goals-service", () => ({
   getCurrentGoals: vi.fn(),
 }));
 
+vi.mock("@/services/nutrition-event-service", () => ({
+  deleteFutureNutritionEventsForPlan: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("@/services/training-event-service", () => ({
+  deleteFutureEventsForPlan: vi.fn().mockResolvedValue(undefined),
+}));
+
 import { supabaseAdmin } from "./supabase-admin";
 import { getBodyMetricsHistory, getLatestBodyMetrics } from "./body-metrics-service";
 import { getCurrentGoals } from "./client-goals-service";
+import { deleteFutureNutritionEventsForPlan } from "@/services/nutrition-event-service";
+import { deleteFutureEventsForPlan } from "@/services/training-event-service";
 
 function createMockQuery(result: { data: unknown; error: unknown; count?: number }) {
   return {
@@ -49,10 +59,14 @@ function createMockQuery(result: { data: unknown; error: unknown; count?: number
 
 const CLIENT_ID = "client-1";
 const PHASE_ID = "phase-1";
+// Fixed past date: the coach-local today the route resolves and threads in.
+const COACH_TODAY = "2026-01-31";
 
 describe("Phase Transition Service", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(deleteFutureNutritionEventsForPlan).mockResolvedValue(undefined);
+    vi.mocked(deleteFutureEventsForPlan).mockResolvedValue(undefined);
   });
 
   describe("getPhaseReviewData", () => {
@@ -136,7 +150,7 @@ describe("Phase Transition Service", () => {
         createdAt: "2026-01-01", updatedAt: "2026-01-01",
       });
 
-      const result = await getPhaseReviewData(PHASE_ID, CLIENT_ID);
+      const result = await getPhaseReviewData(PHASE_ID, CLIENT_ID, COACH_TODAY);
 
       expect(result.phase.id).toBe(PHASE_ID);
       expect(result.bodyMetrics.start?.weight).toBe(85);
@@ -153,7 +167,7 @@ describe("Phase Transition Service", () => {
       vi.mocked(getLatestBodyMetrics).mockResolvedValue(null);
       vi.mocked(getCurrentGoals).mockResolvedValue(null);
 
-      const result = await getPhaseReviewData(PHASE_ID, CLIENT_ID);
+      const result = await getPhaseReviewData(PHASE_ID, CLIENT_ID, COACH_TODAY);
 
       expect(result.bodyMetrics.start).toBeNull();
       expect(result.bodyMetrics.current).toBeNull();
@@ -184,7 +198,7 @@ describe("Phase Transition Service", () => {
       vi.mocked(getLatestBodyMetrics).mockResolvedValue(null);
       vi.mocked(getCurrentGoals).mockResolvedValue(null);
 
-      const result = await getPhaseReviewData(PHASE_ID, CLIENT_ID);
+      const result = await getPhaseReviewData(PHASE_ID, CLIENT_ID, COACH_TODAY);
 
       // No training plan means completed count only, no percentage
       expect(result.trainingAdherence?.completed).toBe(12);
@@ -226,7 +240,7 @@ describe("Phase Transition Service", () => {
       vi.mocked(getLatestBodyMetrics).mockResolvedValue(null);
       vi.mocked(getCurrentGoals).mockResolvedValue(null);
 
-      const result = await getPhaseReviewData(PHASE_ID, CLIENT_ID);
+      const result = await getPhaseReviewData(PHASE_ID, CLIENT_ID, COACH_TODAY);
 
       expect(result.nutritionAdherence).toBeNull();
     });
@@ -267,7 +281,7 @@ describe("Phase Transition Service", () => {
       vi.mocked(getLatestBodyMetrics).mockResolvedValue(null);
       vi.mocked(getCurrentGoals).mockResolvedValue(null);
 
-      await getPhaseReviewData(PHASE_ID, CLIENT_ID, "2026-01-31");
+      await getPhaseReviewData(PHASE_ID, CLIENT_ID, COACH_TODAY);
 
       expect(sessionLogsQuery.lte).toHaveBeenCalledWith("completed_at", "2026-01-31");
       expect(nutritionLogsQuery.lte).toHaveBeenCalledWith("date", "2026-01-31");
@@ -284,15 +298,17 @@ describe("Phase Transition Service", () => {
         roadmapId: "roadmap-1",
       });
 
-      // Setup for getPhaseReviewData
+      // Setup for getPhaseReviewData + the pre-RPC active-plan-id capture
       const phaseQuery = createMockQuery({ data: mockPhaseRow, error: null });
       const emptyQuery = createMockQuery({ data: null, error: null });
       const emptyArrayQuery = createMockQuery({ data: [], error: null });
+      const trainingPlanQuery = createMockQuery({ data: { id: "tp-1" }, error: null });
 
       vi.mocked(supabaseAdmin.from).mockImplementation(((table: string) => {
         if (table === "phases") return phaseQuery;
         if (table === "nutrition_logs") return emptyArrayQuery;
         if (table === "daily_habits") return emptyArrayQuery;
+        if (table === "training_plans") return trainingPlanQuery;
         return emptyQuery;
       }) as never);
 
@@ -306,15 +322,20 @@ describe("Phase Transition Service", () => {
         error: null,
       } as never);
 
-      const result = await transitionPhase(PHASE_ID, CLIENT_ID, {
-        coachReflection: "Great progress",
-        nextAction: "activate_next",
-        planHandling: {
-          trainingPlan: "archive",
-          nutritionPlan: "keep",
-          habits: "archive",
+      const result = await transitionPhase(
+        PHASE_ID,
+        CLIENT_ID,
+        {
+          coachReflection: "Great progress",
+          nextAction: "activate_next",
+          planHandling: {
+            trainingPlan: "archive",
+            nutritionPlan: "keep",
+            habits: "archive",
+          },
         },
-      });
+        COACH_TODAY
+      );
 
       expect(result.resultId).toBe("phase-2");
       expect(supabaseAdmin.rpc).toHaveBeenCalledWith(
@@ -326,8 +347,16 @@ describe("Phase Transition Service", () => {
           p_archive_training: true,
           p_archive_nutrition: false,
           p_archive_habits: true,
+          // The stamps must use the coach-today the route resolved, so the
+          // persisted end_date equals the previewed window end.
+          p_today: COACH_TODAY,
         })
       );
+
+      // Archived training plan's cleanup is anchored at the same coach-today,
+      // never the helper's UTC fallback; nutrition was kept, so no cleanup.
+      expect(deleteFutureEventsForPlan).toHaveBeenCalledWith("tp-1", COACH_TODAY);
+      expect(deleteFutureNutritionEventsForPlan).not.toHaveBeenCalled();
     });
 
     it("passes archive flags correctly based on planHandling options", async () => {
@@ -342,11 +371,13 @@ describe("Phase Transition Service", () => {
       const phaseQuery = createMockQuery({ data: mockPhaseRow, error: null });
       const emptyQuery = createMockQuery({ data: null, error: null });
       const emptyArrayQuery = createMockQuery({ data: [], error: null });
+      const nutritionPlanQuery = createMockQuery({ data: { id: "np-1" }, error: null });
 
       vi.mocked(supabaseAdmin.from).mockImplementation(((table: string) => {
         if (table === "phases") return phaseQuery;
         if (table === "nutrition_logs") return emptyArrayQuery;
         if (table === "daily_habits") return emptyArrayQuery;
+        if (table === "nutrition_plans") return nutritionPlanQuery;
         return emptyQuery;
       }) as never);
 
@@ -359,14 +390,19 @@ describe("Phase Transition Service", () => {
         error: null,
       } as never);
 
-      await transitionPhase(PHASE_ID, CLIENT_ID, {
-        nextAction: "archive_roadmap",
-        planHandling: {
-          trainingPlan: "keep",
-          nutritionPlan: "archive",
-          habits: "keep",
+      await transitionPhase(
+        PHASE_ID,
+        CLIENT_ID,
+        {
+          nextAction: "archive_roadmap",
+          planHandling: {
+            trainingPlan: "keep",
+            nutritionPlan: "archive",
+            habits: "keep",
+          },
         },
-      });
+        COACH_TODAY
+      );
 
       expect(supabaseAdmin.rpc).toHaveBeenCalledWith(
         "transition_phase_atomic",
@@ -375,8 +411,14 @@ describe("Phase Transition Service", () => {
           p_archive_training: false,
           p_archive_nutrition: true,
           p_archive_habits: false,
+          p_today: COACH_TODAY,
         })
       );
+
+      // Archived nutrition plan's cleanup shares the coach-today anchor;
+      // training was kept, so no training cleanup.
+      expect(deleteFutureNutritionEventsForPlan).toHaveBeenCalledWith("np-1", COACH_TODAY);
+      expect(deleteFutureEventsForPlan).not.toHaveBeenCalled();
     });
   });
 });

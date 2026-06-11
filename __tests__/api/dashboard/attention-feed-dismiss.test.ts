@@ -25,10 +25,15 @@ vi.mock("@/services/supabase-admin", () => {
   }
 })
 
+vi.mock("@/services/today-service", () => ({
+  getCoachTodayString: vi.fn().mockResolvedValue("2026-06-10"),
+}))
+
 import { POST } from "@/app/api/dashboard/attention-feed/dismiss/route"
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers"
 import { requireCSRFProtection } from "@/lib/csrf-protection"
 import { supabaseAdmin } from "@/services/supabase-admin"
+import { getCoachTodayString } from "@/services/today-service"
 
 function createRequest(body: Record<string, unknown>) {
   return new NextRequest("http://localhost:3000/api/dashboard/attention-feed/dismiss", {
@@ -43,6 +48,7 @@ describe("/api/dashboard/attention-feed/dismiss", () => {
     vi.clearAllMocks()
     vi.mocked(getAuthenticatedCoachId).mockResolvedValue("coach-1")
     vi.mocked(requireCSRFProtection).mockResolvedValue(null)
+    vi.mocked(getCoachTodayString).mockResolvedValue("2026-06-10")
 
     // Reset supabaseAdmin mock chain
     const mockQuery = {
@@ -65,6 +71,30 @@ describe("/api/dashboard/attention-feed/dismiss", () => {
 
     expect(res.status).toBe(200)
     expect(json.success).toBe(true)
+  })
+
+  it("stamps dismissed_at with the coach-local today, not the server clock", async () => {
+    const mockQuery = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      maybeSingle: vi.fn().mockResolvedValue({ data: { id: "client-1" }, error: null }),
+      upsert: vi.fn().mockResolvedValue({ error: null }),
+    }
+    vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as never)
+
+    const req = createRequest({
+      clientId: "00000000-0000-0000-0000-000000000001",
+      alertType: "training_missed",
+    })
+
+    const res = await POST(req)
+
+    expect(res.status).toBe(200)
+    expect(getCoachTodayString).toHaveBeenCalledWith("coach-1")
+    expect(mockQuery.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ dismissed_at: "2026-06-10" }),
+      { onConflict: "coach_id,client_id,alert_type" }
+    )
   })
 
   it("should return 400 on missing clientId", async () => {

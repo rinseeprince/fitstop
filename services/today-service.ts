@@ -60,11 +60,18 @@ export async function getCoachTodayString(
   coachId: string,
   now: Date = new Date()
 ): Promise<string> {
-  const { data } = await supabaseAdmin
+  const { data, error } = await supabaseAdmin
     .from("coaches")
     .select("timezone")
     .eq("id", coachId)
     .maybeSingle();
+
+  if (error) {
+    console.error(
+      "getCoachTodayString: timezone fetch failed, falling back to UTC",
+      error
+    );
+  }
 
   return getTodayDateStringInTimezone(data?.timezone ?? "UTC", now);
 }

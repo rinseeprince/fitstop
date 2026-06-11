@@ -4,6 +4,7 @@ import { coachApiRateLimit } from "@/lib/rate-limit"
 import { requireCSRFProtection } from "@/lib/csrf-protection"
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers"
 import { supabaseAdmin } from "@/services/supabase-admin"
+import { getCoachTodayString } from "@/services/today-service"
 
 const dismissSchema = z.object({
   clientId: z.string().uuid(),
@@ -52,13 +53,18 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Coach-local today: the read-side filter compares dismissed_at against
+    // coach-local affectedDays, so a server-UTC stamp lands a day early for an
+    // ahead-of-UTC coach and the alert pops straight back.
+    const dismissedAt = await getCoachTodayString(coachId)
+
     const { error: upsertError } = await supabaseAdmin
       .from("attention_dismissals")
       .upsert({
         coach_id: coachId,
         client_id: clientId,
         alert_type: alertType,
-        dismissed_at: new Date().toISOString().split("T")[0],
+        dismissed_at: dismissedAt,
       }, { onConflict: "coach_id,client_id,alert_type" })
 
     if (upsertError) {

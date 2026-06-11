@@ -5,7 +5,11 @@ vi.mock("@/services/supabase-admin", () => ({
 }));
 
 import { supabaseAdmin } from "@/services/supabase-admin";
-import { getDayEditState, assertCanEdit } from "./daily-log-permissions-service";
+import {
+  getDayEditState,
+  assertCanEdit,
+  assertCanEditTrainingDay,
+} from "./daily-log-permissions-service";
 import { DayLockedError } from "@/lib/daily-log-permissions";
 import { getTodayDateStringInTimezone } from "@/lib/date-helpers";
 
@@ -151,5 +155,60 @@ describe("getDayEditState / assertCanEdit", () => {
     mockHabitFrom("logged-habit");
     await getDayEditState("c1", today, "habit", { habitId: "h1" });
     expect(fromSpy).toHaveBeenCalledWith("daily_habit_logs");
+  });
+});
+
+// The loud log is the observable contract: a mocked chain can't reproduce a
+// live PostgREST failure (the PGRST201 lesson), so these pin that a fetch
+// error is logged rather than silently becoming a UTC day decision.
+describe("timezone fetch error paths", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  function erroringClientsQuery() {
+    return {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({
+        data: null,
+        error: { code: "PGRST301", message: "connection failure" },
+      }),
+    };
+  }
+
+  it("getDayEditState logs the fetch error and still falls back to UTC", async () => {
+    vi.mocked(supabaseAdmin.from).mockImplementation(((table: string) =>
+      table === "clients" ? erroringClientsQuery() : childQuery(null)) as never);
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const state = await getDayEditState("c1", today, "nutrition");
+
+    expect(state).toEqual({
+      editable: true,
+      loggedStatus: "never-logged",
+      clientTimezone: "UTC",
+    });
+    expect(consoleError).toHaveBeenCalledWith(
+      expect.stringContaining("getDayEditState: client timezone fetch failed, falling back to UTC"),
+      expect.objectContaining({ code: "PGRST301" })
+    );
+    consoleError.mockRestore();
+  });
+
+  it("assertCanEditTrainingDay logs the fetch error and still applies the UTC fallback rule", async () => {
+    vi.mocked(supabaseAdmin.from).mockImplementation((() =>
+      erroringClientsQuery()) as never);
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    // Today + never-logged is editable under the UTC fallback, so no throw.
+    await expect(
+      assertCanEditTrainingDay("c1", today, "never-logged")
+    ).resolves.toBeUndefined();
+    expect(consoleError).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "assertCanEditTrainingDay: client timezone fetch failed, falling back to UTC"
+      ),
+      expect.objectContaining({ code: "PGRST301" })
+    );
+    consoleError.mockRestore();
   });
 });

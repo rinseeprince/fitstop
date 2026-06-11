@@ -56,11 +56,19 @@ export async function getDayEditState(
   resourceType: DailyLogResourceType,
   opts?: { habitId?: string }
 ): Promise<DayEditState> {
-  const { data: clientRow } = await supabaseAdmin
+  const { data: clientRow, error: clientTzError } = await supabaseAdmin
     .from("clients")
     .select("timezone")
     .eq("id", clientId)
     .single();
+  // Loud fallback: a swallowed fetch error here silently judges the day lock
+  // on UTC (the failure mode that hid the PGRST201 bug — see today-service).
+  if (clientTzError) {
+    console.error(
+      "getDayEditState: client timezone fetch failed, falling back to UTC",
+      clientTzError
+    );
+  }
   const clientTimezone = clientRow?.timezone ?? "UTC";
 
   let childQuery = supabaseAdmin
@@ -120,11 +128,18 @@ export async function assertCanEditTrainingDay(
   date: string,
   loggedStatus: DayLogStatus,
 ): Promise<void> {
-  const { data: clientRow } = await supabaseAdmin
+  const { data: clientRow, error: clientTzError } = await supabaseAdmin
     .from("clients")
     .select("timezone")
     .eq("id", clientId)
     .single();
+  // Loud fallback: same contract as getDayEditState above.
+  if (clientTzError) {
+    console.error(
+      "assertCanEditTrainingDay: client timezone fetch failed, falling back to UTC",
+      clientTzError
+    );
+  }
   const clientTimezone = clientRow?.timezone ?? "UTC";
   if (!canEditDay(date, loggedStatus, clientTimezone)) {
     throw new DayLockedError(date, "training");

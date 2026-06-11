@@ -53,7 +53,7 @@ export type Database = {
           client_id: string
           coach_id: string
           created_at?: string
-          dismissed_at?: string
+          dismissed_at: string
           id?: string
         }
         Update: {
@@ -3008,6 +3008,7 @@ export type Database = {
           p_next_action: string
           p_phase_id: string
           p_phase_summary: Json
+          p_today?: string
         }
         Returns: string
       }

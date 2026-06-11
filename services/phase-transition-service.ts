@@ -7,7 +7,6 @@ import { deleteFutureEventsForPlan as deleteFutureTrainingEventsForPlan } from "
 import { captureApiError } from "@/lib/error-handler";
 import { getBodyMetricsHistory, getLatestBodyMetrics } from "./body-metrics-service";
 import { getCurrentGoals } from "./client-goals-service";
-import { getTodayDateString } from "@/lib/date-helpers";
 import type { PhaseRow, PhaseReviewData, Milestone } from "@/types/roadmap";
 
 const ADHERENCE_SCORES: Record<string, number> = {
@@ -19,9 +18,9 @@ const ADHERENCE_SCORES: Record<string, number> = {
 export const getPhaseReviewData = async (
   phaseId: string,
   clientId: string,
-  // Coach-local today (the review is the coach's dashboard view); falls back
-  // to server UTC when the caller doesn't resolve it.
-  today?: string
+  // Coach-local today (the review is the coach's dashboard view). Required:
+  // the route resolves getCoachTodayString once per request and threads it.
+  today: string
 ): Promise<PhaseReviewData> => {
   // Fetch phase first (required for all other queries)
   const { data: phaseRow, error: phaseError } = await supabaseAdmin
@@ -39,7 +38,7 @@ export const getPhaseReviewData = async (
 
   const phase = mapPhaseRow(phaseRow as unknown as PhaseRow);
   const startDate = phase.startDate ?? phase.createdAt;
-  const endDate = phase.endDate ?? today ?? getTodayDateString();
+  const endDate = phase.endDate ?? today;
   const daysInRange = Math.max(
     1,
     Math.round(
@@ -241,8 +240,9 @@ export const transitionPhase = async (
   options: TransitionOptions,
   // Coach-local today — MUST match what the GET preview used, or the
   // persisted phase_summary adherence covers a different window than the
-  // numbers the coach just reviewed.
-  today?: string
+  // numbers the coach just reviewed. Also stamps the RPC's p_today and
+  // anchors the post-archive event cleanup.
+  today: string
 ): Promise<{ resultId: string; reviewData: PhaseReviewData }> => {
   const reviewData = await getPhaseReviewData(phaseId, clientId, today);
 
@@ -304,6 +304,9 @@ export const transitionPhase = async (
       p_archive_training: options.planHandling.trainingPlan === "archive",
       p_archive_nutrition: options.planHandling.nutritionPlan === "archive",
       p_archive_habits: options.planHandling.habits === "archive",
+      // Coach-local: the completed end_date / activated start_date stamps must
+      // equal the previewed window end, not the server's UTC day (mig 111).
+      p_today: today,
     } as never
   )) as unknown as {
     data: string | null;
@@ -316,14 +319,15 @@ export const transitionPhase = async (
     );
   }
 
-  // Clean up future events for archived plans (non-blocking)
+  // Clean up future events for archived plans (non-blocking), anchored at the
+  // same coach-local today as the stamps — never the helpers' UTC fallback.
   if (nutritionPlanId) {
-    await deleteFutureNutritionEventsForPlan(nutritionPlanId).catch((err) =>
+    await deleteFutureNutritionEventsForPlan(nutritionPlanId, today).catch((err) =>
       captureApiError(err, { action: "delete-nutrition-events-phase-transition", planId: nutritionPlanId })
     );
   }
   if (trainingPlanId) {
-    await deleteFutureTrainingEventsForPlan(trainingPlanId).catch((err) =>
+    await deleteFutureTrainingEventsForPlan(trainingPlanId, today).catch((err) =>
       captureApiError(err, { action: "delete-training-events-phase-transition", planId: trainingPlanId })
     );
   }

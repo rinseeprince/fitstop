@@ -205,6 +205,7 @@ describe("library-placement-service", () => {
           coachId: "coach-1",
           clientId: "client-1",
           startDate: "2026-04-15",
+          clientToday: "2026-04-10",
         })
       ).rejects.toThrow("Only saved plans can be placed on calendar");
     });
@@ -218,6 +219,7 @@ describe("library-placement-service", () => {
           coachId: "coach-1",
           clientId: "client-1",
           startDate: "2026-04-15",
+          clientToday: "2026-04-10",
         })
       ).rejects.toThrow("Saved plan not found");
     });
@@ -254,6 +256,7 @@ describe("library-placement-service", () => {
         coachId: "coach-1",
         clientId: "client-1",
         startDate: "2026-04-15",
+        clientToday: "2026-04-10",
       });
 
       // Verify atomic plan creation was called
@@ -330,6 +333,7 @@ describe("library-placement-service", () => {
         coachId: "coach-1",
         clientId: "client-1",
         startDate: "2026-04-15",
+        clientToday: "2026-04-10",
       });
 
       // First session: explicit 20%
@@ -361,6 +365,7 @@ describe("library-placement-service", () => {
         coachId: "coach-1",
         clientId: "client-1",
         startDate: "2026-04-15",
+        clientToday: "2026-04-10",
       });
 
       expect(mockDeleteFuture).toHaveBeenCalledWith("old-active-id", "2026-04-15");
@@ -396,10 +401,15 @@ describe("library-placement-service", () => {
         coachId: "coach-1",
         clientId: "client-1",
         startDate: "2026-04-15",
+        clientToday: "2026-04-10",
       });
 
-      // Planned-plan cleanup fires with no fromDate (planned plans have no past events).
-      expect(mockDeleteFuture).toHaveBeenCalledWith("old-planned-id");
+      // Planned-plan cleanup anchors at client-local today, NOT startDate: the
+      // RPC's STEP 0 already cleared >= startDate, so a startDate anchor would
+      // no-op and orphan plan A's events in [A.start, B.start). The distinct
+      // clientToday fixture ("2026-04-10" vs startDate "2026-04-15") makes this
+      // assertion discriminate the two anchors.
+      expect(mockDeleteFuture).toHaveBeenCalledWith("old-planned-id", "2026-04-10");
       // No active plan existed, so only the planned-cleanup call should have fired.
       expect(mockDeleteFuture).toHaveBeenCalledTimes(1);
     });
@@ -442,6 +452,7 @@ describe("library-placement-service", () => {
         coachId: "coach-1",
         clientId: "client-1",
         startDate: "2026-04-15",
+        clientToday: "2026-04-10",
       });
 
       const exerciseCall = exerciseInsertQuery.insert.mock.calls[0][0];
@@ -498,6 +509,7 @@ describe("library-placement-service", () => {
         coachId: "coach-1",
         clientId: "client-1",
         startDate: "2026-04-15",
+        clientToday: "2026-04-10",
       });
 
       const events = eventUpsertQuery.upsert.mock.calls[0][0];
@@ -558,6 +570,7 @@ describe("library-placement-service", () => {
         coachId: "coach-1",
         clientId: "client-1",
         startDate: "2026-04-15",
+        clientToday: "2026-04-10",
       });
 
       const events = eventQuery.upsert.mock.calls[0][0];

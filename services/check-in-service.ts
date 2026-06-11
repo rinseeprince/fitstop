@@ -290,11 +290,19 @@ async function enrichWithDailyLogCounts(
 ): Promise<CheckInWithDailyLogCounts[]> {
   // Activation date: clamps the oldest check-in's period to a partial first week so
   // its denominator matches the check-in form (never counts pre-activation days).
-  const { data: clientRow } = await supabaseAdmin
+  const { data: clientRow, error: activationError } = await supabaseAdmin
     .from("clients")
     .select("start_date")
     .eq("id", clientId)
     .maybeSingle();
+  // Loud fallback: a swallowed fetch error silently disables the clamp, so the
+  // oldest period would count pre-activation days the form never shows.
+  if (activationError) {
+    console.error(
+      "enrichWithDailyLogCounts: client start_date fetch failed, activation clamp disabled",
+      activationError
+    );
+  }
   const activationMs = clientRow?.start_date
     ? new Date(clientRow.start_date + "T00:00:00").getTime()
     : null;

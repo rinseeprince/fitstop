@@ -101,7 +101,7 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 | 7.82 | Timezone: placement-family dates use client-local (reported bug) | 7 | COMPLETE
 | 7.83 | Timezone: sweep promotion / check-in / streaks / home + docs | 7 | COMPLETE
 | 7.84 | Timezone: coach-side windows + notifications consumer | 7 | COMPLETE
-| 7.85 | Timezone: audit remediation — write-path day stamps + UTC fallbacks + swallowed-tz-error guards | 7 |
+| 7.85 | Timezone: audit remediation — write-path day stamps + UTC fallbacks + swallowed-tz-error guards | 7 | COMPLETE
 | 7.86 | Timezone: audit remediation — calendar drag gating, deadline validation, days-remaining anchors | 7 |
 | 7.9 | Goal outcome lifecycle (finishable goals) | 7 |
 | 7.10 | Roadmap completion (status + summary) + client completion card | 7 |
@@ -2551,6 +2551,8 @@ Commit.
 ---
 
 ## Session 7.85: Timezone — audit remediation: write-path day stamps + UTC fallbacks + swallowed-tz-error guards
+
+**Status**: COMPLETE (migrations `111_phase_transition_coach_local_today.sql` + `112_attention_dismissals_drop_utc_default.sql`. Two deviations from the plan below: **(1)** implement step 3 is wrong as written — passing `startDate` to the planned-plan `deleteFutureEventsForPlan` call would be a guaranteed no-op (the placement RPC's STEP 0 already clears scheduled events `>= startDate` for every active+planned plan) and would orphan the old planned plan's events in `[its start, startDate)` whenever the new plan starts later; the anchor is **client-local today**, threaded as a required `clientToday` param from the route that already resolves it for the guard. **(2)** FOUR swallowed `{ data }`-only destructures were hardened, not three — the three listed plus `getCoachTodayString` in `services/today-service.ts`, found during planning; only `getClientTodayString` had been fixed in 58289ef.)
 
 > **Why 7.85–7.86:** a 5-lens adversarially-verified timezone audit (2026-06-12, after the PGRST201 `getClientTodayString` fix) confirmed 13 remaining wrong-anchor sites the 7.81–7.84 sweeps missed. These two sessions clear them: 7.85 = everything that **persists** a day (stamps, event cleanup, lock guards — includes one migration); 7.86 = read/UI-side anchors. Both follow the LOCKED TIMEZONE MODEL (see 7.81 note + ARCHITECTURE.md "Timezone model").
 
