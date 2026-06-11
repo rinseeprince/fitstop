@@ -78,11 +78,27 @@ describe("POST /api/client/habits/log", () => {
     expect(logHabit).not.toHaveBeenCalled();
   });
 
-  it("400 on a future date — the schema rejects it before the lock guard runs", async () => {
-    const res = await POST(postReq({ dailyHabitId: UID, date: "2999-01-01", completed: true }));
+  it("400 on a malformed date — schema is format-only", async () => {
+    const res = await POST(postReq({ dailyHabitId: UID, date: "21-05-2026", completed: true }));
     expect(res.status).toBe(400);
-    // Validation precedes assertCanEdit, so a future date is a 400 (schema), never a 403.
     expect(assertCanEdit).not.toHaveBeenCalled();
+    expect(logHabit).not.toHaveBeenCalled();
+  });
+
+  it("future dates pass the schema and are judged by the client-tz lock guard, not the server clock", async () => {
+    // The schema must NOT bound dates against the server clock: an east-of-UTC
+    // client's own today reads as "future" in UTC. Day bounds belong to
+    // assertCanEdit (canEditDay), which resolves today in the client's timezone.
+    vi.mocked(assertCanEdit).mockRejectedValue(new DayLockedError("2999-01-01", "habit"));
+
+    const res = await POST(postReq({ dailyHabitId: UID, date: "2999-01-01", completed: true }));
+    expect(res.status).toBe(403);
+    expect(assertCanEdit).toHaveBeenCalledWith({
+      clientId: "client-1",
+      date: "2999-01-01",
+      resourceType: "habit",
+      habitId: UID,
+    });
     expect(logHabit).not.toHaveBeenCalled();
   });
 

@@ -18,19 +18,14 @@ const optionalString = (maxLength: number) =>
     z.string().max(maxLength).optional()
   );
 
-// Date validation helper - not in future
-const futureDateValidation = z.string().refine(
-  (date) => {
-    const logDate = new Date(date);
-    const today = new Date();
-    today.setHours(23, 59, 59, 999); // End of today
-    
-    return logDate <= today;
-  },
-  {
-    message: "Date cannot be in the future"
-  }
-);
+// Format-only date validation: a YYYY-MM-DD string. No past/future bounds —
+// those are write-side via assertCanEdit/canEditDay, which judge against the
+// CLIENT's timezone. A server-clock bound here rejects an east-of-UTC client's
+// own today as "future" (see lib/validations/daily-log-cards.ts for the same
+// rule on the read path).
+const logDateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format");
 
 /**
  * Validation schema for creating daily habits
@@ -51,7 +46,7 @@ export const dailyHabitSchema = z.object({
  */
 export const dailyHabitLogSchema = z.object({
   dailyHabitId: z.string().uuid("Invalid habit ID"),
-  date: futureDateValidation,
+  date: logDateSchema,
   completed: z.boolean(),
   value: optionalNumber(z.number().positive("Value must be positive")),
   notes: optionalString(500),
