@@ -19,6 +19,9 @@ type CalendarWeekRowProps = {
   eventsByDate: Map<string, TrainingEvent[]>;
   editMode: boolean;
   todayDate: string;
+  // Client-local "today" for drag/delete gating (matches the 7.82 server guards).
+  // Distinct from todayDate, which drives the coach-device visual today ring.
+  clientToday: string;
   duplicateMode: boolean;
   /** Month shown in the grid; days outside it render dimmed. 0-indexed. */
   viewMonth: number;
@@ -42,6 +45,7 @@ export const CalendarWeekRow = memo(function CalendarWeekRow({
   eventsByDate,
   editMode,
   todayDate,
+  clientToday,
   duplicateMode,
   viewMonth,
   viewYear,
@@ -123,11 +127,12 @@ export const CalendarWeekRow = memo(function CalendarWeekRow({
               dayOfMonth={dayDate.getDate()}
               events={eventsByDate.get(date) ?? []}
               isToday={date === todayDate}
-              isPast={date < todayDate}
+              isPast={date < clientToday}
               isOutsideMonth={isOutsideMonth}
               phaseStatus={phaseByDate?.get(date) ?? null}
               editMode={editMode}
               duplicateMode={duplicateMode}
+              clientToday={clientToday}
               onCellClick={onCellClick}
               onEventClick={onEventClick}
               onDuplicate={onDuplicate}

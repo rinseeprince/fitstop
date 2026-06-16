@@ -345,4 +345,36 @@ describe('Comparison Service - read-switch behavior', () => {
       vi.useRealTimers()
     }
   })
+
+  it("anchors daysRemaining to the client's local day, not the server clock (west-of-UTC boundary)", async () => {
+    // UTC has already rolled to 2026-06-18, but a UTC-11 client is still on
+    // 2026-06-17. A deadline of their local today reads 0 days remaining, not
+    // -1 (the old Date.now() ms-math bug across the UTC day boundary).
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date('2026-06-18T00:30:00Z'))
+      vi.mocked(getClientById).mockResolvedValue({
+        ...mockClient,
+        timezone: 'Pacific/Niue',
+      } as never)
+      vi.mocked(getBodyMetricsHistory).mockResolvedValue([])
+      vi.mocked(getCurrentGoals).mockResolvedValue({
+        id: 'goal-1',
+        clientId: 'client-1',
+        goalWeight: 170,
+        goalDeadline: '2026-06-17',
+        setBy: 'coach',
+        effectiveFrom: '2024-01-01T00:00:00Z',
+        createdAt: '2024-01-01T00:00:00Z',
+        updatedAt: '2024-01-01T00:00:00Z',
+      } as never)
+
+      const result = await getCheckInComparison('ci-1')
+
+      expect(result.goalProgress.deadline?.daysRemaining).toBe(0)
+      expect(result.goalProgress.deadline?.isPastDeadline).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

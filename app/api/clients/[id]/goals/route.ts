@@ -10,6 +10,7 @@ import {
 import { recordAuditEvent } from "@/services/audit-log-service";
 import { AUDIT_ACTIONS } from "@/lib/constants";
 import { updateGoalsSchema } from "@/lib/validations/roadmap";
+import { getCoachTodayString } from "@/services/today-service";
 
 export async function GET(
   request: NextRequest,
@@ -74,6 +75,20 @@ export async function PUT(
         { success: false, error: "Invalid input", details: validation.error.errors },
         { status: 400 }
       );
+    }
+
+    // Past-deadline bound (format-only schema): the coach is the setter, so the
+    // honest "today" is the coach's local day — not the server's UTC clock, which
+    // would reject an east-of-UTC coach's own today (the habit-log bug class).
+    const { goalDeadline } = validation.data;
+    if (goalDeadline) {
+      const coachToday = await getCoachTodayString(auth.coachId);
+      if (goalDeadline < coachToday) {
+        return NextResponse.json(
+          { success: false, error: "Goal deadline cannot be in the past" },
+          { status: 400 }
+        );
+      }
     }
 
     const goals = await updateGoals(clientId, validation.data, auth.coachId);

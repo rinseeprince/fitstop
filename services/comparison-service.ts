@@ -9,7 +9,7 @@ import { getCurrentGoals } from "./client-goals-service";
 import { getActiveRoadmap } from "./roadmap-service";
 import { resolveEffectiveGoal } from "@/lib/goals/resolve-effective-goal";
 import { weightFromKg } from "@/utils/nutrition-helpers";
-import { getTodayDateStringInTimezone } from "@/lib/date-helpers";
+import { getTodayDateStringInTimezone, getTodayInTimezone, differenceInDays } from "@/lib/date-helpers";
 import type {
   CheckInComparison,
   GoalProgress,
@@ -101,8 +101,16 @@ export const getCheckInComparison = async (
   // Goal deadline, used by both the weight pace check and the deadline card —
   // from the SAME scope as goalWeight above (no cross-scope mismatch).
   const goalDeadline = effectiveGoal.deadline ?? undefined;
+  // Whole-day difference anchored to the client's local midnight (the pace window
+  // is on the client's calendar), not Date.now() ms-math that reads -1 across a
+  // UTC day boundary while the client still has today — mirrors getDaysUntilOrPastDue.
+  // "T00:00:00" parses local-midnight to match getTodayInTimezone (NOT parseISODate,
+  // which is UTC midnight).
   const daysRemaining = goalDeadline
-    ? Math.ceil((new Date(goalDeadline).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+    ? differenceInDays(
+        new Date(goalDeadline + "T00:00:00"),
+        getTodayInTimezone(client.timezone)
+      )
     : null;
   const weeksRemaining = daysRemaining !== null ? daysRemaining / 7 : null;
 

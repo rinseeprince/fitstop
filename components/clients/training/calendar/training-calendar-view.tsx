@@ -12,7 +12,7 @@ import { LibraryPanel } from "./library-panel";
 import { ApplyToClientDialog } from "@/components/training-library/apply-to-client-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useSavedPlans } from "@/hooks/use-saved-plans";
-import { getTodayDateString, getDateString } from "@/lib/date-helpers";
+import { getTodayDateString, getTodayDateStringInTimezone, getDateString } from "@/lib/date-helpers";
 import { BookOpen, Loader2, X, ChevronLeft, ChevronRight } from "lucide-react";
 import {
   Dialog,
@@ -81,6 +81,15 @@ export function TrainingCalendarView({
 }: TrainingCalendarViewProps) {
   const { toast } = useToast();
   const todayDate = getTodayDateString();
+  // Gating (can I drag/delete this event?) is judged on the CLIENT's calendar so
+  // it agrees with the 7.82 server guards; the visual today ring stays on the
+  // coach's device (todayDate). 'UTC' is the never-synced sentinel → fall back to
+  // device today, matching the apply-dialog min and getClientTodayString's coach-tz
+  // fallback (NOT getTodayDateStringInTimezone('UTC'), which would be UTC today).
+  const clientToday =
+    clientTimezone && clientTimezone !== "UTC"
+      ? getTodayDateStringInTimezone(clientTimezone)
+      : todayDate;
   const scrollRef = useRef<HTMLDivElement>(null);
   const todayRowRef = useRef<HTMLDivElement>(null);
 
@@ -506,6 +515,7 @@ export function TrainingCalendarView({
                   eventsByDate={eventsByDate}
                   editMode={editMode}
                   todayDate={todayDate}
+                  clientToday={clientToday}
                   duplicateMode={!!pendingDuplicate}
                   viewMonth={viewMonth.month}
                   viewYear={viewMonth.year}
@@ -563,6 +573,7 @@ export function TrainingCalendarView({
           <CalendarEventCard
             event={dnd.activeEvent}
             editMode={false}
+            clientToday={clientToday}
             isDragging
             onEventClick={() => {}}
           />

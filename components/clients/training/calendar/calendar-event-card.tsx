@@ -3,7 +3,6 @@
 import { memo } from "react";
 import { useDraggable } from "@dnd-kit/core";
 import { cn } from "@/lib/utils";
-import { getTodayDateString } from "@/lib/date-helpers";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,6 +23,9 @@ const STATUS_COLORS: Record<TrainingEventStatus, string> = {
 type CalendarEventCardProps = {
   event: TrainingEvent;
   editMode: boolean;
+  // Client-local "today" — gating must agree with the 7.82 server move/delete
+  // guards (which anchor on the client's tz), not the coach's device clock.
+  clientToday: string;
   isDragging?: boolean;
   onEventClick: (event: TrainingEvent) => void;
   onDuplicate?: (event: TrainingEvent) => void;
@@ -33,13 +35,14 @@ type CalendarEventCardProps = {
 export const CalendarEventCard = memo(function CalendarEventCard({
   event,
   editMode,
+  clientToday,
   isDragging,
   onEventClick,
   onDuplicate,
   onDelete,
 }: CalendarEventCardProps) {
   const isFutureScheduled =
-    event.status === "scheduled" && event.date >= getTodayDateString();
+    event.status === "scheduled" && event.date >= clientToday;
 
   const {
     attributes,

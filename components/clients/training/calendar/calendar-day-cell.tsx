@@ -22,6 +22,8 @@ type CalendarDayCellProps = {
   phaseStatus?: PhaseStatus | null;
   editMode: boolean;
   duplicateMode: boolean;
+  // Client-local "today" forwarded to the event card's drag/delete gate.
+  clientToday: string;
   onCellClick: (date: string) => void;
   onEventClick: (event: TrainingEvent) => void;
   onDuplicate: (event: TrainingEvent) => void;
@@ -53,6 +55,7 @@ export const CalendarDayCell = memo(function CalendarDayCell({
   phaseStatus,
   editMode,
   duplicateMode,
+  clientToday,
   onCellClick,
   onEventClick,
   onDuplicate,
@@ -101,6 +104,7 @@ export const CalendarDayCell = memo(function CalendarDayCell({
           key={event.id}
           event={event}
           editMode={editMode}
+          clientToday={clientToday}
           onEventClick={onEventClick}
           onDuplicate={onDuplicate}
           onDelete={onDelete}

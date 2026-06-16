@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { getTodayDateString } from "@/lib/date-helpers";
 
 const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
 const dateMessage = "Date must be in YYYY-MM-DD format";
@@ -66,8 +65,10 @@ export const updatePhaseSchema = createPhaseSchema.partial().refine(
  * the column. `goalWeight` is NOT nullable: it cannot be cleared to null. It may
  * still be omitted on a partial update (updateGoals carries the existing weight
  * forward); the Goals editor always supplies it, so the "every goal has a weight"
- * invariant holds in practice. `goalDeadline` rejects past dates — a past
- * deadline is what produced the check-in "unrealistic" false alarm.
+ * invariant holds in practice. `goalDeadline` is format-only here: the
+ * "not in the past" bound is enforced route-side against the coach's local today
+ * (`getCoachTodayString`) — a server-clock bound in the schema would reject an
+ * east-of-UTC coach's own today as past (same rule as `dailyHabitLogSchema`).
  */
 export const updateGoalsSchema = z
   .object({
@@ -79,10 +80,6 @@ export const updateGoalsSchema = z
   })
   .refine((data) => Object.values(data).some((v) => v !== undefined), {
     message: "At least one field must be provided",
-  })
-  .refine((data) => !data.goalDeadline || data.goalDeadline >= getTodayDateString(), {
-    message: "Goal deadline cannot be in the past",
-    path: ["goalDeadline"],
   });
 
 export type CreateRoadmapInput = z.infer<typeof createRoadmapSchema>;

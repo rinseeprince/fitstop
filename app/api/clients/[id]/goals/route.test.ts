@@ -26,12 +26,20 @@ vi.mock("@/services/audit-log-service", () => ({
   recordAuditEvent: vi.fn().mockResolvedValue(undefined),
 }));
 
+// Session 7.86: the past-deadline bound moved out of the zod schema into the
+// route, judged against the coach's local today. Mock it so the bound is
+// deterministic regardless of the suite's wall clock / TZ.
+vi.mock("@/services/today-service", () => ({
+  getCoachTodayString: vi.fn(),
+}));
+
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 import {
   getCurrentGoals,
   updateGoals,
   getGoalsHistory,
 } from "@/services/client-goals-service";
+import { getCoachTodayString } from "@/services/today-service";
 
 const mockParams = { params: Promise.resolve({ id: "client-1" }) };
 
@@ -68,6 +76,7 @@ describe("/api/clients/[id]/goals", () => {
       authorized: true,
       coachId: "coach-1",
     });
+    vi.mocked(getCoachTodayString).mockResolvedValue("2026-06-17");
   });
 
   describe("GET", () => {
@@ -141,6 +150,54 @@ describe("/api/clients/[id]/goals", () => {
 
       expect(response.status).toBe(400);
       expect(data.success).toBe(false);
+    });
+
+    it("accepts a deadline equal to coach-local today (even when server UTC has rolled over)", async () => {
+      // Coach is behind UTC: their local today is still 2026-06-17 while the
+      // server clock may already read 2026-06-18. The route bounds on the coach's
+      // day, so their own "today" passes — the bug the schema bound caused.
+      vi.mocked(getCoachTodayString).mockResolvedValue("2026-06-17");
+      vi.mocked(updateGoals).mockResolvedValue({
+        ...mockGoals,
+        goalDeadline: "2026-06-17",
+      });
+
+      const response = await PUT(
+        createMockRequest("PUT", { goalDeadline: "2026-06-17" }),
+        mockParams
+      );
+      const data = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(data.success).toBe(true);
+      expect(getCoachTodayString).toHaveBeenCalledWith("coach-1");
+    });
+
+    it("rejects a deadline before coach-local today", async () => {
+      vi.mocked(getCoachTodayString).mockResolvedValue("2026-06-17");
+
+      const response = await PUT(
+        createMockRequest("PUT", { goalDeadline: "2026-06-16" }),
+        mockParams
+      );
+      const data = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(data.success).toBe(false);
+      expect(data.error).toContain("past");
+      expect(updateGoals).not.toHaveBeenCalled();
+    });
+
+    it("rejects a malformed deadline at the schema (400)", async () => {
+      const response = await PUT(
+        createMockRequest("PUT", { goalDeadline: "2026-6-1" }),
+        mockParams
+      );
+      const data = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(data.success).toBe(false);
+      expect(updateGoals).not.toHaveBeenCalled();
     });
   });
 });
