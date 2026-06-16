@@ -102,7 +102,7 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 | 7.83 | Timezone: sweep promotion / check-in / streaks / home + docs | 7 | COMPLETE
 | 7.84 | Timezone: coach-side windows + notifications consumer | 7 | COMPLETE
 | 7.85 | Timezone: audit remediation — write-path day stamps + UTC fallbacks + swallowed-tz-error guards | 7 | COMPLETE
-| 7.86 | Timezone: audit remediation — calendar drag gating, deadline validation, days-remaining anchors | 7 |
+| 7.86 | Timezone: audit remediation — calendar drag gating, deadline validation, days-remaining anchors | 7 | COMPLETE
 | 7.9 | Goal outcome lifecycle (finishable goals) | 7 |
 | 7.10 | Roadmap completion (status + summary) + client completion card | 7 |
 | 7.11 | Roadmap-creation goal prompt + complete→create-next chain | 7 |
