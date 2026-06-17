@@ -1,6 +1,6 @@
 # Events-as-SOT Overhaul — Execution Plan
 
-> **Status:** planning complete, not started. Merges the training plan-demotion work with `NUTRITION-CALENDAR-IMPLEMENTATION-SPEC.md` (repo root).
+> **Status:** **Session 1 COMPLETE (2026-06-17)** — migs 113 + cascade-preserve guards shipped & smoke-verified; Sessions 2-6 not started. Merges the training plan-demotion work with `NUTRITION-CALENDAR-IMPLEMENTATION-SPEC.md` (repo root).
 > **How to use:** Run one session at a time in a fresh Claude Code session. Paste that session's **Prompt**. Each session owns a coherent track and **commits at the checkpoints (◆) inside it** — the app must build + test clean at every checkpoint, not just at session end. A session is done when all its steps are committed and **Session verify** passes. Do not reorder sessions; the internal step order also matters.
 
 ## 1. Context
@@ -62,7 +62,7 @@ Each session prompt then assumes this protocol:
 
 | # | Session | Schema? | Checkpoints (◆ = commit) | Depends |
 |---|---------|---------|--------------------------|---------|
-| 1 | Foundation + cascade-preserve guards | ✅ Mig A | 2 | — |
+| 1 ✅ | Foundation + cascade-preserve guards **(COMPLETE)** | ✅ Mig A | 2 | — |
 | 2 | Training track: additive placement → demotion → builder UI → phase lifecycle | ✅ RPC | 4 | 1 |
 | 3 | Nutrition lifecycle: durable plan → materialized edits → phase-transition seam | ✅ Mig B/C + RPC | 3 | 1, 2 |
 | 4 | Nutrition coach UI: calendar (read-only → editing) → generate-tray UX | — | 3 | 2, 3 |
@@ -73,7 +73,7 @@ Each session prompt then assumes this protocol:
 
 ---
 
-## Session 1 — Foundation + cascade-preserve guards
+## Session 1 — Foundation + cascade-preserve guards ✅ COMPLETE (2026-06-17)
 
 **Goal:** Lay the shared, behavior-neutral floor both tracks build on: survivable event→plan FKs, a nutrition edit flag, and regeneration that preserves edited days (shipped *before* any in-place/edit path exists, per spec §11 step 2).
 **Schema:** ✅ Mig A.
@@ -101,7 +101,7 @@ Each session prompt then assumes this protocol:
 >
 > **◆2 — Demotion: kill promotion + date-driven reads.** Delete `promoteTrainingPlanIfReady` (`services/training-service.ts`) and all promotion calls. Re-resolve `getActiveTrainingPlan`/`getActiveTrainingPlanId` to "the provenance plan whose date range covers clientToday" (date-driven, not `status='active'`); add `getTrainingPlanForDate` if useful. **Delete the 3 dead `getActiveTrainingPlan` calls in nutrition** (`nutrition-event-service.ts:210`, `nutrition-plan-orchestrator.ts:193,283`) — the `trainingPlan` object is unreferenced dead data there (surplus/isTrainingDay derive from `training_events`); drop the var + unused param, no repoint. Keep `GET /api/clients/[id]/training` returning a coherent `{plan, …}` (active = covers today; future plans coexist). Update all tests/mocks; grep-clean `promoteTrainingPlanIfReady`. Commit.
 >
-> **◆3 — Training builder UI for coexisting plans.** Update `components/clients/training/builder/*` (`training-builder-right-panel.tsx`, `training-plan-builder.tsx`), `components/clients/training/calendar/*`, `hooks/use-training-plan.ts` to consume the new shape: no promotion banner, no "Starts {scheduledFor}" planned-as-promotion badge; render coexisting placed plans/events plainly. Relabel "Cancel"/"Clear Plan" to "delete (future) events" (they already hit archive+cancel; do not delete past/logged). Match existing patterns. Commit.
+> **◆3 — Training builder UI for coexisting plans.** Update `components/clients/training/builder/*` (`training-builder-right-panel.tsx`, `training-plan-builder.tsx`), `components/clients/training/calendar/*`, `hooks/use-training-plan.ts` to consume the new shape: no promotion banner, no "Starts {scheduledFor}" planned-as-promotion badge; render coexisting placed plans/events plainly. Relabel "Cancel"/"Clear Plan" to "delete (future) events" (they already hit archive+cancel; do not delete past/logged). Match existing patterns. **Fix the pre-existing "Duplicate to remaining weeks" 400 (found during Session 1 smoke):** the `duplicate_remaining` week-action only sends `phaseEndDate` when `plan.effectiveFrom && plan.programDurationWeeks` are both set, but the `duplicate-week` route hard-requires `fillRemaining && phaseEndDate` — so no-phase / duration-less (roadmaps-opt-in) plans 400 with "Provide either targetStartDate or fillRemaining with phaseEndDate". Under D1 "remaining" should be bounded by the **plan's own date range** (not a phase/`programDurationWeeks`), with a graceful fallback when no end resolves (or disable the action with a clear message). Commit.
 >
 > **◆4 — Phase lifecycle.** In `services/phase-service.ts`: add an **overlap/ordering guard** to `createPhase`/`updatePhase` (reject `[start,end]` overlapping a sibling or starting mid-phase; extend the existing single-active guard ~:102-116). Add a **complete-before-start guard** (reject completing a phase with `start_date > clientToday`). Add **auto-activate-by-date** — a `promotePhaseIfReady` (mirror the laziness of the deleted training promotion) flipping `planned→active` when `start_date <= clientToday` and no other active phase, called on roadmap read; demote/keep the manual Activate per D3. Wire the **delete affordances** in `phase-card.tsx` + `roadmap-tab-content.tsx` to the existing tested DELETE routes (planned-only; surface the "archive instead" 400 as a toast). Optionally narrow planned-phase calendar shading. No schema unless auto-activate needs a column (verify first). Commit.
 
