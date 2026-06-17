@@ -1,0 +1,178 @@
+# Events-as-SOT Overhaul — Execution Plan
+
+> **Status:** planning complete, not started. Merges the training plan-demotion work with `NUTRITION-CALENDAR-IMPLEMENTATION-SPEC.md` (repo root).
+> **How to use:** Run one session at a time in a fresh Claude Code session. Paste that session's **Prompt**. Each session owns a coherent track and **commits at the checkpoints (◆) inside it** — the app must build + test clean at every checkpoint, not just at session end. A session is done when all its steps are committed and **Session verify** passes. Do not reorder sessions; the internal step order also matters.
+
+## 1. Context
+
+The roadmap/phase + calendar pain (diagnosed June 2026, see `memory/project_events_sot_overhaul.md`) is **logic/UX, not a broken data model**. `create_training_plan_atomic` + `library-placement-service.ts` enforce "one active + one planned training plan per client" and **wipe-and-replace** on every placement, so a distinct plan per phase is impossible and placing a second future plan deletes the first. Phase "Activate" is manual and collides with the date-driven plan-promotion (`promoteTrainingPlanIfReady`) — the "two activations" confusion. Phase create/complete have no date/overlap guards. Roadmap/phase delete is built + tested but unwired.
+
+**Principle:** the **events** are the source of truth; **plans become templates/provenance**. Training demotes `training_plans` from a wiping singleton to **many coexisting provenance instances** (additive placement; drop planned/promotion). Nutrition collapses to **one durable mutable plan** with per-day coach edits **materialized onto `nutrition_events`** (`is_modified`, preserved across regen). These are **deliberately asymmetric** — nutrition keeps a singleton (one target/day is correct); training drops it (many splits coexist). **Do not homogenize them.**
+
+**Outcome:** coaches lay out distinct training across phases on one calendar; nutrition gets the same per-day calendar editing; the training→nutrition cascade is preserved (and gains edit-preservation it lacks today); history stays immutable.
+
+## 2. Locked design decisions
+
+- **D1 — Training overlap/replace policy:** additive placement deletes only **future `scheduled` events of the incoming plan's own date range** (never a blanket wipe). Non-overlapping plans coexist; the per-`(client, session, date)` unique index already prevents two events colliding on one day.
+- **D2 — Nutrition stays one durable plan:** keep `idx_nutrition_plans_active_unique`; `getActiveNutritionPlanId` stays. One target/day (`nutrition_events UNIQUE(client_id,date)`) is correct, not a limitation.
+- **D3 — Phase activation becomes date-driven** (auto-activate when `start_date <= clientToday`), replacing the manual button. Plan-level promotion is deleted (additive placement removes the planned→active concept).
+- **D4 — Coach per-day nutrition edits are materialized** onto the event (`baseline_calories`/macros set, `calorie_surplus_percentage := NULL`, `is_modified := true`) — spec §3. An edited day freezes (no surplus stacking); reset clears the flag.
+- **D5 — Nutrition generate-tray UX:** primary tabs **Auto generation | Custom** (units → compact header `kg⇄lb` toggle); **Custom macros are %-of-calories split** (P/C/F sum to 100; grams derived via 4/4/9; storage stays grams); both tabs share calorie-skewing + include-burn; **burn stacks in Custom too** (parity). Input-layer only.
+- **D6 — Adherence:** out of scope, documented. Two divergent live calcs exist (coach phase-review = `session_logs`/`frequency_per_week`; client check-in = `training_events` count/event-count). Unifying them + a periodisation-safe denominator is a separate decision; this plan does not change adherence math.
+
+## 3. Global invariants & landmines (every session must respect)
+
+1. **FK-cascade trap.** `training_events.training_plan_id` and `nutrition_events.nutrition_plan_id` are `ON DELETE CASCADE` + NOT NULL today. They become **`SET NULL` + nullable in Session 1**, *before* any plan/template hard-delete — else deleting a template silently wipes past/logged events. (Roadmaps/phases keep `RESTRICT`/status-archive per CONVENTIONS.md §8.)
+2. **Surplus-write contract.** The cascade reads `training_events.calorie_surplus_percentage` (denormalized) per date. **Every** training event-write path must keep populating it; one dropped write → nutrition silently falls back to rest-day calories while the TRAIN badge still renders. Verified hardest in Session 2◆1.
+3. **Cascade anchors.** The cascade fires from ~8 training routes, each with its own anchor (`move` = `min(source,target)`; delete = client-today; duplicate = `targetDate`). Consolidation keeps each route computing + threading its own anchor.
+4. **Freeze rule + snapshot completeness.** Only future `scheduled` events are ever hard-deleted; past/logged are immutable. Historical reads resolve from `session_logs` snapshots, never a live-join to a deletable event.
+5. **Migration discipline (CONVENTIONS.md §8).** One new numbered file per schema change; pure ASCII inside `$$`; `DROP` superseded RPC overloads by explicit signature (mig 110 enumerates the catalog); `SET search_path = public`; `REVOKE … FROM PUBLIC, anon, authenticated` + `GRANT EXECUTE … TO service_role`. `db push` is classifier-blocked — the **user** runs it (`!npx supabase db push`); the session prepares the file, asks for push, then runs `gen types` and commits migration + types together.
+
+## 3.5 Doc-contradiction map — what every reading session must distrust
+
+A doc sweep found the referenced docs describe the **current/old** model, much of which this plan deletes. Read them for current-state context, but the **authoritative target is this plan + `NUTRITION-CALENDAR-IMPLEMENTATION-SPEC.md`**. Treat these as superseded (Session 6 fixes them):
+
+| Doc · locator | Says (old model — do NOT implement) | Reality (this plan) |
+|---|---|---|
+| `NUTRITION_PLANS_ARCHITECTURE.md` (most: ~69-149, 226-403) | nutrition plan **versioning** — every edit archives the plan + mints a new row; 7-weekday `nutrition_plan_daily_targets` grid; `status`/`effective_until` archival | ONE durable mutable plan; per-day edits materialized on `nutrition_events` (`is_modified`); date calendar. **No versioning.** |
+| `NUTRITION_PLAN_CALCULATOR.md` ~95-100, 164-170 | "Regenerate re-stamps `base_weight_kg` as the new baseline" | **Contradicts D5** — cascade/in-place regen must NOT re-stamp; only explicit "Recalculate plan" does. |
+| `NUTRITION_PLAN_CALCULATOR.md` ~234-243, 659-696, 852-897 | Plan History tab/modal + `GET …/nutrition/history` | Retired (Session 4◆1 / Session 3). Don't build/keep. |
+| `NUTRITION_PLAN_CALCULATOR.md` ~290-340 (TDEE/macro formula) | the calorie/macro math | ✅ **VALID — still the live formula.** Use it. |
+| `ARCHITECTURE.md` "Phase Transition Flow" ~:188 | transition "archives … nutrition plans" | Nutrition is **re-windowed, never archived** (Session 3◆3). |
+| `ARCHITECTURE.md` "Atomic placement" ~:368-369 | placement "archives the previous plan" + STEP-0 wipe | **Additive** placement — no wipe, plans coexist (Session 2◆1). |
+| `ARCHITECTURE.md` timezone ~:429, :436 | "plan promotion" / plan-status RPCs | Promotion deleted; phases auto-activate by date (Sessions 2-3). |
+| `CONVENTIONS.md §8` status-lifecycle ~:291-296 | implies all plans use status lifecycle | Nutrition keeps one-active status; **training moves to date-range coexistence** (no planned/promotion). |
+| `CLIENT-PORTAL-EXECUTION-PLAN.md` ~:1075, :2518, :1080 | `promoteNutritionPlanIfReady` "desirable"; training "Starts X / scheduledFor" coach UX; per-day-type nutrition page | All removed/reworked (Sessions 2-5). |
+| `CLIENT-APP-REFERENCE.md` nutrition shape ~:192-204 | rest-day/training-day **2-slot** targets | Becomes a per-date window — the **RN contract gate** (Session 5◆1; verify before shipping). |
+| `newdesignsystem.md` | — | ✅ **Clean, no conflicts.** Trust it. |
+
+## 4. Required reading & session protocol
+
+A fresh session has **none** of this plan's context — it only knows what it reads. **Every session reads these before any code:**
+- **`CONVENTIONS.md` — in full.** Its own header makes this mandatory before any code change: engineering philosophy, route auth chain (§8/§10), the 5-step migration workflow (§8), commit-ready checklist (§13), file-size limits (§4), soft-delete/status-lifecycle (§8).
+- **This doc** — §1 (context), §2 (decisions), §3 (invariants), **§3.5 (doc-contradiction map — what to distrust in the docs you're about to read)**, and the session's own section.
+- **`memory/project_events_sot_overhaul.md`** — the one-screen diagnosis + landmines.
+- Plus the session's **Read first** list below (domain docs + the exact `docs/ARCHITECTURE.md` and spec sections it touches). Read these BEFORE writing code; if a code path contradicts a doc, surface it rather than silently diverging.
+
+Each session prompt then assumes this protocol:
+
+> Follow the route auth chain (§8/§10), file-size limits (§4 — split as you go; these are big sessions), no-`as any` (§5), and "one fix per change" **within each checkpoint**. At **every ◆ checkpoint**: `npx tsc --noEmit && npx eslint . && npx vitest run` must be clean, no `as any`, no leftover `TODO/FIXME/DEBUG/console.log`; update test mocks for changed signatures/exports; then commit with a `type(scope): summary` message + the `Co-Authored-By` trailer. For schema work follow §3 invariant 5 (prepare the migration; ask me to run `db push`; then `gen types`; commit migration + types together). Do steps in the listed order — the order encodes dependencies. Stop at session end; do not start the next session.
+
+## 5. Session map (6 sessions)
+
+| # | Session | Schema? | Checkpoints (◆ = commit) | Depends |
+|---|---------|---------|--------------------------|---------|
+| 1 | Foundation + cascade-preserve guards | ✅ Mig A | 2 | — |
+| 2 | Training track: additive placement → demotion → builder UI → phase lifecycle | ✅ RPC | 4 | 1 |
+| 3 | Nutrition lifecycle: durable plan → materialized edits → phase-transition seam | ✅ Mig B/C + RPC | 3 | 1, 2 |
+| 4 | Nutrition coach UI: calendar (read-only → editing) → generate-tray UX | — | 3 | 2, 3 |
+| 5 | Client/RN surfaces + seed/backfill | — | 2 | 3 |
+| 6 | Docs reconciliation (ARCHITECTURE, CONVENTIONS + the stale nutrition + client-portal docs per §3.5) | — | 1 | all |
+
+**Riskiest:** 2◆1 (surplus-write contract), 3◆1 (in-place RPC daily-targets replacement + D5 snapshot preservation), 3◆3 (blank-calendar landmine).
+
+---
+
+## Session 1 — Foundation + cascade-preserve guards
+
+**Goal:** Lay the shared, behavior-neutral floor both tracks build on: survivable event→plan FKs, a nutrition edit flag, and regeneration that preserves edited days (shipped *before* any in-place/edit path exists, per spec §11 step 2).
+**Schema:** ✅ Mig A.
+**Read first:** `docs/ARCHITECTURE.md` → "Nutrition & Training Events" + "Training event fields"; spec §4 (Mig A), §5; `supabase/migrations/110_plan_rpcs_client_local_today.sql` (migration discipline template) + `supabase/migrations/082_*` (training `is_modified` precedent to mirror).
+
+**Prompt:**
+> [Standard protocol. Read spec §4 (Mig A), §5.]
+>
+> **◆1 — Mig A (schema).** One migration `supabase/migrations/NNN_events_sot_foundation.sql`: (a) `ALTER TABLE nutrition_events ADD COLUMN is_modified BOOLEAN NOT NULL DEFAULT false;` (mirrors training mig 082). (b) For **both** `training_events.training_plan_id` and `nutrition_events.nutrition_plan_id`: look up the real constraint name (`information_schema.table_constraints` / `\d`), `DROP CONSTRAINT <name>`, `ALTER COLUMN … DROP NOT NULL`, re-add `… REFERENCES <parent>(id) ON DELETE SET NULL`. Additive — existing rows keep their plan id; SET NULL only bites on a future hard-delete that doesn't happen yet. Touch no read/write code. Ask me to `db push`, then `gen types`; confirm the `types/database.ts` diff shows only `is_modified` + the two nullability changes; verify a `SELECT` shows `confdeltype='n'` on both FKs. Commit migration + types together.
+>
+> **◆2 — cascade-preserve guards (code).** In `services/nutrition-event-service.ts`: (a) the `regenerateFutureNutritionEvents` delete gains `.eq('is_modified', false)`. (b) `generateNutritionEvents`: before the `upsert(rows,{onConflict:'client_id,date'})`, query existing `is_modified=true` dates in `[start,end]` and **omit them from `rows`**. Add a unit test: seed events, mark a future range `is_modified`, regenerate → assert those rows are preserved untouched and other days regenerate. (No edited days exist in prod yet, so this is safe alone.) Commit.
+
+**Session verify:** `tsc/eslint/vitest` clean at both checkpoints; FK + column confirmed in `types/database.ts`; the new preserve test passes alongside existing nutrition cascade tests.
+
+## Session 2 — Training track (placement → demotion → builder UI → phase lifecycle) 🔴 highest blast radius
+
+**Goal:** Move the entire training side onto events-as-SOT: additive placement (no wipe), plans demoted to provenance, builder UI for coexisting plans, and phases as date-driven goal context with guards + delete.
+**Schema:** ✅ rewrite `create_training_plan_atomic` (new migration). Phase auto-activate: verify it needs no column.
+**Read first:** `docs/ARCHITECTURE.md` → "Coach Library", "Atomic placement (migration 087)", "Cycle-aware placement", "Roadmap/Phase Architecture", "Phase goals — phase-is-king"; spec §12.1 (surplus coupling); `supabase/migrations/110_plan_rpcs_client_local_today.sql` (RPC template) + `087_atomic_event_cleanup_on_plan_placement.sql` (the wipe being removed); `docs/newdesignsystem.md` (visual tokens, for ◆3 builder UI).
+
+**Prompt:**
+> [Standard protocol. Read spec §12.1; `docs/ARCHITECTURE.md` "Coach Library / Atomic placement" + "Roadmap/Phase Architecture".]
+>
+> **◆1 — Additive placement (schema + service; the riskiest checkpoint).** Rewrite `create_training_plan_atomic` (new migration, mig-110 discipline, DROP the post-110 overloads by signature) **and** `services/library-placement-service.ts` together — they are coupled (the service's wipe at ~:76-134 pairs with the RPC's STEP 0 wipe; splitting them orphans/double-deletes events). New behavior: insert the new `training_plans` row as provenance + generate its events; delete only **future `scheduled` events of the incoming plan's own date range** (D1) — no cross-plan archive, no `clientToday` blanket wipe; remove the `oldActivePlan/oldPlannedPlan` capture + `deleteFutureEventsForPlan` calls. Non-overlapping plans must coexist. **INVARIANT 2 (verify hardest):** every event-write path must STILL write `calorie_surplus_percentage` — confirm `generateCycleAwareEvents` (~:381) and `placeSessionOnCalendar` (~:323) keep it. Tests: (a) place a plan → assert every training-day `nutrition_event` carries the expected surplus; (b) place plan A then plan B on a later non-overlapping range → both event sets coexist; (c) idempotent re-place of the same range. Keep `getActiveTrainingPlan`'s response shape intact for now. Commit.
+>
+> **◆2 — Demotion: kill promotion + date-driven reads.** Delete `promoteTrainingPlanIfReady` (`services/training-service.ts`) and all promotion calls. Re-resolve `getActiveTrainingPlan`/`getActiveTrainingPlanId` to "the provenance plan whose date range covers clientToday" (date-driven, not `status='active'`); add `getTrainingPlanForDate` if useful. **Delete the 3 dead `getActiveTrainingPlan` calls in nutrition** (`nutrition-event-service.ts:210`, `nutrition-plan-orchestrator.ts:193,283`) — the `trainingPlan` object is unreferenced dead data there (surplus/isTrainingDay derive from `training_events`); drop the var + unused param, no repoint. Keep `GET /api/clients/[id]/training` returning a coherent `{plan, …}` (active = covers today; future plans coexist). Update all tests/mocks; grep-clean `promoteTrainingPlanIfReady`. Commit.
+>
+> **◆3 — Training builder UI for coexisting plans.** Update `components/clients/training/builder/*` (`training-builder-right-panel.tsx`, `training-plan-builder.tsx`), `components/clients/training/calendar/*`, `hooks/use-training-plan.ts` to consume the new shape: no promotion banner, no "Starts {scheduledFor}" planned-as-promotion badge; render coexisting placed plans/events plainly. Relabel "Cancel"/"Clear Plan" to "delete (future) events" (they already hit archive+cancel; do not delete past/logged). Match existing patterns. Commit.
+>
+> **◆4 — Phase lifecycle.** In `services/phase-service.ts`: add an **overlap/ordering guard** to `createPhase`/`updatePhase` (reject `[start,end]` overlapping a sibling or starting mid-phase; extend the existing single-active guard ~:102-116). Add a **complete-before-start guard** (reject completing a phase with `start_date > clientToday`). Add **auto-activate-by-date** — a `promotePhaseIfReady` (mirror the laziness of the deleted training promotion) flipping `planned→active` when `start_date <= clientToday` and no other active phase, called on roadmap read; demote/keep the manual Activate per D3. Wire the **delete affordances** in `phase-card.tsx` + `roadmap-tab-content.tsx` to the existing tested DELETE routes (planned-only; surface the "archive instead" 400 as a toast). Optionally narrow planned-phase calendar shading. No schema unless auto-activate needs a column (verify first). Commit.
+
+**Session verify:** at each ◆, `tsc/eslint/vitest` clean. End-to-end: place two plans across two phases (both coexist on the calendar), the training tab renders without promotion UI, overlapping phases are blocked, a planned phase deletes, a dated phase auto-activates. Surplus-carried + plans-coexist tests green.
+
+## Session 3 — Nutrition lifecycle (durable plan → materialized edits → phase-transition seam)
+
+**Goal:** Move the nutrition data/lifecycle onto one durable mutable plan with materialized per-day edits, consolidate the cascade, and rework phase-transition so completing a phase re-windows (not archives) the plan.
+**Schema:** ✅ Mig B + Mig C + rewrite `transition_phase_atomic` nutrition branch.
+**Read first:** ⚠️ **per §3.5** — `docs/NUTRITION_PLANS_ARCHITECTURE.md` describes the **versioning model this session DELETES**; read only to understand current-state, never as the target. `docs/NUTRITION_PLAN_CALCULATOR.md`: use its TDEE/macro **formula (~290-340), still live**, but ignore its Plan-History + `base_weight` re-stamp claims (they contradict D5). Then `docs/ARCHITECTURE.md` → "Nutrition & Training Events", "Read priority for nutrition targets", "Phase Transition Flow"; spec §4 (Mig B/C), §5, §6, §8, §9, §12.2; `supabase/migrations/110_*` (RPC template) + `111_phase_transition_coach_local_today.sql` (transition RPC being reworked) + `080_nutrition_rpc_planned_status.sql` + `044_create_nutrition_plans_tables.sql` (the indexes being dropped).
+
+**Prompt:**
+> [Standard protocol. Read spec §4 (Mig B/C), §5, §6, §8, §9, §12.2; `docs/ARCHITECTURE.md` "Phase Transition Flow".]
+>
+> **◆1 — Durable-plan cutover (schema + services; verify hardest).** Mig B: rewrite `create_nutrition_plan_atomic` to **upsert the single active plan** (`idx_nutrition_plans_active_unique` is the conflict target) and **replace `nutrition_plan_daily_targets` via DELETE-then-INSERT or `ON CONFLICT (nutrition_plan_id, day_of_week) DO UPDATE`** (a plain insert loop collides on the 2nd call — most likely bug). Add `p_recalc_snapshots BOOLEAN`: false (cascade/in-place) **preserves** `base_weight_kg`/`goal_weight_kg`/`goal_deadline` (keeps banners alive, spec §9); true (explicit "Recalculate plan") re-stamps. Mig C: data-step first (promote-or-delete `status='planned'` nutrition_plans), then `DROP INDEX idx_one_planned_nutrition_plan_per_client`, retire the planned-status RPC. Flip `createNutritionPlan` + orchestrator (`nutrition-plan-orchestrator.ts:195-247, 285-382`) to one in-place regen (remove the capture-old-id + deleteFuture+regenerate-new dance). Delete `promoteNutritionPlanIfReady` + its 6 callers (`nutrition/route:59`, `nutrition/skew`, `activation-readiness`, `check-in-context`, `client-portal`, `comparison`). Remove the dead planned-end-cap block in `regenerateFutureNutritionEvents` (~:216-240). Two migrations (mig-110 discipline); ask me to `db push`; `gen types`; rewrite the ~7 affected test files (spec §13). Tests: in-place regen preserves `base_weight_kg` (recalc=false) and re-stamps (recalc=true); daily-targets replace with no unique-key error. Commit (migrations + types + code).
+>
+> **◆2 — Materialized edits + range/reset endpoints + cascade consolidation.** Add `PATCH /api/clients/[id]/nutrition/events/range` (absolute or %-delta over a date range; **materialize** per §3: `baseline_calories`+macros set, `calorie_surplus_percentage:=NULL`, `is_modified:=true`; server-side `date >= clientToday` guard) and `PATCH …/events/[date]/reset` (clear `is_modified` **before** regenerating that date — order matters). Repoint/retire `nutrition/skew` onto the range path (must not touch `base_weight_kg`). Consolidate the ~8 training-route cascade calls onto `cascadeNutritionAfterTrainingChange` — **each route keeps computing + threading its own anchor** (invariant 3); only the guard/loop logic de-duplicates. Tests: range edit materializes + survives a training-day move (cascade preserves it, exercising Session 1◆2's guard); reset un-freezes; each consolidated route still passes its own anchor (source-day clears on a forward move). Commit.
+>
+> **◆3 — Phase-transition seam (schema; blank-calendar landmine).** Rewrite the `transition_phase_atomic` (mig 111) nutrition branch: instead of archiving the plan, **re-point the durable plan to the activated phase** (`UPDATE phase_id`) and regenerate forward to the new window **preserving `is_modified`**. Retire the `planHandling.nutritionPlan: keep|archive` toggle everywhere (`phase-transition-service.ts:229-231,276,286,304-306` + the transition route + the coach UI control). `archive_roadmap_atomic` (mig 099): add the no-active-phase windowing rule. This couples with Session 2◆4's phase auto-activate (the next phase activating is what the plan re-windows to). Test: complete a phase → nutrition calendar is **not blank**, re-windows to the next phase, `is_modified` days survive; grep-clean `p_archive_nutrition`. Commit (migration + types + code).
+
+**Session verify:** each ◆ clean; manual end-to-end transition shows a non-blank re-windowed nutrition calendar with edits preserved; grep shows zero `promoteNutritionPlanIfReady` / planned-status reads.
+
+## Session 4 — Nutrition coach UI (calendar read-only → editing → generate-tray)
+
+**Goal:** Give nutrition the training calendar's interaction model, then the per-day editing, then the restructured generate tray.
+**Schema:** none.
+**Read first:** spec §7, §12.4; `docs/newdesignsystem.md` (visual tokens — mandatory for UI); `docs/ARCHITECTURE.md` → "Coach-side Data Flow" + "Builder flows"; the source files this ports from — `components/clients/training/calendar/training-calendar-view.tsx`, `hooks/use-calendar-events.ts`, `hooks/use-calendar-dnd.ts`, and the existing `components/clients/nutrition/builder/*` (so you match patterns, not reinvent). Coach-facing → `components/clients/`, so the client-portal redesign docs are NOT required here.
+
+**Prompt:**
+> [Standard protocol. Read spec §7, §12.4.]
+>
+> **◆1 — Read-only calendar.** Build `NutritionCalendarView` by porting the **final** `components/clients/training/calendar/training-calendar-view.tsx` (month-grid math, month nav, phase tint, two-clock gating: today-ring=coach device, edit-enable=client-local). One event/day (calories, TRAIN badge, macros). Reuse `use-nutrition-calendar-events` (copy `use-calendar-events.ts`, repoint URL to a thin `GET …/nutrition/events?startDate&endDate` wrapping `getNutritionEventsForDateRange`). Retire `WeeklyNutritionView` as primary (keep as optional "typical week"); remove the Plan History tab (`nutrition-plan-history.tsx`) + wiring. Coach-facing → `components/clients/nutrition/`. Commit.
+>
+> **◆2 — Editing.** Edit toggle + multi-select (1/several/this-week/this-month; NOT "all" → that's regenerate) + range-edit modal (calories + macros, absolute or adjust-by-amount per D4; macros auto-rebalance via `calculateDailyMacros`). Reset-to-plan affordance + `is_modified` badge (mirror training's dimmed-modified treatment). Wire to Session 3◆2's range/reset endpoints; today-forward only (UI + server). Commit.
+>
+> **◆3 — Generate-tray UX (D5; input-layer, independent).** Move `UnitToggle` into `drawer-header.tsx` as a compact `kg⇄lb` control. Restructure `drawer-form-body.tsx` into **Auto generation | Custom** tabs (existing Tabs UI). Auto = `NutritionSettingsForm` + phase/goal context + shared toggles (`NutritionTrainingCaloriesDisplay`, `CalorieSkewingSection`); Custom = the rewritten macro section + the same shared toggles (burn **stacks** in Custom too — display-time on the event surplus, no special handling). Rewrite `nutrition-custom-macros-section.tsx` to **total calories + P/C/F % split** (fat% auto-fills to 100; derived grams shown live via `cal×%/4`|`/9`; show re-totaled actual calories). Keep `customMacros` stored as **grams** (convert %→g on change; derive %←g when opening an existing plan); swap `customMacrosValidationError` to "%s sum to 100 + calories>0". `generatePlan` payload unchanged. Commit.
+
+**Session verify:** each ◆ clean; manual — dense nutrition calendar renders over the phase; drag-select a deload week, lower calories, it persists across a training move + shows the badge, reset restores auto; Custom tab: 2000 kcal @ 30/40/30 → 150/200/67g, reopening an existing custom plan shows its split.
+
+## Session 5 — Client/RN surfaces + seed/backfill
+
+**Goal:** Client-facing parity on the single durable plan + data hygiene; clear the RN contract gate.
+**Schema:** none (FK already in Session 1).
+**Read first (MANDATORY per CONVENTIONS.md §16 — this session touches `components/client-portal/**` / `app/client/**`):** `docs/CLIENT-PORTAL-REDESIGN.md` + `docs/CLIENT-PORTAL-EXECUTION-PLAN.md` (both, in full). Then spec §10, §13; `docs/ARCHITECTURE.md` → "Client Portal Architecture" + "Scale / payload contracts"; `CLIENT-APP-REFERENCE.md` (RN response-shape contract). ⚠️ **per §3.5** — `CLIENT-PORTAL-EXECUTION-PLAN.md` ~:1075/:2518/:1080 (`promoteNutritionPlanIfReady` "desirable", training "Starts X/scheduledFor" UX, per-day-type nutrition page) describe behavior this overhaul **removes** — context only; and `CLIENT-APP-REFERENCE.md`'s nutrition shape is the **2-slot rest/training** model you're changing to a per-date window (the contract gate at ◆1).
+
+**Prompt:**
+> [Standard protocol. Read spec §10, §13.]
+>
+> **◆1 — Client surfaces.** Repoint `vertical-nutrition-view.tsx` + `getClientNutritionTargets` to the single durable plan + dense date window (drop the `promote` call). **RN contract:** `NutritionTargets.dailyTargets` shifts weekday-array → date-window (object shape unchanged, meaning changes) — verify whether RN consumes it as a 7-weekday array and add a contract note before shipping. Confirm `/api/client/**` nutrition response shapes are otherwise unchanged (diff the JSON). Commit.
+>
+> **◆2 — Seed/backfill.** `scripts/seed-scale-client.ts` inserts dense `nutrition_events`; `scripts/backfill-nutrition-events.ts` drops the archived-window/per-version branch (one plan → one dense window); recompute cached `nutrition_weekly_summaries` (dense generation completes a previously-incomplete denominator — some adherence numbers move; expected, document it). Commit.
+
+**Session verify:** client `/client/nutrition` shows edited numbers; `/api/client/**` JSON diffed clean except the documented `dailyTargets` note; scripts run without error.
+
+## Session 6 — Docs reconciliation
+
+**Goal:** Make the **entire doc set** describe the shipped model — not just ARCHITECTURE/CONVENTIONS, but every stale nutrition + client-portal doc flagged in §3.5, so no future session is misled.
+**Schema:** none.
+**Read first:** §3.5 (the full list of docs to fix); the current `docs/ARCHITECTURE.md` + `CONVENTIONS.md` (in full — you are editing them); `git log --oneline` for Sessions 1–5 (to know exactly what shipped); this plan §1–§3 (the model to document). Cross-check every claim against the merged code before writing — docs must match what shipped, not what was planned.
+
+**Prompt:**
+> [Standard protocol.] Update `docs/ARCHITECTURE.md`: **Roadmap/Phase Architecture** (phases auto-activate by date; overlap/complete guards; deletion); **Phase Transition Flow** (re-window nutrition, no archive); **Nutrition & Training Events** + **Event lifecycle** + **Training → Nutrition cascade** + **Read priority** (events-as-SOT; `nutrition_events.is_modified` materialized overrides; cascade preserves edits); **Coach Library / Atomic placement / Cycle-aware placement** (additive placement, no wipe-and-replace, coexisting provenance plans; promotion removed). Record the **training-many-provenance vs nutrition-one-durable asymmetry** explicitly so it isn't "consistency-refactored" later. Update `CONVENTIONS.md` (event→plan FKs are SET NULL; clarify §8 status-lifecycle — nutrition stays one-active, training moves to date-range coexistence; the events-as-SOT principle; note the deferred adherence-unification + prescribed-denormalization debt).
+>
+> **Then reconcile the rest of the doc set against §3.5 — each currently misleads a reader:** (a) `docs/NUTRITION_PLANS_ARCHITECTURE.md` — mark superseded at the top and strike/rewrite the versioning + 7-weekday-grid + archive-on-edit sections (now: one durable plan + `nutrition_events` materialized edits), or fold the still-true bits into ARCHITECTURE and retire the file; (b) `docs/NUTRITION_PLAN_CALCULATOR.md` — remove the Plan-History tab/modal + `GET …/nutrition/history` sections, fix the weight-change passage to state regen does NOT re-stamp `base_weight_kg` (D5), add `nutrition_events` + the per-day range-edit path to its schema/feature sections, **keep the TDEE/macro formula**; (c) `docs/CLIENT-PORTAL-EXECUTION-PLAN.md` + `CLIENT-PORTAL-REDESIGN.md` — add deprecation pointers at the stale lines (~1075/2518/1080) and note the new `is_modified` / SET-NULL / phase-auto-activate behavior; (d) `CLIENT-APP-REFERENCE.md` — update the nutrition response shape to the per-date-window model and document the `dailyTargets` weekday→date change. Collapse the cross-doc redundancy (TDEE formula + `nutrition_plan_daily_targets` documented in two places) to a single source. Keep each doc's existing voice/structure. Commit.
+
+**Session verify:** docs read coherently against shipped code; no stale references to promotion / one-active-training-plan / Plan History tab.
+
+---
+
+## Whole-plan verification
+
+- Every ◆ checkpoint: `npx tsc --noEmit && npx eslint . && npx vitest run` clean before commit.
+- Smoke after Session 3 and again after Session 5 (use the `/run` skill): place two training plans across two phases (coexist); edit a nutrition deload week (persists across a training move); complete a phase (nutrition re-windows, not blank); delete a planned phase.
+- Hardest gates: 2◆1 (every training-day nutrition event carries surplus), 3◆1 (daily-targets replace without unique-key error; snapshot preserved on recalc=false), 3◆3 (calendar not blank post-transition; `is_modified` survives).
