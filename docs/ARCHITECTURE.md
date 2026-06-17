@@ -6,7 +6,7 @@ This file documents the platform architecture, database schema, and data flow pa
 >
 > | Section | Status | Authoritative source |
 > |---------|--------|----------------------|
-> | Auth Model → "Database clients" | **Legacy** — described the old session-scoped-default model. The codebase is on **Shape B**: services default to `supabaseAdmin`, the route layer is the security perimeter, RLS is defense-in-depth. Corrected inline below. | **CONVENTIONS.md §8** |
+> | Auth Model → "Database clients" | **Accurate / migrated** — the codebase is on **Shape B**: services default to `supabaseAdmin`, the route layer is the security perimeter. RLS is a safety net for route/service bugs, not a second line of defense (if the route layer is broken RLS does nothing — `service_role` bypasses it). Migrations 105–108 (2026-06-10) hardened RLS: dropped permissive policies, locked `SECURITY DEFINER` RPCs to `service_role`. | **CONVENTIONS.md §8** |
 > | "JSONB Conventions" (`training_data`/`activityStatuses`) | **Orphaned cache** — legacy `training_logs` rows only; no active read/write path. | redesign docs |
 > | "Activation Flow" · "Training Completion Hierarchy" (`session_logs` identity) | **Accurate / landed** — `session_logs` event-keyed identity shipped (migration 097, Session 5.2); the onboarding walkthrough was reworked for the day-centric portal (Session 6.1). | this file |
 
@@ -84,6 +84,7 @@ roadmaps              -- long-term goal container, one active per client
 - Unique index enforces one active roadmap per client
 - ON DELETE RESTRICT prevents hard-deletion (forces archival instead)
 - Fields: `name`, `long_term_goal`, `started_at`, `target_end_date`
+- Readers: `getActiveRoadmap()` (filters `status = 'active'`), `getArchivedRoadmaps()` (archived/completed, for the Past-roadmaps browser), and `getLatestRoadmap()` (Session 7.3 — status-agnostic, newest-first, any status; a forward-compat reader, not yet wired to a caller)
 
 ### Phases
 
@@ -91,8 +92,8 @@ roadmaps              -- long-term goal container, one active per client
 - Unique index enforces one active phase per roadmap
 - `order_index` controls display order within a roadmap
 - `phase_goals_snapshot` JSONB captures the client's goal state at phase creation time
-- `phase_goal_weight` (NUMERIC, nullable) - phase-specific goal weight in kg. NULL = fall back to client's overall goal
-- `phase_goal_body_fat_percentage` (NUMERIC, nullable) - phase-specific goal body fat %. NULL = fall back to client's overall goal
+- `phase_goal_weight` (NUMERIC, nullable) - phase-specific goal weight in kg. While the phase is active this target applies; **NULL = maintenance, NOT a fallback to the client's overall goal** (phase-is-king — see below)
+- `phase_goal_body_fat_percentage` (NUMERIC, nullable) - phase-specific goal body fat %. Same semantics: NULL = no body-fat target while the phase is active
 - `coach_reflection` (text) and `phase_summary` (JSONB) are written during phase transitions
 - `milestones` JSONB — array of milestone objects scoped to the phase (`{id, text, completed, completed_at}`)
 - `completion_seen` (boolean) tracks whether the client has dismissed the completion card
@@ -109,7 +110,7 @@ The resolver is the **one** place display-unit weights are normalized to kg (`cl
 
 Callers: `services/nutrition-plan-orchestrator.ts` (plan creation — the active-phase guard means a present phase is the active one) and `services/comparison-service.ts` (the check-in weight pace — weight **and** deadline now come from one scope, fixing the cross-scope "Deadline unrealistic" false alarm). The nutrition response still includes `goalSource: "phase" | "client"`. `client_goals.goal_start_date` (migration 104) anchors the long-term pace window.
 
-**Status guard**: Phase goals can only be edited while `status = 'planned'`. The guard in `updatePhase()` rejects the entire request (including non-goal fields in the same payload) if goal fields are present and the phase is not planned.
+**Status guard**: Phase goals can be edited while `status = 'planned'` **or `'active'`** (Session 7.2 unlocked active-phase goal edits); completed and skipped phases are read-only. The guard in `updatePhase()` rejects the entire request (including non-goal fields in the same payload) if goal fields are present and the phase is neither planned nor active.
 
 ### Phase selection enforcement
 
@@ -229,15 +230,16 @@ Events are the **source of truth for date-specific targets**. Plan templates (`n
 - `training_session_id` FK (SET NULL on delete, preserves events when sessions removed)
 - `session_name`, `session_focus` - snapshotted at creation, survive template renames
 - `estimated_calories` - from the session template
+- `calorie_surplus_percentage` (NUMERIC, nullable, migration 085) - the per-date training surplus, denormalized onto the event at generation from `training_sessions.calorie_surplus_percentage`. The nutrition cascade reads it directly from the event (see "Training → Nutrition cascade"). NULL on rest days
 - `is_modified` - true when manually moved/duplicated via the calendar UI. Regeneration preserves modified events by default (`force = false`); coaches can override with `force = true` after a warning dialog
 - `status`: `scheduled` / `completed` / `partial` / `missed` / `skipped`
 - Unique constraint: `(client_id, training_session_id, date)` partial index where `training_session_id IS NOT NULL`
 
-`training_sessions.calorie_surplus_percentage` (NUMERIC, nullable) is the source the nutrition cascade reads when materializing surplus onto nutrition events. Rest-day sessions have NULL.
+`training_sessions.calorie_surplus_percentage` (NUMERIC, nullable) is the **origin** of the surplus: it is copied onto each `training_events.calorie_surplus_percentage` at event generation, and the nutrition cascade then reads it from the event (not from the session). Rest-day sessions have NULL.
 
 ### Nutrition event fields (percentage-surplus model, post-LIB-2)
 - `baseline_calories` - plan's rest-day target, frozen at event creation
-- `calorie_surplus_percentage` (NUMERIC, nullable) - read from the training session assigned to that date (e.g., 15 for +15%). NULL on rest days
+- `calorie_surplus_percentage` (NUMERIC, nullable) - copied from the training event assigned to that date (e.g., 15 for +15%). NULL on rest days
 - `training_burn_calories`, `external_burn_calories` - **deprecated**; 0 on new events, legacy values preserved on pre-LIB-2 events for backward compat
 - `protein_g`, `carb_g`, `fat_g` - baseline macros (protein fixed; extra calories redistribute to carbs/fats per `diet_type` via `calculateDailyMacros()`)
 - `diet_type` - snapshotted from plan, enables display-time macro recalculation when `include_activity_burn` is on
@@ -258,7 +260,7 @@ Events are the **source of truth for date-specific targets**. Plan templates (`n
 - **Calendar operations** (training events only): coaches can move events to different dates, duplicate individual events, and duplicate entire weeks. Duplicate-week clones sessions + exercises so each week is independent. Moved/duplicated events get `is_modified = true`
 
 ### Training → Nutrition cascade
-- Training event changes invoke `regenerateFutureNutritionEvents()`. Nutrition events read `calorie_surplus_percentage` via `training_event.training_session_id` → `training_sessions.calorie_surplus_percentage`.
+- Training event changes invoke `regenerateFutureNutritionEvents()`. Nutrition events read the day's surplus **directly from `training_events.calorie_surplus_percentage`** (denormalized from the session at event generation, migration 085) — not by traversing the `training_session_id` FK.
 - Only future `scheduled` nutrition events are replaced; `logged` / `missed` events are immutable.
 - Baseline is preserved across a cascade — only `calorie_surplus_percentage` and `is_training_day` change.
 
@@ -279,7 +281,7 @@ training_logs            -- did the client train today? (1:1 per day, child of d
 ```
 ### Event-keyed identity (migration 097, Session 5.2)
 - `session_logs` is keyed by **`training_event_id`** (FK → `training_events`, `ON DELETE SET NULL`), with a partial unique index `session_logs_training_event_id_key ON (training_event_id) WHERE training_event_id IS NOT NULL`. The old session-week composite `UNIQUE(client_id, training_session_id, week_start_date)` is **dropped** — it silently overwrote two cycle-plan events that shared a session in one week.
-- Write semantics (`services/training-log-service.ts:writeSessionLog`): if the event already has a `session_log_id` → UPDATE that row by id; else INSERT, stamping `training_event_id = event.id`. A `23505` on the partial index (concurrent submit / half-failed prior link) recovers by updating the conflicting row — never a duplicate. `linkSessionLogToEvent` writes both directions (`event.session_log_id` + status, and `session_log.training_event_id`).
+- Write semantics (public `logTrainingEvent` / `logTrainingSessionForDate` in `services/training-log-service.ts`, both delegating to the internal `writeSessionLog` helper): if the event already has a `session_log_id` → UPDATE that row by id; else INSERT, stamping `training_event_id = event.id`. A `23505` on the partial index (concurrent submit / half-failed prior link) recovers by updating the conflicting row — never a duplicate. `linkSessionLogToEvent` writes both directions (`event.session_log_id` + status, and `session_log.training_event_id`).
 - `completed_at` is the **attribution date** — `event.date` for event-keyed logs (NOT the entry day), the logged date for event-less. A late backfill therefore attributes to the prescribed day.
 - `session_logs.training_session_id` holds the **performed** session. `prescribed_session_snapshot` captures the **prescribed** session (the event's session for matched logs; the chosen session for unmatched extras). Both SET NULL on delete; history preserved via the snapshot JSONB.
 
@@ -402,9 +404,9 @@ Reads/writes the existing day-keyed tables — no portal-specific schema:
 
 ### API surface
 
-**Reads:** `GET /api/client/day-summary?date=` (home payload `{ phase, training[], nutrition, wellness, habits }`, `no-store`) · `GET /api/client/training/events/[eventId]` · `GET /api/client/daily-logs/[date]/{wellness,nutrition,habits}` · `GET /api/client/program` · `GET /api/client/training/exercise-history` (bounded full return) · `GET /api/client/check-ins` (**keyset-default**, opaque base64url `{createdAt,id}` cursor via `lib/cursor.ts`; legacy `?offset=` opt-in).
+**Reads:** `GET /api/client/day-summary?date=` (home payload `{ phase, training[], nutrition, wellness, habits }`, `no-store`) · `GET /api/client/training/events/[eventId]` · `GET /api/client/daily-logs/[date]/{wellness,nutrition}` · `GET /api/client/habits` + `GET /api/client/habits/logs` (habits are **not** under `/daily-logs/[date]`) · `GET /api/client/program` · `GET /api/client/training/exercise-history` (bounded full return) · `GET /api/client/check-ins` (**keyset-default**, opaque base64url `{createdAt,id}` cursor via `lib/cursor.ts`; legacy `?offset=` opt-in).
 
-**Writes:** `POST /api/client/training/events/[eventId]/log` (bulk-replace `session_logs` + `exercise_logs` with snapshots; updates `training_events.status`) · `PATCH /api/client/daily-logs/[date]/{wellness,nutrition}` · `PATCH /api/client/settings` (`weight_unit`, `unit_preference`, `reminder_preferences`, `timezone` — IANA-validated).
+**Writes:** `POST /api/client/training/events/[eventId]/log` (bulk-replace `session_logs` + `exercise_logs` with snapshots; updates `training_events.status`) · `POST /api/client/training/session-logs` (event-less log for a rest-day or alternative session; plan-active guard) · `PATCH /api/client/daily-logs/[date]/{wellness,nutrition}` (nutrition is plan-active-guarded; wellness is ungated) · `POST /api/client/habits/log` (per-habit toggle for a date; ungated) · `PATCH /api/client/settings` (`weight_unit`, `unit_preference`, `reminder_preferences`, `timezone` — IANA-validated).
 
 Every write resolves plan context once via `resolvePlanContextForDate(clientId, date)` to stamp `daily_logs.phase_id` + `*_plan_id`, and enforces the past-day lock server-side.
 
@@ -424,18 +426,18 @@ One rule in `lib/daily-log-permissions.ts` (pure, client-safe): today always edi
 
 ### Timezone model
 
-**Locked model (Sessions 7.81–7.84): "today" is computed in the device timezone of the person whose calendar the date is on — never the server's UTC clock.** A client's day, plan placement, promotion, check-in window, streaks → the **client's** zone. A coach's dashboard windows (attention feed, current-week metrics, history summaries) → the **coach's** zone. The cross-person cases (a coach viewing a client's check-in due/overdue; background reminders) → the **client's** zone. One question decides every site: *whose calendar is this date on?*
+**Locked model (Sessions 7.81–7.86): "today" is computed in the device timezone of the person whose calendar the date is on — never the server's UTC clock.** A client's day, plan placement, promotion, check-in window, streaks → the **client's** zone. A coach's dashboard windows (attention feed, current-week metrics, history summaries) → the **coach's** zone. The cross-person cases (a coach viewing a client's check-in due/overdue; background reminders) → the **client's** zone. One question decides every site: *whose calendar is this date on?*
 
 - **Storage**: `clients.timezone` (migration 089) and `coaches.timezone` (migration 109), both `TEXT NOT NULL DEFAULT 'UTC'`, IANA.
 - **Capture is device-synced, no manual picker** (Session 7.81 — intentionally reverses Session 2.6's "no silent overwrites"): the shared `useTimezoneSync` hook (`hooks/use-timezone-sync.ts`) compares the device zone against the stored value on every app load and fires a fire-and-forget PATCH on mismatch (client shell → `PATCH /api/client/settings`; coach shell → `PATCH /api/coach/settings`). Travel re-syncs on next open.
 - **Read side**: server code derives "today" via `getTodayDateStringInTimezone()` in `lib/date-helpers.ts` — the only surface owning `Intl.DateTimeFormat` math. (Sanctioned exception: the two settings routes validate input zones with `Intl.supportedValuesOf("timeZone")` — validation, not date math.)
 - **Helper inventory**: `lib/date-helpers.ts` owns the pure helpers — `getTodayDateStringInTimezone(tz, now?)` (string), `getTodayInTimezone(tz, now?)` (local-midnight `Date` for the injectable check-in helpers; NOT `parseISODate`, which parses as UTC midnight), `getDeviceTimeZone()` (browser capture). `services/today-service.ts` owns the DB-fetching ones — `getClientTodayString(clientId)` (client tz → coach tz fallback while the client is on the unsynced `'UTC'` sentinel → UTC) and `getCoachTodayString(coachId)`. **Rule:** when a `Client` record with `timezone` is already in scope, use the pure helpers (zero extra fetches — the overdue/attention-feed loops rely on this); the fetching helpers are for call sites holding a bare id.
 - A stored `'UTC'` is the "never device-synced" sentinel; coach-initiated placement on a never-synced client's calendar falls back to the coach's zone (`getClientTodayString`, Session 7.82), then UTC.
-- **Where each anchor applies** (Sessions 7.82–7.85): client tz — plan placement RPCs (`p_today`), calendar move/duplicate/delete guards, plan promotion, the client home week, check-in gate/window, streaks/habit defaults, goal-pace `today`, goal-deadline days-remaining (Session 7.86, `services/comparison-service.ts`), the coach calendar's drag/delete *gating* (Session 7.86 — the visual today ring stays coach-device), check-in due/overdue, and the placement-path planned-plan event wipe (`clientToday` threaded from the route — anchoring it at `startDate` would no-op against the RPC's STEP 0 and orphan the old plan's earlier events). Coach tz — attention-feed window, coach "current week" metrics/history anchors, phase-review adherence bound, phase-transition stamps (`transition_phase_atomic` `p_today`, migration 111: the completed phase's `end_date` + the activated next phase's `start_date`), the attention-dismissal `dismissed_at` (migration 112 drops the column's UTC `CURRENT_DATE` default so a writer that forgets the date fails loudly), and the goal-deadline write bound (Session 7.86 — the coach is the setter, so the past-date check is route-side via `getCoachTodayString`; the zod schema is format-only). The plan-status RPCs additionally take `p_effective_from DATE DEFAULT NULL` coalescing to `p_today` (migration 110).
+- **Where each anchor applies** (Sessions 7.82–7.86): client tz — plan placement RPCs (`p_today`), calendar move/duplicate/delete guards, plan promotion, the client home week, check-in gate/window, streaks/habit defaults, goal-pace `today`, goal-deadline days-remaining (Session 7.86, `services/comparison-service.ts`), the coach calendar's drag/delete *gating* (Session 7.86 — the visual today ring stays coach-device), check-in due/overdue, and the placement-path planned-plan event wipe (`clientToday` threaded from the route — anchoring it at `startDate` would no-op against the RPC's STEP 0 and orphan the old plan's earlier events). Coach tz — attention-feed window, coach "current week" metrics/history anchors, phase-review adherence bound, phase-transition stamps (`transition_phase_atomic` `p_today`, migration 111: the completed phase's `end_date` + the activated next phase's `start_date`), the attention-dismissal `dismissed_at` (migration 112 drops the column's UTC `CURRENT_DATE` default so a writer that forgets the date fails loudly), and the goal-deadline write bound (Session 7.86 — the coach is the setter, so the past-date check is route-side via `getCoachTodayString`; the zod schema is format-only). The plan-status RPCs additionally take `p_effective_from DATE DEFAULT NULL` coalescing to `p_today` (migration 110).
 
 ### Scale / payload contracts
 
-Keyset-by-default is scoped to paginated, time-ordered "load older" history (check-ins). Small bounded sets return in full with no cursor (habits, a 1-week completions window, the exercise list). History rows are ID-first (`exercise_id` + `performed_name` fallback), never the catalog dictionary; the dictionary syncs separately via `GET /api/client/exercises/catalog?since=` (UPSERT-only delta on `updated_at`, internally paged past the ~1000-row PostgREST cap; periodic full resync catches deletes). Weight is rendered client-side in the user's unit preference via `formatWeight(weightKg, unitPreference)` (no `formatWeight` calls in `app/api/client/**`); viewer-relative per-record units (stored `weight_unit` + conversion at the API boundary) are Phase 8, not yet built.
+Keyset-by-default is scoped to paginated, time-ordered "load older" history (check-ins). Small bounded sets return in full with no cursor (habits, a 1-week completions window, the exercise list). History rows are ID-first (`exercise_id` + `performed_name` fallback), never the catalog dictionary; the dictionary syncs separately via `GET /api/client/exercises/catalog?since=` (a read-only delta returning rows with `updated_at` after `since`; the client upserts them into its cached catalog — deletes are invisible to the delta, so a periodic full resync, by omitting `since`, catches them; internally paged past the ~1000-row PostgREST cap). Weight is rendered client-side in the user's unit preference via `formatWeight(weightKg, unitPreference)` (no `formatWeight` calls in `app/api/client/**`); viewer-relative per-record units (stored `weight_unit` + conversion at the API boundary) are Phase 8, not yet built.
 
 ### Coach-side wellness strip
 
@@ -532,6 +534,14 @@ Because the route layer is the perimeter (Shape B), every authenticated route ma
 3. **Resource ownership**: `resource.clientId === clientId` - returns 404 if mismatch
 
 **Client routes** (`/api/client/*`): use `requireClientAuth(request)` (`lib/require-client-auth.ts`) for rate-limit → CSRF → auth, then verify the resource's `client_id === authedClientId` (return 404 to avoid leaking existence). The helper returns the authed `clientId` but does **not** perform the resource-ownership step — the caller still must.
+
+### Audit logging (migration 108)
+
+An immutable, append-only `audit_logs` table records security-relevant actions on client-owned data for incident investigation and accountability (`services/audit-log-service.ts`, `supabase/migrations/108_create_audit_logs.sql`).
+
+- **Table**: `audit_logs` — RLS deny-all for anon/authenticated; written via `service_role` only. Fields: `actor_id` (coach/client id, or null for system), `actor_role` (`trainer` | `client` | `system`), `action` (dotted key, e.g. `goal.create`), `target_table`, `target_id`, `client_id` (tenant scope), `metadata` (small non-sensitive context — never health PII), `ip_hash` (SHA-256 prefix, never the raw IP), `created_at`. Indexed `(client_id, created_at DESC)` and `(actor_id, created_at DESC)`.
+- **Usage**: routes call `recordAuditEvent(...)` **fire-and-forget** (`void`-prefixed) after a successful, already-authorized write. Action names come from `AUDIT_ACTIONS` (`lib/constants.ts`). Live call sites include client invitation/activation, goal create, training placement, nutrition plan creation, phase transitions, and intake metrics sync. Failures go to Sentry, never to the user.
+- **Design**: the audit trail records what the route already authorized — it never authorizes anything and never blocks the request path.
 
 ---
 
@@ -630,7 +640,7 @@ Pre-onboarding clients (created before the intake feature shipped) default to `a
 - `hasRoadmap` - an active roadmap exists
 - `hasActivePhase` - roadmap has an active phase (with name/startDate)
 
-Uses `Promise.all` with `safeQuery()` wrapper for partial failure tolerance. The coach sees the `ClientActivationBanner` component which shows required vs recommended status. `activation-readiness` is advisory — `POST /api/clients/[id]/activate` does not enforce it. The orphan-log perimeter lives at the per-card **nutrition and training** writers instead (see `assertHasActivePlan` in `services/daily-context-service.ts`): each rejects a write whose `*_plan_id` stamp would be null, because those stamps feed adherence reads. Wellness and habits writes are deliberately ungated (Session 3.1C) — wellness has no plan or adherence concept, and `daily_logs.phase_id` is nullable by design for no-roadmap clients (roadmaps are opt-in; all wellness/phase analytics are date-windowed, never `phase_id`-keyed).
+Uses `Promise.all` with `safeQuery()` wrapper for partial failure tolerance. The coach sees the `ClientActivationBanner` component which shows required vs recommended status. `activation-readiness` is advisory — `POST /api/clients/[id]/activate` does not enforce it. The orphan-log perimeter lives at the per-card **nutrition** writer and the **event-less training** writer (see `assertHasActivePlan` in `services/daily-context-service.ts`): each rejects a write whose `*_plan_id` stamp would be null, because those stamps feed adherence reads. The **event-keyed** training writer (`POST /api/client/training/events/[eventId]/log`) needs no guard — the event already carries its `training_plan_id` from plan generation. Wellness and habits writes are deliberately ungated (Session 3.1C) — wellness has no plan or adherence concept, and `daily_logs.phase_id` is nullable by design for no-roadmap clients (roadmaps are opt-in; all wellness/phase analytics are date-windowed, never `phase_id`-keyed).
 
 ---
 
@@ -728,7 +738,7 @@ After submission, `triggerAISummaryGeneration()` (`services/client-check-in-serv
 1. Fetches current check-in with details + previous 5 check-ins for trend analysis
 2. Fetches daily logs, habit logs, and weekly nutrition summary for the check-in period
 3. Calls `generateCheckInSummary()` (OpenAI GPT-4o via `services/ai-service.ts`) with all context
-4. Updates check-in with AI summary in v2 format (`ai_insights` JSONB)
+4. Updates check-in with AI summary in v3 format (`ai_insights` JSONB with `_version: 3` — `watchItems`, `themes`, `coachActions`; bumped from v2 in the post-6.4 coach-review redesign)
 5. Status transitions: `pending` -> `ai_processed` -> `reviewed` (after coach reviews)
 
 ### Check-in period gating

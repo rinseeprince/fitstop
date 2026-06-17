@@ -18,7 +18,7 @@
   ### Scope discipline
   - Implement exactly what's asked, not what you think might be needed later.
   - Don't add optimistic updates, caching strategies, or performance optimizations unless explicitly requested.
-    - **Authorized exception (client scale only):** Sessions 3.5–3.10 of `docs/CLIENT-PORTAL-EXECUTION-PLAN.md` are an explicitly-requested performance/scale workstream for the client app. Within those sessions (and only those), caching and perf work are in-scope: short-TTL context cache (3.7), Upstash `user_id → client_id` auth-resolution cache (3.8), SQL aggregation, keyset pagination, and rate-limit re-keying. Per product-owner direction, where this rule blocks a needed scale change in those sessions, the change wins and the deviation is flagged in the session. Everywhere else, this rule stands.
+    - **Authorized exception (client scale only):** Sessions 3.5–3.10 of `docs/CLIENT-PORTAL-EXECUTION-PLAN.md` are an explicitly-requested performance/scale workstream for the client app. Within those sessions (and only those), caching and perf work are in-scope: the Upstash `user_id → client_id` auth-resolution cache (3.8, `lib/auth-cache.ts`, 60s TTL), SQL aggregation (3.6/3.7), keyset pagination (3.7, `lib/cursor.ts`), bounded/render-ready payloads (3.9), and client rate-limit re-keying (3.10). Per product-owner direction, where this rule blocks a needed scale change in those sessions, the change wins and the deviation is flagged in the session. Everywhere else, this rule stands.
   - Simple and working beats clever and fragile.
   - One fix per change. Don't fix a bug AND refactor the component AND update the styling in the same edit. If something breaks, you can't tell which change caused it.
 
@@ -135,20 +135,19 @@
   ## 5. Code Style
   - Use Tailwind for styling
   - Lucide icons only
-  - Instrument Sans (UI text) + JetBrains Mono (numerical data) - see DESIGNSYSTEM.md for full typography spec
+  - Instrument Sans (UI text) + JetBrains Mono (numerical data) - see `docs/newdesignsystem.md` for the full typography spec
   - Async/await over promises
   - Named exports over default
   - No `as any` type casts - use proper types from `types/database.ts`. If extending an existing type, create a local interface.
-  - Use `lib/design-tokens.ts` for type-safe spacing, border radius, shadows, and typography constants
 
   ## 6. File Structure
   ```
   /app           - Next.js App Router pages and API routes
   /components    - React components
     /clients       - Coach-facing: a coach viewing their clients' data (plural)
+      /daily-pulse - Legacy coach-side pulse (wellness strip, day-detail card; being retired)
     /client        - Client-facing: pre-activation flows (onboarding, walkthrough, waiting state)
     /client-portal - Client-facing: post-activation portal (home, detail pages, nav, settings)
-    /daily-pulse   - Legacy client-side pulse (being retired in client portal redesign)
     /ui            - Shadcn/Radix base components
   /services      - Business logic and data operations
   /utils         - Helper functions (AI, nutrition, training calculations)
@@ -170,8 +169,11 @@
   - `lib/csrf-protection.ts` - CSRF origin/referer validation
   - `lib/error-handler.ts` - Sentry error capture wrapper
   - `lib/swr-fetcher.ts` - SWR fetcher with error handling
-  - `lib/design-tokens.ts` - Type-safe design system constants
   - `lib/auth-helpers.ts` - `getAuthenticatedCoachId()`, `getAuthenticatedClientId()`
+  - `lib/auth-cache.ts` - Short-TTL (60s) `user_id → client_id` auth-resolution cache (Session 3.8)
+  - `lib/cursor.ts` - Opaque base64url keyset cursor encode/decode for paginated reads (Sessions 3.7/3.9)
+  - `lib/date-helpers.ts` - Date/timezone helpers; the ONLY surface owning `Intl.DateTimeFormat` math (`getTodayDateStringInTimezone`, `getTodayInTimezone`, `getDeviceTimeZone`)
+  - `services/today-service.ts` - DB-fetching "today" helpers for bare ids: `getClientTodayString` (client→coach→UTC fallback), `getCoachTodayString`
 
   ### Component folder audience conventions
 
@@ -187,7 +189,7 @@
   3. Is this shown to an activated client inside the portal? → `components/client-portal/`.
   4. Never mix audiences in the same file. A component used by both coach and client belongs in `components/` or `components/ui/`.
 
-  `components/daily-pulse/` is legacy and being retired as part of the client portal redesign. Do not add new files there. See `docs/CLIENT-PORTAL-REDESIGN.md` for the target structure.
+  `components/clients/daily-pulse/` (coach-side: wellness strip, day-detail card) is legacy and being retired as part of the client portal redesign. Do not add new files there. (The old client-side `components/daily-pulse/` was removed in Session 5.1.) See `docs/CLIENT-PORTAL-REDESIGN.md` for the target structure.
 
   ## 7. Data Fetching & State
 
@@ -219,7 +221,7 @@
 
   ### Auth & data-access architecture (Shape B)
 
-  CoachHub runs in a backend-mediated shape: the browser calls Next.js API routes, routes authenticate the user and verify ownership, routes call service functions scoped by `clientId`, service functions read/write through `supabaseAdmin`. Row-Level Security policies exist on most tables as **defense-in-depth**, not as the primary access control. This is a valid pattern for apps with a dedicated backend, multiple user audiences (coach + client), cross-user aggregation reads, and server-only integrations (OpenAI, Stripe, Resend). See `TECHNICAL-DEBT.md → Auth Architecture Hygiene` for the rationale and for open hardening items.
+  CoachHub runs in a backend-mediated shape: the browser calls Next.js API routes, routes authenticate the user and verify ownership, routes call service functions scoped by `clientId`, service functions read/write through `supabaseAdmin`. Row-Level Security policies exist on most tables as a **safety net** for bugs in the route/service layers — not a second line of defense (if the route layer is broken, RLS does nothing because `service_role` bypasses it; see "RLS policies" below). This is a valid pattern for apps with a dedicated backend, multiple user audiences (coach + client), cross-user aggregation reads, and server-only integrations (OpenAI, Stripe, Resend). See `TECHNICAL-DEBT.md → Auth Architecture Hygiene` for the rationale and for open hardening items.
 
   The consequence: the route layer **is** the security perimeter. Gaps in route-level auth are not caught by a second line of defense. Treat the route's auth chain and the service function's scoping parameter as non-optional.
 
@@ -261,6 +263,12 @@
   - Do NOT write new app-code that relies on RLS to enforce access. If the route layer is broken, RLS under service_role does nothing (service_role bypasses RLS entirely — which is most of our DB traffic).
   - When adding a new table, enable RLS with simple deny-by-default plus authenticated-allow policies. Do not write nested-subquery policies that try to replicate the IDOR chain — those have a performance cost and no practical benefit because service_role bypasses them. See `TECHNICAL-DEBT.md → Auth Architecture Hygiene H3 #1` for the simplification plan for legacy policies.
 
+  #### Audit logging (migration 108)
+
+  - Security-relevant actions on client-owned data are recorded in an immutable, append-only `audit_logs` table for incident investigation (`services/audit-log-service.ts`, migration 108). Call `recordAuditEvent(...)` **fire-and-forget** (`void`-prefixed) AFTER a successful, already-authorized write — it records what the route already authorized; it never authorizes or blocks the request.
+  - Pass a caller-verified `actorId` + `clientId`. Use `action` names from `AUDIT_ACTIONS` (`lib/constants.ts`); `metadata` is small, non-sensitive context only — never health PII. If you pass `request`, the helper hashes the IP (SHA-256 prefix), never the raw address.
+  - When to log: client invitation/activation, goal/plan/metric changes, phase transitions, intake metrics sync, role creation. Failures go to Sentry, not the user.
+
   ### General
   - Migrations: Version controlled, never edit directly
   - Relations: Foreign keys with ON DELETE CASCADE, SET NULL, or RESTRICT. Use RESTRICT on parent tables that must not be hard-deleted (e.g. roadmaps - forces archival instead).
@@ -277,6 +285,8 @@
   - **Bounded AND keyset by default.** Client list/history reads page on a cursor (e.g. `(completed_at, id)` for sessions, `(created_at, id)` for check-ins), never `OFFSET` / `.range()`. Offset cost grows with how deep the client scrolls into a multi-year history; keyset stays flat. Add the matching keyset index *with* the query (e.g. `session_logs(client_id, completed_at DESC, id DESC)`).
   - **Sparse fieldsets.** Select only the columns a row needs — never `select('*')`, and never embed a dictionary inside a row list. Fetch dictionaries (e.g. the exercise catalog) once via their own endpoint; history rows carry IDs (`exercise_id`, with `performed_name` as fallback) and the client joins locally.
   - **Aggregate server-side.** Push GROUP BY / windowed aggregates into Postgres (RPCs) so payloads are render-ready and bounded by the result, not by history size. Native is a thin renderer.
+  - **Keyset cursors are opaque.** Encode/decode via `lib/cursor.ts` (base64url of `{createdAt, id}`). Routes accept the cursor as a query param, decode it strictly (reject malformed base64/JSON, non-UUID `id`, or out-of-format timestamps with 400), and build the predicate with PostgREST `.or()` (`created_at.lt.<ts>,and(created_at.eq.<ts>,id.lt.<id>)`) ordered `created_at DESC, id DESC`. `isValidIsoTimestamp()` rejects any value outside the safe ISO charset (no commas/parens) to prevent PostgREST filter injection.
+  - **Dictionaries sync via their own delta endpoint.** The exercise catalog is the canonical example: `GET /api/client/exercises/catalog?since=<ISO>` returns a sparse fieldset of rows with `updated_at` after `since` (omit `since` for a full resync). It is complete-by-construction past the ~1000-row PostgREST cap (pages internally on the tie-safe `(updated_at, id)` cursor); deletes are invisible to the delta, so a periodic full resync catches them.
 
   ### Soft deletes
   - User-created data uses soft delete, never hard delete
@@ -453,7 +463,7 @@
   ## 16. References
   - **docs/ARCHITECTURE.md**: Database schema diagrams, table hierarchies, JSONB conventions. Evolves with migrations - update when shipping schema changes.
   - **docs/CLIENT-PORTAL-REDESIGN.md** + **docs/CLIENT-PORTAL-EXECUTION-PLAN.md**: Active redesign replacing Daily Pulse with a day-centric, event-driven client portal. These are the source of truth for any client-portal work. Read both before modifying anything under `app/client/**` or `components/client-portal/**`. Where ARCHITECTURE.md and these docs disagree about a client-portal write path or data flow (for example the monolithic `upsert_daily_log_atomic()` write under ARCHITECTURE's "Daily Logs" section), these redesign docs win; ARCHITECTURE describes the legacy path until Session 5.1's doc sweep rewrites it.
-  - **DESIGNSYSTEM.md**: Visual patterns, colour tokens, spacing, component styling conventions. This is the authoritative source for all visual tokens and takes precedence over any inline references in other sections.
+  - **`docs/newdesignsystem.md`**: Visual patterns, colour tokens, spacing, typography. The authoritative source for visual tokens (the old `DESIGNSYSTEM.md` path no longer exists).
   - **TECHNICAL-DEBT.md**: Known gaps between conventions and current implementation.
 
   ## 17. Logging
