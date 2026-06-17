@@ -150,11 +150,34 @@ export async function generateNutritionEvents(
 
   if (rows.length === 0) return;
 
+  // Preserve coach-edited days: an is_modified override that survived the cascade
+  // delete must not be clobbered by this client-scoped onConflict(client_id,date)
+  // upsert. Key on client_id + date range (NOT nutrition_plan_id) — the conflict
+  // key is client-scoped, so an override owned by a different plan in this window
+  // must still be protected. A failed read must NOT silently overwrite an edit,
+  // so throw (consistent with the delete/plan/targets/upsert errors here).
+  const { data: protectedDays, error: protectedErr } = await supabaseAdmin
+    .from("nutrition_events")
+    .select("date")
+    .eq("client_id", clientId)
+    .eq("is_modified", true)
+    .gte("date", startDate)
+    .lte("date", endDate);
+
+  if (protectedErr) throw protectedErr;
+
+  const protectedDates = new Set((protectedDays ?? []).map((r) => r.date));
+  const rowsToUpsert = protectedDates.size
+    ? rows.filter((r) => !protectedDates.has(r.date))
+    : rows;
+
+  if (rowsToUpsert.length === 0) return;
+
   // Upsert with overwrite on conflict (no ignoreDuplicates — new plan values always win)
   // supabaseAdmin: system-level write for event generation
   const { error } = await supabaseAdmin
     .from("nutrition_events")
-    .upsert(rows, { onConflict: "client_id,date" });
+    .upsert(rowsToUpsert, { onConflict: "client_id,date" });
 
   if (error) throw error;
 }
@@ -172,13 +195,17 @@ export async function regenerateFutureNutritionEvents(
 ): Promise<void> {
   const fromDate = effectiveFrom ?? (await getClientTodayString(clientId));
 
-  // Delete scheduled events from effectiveFrom onward
+  // Delete scheduled events from effectiveFrom onward.
+  // Always preserve coach-edited days (is_modified): nutrition preserves edits
+  // across the cascade unconditionally (no force param, unlike training); an
+  // explicit reset clears the flag before regenerating that date.
   const { error: deleteError } = await supabaseAdmin
     .from("nutrition_events")
     .delete()
     .eq("nutrition_plan_id", planId)
     .gte("date", fromDate)
-    .eq("status", "scheduled");
+    .eq("status", "scheduled")
+    .eq("is_modified", false);
 
   if (deleteError) throw deleteError;
 

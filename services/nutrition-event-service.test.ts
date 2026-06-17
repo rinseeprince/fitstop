@@ -1,0 +1,224 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+// Mock supabase-admin before importing the service
+vi.mock("./supabase-admin", () => ({
+  supabaseAdmin: {
+    from: vi.fn(),
+  },
+}));
+
+// Service deps that hit supabase / the clock — stub directly so the unit under
+// test is the nutrition event service alone.
+vi.mock("@/services/training-event-service", () => ({
+  getEventsForDateRange: vi.fn(),
+}));
+vi.mock("@/services/training-service", () => ({
+  getActiveTrainingPlan: vi.fn(),
+}));
+vi.mock("@/services/today-service", () => ({
+  getClientTodayString: vi.fn(),
+}));
+
+// Inline query-builder mock (mirrors services/training-event-service.test.ts):
+// every chain method returns `this`; single/maybeSingle resolve to `result`; a
+// thenable makes `await query` resolve to `result` (list reads).
+function createMockQuery<T = unknown>(result: {
+  data: T | null;
+  error: { message: string } | null;
+}) {
+  const mockQuery = {
+    select: vi.fn().mockReturnThis(),
+    insert: vi.fn().mockReturnThis(),
+    update: vi.fn().mockReturnThis(),
+    delete: vi.fn().mockReturnThis(),
+    upsert: vi.fn().mockReturnThis(),
+    eq: vi.fn().mockReturnThis(),
+    neq: vi.fn().mockReturnThis(),
+    in: vi.fn().mockReturnThis(),
+    is: vi.fn().mockReturnThis(),
+    gt: vi.fn().mockReturnThis(),
+    gte: vi.fn().mockReturnThis(),
+    lt: vi.fn().mockReturnThis(),
+    lte: vi.fn().mockReturnThis(),
+    order: vi.fn().mockReturnThis(),
+    limit: vi.fn().mockReturnThis(),
+    single: vi.fn().mockResolvedValue(result),
+    maybeSingle: vi.fn().mockResolvedValue(result),
+    then: vi.fn(),
+  };
+
+  Object.defineProperty(mockQuery, "then", {
+    value: (resolve: (value: typeof result) => void) =>
+      Promise.resolve(result).then(resolve),
+  });
+
+  return mockQuery;
+}
+
+import { supabaseAdmin } from "./supabase-admin";
+import { getEventsForDateRange } from "@/services/training-event-service";
+import { getActiveTrainingPlan } from "@/services/training-service";
+import { getClientTodayString } from "@/services/today-service";
+import {
+  generateNutritionEvents,
+  regenerateFutureNutritionEvents,
+} from "./nutrition-event-service";
+
+const mockFrom = vi.mocked(supabaseAdmin.from);
+
+const PLAN = { baselineCalories: 2000, proteinTargetG: 150, dietType: "balanced" };
+
+describe("nutrition-event-service: cascade-preserve guards", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // No training events → surplus null, burn 0; keeps generated rows deterministic.
+    vi.mocked(getEventsForDateRange).mockResolvedValue([]);
+    vi.mocked(getActiveTrainingPlan).mockResolvedValue(null);
+    vi.mocked(getClientTodayString).mockResolvedValue("2026-04-10");
+  });
+
+  // =========================================================================
+  // ◆2(b) generateNutritionEvents — skip is_modified days from the upsert
+  // =========================================================================
+  describe("generateNutritionEvents preserves is_modified days", () => {
+    it("omits coach-edited dates from the upsert and regenerates the rest", async () => {
+      let nutCount = 0;
+      // The protected-days read returns one edited day in the middle of the window.
+      const protectedQuery = createMockQuery<{ date: string }[]>({
+        data: [{ date: "2026-04-11" }],
+        error: null,
+      });
+      const upsertQuery = createMockQuery({ data: [], error: null });
+
+      mockFrom.mockImplementation((table: string) => {
+        if (table === "nutrition_events") {
+          nutCount += 1;
+          // 1st nutrition_events access = protected-select, 2nd = upsert
+          return (nutCount === 1 ? protectedQuery : upsertQuery) as any;
+        }
+        return createMockQuery({ data: null, error: null }) as any;
+      });
+
+      await generateNutritionEvents(
+        "client-1",
+        "plan-1",
+        PLAN,
+        null,
+        null,
+        "2026-04-10",
+        "2026-04-12",
+      );
+
+      // Protected-days read is keyed on client_id + date range (NOT plan id),
+      // because the upsert conflict key is client-scoped.
+      expect(protectedQuery.eq).toHaveBeenCalledWith("client_id", "client-1");
+      expect(protectedQuery.eq).toHaveBeenCalledWith("is_modified", true);
+      expect(protectedQuery.gte).toHaveBeenCalledWith("date", "2026-04-10");
+      expect(protectedQuery.lte).toHaveBeenCalledWith("date", "2026-04-12");
+
+      // The edited day (04-11) is omitted; the other two days are regenerated.
+      expect(upsertQuery.upsert).toHaveBeenCalledTimes(1);
+      const rows = upsertQuery.upsert.mock.calls[0][0] as Array<{ date: string }>;
+      expect(rows.map((r) => r.date)).toEqual(["2026-04-10", "2026-04-12"]);
+      expect(upsertQuery.upsert.mock.calls[0][1]).toEqual({ onConflict: "client_id,date" });
+    });
+
+    it("upserts every day when none are edited", async () => {
+      let nutCount = 0;
+      const protectedQuery = createMockQuery<{ date: string }[]>({ data: [], error: null });
+      const upsertQuery = createMockQuery({ data: [], error: null });
+
+      mockFrom.mockImplementation((table: string) => {
+        if (table === "nutrition_events") {
+          nutCount += 1;
+          return (nutCount === 1 ? protectedQuery : upsertQuery) as any;
+        }
+        return createMockQuery({ data: null, error: null }) as any;
+      });
+
+      await generateNutritionEvents(
+        "client-1",
+        "plan-1",
+        PLAN,
+        null,
+        null,
+        "2026-04-10",
+        "2026-04-12",
+      );
+
+      const rows = upsertQuery.upsert.mock.calls[0][0] as Array<{ date: string }>;
+      expect(rows.map((r) => r.date)).toEqual(["2026-04-10", "2026-04-11", "2026-04-12"]);
+    });
+
+    it("throws (and never upserts) when the protected-days read fails", async () => {
+      let nutCount = 0;
+      const protectedQuery = createMockQuery({ data: null, error: { message: "boom" } });
+      const upsertQuery = createMockQuery({ data: [], error: null });
+
+      mockFrom.mockImplementation((table: string) => {
+        if (table === "nutrition_events") {
+          nutCount += 1;
+          return (nutCount === 1 ? protectedQuery : upsertQuery) as any;
+        }
+        return createMockQuery({ data: null, error: null }) as any;
+      });
+
+      await expect(
+        generateNutritionEvents("client-1", "plan-1", PLAN, null, null, "2026-04-10", "2026-04-12"),
+      ).rejects.toMatchObject({ message: "boom" });
+
+      // A read failure must NOT silently overwrite an edited day.
+      expect(upsertQuery.upsert).not.toHaveBeenCalled();
+    });
+  });
+
+  // =========================================================================
+  // ◆2(a) regenerateFutureNutritionEvents — delete preserves is_modified rows
+  // =========================================================================
+  describe("regenerateFutureNutritionEvents delete-guard", () => {
+    it("excludes is_modified rows from the cascade delete", async () => {
+      let nutCount = 0;
+      const deleteQuery = createMockQuery({ data: null, error: null });
+      const protectedQuery = createMockQuery<{ date: string }[]>({ data: [], error: null });
+      const upsertQuery = createMockQuery({ data: [], error: null });
+
+      // One generic "fat" row satisfies every nutrition_plans read (baseline,
+      // phase_id, status, planned-sibling). phase_id:null -> 8-week fallback end
+      // date (no phases read); planned-sibling effective_from:null -> no cap.
+      const planRow = {
+        baseline_calories: 2000,
+        protein_target_g: 150,
+        diet_type: "balanced",
+        phase_id: null,
+        status: "active",
+        effective_from: null,
+      };
+
+      mockFrom.mockImplementation((table: string) => {
+        if (table === "nutrition_events") {
+          nutCount += 1;
+          // 1st = delete, 2nd = protected-select (in generate), 3rd = upsert
+          if (nutCount === 1) return deleteQuery as any;
+          if (nutCount === 2) return protectedQuery as any;
+          return upsertQuery as any;
+        }
+        if (table === "nutrition_plans") {
+          return createMockQuery({ data: planRow, error: null }) as any;
+        }
+        if (table === "nutrition_plan_daily_targets") {
+          return createMockQuery({ data: [], error: null }) as any;
+        }
+        return createMockQuery({ data: null, error: null }) as any;
+      });
+
+      await regenerateFutureNutritionEvents("client-1", "plan-1", "2026-04-10");
+
+      expect(deleteQuery.delete).toHaveBeenCalled();
+      expect(deleteQuery.eq).toHaveBeenCalledWith("nutrition_plan_id", "plan-1");
+      expect(deleteQuery.gte).toHaveBeenCalledWith("date", "2026-04-10");
+      expect(deleteQuery.eq).toHaveBeenCalledWith("status", "scheduled");
+      // The guard under test: edited rows survive the cascade delete.
+      expect(deleteQuery.eq).toHaveBeenCalledWith("is_modified", false);
+    });
+  });
+});
