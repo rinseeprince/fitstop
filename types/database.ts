@@ -1611,8 +1611,9 @@ export type Database = {
           diet_type: string
           fat_g: number
           id: string
+          is_modified: boolean
           is_training_day: boolean
-          nutrition_plan_id: string
+          nutrition_plan_id: string | null
           protein_g: number
           status: string
           training_burn_calories: number
@@ -1629,8 +1630,9 @@ export type Database = {
           diet_type?: string
           fat_g: number
           id?: string
+          is_modified?: boolean
           is_training_day?: boolean
-          nutrition_plan_id: string
+          nutrition_plan_id?: string | null
           protein_g: number
           status?: string
           training_burn_calories?: number
@@ -1647,8 +1649,9 @@ export type Database = {
           diet_type?: string
           fat_g?: number
           id?: string
+          is_modified?: boolean
           is_training_day?: boolean
-          nutrition_plan_id?: string
+          nutrition_plan_id?: string | null
           protein_g?: number
           status?: string
           training_burn_calories?: number
@@ -1663,7 +1666,7 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "nutrition_events_nutrition_plan_id_fkey"
+            foreignKeyName: "nutrition_events_plan_fk"
             columns: ["nutrition_plan_id"]
             isOneToOne: false
             referencedRelation: "nutrition_plans"
@@ -2306,7 +2309,7 @@ export type Database = {
           session_log_id: string | null
           session_name: string
           status: string
-          training_plan_id: string
+          training_plan_id: string | null
           training_session_id: string | null
           updated_at: string
         }
@@ -2322,7 +2325,7 @@ export type Database = {
           session_log_id?: string | null
           session_name: string
           status?: string
-          training_plan_id: string
+          training_plan_id?: string | null
           training_session_id?: string | null
           updated_at?: string
         }
@@ -2338,7 +2341,7 @@ export type Database = {
           session_log_id?: string | null
           session_name?: string
           status?: string
-          training_plan_id?: string
+          training_plan_id?: string | null
           training_session_id?: string | null
           updated_at?: string
         }
@@ -2351,17 +2354,17 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "training_events_plan_fk"
+            columns: ["training_plan_id"]
+            isOneToOne: false
+            referencedRelation: "training_plans"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "training_events_session_log_id_fkey"
             columns: ["session_log_id"]
             isOneToOne: false
             referencedRelation: "session_logs"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "training_events_training_plan_id_fkey"
-            columns: ["training_plan_id"]
-            isOneToOne: false
-            referencedRelation: "training_plans"
             referencedColumns: ["id"]
           },
           {

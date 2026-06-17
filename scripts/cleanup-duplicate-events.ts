@@ -54,7 +54,11 @@ async function cleanup() {
   }
 
   // 3. Fetch plan effective dates for determining which plan was active
-  const planIds = new Set(allEvents.map((e) => e.training_plan_id));
+  // training_plan_id is nullable since mig 113 (FK is ON DELETE SET NULL); an
+  // orphaned event has no plan to look up, so drop nulls before the .in() query.
+  const planIds = new Set(
+    allEvents.map((e) => e.training_plan_id).filter((id): id is string => id !== null)
+  );
   const { data: plans, error: plansError } = await supabaseAdmin
     .from("training_plans")
     .select("id, effective_from, effective_until")
@@ -89,7 +93,7 @@ async function cleanup() {
       // Find the plan that was active on this date:
       // latest effective_from <= event date, and (no effective_until OR effective_until >= event date)
       const scoredScheduled = scheduled.map((e) => {
-        const plan = planDates.get(e.training_plan_id);
+        const plan = e.training_plan_id ? planDates.get(e.training_plan_id) : undefined;
         const from = plan?.from ?? "1970-01-01";
         const until = plan?.until ?? null;
         const wasActive = from <= eventDate && (until === null || until >= eventDate);

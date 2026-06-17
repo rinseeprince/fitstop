@@ -283,7 +283,7 @@ export function TrainingCalendarView({
       const ids = new Set<string>();
       for (const date of days) {
         for (const e of eventsByDate.get(date) ?? []) {
-          ids.add(e.trainingPlanId);
+          if (e.trainingPlanId) ids.add(e.trainingPlanId);
         }
       }
       if (ids.size === 1) return [...ids][0];
@@ -527,7 +527,7 @@ export function TrainingCalendarView({
                   onCellClick={handleCellClick}
                   onEventClick={(event) => {
                     if (pendingDuplicate) return;
-                    if (event.trainingSessionId) {
+                    if (event.trainingSessionId && event.trainingPlanId) {
                       setSelectedSession({
                         sessionId: event.trainingSessionId,
                         eventId: event.id,

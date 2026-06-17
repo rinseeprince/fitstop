@@ -132,7 +132,9 @@ export type TrainingEventStatus = 'scheduled' | 'completed' | 'partial' | 'misse
 export type TrainingEvent = {
   id: string;
   clientId: string;
-  trainingPlanId: string;
+  // Nullable since mig 113: the event->plan FK is ON DELETE SET NULL, so a plan
+  // hard-delete (events-as-SOT overhaul, Sessions 2-3) can orphan the event.
+  trainingPlanId: string | null;
   trainingSessionId: string | null;
   date: string;
   sessionName: string;

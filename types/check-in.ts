@@ -373,7 +373,9 @@ export type NutritionEventStatus = "scheduled" | "logged" | "missed";
 export type NutritionEvent = {
   id: string;
   clientId: string;
-  nutritionPlanId: string;
+  // Nullable since mig 113: the event->plan FK is ON DELETE SET NULL, so a plan
+  // hard-delete (events-as-SOT overhaul, Sessions 2-3) can orphan the event.
+  nutritionPlanId: string | null;
   date: string;
   dayOfWeek: string;
   baselineCalories: number;
