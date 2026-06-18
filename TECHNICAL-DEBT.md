@@ -1,5 +1,11 @@
 # Technical Debt Tracker
 
+## Events-as-SOT overhaul — test coverage gap
+
+- **`create_training_plan_atomic` (mig 114) real-effect coverage.** Session 2◆1 rewrote the RPC to be additive (window-bounded delete + provenance insert). The vitest suite mocks `supabaseAdmin`, so the RPC's actual DELETE/INSERT — window-bound, coexistence of disjoint plans, idempotent re-place, overlap "incoming wins" — has **no automated coverage**. Correctness currently rests on the manual smoke (place A Jan + B Mar disjoint → both survive; place B overlapping A → B wins contested, A's pre-overlap survives; re-place same range → event count stable). **Owe a focused local-supabase RPC test no later than Session 5** (where seed/backfill already needs DB-level validation). Same gap applies to `getNextPlanStartCap`'s cross-plan cap. Decided 2026-06-18 (no pgTAP/Postgres infra before launch — consistent with the mock-everything architecture + deferred-tooling stance).
+
+---
+
 ## Pre-launch Security Checklist (from 2026-06-10 audit)
 
 Items deliberately deferred or remaining after the 2026-06-10 security remediation pass (migrations 105–108 + code fixes — see "Known RLS Gaps"). Address before public launch.
