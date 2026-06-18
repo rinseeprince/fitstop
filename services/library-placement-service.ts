@@ -1,10 +1,9 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { getSavedPlanById } from "./coach-saved-plan-service";
 import { createTrainingPlanAtomic } from "./training-service";
-import { deleteFutureEventsForPlan } from "./training-event-service";
+import { getNextPlanStartCap } from "./training-event-service";
 import { validatePhaseBounds } from "./training-event-calendar-service";
 import { getDateString } from "@/lib/date-helpers";
-import { captureApiError } from "@/lib/error-handler";
 import type { TrainingEventInsert, CoachSavedExerciseRow } from "@/lib/database-helpers";
 import type { SavedSession, SavedExercise } from "@/types/training";
 
@@ -28,12 +27,10 @@ export async function placePlanOnCalendar(params: {
   coachId: string;
   clientId: string;
   startDate: string;
-  /** Client-local today (the route's guard anchor) — anchors the planned-plan event wipe below. */
-  clientToday: string;
   repeatCycles?: number;
   phaseId?: string;
 }): Promise<{ planId: string; sessionsCreated: number; eventsCreated: number }> {
-  const { savedPlanId, coachId, clientId, startDate, clientToday, repeatCycles, phaseId } = params;
+  const { savedPlanId, coachId, clientId, startDate, repeatCycles, phaseId } = params;
 
   // 1. Fetch saved plan with sessions + exercises
   const savedPlan = await getSavedPlanById(savedPlanId, coachId);
@@ -46,7 +43,6 @@ export async function placePlanOnCalendar(params: {
     coachId,
     clientId,
     startDate,
-    clientToday,
     repeatCycles,
     phaseId,
   });
@@ -58,7 +54,6 @@ async function placePlaceablePlanOnCalendar(params: {
   coachId: string;
   clientId: string;
   startDate: string;
-  clientToday: string;
   repeatCycles?: number;
   phaseId?: string;
 }): Promise<{ planId: string; sessionsCreated: number; eventsCreated: number }> {
@@ -68,31 +63,27 @@ async function placePlaceablePlanOnCalendar(params: {
     coachId,
     clientId,
     startDate,
-    clientToday,
     repeatCycles,
     phaseId,
   } = params;
 
-  // 2. Find any existing active AND planned plans — both need their future
-  //    events cleaned up after the RPC archives them, or orphan events remain
-  //    on the calendar. The RPC archives planned plans silently when a new
-  //    plan is applied, so we have to capture the id beforehand.
-  const [{ data: oldActivePlan }, { data: oldPlannedPlan }] = await Promise.all([
-    supabaseAdmin
-      .from("training_plans")
-      .select("id")
-      .eq("client_id", clientId)
-      .eq("status", "active")
-      .maybeSingle(),
-    supabaseAdmin
-      .from("training_plans")
-      .select("id")
-      .eq("client_id", clientId)
-      .eq("status", "planned")
-      .maybeSingle(),
-  ]);
+  // 2. Compute the incoming plan's own window end FIRST (capped at the next
+  //    coexisting plan's start). It bounds BOTH the RPC's additive delete and
+  //    the event generation below to exactly the same range, so re-placing the
+  //    same window is idempotent and non-overlapping plans coexist untouched.
+  const endDate = await calculatePlacementEndDate({
+    phaseId,
+    clientId,
+    programDurationWeeks: savedPlan.programDurationWeeks ?? null,
+    cycleLength: savedPlan.cycleLength ?? null,
+    repeatCycles: repeatCycles ?? null,
+    startDate,
+  });
 
-  // 3. Atomically archive old plan + create new one
+  // 3. Additively insert the new plan as provenance and clear ONLY its own
+  //    future window (the RPC no longer archives prior plans or wipes the
+  //    calendar). Non-overlapping plans coexist; an overlapping placement wins
+  //    only on its contested dates.
   const newPlanId = await createTrainingPlanAtomic({
     clientId,
     coachId,
@@ -104,36 +95,13 @@ async function placePlaceablePlanOnCalendar(params: {
     programDurationWeeks: savedPlan.programDurationWeeks ?? undefined,
     phaseId,
     effectiveFrom: startDate,
-    // null → inline placement (edited working copy), don't link back to any
+    windowEnd: endDate,
+    // null -> inline placement (edited working copy), don't link back to any
     // library template. The helper normalizes falsy values to null for the RPC.
     savedPlanId: savedPlanId ?? undefined,
   });
 
-  // 4. Delete future events for the now-archived plans. Matches the pattern in
-  //    promoteTrainingPlanIfReady: non-blocking cleanup, Sentry on failure.
-  if (oldActivePlan) {
-    await deleteFutureEventsForPlan(oldActivePlan.id, startDate).catch((err) =>
-      captureApiError(err, {
-        action: "delete-future-events-placement-active",
-        planId: oldActivePlan.id,
-      }),
-    );
-  }
-  if (oldPlannedPlan && oldPlannedPlan.id !== newPlanId) {
-    // A never-active plan's prescriptions vanish wholesale: anchoring at
-    // client-local today wipes them all (a planned plan's events lie at/after
-    // the client's today). startDate would no-op here — the RPC's STEP 0
-    // already cleared >= startDate — and orphan the old plan's events in
-    // [its start, startDate) when the new plan starts later.
-    await deleteFutureEventsForPlan(oldPlannedPlan.id, clientToday).catch((err) =>
-      captureApiError(err, {
-        action: "delete-future-events-placement-planned",
-        planId: oldPlannedPlan.id,
-      }),
-    );
-  }
-
-  // 5. Clone sessions and exercises
+  // 4. Clone sessions and exercises
   const nonRestSessions = savedPlan.sessions
     .filter((s) => !s.isRest)
     .sort((a, b) => a.orderIndex - b.orderIndex);
@@ -209,17 +177,7 @@ async function placePlaceablePlanOnCalendar(params: {
     });
   }
 
-  // 6. Calculate end date
-  const endDate = await calculatePlacementEndDate({
-    phaseId,
-    clientId,
-    programDurationWeeks: savedPlan.programDurationWeeks ?? null,
-    cycleLength: savedPlan.cycleLength ?? null,
-    repeatCycles: repeatCycles ?? null,
-    startDate,
-  });
-
-  // 7. Generate cycle-aware events
+  // 5. Generate cycle-aware events (same window the RPC just cleared)
   const eventsCreated = await generateCycleAwareEvents({
     clientId,
     planId: newPlanId,
@@ -473,14 +431,23 @@ async function calculatePlacementEndDate(params: {
   }
 
   // Phase boundary caps everything
+  let computedEnd: string;
   if (phaseEndDate && durationEndDate) {
-    return phaseEndDate < durationEndDate ? phaseEndDate : durationEndDate;
+    computedEnd = phaseEndDate < durationEndDate ? phaseEndDate : durationEndDate;
+  } else if (phaseEndDate) {
+    computedEnd = phaseEndDate;
+  } else if (durationEndDate) {
+    computedEnd = durationEndDate;
+  } else {
+    // Fallback: 8 weeks from start
+    const d = new Date(startDate + "T00:00:00");
+    d.setDate(d.getDate() + 8 * 7 - 1);
+    computedEnd = getDateString(d);
   }
-  if (phaseEndDate) return phaseEndDate;
-  if (durationEndDate) return durationEndDate;
 
-  // Fallback: 8 weeks from start
-  const d = new Date(startDate + "T00:00:00");
-  d.setDate(d.getDate() + 8 * 7 - 1);
-  return getDateString(d);
+  // Additive placement: never let this plan's window bleed past the start of a
+  // later coexisting plan (matters most for the 8-week fallback above).
+  const nextPlanCap = await getNextPlanStartCap(clientId, startDate);
+  if (nextPlanCap && nextPlanCap < computedEnd) return nextPlanCap;
+  return computedEnd;
 }

@@ -18,7 +18,7 @@ vi.mock("./training-service", () => ({
 }));
 
 vi.mock("./training-event-service", () => ({
-  deleteFutureEventsForPlan: vi.fn(),
+  getNextPlanStartCap: vi.fn(),
 }));
 
 vi.mock("./training-event-calendar-service", () => ({
@@ -28,14 +28,14 @@ vi.mock("./training-event-calendar-service", () => ({
 import { supabaseAdmin } from "./supabase-admin";
 import { getSavedPlanById } from "./coach-saved-plan-service";
 import { createTrainingPlanAtomic } from "./training-service";
-import { deleteFutureEventsForPlan } from "./training-event-service";
+import { getNextPlanStartCap } from "./training-event-service";
 import { validatePhaseBounds } from "./training-event-calendar-service";
 import { placePlanOnCalendar, placeSessionOnCalendar } from "./library-placement-service";
 
 const mockFrom = vi.mocked(supabaseAdmin.from);
 const mockGetSavedPlanById = vi.mocked(getSavedPlanById);
 const mockCreateAtomic = vi.mocked(createTrainingPlanAtomic);
-const mockDeleteFuture = vi.mocked(deleteFutureEventsForPlan);
+const mockGetNextPlanStartCap = vi.mocked(getNextPlanStartCap);
 const mockValidatePhaseBounds = vi.mocked(validatePhaseBounds);
 
 // Inline query mock helper
@@ -66,49 +66,6 @@ function createMockQuery<T = unknown>(result: { data: T | null; error: { message
   });
 
   return mockQuery;
-}
-
-// Placement queries training_plans twice (active + planned) via Promise.all.
-// This helper returns a fresh builder per from() call so concurrent chains
-// don't share the status filter. Each builder resolves based on the status
-// eq() it was asked to match.
-function makeTrainingPlansFactory(config: {
-  active?: { id: string } | null;
-  planned?: { id: string } | null;
-}) {
-  const rows = {
-    active: config.active ?? null,
-    planned: config.planned ?? null,
-  };
-  return () => {
-    let statusFilter: string | null = null;
-    const builder: any = {
-      select: vi.fn().mockReturnThis(),
-      insert: vi.fn().mockReturnThis(),
-      update: vi.fn().mockReturnThis(),
-      delete: vi.fn().mockReturnThis(),
-      upsert: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockImplementation((column: string, value: string) => {
-        if (column === "status") statusFilter = value;
-        return builder;
-      }),
-      neq: vi.fn().mockReturnThis(),
-      gte: vi.fn().mockReturnThis(),
-      in: vi.fn().mockReturnThis(),
-      order: vi.fn().mockReturnThis(),
-      limit: vi.fn().mockReturnThis(),
-      maybeSingle: vi.fn().mockImplementation(() => {
-        const row =
-          statusFilter === "active"
-            ? rows.active
-            : statusFilter === "planned"
-            ? rows.planned
-            : null;
-        return Promise.resolve({ data: row, error: null });
-      }),
-    };
-    return builder;
-  };
 }
 
 // --- Test data factories ---
@@ -187,7 +144,8 @@ function makeSavedPlan(overrides?: Partial<SavedPlan>): SavedPlan {
 describe("library-placement-service", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockDeleteFuture.mockResolvedValue();
+    // Default: this is the last plan, so no next-plan cap shortens the window.
+    mockGetNextPlanStartCap.mockResolvedValue(null);
     mockValidatePhaseBounds.mockResolvedValue();
   });
 
@@ -204,9 +162,7 @@ describe("library-placement-service", () => {
           savedPlanId: "sp-1",
           coachId: "coach-1",
           clientId: "client-1",
-          startDate: "2026-04-15",
-          clientToday: "2026-04-10",
-        })
+          startDate: "2026-04-15",        })
       ).rejects.toThrow("Only saved plans can be placed on calendar");
     });
 
@@ -218,9 +174,7 @@ describe("library-placement-service", () => {
           savedPlanId: "sp-1",
           coachId: "coach-1",
           clientId: "client-1",
-          startDate: "2026-04-15",
-          clientToday: "2026-04-10",
-        })
+          startDate: "2026-04-15",        })
       ).rejects.toThrow("Saved plan not found");
     });
 
@@ -240,14 +194,12 @@ describe("library-placement-service", () => {
       // Mock: event upsert
       const eventUpsertQuery = createMockQuery({ data: [], error: null });
 
-      let callCount = 0;
       mockFrom.mockImplementation((table: string) => {
         if (table === "training_plans") return noActivePlanQuery as any;
         if (table === "training_sessions") return sessionInsertQuery as any;
         if (table === "training_exercises") return exerciseInsertQuery as any;
         if (table === "phases") return phaseQuery as any;
         if (table === "training_events") return eventUpsertQuery as any;
-        callCount++;
         return createMockQuery({ data: null, error: null }) as any;
       });
 
@@ -255,9 +207,7 @@ describe("library-placement-service", () => {
         savedPlanId: "sp-1",
         coachId: "coach-1",
         clientId: "client-1",
-        startDate: "2026-04-15",
-        clientToday: "2026-04-10",
-      });
+        startDate: "2026-04-15",      });
 
       // Verify atomic plan creation was called
       expect(mockCreateAtomic).toHaveBeenCalledWith(
@@ -332,9 +282,7 @@ describe("library-placement-service", () => {
         savedPlanId: "sp-1",
         coachId: "coach-1",
         clientId: "client-1",
-        startDate: "2026-04-15",
-        clientToday: "2026-04-10",
-      });
+        startDate: "2026-04-15",      });
 
       // First session: explicit 20%
       expect(sessionInsertQuery.insert.mock.calls[0][0].calorie_surplus_percentage).toBe(20);
@@ -342,55 +290,18 @@ describe("library-placement-service", () => {
       expect(sessionInsertQuery.insert.mock.calls[1][0].calorie_surplus_percentage).toBe(10);
     });
 
-    it("deletes future events for old active plan", async () => {
-      mockGetSavedPlanById.mockResolvedValue(makeSavedPlan({ sessions: [], cycleLength: 1, restPattern: [] }));
-      mockCreateAtomic.mockResolvedValue("new-plan-id");
-
-      const plansFactory = makeTrainingPlansFactory({
-        active: { id: "old-active-id" },
-        planned: null,
-      });
-      const phaseQuery = createMockQuery({ data: null, error: null });
-      const eventUpsertQuery = createMockQuery({ data: [], error: null });
-
-      mockFrom.mockImplementation((table: string) => {
-        if (table === "training_plans") return plansFactory();
-        if (table === "phases") return phaseQuery as any;
-        if (table === "training_events") return eventUpsertQuery as any;
-        return createMockQuery({ data: null, error: null }) as any;
-      });
-
-      await placePlanOnCalendar({
-        savedPlanId: "sp-1",
-        coachId: "coach-1",
-        clientId: "client-1",
-        startDate: "2026-04-15",
-        clientToday: "2026-04-10",
-      });
-
-      expect(mockDeleteFuture).toHaveBeenCalledWith("old-active-id", "2026-04-15");
-      // No planned plan existed, so only the active-cleanup call should have fired.
-      expect(mockDeleteFuture).toHaveBeenCalledTimes(1);
-    });
-
-    it("deletes events for an existing planned plan so back-to-back future-dated placements don't leave orphans", async () => {
-      // Coach has plan A planned for a future date, then applies plan B
-      // (also planned). The RPC silently archives plan A — placement must
-      // delete plan A's future events or the calendar double-books.
+    it("passes effectiveFrom + windowEnd to the atomic RPC, capped at the next plan's start", async () => {
+      // A later coexisting plan starts 2026-05-01, so getNextPlanStartCap caps
+      // the incoming plan's window at 2026-04-30 instead of the 8-week fallback.
       mockGetSavedPlanById.mockResolvedValue(
         makeSavedPlan({ sessions: [], cycleLength: 1, restPattern: [] }),
       );
-      mockCreateAtomic.mockResolvedValue("new-plan-b-id");
+      mockCreateAtomic.mockResolvedValue("new-plan-id");
+      mockGetNextPlanStartCap.mockResolvedValue("2026-04-30");
 
-      const plansFactory = makeTrainingPlansFactory({
-        active: null,
-        planned: { id: "old-planned-id" },
-      });
       const phaseQuery = createMockQuery({ data: null, error: null });
       const eventUpsertQuery = createMockQuery({ data: [], error: null });
-
       mockFrom.mockImplementation((table: string) => {
-        if (table === "training_plans") return plansFactory();
         if (table === "phases") return phaseQuery as any;
         if (table === "training_events") return eventUpsertQuery as any;
         return createMockQuery({ data: null, error: null }) as any;
@@ -401,17 +312,98 @@ describe("library-placement-service", () => {
         coachId: "coach-1",
         clientId: "client-1",
         startDate: "2026-04-15",
-        clientToday: "2026-04-10",
       });
 
-      // Planned-plan cleanup anchors at client-local today, NOT startDate: the
-      // RPC's STEP 0 already cleared >= startDate, so a startDate anchor would
-      // no-op and orphan plan A's events in [A.start, B.start). The distinct
-      // clientToday fixture ("2026-04-10" vs startDate "2026-04-15") makes this
-      // assertion discriminate the two anchors.
-      expect(mockDeleteFuture).toHaveBeenCalledWith("old-planned-id", "2026-04-10");
-      // No active plan existed, so only the planned-cleanup call should have fired.
-      expect(mockDeleteFuture).toHaveBeenCalledTimes(1);
+      expect(mockGetNextPlanStartCap).toHaveBeenCalledWith("client-1", "2026-04-15");
+      // The same window end bounds the RPC's additive delete and the fill below.
+      expect(mockCreateAtomic).toHaveBeenCalledWith(
+        expect.objectContaining({
+          effectiveFrom: "2026-04-15",
+          windowEnd: "2026-04-30",
+        }),
+      );
+    });
+
+    it("is idempotent on re-place: same window + same event count across two placements", async () => {
+      const savedPlan = makeSavedPlan({
+        defaultSurplusPercentage: 10,
+        sessions: [makeSession({ id: "ss-1", orderIndex: 0, calorieSurplusPercentage: 15 })],
+        cycleLength: 1,
+        restPattern: [],
+        programDurationWeeks: 2,
+      });
+      mockGetSavedPlanById.mockResolvedValue(savedPlan);
+      mockCreateAtomic.mockResolvedValue("new-plan-id");
+
+      const sessionInsertQuery = createMockQuery({ data: { id: "ts-1" }, error: null });
+      const exerciseInsertQuery = createMockQuery({ data: null, error: null });
+      const phaseQuery = createMockQuery({ data: null, error: null });
+      const eventUpsertQuery = createMockQuery({ data: [], error: null });
+      mockFrom.mockImplementation((table: string) => {
+        if (table === "training_sessions") return sessionInsertQuery as any;
+        if (table === "training_exercises") return exerciseInsertQuery as any;
+        if (table === "phases") return phaseQuery as any;
+        if (table === "training_events") return eventUpsertQuery as any;
+        return createMockQuery({ data: null, error: null }) as any;
+      });
+
+      const args = {
+        savedPlanId: "sp-1",
+        coachId: "coach-1",
+        clientId: "client-1",
+        startDate: "2026-04-15",
+      };
+      await placePlanOnCalendar(args);
+      await placePlanOnCalendar(args);
+
+      // Re-place inserts a second provenance row (new RPC call) over the same
+      // window; the RPC clears that window first, so event count is stable.
+      expect(mockCreateAtomic).toHaveBeenCalledTimes(2);
+      const first = mockCreateAtomic.mock.calls[0][0];
+      const second = mockCreateAtomic.mock.calls[1][0];
+      expect(second.effectiveFrom).toBe(first.effectiveFrom);
+      expect(second.windowEnd).toBe(first.windowEnd);
+      expect(eventUpsertQuery.upsert).toHaveBeenCalledTimes(2);
+      const firstRows = eventUpsertQuery.upsert.mock.calls[0][0];
+      const secondRows = eventUpsertQuery.upsert.mock.calls[1][0];
+      expect(secondRows.length).toBe(firstRows.length);
+    });
+
+    it("writes calorie_surplus_percentage onto generated event rows (INVARIANT 2)", async () => {
+      const savedPlan = makeSavedPlan({
+        defaultSurplusPercentage: 10,
+        sessions: [makeSession({ id: "ss-1", orderIndex: 0, calorieSurplusPercentage: 25 })],
+        cycleLength: 1,
+        restPattern: [],
+        programDurationWeeks: 1,
+      });
+      mockGetSavedPlanById.mockResolvedValue(savedPlan);
+      mockCreateAtomic.mockResolvedValue("new-plan-id");
+
+      const sessionInsertQuery = createMockQuery({ data: { id: "ts-1" }, error: null });
+      const exerciseInsertQuery = createMockQuery({ data: null, error: null });
+      const phaseQuery = createMockQuery({ data: null, error: null });
+      const eventUpsertQuery = createMockQuery({ data: [], error: null });
+      mockFrom.mockImplementation((table: string) => {
+        if (table === "training_sessions") return sessionInsertQuery as any;
+        if (table === "training_exercises") return exerciseInsertQuery as any;
+        if (table === "phases") return phaseQuery as any;
+        if (table === "training_events") return eventUpsertQuery as any;
+        return createMockQuery({ data: null, error: null }) as any;
+      });
+
+      await placePlanOnCalendar({
+        savedPlanId: "sp-1",
+        coachId: "coach-1",
+        clientId: "client-1",
+        startDate: "2026-04-15",
+      });
+
+      const eventRows = eventUpsertQuery.upsert.mock.calls[0][0];
+      expect(eventRows.length).toBeGreaterThan(0);
+      for (const row of eventRows) {
+        expect(row.calorie_surplus_percentage).toBe(25);
+      }
     });
 
     it("preserves exercise_id FK from saved exercises", async () => {
@@ -451,9 +443,7 @@ describe("library-placement-service", () => {
         savedPlanId: "sp-1",
         coachId: "coach-1",
         clientId: "client-1",
-        startDate: "2026-04-15",
-        clientToday: "2026-04-10",
-      });
+        startDate: "2026-04-15",      });
 
       const exerciseCall = exerciseInsertQuery.insert.mock.calls[0][0];
       expect(exerciseCall[0].exercise_id).toBe("catalog-abc");
@@ -483,7 +473,6 @@ describe("library-placement-service", () => {
       mockCreateAtomic.mockResolvedValue("new-plan-id");
 
       const noActivePlanQuery = createMockQuery({ data: null, error: null });
-      const sessionInsertQuery = createMockQuery({ data: { id: "ts-x" }, error: null });
       // Need to return different IDs for each session insert
       let sessionCallIdx = 0;
       const sessionIds = ["ts-push", "ts-pull", "ts-legs"];
@@ -508,9 +497,7 @@ describe("library-placement-service", () => {
         savedPlanId: "sp-1",
         coachId: "coach-1",
         clientId: "client-1",
-        startDate: "2026-04-15",
-        clientToday: "2026-04-10",
-      });
+        startDate: "2026-04-15",      });
 
       const events = eventUpsertQuery.upsert.mock.calls[0][0];
 
@@ -569,9 +556,7 @@ describe("library-placement-service", () => {
         savedPlanId: "sp-1",
         coachId: "coach-1",
         clientId: "client-1",
-        startDate: "2026-04-15",
-        clientToday: "2026-04-10",
-      });
+        startDate: "2026-04-15",      });
 
       const events = eventQuery.upsert.mock.calls[0][0];
       // 7 days, no rest = 7 events

@@ -2946,6 +2946,7 @@ export type Database = {
           p_saved_plan_id?: string
           p_split_type: string
           p_today?: string
+          p_window_end?: string
         }
         Returns: string
       }

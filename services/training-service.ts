@@ -300,6 +300,8 @@ export const createTrainingPlanAtomic = async (params: {
   phaseId?: string;
   effectiveFrom?: string;
   savedPlanId?: string;
+  /** End of the incoming plan's own window; bounds the RPC's additive delete. */
+  windowEnd?: string;
 }): Promise<string> => {
   // Client-local today (coach-tz fallback) — computed here, not threaded from
   // callers, so every placement path judges active-vs-planned correctly.
@@ -329,6 +331,7 @@ export const createTrainingPlanAtomic = async (params: {
       p_effective_from: params.effectiveFrom ?? null,
       p_saved_plan_id: params.savedPlanId ?? null,
       p_today: pToday,
+      p_window_end: params.windowEnd ?? null,
     } as never) as unknown as { data: string | null; error: { message: string } | null };
 
   if (rpcError || !newPlanId) {

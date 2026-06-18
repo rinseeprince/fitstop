@@ -298,6 +298,42 @@ function fallbackEndDate(today: string): string {
   return getDateString(d);
 }
 
+// --- Next-plan window cap (additive placement) ---
+
+/**
+ * The day before the next coexisting plan starts, or null if this is the last
+ * plan. Under additive placement, plans own disjoint date windows; this caps
+ * event generation so a plan (especially a no-duration one falling back to the
+ * 8-week default) never bleeds past the start of a later coexisting plan.
+ *
+ * Scoped to non-deleted, non-archived rows: the archived filter only matters
+ * for pre-migration legacy rows (nothing archives under the new model) but
+ * stops a stale archived plan with a later start from over-shortening a live
+ * plan's window. Strict `>` is deliberate: two plans sharing the exact same
+ * effective_from do NOT cap each other (a degenerate same-day double-placement
+ * is a known no-cap case, not a surprise).
+ */
+export async function getNextPlanStartCap(
+  clientId: string,
+  planEffectiveFrom: string
+): Promise<string | null> {
+  const { data } = await supabaseAdmin
+    .from("training_plans")
+    .select("effective_from")
+    .eq("client_id", clientId)
+    .is("deleted_at", null)
+    .neq("status", "archived")
+    .gt("effective_from", planEffectiveFrom)
+    .order("effective_from", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (!data?.effective_from) return null;
+  const dayBefore = new Date(data.effective_from + "T00:00:00");
+  dayBefore.setDate(dayBefore.getDate() - 1);
+  return getDateString(dayBefore);
+}
+
 // --- Delete future events ---
 
 /**

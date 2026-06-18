@@ -84,7 +84,6 @@ export async function POST(
         coachId,
         clientId,
         startDate: data.startDate,
-        clientToday,
         repeatCycles: data.repeatCycles,
         phaseId: data.phaseId,
       });

@@ -130,9 +130,6 @@ describe("POST /api/clients/[id]/training/place-from-library start-date guard", 
       expect.objectContaining({
         startDate: "2026-01-15",
         clientId,
-        // The route's guard anchor is threaded into the service so the
-        // planned-plan event wipe shares it.
-        clientToday: "2026-01-15",
       })
     );
   });
@@ -146,7 +143,7 @@ describe("POST /api/clients/[id]/training/place-from-library start-date guard", 
 
     expect(res.status).toBe(200);
     expect(placePlanOnCalendar).toHaveBeenCalledWith(
-      expect.objectContaining({ startDate: "2026-01-20", clientToday: "2026-01-15" })
+      expect.objectContaining({ startDate: "2026-01-20" })
     );
   });
 });
