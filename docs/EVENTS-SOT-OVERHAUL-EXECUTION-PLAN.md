@@ -1,6 +1,6 @@
 # Events-as-SOT Overhaul — Execution Plan
 
-> **Status:** **Session 1 COMPLETE (2026-06-17)** — migs 113 + cascade-preserve guards shipped & smoke-verified; Sessions 2-6 not started. Merges the training plan-demotion work with `NUTRITION-CALENDAR-IMPLEMENTATION-SPEC.md` (repo root).
+> **Status:** **Sessions 1-2 COMPLETE** (S1 2026-06-17 mig 113; S2 2026-06-18 mig 114 — additive placement, demotion, coexisting-plan builder/calendar, phase lifecycle; tsc+eslint+vitest green at each ◆). Sessions 3-6 not started. **Owed from S2:** the additive RPC's real DELETE/INSERT effect is unit-test-mocked — a focused local-supabase RPC test is owed by S5 (see `TECHNICAL-DEBT.md`); until then ◆1 correctness rests on the manual smoke. Merges the training plan-demotion work with `NUTRITION-CALENDAR-IMPLEMENTATION-SPEC.md` (repo root).
 > **How to use:** Run one session at a time in a fresh Claude Code session. Paste that session's **Prompt**. Each session owns a coherent track and **commits at the checkpoints (◆) inside it** — the app must build + test clean at every checkpoint, not just at session end. A session is done when all its steps are committed and **Session verify** passes. Do not reorder sessions; the internal step order also matters.
 
 ## 1. Context
@@ -63,7 +63,7 @@ Each session prompt then assumes this protocol:
 | # | Session | Schema? | Checkpoints (◆ = commit) | Depends |
 |---|---------|---------|--------------------------|---------|
 | 1 ✅ | Foundation + cascade-preserve guards **(COMPLETE)** | ✅ Mig A | 2 | — |
-| 2 | Training track: additive placement → demotion → builder UI → phase lifecycle | ✅ RPC | 4 | 1 |
+| 2 ✅ | Training track: additive placement → demotion → builder UI → phase lifecycle **(COMPLETE)** | ✅ RPC (mig 114) | 4 | 1 |
 | 3 | Nutrition lifecycle: durable plan → materialized edits → phase-transition seam | ✅ Mig B/C + RPC | 3 | 1, 2 |
 | 4 | Nutrition coach UI: calendar (read-only → editing) → generate-tray UX | — | 3 | 2, 3 |
 | 5 | Client/RN surfaces + seed/backfill | — | 2 | 3 |
@@ -88,7 +88,7 @@ Each session prompt then assumes this protocol:
 
 **Session verify:** `tsc/eslint/vitest` clean at both checkpoints; FK + column confirmed in `types/database.ts`; the new preserve test passes alongside existing nutrition cascade tests.
 
-## Session 2 — Training track (placement → demotion → builder UI → phase lifecycle) 🔴 highest blast radius
+## Session 2 — Training track (placement → demotion → builder UI → phase lifecycle) ✅ COMPLETE (2026-06-18)
 
 **Goal:** Move the entire training side onto events-as-SOT: additive placement (no wipe), plans demoted to provenance, builder UI for coexisting plans, and phases as date-driven goal context with guards + delete.
 **Schema:** ✅ rewrite `create_training_plan_atomic` (new migration). Phase auto-activate: verify it needs no column.
