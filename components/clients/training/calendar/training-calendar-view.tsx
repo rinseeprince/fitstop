@@ -25,7 +25,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
-import type { TrainingPlan, TrainingEvent } from "@/types/training";
+import type { TrainingPlan, TrainingEvent, TrainingSession } from "@/types/training";
 import type { Phase, PhaseStatus } from "@/types/roadmap";
 
 const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -137,6 +137,9 @@ export function TrainingCalendarView({
       setApplyFromDrop({ planId: libraryPlanId, startDate: targetStartDate });
     },
     onLibrarySessionDrop: (sessionId, targetDate) => {
+      // NOTE: a dropped session attaches to the displayed plan (`plan`). Precise
+      // retargeting to the plan whose range covers `targetDate` (for dates in a
+      // future coexisting plan) is deferred; the event still lands on the date.
       void (async () => {
         if (!plan) {
           toast({
@@ -195,10 +198,60 @@ export function TrainingCalendarView({
   }, [pendingDuplicate]);
 
   // Find session from plan for drawer
-  const selectedSessionData = useMemo(() => {
-    if (!selectedSession || !plan) return null;
-    return plan.sessions.find((s) => s.id === selectedSession.sessionId) ?? null;
-  }, [selectedSession, plan]);
+  // The clicked event may belong to a coexisting (non-active) plan whose sessions
+  // aren't in `plan.sessions`. Resolve from the active plan when possible; else
+  // lazy-fetch by id, showing an event-snapshot immediately so the drawer never
+  // opens blank (hard floor).
+  const [selectedSessionData, setSelectedSessionData] = useState<TrainingSession | null>(null);
+
+  useEffect(() => {
+    if (!selectedSession) {
+      setSelectedSessionData(null);
+      return;
+    }
+    const local = plan?.sessions.find((s) => s.id === selectedSession.sessionId);
+    if (local) {
+      setSelectedSessionData(local);
+      return;
+    }
+    // Snapshot from the event so the drawer renders something instantly.
+    const evt = events.find((e) => e.id === selectedSession.eventId);
+    setSelectedSessionData(
+      evt
+        ? {
+            id: selectedSession.sessionId,
+            planId: selectedSession.planId,
+            name: evt.sessionName,
+            focus: evt.sessionFocus ?? undefined,
+            orderIndex: 0,
+            exercises: [],
+            estimatedCalories: evt.estimatedCalories ?? undefined,
+            calorieSurplusPercentage: evt.calorieSurplusPercentage,
+            createdAt: "",
+            updatedAt: "",
+          }
+        : null,
+    );
+    // Then fetch the full session (with exercises) for the coexisting plan.
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(
+          `/api/clients/${clientId}/training/${selectedSession.planId}/sessions/${selectedSession.sessionId}`,
+        );
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled && data?.success && data.session) {
+          setSelectedSessionData(data.session as TrainingSession);
+        }
+      } catch {
+        // Keep the snapshot on failure.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedSession, plan, events, clientId]);
 
   // Count events sharing the selected session
   const sharedEventCount = useMemo(() => {
@@ -364,14 +417,8 @@ export function TrainingCalendarView({
         }
         toast({ title: "Week duplicated to next week" });
       } else {
-        // duplicate_remaining — use plan's effective range when available
-        const phaseEnd = (plan && plan.effectiveFrom && plan.programDurationWeeks)
-          ? (() => {
-              const end = new Date(plan.effectiveFrom + "T00:00:00");
-              end.setDate(end.getDate() + plan.programDurationWeeks * 7 - 1);
-              return getDateString(end);
-            })()
-          : undefined;
+        // duplicate_remaining — the server bounds "remaining" by the plan's own
+        // date range (its last scheduled event), so no phaseEndDate is needed.
         const res = await fetch(
           `/api/clients/${clientId}/training/${rowPlanId}/events/duplicate-week`,
           {
@@ -380,15 +427,20 @@ export function TrainingCalendarView({
             body: JSON.stringify({
               sourceStartDate: weekStartDate,
               fillRemaining: true,
-              phaseEndDate: phaseEnd,
             }),
           }
         );
+        const data = await res.json().catch(() => ({}));
         if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
           throw new Error(data.error || "Failed to duplicate weeks");
         }
-        toast({ title: "Week duplicated to all remaining weeks" });
+        const weeks = data.weeksCreated ?? 0;
+        toast({
+          title:
+            weeks > 0
+              ? `Week duplicated to ${weeks} remaining week${weeks === 1 ? "" : "s"}`
+              : "No remaining weeks to fill",
+        });
       }
       await mutate();
     } catch (error) {

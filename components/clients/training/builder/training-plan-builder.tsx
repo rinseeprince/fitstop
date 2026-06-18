@@ -251,7 +251,7 @@ function TopContentBar({
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[12.5px] font-medium text-[#c06060] bg-white border border-[rgba(192,96,96,0.2)] rounded-[6px] hover:bg-[rgba(192,96,96,0.05)] transition-colors"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
-                  Clear Plan
+                  Delete future sessions
                 </button>
               </>
             )}
@@ -297,11 +297,11 @@ function TopContentBar({
                 <AlertTriangle className="h-4 w-4 text-[#c06060]" />
               </div>
               <DialogTitle>
-                Clear {plan?.name ?? "training plan"}?
+                Delete future sessions for {plan?.name ?? "this plan"}?
               </DialogTitle>
             </div>
             <DialogDescription className="pt-2">
-              This archives the plan and removes all future scheduled sessions. Completed and past sessions are kept for history. This cannot be undone.
+              This removes all upcoming sessions for this plan. Completed and past sessions are kept for history. This cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -320,7 +320,7 @@ function TopContentBar({
               {isClearing ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
-                "Clear plan"
+                "Delete future sessions"
               )}
             </Button>
           </DialogFooter>

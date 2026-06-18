@@ -8,6 +8,47 @@ import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { updateSessionSchema } from "@/lib/validations/training";
 import { getClientTodayString } from "@/services/today-service";
 
+// GET - Fetch a single session (with exercises) for the calendar drawer.
+// The drawer needs to resolve sessions from coexisting (non-active) plans whose
+// sessions aren't in the active plan's session list, so it fetches by id here.
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string; planId: string; sessionId: string }> }
+) {
+  const rateLimitResult = await coachApiRateLimit(request);
+  if (rateLimitResult) return rateLimitResult;
+
+  try {
+    const coachId = await getAuthenticatedCoachId();
+    if (!coachId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { id: clientId, planId, sessionId } = await params;
+    const client = await getClientById(clientId);
+
+    if (!client || client.coachId !== coachId) {
+      return NextResponse.json({ error: "Access denied" }, { status: 403 });
+    }
+
+    // getTrainingPlanById already loads sessions + exercises.
+    const plan = await getTrainingPlanById(planId);
+    if (!plan || plan.clientId !== clientId) {
+      return NextResponse.json({ error: "Plan not found" }, { status: 404 });
+    }
+
+    const session = plan.sessions.find((s) => s.id === sessionId);
+    if (!session) {
+      return NextResponse.json({ error: "Session not found" }, { status: 404 });
+    }
+
+    return NextResponse.json({ success: true, session }, { status: 200 });
+  } catch (error) {
+    console.error("Error fetching session:", error);
+    return NextResponse.json({ error: "Failed to fetch session" }, { status: 500 });
+  }
+}
+
 // PATCH - Update session
 // Events are NOT regenerated here — the coach triggers regeneration
 // via the "Done" button which calls /regenerate-events with an effective date.

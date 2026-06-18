@@ -64,14 +64,41 @@ export async function POST(
 
     let result: { eventsCreated: number; weeksCreated?: number };
 
-    if (fillRemaining && phaseEndDate) {
-      result = await duplicateWeekToRemaining(clientId, planId, sourceStartDate, phaseEndDate);
+    if (fillRemaining) {
+      // Bound "remaining weeks" by the plan's OWN date range. The caller may
+      // still pass an explicit phaseEndDate; otherwise derive it from the
+      // plan's last scheduled event (additive placement: plans own disjoint
+      // windows, so there's no phase/duration to rely on for no-phase plans).
+      let fillEnd = phaseEndDate ?? null;
+      if (!fillEnd) {
+        const { data: lastEvent } = await supabaseAdmin
+          .from("training_events")
+          .select("date")
+          .eq("training_plan_id", planId)
+          .eq("status", "scheduled")
+          .order("date", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        fillEnd = lastEvent?.date ?? null;
+      }
+
+      if (!fillEnd) {
+        return NextResponse.json(
+          {
+            error:
+              "No remaining weeks to fill: this plan has no scheduled sessions beyond the source week.",
+          },
+          { status: 422 }
+        );
+      }
+
+      result = await duplicateWeekToRemaining(clientId, planId, sourceStartDate, fillEnd);
     } else if (targetStartDate) {
       const weekResult = await duplicateWeek(clientId, planId, sourceStartDate, targetStartDate);
       result = weekResult;
     } else {
       return NextResponse.json(
-        { error: "Provide either targetStartDate or fillRemaining with phaseEndDate" },
+        { error: "Provide either targetStartDate or fillRemaining" },
         { status: 400 }
       );
     }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, memo, useState } from "react";
+import { useMemo, memo } from "react";
 import useSWR from "swr";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import { useTrainingBuilderContext } from "@/contexts/training-builder-context";
@@ -10,29 +10,15 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
-  CalendarClock,
   Loader2,
   AlertTriangle,
   RefreshCw,
   Sparkles,
   Info,
-  Trash2,
 } from "lucide-react";
 import { TrainingCalendarView } from "../calendar/training-calendar-view";
-import { format } from "date-fns";
-import { getTodayDateString, getTodayDateStringInTimezone } from "@/lib/date-helpers";
 import { SPLIT_TYPE_LABELS } from "@/lib/training-constants";
 import type { TrainingHistoryRow } from "@/types/history";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { useToast } from "@/hooks/use-toast";
 
 type TrainingBuilderRightPanelProps = {
   clientId: string;
@@ -50,49 +36,6 @@ export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel
 }: TrainingBuilderRightPanelProps) {
   const builder = useTrainingBuilderContext();
   const { editMode } = builder;
-  const { toast } = useToast();
-  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
-  const [isCancelling, setIsCancelling] = useState(false);
-
-  // Timezone skew: the date is already "today or past" on the coach's device
-  // but still in the future on the client's calendar — the only case where
-  // a scheduled plan needs explaining to the coach.
-  const deviceToday = getTodayDateString();
-  const clientToday = builder.clientTimezone
-    ? getTodayDateStringInTimezone(builder.clientTimezone)
-    : null;
-  const isTimezoneSkew = (dateStr: string) =>
-    clientToday !== null && clientToday < dateStr && dateStr <= deviceToday;
-  const timezoneSkewLine = clientToday
-    ? `It's still ${format(new Date(clientToday + "T00:00:00"), "d MMMM")} for this client — the plan goes live at their local midnight.`
-    : null;
-
-  const handleCancelUpcoming = async () => {
-    // With an active plan the target is the queued upcoming plan; in the
-    // scheduled-only case the plan being cancelled IS builder.plan.
-    const cancelTargetId = builder.upcomingPlan?.id ?? builder.plan?.id;
-    if (!cancelTargetId) return;
-    setIsCancelling(true);
-    try {
-      const res = await fetch(
-        `/api/clients/${clientId}/training/${cancelTargetId}`,
-        { method: "DELETE" },
-      );
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error ?? "Failed to cancel scheduled plan");
-      }
-      toast({ title: "Scheduled plan cancelled" });
-      setShowCancelConfirm(false);
-      await builder.fetchPlan();
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to cancel scheduled plan";
-      toast({ title: "Error", description: message, variant: "destructive" });
-    } finally {
-      setIsCancelling(false);
-    }
-  };
 
   // Fetch training history for completion stats
   const { data: historyData } = useSWR<HistoryResponse>(
@@ -201,81 +144,10 @@ export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel
   }
 
   // Calendar is always visible — plan-specific UI renders only when plan exists.
+  // Coexisting plans render plainly via the calendar; deletion lives on the
+  // plan-builder header ("Delete future sessions") and the calendar week menu.
   return (
     <div className="flex flex-col gap-4">
-      {/* Upcoming plan banner */}
-      {builder.upcomingPlan && (
-        <div className="flex items-start gap-2 p-3 bg-blue-50 rounded-[6px]">
-          <CalendarClock className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
-          <div className="flex-1">
-            <p className="text-sm text-[#0c1a1e]">
-              A new plan takes effect on {format(new Date(builder.upcomingPlan.effectiveFrom + "T00:00:00"), "d MMMM yyyy")}. Current sessions remain active until then.
-            </p>
-            {isTimezoneSkew(builder.upcomingPlan.effectiveFrom) && timezoneSkewLine && (
-              <p className="text-xs text-[#5a7d82] mt-1">{timezoneSkewLine}</p>
-            )}
-          </div>
-          <button
-            onClick={() => setShowCancelConfirm(true)}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[12px] font-medium text-[#c06060] bg-white border border-[rgba(192,96,96,0.2)] rounded-[6px] hover:bg-[rgba(192,96,96,0.05)] transition-colors flex-shrink-0"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-            Cancel plan
-          </button>
-        </div>
-      )}
-
-      <Dialog open={showCancelConfirm} onOpenChange={setShowCancelConfirm}>
-        <DialogContent>
-          <DialogHeader>
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-full bg-[rgba(192,96,96,0.08)] flex items-center justify-center">
-                <AlertTriangle className="h-4 w-4 text-[#c06060]" />
-              </div>
-              <DialogTitle>
-                {builder.upcomingPlan ? "Cancel upcoming plan?" : "Cancel scheduled plan?"}
-              </DialogTitle>
-            </div>
-            <DialogDescription className="pt-2">
-              {(() => {
-                const cancelDate =
-                  builder.upcomingPlan?.effectiveFrom ?? builder.scheduledFor;
-                if (!cancelDate) {
-                  return "This removes the scheduled plan. This cannot be undone.";
-                }
-                const dateLabel = format(
-                  new Date(cancelDate + "T00:00:00"),
-                  "d MMMM yyyy",
-                );
-                return builder.upcomingPlan
-                  ? `This removes the scheduled plan for ${dateLabel}. Sessions and exercises created for this plan will be archived. This cannot be undone.`
-                  : `This removes the plan scheduled to start ${dateLabel}, leaving this client without a training plan. Sessions and exercises created for it will be archived. This cannot be undone.`;
-              })()}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setShowCancelConfirm(false)}
-              disabled={isCancelling}
-            >
-              Keep plan
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={handleCancelUpcoming}
-              disabled={isCancelling}
-            >
-              {isCancelling ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                "Cancel plan"
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       {/* Dark summary strip — only when a plan exists */}
       {builder.plan && (
       <div className="bg-[#0f2027] rounded-[6px] p-5">
@@ -309,28 +181,8 @@ export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel
                   {builder.plan.programDurationWeeks} weeks
                 </span>
               )}
-              {builder.scheduledFor && (
-                <>
-                  <span className="bg-[rgba(96,165,250,0.16)] text-[#93c5fd] text-[10px] px-1.5 py-0.5 rounded-[3px] font-medium inline-flex items-center gap-1">
-                    <CalendarClock className="h-3 w-3" />
-                    Starts {format(new Date(builder.scheduledFor + "T00:00:00"), "d MMMM yyyy")}
-                  </span>
-                  <button
-                    onClick={() => setShowCancelConfirm(true)}
-                    className="inline-flex items-center gap-1 text-[10px] font-medium text-[rgba(255,255,255,0.45)] px-1.5 py-0.5 rounded-[3px] border border-[rgba(255,255,255,0.12)] hover:text-[#e58c8c] hover:border-[rgba(229,140,140,0.4)] transition-colors"
-                  >
-                    <Trash2 className="h-3 w-3" />
-                    Cancel
-                  </button>
-                </>
-              )}
             </div>
           </div>
-          {builder.scheduledFor && isTimezoneSkew(builder.scheduledFor) && timezoneSkewLine && (
-            <p className="text-[11px] text-[rgba(255,255,255,0.45)] mt-2">
-              {timezoneSkewLine}
-            </p>
-          )}
         </div>
         {/* Stat columns */}
         <div className="grid grid-cols-[1fr_1fr_1fr_1fr]">
