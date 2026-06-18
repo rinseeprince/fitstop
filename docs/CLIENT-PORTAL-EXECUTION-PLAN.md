@@ -2633,7 +2633,27 @@ Commit.
 
 ---
 
+> ## ⚠️ MERGE COORDINATION — events-SOT nutrition overhaul (note added 2026-06-18; read before building any of 7.9–7.12)
+>
+> **Status:** 7.9–7.12 are **paused.** Decision 2026-06-18: finish the training/nutrition **builders** (`docs/EVENTS-SOT-OVERHAUL-EXECUTION-PLAN.md`, Sessions 3–6) first, then resume these four as **one coordinated workstream.** Full rationale + the code-grounded session map: `memory/project_roadmap_phase_workstream_parked.md`.
+>
+> **Why coordinated:** events-SOT carved its phase-transition seam (its old "◆3") OUT and parked it here. So this workstream now does BOTH the roadmap/phase lifecycle AND the nutrition side of the transition. They share `transition_phase_atomic` + `phase-transition-service.ts` + `phase-review-drawer.tsx`.
+>
+> **HARD PREREQUISITE (dependency-forced):** events-SOT **Session 3 (◆1 durable nutrition plan + ◆2 edits) must ship first.** 7.10 re-points/recalculates the *single durable* nutrition plan and reuses `create_nutrition_plan_atomic`'s new `p_recalc_snapshots` flag — neither exists until then. You cannot build 7.10 before it.
+>
+> **"Rewrite once" (Path A):** `transition_phase_atomic` is rewritten in **exactly ONE migration** (in 7.10) that does BOTH (a) 7.10's work — add the `complete_roadmap` branch + `p_roadmap_summary`, widen `p_next_action` — AND (b) the nutrition change — **DROP `p_archive_nutrition`, delete the nutrition-archive branch, re-window instead of archive.** Do NOT let 7.10's "rebuild existing branches byte-for-byte" note re-add the nutrition archive branch. Re-apply mig-106's REVOKE/GRANT lockdown at the new arity on BOTH that RPC and `archive_roadmap_atomic` (a wrong-arity REVOKE re-opens the security hole).
+>
+> **Migration numbers:** the hard-coded 100/101/102 in 7.9/7.10 are stale. events-SOT Session 3 takes 115/116, so renumber the lifecycle migrations from **117+** (highest applied is 114).
+>
+> **The nutrition re-point/recalc helper (the old events-SOT ◆3):** one TS helper `rewindowNutritionToActivePhase(clientId, activePhaseId|null, today)` — re-points the durable plan's `phase_id` and **recalculates targets from the newly-active phase's goal + the client's current weight** (reuse `createNutritionPlan` with `isRecalculation=true`), preserving `is_modified` days. Wire into all three activation paths: `transitionPhase` (manual), `promotePhaseIfReady` (date-driven auto-activation — fire only on the actual flip, non-blocking), and `archiveRoadmap` (→ `phase_id=NULL` → nutrition windows to maintenance). It **folds into 7.10** (the nutrition half of the same atomic change), not a separate session.
+>
+> **Coach UX we designed (build with 7.10/7.11/7.12):** the coach drives nutrition by setting the **phase goal**, never by typing calories — on activation nutrition auto-recalculates from that goal. A proactive review prompt (7.12) fires **7 days + 1 day** before a phase ends, deep-linking to the review drawer. The rebuilt drawer becomes "review results → set/confirm the next phase's goal (or create the next phase) → nutrition recalc preview," replacing the old keep/archive nutrition toggle.
+>
+> **Code-grounded sizing (~5 sessions):** 7.9 = 1 session (medium). **7.10 = 2 sessions** — 7.10a (migration + RPC + nutrition helper + completion-card data; HIGH risk) and 7.10b (drawer + cards + review/adjust UI) — because `phase-transition-service.ts` (343 lines) and `phase-review-drawer.tsx` (266) are already over the CONVENTIONS size limits and need sub-extraction. 7.11 = 1 session (low, no migration). 7.12 = 1 session (medium, no migration).
+
 ## Session 7.9: Goal outcome lifecycle (finishable goals)
+
+> **⚙️ Merge note (see the COORDINATION block above):** build this FIRST of the four — 7.10 needs its goal verdict (`evaluateAndCompleteGoal` / `presetVerdict`). Renumber the migration to **117+**. Otherwise as-written.
 
 **Commit message**: `feat(goals): terminal goal outcome (completed/achieved) coexisting with edit-versioning`
 
@@ -2677,6 +2697,8 @@ Commit.
 ---
 
 ## Session 7.10: Roadmap completion (status + summary) + client completion card
+
+> **⚙️ Merge note (see the COORDINATION block above) — THIS IS THE CONVERGENCE POINT.** The single `transition_phase_atomic` rewrite here ALSO drops `p_archive_nutrition` + deletes the nutrition-archive branch + re-windows the durable plan (the old events-SOT ◆3), and the `rewindowNutritionToActivePhase` helper + 3-path wiring fold in here. **SPLIT into 7.10a** (migration + RPC + nutrition helper + completion-card data) **and 7.10b** (drawer rebuild + cards + review/adjust UI) — both anchor files are already over the size limit. Renumber the migration to **117+**. Hard-blocked on events-SOT Session 3 + 7.9 shipping first.
 
 **Commit message**: `feat(roadmap): completed status + summary + client program-complete card`
 
@@ -2728,6 +2750,8 @@ Commit.
 
 ## Session 7.11: Roadmap-creation goal prompt + complete→create-next chain
 
+> **⚙️ Merge note (see the COORDINATION block above):** largely as-written; lightly extend so "create the next phase + set its goal" ties into the nutrition recalc (the coach steers nutrition via the phase goal). No migration.
+
 **Commit message**: `feat(roadmap): goal-handling choice at create/replace + build-next-roadmap chain`
 
 > **Plain terms:** When creating (or replacing) a roadmap, the coach is asked whether to **update the client's long-term goal** or **keep it** — purely about the destination record. Phases always drive nutrition either way; this is NOT a "what drives nutrition" toggle. Finishing a program then prompts "build the next roadmap".
@@ -2765,7 +2789,9 @@ Commit.
 
 ## Session 7.12: BRAINSTORM — notify the coach of phases/roadmaps ending
 
-> **This is a brainstorm / reservation, NOT a build session.** Plan the approach; no implementation, no migration, no commit. It exists so the need isn't forgotten.
+> **⚙️ Merge note (see the COORDINATION block above) — PROMOTE this from brainstorm to a real build session.** Decided 2026-06-18: build `phase_ending_soon` + `roadmap_ending_soon` attention triggers, lead times **7 days + 1 day** before phase end, severity by days-remaining, deep-link to the review drawer; reuse the existing `TriggerResult` + dismissal/auto-resurface plumbing. **No migration** (`attention_dismissals.alert_type` is unconstrained TEXT). This is the proactive nudge that makes the phase-end review/recalc UX work. The original brainstorm + open questions below are mostly answered by those decisions.
+>
+> _(original brainstorm framing, kept for context)_ **This is a brainstorm / reservation, NOT a build session.** Plan the approach; no implementation, no migration, no commit. It exists so the need isn't forgotten.
 
 **Problem**: Nothing proactively tells a coach that a client's phase (`phases.end_date`) or roadmap (`roadmaps.target_end_date`) is approaching or past its end, so transitions/completions get missed. We want a low-friction nudge built on existing surfaces.
 
