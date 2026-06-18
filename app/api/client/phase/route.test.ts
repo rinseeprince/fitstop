@@ -13,6 +13,7 @@ vi.mock("@/lib/auth-helpers", () => ({
 
 vi.mock("@/services/phase-service", () => ({
   getActivePhase: vi.fn(),
+  promotePhaseIfReady: vi.fn().mockResolvedValue({ promoted: false }),
 }));
 
 import { clientApiRateLimit } from "@/lib/rate-limit";

@@ -3,7 +3,15 @@
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Loader2, Calendar, ChevronRight, Pencil } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Loader2, Calendar, ChevronRight, Pencil, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { PhaseReviewDrawer } from "./phase-review-drawer";
 import { EditPhaseDialog } from "./edit-phase-dialog";
@@ -54,6 +62,35 @@ export const PhaseCard = ({
   const [isActivating, setIsActivating] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleDelete = async () => {
+    setIsDeleting(true);
+    try {
+      const res = await fetch(
+        `/api/clients/${clientId}/roadmap/phases/${phase.id}`,
+        { method: "DELETE" }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        // Planned-only: a started/completed phase returns 400 ("archive instead").
+        throw new Error(data.error || "Failed to delete phase");
+      }
+      toast({ title: `"${phase.name}" deleted` });
+      setShowDeleteConfirm(false);
+      onUpdate();
+    } catch (error) {
+      toast({
+        title: "Couldn't delete phase",
+        description:
+          error instanceof Error ? error.message : "Failed to delete phase",
+        variant: "destructive",
+      });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   const handleActivate = async () => {
     setIsActivating(true);
@@ -175,6 +212,16 @@ export const PhaseCard = ({
                 </button>
               )}
 
+            {!isReadOnly && phase.status === "planned" && (
+              <button
+                onClick={() => setShowDeleteConfirm(true)}
+                className="p-1.5 rounded-[6px] text-[#93b0b4] hover:text-[#c06060] hover:bg-[rgba(192,96,96,0.05)] transition-colors"
+                title="Delete phase"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            )}
+
             {showActivate && (
               <Button
                 variant="outline"
@@ -185,7 +232,7 @@ export const PhaseCard = ({
                 title={
                   hasActivePhase
                     ? "Complete the current active phase first"
-                    : "Activate this phase"
+                    : "Activate now (phases also auto-activate on their start date)"
                 }
               >
                 {isActivating ? (
@@ -254,6 +301,39 @@ export const PhaseCard = ({
         onOpenChange={setEditOpen}
         onSuccess={onUpdate}
       />
+
+      <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <DialogContent>
+          <DialogHeader>
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-full bg-[rgba(192,96,96,0.08)] flex items-center justify-center">
+                <Trash2 className="h-4 w-4 text-[#c06060]" />
+              </div>
+              <DialogTitle>Delete {phase.name}?</DialogTitle>
+            </div>
+            <DialogDescription className="pt-2">
+              This permanently removes this planned phase. Any plans linked to it
+              are unlinked (not deleted). This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowDeleteConfirm(false)}
+              disabled={isDeleting}
+            >
+              Keep phase
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={isDeleting}
+            >
+              {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Delete phase"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

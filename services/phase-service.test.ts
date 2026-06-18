@@ -6,11 +6,11 @@ import {
   getActivePhase,
   updatePhase,
   deletePhase,
+  promotePhaseIfReady,
 } from './phase-service';
 import {
   createMockPhaseRow,
   createMockRoadmapRow,
-  createMockClientGoalsRow,
 } from '@/__tests__/helpers/mock-data-builders';
 
 vi.mock('./supabase-admin', () => ({
@@ -23,6 +23,10 @@ vi.mock('./client-goals-service', () => ({
   getCurrentGoals: vi.fn(),
 }));
 
+vi.mock('./today-service', () => ({
+  getClientTodayString: vi.fn().mockResolvedValue('2026-06-15'),
+}));
+
 import { supabaseAdmin } from './supabase-admin';
 import { getCurrentGoals } from './client-goals-service';
 
@@ -33,7 +37,12 @@ function createMockQuery(result: { data: unknown; error: unknown }) {
     update: vi.fn().mockReturnThis(),
     delete: vi.fn().mockReturnThis(),
     eq: vi.fn().mockReturnThis(),
+    neq: vi.fn().mockReturnThis(),
     is: vi.fn().mockReturnThis(),
+    not: vi.fn().mockReturnThis(),
+    or: vi.fn().mockReturnThis(),
+    gte: vi.fn().mockReturnThis(),
+    lte: vi.fn().mockReturnThis(),
     order: vi.fn().mockReturnThis(),
     limit: vi.fn().mockReturnThis(),
     single: vi.fn().mockResolvedValue(result),
@@ -78,13 +87,9 @@ describe('Phase Service', () => {
       });
       const insertQuery = createMockQuery({ data: mockPhase, error: null });
 
-      let callCount = 0;
       vi.mocked(supabaseAdmin.from).mockImplementation((table: string) => {
         if (table === 'roadmaps') return roadmapQuery as never;
-        if (table === 'phases') {
-          callCount++;
-          return insertQuery as never;
-        }
+        if (table === 'phases') return insertQuery as never;
         return createMockQuery({ data: null, error: null }) as never;
       });
 
@@ -498,6 +503,122 @@ describe('Phase Service', () => {
       await expect(deletePhase('phase-1', 'client-1')).rejects.toThrow(
         'This phase has been started or completed and cannot be deleted.'
       );
+    });
+  });
+
+  describe('overlap guard', () => {
+    it('createPhase rejects a dated phase that overlaps a dated sibling', async () => {
+      vi.mocked(getCurrentGoals).mockResolvedValue(null);
+      const roadmapQuery = createMockQuery({ data: { client_id: 'client-1' }, error: null });
+      // Sibling runs Jan 1 - Mar 1; the new phase Feb 1 - Apr 1 overlaps it.
+      const siblingsQuery = createMockQuery({
+        data: [{ id: 'sib-1', name: 'Base', start_date: '2026-01-01', end_date: '2026-03-01' }],
+        error: null,
+      });
+      vi.mocked(supabaseAdmin.from).mockImplementation((table: string) => {
+        if (table === 'roadmaps') return roadmapQuery as never;
+        return siblingsQuery as never;
+      });
+
+      await expect(
+        createPhase('roadmap-1', { name: 'Cut', startDate: '2026-02-01', endDate: '2026-04-01' })
+      ).rejects.toThrow('overlap');
+    });
+
+    it('updatePhase rejects a date edit that overlaps a dated sibling', async () => {
+      // 1st phases call: fetch the edited phase; 2nd: the sibling set.
+      const phaseFetch = createMockQuery({
+        data: { roadmap_id: 'roadmap-1', start_date: '2026-05-01', end_date: '2026-06-01' },
+        error: null,
+      });
+      const siblingsQuery = createMockQuery({
+        data: [{ id: 'sib-1', name: 'Base', start_date: '2026-01-01', end_date: '2026-03-01' }],
+        error: null,
+      });
+      let call = 0;
+      vi.mocked(supabaseAdmin.from).mockImplementation(() => {
+        call++;
+        return call === 1 ? (phaseFetch as never) : (siblingsQuery as never);
+      });
+
+      // Moving start to Feb 15 (end stays Jun 1) now overlaps the Jan-Mar sibling.
+      await expect(
+        updatePhase('phase-1', 'client-1', { startDate: '2026-02-15' })
+      ).rejects.toThrow('overlap');
+    });
+  });
+
+  describe('completePhase start guard', () => {
+    it('rejects completing a phase that has not started yet', async () => {
+      // clientToday mock = 2026-06-15; this phase starts in December.
+      const mockPhase = createMockPhaseRow({
+        id: 'phase-1',
+        status: 'planned',
+        startDate: '2026-12-01',
+        endDate: null,
+      });
+      const fetchQuery = createMockQuery({ data: mockPhase, error: null });
+      vi.mocked(supabaseAdmin.from).mockReturnValue(fetchQuery as never);
+
+      await expect(completePhase('phase-1', 'client-1')).rejects.toThrow(
+        "hasn't started yet"
+      );
+    });
+  });
+
+  describe('promotePhaseIfReady', () => {
+    it('auto-activates the earliest due planned phase when none is active', async () => {
+      const roadmapQuery = createMockQuery({ data: { id: 'roadmap-1' }, error: null });
+      const activeCheck = createMockQuery({ data: null, error: null });
+      const dueQuery = createMockQuery({ data: { id: 'phase-due' }, error: null });
+      const updateQuery = createMockQuery({ data: null, error: null });
+      let call = 0;
+      vi.mocked(supabaseAdmin.from).mockImplementation((table: string) => {
+        if (table === 'roadmaps') return roadmapQuery as never;
+        call++;
+        if (call === 1) return activeCheck as never; // no active phase
+        if (call === 2) return dueQuery as never; // earliest due planned phase
+        return updateQuery as never; // flip planned -> active
+      });
+
+      const result = await promotePhaseIfReady('client-1', '2026-06-15');
+
+      expect(result).toEqual({ promoted: true, phaseId: 'phase-due' });
+    });
+
+    it('does not promote when a phase is already active', async () => {
+      const roadmapQuery = createMockQuery({ data: { id: 'roadmap-1' }, error: null });
+      const activeCheck = createMockQuery({ data: { id: 'phase-active' }, error: null });
+      vi.mocked(supabaseAdmin.from).mockImplementation((table: string) => {
+        if (table === 'roadmaps') return roadmapQuery as never;
+        return activeCheck as never;
+      });
+
+      const result = await promotePhaseIfReady('client-1', '2026-06-15');
+
+      expect(result).toEqual({ promoted: false });
+    });
+
+    it('treats a 23505 activation race (another reader won) as a no-op', async () => {
+      const roadmapQuery = createMockQuery({ data: { id: 'roadmap-1' }, error: null });
+      const activeCheck = createMockQuery({ data: null, error: null });
+      const dueQuery = createMockQuery({ data: { id: 'phase-due' }, error: null });
+      const updateQuery = createMockQuery({
+        data: null,
+        error: { code: '23505', message: 'duplicate key' },
+      });
+      let call = 0;
+      vi.mocked(supabaseAdmin.from).mockImplementation((table: string) => {
+        if (table === 'roadmaps') return roadmapQuery as never;
+        call++;
+        if (call === 1) return activeCheck as never;
+        if (call === 2) return dueQuery as never;
+        return updateQuery as never;
+      });
+
+      const result = await promotePhaseIfReady('client-1', '2026-06-15');
+
+      expect(result).toEqual({ promoted: false });
     });
   });
 });

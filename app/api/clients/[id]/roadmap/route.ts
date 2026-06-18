@@ -9,6 +9,8 @@ import {
   deleteRoadmap,
 } from "@/services/roadmap-service";
 import { getClientById } from "@/services/client-service";
+import { promotePhaseIfReady } from "@/services/phase-service";
+import { captureApiError } from "@/lib/error-handler";
 import {
   createRoadmapSchema,
   updateRoadmapSchema,
@@ -26,6 +28,12 @@ export async function GET(
 
     const auth = await requireCoachOwnsClient(clientId);
     if (!auth.authorized) return auth.response;
+
+    // Date-driven auto-activation: flip a due planned phase to active before the
+    // read (best-effort; a failure must not block the roadmap from loading).
+    await promotePhaseIfReady(clientId).catch((err) =>
+      captureApiError(err, { action: "promote-phase-roadmap-get", clientId }),
+    );
 
     const roadmap = await getActiveRoadmap(clientId);
 

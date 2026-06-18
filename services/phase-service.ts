@@ -3,7 +3,44 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { mapPhaseRow } from "./roadmap-service";
 import { getCurrentGoals } from "./client-goals-service";
+import { getClientTodayString } from "./today-service";
 import type { Phase, PhaseRow, Milestone } from "@/types/roadmap";
+
+/**
+ * Reject a [startDate, endDate] range that overlaps a dated sibling phase in the
+ * same roadmap (two phases can't run at once, and a phase can't start mid-phase).
+ * Only fully-dated siblings participate; half-dated/dateless phases are skipped
+ * (they can't be bounded). YYYY-MM-DD compares lexicographically = chronologically.
+ */
+async function assertNoSiblingOverlap(
+  roadmapId: string,
+  startDate: string,
+  endDate: string,
+  excludePhaseId?: string,
+): Promise<void> {
+  let query = supabaseAdmin
+    .from("phases")
+    .select("id, name, start_date, end_date")
+    .eq("roadmap_id", roadmapId)
+    .not("start_date", "is", null)
+    .not("end_date", "is", null);
+  if (excludePhaseId) query = query.neq("id", excludePhaseId);
+
+  const { data: siblings, error } = await query;
+  if (error) {
+    console.error("Failed to check phase overlap:", error);
+    throw new Error(`Failed to check phase overlap: ${error.message}`);
+  }
+
+  for (const sib of siblings ?? []) {
+    // Half-open guard: overlap iff start <= sibEnd AND sibStart <= end.
+    if (startDate <= (sib.end_date as string) && (sib.start_date as string) <= endDate) {
+      throw new Error(
+        `These dates overlap the phase "${sib.name}" (${sib.start_date} to ${sib.end_date}). Phases in a roadmap can't overlap.`,
+      );
+    }
+  }
+}
 
 export const createPhase = async (
   roadmapId: string,
@@ -30,6 +67,11 @@ export const createPhase = async (
   if (roadmapError) {
     console.error("Failed to fetch roadmap:", roadmapError);
     throw new Error(`Failed to fetch roadmap: ${roadmapError.message}`);
+  }
+
+  // A fully-dated phase must not overlap a dated sibling.
+  if (data.startDate && data.endDate) {
+    await assertNoSiblingOverlap(roadmapId, data.startDate, data.endDate);
   }
 
   // Optionally snapshot current goals
@@ -158,6 +200,15 @@ export const completePhase = async (
     throw new Error("Phase not found");
   }
 
+  // A phase that hasn't started yet (start_date in the client's future) can't be
+  // completed - there's nothing to look back on.
+  if (phase.start_date) {
+    const clientToday = await getClientTodayString(clientId);
+    if (phase.start_date > clientToday) {
+      throw new Error("This phase hasn't started yet and can't be completed.");
+    }
+  }
+
   const now = new Date().toISOString();
   const { data: row, error } = await supabaseAdmin
     .from("phases")
@@ -246,6 +297,24 @@ export const updatePhase = async (
       throw new Error(
         "Phase goals can only be edited while the phase is planned or active"
       );
+    }
+  }
+
+  // Date edits: the resulting fully-dated range must not overlap a dated sibling.
+  if (data.startDate !== undefined || data.endDate !== undefined) {
+    const { data: phase } = await supabaseAdmin
+      .from("phases")
+      .select("roadmap_id, start_date, end_date")
+      .eq("id", phaseId)
+      .eq("client_id", clientId)
+      .single();
+    if (phase) {
+      const effStart =
+        data.startDate !== undefined ? data.startDate : phase.start_date;
+      const effEnd = data.endDate !== undefined ? data.endDate : phase.end_date;
+      if (effStart && effEnd) {
+        await assertNoSiblingOverlap(phase.roadmap_id, effStart, effEnd, phaseId);
+      }
     }
   }
 
@@ -340,4 +409,69 @@ export const deletePhase = async (
     console.error("Failed to delete phase:", error);
     throw new Error(`Failed to delete phase: ${error.message}`);
   }
+};
+
+/**
+ * Lazy date-driven auto-activation: if a planned phase's window now contains the
+ * client's local today and no phase is active, flip it to active. Mirrors the
+ * (deleted) training-plan promotion's laziness; called on roadmap reads (coach
+ * and client) so activation tracks the client's day, not coach attention.
+ *
+ * Deterministic: the earliest eligible planned phase wins (start_date ASC, then
+ * order_index ASC). Conflict-tolerant: a concurrent reader may activate first
+ * and trip idx_phases_active_unique (23505) - treat that as a no-op, not a 500.
+ */
+export const promotePhaseIfReady = async (
+  clientId: string,
+  clientToday?: string,
+): Promise<{ promoted: boolean; phaseId?: string }> => {
+  const today = clientToday ?? (await getClientTodayString(clientId));
+
+  const { data: roadmap } = await supabaseAdmin
+    .from("roadmaps")
+    .select("id")
+    .eq("client_id", clientId)
+    .eq("status", "active")
+    .maybeSingle();
+  if (!roadmap) return { promoted: false };
+
+  // Single-active invariant: if a phase is already active, nothing to promote.
+  const { data: activePhase } = await supabaseAdmin
+    .from("phases")
+    .select("id")
+    .eq("roadmap_id", roadmap.id)
+    .eq("status", "active")
+    .limit(1)
+    .maybeSingle();
+  if (activePhase) return { promoted: false };
+
+  // The earliest planned phase whose window actually contains today (skip wholly
+  // past planned phases - a data anomaly left for the coach).
+  const { data: due } = await supabaseAdmin
+    .from("phases")
+    .select("id")
+    .eq("roadmap_id", roadmap.id)
+    .eq("status", "planned")
+    .lte("start_date", today)
+    .or(`end_date.gte.${today},end_date.is.null`)
+    .order("start_date", { ascending: true })
+    .order("order_index", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (!due) return { promoted: false };
+
+  const { error } = await supabaseAdmin
+    .from("phases")
+    .update({ status: "active", updated_at: new Date().toISOString() })
+    .eq("id", due.id)
+    .eq("status", "planned");
+
+  if (error) {
+    // 23505 = another reader activated a phase first; the invariant still holds.
+    if ((error as { code?: string }).code === "23505") return { promoted: false };
+    console.error("Failed to auto-activate phase:", error);
+    throw new Error(`Failed to auto-activate phase: ${error.message}`);
+  }
+
+  return { promoted: true, phaseId: due.id };
 };
