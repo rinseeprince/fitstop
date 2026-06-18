@@ -128,15 +128,16 @@ function TopContentBar({
     if (!plan) return;
     setIsClearing(true);
     try {
+      // Client-level clear: removes future sessions across ALL coexisting plans.
       const res = await fetch(
-        `/api/clients/${client.id}/training/${plan.id}`,
+        `/api/clients/${client.id}/training`,
         { method: "DELETE" }
       );
       const data = await res.json();
       if (!res.ok || !data.success) {
         throw new Error(data.error ?? "Failed to clear plan");
       }
-      toast({ title: "Plan cleared" });
+      toast({ title: "Future sessions deleted" });
       setShowClearConfirm(false);
       await builder.fetchPlan();
     } catch (error) {
@@ -296,12 +297,10 @@ function TopContentBar({
               <div className="w-8 h-8 rounded-full bg-[rgba(192,96,96,0.08)] flex items-center justify-center">
                 <AlertTriangle className="h-4 w-4 text-[#c06060]" />
               </div>
-              <DialogTitle>
-                Delete future sessions for {plan?.name ?? "this plan"}?
-              </DialogTitle>
+              <DialogTitle>Delete all future sessions?</DialogTitle>
             </div>
             <DialogDescription className="pt-2">
-              This removes all upcoming sessions for this plan. Completed and past sessions are kept for history. This cannot be undone.
+              This removes every upcoming session from this client&apos;s calendar, across all placed plans. Completed and past sessions are kept for history. This cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

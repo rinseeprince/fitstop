@@ -346,28 +346,22 @@ describe("/api/clients/[id]/roadmap/phases/[phaseId]", () => {
       expect(deletePhase).toHaveBeenCalledWith("phase-1", "client-1");
     });
 
-    it("returns 400 when phase is active", async () => {
-      vi.mocked(deletePhase).mockRejectedValue(
-        new Error("This phase has been started or completed and cannot be deleted.")
-      );
+    it("deletes an active or completed phase successfully (any status deletable)", async () => {
+      vi.mocked(deletePhase).mockResolvedValue(undefined);
 
       const response = await DELETE(createMockRequest("DELETE"), mockParams);
       const data = await response.json();
 
-      expect(response.status).toBe(400);
-      expect(data.error).toContain("has been started or completed");
+      expect(response.status).toBe(200);
+      expect(data.success).toBe(true);
     });
 
-    it("returns 400 when phase is completed", async () => {
-      vi.mocked(deletePhase).mockRejectedValue(
-        new Error("This phase has been started or completed and cannot be deleted.")
-      );
+    it("returns 500 on an unexpected delete failure", async () => {
+      vi.mocked(deletePhase).mockRejectedValue(new Error("DB exploded"));
 
       const response = await DELETE(createMockRequest("DELETE"), mockParams);
-      const data = await response.json();
 
-      expect(response.status).toBe(400);
-      expect(data.error).toContain("cannot be deleted");
+      expect(response.status).toBe(500);
     });
   });
 });

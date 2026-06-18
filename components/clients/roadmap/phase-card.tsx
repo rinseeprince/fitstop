@@ -212,7 +212,7 @@ export const PhaseCard = ({
                 </button>
               )}
 
-            {!isReadOnly && phase.status === "planned" && (
+            {!isReadOnly && (
               <button
                 onClick={() => setShowDeleteConfirm(true)}
                 className="p-1.5 rounded-[6px] text-[#93b0b4] hover:text-[#c06060] hover:bg-[rgba(192,96,96,0.05)] transition-colors"
@@ -312,8 +312,18 @@ export const PhaseCard = ({
               <DialogTitle>Delete {phase.name}?</DialogTitle>
             </div>
             <DialogDescription className="pt-2">
-              This permanently removes this planned phase. Any plans linked to it
-              are unlinked (not deleted). This cannot be undone.
+              {phase.status === "completed" || phase.status === "active" ? (
+                <>
+                  This permanently removes the phase and its review/summary
+                  (reflection, completion stats). The client&apos;s logged
+                  workouts and meals are kept. This cannot be undone.
+                </>
+              ) : (
+                <>
+                  This permanently removes this planned phase. Any plans linked to
+                  it are unlinked (not deleted). This cannot be undone.
+                </>
+              )}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

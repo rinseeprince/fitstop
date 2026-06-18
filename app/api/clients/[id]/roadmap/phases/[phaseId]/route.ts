@@ -133,6 +133,9 @@ export async function PUT(
         { status: 400 }
       );
     }
+    if (message.includes("overlap")) {
+      return NextResponse.json({ success: false, error: message }, { status: 400 });
+    }
     console.error("Error updating phase:", error);
     return NextResponse.json(
       { error: "Failed to update phase" },
@@ -161,13 +164,6 @@ export async function DELETE(
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to delete phase";
-    if (message.includes("has been started or completed")) {
-      return NextResponse.json(
-        { success: false, error: message },
-        { status: 400 }
-      );
-    }
     console.error("Error deleting phase:", error);
     return NextResponse.json(
       { error: "Failed to delete phase" },

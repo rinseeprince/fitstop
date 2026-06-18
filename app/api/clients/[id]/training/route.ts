@@ -1,11 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getClientById } from "@/services/client-service";
-import { getActiveTrainingPlan, getTrainingPlanById } from "@/services/training-service";
+import {
+  getActiveTrainingPlan,
+  getTrainingPlanById,
+  archiveTrainingPlan,
+} from "@/services/training-service";
+import { cancelFutureEventsForPlan } from "@/services/training-event-service";
+import { regenerateFutureNutritionEvents } from "@/services/nutrition-event-service";
 import { getClientTodayString } from "@/services/today-service";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { aiRateLimit, coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
+import { captureApiError } from "@/lib/error-handler";
 import { generateTrainingPlanSchema } from "@/lib/validations/training";
 import {
   orchestrateTrainingPlanGeneration,
@@ -139,6 +146,75 @@ export async function GET(
     console.error("Error fetching training plan:", error);
     return NextResponse.json(
       { error: "Failed to fetch training plan" },
+      { status: 500 }
+    );
+  }
+}
+
+// DELETE - Clear ALL upcoming training sessions for the client across every
+// coexisting plan ("Delete future sessions"). Archives each non-archived plan
+// and removes its future events; past/completed sessions are kept as history.
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const rateLimitResult = await coachApiRateLimit(request);
+  if (rateLimitResult) return rateLimitResult;
+
+  const csrfError = await requireCSRFProtection(request);
+  if (csrfError) return csrfError;
+
+  try {
+    const coachId = await getAuthenticatedCoachId();
+    if (!coachId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { id: clientId } = await params;
+    const client = await getClientById(clientId);
+    if (!client || client.coachId !== coachId) {
+      return NextResponse.json({ error: "Access denied" }, { status: 403 });
+    }
+
+    // Client-local today anchors the "future" cutoff on the client's calendar.
+    const today = await getClientTodayString(clientId);
+
+    const { data: plans } = await supabaseAdmin
+      .from("training_plans")
+      .select("id")
+      .eq("client_id", clientId)
+      .is("deleted_at", null)
+      .neq("status", "archived");
+
+    for (const p of plans ?? []) {
+      await archiveTrainingPlan(p.id);
+      await cancelFutureEventsForPlan(p.id, today);
+    }
+
+    // Cascade once: nutrition burn estimates depend on training events.
+    const { data: nutritionPlans } = await supabaseAdmin
+      .from("nutrition_plans")
+      .select("id")
+      .eq("client_id", clientId)
+      .in("status", ["active", "planned"]);
+
+    for (const np of nutritionPlans ?? []) {
+      await regenerateFutureNutritionEvents(clientId, np.id, today).catch((err) =>
+        captureApiError(err, {
+          action: "cascade-nutrition-events-from-clear-all-training",
+          planId: np.id,
+        })
+      );
+    }
+
+    return NextResponse.json(
+      { success: true, plansCleared: plans?.length ?? 0 },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error("Error clearing future training sessions:", error);
+    return NextResponse.json(
+      { error: "Failed to clear future sessions" },
       { status: 500 }
     );
   }

@@ -119,6 +119,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         { status: 404 }
       );
     }
+    if (message.includes("hasn't started yet")) {
+      return NextResponse.json(
+        { success: false, error: message },
+        { status: 400 }
+      );
+    }
     console.error("Error transitioning phase:", error);
     return NextResponse.json(
       { error: "Failed to transition phase" },

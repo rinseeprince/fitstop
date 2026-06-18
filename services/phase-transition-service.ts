@@ -246,6 +246,13 @@ export const transitionPhase = async (
 ): Promise<{ resultId: string; reviewData: PhaseReviewData }> => {
   const reviewData = await getPhaseReviewData(phaseId, clientId, today);
 
+  // Can't complete a phase that hasn't started yet (e.g. activated early but
+  // still dated in the future) - that would stamp an end_date before the start
+  // and show a negative duration.
+  if (reviewData.phase.startDate && reviewData.phase.startDate > today) {
+    throw new Error("This phase hasn't started yet and can't be completed.");
+  }
+
   // Persist toggled milestones on the phase row before the atomic transition
   if (options.milestones) {
     await supabaseAdmin

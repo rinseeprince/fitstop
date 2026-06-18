@@ -93,6 +93,7 @@ describe("date-driven plan resolution", () => {
     return {
       select: vi.fn().mockReturnThis(),
       eq: vi.fn().mockReturnThis(),
+      neq: vi.fn().mockReturnThis(),
       is: vi.fn().mockReturnThis(),
       lte: vi.fn().mockReturnThis(),
       or: vi.fn().mockReturnThis(),

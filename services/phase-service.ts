@@ -69,6 +69,14 @@ export const createPhase = async (
     throw new Error(`Failed to fetch roadmap: ${roadmapError.message}`);
   }
 
+  // A phase can't start in the past (today is allowed -> it auto-activates).
+  if (data.startDate) {
+    const clientToday = await getClientTodayString(roadmap.client_id);
+    if (data.startDate < clientToday) {
+      throw new Error("A phase can't start before today.");
+    }
+  }
+
   // A fully-dated phase must not overlap a dated sibling.
   if (data.startDate && data.endDate) {
     await assertNoSiblingOverlap(roadmapId, data.startDate, data.endDate);
@@ -160,11 +168,20 @@ export const activatePhase = async (
   }
 
   const now = new Date().toISOString();
+  const clientToday = await getClientTodayString(clientId);
+  // Activating early means starting NOW: a future (or missing) planned start is
+  // pulled to the client's today, so a phase can't be "active" yet "start later"
+  // (which would let it be completed with a negative duration).
+  const effectiveStart =
+    phase.start_date && phase.start_date <= clientToday
+      ? phase.start_date
+      : clientToday;
+
   const { data: row, error } = await supabaseAdmin
     .from("phases")
     .update({
       status: "active",
-      start_date: phase.start_date ?? now,
+      start_date: effectiveStart,
       updated_at: now,
     })
     .eq("id", phaseId)
@@ -377,13 +394,9 @@ export const deletePhase = async (
     throw new Error("Phase not found");
   }
 
-  if (phase.status !== "planned") {
-    throw new Error(
-      "This phase has been started or completed and cannot be deleted."
-    );
-  }
-
-  // Unlink plans before deleting
+  // Deletion is allowed for any status (coach decision). Logged training/
+  // nutrition history survives (it's event-keyed, not phase-keyed); only the
+  // phase's own record (reflection/summary) is removed. Unlink plans first.
   await supabaseAdmin
     .from("training_plans")
     .update({ phase_id: null })

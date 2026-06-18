@@ -75,6 +75,11 @@ export async function POST(
       { status: 201 }
     );
   } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to create phase";
+    // Surface the date guards (overlap / past start) so the toast explains why.
+    if (message.includes("overlap") || message.includes("can't start before")) {
+      return NextResponse.json({ success: false, error: message }, { status: 400 });
+    }
     console.error("Error creating phase:", error);
     return NextResponse.json(
       { error: "Failed to create phase" },
