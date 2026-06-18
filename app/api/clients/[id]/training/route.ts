@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getClientById } from "@/services/client-service";
-import { getActiveTrainingPlan, promoteTrainingPlanIfReady, getTrainingPlanById } from "@/services/training-service";
+import { getActiveTrainingPlan, getTrainingPlanById } from "@/services/training-service";
+import { getClientTodayString } from "@/services/today-service";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { aiRateLimit, coachApiRateLimit } from "@/lib/rate-limit";
@@ -85,47 +86,50 @@ export async function GET(
       );
     }
 
-    // Promote planned plan if its effective date has arrived
-    await promoteTrainingPlanIfReady(clientId);
-
+    // "Active" is date-driven: the provenance plan whose range covers today.
+    const clientToday = await getClientTodayString(clientId);
     const activePlan = await getActiveTrainingPlan(clientId);
 
-    // Check for a planned (upcoming) plan
-    const { data: plannedPlanRow } = await supabaseAdmin
+    // The next future plan (additive placement has no 'planned' status; a future
+    // plan is simply one whose effective_from is after today).
+    const { data: nextPlanRow } = await supabaseAdmin
       .from("training_plans")
-      .select("id, effective_from, name, split_type, frequency_per_week")
+      .select("id, effective_from")
       .eq("client_id", clientId)
-      .eq("status", "planned")
+      .is("deleted_at", null)
+      .gt("effective_from", clientToday)
+      .order("effective_from", { ascending: true })
+      .limit(1)
       .maybeSingle();
 
-    const plannedFullPlan = plannedPlanRow
-      ? await getTrainingPlanById(plannedPlanRow.id)
+    const nextFullPlan = nextPlanRow
+      ? await getTrainingPlanById(nextPlanRow.id)
       : null;
 
-    // With no active plan, the scheduled plan IS the coach's working plan:
-    // it's returned as `plan` (editable in the builder) with `scheduledFor`
-    // marking the start date. `upcomingPlan` only describes a planned plan
-    // queued BEHIND an active one.
+    // With no plan covering today, the next future plan IS the coach's working
+    // plan: returned as `plan` (editable in the builder) with `scheduledFor`
+    // marking its start date. `upcomingPlan` only describes a future plan queued
+    // BEHIND a plan that already covers today.
     const upcomingPlan =
-      activePlan && plannedPlanRow && plannedFullPlan
+      activePlan && nextPlanRow && nextFullPlan
         ? {
-            id: plannedFullPlan.id,
-            effectiveFrom: plannedPlanRow.effective_from,
-            name: plannedFullPlan.name,
-            splitType: plannedFullPlan.splitType,
-            frequencyPerWeek: plannedFullPlan.frequencyPerWeek,
-            sessions: plannedFullPlan.sessions,
+            id: nextFullPlan.id,
+            effectiveFrom: nextPlanRow.effective_from,
+            name: nextFullPlan.name,
+            splitType: nextFullPlan.splitType,
+            frequencyPerWeek: nextFullPlan.frequencyPerWeek,
+            sessions: nextFullPlan.sessions,
           }
         : null;
 
     return NextResponse.json(
       {
         success: true,
-        plan: activePlan ?? plannedFullPlan,
+        plan: activePlan ?? nextFullPlan,
         upcomingPlan,
         scheduledFor:
-          !activePlan && plannedPlanRow && plannedFullPlan
-            ? plannedPlanRow.effective_from
+          !activePlan && nextPlanRow && nextFullPlan
+            ? nextPlanRow.effective_from
             : null,
         clientTimezone: client.timezone,
       },

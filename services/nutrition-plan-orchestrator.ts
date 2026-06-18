@@ -1,6 +1,5 @@
 import { getClientById } from "@/services/client-service";
 import { generateNutritionPlan, calculateTDEE } from "@/services/nutrition-service";
-import { getActiveTrainingPlan } from "@/services/training-service";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import {
   validateClientForNutrition,
@@ -11,7 +10,7 @@ import { CUSTOM_MACRO_CALORIE_TOLERANCE } from "@/lib/constants";
 import { getLatestBodyMetrics } from "@/services/body-metrics-service";
 import { getCurrentGoals } from "@/services/client-goals-service";
 import { requirePhaseSelection } from "@/lib/require-phase-selection";
-import type { GenerateNutritionPlanRequest, DietType } from "@/types/check-in";
+import type { GenerateNutritionPlanRequest } from "@/types/check-in";
 import { deleteFutureNutritionEventsForPlan, regenerateFutureNutritionEvents } from "@/services/nutrition-event-service";
 import { captureApiError } from "@/lib/error-handler";
 import { getClientTodayString } from "@/services/today-service";
@@ -190,8 +189,6 @@ async function handleCustomMacros(
     ? calculateTDEE(bmr, body.workActivityLevel)
     : tdeeValue;
 
-  const trainingPlan = await getActiveTrainingPlan(clientId);
-
   // Capture old plan ID BEFORE the RPC archives it
   const { data: existingPlan } = await supabaseAdmin
     .from("nutrition_plans")
@@ -222,7 +219,7 @@ async function handleCustomMacros(
     customCarbG: body.customCarbG,
     customFatG: body.customFatG,
     regenerationReason: body.dayCalorieOverrides ? "custom_macros_custom_day_distribution" : "custom_macros",
-    trainingPlan,
+    trainingPlan: null, // vestigial param (createNutritionPlan ignores it)
     phaseId: phase.phaseId,
     coachNotes: validatedData.coachNotes,
     goalSource,
@@ -280,8 +277,6 @@ async function handleCalculatedPlan(
 ): Promise<NutritionPlanResult> {
   const currentWeightKg = weightToKg(currentWeight!, weightUnit);
 
-  const trainingPlan = await getActiveTrainingPlan(clientId);
-
   // Capture old plan BEFORE the RPC archives it (need id + baseline for preserveCalories)
   const { data: existingPlan } = await supabaseAdmin
     .from("nutrition_plans")
@@ -322,7 +317,7 @@ async function handleCalculatedPlan(
       gender: client.gender as "male" | "female" | "other",
       workActivityLevel: body.workActivityLevel,
       trainingVolumeHours: body.trainingVolumeHours,
-      trainingPlan,
+      trainingPlan: null, // vestigial param (generateNutritionPlan ignores it)
       proteinTargetGPerKg: body.proteinTargetGPerKg,
       dietType: body.dietType,
       goalDeadline: effectiveGoalDeadline ?? undefined,
@@ -357,7 +352,7 @@ async function handleCalculatedPlan(
     customCarbG: null,
     customFatG: null,
     regenerationReason,
-    trainingPlan,
+    trainingPlan: null, // vestigial param (createNutritionPlan ignores it)
     phaseId: phase.phaseId,
     coachNotes: validatedData.coachNotes,
     goalSource,

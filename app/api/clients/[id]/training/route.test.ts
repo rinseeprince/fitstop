@@ -20,8 +20,11 @@ vi.mock('@/services/coach-saved-plan-service', () => ({
 
 vi.mock('@/services/training-service', () => ({
   getActiveTrainingPlan: vi.fn().mockResolvedValue(null),
-  promoteTrainingPlanIfReady: vi.fn().mockResolvedValue(undefined),
   getTrainingPlanById: vi.fn().mockResolvedValue(null),
+}))
+
+vi.mock('@/services/today-service', () => ({
+  getClientTodayString: vi.fn().mockResolvedValue('2026-01-15'),
 }))
 
 vi.mock('@/lib/auth-helpers', () => ({
@@ -217,8 +220,9 @@ const plannedFullPlan = {
   sessions: [],
 }
 
-// Fixed past date: assertions only echo it back, so it can never collide
-// with the host clock.
+// Fixed date after the mocked client-today (2026-01-15): the route resolves the
+// "next future plan" by effective_from > today. The chain mock ignores the
+// filter args and just echoes the row, so the value only needs to be stable.
 const plannedRow = {
   id: 'plan-planned',
   effective_from: '2026-01-19',
@@ -228,9 +232,14 @@ const plannedRow = {
 }
 
 function mockPlannedPlanRow(row: typeof plannedRow | null): void {
+  // Matches the date-driven next-plan query: select().eq().is().gt().order().limit().maybeSingle().
   const chain: Record<string, unknown> = {}
   chain.select = vi.fn().mockReturnValue(chain)
   chain.eq = vi.fn().mockReturnValue(chain)
+  chain.is = vi.fn().mockReturnValue(chain)
+  chain.gt = vi.fn().mockReturnValue(chain)
+  chain.order = vi.fn().mockReturnValue(chain)
+  chain.limit = vi.fn().mockReturnValue(chain)
   chain.maybeSingle = vi.fn().mockResolvedValue({ data: row })
   vi.mocked(supabaseAdmin.from).mockReturnValue(chain as never)
 }

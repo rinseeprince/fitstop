@@ -5,7 +5,6 @@ import type { TrainingPlan } from "@/types/training";
 import { getTodayDateString, getDateString, DAY_NUM } from "@/lib/date-helpers";
 import { getClientTodayString } from "@/services/today-service";
 import { getEventsForDateRange } from "@/services/training-event-service";
-import { getActiveTrainingPlan } from "@/services/training-service";
 import { calculateDailyMacros } from "@/utils/nutrition-helpers";
 import type { DayOfWeek } from "@/utils/nutrition-helpers";
 import { captureApiError } from "@/lib/error-handler";
@@ -234,7 +233,6 @@ export async function regenerateFutureNutritionEvents(
   // from the actual event rows via buildDailyTargetsFromPlan, so the stored
   // column is no longer read. The per-date `nutrition_events.is_training_day`
   // written below by generateNutritionEvents remains the source of truth.
-  const trainingPlan = await getActiveTrainingPlan(clientId);
 
   // Calculate end date
   const endDate = await calculateNutritionEndDate(planId, fromDate);
@@ -277,7 +275,7 @@ export async function regenerateFutureNutritionEvents(
       dietType: planRow.diet_type,
     },
     dailyTargetRows,
-    trainingPlan,
+    null, // trainingPlan param is vestigial; training days derive from training_events
     fromDate,
     cappedEndDate
   );

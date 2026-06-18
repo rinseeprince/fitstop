@@ -11,15 +11,9 @@ vi.mock("./today-service", () => ({
   getClientTodayString: vi.fn(),
 }));
 
-vi.mock("./training-event-service", () => ({
-  deleteFutureEventsForPlan: vi.fn().mockResolvedValue(undefined),
-  regenerateFutureEvents: vi.fn().mockResolvedValue(undefined),
-}));
-
 import { supabaseAdmin } from "./supabase-admin";
 import { getClientTodayString } from "./today-service";
-import { deleteFutureEventsForPlan, regenerateFutureEvents } from "./training-event-service";
-import { createTrainingPlanAtomic, promoteTrainingPlanIfReady } from "./training-service";
+import { createTrainingPlanAtomic, getActiveTrainingPlanId, getTrainingPlanIdForDate } from "./training-service";
 
 describe("createTrainingPlanAtomic", () => {
   beforeEach(() => {
@@ -94,13 +88,16 @@ describe("createTrainingPlanAtomic", () => {
   });
 });
 
-describe("promoteTrainingPlanIfReady", () => {
-  function createMockQuery(result: { data: unknown; error: unknown }) {
+describe("date-driven plan resolution", () => {
+  function createIdQuery(result: { data: unknown; error: unknown }) {
     return {
       select: vi.fn().mockReturnThis(),
-      update: vi.fn().mockReturnThis(),
       eq: vi.fn().mockReturnThis(),
+      is: vi.fn().mockReturnThis(),
       lte: vi.fn().mockReturnThis(),
+      or: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockReturnThis(),
       maybeSingle: vi.fn().mockResolvedValue(result),
     };
   }
@@ -109,50 +106,34 @@ describe("promoteTrainingPlanIfReady", () => {
     vi.clearAllMocks();
   });
 
-  it("gates promotion on the CLIENT's local today and anchors the delete/regen pair to it", async () => {
-    // London client at 00:30 BST June 10 (23:30 UTC June 9): a plan effective
-    // 06-10 must promote NOW, a day before server UTC reaches 06-10.
-    vi.mocked(getClientTodayString).mockResolvedValue("2026-06-10");
+  it("getTrainingPlanIdForDate resolves the plan whose range covers the given date", async () => {
+    const q = createIdQuery({ data: { id: "plan-cover" }, error: null });
+    vi.mocked(supabaseAdmin.from).mockReturnValue(q as never);
 
-    const plannedQuery = createMockQuery({
-      data: { id: "plan-new", effective_from: "2026-06-10" },
-      error: null,
-    });
-    const activeQuery = createMockQuery({
-      data: { id: "plan-old" },
-      error: null,
-    });
-    const updateQuery = createMockQuery({ data: null, error: null });
+    const id = await getTrainingPlanIdForDate("client-1", "2026-06-15");
 
-    let selectCalls = 0;
-    vi.mocked(supabaseAdmin.from).mockImplementation(() => {
-      selectCalls++;
-      if (selectCalls === 1) return plannedQuery as never;
-      if (selectCalls === 2) return activeQuery as never;
-      return updateQuery as never;
-    });
-
-    const result = await promoteTrainingPlanIfReady("client-1");
-
-    expect(result).toEqual({ promoted: true, newPlanId: "plan-new" });
-    expect(getClientTodayString).toHaveBeenCalledWith("client-1");
-    // The readiness gate compares against the client-local day.
-    expect(plannedQuery.lte).toHaveBeenCalledWith("effective_from", "2026-06-10");
-    // Both halves of the cleanup pair share that anchor (no UTC/local split).
-    expect(deleteFutureEventsForPlan).toHaveBeenCalledWith("plan-old", "2026-06-10");
-    expect(regenerateFutureEvents).toHaveBeenCalledWith("client-1", "plan-new", "2026-06-10");
+    expect(id).toBe("plan-cover");
+    // Window predicate: effective_from <= date, ordered effective_from DESC.
+    expect(q.lte).toHaveBeenCalledWith("effective_from", "2026-06-15");
   });
 
-  it("does not promote when no planned plan has reached the client-local today", async () => {
-    vi.mocked(getClientTodayString).mockResolvedValue("2026-06-09");
+  it("getTrainingPlanIdForDate returns null (not a throw) when no plan covers the date", async () => {
     vi.mocked(supabaseAdmin.from).mockReturnValue(
-      createMockQuery({ data: null, error: null }) as never,
+      createIdQuery({ data: null, error: null }) as never,
     );
 
-    const result = await promoteTrainingPlanIfReady("client-1");
+    expect(await getTrainingPlanIdForDate("client-1", "2026-06-15")).toBeNull();
+  });
 
-    expect(result).toEqual({ promoted: false });
-    expect(deleteFutureEventsForPlan).not.toHaveBeenCalled();
-    expect(regenerateFutureEvents).not.toHaveBeenCalled();
+  it("getActiveTrainingPlanId resolves against the client-local today", async () => {
+    vi.mocked(getClientTodayString).mockResolvedValue("2026-06-10");
+    const q = createIdQuery({ data: { id: "plan-today" }, error: null });
+    vi.mocked(supabaseAdmin.from).mockReturnValue(q as never);
+
+    const id = await getActiveTrainingPlanId("client-1");
+
+    expect(id).toBe("plan-today");
+    expect(getClientTodayString).toHaveBeenCalledWith("client-1");
+    expect(q.lte).toHaveBeenCalledWith("effective_from", "2026-06-10");
   });
 });

@@ -194,30 +194,21 @@ export async function regenerateFutureEvents(
   const endDate = await calculateEndDate(planId, fromDate);
   if (!endDate || endDate <= fromDate) return;
 
-  // Cap end date if this is the active plan and a planned plan exists
-  // (active plan events shouldn't overlap with planned plan's date range)
+  // Cap at the next coexisting plan's start so a regenerated plan never bleeds
+  // past a later plan's window (additive placement: plans own disjoint ranges).
+  // Replaces the old status='planned' cap, which no-ops now that placement
+  // never writes 'planned'.
   const { data: thisPlan } = await supabaseAdmin
     .from("training_plans")
-    .select("status")
+    .select("effective_from")
     .eq("id", planId)
-    .single();
+    .maybeSingle();
 
   let cappedEndDate = endDate;
-  if (thisPlan?.status === "active") {
-    const { data: plannedPlan } = await supabaseAdmin
-      .from("training_plans")
-      .select("effective_from")
-      .eq("client_id", clientId)
-      .eq("status", "planned")
-      .maybeSingle();
-
-    if (plannedPlan?.effective_from) {
-      const dayBefore = new Date(plannedPlan.effective_from + "T00:00:00");
-      dayBefore.setDate(dayBefore.getDate() - 1);
-      const capDate = getDateString(dayBefore);
-      if (capDate < cappedEndDate) {
-        cappedEndDate = capDate;
-      }
+  if (thisPlan?.effective_from) {
+    const nextPlanCap = await getNextPlanStartCap(clientId, thisPlan.effective_from);
+    if (nextPlanCap && nextPlanCap < cappedEndDate) {
+      cappedEndDate = nextPlanCap;
     }
   }
 

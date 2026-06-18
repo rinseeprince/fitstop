@@ -2,10 +2,7 @@ import { supabaseAdmin } from "./supabase-admin";
 import type { TrainingPlan, TrainingSession, TrainingExercise, AIGeneratedPlan, UpdateTrainingPlanRequest } from "@/types/training";
 import type { TrainingPlanUpdate } from "@/lib/database-helpers";
 import { mapExerciseRow, mapSessionRow, mapPlanRow } from "./training-mappers";
-import { getDateString } from "@/lib/date-helpers";
 import { getClientTodayString } from "@/services/today-service";
-import { deleteFutureEventsForPlan, regenerateFutureEvents } from "@/services/training-event-service";
-import { captureApiError } from "@/lib/error-handler";
 
 // Re-export moved functions so existing imports continue to work
 export { updateSession, addSession, deleteSession, replaceSessionExercises, getSessionWithExercises, insertTrainingSessions, reorderSessions, updateSessionCalories, updateSurplusForFutureEvents } from "./training-session-service";
@@ -161,53 +158,10 @@ const fetchSessionsWithExercises = async (planId: string): Promise<TrainingSessi
   );
 };
 
-// Get active training plan for a client
-export const getActiveTrainingPlan = async (clientId: string): Promise<TrainingPlan | null> => {
-  const { data: planRow, error: planError } = await supabaseAdmin
-    .from("training_plans")
-    .select("*")
-    .eq("client_id", clientId)
-    .eq("status", "active")
-    .is("deleted_at", null)
-    .is("effective_until", null)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .single();
-
-  if (planError || !planRow) return null;
-  const sessions = await fetchSessionsWithExercises(planRow.id);
-  return mapPlanRow(planRow, sessions);
-};
-
-/**
- * Lightweight active-plan id lookup — id only, no sessions/exercises. Mirrors
- * getActiveNutritionPlanId. Used by resolvePlanContextForDate's training
- * fallback (Session 5.3), which runs on every per-card write and must not pay
- * for getActiveTrainingPlan's fetchSessionsWithExercises. Same active-plan
- * filters as getActiveTrainingPlan, but .maybeSingle() (NOT .single()) so a
- * client with no active plan resolves to null → clean 422, not a 500.
- */
-export const getActiveTrainingPlanId = async (
-  clientId: string
-): Promise<string | null> => {
-  const { data, error } = await supabaseAdmin
-    .from("training_plans")
-    .select("id")
-    .eq("client_id", clientId)
-    .eq("status", "active")
-    .is("deleted_at", null)
-    .is("effective_until", null)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (error) {
-    throw new Error(`Failed to fetch active training plan id: ${error.message}`);
-  }
-  return data?.id ?? null;
-};
-
-// Get training plan that was active on a specific date
+// Get the training plan whose date range covers a specific date. Under additive
+// placement, plans are coexisting provenance rows; "active" is date-driven, not
+// a status. effective_until stays NULL on placed plans, so resolution falls out
+// of effective_from ordering (the latest-started plan whose start <= date).
 export const getTrainingPlanForDate = async (
   clientId: string,
   date: string
@@ -227,6 +181,49 @@ export const getTrainingPlanForDate = async (
   if (planError || !planRow) return null;
   const sessions = await fetchSessionsWithExercises(planRow.id);
   return mapPlanRow(planRow, sessions);
+};
+
+/**
+ * Lightweight date-driven plan-id lookup - id only, no sessions/exercises.
+ * Same window predicate as getTrainingPlanForDate. Used by hot per-write paths
+ * (resolvePlanContextForDate's training fallback) that must not pay for
+ * fetchSessionsWithExercises. .maybeSingle() so no covering plan resolves to
+ * null (clean 422, not a 500).
+ */
+export const getTrainingPlanIdForDate = async (
+  clientId: string,
+  date: string
+): Promise<string | null> => {
+  const { data, error } = await supabaseAdmin
+    .from("training_plans")
+    .select("id")
+    .eq("client_id", clientId)
+    .is("deleted_at", null)
+    .lte("effective_from", date)
+    .or(`effective_until.gte.${date},effective_until.is.null`)
+    .order("effective_from", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to fetch training plan id for date: ${error.message}`);
+  }
+  return data?.id ?? null;
+};
+
+// The "active" training plan is the provenance plan whose range covers the
+// client's local today (date-driven; no status='active' singleton, no promotion).
+export const getActiveTrainingPlan = async (clientId: string): Promise<TrainingPlan | null> => {
+  const today = await getClientTodayString(clientId);
+  return getTrainingPlanForDate(clientId, today);
+};
+
+export const getActiveTrainingPlanId = async (
+  clientId: string
+): Promise<string | null> => {
+  const today = await getClientTodayString(clientId);
+  return getTrainingPlanIdForDate(clientId, today);
 };
 
 // Get training plan by ID
@@ -340,80 +337,3 @@ export const createTrainingPlanAtomic = async (params: {
 
   return newPlanId;
 };
-
-/**
- * Lazy promotion: if a planned training plan's effective_from has arrived,
- * promote it to active and archive the current active plan.
- * Called before any read of the active training plan.
- *
- * supabaseAdmin: system-level write for plan lifecycle management.
- */
-export async function promoteTrainingPlanIfReady(
-  clientId: string,
-  clientToday?: string
-): Promise<{ promoted: boolean; newPlanId?: string }> {
-  // Client-local today: a plan effective "today" must promote when the
-  // CLIENT's day arrives, not the server's UTC day. Also the anchor for the
-  // delete/regen pair below. Callers that already resolved the client-local
-  // today pass it in to avoid a redundant fetch.
-  const today = clientToday ?? (await getClientTodayString(clientId));
-
-  const { data: plannedPlan, error } = await supabaseAdmin
-    .from("training_plans")
-    .select("id, effective_from")
-    .eq("client_id", clientId)
-    .eq("status", "planned")
-    .lte("effective_from", today)
-    .maybeSingle();
-
-  if (error || !plannedPlan) return { promoted: false };
-
-  // Capture old active plan ID before archiving it
-  const { data: oldActivePlan } = await supabaseAdmin
-    .from("training_plans")
-    .select("id")
-    .eq("client_id", clientId)
-    .eq("status", "active")
-    .maybeSingle();
-
-  // Archive the current active plan
-  const archiveUntil = new Date(plannedPlan.effective_from + "T00:00:00");
-  archiveUntil.setDate(archiveUntil.getDate() - 1);
-  const archiveUntilStr = getDateString(archiveUntil);
-
-  await supabaseAdmin
-    .from("training_plans")
-    .update({
-      status: "archived",
-      effective_until: archiveUntilStr,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("client_id", clientId)
-    .eq("status", "active");
-
-  // Promote planned to active
-  await supabaseAdmin
-    .from("training_plans")
-    .update({
-      status: "active",
-      effective_until: null,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", plannedPlan.id);
-
-  // Clean up old plan's future events, generate for promoted plan. Pass the
-  // SAME anchor date to both: a dateless delete falls back to UTC while a
-  // dateless regen falls back to client-local today, and a mismatched pair
-  // leaves the old plan's local-today event alongside the new plan's.
-  if (oldActivePlan) {
-    await deleteFutureEventsForPlan(oldActivePlan.id, today).catch((err) =>
-      captureApiError(err, { action: "delete-future-training-events-promote", planId: oldActivePlan.id })
-    );
-  }
-  await regenerateFutureEvents(clientId, plannedPlan.id, today).catch((err) =>
-    captureApiError(err, { action: "generate-training-events-promote", planId: plannedPlan.id })
-  );
-
-  return { promoted: true, newPlanId: plannedPlan.id };
-}
-

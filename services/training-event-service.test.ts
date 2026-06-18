@@ -51,7 +51,6 @@ import { getTodayDateString } from "@/lib/date-helpers";
 import {
   generateTrainingEvents,
   regenerateFutureEvents,
-  deleteFutureEventsForPlan,
   getEventsForDateRange,
   getEventForDate,
   countEventsInRange,
@@ -237,7 +236,11 @@ describe("training-event-service", () => {
           return count === 1 ? (deleteQuery as any) : (upsertQuery as any);
         }
         if (table === "training_sessions") return sessionsQuery as any;
-        if (table === "training_plans") return planQuery as any;
+        if (table === "training_plans") {
+          // #1 calculateEndDate + #2 next-plan-cap read the plan row; #3 is
+          // getNextPlanStartCap's next-plan lookup -> none (single-plan tests).
+          return count <= 2 ? (planQuery as any) : (createMockQuery({ data: null, error: null }) as any);
+        }
         if (table === "phases") return phaseQuery as any;
         return createMockQuery({ data: null, error: null }) as any;
       });
@@ -282,7 +285,11 @@ describe("training-event-service", () => {
         const count = callIndex.filter((t) => t === table).length;
         if (table === "training_events") return count === 1 ? (deleteQuery as any) : (upsertQuery as any);
         if (table === "training_sessions") return sessionsQuery as any;
-        if (table === "training_plans") return planQuery as any;
+        if (table === "training_plans") {
+          // #1 calculateEndDate + #2 next-plan-cap read the plan row; #3 is
+          // getNextPlanStartCap's next-plan lookup -> none (single-plan tests).
+          return count <= 2 ? (planQuery as any) : (createMockQuery({ data: null, error: null }) as any);
+        }
         return createMockQuery({ data: null, error: null }) as any;
       });
 
@@ -317,7 +324,11 @@ describe("training-event-service", () => {
         const count = callIndex.filter((t) => t === table).length;
         if (table === "training_events") return count === 1 ? (deleteQuery as any) : (upsertQuery as any);
         if (table === "training_sessions") return sessionsQuery as any;
-        if (table === "training_plans") return planQuery as any;
+        if (table === "training_plans") {
+          // #1 calculateEndDate + #2 next-plan-cap read the plan row; #3 is
+          // getNextPlanStartCap's next-plan lookup -> none (single-plan tests).
+          return count <= 2 ? (planQuery as any) : (createMockQuery({ data: null, error: null }) as any);
+        }
         if (table === "phases") return phaseQuery as any;
         return createMockQuery({ data: null, error: null }) as any;
       });
@@ -359,7 +370,11 @@ describe("training-event-service", () => {
         const count = callIndex.filter((t) => t === table).length;
         if (table === "training_events") return count === 1 ? (deleteQuery as any) : (upsertQuery as any);
         if (table === "training_sessions") return sessionsQuery as any;
-        if (table === "training_plans") return planQuery as any;
+        if (table === "training_plans") {
+          // #1 calculateEndDate + #2 next-plan-cap read the plan row; #3 is
+          // getNextPlanStartCap's next-plan lookup -> none (single-plan tests).
+          return count <= 2 ? (planQuery as any) : (createMockQuery({ data: null, error: null }) as any);
+        }
         if (table === "phases") return phaseQuery as any;
         return createMockQuery({ data: null, error: null }) as any;
       });
@@ -394,7 +409,11 @@ describe("training-event-service", () => {
         const count = callIndex.filter((t) => t === table).length;
         if (table === "training_events") return count === 1 ? (deleteQuery as any) : (upsertQuery as any);
         if (table === "training_sessions") return sessionsQuery as any;
-        if (table === "training_plans") return planQuery as any;
+        if (table === "training_plans") {
+          // #1 calculateEndDate + #2 next-plan-cap read the plan row; #3 is
+          // getNextPlanStartCap's next-plan lookup -> none (single-plan tests).
+          return count <= 2 ? (planQuery as any) : (createMockQuery({ data: null, error: null }) as any);
+        }
         return createMockQuery({ data: null, error: null }) as any;
       });
 
@@ -429,7 +448,11 @@ describe("training-event-service", () => {
         const count = callIndex.filter((t) => t === table).length;
         if (table === "training_events") return deleteQuery as any;
         if (table === "training_sessions") return sessionsQuery as any;
-        if (table === "training_plans") return planQuery as any;
+        if (table === "training_plans") {
+          // #1 calculateEndDate + #2 next-plan-cap read the plan row; #3 is
+          // getNextPlanStartCap's next-plan lookup -> none (single-plan tests).
+          return count <= 2 ? (planQuery as any) : (createMockQuery({ data: null, error: null }) as any);
+        }
         if (table === "phases") return phaseQuery as any;
         return createMockQuery({ data: null, error: null }) as any;
       });
@@ -455,9 +478,14 @@ describe("training-event-service", () => {
 
       mockFrom.mockImplementation((table: string) => {
         callIndex.push(table);
+        const count = callIndex.filter((t) => t === table).length;
         if (table === "training_events") return deleteQuery as any;
         if (table === "training_sessions") return sessionsQuery as any;
-        if (table === "training_plans") return planQuery as any;
+        if (table === "training_plans") {
+          // #1 calculateEndDate + #2 next-plan-cap read the plan row; #3 is
+          // getNextPlanStartCap's next-plan lookup -> none (single-plan tests).
+          return count <= 2 ? (planQuery as any) : (createMockQuery({ data: null, error: null }) as any);
+        }
         return createMockQuery({ data: null, error: null }) as any;
       });
 
