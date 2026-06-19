@@ -2914,6 +2914,7 @@ export type Database = {
           p_phase_id?: string
           p_protein_target_g: number
           p_protein_target_g_per_kg: number
+          p_recalc_snapshots?: boolean
           p_regeneration_reason: string
           p_tdee: number
           p_today?: string

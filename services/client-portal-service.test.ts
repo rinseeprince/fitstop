@@ -16,10 +16,6 @@ vi.mock("./training-event-service", () => ({
   getEventsForDateRange: vi.fn().mockResolvedValue([]),
 }));
 
-vi.mock("./nutrition-plan-service", () => ({
-  promoteNutritionPlanIfReady: vi.fn().mockResolvedValue({ promoted: false }),
-}));
-
 vi.mock("@/utils/build-daily-targets", () => ({
   buildDailyTargetsFromPlan: vi.fn().mockReturnValue([]),
 }));

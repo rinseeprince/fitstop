@@ -15,7 +15,6 @@ import type {
   GoalProgress,
   GetCheckInComparisonResponse,
 } from "@/types/check-in";
-import { promoteNutritionPlanIfReady } from "./nutrition-plan-service";
 
 export const getCheckInComparison = async (
   checkInId: string
@@ -37,9 +36,6 @@ export const getCheckInComparison = async (
     currentCheckIn.clientId,
     checkInId
   );
-
-  // Promote planned plan if its effective date has arrived
-  await promoteNutritionPlanIfReady(currentCheckIn.clientId);
 
   // Fetch all check-ins for chart data (last 10), first check-in for starting values,
   // active nutrition plan for base weight and created date, goal_deadline from clients table,

@@ -4,10 +4,7 @@ import type { DietType, DayCalorieOverrides } from "@/types/check-in";
 import type { DayOfWeek } from "@/utils/nutrition-helpers";
 import type { TrainingPlan } from "@/types/training";
 import { recordBodyMetrics } from "@/services/body-metrics-service";
-import { getDateString } from "@/lib/date-helpers";
 import { getClientTodayString } from "@/services/today-service";
-import { deleteFutureNutritionEventsForPlan, regenerateFutureNutritionEvents } from "@/services/nutrition-event-service";
-import { captureApiError } from "@/lib/error-handler";
 export type CreateNutritionPlanParams = {
   clientId: string;
   coachId: string;
@@ -36,6 +33,11 @@ export type CreateNutritionPlanParams = {
   goalSource?: "phase" | "client";
   effectiveFrom?: string;
   dayCalorieOverrides?: DayCalorieOverrides;
+  // When true (explicit "Recalculate plan" / fresh Generate recompute) the RPC
+  // re-stamps the banner snapshot (base_weight_kg/goal_weight_kg/goal_deadline);
+  // when false/omitted (in-place edit, e.g. preserve-calories regen) it is
+  // preserved so the weight/goal drift banners stay accurate (spec section 9).
+  recalcSnapshots?: boolean;
 };
 
 /**
@@ -131,6 +133,7 @@ export async function createNutritionPlan(params: CreateNutritionPlanParams): Pr
       p_goal_source: params.goalSource || null,
       p_effective_from: params.effectiveFrom || null,
       p_today: pToday,
+      p_recalc_snapshots: params.recalcSnapshots ?? false,
     } as never) as unknown as { data: string | null; error: { message: string } | null };
 
   if (rpcError || !newPlanId) {
@@ -165,89 +168,13 @@ export async function createNutritionPlan(params: CreateNutritionPlanParams): Pr
 }
 
 /**
- * Lazy promotion: if a planned nutrition plan's effective_from has arrived,
- * promote it to active and archive the current active plan.
- * Called before any read of the active nutrition plan.
- *
- * supabaseAdmin: system-level write for plan lifecycle management.
- */
-export async function promoteNutritionPlanIfReady(
-  clientId: string,
-  clientToday?: string
-): Promise<{ promoted: boolean; newPlanId?: string }> {
-  // Client-local today: a plan effective "today" must promote when the
-  // CLIENT's day arrives, not the server's UTC day. Also the anchor for the
-  // delete/regen pair below. Callers that already resolved the client-local
-  // today pass it in to avoid a redundant fetch.
-  const today = clientToday ?? (await getClientTodayString(clientId));
-
-  const { data: plannedPlan, error } = await supabaseAdmin
-    .from("nutrition_plans")
-    .select("id, effective_from")
-    .eq("client_id", clientId)
-    .eq("status", "planned")
-    .lte("effective_from", today)
-    .maybeSingle();
-
-  if (error || !plannedPlan) return { promoted: false };
-
-  // Capture old active plan ID BEFORE archiving it
-  const { data: oldActivePlan } = await supabaseAdmin
-    .from("nutrition_plans")
-    .select("id")
-    .eq("client_id", clientId)
-    .eq("status", "active")
-    .maybeSingle();
-
-  // Archive the current active plan
-  const archiveUntil = new Date(plannedPlan.effective_from + "T00:00:00");
-  archiveUntil.setDate(archiveUntil.getDate() - 1);
-  const archiveUntilStr = getDateString(archiveUntil);
-
-  await supabaseAdmin
-    .from("nutrition_plans")
-    .update({
-      status: "archived",
-      effective_until: archiveUntilStr,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("client_id", clientId)
-    .eq("status", "active");
-
-  // Promote planned → active (clear effective_until so the active plan has open-ended coverage)
-  await supabaseAdmin
-    .from("nutrition_plans")
-    .update({
-      status: "active",
-      effective_until: null,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", plannedPlan.id);
-
-  // Clean up old plan's future events, generate for promoted plan. Pass the
-  // SAME anchor date to both: a dateless delete falls back to UTC while a
-  // dateless regen falls back to client-local today, and a mismatched pair
-  // anchors the cleanup and the regeneration on different days.
-  if (oldActivePlan) {
-    await deleteFutureNutritionEventsForPlan(oldActivePlan.id, today).catch((err) =>
-      captureApiError(err, { action: "delete-future-nutrition-events-promote", planId: oldActivePlan.id })
-    );
-  }
-  await regenerateFutureNutritionEvents(clientId, plannedPlan.id, today).catch((err) =>
-    captureApiError(err, { action: "generate-nutrition-events-promote", planId: plannedPlan.id })
-  );
-
-  return { promoted: true, newPlanId: plannedPlan.id };
-}
-
-/**
  * Returns the id of the client's currently active nutrition plan, or null.
  *
- * Pure read — no promotion side-effect (callers that need lazy promotion call
- * `promoteNutritionPlanIfReady` first). Mirrors the active-plan resolution inlined in
- * `client-portal-service` and the activation-readiness route. Used by
- * `resolvePlanContextForDate` to stamp `nutrition_logs.nutrition_plan_id` on days with
- * no nutrition event.
+ * Single durable plan: there is exactly one active plan per client
+ * (`idx_nutrition_plans_active_unique`). Mirrors the active-plan resolution
+ * inlined in `client-portal-service` and the activation-readiness route. Used by
+ * `resolvePlanContextForDate` to stamp `nutrition_logs.nutrition_plan_id` on days
+ * with no nutrition event.
  */
 export async function getActiveNutritionPlanId(clientId: string): Promise<string | null> {
   const { data, error } = await supabaseAdmin

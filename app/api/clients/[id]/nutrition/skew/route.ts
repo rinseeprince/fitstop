@@ -10,7 +10,6 @@ import type { DayCalorieOverrides } from "@/types/check-in";
 import type { Database } from "@/types/database";
 import { getDateString } from "@/lib/date-helpers";
 import { getClientTodayString } from "@/services/today-service";
-import { promoteNutritionPlanIfReady } from "@/services/nutrition-plan-service";
 import { deleteFutureNutritionEventsForPlan, regenerateFutureNutritionEvents } from "@/services/nutrition-event-service";
 import { captureApiError } from "@/lib/error-handler";
 
@@ -64,11 +63,7 @@ export async function POST(
 
     // Client-local today: this route stamps a new plan's effective_from
     // directly (it bypasses the atomic RPC), so it must anchor the same way.
-    // Resolved once and shared with the promotion check below.
     const today = await getClientTodayString(clientId);
-
-    // Promote planned plan if its effective date has arrived
-    await promoteNutritionPlanIfReady(clientId, today);
 
     // Get the current active plan
     const { data: currentPlan, error: planError } = await supabaseAdmin

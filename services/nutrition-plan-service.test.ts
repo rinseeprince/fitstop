@@ -21,16 +21,10 @@ vi.mock('./today-service', () => ({
   getClientTodayString: vi.fn().mockResolvedValue('2024-01-17'),
 }))
 
-vi.mock('./nutrition-event-service', () => ({
-  deleteFutureNutritionEventsForPlan: vi.fn().mockResolvedValue(undefined),
-  regenerateFutureNutritionEvents: vi.fn().mockResolvedValue(undefined),
-}))
-
 import { supabaseAdmin } from './supabase-admin'
 import { recordBodyMetrics } from './body-metrics-service'
 import { getClientTodayString } from './today-service'
-import { deleteFutureNutritionEventsForPlan, regenerateFutureNutritionEvents } from './nutrition-event-service'
-import { createNutritionPlan, promoteNutritionPlanIfReady } from './nutrition-plan-service'
+import { createNutritionPlan } from './nutrition-plan-service'
 
 describe('Nutrition Plan Service', () => {
   beforeEach(() => {
@@ -120,52 +114,26 @@ describe('Nutrition Plan Service', () => {
         expect.objectContaining({
           p_effective_from: '2026-06-10',
           p_today: '2026-06-10',
+          // Defaults to false (preserve banner snapshot) when not passed.
+          p_recalc_snapshots: false,
         })
       )
     })
-  })
 
-  describe('promoteNutritionPlanIfReady', () => {
-    function createPromoteQuery(result: { data: unknown; error: unknown }) {
-      return {
-        select: vi.fn().mockReturnThis(),
+    it('forwards recalcSnapshots to the RPC as p_recalc_snapshots', async () => {
+      vi.mocked(supabaseAdmin.rpc).mockResolvedValue({ data: 'plan-123', error: null } as any)
+      const updateQuery = {
         update: vi.fn().mockReturnThis(),
-        eq: vi.fn().mockReturnThis(),
-        lte: vi.fn().mockReturnThis(),
-        maybeSingle: vi.fn().mockResolvedValue(result),
+        eq: vi.fn().mockResolvedValue({ error: null }),
       }
-    }
+      vi.mocked(supabaseAdmin.from).mockReturnValue(updateQuery as any)
 
-    it('gates promotion on the client-local today and anchors the delete/regen pair to it', async () => {
-      // London client at 00:30 BST June 10 (23:30 UTC June 9): a plan
-      // effective 06-10 must promote NOW, a day before server UTC catches up.
-      vi.mocked(getClientTodayString).mockResolvedValue('2026-06-10')
+      await createNutritionPlan({ ...baseParams, recalcSnapshots: true })
 
-      const plannedQuery = createPromoteQuery({
-        data: { id: 'plan-new', effective_from: '2026-06-10' },
-        error: null,
-      })
-      const activeQuery = createPromoteQuery({
-        data: { id: 'plan-old' },
-        error: null,
-      })
-      const updateQuery = createPromoteQuery({ data: null, error: null })
-
-      let fromCalls = 0
-      vi.mocked(supabaseAdmin.from).mockImplementation(() => {
-        fromCalls++
-        if (fromCalls === 1) return plannedQuery as never
-        if (fromCalls === 2) return activeQuery as never
-        return updateQuery as never
-      })
-
-      const result = await promoteNutritionPlanIfReady('client-123')
-
-      expect(result).toEqual({ promoted: true, newPlanId: 'plan-new' })
-      expect(getClientTodayString).toHaveBeenCalledWith('client-123')
-      expect(plannedQuery.lte).toHaveBeenCalledWith('effective_from', '2026-06-10')
-      expect(deleteFutureNutritionEventsForPlan).toHaveBeenCalledWith('plan-old', '2026-06-10')
-      expect(regenerateFutureNutritionEvents).toHaveBeenCalledWith('client-123', 'plan-new', '2026-06-10')
+      expect(supabaseAdmin.rpc).toHaveBeenCalledWith(
+        'create_nutrition_plan_atomic',
+        expect.objectContaining({ p_recalc_snapshots: true })
+      )
     })
   })
 })

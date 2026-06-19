@@ -7,7 +7,6 @@ import { getActiveRoadmap } from "@/services/roadmap-service";
 import { getActivePhase } from "@/services/phase-service";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { coachApiRateLimit } from "@/lib/rate-limit";
-import { promoteNutritionPlanIfReady } from "@/services/nutrition-plan-service";
 
 async function safeQuery<T>(fn: () => Promise<T>): Promise<T | null> {
   try {
@@ -39,9 +38,6 @@ export async function GET(
     if (client.coachId !== coachId) {
       return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
     }
-
-    // Promote planned plan if its effective date has arrived
-    await promoteNutritionPlanIfReady(clientId);
 
     const [trainingPlan, habits, nutritionPlan, roadmap, activePhase] = await Promise.all([
       safeQuery(() => getActiveTrainingPlan(clientId)),

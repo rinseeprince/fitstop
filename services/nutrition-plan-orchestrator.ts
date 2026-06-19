@@ -11,7 +11,7 @@ import { getLatestBodyMetrics } from "@/services/body-metrics-service";
 import { getCurrentGoals } from "@/services/client-goals-service";
 import { requirePhaseSelection } from "@/lib/require-phase-selection";
 import type { GenerateNutritionPlanRequest } from "@/types/check-in";
-import { deleteFutureNutritionEventsForPlan, regenerateFutureNutritionEvents } from "@/services/nutrition-event-service";
+import { regenerateFutureNutritionEvents } from "@/services/nutrition-event-service";
 import { captureApiError } from "@/lib/error-handler";
 import { getClientTodayString } from "@/services/today-service";
 import { resolveEffectiveGoal } from "@/lib/goals/resolve-effective-goal";
@@ -189,14 +189,6 @@ async function handleCustomMacros(
     ? calculateTDEE(bmr, body.workActivityLevel)
     : tdeeValue;
 
-  // Capture old plan ID BEFORE the RPC archives it
-  const { data: existingPlan } = await supabaseAdmin
-    .from("nutrition_plans")
-    .select("id")
-    .eq("client_id", clientId)
-    .eq("status", "active")
-    .maybeSingle();
-
   const newPlanId = await createNutritionPlan({
     clientId,
     coachId,
@@ -225,20 +217,18 @@ async function handleCustomMacros(
     goalSource,
     effectiveFrom: body.effectiveFrom,
     dayCalorieOverrides: body.dayCalorieOverrides,
+    // A fresh custom-macro plan establishes a new baseline at the current
+    // weight -> re-stamp the banner snapshot.
+    recalcSnapshots: true,
   });
 
   if (!newPlanId) {
     throw new NutritionPlanError("Failed to create nutrition plan", 500);
   }
 
-  // Non-blocking: clean up old plan's future events, then generate for new
-  // plan. Both calls share one anchor date (client-local when no explicit
-  // start) — a mismatched delete/regen pair leaves stale same-day events.
-  if (existingPlan) {
-    await deleteFutureNutritionEventsForPlan(existingPlan.id, body.effectiveFrom ?? clientToday).catch((err) =>
-      captureApiError(err, { action: "delete-future-nutrition-events", planId: existingPlan.id })
-    );
-  }
+  // In-place durable plan: the RPC upserts the single active plan (stable id),
+  // so we regenerate its future events from one client-local anchor. No
+  // separate old-plan cleanup — there is no old plan to delete.
   await regenerateFutureNutritionEvents(clientId, newPlanId, body.effectiveFrom ?? clientToday).catch((err) =>
     captureApiError(err, { action: "generate-nutrition-events", planId: newPlanId })
   );
@@ -277,10 +267,11 @@ async function handleCalculatedPlan(
 ): Promise<NutritionPlanResult> {
   const currentWeightKg = weightToKg(currentWeight!, weightUnit);
 
-  // Capture old plan BEFORE the RPC archives it (need id + baseline for preserveCalories)
+  // Read the existing active plan's baseline: preserveCalories reuses it, and
+  // its presence distinguishes an "initial" plan from a "regenerated" one.
   const { data: existingPlan } = await supabaseAdmin
     .from("nutrition_plans")
-    .select("id, baseline_calories")
+    .select("baseline_calories")
     .eq("client_id", clientId)
     .eq("status", "active")
     .maybeSingle();
@@ -358,20 +349,19 @@ async function handleCalculatedPlan(
     goalSource,
     effectiveFrom: body.effectiveFrom,
     dayCalorieOverrides: body.dayCalorieOverrides,
+    // A fresh recompute re-stamps the banner snapshot; a preserve-calories
+    // regen keeps the existing calories (not a recompute), so it must NOT
+    // re-stamp base_weight_kg or the banner would wrongly silence (spec section 9).
+    recalcSnapshots: !body.preserveCalories,
   });
 
   if (!newPlanId) {
     throw new NutritionPlanError("Failed to create nutrition plan", 500);
   }
 
-  // Non-blocking: clean up old plan's future events, then generate for new
-  // plan. Both calls share one anchor date (client-local when no explicit
-  // start) — a mismatched delete/regen pair leaves stale same-day events.
-  if (existingPlan) {
-    await deleteFutureNutritionEventsForPlan(existingPlan.id, body.effectiveFrom ?? clientToday).catch((err) =>
-      captureApiError(err, { action: "delete-future-nutrition-events", planId: existingPlan.id })
-    );
-  }
+  // In-place durable plan: the RPC upserts the single active plan (stable id),
+  // so we regenerate its future events from one client-local anchor. No
+  // separate old-plan cleanup — there is no old plan to delete.
   await regenerateFutureNutritionEvents(clientId, newPlanId, body.effectiveFrom ?? clientToday).catch((err) =>
     captureApiError(err, { action: "generate-nutrition-events", planId: newPlanId })
   );

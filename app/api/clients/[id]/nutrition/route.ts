@@ -19,7 +19,6 @@ import {
   orchestrateNutritionPlanCreation,
   NutritionPlanError,
 } from "@/services/nutrition-plan-orchestrator";
-import { promoteNutritionPlanIfReady } from "@/services/nutrition-plan-service";
 import { getActiveRoadmap } from "@/services/roadmap-service";
 import { getCurrentGoals } from "@/services/client-goals-service";
 import { resolveEffectiveGoal } from "@/lib/goals/resolve-effective-goal";
@@ -55,10 +54,7 @@ export async function GET(
 
     const includeActivityBurn = client.includeActivityBurn ?? true;
 
-    // Promote planned plan if its effective date has arrived
-    await promoteNutritionPlanIfReady(clientId);
-
-    // Fetch active plan
+    // Fetch active plan (single durable plan per client)
     const { data: plan } = await supabaseAdmin
       .from("nutrition_plans")
       .select("*")
@@ -98,53 +94,6 @@ export async function GET(
       dietType,
       trainingEvents
     );
-
-    // Check for a planned (upcoming) plan
-    const { data: plannedPlan } = await supabaseAdmin
-      .from("nutrition_plans")
-      .select("id, effective_from, baseline_calories, protein_target_g, carb_target_g, fat_target_g, custom_macros_enabled, custom_calories, custom_protein_g, custom_carb_g, custom_fat_g, diet_type")
-      .eq("client_id", clientId)
-      .eq("status", "planned")
-      .maybeSingle();
-
-    let upcomingPlan: {
-      effectiveFrom: string;
-      calorieTarget: number;
-      proteinTargetG: number;
-      carbTargetG: number;
-      fatTargetG: number;
-      dietType: string;
-      dailyTargets: typeof dailyTargets;
-    } | null = null;
-
-    if (plannedPlan) {
-      const { data: plannedDailyTargetRows } = await supabaseAdmin
-        .from("nutrition_plan_daily_targets")
-        .select("*")
-        .eq("nutrition_plan_id", plannedPlan.id);
-
-      const plannedDietType = (plannedPlan.diet_type as DietType) || "balanced";
-      const plannedDailyTargets = buildDailyTargetsFromPlan(
-        plannedPlan,
-        plannedDailyTargetRows,
-        trainingPlan,
-        includeActivityBurn,
-        plannedDietType,
-        trainingEvents
-      );
-
-      upcomingPlan = {
-        effectiveFrom: plannedPlan.effective_from,
-        calorieTarget: plannedPlan.custom_macros_enabled && plannedPlan.custom_calories
-          ? plannedPlan.custom_calories
-          : plannedPlan.baseline_calories,
-        proteinTargetG: plannedPlan.protein_target_g,
-        carbTargetG: plannedPlan.carb_target_g,
-        fatTargetG: plannedPlan.fat_target_g,
-        dietType: plannedPlan.diet_type,
-        dailyTargets: plannedDailyTargets,
-      };
-    }
 
     // Goal-drift flag (Session 7.8): does the goal that drives the client NOW
     // (effective-goal resolver) differ from the snapshot this active plan was
@@ -194,7 +143,6 @@ export async function GET(
       includeActivityBurn,
       effectiveFrom: plan.effective_from,
       dailyTargets,
-      upcomingPlan,
       goalChanged,
     });
   } catch (error) {

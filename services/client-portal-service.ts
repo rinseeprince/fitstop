@@ -7,7 +7,6 @@ import { getActiveTrainingPlan } from "./training-service";
 import { getEventsForDateRange } from "./training-event-service";
 import { getTrainingWeekStart, getTrainingWeekEnd } from "@/lib/date-helpers";
 import { getClientTodayString } from "./today-service";
-import { promoteNutritionPlanIfReady } from "./nutrition-plan-service";
 
 // Session-scoped Supabase client for client-portal reads that rely on RLS.
 // Re-exported under the old name so existing callers don't churn; the body
@@ -73,14 +72,9 @@ export async function getClientNutritionTargets(
 
   const includeActivityBurn = clientData.include_activity_burn ?? true;
 
-  // Client-local today: resolved once, shared by the promotion check and the
-  // live-week anchor below. At 00:30 local just after a UTC week boundary,
-  // server-UTC today would show last week's targets.
+  // Client-local today: the live-week anchor below. At 00:30 local just after
+  // a UTC week boundary, server-UTC today would show last week's targets.
   const today = await getClientTodayString(clientId);
-
-  // Promote planned plan if its effective date has arrived
-  // supabaseAdmin: system-level write for plan lifecycle (promotion uses admin internally)
-  await promoteNutritionPlanIfReady(clientId, today);
 
   // Read active nutrition plan from new tables
   const { data: plan, error: planError } = await supabase

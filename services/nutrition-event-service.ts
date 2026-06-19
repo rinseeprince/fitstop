@@ -238,34 +238,6 @@ export async function regenerateFutureNutritionEvents(
   const endDate = await calculateNutritionEndDate(planId, fromDate);
   if (!endDate || endDate <= fromDate) return;
 
-  // Cap end date if this is the active plan and a planned plan exists
-  const { data: thisPlan } = await supabaseAdmin
-    .from("nutrition_plans")
-    .select("status")
-    .eq("id", planId)
-    .single();
-
-  let cappedEndDate = endDate;
-  if (thisPlan?.status === "active") {
-    const { data: plannedNutritionPlan } = await supabaseAdmin
-      .from("nutrition_plans")
-      .select("effective_from")
-      .eq("client_id", clientId)
-      .eq("status", "planned")
-      .maybeSingle();
-
-    if (plannedNutritionPlan?.effective_from) {
-      const dayBefore = new Date(plannedNutritionPlan.effective_from + "T00:00:00");
-      dayBefore.setDate(dayBefore.getDate() - 1);
-      const capDate = getDateString(dayBefore);
-      if (capDate < cappedEndDate) {
-        cappedEndDate = capDate;
-      }
-    }
-  }
-
-  if (cappedEndDate <= fromDate) return;
-
   await generateNutritionEvents(
     clientId,
     planId,
@@ -277,7 +249,7 @@ export async function regenerateFutureNutritionEvents(
     dailyTargetRows,
     null, // trainingPlan param is vestigial; training days derive from training_events
     fromDate,
-    cappedEndDate
+    endDate
   );
 }
 
@@ -334,32 +306,32 @@ function fallbackEndDate(today: string): string {
  * events (placement, duplicate, move, surplus edits) so calorie targets
  * always stay in sync with the training calendar.
  *
- * Errors are logged to Sentry per plan so a single failing plan doesn't
- * block the caller's primary operation.
+ * Errors are logged to Sentry so a failing regen doesn't block the caller's
+ * primary operation.
  *
- * @param fromDate YYYY-MM-DD — regenerate from this date onward for *active*
- *   plans. Planned plans fall back to their own effective_from via the default.
+ * @param fromDate YYYY-MM-DD — regenerate the single active plan's events from
+ *   this date onward. Each caller threads its own anchor (move = min(source,
+ *   target); delete = client-local today; duplicate = targetDate).
  */
 export async function cascadeNutritionAfterTrainingChange(
   clientId: string,
   fromDate: string,
   actionTag: string,
 ): Promise<void> {
-  const { data: nutritionPlans } = await supabaseAdmin
+  // Single durable plan: regenerate the one active plan's future events.
+  // (The 'planned' nutrition model was removed in migration 116.)
+  const { data: activePlan } = await supabaseAdmin
     .from("nutrition_plans")
-    .select("id, status")
+    .select("id")
     .eq("client_id", clientId)
-    .in("status", ["active", "planned"]);
+    .eq("status", "active")
+    .maybeSingle();
 
-  for (const np of nutritionPlans ?? []) {
-    const effectiveFrom = np.status === "active" ? fromDate : undefined;
-    await regenerateFutureNutritionEvents(clientId, np.id, effectiveFrom).catch((err) =>
-      captureApiError(err, {
-        action: actionTag,
-        planId: np.id,
-      }),
-    );
-  }
+  if (!activePlan) return;
+
+  await regenerateFutureNutritionEvents(clientId, activePlan.id, fromDate).catch((err) =>
+    captureApiError(err, { action: actionTag, planId: activePlan.id }),
+  );
 }
 
 // --- Delete future events ---
@@ -428,45 +400,3 @@ export async function getNutritionEventForDate(
   return data ? mapNutritionEventRow(data) : null;
 }
 
-// --- Status updates ---
-
-/**
- * Mark a nutrition event as logged (called when a nutrition log is saved).
- */
-export async function markNutritionEventLogged(
-  clientId: string,
-  date: string
-): Promise<void> {
-  // supabaseAdmin: system-level write for status tracking
-  const { error } = await supabaseAdmin
-    .from("nutrition_events")
-    .update({
-      status: "logged",
-      updated_at: new Date().toISOString(),
-    })
-    .eq("client_id", clientId)
-    .eq("date", date);
-
-  if (error) throw error;
-}
-
-/**
- * Mark all past scheduled events as missed.
- */
-export async function markMissedNutritionEvents(
-  clientId: string,
-  beforeDate: string
-): Promise<void> {
-  // supabaseAdmin: system-level write for status tracking
-  const { error } = await supabaseAdmin
-    .from("nutrition_events")
-    .update({
-      status: "missed",
-      updated_at: new Date().toISOString(),
-    })
-    .eq("client_id", clientId)
-    .lt("date", beforeDate)
-    .eq("status", "scheduled");
-
-  if (error) throw error;
-}

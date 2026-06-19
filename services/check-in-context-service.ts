@@ -13,7 +13,6 @@ import type {
   SessionCompletionQuality,
   DayOfWeek,
 } from "@/types/check-in";
-import { promoteNutritionPlanIfReady } from "./nutrition-plan-service";
 
 /**
  * Get training context for the check-in form
@@ -60,12 +59,8 @@ export const getCheckInNutritionContext = async (
 ): Promise<CheckInNutritionContext> => {
   // Client-local today: the check-in form's "current week" targets must agree
   // with the gate/period (also client-local) — at 00:30 local just past a UTC
-  // week rollover, server-UTC today would show last week's targets. Resolved
-  // once and shared with the promotion check below.
+  // week rollover, server-UTC today would show last week's targets.
   const today = await getClientTodayString(clientId);
-
-  // Promote planned plan if its effective date has arrived
-  await promoteNutritionPlanIfReady(clientId, today);
 
   const { data: nutritionPlan, error } = await supabaseAdmin
     .from("nutrition_plans")
