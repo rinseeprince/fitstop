@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -16,22 +16,25 @@ import { cn } from "@/lib/utils";
 import { calculateDailyMacros } from "@/utils/nutrition-helpers";
 import type { DietType } from "@/types/check-in";
 
-type Mode = "absolute" | "delta";
-
 /** The materialized-edit payload sent to PATCH …/nutrition/events/range. */
 export type RangeEditPayload =
   | { mode: "absolute"; calories: number; proteinG?: number; carbG?: number; fatG?: number }
   | { mode: "delta"; percent?: number; calorieDelta?: number };
 
+// Macros must sum to within this many kcal of the calorie target before applying.
+const CALORIE_MATCH_TOLERANCE = 15;
+
 type NutritionRangeEditDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Number of eligible days the edit will apply to. */
   dayCount: number;
-  /** Diet type of the first selected day — drives the macro auto-rebalance preview. */
+  /** First selected day's diet type — drives the carb/fat auto-rebalance. */
   dietType: DietType;
-  /** Protein (g) of the first selected day — the default "held" protein. */
+  /** First selected day's current values — seed the form on open. */
+  defaultCalories: number;
   defaultProtein: number;
+  defaultCarbs: number;
+  defaultFat: number;
   isSaving: boolean;
   onApply: (payload: RangeEditPayload) => void;
 };
@@ -47,231 +50,157 @@ export function NutritionRangeEditDialog({
   onOpenChange,
   dayCount,
   dietType,
+  defaultCalories,
   defaultProtein,
+  defaultCarbs,
+  defaultFat,
   isSaving,
   onApply,
 }: NutritionRangeEditDialogProps) {
-  const [mode, setMode] = useState<Mode>("absolute");
-
-  // Absolute
   const [calories, setCalories] = useState("");
   const [protein, setProtein] = useState("");
-  const [manualMacros, setManualMacros] = useState(false);
   const [carbs, setCarbs] = useState("");
   const [fat, setFat] = useState("");
-
-  // Delta
   const [percent, setPercent] = useState("");
   const [calorieDelta, setCalorieDelta] = useState("");
 
-  const caloriesNum = toInt(calories);
-  const proteinNum = toInt(protein);
-  const percentNum = toInt(percent);
-  const calorieDeltaNum = toInt(calorieDelta);
-
-  // Auto-rebalanced macro preview (protein held; carbs/fat split by diet type).
-  const autoMacros = useMemo(() => {
-    if (caloriesNum == null || caloriesNum <= 0) return null;
-    return calculateDailyMacros(caloriesNum, proteinNum ?? defaultProtein, false, dietType);
-  }, [caloriesNum, proteinNum, defaultProtein, dietType]);
-
-  const valid =
-    mode === "absolute"
-      ? caloriesNum != null && caloriesNum > 0
-      : percentNum != null || calorieDeltaNum != null;
-
-  function reset() {
-    setMode("absolute");
-    setCalories("");
-    setProtein("");
-    setManualMacros(false);
-    setCarbs("");
-    setFat("");
+  // Seed from the first selected day's CURRENT values when the dialog opens so the
+  // coach edits from real numbers (and they already sum consistently).
+  useEffect(() => {
+    if (!open) return;
+    const s = (n: number) => (n > 0 ? String(n) : "");
+    setCalories(s(defaultCalories));
+    setProtein(s(defaultProtein));
+    setCarbs(s(defaultCarbs));
+    setFat(s(defaultFat));
     setPercent("");
     setCalorieDelta("");
+  }, [open, defaultCalories, defaultProtein, defaultCarbs, defaultFat]);
+
+  const p = toInt(protein) ?? 0;
+  const c = toInt(carbs) ?? 0;
+  const f = toInt(fat) ?? 0;
+  const target = toInt(calories) ?? 0;
+  const macroCals = p * 4 + c * 4 + f * 9;
+  const diff = macroCals - target;
+  const matched = target > 0 && Math.abs(diff) <= CALORIE_MATCH_TOLERANCE;
+  // The fat that hits the calorie target given the current protein + carbs.
+  const fatForTarget = Math.max(0, Math.round((target - p * 4 - c * 4) / 9));
+
+  const pct = toInt(percent);
+  const cd = toInt(calorieDelta);
+  const adjustActive = pct != null || cd != null;
+
+  // Guard: absolute edits require macros to match the calorie target (within
+  // tolerance); the relative "adjust by" path only needs a percent or delta.
+  const valid = adjustActive ? true : target > 0 && matched;
+
+  function onCaloriesChange(v: string) {
+    setCalories(v);
+    const cal = toInt(v) ?? 0;
+    if (cal > 0) {
+      const m = calculateDailyMacros(cal, toInt(protein) ?? defaultProtein, false, dietType);
+      setCarbs(String(m.carbsG));
+      setFat(String(m.fatG));
+    }
   }
 
   function handleApply() {
     if (!valid) return;
-    if (mode === "absolute") {
-      const payload: RangeEditPayload = { mode: "absolute", calories: caloriesNum as number };
-      if (manualMacros) {
-        // Explicit macros win — send all three (server stores them verbatim).
-        payload.proteinG = proteinNum ?? defaultProtein;
-        payload.carbG = toInt(carbs) ?? autoMacros?.carbsG ?? 0;
-        payload.fatG = toInt(fat) ?? autoMacros?.fatG ?? 0;
-      } else if (proteinNum != null) {
-        // Hold this protein; let the server rebalance carbs/fat to the new total.
-        payload.proteinG = proteinNum;
-      }
-      onApply(payload);
+    if (adjustActive) {
+      onApply({ mode: "delta", percent: pct ?? undefined, calorieDelta: cd ?? undefined });
     } else {
-      onApply({
-        mode: "delta",
-        percent: percentNum ?? undefined,
-        calorieDelta: calorieDeltaNum ?? undefined,
-      });
-    }
-  }
-
-  // Seed the manual carb/fat fields from the live auto preview when toggled on.
-  function enableManual(on: boolean) {
-    setManualMacros(on);
-    if (on && autoMacros) {
-      if (carbs.trim() === "") setCarbs(String(autoMacros.carbsG));
-      if (fat.trim() === "") setFat(String(autoMacros.fatG));
+      onApply({ mode: "absolute", calories: target, proteinG: p, carbG: c, fatG: f });
     }
   }
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(o) => {
-        if (!o) reset();
-        onOpenChange(o);
-      }}
-    >
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Edit {dayCount} {dayCount === 1 ? "day" : "days"}</DialogTitle>
+          <DialogTitle>
+            Edit {dayCount} {dayCount === 1 ? "day" : "days"}
+          </DialogTitle>
           <DialogDescription>
-            Sets the calorie target on the selected days; macros auto-rebalance
-            (protein held). Edited days freeze — training surplus stops stacking.
+            Set the targets on the selected days. Edited days freeze — training
+            surplus stops stacking.
           </DialogDescription>
         </DialogHeader>
 
-        {/* Mode toggle */}
-        <div className="inline-flex bg-[rgba(13,148,136,0.05)] rounded-[6px] p-[2px] self-start">
-          {(["absolute", "delta"] as const).map((m) => (
-            <button
-              key={m}
-              type="button"
-              onClick={() => setMode(m)}
-              className={cn(
-                "px-3 py-1.5 text-[12.5px] font-medium rounded-[4px] transition-all",
-                mode === m
-                  ? "bg-white text-[#0c1a1e] shadow-[0_1px_3px_rgba(0,0,0,0.05)]"
-                  : "text-[#5a7d82] hover:text-[#0c1a1e]"
-              )}
-            >
-              {m === "absolute" ? "Set to" : "Adjust by"}
-            </button>
-          ))}
-        </div>
-
-        {mode === "absolute" ? (
-          <div className="space-y-3">
+        {/* Absolute: calories + per-macro grams (disabled while adjusting by %) */}
+        <fieldset disabled={adjustActive} className={cn("space-y-3", adjustActive && "opacity-50")}>
+          <div className="space-y-1.5">
+            <Label htmlFor="re-cal" className="text-xs font-medium text-foreground">
+              Calories
+            </Label>
+            <Input
+              id="re-cal"
+              type="number"
+              inputMode="numeric"
+              value={calories}
+              onChange={(e) => onCaloriesChange(e.target.value)}
+              className="h-9"
+            />
+          </div>
+          <div className="grid grid-cols-3 gap-3">
             <div className="space-y-1.5">
-              <Label htmlFor="range-calories" className="text-xs font-medium text-foreground">
-                Calories
+              <Label htmlFor="re-p" className="text-xs font-medium text-foreground">
+                Protein (g)
               </Label>
-              <Input
-                id="range-calories"
-                type="number"
-                inputMode="numeric"
-                value={calories}
-                onChange={(e) => setCalories(e.target.value)}
-                placeholder="e.g. 1800"
-                className="h-9"
-              />
+              <Input id="re-p" type="number" inputMode="numeric" value={protein} onChange={(e) => setProtein(e.target.value)} className="h-9" />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="range-protein" className="text-xs font-medium text-foreground">
-                Protein (g) <span className="text-[#93b0b4] font-normal">— optional, held fixed</span>
+              <Label htmlFor="re-c" className="text-xs font-medium text-foreground">
+                Carbs (g)
               </Label>
-              <Input
-                id="range-protein"
-                type="number"
-                inputMode="numeric"
-                value={protein}
-                onChange={(e) => setProtein(e.target.value)}
-                placeholder={`default ${defaultProtein}`}
-                className="h-9"
-              />
+              <Input id="re-c" type="number" inputMode="numeric" value={carbs} onChange={(e) => setCarbs(e.target.value)} className="h-9" />
             </div>
-
-            {/* Macro preview / manual override */}
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] text-[#93b0b4]">
-                {autoMacros
-                  ? `Macros: ${autoMacros.proteinG}p · ${manualMacros ? toInt(carbs) ?? autoMacros.carbsG : autoMacros.carbsG}c · ${manualMacros ? toInt(fat) ?? autoMacros.fatG : autoMacros.fatG}f`
-                  : "Enter calories to preview macros"}
-              </span>
-              <label className="flex items-center gap-1.5 text-[11px] text-[#5a7d82] cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={manualMacros}
-                  onChange={(e) => enableManual(e.target.checked)}
-                />
-                Set macros manually
-              </label>
+            <div className="space-y-1.5">
+              <Label htmlFor="re-f" className="text-xs font-medium text-foreground">
+                Fat (g)
+              </Label>
+              <Input id="re-f" type="number" inputMode="numeric" value={fat} onChange={(e) => setFat(e.target.value)} className="h-9" />
             </div>
+          </div>
 
-            {manualMacros && (
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label htmlFor="range-carbs" className="text-xs font-medium text-foreground">
-                    Carbs (g)
-                  </Label>
-                  <Input
-                    id="range-carbs"
-                    type="number"
-                    inputMode="numeric"
-                    value={carbs}
-                    onChange={(e) => setCarbs(e.target.value)}
-                    className="h-9"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="range-fat" className="text-xs font-medium text-foreground">
-                    Fat (g)
-                  </Label>
-                  <Input
-                    id="range-fat"
-                    type="number"
-                    inputMode="numeric"
-                    value={fat}
-                    onChange={(e) => setFat(e.target.value)}
-                    className="h-9"
-                  />
-                </div>
-              </div>
+          {/* Live guidance */}
+          <div className="text-[11px] space-y-0.5">
+            <p className={cn("font-medium", matched ? "text-[#0d9488]" : "text-[#d97706]")}>
+              Macros = {macroCals} kcal
+              {target > 0 && (matched ? " · on target" : ` · ${diff > 0 ? "+" : ""}${diff} vs ${target}`)}
+            </p>
+            {target > 0 && !matched && (
+              <p className="text-[#93b0b4]">
+                Set fat to {fatForTarget}g to hit {target} kcal.
+              </p>
             )}
           </div>
-        ) : (
-          <div className="space-y-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="range-percent" className="text-xs font-medium text-foreground">
-                Percent change (%) <span className="text-[#93b0b4] font-normal">— e.g. -10</span>
-              </Label>
-              <Input
-                id="range-percent"
-                type="number"
-                inputMode="numeric"
-                value={percent}
-                onChange={(e) => setPercent(e.target.value)}
-                placeholder="e.g. -10"
-                className="h-9"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="range-cal-delta" className="text-xs font-medium text-foreground">
-                Calorie adjustment <span className="text-[#93b0b4] font-normal">— e.g. -200</span>
-              </Label>
-              <Input
-                id="range-cal-delta"
-                type="number"
-                inputMode="numeric"
-                value={calorieDelta}
-                onChange={(e) => setCalorieDelta(e.target.value)}
-                placeholder="e.g. -200"
-                className="h-9"
-              />
-            </div>
-            <p className="text-[11px] text-[#93b0b4]">
-              Applied to each day&apos;s current total; macros rebalance per day.
-            </p>
+        </fieldset>
+
+        {/* Relative */}
+        <div className="flex items-center gap-2">
+          <div className="flex-1 h-px bg-[rgba(13,148,136,0.08)]" />
+          <span className="text-[10px] uppercase tracking-[0.08em] text-[#93b0b4]">or adjust by</span>
+          <div className="flex-1 h-px bg-[rgba(13,148,136,0.08)]" />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="re-pct" className="text-xs font-medium text-foreground">
+              Percent (%)
+            </Label>
+            <Input id="re-pct" type="number" inputMode="numeric" placeholder="e.g. -10" value={percent} onChange={(e) => setPercent(e.target.value)} className="h-9" />
           </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="re-cd" className="text-xs font-medium text-foreground">
+              Calorie change
+            </Label>
+            <Input id="re-cd" type="number" inputMode="numeric" placeholder="e.g. -200" value={calorieDelta} onChange={(e) => setCalorieDelta(e.target.value)} className="h-9" />
+          </div>
+        </div>
+        {adjustActive && (
+          <p className="text-[11px] text-[#93b0b4]">
+            Applies a relative change to each day. Clear to set absolute values.
+          </p>
         )}
 
         <DialogFooter>

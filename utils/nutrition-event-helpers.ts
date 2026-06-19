@@ -29,6 +29,11 @@ export function getTotalCalories(
  * When includeActivityBurn is true: recalculates macros from total calories
  * using the event's snapshotted dietType so carb/fat split is correct for
  * the higher calorie total.
+ *
+ * A MODIFIED (is_modified) day is frozen — its macros were materialized by a
+ * coach edit (surplus already null, burn 0), so they are explicit and must be
+ * shown VERBATIM, never recalculated from the diet split (else a manual carb/fat
+ * override silently reverts to the plan's split on display). Read-only change.
  */
 export function mapNutritionEventToDisplayTarget(
   event: NutritionEvent,
@@ -37,7 +42,7 @@ export function mapNutritionEventToDisplayTarget(
   const dayOfWeek = event.dayOfWeek as DayOfWeek;
   const dayLabel = dayOfWeek.charAt(0).toUpperCase() + dayOfWeek.slice(1);
 
-  if (!includeActivityBurn) {
+  if (!includeActivityBurn || event.isModified) {
     const totalCal = event.proteinG * 4 + event.carbG * 4 + event.fatG * 9;
     const proteinPercent = totalCal > 0 ? Math.round((event.proteinG * 4 / totalCal) * 100) : 0;
     const carbsPercent = totalCal > 0 ? Math.round((event.carbG * 4 / totalCal) * 100) : 0;

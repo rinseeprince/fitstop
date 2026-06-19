@@ -7,6 +7,7 @@ import {
   thisMonthDates,
   weekContaining,
 } from "@/utils/nutrition-calendar-selection";
+import { mapNutritionEventToDisplayTarget } from "@/utils/nutrition-event-helpers";
 import type { RangeEditPayload } from "@/components/clients/nutrition/calendar/nutrition-range-edit-dialog";
 import type { NutritionEvent, DietType } from "@/types/check-in";
 
@@ -16,6 +17,8 @@ type UseNutritionCalendarEditingArgs = {
   weeks: string[][];
   clientToday: string;
   viewMonth: { year: number; month: number };
+  /** Activity-burn toggle — seeds the modal with the day's displayed numbers. */
+  includeActivityBurn: boolean;
   mutate: () => Promise<unknown>;
   onUpdate: () => void;
 };
@@ -33,6 +36,7 @@ export function useNutritionCalendarEditing({
   weeks,
   clientToday,
   viewMonth,
+  includeActivityBurn,
   mutate,
   onUpdate,
 }: UseNutritionCalendarEditingArgs) {
@@ -77,13 +81,21 @@ export function useNutritionCalendarEditing({
     setSelected(new Set());
   }, []);
 
-  // Diet/protein of the first selected day seed the dialog's macro auto-rebalance.
+  // The first selected day's CURRENT displayed values seed the modal (so the coach
+  // edits from real, already-consistent numbers). Uses the same display helper as
+  // the calendar so seed == what the cell shows.
   const firstSelectedEvent = useMemo(() => {
     const first = [...selected].sort()[0];
     return first ? eventsByDate.get(first) : null;
   }, [selected, eventsByDate]);
+  const seedTarget = firstSelectedEvent
+    ? mapNutritionEventToDisplayTarget(firstSelectedEvent, includeActivityBurn)
+    : null;
   const dietType = (firstSelectedEvent?.dietType as DietType) || "balanced";
-  const defaultProtein = firstSelectedEvent?.proteinG ?? 0;
+  const defaultCalories = seedTarget?.calories ?? 0;
+  const defaultProtein = seedTarget?.proteinG ?? 0;
+  const defaultCarbs = seedTarget?.carbsG ?? 0;
+  const defaultFat = seedTarget?.fatG ?? 0;
 
   const applyEdit = useCallback(
     async (payload: RangeEditPayload) => {
@@ -159,7 +171,10 @@ export function useNutritionCalendarEditing({
     setDialogOpen,
     isSaving,
     dietType,
+    defaultCalories,
     defaultProtein,
+    defaultCarbs,
+    defaultFat,
     applyEdit,
     resetSelected,
   };

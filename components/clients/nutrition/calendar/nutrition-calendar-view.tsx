@@ -108,6 +108,7 @@ export function NutritionCalendarView({
     weeks,
     clientToday,
     viewMonth,
+    includeActivityBurn,
     mutate,
     onUpdate,
   });
@@ -255,7 +256,10 @@ export function NutritionCalendarView({
         onOpenChange={edit.setDialogOpen}
         dayCount={edit.selected.size}
         dietType={edit.dietType}
+        defaultCalories={edit.defaultCalories}
         defaultProtein={edit.defaultProtein}
+        defaultCarbs={edit.defaultCarbs}
+        defaultFat={edit.defaultFat}
         isSaving={edit.isSaving}
         onApply={edit.applyEdit}
       />
