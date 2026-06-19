@@ -87,6 +87,34 @@ export const updateUnitPreferenceSchema = z.object({
   unitPreference: unitPreferenceSchema,
 });
 
+// Coach per-day range edit (events-as-SOT, Session 3 D4). Absolute sets the
+// calorie target outright (optional explicit macros); delta scales each day's
+// current total by a percent and/or a flat amount. Materialized onto the events.
+export const nutritionRangeEditSchema = z
+  .object({
+    startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format"),
+    endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format"),
+    mode: z.enum(["absolute", "delta"]),
+    calories: z.number().int().positive().optional(),
+    proteinG: z.number().nonnegative().optional(),
+    carbG: z.number().nonnegative().optional(),
+    fatG: z.number().nonnegative().optional(),
+    percent: z.number().optional(),
+    calorieDelta: z.number().optional(),
+  })
+  .refine((d) => d.endDate >= d.startDate, {
+    message: "endDate must be on or after startDate",
+    path: ["endDate"],
+  })
+  .refine((d) => d.mode !== "absolute" || (d.calories != null && d.calories > 0), {
+    message: "absolute mode requires a positive calories value",
+    path: ["calories"],
+  })
+  .refine((d) => d.mode !== "delta" || d.percent != null || d.calorieDelta != null, {
+    message: "delta mode requires percent or calorieDelta",
+    path: ["percent"],
+  });
+
 // Validation function to ensure required client data exists
 export function validateClientForNutrition(client: {
   currentWeight?: number;

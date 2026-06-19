@@ -6,11 +6,9 @@ import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { placePlanOnCalendar, placeSessionOnCalendar } from "@/services/library-placement-service";
 import { getClientTodayString } from "@/services/today-service";
-import { supabaseAdmin } from "@/services/supabase-admin";
-import { regenerateFutureNutritionEvents } from "@/services/nutrition-event-service";
+import { cascadeNutritionAfterTrainingChange } from "@/services/nutrition-event-service";
 import { recordAuditEvent } from "@/services/audit-log-service";
 import { AUDIT_ACTIONS } from "@/lib/constants";
-import { captureApiError } from "@/lib/error-handler";
 import { z } from "zod";
 
 const placeFromLibrarySchema = z.discriminatedUnion("type", [
@@ -167,22 +165,14 @@ export async function POST(
   }
 }
 
-// --- Nutrition cascade (matches duplicate-week pattern) ---
+// --- Nutrition cascade ---
+// Thin wrapper so each placement call site keeps threading its own anchor
+// (plan = startDate, session = targetDate) onto the shared cascade helper.
 
 async function cascadeNutritionEvents(clientId: string, fromDate: string) {
-  const { data: nutritionPlans } = await supabaseAdmin
-    .from("nutrition_plans")
-    .select("id, status")
-    .eq("client_id", clientId)
-    .in("status", ["active", "planned"]);
-
-  for (const np of nutritionPlans ?? []) {
-    const effectiveFrom = np.status === "active" ? fromDate : undefined;
-    await regenerateFutureNutritionEvents(clientId, np.id, effectiveFrom).catch((err) =>
-      captureApiError(err, {
-        action: "cascade-nutrition-events-from-library-placement",
-        planId: np.id,
-      })
-    );
-  }
+  await cascadeNutritionAfterTrainingChange(
+    clientId,
+    fromDate,
+    "cascade-nutrition-events-from-library-placement"
+  );
 }

@@ -5,9 +5,7 @@ import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { duplicateEvent } from "@/services/training-event-calendar-service";
-import { supabaseAdmin } from "@/services/supabase-admin";
-import { regenerateFutureNutritionEvents } from "@/services/nutrition-event-service";
-import { captureApiError } from "@/lib/error-handler";
+import { cascadeNutritionAfterTrainingChange } from "@/services/nutrition-event-service";
 import { z } from "zod";
 
 const duplicateEventSchema = z.object({
@@ -55,18 +53,11 @@ export async function POST(
     const newEventId = await duplicateEvent(eventId, targetDate, clientId, planId);
 
     // Cascade: regenerate nutrition events for the target date
-    const { data: nutritionPlans } = await supabaseAdmin
-      .from("nutrition_plans")
-      .select("id, status")
-      .eq("client_id", clientId)
-      .in("status", ["active", "planned"]);
-
-    for (const np of nutritionPlans ?? []) {
-      const fromDate = np.status === "active" ? targetDate : undefined;
-      await regenerateFutureNutritionEvents(clientId, np.id, fromDate).catch((err) =>
-        captureApiError(err, { action: "cascade-nutrition-events-from-duplicate", planId: np.id })
-      );
-    }
+    await cascadeNutritionAfterTrainingChange(
+      clientId,
+      targetDate,
+      "cascade-nutrition-events-from-duplicate"
+    );
 
     return NextResponse.json({ success: true, eventId: newEventId }, { status: 200 });
   } catch (error) {

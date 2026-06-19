@@ -6,9 +6,8 @@ import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { regenerateFutureEvents } from "@/services/training-event-service";
 import { countModifiedFutureEvents } from "@/services/training-event-calendar-service";
-import { supabaseAdmin } from "@/services/supabase-admin";
-import { regenerateFutureNutritionEvents } from "@/services/nutrition-event-service";
-import { captureApiError } from "@/lib/error-handler";
+import { cascadeNutritionAfterTrainingChange } from "@/services/nutrition-event-service";
+import { getClientTodayString } from "@/services/today-service";
 import { z } from "zod";
 
 const regenerateEventsSchema = z.object({
@@ -69,19 +68,14 @@ export async function POST(
 
     await regenerateFutureEvents(clientId, planId, effectiveFrom, force);
 
-    // Cascade: regenerate nutrition events (they depend on training burn data)
-    const { data: nutritionPlans } = await supabaseAdmin
-      .from("nutrition_plans")
-      .select("id, status")
-      .eq("client_id", clientId)
-      .in("status", ["active", "planned"]);
-
-    for (const np of nutritionPlans ?? []) {
-      const fromDate = np.status === "active" ? effectiveFrom : undefined;
-      await regenerateFutureNutritionEvents(clientId, np.id, fromDate).catch((err) =>
-        captureApiError(err, { action: "cascade-nutrition-events-from-training", planId: np.id })
-      );
-    }
+    // Cascade: regenerate nutrition events (they depend on training burn data).
+    // No effectiveFrom -> anchor at client-local today (the prior per-plan
+    // fallback), threaded explicitly per cascade-anchor discipline.
+    await cascadeNutritionAfterTrainingChange(
+      clientId,
+      effectiveFrom ?? (await getClientTodayString(clientId)),
+      "cascade-nutrition-events-from-training"
+    );
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {

@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { useToast } from "@/hooks/use-toast";
 import {
   validateWeeklyBudget,
   initializeDayOverridesFromTargets,
@@ -13,26 +12,19 @@ import type { DayCalorieOverrides, DietType } from "@/types/check-in";
 import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
 
 type UseCalorieSkewProps = {
-  clientId: string;
   weeklyTargets: DailyNutritionTargets[] | null | undefined;
   baselineCalories: number;
   dietType: DietType;
-  onUpdate?: () => void;
 };
 
 export function useCalorieSkew({
-  clientId,
   weeklyTargets,
   baselineCalories,
   dietType,
-  onUpdate,
 }: UseCalorieSkewProps) {
-  const { toast } = useToast();
-
   const [customDayDistribution, setCustomDayDistribution] = useState(false);
   const [dayCalorieOverrides, setDayCalorieOverrides] = useState<DayCalorieOverrides | null>(null);
   const [skewMacroMode, setSkewMacroMode] = useState<"proportional" | "custom">("proportional");
-  const [isSavingSkew, setIsSavingSkew] = useState(false);
 
   const handleToggleCustomDistribution = useCallback(
     (enabled: boolean) => {
@@ -70,30 +62,6 @@ export function useCalorieSkew({
     [skewMacroMode, weeklyTargets, dietType]
   );
 
-  const handleSaveCustomDistribution = useCallback(async () => {
-    setIsSavingSkew(true);
-    try {
-      const res = await fetch(`/api/clients/${clientId}/nutrition/skew`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          dayCalorieOverrides,
-        }),
-      });
-      if (!res.ok) throw new Error("Failed to save");
-      onUpdate?.();
-      toast({ title: "Custom day distribution saved" });
-    } catch {
-      toast({
-        title: "Error",
-        description: "Failed to save custom day distribution",
-        variant: "destructive",
-      });
-    } finally {
-      setIsSavingSkew(false);
-    }
-  }, [clientId, dayCalorieOverrides, onUpdate, toast]);
-
   const handleResetToDefault = useCallback(() => {
     if (weeklyTargets) {
       const overrides = initializeDayOverridesFromTargets(weeklyTargets);
@@ -119,11 +87,9 @@ export function useCalorieSkew({
     dayCalorieOverrides,
     skewMacroMode,
     setSkewMacroMode,
-    isSavingSkew,
     budgetValidation,
     handleToggleCustomDistribution,
     handleDayOverrideChange,
-    handleSaveCustomDistribution,
     handleResetToDefault,
     resetSkew,
   };

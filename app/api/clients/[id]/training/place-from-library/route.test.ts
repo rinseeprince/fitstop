@@ -31,39 +31,20 @@ vi.mock("@/services/today-service", () => ({
 }));
 
 vi.mock("@/services/nutrition-event-service", () => ({
-  regenerateFutureNutritionEvents: vi.fn().mockResolvedValue(undefined),
+  cascadeNutritionAfterTrainingChange: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("@/services/audit-log-service", () => ({
   recordAuditEvent: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock("@/services/supabase-admin", () => ({
-  supabaseAdmin: {
-    from: vi.fn(),
-  },
-}));
-
-vi.mock("@/lib/error-handler", () => ({
-  captureApiError: vi.fn(),
-}));
-
 import { getClientById } from "@/services/client-service";
 import { placePlanOnCalendar } from "@/services/library-placement-service";
 import { getClientTodayString } from "@/services/today-service";
-import { supabaseAdmin } from "@/services/supabase-admin";
 import { POST } from "./route";
 
 const clientId = "client-1";
 const savedPlanId = "11111111-1111-4111-8111-111111111111";
-
-function mockNutritionPlans(): void {
-  const chain: Record<string, unknown> = {};
-  chain.select = vi.fn().mockReturnValue(chain);
-  chain.eq = vi.fn().mockReturnValue(chain);
-  chain.in = vi.fn().mockResolvedValue({ data: [] });
-  vi.mocked(supabaseAdmin.from).mockReturnValue(chain as never);
-}
 
 function makeRequest(body: Record<string, unknown>): NextRequest {
   return new NextRequest(
@@ -97,7 +78,6 @@ describe("POST /api/clients/[id]/training/place-from-library start-date guard", 
       sessionsCreated: 3,
       eventsCreated: 12,
     });
-    mockNutritionPlans();
   });
 
   it("rejects a start date before the client's local today", async () => {

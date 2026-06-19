@@ -20,8 +20,6 @@ type CalorieSkewingSectionProps = {
   macroMode: "proportional" | "custom";
   onMacroModeChange: (mode: "proportional" | "custom") => void;
   onReset: () => void;
-  onSave: () => void;
-  isSaving: boolean;
   hasPlan: boolean;
 };
 
@@ -35,8 +33,6 @@ export function CalorieSkewingSection({
   macroMode,
   onMacroModeChange,
   onReset,
-  onSave,
-  isSaving,
   hasPlan,
 }: CalorieSkewingSectionProps) {
   if (!hasPlan) return null;

@@ -5,9 +5,7 @@ import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { moveEvent, moveEventAndFuture } from "@/services/training-event-calendar-service";
-import { supabaseAdmin } from "@/services/supabase-admin";
-import { regenerateFutureNutritionEvents } from "@/services/nutrition-event-service";
-import { captureApiError } from "@/lib/error-handler";
+import { cascadeNutritionAfterTrainingChange } from "@/services/nutrition-event-service";
 import { z } from "zod";
 
 const moveEventSchema = z.object({
@@ -71,18 +69,11 @@ export async function POST(
     // Cascade: regenerate nutrition events for affected dates.
     // Use min(source, target) so a forward-in-time move also clears the stale
     // nutrition_event row on the source date.
-    const { data: nutritionPlans } = await supabaseAdmin
-      .from("nutrition_plans")
-      .select("id, status")
-      .eq("client_id", clientId)
-      .in("status", ["active", "planned"]);
-
-    for (const np of nutritionPlans ?? []) {
-      const fromDate = np.status === "active" ? earliestAffectedDate : undefined;
-      await regenerateFutureNutritionEvents(clientId, np.id, fromDate).catch((err) =>
-        captureApiError(err, { action: "cascade-nutrition-events-from-move", planId: np.id })
-      );
-    }
+    await cascadeNutritionAfterTrainingChange(
+      clientId,
+      earliestAffectedDate,
+      "cascade-nutrition-events-from-move"
+    );
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {

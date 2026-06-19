@@ -5,12 +5,8 @@ import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { deleteEvent, updateEventSurplus } from "@/services/training-event-calendar-service";
-import { supabaseAdmin } from "@/services/supabase-admin";
-import {
-  regenerateFutureNutritionEvents,
-  cascadeNutritionAfterTrainingChange,
-} from "@/services/nutrition-event-service";
-import { captureApiError } from "@/lib/error-handler";
+import { cascadeNutritionAfterTrainingChange } from "@/services/nutrition-event-service";
+import { getClientTodayString } from "@/services/today-service";
 import { z } from "zod";
 
 const patchEventSchema = z.object({
@@ -116,18 +112,13 @@ export async function DELETE(
 
     await deleteEvent(eventId, clientId, planId);
 
-    // Cascade: regenerate nutrition events for affected dates
-    const { data: nutritionPlans } = await supabaseAdmin
-      .from("nutrition_plans")
-      .select("id, status")
-      .eq("client_id", clientId)
-      .in("status", ["active", "planned"]);
-
-    for (const np of nutritionPlans ?? []) {
-      await regenerateFutureNutritionEvents(clientId, np.id).catch((err) =>
-        captureApiError(err, { action: "cascade-nutrition-events-from-delete", planId: np.id })
-      );
-    }
+    // Cascade: a delete affects today-forward, so anchor at client-local today.
+    const today = await getClientTodayString(clientId);
+    await cascadeNutritionAfterTrainingChange(
+      clientId,
+      today,
+      "cascade-nutrition-events-from-delete"
+    );
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {

@@ -113,11 +113,9 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
   // Calorie skewing (extracted hook)
   const planBaseline = nutritionPlan.nutritionData?.baselineCalories ?? nutritionPlan.nutritionData?.calorieTarget ?? 0;
   const calorieSkew = useCalorieSkew({
-    clientId: client.id,
     weeklyTargets: nutritionPlan.weeklyTargets,
     baselineCalories: planBaseline,
     dietType: settings.dietType,
-    onUpdate,
   });
 
   // Phase selection

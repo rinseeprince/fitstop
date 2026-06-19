@@ -27,17 +27,7 @@ vi.mock("@/services/training-event-calendar-service", () => ({
 }));
 
 vi.mock("@/services/nutrition-event-service", () => ({
-  regenerateFutureNutritionEvents: vi.fn().mockResolvedValue(undefined),
-}));
-
-vi.mock("@/services/supabase-admin", () => ({
-  supabaseAdmin: {
-    from: vi.fn(),
-  },
-}));
-
-vi.mock("@/lib/error-handler", () => ({
-  captureApiError: vi.fn(),
+  cascadeNutritionAfterTrainingChange: vi.fn().mockResolvedValue(undefined),
 }));
 
 import { getClientById } from "@/services/client-service";
@@ -46,23 +36,12 @@ import {
   moveEvent,
   moveEventAndFuture,
 } from "@/services/training-event-calendar-service";
-import { regenerateFutureNutritionEvents } from "@/services/nutrition-event-service";
-import { supabaseAdmin } from "@/services/supabase-admin";
+import { cascadeNutritionAfterTrainingChange } from "@/services/nutrition-event-service";
 import { POST } from "./route";
 
 const clientId = "client-1";
 const planId = "plan-1";
 const eventId = "event-1";
-
-type NutritionPlanRow = { id: string; status: "active" | "planned" };
-
-function mockNutritionPlans(rows: NutritionPlanRow[]): void {
-  const chain: Record<string, unknown> = {};
-  chain.select = vi.fn().mockReturnValue(chain);
-  chain.eq = vi.fn().mockReturnValue(chain);
-  chain.in = vi.fn().mockResolvedValue({ data: rows });
-  vi.mocked(supabaseAdmin.from).mockReturnValue(chain as never);
-}
 
 function makeRequest(body: Record<string, unknown>): NextRequest {
   return new NextRequest(
@@ -94,21 +73,20 @@ describe("POST /api/clients/[id]/training/[planId]/events/[eventId]/move nutriti
     } as never);
   });
 
-  it("forward-in-time single move cascades from sourceDate", async () => {
+  it("forward-in-time single move cascades from sourceDate (min of source/target)", async () => {
     vi.mocked(moveEvent).mockResolvedValue({
       sourceDate: "2026-04-27",
       targetDate: "2026-04-30",
     });
-    mockNutritionPlans([{ id: "np-active", status: "active" }]);
 
     const res = await callRoute({ targetDate: "2026-04-30", scope: "single" });
 
     expect(res.status).toBe(200);
-    expect(regenerateFutureNutritionEvents).toHaveBeenCalledTimes(1);
-    expect(regenerateFutureNutritionEvents).toHaveBeenCalledWith(
+    expect(cascadeNutritionAfterTrainingChange).toHaveBeenCalledTimes(1);
+    expect(cascadeNutritionAfterTrainingChange).toHaveBeenCalledWith(
       clientId,
-      "np-active",
-      "2026-04-27"
+      "2026-04-27",
+      "cascade-nutrition-events-from-move"
     );
   });
 
@@ -117,15 +95,14 @@ describe("POST /api/clients/[id]/training/[planId]/events/[eventId]/move nutriti
       sourceDate: "2026-04-30",
       targetDate: "2026-04-27",
     });
-    mockNutritionPlans([{ id: "np-active", status: "active" }]);
 
     const res = await callRoute({ targetDate: "2026-04-27", scope: "single" });
 
     expect(res.status).toBe(200);
-    expect(regenerateFutureNutritionEvents).toHaveBeenCalledWith(
+    expect(cascadeNutritionAfterTrainingChange).toHaveBeenCalledWith(
       clientId,
-      "np-active",
-      "2026-04-27"
+      "2026-04-27",
+      "cascade-nutrition-events-from-move"
     );
   });
 
@@ -134,45 +111,16 @@ describe("POST /api/clients/[id]/training/[planId]/events/[eventId]/move nutriti
       earliestSourceDate: "2026-04-27",
       targetDate: "2026-04-29",
     });
-    mockNutritionPlans([{ id: "np-active", status: "active" }]);
 
     const res = await callRoute({ targetDate: "2026-04-29", scope: "all_future" });
 
     expect(res.status).toBe(200);
     expect(moveEventAndFuture).toHaveBeenCalledWith(eventId, "2026-04-29", clientId, planId);
     expect(moveEvent).not.toHaveBeenCalled();
-    expect(regenerateFutureNutritionEvents).toHaveBeenCalledWith(
+    expect(cascadeNutritionAfterTrainingChange).toHaveBeenCalledWith(
       clientId,
-      "np-active",
-      "2026-04-27"
-    );
-  });
-
-  it("planned nutrition plan is cascaded with undefined fromDate regardless of move direction", async () => {
-    vi.mocked(moveEvent).mockResolvedValue({
-      sourceDate: "2026-04-27",
-      targetDate: "2026-04-30",
-    });
-    mockNutritionPlans([
-      { id: "np-active", status: "active" },
-      { id: "np-planned", status: "planned" },
-    ]);
-
-    const res = await callRoute({ targetDate: "2026-04-30", scope: "single" });
-
-    expect(res.status).toBe(200);
-    expect(regenerateFutureNutritionEvents).toHaveBeenCalledTimes(2);
-    expect(regenerateFutureNutritionEvents).toHaveBeenNthCalledWith(
-      1,
-      clientId,
-      "np-active",
-      "2026-04-27"
-    );
-    expect(regenerateFutureNutritionEvents).toHaveBeenNthCalledWith(
-      2,
-      clientId,
-      "np-planned",
-      undefined
+      "2026-04-27",
+      "cascade-nutrition-events-from-move"
     );
   });
 });

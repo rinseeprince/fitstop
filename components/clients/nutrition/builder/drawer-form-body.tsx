@@ -139,8 +139,6 @@ export function DrawerFormBody() {
               macroMode={builder.skewMacroMode}
               onMacroModeChange={builder.setSkewMacroMode}
               onReset={builder.handleResetToDefault}
-              onSave={builder.handleSaveCustomDistribution}
-              isSaving={builder.isSavingSkew}
               hasPlan={builder.hasPlan}
             />
           </div>

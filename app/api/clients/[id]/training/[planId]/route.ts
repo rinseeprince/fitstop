@@ -6,12 +6,10 @@ import {
   archiveTrainingPlan,
 } from "@/services/training-service";
 import { cancelFutureEventsForPlan } from "@/services/training-event-service";
-import { regenerateFutureNutritionEvents } from "@/services/nutrition-event-service";
-import { supabaseAdmin } from "@/services/supabase-admin";
+import { cascadeNutritionAfterTrainingChange } from "@/services/nutrition-event-service";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { apiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
-import { captureApiError } from "@/lib/error-handler";
 import { getClientTodayString } from "@/services/today-service";
 import { updateTrainingPlanSchema } from "@/lib/validations/training";
 
@@ -134,22 +132,12 @@ export async function DELETE(
     await archiveTrainingPlan(planId);
     await cancelFutureEventsForPlan(planId, today);
 
-    // Cascade: nutrition burn estimates depend on training events, so regenerate
-    // future nutrition events for any active/planned nutrition plan the client has.
-    const { data: nutritionPlans } = await supabaseAdmin
-      .from("nutrition_plans")
-      .select("id")
-      .eq("client_id", clientId)
-      .in("status", ["active", "planned"]);
-
-    for (const np of nutritionPlans ?? []) {
-      await regenerateFutureNutritionEvents(clientId, np.id, today).catch((err) =>
-        captureApiError(err, {
-          action: "cascade-nutrition-events-from-clear-plan",
-          planId: np.id,
-        })
-      );
-    }
+    // Cascade: nutrition burn estimates depend on training events.
+    await cascadeNutritionAfterTrainingChange(
+      clientId,
+      today,
+      "cascade-nutrition-events-from-clear-plan"
+    );
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {

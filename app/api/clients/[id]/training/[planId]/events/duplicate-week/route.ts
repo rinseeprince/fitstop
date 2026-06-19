@@ -9,8 +9,7 @@ import {
   duplicateWeekToRemaining,
 } from "@/services/training-event-calendar-service";
 import { supabaseAdmin } from "@/services/supabase-admin";
-import { regenerateFutureNutritionEvents } from "@/services/nutrition-event-service";
-import { captureApiError } from "@/lib/error-handler";
+import { cascadeNutritionAfterTrainingChange } from "@/services/nutrition-event-service";
 import { z } from "zod";
 
 const duplicateWeekSchema = z.object({
@@ -108,21 +107,11 @@ export async function POST(
       ? sourceStartDate
       : targetStartDate!;
 
-    const { data: nutritionPlans } = await supabaseAdmin
-      .from("nutrition_plans")
-      .select("id, status")
-      .eq("client_id", clientId)
-      .in("status", ["active", "planned"]);
-
-    for (const np of nutritionPlans ?? []) {
-      const fromDate = np.status === "active" ? earliestAffectedDate : undefined;
-      await regenerateFutureNutritionEvents(clientId, np.id, fromDate).catch((err) =>
-        captureApiError(err, {
-          action: "cascade-nutrition-events-from-duplicate-week",
-          planId: np.id,
-        })
-      );
-    }
+    await cascadeNutritionAfterTrainingChange(
+      clientId,
+      earliestAffectedDate,
+      "cascade-nutrition-events-from-duplicate-week"
+    );
 
     return NextResponse.json(
       { success: true, eventsCreated: result.eventsCreated, weeksCreated: result.weeksCreated },
