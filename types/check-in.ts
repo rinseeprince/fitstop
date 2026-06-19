@@ -386,6 +386,9 @@ export type NutritionEvent = {
   dietType: string;
   isTrainingDay: boolean;
   calorieSurplusPercentage: number | null;
+  // Coach materialized a per-day override onto this event (mig 113, Session 1).
+  // The cascade/regenerate leaves is_modified=true days untouched; reset clears it.
+  isModified: boolean;
   status: NutritionEventStatus;
   createdAt: string;
   updatedAt: string;

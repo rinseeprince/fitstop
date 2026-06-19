@@ -26,6 +26,7 @@ function mapNutritionEventRow(row: NutritionEventRow): NutritionEvent {
     dietType: row.diet_type,
     isTrainingDay: row.is_training_day,
     calorieSurplusPercentage: row.calorie_surplus_percentage ?? null,
+    isModified: row.is_modified,
     status: row.status as NutritionEventStatus,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

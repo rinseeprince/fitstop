@@ -6,7 +6,7 @@ import { NutritionBuilderProvider, useNutritionBuilderContext } from "@/contexts
 import { NutritionBuilderRightPanel } from "./nutrition-builder-right-panel";
 import { NutritionSettingsDrawer } from "./nutrition-settings-drawer";
 import { NutritionHistoryTable } from "../nutrition-history-table";
-import { NutritionPlanHistory } from "../nutrition-plan-history";
+import { NutritionCalendarView } from "../calendar/nutrition-calendar-view";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -53,7 +53,9 @@ export function NutritionPlanBuilder({ client, onUpdate }: NutritionPlanBuilderP
                 onOpenSettings={() => setDrawerOpen(true)}
               />
             </ErrorBoundary>
-            <NutritionPlanHistory clientId={client.id} />
+            <ErrorBoundary>
+              <NutritionCalendarMount />
+            </ErrorBoundary>
           </div>
         )}
 
@@ -171,6 +173,28 @@ function NoPlanAlert() {
       <p className="text-sm text-foreground">
         No nutrition plan for this phase — generate one with the Regenerate Plan button.
       </p>
+    </div>
+  );
+}
+
+/**
+ * Mounts the nutrition calendar (the primary day-by-day surface) by pulling
+ * clientId/timezone/phases/burn-toggle from the builder context — the same
+ * context-consumer pattern as TopContentBar/NoPlanAlert. Only renders once a
+ * plan exists (no plan => no events => an empty grid the right-panel CTA covers).
+ */
+function NutritionCalendarMount() {
+  const builder = useNutritionBuilderContext();
+  if (!builder.hasPlan) return null;
+
+  return (
+    <div className="bg-white rounded-[6px] p-4 border border-[rgba(13,148,136,0.06)]">
+      <NutritionCalendarView
+        clientId={builder.client.id}
+        phases={builder.phases}
+        clientTimezone={builder.client.timezone}
+        includeActivityBurn={builder.includeActivityBurn}
+      />
     </div>
   );
 }
