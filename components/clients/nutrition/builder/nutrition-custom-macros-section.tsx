@@ -12,8 +12,8 @@ type NutritionCustomMacrosSectionProps = {
   onProteinPctChange: (value: number) => void;
   carbPct: number;
   onCarbPctChange: (value: number) => void;
-  /** Auto-filled to 100 - protein% - carb%. */
   fatPct: number;
+  onFatPctChange: (value: number) => void;
   /** Live derived grams (cal x %/4 | /9). */
   grams: MacroGrams;
   /** Re-totaled actual calories from the rounded grams (4/4/9). */
@@ -27,10 +27,11 @@ function toInt(value: string): number {
 }
 
 /**
- * Custom macros as total calories + P/C/F percent split (◆3). Fat% auto-fills to
- * 100 - P - C; grams are derived live and STORED as grams by the builder (the
- * generate payload is unchanged). The re-totaled actual calories are shown so the
- * coach sees rounding drift.
+ * Custom macros as total calories + P/C/F percent split (◆3). All three percents
+ * are independently editable and must total 100% (guarded by the builder); grams
+ * are derived live and STORED as grams by the builder (the generate payload is
+ * unchanged). The re-totaled actual calories are shown so the coach sees rounding
+ * drift, and the total-% callout flags a split that doesn't add up.
  */
 export function NutritionCustomMacrosSection({
   calories,
@@ -40,6 +41,7 @@ export function NutritionCustomMacrosSection({
   carbPct,
   onCarbPctChange,
   fatPct,
+  onFatPctChange,
   grams,
   reTotaledCalories,
   validationError,
@@ -97,20 +99,34 @@ export function NutritionCustomMacrosSection({
           <p className="text-[10px] text-[#93b0b4] font-mono-display">= {grams.carbs}g</p>
         </div>
         <div className="space-y-1.5">
-          <Label className="text-xs font-medium text-foreground">
-            Fat % <span className="text-[#93b0b4] font-normal">auto</span>
+          <Label htmlFor="custom-fat-pct" className="text-xs font-medium text-foreground">
+            Fat %
           </Label>
-          <div className="h-9 flex items-center px-3 rounded-md border border-border bg-muted/40 text-[13px] text-[#5a7d82]">
-            {fatPct}
-          </div>
+          <Input
+            id="custom-fat-pct"
+            type="number"
+            inputMode="numeric"
+            value={fatPct || ""}
+            onChange={(e) => onFatPctChange(toInt(e.target.value))}
+            className="h-9"
+          />
           <p className="text-[10px] text-[#93b0b4] font-mono-display">= {grams.fat}g</p>
         </div>
       </div>
 
-      {/* Re-totaled actual calories */}
+      {/* Total % + re-totaled actual calories */}
       <p className="text-[11px] text-[#93b0b4]">
-        Actual from macros:{" "}
-        <span className="font-mono-display text-[#0c1a1e]">{reTotaledCalories}</span> kcal
+        Split totals{" "}
+        <span
+          className={
+            proteinPct + carbPct + fatPct === 100
+              ? "font-mono-display text-[#0d9488]"
+              : "font-mono-display text-[#d97706]"
+          }
+        >
+          {proteinPct + carbPct + fatPct}%
+        </span>{" "}
+        · {reTotaledCalories} kcal from macros
       </p>
 
       {validationError && (

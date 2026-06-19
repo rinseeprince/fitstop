@@ -6,13 +6,16 @@
 
 export type MacroGrams = { protein: number; carbs: number; fat: number };
 
-/** Derive grams from a calorie total + P/C/F percent split (fat% = 100 − P − C). */
+/**
+ * Derive grams from a calorie total + P/C/F percent split. `fatPct` defaults to
+ * the remainder (100 − P − C); pass it explicitly when fat is edited directly.
+ */
 export function percentToGrams(
   calories: number,
   proteinPct: number,
-  carbPct: number
+  carbPct: number,
+  fatPct: number = Math.max(0, 100 - proteinPct - carbPct)
 ): MacroGrams {
-  const fatPct = Math.max(0, 100 - proteinPct - carbPct);
   return {
     protein: Math.round((calories * proteinPct) / 100 / 4),
     carbs: Math.round((calories * carbPct) / 100 / 4),

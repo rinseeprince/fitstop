@@ -69,6 +69,7 @@ export function DrawerFormBody() {
             carbPct={builder.customCarbPct}
             onCarbPctChange={builder.setCustomCarbPct}
             fatPct={builder.customFatPct}
+            onFatPctChange={builder.setCustomFatPct}
             grams={builder.customGrams}
             reTotaledCalories={builder.customReTotaledCalories}
             validationError={builder.customMacrosValidationError}

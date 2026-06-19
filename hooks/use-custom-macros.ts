@@ -21,16 +21,17 @@ type CustomMacroSeed =
 
 /**
  * Custom-macros input state (Session 4 ◆3). The coach edits a total calorie
- * target + a P/C/F percent split (fat% auto-fills); macros are STORED as grams
- * so the generate payload is unchanged, and `customMacros.calories` is the
- * RE-TOTALED macro calories (4/4/9) so the server's +-50 tolerance can't trip on
- * rounding. Opening an existing custom plan seeds the split from its stored grams.
+ * target + a P/C/F percent split — ALL THREE are independently editable, with a
+ * guard that they must total 100%. Macros are STORED as grams so the generate
+ * payload is unchanged, and `customMacros.calories` is the RE-TOTALED macro
+ * calories (4/4/9) so the server's +-50 tolerance can't trip on rounding. Opening
+ * an existing custom plan seeds the split from its stored grams.
  */
 export function useCustomMacros(seed: CustomMacroSeed) {
   const [calories, setCalories] = useState(0);
   const [proteinPct, setProteinPct] = useState(30);
   const [carbPct, setCarbPct] = useState(40);
-  const fatPct = Math.max(0, 100 - proteinPct - carbPct);
+  const [fatPct, setFatPct] = useState(30);
 
   // Seed % + calories from an existing custom plan when it loads (once per plan).
   const seedKey =
@@ -52,10 +53,11 @@ export function useCustomMacros(seed: CustomMacroSeed) {
     setCalories(cals);
     setProteinPct(pct.proteinPct);
     setCarbPct(pct.carbPct);
+    setFatPct(pct.fatPct);
     seededRef.current = seedKey;
   }, [seedKey, seed]);
 
-  const grams = percentToGrams(calories, proteinPct, carbPct);
+  const grams = percentToGrams(calories, proteinPct, carbPct, fatPct);
   const reTotaledCalories = macroCalories(grams);
 
   // The generate payload: grams + the re-totaled calories (NOT the entered total).
@@ -66,11 +68,12 @@ export function useCustomMacros(seed: CustomMacroSeed) {
     calories: reTotaledCalories,
   };
 
+  const pctSum = proteinPct + carbPct + fatPct;
   const customMacrosValidationError =
     calories <= 0
       ? "Enter a calorie total greater than 0"
-      : proteinPct + carbPct > 100
-        ? "Protein % + carb % can't exceed 100 (fat fills the rest)"
+      : pctSum !== 100
+        ? `Macro percentages must total 100% (currently ${pctSum}%)`
         : null;
 
   return {
@@ -81,6 +84,7 @@ export function useCustomMacros(seed: CustomMacroSeed) {
     customCarbPct: carbPct,
     setCustomCarbPct: setCarbPct,
     customFatPct: fatPct,
+    setCustomFatPct: setFatPct,
     customGrams: grams,
     customReTotaledCalories: reTotaledCalories,
     customMacros,

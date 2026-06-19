@@ -20,6 +20,13 @@ describe("custom-macro-conversion", () => {
       const g = percentToGrams(2000, 70, 50); // fat% -> 0
       expect(g.fat).toBe(0);
     });
+
+    it("honors an explicit fat% (all three independently editable)", () => {
+      // 30/40/30 explicit -> same as the auto example
+      expect(percentToGrams(2000, 30, 40, 30)).toEqual({ protein: 150, carbs: 200, fat: 67 });
+      // explicit fat 40 (sum 120) uses 40%, not the 20% remainder
+      expect(percentToGrams(2000, 40, 40, 40).fat).toBe(89);
+    });
   });
 
   describe("macroCalories", () => {
