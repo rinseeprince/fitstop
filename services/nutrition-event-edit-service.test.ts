@@ -15,8 +15,9 @@ vi.mock("@/utils/nutrition-helpers", () => ({
 import { supabaseAdmin } from "./supabase-admin";
 import { regenerateFutureNutritionEvents } from "@/services/nutrition-event-service";
 import {
-  materializeNutritionEventRange,
+  materializeNutritionEventDays,
   resetNutritionEvent,
+  resetNutritionEventDays,
 } from "./nutrition-event-edit-service";
 
 type Row = {
@@ -29,23 +30,25 @@ type Row = {
 };
 
 const updateEqSpy = vi.fn();
+const updateInSpy = vi.fn();
 const updateSpy = vi.fn();
-const gteSpy = vi.fn();
+const selectInSpy = vi.fn();
 
-/** from() returns a node that serves both the ranged select and per-row updates. */
+/** from() returns a node serving both the IN-list select and the updates. */
 function mockEvents(rows: Row[]): void {
-  // Update chain is thenable so both `.update().eq(...)` (materialize: 1 eq)
-  // and `.update().eq().eq().eq()` (reset: 3 eqs) await to { error: null }.
+  // Update chain is thenable so `.update().eq(...)` (materialize: 1 eq),
+  // `.update().eq().eq().eq()` (single reset: 3 eqs), and
+  // `.update().eq().eq().in()` (multi reset: 2 eqs + in) all await { error: null }.
   const updateChain: Record<string, unknown> = {
     then: (resolve: (v: { error: null }) => void) => resolve({ error: null }),
   };
   updateChain.eq = updateEqSpy.mockReturnValue(updateChain);
+  updateChain.in = updateInSpy.mockReturnValue(updateChain);
   updateSpy.mockReturnValue(updateChain);
 
   const selectChain: Record<string, unknown> = {};
   selectChain.eq = vi.fn().mockReturnValue(selectChain);
-  selectChain.gte = gteSpy.mockReturnValue(selectChain);
-  selectChain.lte = vi.fn().mockResolvedValue({ data: rows, error: null });
+  selectChain.in = selectInSpy.mockResolvedValue({ data: rows, error: null });
 
   vi.mocked(supabaseAdmin.from).mockReturnValue({
     select: vi.fn().mockReturnValue(selectChain),
@@ -55,28 +58,30 @@ function mockEvents(rows: Row[]): void {
 
 const clientId = "client-1";
 
+function row(overrides: Partial<Row> = {}): Row {
+  return {
+    id: "e1",
+    baseline_calories: 2000,
+    protein_g: 150,
+    training_burn_calories: 0,
+    calorie_surplus_percentage: null,
+    diet_type: "balanced",
+    ...overrides,
+  };
+}
+
 describe("nutrition-event-edit-service", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  describe("materializeNutritionEventRange", () => {
+  describe("materializeNutritionEventDays", () => {
     it("absolute: materializes calories + macros, freezes surplus/burn, flags modified", async () => {
-      mockEvents([
-        {
-          id: "e1",
-          baseline_calories: 2000,
-          protein_g: 150,
-          training_burn_calories: 0,
-          calorie_surplus_percentage: null,
-          diet_type: "balanced",
-        },
-      ]);
+      mockEvents([row()]);
 
-      const { updated } = await materializeNutritionEventRange(
+      const { updated } = await materializeNutritionEventDays(
         clientId,
-        "2026-02-01",
-        "2026-02-07",
+        ["2026-02-01"],
         { mode: "absolute", calories: 1800 },
         "2026-01-15"
       );
@@ -97,51 +102,56 @@ describe("nutrition-event-edit-service", () => {
     });
 
     it("delta: scales the surplus-stacked displayed calories", async () => {
-      mockEvents([
-        {
-          id: "e1",
-          baseline_calories: 2000,
-          protein_g: 150,
-          training_burn_calories: 0,
-          calorie_surplus_percentage: 10, // displayed = round(2000 * 1.1) = 2200
-          diet_type: "balanced",
-        },
-      ]);
+      // displayed = round(2000 * 1.1) = 2200; * 0.5 = 1100
+      mockEvents([row({ calorie_surplus_percentage: 10 })]);
 
-      await materializeNutritionEventRange(
+      await materializeNutritionEventDays(
         clientId,
-        "2026-02-01",
-        "2026-02-07",
+        ["2026-02-01"],
         { mode: "delta", percent: -50 },
         "2026-01-15"
       );
 
-      // 2200 * 0.5 = 1100
       expect(updateSpy).toHaveBeenCalledWith(
         expect.objectContaining({ baseline_calories: 1100, calorie_surplus_percentage: null })
       );
     });
 
-    it("floors the window at clientToday when the range starts in the past", async () => {
-      mockEvents([]);
+    it("scattered: queries EXACTLY the selected days (gaps are never touched)", async () => {
+      mockEvents([row()]);
 
-      await materializeNutritionEventRange(
+      // Mon + Wed + Sat with Tue/Thu/Fri gaps — the gaps are not in the IN-list.
+      await materializeNutritionEventDays(
         clientId,
-        "2026-01-01",
-        "2026-02-07",
+        ["2026-02-02", "2026-02-04", "2026-02-07"],
         { mode: "absolute", calories: 1800 },
         "2026-01-15"
       );
 
-      // The select is floored to clientToday, never the past startDate.
-      expect(gteSpy).toHaveBeenCalledWith("date", "2026-01-15");
+      expect(selectInSpy).toHaveBeenCalledWith("date", [
+        "2026-02-02",
+        "2026-02-04",
+        "2026-02-07",
+      ]);
     });
 
-    it("no-ops when the whole range is in the past", async () => {
-      const { updated } = await materializeNutritionEventRange(
+    it("partial-past: drops past dates, keeps the future ones in the IN-list", async () => {
+      mockEvents([row()]);
+
+      await materializeNutritionEventDays(
         clientId,
-        "2026-01-01",
-        "2026-01-10",
+        ["2026-01-01", "2026-02-01"],
+        { mode: "absolute", calories: 1800 },
+        "2026-01-15"
+      );
+
+      expect(selectInSpy).toHaveBeenCalledWith("date", ["2026-02-01"]);
+    });
+
+    it("no-ops when every selected day is in the past", async () => {
+      const { updated } = await materializeNutritionEventDays(
+        clientId,
+        ["2026-01-01", "2026-01-10"],
         { mode: "absolute", calories: 1800 },
         "2026-01-15"
       );
@@ -150,7 +160,7 @@ describe("nutrition-event-edit-service", () => {
     });
   });
 
-  describe("resetNutritionEvent", () => {
+  describe("resetNutritionEvent (single)", () => {
     it("clears is_modified BEFORE regenerating that date from the plan", async () => {
       mockEvents([]);
 
@@ -164,10 +174,72 @@ describe("nutrition-event-edit-service", () => {
         "plan-1",
         "2026-02-01"
       );
-      // Order: the flag flip must resolve before the regen is invoked.
       expect(updateSpy.mock.invocationCallOrder[0]).toBeLessThan(
         vi.mocked(regenerateFutureNutritionEvents).mock.invocationCallOrder[0]
       );
+    });
+  });
+
+  describe("resetNutritionEventDays (multi)", () => {
+    it("clears the date list then regenerates from the EARLIEST day", async () => {
+      mockEvents([]);
+
+      const { reset } = await resetNutritionEventDays(
+        clientId,
+        ["2026-02-10", "2026-02-01", "2026-02-05"],
+        "plan-1",
+        "2026-01-15"
+      );
+
+      expect(reset).toBe(3);
+      expect(updateSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ is_modified: false })
+      );
+      expect(updateInSpy).toHaveBeenCalledWith("date", [
+        "2026-02-10",
+        "2026-02-01",
+        "2026-02-05",
+      ]);
+      // Regen anchors on the earliest reset day so all of them are re-derived.
+      expect(regenerateFutureNutritionEvents).toHaveBeenCalledWith(
+        clientId,
+        "plan-1",
+        "2026-02-01"
+      );
+      expect(updateSpy.mock.invocationCallOrder[0]).toBeLessThan(
+        vi.mocked(regenerateFutureNutritionEvents).mock.invocationCallOrder[0]
+      );
+    });
+
+    it("partial-past: resets only the future days", async () => {
+      mockEvents([]);
+
+      const { reset } = await resetNutritionEventDays(
+        clientId,
+        ["2026-01-01", "2026-02-01"],
+        "plan-1",
+        "2026-01-15"
+      );
+
+      expect(reset).toBe(1);
+      expect(updateInSpy).toHaveBeenCalledWith("date", ["2026-02-01"]);
+      expect(regenerateFutureNutritionEvents).toHaveBeenCalledWith(
+        clientId,
+        "plan-1",
+        "2026-02-01"
+      );
+    });
+
+    it("no-ops when every selected day is in the past", async () => {
+      const { reset } = await resetNutritionEventDays(
+        clientId,
+        ["2026-01-01"],
+        "plan-1",
+        "2026-01-15"
+      );
+      expect(reset).toBe(0);
+      expect(supabaseAdmin.from).not.toHaveBeenCalled();
+      expect(regenerateFutureNutritionEvents).not.toHaveBeenCalled();
     });
   });
 });

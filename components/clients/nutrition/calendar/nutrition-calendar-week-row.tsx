@@ -18,6 +18,10 @@ type NutritionCalendarWeekRowProps = {
   /** Per-day phase status for tinting. Keyed by YYYY-MM-DD. */
   phaseByDate?: Map<string, PhaseStatus>;
   includeActivityBurn: boolean;
+  /** Edit mode (◆2) + selection. */
+  editMode?: boolean;
+  selected?: Set<string>;
+  onToggle?: (date: string) => void;
 };
 
 export const NutritionCalendarWeekRow = memo(function NutritionCalendarWeekRow({
@@ -29,6 +33,9 @@ export const NutritionCalendarWeekRow = memo(function NutritionCalendarWeekRow({
   viewYear,
   phaseByDate,
   includeActivityBurn,
+  editMode,
+  selected,
+  onToggle,
 }: NutritionCalendarWeekRowProps) {
   return (
     <div className="flex gap-1">
@@ -48,6 +55,9 @@ export const NutritionCalendarWeekRow = memo(function NutritionCalendarWeekRow({
               isOutsideMonth={isOutsideMonth}
               phaseStatus={phaseByDate?.get(date) ?? null}
               includeActivityBurn={includeActivityBurn}
+              editMode={editMode}
+              isSelected={selected?.has(date) ?? false}
+              onToggle={onToggle}
             />
           );
         })}

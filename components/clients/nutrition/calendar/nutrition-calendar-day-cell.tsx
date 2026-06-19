@@ -17,6 +17,10 @@ type NutritionCalendarDayCellProps = {
   phaseStatus?: PhaseStatus | null;
   /** Activity-burn toggle — the cell shows the same total the rest of the builder does. */
   includeActivityBurn: boolean;
+  /** Edit mode (◆2) — eligible cells become click-to-select targets. */
+  editMode?: boolean;
+  isSelected?: boolean;
+  onToggle?: (date: string) => void;
 };
 
 /** Mirrors the training calendar's phase tint (calendar-day-cell.tsx). */
@@ -42,18 +46,27 @@ export const NutritionCalendarDayCell = memo(function NutritionCalendarDayCell({
   isOutsideMonth,
   phaseStatus,
   includeActivityBurn,
+  editMode,
+  isSelected,
+  onToggle,
 }: NutritionCalendarDayCellProps) {
   const target = event ? mapNutritionEventToDisplayTarget(event, includeActivityBurn) : null;
+  // Eligible to edit = today-forward + a scheduled event (mirrors the server guard).
+  const isEligible =
+    !!editMode && !isPast && !!event && event.status === "scheduled";
 
   return (
     <div
       data-date={date}
+      onClick={isEligible && onToggle ? () => onToggle(date) : undefined}
       className={cn(
         "min-h-[92px] rounded-[4px] border border-[rgba(13,148,136,0.06)] p-1.5 flex flex-col gap-1 relative transition-all",
         phaseTintClass(phaseStatus),
         isOutsideMonth && "opacity-40",
         isPast && !isOutsideMonth && "opacity-60",
-        isToday && "ring-2 ring-teal-500"
+        isToday && !isSelected && "ring-2 ring-teal-500",
+        isEligible && "cursor-pointer hover:border-[rgba(13,148,136,0.3)]",
+        isSelected && "ring-2 ring-teal-500/60 bg-[rgba(13,148,136,0.05)]"
       )}
     >
       {/* Header row: TRAIN badge (left) + date number (right) */}

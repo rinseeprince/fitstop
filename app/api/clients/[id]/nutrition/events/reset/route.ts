@@ -4,15 +4,13 @@ import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { getClientTodayString } from "@/services/today-service";
-import { nutritionRangeEditSchema } from "@/lib/validations/nutrition";
-import {
-  materializeNutritionEventDays,
-  type RangeEdit,
-} from "@/services/nutrition-event-edit-service";
+import { getActiveNutritionPlanId } from "@/services/nutrition-plan-service";
+import { nutritionResetDaysSchema } from "@/lib/validations/nutrition";
+import { resetNutritionEventDays } from "@/services/nutrition-event-edit-service";
 
 /**
- * PATCH - Materialize a coach edit (absolute or %/amount delta) onto every
- * future scheduled nutrition event in a date range. Today-forward only.
+ * PATCH - Reset a LIST of coach-edited days back to auto in one call: clear
+ * `is_modified` and regenerate them from the plan. Today-forward only.
  */
 export async function PATCH(
   request: NextRequest,
@@ -37,61 +35,47 @@ export async function PATCH(
     }
 
     const body = await request.json();
-    const validation = nutritionRangeEditSchema.safeParse(body);
+    const validation = nutritionResetDaysSchema.safeParse(body);
     if (!validation.success) {
       return NextResponse.json(
         { success: false, error: "Invalid input", details: validation.error.issues },
         { status: 400 }
       );
     }
-    const data = validation.data;
 
-    // Per-element today-forward guard (no existing one to inherit): drop any
-    // past dates and reject only if NONE survive. A scattered selection that
-    // mixes past and future days still edits its future days.
+    // Per-element today-forward guard: drop past dates, reject only if none remain.
     const clientToday = await getClientTodayString(clientId);
-    const futureDates = data.dates.filter((d) => d >= clientToday);
+    const futureDates = validation.data.dates.filter((d) => d >= clientToday);
     if (futureDates.length === 0) {
       return NextResponse.json(
-        { success: false, error: "Cannot edit past dates" },
+        { success: false, error: "Cannot reset past dates" },
         { status: 403 }
       );
     }
 
-    let edit: RangeEdit;
-    if (data.mode === "absolute") {
-      if (data.calories == null) {
-        return NextResponse.json(
-          { success: false, error: "absolute mode requires a calories value" },
-          { status: 400 }
-        );
-      }
-      edit = {
-        mode: "absolute",
-        calories: data.calories,
-        proteinG: data.proteinG,
-        carbG: data.carbG,
-        fatG: data.fatG,
-      };
-    } else {
-      edit = { mode: "delta", percent: data.percent, calorieDelta: data.calorieDelta };
+    const activePlanId = await getActiveNutritionPlanId(clientId);
+    if (!activePlanId) {
+      return NextResponse.json(
+        { success: false, error: "No active nutrition plan" },
+        { status: 404 }
+      );
     }
 
-    const { updated } = await materializeNutritionEventDays(
+    const { reset } = await resetNutritionEventDays(
       clientId,
       futureDates,
-      edit,
+      activePlanId,
       clientToday
     );
 
-    return NextResponse.json({ success: true, updated }, { status: 200 });
+    return NextResponse.json({ success: true, reset }, { status: 200 });
   } catch (error) {
     console.error(
-      "Error editing nutrition range:",
+      "Error resetting nutrition days:",
       error instanceof Error ? error.message : "Unknown error"
     );
     return NextResponse.json(
-      { success: false, error: "Failed to edit nutrition range" },
+      { success: false, error: "Failed to reset nutrition days" },
       { status: 500 }
     );
   }

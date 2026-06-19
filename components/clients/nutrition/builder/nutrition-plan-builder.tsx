@@ -194,6 +194,7 @@ function NutritionCalendarMount() {
         phases={builder.phases}
         clientTimezone={builder.client.timezone}
         includeActivityBurn={builder.includeActivityBurn}
+        onUpdate={() => builder.refetchNutrition()}
       />
     </div>
   );

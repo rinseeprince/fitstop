@@ -2,13 +2,17 @@
 
 import { useState, useMemo, useEffect, useRef } from "react";
 import { useNutritionCalendarEvents } from "@/hooks/use-nutrition-calendar-events";
+import { useNutritionCalendarEditing } from "@/hooks/use-nutrition-calendar-editing";
 import { NutritionCalendarWeekRow } from "./nutrition-calendar-week-row";
+import { NutritionCalendarEditBar } from "./nutrition-calendar-edit-bar";
+import { NutritionRangeEditDialog } from "./nutrition-range-edit-dialog";
 import {
   getTodayDateString,
   getTodayDateStringInTimezone,
   getDateString,
 } from "@/lib/date-helpers";
-import { Loader2, ChevronLeft, ChevronRight } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Loader2, ChevronLeft, ChevronRight, Pencil } from "lucide-react";
 import { format } from "date-fns";
 import type { Phase, PhaseStatus } from "@/types/roadmap";
 
@@ -52,6 +56,8 @@ type NutritionCalendarViewProps = {
   clientTimezone?: string;
   /** Activity-burn toggle, so calendar totals match the rest of the builder. */
   includeActivityBurn: boolean;
+  /** Refetch the surrounding builder (hero/typical-week) after an edit. */
+  onUpdate: () => void;
 };
 
 export function NutritionCalendarView({
@@ -59,12 +65,13 @@ export function NutritionCalendarView({
   phases,
   clientTimezone,
   includeActivityBurn,
+  onUpdate,
 }: NutritionCalendarViewProps) {
   const todayDate = getTodayDateString();
-  // Past/future display is judged on the CLIENT's calendar so it agrees with the
-  // server's getClientTodayString edit guards; the visual today ring stays on the
-  // coach's device (todayDate). 'UTC' is the never-synced sentinel -> fall back to
-  // device today (NOT getTodayDateStringInTimezone('UTC'), which would be UTC today).
+  // Past/future display + edit gating is judged on the CLIENT's calendar so it
+  // agrees with the server's getClientTodayString guards; the visual today ring
+  // stays on the coach's device (todayDate). 'UTC' is the never-synced sentinel
+  // -> fall back to device today (NOT getTodayDateStringInTimezone('UTC')).
   const clientToday =
     clientTimezone && clientTimezone !== "UTC"
       ? getTodayDateStringInTimezone(clientTimezone)
@@ -72,13 +79,11 @@ export function NutritionCalendarView({
 
   const todayRowRef = useRef<HTMLDivElement>(null);
 
-  // Month nav state — defaults to the current month
   const [viewMonth, setViewMonth] = useState(() => {
     const today = new Date();
     return { year: today.getFullYear(), month: today.getMonth() };
   });
 
-  // Compute grid range for the viewed month
   const { weeks, startDate, endDate } = useMemo(() => {
     const firstOfMonth = new Date(viewMonth.year, viewMonth.month, 1);
     const lastOfMonth = new Date(viewMonth.year, viewMonth.month + 1, 0);
@@ -91,9 +96,22 @@ export function NutritionCalendarView({
     };
   }, [viewMonth]);
 
-  const { eventsByDate, isLoading } = useNutritionCalendarEvents(clientId, startDate, endDate);
+  const { eventsByDate, isLoading, mutate } = useNutritionCalendarEvents(
+    clientId,
+    startDate,
+    endDate
+  );
 
-  // Build per-day phase status map for tinting
+  const edit = useNutritionCalendarEditing({
+    clientId,
+    eventsByDate,
+    weeks,
+    clientToday,
+    viewMonth,
+    mutate,
+    onUpdate,
+  });
+
   const phaseByDate = useMemo(() => {
     const map = new Map<string, PhaseStatus>();
     if (phases.length === 0) return map;
@@ -115,7 +133,6 @@ export function NutritionCalendarView({
     return map;
   }, [phases, weeks]);
 
-  // Scroll today row into view when the viewed month contains today
   useEffect(() => {
     const viewingCurrentMonth =
       new Date().getFullYear() === viewMonth.year &&
@@ -126,7 +143,6 @@ export function NutritionCalendarView({
   }, [isLoading, viewMonth]);
 
   const monthLabel = format(new Date(viewMonth.year, viewMonth.month, 1), "MMMM yyyy");
-
   const goPrevMonth = () =>
     setViewMonth(({ year, month }) =>
       month === 0 ? { year: year - 1, month: 11 } : { year, month: month - 1 }
@@ -142,7 +158,7 @@ export function NutritionCalendarView({
 
   return (
     <div className="flex flex-col gap-2">
-      {/* Month nav toolbar */}
+      {/* Month nav + edit toggle */}
       <div className="flex items-center gap-2 px-1">
         <button
           onClick={goPrevMonth}
@@ -170,8 +186,31 @@ export function NutritionCalendarView({
 
         <div className="ml-auto flex items-center gap-2">
           {isLoading && <Loader2 className="h-3.5 w-3.5 animate-spin text-[#93b0b4]" />}
+          <Button
+            variant={edit.editMode ? "default" : "outline"}
+            size="sm"
+            className="h-7 text-[11px]"
+            onClick={() => (edit.editMode ? edit.exitEdit() : edit.setEditMode(true))}
+          >
+            <Pencil className="h-3 w-3 mr-1" />
+            {edit.editMode ? "Done" : "Edit"}
+          </Button>
         </div>
       </div>
+
+      {/* Selection bar */}
+      {edit.editMode && (
+        <NutritionCalendarEditBar
+          todayWeekAvailable={!!edit.todayWeek}
+          selectedCount={edit.selected.size}
+          isSaving={edit.isSaving}
+          onSelectThisWeek={edit.selectThisWeek}
+          onSelectThisMonth={edit.selectThisMonth}
+          onEdit={() => edit.setDialogOpen(true)}
+          onReset={edit.resetSelected}
+          onClear={edit.clearSelection}
+        />
+      )}
 
       {/* Day headers */}
       <div className="flex gap-1">
@@ -202,11 +241,24 @@ export function NutritionCalendarView({
                 viewYear={viewMonth.year}
                 phaseByDate={phaseByDate}
                 includeActivityBurn={includeActivityBurn}
+                editMode={edit.editMode}
+                selected={edit.selected}
+                onToggle={edit.toggleDay}
               />
             </div>
           );
         })}
       </div>
+
+      <NutritionRangeEditDialog
+        open={edit.dialogOpen}
+        onOpenChange={edit.setDialogOpen}
+        dayCount={edit.selected.size}
+        dietType={edit.dietType}
+        defaultProtein={edit.defaultProtein}
+        isSaving={edit.isSaving}
+        onApply={edit.applyEdit}
+      />
     </div>
   );
 }

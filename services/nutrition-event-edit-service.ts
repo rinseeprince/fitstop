@@ -41,28 +41,29 @@ function currentDisplayedCalories(row: EligibleRow): number {
 }
 
 /**
- * Materialize an absolute or %/amount-delta edit onto every future scheduled
- * event in [startDate, endDate]. Returns the number of days updated.
+ * Materialize an absolute or %/amount-delta edit onto an explicit LIST of future
+ * scheduled events (any arrangement — single, scattered, or contiguous). A
+ * scattered selection edits exactly the chosen days and leaves the gaps
+ * untouched (the IN-list, not a [min,max] range). Returns the days updated.
  */
-export async function materializeNutritionEventRange(
+export async function materializeNutritionEventDays(
   clientId: string,
-  startDate: string,
-  endDate: string,
+  dates: string[],
   edit: RangeEdit,
   clientToday: string
 ): Promise<{ updated: number }> {
-  // Floor the window at clientToday so a range straddling today never writes a
-  // past row. Only scheduled rows are editable (logged/missed are immutable).
-  const from = startDate > clientToday ? startDate : clientToday;
-  if (from > endDate) return { updated: 0 };
+  // Keep only today-forward dates (defensive — the route also filters); a past
+  // row is never written. Only scheduled rows are editable (logged/missed are
+  // immutable).
+  const eligibleDates = dates.filter((d) => d >= clientToday);
+  if (eligibleDates.length === 0) return { updated: 0 };
 
   const { data: rows, error } = await supabaseAdmin
     .from("nutrition_events")
     .select("id, baseline_calories, protein_g, training_burn_calories, calorie_surplus_percentage, diet_type")
     .eq("client_id", clientId)
     .eq("status", "scheduled")
-    .gte("date", from)
-    .lte("date", endDate);
+    .in("date", eligibleDates);
 
   if (error) throw error;
   if (!rows || rows.length === 0) return { updated: 0 };
@@ -137,4 +138,36 @@ export async function resetNutritionEvent(
   if (error) throw error;
 
   await regenerateFutureNutritionEvents(clientId, activePlanId, date);
+}
+
+/**
+ * Reset a LIST of coach-edited days back to auto in one call: clear `is_modified`
+ * on every today-forward scheduled day in `dates`, then regenerate forward from
+ * the EARLIEST of them (one regen pass re-derives the un-frozen days from the
+ * plan; other is_modified/logged days are preserved). Order matters — clear the
+ * flags BEFORE regenerating, since the regen delete only removes is_modified=false
+ * rows. Returns the days reset.
+ */
+export async function resetNutritionEventDays(
+  clientId: string,
+  dates: string[],
+  activePlanId: string,
+  clientToday: string
+): Promise<{ reset: number }> {
+  const eligibleDates = dates.filter((d) => d >= clientToday);
+  if (eligibleDates.length === 0) return { reset: 0 };
+
+  const { error } = await supabaseAdmin
+    .from("nutrition_events")
+    .update({ is_modified: false, updated_at: new Date().toISOString() })
+    .eq("client_id", clientId)
+    .eq("status", "scheduled")
+    .in("date", eligibleDates);
+
+  if (error) throw error;
+
+  const fromDate = eligibleDates.reduce((min, d) => (d < min ? d : min), eligibleDates[0]);
+  await regenerateFutureNutritionEvents(clientId, activePlanId, fromDate);
+
+  return { reset: eligibleDates.length };
 }

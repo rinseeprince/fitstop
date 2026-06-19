@@ -87,13 +87,20 @@ export const updateUnitPreferenceSchema = z.object({
   unitPreference: unitPreferenceSchema,
 });
 
-// Coach per-day range edit (events-as-SOT, Session 3 D4). Absolute sets the
-// calorie target outright (optional explicit macros); delta scales each day's
-// current total by a percent and/or a flat amount. Materialized onto the events.
+// Coach per-day edit (events-as-SOT, Session 3 D4 / Session 4). Operates on an
+// explicit date LIST (any arrangement — single, scattered, or contiguous), not a
+// [start,end] range, so a scattered selection edits exactly the chosen days and
+// leaves the gaps untouched. Absolute sets the calorie target outright (optional
+// explicit macros); delta scales each day's current total by a percent and/or a
+// flat amount. Materialized onto the events.
+const editableDates = z
+  .array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format"))
+  .min(1, "At least one date is required")
+  .max(366, "Too many dates (max 366)");
+
 export const nutritionRangeEditSchema = z
   .object({
-    startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format"),
-    endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format"),
+    dates: editableDates,
     mode: z.enum(["absolute", "delta"]),
     calories: z.number().int().positive().optional(),
     proteinG: z.number().nonnegative().optional(),
@@ -101,10 +108,6 @@ export const nutritionRangeEditSchema = z
     fatG: z.number().nonnegative().optional(),
     percent: z.number().optional(),
     calorieDelta: z.number().optional(),
-  })
-  .refine((d) => d.endDate >= d.startDate, {
-    message: "endDate must be on or after startDate",
-    path: ["endDate"],
   })
   .refine((d) => d.mode !== "absolute" || (d.calories != null && d.calories > 0), {
     message: "absolute mode requires a positive calories value",
@@ -114,6 +117,12 @@ export const nutritionRangeEditSchema = z
     message: "delta mode requires percent or calorieDelta",
     path: ["percent"],
   });
+
+// Coach multi-day reset (Session 4): clear is_modified on a date list and
+// regenerate them from the plan in one call.
+export const nutritionResetDaysSchema = z.object({
+  dates: editableDates,
+});
 
 // Validation function to ensure required client data exists
 export function validateClientForNutrition(client: {
