@@ -1,129 +1,122 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { AlertCircle, ChevronDown, ChevronUp } from "lucide-react";
-
-type CustomMacros = {
-  protein: number;
-  carbs: number;
-  fat: number;
-  calories: number;
-};
+import { AlertCircle } from "lucide-react";
+import type { MacroGrams } from "@/utils/custom-macro-conversion";
 
 type NutritionCustomMacrosSectionProps = {
-  customMacros: CustomMacros;
-  setCustomMacros: (macros: CustomMacros) => void;
+  calories: number;
+  onCaloriesChange: (value: number) => void;
+  proteinPct: number;
+  onProteinPctChange: (value: number) => void;
+  carbPct: number;
+  onCarbPctChange: (value: number) => void;
+  /** Auto-filled to 100 - protein% - carb%. */
+  fatPct: number;
+  /** Live derived grams (cal x %/4 | /9). */
+  grams: MacroGrams;
+  /** Re-totaled actual calories from the rounded grams (4/4/9). */
+  reTotaledCalories: number;
   validationError: string | null;
-  showCustomMacros: boolean;
-  setShowCustomMacros: (show: boolean) => void;
-  onSaveCustom: () => void;
-  isGenerating: boolean;
 };
 
+function toInt(value: string): number {
+  const n = parseInt(value, 10);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * Custom macros as total calories + P/C/F percent split (◆3). Fat% auto-fills to
+ * 100 - P - C; grams are derived live and STORED as grams by the builder (the
+ * generate payload is unchanged). The re-totaled actual calories are shown so the
+ * coach sees rounding drift.
+ */
 export function NutritionCustomMacrosSection({
-  customMacros,
-  setCustomMacros,
+  calories,
+  onCaloriesChange,
+  proteinPct,
+  onProteinPctChange,
+  carbPct,
+  onCarbPctChange,
+  fatPct,
+  grams,
+  reTotaledCalories,
   validationError,
-  showCustomMacros,
-  setShowCustomMacros,
-  onSaveCustom,
-  isGenerating,
 }: NutritionCustomMacrosSectionProps) {
   return (
-    <div className="border-t border-border pt-4">
-      <button
-        onClick={() => setShowCustomMacros(!showCustomMacros)}
-        className="flex items-center justify-between w-full text-sm font-medium text-foreground hover:text-foreground transition-colors"
-      >
-        <span>Advanced: Custom macros</span>
-        {showCustomMacros ? (
-          <ChevronUp className="h-4 w-4 text-muted-foreground" />
-        ) : (
-          <ChevronDown className="h-4 w-4 text-muted-foreground" />
-        )}
-      </button>
+    <div className="space-y-4">
+      <p className="text-xs text-muted-foreground">
+        Set a calorie total and macro split — the same targets apply to every day.
+      </p>
 
-      {showCustomMacros && (
-        <div className="mt-4 space-y-4 pl-4 border-l-2 border-primary/30">
-          <p className="text-xs text-muted-foreground">
-            Override calculated macros (applies same targets to all days)
-          </p>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="custom-protein" className="text-xs font-medium text-foreground">
-                Protein (g)
-              </Label>
-              <Input
-                id="custom-protein"
-                type="number"
-                value={customMacros.protein}
-                onChange={(e) =>
-                  setCustomMacros({ ...customMacros, protein: parseInt(e.target.value) || 0 })
-                }
-                className="h-9 bg-card border-border rounded-lg focus:border-primary focus:ring-1 focus:ring-ring"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="custom-carbs" className="text-xs font-medium text-foreground">
-                Carbs (g)
-              </Label>
-              <Input
-                id="custom-carbs"
-                type="number"
-                value={customMacros.carbs}
-                onChange={(e) =>
-                  setCustomMacros({ ...customMacros, carbs: parseInt(e.target.value) || 0 })
-                }
-                className="h-9 bg-card border-border rounded-lg focus:border-primary focus:ring-1 focus:ring-ring"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="custom-fat" className="text-xs font-medium text-foreground">
-                Fat (g)
-              </Label>
-              <Input
-                id="custom-fat"
-                type="number"
-                value={customMacros.fat}
-                onChange={(e) =>
-                  setCustomMacros({ ...customMacros, fat: parseInt(e.target.value) || 0 })
-                }
-                className="h-9 bg-card border-border rounded-lg focus:border-primary focus:ring-1 focus:ring-ring"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="custom-calories" className="text-xs font-medium text-foreground">
-                Calories
-              </Label>
-              <Input
-                id="custom-calories"
-                type="number"
-                value={customMacros.calories}
-                onChange={(e) =>
-                  setCustomMacros({ ...customMacros, calories: parseInt(e.target.value) || 0 })
-                }
-                className="h-9 bg-card border-border rounded-lg focus:border-primary focus:ring-1 focus:ring-ring"
-                placeholder={`~${customMacros.protein * 4 + customMacros.carbs * 4 + customMacros.fat * 9}`}
-              />
-            </div>
+      {/* Total calories */}
+      <div className="space-y-1.5">
+        <Label htmlFor="custom-calories" className="text-xs font-medium text-foreground">
+          Total calories
+        </Label>
+        <Input
+          id="custom-calories"
+          type="number"
+          inputMode="numeric"
+          value={calories || ""}
+          onChange={(e) => onCaloriesChange(toInt(e.target.value))}
+          placeholder="e.g. 2000"
+          className="h-9"
+        />
+      </div>
+
+      {/* P / C / F percent split */}
+      <div className="grid grid-cols-3 gap-3">
+        <div className="space-y-1.5">
+          <Label htmlFor="custom-protein-pct" className="text-xs font-medium text-foreground">
+            Protein %
+          </Label>
+          <Input
+            id="custom-protein-pct"
+            type="number"
+            inputMode="numeric"
+            value={proteinPct || ""}
+            onChange={(e) => onProteinPctChange(toInt(e.target.value))}
+            className="h-9"
+          />
+          <p className="text-[10px] text-[#93b0b4] font-mono-display">= {grams.protein}g</p>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="custom-carb-pct" className="text-xs font-medium text-foreground">
+            Carb %
+          </Label>
+          <Input
+            id="custom-carb-pct"
+            type="number"
+            inputMode="numeric"
+            value={carbPct || ""}
+            onChange={(e) => onCarbPctChange(toInt(e.target.value))}
+            className="h-9"
+          />
+          <p className="text-[10px] text-[#93b0b4] font-mono-display">= {grams.carbs}g</p>
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs font-medium text-foreground">
+            Fat % <span className="text-[#93b0b4] font-normal">auto</span>
+          </Label>
+          <div className="h-9 flex items-center px-3 rounded-md border border-border bg-muted/40 text-[13px] text-[#5a7d82]">
+            {fatPct}
           </div>
-          {validationError && (
-            <div className="flex items-start gap-2 p-3 bg-warning/10 rounded-lg">
-              <AlertCircle className="h-4 w-4 text-warning mt-0.5 flex-shrink-0" />
-              <p className="text-xs text-foreground">{validationError}</p>
-            </div>
-          )}
-          <Button
-            onClick={onSaveCustom}
-            disabled={isGenerating || !!validationError}
-            size="sm"
-            variant="outline"
-            className="w-full bg-card border-border text-foreground hover:bg-muted hover:border-border font-medium rounded-lg transition-all"
-          >
-            Save Custom Macros
-          </Button>
+          <p className="text-[10px] text-[#93b0b4] font-mono-display">= {grams.fat}g</p>
+        </div>
+      </div>
+
+      {/* Re-totaled actual calories */}
+      <p className="text-[11px] text-[#93b0b4]">
+        Actual from macros:{" "}
+        <span className="font-mono-display text-[#0c1a1e]">{reTotaledCalories}</span> kcal
+      </p>
+
+      {validationError && (
+        <div className="flex items-start gap-2 p-3 bg-warning/10 rounded-lg">
+          <AlertCircle className="h-4 w-4 text-warning mt-0.5 flex-shrink-0" />
+          <p className="text-xs text-foreground">{validationError}</p>
         </div>
       )}
     </div>

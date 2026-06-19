@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import useSWR from "swr";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import { useToast } from "@/hooks/use-toast";
@@ -13,8 +13,8 @@ import {
   weightToKg,
   getActivityMultiplier,
 } from "@/utils/nutrition-helpers";
-import { CUSTOM_MACRO_CALORIE_TOLERANCE } from "@/lib/constants";
 import { addDays } from "date-fns";
+import { useCustomMacros } from "@/hooks/use-custom-macros";
 
 type UseNutritionBuilderProps = {
   client: Client;
@@ -25,13 +25,6 @@ export type NutritionSettings = {
   workActivityLevel: ActivityLevel;
   proteinTargetGPerKg: number;
   dietType: DietType;
-};
-
-export type CustomMacros = {
-  protein: number;
-  carbs: number;
-  fat: number;
-  calories: number;
 };
 
 export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderProps) {
@@ -68,17 +61,11 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
   });
   const [settingsChanged, setSettingsChanged] = useState(false);
 
-  // Custom macros state
-  const [customMacros, setCustomMacros] = useState<CustomMacros>({
-    protein: 0,
-    carbs: 0,
-    fat: 0,
-    calories: 0,
-  });
-  const [customMacrosValidationError, setCustomMacrosValidationError] = useState<string | null>(
-    null
-  );
-  const [showCustomMacros, setShowCustomMacros] = useState(false);
+  // Custom macros: %-split input stored as grams (◆3). Generation mode drives
+  // whether the footer generate posts custom macros (Custom tab) or not (Auto).
+  const customMacroState = useCustomMacros(nutritionPlan.nutritionData);
+  const customMacros = customMacroState.customMacros; // grams + re-totaled calories
+  const [generationMode, setGenerationMode] = useState<"auto" | "custom">("auto");
 
   // Activity burn toggle
   const [includeActivityBurn, setIncludeActivityBurn] = useState(client.includeActivityBurn);
@@ -125,25 +112,6 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
   const [isGenerating, setIsGenerating] = useState(false);
   const [warnings, setWarnings] = useState<string[]>([]);
 
-  // Validate custom macros
-  useEffect(() => {
-    if (customMacros.protein > 0 || customMacros.carbs > 0 || customMacros.fat > 0) {
-      const calculatedCalories =
-        customMacros.protein * 4 + customMacros.carbs * 4 + customMacros.fat * 9;
-      const difference = Math.abs(customMacros.calories - calculatedCalories);
-
-      if (customMacros.calories > 0 && difference > CUSTOM_MACRO_CALORIE_TOLERANCE) {
-        setCustomMacrosValidationError(
-          `Calories should be within ±50 of calculated total (${calculatedCalories} cal from macros)`
-        );
-      } else {
-        setCustomMacrosValidationError(null);
-      }
-    } else {
-      setCustomMacrosValidationError(null);
-    }
-  }, [customMacros]);
-
   // Settings change handler
   const handleSettingsChange = useCallback((newSettings: Partial<NutritionSettings>) => {
     setSettings((prev) => ({ ...prev, ...newSettings }));
@@ -152,7 +120,7 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
 
   // Generate nutrition plan
   const generatePlan = useCallback(
-    async (useCustomMacros = false, effectiveFrom?: string | null, preserveCalories?: boolean) => {
+    async (useCustom = false, effectiveFrom?: string | null, preserveCalories?: boolean) => {
       const validation = validateClientForNutrition(client);
       if (!validation.valid) {
         toast({
@@ -181,7 +149,7 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
             : {}),
         };
 
-        if (useCustomMacros) {
+        if (useCustom) {
           body.customMacrosEnabled = true;
           body.customProteinG = customMacros.protein;
           body.customCarbG = customMacros.carbs;
@@ -224,7 +192,20 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
         setIsGenerating(false);
       }
     },
-    [client, settings, customMacros, phaseId, coachNotes, onUpdate, toast, calorieSkew, nutritionPlan]
+    [
+      client,
+      settings,
+      customMacros.protein,
+      customMacros.carbs,
+      customMacros.fat,
+      customMacros.calories,
+      phaseId,
+      coachNotes,
+      onUpdate,
+      toast,
+      calorieSkew,
+      nutritionPlan,
+    ]
   );
 
   // Calculate projected goal date
@@ -262,12 +243,10 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
     settingsChanged,
     handleSettingsChange,
 
-    // Custom macros
-    customMacros,
-    setCustomMacros,
-    customMacrosValidationError,
-    showCustomMacros,
-    setShowCustomMacros,
+    // Custom macros (%-split state) + generation mode (Auto | Custom tabs)
+    ...customMacroState,
+    generationMode,
+    setGenerationMode,
 
     // Activity burn toggle
     includeActivityBurn,

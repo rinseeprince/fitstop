@@ -11,6 +11,8 @@ export function DrawerFooter() {
   const [preserveCalories, setPreserveCalories] = useState(false);
 
   const hasPlan = builder.hasPlan;
+  // The Custom tab posts the %-split-derived custom macros; Auto recalculates.
+  const isCustom = builder.generationMode === "custom";
 
   const handleClick = () => {
     if (hasPlan) {
@@ -18,12 +20,13 @@ export function DrawerFooter() {
       setShowApplyDialog(true);
     } else {
       // First creation — no popup, effective_from uses phase start date
-      builder.generatePlan(false);
+      void builder.generatePlan(isCustom);
     }
   };
 
   const handleApply = (effectiveFrom: string | null) => {
-    builder.generatePlan(false, effectiveFrom, preserveCalories);
+    // preserve-calories is an Auto-only option; custom macros ARE the targets.
+    void builder.generatePlan(isCustom, effectiveFrom, isCustom ? false : preserveCalories);
   };
 
   return (
@@ -32,9 +35,16 @@ export function DrawerFooter() {
         <div className="pointer-events-auto px-6 pb-6 pt-4">
           <button
             onClick={handleClick}
-            disabled={builder.isGenerating || builder.phaseBlocked || (builder.customDayDistribution && !builder.budgetValidation?.isValid)}
+            disabled={
+              builder.isGenerating ||
+              builder.phaseBlocked ||
+              (builder.customDayDistribution && !builder.budgetValidation?.isValid) ||
+              (isCustom && !!builder.customMacrosValidationError)
+            }
             title={
-              builder.customDayDistribution && !builder.budgetValidation?.isValid
+              isCustom && builder.customMacrosValidationError
+                ? builder.customMacrosValidationError
+                : builder.customDayDistribution && !builder.budgetValidation?.isValid
                 ? "Save your custom day distribution first, or adjust calories to match the weekly budget"
                 : undefined
             }
@@ -43,13 +53,17 @@ export function DrawerFooter() {
             <Sparkles className={`w-4 h-4 ${builder.isGenerating ? "animate-pulse" : ""}`} strokeWidth={1.5} />
             {builder.isGenerating
               ? "Generating..."
-              : builder.customDayDistribution
-                ? "Apply Distribution & Regenerate"
-                : builder.settingsChanged
-                  ? "Save & Regenerate Plan"
-                  : builder.hasPlan
-                    ? "Regenerate Plan"
-                    : "Generate Plan"}
+              : isCustom
+                ? builder.hasPlan
+                  ? "Regenerate with Custom Macros"
+                  : "Generate with Custom Macros"
+                : builder.customDayDistribution
+                  ? "Apply Distribution & Regenerate"
+                  : builder.settingsChanged
+                    ? "Save & Regenerate Plan"
+                    : builder.hasPlan
+                      ? "Regenerate Plan"
+                      : "Generate Plan"}
           </button>
 
           {!builder.client.bmr && (
@@ -74,7 +88,7 @@ export function DrawerFooter() {
         description="The new nutrition plan will replace the current one. Choose when the updated targets should start."
         onApply={handleApply}
         maxDate={builder.activePhase?.endDate}
-        showPreserveCalories={true}
+        showPreserveCalories={!isCustom}
         preserveCalories={preserveCalories}
         onPreserveCaloriesChange={setPreserveCalories}
       />
