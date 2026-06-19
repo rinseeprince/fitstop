@@ -102,6 +102,9 @@ function SharedControls() {
           includeActivityBurn={builder.includeActivityBurn}
           onToggleActivityBurn={builder.handleToggleActivityBurn}
           isSavingToggle={builder.isSavingBurnToggle}
+          surplusAsCarbs={builder.surplusAsCarbs}
+          onToggleSurplusAsCarbs={builder.handleToggleSurplusAsCarbs}
+          isSavingSurplus={builder.isSavingSurplusToggle}
         />
         <CalorieSkewingSection
           enabled={builder.customDayDistribution}

@@ -18,6 +18,7 @@ type NutritionCalendarWeekRowProps = {
   /** Per-day phase status for tinting. Keyed by YYYY-MM-DD. */
   phaseByDate?: Map<string, PhaseStatus>;
   includeActivityBurn: boolean;
+  surplusAsCarbs?: boolean;
   /** Edit mode (◆2) + selection. */
   editMode?: boolean;
   selected?: Set<string>;
@@ -33,6 +34,7 @@ export const NutritionCalendarWeekRow = memo(function NutritionCalendarWeekRow({
   viewYear,
   phaseByDate,
   includeActivityBurn,
+  surplusAsCarbs,
   editMode,
   selected,
   onToggle,
@@ -55,6 +57,7 @@ export const NutritionCalendarWeekRow = memo(function NutritionCalendarWeekRow({
               isOutsideMonth={isOutsideMonth}
               phaseStatus={phaseByDate?.get(date) ?? null}
               includeActivityBurn={includeActivityBurn}
+              surplusAsCarbs={surplusAsCarbs}
               editMode={editMode}
               isSelected={selected?.has(date) ?? false}
               onToggle={onToggle}

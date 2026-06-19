@@ -49,6 +49,7 @@ describe("PATCH /api/client/settings", () => {
       email: "test@example.com",
       active: true,
       includeActivityBurn: true,
+      surplusAsCarbs: false,
       timezone: "UTC",
       createdAt: "2024-01-01T00:00:00Z",
       updatedAt: "2024-01-01T00:00:00Z",

@@ -19,6 +19,7 @@ type UseNutritionCalendarEditingArgs = {
   viewMonth: { year: number; month: number };
   /** Activity-burn toggle — seeds the modal with the day's displayed numbers. */
   includeActivityBurn: boolean;
+  surplusAsCarbs: boolean;
   mutate: () => Promise<unknown>;
   onUpdate: () => void;
 };
@@ -37,6 +38,7 @@ export function useNutritionCalendarEditing({
   clientToday,
   viewMonth,
   includeActivityBurn,
+  surplusAsCarbs,
   mutate,
   onUpdate,
 }: UseNutritionCalendarEditingArgs) {
@@ -89,7 +91,7 @@ export function useNutritionCalendarEditing({
     return first ? eventsByDate.get(first) : null;
   }, [selected, eventsByDate]);
   const seedTarget = firstSelectedEvent
-    ? mapNutritionEventToDisplayTarget(firstSelectedEvent, includeActivityBurn)
+    ? mapNutritionEventToDisplayTarget(firstSelectedEvent, includeActivityBurn, surplusAsCarbs)
     : null;
   const dietType = (firstSelectedEvent?.dietType as DietType) || "balanced";
   const defaultCalories = seedTarget?.calories ?? 0;

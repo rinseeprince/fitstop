@@ -447,6 +447,9 @@ export type Client = {
   // Display preferences (remain on clients table)
   unitPreference?: UnitPreference;
   includeActivityBurn: boolean;
+  // How a training-day surplus distributes across macros (mig 117): false = keep
+  // the plan's carb:fat ratio (protein held); true = carbs only (protein+fat held).
+  surplusAsCarbs: boolean;
 
   // Activation
   welcomeMessage?: string;

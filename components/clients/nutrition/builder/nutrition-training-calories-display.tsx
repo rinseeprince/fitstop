@@ -3,6 +3,7 @@
 import { Flame } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
 import type { TrainingPlan } from "@/types/training";
 import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
 
@@ -15,6 +16,10 @@ type NutritionTrainingCaloriesDisplayProps = {
   includeActivityBurn: boolean;
   onToggleActivityBurn: (value: boolean) => void;
   isSavingToggle?: boolean;
+  /** How a training-day surplus distributes across macros (mig 117). */
+  surplusAsCarbs: boolean;
+  onToggleSurplusAsCarbs: (value: boolean) => void;
+  isSavingSurplus?: boolean;
   dailyTargets?: DailyNutritionTargets[];
 };
 
@@ -27,6 +32,9 @@ export function NutritionTrainingCaloriesDisplay({
   includeActivityBurn,
   onToggleActivityBurn,
   isSavingToggle,
+  surplusAsCarbs,
+  onToggleSurplusAsCarbs,
+  isSavingSurplus,
   dailyTargets,
 }: NutritionTrainingCaloriesDisplayProps) {
   if (isLoading) {
@@ -148,6 +156,44 @@ export function NutritionTrainingCaloriesDisplay({
           className="h-[22px] w-[40px] rounded-[11px] data-[state=checked]:bg-[#0d9488] data-[state=unchecked]:bg-[rgba(13,148,136,0.12)] [&>[data-slot=switch-thumb]]:h-4 [&>[data-slot=switch-thumb]]:w-4 [&>[data-slot=switch-thumb]]:shadow-[0_1px_3px_rgba(0,0,0,0.12)] [&>[data-slot=switch-thumb]]:data-[state=checked]:translate-x-[18px]"
         />
       </div>
+
+      {/* Surplus distribution — only relevant when burn adds calories */}
+      {includeActivityBurn && (
+        <div className="flex items-center justify-between px-1 pt-1">
+          <div className="space-y-0.5">
+            <Label className="text-[12.5px] font-semibold text-[#0c1a1e]">
+              Add training calories as
+            </Label>
+            <p className="text-[11px] text-[#93b0b4] leading-[1.4]">
+              Keep split honors your carb:fat ratio; carbs only fuels with carbs
+            </p>
+          </div>
+          <div className="bg-[rgba(13,148,136,0.05)] rounded-[6px] p-[2px] inline-flex flex-shrink-0">
+            {([
+              ["split", "Keep split"],
+              ["carbs", "Carbs only"],
+            ] as const).map(([key, label]) => {
+              const active = (key === "carbs") === surplusAsCarbs;
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  disabled={isSavingSurplus}
+                  onClick={() => onToggleSurplusAsCarbs(key === "carbs")}
+                  className={cn(
+                    "px-2.5 py-1 text-[11.5px] font-medium rounded-[4px] transition-all",
+                    active
+                      ? "bg-white text-[#0c1a1e] shadow-[0_1px_3px_rgba(0,0,0,0.05)]"
+                      : "text-[#5a7d82] hover:text-[#0c1a1e]"
+                  )}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

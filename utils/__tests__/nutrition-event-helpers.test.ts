@@ -45,24 +45,62 @@ describe("mapNutritionEventToDisplayTarget", () => {
     expect(target.fatG).toBe(47);
   });
 
-  it("still recalculates the split for an UNMODIFIED training day with surplus", () => {
+  it("shows stored macros verbatim on a non-modified day with NO surplus (burn on)", () => {
+    // The reported bug: a flat custom plan (burn on, surplus 0) must NOT re-split.
+    const event = ev({
+      isModified: false,
+      baselineCalories: 2502,
+      proteinG: 200,
+      carbG: 250,
+      fatG: 78,
+      calorieSurplusPercentage: null,
+    });
+
+    const target = mapNutritionEventToDisplayTarget(event, true);
+
+    expect(target.calories).toBe(2502);
+    expect(target.carbsG).toBe(250); // NOT re-derived to 213
+    expect(target.fatG).toBe(78);
+  });
+
+  it("keep-split: preserves the stored carb:fat ratio on a training surplus", () => {
     const event = ev({
       isModified: false,
       isTrainingDay: true,
       baselineCalories: 2000,
       proteinG: 150,
-      carbG: 100, // stored rest-day macros
+      carbG: 100, // stored carb:fat = 400:450 cal
       fatG: 50,
       calorieSurplusPercentage: 10, // total = 2200
     });
 
-    const target = mapNutritionEventToDisplayTarget(event, true);
+    const target = mapNutritionEventToDisplayTarget(event, true); // surplusAsCarbs default false
 
-    // balanced: protein held (150), remaining 1600 split 50/50 -> 200c / 89f
+    // protein held; the +200 surplus splits by the stored 400:450 ratio
     expect(target.calories).toBe(2200);
     expect(target.proteinG).toBe(150);
-    expect(target.carbsG).toBe(200); // recalculated, not the stored 100
-    expect(target.fatG).toBe(89);
+    expect(target.carbsG).toBe(188);
+    expect(target.fatG).toBe(94);
+  });
+
+  it("carbs-only: protein AND fat held, the whole surplus goes to carbs", () => {
+    const event = ev({
+      isModified: false,
+      isTrainingDay: true,
+      baselineCalories: 2000,
+      proteinG: 150,
+      carbG: 100,
+      fatG: 50,
+      calorieSurplusPercentage: 10, // total = 2200
+    });
+
+    const target = mapNutritionEventToDisplayTarget(event, true, true);
+
+    expect(target.calories).toBe(2200);
+    expect(target.proteinG).toBe(150); // held
+    expect(target.fatG).toBe(50); // held
+    // carbs absorb the rest: (2200 - 600 - 450) / 4 = 288
+    expect(target.carbsG).toBe(288);
   });
 
   it("uses stored macros when activity burn is off (unchanged)", () => {

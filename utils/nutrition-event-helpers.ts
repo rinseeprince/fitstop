@@ -1,7 +1,5 @@
 import type { NutritionEvent } from "@/types/check-in";
-import type { DietType } from "@/types/check-in";
 import type { DailyNutritionTargets, DayOfWeek } from "@/utils/nutrition-helpers";
-import { calculateDailyMacros } from "@/utils/nutrition-helpers";
 
 /**
  * Get total calories for a nutrition event, respecting the activity burn toggle.
@@ -25,24 +23,29 @@ export function getTotalCalories(
 /**
  * Map a NutritionEvent to the DailyNutritionTargets display type.
  *
- * When includeActivityBurn is false: uses stored baseline macros directly.
- * When includeActivityBurn is true: recalculates macros from total calories
- * using the event's snapshotted dietType so carb/fat split is correct for
- * the higher calorie total.
- *
- * A MODIFIED (is_modified) day is frozen — its macros were materialized by a
- * coach edit (surplus already null, burn 0), so they are explicit and must be
- * shown VERBATIM, never recalculated from the diet split (else a manual carb/fat
- * override silently reverts to the plan's split on display). Read-only change.
+ * The macros the coach SET are what display. They are shown verbatim when burn
+ * is off, the day is frozen (is_modified), or there's no training surplus to add
+ * (rest days, flat custom plans). Only a real training-day surplus changes them,
+ * and even then protein is held at the set grams; `surplusAsCarbs` decides where
+ * the extra calories go:
+ *   - false (default, "keep my split"): carbs + fat scale to the higher total
+ *     PRESERVING their stored ratio — the coach's split is honored, never
+ *     re-derived from the diet type (keto stays keto). For auto plans the stored
+ *     ratio already IS the diet split, so this is a no-op there.
+ *   - true ("carbs only"): fat is ALSO held; the whole surplus is added as carbs.
  */
 export function mapNutritionEventToDisplayTarget(
   event: NutritionEvent,
-  includeActivityBurn: boolean
+  includeActivityBurn: boolean,
+  surplusAsCarbs = false
 ): DailyNutritionTargets {
   const dayOfWeek = event.dayOfWeek as DayOfWeek;
   const dayLabel = dayOfWeek.charAt(0).toUpperCase() + dayOfWeek.slice(1);
 
-  if (!includeActivityBurn || event.isModified) {
+  const totalCalories = getTotalCalories(event, includeActivityBurn);
+  const surplusCalories = totalCalories - event.baselineCalories;
+
+  if (!includeActivityBurn || event.isModified || surplusCalories <= 0) {
     const totalCal = event.proteinG * 4 + event.carbG * 4 + event.fatG * 9;
     const proteinPercent = totalCal > 0 ? Math.round((event.proteinG * 4 / totalCal) * 100) : 0;
     const carbsPercent = totalCal > 0 ? Math.round((event.carbG * 4 / totalCal) * 100) : 0;
@@ -67,19 +70,29 @@ export function mapNutritionEventToDisplayTarget(
     };
   }
 
-  // Recalculate macros for total calories (baseline + surplus or burns)
-  const totalCalories = getTotalCalories(event, true);
-  const surplusCalories = totalCalories - event.baselineCalories;
-  const macros = calculateDailyMacros(
-    totalCalories,
-    event.proteinG,
-    event.isTrainingDay,
-    (event.dietType as DietType) || "balanced"
-  );
+  // A real training surplus applies. Protein is always held; the surplus mode
+  // decides the rest.
+  const proteinG = event.proteinG;
+  let carbsG: number;
+  let fatG: number;
+  if (surplusAsCarbs) {
+    // Fat held too; carbs absorb the entire surplus.
+    fatG = event.fatG;
+    carbsG = Math.round((totalCalories - proteinG * 4 - fatG * 9) / 4);
+  } else {
+    // Carbs + fat scale to the higher total preserving their stored ratio.
+    const carbFatCalories = Math.max(0, totalCalories - proteinG * 4);
+    const baseCarbCal = event.carbG * 4;
+    const baseFatCal = event.fatG * 9;
+    const baseCarbFat = baseCarbCal + baseFatCal;
+    const carbShare = baseCarbFat > 0 ? baseCarbCal / baseCarbFat : 0.5;
+    carbsG = Math.round((carbFatCalories * carbShare) / 4);
+    fatG = Math.round((carbFatCalories * (1 - carbShare)) / 9);
+  }
 
-  const totalCal = macros.proteinG * 4 + macros.carbsG * 4 + macros.fatG * 9;
-  const proteinPercent = totalCal > 0 ? Math.round((macros.proteinG * 4 / totalCal) * 100) : 0;
-  const carbsPercent = totalCal > 0 ? Math.round((macros.carbsG * 4 / totalCal) * 100) : 0;
+  const totalCal = proteinG * 4 + carbsG * 4 + fatG * 9;
+  const proteinPercent = totalCal > 0 ? Math.round((proteinG * 4 / totalCal) * 100) : 0;
+  const carbsPercent = totalCal > 0 ? Math.round((carbsG * 4 / totalCal) * 100) : 0;
 
   return {
     day: dayOfWeek,
@@ -87,9 +100,9 @@ export function mapNutritionEventToDisplayTarget(
     isTrainingDay: event.isTrainingDay,
     calories: totalCalories,
     baselineCalories: event.baselineCalories,
-    proteinG: macros.proteinG,
-    carbsG: macros.carbsG,
-    fatG: macros.fatG,
+    proteinG,
+    carbsG,
+    fatG,
     proteinPercent,
     carbsPercent,
     fatPercent: 100 - proteinPercent - carbsPercent,

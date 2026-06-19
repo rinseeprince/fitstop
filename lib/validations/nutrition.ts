@@ -41,10 +41,12 @@ export const dayCalorieOverridesSchema = z.object({
 export const nutritionSettingsPatchSchema = z.object({
   unitPreference: unitPreferenceSchema.optional(),
   includeActivityBurn: z.boolean().optional(),
+  surplusAsCarbs: z.boolean().optional(),
 }).refine(
   (data) =>
     data.unitPreference !== undefined ||
-    data.includeActivityBurn !== undefined,
+    data.includeActivityBurn !== undefined ||
+    data.surplusAsCarbs !== undefined,
   { message: "No valid updates provided" }
 );
 

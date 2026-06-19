@@ -762,6 +762,7 @@ export type Database = {
           start_date: string | null
           starting_body_fat_percentage: number | null
           starting_weight: number | null
+          surplus_as_carbs: boolean
           tdee: number | null
           tdee_manual_override: boolean | null
           timezone: string
@@ -808,6 +809,7 @@ export type Database = {
           start_date?: string | null
           starting_body_fat_percentage?: number | null
           starting_weight?: number | null
+          surplus_as_carbs?: boolean
           tdee?: number | null
           tdee_manual_override?: boolean | null
           timezone?: string
@@ -854,6 +856,7 @@ export type Database = {
           start_date?: string | null
           starting_body_fat_percentage?: number | null
           starting_weight?: number | null
+          surplus_as_carbs?: boolean
           tdee?: number | null
           tdee_manual_override?: boolean | null
           timezone?: string

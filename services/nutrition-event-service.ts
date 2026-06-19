@@ -107,7 +107,6 @@ export async function generateNutritionEvents(
     // Baseline from stored daily target row (handles custom macros + custom day distribution)
     const stored = targetsByDay.get(dayName);
     const baselineCalories = stored?.calories ?? plan.baselineCalories;
-    const proteinG = stored ? Number(stored.protein_g) : plan.proteinTargetG;
 
     // New percentage model: use surplus % from training event's session
     // Legacy fallback: sum estimatedCalories as flat burn
@@ -123,13 +122,22 @@ export async function generateNutritionEvents(
       );
     }
 
-    // Calculate baseline macros (from baseline calories only, not burn-inclusive)
-    const macros = calculateDailyMacros(
-      baselineCalories,
-      proteinG,
-      isTrainingDay,
-      plan.dietType as DietType
-    );
+    // Baseline macros: use the stored daily-target macros VERBATIM — they already
+    // carry custom macros, custom day-distribution, and the auto diet-split.
+    // Whatever the coach set is what lands on the event (no re-deriving the
+    // carb/fat split). Only compute a split when there's no stored target.
+    const macros = stored
+      ? {
+          proteinG: Number(stored.protein_g),
+          carbsG: Number(stored.carb_g),
+          fatG: Number(stored.fat_g),
+        }
+      : calculateDailyMacros(
+          baselineCalories,
+          plan.proteinTargetG,
+          isTrainingDay,
+          plan.dietType as DietType
+        );
 
     rows.push({
       client_id: clientId,

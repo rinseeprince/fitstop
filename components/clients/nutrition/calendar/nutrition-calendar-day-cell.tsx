@@ -17,6 +17,8 @@ type NutritionCalendarDayCellProps = {
   phaseStatus?: PhaseStatus | null;
   /** Activity-burn toggle — the cell shows the same total the rest of the builder does. */
   includeActivityBurn: boolean;
+  /** How a training-day surplus distributes across macros. */
+  surplusAsCarbs?: boolean;
   /** Edit mode (◆2) — eligible cells become click-to-select targets. */
   editMode?: boolean;
   isSelected?: boolean;
@@ -46,11 +48,14 @@ export const NutritionCalendarDayCell = memo(function NutritionCalendarDayCell({
   isOutsideMonth,
   phaseStatus,
   includeActivityBurn,
+  surplusAsCarbs,
   editMode,
   isSelected,
   onToggle,
 }: NutritionCalendarDayCellProps) {
-  const target = event ? mapNutritionEventToDisplayTarget(event, includeActivityBurn) : null;
+  const target = event
+    ? mapNutritionEventToDisplayTarget(event, includeActivityBurn, surplusAsCarbs)
+    : null;
   // Eligible to edit = today-forward + a scheduled event (mirrors the server guard).
   const isEligible =
     !!editMode && !isPast && !!event && event.status === "scheduled";

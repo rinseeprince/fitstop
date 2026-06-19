@@ -56,6 +56,8 @@ type NutritionCalendarViewProps = {
   clientTimezone?: string;
   /** Activity-burn toggle, so calendar totals match the rest of the builder. */
   includeActivityBurn: boolean;
+  /** How a training-day surplus distributes across macros. */
+  surplusAsCarbs: boolean;
   /** Refetch the surrounding builder (hero/typical-week) after an edit. */
   onUpdate: () => void;
 };
@@ -65,6 +67,7 @@ export function NutritionCalendarView({
   phases,
   clientTimezone,
   includeActivityBurn,
+  surplusAsCarbs,
   onUpdate,
 }: NutritionCalendarViewProps) {
   const todayDate = getTodayDateString();
@@ -109,6 +112,7 @@ export function NutritionCalendarView({
     clientToday,
     viewMonth,
     includeActivityBurn,
+    surplusAsCarbs,
     mutate,
     onUpdate,
   });
@@ -242,6 +246,7 @@ export function NutritionCalendarView({
                 viewYear={viewMonth.year}
                 phaseByDate={phaseByDate}
                 includeActivityBurn={includeActivityBurn}
+                surplusAsCarbs={surplusAsCarbs}
                 editMode={edit.editMode}
                 selected={edit.selected}
                 onToggle={edit.toggleDay}

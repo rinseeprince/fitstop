@@ -86,6 +86,7 @@ describe('/api/client/notifications', () => {
     carbTargetG: undefined,
     fatTargetG: undefined,
     includeActivityBurn: true,
+    surplusAsCarbs: false,
     customMacrosEnabled: false,
     customProteinG: undefined,
     customCarbG: undefined,

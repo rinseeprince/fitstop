@@ -97,6 +97,37 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
     [client.id, onUpdate, toast]
   );
 
+  // Surplus distribution toggle (mig 117): false = keep the plan's carb:fat ratio
+  // on a training-day surplus; true = add the whole surplus as carbs.
+  const [surplusAsCarbs, setSurplusAsCarbs] = useState(client.surplusAsCarbs);
+  const [isSavingSurplusToggle, setIsSavingSurplusToggle] = useState(false);
+
+  const handleToggleSurplusAsCarbs = useCallback(
+    async (value: boolean) => {
+      setSurplusAsCarbs(value);
+      setIsSavingSurplusToggle(true);
+      try {
+        const res = await fetch(`/api/clients/${client.id}/nutrition`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ surplusAsCarbs: value }),
+        });
+        if (!res.ok) throw new Error("Failed to update");
+        onUpdate?.();
+      } catch {
+        toast({
+          title: "Error",
+          description: "Failed to update surplus setting",
+          variant: "destructive",
+        });
+        setSurplusAsCarbs(!value);
+      } finally {
+        setIsSavingSurplusToggle(false);
+      }
+    },
+    [client.id, onUpdate, toast]
+  );
+
   // Calorie skewing (extracted hook)
   const planBaseline = nutritionPlan.nutritionData?.baselineCalories ?? nutritionPlan.nutritionData?.calorieTarget ?? 0;
   const calorieSkew = useCalorieSkew({
@@ -252,6 +283,11 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
     includeActivityBurn,
     isSavingBurnToggle,
     handleToggleActivityBurn,
+
+    // Surplus distribution toggle
+    surplusAsCarbs,
+    isSavingSurplusToggle,
+    handleToggleSurplusAsCarbs,
 
     // Calorie skewing
     ...calorieSkew,

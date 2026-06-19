@@ -87,6 +87,7 @@ export function mapClientRow(row: ClientRow): Client {
     // Display preferences
     unitPreference: (row.unit_preference ?? "imperial") as "metric" | "imperial",
     includeActivityBurn: row.include_activity_burn ?? true,
+    surplusAsCarbs: row.surplus_as_carbs ?? false,
     startingWeight: row.starting_weight ?? undefined,
     startingBodyFatPercentage: row.starting_body_fat_percentage ?? undefined,
     bmrManualOverride: row.bmr_manual_override ?? undefined,

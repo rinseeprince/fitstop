@@ -254,6 +254,9 @@ export async function PATCH(
     if (validationResult.data.includeActivityBurn !== undefined) {
       updates.include_activity_burn = validationResult.data.includeActivityBurn;
     }
+    if (validationResult.data.surplusAsCarbs !== undefined) {
+      updates.surplus_as_carbs = validationResult.data.surplusAsCarbs;
+    }
 
     if (Object.keys(updates).length > 0) {
       const { error } = await supabaseAdmin
