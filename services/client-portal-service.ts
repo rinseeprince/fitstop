@@ -5,6 +5,7 @@ import { buildDailyTargetsFromPlan } from "@/utils/build-daily-targets";
 import { mapClientRow } from "@/lib/mappers";
 import { getActiveTrainingPlan } from "./training-service";
 import { getEventsForDateRange } from "./training-event-service";
+import { getNutritionEventsForDateRange } from "./nutrition-event-service";
 import { getTrainingWeekStart, getTrainingWeekEnd } from "@/lib/date-helpers";
 import { getClientTodayString } from "./today-service";
 
@@ -61,16 +62,19 @@ export async function getClientNutritionTargets(
 ): Promise<NutritionTargets | null> {
   const supabase = await createPortalClient();
 
-  // Read include_activity_burn and unit_preference from clients (display prefs stay on clients)
+  // Read include_activity_burn, unit_preference + surplus_as_carbs from clients
+  // (display prefs stay on clients). surplus_as_carbs decides how a training-day
+  // surplus splits — the program card must match the coach calendar.
   const { data: clientData, error: clientError } = await supabase
     .from("clients")
-    .select("include_activity_burn, unit_preference")
+    .select("include_activity_burn, unit_preference, surplus_as_carbs")
     .eq("id", clientId)
     .single();
 
   if (clientError || !clientData) return null;
 
   const includeActivityBurn = clientData.include_activity_burn ?? true;
+  const surplusAsCarbs = clientData.surplus_as_carbs ?? false;
 
   // Client-local today: the live-week anchor below. At 00:30 local just after
   // a UTC week boundary, server-UTC today would show last week's targets.
@@ -97,13 +101,15 @@ export async function getClientNutritionTargets(
   if (dtError) return null;
 
   // Fetch training plan + current week's training events for live calorie
-  // enrichment, anchored to the client-local today resolved above.
+  // enrichment, plus the week's dense nutrition events so per-day coach edits
+  // (is_modified) surface on the program card. Anchored to client-local today.
   const weekStart = getTrainingWeekStart(today);
   const weekEnd = getTrainingWeekEnd(today);
 
-  const [trainingPlan, trainingEvents] = await Promise.all([
+  const [trainingPlan, trainingEvents, nutritionEvents] = await Promise.all([
     getActiveTrainingPlan(clientId),
     getEventsForDateRange(clientId, weekStart, weekEnd),
+    getNutritionEventsForDateRange(clientId, weekStart, weekEnd),
   ]);
   const dietType = (plan.diet_type as DietType) || "balanced";
 
@@ -113,7 +119,9 @@ export async function getClientNutritionTargets(
     trainingPlan,
     includeActivityBurn,
     dietType,
-    trainingEvents
+    surplusAsCarbs,
+    trainingEvents,
+    nutritionEvents
   );
 
   return {

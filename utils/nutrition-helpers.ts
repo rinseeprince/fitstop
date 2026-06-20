@@ -39,6 +39,9 @@ export type DailyNutritionTargets = {
   totalCaloriesWithActivities: number;
   includeActivityBurn: boolean;
   calorieSurplusPercentage?: number | null;
+  // Optional coach per-day note (rides a materialized event edit). Surfaced to
+  // the client on the program card + day-view. Null/undefined on template days.
+  note?: string | null;
 };
 
 /**
@@ -116,6 +119,44 @@ export function calculateDailyMacros(
     carbsG: Math.round(carbCal / 4),
     fatG: Math.round(fatCal / 9),
   };
+}
+
+/**
+ * Split a training-day calorie total into carbs + fat, holding protein.
+ * The single source of truth for the surplus-split policy, shared by the
+ * event display path (`mapNutritionEventToDisplayTarget`) and the plan-template
+ * path (`buildDailyTargetsFromPlan`) so the client app + coach "typical week"
+ * card match the coach calendar.
+ *   - surplusAsCarbs=false ("keep my split"): carbs + fat scale to the higher
+ *     total PRESERVING their stored ratio (the coach's split is honored, never
+ *     re-derived from the diet type — keto stays keto).
+ *   - surplusAsCarbs=true ("carbs only"): fat is ALSO held; the whole surplus
+ *     is added as carbs.
+ * Caller owns the verbatim guard (no surplus / frozen day / burn off) — this
+ * helper assumes a real surplus applies.
+ */
+export function applySurplusSplit(
+  totalCalories: number,
+  proteinG: number,
+  baselineCarbG: number,
+  baselineFatG: number,
+  surplusAsCarbs: boolean
+): { carbsG: number; fatG: number } {
+  if (surplusAsCarbs) {
+    // Fat held too; carbs absorb the entire surplus.
+    const fatG = baselineFatG;
+    const carbsG = Math.round((totalCalories - proteinG * 4 - fatG * 9) / 4);
+    return { carbsG, fatG };
+  }
+  // Carbs + fat scale to the higher total preserving their stored ratio.
+  const carbFatCalories = Math.max(0, totalCalories - proteinG * 4);
+  const baseCarbCal = baselineCarbG * 4;
+  const baseFatCal = baselineFatG * 9;
+  const baseCarbFat = baseCarbCal + baseFatCal;
+  const carbShare = baseCarbFat > 0 ? baseCarbCal / baseCarbFat : 0.5;
+  const carbsG = Math.round((carbFatCalories * carbShare) / 4);
+  const fatG = Math.round((carbFatCalories * (1 - carbShare)) / 9);
+  return { carbsG, fatG };
 }
 
 /**

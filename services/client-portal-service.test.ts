@@ -16,6 +16,10 @@ vi.mock("./training-event-service", () => ({
   getEventsForDateRange: vi.fn().mockResolvedValue([]),
 }));
 
+vi.mock("./nutrition-event-service", () => ({
+  getNutritionEventsForDateRange: vi.fn().mockResolvedValue([]),
+}));
+
 vi.mock("@/utils/build-daily-targets", () => ({
   buildDailyTargetsFromPlan: vi.fn().mockReturnValue([]),
 }));
@@ -23,6 +27,8 @@ vi.mock("@/utils/build-daily-targets", () => ({
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { getClientTodayString } from "./today-service";
 import { getEventsForDateRange } from "./training-event-service";
+import { getNutritionEventsForDateRange } from "./nutrition-event-service";
+import { buildDailyTargetsFromPlan } from "@/utils/build-daily-targets";
 import { getClientNutritionTargets } from "./client-portal-service";
 
 function createMockQuery(result: { data: unknown; error: unknown }) {
@@ -95,5 +101,60 @@ describe("getClientNutritionTargets", () => {
       "2026-06-08",
       "2026-06-14",
     );
+    // The dense nutrition events for the same week feed the program card so
+    // per-day edits surface.
+    expect(getNutritionEventsForDateRange).toHaveBeenCalledWith(
+      "client-1",
+      "2026-06-08",
+      "2026-06-14",
+    );
+  });
+
+  it("reads surplus_as_carbs from the client and threads it + the week's events into the builder", async () => {
+    vi.mocked(getClientTodayString).mockResolvedValue("2026-06-10");
+    const weekEvents = [{ dayOfWeek: "monday" }];
+    vi.mocked(getNutritionEventsForDateRange).mockResolvedValue(
+      weekEvents as never,
+    );
+
+    const clientQuery = createMockQuery({
+      data: {
+        include_activity_burn: true,
+        unit_preference: "metric",
+        surplus_as_carbs: true,
+      },
+      error: null,
+    });
+    const planQuery = createMockQuery({
+      data: {
+        id: "plan-1",
+        diet_type: "balanced",
+        custom_macros_enabled: false,
+        baseline_calories: 2200,
+        protein_target_g: 170,
+        carb_target_g: 240,
+        fat_target_g: 70,
+      },
+      error: null,
+    });
+    const targetsQuery = createMockQuery({ data: [], error: null });
+
+    let call = 0;
+    vi.mocked(createServerSupabaseClient).mockResolvedValue({
+      from: vi.fn().mockImplementation(() => {
+        call++;
+        if (call === 1) return clientQuery;
+        if (call === 2) return planQuery;
+        return targetsQuery;
+      }),
+    } as never);
+
+    await getClientNutritionTargets("client-1");
+
+    // Args: (plan, dailyTargetRows, trainingPlan, includeActivityBurn,
+    //        dietType, surplusAsCarbs, trainingEvents, nutritionEvents)
+    const args = vi.mocked(buildDailyTargetsFromPlan).mock.calls[0];
+    expect(args[5]).toBe(true); // surplusAsCarbs threaded
+    expect(args[7]).toBe(weekEvents); // the week's nutrition events
   });
 });

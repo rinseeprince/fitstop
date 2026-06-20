@@ -1,5 +1,6 @@
 import type { NutritionEvent } from "@/types/check-in";
 import type { DailyNutritionTargets, DayOfWeek } from "@/utils/nutrition-helpers";
+import { applySurplusSplit } from "@/utils/nutrition-helpers";
 
 /**
  * Get total calories for a nutrition event, respecting the activity burn toggle.
@@ -71,24 +72,15 @@ export function mapNutritionEventToDisplayTarget(
   }
 
   // A real training surplus applies. Protein is always held; the surplus mode
-  // decides the rest.
+  // decides the rest (shared with the plan-template path via applySurplusSplit).
   const proteinG = event.proteinG;
-  let carbsG: number;
-  let fatG: number;
-  if (surplusAsCarbs) {
-    // Fat held too; carbs absorb the entire surplus.
-    fatG = event.fatG;
-    carbsG = Math.round((totalCalories - proteinG * 4 - fatG * 9) / 4);
-  } else {
-    // Carbs + fat scale to the higher total preserving their stored ratio.
-    const carbFatCalories = Math.max(0, totalCalories - proteinG * 4);
-    const baseCarbCal = event.carbG * 4;
-    const baseFatCal = event.fatG * 9;
-    const baseCarbFat = baseCarbCal + baseFatCal;
-    const carbShare = baseCarbFat > 0 ? baseCarbCal / baseCarbFat : 0.5;
-    carbsG = Math.round((carbFatCalories * carbShare) / 4);
-    fatG = Math.round((carbFatCalories * (1 - carbShare)) / 9);
-  }
+  const { carbsG, fatG } = applySurplusSplit(
+    totalCalories,
+    proteinG,
+    event.carbG,
+    event.fatG,
+    surplusAsCarbs
+  );
 
   const totalCal = proteinG * 4 + carbsG * 4 + fatG * 9;
   const proteinPercent = totalCal > 0 ? Math.round((proteinG * 4 / totalCal) * 100) : 0;

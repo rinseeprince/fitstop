@@ -1,8 +1,9 @@
 import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
-import { DAYS_OF_WEEK, calculateDailyMacros } from "@/utils/nutrition-helpers";
+import { DAYS_OF_WEEK, calculateDailyMacros, applySurplusSplit } from "@/utils/nutrition-helpers";
 import { getTrainingSessionsSummary } from "@/utils/training-calorie-helpers";
+import { mapNutritionEventToDisplayTarget } from "@/utils/nutrition-event-helpers";
 import type { TrainingPlan, TrainingEvent } from "@/types/training";
-import type { DietType } from "@/types/check-in";
+import type { DietType, NutritionEvent } from "@/types/check-in";
 
 const DAY_NAMES: Record<number, string> = {
   0: "sunday", 1: "monday", 2: "tuesday", 3: "wednesday",
@@ -45,9 +46,22 @@ type PlanBaseline = {
 };
 
 /**
- * Build DailyNutritionTargets[] from stored plan data + live training events.
- * Shared between the coach nutrition API route and the client portal service.
- * Uses percentage surplus model when events have calorieSurplusPercentage set.
+ * Build DailyNutritionTargets[] from stored plan data + live training events,
+ * and (for the client program view) the week's dense nutrition events.
+ *
+ * Shared between the coach nutrition API route ("typical week" card — pass no
+ * `nutritionEvents` → weekday template) and the client portal service (pass the
+ * current week's events → date-accurate, shows per-day edits + notes).
+ *
+ * The surplus-split policy is unified with the coach calendar:
+ *   - event-present days reuse `mapNutritionEventToDisplayTarget` (parity by
+ *     construction — frozen `is_modified` days display verbatim, the
+ *     `surplusAsCarbs` toggle decides the split), overriding only the live
+ *     trainingSessions list (and the coach note, threaded in a later session);
+ *   - no-event (template) days hold protein and split any training surplus via
+ *     `applySurplusSplit`, preserving the coach's stored carb/fat ratio (never
+ *     re-derived from the diet type), with stored macros shown verbatim on rest
+ *     days / when burn is off.
  */
 export function buildDailyTargetsFromPlan(
   plan: PlanBaseline,
@@ -55,7 +69,9 @@ export function buildDailyTargetsFromPlan(
   trainingPlan: TrainingPlan | null,
   includeActivityBurn: boolean,
   dietType: DietType,
-  trainingEvents?: TrainingEvent[]
+  surplusAsCarbs: boolean,
+  trainingEvents?: TrainingEvent[],
+  nutritionEvents?: NutritionEvent[]
 ): DailyNutritionTargets[] {
   const surplusByDay = trainingEvents ? getEventSurplusByDay(trainingEvents) : {};
 
@@ -63,91 +79,95 @@ export function buildDailyTargetsFromPlan(
     (dailyTargetRows || []).map((dt) => [dt.day_of_week, dt])
   );
 
-  let dailyTargets: DailyNutritionTargets[] = DAYS_OF_WEEK.map((day) => {
+  // First-wins weekday -> nutrition event map. One event per weekday in a
+  // Mon-Sun window; the guard tolerates a future widening of the range.
+  const eventsByWeekday = new Map<string, NutritionEvent>();
+  for (const ev of nutritionEvents ?? []) {
+    if (!eventsByWeekday.has(ev.dayOfWeek)) eventsByWeekday.set(ev.dayOfWeek, ev);
+  }
+
+  const trainingSessionsFor = (day: string) =>
+    trainingEvents
+      ? getEventSessionsSummary(trainingEvents, day)
+      : getTrainingSessionsSummary(trainingPlan, day);
+
+  return DAYS_OF_WEEK.map((day) => {
+    const dayLabel = day.charAt(0).toUpperCase() + day.slice(1);
+
+    // Event-present day -> reuse the calendar mapper for full parity, then
+    // layer the live training-session list (the mapper returns none). The
+    // mapper already honors includeActivityBurn, is_modified, and surplusAsCarbs.
+    const event = eventsByWeekday.get(day);
+    if (event) {
+      return {
+        ...mapNutritionEventToDisplayTarget(event, includeActivityBurn, surplusAsCarbs),
+        trainingSessions: trainingSessionsFor(day),
+      };
+    }
+
+    // No-event (template) day.
     const stored = targetsByDay.get(day);
     const baselineCalories = stored?.calories ?? plan.baseline_calories;
     const proteinG = stored?.protein_g ?? plan.protein_target_g;
-    // Badge must track the live training events for the week, not the stored
-    // column on nutrition_plan_daily_targets (which can drift — the sync in
-    // regenerateFutureNutritionEvents uses getTrainingDays which returns empty
-    // in the current architecture where sessions live on dates, not days).
-    // When events are available, use them; otherwise fall back to the column.
+
+    // Baseline carb/fat ratio: prefer the coach's stored split; derive from the
+    // diet type only when no daily-target row exists.
+    let baselineCarbG: number;
+    let baselineFatG: number;
+    if (stored) {
+      baselineCarbG = stored.carb_g;
+      baselineFatG = stored.fat_g;
+    } else {
+      const m = calculateDailyMacros(baselineCalories, proteinG, false, dietType);
+      baselineCarbG = m.carbsG;
+      baselineFatG = m.fatG;
+    }
+
+    const daySurplus = surplusByDay[day] ?? null;
     const isTrainingDay = trainingEvents
       ? day in surplusByDay
       : stored?.is_training_day ?? false;
 
-    const trainingSessions = trainingEvents
-      ? getEventSessionsSummary(trainingEvents, day)
-      : getTrainingSessionsSummary(trainingPlan, day);
-
-    const daySurplus = surplusByDay[day];
+    // Apply the training surplus only when burn is on and a real surplus exists;
+    // otherwise the stored macros display verbatim (matches the event mapper's
+    // verbatim guard).
+    const applyBurn = includeActivityBurn && daySurplus != null && daySurplus > 0;
     let dayCalories: number;
     let trainingSessionCalories: number;
-    let calorieSurplusPercentage: number | null = null;
-
-    if (daySurplus != null) {
-      // Percentage model: training day = baseline * (1 + surplus/100)
-      calorieSurplusPercentage = daySurplus;
+    let carbsG: number;
+    let fatG: number;
+    if (applyBurn) {
       dayCalories = Math.round(baselineCalories * (1 + daySurplus / 100));
       trainingSessionCalories = dayCalories - baselineCalories;
+      ({ carbsG, fatG } = applySurplusSplit(dayCalories, proteinG, baselineCarbG, baselineFatG, surplusAsCarbs));
     } else {
-      // Rest day or no events
-      trainingSessionCalories = 0;
       dayCalories = baselineCalories;
+      trainingSessionCalories = 0;
+      carbsG = baselineCarbG;
+      fatG = baselineFatG;
     }
 
-    const macros = calculateDailyMacros(dayCalories, proteinG, isTrainingDay, dietType);
-    const totalCal = macros.proteinG * 4 + macros.carbsG * 4 + macros.fatG * 9;
-    const proteinPercent = totalCal > 0 ? Math.round((macros.proteinG * 4 / totalCal) * 100) : 0;
-    const carbsPercent = totalCal > 0 ? Math.round((macros.carbsG * 4 / totalCal) * 100) : 0;
+    const totalCal = proteinG * 4 + carbsG * 4 + fatG * 9;
+    const proteinPercent = totalCal > 0 ? Math.round((proteinG * 4 / totalCal) * 100) : 0;
+    const carbsPercent = totalCal > 0 ? Math.round((carbsG * 4 / totalCal) * 100) : 0;
 
     return {
       day,
-      dayLabel: day.charAt(0).toUpperCase() + day.slice(1),
+      dayLabel,
       isTrainingDay,
       calories: dayCalories,
       baselineCalories,
-      proteinG: macros.proteinG,
-      carbsG: macros.carbsG,
-      fatG: macros.fatG,
+      proteinG,
+      carbsG,
+      fatG,
       proteinPercent,
       carbsPercent,
       fatPercent: 100 - proteinPercent - carbsPercent,
       trainingSessionCalories,
-      trainingSessions,
+      trainingSessions: trainingSessionsFor(day),
       totalCaloriesWithActivities: dayCalories,
       includeActivityBurn,
-      calorieSurplusPercentage,
+      calorieSurplusPercentage: daySurplus,
     };
   });
-
-  // When activity burn is excluded, flatten calories to baseline
-  if (!includeActivityBurn) {
-    dailyTargets = dailyTargets.map((day) => {
-      const macros = calculateDailyMacros(
-        day.baselineCalories,
-        day.proteinG,
-        false,
-        dietType
-      );
-      const totalCal = macros.proteinG * 4 + macros.carbsG * 4 + macros.fatG * 9;
-      const proteinPercent = totalCal > 0 ? Math.round((macros.proteinG * 4 / totalCal) * 100) : 0;
-      const carbsPercent = totalCal > 0 ? Math.round((macros.carbsG * 4 / totalCal) * 100) : 0;
-
-      return {
-        ...day,
-        calories: day.baselineCalories,
-        trainingSessionCalories: 0,
-        totalCaloriesWithActivities: day.baselineCalories,
-        proteinG: macros.proteinG,
-        carbsG: macros.carbsG,
-        fatG: macros.fatG,
-        proteinPercent,
-        carbsPercent,
-        fatPercent: 100 - proteinPercent - carbsPercent,
-      };
-    });
-  }
-
-  return dailyTargets;
 }

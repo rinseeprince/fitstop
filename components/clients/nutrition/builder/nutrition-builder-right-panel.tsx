@@ -5,8 +5,7 @@ import { useNutritionBuilderContext } from "@/contexts/nutrition-builder-context
 import { WeeklyNutritionView } from "../display/weekly-nutrition-view";
 import { NutritionWarnings } from "../nutrition-warnings";
 import { Button } from "@/components/ui/button";
-import { Apple, CalendarClock, ChevronDown, Loader2, Sparkles } from "lucide-react";
-import { format } from "date-fns";
+import { Apple, ChevronDown, Loader2, Sparkles } from "lucide-react";
 
 type NutritionBuilderRightPanelProps = {
   onOpenSettings?: () => void;
@@ -63,21 +62,9 @@ export const NutritionBuilderRightPanel = memo(function NutritionBuilderRightPan
   const trainingCount = weeklyTargets.filter(d => d.isTrainingDay).length;
   const restCount = days - trainingCount;
 
-  const upcomingPlan = builder.nutritionData?.upcomingPlan;
-
   // Plan exists - show content
   return (
     <div className="flex flex-col gap-4">
-      {/* Upcoming plan banner */}
-      {upcomingPlan && (
-        <div className="flex items-start gap-2 p-3 bg-blue-50 dark:bg-blue-950/30 rounded-[6px]">
-          <CalendarClock className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
-          <p className="text-sm text-foreground">
-            A new plan takes effect on {format(new Date(upcomingPlan.effectiveFrom + "T00:00:00"), "d MMMM yyyy")}. Current targets remain active until then.
-          </p>
-        </div>
-      )}
-
       {/* Warnings */}
       {builder.warnings.length > 0 && (
         <NutritionWarnings warnings={builder.warnings} />
@@ -161,19 +148,6 @@ export const NutritionBuilderRightPanel = memo(function NutritionBuilderRightPan
           ) : null}
         </div>
       </details>
-
-      {/* Upcoming plan breakdown */}
-      {upcomingPlan && upcomingPlan.dailyTargets.length > 0 && (
-        <>
-          <div className="flex items-center gap-3 mt-4">
-            <span className="text-[11px] uppercase tracking-[0.06em] text-[#93b0b4] font-medium whitespace-nowrap">
-              Upcoming Plan &mdash; starts {format(new Date(upcomingPlan.effectiveFrom + "T00:00:00"), "MMM d, yyyy")}
-            </span>
-            <div className="flex-1 h-px bg-[rgba(13,148,136,0.08)]" />
-          </div>
-          <WeeklyNutritionView targets={upcomingPlan.dailyTargets} />
-        </>
-      )}
     </div>
   );
 });
