@@ -48,6 +48,7 @@ const sampleEvent: NutritionEvent = {
   isTrainingDay: true,
   calorieSurplusPercentage: 5,
   isModified: true,
+  note: null,
   status: "scheduled",
   createdAt: "",
   updatedAt: "",

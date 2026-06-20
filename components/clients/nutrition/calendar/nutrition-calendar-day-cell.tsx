@@ -2,7 +2,7 @@
 
 import { memo } from "react";
 import { cn } from "@/lib/utils";
-import { Pencil } from "lucide-react";
+import { Pencil, StickyNote } from "lucide-react";
 import { mapNutritionEventToDisplayTarget } from "@/utils/nutrition-event-helpers";
 import type { NutritionEvent } from "@/types/check-in";
 import type { PhaseStatus } from "@/types/roadmap";
@@ -100,8 +100,16 @@ export const NutritionCalendarDayCell = memo(function NutritionCalendarDayCell({
               {target.calories.toLocaleString()}
             </span>
             <span className="text-[8px] text-[#93b0b4]">kcal</span>
+            {event?.note ? (
+              <StickyNote
+                className="h-2.5 w-2.5 text-[#0d9488] ml-auto flex-shrink-0"
+                aria-label="Has a coach note"
+              >
+                <title>{event.note}</title>
+              </StickyNote>
+            ) : null}
             {event?.isModified && (
-              <Pencil className="h-2.5 w-2.5 text-[#93b0b4] ml-auto flex-shrink-0" />
+              <Pencil className={cn("h-2.5 w-2.5 text-[#93b0b4] flex-shrink-0", event?.note ? "ml-1" : "ml-auto")} />
             )}
           </div>
           <div className="flex h-[4px] rounded-full overflow-hidden">

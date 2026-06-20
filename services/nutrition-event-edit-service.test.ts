@@ -158,6 +158,45 @@ describe("nutrition-event-edit-service", () => {
       expect(updated).toBe(0);
       expect(supabaseAdmin.from).not.toHaveBeenCalled();
     });
+
+    // D-B: undefined = preserve (omit the column); "" = clear (null); text = set.
+    it("note set: writes the trimmed note text", async () => {
+      mockEvents([row()]);
+      await materializeNutritionEventDays(
+        clientId,
+        ["2026-02-01"],
+        { mode: "absolute", calories: 1800, note: "  Deload week  " },
+        "2026-01-15"
+      );
+      expect(updateSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ note: "Deload week" })
+      );
+    });
+
+    it("note empty string: clears the note (null)", async () => {
+      mockEvents([row()]);
+      await materializeNutritionEventDays(
+        clientId,
+        ["2026-02-01"],
+        { mode: "absolute", calories: 1800, note: "" },
+        "2026-01-15"
+      );
+      expect(updateSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ note: null })
+      );
+    });
+
+    it("note undefined: preserves any existing note (column omitted from the update)", async () => {
+      mockEvents([row()]);
+      await materializeNutritionEventDays(
+        clientId,
+        ["2026-02-01"],
+        { mode: "absolute", calories: 1800 },
+        "2026-01-15"
+      );
+      const payload = updateSpy.mock.calls[0][0] as Record<string, unknown>;
+      expect(payload).not.toHaveProperty("note");
+    });
   });
 
   describe("resetNutritionEvent (single)", () => {
@@ -167,7 +206,7 @@ describe("nutrition-event-edit-service", () => {
       await resetNutritionEvent(clientId, "2026-02-01", "plan-1");
 
       expect(updateSpy).toHaveBeenCalledWith(
-        expect.objectContaining({ is_modified: false })
+        expect.objectContaining({ is_modified: false, note: null })
       );
       expect(regenerateFutureNutritionEvents).toHaveBeenCalledWith(
         clientId,
@@ -193,7 +232,7 @@ describe("nutrition-event-edit-service", () => {
 
       expect(reset).toBe(3);
       expect(updateSpy).toHaveBeenCalledWith(
-        expect.objectContaining({ is_modified: false })
+        expect.objectContaining({ is_modified: false, note: null })
       );
       expect(updateInSpy).toHaveBeenCalledWith("date", [
         "2026-02-10",

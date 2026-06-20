@@ -110,6 +110,9 @@ export const nutritionRangeEditSchema = z
     fatG: z.number().nonnegative().optional(),
     percent: z.number().optional(),
     calorieDelta: z.number().optional(),
+    // Optional coach per-day note. Kept .optional() with NO default so the route
+    // can distinguish "omitted" (preserve) from "" (clear) — see RangeEdit D-B.
+    note: z.string().max(500).optional(),
   })
   .refine((d) => d.mode !== "absolute" || (d.calories != null && d.calories > 0), {
     message: "absolute mode requires a positive calories value",

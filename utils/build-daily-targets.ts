@@ -57,7 +57,7 @@ type PlanBaseline = {
  *   - event-present days reuse `mapNutritionEventToDisplayTarget` (parity by
  *     construction — frozen `is_modified` days display verbatim, the
  *     `surplusAsCarbs` toggle decides the split), overriding only the live
- *     trainingSessions list (and the coach note, threaded in a later session);
+ *     trainingSessions list + the coach note;
  *   - no-event (template) days hold protein and split any training surplus via
  *     `applySurplusSplit`, preserving the coach's stored carb/fat ratio (never
  *     re-derived from the diet type), with stored macros shown verbatim on rest
@@ -102,6 +102,7 @@ export function buildDailyTargetsFromPlan(
       return {
         ...mapNutritionEventToDisplayTarget(event, includeActivityBurn, surplusAsCarbs),
         trainingSessions: trainingSessionsFor(day),
+        note: event.note ?? null,
       };
     }
 

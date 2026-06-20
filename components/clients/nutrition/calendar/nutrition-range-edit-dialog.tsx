@@ -16,10 +16,11 @@ import { cn } from "@/lib/utils";
 import { calculateDailyMacros } from "@/utils/nutrition-helpers";
 import type { DietType } from "@/types/check-in";
 
-/** The materialized-edit payload sent to PATCH …/nutrition/events/range. */
+/** The materialized-edit payload sent to PATCH …/nutrition/events/range.
+ * `note`: omitted = preserve existing notes; "" = clear; string = set (D-B). */
 export type RangeEditPayload =
-  | { mode: "absolute"; calories: number; proteinG?: number; carbG?: number; fatG?: number }
-  | { mode: "delta"; percent?: number; calorieDelta?: number };
+  | { mode: "absolute"; calories: number; proteinG?: number; carbG?: number; fatG?: number; note?: string }
+  | { mode: "delta"; percent?: number; calorieDelta?: number; note?: string };
 
 // Macros must sum to within this many kcal of the calorie target before applying.
 const CALORIE_MATCH_TOLERANCE = 15;
@@ -35,6 +36,8 @@ type NutritionRangeEditDialogProps = {
   defaultProtein: number;
   defaultCarbs: number;
   defaultFat: number;
+  /** First selected day's current note — seeded only for a single-day edit. */
+  defaultNote?: string | null;
   isSaving: boolean;
   onApply: (payload: RangeEditPayload) => void;
 };
@@ -54,6 +57,7 @@ export function NutritionRangeEditDialog({
   defaultProtein,
   defaultCarbs,
   defaultFat,
+  defaultNote,
   isSaving,
   onApply,
 }: NutritionRangeEditDialogProps) {
@@ -63,9 +67,14 @@ export function NutritionRangeEditDialog({
   const [fat, setFat] = useState("");
   const [percent, setPercent] = useState("");
   const [calorieDelta, setCalorieDelta] = useState("");
+  const [note, setNote] = useState("");
+
+  const singleDay = dayCount === 1;
 
   // Seed from the first selected day's CURRENT values when the dialog opens so the
-  // coach edits from real numbers (and they already sum consistently).
+  // coach edits from real numbers (and they already sum consistently). The note
+  // is seeded only for a single-day edit (a multi-day range starts blank — empty
+  // = preserve each day's note; typing applies one note to all).
   useEffect(() => {
     if (!open) return;
     const s = (n: number) => (n > 0 ? String(n) : "");
@@ -75,7 +84,8 @@ export function NutritionRangeEditDialog({
     setFat(s(defaultFat));
     setPercent("");
     setCalorieDelta("");
-  }, [open, defaultCalories, defaultProtein, defaultCarbs, defaultFat]);
+    setNote(singleDay ? defaultNote ?? "" : "");
+  }, [open, defaultCalories, defaultProtein, defaultCarbs, defaultFat, defaultNote, singleDay]);
 
   const p = toInt(protein) ?? 0;
   const c = toInt(carbs) ?? 0;
@@ -105,12 +115,17 @@ export function NutritionRangeEditDialog({
     }
   }
 
+  // D-B: single-day edits are authoritative (send the field value — "" clears);
+  // multi-day edits send a note only when the coach typed one (empty = preserve
+  // each day's existing note).
+  const noteValue = singleDay ? note : note.trim() !== "" ? note : undefined;
+
   function handleApply() {
     if (!valid) return;
     if (adjustActive) {
-      onApply({ mode: "delta", percent: pct ?? undefined, calorieDelta: cd ?? undefined });
+      onApply({ mode: "delta", percent: pct ?? undefined, calorieDelta: cd ?? undefined, note: noteValue });
     } else {
-      onApply({ mode: "absolute", calories: target, proteinG: p, carbG: c, fatG: f });
+      onApply({ mode: "absolute", calories: target, proteinG: p, carbG: c, fatG: f, note: noteValue });
     }
   }
 
@@ -202,6 +217,22 @@ export function NutritionRangeEditDialog({
             Applies a relative change to each day. Clear to set absolute values.
           </p>
         )}
+
+        {/* Optional coach note — shows on the client's day view + program card. */}
+        <div className="space-y-1.5">
+          <Label htmlFor="re-note" className="text-xs font-medium text-foreground">
+            Note <span className="text-[#93b0b4]">(optional, shown to the client)</span>
+          </Label>
+          <Input
+            id="re-note"
+            type="text"
+            maxLength={500}
+            placeholder={singleDay ? "e.g. Deload week — go easy" : "Applies one note to every selected day"}
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            className="h-9"
+          />
+        </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSaving}>

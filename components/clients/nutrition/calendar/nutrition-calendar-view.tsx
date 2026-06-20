@@ -265,6 +265,7 @@ export function NutritionCalendarView({
         defaultProtein={edit.defaultProtein}
         defaultCarbs={edit.defaultCarbs}
         defaultFat={edit.defaultFat}
+        defaultNote={edit.defaultNote}
         isSaving={edit.isSaving}
         onApply={edit.applyEdit}
       />

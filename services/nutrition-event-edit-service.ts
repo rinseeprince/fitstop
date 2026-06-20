@@ -17,9 +17,12 @@ import { regenerateFutureNutritionEvents } from "@/services/nutrition-event-serv
  * and only touches `status = 'scheduled'` rows.
  */
 
+// `note` semantics (D-B): undefined = preserve any existing note; "" (or
+// whitespace) = clear it; a string = set it. The dialog sends a value only for
+// the day(s) the coach actually typed on, so a macro-only edit never wipes notes.
 export type RangeEdit =
-  | { mode: "absolute"; calories: number; proteinG?: number; carbG?: number; fatG?: number }
-  | { mode: "delta"; percent?: number; calorieDelta?: number };
+  | { mode: "absolute"; calories: number; proteinG?: number; carbG?: number; fatG?: number; note?: string | null }
+  | { mode: "delta"; percent?: number; calorieDelta?: number; note?: string | null };
 
 type EligibleRow = {
   id: string;
@@ -68,6 +71,13 @@ export async function materializeNutritionEventDays(
   if (error) throw error;
   if (!rows || rows.length === 0) return { updated: 0 };
 
+  // D-B: only touch `note` when the edit carries one. undefined -> preserve;
+  // "" / whitespace -> clear (null); text -> set.
+  const noteUpdate =
+    edit.note === undefined
+      ? {}
+      : { note: edit.note && edit.note.trim() !== "" ? edit.note.trim() : null };
+
   for (const row of rows as EligibleRow[]) {
     // Resolve the day's new calorie total.
     let calories: number;
@@ -107,6 +117,7 @@ export async function materializeNutritionEventDays(
         calorie_surplus_percentage: null,
         training_burn_calories: 0,
         is_modified: true,
+        ...noteUpdate,
         updated_at: new Date().toISOString(),
       })
       .eq("id", row.id);
@@ -130,7 +141,7 @@ export async function resetNutritionEvent(
 ): Promise<void> {
   const { error } = await supabaseAdmin
     .from("nutrition_events")
-    .update({ is_modified: false, updated_at: new Date().toISOString() })
+    .update({ is_modified: false, note: null, updated_at: new Date().toISOString() })
     .eq("client_id", clientId)
     .eq("date", date)
     .eq("status", "scheduled");
@@ -159,7 +170,7 @@ export async function resetNutritionEventDays(
 
   const { error } = await supabaseAdmin
     .from("nutrition_events")
-    .update({ is_modified: false, updated_at: new Date().toISOString() })
+    .update({ is_modified: false, note: null, updated_at: new Date().toISOString() })
     .eq("client_id", clientId)
     .eq("status", "scheduled")
     .in("date", eligibleDates);

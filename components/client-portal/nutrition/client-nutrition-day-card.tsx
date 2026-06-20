@@ -17,6 +17,7 @@ import {
   Beef,
   Wheat,
   Droplets,
+  StickyNote,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
@@ -94,6 +95,13 @@ export function ClientNutritionDayCard({ dayTarget }: ClientNutritionDayCardProp
                 {dayTarget.fatG}g fat
               </span>
             </div>
+
+            {dayTarget.note ? (
+              <div className="mt-2 flex items-start gap-1.5 rounded-md bg-muted/50 p-2 text-sm text-foreground">
+                <StickyNote className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+                <span>{dayTarget.note}</span>
+              </div>
+            ) : null}
           </div>
         </div>
       </CardHeader>

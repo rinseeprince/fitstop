@@ -389,6 +389,9 @@ export type NutritionEvent = {
   // Coach materialized a per-day override onto this event (mig 113, Session 1).
   // The cascade/regenerate leaves is_modified=true days untouched; reset clears it.
   isModified: boolean;
+  // Optional coach per-day note (mig 118). Rides is_modified=true so it survives
+  // regen; cleared on reset. Mirrors training_events.session_focus.
+  note: string | null;
   status: NutritionEventStatus;
   createdAt: string;
   updatedAt: string;

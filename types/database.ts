@@ -1616,6 +1616,7 @@ export type Database = {
           id: string
           is_modified: boolean
           is_training_day: boolean
+          note: string | null
           nutrition_plan_id: string | null
           protein_g: number
           status: string
@@ -1635,6 +1636,7 @@ export type Database = {
           id?: string
           is_modified?: boolean
           is_training_day?: boolean
+          note?: string | null
           nutrition_plan_id?: string | null
           protein_g: number
           status?: string
@@ -1654,6 +1656,7 @@ export type Database = {
           id?: string
           is_modified?: boolean
           is_training_day?: boolean
+          note?: string | null
           nutrition_plan_id?: string | null
           protein_g?: number
           status?: string

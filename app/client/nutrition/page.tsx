@@ -8,6 +8,7 @@ import {
   Droplets,
   Flame,
   Loader2,
+  StickyNote,
   Wheat,
   type LucideIcon,
 } from "lucide-react";
@@ -32,7 +33,7 @@ type NutrientValues = {
 
 type NutritionForDate = {
   consumed: NutrientValues | null;
-  target: NutrientValues | null;
+  target: (NutrientValues & { note?: string | null }) | null;
   source: "log" | "event" | null;
   editable: boolean;
 };
@@ -228,6 +229,13 @@ function NutritionLogInner() {
       <p className="mt-1 text-sm text-muted-foreground">{formatHeading(date)}</p>
 
       {isLocked ? <LockedDayNotice reason="past-logged" /> : null}
+
+      {target?.note ? (
+        <div className="mt-4 flex items-start gap-2 rounded-md border border-primary/30 bg-primary/5 p-3">
+          <StickyNote className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+          <p className="text-sm text-foreground">{target.note}</p>
+        </div>
+      ) : null}
 
       <Card className="mt-4">
         <CardContent className="space-y-6 py-6">

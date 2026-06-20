@@ -159,13 +159,13 @@ describe("getNutritionForDate", () => {
     fromImpl(null, false);
     vi.mocked(getNutritionEventForDate).mockResolvedValue(event as never);
     let result = await getNutritionForDate("c1", "2026-06-08");
-    expect(result.target).toEqual({ calories: 2200, proteinG: 150, carbsG: 188, fatG: 94 });
+    expect(result.target).toEqual({ calories: 2200, proteinG: 150, carbsG: 188, fatG: 94, note: null });
 
     // carbs-only: fat held, the surplus goes to carbs.
     fromImpl(null, true);
     vi.mocked(getNutritionEventForDate).mockResolvedValue(event as never);
     result = await getNutritionForDate("c1", "2026-06-08");
-    expect(result.target).toEqual({ calories: 2200, proteinG: 150, carbsG: 288, fatG: 50 });
+    expect(result.target).toEqual({ calories: 2200, proteinG: 150, carbsG: 288, fatG: 50, note: null });
   });
 
   it("level 3: no log and no event → null", async () => {

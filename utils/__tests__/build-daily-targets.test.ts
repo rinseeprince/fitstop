@@ -48,6 +48,7 @@ function nev(overrides: Partial<NutritionEvent>): NutritionEvent {
     isTrainingDay: false,
     calorieSurplusPercentage: null,
     isModified: false,
+    note: null,
     status: "scheduled",
     createdAt: "",
     updatedAt: "",
@@ -158,6 +159,14 @@ describe("buildDailyTargetsFromPlan", () => {
     expect(mon.carbsG).toBe(100);
     expect(mon.fatG).toBe(50);
     expect(mon.trainingSessionCalories).toBe(0);
+  });
+
+  it("surfaces the event's coach note on the program card (event days only)", () => {
+    const nutritionEvents = [nev({ dayOfWeek: "monday", note: "Deload week — go easy" })];
+    const targets = buildDailyTargetsFromPlan(PLAN, [], null, true, "balanced", false, [], nutritionEvents);
+    expect(find(targets, "monday").note).toBe("Deload week — go easy");
+    // A template (no-event) day carries no per-date note.
+    expect(find(targets, "tuesday").note ?? null).toBeNull();
   });
 
   it("gap day (no event, no stored row): falls back to plan baseline + diet split", () => {

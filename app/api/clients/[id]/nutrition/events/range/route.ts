@@ -72,9 +72,10 @@ export async function PATCH(
         proteinG: data.proteinG,
         carbG: data.carbG,
         fatG: data.fatG,
+        note: data.note,
       };
     } else {
-      edit = { mode: "delta", percent: data.percent, calorieDelta: data.calorieDelta };
+      edit = { mode: "delta", percent: data.percent, calorieDelta: data.calorieDelta, note: data.note };
     }
 
     const { updated } = await materializeNutritionEventDays(

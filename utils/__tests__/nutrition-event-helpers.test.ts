@@ -18,6 +18,7 @@ function ev(overrides: Partial<NutritionEvent>): NutritionEvent {
     isTrainingDay: false,
     calorieSurplusPercentage: null,
     isModified: false,
+    note: null,
     status: "scheduled",
     createdAt: "",
     updatedAt: "",

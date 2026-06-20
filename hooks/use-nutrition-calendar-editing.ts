@@ -98,6 +98,8 @@ export function useNutritionCalendarEditing({
   const defaultProtein = seedTarget?.proteinG ?? 0;
   const defaultCarbs = seedTarget?.carbsG ?? 0;
   const defaultFat = seedTarget?.fatG ?? 0;
+  // The note lives on the event, not the display target — seed it from there.
+  const defaultNote = firstSelectedEvent?.note ?? null;
 
   const applyEdit = useCallback(
     async (payload: RangeEditPayload) => {
@@ -177,6 +179,7 @@ export function useNutritionCalendarEditing({
     defaultProtein,
     defaultCarbs,
     defaultFat,
+    defaultNote,
     applyEdit,
     resetSelected,
   };

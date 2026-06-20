@@ -23,6 +23,7 @@ export type PlanDayTarget = {
   carbsG: number;
   fatG: number;
   isTrainingDay: boolean;
+  note: string | null;
 };
 
 export const getPlanTargetForDate = async (
@@ -55,6 +56,7 @@ export const getPlanTargetForDate = async (
     carbsG: target.carbsG,
     fatG: target.fatG,
     isTrainingDay: target.isTrainingDay,
+    note: event.note ?? null,
   };
 };
 
@@ -141,7 +143,9 @@ export const assertHasActivePlan = (
 
 export type NutritionForDate = {
   consumed: { calories: number | null; proteinG: number | null; carbsG: number | null; fatG: number | null } | null;
-  target: { calories: number; proteinG: number | null; carbsG: number | null; fatG: number | null } | null;
+  // `note` is the coach's per-day note (event source only — a logged day reads
+  // the frozen nutrition_logs snapshot, which has no note column).
+  target: { calories: number; proteinG: number | null; carbsG: number | null; fatG: number | null; note?: string | null } | null;
   source: "log" | "event" | null;
 };
 
@@ -196,6 +200,7 @@ export const getNutritionForDate = async (
         proteinG: planTarget.proteinG,
         carbsG: planTarget.carbsG,
         fatG: planTarget.fatG,
+        note: planTarget.note,
       },
       source: "event",
     };
