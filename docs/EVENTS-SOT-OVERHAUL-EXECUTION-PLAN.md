@@ -67,7 +67,7 @@ Each session prompt then assumes this protocol:
 | 2 ✅ | Training track: additive placement → demotion → builder UI → phase lifecycle **(COMPLETE)** | ✅ RPC (mig 114) | 4 | 1 |
 | 3 ✅ | Nutrition lifecycle: durable plan → materialized edits **(◆1/◆2 COMPLETE; ◆3 phase-transition seam PARKED → CPEP 7.10)** | ✅ Mig B/C | 2 | 1, 2 |
 | 4 | Nutrition coach UI: calendar (read-only → editing) → generate-tray UX | — | 3 | 2, 3 |
-| 5 | Client/RN surfaces + seed/backfill | — | 2 | 3 |
+| 5 | Client/RN surfaces + seed/backfill + surplus-split consistency + nutrition day-notes | ✅ Mig (note) | 3 | 3, 4 |
 | 6 | Docs reconciliation (ARCHITECTURE, CONVENTIONS + the stale nutrition + client-portal docs per §3.5) | — | 1 | all |
 
 **Riskiest:** 2◆1 (surplus-write contract), 3◆1 (in-place RPC daily-targets replacement + D5 snapshot preservation). *(3◆3 blank-calendar landmine is **PARKED** — moved to the CPEP roadmap workstream, 7.10.)*
@@ -142,20 +142,22 @@ Each session prompt then assumes this protocol:
 
 **Session verify:** each ◆ clean; manual — dense nutrition calendar renders over the phase; drag-select a deload week, lower calories, it persists across a training move + shows the badge, reset restores auto; Custom tab: 2000 kcal @ 30/40/30 → 150/200/67g, reopening an existing custom plan shows its split.
 
-## Session 5 — Client/RN surfaces + seed/backfill
+## Session 5 — Client/RN surfaces + seed/backfill (+ surplus-split consistency + day-notes)
 
-**Goal:** Client-facing parity on the single durable plan + data hygiene; clear the RN contract gate.
-**Schema:** none (FK already in Session 1).
+**Goal:** Client-facing parity on the single durable plan + data hygiene; clear the RN contract gate. **Plus two Session-4 carry-overs** (folded here because both need the client-path repoint + the RN contract gate that live in this session): make the plan-based targets path honor the new surplus-split toggle, and add coach per-day notes that surface to the client.
+**Schema:** one additive migration — `nutrition_events.note TEXT` for ◆3 day-notes (mirror `training_events.session_focus`; next number after Session-4's mig 117). The event→plan FK is already from Session 1.
 **Read first (MANDATORY per CONVENTIONS.md §16 — this session touches `components/client-portal/**` / `app/client/**`):** `docs/CLIENT-PORTAL-REDESIGN.md` + `docs/CLIENT-PORTAL-EXECUTION-PLAN.md` (both, in full). Then spec §10, §13; `docs/ARCHITECTURE.md` → "Client Portal Architecture" + "Scale / payload contracts"; `CLIENT-APP-REFERENCE.md` (RN response-shape contract). ⚠️ **per §3.5** — `CLIENT-PORTAL-EXECUTION-PLAN.md` ~:1075/:2518/:1080 (`promoteNutritionPlanIfReady` "desirable", training "Starts X/scheduledFor" UX, per-day-type nutrition page) describe behavior this overhaul **removes** — context only; and `CLIENT-APP-REFERENCE.md`'s nutrition shape is the **2-slot rest/training** model you're changing to a per-date window (the contract gate at ◆1).
 
 **Prompt:**
 > [Standard protocol. Read spec §10, §13.]
 >
-> **◆1 — Client surfaces.** Repoint `vertical-nutrition-view.tsx` + `getClientNutritionTargets` to the single durable plan + dense date window (drop the `promote` call). **RN contract:** `NutritionTargets.dailyTargets` shifts weekday-array → date-window (object shape unchanged, meaning changes) — verify whether RN consumes it as a 7-weekday array and add a contract note before shipping. Confirm `/api/client/**` nutrition response shapes are otherwise unchanged (diff the JSON). Commit.
+> **◆1 — Client surfaces.** Repoint `vertical-nutrition-view.tsx` + `getClientNutritionTargets` to the single durable plan + dense date window (drop the `promote` call). **RN contract:** `NutritionTargets.dailyTargets` shifts weekday-array → date-window (object shape unchanged, meaning changes) — verify whether RN consumes it as a 7-weekday array and add a contract note before shipping. Confirm `/api/client/**` nutrition response shapes are otherwise unchanged (diff the JSON). **Carry-over from Session 4 — surplus-split consistency:** `buildDailyTargetsFromPlan` (the plan-based path behind `getClientNutritionTargets` AND the coach "typical week" card) must honor `clients.surplus_as_carbs` (mig 117) the same way `mapNutritionEventToDisplayTarget` already does — protein held; keep-split scales carbs+fat preserving the plan ratio, carbs-only holds fat and adds the surplus to carbs. Today only the event-based coach calendar honors it; close the gap so the client app + typical-week match the calendar. Commit.
 >
 > **◆2 — Seed/backfill.** `scripts/seed-scale-client.ts` inserts dense `nutrition_events`; `scripts/backfill-nutrition-events.ts` drops the archived-window/per-version branch (one plan → one dense window); recompute cached `nutrition_weekly_summaries` (dense generation completes a previously-incomplete denominator — some adherence numbers move; expected, document it). Commit.
+>
+> **◆3 — Per-day nutrition notes/tags (Session-4 carry-over; fully scoped).** One additive migration `nutrition_events.note TEXT` (nullable; mirror `training_events.session_focus`; next number after mig 117). Add `note` to the `NutritionEvent` type (`types/check-in.ts`) + `mapNutritionEventRow` (`services/nutrition-event-service.ts`). Thread an optional `note` through the edit path: `nutritionRangeEditSchema` + the `RangeEdit` type + the range route, written in `materializeNutritionEventDays` and **cleared in the reset path** — a note rides `is_modified=true`, so it survives regen exactly like the macro edits. **Coach:** a short note input in `nutrition-range-edit-dialog.tsx` + a small tag on `nutrition-calendar-day-cell.tsx`. **Client:** surface the note on `client-nutrition-day-card.tsx` via the ◆1-repointed `getClientNutritionTargets`, adding `note` to the client `dailyTargets` shape (**same RN contract note as ◆1**). **Immutability:** past **logged** days read the frozen `nutrition_logs` snapshot (no `note` column there), never the event, so adding/clearing a note never touches them; the edit/reset routes already gate `date >= clientToday`. Commit.
 
-**Session verify:** client `/client/nutrition` shows edited numbers; `/api/client/**` JSON diffed clean except the documented `dailyTargets` note; scripts run without error.
+**Session verify:** client `/client/nutrition` shows edited numbers; `/api/client/**` JSON diffed clean except the documented `dailyTargets` note; scripts run without error. **Carry-overs:** the client `/client/nutrition` + coach "typical week" honor the surplus toggle (numbers match the calendar in both keep-split and carbs-only); a coach note set on a date range shows as a calendar tag + on the client day card and survives a regenerate, while past logged days are untouched.
 
 ## Session 6 — Docs reconciliation
 
