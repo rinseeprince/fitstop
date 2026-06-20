@@ -18,6 +18,7 @@ import "./env-bootstrap";
 
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { generateTrainingEvents } from "@/services/training-event-service";
+import { generateNutritionEvents } from "@/services/nutrition-event-service";
 import {
   getTodayDateString,
   getDateString,
@@ -147,7 +148,7 @@ async function main() {
   await ensureClientAuthUser();
   const exerciseIds = await pickGlobalExercises();
   await insertClientGoal();
-  await insertNutritionPlan();
+  const nutritionDailyTargets = await insertNutritionPlan();
   const { sessionIds, exerciseRowsBySession, hotExerciseId } = await insertTrainingPlan(exerciseIds, rng);
   await insertHabits();
   const dailyLogIdsByDate = await insertDailyLogsSpine(args.months);
@@ -157,6 +158,9 @@ async function main() {
   const checkInRows = await insertCheckIns(args.months, rng);
   await insertBodyMetrics(checkInRows, rng);
   await insertTrainingEvents(sessionIds, args.months);
+  // After training events (the surplus source) so generated nutrition events
+  // pick up the training-day surplus.
+  await insertNutritionEvents(args.months, nutritionDailyTargets);
 
   const elapsedMs = Date.now() - t0;
   console.log("");
@@ -180,6 +184,9 @@ async function cleanExistingFixtures(fullReset: boolean) {
   await del("session_logs (→ exercise_logs → set_logs)", supabaseAdmin.from("session_logs").delete().eq("client_id", c));
   await del("training_plans (→ sessions, exercises)", supabaseAdmin.from("training_plans").delete().eq("client_id", c));
   await del("daily_logs (→ wellness/nutrition/training children)", supabaseAdmin.from("daily_logs").delete().eq("client_id", c));
+  // nutrition_events FK is ON DELETE SET NULL, so the plan delete below won't
+  // cascade them — clear them explicitly or they orphan + survive a reseed.
+  await del("nutrition_events", supabaseAdmin.from("nutrition_events").delete().eq("client_id", c));
   await del("nutrition_plans (→ daily_targets)", supabaseAdmin.from("nutrition_plans").delete().eq("client_id", c));
   await del("client_goals", supabaseAdmin.from("client_goals").delete().eq("client_id", c));
 
@@ -389,6 +396,38 @@ async function insertNutritionPlan() {
     .from("nutrition_plan_daily_targets")
     .insert(dailyTargets);
   if (tgtErr) throw new Error(`nutrition_plan_daily_targets insert: ${tgtErr.message}`);
+
+  return dailyTargets;
+}
+
+// ---------------------------------------------------------------------------
+// Dense nutrition_events — one row per date over the window, mirroring the
+// training-events window so the current week is dense. generateNutritionEvents
+// reads the training events for surplus/training-day detection, so this must
+// run AFTER insertTrainingEvents.
+// ---------------------------------------------------------------------------
+
+async function insertNutritionEvents(
+  months: number,
+  dailyTargets: Array<{
+    day_of_week: string;
+    calories: number;
+    protein_g: number;
+    carb_g: number;
+    fat_g: number;
+    is_training_day: boolean;
+  }>
+) {
+  console.log("Inserting dense nutrition_events via generateNutritionEvents()...");
+  await generateNutritionEvents(
+    PERF_CLIENT_ID,
+    PERF_NUTRITION_PLAN_ID,
+    { baselineCalories: 2400, proteinTargetG: 170, dietType: "balanced" },
+    dailyTargets,
+    null, // trainingPlan — generateNutritionEvents fetches training events by date range
+    getDateDaysAgo(months * 30),
+    getDateDaysFrom(new Date(), 8 * 7)
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -877,6 +916,10 @@ async function insertTrainingEvents(
       dayOfWeek: s.dayOfWeek,
       focus: s.focus,
       estimatedCalories: 400,
+      // Exercise the percentage-surplus model (not the legacy flat-400 path) so
+      // generated nutrition events carry a real surplus % and the surplus-split
+      // toggle is observable in-app. Lands on training_events.calorie_surplus_percentage.
+      calorieSurplusPercentage: 15,
     })),
     getDateDaysAgo(months * 30),
     getDateDaysFrom(new Date(), 8 * 7)

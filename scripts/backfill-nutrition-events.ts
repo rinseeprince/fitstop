@@ -15,19 +15,22 @@ async function backfillEvents() {
   const today = getTodayDateString();
   console.log(`Backfill started — today is ${today}`);
 
-  // 1. Fetch all nutrition plans with daily targets
+  // 1. Fetch active nutrition plans with daily targets. Under the durable-plan
+  // model there is exactly one active plan per client → one dense window; the
+  // old archived-window/per-version branch is gone.
   const { data: plans, error: plansError } = await supabaseAdmin
     .from("nutrition_plans")
     .select(
-      "id, client_id, status, effective_from, effective_until, baseline_calories, protein_target_g, diet_type, phase_id, nutrition_plan_daily_targets(day_of_week, calories, protein_g, carb_g, fat_g, is_training_day)"
-    );
+      "id, client_id, effective_from, baseline_calories, protein_target_g, diet_type, phase_id, nutrition_plan_daily_targets(day_of_week, calories, protein_g, carb_g, fat_g, is_training_day)"
+    )
+    .eq("status", "active");
 
   if (plansError) {
     console.error("Failed to fetch plans:", plansError.message);
     process.exit(1);
   }
 
-  console.log(`Found ${plans.length} nutrition plans`);
+  console.log(`Found ${plans.length} active nutrition plans`);
 
   let plansProcessed = 0;
   let plansSkipped = 0;
@@ -51,10 +54,7 @@ async function backfillEvents() {
 
     let endDate: string;
 
-    if (plan.status === "archived" && plan.effective_until) {
-      // Archived plan: events only up to when it was replaced, capped at today
-      endDate = plan.effective_until < today ? plan.effective_until : today;
-    } else if (plan.phase_id) {
+    if (plan.phase_id) {
       const { data: phase } = await supabaseAdmin
         .from("phases")
         .select("end_date, start_date, duration_weeks")
@@ -78,14 +78,12 @@ async function backfillEvents() {
       endDate = getDateString(start);
     }
 
-    // For active plans, also generate up to 8 weeks from today
-    if (plan.status === "active") {
-      const futureLimit = new Date(today + "T00:00:00");
-      futureLimit.setDate(futureLimit.getDate() + 8 * 7);
-      const futureLimitStr = getDateString(futureLimit);
-      if (endDate < futureLimitStr) {
-        endDate = futureLimitStr;
-      }
+    // Always extend the dense forward window to today + 8 weeks.
+    const futureLimit = new Date(today + "T00:00:00");
+    futureLimit.setDate(futureLimit.getDate() + 8 * 7);
+    const futureLimitStr = getDateString(futureLimit);
+    if (endDate < futureLimitStr) {
+      endDate = futureLimitStr;
     }
 
     try {

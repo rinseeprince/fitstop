@@ -59,6 +59,12 @@ describe("upsertNutritionLog", () => {
         calories_consumed: 2000,
         protein_g: 150,
         target_calories: 2100,
+        // The macro targets snapshotted into the frozen log come straight from
+        // getPlanTargetForDate — which now applies the surplus-split (D-C), so a
+        // new log captures split-consistent macros.
+        target_protein_g: 160,
+        target_carbs_g: 210,
+        target_fat_g: 65,
         nutrition_adherence: "partial", // |2000-2100| = 100 → partial
         calorie_surplus_deficit: -100,
       }),

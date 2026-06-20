@@ -10,12 +10,12 @@ import { getNutritionEventForDate } from "./nutrition-event-service";
 import { getActivePhase } from "./phase-service";
 import { getActiveNutritionPlanId } from "./nutrition-plan-service";
 import { getActiveTrainingPlanId } from "./training-service";
-import { getTotalCalories } from "@/utils/nutrition-event-helpers";
+import { mapNutritionEventToDisplayTarget } from "@/utils/nutrition-event-helpers";
 
 /**
  * Find the plan that was active on a specific date and return its daily target.
  * Resolves from the date's nutrition_event; returns null when there is no event (no template fallback exists yet).
- * Optional includeActivityBurn avoids repeated clients table queries when called in a loop.
+ * Optional includeActivityBurn / surplusAsCarbs avoid repeated clients table queries when called in a loop.
  */
 export type PlanDayTarget = {
   calories: number;
@@ -28,25 +28,33 @@ export type PlanDayTarget = {
 export const getPlanTargetForDate = async (
   clientId: string,
   date: string,
-  includeActivityBurn?: boolean
+  includeActivityBurn?: boolean,
+  surplusAsCarbs?: boolean
 ): Promise<PlanDayTarget | null> => {
-  // Resolve includeActivityBurn once if not passed by caller
+  // Resolve the display prefs once if not passed by caller (single query).
   let burnFlag = includeActivityBurn;
-  if (burnFlag === undefined) {
+  let splitFlag = surplusAsCarbs;
+  if (burnFlag === undefined || splitFlag === undefined) {
     const { data: clientRow } = await supabaseAdmin
-      .from("clients").select("include_activity_burn").eq("id", clientId).single();
-    burnFlag = clientRow?.include_activity_burn !== false;
+      .from("clients").select("include_activity_burn, surplus_as_carbs").eq("id", clientId).single();
+    if (burnFlag === undefined) burnFlag = clientRow?.include_activity_burn !== false;
+    if (splitFlag === undefined) splitFlag = clientRow?.surplus_as_carbs ?? false;
   }
 
   const event = await getNutritionEventForDate(clientId, date);
   if (!event) return null;
 
+  // Reuse the calendar mapper so the per-day lane (and the weekly denominators
+  // it feeds) split a training surplus the same way the program card + calendar
+  // do — protein held; surplusAsCarbs decides carbs-only vs keep-split. Calories
+  // are unchanged by the split, so adherence is unaffected.
+  const target = mapNutritionEventToDisplayTarget(event, burnFlag, splitFlag);
   return {
-    calories: getTotalCalories(event, burnFlag),
-    proteinG: event.proteinG,
-    carbsG: event.carbG,
-    fatG: event.fatG,
-    isTrainingDay: event.isTrainingDay,
+    calories: target.calories,
+    proteinG: target.proteinG,
+    carbsG: target.carbsG,
+    fatG: target.fatG,
+    isTrainingDay: target.isTrainingDay,
   };
 };
 

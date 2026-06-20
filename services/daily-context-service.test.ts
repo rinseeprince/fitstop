@@ -106,14 +106,17 @@ describe("getNutritionForDate", () => {
     eq: vi.fn().mockReturnThis(),
     maybeSingle: vi.fn().mockResolvedValue({ data: row, error: null }),
   });
-  const clientsRow = () => ({
+  const clientsRow = (surplusAsCarbs = false) => ({
     select: vi.fn().mockReturnThis(),
     eq: vi.fn().mockReturnThis(),
-    single: vi.fn().mockResolvedValue({ data: { include_activity_burn: true }, error: null }),
+    single: vi.fn().mockResolvedValue({
+      data: { include_activity_burn: true, surplus_as_carbs: surplusAsCarbs },
+      error: null,
+    }),
   });
-  const fromImpl = (logRow: Record<string, unknown> | null) =>
+  const fromImpl = (logRow: Record<string, unknown> | null, surplusAsCarbs = false) =>
     vi.mocked(supabaseAdmin.from).mockImplementation(((table: string) =>
-      table === "nutrition_logs" ? nutritionLogsRow(logRow) : clientsRow()) as never);
+      table === "nutrition_logs" ? nutritionLogsRow(logRow) : clientsRow(surplusAsCarbs)) as never);
 
   it("level 1: returns the logged snapshot (source 'log')", async () => {
     fromImpl({
@@ -132,8 +135,8 @@ describe("getNutritionForDate", () => {
   it("level 2: no log but an event → event target (source 'event')", async () => {
     fromImpl(null);
     vi.mocked(getNutritionEventForDate).mockResolvedValue({
-      baselineCalories: 2000, trainingBurnCalories: 0,
-      proteinG: 150, carbG: 200, fatG: 60, isTrainingDay: false,
+      dayOfWeek: "thursday", baselineCalories: 2000, trainingBurnCalories: 0,
+      proteinG: 150, carbG: 200, fatG: 60, isTrainingDay: false, isModified: false,
       calorieSurplusPercentage: null,
     } as never);
 
@@ -142,6 +145,27 @@ describe("getNutritionForDate", () => {
     expect(result.source).toBe("event");
     expect(result.consumed).toBeNull();
     expect(result.target?.proteinG).toBe(150);
+  });
+
+  it("level 2: a training-day surplus is split by surplus_as_carbs (per-day lane matches the calendar)", async () => {
+    // baseline 2000, protein 150, carb 100, fat 50, +10% surplus → total 2200.
+    const event = {
+      dayOfWeek: "monday", baselineCalories: 2000, trainingBurnCalories: 0,
+      proteinG: 150, carbG: 100, fatG: 50, isTrainingDay: true, isModified: false,
+      calorieSurplusPercentage: 10,
+    };
+
+    // keep-split (default): carbs+fat scale preserving the stored ratio.
+    fromImpl(null, false);
+    vi.mocked(getNutritionEventForDate).mockResolvedValue(event as never);
+    let result = await getNutritionForDate("c1", "2026-06-08");
+    expect(result.target).toEqual({ calories: 2200, proteinG: 150, carbsG: 188, fatG: 94 });
+
+    // carbs-only: fat held, the surplus goes to carbs.
+    fromImpl(null, true);
+    vi.mocked(getNutritionEventForDate).mockResolvedValue(event as never);
+    result = await getNutritionForDate("c1", "2026-06-08");
+    expect(result.target).toEqual({ calories: 2200, proteinG: 150, carbsG: 288, fatG: 50 });
   });
 
   it("level 3: no log and no event → null", async () => {
