@@ -20,6 +20,7 @@ export type DaySummary = {
     hasLog: boolean;
     caloriesConsumed: number | null;
     targetCalories: number | null;
+    note: string | null; // coach per-day note (event source only)
   } | null; // null = no nutrition target (log or event) for this day
   wellness: { hasLog: boolean };
   habits: { totalCount: number; loggedCount: number };

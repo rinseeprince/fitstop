@@ -1,3 +1,5 @@
+import { StickyNote } from "lucide-react";
+
 import {
   DsCardSummary,
   DsCardSummaryRow,
@@ -49,6 +51,12 @@ export function NutritionCardSummary({ nutrition, date }: Props) {
         hint={isFuture ? undefined : hint}
         ariaLabel={`Nutrition — ${leadingText}`}
       />
+      {nutrition.note ? (
+        <div className="flex items-start gap-1.5 text-xs text-foreground">
+          <StickyNote className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
+          <span>{nutrition.note}</span>
+        </div>
+      ) : null}
     </DsCardSummary>
   );
 }

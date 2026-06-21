@@ -82,6 +82,9 @@ export async function getDaySummary(
             hasLog: nutrition.source === "log",
             caloriesConsumed: nutrition.consumed?.calories ?? null,
             targetCalories: nutrition.target?.calories ?? null,
+            // Coach per-day note (event source only — logged days have no note).
+            // Surfaced on the home card since future days aren't openable.
+            note: nutrition.target?.note ?? null,
           }
         : null,
     wellness: {

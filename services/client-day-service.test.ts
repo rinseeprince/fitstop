@@ -193,7 +193,20 @@ describe("client-day-service", () => {
       hasLog: false,
       caloriesConsumed: null,
       targetCalories: 2000,
+      note: null,
     });
+  });
+
+  it("threads the coach note from the event target onto the day summary", async () => {
+    mockNutrition.mockResolvedValue({
+      consumed: null,
+      target: { calories: 2500, proteinG: 170, carbsG: 250, fatG: 70, note: "Deload — go easy" },
+      source: "event",
+    });
+
+    const result = await getDaySummary(CLIENT_ID, DATE);
+
+    expect(result.nutrition?.note).toBe("Deload — go easy");
   });
 
   // ---- Nutrition: logged ----
@@ -211,6 +224,7 @@ describe("client-day-service", () => {
       hasLog: true,
       caloriesConsumed: 1900,
       targetCalories: 2000,
+      note: null,
     });
   });
 
