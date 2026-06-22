@@ -220,8 +220,10 @@ Supports both **Metric** and **Imperial** units:
    - Date plan was created
    - Before → After weight
 3. Click **"Regenerate Nutrition Plan"**
-4. System recalculates using current weight as new baseline
+4. System recalculates the targets using the client's current weight and saves them
 5. New targets displayed and saved
+
+> **Baseline is NOT re-stamped on a regenerate/cascade (D5).** Regenerating events (and the training→nutrition cascade) call `create_nutrition_plan_atomic` with `p_recalc_snapshots=false`, which **preserves** the durable plan's stored snapshot — `base_weight_kg`, `goal_weight_kg`, `goal_deadline`, and `created_at`/`effective_from`. So the weight-change banner keeps comparing against the **original** baseline. Re-stamping the baseline to the current weight happens **only** on an explicit recalculation (a settings-change "Recalculate plan", `p_recalc_snapshots=true`).
 
 #### Manual Regeneration
 1. Navigate to Nutrition tab
@@ -231,16 +233,9 @@ Supports both **Metric** and **Imperial** units:
 5. Click **"Regenerate Plan"**
 6. Review new targets and warnings
 
-### Viewing Plan History
-1. Click **"View History"** button (clock icon) in Nutrition tab
-2. Modal opens showing all historical plans
-3. Each entry shows:
-   - Date created
-   - Reason badge (Initial, Regenerated, Weight Change, Custom)
-   - Settings used at that time
-   - Calculated targets
-   - Trend indicators (↑ ↓ →) comparing to previous
-4. Useful for tracking progress and accountability
+### Plan history (retired)
+
+The versioned **"View History" plan-history modal was removed** in the events-as-SOT overhaul (Session 4): there is now **one durable plan per client** (edited in place, no versioned rows to browse), so a per-version history view no longer has data to show. The Nutrition tab instead surfaces a **weekly adherence history** table (`NutritionHistoryTable` → `GET /api/clients/[id]/history/nutrition`), which is unrelated to the old plan-version log. (The old `GET …/nutrition/history` route is orphaned dead code, pending removal.)
 
 ### Using Custom Macros
 For advanced use cases where calculated macros don't fit:
@@ -581,80 +576,33 @@ The calculator prioritizes **long-term sustainability** over aggressive short-te
                      ├─ Generate/Regenerate Button
                      │  └─ POST /api/clients/[id]/nutrition
                      │
-                     └─ View History Button
-                        └─ NutritionPlanHistoryModal
-                           └─ GET /api/clients/[id]/nutrition/history
+                     └─ Nutrition Calendar (per-day editing)
+                        ├─ GET   /api/clients/[id]/nutrition/events?startDate&endDate
+                        ├─ PATCH /api/clients/[id]/nutrition/events/range          (materialize per-day edit)
+                        └─ PATCH /api/clients/[id]/nutrition/events/[date]/reset   (clear edit, regen to baseline)
 ```
 
 ### Database Schema
 
-#### Client Table (Nutrition Fields)
-```sql
--- Unit & Preferences
-unit_preference           VARCHAR(10)    -- 'metric' | 'imperial'
+> **Nutrition plan data no longer lives as flat `clients` columns.** Migrations 044-069 moved it onto a durable `nutrition_plans` row + a `nutrition_plan_daily_targets` per-weekday template, and the events-as-SOT overhaul (migrations 113-118) made per-date `nutrition_events` the display source of truth. **`docs/ARCHITECTURE.md → Nutrition & Training Events` is the single authoritative schema reference** — the calculator only computes + writes the plan-level prescription below. (`clients` still holds the display-cache `current_weight`/`bmr`/`tdee` + the `unit_preference` setting.)
 
--- Activity Settings
-work_activity_level       VARCHAR(30)    -- ENUM: sedentary | lightly_active | ...
-training_volume_hours     VARCHAR(10)    -- ENUM: '0-1' | '2-3' | ...
-protein_target_g_per_kg   NUMERIC(3,1)   -- Range: 1.0 - 3.0
-diet_type                 VARCHAR(20)    -- ENUM: balanced | high_carb | ...
-goal_deadline             DATE           -- Optional target date
+The calculator's inputs/outputs on the **durable `nutrition_plans` row** (one active plan per client, upserted in place by `create_nutrition_plan_atomic`):
 
--- Plan Metadata
-nutrition_plan_created_date  TIMESTAMPTZ -- When plan was generated
-nutrition_plan_base_weight_kg NUMERIC(5,2) -- Weight at plan creation (for comparison)
+```
+-- Calculator inputs
+work_activity_level, training_volume_hours, protein_target_g_per_kg, diet_type,
+goal_weight_kg, goal_deadline, base_weight_kg, bmr, tdee
 
--- Calculated Targets (Locked)
-calorie_target            INTEGER        -- Daily calories
-protein_target_g          NUMERIC(5,1)   -- Protein in grams
-carb_target_g             NUMERIC(5,1)   -- Carbs in grams
-fat_target_g              NUMERIC(5,1)   -- Fat in grams
+-- Calculated outputs
+baseline_calories, protein_target_g, carb_target_g, fat_target_g
 
--- Custom Overrides
-custom_macros_enabled     BOOLEAN        -- True if using custom values
-custom_protein_g          NUMERIC(5,1)   -- Manual protein override
-custom_carb_g             NUMERIC(5,1)   -- Manual carb override
-custom_fat_g              NUMERIC(5,1)   -- Manual fat override
-
--- Related Metrics (from profile)
-current_weight            NUMERIC(5,2)   -- Updated by check-ins
-bmr                       NUMERIC(6,2)   -- Basal metabolic rate
-tdee                      NUMERIC(6,2)   -- Total daily energy expenditure
+-- Custom override (verbatim)
+custom_macros_enabled, custom_calories, custom_protein_g, custom_carb_g, custom_fat_g
 ```
 
-#### Nutrition Plan History Table
-```sql
-CREATE TABLE nutrition_plan_history (
-  id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  client_id              UUID NOT NULL REFERENCES clients(id),
-  created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-
-  -- Snapshot of metrics
-  base_weight_kg         NUMERIC(5,2) NOT NULL,
-  goal_weight_kg         NUMERIC(5,2),
-  bmr                    NUMERIC(6,2),
-  tdee                   NUMERIC(6,2),
-
-  -- Settings used
-  work_activity_level    TEXT NOT NULL,
-  training_volume_hours  TEXT NOT NULL,
-  protein_target_g_per_kg NUMERIC(3,1) NOT NULL,
-  diet_type              TEXT NOT NULL,
-  goal_deadline          DATE,
-
-  -- Calculated targets
-  calorie_target         INTEGER NOT NULL,
-  protein_target_g       NUMERIC(5,1) NOT NULL,
-  carb_target_g          NUMERIC(5,1) NOT NULL,
-  fat_target_g           NUMERIC(5,1) NOT NULL,
-
-  -- Metadata
-  created_by_coach_id    UUID REFERENCES coaches(id),
-  regeneration_reason    TEXT -- 'initial' | 'regenerated' | 'weight_change' | 'custom_macros'
-);
-
-CREATE INDEX idx_nutrition_history_client ON nutrition_plan_history(client_id, created_at DESC);
-```
+- **Per-weekday grid:** `nutrition_plan_daily_targets (nutrition_plan_id, day_of_week) → calories, protein_g, carb_g, fat_g` — replaced DELETE-then-INSERT on each plan upsert; the source for generating the dense per-date `nutrition_events`.
+- **Per-date events:** `nutrition_events` (one per client per date) carry the display target plus coach per-day edits (`is_modified`, `note`); see ARCHITECTURE for the field list and the per-day range/reset edit path.
+- The old `nutrition_plan_history` table is **dead** (no app references) — the versioned plan-history feature was retired with the durable single-plan model.
 
 ### File Structure
 
@@ -665,9 +613,11 @@ CREATE INDEX idx_nutrition_history_client ON nutrition_plan_history(client_id, c
       /calculate-bmr
         route.ts              # BMR calculation endpoint
       /nutrition
-        route.ts              # Generate/update nutrition plan
-        /history
-          route.ts            # Get plan history
+        route.ts              # Generate/update nutrition plan (durable, in-place upsert)
+        /events
+          route.ts            # GET dense per-date nutrition events (calendar)
+          /range/route.ts     # PATCH per-day edit (materialize onto events)
+          /[date]/reset/route.ts  # PATCH reset a day back to the plan baseline
 
 /components
   /clients
@@ -676,7 +626,6 @@ CREATE INDEX idx_nutrition_history_client ON nutrition_plan_history(client_id, c
     nutrition-settings-form.tsx             # Settings inputs
     nutrition-targets-display.tsx           # Macro display
     nutrition-warnings.tsx                  # Warning alerts
-    nutrition-plan-history-modal.tsx        # History viewer
     nutrition-regeneration-banner.tsx       # Weight change alert
     unit-toggle.tsx                         # Metric/Imperial toggle
 
@@ -847,57 +796,6 @@ curl -X PATCH https://yourapp.com/api/clients/123/nutrition \
 
 ---
 
-### Get Plan History
-
-**Endpoint**: `GET /api/clients/[id]/nutrition/history`
-
-**Purpose**: Retrieve all historical nutrition plans for client
-
-**Request**: No body required
-
-**Response**:
-```typescript
-{
-  success: boolean
-  history: Array<{
-    id: string
-    clientId: string
-    createdAt: string  // ISO timestamp
-
-    // Metrics at creation
-    baseWeightKg: number
-    goalWeightKg?: number
-    bmr?: number
-    tdee?: number
-
-    // Settings used
-    workActivityLevel: string
-    trainingVolumeHours: string
-    proteinTargetGPerKg: number
-    dietType: string
-    goalDeadline?: string
-
-    // Calculated targets
-    calorieTarget: number
-    proteinTargetG: number
-    carbTargetG: number
-    fatTargetG: number
-
-    // Metadata
-    createdByCoachId?: string
-    regenerationReason?: string  // 'initial' | 'regenerated' | 'weight_change' | 'custom_macros'
-  }>
-  error?: string
-}
-```
-
-**Example**:
-```bash
-curl https://yourapp.com/api/clients/123/nutrition/history
-```
-
----
-
 ## Frequently Asked Questions
 
 ### Why does the plan show warnings?
@@ -931,12 +829,12 @@ The calculator is flexible:
 
 ### Can I adjust macros without regenerating?
 
-No. Macro targets are **locked** when plan is generated to maintain consistency.
-
-**To adjust**:
+The plan-level macro targets are computed when the plan is generated. **To change the whole plan**:
 1. Use "Update Settings" to change inputs
 2. Regenerate plan with new settings
-3. Or use "Custom Macros" for manual override
+3. Or use "Custom Macros" for a manual override
+
+**To change specific days only** (e.g. a deload week), edit them directly on the **nutrition calendar** — a per-day range edit materializes onto `nutrition_events` (`is_modified=true`) and survives regeneration/cascade until you reset it. This does not touch the plan's baseline. See `docs/ARCHITECTURE.md → Event lifecycle`.
 
 **Why**: Ensures all calculations are internally consistent and tracked in history.
 

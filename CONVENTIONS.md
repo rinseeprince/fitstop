@@ -271,7 +271,7 @@
 
   ### General
   - Migrations: Version controlled, never edit directly
-  - Relations: Foreign keys with ON DELETE CASCADE, SET NULL, or RESTRICT. Use RESTRICT on parent tables that must not be hard-deleted (e.g. roadmaps - forces archival instead).
+  - Relations: Foreign keys with ON DELETE CASCADE, SET NULL, or RESTRICT. Use RESTRICT on parent tables that must not be hard-deleted (e.g. roadmaps - forces archival instead). **Event→plan FKs are SET NULL** (`training_events.training_plan_id`, `nutrition_events.nutrition_plan_id`, both nullable since migration 113) so deleting a plan/template never destroys past/logged events — the events carry the date-specific truth (see "Events-as-SOT" below and `docs/ARCHITECTURE.md → Nutrition & Training Events`).
   - Indexes: On foreign keys, search fields, sort columns
   - Timestamps: created_at, updated_at on all tables. Exception: immutable event tables (e.g. body_metrics) intentionally skip updated_at - add a comment explaining why.
 
@@ -291,9 +291,21 @@
   ### Soft deletes
   - User-created data uses soft delete, never hard delete
   - **is_active pattern**: Training sessions, exercises, and daily habits use `is_active = false`. Always filter by `.eq("is_active", true)` in read queries
-  - **Status-based lifecycle**: Entities with richer states (e.g. roadmaps: 'active'/'archived'/'draft', phases: 'planned'/'active'/'completed'/'skipped') use a status column instead of is_active. Never hard-delete these - they contain historical data (e.g. phase_goals_snapshot)
+  - **Status-based lifecycle**: Entities with richer states (e.g. roadmaps: 'active'/'archived'/'draft', phases: 'planned'/'active'/'completed'/'skipped') use a status column instead of is_active. The lifecycle is **not uniform across entities** — match the one already in place:
+    - **Roadmaps** stay archive-only (`ON DELETE RESTRICT`); never hard-delete a roadmap (it holds historical phases/snapshots).
+    - **Phases** auto-activate by date (`promotePhaseIfReady`, no manual button) and **CAN be coach hard-deleted for any status** (`deletePhase` unlinks plans/habits `phase_id := NULL` first; logged history survives because it is event-keyed, not phase-keyed). So the "never hard-delete a status entity" rule applies to roadmaps, **not** phases.
+    - **Training plans** moved to **date-range coexistence** (events-as-SOT): many provenance `training_plans` rows coexist, there is **no `planned`/promotion concept**, and "active" is resolved **by date** (the row whose `[effective_from, effective_until]` covers today), not `status='active'`. Placement is additive (no wipe/archive of prior plans).
+    - **Nutrition plans** stay **one durable active plan per client** (`idx_nutrition_plans_active_unique`), edited **in place** (upsert) with **no versioning/archival**. Per-day coach edits are materialized onto `nutrition_events` (`is_modified`), never minted as new plan rows.
   - Unique constraints must account for inactive rows (check for inactive before inserting, reactivate if found)
   - Provide UI for viewing and reactivating inactive items where appropriate
+
+  ### Events-as-SOT (plans are templates/provenance)
+
+  Date-specific training/nutrition targets live on **events** (`training_events`, `nutrition_events`), one row per date. Plans and their templates (`training_sessions`, `nutrition_plan_daily_targets`) are **blueprints that generate events + provenance for analytics/reapply** — not the live read path for a given day, and never embedded via a live join to a deletable plan. Historical reads resolve from immutable snapshots (`session_logs`, `nutrition_logs`), never from regenerable events. When you add a date-specific feature, write it onto the event, not the plan. Full model: `docs/ARCHITECTURE.md → Nutrition & Training Events`.
+
+  **Deferred debt (events-SOT — documented, not done):**
+  - **Adherence is not unified.** Two divergent live adherence calcs coexist (coach phase-review = `session_logs` / `frequency_per_week`; client check-in = `training_events` count). A periodisation-safe denominator + unifying them is a separate decision — do not change adherence math under the guise of an events-SOT edit.
+  - **Prescribed denormalization.** `training_events.calorie_surplus_percentage` is denormalized from the session so the nutrition cascade can read it per date; **every** training event-write path must keep populating it (one dropped write silently falls nutrition back to rest-day calories while the TRAIN badge still renders). See `TECHNICAL-DEBT.md`.
 
   ### Migration awareness
   - Don't suggest schema changes that would break existing data

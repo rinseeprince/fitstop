@@ -38,12 +38,12 @@ coaches
         │           ├── nutrition_plans  -- phase_id FK (nullable)
         │           └── daily_habits     -- phase_id FK (nullable)
         │
-        ├── training_plans            -- can exist without roadmap (phase_id = null); saved_plan_id FK tracks library provenance (nullable)
+        ├── training_plans            -- MANY coexisting provenance rows (date-range, no singleton); saved_plan_id FK tracks library provenance (nullable)
         │     ├── training_sessions   -- carries calorie_surplus_percentage (source for nutrition cascade)
         │     │     └── training_exercises  -- exercise_id FK to exercises catalog
-        │     └── training_events        -- one row per session per date (calendar SOT)
-        ├── nutrition_plans           -- can exist without roadmap (phase_id = null)
-        │     └── nutrition_events       -- one row per client per date
+        │     └── training_events        -- one row per session per date (calendar SOT; training_plan_id FK is SET NULL)
+        ├── nutrition_plans           -- ONE durable active plan per client (in-place upsert; no versioning)
+        │     └── nutrition_events       -- one row per client per date (SOT; nutrition_plan_id FK is SET NULL)
         │
         ├── exercises (catalog)          -- two-tier: global (coach_id=NULL) + coach-specific
         ├── daily_habits              -- can exist without roadmap (phase_id = null)
@@ -97,6 +97,14 @@ roadmaps              -- long-term goal container, one active per client
 - `coach_reflection` (text) and `phase_summary` (JSONB) are written during phase transitions
 - `milestones` JSONB — array of milestone objects scoped to the phase (`{id, text, completed, completed_at}`)
 - `completion_seen` (boolean) tracks whether the client has dismissed the completion card
+
+### Phase lifecycle (date-driven, events-SOT — Sessions 2-3)
+
+Since the events-as-SOT overhaul the phase lifecycle is **date-driven**, replacing the old manual "Activate" button + plan-level promotion:
+- **Auto-activate by date.** `promotePhaseIfReady()` (`services/phase-service.ts`) lazily flips the earliest eligible `planned` phase to `active` when its `start_date <= clientToday` and no phase is already active. It is idempotent and runs on roadmap reads (coach `GET /api/clients/[id]/roadmap` and the client phase read), not from a button. (A manual `activatePhase` still exists for an explicit "start now".) No new column was needed — it keys off the existing `start_date`.
+- **Overlap guard.** `createPhase`/`updatePhase` reject a fully-dated `[start, end]` that overlaps a dated sibling (half-open: overlap iff `start <= sibEnd && sibStart <= end`).
+- **Complete-before-start guard.** A phase whose `start_date > clientToday` cannot be completed.
+- **Deletion.** `deletePhase()` **hard-deletes the phase row for any status** (a coach decision), after unlinking its plans/habits (`phase_id := NULL`). Logged training/nutrition history survives because it is **event-keyed, not phase-keyed** — only the phase's own reflection/summary record is removed. (Roadmaps, by contrast, stay archive-only via `ON DELETE RESTRICT`.) The delete affordances live in `phase-card.tsx` + `roadmap-tab-content.tsx`.
 
 ### Phase goals — phase-is-king (Session 7.8)
 
@@ -185,7 +193,9 @@ When a coach completes a phase, the transition follows this sequence:
 - Based on `next_action` parameter:
   - `activate_next`: activates the next planned phase
   - `archive_roadmap`: archives the entire roadmap
-- Based on `plan_handling` flags, archives or keeps training plans, nutrition plans, and habits
+- Based on `plan_handling` flags, archives or keeps training plans, nutrition plans, and habits (`p_archive_nutrition` etc. on `transition_phase_atomic`, migration 111)
+
+> **Known gap (events-SOT).** The live transition still **archives** the nutrition plan when `p_archive_nutrition` is set. Under the single durable nutrition plan (one mutable plan per client, Session 3), the intended end-state is to **re-window** the durable plan's forward events to the newly-active phase instead of archiving — but that seam is **PARKED → `CLIENT-PORTAL-EXECUTION-PLAN.md` Session 7.10** (`rewindowNutritionToActivePhase` does not exist yet). Until 7.10 lands, completing/auto-activating a phase for a **phase-linked** client leaves a blank/stale forward nutrition calendar; no-phase clients are unaffected.
 
 ### 3. Client completion card
 
@@ -226,6 +236,15 @@ nutrition_events   -- one row per client per date
 
 Events are the **source of truth for date-specific targets**. Plan templates (`nutrition_plan_daily_targets`, `training_sessions`) are blueprints used to generate events, not for display.
 
+### Plans as templates/provenance (events-as-SOT)
+
+The events-as-SOT overhaul (Sessions 1-5, migrations 113-118) demoted plans from the live read path to **templates/provenance** — the events carry the date-specific truth, and a plan's deletion no longer destroys history:
+
+- **Event→plan FKs are `ON DELETE SET NULL` + nullable** (migration 113). Both `training_events.training_plan_id` and `nutrition_events.nutrition_plan_id` survive a plan/template hard-delete (was `ON DELETE CASCADE` + NOT NULL). Past/logged events are never orphaned by deleting their source plan.
+- **Deliberate asymmetry — do NOT "consistency-refactor" the two tracks into one model:**
+  - **Training = many coexisting provenance plans.** A distinct `training_plans` row per placement coexists with others; there is **no singleton, no `planned`/promotion concept**. "The active plan" is resolved **by date** (the provenance plan whose `[effective_from, effective_until]` covers today), not by `status='active'`. Placement is **additive** (see "Atomic placement").
+  - **Nutrition = one durable mutable plan.** Exactly one active `nutrition_plans` row per client (`idx_nutrition_plans_active_unique`), edited **in place** (upsert) with **no versioning/archival**. One target per day is correct, not a limitation (`nutrition_events UNIQUE(client_id, date)`). Per-day coach edits are **materialized onto the events** (`is_modified`), not minted as new plan rows.
+
 ### Training event fields
 - `training_session_id` FK (SET NULL on delete, preserves events when sessions removed)
 - `session_name`, `session_focus` - snapshotted at creation, survive template renames
@@ -237,6 +256,10 @@ Events are the **source of truth for date-specific targets**. Plan templates (`n
 
 `training_sessions.calorie_surplus_percentage` (NUMERIC, nullable) is the **origin** of the surplus: it is copied onto each `training_events.calorie_surplus_percentage` at event generation, and the nutrition cascade then reads it from the event (not from the session). Rest-day sessions have NULL.
 
+### Nutrition plan (durable) + daily-targets template
+
+The single durable `nutrition_plans` row per client is the **template** that generates `nutrition_events`. It holds the plan-level prescription — `baseline_calories`, `protein_target_g` / `carb_target_g` / `fat_target_g`, `diet_type`, `protein_target_g_per_kg`, the custom-macros override (`custom_macros_enabled` + `custom_calories`/`custom_protein_g`/`custom_carb_g`/`custom_fat_g`), the calculator inputs (`base_weight_kg`, `bmr`, `tdee`, `work_activity_level`, `training_volume_hours`), and the goal snapshot (`goal_weight_kg`, `goal_deadline`, `goal_source`) that drives the "active since {date}" / weight-drift banners. `nutrition_plan_daily_targets` is its **per-weekday grid** (`(nutrition_plan_id, day_of_week)` → `calories`, `protein_g`, `carb_g`, `fat_g`) — the source used to generate/regenerate the dense per-date `nutrition_events`. It is replaced **DELETE-then-INSERT** on each plan upsert and is **not** the display SOT (events are). See `docs/NUTRITION_PLAN_CALCULATOR.md` for the TDEE/macro formula that computes these values. The plan is edited **in place** (`create_nutrition_plan_atomic` upsert, migration 115): a cascade/in-place regen (`p_recalc_snapshots=false`) preserves the goal snapshot + `created_at`/`effective_from`; only an explicit "Recalculate plan" (`p_recalc_snapshots=true`) re-stamps them.
+
 ### Nutrition event fields (percentage-surplus model, post-LIB-2)
 - `baseline_calories` - plan's rest-day target, frozen at event creation
 - `calorie_surplus_percentage` (NUMERIC, nullable) - copied from the training event assigned to that date (e.g., 15 for +15%). NULL on rest days
@@ -244,9 +267,11 @@ Events are the **source of truth for date-specific targets**. Plan templates (`n
 - `protein_g`, `carb_g`, `fat_g` - baseline macros (protein fixed; extra calories redistribute to carbs/fats per `diet_type` via `calculateDailyMacros()`)
 - `diet_type` - snapshotted from plan, enables display-time macro recalculation when `include_activity_burn` is on
 - `is_training_day` - derived from training events on that date
+- `is_modified` (BOOLEAN, migration 113) - true when a coach **materializes a per-day edit** (range edit). On a modified day `baseline_calories` + macros are frozen to the edited values and `calorie_surplus_percentage` is set to NULL (no surplus stacking); the day **survives regeneration and the training cascade** (delete/upsert skip `is_modified=true` rows). Cleared by reset.
+- `note` (TEXT, migration 118) - optional per-day coach note; rides `is_modified=true` so it survives regen, is cleared on reset, and surfaces on the coach calendar tag + the client nutrition day card.
 - `status`: `scheduled` / `logged` / `missed`
 
-**Display total**: `baseline * (1 + surplus/100)` when `include_activity_burn` is on, else `baseline`. The toggle does not require event regeneration.
+**Display total**: `baseline * (1 + surplus/100)` when `include_activity_burn` is on, else `baseline`. The toggle does not require event regeneration. How the surplus calories distribute across macros honors `clients.surplus_as_carbs` (migration 117) via the shared `applySurplusSplit()` (`utils/nutrition-helpers.ts`): protein is held; **keep-split** (default) scales carbs+fat preserving the plan ratio; **carbs-only** holds fat and adds the surplus to carbs. The same helper backs both the event mapper (`mapNutritionEventToDisplayTarget`) and the plan-based "typical week" path (`buildDailyTargetsFromPlan`).
 
 ### Event lifecycle
 - **Generation paths** (training):
@@ -257,17 +282,23 @@ Events are the **source of truth for date-specific targets**. Plan templates (`n
 - **Generated** when a plan is created or regenerated
 - **Cascaded** when training events change (training day swaps trigger nutrition event regeneration via `regenerateFutureNutritionEvents`)
 - **Frozen once past** - only future `scheduled` events are deleted/regenerated. Past events and non-scheduled statuses are preserved
-- **Calendar operations** (training events only): coaches can move events to different dates, duplicate individual events, and duplicate entire weeks. Duplicate-week clones sessions + exercises so each week is independent. Moved/duplicated events get `is_modified = true`
+- **Calendar operations** (training events): coaches can move events to different dates, duplicate individual events, and duplicate entire weeks. Duplicate-week clones sessions + exercises so each week is independent. Moved/duplicated events get `is_modified = true`
+- **Per-day nutrition editing** (Session 4): coaches edit nutrition events directly on the nutrition calendar over a `dates[]` selection (absolute or %-delta) via `PATCH /api/clients/[id]/nutrition/events/range`, which **materializes** the edit (`materializeNutritionEventDays` → baseline+macros set, surplus NULL, `is_modified=true`, optional `note`); `PATCH …/nutrition/events/[date]/reset` (`resetNutritionEvent`) clears `is_modified`+`note` **then** regenerates that date back to the plan baseline. Both are server-guarded to `date >= clientToday`. The read is `GET …/nutrition/events?startDate&endDate`.
 
 ### Training → Nutrition cascade
-- Training event changes invoke `regenerateFutureNutritionEvents()`. Nutrition events read the day's surplus **directly from `training_events.calorie_surplus_percentage`** (denormalized from the session at event generation, migration 085) — not by traversing the `training_session_id` FK.
-- Only future `scheduled` nutrition events are replaced; `logged` / `missed` events are immutable.
+- The ~8 training event-write routes (place, move, duplicate, duplicate-week, regenerate, event/session edits, delete) invoke one consolidated helper, `cascadeNutritionAfterTrainingChange()` (`services/nutrition-event-service.ts`), which fetches the durable nutrition plan and calls `regenerateFutureNutritionEvents()`. The consolidation de-dupes the loop logic only — **each route still computes and threads its own anchor date** (move = `min(source, target)`; delete = client-today; duplicate = `targetDate`).
+- Nutrition events read the day's surplus **directly from `training_events.calorie_surplus_percentage`** (denormalized from the session at event generation, migration 085) — not by traversing the `training_session_id` FK.
+- Only future `scheduled`, **non-`is_modified`** nutrition events are replaced; `logged` / `missed` events and coach-edited (`is_modified=true`) days are immutable across the cascade (preserves the Session 1 edit-preservation guard).
 - Baseline is preserved across a cascade — only `calorie_surplus_percentage` and `is_training_day` change.
 
 ### Read priority for nutrition targets
-1. **Logged days**: `nutrition_logs.target_calories` (snapshot written at log time, authoritative)
-2. **Unlogged days with event**: `nutrition_events` row for that date (primary path since NE-3)
-3. **Unlogged days without event**: template fallback via `getPlanTargetForDateFromTemplate()` for pre-backfill dates or coverage gaps
+
+The **per-date day-view path** — `getPlanTargetForDate()` / `getNutritionForDate()` (`services/daily-context-service.ts`):
+1. **Logged days**: `nutrition_logs` snapshot (written at log time, authoritative)
+2. **Unlogged days with event**: the `nutrition_events` row for that date (via `mapNutritionEventToDisplayTarget`, honoring `include_activity_burn` + `surplus_as_carbs`)
+3. **Unlogged days without event**: returns `null` — **the level-3 template fallback is currently unbuilt** (there is no `getPlanTargetForDateFromTemplate`). Dense event generation/backfill is expected to cover the window, so a missing event reads as "no target".
+
+The **plan-based "typical week" / client program-card path** — `buildDailyTargetsFromPlan()` (`utils/build-daily-targets.ts`) — is event-first too, but for no-event days it **does** derive the target from the durable plan's `nutrition_plan_daily_targets` template (applying the same surplus-split), so the program card never shows a hole.
 
 ---
 
@@ -365,8 +396,8 @@ coach_saved_plans              -- plan templates (status: draft / saved)
 ### Cycle-aware placement
 `coach_saved_plans.cycle_length` + session `order_index` let placement map any start date onto the correct position. For example, a PPL+Rest plan (cycle_length=4) starting on a Wednesday places Push/Pull/Legs/Rest/Push/... from that Wednesday onward, regardless of calendar week boundaries.
 
-### Atomic placement (migration 087)
-`create_training_plan_atomic()` runs event cleanup in the same transaction as plan creation/archival. STEP 0 deletes scheduled `training_events` from `v_effective_from` onward so an outgoing plan's events cannot collide with the incoming plan. Archival of the previous `training_plan` and insertion of the new plan/sessions/events happen atomically.
+### Atomic placement (additive — migration 114)
+`create_training_plan_atomic()` (the 23-arg signature, with `p_window_end`) inserts the new plan + sessions + events in one transaction as a **coexisting provenance row** (`status='active'`, `effective_until=NULL`). Placement is **additive**: it deletes only **future `scheduled` events within the incoming plan's own date window** (`GREATEST(effective_from, today) … p_window_end`) so the freshly generated events have empty slots to land in. There is **no STEP-0 cross-plan wipe and no archival of the previous plan** (the old behavior of migration 087); non-overlapping plans coexist and reads resolve "active" by date. `services/library-placement-service.ts` computes the window via `calculatePlacementEndDate()` and caps it at the start of the next coexisting plan (`getNextPlanStartCap`) so two placements never bleed into each other. Every generated event keeps carrying `calorie_surplus_percentage` (the nutrition-cascade contract).
 
 ### Stale drafts
 EL-1 (not currently in scope) specifies a cron that deletes draft plans older than 7 days. Until then, abandoned drafts accumulate in `coach_saved_plans` with `status = 'draft'`.
@@ -426,14 +457,14 @@ One rule in `lib/daily-log-permissions.ts` (pure, client-safe): today always edi
 
 ### Timezone model
 
-**Locked model (Sessions 7.81–7.86): "today" is computed in the device timezone of the person whose calendar the date is on — never the server's UTC clock.** A client's day, plan placement, promotion, check-in window, streaks → the **client's** zone. A coach's dashboard windows (attention feed, current-week metrics, history summaries) → the **coach's** zone. The cross-person cases (a coach viewing a client's check-in due/overdue; background reminders) → the **client's** zone. One question decides every site: *whose calendar is this date on?*
+**Locked model (Sessions 7.81–7.86): "today" is computed in the device timezone of the person whose calendar the date is on — never the server's UTC clock.** A client's day, plan placement, phase auto-activation, check-in window, streaks → the **client's** zone. A coach's dashboard windows (attention feed, current-week metrics, history summaries) → the **coach's** zone. The cross-person cases (a coach viewing a client's check-in due/overdue; background reminders) → the **client's** zone. One question decides every site: *whose calendar is this date on?*
 
 - **Storage**: `clients.timezone` (migration 089) and `coaches.timezone` (migration 109), both `TEXT NOT NULL DEFAULT 'UTC'`, IANA.
 - **Capture is device-synced, no manual picker** (Session 7.81 — intentionally reverses Session 2.6's "no silent overwrites"): the shared `useTimezoneSync` hook (`hooks/use-timezone-sync.ts`) compares the device zone against the stored value on every app load and fires a fire-and-forget PATCH on mismatch (client shell → `PATCH /api/client/settings`; coach shell → `PATCH /api/coach/settings`). Travel re-syncs on next open.
 - **Read side**: server code derives "today" via `getTodayDateStringInTimezone()` in `lib/date-helpers.ts` — the only surface owning `Intl.DateTimeFormat` math. (Sanctioned exception: the two settings routes validate input zones with `Intl.supportedValuesOf("timeZone")` — validation, not date math.)
 - **Helper inventory**: `lib/date-helpers.ts` owns the pure helpers — `getTodayDateStringInTimezone(tz, now?)` (string), `getTodayInTimezone(tz, now?)` (local-midnight `Date` for the injectable check-in helpers; NOT `parseISODate`, which parses as UTC midnight), `getDeviceTimeZone()` (browser capture). `services/today-service.ts` owns the DB-fetching ones — `getClientTodayString(clientId)` (client tz → coach tz fallback while the client is on the unsynced `'UTC'` sentinel → UTC) and `getCoachTodayString(coachId)`. **Rule:** when a `Client` record with `timezone` is already in scope, use the pure helpers (zero extra fetches — the overdue/attention-feed loops rely on this); the fetching helpers are for call sites holding a bare id.
 - A stored `'UTC'` is the "never device-synced" sentinel; coach-initiated placement on a never-synced client's calendar falls back to the coach's zone (`getClientTodayString`, Session 7.82), then UTC.
-- **Where each anchor applies** (Sessions 7.82–7.86): client tz — plan placement RPCs (`p_today`), calendar move/duplicate/delete guards, plan promotion, the client home week, check-in gate/window, streaks/habit defaults, goal-pace `today`, goal-deadline days-remaining (Session 7.86, `services/comparison-service.ts`), the coach calendar's drag/delete *gating* (Session 7.86 — the visual today ring stays coach-device), check-in due/overdue, and the placement-path planned-plan event wipe (`clientToday` threaded from the route — anchoring it at `startDate` would no-op against the RPC's STEP 0 and orphan the old plan's earlier events). Coach tz — attention-feed window, coach "current week" metrics/history anchors, phase-review adherence bound, phase-transition stamps (`transition_phase_atomic` `p_today`, migration 111: the completed phase's `end_date` + the activated next phase's `start_date`), the attention-dismissal `dismissed_at` (migration 112 drops the column's UTC `CURRENT_DATE` default so a writer that forgets the date fails loudly), and the goal-deadline write bound (Session 7.86 — the coach is the setter, so the past-date check is route-side via `getCoachTodayString`; the zod schema is format-only). The plan-status RPCs additionally take `p_effective_from DATE DEFAULT NULL` coalescing to `p_today` (migration 110).
+- **Where each anchor applies** (Sessions 7.82–7.86): client tz — plan placement RPCs (`p_today`), calendar move/duplicate/delete guards, phase auto-activation (`promotePhaseIfReady`), the client home week, check-in gate/window, streaks/habit defaults, goal-pace `today`, goal-deadline days-remaining (Session 7.86, `services/comparison-service.ts`), the coach calendar's drag/delete *gating* (Session 7.86 — the visual today ring stays coach-device), check-in due/overdue, and the placement-path event window-delete (`clientToday` threaded from the route as the additive RPC's `p_today` floor, `GREATEST(effective_from, today)`; migration 114 replaced the old STEP-0 cross-plan wipe). Coach tz — attention-feed window, coach "current week" metrics/history anchors, phase-review adherence bound, phase-transition stamps (`transition_phase_atomic` `p_today`, migration 111: the completed phase's `end_date` + the activated next phase's `start_date`), the attention-dismissal `dismissed_at` (migration 112 drops the column's UTC `CURRENT_DATE` default so a writer that forgets the date fails loudly), and the goal-deadline write bound (Session 7.86 — the coach is the setter, so the past-date check is route-side via `getCoachTodayString`; the zod schema is format-only). The placement RPCs additionally take `p_effective_from DATE DEFAULT NULL` coalescing to `p_today` (migration 110, carried into the additive 114/115 rewrites).
 
 ### Scale / payload contracts
 
@@ -467,7 +498,7 @@ All coach-side data fetching uses SWR with:
 | Roadmap | `RoadmapTabContent` | Phase timeline, create/transition dialogs |
 | Metrics | `MetricsTabContent` | Body metrics charts, check-in history |
 | Training Plan | `TrainingPlanCard` + `TrainingHistoryTable` | Plan builder, session history |
-| Nutrition | `NutritionCalculatorCardEnhanced` + `NutritionHistoryTable` | Plan builder, weekly history |
+| Nutrition | `NutritionCalculatorCardEnhanced` + `NutritionHistoryTable` | Plan builder, per-day nutrition calendar, weekly adherence history |
 | Wellness | `WellnessTabContent` | Wellness trends and analysis |
 | Daily Habits | `HabitsTabContent` + `HabitsHistoryTable` | Habit management, analytics |
 | Notes | Coach notes (inline) | Free-text notes |

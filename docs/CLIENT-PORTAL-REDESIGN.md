@@ -472,6 +472,8 @@ Implementation: remove the `goalsDisabled` status check for active; update the `
 
 Known downstream implication: nutrition plans calculated with the old phase goal won't auto-recalculate. Flag in the confirmation; a recalc workflow is out of scope for this change.
 
+> **events-SOT clarification.** There is now **one durable nutrition plan per client** (no versioning), so a phase-goal edit neither archives nor re-mints a plan — it simply won't auto-recalculate the targets. Per-day overrides live on `nutrition_events` (`is_modified`), and event→plan FKs are `SET NULL`. Separately, **completing/auto-activating a phase currently archives the linked nutrition plan and does NOT yet re-window** its forward events — that re-window seam is parked → Session 7.10 (`rewindowNutritionToActivePhase`). Phases now auto-activate by date (`promotePhaseIfReady`).
+
 ### Archived-roadmap browsing
 
 Today the coach can archive a roadmap but cannot view archived ones afterwards. Add a "Past roadmaps" surface to `roadmap-tab-content.tsx` (collapsible section or dropdown) that lists archived roadmaps for this client. Selecting one renders its phases read-only — same component as the active roadmap's phase list, but nothing is editable. Archived phase goals, reflections, and summaries visible for historical reference.

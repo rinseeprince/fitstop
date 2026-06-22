@@ -190,33 +190,41 @@ All client API endpoints require authentication except where noted.
 - `POST /api/client/training/completions` - Mark session complete
 
 ### Nutrition
-- `GET /api/client/nutrition` - Get nutrition targets
+- `GET /api/client/nutrition` (alias: `GET /api/client/nutrition-plan`) - Get nutrition targets (`getClientNutritionTargets`)
   ```json
   {
-    "calories": 2500,
-    "proteinG": 180,
-    "carbsG": 280,
-    "fatG": 70,
+    "planId": "…",
+    "calorieTarget": 2200,
+    "proteinTargetG": 180,
+    "carbTargetG": 230,
+    "fatTargetG": 70,
     "baselineCalories": 2200,
-    "trainingDayCalories": 2500,
-    "restDayCalories": 2200
+    "dietType": "balanced",
+    "includeActivityBurn": true,
+    "customMacrosEnabled": false,
+    "dailyTargets": [
+      {
+        "day": "monday",
+        "dayLabel": "Monday",
+        "isTrainingDay": true,
+        "calories": 2530,
+        "baselineCalories": 2200,
+        "proteinG": 180,
+        "carbsG": 280,
+        "fatG": 78,
+        "proteinPercent": 28,
+        "carbsPercent": 44,
+        "fatPercent": 28,
+        "trainingSessions": [{ "name": "Push", "calories": 330 }],
+        "calorieSurplusPercentage": 15,
+        "note": "Higher carbs — heavy session"
+      }
+      // … 7 entries, one per weekday of the CURRENT client-local week
+    ]
   }
   ```
 
-  > **⚠️ RN CONTRACT NOTE (events-as-SOT overhaul, Session 5).** The 2-slot
-  > rest/training shape above is the *legacy* model; the program-view response
-  > (`getClientNutritionTargets`) actually returns `dailyTargets:
-  > DailyNutritionTargets[]` — **7 weekday-keyed entries** (`day`, `dayLabel`,
-  > `calories`, `proteinG/carbsG/fatG`, `*Percent`, `trainingSessions`, …).
-  > **The array shape is unchanged, but the meaning shifted:** entries now
-  > reflect the **current client-local week's actual events** (so a coach's
-  > per-day edit shows) and honor the `surplus_as_carbs` split — not a generic
-  > weekday template. RN code that reads `dailyTargets` by weekday index still
-  > works; just treat the values as date-specific to the current week. A coach
-  > may edit a *future* week — that surfaces on the per-date day-view
-  > (`/api/client/daily-logs/{date}/nutrition`), not this card, until that week
-  > is current. An optional per-day coach `note` field is being added (Session 5
-  > ◆3). The full per-date-window rewrite of this section lands in Session 6.
+  > **RN contract — `dailyTargets` is a per-date window, not a 2-slot template (events-as-SOT, shipped Sessions 4-5).** The legacy `trainingDayCalories` / `restDayCalories` 2-slot shape is **gone**. `dailyTargets` is a **7-entry array, one per weekday of the current client-local week**, built from that week's actual `nutrition_events` — so a coach's per-day edit (`is_modified`) and per-day `note` show through, and the macro split honors `clients.surplus_as_carbs`. RN may still index by weekday, but **treat the values as date-specific to the current week**, not a generic weekly template. A coach edit to a **future** week surfaces on the per-date day-view (`GET /api/client/daily-logs/{date}/nutrition`), not this card, until that week becomes current. Logged past days read their frozen `nutrition_logs` snapshot (no `note`), never the event. Full field list: `DailyNutritionTargets` (`utils/nutrition-helpers.ts`).
 
 ### Progress
 - `GET /api/client/progress?days={30|60|90}` - Get progress data
