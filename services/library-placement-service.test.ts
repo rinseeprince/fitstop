@@ -30,7 +30,13 @@ import { getSavedPlanById } from "./coach-saved-plan-service";
 import { createTrainingPlanAtomic } from "./training-service";
 import { getNextPlanStartCap } from "./training-event-service";
 import { validatePhaseBounds } from "./training-event-calendar-service";
-import { placePlanOnCalendar, placeSessionOnCalendar } from "./library-placement-service";
+import {
+  placePlanOnCalendar,
+  placeSessionOnCalendar,
+  placeInlineEditedPlanOnCalendar,
+} from "./library-placement-service";
+import { deriveCycleInfoFromSessions } from "./coach-library-helpers";
+import type { InlinePlanBody } from "@/lib/validations/training";
 
 const mockFrom = vi.mocked(supabaseAdmin.from);
 const mockGetSavedPlanById = vi.mocked(getSavedPlanById);
@@ -53,6 +59,7 @@ function createMockQuery<T = unknown>(result: { data: T | null; error: { message
     lt: vi.fn().mockReturnThis(),
     lte: vi.fn().mockReturnThis(),
     in: vi.fn().mockReturnThis(),
+    or: vi.fn().mockReturnThis(),
     order: vi.fn().mockReturnThis(),
     limit: vi.fn().mockReturnThis(),
     single: vi.fn().mockResolvedValue(result),
@@ -678,6 +685,171 @@ describe("library-placement-service", () => {
           targetDate: "2026-06-01",
         })
       ).rejects.toThrow("outside the current phase");
+    });
+  });
+
+  // =========================================================================
+  // placeInlineEditedPlanOnCalendar (apply-without-overwrite)
+  // =========================================================================
+
+  describe("placeInlineEditedPlanOnCalendar", () => {
+    function makeInlinePlan(overrides?: Partial<InlinePlanBody>): InlinePlanBody {
+      return {
+        name: "Edited PPL",
+        splitType: "push_pull_legs",
+        programDurationWeeks: 1,
+        defaultSurplusPercentage: 10,
+        sessions: [
+          {
+            name: "Push",
+            focus: "chest",
+            orderIndex: 0,
+            isRest: false,
+            estimatedDurationMinutes: 60,
+            calorieSurplusPercentage: 15,
+            notes: null,
+            sessionType: "training",
+            exercises: [
+              { name: "Bench", exerciseId: "catalog-1", orderIndex: 0, sets: 3 },
+            ],
+          },
+        ],
+        ...overrides,
+      };
+    }
+
+    function wireInlineMocks(exerciseCatalogIds: string[]) {
+      const exercisesQuery = createMockQuery({
+        data: exerciseCatalogIds.map((id) => ({ id })),
+        error: null,
+      });
+      const sessionInsertQuery = createMockQuery({ data: { id: "ts-1" }, error: null });
+      const exerciseInsertQuery = createMockQuery({ data: null, error: null });
+      const phaseQuery = createMockQuery({ data: null, error: null });
+      const eventUpsertQuery = createMockQuery({ data: [], error: null });
+      const libraryQuery = createMockQuery({ data: null, error: null });
+
+      mockFrom.mockImplementation((table: string) => {
+        if (table === "exercises") return exercisesQuery as any;
+        if (table === "training_sessions") return sessionInsertQuery as any;
+        if (table === "training_exercises") return exerciseInsertQuery as any;
+        if (table === "phases") return phaseQuery as any;
+        if (table === "training_events") return eventUpsertQuery as any;
+        if (table === "coach_saved_sessions") return libraryQuery as any;
+        if (table === "coach_saved_exercises") return libraryQuery as any;
+        if (table === "coach_saved_plans") return libraryQuery as any;
+        return createMockQuery({ data: null, error: null }) as any;
+      });
+
+      return { sessionInsertQuery, exerciseInsertQuery, eventUpsertQuery, libraryQuery };
+    }
+
+    it("places with saved_plan_id unset, never mutates the library, materializes events, preserves surplus", async () => {
+      mockCreateAtomic.mockResolvedValue("new-plan-id");
+      const { sessionInsertQuery, eventUpsertQuery, libraryQuery } = wireInlineMocks(["catalog-1"]);
+
+      const result = await placeInlineEditedPlanOnCalendar({
+        plan: makeInlinePlan(),
+        coachId: "coach-1",
+        clientId: "client-1",
+        startDate: "2026-04-15",
+      });
+
+      // No template link: an edited copy is not a copy of any single template.
+      expect(mockCreateAtomic).toHaveBeenCalledWith(
+        expect.objectContaining({ savedPlanId: undefined }),
+      );
+      // Library is NEVER touched (no delete/insert on any coach_saved_* table).
+      expect(libraryQuery.delete).not.toHaveBeenCalled();
+      expect(libraryQuery.insert).not.toHaveBeenCalled();
+      // Surplus preserved onto the cloned session and the generated events.
+      expect(sessionInsertQuery.insert).toHaveBeenCalledWith(
+        expect.objectContaining({ calorie_surplus_percentage: 15 }),
+      );
+      const eventRows = eventUpsertQuery.upsert.mock.calls[0][0];
+      expect(eventRows.length).toBeGreaterThan(0);
+      for (const row of eventRows) {
+        expect(row.calorie_surplus_percentage).toBe(15);
+      }
+      expect(result.planId).toBe("new-plan-id");
+    });
+
+    it("carries programDurationWeeks so a >8-week edited plan is not truncated to the fallback window", async () => {
+      mockCreateAtomic.mockResolvedValue("new-plan-id");
+      wireInlineMocks(["catalog-1"]);
+
+      await placeInlineEditedPlanOnCalendar({
+        plan: makeInlinePlan({ programDurationWeeks: 12 }),
+        coachId: "coach-1",
+        clientId: "client-1",
+        startDate: "2026-04-15",
+      });
+
+      const call = mockCreateAtomic.mock.calls[0][0];
+      // 8-week fallback would end ~2026-06-10; 12 weeks must reach well beyond it.
+      expect(call.windowEnd).toBeDefined();
+      expect(new Date(call.windowEnd as string).getTime()).toBeGreaterThan(
+        new Date("2026-06-20").getTime(),
+      );
+    });
+
+    it("nulls an exercise_id that is not in the coach's own+global catalog", async () => {
+      mockCreateAtomic.mockResolvedValue("new-plan-id");
+      const { exerciseInsertQuery } = wireInlineMocks(["catalog-1"]);
+
+      await placeInlineEditedPlanOnCalendar({
+        plan: makeInlinePlan({
+          sessions: [
+            {
+              name: "Push",
+              focus: null,
+              orderIndex: 0,
+              isRest: false,
+              estimatedDurationMinutes: null,
+              calorieSurplusPercentage: null,
+              notes: null,
+              sessionType: "training",
+              exercises: [
+                { name: "Owned", exerciseId: "catalog-1", orderIndex: 0, sets: 3 },
+                { name: "Foreign", exerciseId: "not-in-catalog", orderIndex: 1, sets: 3 },
+              ],
+            },
+          ],
+        }),
+        coachId: "coach-1",
+        clientId: "client-1",
+        startDate: "2026-04-15",
+      });
+
+      const inserted = exerciseInsertQuery.insert.mock.calls[0][0];
+      expect(inserted[0].exercise_id).toBe("catalog-1");
+      expect(inserted[1].exercise_id).toBeNull();
+    });
+  });
+
+  // =========================================================================
+  // deriveCycleInfoFromSessions (rest days survive an out-of-order body)
+  // =========================================================================
+
+  describe("deriveCycleInfoFromSessions", () => {
+    it("sorts by orderIndex before deriving rest positions", () => {
+      const info = deriveCycleInfoFromSessions([
+        { orderIndex: 1, isRest: false },
+        { orderIndex: 0, isRest: true },
+        { orderIndex: 2, isRest: false },
+      ]);
+      expect(info.cycleLength).toBe(3);
+      expect(info.restPattern).toEqual([0]); // rest is orderIndex 0, not array pos 1
+      expect(info.frequencyPerWeek).toBe(2);
+    });
+
+    it("handles a no-rest plan", () => {
+      const info = deriveCycleInfoFromSessions([
+        { orderIndex: 0, isRest: false },
+        { orderIndex: 1, isRest: false },
+      ]);
+      expect(info.restPattern).toEqual([]);
+      expect(info.frequencyPerWeek).toBe(2);
     });
   });
 });

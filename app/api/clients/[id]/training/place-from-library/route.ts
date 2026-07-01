@@ -4,17 +4,33 @@ import { getTrainingPlanById } from "@/services/training-service";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
-import { placePlanOnCalendar, placeSessionOnCalendar } from "@/services/library-placement-service";
+import {
+  placePlanOnCalendar,
+  placeSessionOnCalendar,
+  placeInlineEditedPlanOnCalendar,
+} from "@/services/library-placement-service";
+import { assertPhaseBelongsToClient } from "@/services/phase-service";
 import { getClientTodayString } from "@/services/today-service";
 import { cascadeNutritionAfterTrainingChange } from "@/services/nutrition-event-service";
 import { recordAuditEvent } from "@/services/audit-log-service";
 import { AUDIT_ACTIONS } from "@/lib/constants";
+import { inlinePlanBodySchema } from "@/lib/validations/training";
 import { z } from "zod";
 
 const placeFromLibrarySchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("plan"),
     savedPlanId: z.string().uuid(),
+    startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format"),
+    repeatCycles: z.number().int().min(1).max(52).optional(),
+    phaseId: z.string().uuid().optional(),
+  }),
+  // Apply an edited working copy without overwriting the library template. No
+  // savedPlanId field: the inline path structurally cannot accept/trust a
+  // template id from the body (placed with saved_plan_id = NULL).
+  z.object({
+    type: z.literal("inline"),
+    plan: inlinePlanBodySchema,
     startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format"),
     repeatCycles: z.number().int().min(1).max(52).optional(),
     phaseId: z.string().uuid().optional(),
@@ -77,6 +93,10 @@ export async function POST(
         );
       }
 
+      // Reject a phaseId that isn't this client's (IDOR — the body value is
+      // otherwise trusted straight into placement). No-op when absent.
+      await assertPhaseBelongsToClient(data.phaseId, clientId);
+
       const result = await placePlanOnCalendar({
         savedPlanId: data.savedPlanId,
         coachId,
@@ -97,6 +117,55 @@ export async function POST(
         targetId: result.planId,
         clientId,
         metadata: { savedPlanId: data.savedPlanId, startDate: data.startDate },
+        request,
+      });
+
+      return NextResponse.json(
+        {
+          success: true,
+          planId: result.planId,
+          sessionsCreated: result.sessionsCreated,
+          eventsCreated: result.eventsCreated,
+        },
+        { status: 200 }
+      );
+    }
+
+    if (data.type === "inline") {
+      // Same client-local "past" guard as the plan branch — it lives here, not
+      // in the service/RPC, so it must be re-run for this branch.
+      const clientToday = await getClientTodayString(clientId);
+      if (data.startDate < clientToday) {
+        return NextResponse.json(
+          {
+            error: `Start date ${data.startDate} has already passed for this client (their local date is ${clientToday}).`,
+          },
+          { status: 400 }
+        );
+      }
+
+      await assertPhaseBelongsToClient(data.phaseId, clientId);
+
+      const result = await placeInlineEditedPlanOnCalendar({
+        plan: data.plan,
+        coachId,
+        clientId,
+        startDate: data.startDate,
+        repeatCycles: data.repeatCycles,
+        phaseId: data.phaseId,
+      });
+
+      // Nutrition cascade
+      await cascadeNutritionEvents(clientId, data.startDate);
+
+      void recordAuditEvent({
+        actorId: coachId,
+        actorRole: "trainer",
+        action: AUDIT_ACTIONS.TRAINING_PLAN_PLACE,
+        targetTable: "training_plans",
+        targetId: result.planId,
+        clientId,
+        metadata: { inline: true, startDate: data.startDate },
         request,
       });
 

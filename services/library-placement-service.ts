@@ -3,9 +3,11 @@ import { getSavedPlanById } from "./coach-saved-plan-service";
 import { createTrainingPlanAtomic } from "./training-service";
 import { getNextPlanStartCap } from "./training-event-service";
 import { validatePhaseBounds } from "./training-event-calendar-service";
+import { deriveCycleInfoFromSessions } from "./coach-library-helpers";
 import { getDateString } from "@/lib/date-helpers";
 import type { TrainingEventInsert, CoachSavedExerciseRow } from "@/lib/database-helpers";
 import type { SavedSession, SavedExercise } from "@/types/training";
+import type { InlinePlanBody } from "@/lib/validations/training";
 
 // --- Shape used by both DB-backed and inline (in-memory) placements ---
 
@@ -46,6 +48,120 @@ export async function placePlanOnCalendar(params: {
     repeatCycles,
     phaseId,
   });
+}
+
+// --- Place an EDITED working copy (not a saved template) onto a calendar ---
+
+/**
+ * Apply-without-overwrite: materialize a coach's edited working copy onto a
+ * client's calendar WITHOUT mutating the library template. Stamps
+ * saved_plan_id = NULL — an edited copy is not a copy of any single template, so
+ * it carries no template link (this is both IDOR-safe, since no body-supplied
+ * template id is trusted, and semantically honest; see the Phase 1 plan). Cycle
+ * metadata is re-derived from the edited structure so a moved/removed rest day
+ * rotates correctly, and any exercise_id from the (client-tampered) working copy
+ * that isn't in the coach's own+global catalog is nulled before it is written.
+ */
+export async function placeInlineEditedPlanOnCalendar(params: {
+  plan: InlinePlanBody;
+  coachId: string;
+  clientId: string;
+  startDate: string;
+  repeatCycles?: number;
+  phaseId?: string;
+}): Promise<{ planId: string; sessionsCreated: number; eventsCreated: number }> {
+  const { plan, coachId, clientId, startDate, repeatCycles, phaseId } = params;
+
+  const { cycleLength, restPattern, frequencyPerWeek } = deriveCycleInfoFromSessions(
+    plan.sessions.map((s) => ({ orderIndex: s.orderIndex, isRest: s.isRest })),
+  );
+
+  const ownedExerciseIds = await fetchOwnedExerciseIds(coachId);
+
+  const placeable: PlaceablePlan = {
+    name: plan.name,
+    splitType: plan.splitType ?? null,
+    frequencyPerWeek,
+    programDurationWeeks: plan.programDurationWeeks ?? null,
+    cycleLength,
+    restPattern,
+    defaultSurplusPercentage: plan.defaultSurplusPercentage ?? null,
+    sessions: plan.sessions.map((s) => inlineSessionToSaved(s, ownedExerciseIds)),
+  };
+
+  return placePlaceablePlanOnCalendar({
+    plan: placeable,
+    savedPlanId: null, // edited copy -> no template link (IDOR-safe + honest)
+    coachId,
+    clientId,
+    startDate,
+    repeatCycles,
+    phaseId,
+  });
+}
+
+/** Set of exercise ids the coach may reference: their own + global catalog. */
+async function fetchOwnedExerciseIds(coachId: string): Promise<Set<string>> {
+  const { data, error } = await supabaseAdmin
+    .from("exercises")
+    .select("id")
+    .or(`coach_id.eq.${coachId},coach_id.is.null`);
+  if (error) throw new Error(`Failed to load exercise catalog: ${error.message}`);
+  return new Set((data ?? []).map((r) => r.id));
+}
+
+// Map a validated inline-body session/exercise to the SavedSession/SavedExercise
+// shape placePlaceablePlanOnCalendar consumes. Ids/timestamps are placeholders —
+// the placement inserts fresh rows and never reads the source ids. A foreign
+// exercise_id (not in the coach's own+global catalog) is nulled.
+function inlineSessionToSaved(
+  s: InlinePlanBody["sessions"][number],
+  ownedExerciseIds: Set<string>,
+): SavedSession {
+  return {
+    id: "",
+    coachId: "",
+    savedPlanId: null,
+    name: s.name,
+    focus: s.focus ?? null,
+    orderIndex: s.orderIndex,
+    isRest: s.isRest,
+    estimatedDurationMinutes: s.estimatedDurationMinutes ?? null,
+    calorieSurplusPercentage: s.calorieSurplusPercentage ?? null,
+    notes: s.notes ?? null,
+    // SavedSessionType is the single literal 'training'; the placement path
+    // doesn't read this field anyway (it clones into training_sessions).
+    sessionType: "training",
+    exercises: s.exercises.map((e) => inlineExerciseToSaved(e, ownedExerciseIds)),
+    createdAt: "",
+    updatedAt: "",
+  };
+}
+
+function inlineExerciseToSaved(
+  e: InlinePlanBody["sessions"][number]["exercises"][number],
+  ownedExerciseIds: Set<string>,
+): SavedExercise {
+  return {
+    id: "",
+    savedSessionId: "",
+    exerciseId: e.exerciseId && ownedExerciseIds.has(e.exerciseId) ? e.exerciseId : null,
+    name: e.name,
+    orderIndex: e.orderIndex,
+    sets: e.sets,
+    repsMin: e.repsMin ?? null,
+    repsMax: e.repsMax ?? null,
+    repsTarget: e.repsTarget ?? null,
+    rpeTarget: e.rpeTarget ?? null,
+    percentage1rm: e.percentage1rm ?? null,
+    tempo: e.tempo ?? null,
+    restSeconds: e.restSeconds ?? null,
+    supersetGroup: e.supersetGroup ?? null,
+    isWarmup: e.isWarmup ?? false,
+    notes: e.notes ?? null,
+    createdAt: "",
+    updatedAt: "",
+  };
 }
 
 async function placePlaceablePlanOnCalendar(params: {

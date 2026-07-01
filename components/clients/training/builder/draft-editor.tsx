@@ -33,6 +33,50 @@ import { ApplyToClientDialog } from "@/components/training-library/apply-to-clie
 import { useSessionMutations } from "./use-session-mutations";
 import { SessionForm } from "./session-form";
 import type { SavedPlan, SavedSession, SavedExercise } from "@/types/training";
+import type { InlinePlanBody } from "@/lib/validations/training";
+
+// Serialize working-copy sessions into the API's session/exercise shape (shared
+// by the library overwrite and the inline apply so the two never drift).
+function serializeSessionsForApi(sessions: SavedSession[]) {
+  return sessions.map((s) => ({
+    name: s.name,
+    focus: s.focus,
+    orderIndex: s.orderIndex,
+    isRest: s.isRest,
+    estimatedDurationMinutes: s.estimatedDurationMinutes,
+    calorieSurplusPercentage: s.calorieSurplusPercentage,
+    notes: s.notes,
+    sessionType: s.sessionType,
+    exercises: s.exercises.map((e) => ({
+      name: e.name,
+      exerciseId: e.exerciseId,
+      orderIndex: e.orderIndex,
+      sets: e.sets,
+      repsMin: e.repsMin,
+      repsMax: e.repsMax,
+      repsTarget: e.repsTarget,
+      rpeTarget: e.rpeTarget,
+      percentage1rm: e.percentage1rm,
+      tempo: e.tempo,
+      restSeconds: e.restSeconds,
+      notes: e.notes,
+      supersetGroup: e.supersetGroup,
+      isWarmup: e.isWarmup,
+    })),
+  }));
+}
+
+// The edited working copy as the inline-apply body. Carries programDurationWeeks
+// + splitType (the placement window length + metadata that overwrite omits).
+function buildInlinePlanBody(plan: SavedPlan): InlinePlanBody {
+  return {
+    name: plan.name,
+    splitType: plan.splitType,
+    programDurationWeeks: plan.programDurationWeeks,
+    defaultSurplusPercentage: plan.defaultSurplusPercentage,
+    sessions: serializeSessionsForApi(plan.sessions),
+  };
+}
 
 type DraftEditorProps = {
   savedPlanId: string;
@@ -198,32 +242,7 @@ export function DraftEditor({
           name: workingPlan.name,
           description: workingPlan.description,
           defaultSurplusPercentage: workingPlan.defaultSurplusPercentage,
-          sessions: workingPlan.sessions.map((s) => ({
-            name: s.name,
-            focus: s.focus,
-            orderIndex: s.orderIndex,
-            isRest: s.isRest,
-            estimatedDurationMinutes: s.estimatedDurationMinutes,
-            calorieSurplusPercentage: s.calorieSurplusPercentage,
-            notes: s.notes,
-            sessionType: s.sessionType,
-            exercises: s.exercises.map((e) => ({
-              name: e.name,
-              exerciseId: e.exerciseId,
-              orderIndex: e.orderIndex,
-              sets: e.sets,
-              repsMin: e.repsMin,
-              repsMax: e.repsMax,
-              repsTarget: e.repsTarget,
-              rpeTarget: e.rpeTarget,
-              percentage1rm: e.percentage1rm,
-              tempo: e.tempo,
-              restSeconds: e.restSeconds,
-              notes: e.notes,
-              supersetGroup: e.supersetGroup,
-              isWarmup: e.isWarmup,
-            })),
-          })),
+          sessions: serializeSessionsForApi(workingPlan.sessions),
         }),
       });
       if (!res.ok) {
@@ -466,10 +485,9 @@ export function DraftEditor({
               size="sm"
               variant="outline"
               onClick={() => setApplyDialogOpen(true)}
-              disabled={hasUnsavedEdits}
               title={
                 hasUnsavedEdits
-                  ? "Save your edits first — apply uses the library version of the plan."
+                  ? "Apply your edited copy to a client's calendar (the library template stays unchanged)."
                   : "Apply this plan to a client's calendar."
               }
             >
@@ -636,7 +654,12 @@ export function DraftEditor({
       <ApplyToClientDialog
         open={applyDialogOpen}
         onOpenChange={setApplyDialogOpen}
-        savedPlan={plan}
+        savedPlan={displayedPlan}
+        // With unsaved edits, apply the working copy inline (template untouched);
+        // otherwise place the persisted saved plan by id.
+        inlinePlan={
+          hasUnsavedEdits && workingPlan ? buildInlinePlanBody(workingPlan) : undefined
+        }
         preselectedClientId={clientId}
         onSuccess={() => {
           // Keep the editor open — the coach may want to apply to another

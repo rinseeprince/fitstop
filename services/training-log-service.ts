@@ -80,6 +80,10 @@ type ExerciseSnapshot = {
   notes: string | null;
   superset_group: string | null;
   is_warmup: boolean;
+  // Per-set prescription (mig 119). Captured so warm-up-aware compliance is
+  // correct for historical logs once the Phase 2 builder authors it; null until
+  // then. Analytics reads it via countWorkingSets, falling back to `sets`.
+  set_specs: Json | null;
 };
 
 // --- Row → camelCase mappers ---
@@ -287,7 +291,7 @@ async function writeSessionLog(params: {
       const { data: exerciseRows, error: exerciseErr } = await supabaseAdmin
         .from("training_exercises")
         .select(
-          "id, name, sets, reps_min, reps_max, reps_target, rpe_target, percentage_1rm, tempo, rest_seconds, notes, superset_group, is_warmup",
+          "id, name, sets, reps_min, reps_max, reps_target, rpe_target, percentage_1rm, tempo, rest_seconds, notes, superset_group, is_warmup, set_specs",
         )
         .in("id", exerciseIds);
       if (exerciseErr) {
@@ -309,6 +313,7 @@ async function writeSessionLog(params: {
           notes: row.notes,
           superset_group: row.superset_group,
           is_warmup: row.is_warmup ?? false,
+          set_specs: row.set_specs ?? null,
         });
       }
     }

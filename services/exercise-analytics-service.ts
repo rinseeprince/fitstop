@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { calculateEpleyE1RM } from "@/utils/exercise-analytics-helpers";
+import { countWorkingSets } from "@/utils/exercise-set-specs";
 import type {
   ExerciseListItem,
   ExerciseProgressionPoint,
@@ -68,6 +69,7 @@ export async function getExerciseProgressionSeries(
     reps: number | null;
     weight: number | null;
     rpe: number | null;
+    setType: string;
   };
   type SessionGroup = {
     completedAt: string;
@@ -94,6 +96,8 @@ export async function getExerciseProgressionSeries(
         reps: row.reps,
         weight: row.weight !== null ? Number(row.weight) : null,
         rpe: row.rpe !== null ? Number(row.rpe) : null,
+        // NOT NULL column (default 'working'); guarded for any legacy/null row.
+        setType: row.set_type ?? "working",
       });
     }
   }
@@ -101,11 +105,15 @@ export async function getExerciseProgressionSeries(
   const points: ExerciseProgressionPoint[] = [];
 
   for (const [sessionLogId, group] of groups) {
+    // Warm-ups don't count toward any performance metric (top set, volume,
+    // e1RM) or compliance — only working/amrap/failure/drop sets do.
+    const workingSets = group.sets.filter((s) => s.setType !== "warmup");
+
     // Top set: highest weight, tiebreak by highest reps
     let topSetWeight: number | null = null;
     let topSetReps: number | null = null;
     let topSetRpe: number | null = null;
-    for (const s of group.sets) {
+    for (const s of workingSets) {
       if (s.weight == null) continue;
       if (
         topSetWeight == null ||
@@ -118,17 +126,18 @@ export async function getExerciseProgressionSeries(
       }
     }
 
-    // Total volume: SUM(reps * weight) for sets with both values
+    // Total volume: SUM(reps * weight) over working sets with both values.
+    // AMRAP/failure use their logged reps; drop sets contribute each logged row.
     let totalVolume: number | null = null;
-    for (const s of group.sets) {
+    for (const s of workingSets) {
       if (s.reps != null && s.weight != null) {
         totalVolume = (totalVolume ?? 0) + s.reps * s.weight;
       }
     }
 
-    // Best estimated 1RM across all sets
+    // Best estimated 1RM across working sets
     let estimatedOneRepMax: number | null = null;
-    for (const s of group.sets) {
+    for (const s of workingSets) {
       if (s.reps != null && s.weight != null) {
         const e1rm = calculateEpleyE1RM(s.weight, s.reps);
         if (
@@ -141,8 +150,16 @@ export async function getExerciseProgressionSeries(
     }
 
     const snapshot = group.snapshot;
-    const prescribedSets =
+    const snapshotSets =
       snapshot && typeof snapshot.sets === "number" ? snapshot.sets : null;
+    const snapshotSpecs = snapshot ? snapshot.set_specs : null;
+    // Prescribed working-set count: from set_specs (non-warmup) when the
+    // prescription carries it, else the legacy compact `sets` count. Stays null
+    // when neither exists (unknown prescription — excluded from compliance).
+    const prescribedSets =
+      snapshotSets == null && !Array.isArray(snapshotSpecs)
+        ? null
+        : countWorkingSets(snapshotSpecs, snapshotSets ?? 0);
     const prescribedRepsMin =
       snapshot && typeof snapshot.reps_min === "number"
         ? snapshot.reps_min
@@ -164,7 +181,7 @@ export async function getExerciseProgressionSeries(
       totalVolume,
       topSetRpe,
       prescribedSets,
-      actualSets: group.sets.length,
+      actualSets: workingSets.length,
       prescribedRepsMin,
       prescribedRepsMax,
     });

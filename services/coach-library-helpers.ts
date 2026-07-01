@@ -49,6 +49,26 @@ export function detectCycleInfoFallback(
 }
 
 /**
+ * Derive cycle_length / rest_pattern / frequency_per_week from an in-memory
+ * session list (rest positions are 0-indexed slots in cycle order). Sorts by
+ * orderIndex FIRST so an out-of-order sessions array still lands the rest days
+ * at the right slots — matching recomputePlanCycleInfo (which reads sessions
+ * ordered by order_index). Shared by overwriteSavedPlan (library save) and the
+ * inline placement path so the two never drift.
+ */
+export function deriveCycleInfoFromSessions(
+  sessions: Array<{ orderIndex: number; isRest: boolean }>,
+): { cycleLength: number; restPattern: number[]; frequencyPerWeek: number } {
+  const ordered = [...sessions].sort((a, b) => a.orderIndex - b.orderIndex);
+  const cycleLength = ordered.length;
+  const restPattern = ordered
+    .map((s, i) => (s.isRest ? i : -1))
+    .filter((i) => i >= 0);
+  const frequencyPerWeek = cycleLength - restPattern.length;
+  return { cycleLength, restPattern, frequencyPerWeek };
+}
+
+/**
  * Batch-insert exercises for a saved session. Resolves exercise names to
  * canonical exercise_ids via the caller-supplied lookup map.
  */

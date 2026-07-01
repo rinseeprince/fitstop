@@ -929,10 +929,12 @@ export type Database = {
           rest_seconds: number | null
           rpe_target: number | null
           saved_session_id: string
+          set_specs: Json | null
           sets: number
           superset_group: string | null
           tempo: string | null
           updated_at: string
+          video_url: string | null
         }
         Insert: {
           created_at?: string
@@ -949,10 +951,12 @@ export type Database = {
           rest_seconds?: number | null
           rpe_target?: number | null
           saved_session_id: string
+          set_specs?: Json | null
           sets?: number
           superset_group?: string | null
           tempo?: string | null
           updated_at?: string
+          video_url?: string | null
         }
         Update: {
           created_at?: string
@@ -969,10 +973,12 @@ export type Database = {
           rest_seconds?: number | null
           rpe_target?: number | null
           saved_session_id?: string
+          set_specs?: Json | null
           sets?: number
           superset_group?: string | null
           tempo?: string | null
           updated_at?: string
+          video_url?: string | null
         }
         Relationships: [
           {
@@ -2269,6 +2275,7 @@ export type Database = {
           reps: number | null
           rpe: number | null
           set_number: number
+          set_type: string
           updated_at: string
           weight: number | null
         }
@@ -2279,6 +2286,7 @@ export type Database = {
           reps?: number | null
           rpe?: number | null
           set_number: number
+          set_type?: string
           updated_at?: string
           weight?: number | null
         }
@@ -2289,6 +2297,7 @@ export type Database = {
           reps?: number | null
           rpe?: number | null
           set_number?: number
+          set_type?: string
           updated_at?: string
           weight?: number | null
         }
@@ -2399,10 +2408,12 @@ export type Database = {
           rest_seconds: number | null
           rpe_target: number | null
           session_id: string
+          set_specs: Json | null
           sets: number
           superset_group: string | null
           tempo: string | null
           updated_at: string
+          video_url: string | null
         }
         Insert: {
           created_at?: string
@@ -2420,10 +2431,12 @@ export type Database = {
           rest_seconds?: number | null
           rpe_target?: number | null
           session_id: string
+          set_specs?: Json | null
           sets: number
           superset_group?: string | null
           tempo?: string | null
           updated_at?: string
+          video_url?: string | null
         }
         Update: {
           created_at?: string
@@ -2441,10 +2454,12 @@ export type Database = {
           rest_seconds?: number | null
           rpe_target?: number | null
           session_id?: string
+          set_specs?: Json | null
           sets?: number
           superset_group?: string | null
           tempo?: string | null
           updated_at?: string
+          video_url?: string | null
         }
         Relationships: [
           {
@@ -2995,6 +3010,7 @@ export type Database = {
           session_log_id: string
           set_id: string
           set_number: number
+          set_type: string
           weight: number
         }[]
       }

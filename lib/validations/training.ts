@@ -202,6 +202,21 @@ export const overwriteSavedPlanSchema = z.object({
   sessions: z.array(savedSessionInputSchema),
 });
 
+// Inline (edited working copy) placement body — the coach applies their local
+// edits to a client's calendar without overwriting the library template. Unlike
+// overwriteSavedPlanSchema it MUST carry programDurationWeeks (the placement
+// window length — omitting it collapses a >8-week plan to the 8-week fallback)
+// and splitType (plan metadata). cycleLength / restPattern / frequencyPerWeek are
+// NOT sent — the placement service re-derives them from the sessions.
+export const inlinePlanBodySchema = z.object({
+  name: z.string().min(1).max(100),
+  splitType: splitTypeSchema.nullish(),
+  programDurationWeeks: z.number().int().min(1).max(52).nullish(),
+  defaultSurplusPercentage: z.number().min(0).max(100).nullish(),
+  sessions: z.array(savedSessionInputSchema),
+});
+export type InlinePlanBody = z.infer<typeof inlinePlanBodySchema>;
+
 export const updateSavedSessionSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   focus: z.string().max(200).nullish(),

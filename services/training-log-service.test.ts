@@ -114,6 +114,9 @@ const EXERCISE_A_SNAPSHOT = {
   notes: EXERCISE_A_PRESCRIPTION.notes,
   superset_group: EXERCISE_A_PRESCRIPTION.superset_group,
   is_warmup: EXERCISE_A_PRESCRIPTION.is_warmup,
+  // Captured from training_exercises.set_specs (mig 119); null for this legacy
+  // prescription fixture (no per-set list authored).
+  set_specs: null,
 };
 
 // `Router` builds a mockFrom that dispatches by table name; each entry can be
@@ -802,11 +805,69 @@ describe("logTrainingEvent", () => {
         "reps_target",
         "rest_seconds",
         "rpe_target",
+        "set_specs",
         "sets",
         "superset_group",
         "tempo",
       ].sort(),
     );
+  });
+
+  // -------------------------------------------------------------------------
+  // Snapshot captures set_specs (mig 119) — needed for warm-up-aware historical
+  // compliance once the Phase 2 builder authors per-set prescriptions.
+  // -------------------------------------------------------------------------
+  it("captures training_exercises.set_specs into the prescribed_exercise_snapshot", async () => {
+    const setSpecs = [
+      { set_number: 1, set_type: "warmup" },
+      { set_number: 2, set_type: "working", reps_min: 8, reps_max: 10 },
+    ];
+    const eventQ = createMockQuery({ data: eventRow(), error: null });
+    const clientQ = createMockQuery({
+      data: { expected_check_in_day: null },
+      error: null,
+    });
+    const sessionSnapQ = createMockQuery({ data: SESSION_PRESCRIPTION, error: null });
+    const exerciseSnapQ = createMockQuery({
+      data: [{ ...EXERCISE_A_PRESCRIPTION, set_specs: setSpecs }],
+      error: null,
+    });
+    const upsertQ = createMockQuery({ data: { id: SESSION_LOG_ID }, error: null });
+    const existingExLogsQ = createMockQuery({ data: [], error: null });
+    const deleteExQ = createMockQuery({ data: null, error: null });
+    const insertExQ = insertExerciseLogsReturning(["el-specs"]);
+    const setLogsInsertQ = createMockQuery({ data: null, error: null });
+    const linkQ = createMockQuery({ data: null, error: null });
+
+    installRouter({
+      training_events: [eventQ, linkQ],
+      clients: clientQ,
+      training_sessions: sessionSnapQ,
+      training_exercises: exerciseSnapQ,
+      session_logs: upsertQ,
+      exercise_logs: [existingExLogsQ, deleteExQ, insertExQ],
+      set_logs: setLogsInsertQ,
+    });
+
+    await logTrainingEvent({
+      eventId: EVENT_ID,
+      clientId: CLIENT_ID,
+      payload: {
+        completionQuality: "full",
+        exercises: [
+          {
+            trainingExerciseId: EXERCISE_A,
+            exerciseName: "Bench",
+            sets: [{ reps: 10, weight: 100 }],
+            weightUnit: "lbs",
+          },
+        ],
+      },
+    });
+
+    const exerciseSnap =
+      insertExQ.insert.mock.calls[0][0][0].prescribed_exercise_snapshot;
+    expect(exerciseSnap.set_specs).toEqual(setSpecs);
   });
 
   // -------------------------------------------------------------------------

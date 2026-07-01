@@ -7,6 +7,28 @@ import { getClientTodayString } from "./today-service";
 import type { Phase, PhaseRow, Milestone } from "@/types/roadmap";
 
 /**
+ * Reject a phaseId that does not belong to the given client. Present-guarded: a
+ * null/undefined phaseId is a no-op — placement is phase-optional by design (the
+ * placement routes intentionally never call requirePhaseSelection). Closes the
+ * IDOR where a coach could pass another client's phase id in a placement body
+ * (phases carry client_id directly, so no roadmap join is needed).
+ */
+export async function assertPhaseBelongsToClient(
+  phaseId: string | null | undefined,
+  clientId: string,
+): Promise<void> {
+  if (!phaseId) return;
+  const { data, error } = await supabaseAdmin
+    .from("phases")
+    .select("id")
+    .eq("id", phaseId)
+    .eq("client_id", clientId)
+    .maybeSingle();
+  if (error) throw new Error(`Failed to validate phase: ${error.message}`);
+  if (!data) throw new Error("Phase not found for this client");
+}
+
+/**
  * Reject a [startDate, endDate] range that overlaps a dated sibling phase in the
  * same roadmap (two phases can't run at once, and a phase can't start mid-phase).
  * Only fully-dated siblings participate; half-dated/dateless phases are skipped

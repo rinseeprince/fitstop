@@ -322,6 +322,8 @@ export function createMockTrainingExerciseRow(options: MockTrainingExerciseOptio
     is_warmup: false,
     is_active: true,
     exercise_id: null,
+    set_specs: null,
+    video_url: null,
     created_at: options.createdAt ?? now,
     updated_at: options.updatedAt ?? now,
   }

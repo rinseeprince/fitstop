@@ -7,6 +7,7 @@ import {
 } from "@/lib/coach-mappers";
 import {
   detectCycleInfoFallback,
+  deriveCycleInfoFromSessions,
   insertSavedExercises,
 } from "./coach-library-helpers";
 import type {
@@ -472,12 +473,12 @@ export async function overwriteSavedPlan(
     .single();
   if (fetchError || !existing) throw new Error("Plan not found or access denied");
 
-  // Patch plan-level metadata (if provided) and derived cycle info.
-  const cycleLength = input.sessions.length;
-  const restPattern = input.sessions
-    .map((s, i) => (s.isRest ? i : -1))
-    .filter((i) => i >= 0);
-  const frequencyPerWeek = cycleLength - restPattern.length;
+  // Patch plan-level metadata (if provided) and derived cycle info. Shared
+  // helper sorts by orderIndex before deriving rest positions; a no-op for this
+  // caller (the builder sends sessions in orderIndex order) but keeps the
+  // derivation identical to the inline placement path and recomputePlanCycleInfo.
+  const { cycleLength, restPattern, frequencyPerWeek } =
+    deriveCycleInfoFromSessions(input.sessions);
 
   const { error: planUpdateError } = await supabaseAdmin
     .from("coach_saved_plans")

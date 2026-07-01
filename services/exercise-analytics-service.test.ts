@@ -450,6 +450,94 @@ describe("getExerciseProgressionSeries", () => {
     expect(result[1].date).toBe("2026-04-01T00:00:00+00:00");
   });
 
+  // ---------------------------------------------------------------------------
+  // Set-type awareness (migration 120). set_type rides each set row; warm-ups
+  // are excluded from every performance metric, and prescribedSets reads the
+  // snapshot's set_specs working-set count. In Phase 1 real logs are all
+  // 'working' (the column default), so these use synthetic mixed-type rows.
+  // ---------------------------------------------------------------------------
+
+  function progressionRow(over: {
+    setId: string | null;
+    setNumber: number | null;
+    reps: number | null;
+    weight: number | null;
+    setType: string;
+    snapshot?: Record<string, unknown> | null;
+  }) {
+    return {
+      session_log_id: SESSION_LOG_1,
+      completed_at: "2026-04-01T00:00:00+00:00",
+      exercise_log_id: EXERCISE_LOG_1,
+      prescribed_exercise_snapshot: over.snapshot ?? null,
+      set_id: over.setId,
+      set_number: over.setNumber,
+      reps: over.reps,
+      weight: over.weight,
+      rpe: null,
+      set_type: over.setType,
+    };
+  }
+
+  it("excludes warm-up sets from volume, top set, and actualSets", async () => {
+    mockRpcResolve([
+      progressionRow({ setId: "s1", setNumber: 1, reps: 12, weight: 40, setType: "warmup" }),
+      progressionRow({ setId: "s2", setNumber: 2, reps: 8, weight: 100, setType: "working" }),
+      progressionRow({ setId: "s3", setNumber: 3, reps: 8, weight: 100, setType: "working" }),
+    ]);
+
+    const result = await getExerciseProgressionSeries(CLIENT_ID, {
+      exerciseId: EXERCISE_ID,
+    });
+    expect(result[0].actualSets).toBe(2); // warm-up not counted
+    expect(result[0].totalVolume).toBe(8 * 100 + 8 * 100); // 12*40 warm-up excluded
+    expect(result[0].topSetWeight).toBe(100); // the 40kg warm-up is not the top set
+  });
+
+  it("counts amrap/failure/drop sets in volume using their logged reps", async () => {
+    mockRpcResolve([
+      progressionRow({ setId: "s1", setNumber: 1, reps: 5, weight: 100, setType: "working" }),
+      progressionRow({ setId: "s2", setNumber: 2, reps: 12, weight: 80, setType: "amrap" }),
+      progressionRow({ setId: "s3", setNumber: 3, reps: 3, weight: 110, setType: "failure" }),
+      progressionRow({ setId: "s4", setNumber: 4, reps: 10, weight: 60, setType: "drop" }),
+      progressionRow({ setId: "s5", setNumber: 5, reps: 8, weight: 40, setType: "drop" }),
+    ]);
+
+    const result = await getExerciseProgressionSeries(CLIENT_ID, {
+      exerciseId: EXERCISE_ID,
+    });
+    expect(result[0].actualSets).toBe(5);
+    expect(result[0].totalVolume).toBe(
+      5 * 100 + 12 * 80 + 3 * 110 + 10 * 60 + 8 * 40,
+    );
+  });
+
+  it("derives prescribedSets from set_specs working-set count, not the compact `sets`", async () => {
+    mockRpcResolve([
+      progressionRow({
+        setId: "s1",
+        setNumber: 1,
+        reps: 8,
+        weight: 100,
+        setType: "working",
+        snapshot: {
+          sets: 5, // compact count includes warm-ups — must be overridden
+          set_specs: [
+            { set_number: 1, set_type: "warmup" },
+            { set_number: 2, set_type: "working" },
+            { set_number: 3, set_type: "working" },
+            { set_number: 4, set_type: "working" },
+          ],
+        },
+      }),
+    ]);
+
+    const result = await getExerciseProgressionSeries(CLIENT_ID, {
+      exerciseId: EXERCISE_ID,
+    });
+    expect(result[0].prescribedSets).toBe(3); // 3 working specs, not compact 5
+  });
+
   it("throws on RPC error", async () => {
     mockRpc.mockResolvedValueOnce({
       data: null,

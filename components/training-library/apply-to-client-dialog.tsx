@@ -31,11 +31,19 @@ import {
   getTodayDateStringInTimezone,
 } from "@/lib/date-helpers";
 import type { SavedPlan } from "@/types/training";
+import type { InlinePlanBody } from "@/lib/validations/training";
 
 type ApplyToClientDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   savedPlan: SavedPlan;
+  /**
+   * When set, apply this edited working copy inline (materialized onto the
+   * client's calendar; the library template is never touched) instead of
+   * placing the saved plan by id. Provided by the client-drawer editor when the
+   * coach has unsaved edits.
+   */
+  inlinePlan?: InlinePlanBody | null;
   preselectedClientId?: string;
   /** Timezone of the preselected client (the client list isn't fetched in that path). */
   clientTimezone?: string;
@@ -68,6 +76,7 @@ export function ApplyToClientDialog({
   open,
   onOpenChange,
   savedPlan,
+  inlinePlan,
   preselectedClientId,
   clientTimezone,
   onSuccess,
@@ -144,13 +153,23 @@ export function ApplyToClientDialog({
     setIsSubmitting(true);
     try {
       const url = `/api/clients/${clientId}/training/place-from-library`;
-      const body = {
-        type: "plan",
-        savedPlanId: savedPlan.id,
-        startDate,
-        ...(phaseId && { phaseId }),
-        ...(repeatCycles && { repeatCycles: parseInt(repeatCycles, 10) }),
-      };
+      // Edited working copy -> place inline (template untouched). Otherwise
+      // place the saved plan by id (pristine, ownership-checked server-side).
+      const body = inlinePlan
+        ? {
+            type: "inline" as const,
+            plan: inlinePlan,
+            startDate,
+            ...(phaseId && { phaseId }),
+            ...(repeatCycles && { repeatCycles: parseInt(repeatCycles, 10) }),
+          }
+        : {
+            type: "plan" as const,
+            savedPlanId: savedPlan.id,
+            startDate,
+            ...(phaseId && { phaseId }),
+            ...(repeatCycles && { repeatCycles: parseInt(repeatCycles, 10) }),
+          };
 
       const res = await fetch(url, {
         method: "POST",
