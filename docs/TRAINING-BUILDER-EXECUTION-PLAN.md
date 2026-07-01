@@ -6,11 +6,11 @@
 
 ## 1. How to use this document
 
-- **The six phases are ordered. Do not start Phase N+1 until Phase N is committed.** Each builds on the last; several later phases depend on Phase 1's set model and Phase 2's shared component.
+- **The seven phases are ordered. Do not start Phase N+1 until Phase N is committed.** Each builds on the last; several later phases depend on Phase 1's set model and Phase 2's shared component. Phase 7 (docs reconciliation + dead-code sweep) runs **last, only after 1–6 are all shipped**.
 - **Run one phase per fresh Claude Code session.** Each phase has a **"Prompt to paste"** block that is self-contained: paste it into a new session, it tells the session to read the shared context (§4) + its own block, confirm scope, implement, run the gates, and commit.
 - **Report the plan before implementing.** Every phase prompt instructs the session to investigate + confirm scope/out-of-scope with you before writing code. Honor `CONVENTIONS.md §2` ("Always show a plan before writing code").
 - **"Tests to write" is scope, not optional.** A phase is not done until its tests exist and pass alongside the type-check and lint gates.
-- **This is a living contract with your existing docs.** Where this plan and `docs/ARCHITECTURE.md` disagree, this plan wins for training-builder work *once a phase lands*; until then ARCHITECTURE describes the pre-overhaul state. `CONVENTIONS.md` always wins on coding/auth rules. Update `docs/ARCHITECTURE.md` when a phase ships schema (its migration workflow requires it).
+- **This is a living contract with your existing docs.** Where this plan and `docs/ARCHITECTURE.md` disagree, this plan wins for training-builder work *once a phase lands*; until then ARCHITECTURE describes the pre-overhaul state. `CONVENTIONS.md` always wins on coding/auth rules. Update `docs/ARCHITECTURE.md` when a phase ships schema (its migration workflow requires it). **Phase 7 closes this contract:** once it ships, `docs/ARCHITECTURE.md` + `CONVENTIONS.md` are canonical again and this plan becomes a historical execution record (same treatment the events-SOT plan received).
 
 ---
 
@@ -113,7 +113,7 @@ Add **"Programs"** to `lib/navigation.ts` (flat top-level list; place after "Cli
 
 ---
 
-## 5. The six phases
+## 5. The seven phases
 
 Each phase's **Prompt to paste** is the copy-into-a-fresh-session instruction. The Objective/Read/Implement/Do-NOT/Tests/Verify/Commit blocks below it are the detail the prompt refers to.
 
@@ -294,6 +294,30 @@ Each phase's **Prompt to paste** is the copy-into-a-fresh-session instruction. T
 
 ---
 
+### Phase 7 — Docs reconciliation + dead-code sweep
+
+> **Run LAST, in its own fresh session, only after Phases 1–6 are ALL committed.** Purpose: bring the permanent docs and the codebase in line with what actually shipped — docs describe the system **as it is**, and the code contains **only what the system still uses** — so future Claude Code sessions and future developers are never confused by old/sunsetted/retired/legacy docs or code. Precedent: the events-SOT S6 reconciliation (commit `6c22a74`) — reuse its conventions (⊘ one-line pointer stubs for superseded docs, RETIRED banners). This phase closes §1's living-contract rule: after it ships, `docs/ARCHITECTURE.md` + `CONVENTIONS.md` are the truth again and this plan becomes a historical execution record.
+
+> **Prompt to paste:**
+> "You are implementing **Phase 7 (docs reconciliation + dead-code sweep)** of `docs/TRAINING-BUILDER-EXECUTION-PLAN.md` — the final phase; Phases 1–6 are all shipped. First build the full picture of what the overhaul actually changed: walk the S1–S6 commits (`git log` from `28d9dbd` forward) and every phase's STATUS block in this doc (recorded deviations win over the plan text). Then, **docs**: compare that reality against every doc that describes training authoring, the library, placement, prescription, logging, or analytics — `docs/ARCHITECTURE.md`, `CONVENTIONS.md`, `CLIENT-APP-REFERENCE.md`, `TECHNICAL-DEBT.md`, and anything else in `docs/` — and change, update, or delete whatever no longer matches reality; retire fully superseded docs with a ⊘ pointer stub; close TECHNICAL-DEBT entries the overhaul fixed; mark this plan SHIPPED. Then, **code**: find everything the overhaul made dead — retired/orphaned/superseded components, hooks, contexts, helpers, schemas, fallback branches — prove each is unreferenced (grep for imports/usages + `npx tsc --noEmit` after deletion, never assumption) and remove it together with its tests and mock entries. Show me the full inventory (doc deltas + deletion list) for approval before changing anything. Docs and deletions only — zero behavior changes, zero migrations (anything needing a column/constraint drop becomes a TECHNICAL-DEBT note instead). Run the §2 gates and commit with the Phase 7 message."
+
+**Objective.** Docs match shipped reality; code contains no remnants of what the overhaul replaced. A fresh session reading the docs cold lands on the current model with zero contradictions.
+
+**Read first.** `git log` from `28d9dbd` forward + every phase STATUS block above; `docs/ARCHITECTURE.md` in full; `CONVENTIONS.md`; `CLIENT-APP-REFERENCE.md` (the RN contract — the client-facing reads changed); `TECHNICAL-DEBT.md`; `ls docs/` for anything else mentioning the training builder/library.
+
+**Implement.** Inventory first, edits second:
+1. From the commits + STATUS blocks, list (a) every doc claim the overhaul made false, (b) every file or code branch nothing references anymore. Confirm both lists with the user before touching anything.
+2. **Docs:** rewrite stale sections to present-tense reality; delete sections describing removed flows; ⊘-stub superseded docs (never silently delete a doc other docs link to); reconcile `TECHNICAL-DEBT.md`; mark this plan SHIPPED.
+3. **Code:** delete each provably-dead file/branch together with its `*.test.*` and mock entries. Where a dead branch survives only because pre-overhaul-shaped test rows still exist in the DB, purge/re-place that disposable test data first, then delete the branch.
+
+**Do NOT.** Change any behavior, signature, or API shape. Ship a migration or drop columns/constraints. Rewrite other workstreams' docs (events-SOT, CPEP, nutrition) beyond cross-references. Delete anything not proven unreferenced.
+
+**Verify.** §2 gates green after each deletion batch (`rm -rf .next` before judging phantom errors — landmine 8). Fresh-eyes check: answer "how does a coach author a program, what generates the calendar events, and what happens to the template on apply" from the docs alone, and confirm the answers match the code. Grep the docs for references to deleted files and for stale "until Phase N…" future-tense lines — zero of either. Smoke the surfaces adjacent to deletions.
+
+**Commit message.** `docs(training-builder): reconcile docs + remove dead code to match shipped reality (builder S7)`
+
+---
+
 ## Appendix — top landmines (repeated per phase where relevant)
 
 1. **Analytics RPC is DROP-then-CREATE** (return-shape change forbids `CREATE OR REPLACE`) — re-apply `SET search_path=public` + `REVOKE FROM PUBLIC,anon,authenticated` + `GRANT TO service_role`, keep `SECURITY INVOKER`. Forget the drop → migration fails; forget the grants → PostgREST IDOR surface reopens.
@@ -304,3 +328,4 @@ Each phase's **Prompt to paste** is the copy-into-a-fresh-session instruction. T
 6. **The shared builder needs its `target` abstraction from day one** (Phase 2) or Phase 5 is a rewrite; and do not port `training-builder-right-panel.tsx`'s `dayOfWeek`-based counts (placement never sets `dayOfWeek`).
 7. **Inline placement stamps `saved_plan_id = NULL`** (Phase 1 shipped this way — an edited copy isn't a copy of any single template; IDOR-safe + honest), so an inline-placed plan carries no library provenance link. Still guard "reapply from library" so it can't silently overwrite an edited placement. The placement test asserts inline `saved_plan_id = NULL`.
 8. **`.next` zombie cache** after multi-file moves: `rm -rf .next` before debugging phantom 404s.
+9. **Future-tense doc lines rot.** "Until Phase N builds X…" becomes false the moment Phase N ships — Phase 7 sweeps the permanent docs for these.
