@@ -85,7 +85,7 @@ export function mapSavedPlanRow(
     status: row.status as SavedPlanStatus,
     cycleLength: row.cycle_length ?? null,
     restPattern: row.rest_pattern ?? [],
-    defaultSurplusPercentage: row.default_surplus_percentage
+    defaultSurplusPercentage: row.default_surplus_percentage != null
       ? Number(row.default_surplus_percentage)
       : null,
     source: (row.source ?? "manual") as SavedPlanSource,

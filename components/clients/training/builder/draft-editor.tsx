@@ -415,6 +415,20 @@ export function DraftEditor({
   const defaultSurplus = displayedPlan.defaultSurplusPercentage ?? 15;
   const sessions = displayedPlan.sessions ?? [];
 
+  // Builder-authored programs (multi-week, per-set specs, or video URLs) must
+  // not be overwritten or dirty-applied from this drawer: serializeSessionsForApi
+  // omits weekIndex/setSpecs/videoUrl and overwrite is delete-then-reinsert,
+  // so one save here would irrecoverably flatten them. The clean-copy Apply
+  // stays enabled (place-from-library splats the full rows). This guard is
+  // removed in Phase 5 along with this editor.
+  const isBuilderAuthored = (plan.sessions ?? []).some(
+    (s) =>
+      s.weekIndex > 0 ||
+      s.exercises.some(
+        (e) => (e.setSpecs && e.setSpecs.length > 0) || e.videoUrl != null,
+      ),
+  );
+
   return (
     <div className="flex flex-col h-full">
       {/* Top bar */}
@@ -472,8 +486,12 @@ export function DraftEditor({
               size="sm"
               variant="default"
               onClick={() => void handleOverwrite()}
-              disabled={isOverwriting}
-              title="Overwrite the library template with your edits."
+              disabled={isOverwriting || isBuilderAuthored}
+              title={
+                isBuilderAuthored
+                  ? "This program uses the week/per-set model — edit it in Programs."
+                  : "Overwrite the library template with your edits."
+              }
             >
               {isOverwriting ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
@@ -486,15 +504,23 @@ export function DraftEditor({
               size="sm"
               variant="outline"
               onClick={() => setApplyDialogOpen(true)}
+              disabled={isBuilderAuthored && hasUnsavedEdits}
               title={
-                hasUnsavedEdits
-                  ? "Apply your edited copy to a client's calendar (the library template stays unchanged)."
-                  : "Apply this plan to a client's calendar."
+                isBuilderAuthored && hasUnsavedEdits
+                  ? "This program uses the week/per-set model — edit it in Programs."
+                  : hasUnsavedEdits
+                    ? "Apply your edited copy to a client's calendar (the library template stays unchanged)."
+                    : "Apply this plan to a client's calendar."
               }
             >
               <Calendar className="h-3.5 w-3.5 mr-1.5" />
               Apply to Client
             </Button>
+            {isBuilderAuthored && (
+              <span className="text-[11px] text-muted-foreground">
+                Edit this program in Programs
+              </span>
+            )}
           </>
         ) : (
           <>

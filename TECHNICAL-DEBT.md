@@ -1,5 +1,14 @@
 # Technical Debt Tracker
 
+## Training builder week model — deferred tails (builder S2.5)
+
+Logged: 2026-07-01.
+
+- **`training_plans.frequency_per_week` CHECK (1..7) outlives the week model.** The column (migration 015) predates multi-week programs; a raw non-rest total across N weeks violates it at apply time. S2.5 clamps at derivation (`deriveCycleInfoFromSessions` / `recomputePlanCycleInfo` now store a per-week average clamped to 1..7) and defensively at the placement boundary (`library-placement-service.ts` `createTrainingPlanAtomic` call). The CHECK itself gets **dropped in the adherence/phase rewrite (CPEP 7.10a)**, where its per-week readers (`phase-transition-service.ts` ~L142-143 per-week math + display labels) are rewritten — do not drop it piecemeal before that.
+- **`placeSessionOnCalendar` copies a saved session's `week_index` verbatim** (`library-placement-service.ts:373`, `week_index: savedSession.week_index ?? 0`) into whatever plan it lands in. A `week_index > 0` session dropped into a legacy flat plan flips that plan's client read (`getClientTrainingPlan`'s `is_rest || week_index > 0` heuristic) onto the self-describing branch, changing how rest days render. Unreachable from the S2.5 builder (no session placement there), but it bites Phase 3 (saved-workout insert into a day) and Phase 5 — normalize `week_index` to the target plan's shape when those land.
+
+---
+
 ## Events-as-SOT overhaul — test coverage gap
 
 - **`create_training_plan_atomic` (mig 114) real-effect coverage.** Session 2◆1 rewrote the RPC to be additive (window-bounded delete + provenance insert). The vitest suite mocks `supabaseAdmin`, so the RPC's actual DELETE/INSERT — window-bound, coexistence of disjoint plans, idempotent re-place, overlap "incoming wins" — has **no automated coverage**. Correctness currently rests on the manual smoke (place A Jan + B Mar disjoint → both survive; place B overlapping A → B wins contested, A's pre-overlap survives; re-place same range → event count stable). **Owe a focused local-supabase RPC test no later than Session 5** (where seed/backfill already needs DB-level validation). Same gap applies to `getNextPlanStartCap`'s cross-plan cap. Decided 2026-06-18 (no pgTAP/Postgres infra before launch — consistent with the mock-everything architecture + deferred-tooling stance).

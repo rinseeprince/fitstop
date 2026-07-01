@@ -224,7 +224,9 @@ async function placePlaceablePlanOnCalendar(params: {
     description: undefined,
     coachPrompt: "",
     splitType: savedPlan.splitType || "custom",
-    frequencyPerWeek: savedPlan.frequencyPerWeek || 0,
+    // training_plans.frequency_per_week has CHECK (>= 1 AND <= 7); a 0 fallback
+    // (or a stale unclamped multi-week total on an old plan row) fails the RPC.
+    frequencyPerWeek: Math.min(7, Math.max(1, savedPlan.frequencyPerWeek || 1)),
     // Still written as plan metadata / RPC arg even though the placement window is
     // now driven by the repeat count × whole-program length, not this value.
     programDurationWeeks: savedPlan.programDurationWeeks ?? undefined,

@@ -58,7 +58,14 @@ export function detectCycleInfoFallback(
  * out-of-order sessions array still lands the rest days at the right slots —
  * matching recomputePlanCycleInfo. weekIndex defaults to 0 so single-week / legacy
  * plans derive byte-identically to before. Shared by overwriteSavedPlan (library
- * save) and the inline placement path so the two never drift.
+ * save), recomputePlanCycleInfo, and the inline placement path so they never drift.
+ *
+ * frequency_per_week is a per-week AVERAGE clamped to 1..7: at apply time it is
+ * inserted into training_plans.frequency_per_week, which carries
+ * CHECK (frequency_per_week >= 1 AND <= 7) (migration 015) — a raw non-rest
+ * total across a multi-week program (e.g. 12 for 3 weeks x 4/wk) would make the
+ * placement RPC fail. Single-week plans derive identically to the pre-clamp
+ * behaviour (weekCount = 1); all-rest programs clamp up to 1.
  */
 export function deriveCycleInfoFromSessions(
   sessions: Array<{ weekIndex?: number; orderIndex: number; isRest: boolean }>,
@@ -70,7 +77,13 @@ export function deriveCycleInfoFromSessions(
   const restPattern = ordered
     .map((s, i) => (s.isRest ? i : -1))
     .filter((i) => i >= 0);
-  const frequencyPerWeek = cycleLength - restPattern.length;
+  const weekCount =
+    ordered.reduce((max, s) => Math.max(max, s.weekIndex ?? 0), 0) + 1;
+  const nonRestCount = cycleLength - restPattern.length;
+  const frequencyPerWeek = Math.min(
+    7,
+    Math.max(1, Math.round(nonRestCount / weekCount)),
+  );
   return { cycleLength, restPattern, frequencyPerWeek };
 }
 
@@ -148,18 +161,23 @@ export async function recomputePlanCycleInfo(
     .order("order_index", { ascending: true });
   if (error) throw new Error(`Failed to read sessions for cycle recompute: ${error.message}`);
 
-  const cycleLength = sessions?.length ?? 0;
-  const restPattern = (sessions ?? [])
-    .map((s, i) => (s.is_rest ? i : -1))
-    .filter((i) => i >= 0);
-  const trainingCount = cycleLength - restPattern.length;
+  // Delegate to the shared derivation so the 1..7 frequency clamp (see
+  // deriveCycleInfoFromSessions) applies here too — this value flows into the
+  // CHECK-constrained training_plans.frequency_per_week at apply time.
+  const { cycleLength, restPattern, frequencyPerWeek } = deriveCycleInfoFromSessions(
+    (sessions ?? []).map((s) => ({
+      weekIndex: s.week_index ?? 0,
+      orderIndex: s.order_index,
+      isRest: s.is_rest ?? false,
+    })),
+  );
 
   const { error: updateError } = await supabaseAdmin
     .from("coach_saved_plans")
     .update({
       cycle_length: cycleLength,
       rest_pattern: restPattern,
-      frequency_per_week: trainingCount,
+      frequency_per_week: frequencyPerWeek,
     })
     .eq("id", planId)
     .eq("coach_id", coachId);

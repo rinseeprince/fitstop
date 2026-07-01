@@ -764,7 +764,9 @@ describe("library-placement-service", () => {
       // Ordered: w0o0, w0o1, w1o0(rest), w1o1 → rest at slot 2.
       expect(info.cycleLength).toBe(4);
       expect(info.restPattern).toEqual([2]);
-      expect(info.frequencyPerWeek).toBe(3);
+      // Per-week average (3 non-rest / 2 weeks), NOT the raw non-rest total —
+      // the total would fail training_plans' CHECK (1..7) at apply time.
+      expect(info.frequencyPerWeek).toBe(2);
     });
 
     it("handles a no-rest plan", () => {
@@ -774,6 +776,41 @@ describe("library-placement-service", () => {
       ]);
       expect(info.restPattern).toEqual([]);
       expect(info.frequencyPerWeek).toBe(2);
+    });
+
+    it("derives the per-week average for a multi-week program (3 weeks x 4/wk -> 4)", () => {
+      const sessions = [0, 1, 2].flatMap((weekIndex) =>
+        [0, 1, 2, 3, 4, 5, 6].map((orderIndex) => ({
+          weekIndex,
+          orderIndex,
+          isRest: orderIndex >= 4, // 4 training + 3 rest per week
+        })),
+      );
+      const info = deriveCycleInfoFromSessions(sessions);
+      expect(info.cycleLength).toBe(21);
+      expect(info.restPattern).toHaveLength(9);
+      expect(info.frequencyPerWeek).toBe(4);
+    });
+
+    it("clamps an all-rest program up to frequency 1", () => {
+      const info = deriveCycleInfoFromSessions(
+        [0, 1, 2, 3, 4, 5, 6].map((orderIndex) => ({
+          orderIndex,
+          isRest: true,
+        })),
+      );
+      expect(info.frequencyPerWeek).toBe(1);
+    });
+
+    it("clamps a dense single-week program down to frequency 7", () => {
+      const info = deriveCycleInfoFromSessions(
+        Array.from({ length: 10 }, (_, orderIndex) => ({
+          orderIndex,
+          isRest: false,
+        })),
+      );
+      // 10 non-rest slots in one week: clamp to the CHECK's ceiling of 7.
+      expect(info.frequencyPerWeek).toBe(7);
     });
   });
 });
