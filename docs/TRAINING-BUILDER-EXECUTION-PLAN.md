@@ -181,7 +181,18 @@ Each phase's **Prompt to paste** is the copy-into-a-fresh-session instruction. T
 
 ---
 
-### Phase 2.5 — Full-page Program builder (UI)
+### Phase 2.5 — Full-page Program builder (UI) ✅ COMPLETE
+
+> **STATUS: SHIPPED 2026-07-02 (commit `6a962ef`).** Gates green (tsc / eslint / vitest 1760) + adversarial review fleet (16 raw findings → 14 confirmed → all fixed pre-commit). Deviations from the plan text below (these win):
+> - **No Preview button** (owner decision): leaving edit mode IS the preview. Mode machine: view ⇄ edit; drafts open straight into edit.
+> - **Checkpoint 0 (pre-UI blocker, from plan review):** `deriveCycleInfoFromSessions` + `recomputePlanCycleInfo` now derive `frequency_per_week` as a **per-week average clamped 1..7** — the raw all-weeks non-rest total violated `training_plans.frequency_per_week`'s CHECK (mig 015) at apply time for any real multi-week program (all-rest derived 0). Placement also clamps at the RPC boundary (covers stale stored values). Single-week derivation unchanged. The CHECK itself drops in CPEP 7.10a (TECHNICAL-DEBT.md).
+> - **Global monotonic `order_index` = `weekIndex*7 + day`** — `getSavedPlanById` sorts sessions by `order_index` alone, so per-week indices would interleave weeks on read; global indices fix it with zero backend change (derivation is positional, placement sorts the pair).
+> - **New program = create-draft-immediately:** list-page POST creates a 7-rest-day draft skeleton (`createSavedPlanSchema` can't express weeks/specs — never route real structure through create); **Save program** = overwrite → `programDurationWeeks` PATCH (every save where the count changed; non-fatal) → promote (**no** `saveSessionsIndividually`; **409 = content already committed**, plan stays draft, wording never implies nothing saved). Save failure keeps the local draft — overwrite is non-atomic server-side.
+> - **Legacy plans normalize silently** into 7-slot weeks (rest reconstructed from `rest_pattern` when unmaterialized; tail padded with rest) — owner decision, existing plans are disposable test data. A legacy plan padding past 52 weeks fails zod's `weekIndex ≤ 52` at save (blocked with a message, no data loss).
+> - **Bugfixes in scope:** `mapSavedPlanRow` read a `0` default surplus back as `null` (`lib/coach-mappers.ts`); the serializer truncates AI-sourced name/description (AI caps 200/1000) to the overwrite caps (100/500) instead of hard-blocking the save.
+> - **The one sanctioned `draft-editor.tsx` touch:** builder-authored plans (`weekIndex>0` OR `setSpecs` OR **`videoUrl`** — review caught the video-only flatten) disable Save-and-Update always + Apply while dirty, with an "Edit this program in Programs" notice + guard test. Phase 5 removes both with the editor.
+> - **Review-fleet hardening:** saves snapshot a mutation-revision counter so edits landing mid-save are never marked clean (dirty guard stays armed, coach re-saves); no-op blurs/self-drops don't dirty the tree; per-set numeric inputs clamp typed values to the zod ceilings with DOM write-back; save-blocked toasts include the zod issue path; picker free-text capped at 200 chars; day cells keyboard-operable; the compact summary prefers the projected reps range over a stale `repsTarget` once specs exist.
+> - Component tree grew beyond the planned files (all within budget): `program-builder-model.ts` (pure normalize/clone/lookup), `use-program-save.ts`, `use-program-dnd.ts`, `program-top-bar.tsx`, `builder-tokens.ts`, `program-card.tsx`, `drop-set-editor.tsx`, `exercise-picker.tsx`. Session-editor edits are **write-through** (no modal-level cancel) — page Save is the commit point.
 
 > **Depends on Phase 2 (above).** A coach authors a reusable, client-agnostic, date-agnostic multi-week program on a full-page grid, and saves it to the library. **Assigning a program to a client happens separately, in the client's training planner — not here** (the coach sets that client's start date in that context). Built as the reusable component Phase 5 remounts as the client editor. No schema change.
 
@@ -315,6 +326,16 @@ Each phase's **Prompt to paste** is the copy-into-a-fresh-session instruction. T
 **Verify.** §2 gates green after each deletion batch (`rm -rf .next` before judging phantom errors — landmine 8). Fresh-eyes check: answer "how does a coach author a program, what generates the calendar events, and what happens to the template on apply" from the docs alone, and confirm the answers match the code. Grep the docs for references to deleted files and for stale "until Phase N…" future-tense lines — zero of either. Smoke the surfaces adjacent to deletions.
 
 **Commit message.** `docs(training-builder): reconcile docs + remove dead code to match shipped reality (builder S7)`
+
+#### Phase 7 ledger (append-only — one-liners per phase for everything retired, orphaned, or deferred)
+
+- **2.5:** old inline `PlanCard` deleted with the training-library page body (superseded by `program-builder/program-card.tsx`); `app/dashboard/training-library/page.tsx` is now a redirect stub → P7 decides keep-or-delete.
+- **2.5:** `PlanPreviewDrawer` + `ApplyToClientDialog` lost their only standalone-page mounts (both still mounted from the client drawer) — recheck after P5.
+- **2.5:** `draft-editor.tsx` gained the `isBuilderAuthored` guard + `draft-editor.test.tsx` — **P5 must remove both** with the editor.
+- **2.5:** `ProgramBuilderProps.onApply` + `target: 'client-draft'` are dead seams until P5 wires them.
+- **2.5:** TECHNICAL-DEBT entries added: `frequency_per_week` CHECK retirement → CPEP 7.10a; `placeSessionOnCalendar` copies `week_index` verbatim into the target plan (bites P3/P5 — normalize on insert there).
+- **2.5:** orphaned invisible drafts — "New program" creates a draft row no list surface shows if abandoned via back/nav (accepted EL-1 pre-launch; a "Drafts" section on the Programs page is the cheap fix).
+- **2.5:** `recomputePlanCycleInfo` now writes `frequency_per_week = 1` (not 0) for empty/all-rest session sets — anything asserting 0 for empty plans is stale.
 
 ---
 
