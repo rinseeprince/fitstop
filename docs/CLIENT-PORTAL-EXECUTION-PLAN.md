@@ -2498,7 +2498,7 @@ Commit.
 
 **Implement**:
 1. `client-portal-service.ts` home "today" → client-tz.
-2. `promoteTrainingPlanIfReady` / `promoteNutritionPlanIfReady` → client-tz.
+2. `promoteTrainingPlanIfReady` / `promoteNutritionPlanIfReady` → client-tz. *(⊘ both later deleted in events-SOT S2-3 — see the Read-first note above.)*
 3. Check-in gate/period sites → pass client-tz today into `getCheckInStatus` / `resolveCheckInWindow`.
 4. `calculateStreaks` + habit "today" defaults → client-tz.
 5. `comparison-service.ts` pace start-date fallback → client-tz.

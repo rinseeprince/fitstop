@@ -182,7 +182,7 @@ No pill shapes. No large radii.
 | Empty values | — | Dash "—" |
 | Height | Equal height enforced via `minHeight` + `justify-content: space-between` | Same |
 
-### Collapsible sections (Plan History)
+### Collapsible sections (e.g. weekly history)
 
 - White card, no border, 6px radius
 - Header: clickable, font-weight 600 title + count badge (brand-subtle background)
