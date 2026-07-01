@@ -1,5 +1,7 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { resolveExercises } from "./exercise-catalog-service";
+import { projectExerciseCompact } from "@/utils/exercise-set-specs";
+import type { SetSpec } from "@/utils/exercise-set-specs";
 import {
   mapSavedExerciseRow,
   mapSavedSessionRow,
@@ -227,6 +229,8 @@ export async function addSavedExercise(
     supersetGroup?: string | null;
     isWarmup?: boolean;
     notes?: string | null;
+    setSpecs?: SetSpec[] | null;
+    videoUrl?: string | null;
   }
 ): Promise<string> {
   // Verify session ownership
@@ -251,6 +255,7 @@ export async function addSavedExercise(
     .maybeSingle();
 
   const nextIndex = (maxEx?.order_index ?? -1) + 1;
+  const w = projectExerciseCompact(exercise);
 
   const { data, error } = await supabaseAdmin
     .from("coach_saved_exercises")
@@ -259,9 +264,9 @@ export async function addSavedExercise(
       exercise_id: exerciseIdMap.get(exercise.name.trim().toLowerCase()) ?? null,
       name: exercise.name,
       order_index: nextIndex,
-      sets: exercise.sets,
-      reps_min: exercise.repsMin ?? null,
-      reps_max: exercise.repsMax ?? null,
+      sets: w.sets,
+      reps_min: w.reps_min,
+      reps_max: w.reps_max,
       reps_target: exercise.repsTarget ?? null,
       rpe_target: exercise.rpeTarget ?? null,
       percentage_1rm: exercise.percentage1rm ?? null,
@@ -270,6 +275,8 @@ export async function addSavedExercise(
       superset_group: exercise.supersetGroup ?? null,
       is_warmup: exercise.isWarmup ?? false,
       notes: exercise.notes ?? null,
+      set_specs: w.set_specs,
+      video_url: w.video_url,
     })
     .select("id")
     .single();
@@ -293,6 +300,8 @@ export async function updateSavedExercise(
     supersetGroup?: string | null;
     isWarmup?: boolean;
     notes?: string | null;
+    setSpecs?: SetSpec[] | null;
+    videoUrl?: string | null;
   }
 ): Promise<void> {
   // Verify ownership via session
@@ -318,14 +327,32 @@ export async function updateSavedExercise(
     exerciseIdUpdate = { exercise_id: idMap.get(updates.name.trim().toLowerCase()) ?? null };
   }
 
+  // When set_specs changes to a real list, re-derive the compact projection so
+  // the columns stay in sync; a null clears set_specs and honors explicit compact.
+  const specProj = updates.setSpecs
+    ? projectExerciseCompact({ setSpecs: updates.setSpecs, sets: updates.sets ?? 1 })
+    : null;
+
   const { error } = await supabaseAdmin
     .from("coach_saved_exercises")
     .update({
       ...exerciseIdUpdate,
       ...(updates.name !== undefined && { name: updates.name }),
-      ...(updates.sets !== undefined && { sets: updates.sets }),
-      ...(updates.repsMin !== undefined && { reps_min: updates.repsMin }),
-      ...(updates.repsMax !== undefined && { reps_max: updates.repsMax }),
+      ...(specProj
+        ? { sets: specProj.sets }
+        : updates.sets !== undefined
+          ? { sets: updates.sets }
+          : {}),
+      ...(specProj
+        ? { reps_min: specProj.reps_min }
+        : updates.repsMin !== undefined
+          ? { reps_min: updates.repsMin }
+          : {}),
+      ...(specProj
+        ? { reps_max: specProj.reps_max }
+        : updates.repsMax !== undefined
+          ? { reps_max: updates.repsMax }
+          : {}),
       ...(updates.repsTarget !== undefined && { reps_target: updates.repsTarget }),
       ...(updates.rpeTarget !== undefined && { rpe_target: updates.rpeTarget }),
       ...(updates.percentage1rm !== undefined && { percentage_1rm: updates.percentage1rm }),
@@ -334,6 +361,9 @@ export async function updateSavedExercise(
       ...(updates.supersetGroup !== undefined && { superset_group: updates.supersetGroup }),
       ...(updates.isWarmup !== undefined && { is_warmup: updates.isWarmup }),
       ...(updates.notes !== undefined && { notes: updates.notes }),
+      ...(specProj ? { set_specs: specProj.set_specs } : {}),
+      ...(updates.setSpecs === null && { set_specs: null }),
+      ...(updates.videoUrl !== undefined && { video_url: updates.videoUrl }),
     })
     .eq("id", exerciseId);
   if (error) throw new Error(`Failed to update exercise: ${error.message}`);

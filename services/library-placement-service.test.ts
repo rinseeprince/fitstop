@@ -75,6 +75,20 @@ function createMockQuery<T = unknown>(result: { data: T | null; error: { message
   return mockQuery;
 }
 
+// A training_sessions insert mock that hands out a distinct cloned id per slot,
+// so multi-session / multi-week placements reference distinct sessions.
+function makeSessionInsertQuery(ids: string[]) {
+  let i = 0;
+  return {
+    ...createMockQuery({ data: null, error: null }),
+    insert: vi.fn().mockReturnThis(),
+    select: vi.fn().mockReturnThis(),
+    single: vi.fn().mockImplementation(() =>
+      Promise.resolve({ data: { id: ids[i++] ?? `ts-${i}` }, error: null }),
+    ),
+  };
+}
+
 // --- Test data factories ---
 
 function makeExercise(overrides?: Partial<SavedExercise>): SavedExercise {
@@ -95,6 +109,8 @@ function makeExercise(overrides?: Partial<SavedExercise>): SavedExercise {
     supersetGroup: null,
     isWarmup: false,
     notes: null,
+    setSpecs: null,
+    videoUrl: null,
     createdAt: "2026-04-01T00:00:00Z",
     updatedAt: "2026-04-01T00:00:00Z",
     ...overrides,
@@ -109,6 +125,7 @@ function makeSession(overrides?: Partial<SavedSession>): SavedSession {
     name: "Push",
     focus: "chest",
     orderIndex: 0,
+    weekIndex: 0,
     isRest: false,
     estimatedDurationMinutes: 60,
     calorieSurplusPercentage: 15,
@@ -163,411 +180,393 @@ describe("library-placement-service", () => {
   describe("placePlanOnCalendar", () => {
     it("rejects draft plans", async () => {
       mockGetSavedPlanById.mockResolvedValue(makeSavedPlan({ status: "draft" }));
-
       await expect(
-        placePlanOnCalendar({
-          savedPlanId: "sp-1",
-          coachId: "coach-1",
-          clientId: "client-1",
-          startDate: "2026-04-15",        })
+        placePlanOnCalendar({ savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15" }),
       ).rejects.toThrow("Only saved plans can be placed on calendar");
     });
 
     it("rejects when plan not found", async () => {
       mockGetSavedPlanById.mockResolvedValue(null);
-
       await expect(
-        placePlanOnCalendar({
-          savedPlanId: "sp-1",
-          coachId: "coach-1",
-          clientId: "client-1",
-          startDate: "2026-04-15",        })
+        placePlanOnCalendar({ savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15" }),
       ).rejects.toThrow("Saved plan not found");
     });
 
-    it("creates plan, clones non-rest sessions and exercises, generates cycle-aware events", async () => {
-      const savedPlan = makeSavedPlan();
-      mockGetSavedPlanById.mockResolvedValue(savedPlan);
+    it("clones EVERY slot incl. rest (is_rest set), counts only workouts, day_of_week null", async () => {
+      mockGetSavedPlanById.mockResolvedValue(makeSavedPlan());
       mockCreateAtomic.mockResolvedValue("new-plan-id");
 
-      // Mock: no existing active plan
-      const noActivePlanQuery = createMockQuery({ data: null, error: null });
-      // Mock: session insert (3 sessions)
-      const sessionInsertQuery = createMockQuery({ data: { id: "ts-1" }, error: null });
-      // Mock: exercise insert
+      const sessionInsertQuery = makeSessionInsertQuery(["ts-1", "ts-2", "ts-3", "ts-rest"]);
       const exerciseInsertQuery = createMockQuery({ data: null, error: null });
-      // Mock: phase query for end date calculation (no phase)
-      const phaseQuery = createMockQuery({ data: null, error: null });
-      // Mock: event upsert
       const eventUpsertQuery = createMockQuery({ data: [], error: null });
 
       mockFrom.mockImplementation((table: string) => {
-        if (table === "training_plans") return noActivePlanQuery as any;
-        if (table === "training_sessions") return sessionInsertQuery as any;
-        if (table === "training_exercises") return exerciseInsertQuery as any;
-        if (table === "phases") return phaseQuery as any;
-        if (table === "training_events") return eventUpsertQuery as any;
-        return createMockQuery({ data: null, error: null }) as any;
+        if (table === "training_sessions") return sessionInsertQuery as never;
+        if (table === "training_exercises") return exerciseInsertQuery as never;
+        if (table === "training_events") return eventUpsertQuery as never;
+        return createMockQuery({ data: null, error: null }) as never;
       });
 
       const result = await placePlanOnCalendar({
-        savedPlanId: "sp-1",
-        coachId: "coach-1",
-        clientId: "client-1",
-        startDate: "2026-04-15",      });
+        savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15", repeatCycles: 1,
+      });
 
-      // Verify atomic plan creation was called
       expect(mockCreateAtomic).toHaveBeenCalledWith(
-        expect.objectContaining({
-          clientId: "client-1",
-          coachId: "coach-1",
-          name: "PPL Program",
-          savedPlanId: "sp-1",
-          effectiveFrom: "2026-04-15",
-        })
+        expect.objectContaining({ name: "PPL Program", savedPlanId: "sp-1", effectiveFrom: "2026-04-15" }),
       );
-
-      // Verify 3 sessions inserted (rest session excluded)
+      // All 4 slots cloned (3 workouts + 1 rest); only 3 counted as created.
+      expect(sessionInsertQuery.insert).toHaveBeenCalledTimes(4);
       expect(result.sessionsCreated).toBe(3);
-
-      // Verify session inserts used day_of_week = null
-      expect(sessionInsertQuery.insert).toHaveBeenCalledTimes(3);
       for (const call of sessionInsertQuery.insert.mock.calls) {
         expect(call[0].day_of_week).toBeNull();
       }
-
-      // Verify exercise inserts happened (3 sessions x 1 exercise each)
+      const restInsert = sessionInsertQuery.insert.mock.calls.find((c) => c[0].is_rest === true);
+      expect(restInsert).toBeDefined();
+      expect(restInsert![0].name).toBe("Rest");
+      expect(sessionInsertQuery.insert.mock.calls.filter((c) => c[0].is_rest === false)).toHaveLength(3);
+      // Only the 3 non-rest slots get exercises.
       expect(exerciseInsertQuery.insert).toHaveBeenCalledTimes(3);
-
-      // Verify events were upserted
-      expect(eventUpsertQuery.upsert).toHaveBeenCalledTimes(1);
+      // Window = repeat 1 × 4 slots = 4 days → Push, Pull, Legs (rest skipped) = 3 events.
       const events = eventUpsertQuery.upsert.mock.calls[0][0];
-
-      // 8 weeks fallback = 56 days. With 4-day cycle and 1 rest day per cycle,
-      // we get 3 training days per 4-day cycle = 14 cycles * 3 = 42 events
-      expect(events.length).toBeGreaterThan(0);
-
-      // All events should have is_modified = false
+      expect(events).toHaveLength(3);
       for (const event of events) {
         expect(event.is_modified).toBe(false);
         expect(event.status).toBe("scheduled");
       }
-
       expect(result.planId).toBe("new-plan-id");
-      expect(result.eventsCreated).toBe(events.length);
+      expect(result.eventsCreated).toBe(3);
     });
 
-    it("copies calorie_surplus_percentage from saved session, falling back to plan default", async () => {
-      const savedPlan = makeSavedPlan({
-        defaultSurplusPercentage: 10,
-        sessions: [
-          makeSession({ id: "ss-1", orderIndex: 0, calorieSurplusPercentage: 20 }),
-          makeSession({ id: "ss-2", orderIndex: 1, calorieSurplusPercentage: null }),
-        ],
-        cycleLength: 2,
-        restPattern: [],
-      });
-      mockGetSavedPlanById.mockResolvedValue(savedPlan);
+    it("defaults to repeat = 1 (one pass of the program) when repeatCycles is omitted", async () => {
+      mockGetSavedPlanById.mockResolvedValue(
+        makeSavedPlan({
+          cycleLength: 3, restPattern: [],
+          sessions: [
+            makeSession({ id: "a", name: "A", orderIndex: 0, exercises: [] }),
+            makeSession({ id: "b", name: "B", orderIndex: 1, exercises: [] }),
+            makeSession({ id: "c", name: "C", orderIndex: 2, exercises: [] }),
+          ],
+        }),
+      );
       mockCreateAtomic.mockResolvedValue("new-plan-id");
-
-      const noActivePlanQuery = createMockQuery({ data: null, error: null });
-      const sessionInsertQuery = createMockQuery({ data: { id: "ts-1" }, error: null });
-      const exerciseInsertQuery = createMockQuery({ data: null, error: null });
-      const phaseQuery = createMockQuery({ data: null, error: null });
+      const sessionInsertQuery = makeSessionInsertQuery(["ts-a", "ts-b", "ts-c"]);
       const eventUpsertQuery = createMockQuery({ data: [], error: null });
-
       mockFrom.mockImplementation((table: string) => {
-        if (table === "training_plans") return noActivePlanQuery as any;
-        if (table === "training_sessions") return sessionInsertQuery as any;
-        if (table === "training_exercises") return exerciseInsertQuery as any;
-        if (table === "phases") return phaseQuery as any;
-        if (table === "training_events") return eventUpsertQuery as any;
-        return createMockQuery({ data: null, error: null }) as any;
+        if (table === "training_sessions") return sessionInsertQuery as never;
+        if (table === "training_events") return eventUpsertQuery as never;
+        return createMockQuery({ data: null, error: null }) as never;
       });
 
-      await placePlanOnCalendar({
-        savedPlanId: "sp-1",
-        coachId: "coach-1",
-        clientId: "client-1",
-        startDate: "2026-04-15",      });
+      await placePlanOnCalendar({ savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15" });
 
-      // First session: explicit 20%
+      const events = eventUpsertQuery.upsert.mock.calls[0][0];
+      expect(events.map((e: { date: string }) => e.date)).toEqual(["2026-04-15", "2026-04-16", "2026-04-17"]);
+    });
+
+    it("copies calorie_surplus_percentage from session, falls back to plan default; rest is null", async () => {
+      mockGetSavedPlanById.mockResolvedValue(
+        makeSavedPlan({
+          defaultSurplusPercentage: 10, cycleLength: 3, restPattern: [2],
+          sessions: [
+            makeSession({ id: "ss-1", orderIndex: 0, calorieSurplusPercentage: 20, exercises: [] }),
+            makeSession({ id: "ss-2", orderIndex: 1, calorieSurplusPercentage: null, exercises: [] }),
+            makeSession({ id: "ss-r", orderIndex: 2, isRest: true, calorieSurplusPercentage: 99, exercises: [] }),
+          ],
+        }),
+      );
+      mockCreateAtomic.mockResolvedValue("new-plan-id");
+      const sessionInsertQuery = makeSessionInsertQuery(["ts-1", "ts-2", "ts-r"]);
+      const eventUpsertQuery = createMockQuery({ data: [], error: null });
+      mockFrom.mockImplementation((table: string) => {
+        if (table === "training_sessions") return sessionInsertQuery as never;
+        if (table === "training_events") return eventUpsertQuery as never;
+        return createMockQuery({ data: null, error: null }) as never;
+      });
+
+      await placePlanOnCalendar({ savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15", repeatCycles: 1 });
+
       expect(sessionInsertQuery.insert.mock.calls[0][0].calorie_surplus_percentage).toBe(20);
-      // Second session: falls back to plan default 10%
       expect(sessionInsertQuery.insert.mock.calls[1][0].calorie_surplus_percentage).toBe(10);
+      // Rest slot surplus is nulled regardless of the source value.
+      expect(sessionInsertQuery.insert.mock.calls[2][0].calorie_surplus_percentage).toBeNull();
     });
 
     it("passes effectiveFrom + windowEnd to the atomic RPC, capped at the next plan's start", async () => {
-      // A later coexisting plan starts 2026-05-01, so getNextPlanStartCap caps
-      // the incoming plan's window at 2026-04-30 instead of the 8-week fallback.
+      // 7-day program × repeat 10 would run to ~2026-06-23, but a later plan starts
+      // 2026-05-01 so getNextPlanStartCap caps the window at 2026-04-30.
       mockGetSavedPlanById.mockResolvedValue(
-        makeSavedPlan({ sessions: [], cycleLength: 1, restPattern: [] }),
+        makeSavedPlan({
+          cycleLength: 7, restPattern: [],
+          sessions: Array.from({ length: 7 }, (_, i) => makeSession({ id: `d-${i}`, orderIndex: i, exercises: [] })),
+        }),
       );
       mockCreateAtomic.mockResolvedValue("new-plan-id");
       mockGetNextPlanStartCap.mockResolvedValue("2026-04-30");
-
-      const phaseQuery = createMockQuery({ data: null, error: null });
+      const sessionInsertQuery = makeSessionInsertQuery(Array.from({ length: 7 }, (_, i) => `ts-${i}`));
       const eventUpsertQuery = createMockQuery({ data: [], error: null });
       mockFrom.mockImplementation((table: string) => {
-        if (table === "phases") return phaseQuery as any;
-        if (table === "training_events") return eventUpsertQuery as any;
-        return createMockQuery({ data: null, error: null }) as any;
+        if (table === "training_sessions") return sessionInsertQuery as never;
+        if (table === "training_events") return eventUpsertQuery as never;
+        return createMockQuery({ data: null, error: null }) as never;
       });
 
-      await placePlanOnCalendar({
-        savedPlanId: "sp-1",
-        coachId: "coach-1",
-        clientId: "client-1",
-        startDate: "2026-04-15",
-      });
+      await placePlanOnCalendar({ savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15", repeatCycles: 10 });
 
       expect(mockGetNextPlanStartCap).toHaveBeenCalledWith("client-1", "2026-04-15");
-      // The same window end bounds the RPC's additive delete and the fill below.
       expect(mockCreateAtomic).toHaveBeenCalledWith(
-        expect.objectContaining({
-          effectiveFrom: "2026-04-15",
-          windowEnd: "2026-04-30",
-        }),
+        expect.objectContaining({ effectiveFrom: "2026-04-15", windowEnd: "2026-04-30" }),
       );
     });
 
     it("is idempotent on re-place: same window + same event count across two placements", async () => {
       const savedPlan = makeSavedPlan({
-        defaultSurplusPercentage: 10,
-        sessions: [makeSession({ id: "ss-1", orderIndex: 0, calorieSurplusPercentage: 15 })],
-        cycleLength: 1,
-        restPattern: [],
-        programDurationWeeks: 2,
+        cycleLength: 1, restPattern: [],
+        sessions: [makeSession({ id: "ss-1", orderIndex: 0, calorieSurplusPercentage: 15, exercises: [] })],
       });
       mockGetSavedPlanById.mockResolvedValue(savedPlan);
       mockCreateAtomic.mockResolvedValue("new-plan-id");
-
-      const sessionInsertQuery = createMockQuery({ data: { id: "ts-1" }, error: null });
-      const exerciseInsertQuery = createMockQuery({ data: null, error: null });
-      const phaseQuery = createMockQuery({ data: null, error: null });
       const eventUpsertQuery = createMockQuery({ data: [], error: null });
       mockFrom.mockImplementation((table: string) => {
-        if (table === "training_sessions") return sessionInsertQuery as any;
-        if (table === "training_exercises") return exerciseInsertQuery as any;
-        if (table === "phases") return phaseQuery as any;
-        if (table === "training_events") return eventUpsertQuery as any;
-        return createMockQuery({ data: null, error: null }) as any;
+        if (table === "training_sessions") return makeSessionInsertQuery(["ts-1"]) as never;
+        if (table === "training_events") return eventUpsertQuery as never;
+        return createMockQuery({ data: null, error: null }) as never;
       });
 
-      const args = {
-        savedPlanId: "sp-1",
-        coachId: "coach-1",
-        clientId: "client-1",
-        startDate: "2026-04-15",
-      };
+      const args = { savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15", repeatCycles: 2 };
       await placePlanOnCalendar(args);
       await placePlanOnCalendar(args);
 
-      // Re-place inserts a second provenance row (new RPC call) over the same
-      // window; the RPC clears that window first, so event count is stable.
       expect(mockCreateAtomic).toHaveBeenCalledTimes(2);
       const first = mockCreateAtomic.mock.calls[0][0];
       const second = mockCreateAtomic.mock.calls[1][0];
       expect(second.effectiveFrom).toBe(first.effectiveFrom);
       expect(second.windowEnd).toBe(first.windowEnd);
-      expect(eventUpsertQuery.upsert).toHaveBeenCalledTimes(2);
       const firstRows = eventUpsertQuery.upsert.mock.calls[0][0];
       const secondRows = eventUpsertQuery.upsert.mock.calls[1][0];
       expect(secondRows.length).toBe(firstRows.length);
     });
 
     it("writes calorie_surplus_percentage onto generated event rows (INVARIANT 2)", async () => {
-      const savedPlan = makeSavedPlan({
-        defaultSurplusPercentage: 10,
-        sessions: [makeSession({ id: "ss-1", orderIndex: 0, calorieSurplusPercentage: 25 })],
-        cycleLength: 1,
-        restPattern: [],
-        programDurationWeeks: 1,
-      });
-      mockGetSavedPlanById.mockResolvedValue(savedPlan);
+      mockGetSavedPlanById.mockResolvedValue(
+        makeSavedPlan({
+          defaultSurplusPercentage: 10, cycleLength: 1, restPattern: [],
+          sessions: [makeSession({ id: "ss-1", orderIndex: 0, calorieSurplusPercentage: 25, exercises: [] })],
+        }),
+      );
       mockCreateAtomic.mockResolvedValue("new-plan-id");
-
-      const sessionInsertQuery = createMockQuery({ data: { id: "ts-1" }, error: null });
-      const exerciseInsertQuery = createMockQuery({ data: null, error: null });
-      const phaseQuery = createMockQuery({ data: null, error: null });
       const eventUpsertQuery = createMockQuery({ data: [], error: null });
       mockFrom.mockImplementation((table: string) => {
-        if (table === "training_sessions") return sessionInsertQuery as any;
-        if (table === "training_exercises") return exerciseInsertQuery as any;
-        if (table === "phases") return phaseQuery as any;
-        if (table === "training_events") return eventUpsertQuery as any;
-        return createMockQuery({ data: null, error: null }) as any;
+        if (table === "training_sessions") return makeSessionInsertQuery(["ts-1"]) as never;
+        if (table === "training_events") return eventUpsertQuery as never;
+        return createMockQuery({ data: null, error: null }) as never;
       });
 
-      await placePlanOnCalendar({
-        savedPlanId: "sp-1",
-        coachId: "coach-1",
-        clientId: "client-1",
-        startDate: "2026-04-15",
-      });
+      await placePlanOnCalendar({ savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15", repeatCycles: 3 });
 
       const eventRows = eventUpsertQuery.upsert.mock.calls[0][0];
-      expect(eventRows.length).toBeGreaterThan(0);
-      for (const row of eventRows) {
-        expect(row.calorie_surplus_percentage).toBe(25);
-      }
+      expect(eventRows.length).toBe(3);
+      for (const row of eventRows) expect(row.calorie_surplus_percentage).toBe(25);
     });
 
     it("preserves exercise_id FK from saved exercises", async () => {
-      const savedPlan = makeSavedPlan({
-        sessions: [
-          makeSession({
-            id: "ss-1",
-            orderIndex: 0,
-            exercises: [
-              makeExercise({ exerciseId: "catalog-abc", name: "Bench Press" }),
-              makeExercise({ id: "ex-2", exerciseId: null, name: "Custom Move" }),
-            ],
-          }),
-        ],
-        cycleLength: 1,
-        restPattern: [],
-      });
-      mockGetSavedPlanById.mockResolvedValue(savedPlan);
+      mockGetSavedPlanById.mockResolvedValue(
+        makeSavedPlan({
+          cycleLength: 1, restPattern: [],
+          sessions: [
+            makeSession({
+              id: "ss-1", orderIndex: 0,
+              exercises: [
+                makeExercise({ exerciseId: "catalog-abc", name: "Bench Press" }),
+                makeExercise({ id: "ex-2", exerciseId: null, name: "Custom Move" }),
+              ],
+            }),
+          ],
+        }),
+      );
       mockCreateAtomic.mockResolvedValue("new-plan-id");
-
-      const noActivePlanQuery = createMockQuery({ data: null, error: null });
-      const sessionInsertQuery = createMockQuery({ data: { id: "ts-1" }, error: null });
       const exerciseInsertQuery = createMockQuery({ data: null, error: null });
-      const phaseQuery = createMockQuery({ data: null, error: null });
-      const eventUpsertQuery = createMockQuery({ data: [], error: null });
-
       mockFrom.mockImplementation((table: string) => {
-        if (table === "training_plans") return noActivePlanQuery as any;
-        if (table === "training_sessions") return sessionInsertQuery as any;
-        if (table === "training_exercises") return exerciseInsertQuery as any;
-        if (table === "phases") return phaseQuery as any;
-        if (table === "training_events") return eventUpsertQuery as any;
-        return createMockQuery({ data: null, error: null }) as any;
+        if (table === "training_sessions") return makeSessionInsertQuery(["ts-1"]) as never;
+        if (table === "training_exercises") return exerciseInsertQuery as never;
+        if (table === "training_events") return createMockQuery({ data: [], error: null }) as never;
+        return createMockQuery({ data: null, error: null }) as never;
       });
 
-      await placePlanOnCalendar({
-        savedPlanId: "sp-1",
-        coachId: "coach-1",
-        clientId: "client-1",
-        startDate: "2026-04-15",      });
+      await placePlanOnCalendar({ savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15", repeatCycles: 1 });
 
       const exerciseCall = exerciseInsertQuery.insert.mock.calls[0][0];
       expect(exerciseCall[0].exercise_id).toBe("catalog-abc");
       expect(exerciseCall[1].exercise_id).toBeNull();
     });
+
+    it("SURVIVAL: set_specs + video_url survive a pristine apply (clone from SavedExercise)", async () => {
+      const specs = [
+        { set_number: 1, set_type: "warmup" },
+        { set_number: 2, set_type: "working", reps_min: 6, reps_max: 8 },
+        { set_number: 3, set_type: "drop", drops: [{ weight: 100, reps: 8 }] },
+      ];
+      mockGetSavedPlanById.mockResolvedValue(
+        makeSavedPlan({
+          cycleLength: 1, restPattern: [],
+          sessions: [
+            makeSession({
+              id: "ss-1", orderIndex: 0,
+              exercises: [makeExercise({ setSpecs: specs as never, videoUrl: "https://demo/bench" })],
+            }),
+          ],
+        }),
+      );
+      mockCreateAtomic.mockResolvedValue("new-plan-id");
+      const exerciseInsertQuery = createMockQuery({ data: null, error: null });
+      mockFrom.mockImplementation((table: string) => {
+        if (table === "training_sessions") return makeSessionInsertQuery(["ts-1"]) as never;
+        if (table === "training_exercises") return exerciseInsertQuery as never;
+        if (table === "training_events") return createMockQuery({ data: [], error: null }) as never;
+        return createMockQuery({ data: null, error: null }) as never;
+      });
+
+      await placePlanOnCalendar({ savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15", repeatCycles: 1 });
+
+      const inserted = exerciseInsertQuery.insert.mock.calls[0][0];
+      expect(inserted[0].set_specs).toEqual(specs);
+      expect(inserted[0].video_url).toBe("https://demo/bench");
+    });
   });
 
   // =========================================================================
-  // generateCycleAwareEvents (tested via placePlanOnCalendar)
+  // cycle-aware event generation (whole program = repeat unit)
   // =========================================================================
 
   describe("cycle-aware event generation", () => {
-    it("4-day cycle with rest on day 3 generates correct pattern", async () => {
-      // PPL + Rest: Push(0), Pull(1), Legs(2), Rest(3), Push(4=0), ...
-      const savedPlan = makeSavedPlan({
-        cycleLength: 4,
-        restPattern: [3],
-        programDurationWeeks: 1, // 7 days
-        sessions: [
-          makeSession({ id: "ss-push", name: "Push", orderIndex: 0, exercises: [] }),
-          makeSession({ id: "ss-pull", name: "Pull", orderIndex: 1, exercises: [] }),
-          makeSession({ id: "ss-legs", name: "Legs", orderIndex: 2, exercises: [] }),
-          makeSession({ id: "ss-rest", name: "Rest", orderIndex: 3, isRest: true, exercises: [] }),
-        ],
-      });
-      mockGetSavedPlanById.mockResolvedValue(savedPlan);
+    it("legacy single-week plan places identically (explicit repeat count)", async () => {
+      // PPL + Rest: Push(0), Pull(1), Legs(2), Rest(3); repeat 2 = 8 days.
+      mockGetSavedPlanById.mockResolvedValue(
+        makeSavedPlan({
+          cycleLength: 4, restPattern: [3],
+          sessions: [
+            makeSession({ id: "ss-push", name: "Push", orderIndex: 0, exercises: [] }),
+            makeSession({ id: "ss-pull", name: "Pull", orderIndex: 1, exercises: [] }),
+            makeSession({ id: "ss-legs", name: "Legs", orderIndex: 2, exercises: [] }),
+            makeSession({ id: "ss-rest", name: "Rest", orderIndex: 3, isRest: true, exercises: [] }),
+          ],
+        }),
+      );
       mockCreateAtomic.mockResolvedValue("new-plan-id");
-
-      const noActivePlanQuery = createMockQuery({ data: null, error: null });
-      // Need to return different IDs for each session insert
-      let sessionCallIdx = 0;
-      const sessionIds = ["ts-push", "ts-pull", "ts-legs"];
-      const sessionInsertQueryDynamic = {
-        ...createMockQuery({ data: null, error: null }),
-        insert: vi.fn().mockReturnThis(),
-        select: vi.fn().mockReturnThis(),
-        single: vi.fn().mockImplementation(() =>
-          Promise.resolve({ data: { id: sessionIds[sessionCallIdx++] }, error: null })
-        ),
-      };
+      const sessionInsertQuery = makeSessionInsertQuery(["ts-push", "ts-pull", "ts-legs", "ts-rest"]);
       const eventUpsertQuery = createMockQuery({ data: [], error: null });
-
       mockFrom.mockImplementation((table: string) => {
-        if (table === "training_plans") return noActivePlanQuery as any;
-        if (table === "training_sessions") return sessionInsertQueryDynamic as any;
-        if (table === "training_events") return eventUpsertQuery as any;
-        return createMockQuery({ data: null, error: null }) as any;
+        if (table === "training_sessions") return sessionInsertQuery as never;
+        if (table === "training_events") return eventUpsertQuery as never;
+        return createMockQuery({ data: null, error: null }) as never;
       });
 
-      await placePlanOnCalendar({
-        savedPlanId: "sp-1",
-        coachId: "coach-1",
-        clientId: "client-1",
-        startDate: "2026-04-15",      });
+      await placePlanOnCalendar({ savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15", repeatCycles: 2 });
 
-      const events = eventUpsertQuery.upsert.mock.calls[0][0];
-
-      // 7 days, 4-day cycle with 1 rest = 3 training days per cycle
-      // Day 0 (Apr 15): Push, Day 1 (Apr 16): Pull, Day 2 (Apr 17): Legs
-      // Day 3 (Apr 18): REST
-      // Day 4 (Apr 19) = cycle pos 0: Push, Day 5 (Apr 20) = pos 1: Pull
-      // Day 6 (Apr 21) = pos 2: Legs
-      // = 6 events total (last cycle incomplete but no rest day reached)
-
-      // Verify rest day skipped (April 18 should not have an event)
-      const dates = events.map((e: { date: string }) => e.date);
-      expect(dates).not.toContain("2026-04-18");
-      expect(dates).toContain("2026-04-15");
-      expect(dates).toContain("2026-04-16");
-      expect(dates).toContain("2026-04-17");
-      expect(dates).toContain("2026-04-19");
-      expect(events.length).toBe(6);
+      const events = eventUpsertQuery.upsert.mock.calls[0][0] as { date: string }[];
+      // 8 days; rest on day 3 (04-18) and day 7 (04-22) → 6 events.
+      expect(events.map((e) => e.date)).toEqual([
+        "2026-04-15", "2026-04-16", "2026-04-17",
+        "2026-04-19", "2026-04-20", "2026-04-21",
+      ]);
     });
 
-    it("3-day cycle with no rest fills every day", async () => {
-      const savedPlan = makeSavedPlan({
-        cycleLength: 3,
-        restPattern: [],
-        programDurationWeeks: 1,
-        sessions: [
-          makeSession({ id: "ss-a", name: "A", orderIndex: 0, exercises: [] }),
-          makeSession({ id: "ss-b", name: "B", orderIndex: 1, exercises: [] }),
-          makeSession({ id: "ss-c", name: "C", orderIndex: 2, exercises: [] }),
-        ],
-      });
-      mockGetSavedPlanById.mockResolvedValue(savedPlan);
+    it("GUARDRAIL: a rest slot never emits a training_event", async () => {
+      mockGetSavedPlanById.mockResolvedValue(
+        makeSavedPlan({
+          cycleLength: 2, restPattern: [1],
+          sessions: [
+            makeSession({ id: "ss-w", name: "Workout", orderIndex: 0, exercises: [] }),
+            makeSession({ id: "ss-r", name: "Rest", orderIndex: 1, isRest: true, exercises: [] }),
+          ],
+        }),
+      );
       mockCreateAtomic.mockResolvedValue("new-plan-id");
-
-      const noActivePlanQuery = createMockQuery({ data: null, error: null });
-      let idx = 0;
-      const sIds = ["ts-a", "ts-b", "ts-c"];
-      const sessionQuery = {
-        ...createMockQuery({ data: null, error: null }),
-        insert: vi.fn().mockReturnThis(),
-        select: vi.fn().mockReturnThis(),
-        single: vi.fn().mockImplementation(() =>
-          Promise.resolve({ data: { id: sIds[idx++] }, error: null })
-        ),
-      };
-      const eventQuery = createMockQuery({ data: [], error: null });
-
+      const sessionInsertQuery = makeSessionInsertQuery(["ts-w", "ts-r"]);
+      const eventUpsertQuery = createMockQuery({ data: [], error: null });
       mockFrom.mockImplementation((table: string) => {
-        if (table === "training_plans") return noActivePlanQuery as any;
-        if (table === "training_sessions") return sessionQuery as any;
-        if (table === "training_events") return eventQuery as any;
-        return createMockQuery({ data: null, error: null }) as any;
+        if (table === "training_sessions") return sessionInsertQuery as never;
+        if (table === "training_events") return eventUpsertQuery as never;
+        return createMockQuery({ data: null, error: null }) as never;
       });
 
-      await placePlanOnCalendar({
-        savedPlanId: "sp-1",
-        coachId: "coach-1",
-        clientId: "client-1",
-        startDate: "2026-04-15",      });
+      await placePlanOnCalendar({ savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15", repeatCycles: 3 });
 
-      const events = eventQuery.upsert.mock.calls[0][0];
-      // 7 days, no rest = 7 events
-      expect(events.length).toBe(7);
+      const events = eventUpsertQuery.upsert.mock.calls[0][0] as { training_session_id: string }[];
+      // 6 days, every other day rest → 3 workout events, none for the rest slot.
+      expect(events).toHaveLength(3);
+      expect(events.every((e) => e.training_session_id === "ts-w")).toBe(true);
+    });
+
+    it("multi-week program: the whole program (all weeks) is the repeat unit", async () => {
+      // Week 0: A(0), B(1); Week 1: C(0), D(1). Ordered cycle = A,B,C,D.
+      mockGetSavedPlanById.mockResolvedValue(
+        makeSavedPlan({
+          cycleLength: 4, restPattern: [],
+          sessions: [
+            makeSession({ id: "a", name: "A", weekIndex: 0, orderIndex: 0, exercises: [] }),
+            makeSession({ id: "b", name: "B", weekIndex: 0, orderIndex: 1, exercises: [] }),
+            makeSession({ id: "c", name: "C", weekIndex: 1, orderIndex: 0, exercises: [] }),
+            makeSession({ id: "d", name: "D", weekIndex: 1, orderIndex: 1, exercises: [] }),
+          ],
+        }),
+      );
+      mockCreateAtomic.mockResolvedValue("new-plan-id");
+      const sessionInsertQuery = makeSessionInsertQuery(["ts-a", "ts-b", "ts-c", "ts-d"]);
+      const eventUpsertQuery = createMockQuery({ data: [], error: null });
+      mockFrom.mockImplementation((table: string) => {
+        if (table === "training_sessions") return sessionInsertQuery as never;
+        if (table === "training_events") return eventUpsertQuery as never;
+        return createMockQuery({ data: null, error: null }) as never;
+      });
+
+      await placePlanOnCalendar({ savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15", repeatCycles: 2 });
+
+      // Session inserts are ordered by (week_index, order_index).
+      expect(sessionInsertQuery.insert.mock.calls.map((c) => c[0].name)).toEqual(["A", "B", "C", "D"]);
+      expect(sessionInsertQuery.insert.mock.calls.map((c) => c[0].week_index)).toEqual([0, 0, 1, 1]);
+      const events = eventUpsertQuery.upsert.mock.calls[0][0] as { training_session_id: string }[];
+      expect(events.map((e) => e.training_session_id)).toEqual([
+        "ts-a", "ts-b", "ts-c", "ts-d", "ts-a", "ts-b", "ts-c", "ts-d",
+      ]);
+    });
+
+    it("NO COMPRESSION: an all-rest week in the middle + a trailing rest still land dates correctly", async () => {
+      // Week 0: A(0), B(1); Week 1: Rest(0), Rest(1) [all-rest]; Week 2: C(0), Rest(1) [trailing].
+      // Ordered cycle = A, B, rest, rest, C, rest (6 slots). Repeat 2 = 12 days.
+      mockGetSavedPlanById.mockResolvedValue(
+        makeSavedPlan({
+          sessions: [
+            makeSession({ id: "a", name: "A", weekIndex: 0, orderIndex: 0, exercises: [] }),
+            makeSession({ id: "b", name: "B", weekIndex: 0, orderIndex: 1, exercises: [] }),
+            makeSession({ id: "r1", name: "Rest", weekIndex: 1, orderIndex: 0, isRest: true, exercises: [] }),
+            makeSession({ id: "r2", name: "Rest", weekIndex: 1, orderIndex: 1, isRest: true, exercises: [] }),
+            makeSession({ id: "c", name: "C", weekIndex: 2, orderIndex: 0, exercises: [] }),
+            makeSession({ id: "r3", name: "Rest", weekIndex: 2, orderIndex: 1, isRest: true, exercises: [] }),
+          ],
+        }),
+      );
+      mockCreateAtomic.mockResolvedValue("new-plan-id");
+      const sessionInsertQuery = makeSessionInsertQuery(["ts-a", "ts-b", "ts-r1", "ts-r2", "ts-c", "ts-r3"]);
+      const eventUpsertQuery = createMockQuery({ data: [], error: null });
+      mockFrom.mockImplementation((table: string) => {
+        if (table === "training_sessions") return sessionInsertQuery as never;
+        if (table === "training_events") return eventUpsertQuery as never;
+        return createMockQuery({ data: null, error: null }) as never;
+      });
+
+      await placePlanOnCalendar({ savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15", repeatCycles: 2 });
+
+      const events = eventUpsertQuery.upsert.mock.calls[0][0] as { date: string }[];
+      const dates = events.map((e) => e.date);
+      // Rest days consume their date but emit no event; C lands AFTER the all-rest
+      // week, and the next repeat's A lands AFTER the trailing rest — no compression.
+      expect(dates).toEqual([
+        "2026-04-15", "2026-04-16", "2026-04-19", // week0 A,B ; week2 C
+        "2026-04-21", "2026-04-22", "2026-04-25", // repeat: A,B,C
+      ]);
+      expect(dates).not.toContain("2026-04-17"); // all-rest week
+      expect(dates).not.toContain("2026-04-18");
+      expect(dates).not.toContain("2026-04-20"); // trailing rest
     });
   });
 
@@ -576,114 +575,63 @@ describe("library-placement-service", () => {
   // =========================================================================
 
   describe("placeSessionOnCalendar", () => {
-    it("creates session, exercises, and event with is_modified = true", async () => {
+    it("creates session (is_rest false), exercises, and event with is_modified = true", async () => {
       const savedSessionRow = {
-        id: "ss-1",
-        coach_id: "coach-1",
-        saved_plan_id: null,
-        name: "Push Day",
-        focus: "chest",
-        order_index: 0,
-        is_rest: false,
-        estimated_duration_minutes: 60,
-        calorie_surplus_percentage: 15,
-        notes: null,
-        session_type: "training",
+        id: "ss-1", coach_id: "coach-1", saved_plan_id: null, name: "Push Day", focus: "chest",
+        order_index: 0, week_index: 0, is_rest: false, estimated_duration_minutes: 60,
+        calorie_surplus_percentage: 15, notes: null, session_type: "training",
         coach_saved_exercises: [
           {
-            id: "se-1",
-            exercise_id: "catalog-1",
-            name: "Bench Press",
-            order_index: 0,
-            sets: 4,
-            reps_min: 8,
-            reps_max: 12,
-            reps_target: null,
-            rpe_target: 8,
-            percentage_1rm: null,
-            tempo: null,
-            rest_seconds: 90,
-            notes: null,
-            superset_group: null,
-            is_warmup: false,
+            id: "se-1", exercise_id: "catalog-1", name: "Bench Press", order_index: 0, sets: 4,
+            reps_min: 8, reps_max: 12, reps_target: null, rpe_target: 8, percentage_1rm: null,
+            tempo: null, rest_seconds: 90, notes: null, superset_group: null, is_warmup: false,
+            set_specs: null, video_url: null,
           },
         ],
       };
-
       const sessionFetchQuery = createMockQuery({ data: savedSessionRow, error: null });
       const sessionInsertQuery = createMockQuery({ data: { id: "ts-new" }, error: null });
       const exerciseInsertQuery = createMockQuery({ data: null, error: null });
       const eventInsertQuery = createMockQuery({ data: { id: "evt-new" }, error: null });
 
       mockFrom.mockImplementation((table: string) => {
-        if (table === "coach_saved_sessions") return sessionFetchQuery as any;
-        if (table === "training_sessions") return sessionInsertQuery as any;
-        if (table === "training_exercises") return exerciseInsertQuery as any;
-        if (table === "training_events") return eventInsertQuery as any;
-        return createMockQuery({ data: null, error: null }) as any;
+        if (table === "coach_saved_sessions") return sessionFetchQuery as never;
+        if (table === "training_sessions") return sessionInsertQuery as never;
+        if (table === "training_exercises") return exerciseInsertQuery as never;
+        if (table === "training_events") return eventInsertQuery as never;
+        return createMockQuery({ data: null, error: null }) as never;
       });
 
       const result = await placeSessionOnCalendar({
-        savedSessionId: "ss-1",
-        coachId: "coach-1",
-        clientId: "client-1",
-        planId: "plan-1",
-        targetDate: "2026-04-20",
+        savedSessionId: "ss-1", coachId: "coach-1", clientId: "client-1", planId: "plan-1", targetDate: "2026-04-20",
       });
 
       expect(result.sessionId).toBe("ts-new");
       expect(result.eventId).toBe("evt-new");
-
-      // Verify session insert
       expect(sessionInsertQuery.insert).toHaveBeenCalledWith(
-        expect.objectContaining({
-          plan_id: "plan-1",
-          day_of_week: null,
-          calorie_surplus_percentage: 15,
-        })
+        expect.objectContaining({ plan_id: "plan-1", day_of_week: null, is_rest: false, calorie_surplus_percentage: 15 }),
       );
-
-      // Verify exercise insert preserves exercise_id
       const exInsert = exerciseInsertQuery.insert.mock.calls[0][0];
       expect(exInsert[0].exercise_id).toBe("catalog-1");
-
-      // Verify event has is_modified = true
       expect(eventInsertQuery.insert).toHaveBeenCalledWith(
-        expect.objectContaining({
-          is_modified: true,
-          date: "2026-04-20",
-          status: "scheduled",
-          calorie_surplus_percentage: 15,
-        })
+        expect.objectContaining({ is_modified: true, date: "2026-04-20", status: "scheduled", calorie_surplus_percentage: 15 }),
       );
-
-      // Verify phase bounds checked
       expect(mockValidatePhaseBounds).toHaveBeenCalledWith("plan-1", "2026-04-20");
     });
 
     it("rejects when phase boundary is violated", async () => {
-      mockValidatePhaseBounds.mockRejectedValue(
-        new Error("Target date is outside the current phase")
-      );
-
-      // Still need the session fetch to succeed for the function to reach validation
+      mockValidatePhaseBounds.mockRejectedValue(new Error("Target date is outside the current phase"));
       const sessionFetchQuery = createMockQuery({
-        data: { id: "ss-1", coach_id: "coach-1", name: "Push", focus: null, order_index: 0, is_rest: false, estimated_duration_minutes: 60, calorie_surplus_percentage: null, notes: null, session_type: "training", coach_saved_exercises: [] },
+        data: { id: "ss-1", coach_id: "coach-1", name: "Push", focus: null, order_index: 0, week_index: 0, is_rest: false, estimated_duration_minutes: 60, calorie_surplus_percentage: null, notes: null, session_type: "training", coach_saved_exercises: [] },
         error: null,
       });
       mockFrom.mockImplementation((table: string) => {
-        if (table === "coach_saved_sessions") return sessionFetchQuery as any;
-        return createMockQuery({ data: null, error: null }) as any;
+        if (table === "coach_saved_sessions") return sessionFetchQuery as never;
+        return createMockQuery({ data: null, error: null }) as never;
       });
 
       await expect(
-        placeSessionOnCalendar({
-          savedSessionId: "ss-1",
-          coachId: "coach-1",
-          clientId: "client-1",
-          planId: "plan-1",
-          targetDate: "2026-06-01",
-        })
+        placeSessionOnCalendar({ savedSessionId: "ss-1", coachId: "coach-1", clientId: "client-1", planId: "plan-1", targetDate: "2026-06-01" }),
       ).rejects.toThrow("outside the current phase");
     });
   });
@@ -701,17 +649,9 @@ describe("library-placement-service", () => {
         defaultSurplusPercentage: 10,
         sessions: [
           {
-            name: "Push",
-            focus: "chest",
-            orderIndex: 0,
-            isRest: false,
-            estimatedDurationMinutes: 60,
-            calorieSurplusPercentage: 15,
-            notes: null,
-            sessionType: "training",
-            exercises: [
-              { name: "Bench", exerciseId: "catalog-1", orderIndex: 0, sets: 3 },
-            ],
+            name: "Push", focus: "chest", orderIndex: 0, isRest: false, estimatedDurationMinutes: 60,
+            calorieSurplusPercentage: 15, notes: null, sessionType: "training",
+            exercises: [{ name: "Bench", exerciseId: "catalog-1", orderIndex: 0, sets: 3 }],
           },
         ],
         ...overrides,
@@ -719,26 +659,21 @@ describe("library-placement-service", () => {
     }
 
     function wireInlineMocks(exerciseCatalogIds: string[]) {
-      const exercisesQuery = createMockQuery({
-        data: exerciseCatalogIds.map((id) => ({ id })),
-        error: null,
-      });
-      const sessionInsertQuery = createMockQuery({ data: { id: "ts-1" }, error: null });
+      const exercisesQuery = createMockQuery({ data: exerciseCatalogIds.map((id) => ({ id })), error: null });
+      const sessionInsertQuery = makeSessionInsertQuery(["ts-1", "ts-2", "ts-3"]);
       const exerciseInsertQuery = createMockQuery({ data: null, error: null });
-      const phaseQuery = createMockQuery({ data: null, error: null });
       const eventUpsertQuery = createMockQuery({ data: [], error: null });
       const libraryQuery = createMockQuery({ data: null, error: null });
 
       mockFrom.mockImplementation((table: string) => {
-        if (table === "exercises") return exercisesQuery as any;
-        if (table === "training_sessions") return sessionInsertQuery as any;
-        if (table === "training_exercises") return exerciseInsertQuery as any;
-        if (table === "phases") return phaseQuery as any;
-        if (table === "training_events") return eventUpsertQuery as any;
-        if (table === "coach_saved_sessions") return libraryQuery as any;
-        if (table === "coach_saved_exercises") return libraryQuery as any;
-        if (table === "coach_saved_plans") return libraryQuery as any;
-        return createMockQuery({ data: null, error: null }) as any;
+        if (table === "exercises") return exercisesQuery as never;
+        if (table === "training_sessions") return sessionInsertQuery as never;
+        if (table === "training_exercises") return exerciseInsertQuery as never;
+        if (table === "training_events") return eventUpsertQuery as never;
+        if (table === "coach_saved_sessions") return libraryQuery as never;
+        if (table === "coach_saved_exercises") return libraryQuery as never;
+        if (table === "coach_saved_plans") return libraryQuery as never;
+        return createMockQuery({ data: null, error: null }) as never;
       });
 
       return { sessionInsertQuery, exerciseInsertQuery, eventUpsertQuery, libraryQuery };
@@ -749,48 +684,32 @@ describe("library-placement-service", () => {
       const { sessionInsertQuery, eventUpsertQuery, libraryQuery } = wireInlineMocks(["catalog-1"]);
 
       const result = await placeInlineEditedPlanOnCalendar({
-        plan: makeInlinePlan(),
-        coachId: "coach-1",
-        clientId: "client-1",
-        startDate: "2026-04-15",
+        plan: makeInlinePlan(), coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15", repeatCycles: 1,
       });
 
-      // No template link: an edited copy is not a copy of any single template.
-      expect(mockCreateAtomic).toHaveBeenCalledWith(
-        expect.objectContaining({ savedPlanId: undefined }),
-      );
-      // Library is NEVER touched (no delete/insert on any coach_saved_* table).
+      expect(mockCreateAtomic).toHaveBeenCalledWith(expect.objectContaining({ savedPlanId: undefined }));
       expect(libraryQuery.delete).not.toHaveBeenCalled();
       expect(libraryQuery.insert).not.toHaveBeenCalled();
-      // Surplus preserved onto the cloned session and the generated events.
       expect(sessionInsertQuery.insert).toHaveBeenCalledWith(
-        expect.objectContaining({ calorie_surplus_percentage: 15 }),
+        expect.objectContaining({ calorie_surplus_percentage: 15, is_rest: false }),
       );
       const eventRows = eventUpsertQuery.upsert.mock.calls[0][0];
       expect(eventRows.length).toBeGreaterThan(0);
-      for (const row of eventRows) {
-        expect(row.calorie_surplus_percentage).toBe(15);
-      }
+      for (const row of eventRows) expect(row.calorie_surplus_percentage).toBe(15);
       expect(result.planId).toBe("new-plan-id");
     });
 
-    it("carries programDurationWeeks so a >8-week edited plan is not truncated to the fallback window", async () => {
+    it("repeat count drives the window (programDurationWeeks does NOT extend it)", async () => {
       mockCreateAtomic.mockResolvedValue("new-plan-id");
       wireInlineMocks(["catalog-1"]);
 
+      // A 1-slot program with programDurationWeeks = 12 but repeatCycles = 1 places
+      // exactly ONE day — the repeat count is the only length knob.
       await placeInlineEditedPlanOnCalendar({
-        plan: makeInlinePlan({ programDurationWeeks: 12 }),
-        coachId: "coach-1",
-        clientId: "client-1",
-        startDate: "2026-04-15",
+        plan: makeInlinePlan({ programDurationWeeks: 12 }), coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15", repeatCycles: 1,
       });
 
-      const call = mockCreateAtomic.mock.calls[0][0];
-      // 8-week fallback would end ~2026-06-10; 12 weeks must reach well beyond it.
-      expect(call.windowEnd).toBeDefined();
-      expect(new Date(call.windowEnd as string).getTime()).toBeGreaterThan(
-        new Date("2026-06-20").getTime(),
-      );
+      expect(mockCreateAtomic.mock.calls[0][0].windowEnd).toBe("2026-04-15");
     });
 
     it("nulls an exercise_id that is not in the coach's own+global catalog", async () => {
@@ -801,14 +720,8 @@ describe("library-placement-service", () => {
         plan: makeInlinePlan({
           sessions: [
             {
-              name: "Push",
-              focus: null,
-              orderIndex: 0,
-              isRest: false,
-              estimatedDurationMinutes: null,
-              calorieSurplusPercentage: null,
-              notes: null,
-              sessionType: "training",
+              name: "Push", focus: null, orderIndex: 0, isRest: false, estimatedDurationMinutes: null,
+              calorieSurplusPercentage: null, notes: null, sessionType: "training",
               exercises: [
                 { name: "Owned", exerciseId: "catalog-1", orderIndex: 0, sets: 3 },
                 { name: "Foreign", exerciseId: "not-in-catalog", orderIndex: 1, sets: 3 },
@@ -816,9 +729,7 @@ describe("library-placement-service", () => {
             },
           ],
         }),
-        coachId: "coach-1",
-        clientId: "client-1",
-        startDate: "2026-04-15",
+        coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15", repeatCycles: 1,
       });
 
       const inserted = exerciseInsertQuery.insert.mock.calls[0][0];
@@ -828,7 +739,7 @@ describe("library-placement-service", () => {
   });
 
   // =========================================================================
-  // deriveCycleInfoFromSessions (rest days survive an out-of-order body)
+  // deriveCycleInfoFromSessions
   // =========================================================================
 
   describe("deriveCycleInfoFromSessions", () => {
@@ -839,8 +750,21 @@ describe("library-placement-service", () => {
         { orderIndex: 2, isRest: false },
       ]);
       expect(info.cycleLength).toBe(3);
-      expect(info.restPattern).toEqual([0]); // rest is orderIndex 0, not array pos 1
+      expect(info.restPattern).toEqual([0]);
       expect(info.frequencyPerWeek).toBe(2);
+    });
+
+    it("concatenates all weeks by (weekIndex, orderIndex)", () => {
+      const info = deriveCycleInfoFromSessions([
+        { weekIndex: 1, orderIndex: 0, isRest: true },
+        { weekIndex: 0, orderIndex: 1, isRest: false },
+        { weekIndex: 0, orderIndex: 0, isRest: false },
+        { weekIndex: 1, orderIndex: 1, isRest: false },
+      ]);
+      // Ordered: w0o0, w0o1, w1o0(rest), w1o1 → rest at slot 2.
+      expect(info.cycleLength).toBe(4);
+      expect(info.restPattern).toEqual([2]);
+      expect(info.frequencyPerWeek).toBe(3);
     });
 
     it("handles a no-rest plan", () => {

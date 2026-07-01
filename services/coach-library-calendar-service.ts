@@ -85,6 +85,8 @@ export async function savePlanFromCalendar(
           superset_group: e.superset_group ?? null,
           is_warmup: e.is_warmup ?? false,
           notes: e.notes ?? null,
+          set_specs: e.set_specs ?? null,
+          video_url: e.video_url ?? null,
         })
       );
       await supabaseAdmin.from("coach_saved_exercises").insert(exerciseRows);
@@ -154,6 +156,8 @@ export async function saveSessionFromCalendar(
         superset_group: e.superset_group ?? null,
         is_warmup: e.is_warmup ?? false,
         notes: e.notes ?? null,
+        set_specs: e.set_specs ?? null,
+        video_url: e.video_url ?? null,
       })
     );
     await supabaseAdmin.from("coach_saved_exercises").insert(exerciseRows);

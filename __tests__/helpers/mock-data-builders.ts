@@ -260,6 +260,8 @@ export interface MockTrainingSessionOptions {
   name?: string
   dayOfWeek?: string | null
   orderIndex?: number
+  weekIndex?: number
+  isRest?: boolean
   createdAt?: string
   updatedAt?: string
 }
@@ -273,6 +275,8 @@ export function createMockTrainingSessionRow(options: MockTrainingSessionOptions
     name: options.name ?? 'Push Day',
     day_of_week: options.dayOfWeek ?? 'monday',
     order_index: options.orderIndex ?? 0,
+    week_index: options.weekIndex ?? 0,
+    is_rest: options.isRest ?? false,
     focus: 'Chest, Shoulders, Triceps',
     notes: null,
     estimated_duration_minutes: 60,

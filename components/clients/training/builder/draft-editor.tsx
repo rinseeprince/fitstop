@@ -288,6 +288,7 @@ export function DraftEditor({
           name: payload.isRest ? "Rest" : payload.name,
           focus: null,
           orderIndex: current.sessions.length,
+          weekIndex: 0,
           isRest: payload.isRest,
           estimatedDurationMinutes: null,
           calorieSurplusPercentage: null,
@@ -635,6 +636,8 @@ export function DraftEditor({
                           supersetGroup: null,
                           isWarmup: false,
                           notes: null,
+                          setSpecs: null,
+                          videoUrl: null,
                           createdAt: new Date().toISOString(),
                           updatedAt: new Date().toISOString(),
                         };

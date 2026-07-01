@@ -1074,6 +1074,7 @@ export type Database = {
           saved_plan_id: string | null
           session_type: string
           updated_at: string
+          week_index: number
         }
         Insert: {
           calorie_surplus_percentage?: number | null
@@ -1089,6 +1090,7 @@ export type Database = {
           saved_plan_id?: string | null
           session_type?: string
           updated_at?: string
+          week_index?: number
         }
         Update: {
           calorie_surplus_percentage?: number | null
@@ -1104,6 +1106,7 @@ export type Database = {
           saved_plan_id?: string | null
           session_type?: string
           updated_at?: string
+          week_index?: number
         }
         Relationships: [
           {
@@ -2740,11 +2743,13 @@ export type Database = {
           focus: string | null
           id: string
           is_active: boolean
+          is_rest: boolean
           name: string
           notes: string | null
           order_index: number
           plan_id: string
           updated_at: string
+          week_index: number
         }
         Insert: {
           calorie_surplus_percentage?: number | null
@@ -2756,11 +2761,13 @@ export type Database = {
           focus?: string | null
           id?: string
           is_active?: boolean
+          is_rest?: boolean
           name: string
           notes?: string | null
           order_index?: number
           plan_id: string
           updated_at?: string
+          week_index?: number
         }
         Update: {
           calorie_surplus_percentage?: number | null
@@ -2772,11 +2779,13 @@ export type Database = {
           focus?: string | null
           id?: string
           is_active?: boolean
+          is_rest?: boolean
           name?: string
           notes?: string | null
           order_index?: number
           plan_id?: string
           updated_at?: string
+          week_index?: number
         }
         Relationships: [
           {

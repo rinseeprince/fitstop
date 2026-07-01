@@ -14,6 +14,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { swrFetcher } from "@/lib/swr-fetcher";
+import type { SetSpec } from "@/utils/exercise-set-specs";
 import { getTodayDateString } from "@/lib/date-helpers";
 import { canEditDay } from "@/lib/daily-log-permissions";
 import { useToast } from "@/hooks/use-toast";
@@ -619,6 +620,8 @@ function normalizeExercise(
       restSeconds: e.restSeconds,
       notes: e.notes,
       isWarmup: e.isWarmup ?? false,
+      setSpecs: e.setSpecs ?? undefined,
+      videoUrl: e.videoUrl ?? undefined,
     };
   }
   const s = resolved.snapshot;
@@ -634,6 +637,9 @@ function normalizeExercise(
     restSeconds: pick<number>("restSeconds"),
     notes: pick<string>("notes"),
     isWarmup: pick<boolean>("isWarmup") ?? false,
+    // Snapshot uses snake_case keys (matches the snapshot writer).
+    setSpecs: pick<SetSpec[]>("set_specs"),
+    videoUrl: pick<string>("video_url"),
   };
 }
 

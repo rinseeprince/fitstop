@@ -6,7 +6,9 @@ import { validatePhaseBounds } from "./training-event-calendar-service";
 import { deriveCycleInfoFromSessions } from "./coach-library-helpers";
 import { getDateString } from "@/lib/date-helpers";
 import type { TrainingEventInsert, CoachSavedExerciseRow } from "@/lib/database-helpers";
+import type { Json } from "@/types/database";
 import type { SavedSession, SavedExercise } from "@/types/training";
+import type { SetSpec } from "@/utils/exercise-set-specs";
 import type { InlinePlanBody } from "@/lib/validations/training";
 
 // --- Shape used by both DB-backed and inline (in-memory) placements ---
@@ -73,7 +75,11 @@ export async function placeInlineEditedPlanOnCalendar(params: {
   const { plan, coachId, clientId, startDate, repeatCycles, phaseId } = params;
 
   const { cycleLength, restPattern, frequencyPerWeek } = deriveCycleInfoFromSessions(
-    plan.sessions.map((s) => ({ orderIndex: s.orderIndex, isRest: s.isRest })),
+    plan.sessions.map((s) => ({
+      weekIndex: s.weekIndex,
+      orderIndex: s.orderIndex,
+      isRest: s.isRest,
+    })),
   );
 
   const ownedExerciseIds = await fetchOwnedExerciseIds(coachId);
@@ -125,6 +131,7 @@ function inlineSessionToSaved(
     name: s.name,
     focus: s.focus ?? null,
     orderIndex: s.orderIndex,
+    weekIndex: s.weekIndex ?? 0,
     isRest: s.isRest,
     estimatedDurationMinutes: s.estimatedDurationMinutes ?? null,
     calorieSurplusPercentage: s.calorieSurplusPercentage ?? null,
@@ -159,6 +166,8 @@ function inlineExerciseToSaved(
     supersetGroup: e.supersetGroup ?? null,
     isWarmup: e.isWarmup ?? false,
     notes: e.notes ?? null,
+    setSpecs: (e.setSpecs ?? null) as SetSpec[] | null,
+    videoUrl: e.videoUrl ?? null,
     createdAt: "",
     updatedAt: "",
   };
@@ -183,15 +192,23 @@ async function placePlaceablePlanOnCalendar(params: {
     phaseId,
   } = params;
 
+  // The whole authored program (every week, ordered by (week_index, order_index))
+  // is the repeat unit. Rest slots are cloned too so the placed plan is
+  // self-describing about rest; the event generator below emits for non-rest slots
+  // only. Every slot is a real row — a missing rest row would collapse the week.
+  const cycleSlots = [...savedPlan.sessions].sort(
+    (a, b) => a.weekIndex - b.weekIndex || a.orderIndex - b.orderIndex,
+  );
+
   // 2. Compute the incoming plan's own window end FIRST (capped at the next
-  //    coexisting plan's start). It bounds BOTH the RPC's additive delete and
-  //    the event generation below to exactly the same range, so re-placing the
-  //    same window is idempotent and non-overlapping plans coexist untouched.
+  //    coexisting plan's start). It bounds BOTH the RPC's additive delete and the
+  //    event generation below to exactly the same range, so re-placing the same
+  //    window is idempotent and non-overlapping plans coexist untouched. Length =
+  //    (repeat count, default 1) × the whole-program slot count.
   const endDate = await calculatePlacementEndDate({
     phaseId,
     clientId,
-    programDurationWeeks: savedPlan.programDurationWeeks ?? null,
-    cycleLength: savedPlan.cycleLength ?? null,
+    cycleLength: cycleSlots.length,
     repeatCycles: repeatCycles ?? null,
     startDate,
   });
@@ -208,6 +225,8 @@ async function placePlaceablePlanOnCalendar(params: {
     coachPrompt: "",
     splitType: savedPlan.splitType || "custom",
     frequencyPerWeek: savedPlan.frequencyPerWeek || 0,
+    // Still written as plan metadata / RPC arg even though the placement window is
+    // now driven by the repeat count × whole-program length, not this value.
     programDurationWeeks: savedPlan.programDurationWeeks ?? undefined,
     phaseId,
     effectiveFrom: startDate,
@@ -217,31 +236,33 @@ async function placePlaceablePlanOnCalendar(params: {
     savedPlanId: savedPlanId ?? undefined,
   });
 
-  // 4. Clone sessions and exercises
-  const nonRestSessions = savedPlan.sessions
-    .filter((s) => !s.isRest)
-    .sort((a, b) => a.orderIndex - b.orderIndex);
-
-  const clonedSessions: Array<{
+  // 4. Clone EVERY slot (training + rest) in program order so the placed plan is
+  //    self-describing about rest. Rest rows carry is_rest = true, no exercises,
+  //    and null surplus. `clonedSlots` is the ordered cycle the event walk tiles.
+  const clonedSlots: Array<{
     id: string;
+    isRest: boolean;
     name: string;
     focus: string | null;
     calorieSurplusPercentage: number | null;
     estimatedCalories: number | null;
   }> = [];
 
-  for (const savedSession of nonRestSessions) {
-    const surplusPercentage =
-      savedSession.calorieSurplusPercentage ?? savedPlan.defaultSurplusPercentage ?? null;
+  for (const savedSession of cycleSlots) {
+    const surplusPercentage = savedSession.isRest
+      ? null
+      : savedSession.calorieSurplusPercentage ?? savedPlan.defaultSurplusPercentage ?? null;
 
     const { data: clonedSession, error: sessionError } = await supabaseAdmin
       .from("training_sessions")
       .insert({
         plan_id: newPlanId,
-        name: savedSession.name,
+        name: savedSession.isRest ? "Rest" : savedSession.name,
         day_of_week: null,
         order_index: savedSession.orderIndex,
-        focus: savedSession.focus ?? null,
+        week_index: savedSession.weekIndex,
+        is_rest: savedSession.isRest,
+        focus: savedSession.isRest ? null : savedSession.focus ?? null,
         notes: null,
         estimated_duration_minutes: savedSession.estimatedDurationMinutes ?? null,
         calorie_surplus_percentage: surplusPercentage,
@@ -254,9 +275,11 @@ async function placePlaceablePlanOnCalendar(params: {
       throw new Error(`Failed to clone session "${savedSession.name}": ${sessionError?.message}`);
     }
 
-    // Clone exercises
-    if (savedSession.exercises.length > 0) {
-      const exerciseInserts = savedSession.exercises
+    // Clone exercises for training slots only (rest slots have none). Splat the
+    // per-set model verbatim — the source row's compact columns are already the
+    // correct projection of its set_specs.
+    if (!savedSession.isRest && savedSession.exercises.length > 0) {
+      const exerciseInserts = [...savedSession.exercises]
         .sort((a, b) => a.orderIndex - b.orderIndex)
         .map((ex: SavedExercise) => ({
           session_id: clonedSession.id,
@@ -274,6 +297,8 @@ async function placePlaceablePlanOnCalendar(params: {
           notes: ex.notes ?? null,
           superset_group: ex.supersetGroup ?? null,
           is_warmup: ex.isWarmup ?? false,
+          set_specs: (ex.setSpecs ?? null) as unknown as Json,
+          video_url: ex.videoUrl ?? null,
           is_active: true,
         }));
 
@@ -284,27 +309,31 @@ async function placePlaceablePlanOnCalendar(params: {
       if (exError) throw new Error(`Failed to clone exercises: ${exError.message}`);
     }
 
-    clonedSessions.push({
+    clonedSlots.push({
       id: clonedSession.id,
-      name: savedSession.name,
-      focus: savedSession.focus ?? null,
+      isRest: savedSession.isRest,
+      name: savedSession.isRest ? "Rest" : savedSession.name,
+      focus: savedSession.isRest ? null : savedSession.focus ?? null,
       calorieSurplusPercentage: surplusPercentage,
       estimatedCalories: null,
     });
   }
 
-  // 5. Generate cycle-aware events (same window the RPC just cleared)
+  // 5. Generate cycle-aware events (same window the RPC just cleared). Rest slots
+  //    advance the cycle position but emit no event.
   const eventsCreated = await generateCycleAwareEvents({
     clientId,
     planId: newPlanId,
-    sessions: clonedSessions,
-    cycleLength: savedPlan.cycleLength ?? clonedSessions.length,
-    restPattern: savedPlan.restPattern ?? [],
+    cycleSlots: clonedSlots,
     startDate,
     endDate,
   });
 
-  return { planId: newPlanId, sessionsCreated: clonedSessions.length, eventsCreated };
+  return {
+    planId: newPlanId,
+    sessionsCreated: clonedSlots.filter((s) => !s.isRest).length,
+    eventsCreated,
+  };
 }
 
 // --- Place a single saved session onto a client's calendar ---
@@ -339,6 +368,8 @@ export async function placeSessionOnCalendar(params: {
       name: savedSession.name,
       day_of_week: null,
       order_index: savedSession.order_index,
+      week_index: savedSession.week_index ?? 0,
+      is_rest: false,
       focus: savedSession.focus ?? null,
       notes: savedSession.notes ?? null,
       estimated_duration_minutes: savedSession.estimated_duration_minutes ?? null,
@@ -374,6 +405,8 @@ export async function placeSessionOnCalendar(params: {
       notes: ex.notes ?? null,
       superset_group: ex.superset_group ?? null,
       is_warmup: ex.is_warmup ?? false,
+      set_specs: ex.set_specs ?? null,
+      video_url: ex.video_url ?? null,
       is_active: true,
     }));
 
@@ -411,54 +444,54 @@ export async function placeSessionOnCalendar(params: {
 // --- Internal helpers ---
 
 /**
- * Generate cycle-aware training events by walking through dates and
- * rotating sessions based on cycle position and rest pattern.
+ * Generate cycle-aware training events by walking calendar dates and tiling the
+ * ordered program slots — the whole authored program (all weeks) is the repeat
+ * unit. Each calendar day maps to cycleSlots[cyclePosition]; a rest slot advances
+ * the position but emits NO event, so a rest day never spawns a training_event
+ * (it still consumes its date). Each slot references a distinct cloned session id,
+ * so re-tiling across repeats reuses ids and the (client, session, date) upsert
+ * stays idempotent.
  */
 async function generateCycleAwareEvents(params: {
   clientId: string;
   planId: string;
-  sessions: Array<{
+  cycleSlots: Array<{
     id: string;
+    isRest: boolean;
     name: string;
     focus: string | null;
     calorieSurplusPercentage: number | null;
     estimatedCalories: number | null;
   }>;
-  cycleLength: number;
-  restPattern: number[];
   startDate: string;
   endDate: string;
 }): Promise<number> {
-  const { clientId, planId, sessions, cycleLength, restPattern, startDate, endDate } = params;
+  const { clientId, planId, cycleSlots, startDate, endDate } = params;
 
-  if (sessions.length === 0) return 0;
+  const cycleLength = cycleSlots.length;
+  if (cycleLength === 0) return 0;
 
-  const restPositions = new Set(restPattern);
   const rows: TrainingEventInsert[] = [];
-
   const start = new Date(startDate + "T00:00:00");
   const end = new Date(endDate + "T00:00:00");
   let cyclePosition = 0;
-  let sessionIndex = 0;
 
   for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-    if (!restPositions.has(cyclePosition)) {
-      const session = sessions[sessionIndex % sessions.length];
+    const slot = cycleSlots[cyclePosition];
+    if (!slot.isRest) {
       rows.push({
         client_id: clientId,
         training_plan_id: planId,
-        training_session_id: session.id,
+        training_session_id: slot.id,
         date: getDateString(d),
-        session_name: session.name,
-        session_focus: session.focus ?? null,
-        estimated_calories: session.estimatedCalories ?? null,
-        calorie_surplus_percentage: session.calorieSurplusPercentage ?? null,
+        session_name: slot.name,
+        session_focus: slot.focus ?? null,
+        estimated_calories: slot.estimatedCalories ?? null,
+        calorie_surplus_percentage: slot.calorieSurplusPercentage ?? null,
         status: "scheduled",
         is_modified: false,
       });
-      sessionIndex++;
     }
-
     cyclePosition = (cyclePosition + 1) % cycleLength;
   }
 
@@ -477,22 +510,32 @@ async function generateCycleAwareEvents(params: {
 }
 
 /**
- * Calculate the end date for placement using priority chain:
- * phase end_date > programDurationWeeks > repeatCycles * cycleLength > 8-week fallback.
+ * Calculate the placement window end date. The program length is the ONLY length
+ * knob: (repeat count, default 1) × the whole-program slot count in days. There is
+ * deliberately no programDurationWeeks or 8-week fallback — an empty "Repeat
+ * Cycles" box means place exactly one pass of the authored program. The client's
+ * containing phase end is a MAXIMUM cap only (a program never runs past it and
+ * never stretches to fill it), as is the start of the next coexisting plan.
  */
 async function calculatePlacementEndDate(params: {
   phaseId?: string;
   clientId: string;
-  programDurationWeeks: number | null;
-  cycleLength: number | null;
+  cycleLength: number;
   repeatCycles: number | null;
   startDate: string;
 }): Promise<string> {
-  const { phaseId, clientId, programDurationWeeks, cycleLength, repeatCycles, startDate } = params;
+  const { phaseId, clientId, cycleLength, repeatCycles, startDate } = params;
 
+  // Program length = (repeat count, default 1) × whole-program slot count.
+  const repeats = repeatCycles && repeatCycles > 0 ? repeatCycles : 1;
+  const days = Math.max(1, cycleLength) * repeats;
+  const durationEnd = new Date(startDate + "T00:00:00");
+  durationEnd.setDate(durationEnd.getDate() + days - 1);
+  let computedEnd = getDateString(durationEnd);
+
+  // Resolve the client's containing phase end (explicit phase, else the phase that
+  // contains startDate) and apply it as a MAX cap only.
   let phaseEndDate: string | null = null;
-
-  // Phase end_date always wins if set
   if (phaseId) {
     const { data: phase } = await supabaseAdmin
       .from("phases")
@@ -529,40 +572,10 @@ async function calculatePlacementEndDate(params: {
     }
   }
 
-  // Calculate duration-based end date. Coach-supplied repeatCycles wins over
-  // the plan's baked-in programDurationWeeks: the plan default is a fallback
-  // for when the coach doesn't provide an explicit cycle count. Before this
-  // flip, repeatCycles was silently ignored whenever programDurationWeeks
-  // was set on the plan, which misled coaches using the Repeat Cycles input.
-  let durationEndDate: string | null = null;
-
-  if (repeatCycles && cycleLength) {
-    const d = new Date(startDate + "T00:00:00");
-    d.setDate(d.getDate() + repeatCycles * cycleLength - 1);
-    durationEndDate = getDateString(d);
-  } else if (programDurationWeeks) {
-    const d = new Date(startDate + "T00:00:00");
-    d.setDate(d.getDate() + programDurationWeeks * 7 - 1);
-    durationEndDate = getDateString(d);
-  }
-
-  // Phase boundary caps everything
-  let computedEnd: string;
-  if (phaseEndDate && durationEndDate) {
-    computedEnd = phaseEndDate < durationEndDate ? phaseEndDate : durationEndDate;
-  } else if (phaseEndDate) {
-    computedEnd = phaseEndDate;
-  } else if (durationEndDate) {
-    computedEnd = durationEndDate;
-  } else {
-    // Fallback: 8 weeks from start
-    const d = new Date(startDate + "T00:00:00");
-    d.setDate(d.getDate() + 8 * 7 - 1);
-    computedEnd = getDateString(d);
-  }
+  if (phaseEndDate && phaseEndDate < computedEnd) computedEnd = phaseEndDate;
 
   // Additive placement: never let this plan's window bleed past the start of a
-  // later coexisting plan (matters most for the 8-week fallback above).
+  // later coexisting plan.
   const nextPlanCap = await getNextPlanStartCap(clientId, startDate);
   if (nextPlanCap && nextPlanCap < computedEnd) return nextPlanCap;
   return computedEnd;

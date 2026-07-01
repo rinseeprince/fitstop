@@ -1,6 +1,7 @@
 import type { LogTrainingEventInput } from "@/lib/validations/training";
 import type { ExerciseLog, SessionLog } from "@/types/training";
 import type { PrescribedExerciseView } from "./exercise-tracker-block";
+import { expandSetSpecs } from "@/utils/exercise-set-specs";
 
 export const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -99,6 +100,22 @@ function isSkippedLog(log: ExerciseLog): boolean {
   return log.completed === false && log.sets.length === 0;
 }
 
+// Seed the log form's set rows from the prescription's per-set specs so the row
+// COUNT (warm-ups + working) matches what the coach prescribed; the values stay
+// client-entered (set_type is applied server-side, never chosen here).
+function seededSetRows(v: PrescribedExerciseView): SetRowValues[] {
+  const specs = expandSetSpecs({
+    setSpecs: v.setSpecs ?? null,
+    sets: v.sets,
+    repsMin: v.repsMin ?? null,
+    repsMax: v.repsMax ?? null,
+    repsTarget: v.repsTarget ?? null,
+    rpeTarget: v.rpeTarget ?? null,
+    restSeconds: v.restSeconds ?? null,
+  });
+  return Array.from({ length: Math.max(1, specs.length) }, () => emptySet());
+}
+
 export function seedDefaultValues(args: {
   prescribedViews: PrescribedExerciseView[];
   sessionLog: SessionLog | null;
@@ -120,7 +137,7 @@ export function seedDefaultValues(args: {
         weightUnit,
         skipped: false,
         notes: "",
-        sets: Array.from({ length: Math.max(1, v.sets) }, () => emptySet()),
+        sets: seededSetRows(v),
         isUnplanned: false,
       })),
     };
@@ -145,7 +162,7 @@ export function seedDefaultValues(args: {
         weightUnit,
         skipped: false,
         notes: "",
-        sets: Array.from({ length: Math.max(1, v.sets) }, () => emptySet()),
+        sets: seededSetRows(v),
         isUnplanned: false,
       };
     }

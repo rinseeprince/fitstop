@@ -121,6 +121,49 @@ export const reorderSessionsSchema = z.array(reorderSessionSchema);
 // Coach library (saved-plan / saved-session) mutation schemas
 // =============================================================================
 
+// Per-set prescription model (Training Builder S1/S2). Mirrors the SetSpec type
+// in utils/exercise-set-specs.ts; stored verbatim in the set_specs JSONB column
+// (snake_case keys match the stored shape).
+export const setTypeSchema = z.enum([
+  "warmup",
+  "working",
+  "amrap",
+  "drop",
+  "failure",
+]);
+const loadTypeSchema = z.enum(["absolute", "pct_1rm", "pct_top"]);
+
+export const setSpecSchema = z.object({
+  set_number: z.number().int().min(1).max(30),
+  set_type: setTypeSchema,
+  reps_min: z.number().int().min(0).max(100).nullish(),
+  reps_max: z.number().int().min(0).max(100).nullish(),
+  reps_target: z.string().max(20).nullish(),
+  load_type: loadTypeSchema.nullish(),
+  load_value: z.number().min(0).max(2000).nullish(),
+  rpe_target: z.number().min(0).max(10).nullish(),
+  tempo: z.string().max(20).nullish(),
+  rest_seconds: z.number().int().min(0).max(3600).nullish(),
+  drops: z
+    .array(
+      z.object({ weight: z.number().nullable(), reps: z.number().nullable() }),
+    )
+    .max(20)
+    .nullish(),
+});
+
+// Authoring forbids an all-warmup array — the compact `sets` projection needs at
+// least one working set (compactFromSpecs clamps to the training_exercises CHECK
+// [1, 20], but an all-warmup array would be a meaningless prescription).
+export const setSpecsArraySchema = z
+  .array(setSpecSchema)
+  .max(30)
+  .refine((a) => a.some((s) => s.set_type !== "warmup"), {
+    message: "At least one working set is required",
+  });
+
+export const videoUrlSchema = z.string().url().max(500).nullish();
+
 export const savedExerciseInputSchema = z.object({
   name: z.string().min(1).max(200),
   exerciseId: z.string().uuid().nullish(),
@@ -136,12 +179,17 @@ export const savedExerciseInputSchema = z.object({
   notes: z.string().max(500).nullish(),
   supersetGroup: z.string().max(10).nullish(),
   isWarmup: z.boolean().optional(),
+  setSpecs: setSpecsArraySchema.nullish(),
+  videoUrl: videoUrlSchema,
 });
 
 export const savedSessionInputSchema = z.object({
   name: z.string().min(1).max(100),
   focus: z.string().max(200).nullish(),
   orderIndex: z.number().int().min(0),
+  // 0-based slot ordering within a multi-week program (whole program = repeat
+  // unit). Defaults to 0 for single-week / legacy plans.
+  weekIndex: z.number().int().min(0).max(52).optional(),
   isRest: z.boolean(),
   estimatedDurationMinutes: z.number().int().min(0).max(480).nullish(),
   calorieSurplusPercentage: z.number().min(0).max(100).nullish(),
@@ -203,11 +251,11 @@ export const overwriteSavedPlanSchema = z.object({
 });
 
 // Inline (edited working copy) placement body — the coach applies their local
-// edits to a client's calendar without overwriting the library template. Unlike
-// overwriteSavedPlanSchema it MUST carry programDurationWeeks (the placement
-// window length — omitting it collapses a >8-week plan to the 8-week fallback)
-// and splitType (plan metadata). cycleLength / restPattern / frequencyPerWeek are
-// NOT sent — the placement service re-derives them from the sessions.
+// edits to a client's calendar without overwriting the library template. Carries
+// splitType + programDurationWeeks as plan metadata (RPC args), but the placement
+// WINDOW is driven by the apply-time repeat count (default 1) × the whole-program
+// slot count, NOT programDurationWeeks. cycleLength / restPattern / frequencyPerWeek
+// are NOT sent — the placement service re-derives them from the sessions.
 export const inlinePlanBodySchema = z.object({
   name: z.string().min(1).max(100),
   splitType: splitTypeSchema.nullish(),
@@ -240,6 +288,8 @@ export const updateSavedExerciseSchema = z.object({
   notes: z.string().max(500).nullish(),
   supersetGroup: z.string().max(10).nullish(),
   isWarmup: z.boolean().optional(),
+  setSpecs: setSpecsArraySchema.nullish(),
+  videoUrl: videoUrlSchema,
 });
 
 export const reorderSavedSessionsSchema = z.object({
@@ -263,6 +313,10 @@ export const setPerformanceSchema = z.object({
   reps: z.number().int().min(1).max(100).optional(),
   weight: z.number().min(0).max(2000).optional(),
   rpe: z.number().min(1).max(10).optional(),
+  // Accepted-but-ignored: set_type is coach-prescribed, derived server-side from
+  // the prescription snapshot's set_specs at log time (never chosen by the
+  // client). Present only so an echo/restore round-trip doesn't fail validation.
+  setType: setTypeSchema.optional(),
 });
 
 export const exercisePerformanceSchema = z

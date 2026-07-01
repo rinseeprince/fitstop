@@ -6,6 +6,7 @@ import type {
   TrainingSplitType,
 } from "@/types/training";
 import type { TrainingExerciseRow, TrainingSessionRow, TrainingPlanRow } from "@/lib/database-helpers";
+import type { SetSpec } from "@/utils/exercise-set-specs";
 
 // Map database row to TrainingExercise
 export const mapExerciseRow = (row: TrainingExerciseRow): TrainingExercise => ({
@@ -24,6 +25,8 @@ export const mapExerciseRow = (row: TrainingExerciseRow): TrainingExercise => ({
   notes: row.notes ?? undefined,
   supersetGroup: row.superset_group ?? undefined,
   isWarmup: row.is_warmup ?? false,
+  setSpecs: (row.set_specs as SetSpec[] | null) ?? null,
+  videoUrl: row.video_url ?? null,
   exerciseId: row.exercise_id ?? null,
   createdAt: row.created_at,
   updatedAt: row.updated_at,

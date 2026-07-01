@@ -107,6 +107,9 @@ export const createTrainingPlan = async (
           notes: exerciseData.notes || null,
           superset_group: exerciseData.supersetGroup || null,
           is_warmup: exerciseData.isWarmup || false,
+          // AI generation does not author per-set specs; keep the columns null.
+          set_specs: null,
+          video_url: null,
         })
         .select()
         .single();
@@ -129,6 +132,10 @@ const fetchSessionsWithExercises = async (planId: string): Promise<TrainingSessi
     .select("*")
     .eq("plan_id", planId)
     .eq("is_active", true)
+    // Rest days are real rows on placed multi-week programs (migration 121); this
+    // coach-facing workout list excludes them so counts stay workout-only.
+    .eq("is_rest", false)
+    .order("week_index", { ascending: true })
     .order("order_index", { ascending: true });
 
   if (sessionError) throw new Error(`Failed to fetch sessions: ${sessionError.message}`);

@@ -1,3 +1,5 @@
+import type { Json } from "@/types/database";
+
 // Per-set prescription model (Training Builder S1, migration 119).
 //
 // A prescription exercise can carry an authoritative per-set list (`set_specs`
@@ -52,4 +54,106 @@ export function countWorkingSets(setSpecs: unknown, fallbackSets: number): numbe
     }
   }
   return count;
+}
+
+const clamp = (n: number, lo: number, hi: number): number =>
+  Math.max(lo, Math.min(hi, n));
+
+/**
+ * Insert-side compact projection (Phase 2). `set_specs` is authoritative, but the
+ * compact columns (`sets` / `reps_min` / `reps_max`) stay a MAINTAINED PROJECTION
+ * so the legacy readers that never learn about `set_specs` still show a truthful
+ * prescription. `sets` counts working (non-warmup) sets and CLAMPS to the
+ * `training_exercises.sets` CHECK [1, 20]; the reps range spans the working specs.
+ * Authoring validation forbids an all-warmup array (`setSpecsArraySchema`), so the
+ * clamp-to-1 floor here is defensive, not a real authored state.
+ */
+export function compactFromSpecs(specs: SetSpec[]): {
+  sets: number;
+  repsMin: number | null;
+  repsMax: number | null;
+} {
+  const working = specs.filter((s) => s.set_type !== "warmup");
+  const sets = clamp(working.length, 1, 20);
+  let repsMin: number | null = null;
+  let repsMax: number | null = null;
+  for (const s of working) {
+    if (s.reps_min != null) {
+      repsMin = repsMin == null ? s.reps_min : Math.min(repsMin, s.reps_min);
+    }
+    if (s.reps_max != null) {
+      repsMax = repsMax == null ? s.reps_max : Math.max(repsMax, s.reps_max);
+    }
+  }
+  return { sets, repsMin, repsMax };
+}
+
+/**
+ * Log-form / snapshot seeding (Phase 2). Returns the authored per-set list when
+ * present; otherwise synthesizes N `working` specs from the compact columns so
+ * every prescription yields per-set rows carrying a `set_type`. The client log
+ * form seeds its row COUNT + warm-up labels from this; the client still enters
+ * the actual values. `set_type` is coach-prescribed, never chosen by the client.
+ */
+export function expandSetSpecs(ex: {
+  setSpecs?: SetSpec[] | null;
+  sets: number;
+  repsMin?: number | null;
+  repsMax?: number | null;
+  repsTarget?: string | null;
+  rpeTarget?: number | null;
+  percentage1rm?: number | null;
+  tempo?: string | null;
+  restSeconds?: number | null;
+}): SetSpec[] {
+  if (Array.isArray(ex.setSpecs) && ex.setSpecs.length > 0) return ex.setSpecs;
+  const n = clamp(Math.floor(ex.sets ?? 1), 1, 20);
+  return Array.from({ length: n }, (_, i) => ({
+    set_number: i + 1,
+    set_type: "working" as const,
+    reps_min: ex.repsMin ?? null,
+    reps_max: ex.repsMax ?? null,
+    reps_target: ex.repsTarget ?? null,
+    load_type: ex.percentage1rm != null ? ("pct_1rm" as const) : null,
+    load_value: ex.percentage1rm ?? null,
+    rpe_target: ex.rpeTarget ?? null,
+    tempo: ex.tempo ?? null,
+    rest_seconds: ex.restSeconds ?? null,
+    drops: null,
+  }));
+}
+
+/**
+ * Insert-side projection for an INPUT (authoring) write. Returns the DB column
+ * values for the five fields the set model touches: `set_specs` / `video_url` are
+ * written verbatim, and the compact `sets` / `reps_min` / `reps_max` are re-derived
+ * from `set_specs` (via compactFromSpecs) whenever specs are present so they stay a
+ * maintained projection. Every INPUT clone/insert site routes through this so no
+ * path silently drops per-set data (Landmine #2). CLONE sites that copy an existing
+ * row splat `set_specs` / `video_url` verbatim instead (the compact columns are
+ * already correct on the source row).
+ */
+export function projectExerciseCompact(input: {
+  setSpecs?: SetSpec[] | null;
+  videoUrl?: string | null;
+  sets: number;
+  repsMin?: number | null;
+  repsMax?: number | null;
+}): {
+  sets: number;
+  reps_min: number | null;
+  reps_max: number | null;
+  set_specs: Json | null;
+  video_url: string | null;
+} {
+  const specs =
+    input.setSpecs && input.setSpecs.length > 0 ? input.setSpecs : null;
+  const compact = specs ? compactFromSpecs(specs) : null;
+  return {
+    sets: compact ? compact.sets : input.sets,
+    reps_min: compact ? compact.repsMin : input.repsMin ?? null,
+    reps_max: compact ? compact.repsMax : input.repsMax ?? null,
+    set_specs: (specs ?? null) as unknown as Json | null,
+    video_url: input.videoUrl ?? null,
+  };
 }

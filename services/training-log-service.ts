@@ -21,6 +21,8 @@ import type {
   TrainingExerciseRow,
 } from "@/lib/database-helpers";
 import type { Json } from "@/types/database";
+import { expandSetSpecs } from "@/utils/exercise-set-specs";
+import type { SetSpec, SetType } from "@/utils/exercise-set-specs";
 import type {
   LogSessionForDateInput,
   LogTrainingEventInput,
@@ -130,12 +132,31 @@ function mapSetLogRow(row: SetLogRow): SetLog {
     id: row.id,
     exerciseLogId: row.exercise_log_id,
     setNumber: row.set_number,
+    setType: (row.set_type as SetType) ?? "working",
     reps: row.reps,
     weight: row.weight,
     rpe: row.rpe,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+// Expand a prescribed exercise snapshot (fresh ExerciseSnapshot or a preserved
+// JSON record — both snake_case) into per-set specs, so each logged set can be
+// stamped with the coach-prescribed set_type (never chosen by the client).
+function snapshotToSpecs(snap: Record<string, unknown> | null): SetSpec[] {
+  if (!snap) return [];
+  return expandSetSpecs({
+    setSpecs: (snap.set_specs as SetSpec[] | null) ?? null,
+    sets: typeof snap.sets === "number" ? snap.sets : 1,
+    repsMin: (snap.reps_min as number | null) ?? null,
+    repsMax: (snap.reps_max as number | null) ?? null,
+    repsTarget: (snap.reps_target as string | null) ?? null,
+    rpeTarget: (snap.rpe_target as number | null) ?? null,
+    percentage1rm: (snap.percentage_1rm as number | null) ?? null,
+    tempo: (snap.tempo as string | null) ?? null,
+    restSeconds: (snap.rest_seconds as number | null) ?? null,
+  });
 }
 
 // Fetches set_logs for the given exercise_logs in one query and attaches them
@@ -495,11 +516,20 @@ async function writeSessionLog(params: {
       if (ex.skipped) return;
       const exerciseLogId = insertedExerciseLogIds[exIdx];
       if (!exerciseLogId) return;
+      // set_type is coach-prescribed: seed it from the prescription snapshot's
+      // per-set specs (fresh or preserved), never from the client payload.
+      const snapshot = ex.trainingExerciseId
+        ? freshExerciseSnapshotMap.get(ex.trainingExerciseId) ??
+          existingSnapshotMap.get(ex.trainingExerciseId) ??
+          null
+        : null;
+      const prescribedSpecs = snapshotToSpecs(snapshot);
       ex.sets.forEach((s, setIdx) => {
         if (!setRowHasAnyValue(s)) return;
         setLogInserts.push({
           exercise_log_id: exerciseLogId,
           set_number: setIdx + 1,
+          set_type: prescribedSpecs[setIdx]?.set_type ?? "working",
           reps: s.reps ?? null,
           weight: s.weight ?? null,
           rpe: s.rpe ?? null,

@@ -28,6 +28,8 @@ function makeSession(
         restSeconds: 120,
         isWarmup: false,
         supersetGroup: null,
+        setSpecs: null,
+        videoUrl: null,
       },
     ],
     ...overrides,

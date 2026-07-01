@@ -4,12 +4,15 @@ import type {
   ClientTrainingSessionEntry,
   ClientTrainingExercise,
 } from "@/types/client-training-plan";
+import type { SetSpec } from "@/utils/exercise-set-specs";
 
 type TrainingSessionRow = {
   id: string;
   name: string;
   focus: string | null;
   order_index: number;
+  week_index: number;
+  is_rest: boolean;
   estimated_duration_minutes: number | null;
 };
 
@@ -27,6 +30,8 @@ type TrainingExerciseRow = {
   rest_seconds: number | null;
   is_warmup: boolean | null;
   superset_group: string | null;
+  set_specs: SetSpec[] | null;
+  video_url: string | null;
 };
 
 function mapExercise(row: TrainingExerciseRow): ClientTrainingExercise {
@@ -43,6 +48,8 @@ function mapExercise(row: TrainingExerciseRow): ClientTrainingExercise {
     restSeconds: row.rest_seconds,
     isWarmup: row.is_warmup ?? false,
     supersetGroup: row.superset_group,
+    setSpecs: row.set_specs ?? null,
+    videoUrl: row.video_url ?? null,
   };
 }
 
@@ -55,7 +62,8 @@ function mapSession(
     name: row.name,
     focus: row.focus,
     orderIndex: row.order_index,
-    isRest: false,
+    weekIndex: row.week_index ?? 0,
+    isRest: row.is_rest ?? false,
     estimatedDurationMinutes: row.estimated_duration_minutes,
     exercises,
   };
@@ -67,6 +75,7 @@ function buildRestEntry(orderIndex: number): ClientTrainingSessionEntry {
     name: "Rest",
     focus: null,
     orderIndex,
+    weekIndex: 0,
     isRest: true,
     estimatedDurationMinutes: null,
     exercises: [],
@@ -83,12 +92,13 @@ function buildRestEntry(orderIndex: number): ClientTrainingSessionEntry {
  * end date regardless of the link. Pulling by `phase_id` would silently drop
  * any plan that was placed without explicit phase selection.
  *
- * For library-placed plans (`saved_plan_id` set, `coach_saved_plans.cycle_length`
- * and `rest_pattern` populated), splices synthetic rest entries into the cycle
- * sequence — rest sessions are filtered out of `training_sessions` at clone time
- * (`library-placement-service.ts:128`), so the saved-plan join is the authoritative
- * source for rest positions. AI plans or plans with null cycle metadata fall through
- * to a flat sessions list (cycleLength = sessions.length, restPattern = []).
+ * Rest resolution (migration 121): placement clones rest slots as real is_rest
+ * rows, so a placed plan describes its own rest days inline (the self-describing
+ * path) — this also covers inline/edited placements with no template link and
+ * multi-week programs (week_index > 0). Plans placed BEFORE migration 121 have no
+ * is_rest rows; for those the library template's cycle_length / rest_pattern is
+ * joined as a legacy fallback. Anything else (single-week no-rest, or no template)
+ * returns a flat list (cycleLength = sessions.length, restPattern = []).
  */
 export async function getClientTrainingPlan(
   clientId: string
@@ -111,9 +121,12 @@ export async function getClientTrainingPlan(
 
   const { data: sessionRows, error: sessionErr } = await supabaseAdmin
     .from("training_sessions")
-    .select("id, name, focus, order_index, estimated_duration_minutes")
+    .select(
+      "id, name, focus, order_index, week_index, is_rest, estimated_duration_minutes"
+    )
     .eq("plan_id", planRow.id)
     .eq("is_active", true)
+    .order("week_index", { ascending: true })
     .order("order_index", { ascending: true });
 
   if (sessionErr) {
@@ -128,7 +141,7 @@ export async function getClientTrainingPlan(
     const { data: exerciseRows, error: exerciseErr } = await supabaseAdmin
       .from("training_exercises")
       .select(
-        "id, session_id, name, order_index, sets, reps_min, reps_max, reps_target, rpe_target, tempo, rest_seconds, is_warmup, superset_group"
+        "id, session_id, name, order_index, sets, reps_min, reps_max, reps_target, rpe_target, tempo, rest_seconds, is_warmup, superset_group, set_specs, video_url"
       )
       .in("session_id", sessionIds)
       .eq("is_active", true)
@@ -151,6 +164,30 @@ export async function getClientTrainingPlan(
     mapSession(row, exercisesBySession.get(row.id) ?? [])
   );
 
+  // Self-describing path (migration 121+): a placement clones rest slots as real
+  // is_rest rows and multi-week programs carry week_index > 0, so the entries
+  // already describe the full cycle inline — no library-template join needed. The
+  // `week_index > 0` guard also protects a multi-week no-rest plan, whose duplicate
+  // order_index across weeks would collide in the order-index-keyed legacy splice.
+  const isSelfDescribing = flatEntries.some(
+    (e) => e.isRest || (e.weekIndex ?? 0) > 0
+  );
+  if (isSelfDescribing) {
+    const restPattern = flatEntries
+      .map((e, i) => (e.isRest ? i : -1))
+      .filter((i) => i >= 0);
+    return {
+      planId: planRow.id,
+      planName: planRow.name,
+      cycleLength: flatEntries.length,
+      restPattern,
+      sessions: flatEntries,
+    };
+  }
+
+  // Legacy fallback: plans placed BEFORE migration 121 have no is_rest rows, so
+  // rest positions come from the library template's cycle metadata (the last
+  // saved_plan_id reader — kept only for those pre-existing placements).
   if (planRow.saved_plan_id) {
     const { data: savedPlanRow, error: savedPlanErr } = await supabaseAdmin
       .from("coach_saved_plans")

@@ -38,6 +38,7 @@ function makeSetLog(overrides: Partial<SetLog> = {}): SetLog {
     id: "set-1",
     exerciseLogId: "el-1",
     setNumber: 1,
+    setType: "working",
     reps: 10,
     weight: 60,
     rpe: null,

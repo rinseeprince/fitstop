@@ -10,6 +10,8 @@ import {
   deriveCycleInfoFromSessions,
   insertSavedExercises,
 } from "./coach-library-helpers";
+import { projectExerciseCompact } from "@/utils/exercise-set-specs";
+import type { SetSpec } from "@/utils/exercise-set-specs";
 import type {
   SavedPlan,
   AIGeneratedPlan,
@@ -317,6 +319,8 @@ export async function promoteDraftToSaved(
           superset_group: e.superset_group,
           is_warmup: e.is_warmup,
           notes: e.notes,
+          set_specs: e.set_specs ?? null,
+          video_url: e.video_url ?? null,
         }));
         await supabaseAdmin.from("coach_saved_exercises").insert(exerciseRows);
       }
@@ -421,6 +425,7 @@ export type OverwriteSavedPlanInput = {
     name: string;
     focus?: string | null;
     orderIndex: number;
+    weekIndex?: number;
     isRest: boolean;
     estimatedDurationMinutes?: number | null;
     calorieSurplusPercentage?: number | null;
@@ -441,6 +446,8 @@ export type OverwriteSavedPlanInput = {
       notes?: string | null;
       supersetGroup?: string | null;
       isWarmup?: boolean;
+      setSpecs?: SetSpec[] | null;
+      videoUrl?: string | null;
     }>;
   }>;
 };
@@ -473,10 +480,11 @@ export async function overwriteSavedPlan(
     .single();
   if (fetchError || !existing) throw new Error("Plan not found or access denied");
 
-  // Patch plan-level metadata (if provided) and derived cycle info. Shared
-  // helper sorts by orderIndex before deriving rest positions; a no-op for this
-  // caller (the builder sends sessions in orderIndex order) but keeps the
-  // derivation identical to the inline placement path and recomputePlanCycleInfo.
+  // Patch plan-level metadata (if provided) and derived cycle info. Shared helper
+  // sorts by (weekIndex, orderIndex) across all weeks before deriving rest
+  // positions, so a multi-week program derives correctly and identically to the
+  // inline placement path and recomputePlanCycleInfo. Legacy single-week
+  // (weekIndex 0) derives byte-identically to before.
   const { cycleLength, restPattern, frequencyPerWeek } =
     deriveCycleInfoFromSessions(input.sessions);
 
@@ -527,6 +535,7 @@ export async function overwriteSavedPlan(
       name: s.isRest ? "Rest" : s.name,
       focus: s.isRest ? null : (s.focus ?? null),
       order_index: s.orderIndex,
+      week_index: s.weekIndex ?? 0,
       is_rest: s.isRest,
       estimated_duration_minutes: s.estimatedDurationMinutes ?? null,
       calorie_surplus_percentage: s.calorieSurplusPercentage ?? null,
@@ -547,23 +556,28 @@ export async function overwriteSavedPlan(
 
     // coach_saved_exercises has no coach_id column — ownership is inferred
     // via saved_session_id → coach_saved_sessions → coach_id.
-    const exerciseRows = s.exercises.map((e) => ({
-      saved_session_id: newSession.id,
-      exercise_id: e.exerciseId ?? exerciseIdMap.get(e.name) ?? null,
-      name: e.name,
-      order_index: e.orderIndex,
-      sets: e.sets,
-      reps_min: e.repsMin ?? null,
-      reps_max: e.repsMax ?? null,
-      reps_target: e.repsTarget ?? null,
-      rpe_target: e.rpeTarget ?? null,
-      percentage_1rm: e.percentage1rm ?? null,
-      tempo: e.tempo ?? null,
-      rest_seconds: e.restSeconds ?? null,
-      superset_group: e.supersetGroup ?? null,
-      is_warmup: e.isWarmup ?? false,
-      notes: e.notes ?? null,
-    }));
+    const exerciseRows = s.exercises.map((e) => {
+      const w = projectExerciseCompact(e);
+      return {
+        saved_session_id: newSession.id,
+        exercise_id: e.exerciseId ?? exerciseIdMap.get(e.name) ?? null,
+        name: e.name,
+        order_index: e.orderIndex,
+        sets: w.sets,
+        reps_min: w.reps_min,
+        reps_max: w.reps_max,
+        reps_target: e.repsTarget ?? null,
+        rpe_target: e.rpeTarget ?? null,
+        percentage_1rm: e.percentage1rm ?? null,
+        tempo: e.tempo ?? null,
+        rest_seconds: e.restSeconds ?? null,
+        superset_group: e.supersetGroup ?? null,
+        is_warmup: e.isWarmup ?? false,
+        notes: e.notes ?? null,
+        set_specs: w.set_specs,
+        video_url: w.video_url,
+      };
+    });
 
     const { error: exError } = await supabaseAdmin
       .from("coach_saved_exercises")

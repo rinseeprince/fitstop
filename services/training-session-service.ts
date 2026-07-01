@@ -11,7 +11,8 @@ import type {
 import type { TrainingSessionUpdate } from "@/lib/database-helpers";
 import { mapExerciseRow, mapSessionRow } from "./training-mappers";
 import { resolveExercises } from "./exercise-catalog-service";
-import type { Json } from "@/types/database";
+import { projectExerciseCompact } from "@/utils/exercise-set-specs";
+import type { SetSpec } from "@/utils/exercise-set-specs";
 
 // Update session
 export const updateSession = async (
@@ -158,6 +159,7 @@ export const replaceSessionExercises = async (
   const newExercises: TrainingExercise[] = [];
   for (let i = 0; i < exercises.length; i++) {
     const exercise = exercises[i];
+    const w = projectExerciseCompact(exercise);
     const { data, error } = await supabaseAdmin
       .from("training_exercises")
       .insert({
@@ -165,9 +167,9 @@ export const replaceSessionExercises = async (
         name: exercise.name,
         exercise_id: resolvedMap.get(exercise.name.trim()) ?? null,
         order_index: i,
-        sets: exercise.sets,
-        reps_min: exercise.repsMin || null,
-        reps_max: exercise.repsMax || null,
+        sets: w.sets,
+        reps_min: w.reps_min,
+        reps_max: w.reps_max,
         reps_target: exercise.repsTarget || null,
         rpe_target: exercise.rpeTarget || null,
         percentage_1rm: exercise.percentage1rm || null,
@@ -176,6 +178,8 @@ export const replaceSessionExercises = async (
         notes: exercise.notes || null,
         superset_group: exercise.supersetGroup || null,
         is_warmup: exercise.isWarmup || false,
+        set_specs: w.set_specs,
+        video_url: w.video_url,
       })
       .select()
       .single();
@@ -269,6 +273,9 @@ export const insertTrainingSessions = async (
           notes: exerciseData.notes || null,
           superset_group: exerciseData.supersetGroup || null,
           is_warmup: exerciseData.isWarmup || false,
+          // AI generation does not author per-set specs; keep the columns null.
+          set_specs: null,
+          video_url: null,
         })
         .select()
         .single();
@@ -344,27 +351,34 @@ export type ExerciseInput = {
   supersetGroup?: string | null;
   isWarmup?: boolean;
   notes?: string | null;
+  setSpecs?: SetSpec[] | null;
+  videoUrl?: string | null;
 };
 
 function buildExerciseInserts(sessionId: string, exercises: ExerciseInput[]) {
-  return exercises.map((ex) => ({
-    session_id: sessionId,
-    name: ex.name,
-    exercise_id: ex.exerciseId ?? null,
-    order_index: ex.orderIndex,
-    sets: ex.sets,
-    reps_min: ex.repsMin ?? null,
-    reps_max: ex.repsMax ?? null,
-    reps_target: ex.repsTarget ?? null,
-    rpe_target: ex.rpeTarget ?? null,
-    percentage_1rm: ex.percentage1rm ?? null,
-    tempo: ex.tempo ?? null,
-    rest_seconds: ex.restSeconds ?? null,
-    notes: ex.notes ?? null,
-    superset_group: ex.supersetGroup ?? null,
-    is_warmup: ex.isWarmup ?? false,
-    is_active: true,
-  }));
+  return exercises.map((ex) => {
+    const w = projectExerciseCompact(ex);
+    return {
+      session_id: sessionId,
+      name: ex.name,
+      exercise_id: ex.exerciseId ?? null,
+      order_index: ex.orderIndex,
+      sets: w.sets,
+      reps_min: w.reps_min,
+      reps_max: w.reps_max,
+      reps_target: ex.repsTarget ?? null,
+      rpe_target: ex.rpeTarget ?? null,
+      percentage_1rm: ex.percentage1rm ?? null,
+      tempo: ex.tempo ?? null,
+      rest_seconds: ex.restSeconds ?? null,
+      notes: ex.notes ?? null,
+      superset_group: ex.supersetGroup ?? null,
+      is_warmup: ex.isWarmup ?? false,
+      set_specs: w.set_specs,
+      video_url: w.video_url,
+      is_active: true,
+    };
+  });
 }
 
 // Clone a session and reassign a specific event to the clone.
@@ -410,6 +424,8 @@ export async function cloneSessionForEvent(
       name: session.name,
       day_of_week: null,
       order_index: session.order_index,
+      week_index: session.week_index,
+      is_rest: session.is_rest,
       focus: session.focus,
       notes: session.notes,
       estimated_duration_minutes: session.estimated_duration_minutes,
@@ -457,6 +473,8 @@ export async function cloneSessionForEvent(
         notes: ex.notes,
         superset_group: ex.superset_group,
         is_warmup: ex.is_warmup as boolean,
+        set_specs: ex.set_specs ?? null,
+        video_url: ex.video_url ?? null,
         is_active: true,
       }));
       const { error: exError } = await supabaseAdmin.from("training_exercises").insert(exerciseInserts);

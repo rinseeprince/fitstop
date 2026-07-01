@@ -12,6 +12,7 @@ import type {
   CoachSavedSessionRow,
   CoachSavedExerciseRow,
 } from "@/lib/database-helpers";
+import type { SetSpec } from "@/utils/exercise-set-specs";
 
 /**
  * Pure row-to-domain mappers for the coach saved-plan / saved-session /
@@ -40,6 +41,8 @@ export function mapSavedExerciseRow(
     supersetGroup: row.superset_group ?? null,
     isWarmup: row.is_warmup ?? false,
     notes: row.notes ?? null,
+    setSpecs: (row.set_specs as SetSpec[] | null) ?? null,
+    videoUrl: row.video_url ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -56,6 +59,7 @@ export function mapSavedSessionRow(
     name: row.name,
     focus: row.focus ?? null,
     orderIndex: row.order_index,
+    weekIndex: row.week_index ?? 0,
     isRest: row.is_rest ?? false,
     estimatedDurationMinutes: row.estimated_duration_minutes ?? null,
     calorieSurplusPercentage: row.calorie_surplus_percentage ?? null,

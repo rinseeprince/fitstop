@@ -1,6 +1,8 @@
 import { supabaseAdmin } from "./supabase-admin";
 import type { AIGeneratedPlan } from "@/types/training";
 import type { CoachSavedExerciseInsert } from "@/lib/database-helpers";
+import type { SetSpec } from "@/utils/exercise-set-specs";
+import { projectExerciseCompact } from "@/utils/exercise-set-specs";
 
 /**
  * Internal helpers shared across the coach saved-plan and saved-session
@@ -50,16 +52,20 @@ export function detectCycleInfoFallback(
 
 /**
  * Derive cycle_length / rest_pattern / frequency_per_week from an in-memory
- * session list (rest positions are 0-indexed slots in cycle order). Sorts by
- * orderIndex FIRST so an out-of-order sessions array still lands the rest days
- * at the right slots — matching recomputePlanCycleInfo (which reads sessions
- * ordered by order_index). Shared by overwriteSavedPlan (library save) and the
- * inline placement path so the two never drift.
+ * session list. The whole program is the repeat unit, so cycle_length is the
+ * total slot count across ALL weeks and rest_pattern is the 0-indexed rest slots
+ * in (week_index, order_index) order. Sorts by (weekIndex, orderIndex) FIRST so an
+ * out-of-order sessions array still lands the rest days at the right slots —
+ * matching recomputePlanCycleInfo. weekIndex defaults to 0 so single-week / legacy
+ * plans derive byte-identically to before. Shared by overwriteSavedPlan (library
+ * save) and the inline placement path so the two never drift.
  */
 export function deriveCycleInfoFromSessions(
-  sessions: Array<{ orderIndex: number; isRest: boolean }>,
+  sessions: Array<{ weekIndex?: number; orderIndex: number; isRest: boolean }>,
 ): { cycleLength: number; restPattern: number[]; frequencyPerWeek: number } {
-  const ordered = [...sessions].sort((a, b) => a.orderIndex - b.orderIndex);
+  const ordered = [...sessions].sort(
+    (a, b) => (a.weekIndex ?? 0) - (b.weekIndex ?? 0) || a.orderIndex - b.orderIndex,
+  );
   const cycleLength = ordered.length;
   const restPattern = ordered
     .map((s, i) => (s.isRest ? i : -1))
@@ -87,27 +93,34 @@ export async function insertSavedExercises(
     notes?: string;
     supersetGroup?: string;
     isWarmup?: boolean;
+    setSpecs?: SetSpec[] | null;
+    videoUrl?: string | null;
   }>,
   exerciseIdMap: Map<string, string>,
 ): Promise<void> {
   if (exercises.length === 0) return;
-  const rows: CoachSavedExerciseInsert[] = exercises.map((e, i) => ({
-    saved_session_id: sessionId,
-    exercise_id: exerciseIdMap.get(e.name.trim().toLowerCase()) ?? null,
-    name: e.name,
-    order_index: i,
-    sets: e.sets,
-    reps_min: e.repsMin ?? null,
-    reps_max: e.repsMax ?? null,
-    reps_target: e.repsTarget ?? null,
-    rpe_target: e.rpeTarget ?? null,
-    percentage_1rm: e.percentage1rm ?? null,
-    tempo: e.tempo ?? null,
-    rest_seconds: e.restSeconds ?? null,
-    notes: e.notes ?? null,
-    superset_group: e.supersetGroup ?? null,
-    is_warmup: e.isWarmup ?? false,
-  }));
+  const rows: CoachSavedExerciseInsert[] = exercises.map((e, i) => {
+    const w = projectExerciseCompact(e);
+    return {
+      saved_session_id: sessionId,
+      exercise_id: exerciseIdMap.get(e.name.trim().toLowerCase()) ?? null,
+      name: e.name,
+      order_index: i,
+      sets: w.sets,
+      reps_min: w.reps_min,
+      reps_max: w.reps_max,
+      reps_target: e.repsTarget ?? null,
+      rpe_target: e.rpeTarget ?? null,
+      percentage_1rm: e.percentage1rm ?? null,
+      tempo: e.tempo ?? null,
+      rest_seconds: e.restSeconds ?? null,
+      notes: e.notes ?? null,
+      superset_group: e.supersetGroup ?? null,
+      is_warmup: e.isWarmup ?? false,
+      set_specs: w.set_specs,
+      video_url: w.video_url,
+    };
+  });
 
   const { error } = await supabaseAdmin
     .from("coach_saved_exercises")
@@ -129,8 +142,9 @@ export async function recomputePlanCycleInfo(
 ): Promise<void> {
   const { data: sessions, error } = await supabaseAdmin
     .from("coach_saved_sessions")
-    .select("is_rest, order_index")
+    .select("is_rest, order_index, week_index")
     .eq("saved_plan_id", planId)
+    .order("week_index", { ascending: true })
     .order("order_index", { ascending: true });
   if (error) throw new Error(`Failed to read sessions for cycle recompute: ${error.message}`);
 

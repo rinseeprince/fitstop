@@ -401,6 +401,8 @@ export async function duplicateWeek(
           name: session.name as string,
           day_of_week: null, // Calendar-placed sessions don't use template day matching
           order_index: session.order_index as number,
+          week_index: session.week_index as number,
+          is_rest: session.is_rest as boolean,
           focus: session.focus as string | null,
           notes: session.notes as string | null,
           estimated_duration_minutes: session.estimated_duration_minutes as number | null,
@@ -438,6 +440,8 @@ export async function duplicateWeek(
           notes: ex.notes as string | null,
           superset_group: ex.superset_group as string | null,
           is_warmup: ex.is_warmup as boolean,
+          set_specs: (ex.set_specs as Json) ?? null,
+          video_url: ex.video_url as string | null,
           is_active: true,
         }));
 

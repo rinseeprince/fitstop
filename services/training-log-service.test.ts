@@ -324,9 +324,9 @@ describe("logTrainingEvent", () => {
     expect(setLogsInsertQ.insert).toHaveBeenCalledTimes(1);
     const setRows = setLogsInsertQ.insert.mock.calls[0][0];
     expect(setRows).toEqual([
-      { exercise_log_id: "el-a", set_number: 1, reps: 10, weight: 100, rpe: null },
-      { exercise_log_id: "el-a", set_number: 2, reps: 10, weight: 105, rpe: null },
-      { exercise_log_id: "el-a", set_number: 3, reps: 8, weight: 105, rpe: null },
+      { exercise_log_id: "el-a", set_number: 1, set_type: "working", reps: 10, weight: 100, rpe: null },
+      { exercise_log_id: "el-a", set_number: 2, set_type: "working", reps: 10, weight: 105, rpe: null },
+      { exercise_log_id: "el-a", set_number: 3, set_type: "working", reps: 8, weight: 105, rpe: null },
     ]);
 
     // payload completionQuality='full' → status='completed' (mapping).
@@ -543,9 +543,9 @@ describe("logTrainingEvent", () => {
     // set_logs preserves per-set values exactly.
     expect(setLogsInsertQ.insert).toHaveBeenCalledTimes(1);
     expect(setLogsInsertQ.insert.mock.calls[0][0]).toEqual([
-      { exercise_log_id: "el-bench", set_number: 1, reps: 10, weight: 100, rpe: 7 },
-      { exercise_log_id: "el-bench", set_number: 2, reps: 10, weight: 105, rpe: 8 },
-      { exercise_log_id: "el-bench", set_number: 3, reps: 8, weight: 105, rpe: 9 },
+      { exercise_log_id: "el-bench", set_number: 1, set_type: "working", reps: 10, weight: 100, rpe: 7 },
+      { exercise_log_id: "el-bench", set_number: 2, set_type: "working", reps: 10, weight: 105, rpe: 8 },
+      { exercise_log_id: "el-bench", set_number: 3, set_type: "working", reps: 8, weight: 105, rpe: 9 },
     ]);
   });
 

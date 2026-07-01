@@ -7,6 +7,7 @@ import type {
 import type { TrainingExerciseUpdate } from "@/lib/database-helpers";
 import { mapExerciseRow } from "./training-mappers";
 import { resolveExercise } from "./exercise-catalog-service";
+import { projectExerciseCompact } from "@/utils/exercise-set-specs";
 
 // Update exercise
 export const updateExercise = async (
@@ -27,6 +28,19 @@ export const updateExercise = async (
   if (updates.notes !== undefined) updateData.notes = updates.notes;
   if (updates.supersetGroup !== undefined) updateData.superset_group = updates.supersetGroup;
   if (updates.isWarmup !== undefined) updateData.is_warmup = updates.isWarmup;
+  if (updates.videoUrl !== undefined) updateData.video_url = updates.videoUrl;
+  if (updates.setSpecs !== undefined) {
+    if (updates.setSpecs) {
+      // set_specs is authoritative -> re-project the compact columns to match.
+      const w = projectExerciseCompact({ setSpecs: updates.setSpecs, sets: updates.sets ?? 1 });
+      updateData.set_specs = w.set_specs;
+      updateData.sets = w.sets;
+      updateData.reps_min = w.reps_min;
+      updateData.reps_max = w.reps_max;
+    } else {
+      updateData.set_specs = null;
+    }
+  }
 
   const { data, error } = await supabaseAdmin
     .from("training_exercises")
@@ -61,6 +75,7 @@ export const addExercise = async (
 
   // Resolve exercise name to catalog ID
   const exerciseId = await resolveExercise(exercise.name, coachId);
+  const w = projectExerciseCompact(exercise);
 
   const { data, error } = await supabaseAdmin
     .from("training_exercises")
@@ -69,9 +84,9 @@ export const addExercise = async (
       name: exercise.name,
       exercise_id: exerciseId,
       order_index: nextOrderIndex,
-      sets: exercise.sets,
-      reps_min: exercise.repsMin || null,
-      reps_max: exercise.repsMax || null,
+      sets: w.sets,
+      reps_min: w.reps_min,
+      reps_max: w.reps_max,
       reps_target: exercise.repsTarget || null,
       rpe_target: exercise.rpeTarget || null,
       percentage_1rm: exercise.percentage1rm || null,
@@ -80,6 +95,8 @@ export const addExercise = async (
       notes: exercise.notes || null,
       superset_group: exercise.supersetGroup || null,
       is_warmup: exercise.isWarmup || false,
+      set_specs: w.set_specs,
+      video_url: w.video_url,
     })
     .select()
     .single();

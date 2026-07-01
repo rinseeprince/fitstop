@@ -11,7 +11,8 @@ import {
   type UseFormSetValue,
 } from "react-hook-form";
 import Link from "next/link";
-import { LineChart, Plus, Repeat, Trash2, X } from "lucide-react";
+import { LineChart, Plus, Repeat, Trash2, Video, X } from "lucide-react";
+import type { SetSpec } from "@/utils/exercise-set-specs";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
@@ -30,7 +31,26 @@ export type PrescribedExerciseView = {
   restSeconds?: number;
   notes?: string;
   isWarmup: boolean;
+  // Per-set prescription (seeds the log form's set rows) + optional demo video.
+  setSpecs?: SetSpec[];
+  videoUrl?: string;
 };
+
+// Small coach-demo video link, shown wherever a prescription is surfaced.
+export function PrescriptionVideoLink({ url }: { url?: string }) {
+  if (!url) return null;
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="mt-1 inline-flex items-center gap-1 text-[12px] font-medium text-[#0d9488] hover:underline"
+    >
+      <Video className="h-3.5 w-3.5" strokeWidth={1.5} />
+      Watch demo
+    </a>
+  );
+}
 
 export type ExerciseFormContext = {
   control: Control<LogFormValues>;
@@ -75,6 +95,7 @@ export function ExerciseTrackerBlock({
             {summary && (
               <p className="mt-1 text-[12px] text-[#5a7d82]">{summary}</p>
             )}
+            <PrescriptionVideoLink url={exercise.videoUrl} />
           </div>
         </div>
 

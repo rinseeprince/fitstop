@@ -1,4 +1,6 @@
 
+import type { SetSpec, SetType } from "@/utils/exercise-set-specs";
+
 // Training plan split types
 export type TrainingSplitType =
   | "push_pull_legs"
@@ -29,6 +31,8 @@ export type TrainingExercise = {
   notes?: string;
   supersetGroup?: string;
   isWarmup: boolean;
+  setSpecs?: SetSpec[] | null;
+  videoUrl?: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -281,6 +285,8 @@ export type UpdateExerciseRequest = {
   notes?: string | null;
   supersetGroup?: string | null;
   isWarmup?: boolean;
+  setSpecs?: SetSpec[] | null;
+  videoUrl?: string | null;
 };
 
 export type AddSessionRequest = {
@@ -304,6 +310,8 @@ export type AddExerciseRequest = {
   notes?: string | null;
   supersetGroup?: string | null;
   isWarmup?: boolean;
+  setSpecs?: SetSpec[] | null;
+  videoUrl?: string | null;
 };
 
 export type GetTrainingPlanHistoryResponse = {
@@ -395,6 +403,10 @@ export type SavedSession = {
   name: string;
   focus: string | null;
   orderIndex: number;
+  // Internal slot ordering within a multi-week program (0-based). The whole
+  // program is the repeat unit at apply time; weekIndex carries no calendar-week
+  // meaning. Defaults to 0 (single-week / legacy plans).
+  weekIndex: number;
   isRest: boolean;
   estimatedDurationMinutes: number | null;
   calorieSurplusPercentage: number | null;
@@ -422,6 +434,8 @@ export type SavedExercise = {
   supersetGroup: string | null;
   isWarmup: boolean;
   notes: string | null;
+  setSpecs: SetSpec[] | null;
+  videoUrl: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -458,6 +472,9 @@ export type SetLog = {
   id: string;
   exerciseLogId: string;
   setNumber: number;
+  // Coach-prescribed set type, seeded from the prescription's set_specs at log
+  // time (set_logs.set_type). Defaults to 'working'.
+  setType: SetType;
   reps: number | null;
   weight: number | null;
   rpe: number | null;

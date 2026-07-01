@@ -1002,6 +1002,7 @@ describe("SetTracker", () => {
           {
             id: "sl-1",
             exerciseLogId: "elog-1",
+            setType: "working",
             setNumber: 1,
             reps: 10,
             weight: 100,
@@ -1012,6 +1013,7 @@ describe("SetTracker", () => {
           {
             id: "sl-2",
             exerciseLogId: "elog-1",
+            setType: "working",
             setNumber: 2,
             reps: 10,
             weight: 105,
@@ -1022,6 +1024,7 @@ describe("SetTracker", () => {
           {
             id: "sl-3",
             exerciseLogId: "elog-1",
+            setType: "working",
             setNumber: 3,
             reps: 8,
             weight: 105,

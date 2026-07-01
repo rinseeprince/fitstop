@@ -244,4 +244,55 @@ describe("client-training-plan-service", () => {
     expect(result!.sessions).toHaveLength(2);
     expect(result!.sessions.every((s) => !s.isRest)).toBe(true);
   });
+
+  it("self-describing: real is_rest rows render inline without joining the template (migration 121)", async () => {
+    const planRow = { id: "plan-1", name: "New PPL", saved_plan_id: "saved-1" };
+    const sessionRows = [
+      { id: "s0", name: "Push", focus: "Chest", order_index: 0, week_index: 0, is_rest: false, estimated_duration_minutes: 60 },
+      { id: "s1", name: "Rest", focus: null, order_index: 1, week_index: 0, is_rest: true, estimated_duration_minutes: null },
+      { id: "s2", name: "Legs", focus: "Quads", order_index: 2, week_index: 0, is_rest: false, estimated_duration_minutes: 60 },
+    ];
+    const planQuery = awaitableQuery({ data: planRow, error: null });
+    const sessionsQuery = awaitableQuery({ data: sessionRows, error: null });
+    const exercisesQuery = awaitableQuery({ data: [], error: null });
+    mockFrom.mockImplementation((table: string) => {
+      if (table === "training_plans") return planQuery as never;
+      if (table === "training_sessions") return sessionsQuery as never;
+      if (table === "training_exercises") return exercisesQuery as never;
+      throw new Error(`Unexpected from(): ${table}`);
+    });
+
+    const result = await getClientTrainingPlan(CLIENT_ID);
+
+    expect(result!.cycleLength).toBe(3);
+    expect(result!.restPattern).toEqual([1]);
+    expect(result!.sessions.map((s) => s.name)).toEqual(["Push", "Rest", "Legs"]);
+    expect(result!.sessions[1].isRest).toBe(true);
+    // Self-describing: the library template is never consulted.
+    expect(mockFrom).not.toHaveBeenCalledWith("coach_saved_plans");
+  });
+
+  it("self-describing: multi-week (week_index > 0) renders inline without a template join", async () => {
+    const planRow = { id: "plan-1", name: "3-week", saved_plan_id: "saved-1" };
+    const sessionRows = [
+      { id: "w0", name: "Week1 Day1", focus: null, order_index: 0, week_index: 0, is_rest: false, estimated_duration_minutes: null },
+      { id: "w1", name: "Week2 Day1", focus: null, order_index: 0, week_index: 1, is_rest: false, estimated_duration_minutes: null },
+    ];
+    const planQuery = awaitableQuery({ data: planRow, error: null });
+    const sessionsQuery = awaitableQuery({ data: sessionRows, error: null });
+    const exercisesQuery = awaitableQuery({ data: [], error: null });
+    mockFrom.mockImplementation((table: string) => {
+      if (table === "training_plans") return planQuery as never;
+      if (table === "training_sessions") return sessionsQuery as never;
+      if (table === "training_exercises") return exercisesQuery as never;
+      throw new Error(`Unexpected from(): ${table}`);
+    });
+
+    const result = await getClientTrainingPlan(CLIENT_ID);
+
+    expect(result!.cycleLength).toBe(2);
+    expect(result!.restPattern).toEqual([]);
+    expect(result!.sessions.map((s) => s.weekIndex)).toEqual([0, 1]);
+    expect(mockFrom).not.toHaveBeenCalledWith("coach_saved_plans");
+  });
 });
