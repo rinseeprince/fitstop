@@ -119,7 +119,12 @@ Each phase's **Prompt to paste** is the copy-into-a-fresh-session instruction. T
 
 ---
 
-### Phase 1 — Prescription set model + set-type analytics + apply-without-overwrite
+### Phase 1 — Prescription set model + set-type analytics + apply-without-overwrite ✅ COMPLETE
+
+> **STATUS: SHIPPED 2026-07-01 (commit `28d9dbd`, migrations 119-120).** Gates green + security-reviewed clean + smoke-tested. Deviations from the original plan text below (these win):
+> - **Set-model work landed backend-only.** `set_type` is coach-prescribed (via `set_specs`), not client-selected, so all client set-type/video UI + the `set_specs`/`video_url` **write-side splat** were deferred to Phase 2 (see Phase 2 §Implement item 5). Phase 1 shipped the columns, the snapshot capture, the read-side `countWorkingSets`, and the set-type-aware analytics (dormant in prod — proven by synthetic tests until authoring exists).
+> - **D3a stamps `saved_plan_id = NULL` for edited copies** (not `= source template`): an edited copy isn't a copy of any single template (IDOR-safe + honest). Implemented as a `type:"inline"` variant on `place-from-library` (no new route). Known consequence: `getClientTrainingPlan` renders an edited-inline plan as a flat list (no rest rows) until Phase 2's cycle rewrite retires that last `saved_plan_id` reader.
+> - **IDOR fixes shipped:** `assertPhaseBelongsToClient` on both the `plan` and `inline` branches; foreign `exercise_id` nulled in the inline path.
 
 > **Prompt to paste:**
 > "You are implementing **Phase 1** of `docs/TRAINING-BUILDER-EXECUTION-PLAN.md`. First read `docs/ARCHITECTURE.md`, `CONVENTIONS.md`, and this doc's §2 (Global standards), §3 (Shared context), and §4 (Key decisions). Then read the Phase 1 'Read first' files. Confirm the scope and out-of-scope back to me before writing any code. Implement **only** Phase 1: the additive per-set `set_specs` JSONB model + `video_url` + `set_logs.set_type`, the expand-on-read helper, threading set-type through the log write/read + client log UI, the set-type-aware analytics RPC change (checkpoint 1c), and the apply-without-overwrite inline placement path (D3a). This is backend-heavy — run the security-auditor over the migration + RPC + new route. Do not build the new Program builder UI, touch the week model, or backfill data. Run the §2 gates and commit with the Phase 1 commit message. Migrations start at 119; ask me to run `supabase db push`."
