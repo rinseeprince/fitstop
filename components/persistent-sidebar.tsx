@@ -63,11 +63,16 @@ export function PersistentSidebar() {
     return null
   }
 
-  // On client detail pages, render the collapsed 52px icon strip instead of the full sidebar.
-  // NOTE: This regex assumes tab routing uses query params (?tab=nutrition), not nested
-  // routes like /clients/[id]/nutrition. Update if routing strategy changes.
-  const isClientDetailPage = /^\/clients\/[^/]+$/.test(pathname || "")
-  if (isClientDetailPage) {
+  // On sectioned surfaces (client detail, Programs) render the collapsed 52px
+  // icon strip instead of the full sidebar — the section's own white
+  // sub-sidebar sits beside it.
+  // NOTE: The client-detail pattern assumes tab routing uses query params
+  // (?tab=nutrition), not nested routes like /clients/[id]/nutrition.
+  const COLLAPSED_SHELL_PATTERNS = [
+    /^\/clients\/[^/]+$/,
+    /^\/dashboard\/programs(\/|$)/,
+  ]
+  if (COLLAPSED_SHELL_PATTERNS.some((pattern) => pattern.test(pathname || ""))) {
     return <CollapsedIconStrip />
   }
 

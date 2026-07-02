@@ -221,6 +221,18 @@ Each phase's **Prompt to paste** is the copy-into-a-fresh-session instruction. T
 
 ---
 
+### Phase 2.75 — Programs section redesign (mockup adoption) 🔄 IN PROGRESS
+
+> **Inserted 2026-07-02 (owner decision):** adopt the visual/layout redesign in `docs/atletafit-programs-mockup (2).html` NOW, before Phases 3–6 resume. Mockup = SOT for layout/hierarchy/interactions (its `<script>` is the builder's behavioral spec); codebase = SOT for tokens/fonts/shared components (Teal Summit, 6px radii, no pills). Five commits **R1–R5**: section shell (52px icon strip + 200px sub-sidebar: Builder / Programs / Sessions / Exercises) → Programs table → Sessions table → Exercises table (each with dark stat bands + filters) → builder restyle + session-library drawer + add-session popover + create-blank-session slide-over via intercepting route (`@modal` parallel slot + state lift into `ProgramDraftProvider`). **Zero migrations** — new read/duplicate endpoints only. Full plan: `~/.claude/plans/mossy-mapping-hennessy.md` (session artifact). **Locked:** one session per day-cell; no assign-to-client on this surface; blank-session Save = standalone `coach_saved_session` + copy stays in the day; view⇄edit mode machine kept (deviates from the always-edit mockup).
+>
+> - **R1 (section shell) SHIPPED 2026-07-02:** `app/dashboard/programs/layout.tsx` + `ProgramsShell`/`ProgramsSidebar`/`ProgramsTopbar` (`components/programs/`), `lib/programs-nav.ts`, PersistentSidebar collapse generalized to `COLLAPSED_SHELL_PATTERNS` (client-detail + programs section). Topbar owns "New program" (POST→push, moved off the list page); "New session"/"New exercise" hand off via `?new=1`. Builder sub-nav item: active on any plan route, else links to `sessionStorage["programs.builder.lastPlanId"]`, else disabled. Placeholders at `/dashboard/programs/sessions` + `/exercises`. Both programs pages dropped `AppLayout` (shell re-mounts `CheckInNotificationListener`).
+> - **R2 (Programs table):** pending.
+> - **R3 (Sessions page):** pending.
+> - **R4 (Exercises page):** pending.
+> - **R5 (builder redesign):** pending.
+
+---
+
 ### Phase 3 — Saved workouts in the builder
 
 > **Prompt to paste:**
@@ -336,6 +348,7 @@ Each phase's **Prompt to paste** is the copy-into-a-fresh-session instruction. T
 - **2.5:** TECHNICAL-DEBT entries added: `frequency_per_week` CHECK retirement → CPEP 7.10a; `placeSessionOnCalendar` copies `week_index` verbatim into the target plan (bites P3/P5 — normalize on insert there).
 - **2.5:** orphaned invisible drafts — "New program" creates a draft row no list surface shows if abandoned via back/nav (accepted EL-1 pre-launch; a "Drafts" section on the Programs page is the cheap fix).
 - **2.5:** `recomputePlanCycleInfo` now writes `frequency_per_week = 1` (not 0) for empty/all-rest session sets — anything asserting 0 for empty plans is stale.
+- **2.75-R1:** old Programs-page `Tabs` (plans + "Standalone sessions coming soon" placeholder) deleted — Sessions is a sub-sidebar route now; `AppLayout`/`PageHeader` usage dropped from both programs pages (section shell owns chrome); PersistentSidebar's client-detail regex generalized to a `COLLAPSED_SHELL_PATTERNS` list.
 
 ---
 
