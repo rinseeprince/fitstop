@@ -18,10 +18,12 @@ import { FOCUS_RING, TEXT_MUTED, TEXT_SECONDARY } from "./builder-tokens";
 // One per-set prescription row. Column template is shared with the header row
 // exercise-card renders above the set list. Numeric caps mirror setSpecSchema
 // (reps ≤100, load ≤2000, RPE ≤10, per-set rest ≤3600 — NOT the exercise-level
-// 600) so the client-side safeParse belt never trips on these fields. The
-// trailing 48px column holds the duplicate + remove icons.
+// 600) so the client-side safeParse belt never trips on these fields.
+// Fractional columns stretch the rows to the full card width (# and the
+// duplicate/remove icon column stay fixed); minmax(0,…) lets narrow viewports
+// squeeze instead of overflowing.
 export const SET_GRID =
-  "grid grid-cols-[20px_100px_110px_150px_56px_64px_60px_48px] items-center gap-1.5";
+  "grid grid-cols-[20px_minmax(0,1.1fr)_minmax(0,1.3fr)_minmax(0,1.7fr)_minmax(0,0.7fr)_minmax(0,0.8fr)_minmax(0,0.8fr)_48px] items-center gap-1.5";
 
 type SetRowEditorProps = {
   spec: SetSpec;
@@ -110,7 +112,7 @@ export function SetRowEditor({ spec, index, disabled, onEdit }: SetRowEditorProp
               defaultValue={spec.reps_min ?? ""}
               placeholder="min"
               aria-label={`Set ${spec.set_number} min reps`}
-              className={cn("h-7 w-12 px-1 text-center font-mono text-[11px]", FOCUS_RING)}
+              className={cn("h-7 min-w-0 flex-1 px-1 text-center font-mono text-[11px]", FOCUS_RING)}
               onBlur={(e) => update({ reps_min: commitNum(e, { min: 0, max: 100, int: true }) })}
             />
             <span className={cn("text-[10px]", TEXT_MUTED)}>–</span>
@@ -122,7 +124,7 @@ export function SetRowEditor({ spec, index, disabled, onEdit }: SetRowEditorProp
               defaultValue={spec.reps_max ?? ""}
               placeholder="max"
               aria-label={`Set ${spec.set_number} max reps`}
-              className={cn("h-7 w-12 px-1 text-center font-mono text-[11px]", FOCUS_RING)}
+              className={cn("h-7 min-w-0 flex-1 px-1 text-center font-mono text-[11px]", FOCUS_RING)}
               onBlur={(e) => update({ reps_max: commitNum(e, { min: 0, max: 100, int: true }) })}
             />
           </div>
@@ -142,7 +144,7 @@ export function SetRowEditor({ spec, index, disabled, onEdit }: SetRowEditorProp
           >
             <SelectTrigger
               aria-label={`Set ${spec.set_number} load type`}
-              className={cn("h-7 w-[76px] px-2 text-[11px]", FOCUS_RING)}
+              className={cn("h-7 min-w-0 flex-1 px-2 text-[11px]", FOCUS_RING)}
             >
               <SelectValue />
             </SelectTrigger>
@@ -165,7 +167,7 @@ export function SetRowEditor({ spec, index, disabled, onEdit }: SetRowEditorProp
             defaultValue={spec.load_value ?? ""}
             placeholder={loadSuffix}
             aria-label={`Set ${spec.set_number} load`}
-            className={cn("h-7 w-14 px-1 text-center font-mono text-[11px]", FOCUS_RING)}
+            className={cn("h-7 w-16 shrink-0 px-1 text-center font-mono text-[11px]", FOCUS_RING)}
             onBlur={(e) => update({ load_value: commitNum(e, { min: 0, max: 2000 }) })}
           />
         </div>

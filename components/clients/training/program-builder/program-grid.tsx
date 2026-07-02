@@ -41,7 +41,9 @@ export function ProgramGrid({
   const canDelete = draft.weeks.length > 1;
 
   return (
-    <div className="relative max-h-[calc(100vh-16rem)] overflow-auto rounded-[6px]">
+    // -mx-1 cancels the cells' p-1 at the container edges so cards sit
+    // flush on the 32px page gutter, aligned with the header card.
+    <div className="scrollbar-none relative -mx-1 max-h-[calc(100vh-16rem)] overflow-auto rounded-[6px]">
       <div className="min-w-max">
         {/* Day header row — positional Day 1–7, never weekdays. */}
         <div className={cn(GRID_COLS, "sticky top-0 z-30 bg-[#f4f7f6]")}>
