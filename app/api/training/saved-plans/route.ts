@@ -9,7 +9,9 @@ import {
 import { createSavedPlanSchema } from "@/lib/validations/training";
 import type { ManualSessionDraft } from "@/types/training";
 
-// GET - List saved plans for the authenticated coach
+// GET - List saved plans for the authenticated coach.
+// ?status=all additionally returns drafts (the Programs table surfaces them);
+// the default stays saved-only for the calendar library panel.
 export async function GET(request: NextRequest) {
   const rateLimitResult = await coachApiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
@@ -20,7 +22,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const plans = await getSavedPlans(coachId);
+    const includeDrafts =
+      request.nextUrl.searchParams.get("status") === "all";
+    const plans = await getSavedPlans(coachId, { includeDrafts });
     return NextResponse.json({ success: true, plans }, { status: 200 });
   } catch (error) {
     console.error("Error fetching saved plans:", error);

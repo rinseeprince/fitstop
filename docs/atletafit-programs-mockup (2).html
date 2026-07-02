@@ -1,0 +1,1319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Atletafit — Programs</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+/* =========================================================
+   ATLETAFIT DESIGN TOKENS
+   Extracted from existing platform screenshots.
+   Map these 1:1 to your Tailwind theme / CSS vars.
+   ========================================================= */
+:root{
+  --font-ui:'DM Sans', -apple-system, 'Segoe UI', sans-serif;   /* swap for your app font */
+  --font-mono:'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* surfaces */
+  --bg-app:#F6F8F8;
+  --surface:#FFFFFF;
+  --surface-hover:#FAFCFB;
+  --line:#E7EDEB;
+  --line-soft:#EEF2F1;
+
+  /* ink */
+  --ink-900:#152722;
+  --ink-700:#3D504B;
+  --ink-500:#5E736D;
+  --ink-400:#93A5A0;
+  --ink-300:#B6C4C0;
+
+  /* brand */
+  --teal-600:#2E8577;
+  --teal-700:#266E62;
+  --teal-100:#E7F4F1;
+  --teal-soft:#F0F7F5;
+
+  /* dark shells (sidebar + stat cards) */
+  --dark-900:#0B1D19;
+  --dark-800:#0F2721;
+  --dark-line:rgba(255,255,255,.08);
+  --dark-label:#7E948F;
+  --dark-mint:#8FD9C9;
+
+  /* chips + status */
+  --chip-bg:#F1F5F4;
+  --chip-text:#5A6E69;
+  --warn:#E2A63D;
+  --danger:#D2504A;
+  --danger-bg:#FBEFEE;
+
+  /* geometry */
+  --r-xl:18px;
+  --r-lg:16px;
+  --r-md:12px;
+  --r-sm:10px;
+  --r-full:999px;
+  --shadow-xs:0 1px 2px rgba(15,39,33,.05);
+  --shadow-sm:0 1px 2px rgba(15,39,33,.04), 0 4px 14px rgba(15,39,33,.05);
+  --shadow-lg:0 12px 32px rgba(15,39,33,.16);
+}
+
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  font-family:var(--font-ui);
+  background:var(--bg-app);
+  color:var(--ink-900);
+  font-size:15px;
+  -webkit-font-smoothing:antialiased;
+  min-width:1280px;
+}
+button{font-family:inherit}
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-thumb{background:#D5E0DD;border-radius:8px}
+::-webkit-scrollbar-track{background:transparent}
+
+.ic{width:20px;height:20px;stroke:currentColor;stroke-width:1.9;fill:none;stroke-linecap:round;stroke-linejoin:round;flex:0 0 auto}
+.ic.fill{fill:currentColor;stroke:none}
+
+/* ===================== APP FRAME ===================== */
+.app{display:flex;min-height:100vh}
+
+/* ---- main dark sidebar ---- */
+.mainbar{
+  width:126px;flex:0 0 auto;background:var(--dark-900);
+  height:100vh;position:sticky;top:0;z-index:40;
+  display:flex;flex-direction:column;align-items:center;
+  padding:20px 12px 18px;
+}
+.logo{
+  width:44px;height:44px;border-radius:12px;background:var(--teal-600);
+  color:#fff;font-weight:700;font-size:16px;letter-spacing:.03em;
+  display:grid;place-items:center;margin-bottom:26px;
+}
+.mnav{display:flex;flex-direction:column;gap:6px;width:100%}
+.mitem{
+  display:flex;flex-direction:column;align-items:center;gap:7px;
+  padding:13px 4px 11px;border-radius:12px;
+  color:#8AA09A;font-size:12.5px;font-weight:500;cursor:pointer;
+  transition:background .15s, color .15s;text-align:center;
+}
+.mitem .ic{width:21px;height:21px}
+.mitem:hover{color:#C7D6D2;background:rgba(255,255,255,.04)}
+.mitem.active{background:#123129;color:var(--dark-mint);box-shadow:inset 0 0 0 1px #1C4A3F}
+.micon{position:relative;display:grid;place-items:center}
+.mbadge{
+  position:absolute;top:-7px;right:-11px;min-width:17px;height:17px;padding:0 4px;
+  border-radius:var(--r-full);background:var(--teal-600);color:#fff;
+  font-size:10.5px;font-weight:700;display:grid;place-items:center;
+  border:2px solid var(--dark-900);
+}
+.beta{
+  font-size:9px;letter-spacing:.1em;font-weight:700;
+  background:#12352C;color:#6FCDB9;padding:2px 7px;border-radius:var(--r-full);
+  margin-top:-2px;
+}
+.mspacer{flex:1}
+.mavatar{
+  width:36px;height:36px;border-radius:var(--r-full);background:#1B3831;
+  color:#BFD6D0;font-weight:600;font-size:13px;display:grid;place-items:center;
+}
+
+/* ---- white sub-sidebar (client-profile pattern) ---- */
+.subbar{
+  width:292px;flex:0 0 auto;background:var(--surface);
+  border-right:1px solid var(--line);
+  height:100vh;position:sticky;top:0;z-index:35;
+  display:flex;flex-direction:column;padding:18px 0 14px;
+}
+.subhead{display:flex;align-items:center;gap:12px;padding:6px 18px 24px}
+.backbtn{
+  width:34px;height:34px;border-radius:var(--r-sm);display:grid;place-items:center;
+  color:var(--ink-500);cursor:pointer;background:none;border:0;transition:background .15s;
+}
+.backbtn:hover{background:#F2F6F5}
+.subicon{
+  width:40px;height:40px;border-radius:11px;background:var(--teal-600);
+  color:#fff;display:grid;place-items:center;
+}
+.subicon .ic{width:20px;height:20px}
+.subtitle{font-size:19px;font-weight:600;letter-spacing:-.01em}
+.snav{display:flex;flex-direction:column;gap:4px;padding-right:20px}
+.sitem{
+  position:relative;padding:15px 18px 15px 30px;font-size:16.5px;color:var(--ink-500);
+  border-radius:0 var(--r-md) var(--r-md) 0;cursor:pointer;
+  transition:background .15s,color .15s;user-select:none;
+}
+.sitem:hover{background:#F7FAF9;color:var(--ink-700)}
+.sitem.active{background:#F2F7F6;color:var(--ink-900);font-weight:600}
+.sitem.active::before{
+  content:'';position:absolute;left:0;top:7px;bottom:7px;width:3px;
+  background:var(--teal-600);border-radius:0 3px 3px 0;
+}
+.subfoot{margin-top:auto;border-top:1px solid var(--line-soft);padding:12px 16px 2px}
+.sfootitem{
+  display:flex;align-items:center;gap:11px;color:var(--ink-500);
+  font-size:15.5px;padding:11px 12px;border-radius:var(--r-sm);cursor:pointer;
+  transition:background .15s;
+}
+.sfootitem:hover{background:#F7FAF9}
+
+/* ---- content column ---- */
+.content{flex:1;min-width:0;display:flex;flex-direction:column}
+.topbar{
+  height:72px;background:var(--surface);border-bottom:1px solid var(--line);
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 28px;position:sticky;top:0;z-index:30;
+}
+.toptitle{font-size:21px;font-weight:600;letter-spacing:-.01em}
+.topactions{display:flex;align-items:center;gap:12px}
+.iconbtn{
+  width:38px;height:38px;border-radius:var(--r-sm);display:grid;place-items:center;
+  color:var(--ink-500);cursor:pointer;position:relative;background:none;border:0;
+  transition:background .15s,color .15s;
+}
+.iconbtn:hover{background:#F2F6F5;color:var(--ink-700)}
+.nbadge{
+  position:absolute;top:0;right:-1px;min-width:17px;height:17px;padding:0 4px;
+  border-radius:var(--r-full);background:var(--teal-600);color:#fff;
+  font-size:9.5px;font-weight:700;display:grid;place-items:center;border:2px solid #fff;
+}
+
+.page{display:none;padding:26px 28px 56px}
+.page.active{display:block;animation:fadeUp .18s ease}
+@keyframes fadeUp{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+/* ===================== SHARED COMPONENTS ===================== */
+.btn{
+  display:inline-flex;align-items:center;gap:8px;height:44px;padding:0 20px;
+  border-radius:var(--r-md);font-size:15px;font-weight:600;border:0;cursor:pointer;
+  transition:background .15s,border-color .15s,color .15s,transform .05s;
+  white-space:nowrap;
+}
+.btn:active{transform:translateY(1px)}
+.btn .ic{width:18px;height:18px}
+.btn-primary{background:var(--teal-600);color:#fff}
+.btn-primary:hover{background:var(--teal-700)}
+.btn-ghost{background:var(--surface);border:1px solid var(--line);color:var(--ink-700)}
+.btn-ghost:hover{background:#F6FAF9}
+.btn-danger{background:transparent;color:var(--danger)}
+.btn-danger:hover{background:var(--danger-bg)}
+.btn-sm{height:36px;padding:0 14px;font-size:14px}
+
+.chip{
+  display:inline-flex;align-items:center;height:26px;padding:0 11px;
+  border-radius:var(--r-full);background:var(--chip-bg);color:var(--chip-text);
+  font-size:12.5px;font-weight:500;white-space:nowrap;
+}
+.chip.teal{background:var(--teal-100);color:#1F6D5F}
+.chip.tiny{height:21px;padding:0 8px;font-size:11px}
+
+.fchip{
+  display:inline-flex;align-items:center;height:34px;padding:0 15px;
+  border-radius:var(--r-full);border:1px solid var(--line);background:var(--surface);
+  color:var(--ink-500);font-size:13.5px;font-weight:500;cursor:pointer;
+  transition:all .15s;
+}
+.fchip:hover{border-color:#CBDAD6;color:var(--ink-700)}
+.fchip.active{background:var(--teal-100);border-color:#BFE2DA;color:#1F6D5F;font-weight:600}
+
+.seg{display:inline-flex;background:var(--chip-bg);border-radius:var(--r-md);padding:4px;gap:2px}
+.seg button{
+  border:0;background:transparent;padding:8px 16px;border-radius:9px;
+  font-size:14px;font-weight:500;color:var(--ink-500);cursor:pointer;transition:all .15s;
+}
+.seg button.active{
+  background:var(--surface);color:var(--ink-900);font-weight:600;
+  box-shadow:0 1px 2px rgba(15,39,33,.06), inset 0 0 0 1px var(--line);
+}
+
+.search{position:relative}
+.search .ic{position:absolute;left:13px;top:50%;transform:translateY(-50%);width:17px;height:17px;color:var(--ink-400);pointer-events:none}
+.search input{
+  height:42px;width:290px;border:1px solid var(--line);border-radius:var(--r-md);
+  padding:0 14px 0 40px;font-family:inherit;font-size:14.5px;background:var(--surface);
+  color:var(--ink-900);transition:border-color .15s, box-shadow .15s;
+}
+.search input::placeholder{color:var(--ink-400)}
+.search input:focus{outline:none;border-color:var(--teal-600);box-shadow:0 0 0 3px rgba(46,133,119,.13)}
+.search.mini input{height:38px;width:100%;font-size:14px}
+
+.select{
+  appearance:none;height:42px;border:1px solid var(--line);border-radius:var(--r-md);
+  background:var(--surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2393A5A0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 13px center;
+  padding:0 40px 0 14px;font-family:inherit;font-size:14px;color:var(--ink-700);cursor:pointer;
+  transition:border-color .15s, box-shadow .15s;
+}
+.select:focus{outline:none;border-color:var(--teal-600);box-shadow:0 0 0 3px rgba(46,133,119,.13)}
+
+.toolbar{display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap}
+.toolbar .spacer{flex:1}
+
+.seclabel{display:flex;align-items:center;gap:14px;margin:2px 0 14px}
+.seclabel span.lbl{font-size:12px;letter-spacing:.14em;color:#7C8E8A;font-weight:600;text-transform:uppercase}
+.seclabel .rule{flex:1;height:1px;background:var(--line)}
+.seclabel .secmeta{font-family:var(--font-mono);font-size:12px;color:var(--ink-400)}
+
+/* ---- dark stat band ---- */
+.band{
+  background:var(--dark-800);border-radius:var(--r-xl);
+  display:grid;grid-template-columns:repeat(4,1fr);
+  margin-bottom:24px;overflow:hidden;
+}
+.band .cell{padding:24px 28px 22px;position:relative}
+.band .cell + .cell::before{
+  content:'';position:absolute;left:0;top:22px;bottom:22px;width:1px;background:var(--dark-line);
+}
+.blabel{font-size:11px;letter-spacing:.14em;color:var(--dark-label);font-weight:600;text-transform:uppercase;margin-bottom:13px}
+.bval{font-family:var(--font-mono);font-size:31px;font-weight:600;color:#fff;line-height:1;display:flex;align-items:baseline;gap:7px}
+.bval .unit{font-family:var(--font-ui);font-size:13.5px;font-weight:500;color:#8FA5A0}
+.bsub{font-family:var(--font-mono);font-size:12px;color:var(--dark-label);margin-top:11px}
+.bsub .up{color:#4CC0A9}
+.bsub .wn{color:var(--warn)}
+
+/* ---- table card ---- */
+.tcard{
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--r-xl);
+  box-shadow:var(--shadow-xs);overflow:hidden;
+}
+.tcard table{width:100%;border-collapse:collapse}
+.tcard thead th{
+  font-size:11.5px;letter-spacing:.11em;text-transform:uppercase;color:#7C8E8A;
+  font-weight:600;text-align:left;padding:18px 20px;border-bottom:1px solid var(--line-soft);
+}
+.tcard thead th:first-child{padding-left:24px}
+.tcard tbody td{
+  padding:16px 20px;border-bottom:1px solid var(--line-soft);
+  font-size:15px;color:var(--ink-700);vertical-align:middle;
+}
+.tcard tbody td:first-child{padding-left:24px}
+.tcard tbody tr:last-child td{border-bottom:0}
+.tcard tbody tr{cursor:pointer;transition:background .12s}
+.tcard tbody tr:hover{background:var(--surface-hover)}
+.tname{font-weight:600;color:var(--ink-900);font-size:15.5px;display:flex;align-items:center;gap:9px}
+.tdesc{font-size:13px;color:var(--ink-400);margin-top:4px;max-width:400px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.num{font-family:var(--font-mono);font-size:13.5px;color:var(--ink-700)}
+.num.muted{color:var(--ink-400)}
+.rowactions{display:flex;gap:2px;justify-content:flex-end;opacity:0;transition:opacity .15s}
+tr:hover .rowactions{opacity:1}
+.ract{
+  width:32px;height:32px;border-radius:9px;display:grid;place-items:center;
+  color:var(--ink-400);cursor:pointer;background:none;border:0;transition:all .15s;
+}
+.ract .ic{width:16.5px;height:16.5px}
+.ract:hover{background:#EFF5F3;color:var(--ink-700)}
+.ract.danger:hover{background:var(--danger-bg);color:var(--danger)}
+.tfoot{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:14px 24px;border-top:1px solid var(--line-soft);
+}
+.tfoot .count{font-family:var(--font-mono);font-size:12.5px;color:var(--ink-400)}
+.pager{display:flex;gap:4px}
+.pager .ract .ic{width:15px;height:15px}
+
+.exthumb{
+  width:38px;height:38px;border-radius:var(--r-sm);background:var(--teal-soft);
+  color:var(--teal-600);display:grid;place-items:center;flex:0 0 auto;
+}
+.exthumb .ic{width:17px;height:17px}
+.namecell{display:flex;align-items:center;gap:14px}
+.playic{color:var(--teal-600)}
+.novid{color:var(--ink-300)}
+
+/* ===================== BUILDER ===================== */
+.bheader{
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--r-xl);
+  box-shadow:var(--shadow-xs);padding:18px 22px;
+  display:flex;align-items:center;gap:14px;margin-bottom:22px;
+}
+.bh-left{display:flex;flex-direction:column;gap:5px;min-width:0}
+.bh-titlerow{display:flex;align-items:center;gap:9px}
+.bh-title{
+  font-size:23px;font-weight:600;letter-spacing:-.01em;outline:none;
+  border-radius:6px;padding:1px 4px;margin-left:-4px;
+}
+.bh-title:focus{box-shadow:0 0 0 3px rgba(46,133,119,.13);background:#FCFEFD}
+.bh-pencil{color:var(--ink-300);opacity:0;transition:opacity .15s;cursor:pointer}
+.bh-titlerow:hover .bh-pencil{opacity:1}
+.bh-meta{display:flex;align-items:center;gap:9px;color:var(--ink-500);font-size:14.5px}
+.bh-meta .dot{color:var(--ink-300)}
+.draft{
+  border:1px solid var(--line);border-radius:var(--r-full);padding:2px 11px;
+  font-size:12.5px;color:var(--ink-500);font-weight:500;
+}
+.bh-right{margin-left:auto;display:flex;align-items:center;gap:14px}
+.surplus{display:flex;align-items:center;gap:12px}
+.surplus label{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#7C8E8A;font-weight:600}
+.sinput{
+  display:flex;align-items:center;border:1px solid var(--line);border-radius:var(--r-sm);
+  height:40px;padding:0 12px;gap:5px;background:var(--surface);
+}
+.sinput input{
+  width:34px;border:0;font-family:var(--font-mono);font-size:15px;text-align:center;
+  color:var(--ink-900);outline:none;background:transparent;
+}
+.sinput .pct{color:var(--ink-400);font-size:14px}
+.bh-divider{width:1px;height:26px;background:var(--line)}
+
+.bwrap{display:flex;gap:20px;align-items:flex-start}
+.bmain{flex:1;min-width:0}
+.bgrid-scroll{overflow-x:auto;padding-bottom:10px}
+.bgrid{min-width:1330px}
+.dayhead{
+  display:grid;grid-template-columns:214px repeat(7,minmax(146px,1fr));gap:12px;
+  margin-bottom:12px;
+}
+.dh{
+  font-family:var(--font-mono);font-size:11px;letter-spacing:.16em;color:var(--ink-400);
+  text-transform:uppercase;text-align:center;
+}
+.weekrow{
+  display:grid;grid-template-columns:214px repeat(7,minmax(146px,1fr));gap:12px;
+  margin-bottom:14px;align-items:stretch;
+}
+.weekrow.collapsed{grid-template-columns:214px}
+.weekrow.collapsed .daycell{display:none}
+.weekrow.collapsed .wchev .ic{transform:rotate(-90deg)}
+
+.wcard{
+  background:var(--surface);border:1px solid var(--line);border-radius:14px;
+  box-shadow:var(--shadow-xs);padding:14px 15px 12px;display:flex;flex-direction:column;
+}
+.wtop{display:flex;align-items:center;gap:9px}
+.grip{color:#C3D0CC;cursor:grab}
+.grip .ic{width:15px;height:15px}
+.wname{font-weight:600;font-size:16px;flex:1}
+.wchev{background:none;border:0;color:var(--ink-400);cursor:pointer;padding:4px;border-radius:7px;display:grid;place-items:center}
+.wchev:hover{background:#F2F6F5}
+.wchev .ic{width:17px;height:17px;transition:transform .18s}
+.wcount{
+  font-family:var(--font-mono);font-size:10.5px;letter-spacing:.1em;color:var(--ink-400);
+  text-transform:uppercase;margin:8px 0 0 2px;
+}
+.wfoot{
+  margin-top:auto;padding-top:11px;display:flex;align-items:center;
+  justify-content:space-between;border-top:1px solid var(--line-soft);
+}
+.wcount{margin-bottom:14px}
+.wdup{
+  display:flex;align-items:center;gap:7px;font-size:13.5px;color:var(--ink-500);
+  cursor:pointer;padding:6px 9px;border-radius:8px;background:none;border:0;transition:background .15s;
+}
+.wdup:hover{background:#F2F6F5}
+.wdup .ic{width:15px;height:15px}
+.wtrash{
+  width:30px;height:30px;border-radius:8px;display:grid;place-items:center;
+  color:var(--danger);opacity:.85;cursor:pointer;background:none;border:0;transition:all .15s;
+}
+.wtrash:hover{background:var(--danger-bg);opacity:1}
+.wtrash .ic{width:15.5px;height:15.5px}
+
+.daycell{
+  border:1.5px dashed #DCE6E3;border-radius:14px;min-height:122px;position:relative;
+  display:flex;flex-direction:column;gap:8px;padding:8px;
+  transition:border-color .15s, background .15s;
+}
+.daycell.rest{align-items:center;justify-content:center;cursor:pointer}
+.restlbl{font-family:var(--font-mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#AEBFBA}
+.addhint{display:none;align-items:center;gap:6px;color:var(--teal-600);font-size:13px;font-weight:600}
+.addhint .ic{width:15px;height:15px}
+.daycell.rest:hover{background:#F7FBFA;border-color:#BCD5CE}
+.daycell.rest:hover .restlbl{display:none}
+.daycell.rest:hover .addhint{display:inline-flex}
+.daycell.has{border-color:transparent;background:transparent;padding:0}
+.daycell.dragover{border-color:var(--teal-600) !important;border-style:dashed;background:var(--teal-soft) !important}
+.cell-add{
+  opacity:0;border:1.5px dashed #DCE6E3;border-radius:var(--r-sm);height:34px;
+  display:grid;place-items:center;color:#9DB3AD;cursor:pointer;background:none;
+  transition:all .15s;
+}
+.daycell.has:hover .cell-add{opacity:1}
+.cell-add:hover{border-color:var(--teal-600);color:var(--teal-600)}
+.cell-add .ic{width:15px;height:15px}
+
+.scard{
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--r-md);
+  box-shadow:var(--shadow-xs);padding:11px 12px 12px;position:relative;cursor:grab;
+  transition:border-color .15s, box-shadow .15s;
+}
+.scard:hover{border-color:#CBDAD6;box-shadow:var(--shadow-sm)}
+.scard:active{cursor:grabbing}
+.sname{font-size:14px;font-weight:600;color:var(--ink-900);padding-right:18px;line-height:1.3}
+.smeta{display:flex;align-items:center;gap:8px;margin-top:9px;flex-wrap:wrap}
+.sexn{font-family:var(--font-mono);font-size:11.5px;color:var(--ink-400)}
+.sx{
+  position:absolute;top:7px;right:7px;width:22px;height:22px;border-radius:7px;
+  display:grid;place-items:center;color:var(--ink-300);opacity:0;
+  cursor:pointer;background:none;border:0;transition:all .15s;
+}
+.scard:hover .sx{opacity:1}
+.sx:hover{background:var(--danger-bg);color:var(--danger)}
+.sx .ic{width:13px;height:13px}
+
+.addweek{
+  width:214px;height:46px;border:1.5px dashed #CBDAD6;border-radius:var(--r-md);
+  color:var(--ink-500);font-weight:600;font-size:14px;background:transparent;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;gap:8px;transition:all .15s;
+  margin-top:2px;
+}
+.addweek:hover{border-color:var(--teal-600);color:var(--teal-600)}
+.addweek .ic{width:16px;height:16px}
+
+/* ---- session library drawer ---- */
+.libdrawer{
+  width:274px;flex:0 0 auto;background:var(--surface);border:1px solid var(--line);
+  border-radius:var(--r-xl);box-shadow:var(--shadow-xs);padding:16px;
+  position:sticky;top:96px;max-height:calc(100vh - 122px);
+  display:flex;flex-direction:column;transition:width .2s;
+}
+.libhead{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.libhead .t{font-size:15px;font-weight:600}
+.libtoggle{background:none;border:0;color:var(--ink-400);cursor:pointer;width:30px;height:30px;border-radius:8px;display:grid;place-items:center;transition:all .15s}
+.libtoggle:hover{background:#F2F6F5;color:var(--ink-700)}
+.libtoggle .ic{width:16px;height:16px}
+.liblist{overflow-y:auto;display:flex;flex-direction:column;gap:10px;margin:12px -4px 0;padding:2px 4px}
+.libcard{
+  border:1px solid var(--line);border-radius:var(--r-md);padding:11px 12px;
+  display:flex;gap:10px;cursor:grab;background:var(--surface);transition:all .15s;
+}
+.libcard:hover{border-color:#BCD5CE;box-shadow:var(--shadow-xs)}
+.libcard:active{cursor:grabbing}
+.libcard.dragging{opacity:.45}
+.libgrip{color:#C3D0CC;margin-top:2px}
+.libgrip .ic{width:14px;height:14px}
+.libname{font-size:14px;font-weight:600;color:var(--ink-900);line-height:1.3}
+.libmeta{font-family:var(--font-mono);font-size:11.5px;color:var(--ink-400);margin:6px 0 8px}
+.libhint{
+  margin-top:12px;padding-top:12px;border-top:1px solid var(--line-soft);
+  font-size:12px;color:var(--ink-400);line-height:1.55;
+}
+.libdrawer.min{width:56px;padding:12px 8px;align-items:center}
+.libdrawer.min .libhead .t,.libdrawer.min .libsearch,.libdrawer.min .liblist,.libdrawer.min .libhint{display:none}
+
+/* ---- add-session popover ---- */
+.pop{
+  position:fixed;z-index:80;width:326px;background:var(--surface);
+  border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow-lg);
+  display:none;flex-direction:column;overflow:hidden;
+}
+.pop.open{display:flex;animation:popIn .16s ease}
+@keyframes popIn{from{opacity:0;transform:translateY(6px) scale(.98)}to{opacity:1;transform:none}}
+.pophead{padding:15px 16px 11px;display:flex;align-items:flex-start;gap:10px}
+.poptitle{font-size:15px;font-weight:600}
+.popsub{font-family:var(--font-mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-400);margin-top:4px}
+.popclose{margin-left:auto;background:none;border:0;color:var(--ink-400);cursor:pointer;width:28px;height:28px;border-radius:8px;display:grid;place-items:center}
+.popclose:hover{background:#F2F6F5;color:var(--ink-700)}
+.popclose .ic{width:15px;height:15px}
+.popsearch{padding:0 16px 10px}
+.poplist{max-height:262px;overflow-y:auto;padding:4px 8px 8px}
+.popitem{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:10px 11px;border-radius:var(--r-sm);cursor:pointer;transition:background .12s;
+}
+.popitem:hover{background:#F5FAF8}
+.popitem .n{font-size:14px;font-weight:500;color:var(--ink-900)}
+.popitem .m{font-family:var(--font-mono);font-size:11.5px;color:var(--ink-400);margin-top:3px}
+.popfoot{border-top:1px solid var(--line-soft);padding:10px 12px}
+.popnew{
+  display:flex;align-items:center;gap:8px;width:100%;padding:9px 10px;
+  border:0;background:none;border-radius:var(--r-sm);color:var(--teal-600);
+  font-size:13.5px;font-weight:600;cursor:pointer;transition:background .15s;text-align:left;
+}
+.popnew:hover{background:var(--teal-soft)}
+.popnew .ic{width:15px;height:15px}
+
+/* ---- toast ---- */
+.toast{
+  position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(10px);
+  background:var(--dark-800);color:#fff;padding:11px 18px;border-radius:var(--r-md);
+  font-size:14px;font-weight:500;box-shadow:var(--shadow-lg);
+  opacity:0;pointer-events:none;transition:all .22s;z-index:100;
+  display:flex;align-items:center;gap:9px;
+}
+.toast.show{opacity:1;transform:translateX(-50%)}
+.toast .ic{width:16px;height:16px;color:#6FCDB9}
+/* ---- create-session slide-over (mounts your existing session builder) ---- */
+.ovl{position:fixed;inset:0;background:rgba(11,29,25,.34);opacity:0;pointer-events:none;transition:opacity .22s;z-index:70}
+.ovl.open{opacity:1;pointer-events:auto}
+.sdrawer{position:fixed;top:0;right:0;bottom:0;width:520px;max-width:92vw;background:var(--surface);
+  border-left:1px solid var(--line);box-shadow:-28px 0 70px rgba(11,29,25,.16);z-index:71;
+  transform:translateX(103%);transition:transform .28s cubic-bezier(.2,.8,.2,1);display:flex;flex-direction:column}
+.sdrawer.open{transform:none}
+.sdhead{display:flex;align-items:flex-start;gap:12px;padding:20px 24px 16px;border-bottom:1px solid var(--line-soft)}
+.sdhead .t{font-size:16px;font-weight:700;color:var(--ink-900);letter-spacing:-.01em}
+.sdhead .sub{font-size:12.5px;color:var(--ink-500);margin-top:3px}
+.sdhead .sub b{color:var(--teal-600);font-weight:600}
+.sdclose{margin-left:auto;width:32px;height:32px;border-radius:9px;border:none;background:transparent;color:var(--ink-400);cursor:pointer;display:grid;place-items:center}
+.sdclose:hover{background:var(--chip-bg);color:var(--ink-700)}
+.sdbody{flex:1;overflow:auto;padding:22px 24px;display:flex;flex-direction:column;gap:18px}
+.fld label{display:block;font-size:10.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-400);margin-bottom:7px}
+.fld input,.fld select{width:100%;height:42px;border:1px solid var(--line);border-radius:11px;padding:0 13px;font:inherit;font-size:14px;color:var(--ink-900);background:var(--surface);outline:none}
+.fld input:focus,.fld select:focus{border-color:var(--teal-600);box-shadow:0 0 0 3px var(--teal-100)}
+.sdph{border:1.5px dashed var(--line);border-radius:14px;background:var(--bg-app);padding:30px 24px;text-align:center}
+.sdph .ic{width:22px;height:22px;color:var(--ink-300);margin-bottom:8px}
+.sdph .pt{font-size:13px;font-weight:600;color:var(--ink-500)}
+.sdph .ps{font-size:12px;color:var(--ink-400);margin-top:4px;line-height:1.55}
+.sdfoot{padding:16px 24px;border-top:1px solid var(--line-soft);display:flex;align-items:center;justify-content:flex-end;gap:10px}
+</style>
+</head>
+<body>
+
+<!-- ============ ICON SPRITE ============ -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M9.5 21v-6h5v6"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="7.8" r="3.2"/><path d="M3.4 20c.6-3.3 2.9-5.2 5.6-5.2s5 1.9 5.6 5.2"/><path d="M15.8 4.9a3.2 3.2 0 0 1 0 5.8"/><path d="M17.6 15.2c1.8.9 3 2.6 3.4 4.8"/></symbol>
+  <symbol id="i-dumbbell" viewBox="0 0 24 24"><path d="M4 9v6M7.2 6.8v10.4M16.8 6.8v10.4M20 9v6M7.2 12h9.6"/></symbol>
+  <symbol id="i-content" viewBox="0 0 24 24"><path d="M4.5 4v16M9.5 4v16M14 4.6l4.8 14.8"/></symbol>
+  <symbol id="i-kanban" viewBox="0 0 24 24"><path d="M5 4h4.5v15H5zM14.5 4H19v9h-4.5z"/></symbol>
+  <symbol id="i-zap" viewBox="0 0 24 24"><path d="M13 2 4.6 13.4h6L9.6 22 18 10.6h-6z"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.01a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.01a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m16.6 16.6 4.4 4.4"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-chevleft" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+  <symbol id="i-chevright" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+  <symbol id="i-chevdown" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-panel" viewBox="0 0 24 24"><path d="m7 7 5 5-5 5"/><path d="m13 7 5 5-5 5"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6.2h18"/><path d="M8.5 6.2V4h7v2.2"/><path d="M6 6.2 7 21h10l1-14.8"/><path d="M10 10.5v6.5M14 10.5v6.5"/></symbol>
+  <symbol id="i-save" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  <symbol id="i-grip" viewBox="0 0 24 24"><circle cx="9" cy="5.5" r="1.4" fill="currentColor" stroke="none"/><circle cx="15" cy="5.5" r="1.4" fill="currentColor" stroke="none"/><circle cx="9" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="9" cy="18.5" r="1.4" fill="currentColor" stroke="none"/><circle cx="15" cy="18.5" r="1.4" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-userplus" viewBox="0 0 24 24"><circle cx="9" cy="7.8" r="3.2"/><path d="M3.4 20c.6-3.3 2.9-5.2 5.6-5.2s5 1.9 5.6 5.2"/><path d="M19 7.5v6M16 10.5h6"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m4.5 12.5 5 5 10-11"/></symbol>
+</svg>
+
+<div class="app">
+
+  <!-- ============ MAIN DARK SIDEBAR ============ -->
+  <nav class="mainbar">
+    <div class="logo">CH</div>
+    <div class="mnav">
+      <div class="mitem"><span class="micon"><svg class="ic"><use href="#i-home"/></svg></span>Dashboard</div>
+      <div class="mitem"><span class="micon"><svg class="ic"><use href="#i-users"/></svg><span class="mbadge">4</span></span>Clients</div>
+      <div class="mitem active"><span class="micon"><svg class="ic"><use href="#i-dumbbell"/></svg></span>Programs</div>
+      <div class="mitem"><span class="micon"><svg class="ic"><use href="#i-content"/></svg></span>Content</div>
+      <div class="mitem"><span class="micon"><svg class="ic"><use href="#i-kanban"/></svg></span>CRM<span class="beta">BETA</span></div>
+      <div class="mitem"><span class="micon"><svg class="ic"><use href="#i-zap"/></svg></span>Automation<span class="beta">BETA</span></div>
+      <div class="mitem"><span class="micon"><svg class="ic"><use href="#i-gear"/></svg></span>Settings</div>
+    </div>
+    <div class="mspacer"></div>
+    <div class="mavatar">S</div>
+  </nav>
+
+  <!-- ============ SUB-SIDEBAR (client-profile pattern, applied to Programs) ============ -->
+  <aside class="subbar">
+    <div class="subhead">
+      <button class="backbtn"><svg class="ic"><use href="#i-chevleft"/></svg></button>
+      <div class="subicon"><svg class="ic"><use href="#i-dumbbell"/></svg></div>
+      <div class="subtitle">Programs</div>
+    </div>
+    <nav class="snav" id="snav">
+      <div class="sitem" data-view="builder">Builder</div>
+      <div class="sitem active" data-view="programs">Programs</div>
+      <div class="sitem" data-view="sessions">Sessions</div>
+      <div class="sitem" data-view="exercises">Exercises</div>
+    </nav>
+    <div class="subfoot">
+      <div class="sfootitem"><svg class="ic" style="width:18px;height:18px"><use href="#i-gear"/></svg>Settings</div>
+    </div>
+  </aside>
+
+  <!-- ============ CONTENT ============ -->
+  <main class="content">
+    <header class="topbar">
+      <div class="toptitle" id="topTitle">Programs</div>
+      <div class="topactions">
+        <button class="btn btn-primary" id="ctxBtn"><svg class="ic"><use href="#i-plus"/></svg><span id="ctxLabel">New program</span></button>
+        <button class="iconbtn"><svg class="ic"><use href="#i-bell"/></svg><span class="nbadge">9+</span></button>
+      </div>
+    </header>
+
+    <!-- ================================================
+         VIEW: BUILDER
+         ================================================ -->
+    <section class="page" id="page-builder">
+      <div class="bheader">
+        <button class="backbtn"><svg class="ic"><use href="#i-chevleft"/></svg></button>
+        <div class="bh-left">
+          <div class="bh-titlerow">
+            <span class="bh-title" id="bTitle" contenteditable="true" spellcheck="false">Push Pull Legs — 4 Week Split</span>
+            <svg class="ic bh-pencil" style="width:16px;height:16px"><use href="#i-pencil"/></svg>
+          </div>
+          <div class="bh-meta">
+            <span id="mWeeks">4 weeks</span><span class="dot">·</span>
+            <span id="mFreq">1.5 sessions/week</span>
+            <span class="draft">Draft</span>
+          </div>
+        </div>
+        <div class="bh-right">
+          <div class="surplus">
+            <label>Default calorie surplus</label>
+            <div class="sinput"><input type="text" value="15"><span class="pct">%</span></div>
+          </div>
+          <div class="bh-divider"></div>
+          <button class="iconbtn" title="Delete program"><svg class="ic" style="width:18px;height:18px;color:var(--danger)"><use href="#i-trash"/></svg></button>
+          <button class="btn btn-danger" id="discardBtn">Discard</button>
+          <button class="btn btn-primary" id="saveBtn"><svg class="ic"><use href="#i-save"/></svg>Save program</button>
+        </div>
+      </div>
+
+      <div class="bwrap">
+        <div class="bmain">
+          <div class="seclabel">
+            <span class="lbl">Schedule</span>
+            <div class="rule"></div>
+            <span class="secmeta" id="schedMeta">4 weeks · 6 sessions</span>
+          </div>
+          <div class="bgrid-scroll">
+            <div class="bgrid">
+              <div class="dayhead">
+                <div></div>
+                <div class="dh">Day 1</div><div class="dh">Day 2</div><div class="dh">Day 3</div>
+                <div class="dh">Day 4</div><div class="dh">Day 5</div><div class="dh">Day 6</div><div class="dh">Day 7</div>
+              </div>
+              <div id="weeks"></div>
+              <button class="addweek" id="addWeek"><svg class="ic"><use href="#i-plus"/></svg>Add week</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- session library drawer -->
+        <aside class="libdrawer" id="libDrawer">
+          <div class="libhead">
+            <span class="t">Session library</span>
+            <button class="libtoggle" id="libToggle" title="Collapse library"><svg class="ic"><use href="#i-panel"/></svg></button>
+          </div>
+          <div class="search mini libsearch">
+            <svg class="ic"><use href="#i-search"/></svg>
+            <input type="text" placeholder="Search sessions" id="libSearch">
+          </div>
+          <div class="liblist" id="libList"></div>
+          <div class="libhint">Drag a session onto a day, or click any rest day to add one there.</div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ================================================
+         VIEW: PROGRAMS (library)
+         ================================================ -->
+    <section class="page active" id="page-programs">
+      <div class="band">
+        <div class="cell"><div class="blabel">Total programs</div><div class="bval">12</div><div class="bsub">8 ai · 4 custom</div></div>
+        <div class="cell"><div class="blabel">Active assignments</div><div class="bval">5</div><div class="bsub">across 4 clients</div></div>
+        <div class="cell"><div class="blabel">Avg length</div><div class="bval">1.6<span class="unit">wks</span></div><div class="bsub">range 1–3 weeks</div></div>
+        <div class="cell"><div class="blabel">Most used focus</div><div class="bval">PPL</div><div class="bsub">7 of 12 programs</div></div>
+      </div>
+
+      <div class="toolbar">
+        <div class="search">
+          <svg class="ic"><use href="#i-search"/></svg>
+          <input type="text" placeholder="Search programs" id="progSearch">
+        </div>
+        <div class="seg" id="progSeg">
+          <button class="active" data-v="all">All</button>
+          <button data-v="custom">Custom</button>
+          <button data-v="ai">AI generated</button>
+        </div>
+        <div class="spacer"></div>
+        <select class="select"><option>Recently updated</option><option>Name A–Z</option><option>Longest first</option><option>Most assigned</option></select>
+      </div>
+
+      <div class="seclabel"><span class="lbl">Program library</span><div class="rule"></div></div>
+
+      <div class="tcard">
+        <table id="progTable">
+          <thead><tr>
+            <th style="width:34%">Program</th><th>Focus</th><th>Length</th><th>Sessions/wk</th><th>Schedule</th><th>Type</th><th>Updated</th><th style="width:118px"></th>
+          </tr></thead>
+          <tbody>
+            <tr data-type="custom" data-name="Push Pull Legs — New Builder test"><td><div class="tname">Push Pull Legs — New Builder test</div><div class="tdesc">Custom 3-week split built in the new builder.</div></td><td><span class="chip">push pull legs</span></td><td class="num">3 weeks</td><td class="num">5</td><td class="num muted">21 slots · 16 rest</td><td><span class="chip">custom</span></td><td class="num muted">2d ago</td><td><div class="rowactions"><button class="ract" title="Assign to client"><svg class="ic"><use href="#i-userplus"/></svg></button><button class="ract" title="Duplicate"><svg class="ic"><use href="#i-copy"/></svg></button><button class="ract danger" title="Delete"><svg class="ic"><use href="#i-trash"/></svg></button></div></td></tr>
+            <tr data-type="ai" data-name="Glute Focused Training Program"><td><div class="tname">Glute Focused Training Program</div><div class="tdesc">4-day split for glute development with lower body and core strength.</div></td><td><span class="chip">glutes</span></td><td class="num">1 week</td><td class="num">4</td><td class="num muted">6 slots · 2 rest</td><td><span class="chip teal">ai</span></td><td class="num muted">5d ago</td><td><div class="rowactions"><button class="ract" title="Assign to client"><svg class="ic"><use href="#i-userplus"/></svg></button><button class="ract" title="Duplicate"><svg class="ic"><use href="#i-copy"/></svg></button><button class="ract danger" title="Delete"><svg class="ic"><use href="#i-trash"/></svg></button></div></td></tr>
+            <tr data-type="custom" data-name="Body Part Split Program — Jun 22"><td><div class="tname">Body Part Split Program — Jun 22</div><div class="tdesc">Traditional bro split, one muscle group per day.</div></td><td><span class="chip">bro split</span></td><td class="num">1 week</td><td class="num">5</td><td class="num muted">5 slots · 0 rest</td><td><span class="chip">custom</span></td><td class="num muted">22 Jun</td><td><div class="rowactions"><button class="ract" title="Assign to client"><svg class="ic"><use href="#i-userplus"/></svg></button><button class="ract" title="Duplicate"><svg class="ic"><use href="#i-copy"/></svg></button><button class="ract danger" title="Delete"><svg class="ic"><use href="#i-trash"/></svg></button></div></td></tr>
+            <tr data-type="ai" data-name="PPL Sekiiiii"><td><div class="tname">PPL Sekiiiii</div><div class="tdesc">Push/pull/legs performed twice per week with a rest day between sessions.</div></td><td><span class="chip">push pull legs</span></td><td class="num">1 week</td><td class="num">6</td><td class="num muted">12 slots · 6 rest</td><td><span class="chip teal">ai</span></td><td class="num muted">1w ago</td><td><div class="rowactions"><button class="ract" title="Assign to client"><svg class="ic"><use href="#i-userplus"/></svg></button><button class="ract" title="Duplicate"><svg class="ic"><use href="#i-copy"/></svg></button><button class="ract danger" title="Delete"><svg class="ic"><use href="#i-trash"/></svg></button></div></td></tr>
+            <tr data-type="ai" data-name="Push Pull Seki"><td><div class="tname">Push Pull Seki</div><div class="tdesc">Balanced PPL for fat loss while maintaining muscle over 2 weeks.</div></td><td><span class="chip">push pull legs</span></td><td class="num">1 week</td><td class="num">6</td><td class="num muted">6 slots · 0 rest</td><td><span class="chip teal">ai</span></td><td class="num muted">1w ago</td><td><div class="rowactions"><button class="ract" title="Assign to client"><svg class="ic"><use href="#i-userplus"/></svg></button><button class="ract" title="Duplicate"><svg class="ic"><use href="#i-copy"/></svg></button><button class="ract danger" title="Delete"><svg class="ic"><use href="#i-trash"/></svg></button></div></td></tr>
+            <tr data-type="ai" data-name="Body Part Split Program"><td><div class="tname">Body Part Split Program</div><div class="tdesc">High-volume body part split for hypertrophy and fat loss.</div></td><td><span class="chip">bro split</span></td><td class="num">1 week</td><td class="num">5</td><td class="num muted">7 slots · 2 rest</td><td><span class="chip teal">ai</span></td><td class="num muted">2w ago</td><td><div class="rowactions"><button class="ract" title="Assign to client"><svg class="ic"><use href="#i-userplus"/></svg></button><button class="ract" title="Duplicate"><svg class="ic"><use href="#i-copy"/></svg></button><button class="ract danger" title="Delete"><svg class="ic"><use href="#i-trash"/></svg></button></div></td></tr>
+            <tr data-type="ai" data-name="Fat Loss & Muscle Preservation Program"><td><div class="tname">Fat Loss &amp; Muscle Preservation Program</div><div class="tdesc">Resistance training plus metabolic work to protect muscle in a deficit.</div></td><td><span class="chip">full body</span></td><td class="num">1 week</td><td class="num">3</td><td class="num muted">5 slots · 2 rest</td><td><span class="chip teal">ai</span></td><td class="num muted">3w ago</td><td><div class="rowactions"><button class="ract" title="Assign to client"><svg class="ic"><use href="#i-userplus"/></svg></button><button class="ract" title="Duplicate"><svg class="ic"><use href="#i-copy"/></svg></button><button class="ract danger" title="Delete"><svg class="ic"><use href="#i-trash"/></svg></button></div></td></tr>
+            <tr data-type="ai" data-name="PPL Drizzy"><td><div class="tname">PPL Drizzy</div><div class="tdesc">Structured PPL focused on fat loss while keeping strength.</div></td><td><span class="chip">push pull legs</span></td><td class="num">1 week</td><td class="num">3</td><td class="num muted">5 slots · 2 rest</td><td><span class="chip teal">ai</span></td><td class="num muted">3w ago</td><td><div class="rowactions"><button class="ract" title="Assign to client"><svg class="ic"><use href="#i-userplus"/></svg></button><button class="ract" title="Duplicate"><svg class="ic"><use href="#i-copy"/></svg></button><button class="ract danger" title="Delete"><svg class="ic"><use href="#i-trash"/></svg></button></div></td></tr>
+            <tr data-type="ai" data-name="External Removal Test"><td><div class="tname">External Removal Test</div><div class="tdesc">Balanced PPL to promote fat loss while maintaining strength.</div></td><td><span class="chip">push pull legs</span></td><td class="num">1 week</td><td class="num">3</td><td class="num muted">4 slots · 1 rest</td><td><span class="chip teal">ai</span></td><td class="num muted">1mo ago</td><td><div class="rowactions"><button class="ract" title="Assign to client"><svg class="ic"><use href="#i-userplus"/></svg></button><button class="ract" title="Duplicate"><svg class="ic"><use href="#i-copy"/></svg></button><button class="ract danger" title="Delete"><svg class="ic"><use href="#i-trash"/></svg></button></div></td></tr>
+            <tr data-type="ai" data-name="Push Rest Pull Rest Split"><td><div class="tname">Push Rest Pull Rest Split</div><div class="tdesc">8-day PPL cycle with a rest day between every session.</div></td><td><span class="chip">push pull legs</span></td><td class="num">1 week</td><td class="num">2</td><td class="num muted">8 slots · 6 rest</td><td><span class="chip teal">ai</span></td><td class="num muted">1mo ago</td><td><div class="rowactions"><button class="ract" title="Assign to client"><svg class="ic"><use href="#i-userplus"/></svg></button><button class="ract" title="Duplicate"><svg class="ic"><use href="#i-copy"/></svg></button><button class="ract danger" title="Delete"><svg class="ic"><use href="#i-trash"/></svg></button></div></td></tr>
+            <tr data-type="ai" data-name="Push/Pull/Legs Program"><td><div class="tname">Push/Pull/Legs Program</div><div class="tdesc">Structured PPL designed to support fat loss.</div></td><td><span class="chip">push pull legs</span></td><td class="num">1 week</td><td class="num">3</td><td class="num muted">5 slots · 2 rest</td><td><span class="chip teal">ai</span></td><td class="num muted">1mo ago</td><td><div class="rowactions"><button class="ract" title="Assign to client"><svg class="ic"><use href="#i-userplus"/></svg></button><button class="ract" title="Duplicate"><svg class="ic"><use href="#i-copy"/></svg></button><button class="ract danger" title="Delete"><svg class="ic"><use href="#i-trash"/></svg></button></div></td></tr>
+            <tr data-type="custom" data-name="Fat Loss Strength Program"><td><div class="tname">Fat Loss Strength Program</div><div class="tdesc">4-day strength focus with fat loss conditioning built in.</div></td><td><span class="chip">strength</span></td><td class="num">1 week</td><td class="num">3</td><td class="num muted">6 slots · 2 rest</td><td><span class="chip">custom</span></td><td class="num muted">1mo ago</td><td><div class="rowactions"><button class="ract" title="Assign to client"><svg class="ic"><use href="#i-userplus"/></svg></button><button class="ract" title="Duplicate"><svg class="ic"><use href="#i-copy"/></svg></button><button class="ract danger" title="Delete"><svg class="ic"><use href="#i-trash"/></svg></button></div></td></tr>
+          </tbody>
+        </table>
+        <div class="tfoot">
+          <span class="count" id="progCount">Showing 12 of 12 programs</span>
+          <div class="pager">
+            <button class="ract"><svg class="ic"><use href="#i-chevleft"/></svg></button>
+            <button class="ract"><svg class="ic"><use href="#i-chevright"/></svg></button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================================
+         VIEW: SESSIONS (library)
+         ================================================ -->
+    <section class="page" id="page-sessions">
+      <div class="band">
+        <div class="cell"><div class="blabel">Total sessions</div><div class="bval">14</div><div class="bsub">6 focus types</div></div>
+        <div class="cell"><div class="blabel">Avg exercises</div><div class="bval">6.1</div><div class="bsub">per session</div></div>
+        <div class="cell"><div class="blabel">Avg duration</div><div class="bval">44<span class="unit">min</span></div><div class="bsub">range 20–60</div></div>
+        <div class="cell"><div class="blabel">In programs</div><div class="bval">12</div><div class="bsub"><span class="wn">2 unused</span></div></div>
+      </div>
+
+      <div class="toolbar">
+        <div class="search">
+          <svg class="ic"><use href="#i-search"/></svg>
+          <input type="text" placeholder="Search sessions" id="sessSearch">
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap" id="sessChips">
+          <button class="fchip active" data-v="all">All</button>
+          <button class="fchip" data-v="push">Push</button>
+          <button class="fchip" data-v="pull">Pull</button>
+          <button class="fchip" data-v="legs">Legs</button>
+          <button class="fchip" data-v="lower">Lower</button>
+          <button class="fchip" data-v="upper">Upper</button>
+          <button class="fchip" data-v="full body">Full body</button>
+        </div>
+        <div class="spacer"></div>
+        <select class="select"><option>Recently updated</option><option>Name A–Z</option><option>Most used</option><option>Longest first</option></select>
+      </div>
+
+      <div class="seclabel"><span class="lbl">Session library</span><div class="rule"></div></div>
+
+      <div class="tcard">
+        <table id="sessTable">
+          <thead><tr>
+            <th style="width:34%">Session</th><th>Focus</th><th>Exercises</th><th>Duration</th><th>Used in</th><th>Updated</th><th style="width:90px"></th>
+          </tr></thead>
+          <tbody>
+            <tr data-f="push"><td><div class="tname">Push Day A</div></td><td><span class="chip">push</span></td><td class="num">6</td><td class="num">45 min</td><td class="num">3 programs</td><td class="num muted">2d ago</td><td><div class="rowactions"><button class="ract" title="Duplicate"><svg class="ic"><use href="#i-copy"/></svg></button><button class="ract danger" title="Delete"><svg class="ic"><use href="#i-trash"/></svg></button></div></td></tr>
+            <tr data-f="pull"><td><div class="tname">Pull Day A</div></td><td><span class="chip">pull</span></td><td class="num">7</td><td class="num">50 min</td><td class="num">3 programs</td><td class="num muted">2d ago</td><td><div class="rowactions"><button class="ract" title="Duplicate"><svg class="ic"><use href="#i-copy"/></svg></button><button class="ract danger" title="Delete"><svg class="ic"><use href="#i-trash"/></svg></button></div></td></tr>
+            <tr data-f="legs"><td><div class="tname">Leg Day A</div></td><td><span class="chip">legs</span></td><td class="num">6</td><td class="num">55 min</td><td class="num">3 programs</td><td class="num muted">2d ago</td><td><div class="rowactions"><button class="ract" title="Duplicate"><svg class="ic"><use href="#i-copy"/></svg></button><button class="ract danger" title="Delete"><svg class="ic"><use href="#i-trash"/></svg></button></div></td></tr>
+            <tr data-f="push"><td><div class="tname">Push Day B</div></td><td><span class="chip">push</span></td><td class="num">5</td><td class="num">40 min</td><td class="num">2 programs</td><td class="num muted">4d ago</td><td><div class="rowactions"><button class="ract" title="Duplicate"><svg class="ic"><use href="#i-copy"/></svg></button><button class="ract danger" title="Delete"><svg class="ic"><use href="#i-trash"/></svg></button></div></td></tr>
+            <tr data-f="pull"><td><div class="tname">Pull Day B</div></td><td><span class="chip">pull</span></td><td class="num">6</td><td class="num">45 min</td><td class="num">2 programs</td><td class="num muted">4d ago</td><td><div class="rowactions"><button class="ract" title="Duplicate"><svg class="ic"><use href="#i-copy"/></svg></button><button class="ract danger" title="Delete"><svg class="ic"><use href="#i-trash"/></svg></button></div></td></tr>
+            <tr data-f="legs"><td><div class="tname">Leg Day B</div></td><td><span class="chip">legs</span></td><td class="num">7</td><td class="num">60 min</td><td class="num">2 programs</td><td class="num muted">4d ago</td><td><div class="rowactions"><button class="ract" title="Duplicate"><svg class="ic"><use href="#i-copy"/></svg></button><button class="ract danger" title="Delete"><svg class="ic"><use href="#i-trash"/></svg></button></div></td></tr>
+            <tr data-f="lower"><td><div class="tname">Glute Focused Lower Body <span class="chip teal tiny">ai</span></div></td><td><span class="chip">lower</span></td><td class="num">5</td><td class="num">40 min</td><td class="num">1 program</td><td class="num muted">5d ago</td><td><div class="rowactions"><button class="ract" title="Duplicate"><svg class="ic"><use href="#i-copy"/></svg></button><button class="ract danger" title="Delete"><svg class="ic"><use href="#i-trash"/></svg></button></div></td></tr>
+            <tr data-f="lower"><td><div class="tname">Glute Activation &amp; Lower <span class="chip teal tiny">ai</span></div></td><td><span class="chip">lower</span></td><td class="num">6</td><td class="num">45 min</td><td class="num">1 program</td><td class="num muted">5d ago</td><td><div class="rowactions"><button class="ract" title="Duplicate"><svg class="ic"><use href="#i-copy"/></svg></button><button class="ract danger" title="Delete"><svg class="ic"><use href="#i-trash"/></svg></button></div></td></tr>
+            <tr data-f="full body"><td><div class="tname">Total Body Conditioning <span class="chip teal tiny">ai</span></div></td><td><span class="chip">full body</span></td><td class="num">8</td><td class="num">35 min</td><td class="num">2 programs</td><td class="num muted">1w ago</td><td><div class="rowactions"><button class="ract" title="Duplicate"><svg class="ic"><use href="#i-copy"/></svg></button><button class="ract danger" title="Delete"><svg class="ic"><use href="#i-trash"/></svg></button></div></td></tr>
+            <tr data-f="upper"><td><div class="tname">Upper Hypertrophy</div></td><td><span class="chip">upper</span></td><td class="num">7</td><td class="num">50 min</td><td class="num">1 program</td><td class="num muted">1w ago</td><td><div class="rowactions"><button class="ract" title="Duplicate"><svg class="ic"><use href="#i-copy"/></svg></button><button class="ract danger" title="Delete"><svg class="ic"><use href="#i-trash"/></svg></button></div></td></tr>
+            <tr data-f="lower"><td><div class="tname">Lower Strength</div></td><td><span class="chip">lower</span></td><td class="num">6</td><td class="num">55 min</td><td class="num">1 program</td><td class="num muted">2w ago</td><td><div class="rowactions"><button class="ract" title="Duplicate"><svg class="ic"><use href="#i-copy"/></svg></button><button class="ract danger" title="Delete"><svg class="ic"><use href="#i-trash"/></svg></button></div></td></tr>
+            <tr data-f="core"><td><div class="tname">Core &amp; Carry Finisher</div></td><td><span class="chip">core</span></td><td class="num">4</td><td class="num">20 min</td><td class="num">1 program</td><td class="num muted">2w ago</td><td><div class="rowactions"><button class="ract" title="Duplicate"><svg class="ic"><use href="#i-copy"/></svg></button><button class="ract danger" title="Delete"><svg class="ic"><use href="#i-trash"/></svg></button></div></td></tr>
+            <tr data-f="full body"><td><div class="tname">Conditioning Circuit</div></td><td><span class="chip">conditioning</span></td><td class="num">6</td><td class="num">30 min</td><td class="num muted">—</td><td class="num muted">3w ago</td><td><div class="rowactions"><button class="ract" title="Duplicate"><svg class="ic"><use href="#i-copy"/></svg></button><button class="ract danger" title="Delete"><svg class="ic"><use href="#i-trash"/></svg></button></div></td></tr>
+            <tr data-f="push"><td><div class="tname">Push Day C</div></td><td><span class="chip">push</span></td><td class="num">6</td><td class="num">45 min</td><td class="num muted">—</td><td class="num muted">3w ago</td><td><div class="rowactions"><button class="ract" title="Duplicate"><svg class="ic"><use href="#i-copy"/></svg></button><button class="ract danger" title="Delete"><svg class="ic"><use href="#i-trash"/></svg></button></div></td></tr>
+          </tbody>
+        </table>
+        <div class="tfoot">
+          <span class="count" id="sessCount">Showing 14 of 14 sessions</span>
+          <div class="pager">
+            <button class="ract"><svg class="ic"><use href="#i-chevleft"/></svg></button>
+            <button class="ract"><svg class="ic"><use href="#i-chevright"/></svg></button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================================
+         VIEW: EXERCISES (library — new)
+         ================================================ -->
+    <section class="page" id="page-exercises">
+      <div class="band">
+        <div class="cell"><div class="blabel">Total exercises</div><div class="bval">142</div><div class="bsub">24 custom</div></div>
+        <div class="cell"><div class="blabel">Muscle groups</div><div class="bval">8</div><div class="bsub">full coverage</div></div>
+        <div class="cell"><div class="blabel">With video</div><div class="bval">96</div><div class="bsub"><span class="up">68% of library</span></div></div>
+        <div class="cell"><div class="blabel">In use</div><div class="bval">87</div><div class="bsub">across 14 sessions</div></div>
+      </div>
+
+      <div class="toolbar">
+        <div class="search">
+          <svg class="ic"><use href="#i-search"/></svg>
+          <input type="text" placeholder="Search exercises" id="exSearch">
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap" id="exChips">
+          <button class="fchip active" data-v="all">All</button>
+          <button class="fchip" data-v="chest">Chest</button>
+          <button class="fchip" data-v="back">Back</button>
+          <button class="fchip" data-v="legs">Legs</button>
+          <button class="fchip" data-v="glutes">Glutes</button>
+          <button class="fchip" data-v="shoulders">Shoulders</button>
+          <button class="fchip" data-v="core">Core</button>
+        </div>
+        <div class="spacer"></div>
+        <select class="select" id="exEquip">
+          <option value="all">All equipment</option><option value="barbell">Barbell</option><option value="dumbbell">Dumbbell</option><option value="cable">Cable</option><option value="machine">Machine</option><option value="bodyweight">Bodyweight</option>
+        </select>
+      </div>
+
+      <div class="seclabel"><span class="lbl">Exercise library</span><div class="rule"></div></div>
+
+      <div class="tcard">
+        <table id="exTable">
+          <thead><tr>
+            <th style="width:32%">Exercise</th><th>Muscle group</th><th>Equipment</th><th>Type</th><th>Video</th><th>Used in</th><th style="width:90px"></th>
+          </tr></thead>
+          <tbody>
+            <tr data-m="legs" data-eq="barbell"><td><div class="namecell"><div class="exthumb"><svg class="ic"><use href="#i-dumbbell"/></svg></div><div class="tname">Barbell Back Squat</div></div></td><td><span class="chip">legs</span></td><td>Barbell</td><td><span class="chip">compound</span></td><td><svg class="ic playic" style="width:17px;height:17px"><use href="#i-play"/></svg></td><td class="num">9 sessions</td><td><div class="rowactions"><button class="ract" title="Edit"><svg class="ic"><use href="#i-pencil"/></svg></button><button class="ract danger" title="Delete"><svg class="ic"><use href="#i-trash"/></svg></button></div></td></tr>
+            <tr data-m="legs" data-eq="barbell"><td><div class="namecell"><div class="exthumb"><svg class="ic"><use href="#i-dumbbell"/></svg></div><div class="tname">Romanian Deadlift</div></div></td><td><span class="chip">hamstrings</span></td><td>Barbell</td><td><span class="chip">compound</span></td><td><svg class="ic playic" style="width:17px;height:17px"><use href="#i-play"/></svg></td><td class="num">7 sessions</td><td><div class="rowactions"><button class="ract" title="Edit"><svg class="ic"><use href="#i-pencil"/></svg></button><button class="ract danger" title="Delete"><svg class="ic"><use href="#i-trash"/></svg></button></div></td></tr>
+            <tr data-m="chest" data-eq="barbell"><td><div class="namecell"><div class="exthumb"><svg class="ic"><use href="#i-dumbbell"/></svg></div><div class="tname">Barbell Bench Press</div></div></td><td><span class="chip">chest</span></td><td>Barbell</td><td><span class="chip">compound</span></td><td><svg class="ic playic" style="width:17px;height:17px"><use href="#i-play"/></svg></td><td class="num">8 sessions</td><td><div class="rowactions"><button class="ract" title="Edit"><svg class="ic"><use href="#i-pencil"/></svg></button><button class="ract danger" title="Delete"><svg class="ic"><use href="#i-trash"/></svg></button></div></td></tr>
+            <tr data-m="chest" data-eq="dumbbell"><td><div class="namecell"><div class="exthumb"><svg class="ic"><use href="#i-dumbbell"/></svg></div><div class="tname">Incline Dumbbell Press</div></div></td><td><span class="chip">chest</span></td><td>Dumbbell</td><td><span class="chip">compound</span></td><td><svg class="ic playic" style="width:17px;height:17px"><use href="#i-play"/></svg></td><td class="num">6 sessions</td><td><div class="rowactions"><button class="ract" title="Edit"><svg class="ic"><use href="#i-pencil"/></svg></button><button class="ract danger" title="Delete"><svg class="ic"><use href="#i-trash"/></svg></button></div></td></tr>
+            <tr data-m="back" data-eq="cable"><td><div class="namecell"><div class="exthumb"><svg class="ic"><use href="#i-dumbbell"/></svg></div><div class="tname">Lat Pulldown</div></div></td><td><span class="chip">back</span></td><td>Cable</td><td><span class="chip">compound</span></td><td><svg class="ic playic" style="width:17px;height:17px"><use href="#i-play"/></svg></td><td class="num">7 sessions</td><td><div class="rowactions"><button class="ract" title="Edit"><svg class="ic"><use href="#i-pencil"/></svg></button><button class="ract danger" title="Delete"><svg class="ic"><use href="#i-trash"/></svg></button></div></td></tr>
+            <tr data-m="back" data-eq="cable"><td><div class="namecell"><div class="exthumb"><svg class="ic"><use href="#i-dumbbell"/></svg></div><div class="tname">Seated Cable Row</div></div></td><td><span class="chip">back</span></td><td>Cable</td><td><span class="chip">compound</span></td><td><svg class="ic playic" style="width:17px;height:17px"><use href="#i-play"/></svg></td><td class="num">6 sessions</td><td><div class="rowactions"><button class="ract" title="Edit"><svg class="ic"><use href="#i-pencil"/></svg></button><button class="ract danger" title="Delete"><svg class="ic"><use href="#i-trash"/></svg></button></div></td></tr>
+            <tr data-m="glutes" data-eq="barbell"><td><div class="namecell"><div class="exthumb"><svg class="ic"><use href="#i-dumbbell"/></svg></div><div class="tname">Barbell Hip Thrust</div></div></td><td><span class="chip">glutes</span></td><td>Barbell</td><td><span class="chip">compound</span></td><td><svg class="ic playic" style="width:17px;height:17px"><use href="#i-play"/></svg></td><td class="num">5 sessions</td><td><div class="rowactions"><button class="ract" title="Edit"><svg class="ic"><use href="#i-pencil"/></svg></button><button class="ract danger" title="Delete"><svg class="ic"><use href="#i-trash"/></svg></button></div></td></tr>
+            <tr data-m="legs" data-eq="dumbbell"><td><div class="namecell"><div class="exthumb"><svg class="ic"><use href="#i-dumbbell"/></svg></div><div class="tname">Bulgarian Split Squat</div></div></td><td><span class="chip">legs</span></td><td>Dumbbell</td><td><span class="chip">compound</span></td><td><svg class="ic playic" style="width:17px;height:17px"><use href="#i-play"/></svg></td><td class="num">4 sessions</td><td><div class="rowactions"><button class="ract" title="Edit"><svg class="ic"><use href="#i-pencil"/></svg></button><button class="ract danger" title="Delete"><svg class="ic"><use href="#i-trash"/></svg></button></div></td></tr>
+            <tr data-m="shoulders" data-eq="barbell"><td><div class="namecell"><div class="exthumb"><svg class="ic"><use href="#i-dumbbell"/></svg></div><div class="tname">Overhead Press</div></div></td><td><span class="chip">shoulders</span></td><td>Barbell</td><td><span class="chip">compound</span></td><td><svg class="ic playic" style="width:17px;height:17px"><use href="#i-play"/></svg></td><td class="num">5 sessions</td><td><div class="rowactions"><button class="ract" title="Edit"><svg class="ic"><use href="#i-pencil"/></svg></button><button class="ract danger" title="Delete"><svg class="ic"><use href="#i-trash"/></svg></button></div></td></tr>
+            <tr data-m="shoulders" data-eq="dumbbell"><td><div class="namecell"><div class="exthumb"><svg class="ic"><use href="#i-dumbbell"/></svg></div><div class="tname">Lateral Raise</div></div></td><td><span class="chip">shoulders</span></td><td>Dumbbell</td><td><span class="chip">isolation</span></td><td><svg class="ic playic" style="width:17px;height:17px"><use href="#i-play"/></svg></td><td class="num">6 sessions</td><td><div class="rowactions"><button class="ract" title="Edit"><svg class="ic"><use href="#i-pencil"/></svg></button><button class="ract danger" title="Delete"><svg class="ic"><use href="#i-trash"/></svg></button></div></td></tr>
+            <tr data-m="chest" data-eq="cable"><td><div class="namecell"><div class="exthumb"><svg class="ic"><use href="#i-dumbbell"/></svg></div><div class="tname">Cable Fly</div></div></td><td><span class="chip">chest</span></td><td>Cable</td><td><span class="chip">isolation</span></td><td><span class="novid">—</span></td><td class="num">3 sessions</td><td><div class="rowactions"><button class="ract" title="Edit"><svg class="ic"><use href="#i-pencil"/></svg></button><button class="ract danger" title="Delete"><svg class="ic"><use href="#i-trash"/></svg></button></div></td></tr>
+            <tr data-m="shoulders" data-eq="cable"><td><div class="namecell"><div class="exthumb"><svg class="ic"><use href="#i-dumbbell"/></svg></div><div class="tname">Face Pull</div></div></td><td><span class="chip">rear delts</span></td><td>Cable</td><td><span class="chip">isolation</span></td><td><svg class="ic playic" style="width:17px;height:17px"><use href="#i-play"/></svg></td><td class="num">4 sessions</td><td><div class="rowactions"><button class="ract" title="Edit"><svg class="ic"><use href="#i-pencil"/></svg></button><button class="ract danger" title="Delete"><svg class="ic"><use href="#i-trash"/></svg></button></div></td></tr>
+            <tr data-m="legs" data-eq="machine"><td><div class="namecell"><div class="exthumb"><svg class="ic"><use href="#i-dumbbell"/></svg></div><div class="tname">Leg Press</div></div></td><td><span class="chip">legs</span></td><td>Machine</td><td><span class="chip">compound</span></td><td><span class="novid">—</span></td><td class="num">5 sessions</td><td><div class="rowactions"><button class="ract" title="Edit"><svg class="ic"><use href="#i-pencil"/></svg></button><button class="ract danger" title="Delete"><svg class="ic"><use href="#i-trash"/></svg></button></div></td></tr>
+            <tr data-m="core" data-eq="bodyweight"><td><div class="namecell"><div class="exthumb"><svg class="ic"><use href="#i-dumbbell"/></svg></div><div class="tname">Hanging Leg Raise <span class="chip tiny">custom</span></div></div></td><td><span class="chip">core</span></td><td>Bodyweight</td><td><span class="chip">isolation</span></td><td><span class="novid">—</span></td><td class="num">3 sessions</td><td><div class="rowactions"><button class="ract" title="Edit"><svg class="ic"><use href="#i-pencil"/></svg></button><button class="ract danger" title="Delete"><svg class="ic"><use href="#i-trash"/></svg></button></div></td></tr>
+            <tr data-m="legs" data-eq="dumbbell"><td><div class="namecell"><div class="exthumb"><svg class="ic"><use href="#i-dumbbell"/></svg></div><div class="tname">Walking Lunge <span class="chip tiny">custom</span></div></div></td><td><span class="chip">legs</span></td><td>Dumbbell</td><td><span class="chip">compound</span></td><td><svg class="ic playic" style="width:17px;height:17px"><use href="#i-play"/></svg></td><td class="num">2 sessions</td><td><div class="rowactions"><button class="ract" title="Edit"><svg class="ic"><use href="#i-pencil"/></svg></button><button class="ract danger" title="Delete"><svg class="ic"><use href="#i-trash"/></svg></button></div></td></tr>
+          </tbody>
+        </table>
+        <div class="tfoot">
+          <span class="count" id="exCount">Showing 15 of 142 exercises</span>
+          <div class="pager">
+            <button class="ract"><svg class="ic"><use href="#i-chevleft"/></svg></button>
+            <button class="ract"><svg class="ic"><use href="#i-chevright"/></svg></button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- add-session popover -->
+<div class="pop" id="pop">
+  <div class="pophead">
+    <div>
+      <div class="poptitle">Add session</div>
+      <div class="popsub" id="popSub">Week 1 · Day 3</div>
+    </div>
+    <button class="popclose" id="popClose"><svg class="ic"><use href="#i-x"/></svg></button>
+  </div>
+  <div class="popsearch">
+    <div class="search mini">
+      <svg class="ic"><use href="#i-search"/></svg>
+      <input type="text" placeholder="Search sessions" id="popSearch">
+    </div>
+  </div>
+  <div class="poplist" id="popList"></div>
+  <div class="popfoot">
+    <button class="popnew"><svg class="ic"><use href="#i-plus"/></svg>Create blank session</button>
+  </div>
+</div>
+
+<!-- create-session slide-over: your existing session builder mounts here -->
+<div class="ovl" id="ovl"></div>
+<aside class="sdrawer" id="sdrawer">
+  <div class="sdhead">
+    <div>
+      <div class="t">New session</div>
+      <div class="sub">Adding to <b id="sdSub">Week 1 · Day 1</b></div>
+    </div>
+    <button class="sdclose" id="sdClose"><svg class="ic"><use href="#i-x"/></svg></button>
+  </div>
+  <div class="sdbody">
+    <div class="fld">
+      <label>Session name</label>
+      <input type="text" id="sdName" value="Untitled session">
+    </div>
+    <div class="fld">
+      <label>Focus</label>
+      <select id="sdFocus">
+        <option value="push">Push</option><option value="pull">Pull</option><option value="legs">Legs</option>
+        <option value="lower">Lower</option><option value="upper">Upper</option>
+        <option value="full body">Full body</option><option value="core">Core</option>
+      </select>
+    </div>
+    <div class="sdph">
+      <svg class="ic"><use href="#i-dumbbell"/></svg>
+      <div class="pt">Your existing session builder mounts here</div>
+      <div class="ps">Exercise list, sets × reps, rest timers — the editor you already have, rendered as an overlay so the program builder underneath keeps its state.</div>
+    </div>
+  </div>
+  <div class="sdfoot">
+    <button class="btn btn-ghost" id="sdCancel">Cancel</button>
+    <button class="btn btn-primary" id="sdSave"><svg class="ic"><use href="#i-save"/></svg>Save session</button>
+  </div>
+</aside>
+
+<div class="toast" id="toast"><svg class="ic"><use href="#i-check"/></svg><span id="toastMsg">Program saved</span></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+
+/* ---------------- data ---------------- */
+const SLIB = [
+  {id:'s1',  name:'Push Day A',                focus:'push',      ex:6, min:45},
+  {id:'s2',  name:'Pull Day A',                focus:'pull',      ex:7, min:50},
+  {id:'s3',  name:'Leg Day A',                 focus:'legs',      ex:6, min:55},
+  {id:'s4',  name:'Push Day B',                focus:'push',      ex:5, min:40},
+  {id:'s5',  name:'Pull Day B',                focus:'pull',      ex:6, min:45},
+  {id:'s6',  name:'Leg Day B',                 focus:'legs',      ex:7, min:60},
+  {id:'s7',  name:'Glute Focused Lower Body',  focus:'lower',     ex:5, min:40},
+  {id:'s8',  name:'Glute Activation & Lower',  focus:'lower',     ex:6, min:45},
+  {id:'s9',  name:'Total Body Conditioning',   focus:'full body', ex:8, min:35},
+  {id:'s10', name:'Upper Hypertrophy',         focus:'upper',     ex:7, min:50},
+  {id:'s11', name:'Core & Carry Finisher',     focus:'core',      ex:4, min:20},
+];
+const byId = id => SLIB.find(s => s.id === id);
+
+const emptyWeek = () => [[],[],[],[],[],[],[]];
+let weeks = [
+  [['s1'],[],['s2'],[],['s3'],[],[]],
+  [[],['s4'],[],['s5'],[],['s6'],[]],
+  emptyWeek(),
+  emptyWeek(),
+];
+let collapsed = new Set();
+
+/* ---------------- builder render ---------------- */
+function scardHTML(sid, wi, di, si){
+  const s = byId(sid);
+  return `<div class="scard" draggable="true" data-sid="${sid}" data-w="${wi}" data-d="${di}" data-si="${si}">
+    <div class="sname">${s.name}</div>
+    <div class="smeta"><span class="chip tiny">${s.focus}</span><span class="sexn">${s.ex ? `${s.ex} exercises · ${s.min}m` : 'No exercises yet'}</span></div>
+    <button class="sx" data-act="rm" title="Remove"><svg class="ic"><use href="#i-x"/></svg></button>
+  </div>`;
+}
+function cellHTML(day, wi, di){
+  if(!day.length){
+    return `<div class="daycell rest" data-w="${wi}" data-d="${di}" data-act="add">
+      <span class="restlbl">Rest</span>
+      <span class="addhint"><svg class="ic"><use href="#i-plus"/></svg>Add session</span>
+    </div>`;
+  }
+  return `<div class="daycell has" data-w="${wi}" data-d="${di}">
+    ${day.map((sid,si)=>scardHTML(sid,wi,di,si)).join('')}
+    <button class="cell-add" data-act="add" title="Add another session"><svg class="ic"><use href="#i-plus"/></svg></button>
+  </div>`;
+}
+function renderBuilder(){
+  $('#weeks').innerHTML = weeks.map((w, wi) => {
+    const cnt  = w.reduce((a,d)=>a+d.length,0);
+    const rest = 7 - w.filter(d=>d.length).length;
+    return `<div class="weekrow ${collapsed.has(wi)?'collapsed':''}" data-w="${wi}">
+      <div class="wcard">
+        <div class="wtop">
+          <span class="grip"><svg class="ic"><use href="#i-grip"/></svg></span>
+          <span class="wname">Week ${wi+1}</span>
+          <button class="wchev" data-act="collapse" title="Collapse week"><svg class="ic"><use href="#i-chevdown"/></svg></button>
+        </div>
+        <div class="wcount">${cnt} SESSION${cnt===1?'':'S'} · ${rest} REST</div>
+        <div class="wfoot">
+          <button class="wdup" data-act="dup"><svg class="ic"><use href="#i-copy"/></svg>Duplicate</button>
+          <button class="wtrash" data-act="del" title="Delete week"><svg class="ic"><use href="#i-trash"/></svg></button>
+        </div>
+      </div>
+      ${w.map((day,di)=>cellHTML(day,wi,di)).join('')}
+    </div>`;
+  }).join('');
+  updateMeta();
+}
+function updateMeta(){
+  const total = weeks.reduce((a,w)=>a+w.reduce((b,d)=>b+d.length,0),0);
+  $('#mWeeks').textContent = weeks.length + ' week' + (weeks.length===1?'':'s');
+  $('#mFreq').textContent  = (total/weeks.length).toFixed(1) + ' sessions/week';
+  $('#schedMeta').textContent = weeks.length + ' weeks · ' + total + ' session' + (total===1?'':'s');
+}
+
+/* ---------------- builder interactions ---------------- */
+$('#weeks').addEventListener('click', e => {
+  const actEl = e.target.closest('[data-act]');
+  if(!actEl) return;
+  const act = actEl.dataset.act;
+  const row = actEl.closest('.weekrow');
+  const wi  = row ? +row.dataset.w : null;
+
+  if(act === 'collapse'){
+    collapsed.has(wi) ? collapsed.delete(wi) : collapsed.add(wi);
+    renderBuilder(); return;
+  }
+  if(act === 'dup'){
+    weeks.splice(wi+1, 0, weeks[wi].map(d=>[...d]));
+    collapsed = new Set(); renderBuilder(); return;
+  }
+  if(act === 'del'){
+    if(weeks.length > 1){ weeks.splice(wi,1); collapsed = new Set(); renderBuilder(); }
+    return;
+  }
+  if(act === 'rm'){
+    const card = actEl.closest('.scard');
+    weeks[+card.dataset.w][+card.dataset.d].splice(+card.dataset.si,1);
+    renderBuilder(); return;
+  }
+  if(act === 'add'){
+    const cell = actEl.closest('.daycell') || actEl;
+    openPop(+cell.dataset.w, +cell.dataset.d, cell);
+  }
+});
+$('#addWeek').addEventListener('click', () => { weeks.push(emptyWeek()); renderBuilder(); });
+
+/* ---------------- drag & drop ---------------- */
+let dragPayload = null;
+document.addEventListener('dragstart', e => {
+  const lib = e.target.closest && e.target.closest('.libcard');
+  const sc  = e.target.closest && e.target.closest('.scard');
+  if(lib){
+    dragPayload = {sid: lib.dataset.sid, from: null};
+    lib.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'copy';
+  } else if(sc){
+    dragPayload = {sid: sc.dataset.sid, from: {w:+sc.dataset.w, d:+sc.dataset.d, si:+sc.dataset.si}};
+    e.dataTransfer.effectAllowed = 'move';
+  }
+});
+document.addEventListener('dragend', e => {
+  $$('.libcard.dragging').forEach(el=>el.classList.remove('dragging'));
+  $$('.daycell.dragover').forEach(el=>el.classList.remove('dragover'));
+});
+$('#weeks').addEventListener('dragover', e => {
+  const cell = e.target.closest('.daycell');
+  if(cell && dragPayload){ e.preventDefault(); cell.classList.add('dragover'); }
+});
+$('#weeks').addEventListener('dragleave', e => {
+  const cell = e.target.closest('.daycell');
+  if(cell) cell.classList.remove('dragover');
+});
+$('#weeks').addEventListener('drop', e => {
+  const cell = e.target.closest('.daycell');
+  if(!cell || !dragPayload) return;
+  e.preventDefault();
+  const w = +cell.dataset.w, d = +cell.dataset.d;
+  const {sid, from} = dragPayload;
+  if(from){
+    if(from.w === w && from.d === d){ dragPayload = null; return; }
+    weeks[from.w][from.d].splice(from.si,1);
+  }
+  weeks[w][d].push(sid);
+  dragPayload = null;
+  renderBuilder();
+});
+
+/* ---------------- session library drawer ---------------- */
+function renderLib(q=''){
+  const list = SLIB.filter(s => s.name.toLowerCase().includes(q.toLowerCase()));
+  $('#libList').innerHTML = list.map(s => `
+    <div class="libcard" draggable="true" data-sid="${s.id}">
+      <span class="libgrip"><svg class="ic"><use href="#i-grip"/></svg></span>
+      <div>
+        <div class="libname">${s.name}</div>
+        <div class="libmeta">${s.ex} exercises · ${s.min} min</div>
+        <span class="chip tiny">${s.focus}</span>
+      </div>
+    </div>`).join('');
+}
+$('#libSearch').addEventListener('input', e => renderLib(e.target.value));
+$('#libToggle').addEventListener('click', () => $('#libDrawer').classList.toggle('min'));
+
+/* ---------------- add-session popover ---------------- */
+let popW = 0, popD = 0;
+function renderPopList(q=''){
+  const list = SLIB.filter(s => s.name.toLowerCase().includes(q.toLowerCase()));
+  $('#popList').innerHTML = list.map(s => `
+    <div class="popitem" data-sid="${s.id}">
+      <div><div class="n">${s.name}</div><div class="m">${s.ex} exercises · ${s.min} min</div></div>
+      <span class="chip tiny">${s.focus}</span>
+    </div>`).join('');
+}
+function openPop(w, d, anchor){
+  popW = w; popD = d;
+  $('#popSub').textContent = `Week ${w+1} · Day ${d+1}`;
+  $('#popSearch').value = '';
+  renderPopList();
+  const pop = $('#pop');
+  pop.classList.add('open');
+  const r = anchor.getBoundingClientRect();
+  const pw = 326, ph = 420;
+  let left = Math.min(Math.max(r.left, 12), window.innerWidth - pw - 12);
+  let top  = r.bottom + 8;
+  if(top + ph > window.innerHeight) top = Math.max(12, r.top - ph - 8);
+  pop.style.left = left + 'px';
+  pop.style.top  = top + 'px';
+  $('#popSearch').focus();
+}
+function closePop(){ $('#pop').classList.remove('open'); }
+$('#popClose').addEventListener('click', closePop);
+$('#popSearch').addEventListener('input', e => renderPopList(e.target.value));
+$('#popList').addEventListener('click', e => {
+  const item = e.target.closest('.popitem');
+  if(!item) return;
+  weeks[popW][popD].push(item.dataset.sid);
+  closePop();
+  renderBuilder();
+});
+document.addEventListener('click', e => {
+  if(!$('#pop').classList.contains('open')) return;
+  if(e.target.closest('#pop') || e.target.closest('[data-act="add"]') || e.target.closest('.daycell.rest')) return;
+  closePop();
+});
+document.addEventListener('keydown', e => {
+  if(e.key !== 'Escape') return;
+  if($('#sdrawer').classList.contains('open')) cancelDraft();
+  else closePop();
+});
+window.addEventListener('scroll', closePop, true);
+
+/* ---------------- toast ---------------- */
+let toastTimer;
+function toast(msg){
+  $('#toastMsg').textContent = msg;
+  $('#toast').classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>$('#toast').classList.remove('show'), 2200);
+}
+$('#saveBtn').addEventListener('click', () => toast('Program saved'));
+$('#discardBtn').addEventListener('click', () => toast('Changes discarded'));
+
+/* ---------------- create blank session from builder ---------------- */
+let sCounter = 100, draft = null; // draft = {sid, w, d}
+function openDrawer(){
+  $('#ovl').classList.add('open');
+  $('#sdrawer').classList.add('open');
+  const inp = $('#sdName'); inp.value = 'Untitled session';
+  $('#sdFocus').value = 'push';
+  setTimeout(()=>{ inp.focus(); inp.select(); }, 260);
+}
+function closeDrawer(){
+  $('#ovl').classList.remove('open');
+  $('#sdrawer').classList.remove('open');
+}
+document.querySelector('.popnew').addEventListener('click', () => {
+  const sid = 's' + (sCounter++);
+  SLIB.push({id: sid, name: 'Untitled session', focus: 'push', ex: 0, min: 0});
+  weeks[popW][popD].push(sid);
+  draft = {sid, w: popW, d: popD};
+  closePop();
+  renderBuilder();
+  $('#sdSub').textContent = `Week ${popW+1} · Day ${popD+1}`;
+  openDrawer();
+});
+function cancelDraft(){
+  if(draft){
+    const cell = weeks[draft.w][draft.d];
+    const i = cell.indexOf(draft.sid);
+    if(i > -1) cell.splice(i, 1);
+    const li = SLIB.findIndex(s => s.id === draft.sid);
+    if(li > -1) SLIB.splice(li, 1);
+    draft = null;
+    renderBuilder(); renderLib();
+  }
+  closeDrawer();
+}
+$('#sdCancel').addEventListener('click', cancelDraft);
+$('#sdClose').addEventListener('click', cancelDraft);
+$('#ovl').addEventListener('click', cancelDraft);
+$('#sdSave').addEventListener('click', () => {
+  if(!draft) return closeDrawer();
+  const s = byId(draft.sid);
+  s.name  = $('#sdName').value.trim() || 'Untitled session';
+  s.focus = $('#sdFocus').value;
+  toast(`"${s.name}" added to Week ${draft.w+1} · Day ${draft.d+1}`);
+  draft = null;
+  closeDrawer();
+  renderBuilder(); renderLib();
+});
+
+/* ---------------- view navigation ---------------- */
+const VIEWS = {
+  builder:  {title:'Program Builder', ctx:null},
+  programs: {title:'Programs',        ctx:'New program'},
+  sessions: {title:'Sessions',        ctx:'New session'},
+  exercises:{title:'Exercise Library',ctx:'New exercise'},
+};
+function goto(view){
+  $$('.sitem').forEach(el => el.classList.toggle('active', el.dataset.view === view));
+  $$('.page').forEach(el => el.classList.toggle('active', el.id === 'page-' + view));
+  $('#topTitle').textContent = VIEWS[view].title;
+  const ctx = VIEWS[view].ctx;
+  $('#ctxBtn').style.display = ctx ? 'inline-flex' : 'none';
+  if(ctx) $('#ctxLabel').textContent = ctx;
+  closePop();
+}
+$('#snav').addEventListener('click', e => {
+  const item = e.target.closest('.sitem');
+  if(item) goto(item.dataset.view);
+});
+$('#ctxBtn').addEventListener('click', () => {
+  const active = $('.sitem.active').dataset.view;
+  if(active === 'programs'){
+    weeks = [emptyWeek(),emptyWeek(),emptyWeek(),emptyWeek()];
+    collapsed = new Set();
+    $('#bTitle').textContent = 'Untitled program';
+    renderBuilder();
+    goto('builder');
+  } else {
+    toast(VIEWS[active].ctx + ' — hook this up to your create flow');
+  }
+});
+/* clicking a program row opens it in the builder (simulated) */
+$('#progTable').addEventListener('click', e => {
+  if(e.target.closest('.ract')) return;
+  const tr = e.target.closest('tbody tr');
+  if(!tr) return;
+  $('#bTitle').textContent = tr.dataset.name;
+  goto('builder');
+});
+
+/* ---------------- table filters ---------------- */
+function hookTable(searchSel, tableSel, countSel, countNoun, totalOverride){
+  const state = {q:'', f:'all', eq:'all'};
+  const rows = $$(tableSel + ' tbody tr');
+  const apply = () => {
+    let shown = 0;
+    rows.forEach(tr => {
+      const okQ  = !state.q  || tr.textContent.toLowerCase().includes(state.q);
+      const fv   = tr.dataset.type || tr.dataset.f || tr.dataset.m || '';
+      const okF  = state.f === 'all'  || fv === state.f;
+      const okEq = state.eq === 'all' || tr.dataset.eq === state.eq;
+      const show = okQ && okF && okEq;
+      tr.style.display = show ? '' : 'none';
+      if(show) shown++;
+    });
+    const total = totalOverride || rows.length;
+    $(countSel).textContent = `Showing ${shown} of ${total} ${countNoun}`;
+  };
+  $(searchSel).addEventListener('input', e => { state.q = e.target.value.toLowerCase(); apply(); });
+  return state;
+}
+const progState = hookTable('#progSearch', '#progTable', '#progCount', 'programs');
+const sessState = hookTable('#sessSearch', '#sessTable', '#sessCount', 'sessions');
+const exState   = hookTable('#exSearch',   '#exTable',   '#exCount',   'exercises', 142);
+
+$('#progSeg').addEventListener('click', e => {
+  const b = e.target.closest('button'); if(!b) return;
+  $$('#progSeg button').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active');
+  progState.f = b.dataset.v;
+  $('#progSearch').dispatchEvent(new Event('input'));
+});
+function hookChips(sel, state, searchSel){
+  $(sel).addEventListener('click', e => {
+    const b = e.target.closest('.fchip'); if(!b) return;
+    $$(sel + ' .fchip').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+    state.f = b.dataset.v;
+    $(searchSel).dispatchEvent(new Event('input'));
+  });
+}
+hookChips('#sessChips', sessState, '#sessSearch');
+hookChips('#exChips',   exState,   '#exSearch');
+$('#exEquip').addEventListener('change', e => {
+  exState.eq = e.target.value;
+  $('#exSearch').dispatchEvent(new Event('input'));
+});
+
+/* ---------------- init ---------------- */
+renderBuilder();
+renderLib();
+</script>
+</body>
+</html>

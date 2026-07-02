@@ -449,7 +449,7 @@ describe("coach-library-service", () => {
   // =========================================================================
 
   describe("getSavedPlans", () => {
-    it("filters to status = saved only (excludes drafts)", async () => {
+    it("filters to status = saved only by default (excludes drafts)", async () => {
       const plansQuery = createMockQuery({ data: [], error: null });
       mockFrom.mockReturnValue(plansQuery as any);
 
@@ -457,7 +457,16 @@ describe("coach-library-service", () => {
 
       expect(mockFrom).toHaveBeenCalledWith("coach_saved_plans");
       expect(plansQuery.eq).toHaveBeenCalledWith("coach_id", "coach-1");
-      expect(plansQuery.eq).toHaveBeenCalledWith("status", "saved");
+      expect(plansQuery.in).toHaveBeenCalledWith("status", ["saved"]);
+    });
+
+    it("includes drafts when opted in (Programs table)", async () => {
+      const plansQuery = createMockQuery({ data: [], error: null });
+      mockFrom.mockReturnValue(plansQuery as any);
+
+      await getSavedPlans("coach-1", { includeDrafts: true });
+
+      expect(plansQuery.in).toHaveBeenCalledWith("status", ["saved", "draft"]);
     });
 
     it("returns nested sessions and exercises", async () => {

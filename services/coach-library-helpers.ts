@@ -1,6 +1,9 @@
 import { supabaseAdmin } from "./supabase-admin";
 import type { AIGeneratedPlan } from "@/types/training";
-import type { CoachSavedExerciseInsert } from "@/lib/database-helpers";
+import type {
+  CoachSavedExerciseInsert,
+  CoachSavedExerciseRow,
+} from "@/lib/database-helpers";
 import type { SetSpec } from "@/utils/exercise-set-specs";
 import { projectExerciseCompact } from "@/utils/exercise-set-specs";
 
@@ -139,6 +142,38 @@ export async function insertSavedExercises(
     .from("coach_saved_exercises")
     .insert(rows);
   if (error) throw new Error(`Failed to insert saved exercises: ${error.message}`);
+}
+
+/**
+ * Map existing coach_saved_exercises rows onto a new session as verbatim
+ * copies — every prescription column including set_specs, video_url, and the
+ * already-resolved exercise_id is carried as-is (no name re-resolution,
+ * which could re-link or silently drop ids). Used by promote's
+ * save-sessions-individually pass and the plan/session duplicate endpoints.
+ */
+export function copySavedExerciseRows(
+  exercises: CoachSavedExerciseRow[],
+  targetSessionId: string,
+): CoachSavedExerciseInsert[] {
+  return exercises.map((e) => ({
+    saved_session_id: targetSessionId,
+    exercise_id: e.exercise_id,
+    name: e.name,
+    order_index: e.order_index,
+    sets: e.sets,
+    reps_min: e.reps_min,
+    reps_max: e.reps_max,
+    reps_target: e.reps_target,
+    rpe_target: e.rpe_target,
+    percentage_1rm: e.percentage_1rm,
+    tempo: e.tempo,
+    rest_seconds: e.rest_seconds,
+    superset_group: e.superset_group,
+    is_warmup: e.is_warmup,
+    notes: e.notes,
+    set_specs: e.set_specs ?? null,
+    video_url: e.video_url ?? null,
+  }));
 }
 
 /**

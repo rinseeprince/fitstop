@@ -9,9 +9,15 @@ type SavedPlansResponse = {
   plans: SavedPlan[];
 };
 
-export function useSavedPlans() {
+// includeDrafts keys SWR on ?status=all so the Programs table (which shows
+// drafts) and the calendar library panel (which must not) never share a
+// cache entry.
+export function useSavedPlans(options?: { includeDrafts?: boolean }) {
+  const key = options?.includeDrafts
+    ? "/api/training/saved-plans?status=all"
+    : "/api/training/saved-plans";
   const { data, error, isLoading, mutate } = useSWR<SavedPlansResponse>(
-    "/api/training/saved-plans",
+    key,
     swrFetcher,
     {
       revalidateOnFocus: false,

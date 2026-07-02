@@ -6,6 +6,7 @@ import {
   mapSavedPlanRow,
 } from "@/lib/coach-mappers";
 import {
+  copySavedExerciseRows,
   detectCycleInfoFallback,
   deriveCycleInfoFromSessions,
   insertSavedExercises,
@@ -300,29 +301,12 @@ export async function promoteDraftToSaved(
         .single();
       if (sError || !newSession) continue;
 
-      // Copy exercises
+      // Copy exercises verbatim (shared with the duplicate endpoints)
       const exercises = (s.coach_saved_exercises ?? []) as CoachSavedExerciseRow[];
       if (exercises.length > 0) {
-        const exerciseRows: CoachSavedExerciseInsert[] = exercises.map((e) => ({
-          saved_session_id: newSession.id,
-          exercise_id: e.exercise_id,
-          name: e.name,
-          order_index: e.order_index,
-          sets: e.sets,
-          reps_min: e.reps_min,
-          reps_max: e.reps_max,
-          reps_target: e.reps_target,
-          rpe_target: e.rpe_target,
-          percentage_1rm: e.percentage_1rm,
-          tempo: e.tempo,
-          rest_seconds: e.rest_seconds,
-          superset_group: e.superset_group,
-          is_warmup: e.is_warmup,
-          notes: e.notes,
-          set_specs: e.set_specs ?? null,
-          video_url: e.video_url ?? null,
-        }));
-        await supabaseAdmin.from("coach_saved_exercises").insert(exerciseRows);
+        await supabaseAdmin
+          .from("coach_saved_exercises")
+          .insert(copySavedExerciseRows(exercises, newSession.id));
       }
     }
   }
@@ -332,12 +316,19 @@ export async function promoteDraftToSaved(
 
 // --- Query functions ---
 
-export async function getSavedPlans(coachId: string): Promise<SavedPlan[]> {
+export async function getSavedPlans(
+  coachId: string,
+  opts?: { includeDrafts?: boolean }
+): Promise<SavedPlan[]> {
+  // Default stays saved-only: the calendar library panel and legacy callers
+  // must never see drafts. The Programs table opts in (?status=all) so
+  // abandoned "New program" drafts stop being invisible orphans.
+  const statuses = opts?.includeDrafts ? ["saved", "draft"] : ["saved"];
   const { data, error } = await supabaseAdmin
     .from("coach_saved_plans")
     .select("*, coach_saved_sessions(*, coach_saved_exercises(*))")
     .eq("coach_id", coachId)
-    .eq("status", "saved")
+    .in("status", statuses)
     .order("created_at", { ascending: false });
 
   if (error) throw new Error(`Failed to fetch saved plans: ${error.message}`);
@@ -595,4 +586,174 @@ export async function deleteSavedPlan(planId: string, coachId: string): Promise<
     .eq("id", planId)
     .eq("coach_id", coachId);
   if (error) throw new Error(`Failed to delete saved plan: ${error.message}`);
+}
+
+/**
+ * Deep-copy a saved plan (plan row + sessions + exercises) as a verbatim
+ * server-side copy — set_specs, video_url, and resolved exercise_ids carry
+ * as-is; nothing is re-resolved by name. Returns the new plan id.
+ *
+ * The name is deduped in TS against ALL of the coach's plan names (fetched
+ * once — plan lists are small and ilike patterns would need %-escaping).
+ * The base is capped so "name (copy N)" stays inside the overwrite schema's
+ * 100-char name cap, or the first builder save of the copy would truncate it.
+ */
+export async function duplicateSavedPlan(
+  planId: string,
+  coachId: string
+): Promise<string> {
+  const { data: plan, error } = await supabaseAdmin
+    .from("coach_saved_plans")
+    .select("*, coach_saved_sessions(*, coach_saved_exercises(*))")
+    .eq("id", planId)
+    .eq("coach_id", coachId)
+    .single();
+  if (error || !plan) throw new Error("Plan not found");
+
+  const { data: nameRows, error: namesError } = await supabaseAdmin
+    .from("coach_saved_plans")
+    .select("name")
+    .eq("coach_id", coachId);
+  if (namesError) {
+    throw new Error(`Failed to check plan names: ${namesError.message}`);
+  }
+  const taken = new Set(
+    (nameRows ?? []).map((r) => r.name.trim().toLowerCase())
+  );
+  const base = plan.name.length > 88 ? plan.name.slice(0, 88) : plan.name;
+  let name = `${base} (copy)`;
+  for (let n = 2; taken.has(name.trim().toLowerCase()); n++) {
+    name = `${base} (copy ${n})`;
+  }
+
+  const planInsert: CoachSavedPlanInsert = {
+    coach_id: coachId,
+    name,
+    description: plan.description,
+    split_type: plan.split_type,
+    frequency_per_week: plan.frequency_per_week,
+    status: plan.status, // duplicating a draft yields a draft
+    cycle_length: plan.cycle_length,
+    rest_pattern: plan.rest_pattern,
+    default_surplus_percentage: plan.default_surplus_percentage,
+    source: plan.source,
+    coach_prompt: plan.coach_prompt,
+    program_duration_weeks: plan.program_duration_weeks,
+  };
+  const { data: newPlan, error: planError } = await supabaseAdmin
+    .from("coach_saved_plans")
+    .insert(planInsert)
+    .select("id")
+    .single();
+  if (planError || !newPlan) {
+    throw new Error(`Failed to duplicate plan: ${planError?.message ?? "no row"}`);
+  }
+
+  try {
+    const sessions = (
+      (plan.coach_saved_sessions ?? []) as Array<
+        CoachSavedSessionRow & { coach_saved_exercises?: CoachSavedExerciseRow[] }
+      >
+    ).sort(
+      (a, b) => (a.week_index ?? 0) - (b.week_index ?? 0) || a.order_index - b.order_index
+    );
+
+    const exerciseRows: CoachSavedExerciseInsert[] = [];
+    for (const s of sessions) {
+      const sessionInsert: CoachSavedSessionInsert = {
+        coach_id: coachId,
+        saved_plan_id: newPlan.id,
+        name: s.name,
+        focus: s.focus,
+        order_index: s.order_index,
+        week_index: s.week_index ?? 0,
+        is_rest: s.is_rest ?? false,
+        estimated_duration_minutes: s.estimated_duration_minutes,
+        calorie_surplus_percentage: s.calorie_surplus_percentage,
+        notes: s.notes,
+        session_type: s.session_type,
+      };
+      const { data: newSession, error: sessionError } = await supabaseAdmin
+        .from("coach_saved_sessions")
+        .insert(sessionInsert)
+        .select("id")
+        .single();
+      if (sessionError || !newSession) {
+        throw new Error(
+          `Failed to copy session "${s.name}": ${sessionError?.message ?? "no row"}`
+        );
+      }
+      exerciseRows.push(
+        ...copySavedExerciseRows(s.coach_saved_exercises ?? [], newSession.id)
+      );
+    }
+
+    if (exerciseRows.length > 0) {
+      const { error: exError } = await supabaseAdmin
+        .from("coach_saved_exercises")
+        .insert(exerciseRows);
+      if (exError) {
+        throw new Error(`Failed to copy exercises: ${exError.message}`);
+      }
+    }
+  } catch (copyError) {
+    // Child copy failed part-way: remove the new plan (children cascade) so
+    // the library never shows a half-duplicated program.
+    await supabaseAdmin
+      .from("coach_saved_plans")
+      .delete()
+      .eq("id", newPlan.id)
+      .eq("coach_id", coachId);
+    throw copyError;
+  }
+
+  return newPlan.id;
+}
+
+/**
+ * Count live client assignments per saved plan (training_plans provenance).
+ * "Live" = not soft-deleted and status active|planned — a scheduled future
+ * placement is still an assignment (matches getClientTrainingPlan + the
+ * mig-114 planned status). Aggregated in TS; pages through PostgREST's row
+ * cap defensively.
+ */
+export async function getSavedPlanAssignments(coachId: string): Promise<{
+  perPlan: Array<{ savedPlanId: string; count: number }>;
+  totalAssignments: number;
+  distinctClients: number;
+}> {
+  const PAGE = 1000;
+  const rows: Array<{ saved_plan_id: string | null; client_id: string }> = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabaseAdmin
+      .from("training_plans")
+      .select("saved_plan_id, client_id")
+      .eq("coach_id", coachId)
+      .not("saved_plan_id", "is", null)
+      .is("deleted_at", null)
+      .in("status", ["active", "planned"])
+      .range(from, from + PAGE - 1);
+    if (error) {
+      throw new Error(`Failed to fetch plan assignments: ${error.message}`);
+    }
+    rows.push(...(data ?? []));
+    if (!data || data.length < PAGE) break;
+  }
+
+  const counts = new Map<string, number>();
+  const clients = new Set<string>();
+  for (const row of rows) {
+    if (!row.saved_plan_id) continue;
+    counts.set(row.saved_plan_id, (counts.get(row.saved_plan_id) ?? 0) + 1);
+    clients.add(row.client_id);
+  }
+
+  return {
+    perPlan: [...counts.entries()].map(([savedPlanId, count]) => ({
+      savedPlanId,
+      count,
+    })),
+    totalAssignments: rows.length,
+    distinctClients: clients.size,
+  };
 }
