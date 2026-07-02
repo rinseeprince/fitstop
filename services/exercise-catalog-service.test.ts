@@ -22,9 +22,11 @@ function createMockQuery<T = unknown>(result: {
     neq: vi.fn().mockReturnThis(),
     or: vi.fn().mockReturnThis(),
     gt: vi.fn().mockReturnThis(),
+    not: vi.fn().mockReturnThis(),
     ilike: vi.fn().mockReturnThis(),
     order: vi.fn().mockReturnThis(),
     limit: vi.fn().mockReturnThis(),
+    range: vi.fn().mockReturnThis(),
     single: vi.fn().mockResolvedValue(result),
     maybeSingle: vi.fn().mockResolvedValue(result),
     then: vi.fn(),
@@ -44,6 +46,9 @@ import {
   resolveExercises,
   normalizeExerciseName,
   getExerciseCatalogDelta,
+  getExerciseUsageForCoach,
+  updateCatalogExercise,
+  deleteCatalogExercise,
 } from "./exercise-catalog-service";
 
 const mockFrom = vi.mocked(supabaseAdmin.from);
@@ -283,6 +288,24 @@ describe("exercise-catalog-service", () => {
       expect(result.size).toBe(0);
       expect(mockFrom).not.toHaveBeenCalled();
     });
+
+    it("resolves mixed-case names via the lowercase key (insertSavedExercises convention)", async () => {
+      // Regression: the map used to be keyed by trimmed-original only, so
+      // .get(name.trim().toLowerCase()) consumers stored exercise_id NULL
+      // for any mixed-case name.
+      const fetchQuery = createMockQuery({
+        data: [
+          { id: "ex-1", name: "Bench Press", coach_id: null, aliases: [] },
+        ],
+        error: null,
+      });
+      mockFrom.mockReturnValue(fetchQuery as any);
+
+      const result = await resolveExercises(["Bench Press"], coachId);
+
+      expect(result.get("bench press")).toBe("ex-1"); // lowercase lookup
+      expect(result.get("Bench Press")).toBe("ex-1"); // original-case lookup
+    });
   });
 
   // =========================================================================
@@ -418,6 +441,105 @@ describe("exercise-catalog-service", () => {
       mockFrom.mockReturnValue(q as any);
 
       await expect(getExerciseCatalogDelta(coachId)).rejects.toThrow(/boom/);
+    });
+  });
+
+  // =========================================================================
+  // getExerciseUsageForCoach
+  // =========================================================================
+
+  describe("getExerciseUsageForCoach", () => {
+    it("counts DISTINCT sessions per exercise, scoped via the session join", async () => {
+      const q = createMockQuery({
+        data: [
+          { exercise_id: "ex-1", saved_session_id: "s1" },
+          { exercise_id: "ex-1", saved_session_id: "s1" }, // same session twice
+          { exercise_id: "ex-1", saved_session_id: "s2" },
+          { exercise_id: "ex-2", saved_session_id: "s2" },
+        ],
+        error: null,
+      });
+      mockFrom.mockReturnValueOnce(q as any);
+
+      const result = await getExerciseUsageForCoach("coach-1");
+
+      expect(mockFrom).toHaveBeenCalledWith("coach_saved_exercises");
+      expect(q.eq).toHaveBeenCalledWith("coach_saved_sessions.coach_id", "coach-1");
+      expect(q.not).toHaveBeenCalledWith("exercise_id", "is", null);
+
+      expect(result.perExercise).toContainEqual({ exerciseId: "ex-1", sessionCount: 2 });
+      expect(result.perExercise).toContainEqual({ exerciseId: "ex-2", sessionCount: 1 });
+      expect(result.sessionsWithLinks).toBe(2);
+    });
+
+    it("throws when the query errors", async () => {
+      const q = createMockQuery({ data: null, error: { message: "db down" } });
+      mockFrom.mockReturnValueOnce(q as any);
+
+      await expect(getExerciseUsageForCoach("coach-1")).rejects.toThrow(/db down/);
+    });
+  });
+
+  // =========================================================================
+  // updateCatalogExercise / deleteCatalogExercise (coach-owned only)
+  // =========================================================================
+
+  describe("updateCatalogExercise", () => {
+    it("updates a coach-owned row and returns the mapped exercise", async () => {
+      const q = createMockQuery({
+        data: {
+          id: "ex-1",
+          coach_id: "coach-1",
+          name: "Walking Lunge",
+          muscle_group: "legs",
+          equipment: "dumbbell",
+          category: "compound",
+          aliases: [],
+          created_at: "2026-06-01T00:00:00Z",
+          updated_at: "2026-07-01T00:00:00Z",
+        },
+        error: null,
+      });
+      mockFrom.mockReturnValueOnce(q as any);
+
+      const result = await updateCatalogExercise("ex-1", "coach-1", {
+        muscleGroup: "legs",
+      });
+
+      expect(q.eq).toHaveBeenCalledWith("id", "ex-1");
+      expect(q.eq).toHaveBeenCalledWith("coach_id", "coach-1");
+      expect(result.muscleGroup).toBe("legs");
+    });
+
+    it("throws Exercise not found for global rows (coach_id filter misses)", async () => {
+      const q = createMockQuery({ data: null, error: null });
+      mockFrom.mockReturnValueOnce(q as any);
+
+      await expect(
+        updateCatalogExercise("ex-global", "coach-1", { name: "X" })
+      ).rejects.toThrow("Exercise not found");
+    });
+  });
+
+  describe("deleteCatalogExercise", () => {
+    it("deletes a coach-owned row", async () => {
+      const q = createMockQuery({ data: { id: "ex-1" }, error: null });
+      mockFrom.mockReturnValueOnce(q as any);
+
+      await deleteCatalogExercise("ex-1", "coach-1");
+
+      expect(q.delete).toHaveBeenCalled();
+      expect(q.eq).toHaveBeenCalledWith("id", "ex-1");
+      expect(q.eq).toHaveBeenCalledWith("coach_id", "coach-1");
+    });
+
+    it("throws Exercise not found for global or foreign rows", async () => {
+      const q = createMockQuery({ data: null, error: null });
+      mockFrom.mockReturnValueOnce(q as any);
+
+      await expect(deleteCatalogExercise("ex-global", "coach-1")).rejects.toThrow(
+        "Exercise not found"
+      );
     });
   });
 });

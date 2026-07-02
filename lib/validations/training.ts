@@ -243,6 +243,16 @@ export const createStandaloneSessionSchema = z.object({
   })),
 });
 
+// Catalog exercise edit — coach-owned rows only (the route/service enforce
+// ownership; global rows 404 by construction).
+export const updateCatalogExerciseSchema = z.object({
+  name: z.string().min(1).max(200).optional(),
+  muscleGroup: z.string().max(100).nullish(),
+  equipment: z.string().max(100).nullish(),
+  category: z.string().max(100).nullish(),
+  aliases: z.array(z.string().min(1).max(200)).max(20).optional(),
+});
+
 export const overwriteSavedPlanSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   description: z.string().max(500).nullish(),

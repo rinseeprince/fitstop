@@ -191,14 +191,22 @@ export async function resolveExercises(
     }
   }
 
-  // Map all original names (including duplicates) to their exercise IDs
+  // Map all original names (including duplicates) to their exercise IDs.
+  // Keys are set in BOTH trimmed-original and lowercase forms: consumers are
+  // split between .get(name.trim()) (training-session-service, overwrite)
+  // and .get(name.trim().toLowerCase()) (insertSavedExercises,
+  // addSavedExercise) — a single-cased map silently returned undefined for
+  // one side, storing exercise_id NULL for mixed-case names and making those
+  // rows invisible to usage counts.
   const fullResult = new Map<string, string>();
   for (const name of names) {
     const trimmed = name.trim();
     const lower = trimmed.toLowerCase();
     const original = uniqueMap.get(lower);
     if (original && result.has(original)) {
-      fullResult.set(trimmed, result.get(original)!);
+      const id = result.get(original)!;
+      fullResult.set(trimmed, id);
+      fullResult.set(lower, id);
     }
   }
 
@@ -315,6 +323,111 @@ export async function getExerciseCatalogDelta(
   }
 
   return out;
+}
+
+/**
+ * Usage counts for the Exercises library: distinct saved sessions per
+ * catalog exercise, scoped to the coach via the session join. Rows with
+ * exercise_id NULL (free-text prescriptions that never resolved) are
+ * invisible here by definition. Pages through PostgREST's row cap — this
+ * table genuinely can exceed it.
+ */
+export async function getExerciseUsageForCoach(coachId: string): Promise<{
+  perExercise: Array<{ exerciseId: string; sessionCount: number }>;
+  sessionsWithLinks: number;
+}> {
+  const PAGE = 1000;
+  const rows: Array<{ exercise_id: string | null; saved_session_id: string }> = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabaseAdmin
+      .from("coach_saved_exercises")
+      .select("exercise_id, saved_session_id, coach_saved_sessions!inner(coach_id)")
+      .eq("coach_saved_sessions.coach_id", coachId)
+      .not("exercise_id", "is", null)
+      .range(from, from + PAGE - 1);
+    if (error) throw new Error(`Failed to fetch exercise usage: ${error.message}`);
+    rows.push(...(data ?? []));
+    if (!data || data.length < PAGE) break;
+  }
+
+  const perExerciseSessions = new Map<string, Set<string>>();
+  const allSessions = new Set<string>();
+  for (const row of rows) {
+    if (!row.exercise_id) continue;
+    let set = perExerciseSessions.get(row.exercise_id);
+    if (!set) {
+      set = new Set();
+      perExerciseSessions.set(row.exercise_id, set);
+    }
+    set.add(row.saved_session_id);
+    allSessions.add(row.saved_session_id);
+  }
+
+  return {
+    perExercise: [...perExerciseSessions.entries()].map(
+      ([exerciseId, sessions]) => ({
+        exerciseId,
+        sessionCount: sessions.size,
+      })
+    ),
+    sessionsWithLinks: allSessions.size,
+  };
+}
+
+/**
+ * Update a COACH-OWNED catalog exercise. Global rows (coach_id NULL) never
+ * match the coach_id filter, so they are un-editable by construction.
+ */
+export async function updateCatalogExercise(
+  exerciseId: string,
+  coachId: string,
+  updates: {
+    name?: string;
+    muscleGroup?: string | null;
+    equipment?: string | null;
+    category?: string | null;
+    aliases?: string[];
+  }
+): Promise<Exercise> {
+  const { data, error } = await supabaseAdmin
+    .from("exercises")
+    .update({
+      ...(updates.name !== undefined && { name: updates.name.trim() }),
+      ...(updates.muscleGroup !== undefined && { muscle_group: updates.muscleGroup }),
+      ...(updates.equipment !== undefined && { equipment: updates.equipment }),
+      ...(updates.category !== undefined && { category: updates.category }),
+      ...(updates.aliases !== undefined && { aliases: updates.aliases }),
+    })
+    .eq("id", exerciseId)
+    .eq("coach_id", coachId)
+    .select()
+    .maybeSingle();
+
+  if (error) throw new Error(`Failed to update exercise: ${error.message}`);
+  if (!data) throw new Error("Exercise not found");
+  return mapExerciseCatalogRow(data);
+}
+
+/**
+ * Delete a COACH-OWNED catalog exercise. Safe by FK design: both
+ * coach_saved_exercises.exercise_id (mig 084) and
+ * training_exercises.exercise_id (mig 083) are ON DELETE SET NULL, so
+ * prescriptions keep their name and merely lose the catalog link.
+ */
+export async function deleteCatalogExercise(
+  exerciseId: string,
+  coachId: string
+): Promise<void> {
+  const { data, error } = await supabaseAdmin
+    .from("exercises")
+    .delete()
+    .eq("id", exerciseId)
+    .eq("coach_id", coachId)
+    .select("id")
+    .maybeSingle();
+
+  if (error) throw new Error(`Failed to delete exercise: ${error.message}`);
+  if (!data) throw new Error("Exercise not found");
 }
 
 /**

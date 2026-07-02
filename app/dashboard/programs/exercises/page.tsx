@@ -1,16 +1,57 @@
 "use client";
 
-import { BookOpen } from "lucide-react";
+import { Suspense, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useExerciseCatalog } from "@/hooks/use-exercise-catalog";
+import { ExercisesStatBand } from "@/components/programs/exercises-stat-band";
+import { ExercisesTable } from "@/components/programs/exercises-table";
+import { ExerciseFormDialog } from "@/components/programs/exercise-form-dialog";
+import type { Exercise } from "@/types/training";
 
-// Placeholder until the Exercise library table lands (redesign R4).
-// Contract: the section topbar's "New exercise" action navigates here with
-// ?new=1 — once the table exists this page opens its create dialog on that
-// param and clears it with router.replace.
-export default function ExercisesLibraryPage() {
+// The exercise catalog library. The section topbar's "New exercise" action
+// lands here with ?new=1 — we open the form dialog and clear the param.
+function ExercisesLibrary() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const { mutate } = useExerciseCatalog();
+  const [formOpen, setFormOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<Exercise | null>(null);
+
+  useEffect(() => {
+    if (searchParams.get("new") === "1") {
+      setEditTarget(null);
+      setFormOpen(true);
+      router.replace("/dashboard/programs/exercises", { scroll: false });
+    }
+  }, [searchParams, router]);
+
   return (
-    <div className="py-16 text-center text-[#5a7d82]">
-      <BookOpen className="mx-auto mb-2 h-8 w-8 opacity-50" strokeWidth={1.5} />
-      <p className="text-sm">Exercise library coming soon</p>
+    <div className="space-y-5">
+      <ExercisesStatBand />
+      <ExercisesTable
+        onEditExercise={(exercise) => {
+          setEditTarget(exercise);
+          setFormOpen(true);
+        }}
+      />
+      <ExerciseFormDialog
+        open={formOpen}
+        onOpenChange={(open) => {
+          setFormOpen(open);
+          if (!open) setEditTarget(null);
+        }}
+        exercise={editTarget}
+        onSaved={() => void mutate()}
+      />
     </div>
+  );
+}
+
+export default function ExercisesLibraryPage() {
+  // useSearchParams needs a Suspense boundary on statically-rendered routes.
+  return (
+    <Suspense fallback={null}>
+      <ExercisesLibrary />
+    </Suspense>
   );
 }
