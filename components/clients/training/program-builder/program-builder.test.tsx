@@ -156,7 +156,7 @@ describe("ProgramBuilder save flow", () => {
         <ProgramBuilder />
       </ProgramDraftProvider>,
     );
-    expect(screen.getByText("Save program")).toBeInTheDocument();
+    expect(screen.getByLabelText("Save program")).toBeInTheDocument();
     expect(screen.getByText("Push")).toBeInTheDocument();
     expect(screen.getAllByText("Rest")).toHaveLength(6);
   });
@@ -167,7 +167,7 @@ describe("ProgramBuilder save flow", () => {
         <ProgramBuilder />
       </ProgramDraftProvider>,
     );
-    fireEvent.click(screen.getByText("Save program"));
+    fireEvent.click(screen.getByLabelText("Save program"));
 
     await waitFor(() => expect(screen.getByLabelText("Edit program")).toBeInTheDocument());
 
@@ -213,12 +213,12 @@ describe("ProgramBuilder save flow", () => {
         <ProgramBuilder />
       </ProgramDraftProvider>,
     );
-    fireEvent.click(screen.getByText("Save program"));
+    fireEvent.click(screen.getByLabelText("Save program"));
 
     await waitFor(() => expect(promoteCall()).toBeTruthy());
     expect(overwriteCall()).toBeTruthy();
     // Still in edit mode — Save stays available for the rename-and-retry.
-    expect(screen.getByText("Save program")).toBeInTheDocument();
+    expect(screen.getByLabelText("Save program")).toBeInTheDocument();
     expect(screen.queryByLabelText("Edit program")).toBeNull();
   });
 
@@ -229,12 +229,12 @@ describe("ProgramBuilder save flow", () => {
         <ProgramBuilder />
       </ProgramDraftProvider>,
     );
-    fireEvent.click(screen.getByText("Save program"));
+    fireEvent.click(screen.getByLabelText("Save program"));
 
     await waitFor(() => expect(overwriteCall()).toBeTruthy());
     // No promote attempt, no mode flip, grid content intact.
     expect(promoteCall()).toBeUndefined();
-    expect(screen.getByText("Save program")).toBeInTheDocument();
+    expect(screen.getByLabelText("Save program")).toBeInTheDocument();
     expect(screen.getByText("Push")).toBeInTheDocument();
   });
 
@@ -246,11 +246,11 @@ describe("ProgramBuilder save flow", () => {
       </ProgramDraftProvider>,
     );
     expect(screen.getByLabelText("Edit program")).toBeInTheDocument();
-    expect(screen.queryByText("Save program")).toBeNull();
+    expect(screen.queryByLabelText("Save program")).toBeNull();
     expect(screen.queryByText(/Add session/)).toBeNull();
 
     fireEvent.click(screen.getByLabelText("Edit program"));
-    expect(screen.getByText("Save program")).toBeInTheDocument();
+    expect(screen.getByLabelText("Save program")).toBeInTheDocument();
   });
 
   it("Save as workout POSTs the day's session with dedupeName and surfaces the final name", async () => {

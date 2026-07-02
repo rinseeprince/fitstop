@@ -1,31 +1,23 @@
 "use client";
 
-import { ArrowLeft, Loader2, Save } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { ArrowLeft } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { ProgramDraft } from "./program-builder-types";
 import { FOCUS_RING } from "./builder-tokens";
 
-// Builder header card (mockup `bheader`): back, inline-editable program name,
-// auto-derived meta, the program-level default surplus %, and the edit-mode
-// commit actions (Save program / Discard). Edit + Delete moved onto the
-// SCHEDULE divider (roadmap pattern) — the view-mode hero is a pure info
-// band. The view⇄edit machine is kept deliberately (the mockup is
-// always-edit): leaving edit mode IS the preview, and Save's dirty tracking
-// hangs off it. No assign-to-client here (assignment lives in the client's
-// planner, Phase 5).
+// Builder header card (mockup `bheader`): a pure info band — back,
+// inline-editable program name, auto-derived meta, and the program-level
+// default surplus %. ALL program actions (Edit/Delete/Discard/Save) live on
+// the SCHEDULE divider (roadmap pattern). The view⇄edit machine is kept
+// deliberately (the mockup is always-edit): leaving edit mode IS the
+// preview, and Save's dirty tracking hangs off it. No assign-to-client here
+// (assignment lives in the client's planner, Phase 5).
 type ProgramTopBarProps = {
   draft: ProgramDraft;
   mode: "view" | "edit";
-  isSaving: boolean;
-  isDirty: boolean;
   onBack: () => void;
-  onSave: () => void;
-  // Drafts: delete the draft plan. Saved plans: re-seed from server.
-  onDiscardDraft: () => void;
-  onDiscardChanges: () => void;
   onRename: (name: string) => void;
   onDefaultSurplusChange: (pct: number | null) => void;
 };
@@ -33,12 +25,7 @@ type ProgramTopBarProps = {
 export function ProgramTopBar({
   draft,
   mode,
-  isSaving,
-  isDirty,
   onBack,
-  onSave,
-  onDiscardDraft,
-  onDiscardChanges,
   onRename,
   onDefaultSurplusChange,
 }: ProgramTopBarProps) {
@@ -140,44 +127,6 @@ export function ProgramTopBar({
           />
           <span className="normal-case">%</span>
         </label>
-
-        {/* Edit + Delete live on the SCHEDULE divider (roadmap pattern) —
-            the hero only carries edit-mode commit actions. */}
-        {mode === "edit" && (
-          <>
-            {draft.status === "draft" ? (
-              <Button
-                variant="ghost"
-                className="text-[#e07a7a] hover:bg-[rgba(224,122,122,0.12)] hover:text-[#e07a7a]"
-                disabled={isSaving}
-                onClick={onDiscardDraft}
-              >
-                Discard
-              </Button>
-            ) : (
-              <Button
-                variant="ghost"
-                className="text-[#e07a7a] hover:bg-[rgba(224,122,122,0.12)] hover:text-[#e07a7a]"
-                disabled={isSaving || !isDirty}
-                onClick={onDiscardChanges}
-              >
-                Discard changes
-              </Button>
-            )}
-            <Button
-              className="bg-[#0d9488] text-white hover:bg-[#0b7f75]"
-              disabled={isSaving}
-              onClick={onSave}
-            >
-              {isSaving ? (
-                <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
-              ) : (
-                <Save className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.5} />
-              )}
-              Save program
-            </Button>
-          </>
-        )}
       </div>
     </div>
   );

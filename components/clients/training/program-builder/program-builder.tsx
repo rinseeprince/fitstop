@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import { Loader2, Pencil, Trash2 } from "lucide-react";
+import { Ban, Loader2, Pencil, Save, Trash2 } from "lucide-react";
 import { DndContext, DragOverlay } from "@dnd-kit/core";
 import { useToast } from "@/hooks/use-toast";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -145,15 +145,10 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
       <ProgramTopBar
         draft={draft}
         mode={mode}
-        isSaving={isSaving}
-        isDirty={isDirty}
         onBack={() => {
           if (isDirty && mode === "edit") setConfirmLeaveOpen(true);
           else exit();
         }}
-        onSave={() => void saveProgram()}
-        onDiscardDraft={() => setConfirmDiscardOpen(true)}
-        onDiscardChanges={() => setConfirmDiscardChangesOpen(true)}
         onRename={setName}
         onDefaultSurplusChange={setDefaultSurplus}
       />
@@ -171,9 +166,10 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
               label="Schedule"
               meta={`${draft.weeks.length} ${draft.weeks.length === 1 ? "week" : "weeks"} · ${trainingCount} ${trainingCount === 1 ? "session" : "sessions"}`}
               actions={
-                // Roadmap-divider pattern: program actions live on the rule,
-                // not in the hero band.
-                <div className="flex items-center gap-1">
+                // Roadmap-divider pattern: ALL program actions live on the
+                // rule, not in the hero band — icons for edit/delete, small
+                // uppercase text for the edit-mode commit actions.
+                <div className="flex items-center gap-3">
                   {mode === "view" && (
                     <button
                       type="button"
@@ -195,6 +191,47 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
                   >
                     <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
                   </button>
+                  {mode === "edit" && (
+                    <>
+                      {draft.status === "draft" ? (
+                        <button
+                          type="button"
+                          aria-label="Discard draft"
+                          title="Discard draft"
+                          disabled={isSaving}
+                          className="rounded p-1 text-[#93b0b4] transition-colors hover:text-[#c06060] disabled:opacity-50"
+                          onClick={() => setConfirmDiscardOpen(true)}
+                        >
+                          <Ban className="h-3.5 w-3.5" strokeWidth={1.5} />
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          aria-label="Discard changes"
+                          title="Discard changes"
+                          disabled={isSaving || !isDirty}
+                          className="rounded p-1 text-[#93b0b4] transition-colors hover:text-[#c06060] disabled:opacity-50"
+                          onClick={() => setConfirmDiscardChangesOpen(true)}
+                        >
+                          <Ban className="h-3.5 w-3.5" strokeWidth={1.5} />
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        aria-label="Save program"
+                        title="Save program"
+                        disabled={isSaving}
+                        className="rounded p-1 text-[#0d9488] transition-colors hover:text-[#0b7f75] disabled:opacity-50"
+                        onClick={() => void saveProgram()}
+                      >
+                        {isSaving ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Save className="h-3.5 w-3.5" strokeWidth={1.5} />
+                        )}
+                      </button>
+                    </>
+                  )}
                 </div>
               }
             />
