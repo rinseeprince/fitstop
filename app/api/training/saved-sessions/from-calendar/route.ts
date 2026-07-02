@@ -7,7 +7,10 @@ import { z } from "zod";
 
 const fromCalendarSchema = z.object({
   sourceSessionId: z.string().uuid(),
-  name: z.string().min(1).max(200),
+  // 100 = the library-wide session-name cap (create/overwrite/savedSession
+  // schemas). The old 200 here let rows in that every later library save
+  // would silently truncate.
+  name: z.string().min(1).max(100),
 });
 
 /**

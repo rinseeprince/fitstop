@@ -34,9 +34,15 @@ const neutralChip =
   "border-transparent bg-[#f0f5f4] text-[11px] font-medium text-[#5a7d82]"
 
 // Standalone-session library table. No "Used in" column: programs clone
-// sessions by value, so there is no reference to count. No row click in v1 —
-// standalone-session editing is exec-plan Phase 3 territory.
-export function SessionsTable() {
+// sessions by value, so there is no reference to count. Row click (and the
+// keyboard-reachable name button) opens the standalone session editor when
+// the page provides onEdit; RowActions stop propagation, so Duplicate/Delete
+// never trigger it.
+export function SessionsTable({
+  onEdit,
+}: {
+  onEdit?: (session: SavedSession) => void
+}) {
   const { toast } = useToast()
   const { sessions, isLoading, mutate } = useStandaloneSessions()
 
@@ -213,11 +219,31 @@ export function SessionsTable() {
             </TableRow>
           ) : (
             pageRows.map((session) => (
-              <TableRow key={session.id} className="group/row">
+              <TableRow
+                key={session.id}
+                className={onEdit ? "group/row cursor-pointer" : "group/row"}
+                onClick={onEdit ? () => onEdit(session) : undefined}
+              >
                 <TableCell className="pl-5">
-                  <span className="text-[13.5px] font-semibold text-[#0c1a1e]">
-                    {session.name}
-                  </span>
+                  {onEdit ? (
+                    <button
+                      type="button"
+                      aria-label={`Edit ${session.name}`}
+                      className="rounded text-left text-[13.5px] font-semibold text-[#0c1a1e] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0d9488]/35"
+                      onClick={(e) => {
+                        // Same action as the row — stop the bubble so onEdit
+                        // fires exactly once.
+                        e.stopPropagation()
+                        onEdit(session)
+                      }}
+                    >
+                      {session.name}
+                    </button>
+                  ) : (
+                    <span className="text-[13.5px] font-semibold text-[#0c1a1e]">
+                      {session.name}
+                    </span>
+                  )}
                 </TableCell>
                 <TableCell>
                   {session.focus ? (

@@ -5,7 +5,8 @@ import { requireCSRFProtection } from "@/lib/csrf-protection";
 import {
   getStandaloneSessions,
   createStandaloneSession,
-} from "@/services/coach-saved-session-service";
+  createStandaloneSessionDeduped,
+} from "@/services/coach-standalone-session-service";
 import { createStandaloneSessionSchema } from "@/lib/validations/training";
 
 // GET - List standalone sessions for the authenticated coach
@@ -51,16 +52,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const sessionId = await createStandaloneSession(coachId, {
-      name: parsed.data.name,
-      focus: parsed.data.focus,
-      estimatedDurationMinutes: parsed.data.estimatedDurationMinutes,
-      calorieSurplusPercentage: parsed.data.calorieSurplusPercentage,
-      notes: parsed.data.notes,
-      exercises: parsed.data.exercises,
-    });
+    const { dedupeName, ...data } = parsed.data;
 
-    return NextResponse.json({ success: true, sessionId }, { status: 201 });
+    // Response carries the final name in both branches so the caller's toast
+    // can surface a server-side " (copy N)" rename.
+    if (dedupeName) {
+      const { sessionId, name } = await createStandaloneSessionDeduped(coachId, data);
+      return NextResponse.json({ success: true, sessionId, name }, { status: 201 });
+    }
+
+    const sessionId = await createStandaloneSession(coachId, data);
+    return NextResponse.json(
+      { success: true, sessionId, name: data.name },
+      { status: 201 }
+    );
   } catch (error) {
     console.error("Error creating standalone session:", error);
     return NextResponse.json({ error: "Failed to create session" }, { status: 500 });

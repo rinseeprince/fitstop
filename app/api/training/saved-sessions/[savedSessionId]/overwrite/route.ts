@@ -2,10 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
-import { duplicateStandaloneSession } from "@/services/coach-standalone-session-service";
+import { overwriteStandaloneSession } from "@/services/coach-standalone-session-service";
+import { overwriteStandaloneSessionSchema } from "@/lib/validations/training";
 
-// POST - Duplicate a STANDALONE session (exercises copied verbatim, name
-// deduped with " (copy)"). Plan-attached sessions 404. No body.
+// POST - Full replace of a STANDALONE session (fields + exercises, same body
+// shape as create). Plan-attached sessions 404 — program-embedded sessions
+// are edited through the Program builder's overwrite, never here.
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ savedSessionId: string }> }
@@ -23,16 +25,26 @@ export async function POST(
     }
 
     const { savedSessionId } = await params;
-    const sessionId = await duplicateStandaloneSession(savedSessionId, coachId);
-    return NextResponse.json({ success: true, sessionId }, { status: 201 });
+    const body = await request.json();
+
+    const parsed = overwriteStandaloneSessionSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { success: false, error: parsed.error.issues[0]?.message || "Invalid input" },
+        { status: 400 }
+      );
+    }
+
+    await overwriteStandaloneSession(savedSessionId, coachId, parsed.data);
+    return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
     if (message === "Session not found") {
       return NextResponse.json({ error: message }, { status: 404 });
     }
-    console.error("Error duplicating saved session:", error);
+    console.error("Error overwriting saved session:", error);
     return NextResponse.json(
-      { error: "Failed to duplicate session" },
+      { error: "Failed to update session" },
       { status: 500 }
     );
   }

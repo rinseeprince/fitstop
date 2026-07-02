@@ -92,4 +92,41 @@ describe("SessionsTable", () => {
     render(<SessionsTable />);
     expect(screen.getByText("No sessions yet")).toBeDefined();
   });
+
+  it("fires onEdit exactly once per row click", () => {
+    const onEdit = vi.fn();
+    render(<SessionsTable onEdit={onEdit} />);
+    fireEvent.click(screen.getByText("45 min"));
+    expect(onEdit).toHaveBeenCalledTimes(1);
+    expect(onEdit).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "s1", name: "Push Day A" })
+    );
+  });
+
+  it("exposes the session name as a keyboard-reachable edit button", () => {
+    const onEdit = vi.fn();
+    render(<SessionsTable onEdit={onEdit} />);
+    const button = screen.getByRole("button", { name: "Edit Pull Day A" });
+    // The name-cell button stops propagation, so the bubbled row click
+    // can't double-fire onEdit.
+    fireEvent.click(button);
+    expect(onEdit).toHaveBeenCalledTimes(1);
+    expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({ id: "s2" }));
+  });
+
+  it("does not fire onEdit from the row actions", () => {
+    const onEdit = vi.fn();
+    render(<SessionsTable onEdit={onEdit} />);
+    // Delete only opens the confirm dialog — no fetch — and RowActions stops
+    // propagation, so the row's onEdit must not fire.
+    const [firstDelete] = screen.getAllByRole("button", { name: "Delete" });
+    fireEvent.click(firstDelete);
+    expect(onEdit).not.toHaveBeenCalled();
+  });
+
+  it("renders plain name text without onEdit", () => {
+    render(<SessionsTable />);
+    expect(screen.queryByRole("button", { name: "Edit Push Day A" })).toBeNull();
+    expect(screen.getByText("Push Day A")).toBeDefined();
+  });
 });

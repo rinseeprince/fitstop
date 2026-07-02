@@ -2,23 +2,24 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useStandaloneSessions } from "@/hooks/use-standalone-sessions";
 import { SessionsStatBand } from "@/components/programs/sessions-stat-band";
 import { SessionsTable } from "@/components/programs/sessions-table";
-import { NewSessionDialog } from "@/components/programs/new-session-dialog";
+import { StandaloneSessionEditor } from "@/components/programs/standalone-session-editor";
+import type { SessionEditorState } from "@/components/programs/use-standalone-session-editor";
 
 // The standalone-session library. The section topbar's "New session" action
-// lands here with ?new=1 — we open the create dialog and clear the param
-// (router.replace, same URL-state pattern as /clients/[id]?tab=).
+// lands here with ?new=1 — we open the editor in create mode and clear the
+// param (router.replace, same URL-state pattern as /clients/[id]?tab=).
+// Row click re-opens the same editor in edit mode. The editor refreshes the
+// shared SWR key itself after every save.
 function SessionsLibrary() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { mutate } = useStandaloneSessions();
-  const [createOpen, setCreateOpen] = useState(false);
+  const [editorState, setEditorState] = useState<SessionEditorState | null>(null);
 
   useEffect(() => {
     if (searchParams.get("new") === "1") {
-      setCreateOpen(true);
+      setEditorState({ mode: "create" });
       router.replace("/dashboard/programs/sessions", { scroll: false });
     }
   }, [searchParams, router]);
@@ -26,11 +27,12 @@ function SessionsLibrary() {
   return (
     <div className="space-y-5">
       <SessionsStatBand />
-      <SessionsTable />
-      <NewSessionDialog
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        onCreated={() => void mutate()}
+      <SessionsTable
+        onEdit={(session) => setEditorState({ mode: "edit", session })}
+      />
+      <StandaloneSessionEditor
+        state={editorState}
+        onClose={() => setEditorState(null)}
       />
     </div>
   );

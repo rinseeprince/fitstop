@@ -14,6 +14,7 @@ import type { DaySlotDraft } from "./program-builder-types";
 import { savedSessionToDraft } from "./program-builder-serialize";
 import { findSession } from "./use-program-builder-state";
 import { useProgramDnd } from "./use-program-dnd";
+import { useSaveDayAsWorkout } from "./use-save-day-as-workout";
 import { useProgramDraft } from "./program-draft-provider";
 import { ProgramTopBar } from "./program-top-bar";
 import { ProgramGrid } from "./program-grid";
@@ -84,6 +85,7 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
   };
 
   const dnd = useProgramDnd({ draft, reorderWeek, moveSession, placeLibrarySession });
+  const { isSavingWorkout, saveDayAsWorkout } = useSaveDayAsWorkout(draft);
 
   const exit = () => (onExit ? onExit() : router.push("/dashboard/programs"));
 
@@ -250,6 +252,8 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
         onClearToRest={() => {
           if (editingSlotUid) clearSlot(editingSlotUid);
         }}
+        onSaveAsWorkout={(uid) => void saveDayAsWorkout(uid)}
+        isSavingWorkout={isSavingWorkout}
       />
 
       <AddSessionPopover

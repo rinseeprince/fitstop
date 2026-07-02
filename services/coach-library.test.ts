@@ -52,10 +52,6 @@ import {
   promoteDraftToSaved,
   getSavedPlans,
 } from "./coach-saved-plan-service";
-import {
-  createStandaloneSession,
-  getStandaloneSessions,
-} from "./coach-saved-session-service";
 import type { AIGeneratedPlan } from "@/types/training";
 
 const mockFrom = vi.mocked(supabaseAdmin.from);
@@ -395,118 +391,6 @@ describe("coach-library-service", () => {
   });
 
   // =========================================================================
-  // createStandaloneSession
-  // =========================================================================
-
-  describe("createStandaloneSession", () => {
-    it("creates session with saved_plan_id = NULL", async () => {
-      const sessionInsertQuery = createMockQuery({ data: { id: "session-1" }, error: null });
-      const exerciseInsertQuery = createMockQuery({ data: null, error: null });
-
-      mockFrom.mockImplementation((table: string) => {
-        if (table === "coach_saved_sessions") return sessionInsertQuery as any;
-        if (table === "coach_saved_exercises") return exerciseInsertQuery as any;
-        return createMockQuery({ data: null, error: null }) as any;
-      });
-
-      const sessionId = await createStandaloneSession("coach-1", {
-        name: "Quick Workout",
-        exercises: [{ name: "Bench Press", sets: 3 }],
-      });
-
-      expect(sessionId).toBe("session-1");
-      const insertCall = sessionInsertQuery.insert.mock.calls[0][0];
-      expect(insertCall.saved_plan_id).toBeNull();
-    });
-
-    it("resolves exercise names to catalog IDs", async () => {
-      const sessionInsertQuery = createMockQuery({ data: { id: "session-1" }, error: null });
-      const exerciseInsertQuery = createMockQuery({ data: null, error: null });
-
-      mockFrom.mockImplementation((table: string) => {
-        if (table === "coach_saved_sessions") return sessionInsertQuery as any;
-        if (table === "coach_saved_exercises") return exerciseInsertQuery as any;
-        return createMockQuery({ data: null, error: null }) as any;
-      });
-
-      await createStandaloneSession("coach-1", {
-        name: "Test Session",
-        exercises: [
-          { name: "Bench Press", sets: 3 },
-          { name: "Squat", sets: 4 },
-        ],
-      });
-
-      expect(mockResolveExercises).toHaveBeenCalledWith(
-        ["Bench Press", "Squat"],
-        "coach-1"
-      );
-    });
-
-    it("nulls out exerciseIds that aren't visible to the coach (cross-tenant guard)", async () => {
-      const idCheckQuery = createMockQuery({ data: [{ id: "ex-own" }], error: null });
-      const sessionInsertQuery = createMockQuery({ data: { id: "session-1" }, error: null });
-      const exerciseInsertQuery = createMockQuery({ data: null, error: null });
-
-      mockFrom.mockImplementation((table: string) => {
-        if (table === "exercises") return idCheckQuery as any;
-        if (table === "coach_saved_sessions") return sessionInsertQuery as any;
-        if (table === "coach_saved_exercises") return exerciseInsertQuery as any;
-        return createMockQuery({ data: null, error: null }) as any;
-      });
-
-      await createStandaloneSession("coach-1", {
-        name: "Test Session",
-        exercises: [
-          { name: "Own Exercise", exerciseId: "ex-own", sets: 3 },
-          { name: "Foreign Exercise", exerciseId: "ex-foreign", sets: 3 },
-        ],
-      });
-
-      // Visibility check scoped to own + global rows.
-      expect(idCheckQuery.in).toHaveBeenCalledWith("id", ["ex-own", "ex-foreign"]);
-      expect(idCheckQuery.or).toHaveBeenCalledWith(
-        "coach_id.eq.coach-1,coach_id.is.null"
-      );
-      // The foreign id fell back to name resolution.
-      expect(mockResolveExercises).toHaveBeenCalledWith(
-        ["Foreign Exercise"],
-        "coach-1"
-      );
-      // The visible id survived onto the inserted row.
-      const rows = exerciseInsertQuery.insert.mock.calls[0][0] as Array<
-        Record<string, unknown>
-      >;
-      expect(rows[0].exercise_id).toBe("ex-own");
-    });
-
-    it("removes the shell session when the exercise insert fails (no orphans)", async () => {
-      const sessionQuery = createMockQuery({ data: { id: "session-1" }, error: null });
-      const exerciseFailQuery = createMockQuery({
-        data: null,
-        error: { message: "insert blew up" },
-      });
-
-      mockFrom.mockImplementation((table: string) => {
-        if (table === "coach_saved_sessions") return sessionQuery as any;
-        if (table === "coach_saved_exercises") return exerciseFailQuery as any;
-        return createMockQuery({ data: null, error: null }) as any;
-      });
-
-      await expect(
-        createStandaloneSession("coach-1", {
-          name: "Doomed",
-          exercises: [{ name: "Bench Press", sets: 3 }],
-        })
-      ).rejects.toThrow(/insert blew up/);
-
-      // The just-created session row was compensating-deleted.
-      expect(sessionQuery.delete).toHaveBeenCalled();
-      expect(sessionQuery.eq).toHaveBeenCalledWith("id", "session-1");
-    });
-  });
-
-  // =========================================================================
   // getSavedPlans
   // =========================================================================
 
@@ -612,20 +496,4 @@ describe("coach-library-service", () => {
     });
   });
 
-  // =========================================================================
-  // getStandaloneSessions
-  // =========================================================================
-
-  describe("getStandaloneSessions", () => {
-    it("fetches sessions where saved_plan_id is null", async () => {
-      const sessionsQuery = createMockQuery({ data: [], error: null });
-      mockFrom.mockReturnValue(sessionsQuery as any);
-
-      await getStandaloneSessions("coach-1");
-
-      expect(mockFrom).toHaveBeenCalledWith("coach_saved_sessions");
-      expect(sessionsQuery.eq).toHaveBeenCalledWith("coach_id", "coach-1");
-      expect(sessionsQuery.is).toHaveBeenCalledWith("saved_plan_id", null);
-    });
-  });
 });

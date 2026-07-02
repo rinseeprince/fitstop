@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 
-vi.mock("@/services/coach-saved-session-service", () => ({
+vi.mock("@/services/coach-standalone-session-service", () => ({
   duplicateStandaloneSession: vi.fn(),
 }));
 
@@ -18,7 +18,7 @@ vi.mock("@/lib/csrf-protection", () => ({
 }));
 
 import { POST } from "./route";
-import { duplicateStandaloneSession } from "@/services/coach-saved-session-service";
+import { duplicateStandaloneSession } from "@/services/coach-standalone-session-service";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 
 const mockDuplicate = vi.mocked(duplicateStandaloneSession);

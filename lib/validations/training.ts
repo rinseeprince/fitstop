@@ -230,12 +230,14 @@ export const createSavedPlanSchema = z.object({
   })),
 });
 
-// Full-fat standalone-session create: the builder's create-blank slide-over
-// persists an authored session here, so the exercise shape must match the
-// overwrite input (setSpecs, videoUrl, exerciseId, ...) — a narrower schema
-// would silently strip per-set data. orderIndex is optional (the service
-// assigns array order); the legacy minimal shape ({name, sets}) stays valid.
-export const createStandaloneSessionSchema = z.object({
+// Full-fat standalone-session body, shared by create and overwrite: the
+// builder's create-blank slide-over, save-day-as-workout, and the Sessions
+// page editor all persist authored sessions here, so the exercise shape must
+// match the overwrite input (setSpecs, videoUrl, exerciseId, ...) — a
+// narrower schema would silently strip per-set data. orderIndex is optional
+// (the service assigns array order); the legacy minimal shape ({name, sets})
+// stays valid.
+const standaloneSessionBodySchema = z.object({
   name: z.string().min(1).max(100),
   focus: z.string().max(200).nullish(),
   estimatedDurationMinutes: z.number().int().min(0).max(480).nullish(),
@@ -243,6 +245,17 @@ export const createStandaloneSessionSchema = z.object({
   notes: z.string().max(1000).nullish(),
   exercises: z.array(savedExerciseInputSchema.partial({ orderIndex: true })),
 });
+
+// dedupeName: server-side " (copy N)" rename on name conflict (used by the
+// builder's save-day-as-workout). Absent/false = current semantics — the
+// create slide-over and Sessions-page editor keep the coach's exact name.
+export const createStandaloneSessionSchema = standaloneSessionBodySchema.extend({
+  dedupeName: z.boolean().optional(),
+});
+
+// Full replace of a STANDALONE session (fields + exercises). Same body shape
+// as create, no dedupe flag — the coach edited the name deliberately.
+export const overwriteStandaloneSessionSchema = standaloneSessionBodySchema;
 
 // Catalog exercise edit — coach-owned rows only (the route/service enforce
 // ownership; global rows 404 by construction).

@@ -28,6 +28,10 @@ export type SessionEditorBodyProps = {
   session: SessionDraft;
   mode: "view" | "edit";
   defaultSurplusPercentage: number | null;
+  // Helper line under the surplus field. The default speaks program language;
+  // the standalone Sessions-page editor overrides it (no program to inherit
+  // a default from there).
+  surplusHelpText?: string;
   onUpdateSession: (
     sessionUid: string,
     patch: Partial<Omit<SessionDraft, "uid" | "exercises">>,
@@ -43,6 +47,7 @@ export function SessionEditorBody({
   session,
   mode,
   defaultSurplusPercentage,
+  surplusHelpText = "Leave blank to use the program default",
   onUpdateSession,
   onAddExercise,
   onRemoveExercise,
@@ -151,7 +156,7 @@ export function SessionEditorBody({
             }}
           />
           <span className="text-[10px] font-normal normal-case tracking-normal text-[#93b0b4]">
-            Leave blank to use the program default
+            {surplusHelpText}
           </span>
         </label>
       </div>

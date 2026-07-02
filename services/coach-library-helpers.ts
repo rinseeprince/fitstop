@@ -91,6 +91,25 @@ export function deriveCycleInfoFromSessions(
 }
 
 /**
+ * Resolve a name collision with the library's " (copy N)" RENAME convention.
+ * Returns `desired` untouched when free; otherwise caps the base at 88 chars
+ * (so "base (copy NN)" stays inside the 100-char name schemas) and appends
+ * " (copy)", " (copy 2)", ... Matching is lowercased-trimmed; `takenLower`
+ * must already be lowercased+trimmed. Used by the plan/session duplicate
+ * endpoints and save-day-as-workout — NOT by promoteDraftToSaved, whose
+ * standalone-session pass deliberately SKIPS on conflict instead of renaming.
+ */
+export function dedupeCopyName(desired: string, takenLower: Set<string>): string {
+  if (!takenLower.has(desired.trim().toLowerCase())) return desired;
+  const base = desired.length > 88 ? desired.slice(0, 88) : desired;
+  let name = `${base} (copy)`;
+  for (let n = 2; takenLower.has(name.trim().toLowerCase()); n++) {
+    name = `${base} (copy ${n})`;
+  }
+  return name;
+}
+
+/**
  * Batch-insert exercises for a saved session. Resolves exercise names to
  * canonical exercise_ids via the caller-supplied lookup map; an explicit
  * per-exercise `exerciseId` (already-resolved prescription, e.g. the

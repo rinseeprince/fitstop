@@ -22,6 +22,14 @@ Logged: 2026-07-01.
 
 ---
 
+## Training builder standalone sessions — deferred tails (builder S3)
+
+Logged: 2026-07-02.
+
+- **`PATCH`/`DELETE /api/training/saved-sessions/[savedSessionId]` are not standalone-scoped.** `updateSavedSession`/`removeSavedSession` filter only `.eq(id).eq(coach_id)` (`services/coach-saved-session-service.ts`) because the same functions back the plan-attached `saved-plans/[savedPlanId]/sessions/[sessionId]` routes — so the nominally-standalone route can mutate/delete plan-attached sessions too (same-coach only; no cross-tenant exposure). Harmless today (no UI caller PATCHes standalone sessions, and the Sessions table's DELETE only ever sees standalone rows), but scope the standalone route with `.is("saved_plan_id", null)` — via a scoped service variant, not by breaking the shared plan-attached callers — before any new caller appears. The S3 overwrite endpoint (`.../overwrite`) is correctly scoped already.
+
+---
+
 ## Events-as-SOT overhaul — test coverage gap
 
 - **`create_training_plan_atomic` (mig 114) real-effect coverage.** Session 2◆1 rewrote the RPC to be additive (window-bounded delete + provenance insert). The vitest suite mocks `supabaseAdmin`, so the RPC's actual DELETE/INSERT — window-bound, coexistence of disjoint plans, idempotent re-place, overlap "incoming wins" — has **no automated coverage**. Correctness currently rests on the manual smoke (place A Jan + B Mar disjoint → both survive; place B overlapping A → B wins contested, A's pre-overlap survives; re-place same range → event count stable). **Owe a focused local-supabase RPC test no later than Session 5** (where seed/backfill already needs DB-level validation). Same gap applies to `getNextPlanStartCap`'s cross-plan cap. Decided 2026-06-18 (no pgTAP/Postgres infra before launch — consistent with the mock-everything architecture + deferred-tooling stance).

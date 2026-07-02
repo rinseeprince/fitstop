@@ -11,6 +11,12 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: pushMock }),
 }));
 
+// Toast spy so the save-as-workout flow can assert the deduped-name copy.
+const { toastSpy } = vi.hoisted(() => ({ toastSpy: vi.fn() }));
+vi.mock("@/hooks/use-toast", () => ({
+  useToast: () => ({ toast: toastSpy }),
+}));
+
 const mutateMock = vi.fn(() => Promise.resolve(undefined));
 let planFixture: SavedPlan | null = null;
 vi.mock("@/hooks/use-saved-plan", () => ({
@@ -54,6 +60,12 @@ vi.stubGlobal(
     if (u.endsWith("/promote")) {
       return Promise.resolve(
         jsonResponse(promoteStatus, promoteStatus === 200 ? { success: true } : { success: false, error: "name conflict" }),
+      );
+    }
+    if (u === "/api/training/saved-sessions" && init?.method === "POST") {
+      // Save-day-as-workout: the server deduped the name server-side.
+      return Promise.resolve(
+        jsonResponse(201, { success: true, sessionId: "s-new", name: "Push (copy)" }),
       );
     }
     return Promise.resolve(jsonResponse(200, { success: true }));
@@ -130,7 +142,13 @@ describe("ProgramBuilder save flow", () => {
     planFixture = makeDraftPlan();
     mutateMock.mockClear();
     pushMock.mockClear();
+    toastSpy.mockClear();
   });
+
+  const savedSessionPost = () =>
+    fetchCalls.filter(
+      (c) => c.url === "/api/training/saved-sessions" && c.method === "POST",
+    );
 
   it("opens a draft plan straight into edit mode with the seeded grid", () => {
     render(
@@ -233,5 +251,67 @@ describe("ProgramBuilder save flow", () => {
 
     fireEvent.click(screen.getByText("Edit"));
     expect(screen.getByText("Save program")).toBeInTheDocument();
+  });
+
+  it("Save as workout POSTs the day's session with dedupeName and surfaces the final name", async () => {
+    render(
+      <ProgramDraftProvider savedPlanId="plan-1" target="library">
+        <ProgramBuilder />
+      </ProgramDraftProvider>,
+    );
+    // Open the Day 1 session in the editor sheet, then extract it.
+    fireEvent.click(screen.getByText("Push"));
+    fireEvent.click(screen.getByRole("button", { name: /Save as workout/ }));
+
+    await waitFor(() => expect(savedSessionPost()).toHaveLength(1));
+    expect(savedSessionPost()[0].body).toMatchObject({
+      name: "Push",
+      dedupeName: true,
+      exercises: [],
+    });
+    await waitFor(() =>
+      expect(toastSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: expect.stringContaining("Push (copy)"),
+        }),
+      ),
+    );
+  });
+
+  it("Save as workout fires exactly one POST on a double click", async () => {
+    render(
+      <ProgramDraftProvider savedPlanId="plan-1" target="library">
+        <ProgramBuilder />
+      </ProgramDraftProvider>,
+    );
+    fireEvent.click(screen.getByText("Push"));
+    const button = screen.getByRole("button", { name: /Save as workout/ });
+    fireEvent.click(button);
+    fireEvent.click(button);
+
+    await waitFor(() => expect(savedSessionPost()).toHaveLength(1));
+    // Give any stray second request a chance to land before asserting.
+    await waitFor(() =>
+      expect(toastSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: expect.stringContaining("Push (copy)"),
+        }),
+      ),
+    );
+    expect(savedSessionPost()).toHaveLength(1);
+  });
+
+  it("Save as workout is available in view mode (it never mutates the draft)", async () => {
+    planFixture = { ...makeDraftPlan(), status: "saved" };
+    render(
+      <ProgramDraftProvider savedPlanId="plan-1" target="library">
+        <ProgramBuilder />
+      </ProgramDraftProvider>,
+    );
+    fireEvent.click(screen.getByText("Push"));
+    fireEvent.click(screen.getByRole("button", { name: /Save as workout/ }));
+
+    await waitFor(() => expect(savedSessionPost()).toHaveLength(1));
+    expect(savedSessionPost()[0].body).toMatchObject({ dedupeName: true });
   });
 });

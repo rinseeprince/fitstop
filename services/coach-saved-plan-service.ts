@@ -7,6 +7,7 @@ import {
 } from "@/lib/coach-mappers";
 import {
   copySavedExerciseRows,
+  dedupeCopyName,
   detectCycleInfoFallback,
   deriveCycleInfoFromSessions,
   insertSavedExercises,
@@ -620,11 +621,7 @@ export async function duplicateSavedPlan(
   const taken = new Set(
     (nameRows ?? []).map((r) => r.name.trim().toLowerCase())
   );
-  const base = plan.name.length > 88 ? plan.name.slice(0, 88) : plan.name;
-  let name = `${base} (copy)`;
-  for (let n = 2; taken.has(name.trim().toLowerCase()); n++) {
-    name = `${base} (copy ${n})`;
-  }
+  const name = dedupeCopyName(plan.name, taken);
 
   const planInsert: CoachSavedPlanInsert = {
     coach_id: coachId,

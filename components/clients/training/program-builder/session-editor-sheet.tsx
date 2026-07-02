@@ -1,6 +1,6 @@
 "use client";
 
-import { Moon } from "lucide-react";
+import { BookmarkPlus, Loader2, Moon } from "lucide-react";
 import {
   Sheet,
   SheetContent,
@@ -16,11 +16,15 @@ import { SessionEditorBody, type SessionEditorBodyProps } from "./session-editor
 // right slide-over (replaces the old centered Dialog — one editor surface,
 // same treatment as the routed create-blank slide-over). Write-through: the
 // only footer action is Done (+ Make-rest in edit mode); "Save program" on
-// the page is the commit point.
+// the page is the commit point. "Save as workout" copies the day into the
+// standalone session library without touching the draft, so it renders in
+// view mode too.
 type SessionEditorSheetProps = Omit<SessionEditorBodyProps, "session"> & {
   session: SessionDraft | null; // null = closed
   onClose: () => void;
   onClearToRest: (sessionUid: string) => void;
+  onSaveAsWorkout: (sessionUid: string) => void;
+  isSavingWorkout: boolean;
 };
 
 export function SessionEditorSheet({
@@ -28,6 +32,9 @@ export function SessionEditorSheet({
   mode,
   onClose,
   onClearToRest,
+  // Destructured out here — these must never reach the {...bodyProps} spread.
+  onSaveAsWorkout,
+  isSavingWorkout,
   ...bodyProps
 }: SessionEditorSheetProps) {
   const editable = mode === "edit";
@@ -74,12 +81,26 @@ export function SessionEditorSheet({
               ) : (
                 <span />
               )}
-              <Button
-                className="bg-[#0d9488] text-white hover:bg-[#0b7f75]"
-                onClick={onClose}
-              >
-                Done
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  disabled={isSavingWorkout}
+                  onClick={() => onSaveAsWorkout(session.uid)}
+                >
+                  {isSavingWorkout ? (
+                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <BookmarkPlus className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.5} />
+                  )}
+                  Save as workout
+                </Button>
+                <Button
+                  className="bg-[#0d9488] text-white hover:bg-[#0b7f75]"
+                  onClick={onClose}
+                >
+                  Done
+                </Button>
+              </div>
             </div>
           </>
         )}

@@ -78,21 +78,24 @@ export function SessionDetailDrawer({
 
   const handleSaveToLibrary = async () => {
     if (!session) return;
-    const name = prompt("Save to library as:", session.name);
-    if (!name?.trim()) return;
+    const input = prompt("Save to library as:", session.name);
+    if (!input?.trim()) return;
+    // Library session names cap at 100 — clamp the free-text prompt rather
+    // than 400 the save.
+    const name = input.trim().slice(0, 100);
 
     setIsSavingToLibrary(true);
     try {
       const res = await fetch("/api/training/saved-sessions/from-calendar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sourceSessionId: session.id, name: name.trim() }),
+        body: JSON.stringify({ sourceSessionId: session.id, name }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || "Failed to save");
       }
-      toast({ title: "Saved to library", description: `"${name.trim()}" saved as a standalone session` });
+      toast({ title: "Saved to library", description: `"${name}" saved as a standalone session` });
     } catch (error) {
       toast({
         title: "Save failed",
