@@ -5,8 +5,10 @@
 
 // One explicit column template shared by the header row and every week row —
 // sticky left column + aligned Day 1–7 columns depend on all rows using it.
+// 132px day minimum keeps ~5 columns visible on a laptop before the grid
+// scrolls; columns still stretch (1fr) when there's room.
 export const GRID_COLS =
-  "grid grid-cols-[220px_repeat(7,minmax(168px,1fr))]";
+  "grid grid-cols-[220px_repeat(7,minmax(132px,1fr))]";
 
 // Day-card treatments (docs/newdesignsystem.md "training vs rest day cards").
 export const TRAINING_CARD_BORDER = "border border-[rgba(13,148,136,0.08)]";
