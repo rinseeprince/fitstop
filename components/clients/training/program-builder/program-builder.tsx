@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import { Loader2, Pencil, Trash2 } from "lucide-react";
 import { DndContext, DragOverlay } from "@dnd-kit/core";
 import { useToast } from "@/hooks/use-toast";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -151,11 +151,9 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
           if (isDirty && mode === "edit") setConfirmLeaveOpen(true);
           else exit();
         }}
-        onEdit={() => setMode("edit")}
         onSave={() => void saveProgram()}
         onDiscardDraft={() => setConfirmDiscardOpen(true)}
         onDiscardChanges={() => setConfirmDiscardChangesOpen(true)}
-        onDeleteProgram={() => setConfirmDeleteOpen(true)}
         onRename={setName}
         onDefaultSurplusChange={setDefaultSurplus}
       />
@@ -172,6 +170,33 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
             <SectionLabel
               label="Schedule"
               meta={`${draft.weeks.length} ${draft.weeks.length === 1 ? "week" : "weeks"} · ${trainingCount} ${trainingCount === 1 ? "session" : "sessions"}`}
+              actions={
+                // Roadmap-divider pattern: program actions live on the rule,
+                // not in the hero band.
+                <div className="flex items-center gap-1">
+                  {mode === "view" && (
+                    <button
+                      type="button"
+                      aria-label="Edit program"
+                      title="Edit program"
+                      className="rounded p-1 text-[#93b0b4] transition-colors hover:text-[#0d9488]"
+                      onClick={() => setMode("edit")}
+                    >
+                      <Pencil className="h-3.5 w-3.5" strokeWidth={1.5} />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    aria-label="Delete program"
+                    title="Delete program"
+                    disabled={isSaving}
+                    className="rounded p-1 text-[#93b0b4] transition-colors hover:text-[#c06060] disabled:opacity-50"
+                    onClick={() => setConfirmDeleteOpen(true)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+                  </button>
+                </div>
+              }
             />
             <ProgramGrid
               draft={draft}

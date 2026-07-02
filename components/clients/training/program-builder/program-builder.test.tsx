@@ -169,7 +169,7 @@ describe("ProgramBuilder save flow", () => {
     );
     fireEvent.click(screen.getByText("Save program"));
 
-    await waitFor(() => expect(screen.getByText("Edit")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByLabelText("Edit program")).toBeInTheDocument());
 
     const overwrite = overwriteCall()!;
     expect(overwrite.method).toBe("POST");
@@ -219,7 +219,7 @@ describe("ProgramBuilder save flow", () => {
     expect(overwriteCall()).toBeTruthy();
     // Still in edit mode — Save stays available for the rename-and-retry.
     expect(screen.getByText("Save program")).toBeInTheDocument();
-    expect(screen.queryByText("Edit")).toBeNull();
+    expect(screen.queryByLabelText("Edit program")).toBeNull();
   });
 
   it("keeps the local draft and edit mode when the overwrite 500s", async () => {
@@ -245,11 +245,11 @@ describe("ProgramBuilder save flow", () => {
         <ProgramBuilder />
       </ProgramDraftProvider>,
     );
-    expect(screen.getByText("Edit")).toBeInTheDocument();
+    expect(screen.getByLabelText("Edit program")).toBeInTheDocument();
     expect(screen.queryByText("Save program")).toBeNull();
     expect(screen.queryByText(/Add session/)).toBeNull();
 
-    fireEvent.click(screen.getByText("Edit"));
+    fireEvent.click(screen.getByLabelText("Edit program"));
     expect(screen.getByText("Save program")).toBeInTheDocument();
   });
 

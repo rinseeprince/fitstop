@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Loader2, Pencil, Save, Trash2 } from "lucide-react";
+import { ArrowLeft, Loader2, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -9,23 +9,23 @@ import type { ProgramDraft } from "./program-builder-types";
 import { FOCUS_RING } from "./builder-tokens";
 
 // Builder header card (mockup `bheader`): back, inline-editable program name,
-// auto-derived meta, the program-level default surplus %, delete-program, and
-// the mode actions (Edit / Save program / Discard). The view⇄edit machine is
-// kept deliberately (the mockup is always-edit): leaving edit mode IS the
-// preview, and Save's dirty tracking hangs off it. No assign-to-client here
-// (assignment lives in the client's planner, Phase 5).
+// auto-derived meta, the program-level default surplus %, and the edit-mode
+// commit actions (Save program / Discard). Edit + Delete moved onto the
+// SCHEDULE divider (roadmap pattern) — the view-mode hero is a pure info
+// band. The view⇄edit machine is kept deliberately (the mockup is
+// always-edit): leaving edit mode IS the preview, and Save's dirty tracking
+// hangs off it. No assign-to-client here (assignment lives in the client's
+// planner, Phase 5).
 type ProgramTopBarProps = {
   draft: ProgramDraft;
   mode: "view" | "edit";
   isSaving: boolean;
   isDirty: boolean;
   onBack: () => void;
-  onEdit: () => void;
   onSave: () => void;
   // Drafts: delete the draft plan. Saved plans: re-seed from server.
   onDiscardDraft: () => void;
   onDiscardChanges: () => void;
-  onDeleteProgram: () => void;
   onRename: (name: string) => void;
   onDefaultSurplusChange: (pct: number | null) => void;
 };
@@ -36,11 +36,9 @@ export function ProgramTopBar({
   isSaving,
   isDirty,
   onBack,
-  onEdit,
   onSave,
   onDiscardDraft,
   onDiscardChanges,
-  onDeleteProgram,
   onRename,
   onDefaultSurplusChange,
 }: ProgramTopBarProps) {
@@ -143,28 +141,9 @@ export function ProgramTopBar({
           <span className="normal-case">%</span>
         </label>
 
-        <div className="h-6 w-px bg-[rgba(255,255,255,0.1)]" />
-
-        <button
-          type="button"
-          aria-label="Delete program"
-          title="Delete program"
-          disabled={isSaving}
-          className="rounded-[6px] p-2 text-[#e07a7a] transition-colors hover:bg-[rgba(224,122,122,0.12)] disabled:opacity-50"
-          onClick={onDeleteProgram}
-        >
-          <Trash2 className="h-4 w-4" strokeWidth={1.5} />
-        </button>
-
-        {mode === "view" ? (
-          <Button
-            variant="outline"
-            className="border-[rgba(255,255,255,0.2)] bg-transparent text-[rgba(255,255,255,0.85)] hover:bg-[rgba(255,255,255,0.08)] hover:text-white"
-            onClick={onEdit}
-          >
-            <Pencil className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.5} /> Edit
-          </Button>
-        ) : (
+        {/* Edit + Delete live on the SCHEDULE divider (roadmap pattern) —
+            the hero only carries edit-mode commit actions. */}
+        {mode === "edit" && (
           <>
             {draft.status === "draft" ? (
               <Button
