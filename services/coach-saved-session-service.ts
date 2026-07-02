@@ -7,6 +7,7 @@ import {
   mapSavedSessionRow,
 } from "@/lib/coach-mappers";
 import {
+  copySavedExerciseRows,
   insertSavedExercises,
   recomputePlanCycleInfo,
 } from "./coach-library-helpers";
@@ -71,6 +72,89 @@ export async function getStandaloneSessions(coachId: string): Promise<SavedSessi
       .map(mapSavedExerciseRow);
     return mapSavedSessionRow(s, exercises);
   });
+}
+
+/**
+ * Duplicate a STANDALONE session (saved_plan_id IS NULL) as a verbatim
+ * server-side copy — exercises carry set_specs, video_url, and resolved
+ * exercise_ids as-is (never a client-composed POST, whose narrow create
+ * schema would silently strip per-set data). Name deduped with " (copy N)"
+ * against the coach's standalone sessions; base capped so the result stays
+ * inside the 100-char name caps.
+ */
+export async function duplicateStandaloneSession(
+  sessionId: string,
+  coachId: string
+): Promise<string> {
+  const { data: source, error } = await supabaseAdmin
+    .from("coach_saved_sessions")
+    .select("*, coach_saved_exercises(*)")
+    .eq("id", sessionId)
+    .eq("coach_id", coachId)
+    .is("saved_plan_id", null)
+    .single();
+  if (error || !source) throw new Error("Session not found");
+
+  const { data: nameRows, error: namesError } = await supabaseAdmin
+    .from("coach_saved_sessions")
+    .select("name")
+    .eq("coach_id", coachId)
+    .is("saved_plan_id", null);
+  if (namesError) {
+    throw new Error(`Failed to check session names: ${namesError.message}`);
+  }
+  const taken = new Set(
+    (nameRows ?? []).map((r) => r.name.trim().toLowerCase())
+  );
+  const base = source.name.length > 88 ? source.name.slice(0, 88) : source.name;
+  let name = `${base} (copy)`;
+  for (let n = 2; taken.has(name.trim().toLowerCase()); n++) {
+    name = `${base} (copy ${n})`;
+  }
+
+  const { data: newSession, error: insertError } = await supabaseAdmin
+    .from("coach_saved_sessions")
+    .insert({
+      coach_id: coachId,
+      saved_plan_id: null,
+      name,
+      focus: source.focus,
+      order_index: 0,
+      // Normalize placement indices — standalone sessions aren't slotted, and
+      // a stale week_index would leak into plans on insert (TECHNICAL-DEBT:
+      // placeSessionOnCalendar copies week_index verbatim).
+      week_index: 0,
+      is_rest: false,
+      estimated_duration_minutes: source.estimated_duration_minutes,
+      calorie_surplus_percentage: source.calorie_surplus_percentage,
+      notes: source.notes,
+      session_type: source.session_type,
+    })
+    .select("id")
+    .single();
+  if (insertError || !newSession) {
+    throw new Error(
+      `Failed to duplicate session: ${insertError?.message ?? "no row"}`
+    );
+  }
+
+  const exercises = (source.coach_saved_exercises ?? []) as CoachSavedExerciseRow[];
+  if (exercises.length > 0) {
+    const { error: exError } = await supabaseAdmin
+      .from("coach_saved_exercises")
+      .insert(copySavedExerciseRows(exercises, newSession.id));
+    if (exError) {
+      // Remove the half-copied session so the library never shows a shell.
+      await supabaseAdmin
+        .from("coach_saved_sessions")
+        .delete()
+        .eq("id", newSession.id)
+        .eq("coach_id", coachId);
+      throw new Error(`Failed to copy exercises: ${exError.message}`);
+    }
+  }
+
+  return newSession.id;
 }
 
 // --- Session CRUD ---

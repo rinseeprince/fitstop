@@ -1,16 +1,46 @@
 "use client";
 
-import { Dumbbell } from "lucide-react";
+import { Suspense, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useStandaloneSessions } from "@/hooks/use-standalone-sessions";
+import { SessionsStatBand } from "@/components/programs/sessions-stat-band";
+import { SessionsTable } from "@/components/programs/sessions-table";
+import { NewSessionDialog } from "@/components/programs/new-session-dialog";
 
-// Placeholder until the Sessions library table lands (redesign R3).
-// Contract: the section topbar's "New session" action navigates here with
-// ?new=1 — once the table exists this page opens its create flow on that
-// param and clears it with router.replace.
-export default function SessionsLibraryPage() {
+// The standalone-session library. The section topbar's "New session" action
+// lands here with ?new=1 — we open the create dialog and clear the param
+// (router.replace, same URL-state pattern as /clients/[id]?tab=).
+function SessionsLibrary() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const { mutate } = useStandaloneSessions();
+  const [createOpen, setCreateOpen] = useState(false);
+
+  useEffect(() => {
+    if (searchParams.get("new") === "1") {
+      setCreateOpen(true);
+      router.replace("/dashboard/programs/sessions", { scroll: false });
+    }
+  }, [searchParams, router]);
+
   return (
-    <div className="py-16 text-center text-[#5a7d82]">
-      <Dumbbell className="mx-auto mb-2 h-8 w-8 opacity-50" strokeWidth={1.5} />
-      <p className="text-sm">Session library coming soon</p>
+    <div className="space-y-5">
+      <SessionsStatBand />
+      <SessionsTable />
+      <NewSessionDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        onCreated={() => void mutate()}
+      />
     </div>
+  );
+}
+
+export default function SessionsLibraryPage() {
+  // useSearchParams needs a Suspense boundary on statically-rendered routes.
+  return (
+    <Suspense fallback={null}>
+      <SessionsLibrary />
+    </Suspense>
   );
 }
