@@ -10,7 +10,7 @@
 // their card text. Fixed width = deterministically narrow cards everywhere;
 // the grid simply ends early on very wide windows.
 export const GRID_COLS =
-  "grid grid-cols-[220px_repeat(7,132px)]";
+  "grid grid-cols-[220px_repeat(7,152px)]";
 
 // Day-card treatments (docs/newdesignsystem.md "training vs rest day cards").
 export const TRAINING_CARD_BORDER = "border border-[rgba(13,148,136,0.08)]";
