@@ -1,5 +1,8 @@
 import type { z } from "zod";
-import type { overwriteSavedPlanSchema } from "@/lib/validations/training";
+import type {
+  createStandaloneSessionSchema,
+  overwriteSavedPlanSchema,
+} from "@/lib/validations/training";
 import type { SavedPlan, SavedSession, SavedExercise } from "@/types/training";
 import {
   DAYS_PER_WEEK,
@@ -57,6 +60,16 @@ function sessionToDraft(s: SavedSession): SessionDraft {
     sessionType: s.sessionType,
     exercises: s.exercises.map(exerciseToDraft),
   };
+}
+
+/**
+ * Clone a standalone library session into a placeable SessionDraft — fresh
+ * uids, `exerciseId` preserved, setSpecs normalized ([] → null), videoUrl
+ * carried. Pure clone-by-value: the drawer/popover insert never references
+ * the library row, so later library edits can't touch placed programs.
+ */
+export function savedSessionToDraft(s: SavedSession): SessionDraft {
+  return sessionToDraft(s);
 }
 
 function slotFromSession(
@@ -158,6 +171,53 @@ export function savedPlanToDraft(plan: SavedPlan): ProgramDraft {
   };
 }
 
+// One exercise-input mapping shared by the overwrite body and the standalone
+// create payload — the two write paths must never drift (a field missed on
+// one side silently drops per-set data on that path).
+function exerciseDraftToInput(e: ExerciseDraft, i: number) {
+  return {
+    name: e.name,
+    exerciseId: e.exerciseId,
+    orderIndex: i,
+    sets: Math.min(20, Math.max(1, Math.round(e.sets))),
+    repsMin: e.repsMin,
+    repsMax: e.repsMax,
+    repsTarget: e.repsTarget,
+    rpeTarget: e.rpeTarget,
+    percentage1rm: e.percentage1rm,
+    tempo: e.tempo,
+    restSeconds: e.restSeconds,
+    notes: e.notes,
+    supersetGroup: e.supersetGroup,
+    isWarmup: e.isWarmup,
+    // [] must never reach the API — it fails the ≥1-non-warmup refine and
+    // 400s the whole save. normalizeDraft reverts [] to null upstream;
+    // this is the last-line belt.
+    setSpecs: e.setSpecs && e.setSpecs.length > 0 ? e.setSpecs : null,
+    videoUrl: e.videoUrl?.trim() ? e.videoUrl.trim() : null,
+  };
+}
+
+export type StandaloneSessionPayload = z.infer<typeof createStandaloneSessionSchema>;
+
+/**
+ * Serialize one SessionDraft into the standalone-session create body (the
+ * create-blank slide-over's "Save session"). Same exercise mapping as the
+ * overwrite path, so per-set specs and video URLs survive verbatim.
+ */
+export function sessionDraftToStandalonePayload(
+  session: SessionDraft,
+): StandaloneSessionPayload {
+  return {
+    name: session.name.slice(0, 100),
+    focus: session.focus,
+    estimatedDurationMinutes: session.estimatedDurationMinutes,
+    calorieSurplusPercentage: session.calorieSurplusPercentage,
+    notes: session.notes,
+    exercises: session.exercises.map(exerciseDraftToInput),
+  };
+}
+
 /**
  * Serialize the whole draft tree into the overwrite body. Every slot becomes a
  * real session row — rest rows included (the placement date-walk needs all 7
@@ -177,27 +237,7 @@ export function draftToOverwriteBody(draft: ProgramDraft): ProgramOverwriteBody 
       calorieSurplusPercentage: slot.session?.calorieSurplusPercentage ?? null,
       notes: slot.session?.notes ?? null,
       sessionType: slot.session?.sessionType ?? "training",
-      exercises: (slot.session?.exercises ?? []).map((e, i) => ({
-        name: e.name,
-        exerciseId: e.exerciseId,
-        orderIndex: i,
-        sets: Math.min(20, Math.max(1, Math.round(e.sets))),
-        repsMin: e.repsMin,
-        repsMax: e.repsMax,
-        repsTarget: e.repsTarget,
-        rpeTarget: e.rpeTarget,
-        percentage1rm: e.percentage1rm,
-        tempo: e.tempo,
-        restSeconds: e.restSeconds,
-        notes: e.notes,
-        supersetGroup: e.supersetGroup,
-        isWarmup: e.isWarmup,
-        // [] must never reach the API — it fails the ≥1-non-warmup refine and
-        // 400s the whole save. normalizeDraft reverts [] to null upstream;
-        // this is the last-line belt.
-        setSpecs: e.setSpecs && e.setSpecs.length > 0 ? e.setSpecs : null,
-        videoUrl: e.videoUrl?.trim() ? e.videoUrl.trim() : null,
-      })),
+      exercises: (slot.session?.exercises ?? []).map(exerciseDraftToInput),
     })),
   );
   if (sessions.length === 0) {

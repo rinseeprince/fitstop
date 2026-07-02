@@ -31,7 +31,7 @@ function renderRow(props: Partial<Parameters<typeof WeekRow>[0]> = {}) {
     onDuplicateWeek: vi.fn(),
     onDeleteWeek: vi.fn(),
     onOpenSession: vi.fn(),
-    onAddSession: vi.fn(),
+    onRequestAddSession: vi.fn(),
     onClearSlot: vi.fn(),
   };
   render(

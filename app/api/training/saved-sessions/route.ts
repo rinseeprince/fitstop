@@ -54,6 +54,9 @@ export async function POST(request: NextRequest) {
     const sessionId = await createStandaloneSession(coachId, {
       name: parsed.data.name,
       focus: parsed.data.focus,
+      estimatedDurationMinutes: parsed.data.estimatedDurationMinutes,
+      calorieSurplusPercentage: parsed.data.calorieSurplusPercentage,
+      notes: parsed.data.notes,
       exercises: parsed.data.exercises,
     });
 

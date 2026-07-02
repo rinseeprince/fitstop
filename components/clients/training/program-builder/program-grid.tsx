@@ -3,9 +3,9 @@
 import { Plus } from "lucide-react";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { cn } from "@/lib/utils";
-import type { ProgramDraft } from "./program-builder-types";
+import type { DaySlotDraft, ProgramDraft } from "./program-builder-types";
 import { MAX_WEEKS } from "./program-builder-types";
-import { GRID_COLS, LABEL_CLASS, TEXT_SECONDARY } from "./builder-tokens";
+import { GRID_COLS, MONO_LABEL_CLASS, TEXT_SECONDARY } from "./builder-tokens";
 import { WeekRow } from "./week-row";
 
 // The weeks × Day 1–7 grid. ONE dual-axis scroll container: the day-header
@@ -22,7 +22,7 @@ type ProgramGridProps = {
   onDeleteWeek: (weekUid: string) => void;
   onAddWeek: () => void;
   onOpenSession: (sessionUid: string) => void;
-  onAddSession: (slotUid: string) => void;
+  onRequestAddSession: (slot: DaySlotDraft, anchorEl: HTMLElement) => void;
   onClearSlot: (slotUid: string) => void;
 };
 
@@ -35,7 +35,7 @@ export function ProgramGrid({
   onDeleteWeek,
   onAddWeek,
   onOpenSession,
-  onAddSession,
+  onRequestAddSession,
   onClearSlot,
 }: ProgramGridProps) {
   const canDelete = draft.weeks.length > 1;
@@ -48,7 +48,7 @@ export function ProgramGrid({
           <div className="sticky left-0 z-40 bg-[#f4f7f6] p-1" />
           {Array.from({ length: 7 }, (_, i) => (
             <div key={i} className="p-1">
-              <div className={cn("px-2 py-1.5", LABEL_CLASS)}>Day {i + 1}</div>
+              <div className={cn("px-2 py-1.5 text-center", MONO_LABEL_CLASS)}>Day {i + 1}</div>
             </div>
           ))}
         </div>
@@ -68,7 +68,7 @@ export function ProgramGrid({
               onDuplicateWeek={onDuplicateWeek}
               onDeleteWeek={onDeleteWeek}
               onOpenSession={onOpenSession}
-              onAddSession={onAddSession}
+              onRequestAddSession={onRequestAddSession}
               onClearSlot={onClearSlot}
             />
           ))}

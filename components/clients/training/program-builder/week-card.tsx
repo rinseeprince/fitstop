@@ -4,7 +4,7 @@ import { ChevronDown, Copy, GripVertical, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { WeekDraft } from "./program-builder-types";
 import {
-  LABEL_CLASS,
+  MONO_LABEL_CLASS,
   TEXT_MUTED,
   TEXT_PRIMARY,
   TEXT_SECONDARY,
@@ -83,11 +83,11 @@ export function WeekCard({
 
       {!collapsed && (
         <>
-          <div className={cn("mt-1", LABEL_CLASS)}>
+          <div className={cn("mt-1", MONO_LABEL_CLASS)}>
             {trainingCount} {trainingCount === 1 ? "session" : "sessions"} · {restCount} rest
           </div>
           {mode === "edit" && (
-            <div className="mt-auto flex items-center gap-1 pt-2">
+            <div className="mt-auto flex items-center gap-1 border-t border-[rgba(13,148,136,0.06)] pt-2">
               <button
                 type="button"
                 aria-label={`Duplicate week ${week.weekIndex + 1}`}

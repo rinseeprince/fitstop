@@ -92,22 +92,25 @@ export function deriveCycleInfoFromSessions(
 
 /**
  * Batch-insert exercises for a saved session. Resolves exercise names to
- * canonical exercise_ids via the caller-supplied lookup map.
+ * canonical exercise_ids via the caller-supplied lookup map; an explicit
+ * per-exercise `exerciseId` (already-resolved prescription, e.g. the
+ * builder's create-blank payload) wins over the name lookup.
  */
 export async function insertSavedExercises(
   sessionId: string,
   exercises: Array<{
     name: string;
+    exerciseId?: string | null;
     sets: number;
-    repsMin?: number;
-    repsMax?: number;
-    repsTarget?: string;
-    rpeTarget?: number;
-    percentage1rm?: number;
-    tempo?: string;
-    restSeconds?: number;
-    notes?: string;
-    supersetGroup?: string;
+    repsMin?: number | null;
+    repsMax?: number | null;
+    repsTarget?: string | null;
+    rpeTarget?: number | null;
+    percentage1rm?: number | null;
+    tempo?: string | null;
+    restSeconds?: number | null;
+    notes?: string | null;
+    supersetGroup?: string | null;
     isWarmup?: boolean;
     setSpecs?: SetSpec[] | null;
     videoUrl?: string | null;
@@ -119,7 +122,8 @@ export async function insertSavedExercises(
     const w = projectExerciseCompact(e);
     return {
       saved_session_id: sessionId,
-      exercise_id: exerciseIdMap.get(e.name.trim().toLowerCase()) ?? null,
+      exercise_id:
+        e.exerciseId ?? exerciseIdMap.get(e.name.trim().toLowerCase()) ?? null,
       name: e.name,
       order_index: i,
       sets: w.sets,

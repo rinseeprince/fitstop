@@ -161,6 +161,54 @@ describe("useProgramBuilderState — day slots", () => {
   });
 });
 
+describe("useProgramBuilderState — placeSession (library insert)", () => {
+  const makeLibraryClone = (): SessionDraft => ({
+    uid: "sess-lib",
+    name: "Push Day A",
+    focus: "push",
+    estimatedDurationMinutes: 45,
+    calorieSurplusPercentage: 10,
+    notes: null,
+    sessionType: "training",
+    exercises: [],
+  });
+
+  it("inserts a pre-built SessionDraft into an empty slot and dirties", () => {
+    const { result } = setup(1);
+    const slot = result.current.draft!.weeks[0].days[2];
+    act(() => result.current.placeSession(slot.uid, makeLibraryClone()));
+
+    const placed = sessionAt(result.current.draft!, 0, 2);
+    expect(placed?.name).toBe("Push Day A");
+    expect(placed?.calorieSurplusPercentage).toBe(10);
+    expect(result.current.draft!.weeks[0].days[2].isRest).toBe(false);
+    expect(result.current.isDirty).toBe(true);
+  });
+
+  it("occupied slots are a clean no-op (one session per day-cell)", () => {
+    const { result } = setup(1);
+    const slot = result.current.draft!.weeks[0].days[0];
+    act(() => result.current.addSessionToSlot(slot.uid));
+    const original = sessionAt(result.current.draft!, 0, 0);
+
+    // Reset dirty via a save snapshot so the no-op assertion is clean.
+    act(() => {
+      result.current.markSaved(result.current.getRevision());
+    });
+    act(() => result.current.placeSession(slot.uid, makeLibraryClone()));
+
+    expect(sessionAt(result.current.draft!, 0, 0)).toBe(original);
+    expect(result.current.isDirty).toBe(false);
+  });
+
+  it("addSessionToSlot accepts a custom name (create-blank flow)", () => {
+    const { result } = setup(1);
+    const slot = result.current.draft!.weeks[0].days[4];
+    act(() => result.current.addSessionToSlot(slot.uid, "Untitled session"));
+    expect(sessionAt(result.current.draft!, 0, 4)?.name).toBe("Untitled session");
+  });
+});
+
 describe("useProgramBuilderState — exercises + normalize", () => {
   const baseExercise = {
     exerciseId: null,

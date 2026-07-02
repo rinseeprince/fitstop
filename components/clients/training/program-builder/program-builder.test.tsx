@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { ProgramBuilder } from "./program-builder";
+import { ProgramDraftProvider } from "./program-draft-provider";
 import type { SavedPlan, SavedSession } from "@/types/training";
 
 // -- mocks --------------------------------------------------------------------
@@ -14,6 +15,15 @@ const mutateMock = vi.fn(() => Promise.resolve(undefined));
 let planFixture: SavedPlan | null = null;
 vi.mock("@/hooks/use-saved-plan", () => ({
   useSavedPlan: () => ({ plan: planFixture, isLoading: false, mutate: mutateMock }),
+}));
+
+// The session-library drawer + add-session popover read the standalone list.
+vi.mock("@/hooks/use-standalone-sessions", () => ({
+  useStandaloneSessions: () => ({
+    sessions: [],
+    isLoading: false,
+    mutate: vi.fn(),
+  }),
 }));
 
 type FetchCall = { url: string; method: string; body: unknown };
@@ -123,14 +133,22 @@ describe("ProgramBuilder save flow", () => {
   });
 
   it("opens a draft plan straight into edit mode with the seeded grid", () => {
-    render(<ProgramBuilder savedPlanId="plan-1" target="library" />);
+    render(
+      <ProgramDraftProvider savedPlanId="plan-1" target="library">
+        <ProgramBuilder />
+      </ProgramDraftProvider>,
+    );
     expect(screen.getByText("Save program")).toBeInTheDocument();
     expect(screen.getByText("Push")).toBeInTheDocument();
     expect(screen.getAllByText("Rest")).toHaveLength(6);
   });
 
   it("Save program posts the whole tree (surplus 0 preserved), PATCHes duration, promotes, then leaves edit mode", async () => {
-    render(<ProgramBuilder savedPlanId="plan-1" target="library" />);
+    render(
+      <ProgramDraftProvider savedPlanId="plan-1" target="library">
+        <ProgramBuilder />
+      </ProgramDraftProvider>,
+    );
     fireEvent.click(screen.getByText("Save program"));
 
     await waitFor(() => expect(screen.getByText("Edit")).toBeInTheDocument());
@@ -172,7 +190,11 @@ describe("ProgramBuilder save flow", () => {
 
   it("keeps edit mode when promote returns 409 (overwrite already committed)", async () => {
     promoteStatus = 409;
-    render(<ProgramBuilder savedPlanId="plan-1" target="library" />);
+    render(
+      <ProgramDraftProvider savedPlanId="plan-1" target="library">
+        <ProgramBuilder />
+      </ProgramDraftProvider>,
+    );
     fireEvent.click(screen.getByText("Save program"));
 
     await waitFor(() => expect(promoteCall()).toBeTruthy());
@@ -184,7 +206,11 @@ describe("ProgramBuilder save flow", () => {
 
   it("keeps the local draft and edit mode when the overwrite 500s", async () => {
     overwriteStatus = 500;
-    render(<ProgramBuilder savedPlanId="plan-1" target="library" />);
+    render(
+      <ProgramDraftProvider savedPlanId="plan-1" target="library">
+        <ProgramBuilder />
+      </ProgramDraftProvider>,
+    );
     fireEvent.click(screen.getByText("Save program"));
 
     await waitFor(() => expect(overwriteCall()).toBeTruthy());
@@ -196,7 +222,11 @@ describe("ProgramBuilder save flow", () => {
 
   it("saved plans open read-only; Edit enables authoring", () => {
     planFixture = { ...makeDraftPlan(), status: "saved" };
-    render(<ProgramBuilder savedPlanId="plan-1" target="library" />);
+    render(
+      <ProgramDraftProvider savedPlanId="plan-1" target="library">
+        <ProgramBuilder />
+      </ProgramDraftProvider>,
+    );
     expect(screen.getByText("Edit")).toBeInTheDocument();
     expect(screen.queryByText("Save program")).toBeNull();
     expect(screen.queryByText(/Add session/)).toBeNull();

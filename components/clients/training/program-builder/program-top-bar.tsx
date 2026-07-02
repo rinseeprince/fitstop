@@ -11,20 +11,27 @@ import {
   LABEL_CLASS,
   TEXT_PRIMARY,
   TEXT_SECONDARY,
+  TRAINING_CARD_BORDER,
 } from "./builder-tokens";
 
-// Builder top bar: back, inline-editable program name, auto-derived meta, the
-// program-level default surplus %, and the mode actions (Edit / Save program /
-// Discard draft). No Preview button — leaving edit mode IS the preview. No
-// assign-to-client here (assignment lives in the client's planner, Phase 5).
+// Builder header card (mockup `bheader`): back, inline-editable program name,
+// auto-derived meta, the program-level default surplus %, delete-program, and
+// the mode actions (Edit / Save program / Discard). The view⇄edit machine is
+// kept deliberately (the mockup is always-edit): leaving edit mode IS the
+// preview, and Save's dirty tracking hangs off it. No assign-to-client here
+// (assignment lives in the client's planner, Phase 5).
 type ProgramTopBarProps = {
   draft: ProgramDraft;
   mode: "view" | "edit";
   isSaving: boolean;
+  isDirty: boolean;
   onBack: () => void;
   onEdit: () => void;
   onSave: () => void;
+  // Drafts: delete the draft plan. Saved plans: re-seed from server.
   onDiscardDraft: () => void;
+  onDiscardChanges: () => void;
+  onDeleteProgram: () => void;
   onRename: (name: string) => void;
   onDefaultSurplusChange: (pct: number | null) => void;
 };
@@ -33,10 +40,13 @@ export function ProgramTopBar({
   draft,
   mode,
   isSaving,
+  isDirty,
   onBack,
   onEdit,
   onSave,
   onDiscardDraft,
+  onDiscardChanges,
+  onDeleteProgram,
   onRename,
   onDefaultSurplusChange,
 }: ProgramTopBarProps) {
@@ -44,10 +54,16 @@ export function ProgramTopBar({
     (sum, w) => sum + w.days.filter((d) => !d.isRest).length,
     0,
   );
-  const perWeek = Math.round((trainingCount / draft.weeks.length) * 10) / 10;
+  // Mockup formula: always one decimal ("1.5 sessions/week").
+  const perWeek = (trainingCount / draft.weeks.length).toFixed(1);
 
   return (
-    <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-[6px] bg-white p-4">
+    <div
+      className={cn(
+        "mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-[6px] bg-white p-4",
+        TRAINING_CARD_BORDER,
+      )}
+    >
       <button
         type="button"
         aria-label="Back to programs"
@@ -90,7 +106,7 @@ export function ProgramTopBar({
           </span>
           <span>·</span>
           <span>
-            <span className="font-mono">{perWeek}</span> sessions/week
+            <span className="font-mono-display">{perWeek}</span> sessions/week
           </span>
           {draft.status === "draft" && (
             <Badge
@@ -137,6 +153,19 @@ export function ProgramTopBar({
           <span className="normal-case">%</span>
         </label>
 
+        <div className="h-6 w-px bg-[rgba(13,148,136,0.08)]" />
+
+        <button
+          type="button"
+          aria-label="Delete program"
+          title="Delete program"
+          disabled={isSaving}
+          className="rounded-[6px] p-2 text-[#c06060] transition-colors hover:bg-[rgba(192,96,96,0.08)] disabled:opacity-50"
+          onClick={onDeleteProgram}
+        >
+          <Trash2 className="h-4 w-4" strokeWidth={1.5} />
+        </button>
+
         {mode === "view" ? (
           <Button
             variant="outline"
@@ -147,14 +176,23 @@ export function ProgramTopBar({
           </Button>
         ) : (
           <>
-            {draft.status === "draft" && (
+            {draft.status === "draft" ? (
               <Button
                 variant="ghost"
                 className="text-destructive hover:bg-red-50 hover:text-destructive"
                 disabled={isSaving}
                 onClick={onDiscardDraft}
               >
-                <Trash2 className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.5} /> Discard
+                Discard
+              </Button>
+            ) : (
+              <Button
+                variant="ghost"
+                className="text-destructive hover:bg-red-50 hover:text-destructive"
+                disabled={isSaving || !isDirty}
+                onClick={onDiscardChanges}
+              >
+                Discard changes
               </Button>
             )}
             <Button

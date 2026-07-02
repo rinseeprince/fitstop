@@ -25,7 +25,7 @@ function makeSlot(overrides: Partial<DaySlotDraft> = {}): DaySlotDraft {
 function renderCell(props: Partial<Parameters<typeof DayCell>[0]> = {}) {
   const handlers = {
     onOpenSession: vi.fn(),
-    onAddSession: vi.fn(),
+    onRequestAddSession: vi.fn(),
     onClearSlot: vi.fn(),
   };
   render(
@@ -45,11 +45,14 @@ function renderCell(props: Partial<Parameters<typeof DayCell>[0]> = {}) {
 describe("DayCell — rest state (empty === rest)", () => {
   beforeEach(() => cleanup());
 
-  it("renders the rest marker with an Add session affordance in edit mode", () => {
+  it("requests the add-session popover with the slot + anchor on click", () => {
     const handlers = renderCell();
     expect(screen.getByText("Rest")).toBeInTheDocument();
     fireEvent.click(screen.getByText("Rest"));
-    expect(handlers.onAddSession).toHaveBeenCalledWith("slot-1");
+    expect(handlers.onRequestAddSession).toHaveBeenCalledTimes(1);
+    const [slot, anchor] = handlers.onRequestAddSession.mock.calls[0];
+    expect(slot.uid).toBe("slot-1");
+    expect(anchor).toBeInstanceOf(HTMLElement);
   });
 
   it("view mode shows the rest marker but no add affordance", () => {
@@ -57,7 +60,7 @@ describe("DayCell — rest state (empty === rest)", () => {
     expect(screen.getByText("Rest")).toBeInTheDocument();
     expect(screen.queryByText(/Add session/)).toBeNull();
     fireEvent.click(screen.getByText("Rest"));
-    expect(handlers.onAddSession).not.toHaveBeenCalled();
+    expect(handlers.onRequestAddSession).not.toHaveBeenCalled();
   });
 });
 

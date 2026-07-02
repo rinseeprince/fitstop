@@ -6,36 +6,41 @@ import { cn } from "@/lib/utils";
 import type { DaySlotDraft } from "./program-builder-types";
 import type { SessionDragData, SlotDropData } from "./use-program-dnd";
 import {
-  LABEL_CLASS,
+  CHIP_NEUTRAL_CLASS,
+  MONO_LABEL_CLASS,
   REST_CARD_BORDER,
   TEXT_MUTED,
   TEXT_PRIMARY,
-  TEXT_SECONDARY,
   TRAINING_CARD_BORDER,
 } from "./builder-tokens";
 
 // One positional day cell. Two states only (empty === rest): a session card
-// or a rest marker with an add affordance. The cell is ALWAYS a droppable
-// (sessions can land on rest or swap with an occupied cell); only the session
-// card is draggable, grip-only so plain clicks still open the editor.
+// or a rest marker whose hover swaps to "Add session" (opens the add-session
+// popover anchored to the cell). The cell is ALWAYS a droppable (sessions can
+// land on rest or swap with an occupied cell; library cards target rest cells
+// only via the occupied flag); only the session card is draggable, grip-only
+// so plain clicks still open the editor.
 type DayCellProps = {
   slot: DaySlotDraft;
   mode: "view" | "edit";
   collapsed: boolean;
   onOpenSession: (sessionUid: string) => void;
-  onAddSession: (slotUid: string) => void;
+  onRequestAddSession: (slot: DaySlotDraft, anchorEl: HTMLElement) => void;
   onClearSlot: (slotUid: string) => void;
 };
 
 // The cell surfaces are divs (they contain buttons, so they can't be buttons
 // themselves) — this makes them keyboard-operable like every other affordance.
-const pressable = (action: () => void) => ({
+const pressable = (action: (target: HTMLElement) => void) => ({
   role: "button" as const,
   tabIndex: 0,
   onKeyDown: (e: React.KeyboardEvent) => {
+    // Bubbled keydowns from descendant buttons (grip, clear-X) must not
+    // activate the card — they have their own native Enter/Space handling.
+    if (e.target !== e.currentTarget) return;
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
-      action();
+      action(e.currentTarget as HTMLElement);
     }
   },
 });
@@ -45,13 +50,17 @@ export function DayCell({
   mode,
   collapsed,
   onOpenSession,
-  onAddSession,
+  onRequestAddSession,
   onClearSlot,
 }: DayCellProps) {
   const editable = mode === "edit";
   const session = slot.session;
 
-  const dropData: SlotDropData = { type: "day-slot", slotUid: slot.uid };
+  const dropData: SlotDropData = {
+    type: "day-slot",
+    slotUid: slot.uid,
+    occupied: session != null,
+  };
   const { setNodeRef: setDropRef, isOver } = useDroppable({
     id: slot.uid,
     data: dropData,
@@ -86,25 +95,29 @@ export function DayCell({
             REST_CARD_BORDER,
             heightClass,
             isOver && "border-[#0d9488] bg-[rgba(13,148,136,0.05)]",
-            editable && "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0d9488]/35",
+            editable && "cursor-pointer hover:border-[rgba(13,148,136,0.25)] hover:bg-[rgba(13,148,136,0.03)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0d9488]/35",
           )}
           aria-label={editable ? `Add session to day ${slot.orderIndex + 1}` : undefined}
-          onClick={editable ? () => onAddSession(slot.uid) : undefined}
-          {...(editable ? pressable(() => onAddSession(slot.uid)) : {})}
+          onClick={
+            editable
+              ? (e) => onRequestAddSession(slot, e.currentTarget)
+              : undefined
+          }
+          {...(editable
+            ? pressable((target) => onRequestAddSession(slot, target))
+            : {})}
         >
           {collapsed ? (
             <span className={cn("text-xs", TEXT_MUTED)}>—</span>
           ) : (
             <>
-              <span className={LABEL_CLASS}>Rest</span>
+              {/* Hover swaps the rest label for the add affordance (mockup). */}
+              <span className={cn(MONO_LABEL_CLASS, editable && "group-hover/rest:hidden")}>
+                Rest
+              </span>
               {editable && (
-                <span
-                  className={cn(
-                    "mt-1 flex items-center gap-1 text-[11px] opacity-0 transition-opacity group-hover/rest:opacity-100",
-                    TEXT_SECONDARY,
-                  )}
-                >
-                  <Plus className="h-3 w-3" strokeWidth={1.5} /> Add session
+                <span className="hidden items-center gap-1 text-[11px] font-semibold text-[#0d9488] group-hover/rest:flex">
+                  <Plus className="h-3 w-3" strokeWidth={2} /> Add session
                 </span>
               )}
             </>
@@ -140,7 +153,7 @@ export function DayCell({
         ) : (
           <>
             <div className="flex items-start justify-between gap-1">
-              <span className={cn("line-clamp-2 text-xs font-semibold", TEXT_PRIMARY)}>
+              <span className={cn("line-clamp-2 pr-1 text-xs font-semibold", TEXT_PRIMARY)}>
                 {session.name}
               </span>
               {editable && (
@@ -148,7 +161,7 @@ export function DayCell({
                   <button
                     type="button"
                     aria-label="Clear session (back to rest)"
-                    className={cn("rounded p-1 hover:bg-[rgba(13,148,136,0.08)]", TEXT_MUTED)}
+                    className={cn("rounded p-1 hover:bg-[rgba(192,96,96,0.08)] hover:text-[#c06060]", TEXT_MUTED)}
                     onClick={(e) => {
                       e.stopPropagation();
                       onClearSlot(slot.uid);
@@ -170,15 +183,19 @@ export function DayCell({
               )}
             </div>
             <div className="mt-auto flex items-center gap-1.5 pt-2">
-              <span className="rounded-[3px] bg-[rgba(13,148,136,0.08)] px-1 py-px text-[9px] font-semibold uppercase tracking-[0.06em] text-[#0d9488]">
-                Train
-              </span>
-              <span className={cn("text-[10px]", TEXT_SECONDARY)}>
+              {session.focus && (
+                <span className={cn("max-w-[80px] truncate", CHIP_NEUTRAL_CLASS)}>
+                  {session.focus}
+                </span>
+              )}
+              <span className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal")}>
                 {session.exercises.length}{" "}
                 {session.exercises.length === 1 ? "exercise" : "exercises"}
+                {session.estimatedDurationMinutes != null &&
+                  ` · ${session.estimatedDurationMinutes}m`}
               </span>
               {session.calorieSurplusPercentage != null && (
-                <span className="ml-auto font-mono text-[10px] text-[#0d9488]">
+                <span className="ml-auto font-mono-display text-[10px] text-[#0d9488]">
                   +{session.calorieSurplusPercentage}%
                 </span>
               )}

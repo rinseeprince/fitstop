@@ -230,17 +230,18 @@ export const createSavedPlanSchema = z.object({
   })),
 });
 
+// Full-fat standalone-session create: the builder's create-blank slide-over
+// persists an authored session here, so the exercise shape must match the
+// overwrite input (setSpecs, videoUrl, exerciseId, ...) — a narrower schema
+// would silently strip per-set data. orderIndex is optional (the service
+// assigns array order); the legacy minimal shape ({name, sets}) stays valid.
 export const createStandaloneSessionSchema = z.object({
   name: z.string().min(1).max(100),
-  focus: z.string().max(200).optional(),
-  exercises: z.array(z.object({
-    name: z.string().min(1).max(200),
-    sets: z.number().int().min(1).max(20),
-    repsTarget: z.string().max(20).optional(),
-    rpeTarget: z.number().min(0).max(10).optional(),
-    restSeconds: z.number().int().min(0).max(600).optional(),
-    notes: z.string().max(500).optional(),
-  })),
+  focus: z.string().max(200).nullish(),
+  estimatedDurationMinutes: z.number().int().min(0).max(480).nullish(),
+  calorieSurplusPercentage: z.number().min(0).max(100).nullish(),
+  notes: z.string().max(1000).nullish(),
+  exercises: z.array(savedExerciseInputSchema.partial({ orderIndex: true })),
 });
 
 // Catalog exercise edit — coach-owned rows only (the route/service enforce

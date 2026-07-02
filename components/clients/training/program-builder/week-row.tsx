@@ -3,7 +3,7 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { cn } from "@/lib/utils";
-import type { WeekDraft } from "./program-builder-types";
+import type { DaySlotDraft, WeekDraft } from "./program-builder-types";
 import type { WeekDragData } from "./use-program-dnd";
 import { GRID_COLS } from "./builder-tokens";
 import { WeekCard } from "./week-card";
@@ -21,7 +21,7 @@ type WeekRowProps = {
   onDuplicateWeek: (weekUid: string) => void;
   onDeleteWeek: (weekUid: string) => void;
   onOpenSession: (sessionUid: string) => void;
-  onAddSession: (slotUid: string) => void;
+  onRequestAddSession: (slot: DaySlotDraft, anchorEl: HTMLElement) => void;
   onClearSlot: (slotUid: string) => void;
 };
 
@@ -34,7 +34,7 @@ export function WeekRow({
   onDuplicateWeek,
   onDeleteWeek,
   onOpenSession,
-  onAddSession,
+  onRequestAddSession,
   onClearSlot,
 }: WeekRowProps) {
   const dragData: WeekDragData = { type: "week", weekUid: week.uid };
@@ -78,7 +78,7 @@ export function WeekRow({
           mode={mode}
           collapsed={collapsed}
           onOpenSession={onOpenSession}
-          onAddSession={onAddSession}
+          onRequestAddSession={onRequestAddSession}
           onClearSlot={onClearSlot}
         />
       ))}

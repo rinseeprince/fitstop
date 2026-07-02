@@ -1,0 +1,89 @@
+"use client";
+
+import { Moon } from "lucide-react";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import { Button } from "@/components/ui/button";
+import type { SessionDraft } from "./program-builder-types";
+import { SessionEditorBody, type SessionEditorBodyProps } from "./session-editor-body";
+
+// Click-to-edit chrome for one day cell's session: the editor body in a
+// right slide-over (replaces the old centered Dialog — one editor surface,
+// same treatment as the routed create-blank slide-over). Write-through: the
+// only footer action is Done (+ Make-rest in edit mode); "Save program" on
+// the page is the commit point.
+type SessionEditorSheetProps = Omit<SessionEditorBodyProps, "session"> & {
+  session: SessionDraft | null; // null = closed
+  onClose: () => void;
+  onClearToRest: (sessionUid: string) => void;
+};
+
+export function SessionEditorSheet({
+  session,
+  mode,
+  onClose,
+  onClearToRest,
+  ...bodyProps
+}: SessionEditorSheetProps) {
+  const editable = mode === "edit";
+
+  return (
+    <Sheet
+      open={session != null}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <SheetContent
+        side="right"
+        className="flex w-full flex-col gap-0 bg-white p-0 sm:w-[600px] sm:max-w-[600px]"
+      >
+        {session && (
+          <>
+            <SheetHeader className="border-b border-[rgba(13,148,136,0.08)] px-5 py-3.5">
+              <SheetTitle className="pr-8 text-[15px] font-semibold text-[#0c1a1e]">
+                {editable ? "Edit session" : session.name}
+              </SheetTitle>
+              <SheetDescription className="sr-only">
+                Session editor for {session.name}
+              </SheetDescription>
+            </SheetHeader>
+
+            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-5 py-4">
+              <SessionEditorBody session={session} mode={mode} {...bodyProps} />
+            </div>
+
+            <div className="flex items-center justify-between gap-2 border-t border-[rgba(13,148,136,0.08)] px-5 py-3">
+              {editable ? (
+                <Button
+                  variant="ghost"
+                  className="text-destructive hover:bg-red-50 hover:text-destructive"
+                  onClick={() => {
+                    onClearToRest(session.uid);
+                    onClose();
+                  }}
+                >
+                  <Moon className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.5} />
+                  Make this a rest day
+                </Button>
+              ) : (
+                <span />
+              )}
+              <Button
+                className="bg-[#0d9488] text-white hover:bg-[#0b7f75]"
+                onClick={onClose}
+              >
+                Done
+              </Button>
+            </div>
+          </>
+        )}
+      </SheetContent>
+    </Sheet>
+  );
+}

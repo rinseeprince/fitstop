@@ -23,18 +23,61 @@ export async function createStandaloneSession(
   coachId: string,
   data: {
     name: string;
-    focus?: string;
+    focus?: string | null;
+    estimatedDurationMinutes?: number | null;
+    calorieSurplusPercentage?: number | null;
+    notes?: string | null;
     exercises: Array<{
       name: string;
+      exerciseId?: string | null;
       sets: number;
-      repsTarget?: string;
-      rpeTarget?: number;
-      restSeconds?: number;
-      notes?: string;
+      repsMin?: number | null;
+      repsMax?: number | null;
+      repsTarget?: string | null;
+      rpeTarget?: number | null;
+      percentage1rm?: number | null;
+      tempo?: string | null;
+      restSeconds?: number | null;
+      notes?: string | null;
+      supersetGroup?: string | null;
+      isWarmup?: boolean;
+      setSpecs?: SetSpec[] | null;
+      videoUrl?: string | null;
     }>;
   }
 ): Promise<string> {
-  const exerciseNames = data.exercises.map((e) => e.name);
+  // Client-supplied exerciseIds are validated against the coach's visible
+  // catalog (own + global) — a foreign coach's id (or a stale one) is nulled
+  // out and falls back to name resolution rather than linking cross-tenant.
+  const explicitIds = [
+    ...new Set(
+      data.exercises
+        .map((e) => e.exerciseId)
+        .filter((id): id is string => Boolean(id))
+    ),
+  ];
+  let visibleIds = new Set<string>();
+  if (explicitIds.length > 0) {
+    const { data: rows, error: idError } = await supabaseAdmin
+      .from("exercises")
+      .select("id")
+      .in("id", explicitIds)
+      .or(`coach_id.eq.${coachId},coach_id.is.null`);
+    if (idError) {
+      throw new Error(`Failed to validate exercise ids: ${idError.message}`);
+    }
+    visibleIds = new Set((rows ?? []).map((r) => r.id));
+  }
+  const exercises = data.exercises.map((e) =>
+    e.exerciseId && !visibleIds.has(e.exerciseId)
+      ? { ...e, exerciseId: null }
+      : e
+  );
+
+  // Only unresolved names need the lookup; explicit exerciseIds win inside
+  // insertSavedExercises (never create catalog rows for already-linked
+  // prescriptions).
+  const exerciseNames = exercises.filter((e) => !e.exerciseId).map((e) => e.name);
   const exerciseIdMap = await resolveExercises(exerciseNames, coachId);
 
   const { data: session, error } = await supabaseAdmin
@@ -45,14 +88,29 @@ export async function createStandaloneSession(
       name: data.name,
       focus: data.focus ?? null,
       order_index: 0,
+      week_index: 0,
       is_rest: false,
+      estimated_duration_minutes: data.estimatedDurationMinutes ?? null,
+      calorie_surplus_percentage: data.calorieSurplusPercentage ?? null,
+      notes: data.notes ?? null,
       session_type: "training",
     })
     .select("id")
     .single();
   if (error || !session) throw new Error(`Failed to create standalone session: ${error?.message}`);
 
-  await insertSavedExercises(session.id, data.exercises, exerciseIdMap);
+  try {
+    await insertSavedExercises(session.id, exercises, exerciseIdMap);
+  } catch (insertError) {
+    // No shell sessions in the library: a failed exercise insert removes the
+    // just-created row before rethrowing (mirrors duplicateStandaloneSession).
+    await supabaseAdmin
+      .from("coach_saved_sessions")
+      .delete()
+      .eq("id", session.id)
+      .eq("coach_id", coachId);
+    throw insertError;
+  }
   return session.id;
 }
 

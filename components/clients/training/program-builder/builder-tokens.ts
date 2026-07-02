@@ -24,3 +24,12 @@ export const TEXT_MUTED = "text-[#93b0b4]";
 // 10-11px uppercase label treatment.
 export const LABEL_CLASS =
   "text-[10px] font-medium uppercase tracking-[0.06em] text-[#93b0b4]";
+
+// Mono variant — the mockup renders day headers, week microcopy, rest labels,
+// popover subtitles, and card metas in the numeral font.
+export const MONO_LABEL_CLASS =
+  "font-mono-display text-[10px] font-medium uppercase tracking-[0.08em] text-[#93b0b4]";
+
+// Neutral focus chip on session/library/popover cards.
+export const CHIP_NEUTRAL_CLASS =
+  "rounded-[4px] bg-[#f0f5f4] px-1.5 py-px text-[10px] font-medium text-[#5a7d82]";

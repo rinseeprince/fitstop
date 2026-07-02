@@ -37,6 +37,7 @@ export function useProgramBuilderState() {
   // mirror of the draft is safe and lets apply() detect no-ops outside the
   // React updater (updaters must stay side-effect free).
   const draftRef = useRef<ProgramDraft | null>(null);
+  const isDirtyRef = useRef(false);
   const revisionRef = useRef(0);
 
   const apply = useCallback(
@@ -49,6 +50,7 @@ export function useProgramBuilderState() {
       draftRef.current = next;
       revisionRef.current += 1;
       setDraft(next);
+      isDirtyRef.current = true;
       setIsDirty(true);
     },
     [],
@@ -58,7 +60,22 @@ export function useProgramBuilderState() {
     const normalized = normalizeDraft(next);
     draftRef.current = normalized;
     setDraft(normalized);
+    isDirtyRef.current = false;
     setIsDirty(false);
+  }, []);
+
+  /** Synchronous dirty read for flows that snapshot-and-restore (below). */
+  const getDirty = useCallback(() => isDirtyRef.current, []);
+
+  /**
+   * Restore a snapshotted dirty flag after a flow that fully unwound its own
+   * mutations (the create-blank slide-over adds a card then discards it on
+   * cancel — a previously-clean program must not stay flagged dirty). Leaves
+   * the revision counter alone, mirroring markSaved.
+   */
+  const restoreDirty = useCallback((dirty: boolean) => {
+    isDirtyRef.current = dirty;
+    setIsDirty(dirty);
   }, []);
 
   /** Snapshot the mutation counter right before a save request. */
@@ -75,7 +92,10 @@ export function useProgramBuilderState() {
       draftRef.current = { ...draftRef.current, status: "saved" };
       setDraft(draftRef.current);
     }
-    if (clean) setIsDirty(false);
+    if (clean) {
+      isDirtyRef.current = false;
+      setIsDirty(false);
+    }
     return clean;
   }, []);
 
@@ -142,7 +162,7 @@ export function useProgramBuilderState() {
 
   // --- day slots (slots never move; only their session payloads do) ---
   const addSessionToSlot = useCallback(
-    (slotUid: string) =>
+    (slotUid: string, name?: string) =>
       apply((d) => {
         let changed = false;
         const next = mapSlots(d, (slot) => {
@@ -150,7 +170,7 @@ export function useProgramBuilderState() {
           changed = true;
           const session: SessionDraft = {
             uid: newUid("sess"),
-            name: `Day ${slot.orderIndex + 1}`,
+            name: name ?? `Day ${slot.orderIndex + 1}`,
             focus: null,
             estimatedDurationMinutes: null,
             calorieSurplusPercentage: null,
@@ -158,6 +178,24 @@ export function useProgramBuilderState() {
             sessionType: "training",
             exercises: [],
           };
+          return { ...slot, session };
+        });
+        return changed ? next : d;
+      }),
+    [apply],
+  );
+
+  // Insert a pre-built SessionDraft (a clone of a library session) into an
+  // EMPTY slot. Occupied slots are a same-ref no-op — belt under the dnd
+  // collision filter that already keeps library drags off occupied cells
+  // (one session per day-cell is a locked invariant).
+  const placeSession = useCallback(
+    (slotUid: string, session: SessionDraft) =>
+      apply((d) => {
+        let changed = false;
+        const next = mapSlots(d, (slot) => {
+          if (slot.uid !== slotUid || slot.session) return slot;
+          changed = true;
           return { ...slot, session };
         });
         return changed ? next : d;
@@ -292,6 +330,8 @@ export function useProgramBuilderState() {
     isDirty,
     seed,
     getRevision,
+    getDirty,
+    restoreDirty,
     markSaved,
     setName,
     setDefaultSurplus,
@@ -300,6 +340,7 @@ export function useProgramBuilderState() {
     deleteWeek,
     reorderWeek,
     addSessionToSlot,
+    placeSession,
     clearSlot,
     moveSession,
     updateSession,

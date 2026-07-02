@@ -1,7 +1,12 @@
 import { describe, it, expect } from "vitest";
 import type { SavedPlan, SavedSession, SavedExercise } from "@/types/training";
 import type { SetSpec } from "@/utils/exercise-set-specs";
-import { savedPlanToDraft, draftToOverwriteBody } from "./program-builder-serialize";
+import {
+  savedPlanToDraft,
+  draftToOverwriteBody,
+  savedSessionToDraft,
+  sessionDraftToStandalonePayload,
+} from "./program-builder-serialize";
 import { makeRestWeek, type ProgramDraft } from "./program-builder-types";
 
 // =============================================================================
@@ -399,5 +404,71 @@ describe("draftToOverwriteBody guards", () => {
     const body = draftToOverwriteBody(draft);
     expect(body.sessions[0].exercises[0].sets).toBe(1);
     expect(body.sessions[0].exercises[1].sets).toBe(20);
+  });
+});
+
+describe("savedSessionToDraft (library insert clone)", () => {
+  it("clones with fresh uids, preserved exerciseId, normalized specs", () => {
+    const saved = makeSession({
+      name: "Push Day A",
+      focus: "push",
+      estimatedDurationMinutes: 45,
+      calorieSurplusPercentage: 12,
+      exercises: [
+        makeExercise({ id: "e-1", exerciseId: "cat-1", setSpecs: SPECS }),
+        makeExercise({ id: "e-2", exerciseId: null, setSpecs: [] }),
+      ],
+    });
+
+    const a = savedSessionToDraft(saved);
+    const b = savedSessionToDraft(saved);
+
+    expect(a.uid).not.toBe(b.uid); // fresh identity per clone
+    expect(a.name).toBe("Push Day A");
+    expect(a.calorieSurplusPercentage).toBe(12);
+    expect(a.exercises[0].exerciseId).toBe("cat-1");
+    expect(a.exercises[0].setSpecs).toEqual(SPECS);
+    // [] specs normalize to null (an empty array would 400 the save).
+    expect(a.exercises[1].setSpecs).toBeNull();
+    expect(a.exercises[0].uid).not.toBe(b.exercises[0].uid);
+  });
+});
+
+describe("sessionDraftToStandalonePayload (create-blank save)", () => {
+  it("serializes with the same exercise mapping as the overwrite path", () => {
+    const saved = makeSession({
+      name: "Untitled session",
+      focus: "legs",
+      estimatedDurationMinutes: 40,
+      calorieSurplusPercentage: 8,
+      exercises: [
+        makeExercise({
+          id: "e-1",
+          exerciseId: "cat-9",
+          setSpecs: SPECS,
+          videoUrl: "  https://example.com/squat.mp4  ",
+        }),
+      ],
+    });
+    const draft = savedSessionToDraft(saved);
+
+    const payload = sessionDraftToStandalonePayload(draft);
+
+    expect(payload.name).toBe("Untitled session");
+    expect(payload.focus).toBe("legs");
+    expect(payload.estimatedDurationMinutes).toBe(40);
+    expect(payload.calorieSurplusPercentage).toBe(8);
+    expect(payload.exercises).toHaveLength(1);
+    expect(payload.exercises[0]).toMatchObject({
+      exerciseId: "cat-9",
+      orderIndex: 0,
+      setSpecs: SPECS,
+      videoUrl: "https://example.com/squat.mp4", // trimmed
+    });
+  });
+
+  it("caps the name at the create schema's 100 chars", () => {
+    const draft = savedSessionToDraft(makeSession({ name: "x".repeat(150) }));
+    expect(sessionDraftToStandalonePayload(draft).name).toHaveLength(100);
   });
 });
