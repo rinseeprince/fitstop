@@ -6,13 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { ProgramDraft } from "./program-builder-types";
-import {
-  FOCUS_RING,
-  LABEL_CLASS,
-  TEXT_PRIMARY,
-  TEXT_SECONDARY,
-  TRAINING_CARD_BORDER,
-} from "./builder-tokens";
+import { FOCUS_RING } from "./builder-tokens";
 
 // Builder header card (mockup `bheader`): back, inline-editable program name,
 // auto-derived meta, the program-level default surplus %, delete-program, and
@@ -58,16 +52,13 @@ export function ProgramTopBar({
   const perWeek = (trainingCount / draft.weeks.length).toFixed(1);
 
   return (
-    <div
-      className={cn(
-        "mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-[6px] bg-white p-4",
-        TRAINING_CARD_BORDER,
-      )}
-    >
+    // Dark hero band — same treatment as the library pages' StatBand
+    // (bg #0f2027 + rgba-white mutes), toolbar layout unchanged.
+    <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-[6px] bg-[#0f2027] p-4">
       <button
         type="button"
         aria-label="Back to programs"
-        className="rounded p-1 text-[#93b0b4] transition-colors hover:text-[#5a7d82]"
+        className="rounded p-1 text-[rgba(255,255,255,0.45)] transition-colors hover:text-white"
         onClick={onBack}
       >
         <ArrowLeft className="h-5 w-5" strokeWidth={1.5} />
@@ -83,8 +74,7 @@ export function ProgramTopBar({
             maxLength={100}
             aria-label="Program name"
             className={cn(
-              "h-auto border-0 p-0 text-lg font-semibold shadow-none",
-              TEXT_PRIMARY,
+              "h-auto border-0 bg-transparent p-0 text-lg font-semibold text-white shadow-none placeholder:text-[rgba(255,255,255,0.35)]",
               FOCUS_RING,
             )}
             onBlur={(e) => {
@@ -96,11 +86,11 @@ export function ProgramTopBar({
             }}
           />
         ) : (
-          <h2 className={cn("truncate text-lg font-semibold", TEXT_PRIMARY)}>
+          <h2 className="truncate text-lg font-semibold text-white">
             {draft.name}
           </h2>
         )}
-        <div className={cn("mt-0.5 flex items-center gap-2 text-xs", TEXT_SECONDARY)}>
+        <div className="mt-0.5 flex items-center gap-2 text-xs text-[rgba(255,255,255,0.45)]">
           <span>
             {draft.weeks.length} {draft.weeks.length === 1 ? "week" : "weeks"}
           </span>
@@ -111,7 +101,7 @@ export function ProgramTopBar({
           {draft.status === "draft" && (
             <Badge
               variant="outline"
-              className="border-[rgba(13,148,136,0.12)] text-[10px] text-[#5a7d82]"
+              className="border-[rgba(255,255,255,0.2)] text-[10px] text-[rgba(255,255,255,0.6)]"
             >
               Draft
             </Badge>
@@ -120,7 +110,7 @@ export function ProgramTopBar({
       </div>
 
       <div className="flex items-center gap-2">
-        <label className={cn("flex items-center gap-1.5", LABEL_CLASS)}>
+        <label className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-[0.06em] text-[rgba(255,255,255,0.35)]">
           Default calorie surplus
           <Input
             key={`surplus-${draft.id}-${mode}`}
@@ -133,7 +123,7 @@ export function ProgramTopBar({
             defaultValue={draft.defaultSurplusPercentage ?? ""}
             aria-label="Default calorie surplus percent"
             className={cn(
-              "h-7 w-16 px-1.5 text-center font-mono text-xs",
+              "h-7 w-16 border-[rgba(255,255,255,0.15)] bg-[rgba(255,255,255,0.06)] px-1.5 text-center font-mono text-xs text-white",
               FOCUS_RING,
             )}
             onBlur={(e) => {
@@ -153,14 +143,14 @@ export function ProgramTopBar({
           <span className="normal-case">%</span>
         </label>
 
-        <div className="h-6 w-px bg-[rgba(13,148,136,0.08)]" />
+        <div className="h-6 w-px bg-[rgba(255,255,255,0.1)]" />
 
         <button
           type="button"
           aria-label="Delete program"
           title="Delete program"
           disabled={isSaving}
-          className="rounded-[6px] p-2 text-[#c06060] transition-colors hover:bg-[rgba(192,96,96,0.08)] disabled:opacity-50"
+          className="rounded-[6px] p-2 text-[#e07a7a] transition-colors hover:bg-[rgba(224,122,122,0.12)] disabled:opacity-50"
           onClick={onDeleteProgram}
         >
           <Trash2 className="h-4 w-4" strokeWidth={1.5} />
@@ -169,7 +159,7 @@ export function ProgramTopBar({
         {mode === "view" ? (
           <Button
             variant="outline"
-            className="border-[rgba(13,148,136,0.15)] text-[#5a7d82]"
+            className="border-[rgba(255,255,255,0.2)] bg-transparent text-[rgba(255,255,255,0.85)] hover:bg-[rgba(255,255,255,0.08)] hover:text-white"
             onClick={onEdit}
           >
             <Pencil className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.5} /> Edit
@@ -179,7 +169,7 @@ export function ProgramTopBar({
             {draft.status === "draft" ? (
               <Button
                 variant="ghost"
-                className="text-destructive hover:bg-red-50 hover:text-destructive"
+                className="text-[#e07a7a] hover:bg-[rgba(224,122,122,0.12)] hover:text-[#e07a7a]"
                 disabled={isSaving}
                 onClick={onDiscardDraft}
               >
@@ -188,7 +178,7 @@ export function ProgramTopBar({
             ) : (
               <Button
                 variant="ghost"
-                className="text-destructive hover:bg-red-50 hover:text-destructive"
+                className="text-[#e07a7a] hover:bg-[rgba(224,122,122,0.12)] hover:text-[#e07a7a]"
                 disabled={isSaving || !isDirty}
                 onClick={onDiscardChanges}
               >
