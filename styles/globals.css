@@ -123,14 +123,3 @@
     @apply bg-background text-foreground;
   }
 }
-
-/* Scrollable container with no visible scrollbar (builder grid).
-   Tailwind v4: custom utilities must use @utility — a v3-style
-   `@layer utilities` block is not reliably emitted. */
-@utility scrollbar-none {
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-  &::-webkit-scrollbar {
-    display: none;
-  }
-}

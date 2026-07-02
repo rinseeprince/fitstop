@@ -287,3 +287,14 @@
     animation: drawerFadeUp 0.35s ease both;
   }
 }
+
+/* Scrollable container with no visible scrollbar (builder grid).
+   NOTE: this file — app/globals.css — is the stylesheet the app imports
+   (app/layout.tsx); styles/globals.css is an unreferenced leftover. */
+@utility scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
