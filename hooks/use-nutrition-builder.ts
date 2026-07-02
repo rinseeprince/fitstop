@@ -5,6 +5,7 @@ import useSWR from "swr";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import { useToast } from "@/hooks/use-toast";
 import { useNutritionPlan } from "@/hooks/use-nutrition-plan";
+import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
 import { useCalorieSkew } from "@/hooks/use-calorie-skew";
 import type { Client, ActivityLevel, DietType } from "@/types/check-in";
 import type { Phase, Roadmap } from "@/types/roadmap";
@@ -30,6 +31,7 @@ export type NutritionSettings = {
 export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderProps) {
   const { toast } = useToast();
   const nutritionPlan = useNutritionPlan({ client, onUpdate });
+  const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
 
   // Roadmap + phases data (shared with PhaseSelector via phases prop)
   const { data: phasesData } = useSWR<{ success: true; data: Phase[] }>(
@@ -208,6 +210,9 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
           setCoachNotes("");
           onUpdate?.();
           nutritionPlan.refetchNutrition();
+          // The calendar renders from its own SWR events cache — revalidate it
+          // or the regenerated days only appear after a page refresh.
+          void invalidateNutritionCalendar(client.id);
           return true;
         } else {
           throw new Error(data.error || "Failed to generate plan");
@@ -236,6 +241,7 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
       toast,
       calorieSkew,
       nutritionPlan,
+      invalidateNutritionCalendar,
     ]
   );
 

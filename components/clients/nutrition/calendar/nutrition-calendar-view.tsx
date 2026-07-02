@@ -99,7 +99,7 @@ export function NutritionCalendarView({
     };
   }, [viewMonth]);
 
-  const { eventsByDate, isLoading, mutate } = useNutritionCalendarEvents(
+  const { eventsByDate, isLoading } = useNutritionCalendarEvents(
     clientId,
     startDate,
     endDate
@@ -113,7 +113,6 @@ export function NutritionCalendarView({
     viewMonth,
     includeActivityBurn,
     surplusAsCarbs,
-    mutate,
     onUpdate,
   });
 

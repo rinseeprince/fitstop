@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
 import {
   eligibleDatesIn,
   thisMonthDates,
@@ -20,7 +21,6 @@ type UseNutritionCalendarEditingArgs = {
   /** Activity-burn toggle — seeds the modal with the day's displayed numbers. */
   includeActivityBurn: boolean;
   surplusAsCarbs: boolean;
-  mutate: () => Promise<unknown>;
   onUpdate: () => void;
 };
 
@@ -39,10 +39,10 @@ export function useNutritionCalendarEditing({
   viewMonth,
   includeActivityBurn,
   surplusAsCarbs,
-  mutate,
   onUpdate,
 }: UseNutritionCalendarEditingArgs) {
   const { toast } = useToast();
+  const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
   const [editMode, setEditMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -118,7 +118,7 @@ export function useNutritionCalendarEditing({
         toast({ title: `Updated ${n} day${n === 1 ? "" : "s"}` });
         setDialogOpen(false);
         setSelected(new Set());
-        await mutate();
+        await invalidateNutritionCalendar(clientId);
         onUpdate();
       } catch (e) {
         toast({
@@ -130,7 +130,7 @@ export function useNutritionCalendarEditing({
         setIsSaving(false);
       }
     },
-    [selected, clientId, mutate, onUpdate, toast]
+    [selected, clientId, invalidateNutritionCalendar, onUpdate, toast]
   );
 
   const resetSelected = useCallback(async () => {
@@ -148,7 +148,7 @@ export function useNutritionCalendarEditing({
       const n = data.reset ?? dates.length;
       toast({ title: `Reset ${n} day${n === 1 ? "" : "s"}` });
       setSelected(new Set());
-      await mutate();
+      await invalidateNutritionCalendar(clientId);
       onUpdate();
     } catch (e) {
       toast({
@@ -159,7 +159,7 @@ export function useNutritionCalendarEditing({
     } finally {
       setIsSaving(false);
     }
-  }, [selected, clientId, mutate, onUpdate, toast]);
+  }, [selected, clientId, invalidateNutritionCalendar, onUpdate, toast]);
 
   return {
     editMode,

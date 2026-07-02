@@ -11,6 +11,7 @@ import {
 } from "@dnd-kit/core";
 import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { useToast } from "@/hooks/use-toast";
+import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
 import { getTodayDateString } from "@/lib/date-helpers";
 import type { TrainingEvent } from "@/types/training";
 import type { KeyedMutator } from "swr";
@@ -39,6 +40,7 @@ export function useCalendarDnd({
   onLibrarySessionDrop,
 }: UseCalendarDndProps) {
   const { toast } = useToast();
+  const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
   const [activeEvent, setActiveEvent] = useState<TrainingEvent | null>(null);
   const [pendingMove, setPendingMove] = useState<PendingMove | null>(null);
   const [isMoving, setIsMoving] = useState(false);
@@ -159,6 +161,7 @@ export function useCalendarDnd({
 
         toast({ title: "Event moved" });
         await mutate();
+        void invalidateNutritionCalendar(clientId);
       } catch (error) {
         // Revert optimistic update
         await mutate(
@@ -175,7 +178,7 @@ export function useCalendarDnd({
         setPendingMove(null);
       }
     },
-    [pendingMove, events, clientId, mutate, toast]
+    [pendingMove, events, clientId, mutate, invalidateNutritionCalendar, toast]
   );
 
   const handleMoveCancel = useCallback(() => {

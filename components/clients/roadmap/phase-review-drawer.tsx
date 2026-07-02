@@ -17,6 +17,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import { PhaseReviewStats } from "./phase-review-stats";
 import { PhaseReviewMilestones } from "./phase-review-milestones";
@@ -40,6 +41,7 @@ export function PhaseReviewDrawer({
   onTransitionComplete,
 }: PhaseReviewDrawerProps) {
   const { toast } = useToast();
+  const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
   const [reflection, setReflection] = useState("");
   const [nextAction, setNextAction] = useState<
     "activate_next" | "archive_roadmap"
@@ -92,6 +94,9 @@ export function PhaseReviewDrawer({
       }
 
       toast({ title: `"${phase.name}" completed` });
+      // Archiving the nutrition plan deletes its future nutrition_events;
+      // refresh the calendar cache (cheap no-op when nothing was archived).
+      void invalidateNutritionCalendar(clientId);
       onTransitionComplete();
       onOpenChange(false);
     } catch (error) {

@@ -5,7 +5,12 @@ import { PastRoadmapsSection } from "./past-roadmaps-section";
 import type { Phase, Roadmap } from "@/types/roadmap";
 
 const { mockUseSWR } = vi.hoisted(() => ({ mockUseSWR: vi.fn() }));
-vi.mock("swr", () => ({ default: mockUseSWR }));
+vi.mock("swr", () => ({
+  default: mockUseSWR,
+  // PhaseReviewDrawer (rendered via PhaseCard) uses useSWRConfig for the
+  // nutrition-calendar invalidation on transition success.
+  useSWRConfig: () => ({ mutate: vi.fn() }),
+}));
 vi.mock("@/lib/swr-fetcher", () => ({ swrFetcher: vi.fn() }));
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
 

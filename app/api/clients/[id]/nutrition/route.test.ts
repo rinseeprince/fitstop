@@ -14,6 +14,12 @@ vi.mock('@/services/training-service', () => ({
   getActiveTrainingPlan: vi.fn().mockResolvedValue(null),
 }))
 
+// The orchestrator now PROPAGATES event-rewrite failures (previously
+// swallowed), so the success-path tests must mock the rewrite as succeeding.
+vi.mock('@/services/nutrition-event-service', () => ({
+  regenerateFutureNutritionEvents: vi.fn().mockResolvedValue(undefined),
+}))
+
 vi.mock('@/services/supabase-admin', () => ({
   supabaseAdmin: {
     from: vi.fn().mockReturnValue({

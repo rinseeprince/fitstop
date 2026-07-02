@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
 import { format } from "date-fns";
 import type { Client } from "@/types/check-in";
 import { weightToKg } from "@/utils/nutrition-helpers";
@@ -112,6 +113,7 @@ function TopContentBar({
   const builder = useTrainingBuilderContext();
   const { plan, editMode, setEditMode, activePhase } = builder;
   const { toast } = useToast();
+  const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
   const [showGenerateConfirm, setShowGenerateConfirm] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
@@ -139,6 +141,8 @@ function TopContentBar({
       }
       toast({ title: "Future sessions deleted" });
       setShowClearConfirm(false);
+      // Deleting training sessions cascade-rewrites nutrition_events.
+      void invalidateNutritionCalendar(client.id);
       await builder.fetchPlan();
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to clear plan";

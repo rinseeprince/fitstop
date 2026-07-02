@@ -18,6 +18,7 @@ import { TrainingExerciseRow } from "../sessions/training-exercise-row";
 import { AddExerciseDialog } from "../sessions/add-exercise-dialog";
 import { Pencil, Check, Plus, Clock, Save, Loader2, X, Dumbbell } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
 import type { TrainingSession, TrainingExercise } from "@/types/training";
 
 type SessionDetailDrawerProps = {
@@ -44,6 +45,9 @@ export function SessionDetailDrawer({
   onSelectSession,
 }: SessionDetailDrawerProps) {
   const { toast } = useToast();
+  // Surplus PATCHes cascade-rewrite nutrition_events server-side, so those
+  // branches must also refresh the nutrition calendar's cache.
+  const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
   const [editMode, setEditMode] = useState(false);
   const [addExerciseOpen, setAddExerciseOpen] = useState(false);
   const [isSavingToLibrary, setIsSavingToLibrary] = useState(false);
@@ -236,6 +240,7 @@ export function SessionDetailDrawer({
           const data = await surplusRes.json().catch(() => ({}));
           throw new Error(data.error || "Saved session but failed to update surplus");
         }
+        void invalidateNutritionCalendar(clientId);
       }
 
       toast({ title: "Saved for this day only" });
@@ -287,6 +292,7 @@ export function SessionDetailDrawer({
           const data = await surplusRes.json().catch(() => ({}));
           throw new Error(data.error || "Saved exercises but failed to update surplus");
         }
+        void invalidateNutritionCalendar(clientId);
       }
 
       toast({ title: "Saved across all future sessions" });
@@ -324,6 +330,7 @@ export function SessionDetailDrawer({
         throw new Error(data.error || "Failed to save surplus");
       }
       toast({ title: "Surplus updated" });
+      void invalidateNutritionCalendar(clientId);
       onUpdate();
     } catch (error) {
       toast({

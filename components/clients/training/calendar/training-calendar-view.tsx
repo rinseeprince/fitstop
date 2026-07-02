@@ -3,6 +3,7 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { DndContext, DragOverlay, closestCenter } from "@dnd-kit/core";
 import { useCalendarEvents } from "@/hooks/use-calendar-events";
+import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
 import { useCalendarDnd } from "@/hooks/use-calendar-dnd";
 import { CalendarWeekRow } from "./calendar-week-row";
 import { CalendarEventCard } from "./calendar-event-card";
@@ -124,6 +125,11 @@ export function TrainingCalendarView({
   // Fetch events across all plans for this range
   const { events, eventsByDate, isLoading, mutate } = useCalendarEvents(clientId, startDate, endDate);
 
+  // Training mutations cascade-rewrite nutrition_events server-side
+  // (calorie targets track the training layout), so every success path below
+  // must also invalidate the nutrition calendar's cache.
+  const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
+
   // Saved plans for apply-from-drop dialog
   const { plans: savedPlans } = useSavedPlans();
 
@@ -166,6 +172,7 @@ export function TrainingCalendarView({
           }
           toast({ title: "Session placed" });
           await mutate();
+          void invalidateNutritionCalendar(clientId);
         } catch (error) {
           toast({
             title: "Placement failed",
@@ -298,6 +305,7 @@ export function TrainingCalendarView({
       }
       toast({ title: "Session duplicated" });
       await mutate();
+      void invalidateNutritionCalendar(clientId);
     } catch (error) {
       toast({
         title: "Duplicate failed",
@@ -307,7 +315,7 @@ export function TrainingCalendarView({
     } finally {
       setPendingDuplicate(null);
     }
-  }, [pendingDuplicate, clientId, mutate, toast]);
+  }, [pendingDuplicate, clientId, mutate, invalidateNutritionCalendar, toast]);
 
   const handleSavePlanFromCalendar = useCallback(async (weekStartDate: string, name: string, sourcePlanId: string) => {
     try {
@@ -443,6 +451,7 @@ export function TrainingCalendarView({
         });
       }
       await mutate();
+      void invalidateNutritionCalendar(clientId);
     } catch (error) {
       toast({
         title: "Action failed",
@@ -452,7 +461,7 @@ export function TrainingCalendarView({
     } finally {
       setIsWeekActionLoading(false);
     }
-  }, [clientId, plan, eventsByDate, mutate, toast, weekRowPlanId]);
+  }, [clientId, plan, eventsByDate, mutate, invalidateNutritionCalendar, toast, weekRowPlanId]);
 
   const monthLabel = format(new Date(viewMonth.year, viewMonth.month, 1), "MMMM yyyy");
 
@@ -601,6 +610,7 @@ export function TrainingCalendarView({
                         return;
                       }
                       await mutate();
+                      void invalidateNutritionCalendar(clientId);
                       toast({ title: "Session removed" });
                     } catch {
                       toast({ title: "Error", description: "Failed to delete event", variant: "destructive" });

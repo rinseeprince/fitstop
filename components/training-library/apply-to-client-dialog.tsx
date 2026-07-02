@@ -23,6 +23,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import { format } from "date-fns";
 import {
@@ -82,6 +83,7 @@ export function ApplyToClientDialog({
   onSuccess,
 }: ApplyToClientDialogProps) {
   const { toast } = useToast();
+  const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
   const [clientId, setClientId] = useState(preselectedClientId ?? "");
   const [startDate, setStartDate] = useState(getNextMonday());
   const [phaseId, setPhaseId] = useState<string>("");
@@ -193,6 +195,9 @@ export function ApplyToClientDialog({
         description: `Created ${data.sessionsCreated} sessions and ${data.eventsCreated} events`,
       });
 
+      // Placement cascade-rewrites nutrition_events; refresh the nutrition
+      // calendar cache here so every host of this dialog is covered once.
+      void invalidateNutritionCalendar(clientId);
       onOpenChange(false);
       onSuccess?.(clientId);
     } catch {

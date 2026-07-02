@@ -202,6 +202,10 @@
   - Include `onError` callback for debugging failed fetches.
   - Client-facing GET API routes should return `Cache-Control: no-store` headers.
 
+  ### Nutrition calendar cache invalidation (landmine)
+  - The coach nutrition calendar renders from an SWR cache keyed per month window (`/api/clients/{clientId}/nutrition/events?startDate=...&endDate=...`). **Any client-side success path whose server route rewrites `nutrition_events`** — plan regenerate, the training cascades via `cascadeNutritionAfterTrainingChange` (place/move/duplicate/delete/surplus edits), phase transition — **must call `useInvalidateNutritionCalendar` from `hooks/use-nutrition-calendar-events.ts`**, or the calendar silently shows stale targets until a page refresh.
+  - The key-builder and invalidator are co-located in that hook module deliberately so they can never drift. Never construct a `/nutrition/events` key anywhere else.
+
   ### Legacy (being retired)
   - The old Daily Pulse used `fetch` with `{ cache: 'no-store' }`, `Promise.all` for initial load, `fetchWithRetry`, and AbortController for request cancellation. That pattern is being removed in the client portal redesign (see `docs/CLIENT-PORTAL-REDESIGN.md` and `docs/CLIENT-PORTAL-EXECUTION-PLAN.md`). Do NOT imitate it in new code. If you find yourself editing Daily Pulse code before it's deleted, keep the existing pattern - don't mix the two.
 

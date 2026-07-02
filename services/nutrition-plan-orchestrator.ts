@@ -26,6 +26,29 @@ export class NutritionPlanError extends Error {
   }
 }
 
+/**
+ * The events ARE the product of a regenerate — a failed rewrite must not
+ * return success, or the coach sees a green toast over a stale/gapped
+ * calendar. The plan row has already committed by this point, so the message
+ * says so; a retry re-POST is idempotent (upsert on client_id,date; coach
+ * edits protected by is_modified) and repairs any partial state.
+ */
+async function regenerateEventsOrThrow(
+  clientId: string,
+  planId: string,
+  fromDate: string
+): Promise<void> {
+  try {
+    await regenerateFutureNutritionEvents(clientId, planId, fromDate);
+  } catch (err) {
+    captureApiError(err, { action: "generate-nutrition-events", planId });
+    throw new NutritionPlanError(
+      "Plan targets were saved, but calendar events failed to update. Regenerate the plan to retry.",
+      500
+    );
+  }
+}
+
 interface PhaseCheckOk {
   phaseId: string | undefined;
   phaseGoalWeight?: number | null;
@@ -229,9 +252,7 @@ async function handleCustomMacros(
   // In-place durable plan: the RPC upserts the single active plan (stable id),
   // so we regenerate its future events from one client-local anchor. No
   // separate old-plan cleanup — there is no old plan to delete.
-  await regenerateFutureNutritionEvents(clientId, newPlanId, body.effectiveFrom ?? clientToday).catch((err) =>
-    captureApiError(err, { action: "generate-nutrition-events", planId: newPlanId })
-  );
+  await regenerateEventsOrThrow(clientId, newPlanId, body.effectiveFrom ?? clientToday);
 
   return {
     success: true,
@@ -362,9 +383,7 @@ async function handleCalculatedPlan(
   // In-place durable plan: the RPC upserts the single active plan (stable id),
   // so we regenerate its future events from one client-local anchor. No
   // separate old-plan cleanup — there is no old plan to delete.
-  await regenerateFutureNutritionEvents(clientId, newPlanId, body.effectiveFrom ?? clientToday).catch((err) =>
-    captureApiError(err, { action: "generate-nutrition-events", planId: newPlanId })
-  );
+  await regenerateEventsOrThrow(clientId, newPlanId, body.effectiveFrom ?? clientToday);
 
   return {
     success: true,

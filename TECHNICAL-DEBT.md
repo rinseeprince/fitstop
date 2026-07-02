@@ -1,5 +1,18 @@
 # Technical Debt Tracker
 
+## Nutrition-calendar invalidation — uninstrumented caller-less routes
+
+Logged: 2026-07-02 (class-wide SWR invalidation pass; see CONVENTIONS.md §7 "Nutrition calendar cache invalidation").
+
+Four routes rewrite `nutrition_events` server-side but currently have **no web client caller**, so no success handler calls `useInvalidateNutritionCalendar`. If any of these gains a caller (web or RN), that caller MUST adopt the invalidator:
+
+- `DELETE /api/clients/[id]/training/[planId]` (archive plan; cascades via `cascadeNutritionAfterTrainingChange`)
+- `POST /api/clients/[id]/training/[planId]/regenerate-events`
+- `PATCH /api/clients/[id]/training/[planId]/events/[eventId]` (per-event surplus; web UI routes surplus edits through the sessions endpoint instead)
+- `PATCH /api/clients/[id]/nutrition/events/[date]/reset` (single-date reset; web UI uses the bulk `/events/reset`)
+
+---
+
 ## Training builder week model — deferred tails (builder S2.5)
 
 Logged: 2026-07-01.
