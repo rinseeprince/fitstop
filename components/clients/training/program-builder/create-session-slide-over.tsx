@@ -60,19 +60,33 @@ export function CreateSessionSlideOver() {
   const [isSaving, setIsSaving] = useState(false);
   const savedRef = useRef(false);
   const createdHereRef = useRef(false);
-  const closingRef = useRef(false);
   const baselineDirtyRef = useRef(false);
   const slotUidRef = useRef<string | null>(null);
 
+  // TWO lifecycle refs with deliberately DIFFERENT StrictMode semantics — do
+  // not merge them back into one flag (that latch deadlocked the slide-over:
+  // StrictMode runs setup→cleanup→setup with refs persisting, so a one-way
+  // "closed" latch set in cleanup froze the remounted instance).
+  //
+  // navigatedRef — "this instance already fired its router.back()". One-shot
+  // and NEVER reset: a second back() would pop past the builder and drop the
+  // provider (and the dirty tree). Surviving the simulated remount is
+  // correct — if mount #1 navigated, mount #2 must not navigate again.
+  const navigatedRef = useRef(false);
+  // unmountedRef — "past the FINAL unmount". Symmetric setup/cleanup (armed
+  // false on every effect setup, true in cleanup), so it reads false again
+  // after a StrictMode remount and only stays true once the component is
+  // really gone. Consulted by the in-flight save's continuation.
+  const unmountedRef = useRef(false);
+
   // Idempotent close: several paths can request it (Cancel, Escape, overlay,
-  // post-save) and each maps to ONE history entry — a second router.back()
-  // would pop past the builder and drop the provider (and the dirty tree).
-  // push (from the popover) + back keeps history balanced — replacing to the
-  // builder root would leave the intercepted entry in the stack and "back"
-  // from the builder would reopen a dead modal.
+  // post-save) and each maps to ONE history entry. push (from the popover) +
+  // back keeps history balanced — replacing to the builder root would leave
+  // the intercepted entry in the stack and "back" from the builder would
+  // reopen a dead modal.
   const close = useCallback(() => {
-    if (closingRef.current) return;
-    closingRef.current = true;
+    if (navigatedRef.current) return;
+    navigatedRef.current = true;
     router.back();
   }, [router]);
 
@@ -84,10 +98,11 @@ export function CreateSessionSlideOver() {
 
   // Ensure-effect: force edit mode and create the optimistic card once the
   // draft is ready. Re-runs on draft changes but only acts while the slot is
-  // empty and nothing was saved — which also makes it StrictMode-safe (the
-  // dev-only unmount cleanup clears the card, this recreates it).
+  // empty and nothing was saved — StrictMode-safe: the simulated-unmount
+  // cleanup below discards the card, and this re-run recreates it (guarded
+  // by navigatedRef, which only trips when the flow genuinely left).
   useEffect(() => {
-    if (!draft || closingRef.current) return;
+    if (!draft || navigatedRef.current) return;
     if (!hasTarget || !slot) {
       // Invalid target → back out of the intercepted entry (the modal only
       // mounts via soft nav, so a previous entry exists).
@@ -108,13 +123,17 @@ export function CreateSessionSlideOver() {
 
   // Unmount cleanup — the ONE hook that catches every close path, including
   // browser back (which unmounts the modal slot without any event we can
-  // intercept). Only discards what this flow created.
+  // intercept). Only discards what this flow created. Under StrictMode the
+  // cleanup also runs on the simulated unmount; the discard is undone by the
+  // ensure-effect's re-run, and the setup re-arms unmountedRef.
   useEffect(() => {
+    unmountedRef.current = false;
     return () => {
-      closingRef.current = true;
+      unmountedRef.current = true;
       if (!savedRef.current && createdHereRef.current && slotUidRef.current) {
         clearSlot(slotUidRef.current);
         restoreDirty(baselineDirtyRef.current);
+        createdHereRef.current = false;
       }
     };
   }, [clearSlot, restoreDirty]);
@@ -150,7 +169,7 @@ export function CreateSessionSlideOver() {
       // Refresh the session library everywhere (drawer, popover, Sessions
       // page, calendar panel — shared SWR key).
       await globalMutate("/api/training/saved-sessions");
-      if (closingRef.current) {
+      if (unmountedRef.current || navigatedRef.current) {
         // Dismissed (browser back) while the POST was in flight — the
         // optimistic card may already be discarded, but the session did
         // reach the library. Never claim it landed on the day, and never

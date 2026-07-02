@@ -1,3 +1,4 @@
+import { StrictMode } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, cleanup, fireEvent, waitFor, act } from "@testing-library/react";
 import { CreateSessionSlideOver } from "./create-session-slide-over";
@@ -207,6 +208,47 @@ describe("CreateSessionSlideOver", () => {
     // createdHere stayed false → the pre-existing session survives untouched.
     expect(screen.getByTestId("slot-probe").textContent).toBe("Existing");
     expect(fetchCalls.find((c) => c.method === "POST")).toBeUndefined();
+  });
+
+  it("survives StrictMode's simulated remount: card appears and close still works (dev-only deadlock regression)", async () => {
+    // StrictMode runs effect setup→cleanup→setup with REFS PERSISTING. A
+    // one-way "closed" latch set in the unmount cleanup froze the remounted
+    // instance: the card was never re-created (eternal spinner) and every
+    // dismiss path was dead. The lifecycle refs are now split so the
+    // navigation guard survives the remount while the unmount flag re-arms.
+    render(
+      <StrictMode>
+        <ProgramDraftProvider savedPlanId="plan-1" target="library">
+          <SlotProbe w={0} d={2} />
+          <CreateSessionSlideOver />
+        </ProgramDraftProvider>
+      </StrictMode>,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByTestId("slot-probe").textContent).toBe("Untitled session"),
+    );
+
+    // Dismissal must still work — and fire exactly ONE router.back() even
+    // when clicked twice (a second back() would pop past the builder).
+    fireEvent.click(screen.getByText("Cancel"));
+    fireEvent.click(screen.getByText("Cancel"));
+    expect(backMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("survives StrictMode on the invalid-target path: exactly one back(), no phantom card", async () => {
+    searchString = "w=9&d=9";
+    render(
+      <StrictMode>
+        <ProgramDraftProvider savedPlanId="plan-1" target="library">
+          <SlotProbe w={0} d={2} />
+          <CreateSessionSlideOver />
+        </ProgramDraftProvider>
+      </StrictMode>,
+    );
+    await waitFor(() => expect(backMock).toHaveBeenCalled());
+    expect(backMock).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("slot-probe").textContent).toBe("(rest)");
   });
 
   it("backs out of the intercepted entry when the slot indices are invalid", async () => {
