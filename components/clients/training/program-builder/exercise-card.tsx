@@ -28,6 +28,9 @@ import {
 type ExerciseCardProps = {
   exercise: ExerciseDraft;
   mode: "view" | "edit";
+  // Exercises added during the current editing session open straight into
+  // per-set authoring (the body computes newness); existing ones stay compact.
+  defaultExpanded?: boolean;
   onEdit: (patch: Partial<ExerciseDraft>) => void;
   onSpecEdit: (edit: SetSpecEdit) => void;
   onRemove: () => void;
@@ -52,11 +55,12 @@ function compactSummary(e: ExerciseDraft): string {
 export function ExerciseCard({
   exercise,
   mode,
+  defaultExpanded = false,
   onEdit,
   onSpecEdit,
   onRemove,
 }: ExerciseCardProps) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(defaultExpanded);
   const [videoInvalid, setVideoInvalid] = useState(false);
   const editable = mode === "edit";
   const specs = expandSetSpecs(exercise);

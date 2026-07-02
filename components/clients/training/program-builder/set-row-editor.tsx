@@ -1,6 +1,6 @@
 "use client";
 
-import { X } from "lucide-react";
+import { Copy, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -18,9 +18,10 @@ import { FOCUS_RING, TEXT_MUTED, TEXT_SECONDARY } from "./builder-tokens";
 // One per-set prescription row. Column template is shared with the header row
 // exercise-card renders above the set list. Numeric caps mirror setSpecSchema
 // (reps ≤100, load ≤2000, RPE ≤10, per-set rest ≤3600 — NOT the exercise-level
-// 600) so the client-side safeParse belt never trips on these fields.
+// 600) so the client-side safeParse belt never trips on these fields. The
+// trailing 48px column holds the duplicate + remove icons.
 export const SET_GRID =
-  "grid grid-cols-[20px_100px_110px_150px_56px_64px_60px_24px] items-center gap-1.5";
+  "grid grid-cols-[20px_100px_110px_150px_56px_64px_60px_48px] items-center gap-1.5";
 
 type SetRowEditorProps = {
   spec: SetSpec;
@@ -205,14 +206,26 @@ export function SetRowEditor({ spec, index, disabled, onEdit }: SetRowEditorProp
         />
 
         {!disabled ? (
-          <button
-            type="button"
-            aria-label={`Remove set ${spec.set_number}`}
-            className={cn("rounded p-1 hover:bg-[rgba(13,148,136,0.08)]", TEXT_MUTED)}
-            onClick={() => onEdit({ kind: "remove-set", index })}
-          >
-            <X className="h-3 w-3" strokeWidth={1.5} />
-          </button>
+          <div className="flex items-center">
+            <button
+              type="button"
+              aria-label={`Duplicate set ${spec.set_number}`}
+              className={cn("rounded p-1 hover:bg-[rgba(13,148,136,0.08)]", TEXT_MUTED)}
+              // add-set clones the row at afterIndex (drops included) and
+              // renumbers — exact duplicate-below semantics.
+              onClick={() => onEdit({ kind: "add-set", afterIndex: index })}
+            >
+              <Copy className="h-3 w-3" strokeWidth={1.5} />
+            </button>
+            <button
+              type="button"
+              aria-label={`Remove set ${spec.set_number}`}
+              className={cn("rounded p-1 hover:bg-[rgba(13,148,136,0.08)]", TEXT_MUTED)}
+              onClick={() => onEdit({ kind: "remove-set", index })}
+            >
+              <X className="h-3 w-3" strokeWidth={1.5} />
+            </button>
+          </div>
         ) : (
           <span />
         )}

@@ -48,7 +48,7 @@ export function SessionEditorSheet({
     >
       <SheetContent
         side="right"
-        className="flex w-full flex-col gap-0 bg-white p-0 sm:w-[600px] sm:max-w-[600px]"
+        className="flex w-full flex-col gap-0 bg-white p-0 sm:w-[780px] sm:max-w-full"
       >
         {session && (
           <>

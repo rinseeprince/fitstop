@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef } from "react";
 import {
   DndContext,
   PointerSensor,
@@ -59,6 +60,19 @@ export function SessionEditorBody({
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
   );
+
+  // Exercises present when this session was first shown; anything appended
+  // later was added by the coach right now and should open expanded. Reset
+  // when the editor switches to a different session (uids regenerate per
+  // seed, so a stale set would mark everything "new").
+  const seenRef = useRef<{ sessionUid: string; uids: Set<string> } | null>(null);
+  if (seenRef.current?.sessionUid !== session.uid) {
+    seenRef.current = {
+      sessionUid: session.uid,
+      uids: new Set(session.exercises.map((e) => e.uid)),
+    };
+  }
+  const initialUids = seenRef.current.uids;
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
@@ -176,6 +190,7 @@ export function SessionEditorBody({
                 key={exercise.uid}
                 exercise={exercise}
                 mode={mode}
+                defaultExpanded={!initialUids.has(exercise.uid)}
                 onEdit={(patch) => onEditExercise(session.uid, exercise.uid, patch)}
                 onSpecEdit={(edit) => onSpecEdit(session.uid, exercise, edit)}
                 onRemove={() => onRemoveExercise(session.uid, exercise.uid)}

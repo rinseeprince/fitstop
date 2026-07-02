@@ -32,10 +32,12 @@ function makeExercise(overrides: Partial<ExerciseDraft> = {}): ExerciseDraft {
 function Wrapper({
   exercise,
   mode = "edit",
+  defaultExpanded,
   onRemove = () => undefined,
 }: {
   exercise: ExerciseDraft;
   mode?: "view" | "edit";
+  defaultExpanded?: boolean;
   onRemove?: () => void;
 }) {
   // Stateful harness standing in for the draft: applies spec edits through
@@ -51,6 +53,7 @@ function Wrapper({
         <ExerciseCard
           exercise={current}
           mode={mode}
+          defaultExpanded={defaultExpanded}
           onEdit={(patch) => setCurrent((e) => ({ ...e, ...patch }))}
           onSpecEdit={handleSpecEdit}
           onRemove={onRemove}
@@ -109,5 +112,37 @@ describe("ExerciseCard", () => {
     expect(screen.queryByLabelText("Drag Bench Press")).toBeNull();
     fireEvent.click(screen.getByLabelText("Expand sets"));
     expect(screen.queryByText("Add set")).toBeNull();
+    expect(screen.queryByLabelText("Duplicate set 1")).toBeNull();
+  });
+
+  it("defaultExpanded opens straight into per-set authoring", () => {
+    render(<Wrapper exercise={makeExercise()} defaultExpanded />);
+    // No expand click — the set rows are already there.
+    expect(screen.getByLabelText("Set 1 type")).toBeInTheDocument();
+    expect(screen.getByLabelText("Set 4 type")).toBeInTheDocument();
+  });
+
+  it("duplicate-set clones the row in place (values included) and renumbers", () => {
+    render(
+      <Wrapper
+        exercise={makeExercise({
+          sets: 2,
+          repsMin: 5,
+          repsMax: 10,
+          rpeTarget: null,
+          setSpecs: [
+            { set_number: 1, set_type: "working", reps_min: 5, reps_max: 5 },
+            { set_number: 2, set_type: "working", reps_min: 8, reps_max: 10 },
+          ],
+        })}
+        defaultExpanded
+      />,
+    );
+    fireEvent.click(screen.getByLabelText("Duplicate set 1"));
+    // Row 2 is the clone of row 1; the old row 2 renumbered to 3.
+    expect(screen.getByLabelText("Set 2 min reps")).toHaveValue(5);
+    expect(screen.getByLabelText("Set 3 min reps")).toHaveValue(8);
+    // Compact summary re-projected across the 3 working sets.
+    expect(screen.getByText("3 × 5–10")).toBeInTheDocument();
   });
 });
