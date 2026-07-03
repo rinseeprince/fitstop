@@ -124,4 +124,29 @@ describe("ProgramsTable", () => {
     render(<ProgramsTable />);
     expect(screen.getByText("No programs yet")).toBeDefined();
   });
+
+  it("divider + POSTs a 7-rest-day draft and navigates to it", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ planId: "plan-42" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<ProgramsTable />);
+    fireEvent.click(screen.getByLabelText("New program"));
+
+    await waitFor(() => {
+      expect(mockPush).toHaveBeenCalledWith("/dashboard/programs/plan-42");
+    });
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/api/training/saved-plans");
+    const body = JSON.parse(String(init.body)) as {
+      name: string;
+      sessions: Array<{ isRest: boolean }>;
+    };
+    expect(body.name).toBe("Untitled program");
+    expect(body.sessions).toHaveLength(7);
+    expect(body.sessions.every((s) => s.isRest)).toBe(true);
+    vi.unstubAllGlobals();
+  });
 });

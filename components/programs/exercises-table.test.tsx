@@ -107,4 +107,15 @@ describe("ExercisesTable", () => {
     expect(screen.getByText("Hanging Leg Raise")).toBeDefined();
     expect(screen.queryByText("Cable Fly")).toBeNull();
   });
+
+  it("divider + fires onCreate; hidden without the prop", () => {
+    const onCreate = vi.fn();
+    render(<ExercisesTable onEditExercise={onEditExercise} onCreate={onCreate} />);
+    fireEvent.click(screen.getByLabelText("New exercise"));
+    expect(onCreate).toHaveBeenCalledTimes(1);
+
+    cleanup();
+    render(<ExercisesTable onEditExercise={onEditExercise} />);
+    expect(screen.queryByLabelText("New exercise")).toBeNull();
+  });
 });

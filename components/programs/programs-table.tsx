@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
-import { Copy, LayoutGrid, Loader2, Trash2 } from "lucide-react"
+import { Copy, LayoutGrid, Loader2, Plus, Trash2 } from "lucide-react"
 import {
   TableBody,
   TableCell,
@@ -34,6 +34,7 @@ import {
   getTotalSlots,
   getWeekCount,
 } from "./shared/derive-plan-stats"
+import { DAYS_PER_WEEK } from "@/components/clients/training/program-builder/program-builder-types"
 
 type SortKey = "updated" | "name" | "longest"
 
@@ -52,6 +53,43 @@ export function ProgramsTable() {
   const [sort, setSort] = useState<SortKey>("updated")
   const [page, setPage] = useState(0)
   const [deleteTarget, setDeleteTarget] = useState<SavedPlan | null>(null)
+  const [isCreating, setIsCreating] = useState(false)
+
+  const handleCreateProgram = async () => {
+    setIsCreating(true)
+    try {
+      // A new program starts as one week of 7 rest days (empty === rest). The
+      // create schema can't express weeks/set specs — the builder writes the
+      // real structure through /overwrite on Save program.
+      const res = await fetch("/api/training/saved-plans", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "Untitled program",
+          splitType: "custom",
+          sessions: Array.from({ length: DAYS_PER_WEEK }, () => ({
+            name: "Rest",
+            isRest: true,
+            exercises: [],
+          })),
+        }),
+      })
+      const data = (await res.json()) as { planId?: string; error?: string }
+      if (!res.ok || !data.planId) {
+        throw new Error(data.error ?? "Failed to create program")
+      }
+      router.push(`/dashboard/programs/${data.planId}`)
+      // Leave the spinner on through the navigation — the builder replaces
+      // this view.
+    } catch {
+      toast({
+        title: "Error",
+        description: "Failed to create program",
+        variant: "destructive",
+      })
+      setIsCreating(false)
+    }
+  }
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -174,7 +212,25 @@ export function ProgramsTable() {
         </Select>
       </div>
 
-      <SectionLabel label="Program library" />
+      <SectionLabel
+        label="Program library"
+        actions={
+          <button
+            type="button"
+            aria-label="New program"
+            title="New program"
+            disabled={isCreating}
+            className="rounded p-1 text-[#93b0b4] transition-colors hover:text-[#0d9488] disabled:opacity-50"
+            onClick={() => void handleCreateProgram()}
+          >
+            {isCreating ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
+            )}
+          </button>
+        }
+      />
 
       <LibraryTableShell
         shown={filtered.length}

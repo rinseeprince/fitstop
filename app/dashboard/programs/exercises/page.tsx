@@ -33,6 +33,10 @@ function ExercisesLibrary() {
           setEditTarget(exercise);
           setFormOpen(true);
         }}
+        onCreate={() => {
+          setEditTarget(null);
+          setFormOpen(true);
+        }}
       />
       <ExerciseFormDialog
         open={formOpen}

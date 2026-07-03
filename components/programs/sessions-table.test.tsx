@@ -129,4 +129,15 @@ describe("SessionsTable", () => {
     expect(screen.queryByRole("button", { name: "Edit Push Day A" })).toBeNull();
     expect(screen.getByText("Push Day A")).toBeDefined();
   });
+
+  it("divider + fires onCreate; hidden without the prop", () => {
+    const onCreate = vi.fn();
+    render(<SessionsTable onCreate={onCreate} />);
+    fireEvent.click(screen.getByLabelText("New session"));
+    expect(onCreate).toHaveBeenCalledTimes(1);
+
+    cleanup();
+    render(<SessionsTable />);
+    expect(screen.queryByLabelText("New session")).toBeNull();
+  });
 });

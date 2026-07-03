@@ -29,6 +29,7 @@ function SessionsLibrary() {
       <SessionsStatBand />
       <SessionsTable
         onEdit={(session) => setEditorState({ mode: "edit", session })}
+        onCreate={() => setEditorState({ mode: "create" })}
       />
       <StandaloneSessionEditor
         state={editorState}

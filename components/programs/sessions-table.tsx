@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { Copy, Dumbbell, Loader2, Trash2 } from "lucide-react"
+import { Copy, Dumbbell, Loader2, Plus, Trash2 } from "lucide-react"
 import {
   TableBody,
   TableCell,
@@ -40,8 +40,10 @@ const neutralChip =
 // never trigger it.
 export function SessionsTable({
   onEdit,
+  onCreate,
 }: {
   onEdit?: (session: SavedSession) => void
+  onCreate?: () => void
 }) {
   const { toast } = useToast()
   const { sessions, isLoading, mutate } = useStandaloneSessions()
@@ -190,7 +192,22 @@ export function SessionsTable({
         </Select>
       </div>
 
-      <SectionLabel label="Session library" />
+      <SectionLabel
+        label="Session library"
+        actions={
+          onCreate && (
+            <button
+              type="button"
+              aria-label="New session"
+              title="New session"
+              className="rounded p-1 text-[#93b0b4] transition-colors hover:text-[#0d9488]"
+              onClick={onCreate}
+            >
+              <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
+            </button>
+          )
+        }
+      />
 
       <LibraryTableShell
         shown={filtered.length}

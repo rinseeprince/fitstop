@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { BookOpen, Dumbbell, Loader2, Pencil, Trash2 } from "lucide-react"
+import { BookOpen, Dumbbell, Loader2, Pencil, Plus, Trash2 } from "lucide-react"
 import {
   TableBody,
   TableCell,
@@ -38,8 +38,10 @@ const tinyChip =
 // catalog has no video field (videos live per-prescription).
 export function ExercisesTable({
   onEditExercise,
+  onCreate,
 }: {
   onEditExercise: (exercise: Exercise) => void
+  onCreate?: () => void
 }) {
   const { toast } = useToast()
   const { exercises, isLoading, mutate } = useExerciseCatalog()
@@ -182,7 +184,22 @@ export function ExercisesTable({
         </Select>
       </div>
 
-      <SectionLabel label="Exercise library" />
+      <SectionLabel
+        label="Exercise library"
+        actions={
+          onCreate && (
+            <button
+              type="button"
+              aria-label="New exercise"
+              title="New exercise"
+              className="rounded p-1 text-[#93b0b4] transition-colors hover:text-[#0d9488]"
+              onClick={onCreate}
+            >
+              <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
+            </button>
+          )
+        }
+      />
 
       <LibraryTableShell
         shown={filtered.length}
