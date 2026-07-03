@@ -13,8 +13,8 @@ import { Input } from "@/components/ui/input";
 type CatalogExercise = {
   id: string;
   name: string;
-  muscle_group?: string;
-  equipment?: string;
+  muscleGroup?: string | null;
+  equipment?: string | null;
 };
 
 export type ExerciseSearchSelection = {
@@ -34,7 +34,6 @@ type ExerciseSearchInputProps = {
 
 const DEBOUNCE_MS = 300;
 const MIN_QUERY_CHARS = 2;
-const MAX_RESULTS = 8;
 
 export function ExerciseSearchInput({
   value,
@@ -62,7 +61,9 @@ export function ExerciseSearchInput({
       );
       if (res.ok) {
         const data = (await res.json()) as { exercises?: CatalogExercise[] };
-        setResults((data.exercises ?? []).slice(0, MAX_RESULTS));
+        // Every match renders — the dropdown scrolls (max-h-48), so nothing
+        // needs to be dropped.
+        setResults(data.exercises ?? []);
       }
     } catch {
       // Non-critical — free-text fallback still works.
@@ -135,9 +136,9 @@ export function ExerciseSearchInput({
               className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-[rgba(13,148,136,0.05)]"
             >
               <span className="text-[#0c1a1e]">{exercise.name}</span>
-              {exercise.muscle_group && (
+              {exercise.muscleGroup && (
                 <span className="rounded-[3px] bg-[rgba(13,148,136,0.05)] px-1.5 py-0.5 text-[10px] text-[#93b0b4]">
-                  {exercise.muscle_group}
+                  {exercise.muscleGroup}
                 </span>
               )}
             </button>

@@ -67,6 +67,51 @@ function findMatch(
   return aliasMatch;
 }
 
+/**
+ * Offset paging across separate PostgREST requests has no cross-page
+ * snapshot: a row inserted between round trips shifts every later offset,
+ * re-returning a page boundary row. Dedupe by id so a rare race never
+ * surfaces a doubled row (a skipped row self-heals on the next fetch).
+ */
+function dedupeRowsById(rows: ExerciseRow[]): ExerciseRow[] {
+  const seen = new Set<string>();
+  return rows.filter((row) => {
+    if (seen.has(row.id)) return false;
+    seen.add(row.id);
+    return true;
+  });
+}
+
+/**
+ * Full coach+global catalog rows for name resolution, ordered coach-first so
+ * coach-specific rows win ties in findMatch. Pages past PostgREST's
+ * ~1000-row response cap — an unpaged read hid the tail of the union from
+ * the resolver, so saves silently re-created exercises that already existed
+ * (duplicate coach customs, split usage counts). The `id` tiebreak keeps
+ * offset paging stable within the coach/global groups.
+ */
+async function fetchCatalogRowsForResolve(
+  coachId: string
+): Promise<ExerciseRow[]> {
+  const PAGE = 1000;
+  const rows: ExerciseRow[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabaseAdmin
+      .from("exercises")
+      .select("*")
+      .or(`coach_id.eq.${coachId},coach_id.is.null`)
+      .order("coach_id", { ascending: false, nullsFirst: false })
+      .order("id", { ascending: true })
+      .range(from, from + PAGE - 1);
+
+    if (error) throw new Error(`Failed to fetch exercises: ${error.message}`);
+
+    rows.push(...(data ?? []));
+    if (!data || data.length < PAGE) break;
+  }
+  return dedupeRowsById(rows);
+}
+
 // --- Public API ---
 
 /**
@@ -82,15 +127,7 @@ export async function resolveExercise(
   const normalized = normalizeExerciseName(trimmed);
 
   // Fetch all exercises for this coach + global, ordered coach-first
-  const { data: exercises, error } = await supabaseAdmin
-    .from("exercises")
-    .select("*")
-    .or(`coach_id.eq.${coachId},coach_id.is.null`)
-    .order("coach_id", { ascending: false, nullsFirst: false });
-
-  if (error) throw new Error(`Failed to fetch exercises: ${error.message}`);
-
-  const rows = exercises ?? [];
+  const rows = await fetchCatalogRowsForResolve(coachId);
 
   // Step 1: Exact name match
   const exactMatch = findMatch(rows, lower);
@@ -136,16 +173,8 @@ export async function resolveExercises(
     }
   }
 
-  // Fetch all exercises for this coach + global
-  const { data: exercises, error } = await supabaseAdmin
-    .from("exercises")
-    .select("*")
-    .or(`coach_id.eq.${coachId},coach_id.is.null`)
-    .order("coach_id", { ascending: false, nullsFirst: false });
-
-  if (error) throw new Error(`Failed to fetch exercises: ${error.message}`);
-
-  const rows = exercises ?? [];
+  // Fetch all exercises for this coach + global, ordered coach-first
+  const rows = await fetchCatalogRowsForResolve(coachId);
   const result = new Map<string, string>(); // originalName → exerciseId
   const toCreate: Array<{ name: string; lower: string }> = [];
 
@@ -216,26 +245,40 @@ export async function resolveExercises(
 /**
  * Returns all exercises visible to the coach (global + coach-specific),
  * optionally filtered by search term. Ordered alphabetically.
+ *
+ * Pages internally past PostgREST's ~1000-row response cap — the global
+ * catalog alone sits at that boundary, so a single-shot read silently
+ * truncates once coach customs push the union past it. The `id` tiebreak
+ * keeps offset paging stable across rows that share a name.
  */
 export async function getExercisesForCoach(
   coachId: string,
   search?: string
 ): Promise<Exercise[]> {
-  let query = supabaseAdmin
-    .from("exercises")
-    .select("*")
-    .or(`coach_id.eq.${coachId},coach_id.is.null`)
-    .order("name", { ascending: true });
+  const PAGE = 1000;
+  const rows: ExerciseRow[] = [];
+  for (let from = 0; ; from += PAGE) {
+    let query = supabaseAdmin
+      .from("exercises")
+      .select("*")
+      .or(`coach_id.eq.${coachId},coach_id.is.null`)
+      .order("name", { ascending: true })
+      .order("id", { ascending: true })
+      .range(from, from + PAGE - 1);
 
-  if (search) {
-    query = query.ilike("name", `%${search}%`);
+    if (search) {
+      query = query.ilike("name", `%${search}%`);
+    }
+
+    const { data, error } = await query;
+
+    if (error) throw new Error(`Failed to fetch exercises: ${error.message}`);
+
+    rows.push(...(data ?? []));
+    if (!data || data.length < PAGE) break;
   }
 
-  const { data, error } = await query;
-
-  if (error) throw new Error(`Failed to fetch exercises: ${error.message}`);
-
-  return (data ?? []).map(mapExerciseCatalogRow);
+  return dedupeRowsById(rows).map(mapExerciseCatalogRow);
 }
 
 // --- Catalog delta-sync (Session 3.9) ---
@@ -372,6 +415,66 @@ export async function getExerciseUsageForCoach(coachId: string): Promise<{
     ),
     sessionsWithLinks: allSessions.size,
   };
+}
+
+export type RecentExercise = {
+  exerciseId: string;
+  name: string;
+  muscleGroup: string | null;
+};
+
+/**
+ * Most-recently-used catalog exercises for a coach, derived from
+ * coach_saved_exercises: builder saves are wipe-and-reinsert, so created_at
+ * reads as "last time a session containing this exercise was saved" — the
+ * right recency signal for the picker's "Recently used" strip. Rows with
+ * exercise_id NULL (free-text that never resolved) are skipped: the strip
+ * needs a catalog identity to re-pick. The LOOKBACK window is a recency
+ * heuristic, not a completeness guarantee — 200 rows comfortably covers
+ * `limit` distinct exercises for any real library.
+ */
+export async function getRecentExercisesForCoach(
+  coachId: string,
+  limit = 8
+): Promise<RecentExercise[]> {
+  const LOOKBACK = 200;
+  const { data, error } = await supabaseAdmin
+    .from("coach_saved_exercises")
+    .select(
+      "exercise_id, created_at, exercises(name, muscle_group), coach_saved_sessions!inner(coach_id)"
+    )
+    .eq("coach_saved_sessions.coach_id", coachId)
+    .not("exercise_id", "is", null)
+    // Rows of one save share a created_at (single-transaction batch insert),
+    // so tie-break on session position + id — otherwise the strip's subset
+    // and order reshuffle arbitrarily between fetches.
+    .order("created_at", { ascending: false })
+    .order("order_index", { ascending: true })
+    .order("id", { ascending: true })
+    .limit(LOOKBACK);
+
+  if (error)
+    throw new Error(`Failed to fetch recent exercises: ${error.message}`);
+
+  const recent: RecentExercise[] = [];
+  const seen = new Set<string>();
+  for (const row of data ?? []) {
+    // The exercises embed is a to-one FK; supabase-js may still type it as an
+    // array depending on schema introspection, so normalize both shapes.
+    const exercise = Array.isArray(row.exercises)
+      ? row.exercises[0]
+      : row.exercises;
+    if (!row.exercise_id || !exercise || seen.has(row.exercise_id)) continue;
+    seen.add(row.exercise_id);
+    recent.push({
+      exerciseId: row.exercise_id,
+      name: exercise.name,
+      muscleGroup: exercise.muscle_group,
+    });
+    if (recent.length >= limit) break;
+  }
+
+  return recent;
 }
 
 /**

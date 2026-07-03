@@ -688,7 +688,7 @@ describe("SetTracker", () => {
                   {
                     id: PICKED_ID,
                     name: "Bulgarian Split Squat",
-                    muscle_group: "legs",
+                    muscleGroup: "legs",
                   },
                 ],
               }),
@@ -837,7 +837,7 @@ describe("SetTracker", () => {
                   {
                     id: PICKED_ID,
                     name: "Dumbbell Bench",
-                    muscle_group: "chest",
+                    muscleGroup: "chest",
                   },
                 ],
               }),
@@ -905,7 +905,7 @@ describe("SetTracker", () => {
             json: () =>
               Promise.resolve({
                 exercises: [
-                  { id: PICKED_ID, name: "Smith Press", muscle_group: "chest" },
+                  { id: PICKED_ID, name: "Smith Press", muscleGroup: "chest" },
                 ],
               }),
           });

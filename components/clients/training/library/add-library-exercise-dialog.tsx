@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useCallback } from "react";
 import {
   Dialog,
   DialogContent,
@@ -12,13 +12,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { MIN_SEARCH_CHARS, useExerciseSearch } from "@/hooks/use-exercise-search";
 import { Loader2, Search } from "lucide-react";
-
-type CatalogExercise = {
-  id: string;
-  name: string;
-  muscle_group?: string;
-};
+import type { Exercise } from "@/types/training";
 
 export type NewExercisePayload = {
   name: string;
@@ -63,47 +59,33 @@ export function AddLibraryExerciseDialog({
     restSeconds: "90",
   });
 
-  const [catalogResults, setCatalogResults] = useState<CatalogExercise[]>([]);
+  // Instant results over the SWR-cached catalog. suppressSuggestions keeps a
+  // just-selected name from reopening the dropdown on refocus: results derive
+  // from the input value now, so they can't be cleared the way the old fetch
+  // results were.
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [isSearching, setIsSearching] = useState(false);
-  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const searchCatalog = useCallback(async (query: string) => {
-    if (query.length < 2) {
-      setCatalogResults([]);
-      return;
-    }
-    setIsSearching(true);
-    try {
-      const res = await fetch(`/api/training/exercises?search=${encodeURIComponent(query)}`);
-      if (res.ok) {
-        const data = await res.json();
-        setCatalogResults(data.exercises?.slice(0, 8) ?? []);
-      }
-    } catch {
-      // Non-critical
-    } finally {
-      setIsSearching(false);
-    }
-  }, []);
+  const [suppressSuggestions, setSuppressSuggestions] = useState(false);
+  const { results: catalogResults, isLoading: catalogLoading } =
+    useExerciseSearch(formData.name);
+  const isSearching =
+    catalogLoading && formData.name.trim().length >= MIN_SEARCH_CHARS;
 
   const handleNameChange = useCallback((value: string) => {
     setFormData((prev) => ({ ...prev, name: value }));
+    setSuppressSuggestions(false);
     setShowSuggestions(true);
-    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
-    searchTimeoutRef.current = setTimeout(() => void searchCatalog(value), 300);
-  }, [searchCatalog]);
+  }, []);
 
-  const handleSelectExercise = useCallback((exercise: CatalogExercise) => {
+  const handleSelectExercise = useCallback((exercise: Exercise) => {
     setFormData((prev) => ({ ...prev, name: exercise.name }));
+    setSuppressSuggestions(true);
     setShowSuggestions(false);
-    setCatalogResults([]);
   }, []);
 
   const resetForm = () => {
     setFormData({ name: "", sets: "3", repsMin: "8", repsMax: "12", rpeTarget: "", restSeconds: "90" });
-    setCatalogResults([]);
     setShowSuggestions(false);
+    setSuppressSuggestions(false);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -174,7 +156,11 @@ export function AddLibraryExerciseDialog({
                 placeholder="Search or type exercise name..."
                 value={formData.name}
                 onChange={(e) => handleNameChange(e.target.value)}
-                onFocus={() => catalogResults.length > 0 && setShowSuggestions(true)}
+                onFocus={() =>
+                  catalogResults.length > 0 &&
+                  !suppressSuggestions &&
+                  setShowSuggestions(true)
+                }
                 onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
                 className="pl-8"
                 autoComplete="off"
@@ -193,9 +179,9 @@ export function AddLibraryExerciseDialog({
                     onMouseDown={(e) => { e.preventDefault(); handleSelectExercise(exercise); }}
                   >
                     <span className="text-[#0c1a1e]">{exercise.name}</span>
-                    {exercise.muscle_group && (
+                    {exercise.muscleGroup && (
                       <span className="text-[10px] text-[#93b0b4] bg-[rgba(13,148,136,0.05)] px-1.5 py-0.5 rounded-[3px]">
-                        {exercise.muscle_group}
+                        {exercise.muscleGroup}
                       </span>
                     )}
                   </button>

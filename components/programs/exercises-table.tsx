@@ -21,6 +21,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { useToast } from "@/hooks/use-toast"
 import { useExerciseCatalog } from "@/hooks/use-exercise-catalog"
 import { useExerciseUsage } from "@/hooks/use-exercise-usage"
+import { filterExercisesByQuery } from "@/lib/exercise-search"
 import type { Exercise } from "@/types/training"
 import { LibrarySearchInput } from "./shared/library-search-input"
 import { FilterChips } from "./shared/filter-chips"
@@ -76,8 +77,7 @@ export function ExercisesTable({
   }, [exercises])
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    return exercises.filter((e) => {
+    const scoped = exercises.filter((e) => {
       if (
         muscleFilter !== "all" &&
         e.muscleGroup?.trim().toLowerCase() !== muscleFilter
@@ -88,12 +88,9 @@ export function ExercisesTable({
         e.equipment?.trim().toLowerCase() !== equipmentFilter
       )
         return false
-      if (!q) return true
-      return (
-        e.name.toLowerCase().includes(q) ||
-        e.aliases.some((a) => a.toLowerCase().includes(q))
-      )
+      return true
     })
+    return filterExercisesByQuery(scoped, query)
   }, [exercises, query, muscleFilter, equipmentFilter])
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / LIBRARY_PAGE_SIZE))

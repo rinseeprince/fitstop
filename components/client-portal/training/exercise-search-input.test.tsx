@@ -34,8 +34,8 @@ describe("ExerciseSearchInput", () => {
       json: () =>
         Promise.resolve({
           exercises: [
-            { id: "uuid-bench", name: "Bench Press", muscle_group: "chest" },
-            { id: "uuid-bb-row", name: "Barbell Row", muscle_group: "back" },
+            { id: "uuid-bench", name: "Bench Press", muscleGroup: "chest" },
+            { id: "uuid-bb-row", name: "Barbell Row", muscleGroup: "back" },
           ],
         }),
     }) as unknown as typeof fetch;
@@ -77,6 +77,25 @@ describe("ExerciseSearchInput", () => {
       name: "Bench Press",
       exerciseId: "uuid-bench",
     });
+  });
+
+  it("renders every match — results are not capped at 8", async () => {
+    const many = Array.from({ length: 12 }, (_, i) => ({
+      id: `uuid-${i}`,
+      name: `Bench Variation ${i}`,
+      muscleGroup: "chest",
+    }));
+    (global.fetch as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ exercises: many }),
+    });
+    const user = userEvent.setup();
+    render(<Harness />);
+    await user.type(screen.getByTestId("picker"), "bench");
+    await waitFor(() =>
+      expect(screen.getByText("Bench Variation 11")).toBeInTheDocument(),
+    );
+    expect(screen.getAllByTestId(/^picker-option-/)).toHaveLength(12);
   });
 
   it("free-typing emits exerciseId: undefined", async () => {
