@@ -78,6 +78,88 @@ describe("useProgramBuilderState — weeks", () => {
     expect(sessionAt(result.current.draft!, 1, 0)!.name).toBe("Changed");
   });
 
+  it("insertWeekAfter inserts after the source, renumbers, and dirties", () => {
+    const { result } = setup(2);
+    const [w0] = result.current.draft!.weeks;
+    const incoming = makeRestWeek(0);
+
+    act(() => result.current.insertWeekAfter(w0.uid, incoming));
+    const draft = result.current.draft!;
+    expect(result.current.isDirty).toBe(true);
+    expect(draft.weeks).toHaveLength(3);
+    expect(draft.weeks[1].uid).toBe(incoming.uid);
+    expect(draft.weeks.map((w) => w.weekIndex)).toEqual([0, 1, 2]);
+  });
+
+  it("insertWeekAfter no-ops (not dirty) at MAX_WEEKS, on a missing source uid, and on a reused week uid", () => {
+    const capped = renderHook(() => useProgramBuilderState());
+    act(() => capped.result.current.seed(makeDraft(MAX_WEEKS)));
+    act(() =>
+      capped.result.current.insertWeekAfter(
+        capped.result.current.draft!.weeks[0].uid,
+        makeRestWeek(0),
+      ),
+    );
+    expect(capped.result.current.draft!.weeks).toHaveLength(MAX_WEEKS);
+    expect(capped.result.current.isDirty).toBe(false);
+
+    const { result } = setup(2);
+    act(() => result.current.insertWeekAfter("wk-vanished", makeRestWeek(0)));
+    expect(result.current.draft!.weeks).toHaveLength(2);
+    expect(result.current.isDirty).toBe(false);
+
+    // A week object whose uid is already in the tree (stale double-commit) no-ops.
+    const existing = result.current.draft!.weeks[1];
+    act(() => result.current.insertWeekAfter(result.current.draft!.weeks[0].uid, existing));
+    expect(result.current.draft!.weeks).toHaveLength(2);
+    expect(result.current.isDirty).toBe(false);
+  });
+
+  it("insertWeekAfter normalizes an incoming setSpecs: [] to null (backstop)", () => {
+    const { result } = setup(1);
+    const w0 = result.current.draft!.weeks[0];
+    act(() => result.current.addSessionToSlot(w0.days[0].uid));
+    act(() => {
+      const source = result.current.draft!.weeks[0];
+      const incoming = makeRestWeek(0);
+      incoming.days[0] = {
+        ...incoming.days[0],
+        isRest: false,
+        session: {
+          uid: "sess-in",
+          name: "Incoming",
+          focus: null,
+          estimatedDurationMinutes: null,
+          calorieSurplusPercentage: null,
+          notes: null,
+          sessionType: "training",
+          exercises: [
+            {
+              uid: "ex-in",
+              exerciseId: null,
+              name: "Row",
+              setSpecs: [],
+              sets: 3,
+              repsMin: 8,
+              repsMax: 10,
+              repsTarget: null,
+              rpeTarget: null,
+              percentage1rm: null,
+              tempo: null,
+              restSeconds: null,
+              supersetGroup: null,
+              isWarmup: false,
+              notes: null,
+              videoUrl: null,
+            },
+          ],
+        },
+      };
+      result.current.insertWeekAfter(source.uid, incoming);
+    });
+    expect(sessionAt(result.current.draft!, 1, 0)!.exercises[0].setSpecs).toBeNull();
+  });
+
   it("deleteWeek is a no-op at one week (min-1 invariant)", () => {
     const { result } = setup(1);
     act(() => result.current.deleteWeek(result.current.draft!.weeks[0].uid));

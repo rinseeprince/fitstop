@@ -56,6 +56,13 @@ export function countWorkingSets(setSpecs: unknown, fallbackSets: number): numbe
   return count;
 }
 
+// Authoring ceilings shared by the builder editors and the progression engine.
+// MAX_SET_SPECS mirrors setSpecsArraySchema's .max(30); MAX_WORKING_SETS names
+// the training_exercises.sets CHECK bound [1, 20] the compact projection
+// clamps to.
+export const MAX_SET_SPECS = 30;
+export const MAX_WORKING_SETS = 20;
+
 const clamp = (n: number, lo: number, hi: number): number =>
   Math.max(lo, Math.min(hi, n));
 
@@ -74,7 +81,7 @@ export function compactFromSpecs(specs: SetSpec[]): {
   repsMax: number | null;
 } {
   const working = specs.filter((s) => s.set_type !== "warmup");
-  const sets = clamp(working.length, 1, 20);
+  const sets = clamp(working.length, 1, MAX_WORKING_SETS);
   let repsMin: number | null = null;
   let repsMax: number | null = null;
   for (const s of working) {
@@ -107,7 +114,7 @@ export function expandSetSpecs(ex: {
   restSeconds?: number | null;
 }): SetSpec[] {
   if (Array.isArray(ex.setSpecs) && ex.setSpecs.length > 0) return ex.setSpecs;
-  const n = clamp(Math.floor(ex.sets ?? 1), 1, 20);
+  const n = clamp(Math.floor(ex.sets ?? 1), 1, MAX_WORKING_SETS);
   return Array.from({ length: n }, (_, i) => ({
     set_number: i + 1,
     set_type: "working" as const,

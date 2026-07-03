@@ -9,7 +9,9 @@ export function SegmentedControl({
   value,
   onChange,
 }: {
-  options: Array<{ value: string; label: string }>
+  // disabled/title are optional per-option: a disabled segment stays visible
+  // (with its title explaining why) but can't be selected.
+  options: Array<{ value: string; label: string; disabled?: boolean; title?: string }>
   value: string
   onChange: (value: string) => void
 }) {
@@ -21,12 +23,15 @@ export function SegmentedControl({
           <button
             key={option.value}
             type="button"
+            disabled={option.disabled}
+            title={option.title}
             onClick={() => onChange(option.value)}
             className={cn(
               "px-3.5 py-1.5 rounded-[4px] text-[13px] transition-all duration-150",
               isActive
                 ? "bg-white font-semibold text-[#0c1a1e] shadow-[0_1px_3px_rgba(0,0,0,0.05)]"
                 : "font-medium text-[#5a7d82] hover:text-[#0c1a1e]",
+              option.disabled && "cursor-not-allowed opacity-50 hover:text-[#5a7d82]",
             )}
           >
             {option.label}

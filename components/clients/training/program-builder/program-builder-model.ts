@@ -1,4 +1,8 @@
 import {
+  progressExercise,
+  type ProgressionRule,
+} from "@/utils/progression-rules";
+import {
   DAYS_PER_WEEK,
   makeRestSlot,
   newUid,
@@ -85,6 +89,49 @@ export function cloneWeek(w: WeekDraft): WeekDraft {
       uid: newUid("slot"),
       session: slot.session ? cloneSession(slot.session) : null,
     })),
+  };
+}
+
+// =============================================================================
+// progression (builder S4)
+// =============================================================================
+
+/**
+ * Apply a progression rule across a week — the WeekDraft-typed walk over the
+ * pure engine in utils/progression-rules.ts (which cannot import component
+ * types). Call it on a cloneWeek()'d copy and commit THAT returned week:
+ * clone-then-progress, never re-clone after, or changedExerciseUids (the
+ * clone's uids, used for preview rows) go stale. Never adds/removes/reorders
+ * exercises — the preview pairs source↔progressed positionally. Rest slots,
+ * out-of-scope exercises, and rule no-ops keep their references; a week the
+ * rule doesn't touch returns the INPUT reference so callers can detect
+ * "this rule changes nothing".
+ */
+export function progressWeek(
+  week: WeekDraft,
+  rule: ProgressionRule,
+  inScope: (ex: ExerciseDraft) => boolean,
+): { week: WeekDraft; changedExerciseUids: ReadonlySet<string> } {
+  const changedExerciseUids = new Set<string>();
+  let weekChanged = false;
+  const days = week.days.map((slot) => {
+    if (!slot.session) return slot;
+    let sessionChanged = false;
+    const exercises = slot.session.exercises.map((ex) => {
+      if (!inScope(ex)) return ex;
+      const result = progressExercise(ex, rule);
+      if (!result) return ex;
+      sessionChanged = true;
+      changedExerciseUids.add(ex.uid);
+      return { ...ex, ...result };
+    });
+    if (!sessionChanged) return slot;
+    weekChanged = true;
+    return { ...slot, session: { ...slot.session, exercises } };
+  });
+  return {
+    week: weekChanged ? { ...week, days } : week,
+    changedExerciseUids,
   };
 }
 

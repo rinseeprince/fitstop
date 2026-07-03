@@ -5,6 +5,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   compactFromSpecs,
   expandSetSpecs,
+  MAX_SET_SPECS,
   type SetSpec,
   type SetType,
 } from "@/utils/exercise-set-specs";
@@ -18,7 +19,10 @@ import type { ExerciseDraft } from "./program-builder-types";
 // Every accepted edit re-projects the compact columns via compactFromSpecs so
 // the collapsed summary and legacy readers stay truthful (landmine #2).
 
-export const MAX_SET_SPECS = 30;
+// MAX_SET_SPECS moved to utils/exercise-set-specs.ts (the progression engine
+// needs it and can't import a "use client" module); re-exported so existing
+// importers keep working.
+export { MAX_SET_SPECS };
 export const MAX_DROPS = 20;
 
 export type SetSpecEdit =

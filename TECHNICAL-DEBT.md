@@ -22,6 +22,14 @@ Logged: 2026-07-01.
 
 ---
 
+## Training builder progression — pre-existing read cap (builder S4)
+
+Logged: 2026-07-03.
+
+- **`getClientTrainingPlan`'s `training_exercises` read is uncapped** (`services/client-training-plan-service.ts` ~L140-148: one `.in("session_id", sessionIds)` select with no `.range()` paging). PostgREST silently truncates at ~1000 rows, so a long multi-week program (e.g. 52 weeks × 5 sessions × 8 exercises ≈ 2000 rows) would silently drop the tail exercises from the client plan view. Same class as the exercise-catalog cap fixed in `c0020a4` — page with a range loop keyed on the ordered columns. Pre-existing before S4, but duplicate-week progression makes long programs materially likelier.
+
+---
+
 ## Training builder standalone sessions — deferred tails (builder S3)
 
 Logged: 2026-07-02.

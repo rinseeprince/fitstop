@@ -9,6 +9,7 @@ import {
   type ExerciseDraft,
   type ProgramDraft,
   type SessionDraft,
+  type WeekDraft,
 } from "./program-builder-types";
 import {
   cloneWeek,
@@ -33,9 +34,10 @@ export { findSession } from "./program-builder-model";
 export function useProgramBuilderState() {
   const [draft, setDraft] = useState<ProgramDraft | null>(null);
   const [isDirty, setIsDirty] = useState(false);
-  // Mutations only ever originate from event handlers, so a synchronous ref
-  // mirror of the draft is safe and lets apply() detect no-ops outside the
-  // React updater (updaters must stay side-effect free).
+  // Mutations originate from event handlers and from post-await continuations
+  // of handler-initiated flows (saves, dialog commits) — never from render —
+  // so a synchronous ref mirror of the draft is safe and lets apply() detect
+  // no-ops outside the React updater (updaters must stay side-effect free).
   const draftRef = useRef<ProgramDraft | null>(null);
   const isDirtyRef = useRef(false);
   const revisionRef = useRef(0);
@@ -133,6 +135,23 @@ export function useProgramBuilderState() {
         if (index < 0) return d;
         const weeks = [...d.weeks];
         weeks.splice(index + 1, 0, cloneWeek(d.weeks[index]));
+        return { ...d, weeks };
+      }),
+    [apply],
+  );
+
+  // Insert a pre-built week right after the source week (the progression
+  // dialog commits its previewed clone this way). The week must carry fresh
+  // uids — produce it via cloneWeek()/progressWeek(). Belts: MAX_WEEKS cap,
+  // vanished source uid, and an already-present week uid all no-op.
+  const insertWeekAfter = useCallback(
+    (weekUid: string, week: WeekDraft) =>
+      apply((d) => {
+        if (d.weeks.length >= MAX_WEEKS) return d;
+        const index = d.weeks.findIndex((w) => w.uid === weekUid);
+        if (index < 0 || d.weeks.some((w) => w.uid === week.uid)) return d;
+        const weeks = [...d.weeks];
+        weeks.splice(index + 1, 0, week);
         return { ...d, weeks };
       }),
     [apply],
@@ -337,6 +356,7 @@ export function useProgramBuilderState() {
     setDefaultSurplus,
     addWeek,
     duplicateWeek,
+    insertWeekAfter,
     deleteWeek,
     reorderWeek,
     addSessionToSlot,

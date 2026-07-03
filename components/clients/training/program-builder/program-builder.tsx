@@ -10,7 +10,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { SectionLabel } from "@/components/programs/shared/section-label";
 import { cn } from "@/lib/utils";
 import type { SavedSession } from "@/types/training";
-import type { DaySlotDraft } from "./program-builder-types";
+import { MAX_WEEKS, type DaySlotDraft } from "./program-builder-types";
 import { savedSessionToDraft } from "./program-builder-serialize";
 import { findSession } from "./use-program-builder-state";
 import { useProgramDnd } from "./use-program-dnd";
@@ -18,6 +18,7 @@ import { useSaveDayAsWorkout } from "./use-save-day-as-workout";
 import { useProgramDraft } from "./program-draft-provider";
 import { ProgramTopBar } from "./program-top-bar";
 import { ProgramGrid } from "./program-grid";
+import { DuplicateWeekDialog } from "./duplicate-week-dialog";
 import { SessionEditorSheet } from "./session-editor-sheet";
 import { SessionLibraryDrawer } from "./session-library-drawer";
 import { AddSessionPopover, type AddSessionTarget } from "./add-session-popover";
@@ -68,10 +69,14 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
     updateExercise,
     reorderExercise,
     editSetSpec,
+    insertWeekAfter,
   } = useProgramDraft();
 
   const [collapsedWeeks, setCollapsedWeeks] = useState<Set<string>>(new Set());
   const [editingSessionUid, setEditingSessionUid] = useState<string | null>(null);
+  // The uid only — the week resolves live at render, so a vanished uid or a
+  // mode flip closes the progression dialog by unmounting it.
+  const [progressionWeekUid, setProgressionWeekUid] = useState<string | null>(null);
   const [addTarget, setAddTarget] = useState<AddSessionTarget | null>(null);
   const [confirmLeaveOpen, setConfirmLeaveOpen] = useState(false);
   const [confirmDiscardOpen, setConfirmDiscardOpen] = useState(false);
@@ -122,6 +127,10 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
   }
 
   const editingSession = findSession(draft, editingSessionUid);
+  const progressionWeek =
+    mode === "edit"
+      ? (draft.weeks.find((w) => w.uid === progressionWeekUid) ?? null)
+      : null;
   const editingSlotUid =
     draft.weeks
       .flatMap((w) => w.days)
@@ -248,6 +257,7 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
                 })
               }
               onDuplicateWeek={duplicateWeek}
+              onDuplicateWeekWithProgression={setProgressionWeekUid}
               onDeleteWeek={deleteWeek}
               onAddWeek={addWeek}
               onOpenSession={setEditingSessionUid}
@@ -317,6 +327,21 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
         onSaveAsWorkout={(uid) => void saveDayAsWorkout(uid)}
         isSavingWorkout={isSavingWorkout}
       />
+
+      {/* Conditional mount: an always-mounted dialog would fetch the exercise
+          catalog on every builder render and leak closed-state preview
+          content into count-sensitive queries. */}
+      {progressionWeek && (
+        <DuplicateWeekDialog
+          week={progressionWeek}
+          canAddWeek={draft.weeks.length < MAX_WEEKS}
+          onCommit={(newWeek) => {
+            insertWeekAfter(progressionWeek.uid, newWeek);
+            setProgressionWeekUid(null);
+          }}
+          onClose={() => setProgressionWeekUid(null)}
+        />
+      )}
 
       <AddSessionPopover
         target={mode === "edit" ? addTarget : null}

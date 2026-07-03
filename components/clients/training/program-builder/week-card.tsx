@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, Copy, GripVertical, Trash2 } from "lucide-react";
+import { ChevronDown, Copy, GripVertical, Trash2, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { WeekDraft } from "./program-builder-types";
 import {
@@ -21,6 +21,9 @@ type WeekCardProps = {
   canDelete: boolean;
   onToggleCollapse: () => void;
   onDuplicate: () => void;
+  // Opens the progression dialog (duplicate + rule + preview). Plain
+  // Duplicate stays one-click — these are sibling affordances by design.
+  onDuplicateWithProgression: () => void;
   onDelete: () => void;
   // useSortable attributes+listeners from week-row — grip-only drag.
   dragHandleProps?: Record<string, unknown>;
@@ -33,6 +36,7 @@ export function WeekCard({
   canDelete,
   onToggleCollapse,
   onDuplicate,
+  onDuplicateWithProgression,
   onDelete,
   dragHandleProps,
 }: WeekCardProps) {
@@ -98,6 +102,18 @@ export function WeekCard({
                 onClick={onDuplicate}
               >
                 <Copy className="h-3 w-3" strokeWidth={1.5} /> Duplicate
+              </button>
+              <button
+                type="button"
+                aria-label={`Duplicate week ${week.weekIndex + 1} with progression`}
+                title="Duplicate with progression"
+                className={cn(
+                  "rounded p-1 hover:bg-[rgba(13,148,136,0.08)]",
+                  TEXT_SECONDARY,
+                )}
+                onClick={onDuplicateWithProgression}
+              >
+                <TrendingUp className="h-3 w-3" strokeWidth={1.5} />
               </button>
               <button
                 type="button"

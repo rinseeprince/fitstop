@@ -3,6 +3,7 @@ import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/re
 import { ProgramBuilder } from "./program-builder";
 import { ProgramDraftProvider } from "./program-draft-provider";
 import type { SavedPlan, SavedSession } from "@/types/training";
+import type { SetSpec } from "@/utils/exercise-set-specs";
 
 // -- mocks --------------------------------------------------------------------
 
@@ -28,6 +29,30 @@ vi.mock("@/hooks/use-standalone-sessions", () => ({
   useStandaloneSessions: () => ({
     sessions: [],
     isLoading: false,
+    mutate: vi.fn(),
+  }),
+}));
+
+// The duplicate-week progression dialog classifies compounds off the catalog.
+// A real UUID: the overwrite schema validates exerciseId with z.string().uuid().
+const BENCH_CATALOG_ID = "3b8e7a2e-1111-4222-8333-000000000001";
+vi.mock("@/hooks/use-exercise-catalog", () => ({
+  useExerciseCatalog: () => ({
+    exercises: [
+      {
+        id: "3b8e7a2e-1111-4222-8333-000000000001",
+        coachId: null,
+        name: "Bench Press",
+        muscleGroup: "chest",
+        equipment: "barbell",
+        category: "compound",
+        aliases: [],
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+      },
+    ],
+    isLoading: false,
+    error: null,
     mutate: vi.fn(),
   }),
 }));
@@ -251,6 +276,80 @@ describe("ProgramBuilder save flow", () => {
 
     fireEvent.click(screen.getByLabelText("Edit program"));
     expect(screen.getByLabelText("Save program")).toBeInTheDocument();
+  });
+
+  it("duplicate-with-progression previews, commits a progressed week, and saves it without touching week 0", async () => {
+    const benchSpecs: SetSpec[] = [
+      { set_number: 1, set_type: "warmup", load_type: "absolute", load_value: 60 },
+      { set_number: 2, set_type: "working", load_type: "absolute", load_value: 100 },
+      { set_number: 3, set_type: "working", load_type: "absolute", load_value: 90 },
+    ];
+    const plan = makeDraftPlan();
+    plan.sessions[0].exercises = [
+      {
+        id: "ex-row-1",
+        savedSessionId: "s-0",
+        exerciseId: BENCH_CATALOG_ID,
+        name: "Bench Press",
+        orderIndex: 0,
+        sets: 2,
+        repsMin: 8,
+        repsMax: 10,
+        repsTarget: null,
+        rpeTarget: null,
+        percentage1rm: null,
+        tempo: null,
+        restSeconds: null,
+        supersetGroup: null,
+        isWarmup: false,
+        notes: null,
+        setSpecs: benchSpecs.map((s) => ({ ...s })),
+        videoUrl: null,
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+      },
+    ];
+    planFixture = plan;
+    render(
+      <ProgramDraftProvider savedPlanId="plan-1" target="library">
+        <ProgramBuilder />
+      </ProgramDraftProvider>,
+    );
+
+    // Dialog is unmounted until the affordance is clicked (count-sensitive
+    // queries like the 6 Rest cells rely on no hidden preview content).
+    expect(screen.queryByText("Duplicate Week 1")).toBeNull();
+    expect(screen.getAllByText("Rest")).toHaveLength(6);
+
+    fireEvent.click(screen.getByLabelText("Duplicate week 1 with progression"));
+    expect(screen.getByText("Duplicate Week 1")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Compounds only" }));
+    fireEvent.click(screen.getByRole("button", { name: "Duplicate week" }));
+
+    // Dialog closed, progressed week inserted: two Push cards on the grid.
+    expect(screen.queryByText("Duplicate Week 1")).toBeNull();
+    expect(screen.getAllByText("Push")).toHaveLength(2);
+
+    fireEvent.click(screen.getByLabelText("Save program"));
+    await waitFor(() => expect(overwriteCall()).toBeTruthy());
+
+    const body = overwriteCall()!.body as {
+      sessions: Array<{
+        name: string;
+        weekIndex: number;
+        isRest: boolean;
+        exercises: Array<{ setSpecs: Array<{ set_type?: string; load_value?: number }> | null }>;
+      }>;
+    };
+    expect(body.sessions).toHaveLength(14);
+    const week0Push = body.sessions.find((s) => s.weekIndex === 0 && !s.isRest)!;
+    const week1Push = body.sessions.find((s) => s.weekIndex === 1 && !s.isRest)!;
+    // Week 0 serializes byte-identical to the fixture prescription.
+    expect(week0Push.exercises[0].setSpecs).toEqual(benchSpecs);
+    // Week 1 carries the progressed working loads; warm-up untouched.
+    expect(week1Push.exercises[0].setSpecs!.map((s) => s.load_value)).toEqual([
+      60, 102.5, 92.5,
+    ]);
   });
 
   it("Save as workout POSTs the day's session with dedupeName and surfaces the final name", async () => {
