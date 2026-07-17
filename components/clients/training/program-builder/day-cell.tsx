@@ -1,16 +1,17 @@
 "use client";
 
-import { GripVertical, Plus, X } from "lucide-react";
+import { Dumbbell, GripVertical, Plus, X } from "lucide-react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { cn } from "@/lib/utils";
 import type { DaySlotDraft } from "./program-builder-types";
 import type { SessionDragData, SlotDropData } from "./use-program-dnd";
+import { setsRepsShort } from "./exercise-summary";
 import {
-  CHIP_NEUTRAL_CLASS,
   MONO_LABEL_CLASS,
-  REST_CARD_BORDER,
   TEXT_MUTED,
   TEXT_PRIMARY,
+  TEXT_SECONDARY,
+  THUMB_CLASS,
   TRAINING_CARD_BORDER,
 } from "./builder-tokens";
 
@@ -91,8 +92,9 @@ export function DayCell({
         <div
           ref={setDropRef}
           className={cn(
-            "group/rest flex h-full flex-col items-center justify-center rounded-[6px] bg-transparent transition-colors",
-            REST_CARD_BORDER,
+            // Quiet by design (mockup `.rest`): no visible border at rest,
+            // a dashed teal border only on hover / drag-over.
+            "group/rest flex h-full flex-col items-center justify-center rounded-[6px] border border-dashed border-transparent bg-transparent transition-colors",
             heightClass,
             isOver && "border-[#0d9488] bg-[rgba(13,148,136,0.05)]",
             editable && "cursor-pointer hover:border-[rgba(13,148,136,0.25)] hover:bg-[rgba(13,148,136,0.03)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0d9488]/35",
@@ -152,12 +154,15 @@ export function DayCell({
           </span>
         ) : (
           <>
-            <div className="flex items-start justify-between gap-1">
-              <span className={cn("line-clamp-2 pr-1 text-xs font-semibold", TEXT_PRIMARY)}>
+            <div className="flex items-center gap-1.5">
+              <span className={cn(THUMB_CLASS, "h-5 w-5")}>
+                <Dumbbell className="h-3 w-3" strokeWidth={1.5} />
+              </span>
+              <span className={cn("min-w-0 flex-1 truncate text-xs font-semibold", TEXT_PRIMARY)}>
                 {session.name}
               </span>
               {editable && (
-                <div className="-mr-1 -mt-1 flex shrink-0 items-center opacity-0 transition-opacity group-hover/cell:opacity-100">
+                <div className="-mr-1 flex shrink-0 items-center opacity-0 transition-opacity group-hover/cell:opacity-100">
                   <button
                     type="button"
                     aria-label="Clear session (back to rest)"
@@ -182,21 +187,41 @@ export function DayCell({
                 </div>
               )}
             </div>
-            <div className="mt-auto flex items-center gap-1.5 pt-2">
-              {session.focus && (
-                <span className={cn("max-w-[80px] truncate", CHIP_NEUTRAL_CLASS)}>
-                  {session.focus}
-                </span>
-              )}
-              <span className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal")}>
-                {session.exercises.length}{" "}
-                {session.exercises.length === 1 ? "exercise" : "exercises"}
-                {session.estimatedDurationMinutes != null &&
-                  ` · ${session.estimatedDurationMinutes}m`}
+
+            {/* Ordered exercise list — name + sets×reps, first 3 + "+N more". */}
+            {session.exercises.length > 0 && (
+              <div className="mt-1.5 min-w-0 flex-1 space-y-[3px] overflow-hidden">
+                {session.exercises.slice(0, 3).map((ex, i) => (
+                  <div key={ex.uid} className="flex items-baseline gap-1.5">
+                    <span className="w-2 shrink-0 font-mono-display text-[9.5px] text-[#c2d0cc]">
+                      {i + 1}
+                    </span>
+                    <span className={cn("min-w-0 flex-1 truncate text-[11px]", TEXT_SECONDARY)}>
+                      {ex.name}
+                    </span>
+                    <span className={cn("shrink-0 font-mono-display text-[10px]", TEXT_MUTED)}>
+                      {setsRepsShort(ex)}
+                    </span>
+                  </div>
+                ))}
+                {session.exercises.length > 3 && (
+                  <div className="pl-[14px] font-mono-display text-[10px] text-[#c2d0cc]">
+                    +{session.exercises.length - 3} more
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Foot: duration (or exercise count) · focus. */}
+            <div className="mt-auto flex items-center justify-between gap-1.5 border-t border-[rgba(13,148,136,0.06)] pt-1.5">
+              <span className={cn("font-mono-display text-[10px]", TEXT_MUTED)}>
+                {session.estimatedDurationMinutes != null
+                  ? `${session.estimatedDurationMinutes} min`
+                  : `${session.exercises.length} ${session.exercises.length === 1 ? "exercise" : "exercises"}`}
               </span>
-              {session.calorieSurplusPercentage != null && (
-                <span className="ml-auto font-mono-display text-[10px] text-[#0d9488]">
-                  +{session.calorieSurplusPercentage}%
+              {session.focus && (
+                <span className={cn("min-w-0 truncate font-mono-display text-[10px]", TEXT_MUTED)}>
+                  {session.focus}
                 </span>
               )}
             </div>

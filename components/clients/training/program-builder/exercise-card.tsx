@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, GripVertical, Plus, Trash2, Video } from "lucide-react";
+import { ChevronDown, Dumbbell, GripVertical, Plus, Trash2, Video } from "lucide-react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Input } from "@/components/ui/input";
@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { expandSetSpecs } from "@/utils/exercise-set-specs";
 import type { ExerciseDraft } from "./program-builder-types";
 import type { SetSpecEdit } from "./use-set-spec-mutations";
+import { exerciseCompactSummary } from "./exercise-summary";
 import { SET_GRID, SetRowEditor } from "./set-row-editor";
 import {
   FOCUS_RING,
@@ -17,6 +18,7 @@ import {
   TEXT_MUTED,
   TEXT_PRIMARY,
   TEXT_SECONDARY,
+  THUMB_CLASS,
   TRAINING_CARD_BORDER,
 } from "./builder-tokens";
 
@@ -29,6 +31,8 @@ import {
 // they still round-trip through the draft/serializer for legacy rows.
 type ExerciseCardProps = {
   exercise: ExerciseDraft;
+  // 1-based position in the session — rendered as the block's ord circle.
+  ordinal: number;
   mode: "view" | "edit";
   // Exercises added during the current editing session open straight into
   // per-set authoring (the body computes newness); existing ones stay compact.
@@ -38,24 +42,9 @@ type ExerciseCardProps = {
   onRemove: () => void;
 };
 
-function compactSummary(e: ExerciseDraft): string {
-  const range =
-    e.repsMin != null || e.repsMax != null
-      ? `${e.repsMin ?? "?"}–${e.repsMax ?? "?"}`
-      : null;
-  // With authored specs the compact range IS the maintained projection —
-  // prefer it over an exercise-level repsTarget that per-set edits never
-  // update (it would show stale reps after editing sets).
-  const reps =
-    e.setSpecs && e.setSpecs.length > 0
-      ? range ?? e.repsTarget
-      : e.repsTarget ?? range;
-  const base = reps ? `${e.sets} × ${reps}` : `${e.sets} sets`;
-  return e.rpeTarget != null ? `${base} @ RPE ${e.rpeTarget}` : base;
-}
-
 export function ExerciseCard({
   exercise,
+  ordinal,
   mode,
   defaultExpanded = false,
   onEdit,
@@ -100,26 +89,37 @@ export function ExerciseCard({
       )}
     >
       {/* Compact header row */}
-      <div className="flex items-center gap-1.5 p-2">
+      <div className="flex items-center gap-2 p-2">
         {editable && (
           <button
             type="button"
             aria-label={`Drag ${exercise.name}`}
-            className={cn("cursor-grab rounded p-1 hover:bg-[rgba(13,148,136,0.08)] active:cursor-grabbing", TEXT_MUTED)}
+            className={cn("-mr-0.5 cursor-grab rounded p-0.5 hover:bg-[rgba(13,148,136,0.08)] active:cursor-grabbing", TEXT_MUTED)}
             {...attributes}
             {...listeners}
           >
             <GripVertical className="h-3.5 w-3.5" strokeWidth={1.5} />
           </button>
         )}
-        <span className={cn("min-w-0 flex-1 truncate text-xs font-semibold", TEXT_PRIMARY)}>
+        <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[rgba(13,148,136,0.08)] font-mono-display text-[11px] font-semibold text-[#0a5c55]">
+          {ordinal}
+        </span>
+        <span className={cn(THUMB_CLASS, "h-7 w-7")}>
+          <Dumbbell className="h-3.5 w-3.5" strokeWidth={1.5} />
+        </span>
+        <span className={cn("min-w-0 flex-1 truncate text-[13px] font-semibold", TEXT_PRIMARY)}>
           {exercise.name}
         </span>
+        {exercise.notes && (
+          <span className="shrink-0 rounded-[6px] bg-[rgba(13,148,136,0.08)] px-2 py-0.5 font-mono-display text-[10px] text-[#0a5c55]">
+            Notes
+          </span>
+        )}
         {exercise.videoUrl && (
           <Video className={cn("h-3 w-3 shrink-0", TEXT_SECONDARY)} strokeWidth={1.5} />
         )}
-        <span className={cn("shrink-0 font-mono text-[11px]", TEXT_SECONDARY)}>
-          {compactSummary(exercise)}
+        <span className={cn("shrink-0 font-mono-display text-[11px]", TEXT_SECONDARY)}>
+          {exerciseCompactSummary(exercise)}
         </span>
         {editable && (
           <button

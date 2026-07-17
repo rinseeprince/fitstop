@@ -126,7 +126,7 @@ export function SessionEditorBody({
             max={480}
             disabled={!editable}
             defaultValue={session.estimatedDurationMinutes ?? ""}
-            className={cn("h-8 text-center font-mono text-xs", FOCUS_RING)}
+            className={cn("h-8 text-center font-mono-display text-xs", FOCUS_RING)}
             onBlur={(e) => {
               const raw = e.target.value.trim();
               const n = raw === "" ? null : Number(raw);
@@ -156,7 +156,7 @@ export function SessionEditorBody({
                 ? `Default ${defaultSurplusPercentage}%`
                 : "No default"
             }
-            className={cn("h-8 text-center font-mono text-xs", FOCUS_RING)}
+            className={cn("h-8 text-center font-mono-display text-xs", FOCUS_RING)}
             onBlur={(e) => {
               const raw = e.target.value.trim();
               const n = raw === "" ? null : Number(raw);
@@ -186,10 +186,11 @@ export function SessionEditorBody({
             items={session.exercises.map((e) => e.uid)}
             strategy={verticalListSortingStrategy}
           >
-            {session.exercises.map((exercise) => (
+            {session.exercises.map((exercise, i) => (
               <ExerciseCard
                 key={exercise.uid}
                 exercise={exercise}
+                ordinal={i + 1}
                 mode={mode}
                 defaultExpanded={!initialUids.has(exercise.uid)}
                 onEdit={(patch) => onEditExercise(session.uid, exercise.uid, patch)}

@@ -49,7 +49,7 @@ export function DropSetEditor({ drops, setIndex, disabled, onEdit }: DropSetEdit
             defaultValue={drop.weight ?? ""}
             placeholder="kg"
             aria-label={`Drop ${dropIndex + 1} weight`}
-            className={cn("h-6 w-16 px-1 text-center font-mono text-[11px]", FOCUS_RING)}
+            className={cn("h-6 w-16 px-1 text-center font-mono-display text-[11px]", FOCUS_RING)}
             onBlur={(e) =>
               onEdit({
                 kind: "update-drop",
@@ -68,7 +68,7 @@ export function DropSetEditor({ drops, setIndex, disabled, onEdit }: DropSetEdit
             defaultValue={drop.reps ?? ""}
             placeholder="reps"
             aria-label={`Drop ${dropIndex + 1} reps`}
-            className={cn("h-6 w-14 px-1 text-center font-mono text-[11px]", FOCUS_RING)}
+            className={cn("h-6 w-14 px-1 text-center font-mono-display text-[11px]", FOCUS_RING)}
             onBlur={(e) =>
               onEdit({
                 kind: "update-drop",

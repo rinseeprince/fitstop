@@ -55,10 +55,11 @@ function renderRow(props: Partial<Parameters<typeof WeekRow>[0]> = {}) {
 describe("WeekRow / WeekCard", () => {
   beforeEach(() => cleanup());
 
-  it("renders the week number, sessions-vs-rest summary, and 7 day cells", () => {
+  it("renders the week chip, session-count frequency, and 7 day cells", () => {
     renderRow();
-    expect(screen.getByText("Week 1")).toBeInTheDocument();
-    expect(screen.getByText(/1 session · 6 rest/)).toBeInTheDocument();
+    expect(screen.getByText("W1")).toBeInTheDocument();
+    // This week's training-session count, as the compact "N×" frequency.
+    expect(screen.getByText("1×")).toBeInTheDocument();
     // 1 session cell + 6 rest cells.
     expect(screen.getByText("Push")).toBeInTheDocument();
     expect(screen.getAllByText("Rest")).toHaveLength(6);

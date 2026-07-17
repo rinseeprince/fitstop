@@ -60,6 +60,8 @@ const LOAD_OPTIONS = [
 
 export function SetRowEditor({ spec, index, disabled, onEdit }: SetRowEditorProps) {
   const openReps = spec.set_type === "amrap" || spec.set_type === "failure";
+  // Working sets get the teal-wash pill (mockup `.type-pill.work`).
+  const isWorking = spec.set_type === "working";
   const loadSuffix =
     LOAD_OPTIONS.find((o) => o.value === spec.load_type)?.suffix ?? "";
   const update = (patch: Partial<SetSpec>) =>
@@ -68,7 +70,7 @@ export function SetRowEditor({ spec, index, disabled, onEdit }: SetRowEditorProp
   return (
     <div>
       <div className={SET_GRID}>
-        <span className={cn("text-center font-mono text-[11px]", TEXT_MUTED)}>
+        <span className={cn("text-center font-mono-display text-[11px]", TEXT_MUTED)}>
           {spec.set_number}
         </span>
 
@@ -79,7 +81,12 @@ export function SetRowEditor({ spec, index, disabled, onEdit }: SetRowEditorProp
         >
           <SelectTrigger
             aria-label={`Set ${spec.set_number} type`}
-            className={cn("h-7 px-2 text-[11px]", FOCUS_RING)}
+            className={cn(
+              "h-7 px-2 text-[11px]",
+              FOCUS_RING,
+              isWorking &&
+                "border-[rgba(13,148,136,0.2)] bg-[rgba(13,148,136,0.05)] font-medium text-[#0a5c55]",
+            )}
           >
             <SelectValue />
           </SelectTrigger>
@@ -99,7 +106,7 @@ export function SetRowEditor({ spec, index, disabled, onEdit }: SetRowEditorProp
             defaultValue={spec.reps_target ?? ""}
             placeholder={spec.set_type === "amrap" ? "AMRAP" : "To failure"}
             aria-label={`Set ${spec.set_number} rep target`}
-            className={cn("h-7 px-1.5 text-center font-mono text-[11px]", FOCUS_RING)}
+            className={cn("h-7 px-1.5 text-center font-mono-display text-[11px]", FOCUS_RING)}
             onBlur={(e) => update({ reps_target: e.target.value.trim() || null })}
           />
         ) : (
@@ -112,7 +119,7 @@ export function SetRowEditor({ spec, index, disabled, onEdit }: SetRowEditorProp
               defaultValue={spec.reps_min ?? ""}
               placeholder="min"
               aria-label={`Set ${spec.set_number} min reps`}
-              className={cn("h-7 min-w-0 flex-1 px-1 text-center font-mono text-[11px]", FOCUS_RING)}
+              className={cn("h-7 min-w-0 flex-1 px-1 text-center font-mono-display text-[11px]", FOCUS_RING)}
               onBlur={(e) => update({ reps_min: commitNum(e, { min: 0, max: 100, int: true }) })}
             />
             <span className={cn("text-[10px]", TEXT_MUTED)}>–</span>
@@ -124,7 +131,7 @@ export function SetRowEditor({ spec, index, disabled, onEdit }: SetRowEditorProp
               defaultValue={spec.reps_max ?? ""}
               placeholder="max"
               aria-label={`Set ${spec.set_number} max reps`}
-              className={cn("h-7 min-w-0 flex-1 px-1 text-center font-mono text-[11px]", FOCUS_RING)}
+              className={cn("h-7 min-w-0 flex-1 px-1 text-center font-mono-display text-[11px]", FOCUS_RING)}
               onBlur={(e) => update({ reps_max: commitNum(e, { min: 0, max: 100, int: true }) })}
             />
           </div>
@@ -167,7 +174,7 @@ export function SetRowEditor({ spec, index, disabled, onEdit }: SetRowEditorProp
             defaultValue={spec.load_value ?? ""}
             placeholder={loadSuffix}
             aria-label={`Set ${spec.set_number} load`}
-            className={cn("h-7 w-16 shrink-0 px-1 text-center font-mono text-[11px]", FOCUS_RING)}
+            className={cn("h-7 w-16 shrink-0 px-1 text-center font-mono-display text-[11px]", FOCUS_RING)}
             onBlur={(e) => update({ load_value: commitNum(e, { min: 0, max: 2000 }) })}
           />
         </div>
@@ -181,7 +188,7 @@ export function SetRowEditor({ spec, index, disabled, onEdit }: SetRowEditorProp
           defaultValue={spec.rpe_target ?? ""}
           placeholder="RPE"
           aria-label={`Set ${spec.set_number} RPE`}
-          className={cn("h-7 px-1 text-center font-mono text-[11px]", FOCUS_RING)}
+          className={cn("h-7 px-1 text-center font-mono-display text-[11px]", FOCUS_RING)}
           onBlur={(e) => update({ rpe_target: commitNum(e, { min: 0, max: 10 }) })}
         />
 
@@ -191,7 +198,7 @@ export function SetRowEditor({ spec, index, disabled, onEdit }: SetRowEditorProp
           defaultValue={spec.tempo ?? ""}
           placeholder="3010"
           aria-label={`Set ${spec.set_number} tempo`}
-          className={cn("h-7 px-1 text-center font-mono text-[11px]", FOCUS_RING)}
+          className={cn("h-7 px-1 text-center font-mono-display text-[11px]", FOCUS_RING)}
           onBlur={(e) => update({ tempo: e.target.value.trim() || null })}
         />
 
@@ -203,7 +210,7 @@ export function SetRowEditor({ spec, index, disabled, onEdit }: SetRowEditorProp
           defaultValue={spec.rest_seconds ?? ""}
           placeholder="rest"
           aria-label={`Set ${spec.set_number} rest seconds`}
-          className={cn("h-7 px-1 text-center font-mono text-[11px]", FOCUS_RING)}
+          className={cn("h-7 px-1 text-center font-mono-display text-[11px]", FOCUS_RING)}
           onBlur={(e) => update({ rest_seconds: commitNum(e, { min: 0, max: 3600, int: true }) })}
         />
 

@@ -52,6 +52,7 @@ function Wrapper({
       <SortableContext items={[current.uid]} strategy={verticalListSortingStrategy}>
         <ExerciseCard
           exercise={current}
+          ordinal={1}
           mode={mode}
           defaultExpanded={defaultExpanded}
           onEdit={(patch) => setCurrent((e) => ({ ...e, ...patch }))}

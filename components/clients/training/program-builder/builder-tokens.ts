@@ -37,3 +37,14 @@ export const MONO_LABEL_CLASS =
 // Neutral focus chip on session/library/popover cards.
 export const CHIP_NEUTRAL_CLASS =
   "rounded-[4px] bg-[#f0f5f4] px-1.5 py-px text-[10px] font-medium text-[#5a7d82]";
+
+// Teal-tinted icon square — the session-card chip, library-card thumb, and
+// exercise-block thumb all share this (size set by the caller via h-/w-).
+// Deliberately ONE neutral treatment: the mockup's push/pull/legs tints are
+// collapsed (owner decision — no focus→colour mapping).
+export const THUMB_CLASS =
+  "grid shrink-0 place-items-center rounded-[6px] bg-[rgba(13,148,136,0.08)] text-[#0d9488]";
+
+// Mono eyebrow on the dark program header (teal on #0f2027).
+export const HEADER_EYEBROW_CLASS =
+  "font-mono-display text-[9.5px] font-medium uppercase tracking-[0.14em] text-[#5eead4]";

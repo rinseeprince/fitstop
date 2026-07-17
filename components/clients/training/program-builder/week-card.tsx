@@ -4,9 +4,7 @@ import { ChevronDown, Copy, GripVertical, Trash2, TrendingUp } from "lucide-reac
 import { cn } from "@/lib/utils";
 import type { WeekDraft } from "./program-builder-types";
 import {
-  MONO_LABEL_CLASS,
   TEXT_MUTED,
-  TEXT_PRIMARY,
   TEXT_SECONDARY,
   TRAINING_CARD_BORDER,
 } from "./builder-tokens";
@@ -41,23 +39,22 @@ export function WeekCard({
   dragHandleProps,
 }: WeekCardProps) {
   const trainingCount = week.days.filter((d) => !d.isRest).length;
-  const restCount = week.days.length - trainingCount;
 
   return (
     <div
       className={cn(
-        "flex h-full flex-col rounded-[6px] bg-white p-3",
+        "flex h-full flex-col rounded-[6px] bg-white p-2.5",
         TRAINING_CARD_BORDER,
         collapsed ? "min-h-9 justify-center py-1.5" : "min-h-[92px]",
       )}
     >
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1.5">
         {mode === "edit" && (
           <button
             type="button"
             aria-label={`Drag week ${week.weekIndex + 1}`}
             className={cn(
-              "-ml-1.5 cursor-grab rounded p-1 hover:bg-[rgba(13,148,136,0.08)] active:cursor-grabbing",
+              "-ml-1 cursor-grab rounded p-0.5 hover:bg-[rgba(13,148,136,0.08)] active:cursor-grabbing",
               TEXT_MUTED,
             )}
             {...dragHandleProps}
@@ -65,8 +62,12 @@ export function WeekCard({
             <GripVertical className="h-3.5 w-3.5" strokeWidth={1.5} />
           </button>
         )}
-        <span className={cn("text-sm font-semibold", TEXT_PRIMARY)}>
-          Week {week.weekIndex + 1}
+        {/* W# chip + this week's session-count frequency (mockup `.wk-chip`). */}
+        <span className="rounded-[6px] bg-[rgba(13,148,136,0.08)] px-1.5 py-0.5 font-mono-display text-[10.5px] font-semibold text-[#0a5c55]">
+          W{week.weekIndex + 1}
+        </span>
+        <span className={cn("font-mono-display text-[10px]", TEXT_MUTED)}>
+          {trainingCount}×
         </span>
         <button
           type="button"
@@ -85,12 +86,7 @@ export function WeekCard({
         </button>
       </div>
 
-      {!collapsed && (
-        <>
-          <div className={cn("mt-1", MONO_LABEL_CLASS)}>
-            {trainingCount} {trainingCount === 1 ? "session" : "sessions"} · {restCount} rest
-          </div>
-          {mode === "edit" && (
+      {!collapsed && mode === "edit" && (
             <div className="mt-auto flex items-center gap-1 border-t border-[rgba(13,148,136,0.06)] pt-2">
               <button
                 type="button"
@@ -130,8 +126,6 @@ export function WeekCard({
                 <Trash2 className="h-3 w-3" strokeWidth={1.5} />
               </button>
             </div>
-          )}
-        </>
       )}
     </div>
   );

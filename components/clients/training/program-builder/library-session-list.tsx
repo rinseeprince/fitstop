@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useDraggable } from "@dnd-kit/core";
-import { Copy, GripVertical, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { Copy, Dumbbell, GripVertical, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { cn } from "@/lib/utils";
@@ -19,6 +19,7 @@ import {
   MONO_LABEL_CLASS,
   TEXT_MUTED,
   TEXT_PRIMARY,
+  THUMB_CLASS,
   TRAINING_CARD_BORDER,
 } from "./builder-tokens";
 
@@ -55,7 +56,7 @@ function LibrarySessionCard({
     <div
       ref={setNodeRef}
       className={cn(
-        "group/row flex items-start gap-1.5 rounded-[6px] bg-white p-2 transition-all",
+        "group/row flex items-center gap-2 rounded-[6px] bg-white p-2 pl-1.5 transition-all",
         TRAINING_CARD_BORDER,
         isDragging && "opacity-40",
         "hover:-translate-y-px hover:shadow-[0_6px_20px_rgba(13,148,136,0.08)]",
@@ -65,7 +66,7 @@ function LibrarySessionCard({
         type="button"
         aria-label={`Drag ${session.name}`}
         className={cn(
-          "mt-0.5 shrink-0 rounded",
+          "shrink-0 rounded",
           editable ? "cursor-grab active:cursor-grabbing" : "cursor-default",
           TEXT_MUTED,
         )}
@@ -74,6 +75,9 @@ function LibrarySessionCard({
       >
         <GripVertical className="h-3.5 w-3.5" strokeWidth={1.5} />
       </button>
+      <span className={cn(THUMB_CLASS, "h-[30px] w-[30px]")}>
+        <Dumbbell className="h-[15px] w-[15px]" strokeWidth={1.5} />
+      </span>
       <div className="min-w-0 flex-1">
         <div className={cn("truncate text-xs font-semibold", TEXT_PRIMARY)}>
           {session.name}
@@ -168,6 +172,12 @@ export function LibrarySessionList({ editable }: { editable: boolean }) {
           />
         </div>
       </div>
+
+      {editable && (
+        <div className={cn("px-3 pb-1.5", MONO_LABEL_CLASS)}>
+          Drag a session onto a day
+        </div>
+      )}
 
       <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-3 pb-2">
         {isLoading ? (

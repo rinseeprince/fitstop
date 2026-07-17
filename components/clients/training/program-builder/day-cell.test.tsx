@@ -72,18 +72,26 @@ describe("DayCell — session state", () => {
       isRest: false,
       session: makeSession({
         exercises: [
-          { uid: "ex-1" } as SessionDraft["exercises"][number],
-          { uid: "ex-2" } as SessionDraft["exercises"][number],
+          {
+            uid: "ex-1",
+            name: "Bench",
+            sets: 3,
+            repsMin: 8,
+            repsMax: 12,
+          } as SessionDraft["exercises"][number],
+          { uid: "ex-2", name: "Fly", sets: 3, repsMin: 8, repsMax: 12 } as SessionDraft["exercises"][number],
         ],
         calorieSurplusPercentage: 12,
       }),
     });
 
-  it("shows name, exercise count, surplus badge; click opens the editor", () => {
+  it("shows name, the exercise list with sets×reps, and count; click opens the editor", () => {
     const handlers = renderCell({ slot: sessionSlot() });
     expect(screen.getByText("Push")).toBeInTheDocument();
+    // Ordered exercise list (session card renders name + sets×reps).
+    expect(screen.getByText("Bench")).toBeInTheDocument();
+    expect(screen.getAllByText("3×8-12")).toHaveLength(2);
     expect(screen.getByText("2 exercises")).toBeInTheDocument();
-    expect(screen.getByText("+12%")).toBeInTheDocument();
     fireEvent.click(screen.getByText("Push"));
     expect(handlers.onOpenSession).toHaveBeenCalledWith("sess-1");
   });

@@ -1,6 +1,6 @@
 "use client";
 
-import { BookmarkPlus, Loader2, Moon } from "lucide-react";
+import { BookmarkPlus, Dumbbell, Loader2, Moon } from "lucide-react";
 import {
   Sheet,
   SheetContent,
@@ -9,8 +9,10 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import type { SessionDraft } from "./program-builder-types";
 import { SessionEditorBody, type SessionEditorBodyProps } from "./session-editor-body";
+import { MONO_LABEL_CLASS, THUMB_CLASS } from "./builder-tokens";
 
 // Click-to-edit chrome for one day cell's session: the editor body in a
 // right slide-over (replaces the old centered Dialog — one editor surface,
@@ -52,13 +54,19 @@ export function SessionEditorSheet({
       >
         {session && (
           <>
-            <SheetHeader className="border-b border-[rgba(13,148,136,0.08)] px-5 py-3.5">
-              <SheetTitle className="pr-8 text-[15px] font-semibold text-[#0c1a1e]">
-                {editable ? "Edit session" : session.name}
-              </SheetTitle>
-              <SheetDescription className="sr-only">
-                Session editor for {session.name}
-              </SheetDescription>
+            <SheetHeader className="flex-row items-center gap-3 space-y-0 border-b border-[rgba(13,148,136,0.08)] px-5 py-3.5">
+              <span className={cn(THUMB_CLASS, "h-8 w-8")}>
+                <Dumbbell className="h-4 w-4" strokeWidth={1.5} />
+              </span>
+              <div className="min-w-0 pr-8">
+                <SheetTitle className="truncate text-[15px] font-semibold text-[#0c1a1e]">
+                  {session.name}
+                </SheetTitle>
+                <SheetDescription className={cn("mt-0.5", MONO_LABEL_CLASS)}>
+                  {session.exercises.length}{" "}
+                  {session.exercises.length === 1 ? "exercise" : "exercises"}
+                </SheetDescription>
+              </div>
             </SheetHeader>
 
             <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-5 py-4">
