@@ -152,9 +152,9 @@ export function DuplicateWeekDialog({
               <span className={LABEL_CLASS}>Progression</span>
               <SegmentedControl
                 options={[
-                  { value: "load", label: "Add load" },
-                  { value: "reps", label: "Add reps" },
-                  { value: "sets", label: "Add sets" },
+                  { value: "load", label: "Load" },
+                  { value: "reps", label: "Reps" },
+                  { value: "sets", label: "Sets" },
                 ]}
                 value={ruleKind}
                 onChange={(v) => setRuleKind(v as RuleKind)}
@@ -165,7 +165,7 @@ export function DuplicateWeekDialog({
               {ruleKind === "load" && (
                 <>
                   <label className={cn("flex flex-col gap-1", LABEL_CLASS)}>
-                    Add to each working set
+                    Load change per working set
                     <Input
                       type="number"
                       step={0.5}
@@ -189,31 +189,41 @@ export function DuplicateWeekDialog({
                 </>
               )}
               {ruleKind === "reps" && (
-                <label className={cn("flex flex-col gap-1", LABEL_CLASS)}>
-                  Extra reps per working set
-                  <Input
-                    type="number"
-                    step={1}
-                    value={repsAmount}
-                    onChange={(e) => setRepsAmount(e.target.value)}
-                    onBlur={(e) => setRepsAmount(clampOnBlur(e.target.value, -5, 5, true))}
-                    className={AMOUNT_INPUT_CLASS}
-                  />
-                </label>
+                <>
+                  <label className={cn("flex flex-col gap-1", LABEL_CLASS)}>
+                    Reps change per working set
+                    <Input
+                      type="number"
+                      step={1}
+                      value={repsAmount}
+                      onChange={(e) => setRepsAmount(e.target.value)}
+                      onBlur={(e) => setRepsAmount(clampOnBlur(e.target.value, -5, 5, true))}
+                      className={AMOUNT_INPUT_CLASS}
+                    />
+                  </label>
+                  <span className={cn("pb-2 text-[10px]", TEXT_MUTED)}>
+                    Use a negative number for a deload.
+                  </span>
+                </>
               )}
               {ruleKind === "sets" && (
-                <label className={cn("flex flex-col gap-1", LABEL_CLASS)}>
-                  Extra sets per exercise
-                  <Input
-                    type="number"
-                    step={1}
-                    min={1}
-                    value={setsAmount}
-                    onChange={(e) => setSetsAmount(e.target.value)}
-                    onBlur={(e) => setSetsAmount(clampOnBlur(e.target.value, 1, 5, true))}
-                    className={AMOUNT_INPUT_CLASS}
-                  />
-                </label>
+                <>
+                  <label className={cn("flex flex-col gap-1", LABEL_CLASS)}>
+                    Sets to add or remove
+                    <Input
+                      type="number"
+                      step={1}
+                      value={setsAmount}
+                      onChange={(e) => setSetsAmount(e.target.value)}
+                      onBlur={(e) => setSetsAmount(clampOnBlur(e.target.value, -5, 5, true))}
+                      className={AMOUNT_INPUT_CLASS}
+                    />
+                  </label>
+                  <span className={cn("pb-2 text-[10px]", TEXT_MUTED)}>
+                    Negative removes working sets from the end — every exercise
+                    keeps its first working set.
+                  </span>
+                </>
               )}
             </div>
 

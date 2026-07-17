@@ -166,7 +166,7 @@ describe("DuplicateWeekDialog", () => {
     const { onCommit } = renderDialog();
     fireEvent.click(screen.getByRole("button", { name: "Compounds only" }));
     // switch to reps so the compact-only curl WOULD change if it were in scope
-    fireEvent.click(screen.getByRole("button", { name: "Add reps" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reps" }));
     expect(screen.getByText("1 of 2 exercises change")).toBeInTheDocument();
 
     fireEvent.click(commitButton());
@@ -178,7 +178,7 @@ describe("DuplicateWeekDialog", () => {
 
   it("pick-exercises checkboxes narrow the scope by identity", () => {
     const { onCommit } = renderDialog();
-    fireEvent.click(screen.getByRole("button", { name: "Add reps" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reps" }));
     fireEvent.click(screen.getByRole("button", { name: "Pick exercises" }));
     expect(screen.getByLabelText("Include Cable Curl (Day 1)")).toBeInTheDocument();
     expect(screen.getByText("2 of 2 exercises change")).toBeInTheDocument();
@@ -196,11 +196,35 @@ describe("DuplicateWeekDialog", () => {
 
   it("formats reps and set-count diffs", () => {
     renderDialog();
-    fireEvent.click(screen.getByRole("button", { name: "Add reps" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reps" }));
     expect(screen.getByText("11–13")).toBeInTheDocument(); // curl 10–12 -> 11–13
-    fireEvent.click(screen.getByRole("button", { name: "Add sets" }));
+    fireEvent.click(screen.getByRole("button", { name: "Sets" }));
     expect(screen.getAllByText("3 sets").length).toBeGreaterThan(0);
     expect(screen.getAllByText("4 sets").length).toBeGreaterThan(0);
+  });
+
+  it("a negative sets rule previews and commits a deload week (last working sets removed, floor 1)", () => {
+    const { onCommit } = renderDialog();
+    fireEvent.click(screen.getByRole("button", { name: "Sets" }));
+    fireEvent.change(screen.getByLabelText("Sets to add or remove"), {
+      target: { value: "-1" },
+    });
+    // bench 3 working -> 2; compact-only curl 3 -> 2 (materializes)
+    expect(screen.getByText("2 of 2 exercises change")).toBeInTheDocument();
+    expect(screen.getAllByText("3 sets").length).toBe(2);
+    expect(screen.getAllByText("2 sets").length).toBe(2);
+
+    fireEvent.click(commitButton());
+    const committed = onCommit.mock.calls[0][0] as WeekDraft;
+    const [bench, curl] = committed.days[0].session!.exercises;
+    // warm-up + first two working sets survive; the LAST working set was removed
+    expect(bench.setSpecs!.map((s) => [s.set_type, s.load_value])).toEqual([
+      ["warmup", 60],
+      ["working", 100],
+      ["working", 90],
+    ]);
+    expect(bench.sets).toBe(2);
+    expect(curl.setSpecs).toHaveLength(2);
   });
 
   it("cancel closes without committing", () => {
@@ -227,7 +251,7 @@ describe("DuplicateWeekDialog", () => {
 
   it("a rule that changes nothing shows the exact-copy notice and commits an exact copy", () => {
     const { onCommit } = renderDialog();
-    fireEvent.change(screen.getByLabelText("Add to each working set"), {
+    fireEvent.change(screen.getByLabelText("Load change per working set"), {
       target: { value: "" },
     });
     expect(

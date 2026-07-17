@@ -244,23 +244,53 @@ describe("progressSetSpecs — sets", () => {
     expect(progressSetSpecs(twentyNine, sets(3))).toHaveLength(30);
   });
 
-  it("is add-only: zero/negative/fractional-below-1 amounts are no-ops", () => {
-    const specs = [absWorking(1, 100)];
+  it("fractional amounts between -1 and 1 are no-ops", () => {
+    const specs = [absWorking(1, 100), absWorking(2, 100)];
     expect(progressSetSpecs(specs, sets(0))).toBeNull();
-    expect(progressSetSpecs(specs, sets(-1))).toBeNull();
     expect(progressSetSpecs(specs, sets(0.5))).toBeNull();
+    expect(progressSetSpecs(specs, sets(-0.5))).toBeNull();
   });
 
   it("no working set to clone -> null", () => {
     expect(progressSetSpecs([spec("warmup", 1), spec("amrap", 2)], sets(1))).toBeNull();
   });
+
+  it("negative amounts remove the LAST working sets; warm-ups/finishers survive, renumbered", () => {
+    const specs = [
+      spec("warmup", 1),
+      absWorking(2, 100), // top set — survives
+      absWorking(3, 90),
+      absWorking(4, 90),
+      spec("drop", 5, { load_type: "absolute", load_value: 70 }),
+    ];
+    const next = progressSetSpecs(specs, sets(-1))!;
+    expect(next.map((s) => [s.set_type, s.load_value])).toEqual([
+      ["warmup", undefined],
+      ["working", 100],
+      ["working", 90],
+      ["drop", 70],
+    ]);
+    expect(next.map((s) => s.set_number)).toEqual([1, 2, 3, 4]);
+    // specs before the removal point keep identity
+    expect(next[0]).toBe(specs[0]);
+    expect(next[1]).toBe(specs[1]);
+    expect(next[2]).toBe(specs[2]);
+  });
+
+  it("removal floors at one working set (partial removal) and no-ops at the floor", () => {
+    const three = [absWorking(1, 100), absWorking(2, 90), absWorking(3, 90)];
+    const floored = progressSetSpecs(three, sets(-5))!;
+    expect(floored).toHaveLength(1);
+    expect(floored[0].load_value).toBe(100); // the first working set survives
+    expect(progressSetSpecs([absWorking(1, 100)], sets(-1))).toBeNull();
+  });
 });
 
 describe("progressExercise", () => {
-  it.each([kg(2.5), pct(2.5), reps(1), sets(1)])(
+  it.each([kg(2.5), pct(2.5), reps(1), sets(1), sets(-1)])(
     "isWarmup exercise -> null for rule %j",
     (rule) => {
-      const ex = exercise({ isWarmup: true, setSpecs: [absWorking(1, 100)] });
+      const ex = exercise({ isWarmup: true, setSpecs: [absWorking(1, 100), absWorking(2, 90)] });
       expect(progressExercise(ex, rule)).toBeNull();
     },
   );
@@ -278,6 +308,12 @@ describe("progressExercise", () => {
     expect(result.repsMax).toBe(12);
   });
 
+  it("compact-only + negative sets rule materializes the reduced prescription", () => {
+    const result = progressExercise(exercise({ sets: 3 }), sets(-1))!;
+    expect(result.setSpecs).toHaveLength(2);
+    expect(result.sets).toBe(2);
+  });
+
   it("compact-only + percent rule keeps specs and percentage1rm in lockstep", () => {
     const result = progressExercise(exercise({ percentage1rm: 75 }), pct(2.5))!;
     expect(result.setSpecs.every((s) => s.load_value === 77.5)).toBe(true);
@@ -293,7 +329,7 @@ describe("progressExercise", () => {
     expect(nullPct.percentage1rm).toBeNull();
   });
 
-  it.each([kg(2.5), pct(2.5), reps(1), sets(1)])(
+  it.each([kg(2.5), pct(2.5), reps(1), sets(1), sets(-1)])(
     "result compact fields always equal compactFromSpecs(result.setSpecs) for rule %j",
     (rule) => {
       const ex = exercise({
@@ -355,7 +391,7 @@ describe("buildScopePredicate / exerciseScopeKey", () => {
 });
 
 describe("purity", () => {
-  it.each([kg(2.5), pct(2.5), reps(1), sets(2)])(
+  it.each([kg(2.5), pct(2.5), reps(1), sets(2), sets(-1)])(
     "deep-frozen inputs survive rule %j and deep-equal their pre-call snapshot",
     (rule) => {
       const ex = deepFreeze(

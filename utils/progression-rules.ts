@@ -9,19 +9,18 @@ import {
 // Duplicate-week progression engine (Training Builder S4). Pure math over the
 // per-set model: given one exercise's specs and a rule, produce the next
 // week's prescription. Invariants (owner-decided, tested):
-// - WORKING-TYPE sets only: a spec progresses iff (set_type ?? 'working') ===
-//   'working' (missing type counts as working, matching countWorkingSets).
-//   Warm-up/AMRAP/drop/failure specs copy through by reference — a deliberate
-//   divergence from the "non-warmup" definition compactFromSpecs/analytics
-//   use. drops[].weight is never scaled.
-// - Never fabricates a load_type: a spec with load_value but load_type null
-//   is skipped by both load rules.
-// - Never mutates input, never returns [], never changes set_type — so the
+// - WORKING-TYPE sets only ((set_type ?? 'working') === 'working' — missing
+//   type counts as working, matching countWorkingSets). Warm-up/AMRAP/drop/
+//   failure specs copy by reference, a deliberate divergence from the
+//   non-warmup definition analytics use; drops[].weight is never scaled.
+// - Never fabricates a load_type (load_value with null type is skipped),
+//   never mutates input, never returns [], never changes set_type — the
 //   ≥1-non-warmup zod refine cannot be violated.
-// - null return = the rule changes nothing for this exercise (compact-only
-//   exercises then stay compact; same discipline as applySetSpecEdit).
-// - AMRAP-result-keyed progression is a future seam: no logged results exist
-//   at library-authoring time.
+// - null = the rule changes nothing (compact-only exercises then stay
+//   compact, per the applySetSpecEdit discipline). Negative amounts are
+//   deloads on every rule; the sets rule removes working sets from the end,
+//   flooring at one. AMRAP-result-keyed rules are a future seam (no logged
+//   results exist at library-authoring time).
 
 export type ProgressionRule =
   | { kind: "load"; unit: "kg" | "percent"; amount: number }
@@ -97,28 +96,47 @@ function progressReps(s: SetSpec, amount: number): SetSpec {
   return { ...s, reps_min: min, reps_max: max };
 }
 
-// Unified cap policy: append up to the joint headroom of both ceilings
-// (partial append — the preview always shows the exact result); no headroom
-// (or no working set to clone) = no-op.
-function appendWorkingSets(specs: SetSpec[], amount: number): SetSpec[] | null {
+const renumber = (specs: SetSpec[]): SetSpec[] =>
+  // Reference-preserving: specs whose position didn't shift keep identity.
+  specs.map((s, i) => (s.set_number === i + 1 ? s : { ...s, set_number: i + 1 }));
+
+// Unified partial policy for both directions (the preview always shows the
+// exact result): append up to the joint headroom of both ceilings; no
+// headroom (or no working set to clone) = no-op.
+function appendWorkingSets(specs: SetSpec[], count: number): SetSpec[] | null {
   const lastWorking = specs.reduce((acc, s, i) => (isWorking(s) ? i : acc), -1);
   if (lastWorking < 0) return null;
   const workingCount = specs.filter(isWorking).length;
   const headroom = Math.min(MAX_SET_SPECS - specs.length, MAX_WORKING_SETS - workingCount);
-  const count = Math.min(Math.floor(amount), headroom);
-  if (count < 1) return null;
+  const n = Math.min(count, headroom);
+  if (n < 1) return null;
   // Insert right after the last working set so finishers (drop/failure) stay last.
-  const clones = Array.from({ length: count }, () => cloneSpec(specs[lastWorking]));
-  const next = [...specs.slice(0, lastWorking + 1), ...clones, ...specs.slice(lastWorking + 1)];
-  // Reference-preserving renumber: specs before the insertion keep identity.
-  return next.map((s, i) => (s.set_number === i + 1 ? s : { ...s, set_number: i + 1 }));
+  const clones = Array.from({ length: n }, () => cloneSpec(specs[lastWorking]));
+  return renumber([...specs.slice(0, lastWorking + 1), ...clones, ...specs.slice(lastWorking + 1)]);
+}
+
+// Deload direction: remove the LAST working sets (back-offs go first, the top
+// set survives); warm-ups/finishers are never removed and every exercise
+// keeps at least ONE working set (partial removal down to the floor).
+function removeWorkingSets(specs: SetSpec[], count: number): SetSpec[] | null {
+  const workingIdx: number[] = [];
+  specs.forEach((s, i) => {
+    if (isWorking(s)) workingIdx.push(i);
+  });
+  const n = Math.min(count, workingIdx.length - 1);
+  if (n < 1) return null;
+  const drop = new Set(workingIdx.slice(-n));
+  return renumber(specs.filter((_, i) => !drop.has(i)));
 }
 
 /** Math kernel over already-materialized specs. null = rule changes nothing. */
 export function progressSetSpecs(specs: SetSpec[], rule: ProgressionRule): SetSpec[] | null {
   if (!Number.isFinite(rule.amount) || rule.amount === 0) return null;
   if (rule.kind === "sets") {
-    return rule.amount < 1 ? null : appendWorkingSets(specs, rule.amount); // add-only in v1
+    const n = Math.trunc(rule.amount);
+    if (n >= 1) return appendWorkingSets(specs, n);
+    if (n <= -1) return removeWorkingSets(specs, -n);
+    return null; // fractional between -1 and 1
   }
   const next = specs.map((s) => {
     if (!isWorking(s)) return s;
