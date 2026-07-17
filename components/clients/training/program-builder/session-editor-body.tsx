@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import type { ExerciseDraft, SessionDraft } from "./program-builder-types";
 import type { SetSpecEdit } from "./use-set-spec-mutations";
+import { defaultExerciseDraftFromCatalog } from "./program-builder-model";
 import { ExerciseCard } from "./exercise-card";
 import { ExercisePicker } from "./exercise-picker";
 import { FOCUS_RING, LABEL_CLASS } from "./builder-tokens";
@@ -206,23 +207,10 @@ export function SessionEditorBody({
         {editable && (
           <ExercisePicker
             onPick={({ name, exerciseId }) =>
-              onAddExercise(session.uid, {
-                exerciseId,
-                name,
-                setSpecs: null,
-                sets: 3,
-                repsMin: 8,
-                repsMax: 12,
-                repsTarget: null,
-                rpeTarget: null,
-                percentage1rm: null,
-                tempo: null,
-                restSeconds: null,
-                supersetGroup: null,
-                isWarmup: false,
-                notes: null,
-                videoUrl: null,
-              })
+              onAddExercise(
+                session.uid,
+                defaultExerciseDraftFromCatalog({ name, exerciseId }),
+              )
             }
           />
         )}

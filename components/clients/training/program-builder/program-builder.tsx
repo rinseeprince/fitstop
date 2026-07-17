@@ -9,10 +9,10 @@ import { useToast } from "@/hooks/use-toast";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { SectionLabel } from "@/components/programs/shared/section-label";
 import { cn } from "@/lib/utils";
-import type { SavedSession } from "@/types/training";
+import type { Exercise, SavedSession } from "@/types/training";
 import { MAX_WEEKS, type DaySlotDraft } from "./program-builder-types";
 import { savedSessionToDraft } from "./program-builder-serialize";
-import { findSession } from "./use-program-builder-state";
+import { defaultExerciseDraftFromCatalog, findSession } from "./program-builder-model";
 import { useProgramDnd } from "./use-program-dnd";
 import { useSaveDayAsWorkout } from "./use-save-day-as-workout";
 import { useProgramDraft } from "./program-draft-provider";
@@ -20,7 +20,7 @@ import { ProgramTopBar } from "./program-top-bar";
 import { ProgramGrid } from "./program-grid";
 import { DuplicateWeekDialog } from "./duplicate-week-dialog";
 import { SessionEditorSheet } from "./session-editor-sheet";
-import { SessionLibraryDrawer } from "./session-library-drawer";
+import { BuilderLibraryPanel } from "./builder-library-panel";
 import { AddSessionPopover, type AddSessionTarget } from "./add-session-popover";
 import {
   CHIP_NEUTRAL_CLASS,
@@ -89,7 +89,30 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
     placeSession(slotUid, savedSessionToDraft(session));
   };
 
-  const dnd = useProgramDnd({ draft, reorderWeek, moveSession, placeLibrarySession });
+  const placeLibraryExercise = (exercise: Exercise, slotUid: string) => {
+    // Append a catalog exercise to the slot's existing session. Collision
+    // already restricts library-exercise drops to OCCUPIED cells; the session
+    // lookup is the belt (a rest slot has no session to append to).
+    const session = draft?.weeks
+      .flatMap((w) => w.days)
+      .find((s) => s.uid === slotUid)?.session;
+    if (!session) return;
+    addExercise(
+      session.uid,
+      defaultExerciseDraftFromCatalog({
+        name: exercise.name,
+        exerciseId: exercise.id,
+      }),
+    );
+  };
+
+  const dnd = useProgramDnd({
+    draft,
+    reorderWeek,
+    moveSession,
+    placeLibrarySession,
+    placeLibraryExercise,
+  });
   const { isSavingWorkout, saveDayAsWorkout } = useSaveDayAsWorkout(draft);
 
   const exit = () => (onExit ? onExit() : router.push("/dashboard/programs"));
@@ -151,17 +174,6 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
 
   return (
     <div>
-      <ProgramTopBar
-        draft={draft}
-        mode={mode}
-        onBack={() => {
-          if (isDirty && mode === "edit") setConfirmLeaveOpen(true);
-          else exit();
-        }}
-        onRename={setName}
-        onDefaultSurplusChange={setDefaultSurplus}
-      />
-
       <DndContext
         sensors={dnd.sensors}
         collisionDetection={dnd.collisionDetection}
@@ -170,7 +182,18 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
         onDragCancel={dnd.handleDragCancel}
       >
         <div className="flex items-start gap-4">
+          <BuilderLibraryPanel mode={mode} />
           <div className="min-w-0 flex-1">
+            <ProgramTopBar
+              draft={draft}
+              mode={mode}
+              onBack={() => {
+                if (isDirty && mode === "edit") setConfirmLeaveOpen(true);
+                else exit();
+              }}
+              onRename={setName}
+              onDefaultSurplusChange={setDefaultSurplus}
+            />
             <SectionLabel
               label="Schedule"
               meta={`${draft.weeks.length} ${draft.weeks.length === 1 ? "week" : "weeks"} · ${trainingCount} ${trainingCount === 1 ? "session" : "sessions"}`}
@@ -265,8 +288,6 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
               onClearSlot={clearSlot}
             />
           </div>
-
-          <SessionLibraryDrawer mode={mode} />
         </div>
 
         {/* DragOverlay portaled to <body>: proven pattern from draft-editor —
@@ -303,6 +324,17 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
                       {dnd.activeDrag.session.exercises.length} exercises
                     </span>
                   </div>
+                </div>
+              ) : dnd.activeDrag?.type === "library-exercise" ? (
+                <div className={cn("rounded-[6px] bg-white px-3 py-2 shadow-lg", TRAINING_CARD_BORDER)}>
+                  <div className={cn("text-xs font-semibold", TEXT_PRIMARY)}>
+                    {dnd.activeDrag.exercise.name}
+                  </div>
+                  {dnd.activeDrag.exercise.muscleGroup && (
+                    <div className={cn("mt-0.5 text-[10px] capitalize", TEXT_SECONDARY)}>
+                      {dnd.activeDrag.exercise.muscleGroup}
+                    </div>
+                  )}
                 </div>
               ) : null}
             </DragOverlay>,

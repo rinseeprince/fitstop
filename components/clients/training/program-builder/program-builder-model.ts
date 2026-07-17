@@ -180,3 +180,40 @@ export function patchChanges<T extends object>(obj: T, patch: Partial<T>): boole
     ([key, value]) => obj[key as keyof T] !== value,
   );
 }
+
+// =============================================================================
+// exercise-draft factory
+// =============================================================================
+
+/**
+ * The ONE default shape a catalog pick becomes when added to a session — a
+ * compact-only exercise (3 working sets, 8–12 reps). Shared by the in-editor
+ * ExercisePicker and the S4.5 drag-an-exercise-onto-a-session gesture so both
+ * entry points produce byte-identical drafts. `exerciseId` may be null (free
+ * text); the server resolves/creates the catalog row on save.
+ */
+export function defaultExerciseDraftFromCatalog({
+  name,
+  exerciseId,
+}: {
+  name: string;
+  exerciseId: string | null;
+}): Omit<ExerciseDraft, "uid"> {
+  return {
+    exerciseId,
+    name,
+    setSpecs: null,
+    sets: 3,
+    repsMin: 8,
+    repsMax: 12,
+    repsTarget: null,
+    rpeTarget: null,
+    percentage1rm: null,
+    tempo: null,
+    restSeconds: null,
+    supersetGroup: null,
+    isWarmup: false,
+    notes: null,
+    videoUrl: null,
+  };
+}

@@ -1,21 +1,15 @@
-// Navigation model for the Programs section (/dashboard/programs/**).
-// Mirrors the lib/client-tabs.ts precedent, but route-driven: each view is a
-// real route behind the section sub-sidebar, not a query-param tab.
+// Navigation helpers for the Programs section (/dashboard/programs/**).
+// The S4.5 nav flatten retired the sub-sidebar + its PROGRAMS_NAV list; these
+// path helpers survive because the topbar (view title) and the builder
+// provider (last-opened-plan storage) still read them.
 
-export const PROGRAMS_SECTION_PREFIX = "/dashboard/programs"
-
-// The sub-sidebar's Builder item returns to the program last opened this
-// browser session (per-tab by design — sessionStorage).
+// The provider still writes the last-opened program id here; since S4.5 no
+// surface reads it back (the sub-sidebar's Builder link is gone), so the
+// write is inert — a Phase-7 removal candidate.
 export const LAST_PLAN_STORAGE_KEY = "programs.builder.lastPlanId"
 
-// Static section views. The Builder item is route-dynamic (needs a plan id)
-// and is rendered separately by ProgramsSidebar.
-export const PROGRAMS_NAV = [
-  { value: "programs", label: "Programs", href: "/dashboard/programs" },
-  { value: "sessions", label: "Sessions", href: "/dashboard/programs/sessions" },
-  { value: "exercises", label: "Exercises", href: "/dashboard/programs/exercises" },
-] as const
-
+// The two retired standalone routes still resolve as non-builder paths so a
+// stray navigation never mistakes them for a savedPlanId.
 const STATIC_SEGMENTS = new Set(["sessions", "exercises"])
 
 // A builder path is /dashboard/programs/<savedPlanId>[/**] where the first
