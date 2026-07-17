@@ -66,14 +66,25 @@ function Wrapper({
 describe("ExerciseCard", () => {
   beforeEach(() => cleanup());
 
-  it("compact row shows the projected summary and badges", () => {
+  it("compact row shows the projected summary; legacy superset/warm-up fields render nothing", () => {
+    // Fixture carries supersetGroup "A" + isWarmup — both retired from the
+    // builder UI (warm-ups are a per-set type; supersets never functional).
     render(<Wrapper exercise={makeExercise({ isWarmup: true, videoUrl: "https://x.io/v" })} />);
     expect(screen.getByText("Bench Press")).toBeInTheDocument();
     expect(screen.getByText("4 × 8–12 @ RPE 8")).toBeInTheDocument();
-    expect(screen.getByText("SS A")).toBeInTheDocument();
-    expect(screen.getByText("Warm-up")).toBeInTheDocument();
+    expect(screen.queryByText("SS A")).toBeNull();
+    expect(screen.queryByText("Warm-up")).toBeNull();
     // Sets are hidden until expanded.
     expect(screen.queryByLabelText("Set 1 type")).toBeNull();
+  });
+
+  it("the expanded editor exposes no superset or warm-up controls", () => {
+    render(<Wrapper exercise={makeExercise()} defaultExpanded />);
+    expect(screen.queryByText("Superset group")).toBeNull();
+    expect(screen.queryByText("Counts as warm-up work")).toBeNull();
+    // The remaining exercise-level fields survive.
+    expect(screen.getByText("Video URL")).toBeInTheDocument();
+    expect(screen.getByText("Coach note")).toBeInTheDocument();
   });
 
   it("expanding a compact-only exercise synthesizes per-set rows (expand-on-read)", () => {

@@ -389,6 +389,7 @@ Each phase's **Prompt to paste** is the copy-into-a-fresh-session instruction. T
 - **4:** deferred: AMRAP-result-keyed progression (no logged results at library-authoring time; `ProgressionRule` union is the seam), auto-regulation/velocity (per plan). Set REMOVAL was initially deferred, then **shipped 2026-07-17 as the S4.1 deload follow-up** (bidirectional sets rule, end-first removal, one-working-set floor; dialog relabeled `Load | Reps | Sets`).
 - **4:** the stale "mutations only ever originate from event handlers" comment in `use-program-builder-state.ts` reworded (post-await continuations of handler-initiated flows also mutate).
 - **4:** observed pre-existing, logged not fixed: session-editor manual `pct_1rm` per-set edits don't mirror compact `percentage1rm` (progression's percent rule now does); uncapped `training_exercises` read in `client-training-plan-service.ts` → TECHNICAL-DEBT.md.
+- **4.2 (2026-07-17, owner decision):** exercise-level `supersetGroup` + `isWarmup` **retired from builder authoring** (`exercise-card.tsx` controls AND compact-row badges removed) — warm-ups are a per-set `set_type` now and supersets never became functional. Fields still round-trip through drafts/serializers/columns for legacy + AI-authored rows; read-side consumers unchanged (client-session-card warm-up split, progression's `isWarmup` skip). P7 sweep: if nothing readable ever carries them by then, the columns + read-side branches are drop candidates (TECHNICAL-DEBT note, needs a migration).
 
 ---
 

@@ -6,7 +6,6 @@ import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { expandSetSpecs } from "@/utils/exercise-set-specs";
 import type { ExerciseDraft } from "./program-builder-types";
@@ -21,10 +20,13 @@ import {
   TRAINING_CARD_BORDER,
 } from "./builder-tokens";
 
-// One exercise inside the session editor: compact summary row (name, badges,
-// mono `4 × 8–12 @ RPE 8` projected from the compact columns — kept truthful
-// by re-projection on every spec edit) that expands to per-set authoring plus
-// the exercise-level fields (warm-up, superset, note, video URL).
+// One exercise inside the session editor: compact summary row (name, mono
+// `4 × 8–12 @ RPE 8` projected from the compact columns — kept truthful by
+// re-projection on every spec edit) that expands to per-set authoring plus
+// the exercise-level fields (note, video URL). The legacy exercise-level
+// supersetGroup/isWarmup fields are retired from authoring (owner decision:
+// warm-ups are a per-set type now, supersets never became functional) —
+// they still round-trip through the draft/serializer for legacy rows.
 type ExerciseCardProps = {
   exercise: ExerciseDraft;
   mode: "view" | "edit";
@@ -113,16 +115,6 @@ export function ExerciseCard({
         <span className={cn("min-w-0 flex-1 truncate text-xs font-semibold", TEXT_PRIMARY)}>
           {exercise.name}
         </span>
-        {exercise.isWarmup && (
-          <span className="rounded-[3px] bg-[rgba(13,148,136,0.05)] px-1 py-px text-[9px] font-semibold uppercase tracking-[0.06em] text-[#5a7d82]">
-            Warm-up
-          </span>
-        )}
-        {exercise.supersetGroup && (
-          <span className="rounded-[3px] bg-[rgba(13,148,136,0.08)] px-1 py-px text-[9px] font-semibold uppercase tracking-[0.06em] text-[#0d9488]">
-            SS {exercise.supersetGroup}
-          </span>
-        )}
         {exercise.videoUrl && (
           <Video className={cn("h-3 w-3 shrink-0", TEXT_SECONDARY)} strokeWidth={1.5} />
         )}
@@ -188,30 +180,8 @@ export function ExerciseCard({
           )}
 
           {/* Exercise-level fields */}
-          <div className="grid grid-cols-2 gap-2 border-t border-[rgba(13,148,136,0.08)] pt-2">
+          <div className="space-y-2 border-t border-[rgba(13,148,136,0.08)] pt-2">
             <label className={cn("flex flex-col gap-1", LABEL_CLASS)}>
-              Superset group
-              <Input
-                disabled={!editable}
-                maxLength={10}
-                defaultValue={exercise.supersetGroup ?? ""}
-                placeholder="e.g. A"
-                className={cn("h-7 px-2 text-xs", FOCUS_RING)}
-                onBlur={(e) => onEdit({ supersetGroup: e.target.value.trim() || null })}
-              />
-            </label>
-            <div className="flex flex-col gap-1">
-              <span className={LABEL_CLASS}>Warm-up exercise</span>
-              <label className={cn("flex h-7 items-center gap-2 text-xs", TEXT_SECONDARY)}>
-                <Checkbox
-                  disabled={!editable}
-                  checked={exercise.isWarmup}
-                  onCheckedChange={(checked) => onEdit({ isWarmup: checked === true })}
-                />
-                Counts as warm-up work
-              </label>
-            </div>
-            <label className={cn("col-span-2 flex flex-col gap-1", LABEL_CLASS)}>
               Video URL
               <Input
                 disabled={!editable}
@@ -232,7 +202,7 @@ export function ExerciseCard({
                 </span>
               )}
             </label>
-            <label className={cn("col-span-2 flex flex-col gap-1", LABEL_CLASS)}>
+            <label className={cn("flex flex-col gap-1", LABEL_CLASS)}>
               Coach note
               <Textarea
                 disabled={!editable}
