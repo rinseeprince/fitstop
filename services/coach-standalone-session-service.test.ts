@@ -49,7 +49,6 @@ import {
   createStandaloneSession,
   createStandaloneSessionDeduped,
   getStandaloneSessions,
-  duplicateStandaloneSession,
   overwriteStandaloneSession,
 } from "./coach-standalone-session-service";
 
@@ -351,85 +350,6 @@ describe("coach-standalone-session-service", () => {
       expect(mockFrom).toHaveBeenCalledWith("coach_saved_sessions");
       expect(sessionsQuery.eq).toHaveBeenCalledWith("coach_id", "coach-1");
       expect(sessionsQuery.is).toHaveBeenCalledWith("saved_plan_id", null);
-    });
-  });
-
-  // =========================================================================
-  // duplicateStandaloneSession
-  // =========================================================================
-
-  describe("duplicateStandaloneSession", () => {
-    it("copies the session + exercises verbatim with a deduped name", async () => {
-      const sourceQuery = createMockQuery({ data: sourceSession, error: null });
-      const namesQuery = createMockQuery({
-        data: [{ name: "Leg Day A" }],
-        error: null,
-      });
-      const insertQuery = createMockQuery({ data: { id: "s2" }, error: null });
-      const exerciseInsertQuery = createMockQuery({ data: null, error: null });
-
-      mockFrom
-        .mockReturnValueOnce(sourceQuery as never)
-        .mockReturnValueOnce(namesQuery as never)
-        .mockReturnValueOnce(insertQuery as never)
-        .mockReturnValueOnce(exerciseInsertQuery as never);
-
-      const newId = await duplicateStandaloneSession("s1", "coach-1");
-      expect(newId).toBe("s2");
-
-      // Source fetch is scoped to standalone sessions only
-      expect(sourceQuery.is).toHaveBeenCalledWith("saved_plan_id", null);
-
-      const sessionInsert = insertQuery.insert.mock.calls[0][0] as Record<string, unknown>;
-      expect(sessionInsert.name).toBe("Leg Day A (copy)");
-      expect(sessionInsert.saved_plan_id).toBeNull();
-      expect(sessionInsert.calorie_surplus_percentage).toBe(12);
-      // Placement indices normalized — a stale week_index would leak into
-      // plans on insert.
-      expect(sessionInsert.week_index).toBe(0);
-      expect(sessionInsert.order_index).toBe(0);
-
-      const exRows = exerciseInsertQuery.insert.mock.calls[0][0] as Array<Record<string, unknown>>;
-      expect(exRows).toHaveLength(1);
-      expect(exRows[0].saved_session_id).toBe("s2");
-      expect(exRows[0].exercise_id).toBe("ex-3");
-      expect(exRows[0].set_specs).toEqual(exerciseRow.set_specs);
-      expect(exRows[0].video_url).toBe(exerciseRow.video_url);
-    });
-
-    it("rejects plan-attached or foreign sessions", async () => {
-      // A plan-attached session never matches the .is(saved_plan_id, null)
-      // filter, so the source fetch returns no row.
-      const sourceQuery = createMockQuery({ data: null, error: { message: "0 rows" } });
-      mockFrom.mockReturnValueOnce(sourceQuery as never);
-
-      await expect(duplicateStandaloneSession("s1", "coach-1")).rejects.toThrow(
-        "Session not found"
-      );
-    });
-
-    it("removes the half-copied session when the exercise copy fails", async () => {
-      const sourceQuery = createMockQuery({ data: sourceSession, error: null });
-      const namesQuery = createMockQuery({ data: [], error: null });
-      const insertQuery = createMockQuery({ data: { id: "s2" }, error: null });
-      const exerciseFailQuery = createMockQuery({
-        data: null,
-        error: { message: "boom" },
-      });
-      const cleanupQuery = createMockQuery({ data: null, error: null });
-
-      mockFrom
-        .mockReturnValueOnce(sourceQuery as never)
-        .mockReturnValueOnce(namesQuery as never)
-        .mockReturnValueOnce(insertQuery as never)
-        .mockReturnValueOnce(exerciseFailQuery as never)
-        .mockReturnValueOnce(cleanupQuery as never);
-
-      await expect(duplicateStandaloneSession("s1", "coach-1")).rejects.toThrow(
-        "Failed to copy exercises: boom"
-      );
-      expect(cleanupQuery.delete).toHaveBeenCalled();
-      expect(cleanupQuery.eq).toHaveBeenCalledWith("id", "s2");
     });
   });
 

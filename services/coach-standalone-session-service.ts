@@ -119,7 +119,7 @@ export async function createStandaloneSession(
     await insertSavedExercises(session.id, exercises, exerciseIdMap);
   } catch (insertError) {
     // No shell sessions in the library: a failed exercise insert removes the
-    // just-created row before rethrowing (mirrors duplicateStandaloneSession).
+    // just-created row before rethrowing.
     await supabaseAdmin
       .from("coach_saved_sessions")
       .delete()
@@ -181,77 +181,6 @@ export async function getStandaloneSessions(coachId: string): Promise<SavedSessi
  * against the coach's standalone sessions; base capped so the result stays
  * inside the 100-char name caps.
  */
-export async function duplicateStandaloneSession(
-  sessionId: string,
-  coachId: string
-): Promise<string> {
-  const { data: source, error } = await supabaseAdmin
-    .from("coach_saved_sessions")
-    .select("*, coach_saved_exercises(*)")
-    .eq("id", sessionId)
-    .eq("coach_id", coachId)
-    .is("saved_plan_id", null)
-    .single();
-  if (error || !source) throw new Error("Session not found");
-
-  const { data: nameRows, error: namesError } = await supabaseAdmin
-    .from("coach_saved_sessions")
-    .select("name")
-    .eq("coach_id", coachId)
-    .is("saved_plan_id", null);
-  if (namesError) {
-    throw new Error(`Failed to check session names: ${namesError.message}`);
-  }
-  const taken = new Set(
-    (nameRows ?? []).map((r) => r.name.trim().toLowerCase())
-  );
-  const name = dedupeCopyName(source.name, taken);
-
-  const { data: newSession, error: insertError } = await supabaseAdmin
-    .from("coach_saved_sessions")
-    .insert({
-      coach_id: coachId,
-      saved_plan_id: null,
-      name,
-      focus: source.focus,
-      order_index: 0,
-      // Normalize placement indices — standalone sessions aren't slotted, and
-      // a stale week_index would leak into plans on insert (TECHNICAL-DEBT:
-      // placeSessionOnCalendar copies week_index verbatim).
-      week_index: 0,
-      is_rest: false,
-      estimated_duration_minutes: source.estimated_duration_minutes,
-      calorie_surplus_percentage: source.calorie_surplus_percentage,
-      notes: source.notes,
-      session_type: source.session_type,
-    })
-    .select("id")
-    .single();
-  if (insertError || !newSession) {
-    throw new Error(
-      `Failed to duplicate session: ${insertError?.message ?? "no row"}`
-    );
-  }
-
-  const exercises = (source.coach_saved_exercises ?? []) as CoachSavedExerciseRow[];
-  if (exercises.length > 0) {
-    const { error: exError } = await supabaseAdmin
-      .from("coach_saved_exercises")
-      .insert(copySavedExerciseRows(exercises, newSession.id));
-    if (exError) {
-      // Remove the half-copied session so the library never shows a shell.
-      await supabaseAdmin
-        .from("coach_saved_sessions")
-        .delete()
-        .eq("id", newSession.id)
-        .eq("coach_id", coachId);
-      throw new Error(`Failed to copy exercises: ${exError.message}`);
-    }
-  }
-
-  return newSession.id;
-}
-
 /**
  * Full replace of a STANDALONE session — fields + exercises — the Sessions
  * page editor's save. Ordered so ANY failure leaves the session in its
@@ -333,8 +262,9 @@ export async function overwriteStandaloneSession(
       estimated_duration_minutes: input.estimatedDurationMinutes ?? null,
       calorie_surplus_percentage: input.calorieSurplusPercentage ?? null,
       notes: input.notes ?? null,
-      // Converge legacy rows to canonical standalone shape (see
-      // duplicateStandaloneSession's week_index normalization note).
+      // Converge legacy rows to the canonical standalone shape — standalone
+      // sessions aren't slotted, and a stale week_index would leak into plans
+      // on insert (TECHNICAL-DEBT: placeSessionOnCalendar copies it verbatim).
       order_index: 0,
       week_index: 0,
       is_rest: false,
