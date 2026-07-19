@@ -3,15 +3,15 @@
 import { ChevronDown, Copy, GripVertical, Trash2, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { WeekDraft } from "./program-builder-types";
-import {
-  TEXT_MUTED,
-  TEXT_SECONDARY,
-  TRAINING_CARD_BORDER,
-} from "./builder-tokens";
+import { TEXT_MUTED, TEXT_SECONDARY } from "./builder-tokens";
 
-// The sticky left-column card for one week: number, sessions-vs-rest summary,
-// collapse chevron, and (edit mode) duplicate/delete + the drag grip that
-// reorders weeks. Reordering is drag-only — no up/down buttons.
+// The slim 42px week column (reference `.wk`): a `W#` teal chip + the week's
+// session-count frequency, NOT a card. All week controls (grip-reorder,
+// collapse, duplicate, duplicate-with-progression, delete) live in a
+// hover-revealed vertical stack below the chip — nothing is lost, the column
+// just stays narrow like the mockup. Edit controls only surface when the week
+// is expanded (a collapsed row is too short to host them); collapse itself is
+// always reachable on hover in both modes.
 type WeekCardProps = {
   week: WeekDraft;
   mode: "view" | "edit";
@@ -27,6 +27,9 @@ type WeekCardProps = {
   dragHandleProps?: Record<string, unknown>;
 };
 
+const CTRL_BTN =
+  "grid h-5 w-5 place-items-center rounded hover:bg-[rgba(13,148,136,0.08)]";
+
 export function WeekCard({
   week,
   mode,
@@ -39,94 +42,81 @@ export function WeekCard({
   dragHandleProps,
 }: WeekCardProps) {
   const trainingCount = week.days.filter((d) => !d.isRest).length;
+  const editControls = mode === "edit" && !collapsed;
 
   return (
-    <div
-      className={cn(
-        "flex h-full flex-col rounded-[6px] bg-white p-2.5",
-        TRAINING_CARD_BORDER,
-        collapsed ? "min-h-9 justify-center py-1.5" : "min-h-[92px]",
+    <div className="group/wk flex flex-col items-center gap-1 pt-2.5">
+      <span className="rounded-[6px] bg-[rgba(13,148,136,0.08)] px-[7px] py-1 font-mono-display text-[10.5px] font-semibold text-[#0a5c55]">
+        W{week.weekIndex + 1}
+      </span>
+      {!collapsed && (
+        <span className="font-mono-display text-[9.5px] text-[#c2d0cc]">
+          {trainingCount}×
+        </span>
       )}
-    >
-      <div className="flex items-center gap-1.5">
-        {mode === "edit" && (
+
+      {/* Hover-revealed control stack — hidden (no layout cost) until hover. */}
+      <div className={cn("hidden flex-col items-center gap-0.5 pt-0.5 group-hover/wk:flex", TEXT_SECONDARY)}>
+        {editControls && (
           <button
             type="button"
             aria-label={`Drag week ${week.weekIndex + 1}`}
-            className={cn(
-              "-ml-1 cursor-grab rounded p-0.5 hover:bg-[rgba(13,148,136,0.08)] active:cursor-grabbing",
-              TEXT_MUTED,
-            )}
+            className={cn(CTRL_BTN, "cursor-grab active:cursor-grabbing", TEXT_MUTED)}
             {...dragHandleProps}
           >
-            <GripVertical className="h-3.5 w-3.5" strokeWidth={1.5} />
+            <GripVertical className="h-3 w-3" strokeWidth={1.5} />
           </button>
         )}
-        {/* W# chip + this week's session-count frequency (mockup `.wk-chip`). */}
-        <span className="rounded-[6px] bg-[rgba(13,148,136,0.08)] px-1.5 py-0.5 font-mono-display text-[10.5px] font-semibold text-[#0a5c55]">
-          W{week.weekIndex + 1}
-        </span>
-        <span className={cn("font-mono-display text-[10px]", TEXT_MUTED)}>
-          {trainingCount}×
-        </span>
         <button
           type="button"
           aria-label={collapsed ? "Expand week" : "Collapse week"}
           aria-expanded={!collapsed}
-          className={cn("ml-auto rounded p-1 hover:bg-[rgba(13,148,136,0.08)]", TEXT_SECONDARY)}
+          className={CTRL_BTN}
           onClick={onToggleCollapse}
         >
           <ChevronDown
-            className={cn(
-              "h-3.5 w-3.5 transition-transform duration-200",
-              collapsed && "-rotate-90",
-            )}
+            className={cn("h-3.5 w-3.5 transition-transform duration-200", collapsed && "-rotate-90")}
             strokeWidth={1.5}
           />
         </button>
+        {editControls && (
+          <>
+            <button
+              type="button"
+              aria-label={`Duplicate week ${week.weekIndex + 1}`}
+              title="Duplicate week"
+              className={CTRL_BTN}
+              onClick={onDuplicate}
+            >
+              <Copy className="h-3 w-3" strokeWidth={1.5} />
+            </button>
+            <button
+              type="button"
+              aria-label={`Duplicate week ${week.weekIndex + 1} with progression`}
+              title="Duplicate with progression"
+              className={CTRL_BTN}
+              onClick={onDuplicateWithProgression}
+            >
+              <TrendingUp className="h-3 w-3" strokeWidth={1.5} />
+            </button>
+            <button
+              type="button"
+              aria-label={`Delete week ${week.weekIndex + 1}`}
+              title="Delete week"
+              disabled={!canDelete}
+              className={cn(
+                CTRL_BTN,
+                canDelete
+                  ? "text-destructive hover:bg-red-50"
+                  : cn(TEXT_MUTED, "cursor-not-allowed opacity-40 hover:bg-transparent"),
+              )}
+              onClick={onDelete}
+            >
+              <Trash2 className="h-3 w-3" strokeWidth={1.5} />
+            </button>
+          </>
+        )}
       </div>
-
-      {!collapsed && mode === "edit" && (
-            <div className="mt-auto flex items-center gap-1 border-t border-[rgba(13,148,136,0.06)] pt-2">
-              <button
-                type="button"
-                aria-label={`Duplicate week ${week.weekIndex + 1}`}
-                className={cn(
-                  "flex items-center gap-1 rounded-[4px] px-1.5 py-1 text-[11px] hover:bg-[rgba(13,148,136,0.08)]",
-                  TEXT_SECONDARY,
-                )}
-                onClick={onDuplicate}
-              >
-                <Copy className="h-3 w-3" strokeWidth={1.5} /> Duplicate
-              </button>
-              <button
-                type="button"
-                aria-label={`Duplicate week ${week.weekIndex + 1} with progression`}
-                title="Duplicate with progression"
-                className={cn(
-                  "rounded p-1 hover:bg-[rgba(13,148,136,0.08)]",
-                  TEXT_SECONDARY,
-                )}
-                onClick={onDuplicateWithProgression}
-              >
-                <TrendingUp className="h-3 w-3" strokeWidth={1.5} />
-              </button>
-              <button
-                type="button"
-                aria-label={`Delete week ${week.weekIndex + 1}`}
-                disabled={!canDelete}
-                className={cn(
-                  "ml-auto rounded p-1",
-                  canDelete
-                    ? "text-destructive hover:bg-red-50"
-                    : cn(TEXT_MUTED, "cursor-not-allowed opacity-50"),
-                )}
-                onClick={onDelete}
-              >
-                <Trash2 className="h-3 w-3" strokeWidth={1.5} />
-              </button>
-            </div>
-      )}
     </div>
   );
 }

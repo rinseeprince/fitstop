@@ -59,9 +59,10 @@ export function WeekRow({
       style={{ transform: CSS.Transform.toString(transform), transition }}
       className={cn(GRID_COLS, isDragging && "opacity-40")}
     >
-      {/* Opaque sticky plane so day cells pass UNDER the week card on
-          horizontal scroll. z-20 sits below the sticky header (z-30). */}
-      <div className="sticky left-0 z-20 bg-[#f4f7f6] p-1">
+      {/* Opaque sticky plane so day cells pass UNDER the week chip on
+          horizontal scroll. z-20 sits below the sticky header (z-30); the
+          after: strip covers the 8px grid gap to the right. */}
+      <div className="sticky left-0 z-20 bg-[#f4f7f6] after:absolute after:left-full after:top-0 after:h-full after:w-2 after:bg-[#f4f7f6]">
         <WeekCard
           week={week}
           mode={mode}

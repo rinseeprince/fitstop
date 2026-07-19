@@ -17,7 +17,14 @@ const VIEW_TITLES: Record<ProgramsView, string> = {
 
 export function ProgramsTopbar() {
   const pathname = usePathname() ?? ""
-  const title = VIEW_TITLES[getProgramsView(pathname)]
+  const view = getProgramsView(pathname)
+
+  // The builder is full-bleed with its own dark program header (reference
+  // layout) — no top strip there. The list / sessions / exercises pages keep
+  // the topbar. ("Program Builder" now titles the builder's library panel.)
+  if (view === "builder") return null
+
+  const title = VIEW_TITLES[view]
 
   return (
     <header className="sticky top-0 z-10 bg-white px-8 py-2">

@@ -7,14 +7,15 @@ import { cn } from "@/lib/utils";
 import { SegmentedControl } from "@/components/programs/shared/segmented-control";
 import { LibrarySessionList } from "./library-session-list";
 import { LibraryExerciseList } from "./library-exercise-list";
-import { TEXT_PRIMARY, TEXT_SECONDARY, TRAINING_CARD_BORDER } from "./builder-tokens";
+import { TEXT_PRIMARY, TEXT_SECONDARY } from "./builder-tokens";
 
-// The builder's single tabbed library panel (S4.5) — the left column of the
-// 3-column frame (icon strip · panel · builder). Absorbs the retired standalone
-// Sessions + Exercises pages: both tabs are drag sources from one place and
-// carry all session/exercise CRUD. Always present (view + edit); it sits inside
-// the builder's DndContext so its cards drag onto the grid. Fixed width — the
-// grid keeps its own horizontal scroll, so no collapse is needed.
+// The builder's single tabbed library panel (S4.5/S4.75) — the left column of
+// the 3-column frame (icon strip · panel · builder), matched to the reference
+// `.library`: a flush 296px white column with a right border (not a floating
+// card), the `.lib-head` (crumb + title + Sessions|Exercises switch), then the
+// active list. Absorbs the retired standalone Sessions + Exercises pages: both
+// tabs are drag sources from one place and carry all session/exercise CRUD.
+// Always present (view + edit); sits inside the builder's DndContext.
 type LibraryTab = "sessions" | "exercises";
 
 const TAB_OPTIONS = [
@@ -27,28 +28,24 @@ export function BuilderLibraryPanel({ mode }: { mode: "view" | "edit" }) {
   const editable = mode === "edit";
 
   return (
-    <aside
-      className={cn(
-        "sticky top-4 flex max-h-[calc(100vh-8rem)] w-[296px] shrink-0 flex-col rounded-[6px] bg-white",
-        TRAINING_CARD_BORDER,
-      )}
-    >
-      <div className="px-3 pt-3">
+    <aside className="sticky top-0 flex h-screen w-[296px] shrink-0 flex-col border-r border-[rgba(13,148,136,0.08)] bg-white">
+      <div className="px-[18px] pt-[18px]">
         <Link
           href="/dashboard/programs"
           className={cn(
-            "inline-flex items-center gap-1.5 rounded text-xs font-medium transition-colors hover:text-[#0a5c55]",
+            "mb-3.5 inline-flex items-center gap-1.5 rounded text-[12.5px] font-medium transition-colors hover:text-[#0a5c55]",
             TEXT_SECONDARY,
           )}
         >
           <ChevronLeft className="h-3.5 w-3.5" strokeWidth={2} />
           All programs
         </Link>
-        <h2 className={cn("mb-2.5 mt-2 text-sm font-semibold", TEXT_PRIMARY)}>
-          Library
+        <h2 className={cn("mb-3.5 text-base font-semibold tracking-[-0.01em]", TEXT_PRIMARY)}>
+          Program Builder
         </h2>
         <div className="mb-3">
           <SegmentedControl
+            fullWidth
             options={TAB_OPTIONS}
             value={tab}
             onChange={(v) => setTab(v as LibraryTab)}

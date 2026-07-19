@@ -41,7 +41,7 @@ vi.mock("@/hooks/use-standalone-sessions", () => ({
 }));
 
 const catalogMutate = vi.fn();
-const exercises: Exercise[] = [
+const BASE_EXERCISES: Exercise[] = [
   {
     id: "ex-custom",
     coachId: "coach-1",
@@ -65,6 +65,8 @@ const exercises: Exercise[] = [
     updatedAt: "2026-01-01T00:00:00Z",
   },
 ];
+// Reassigned per-test so the catalog-cap test can supply a large catalog.
+let exercises: Exercise[] = BASE_EXERCISES;
 vi.mock("@/hooks/use-exercise-catalog", () => ({
   useExerciseCatalog: () => ({
     exercises,
@@ -87,6 +89,7 @@ function renderPanel(mode: "view" | "edit" = "edit") {
 describe("BuilderLibraryPanel", () => {
   beforeEach(() => {
     cleanup();
+    exercises = BASE_EXERCISES;
   });
 
   it("shows the Sessions tab by default with the breadcrumb + session cards", () => {
@@ -99,9 +102,10 @@ describe("BuilderLibraryPanel", () => {
     expect(screen.getByText("Pull Day A")).toBeInTheDocument();
     // Grip handles present (drag source).
     expect(screen.getByLabelText("Drag Push Day A")).toBeInTheDocument();
-    // Per-card CRUD + a create affordance.
+    // Per-card CRUD + a create affordance (no Duplicate — dragging onto the
+    // program already clones the session).
     expect(screen.getAllByLabelText("Edit").length).toBe(2);
-    expect(screen.getAllByLabelText("Duplicate").length).toBe(2);
+    expect(screen.queryByLabelText("Duplicate")).toBeNull();
     expect(screen.getAllByLabelText("Delete").length).toBe(2);
     expect(screen.getByRole("button", { name: /New session/ })).toBeInTheDocument();
   });
@@ -130,5 +134,36 @@ describe("BuilderLibraryPanel", () => {
     expect(screen.getByText("Push Day A")).toBeInTheDocument();
     expect(screen.getByLabelText("Drag Push Day A")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /New session/ })).toBeInTheDocument();
+  });
+
+  it("Exercises tab caps a huge catalog at the 10 most recent; search surfaces the rest", () => {
+    // A large catalog is the whole reason for the cap — 30 rows, createdAt
+    // increasing so "Exercise 29" is the newest.
+    exercises = Array.from({ length: 30 }, (_, i) => ({
+      id: `ex-${i}`,
+      coachId: null,
+      name: `Exercise ${i}`,
+      muscleGroup: null,
+      equipment: null,
+      category: null,
+      aliases: [],
+      createdAt: `2026-02-${String(i + 1).padStart(2, "0")}T00:00:00Z`,
+      updatedAt: "2026-01-01T00:00:00Z",
+    }));
+    renderPanel();
+    fireEvent.click(screen.getByRole("button", { name: "Exercises" }));
+
+    // Only 10 draggable cards render by default (not 30 → not 1000+).
+    expect(screen.getAllByLabelText(/^Drag /)).toHaveLength(10);
+    // Newest-first: the last-created shows, the oldest does not.
+    expect(screen.getByText("Exercise 29")).toBeInTheDocument();
+    expect(screen.queryByText("Exercise 0")).toBeNull();
+    expect(screen.getByText(/search to find any/)).toBeInTheDocument();
+
+    // The search bar is the escape hatch for everything off the recent list.
+    fireEvent.change(screen.getByLabelText("Search exercises"), {
+      target: { value: "Exercise 0" },
+    });
+    expect(screen.getByText("Exercise 0")).toBeInTheDocument();
   });
 });

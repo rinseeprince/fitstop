@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useDraggable } from "@dnd-kit/core";
 import { Dumbbell, GripVertical, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -14,7 +14,6 @@ import { RowActions } from "@/components/programs/shared/row-actions";
 import type { Exercise } from "@/types/training";
 import type { LibraryExerciseDragData } from "./use-program-dnd";
 import {
-  CHIP_NEUTRAL_CLASS,
   FOCUS_RING,
   MONO_LABEL_CLASS,
   TEXT_MUTED,
@@ -79,13 +78,8 @@ function LibraryExerciseCard({
         <Dumbbell className="h-[15px] w-[15px]" strokeWidth={1.5} />
       </span>
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1.5">
-          <span className={cn("truncate text-xs font-semibold", TEXT_PRIMARY)}>
-            {exercise.name}
-          </span>
-          {isCustom && (
-            <span className={cn("shrink-0", CHIP_NEUTRAL_CLASS)}>custom</span>
-          )}
+        <div className={cn("truncate text-xs font-semibold", TEXT_PRIMARY)}>
+          {exercise.name}
         </div>
         {meta && (
           <div className={cn("mt-0.5 truncate capitalize", MONO_LABEL_CLASS, "normal-case tracking-normal")}>
@@ -130,11 +124,31 @@ export function LibraryExerciseList({ editable }: { editable: boolean }) {
     }
   };
 
-  const filtered = filterExercisesByQuery(exercises, query);
+  // The catalog is 1000+ rows and every card is a dnd-kit draggable — rendering
+  // them all tanks the browser and breaks dragging. So we render a CAP: with no
+  // query, the 10 most-recently-added exercises; while searching, the top
+  // matches. The search bar is the escape hatch for everything else.
+  const RECENT_LIMIT = 10;
+  const SEARCH_LIMIT = 25;
+  const hasQuery = query.trim().length > 0;
+  const matches = useMemo(
+    () => filterExercisesByQuery(exercises, query),
+    [exercises, query],
+  );
+  const recent = useMemo(
+    () =>
+      [...exercises]
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        .slice(0, RECENT_LIMIT),
+    [exercises],
+  );
+  const visible = hasQuery ? matches.slice(0, SEARCH_LIMIT) : recent;
+  const moreCount =
+    (hasQuery ? matches.length : exercises.length) - visible.length;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="mb-2 px-3">
+      <div className="mb-2 px-[18px]">
         <div className="relative">
           <Search
             className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#93b0b4]"
@@ -151,37 +165,46 @@ export function LibraryExerciseList({ editable }: { editable: boolean }) {
       </div>
 
       {editable && (
-        <div className={cn("px-3 pb-1.5", MONO_LABEL_CLASS)}>
+        <div className={cn("px-[18px] pb-1.5", MONO_LABEL_CLASS)}>
           Drag an exercise into a session
         </div>
       )}
 
-      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-3 pb-2">
+      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-[14px] pb-2">
         {isLoading ? (
           <p className={cn("py-4 text-center text-xs", TEXT_MUTED)}>Loading…</p>
-        ) : filtered.length === 0 ? (
+        ) : visible.length === 0 ? (
           <p className={cn("px-1 py-4 text-center text-xs", TEXT_MUTED)}>
             {exercises.length === 0
               ? "No exercises yet — create one below."
               : "No exercises match your search."}
           </p>
         ) : (
-          filtered.map((exercise) => (
-            <LibraryExerciseCard
-              key={exercise.id}
-              exercise={exercise}
-              editable={editable}
-              onEdit={() => {
-                setEditTarget(exercise);
-                setFormOpen(true);
-              }}
-              onDelete={() => setDeleteTarget(exercise)}
-            />
-          ))
+          <>
+            {visible.map((exercise) => (
+              <LibraryExerciseCard
+                key={exercise.id}
+                exercise={exercise}
+                editable={editable}
+                onEdit={() => {
+                  setEditTarget(exercise);
+                  setFormOpen(true);
+                }}
+                onDelete={() => setDeleteTarget(exercise)}
+              />
+            ))}
+            {moreCount > 0 && (
+              <p className={cn("px-1 pt-1 text-center text-[11px]", TEXT_MUTED)}>
+                {hasQuery
+                  ? `+${moreCount} more — refine your search`
+                  : `${exercises.length} in your catalog — search to find any`}
+              </p>
+            )}
+          </>
         )}
       </div>
 
-      <div className="border-t border-[rgba(13,148,136,0.08)] p-3">
+      <div className="border-t border-[rgba(13,148,136,0.08)] px-[18px] py-3">
         <button
           type="button"
           className="flex h-8 w-full items-center justify-center gap-1.5 rounded-[6px] border border-dashed border-[rgba(13,148,136,0.25)] text-xs font-medium text-[#5a7d82] transition-colors hover:border-[#0d9488] hover:bg-[rgba(13,148,136,0.05)] hover:text-[#0a5c55]"

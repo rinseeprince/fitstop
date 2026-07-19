@@ -5,12 +5,13 @@
 
 // One explicit column template shared by the header row and every week row —
 // sticky left column + aligned Day 1–7 columns depend on all rows using it.
-// Day columns are FIXED 132px: a minmax(…,1fr) never clamps here because the
-// min-w-max scroll wrapper sizes tracks to content, so fr columns balloon to
-// their card text. Fixed width = deterministically narrow cards everywhere;
-// the grid simply ends early on very wide windows.
+// Reference geometry (atletafit-builder-redesign.html `.sched`): a slim 42px
+// week column (a chip stack, NOT a card) + seven Day columns that flex to fill
+// (minmax(158px,1fr)), 8px gap. The `1fr` grows only because the scroll
+// wrapper is a FIXED min-width (min-w-[1220px]) rather than min-w-max — so on
+// a wide window the cards breathe, on a narrow one the grid scrolls.
 export const GRID_COLS =
-  "grid grid-cols-[220px_repeat(7,152px)]";
+  "grid grid-cols-[42px_repeat(7,minmax(158px,1fr))] gap-2";
 
 // Day-card treatments (docs/newdesignsystem.md "training vs rest day cards").
 export const TRAINING_CARD_BORDER = "border border-[rgba(13,148,136,0.08)]";

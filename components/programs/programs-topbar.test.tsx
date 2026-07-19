@@ -26,11 +26,17 @@ describe("ProgramsTopbar", () => {
     ["/dashboard/programs", "Programs"],
     ["/dashboard/programs/sessions", "Sessions"],
     ["/dashboard/programs/exercises", "Exercise Library"],
-    ["/dashboard/programs/plan-1", "Program Builder"],
   ])("renders the view title for %s", (path, title) => {
     mockPathname = path
     render(<ProgramsTopbar />)
     expect(screen.getByRole("heading", { name: title })).toBeDefined()
+  })
+
+  it("renders nothing on the builder route (full-bleed, its own header)", () => {
+    mockPathname = "/dashboard/programs/plan-1"
+    const { container } = render(<ProgramsTopbar />)
+    expect(container).toBeEmptyDOMElement()
+    expect(screen.queryByRole("heading")).toBeNull()
   })
 
   it("renders no create button — creation lives on the library dividers", () => {

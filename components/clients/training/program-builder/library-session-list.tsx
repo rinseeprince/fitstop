@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useDraggable } from "@dnd-kit/core";
-import { Copy, Dumbbell, GripVertical, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { Dumbbell, GripVertical, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { cn } from "@/lib/utils";
@@ -34,13 +34,11 @@ function LibrarySessionCard({
   session,
   editable,
   onEdit,
-  onDuplicate,
   onDelete,
 }: {
   session: SavedSession;
   editable: boolean;
   onEdit: () => void;
-  onDuplicate: () => void;
   onDelete: () => void;
 }) {
   const dragData: LibrarySessionDragData = { type: "library-session", session };
@@ -96,7 +94,6 @@ function LibrarySessionCard({
       <RowActions
         actions={[
           { label: "Edit", icon: Pencil, onClick: onEdit },
-          { label: "Duplicate", icon: Copy, onClick: onDuplicate },
           { label: "Delete", icon: Trash2, danger: true, onClick: onDelete },
         ]}
       />
@@ -110,24 +107,6 @@ export function LibrarySessionList({ editable }: { editable: boolean }) {
   const [query, setQuery] = useState("");
   const [editorState, setEditorState] = useState<SessionEditorState | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<SavedSession | null>(null);
-
-  const handleDuplicate = async (session: SavedSession) => {
-    try {
-      const res = await fetch(
-        `/api/training/saved-sessions/${session.id}/duplicate`,
-        { method: "POST" },
-      );
-      if (!res.ok) throw new Error();
-      toast({ title: "Session duplicated" });
-      await mutate();
-    } catch {
-      toast({
-        title: "Error",
-        description: "Failed to duplicate session",
-        variant: "destructive",
-      });
-    }
-  };
 
   const handleDelete = async (session: SavedSession) => {
     try {
@@ -157,7 +136,7 @@ export function LibrarySessionList({ editable }: { editable: boolean }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="mb-2 px-3">
+      <div className="mb-2 px-[18px]">
         <div className="relative">
           <Search
             className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#93b0b4]"
@@ -174,12 +153,12 @@ export function LibrarySessionList({ editable }: { editable: boolean }) {
       </div>
 
       {editable && (
-        <div className={cn("px-3 pb-1.5", MONO_LABEL_CLASS)}>
+        <div className={cn("px-[18px] pb-1.5", MONO_LABEL_CLASS)}>
           Drag a session onto a day
         </div>
       )}
 
-      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-3 pb-2">
+      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-[14px] pb-2">
         {isLoading ? (
           <p className={cn("py-4 text-center text-xs", TEXT_MUTED)}>Loading…</p>
         ) : filtered.length === 0 ? (
@@ -195,14 +174,13 @@ export function LibrarySessionList({ editable }: { editable: boolean }) {
               session={session}
               editable={editable}
               onEdit={() => setEditorState({ mode: "edit", session })}
-              onDuplicate={() => void handleDuplicate(session)}
               onDelete={() => setDeleteTarget(session)}
             />
           ))
         )}
       </div>
 
-      <div className="border-t border-[rgba(13,148,136,0.08)] p-3">
+      <div className="border-t border-[rgba(13,148,136,0.08)] px-[18px] py-3">
         <button
           type="button"
           className="flex h-8 w-full items-center justify-center gap-1.5 rounded-[6px] border border-dashed border-[rgba(13,148,136,0.25)] text-xs font-medium text-[#5a7d82] transition-colors hover:border-[#0d9488] hover:bg-[rgba(13,148,136,0.05)] hover:text-[#0a5c55]"

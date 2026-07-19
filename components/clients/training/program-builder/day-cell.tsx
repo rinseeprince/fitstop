@@ -84,11 +84,11 @@ export function DayCell({
     disabled: !editable || !session,
   });
 
-  const heightClass = collapsed ? "min-h-9" : "min-h-[92px]";
+  const heightClass = collapsed ? "min-h-9" : "min-h-[148px]";
 
   if (!session) {
     return (
-      <div className="p-1">
+      <div className="h-full">
         <div
           ref={setDropRef}
           className={cn(
@@ -130,14 +130,14 @@ export function DayCell({
   }
 
   return (
-    <div className="p-1">
+    <div className="h-full">
       <div
         ref={(node) => {
           setDropRef(node);
           setDragRef(node);
         }}
         className={cn(
-          "group/cell relative flex h-full cursor-pointer flex-col rounded-[6px] bg-white p-2 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0d9488]/35",
+          "group/cell relative flex h-full cursor-pointer flex-col rounded-[6px] bg-white px-[11px] py-2.5 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0d9488]/35",
           TRAINING_CARD_BORDER,
           heightClass,
           isOver && "border-[#0d9488]",
@@ -158,9 +158,14 @@ export function DayCell({
               <span className={cn(THUMB_CLASS, "h-5 w-5")}>
                 <Dumbbell className="h-3 w-3" strokeWidth={1.5} />
               </span>
-              <span className={cn("min-w-0 flex-1 truncate text-xs font-semibold", TEXT_PRIMARY)}>
+              <span className={cn("min-w-0 flex-1 truncate text-[13px] font-semibold", TEXT_PRIMARY)}>
                 {session.name}
               </span>
+              {session.calorieSurplusPercentage != null && (
+                <span className="shrink-0 font-mono-display text-[10px] font-medium text-[#0d9488]">
+                  +{session.calorieSurplusPercentage}%
+                </span>
+              )}
               {editable && (
                 <div className="-mr-1 flex shrink-0 items-center opacity-0 transition-opacity group-hover/cell:opacity-100">
                   <button

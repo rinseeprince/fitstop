@@ -42,59 +42,60 @@ export function ProgramGrid({
 }: ProgramGridProps) {
   const canDelete = draft.weeks.length > 1;
 
+  // Sticky-cell backgrounds must also cover the 8px grid gap to their right,
+  // or day cells show a sliver through the gap on horizontal scroll.
+  const STICKY_BG =
+    "bg-[#f4f7f6] after:absolute after:left-full after:top-0 after:h-full after:w-2 after:bg-[#f4f7f6]";
+
   return (
-    // -mx-1 cancels the cells' p-1 at the container edges so cards sit
-    // flush on the 32px page gutter, aligned with the header card.
-    <div className="scrollbar-none relative -mx-1 max-h-[calc(100vh-16rem)] overflow-auto rounded-[6px]">
-      <div className="min-w-max">
+    <div className="scrollbar-none relative max-h-[calc(100vh-16rem)] overflow-auto">
+      <div className="min-w-[1220px]">
         {/* Day header row — positional Day 1–7, never weekdays. */}
-        <div className={cn(GRID_COLS, "sticky top-0 z-30 bg-[#f4f7f6]")}>
-          <div className="sticky left-0 z-40 bg-[#f4f7f6] p-1" />
+        <div className={cn(GRID_COLS, "sticky top-0 z-30 bg-[#f4f7f6] pb-1.5")}>
+          <div className={cn("sticky left-0 z-40", STICKY_BG)} />
           {Array.from({ length: 7 }, (_, i) => (
-            <div key={i} className="p-1">
-              <div className={cn("px-2 py-1.5 text-center", MONO_LABEL_CLASS)}>Day {i + 1}</div>
+            <div key={i} className={cn("py-1 text-center", MONO_LABEL_CLASS)}>
+              Day {i + 1}
             </div>
           ))}
         </div>
 
-        <SortableContext
-          items={draft.weeks.map((w) => w.uid)}
-          strategy={verticalListSortingStrategy}
-        >
-          {draft.weeks.map((week) => (
-            <WeekRow
-              key={week.uid}
-              week={week}
-              mode={mode}
-              collapsed={collapsedWeeks.has(week.uid)}
-              canDelete={canDelete}
-              onToggleCollapse={onToggleCollapse}
-              onDuplicateWeek={onDuplicateWeek}
-              onDuplicateWeekWithProgression={onDuplicateWeekWithProgression}
-              onDeleteWeek={onDeleteWeek}
-              onOpenSession={onOpenSession}
-              onRequestAddSession={onRequestAddSession}
-              onClearSlot={onClearSlot}
-            />
-          ))}
-        </SortableContext>
+        <div className="space-y-2">
+          <SortableContext
+            items={draft.weeks.map((w) => w.uid)}
+            strategy={verticalListSortingStrategy}
+          >
+            {draft.weeks.map((week) => (
+              <WeekRow
+                key={week.uid}
+                week={week}
+                mode={mode}
+                collapsed={collapsedWeeks.has(week.uid)}
+                canDelete={canDelete}
+                onToggleCollapse={onToggleCollapse}
+                onDuplicateWeek={onDuplicateWeek}
+                onDuplicateWeekWithProgression={onDuplicateWeekWithProgression}
+                onDeleteWeek={onDeleteWeek}
+                onOpenSession={onOpenSession}
+                onRequestAddSession={onRequestAddSession}
+                onClearSlot={onClearSlot}
+              />
+            ))}
+          </SortableContext>
+        </div>
 
         {mode === "edit" && (
-          <div className={GRID_COLS}>
-            <div className="sticky left-0 z-20 bg-[#f4f7f6] p-1">
-              <button
-                type="button"
-                disabled={draft.weeks.length >= MAX_WEEKS}
-                className={cn(
-                  "flex w-full items-center justify-center gap-1.5 rounded-[6px] border border-dashed border-[rgba(13,148,136,0.2)] px-3 py-2 text-xs transition-colors hover:border-[#0d9488] hover:bg-[rgba(13,148,136,0.05)] disabled:cursor-not-allowed disabled:opacity-50",
-                  TEXT_SECONDARY,
-                )}
-                onClick={onAddWeek}
-              >
-                <Plus className="h-3.5 w-3.5" strokeWidth={1.5} /> Add week
-              </button>
-            </div>
-          </div>
+          <button
+            type="button"
+            disabled={draft.weeks.length >= MAX_WEEKS}
+            className={cn(
+              "mt-2 flex w-full items-center justify-center gap-1.5 rounded-[6px] border border-dashed border-[rgba(13,148,136,0.2)] py-2 text-xs transition-colors hover:border-[#0d9488] hover:bg-[rgba(13,148,136,0.05)] disabled:cursor-not-allowed disabled:opacity-50",
+              TEXT_SECONDARY,
+            )}
+            onClick={onAddWeek}
+          >
+            <Plus className="h-3.5 w-3.5" strokeWidth={1.5} /> Add week
+          </button>
         )}
       </div>
     </div>

@@ -173,7 +173,11 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
   };
 
   return (
-    <div>
+    // Full-bleed within the programs shell: cancel its px-8/py padding so the
+    // library panel sits flush against the icon rail and spans top-to-bottom
+    // (the reference 3-column frame; the panel's right border separates it
+    // from the grey main column). The section topbar hides on this route.
+    <div className="-mx-8 -mt-5 -mb-[60px]">
       <DndContext
         sensors={dnd.sensors}
         collisionDetection={dnd.collisionDetection}
@@ -181,9 +185,9 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
         onDragEnd={dnd.handleDragEnd}
         onDragCancel={dnd.handleDragCancel}
       >
-        <div className="flex items-start gap-4">
+        <div className="flex items-start">
           <BuilderLibraryPanel mode={mode} />
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0 flex-1 px-6 pt-5">
             <ProgramTopBar
               draft={draft}
               mode={mode}

@@ -92,6 +92,8 @@ describe("DayCell — session state", () => {
     expect(screen.getByText("Bench")).toBeInTheDocument();
     expect(screen.getAllByText("3×8-12")).toHaveLength(2);
     expect(screen.getByText("2 exercises")).toBeInTheDocument();
+    // Per-session surplus indicator on the card.
+    expect(screen.getByText("+12%")).toBeInTheDocument();
     fireEvent.click(screen.getByText("Push"));
     expect(handlers.onOpenSession).toHaveBeenCalledWith("sess-1");
   });
