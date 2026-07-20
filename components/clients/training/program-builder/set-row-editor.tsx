@@ -23,7 +23,7 @@ import { FOCUS_RING, TEXT_MUTED, TEXT_SECONDARY } from "./builder-tokens";
 // duplicate/remove icon column stay fixed); minmax(0,…) lets narrow viewports
 // squeeze instead of overflowing.
 export const SET_GRID =
-  "grid grid-cols-[20px_minmax(0,1.1fr)_minmax(0,1.3fr)_minmax(0,1.7fr)_minmax(0,0.7fr)_minmax(0,0.8fr)_minmax(0,0.8fr)_48px] items-center gap-1.5";
+  "grid grid-cols-[20px_minmax(0,1.1fr)_minmax(0,1.3fr)_minmax(0,1.7fr)_minmax(0,0.7fr)_minmax(0,0.8fr)_48px] items-center gap-1.5";
 
 type SetRowEditorProps = {
   spec: SetSpec;
@@ -120,7 +120,21 @@ export function SetRowEditor({ spec, index, disabled, onEdit }: SetRowEditorProp
               placeholder="min"
               aria-label={`Set ${spec.set_number} min reps`}
               className={cn("h-7 min-w-0 flex-1 px-1 text-center font-mono-display text-[11px]", FOCUS_RING)}
-              onBlur={(e) => update({ reps_min: commitNum(e, { min: 0, max: 100, int: true }) })}
+              onFocus={(e) => {
+                // Select-all on focus so a prefilled value is typed over, not
+                // deleted (programmatic focus just highlights, never wipes).
+                e.target.select();
+              }}
+              onBlur={(e) => {
+                const v = commitNum(e, { min: 0, max: 100, int: true });
+                if (v === null) {
+                  // Blank reverts to the current value (the prefill on a new
+                  // exercise) instead of clearing — reps always keep a value.
+                  e.target.value = spec.reps_min == null ? "" : String(spec.reps_min);
+                  return;
+                }
+                update({ reps_min: v });
+              }}
             />
             <span className={cn("text-[10px]", TEXT_MUTED)}>–</span>
             <Input
@@ -132,7 +146,17 @@ export function SetRowEditor({ spec, index, disabled, onEdit }: SetRowEditorProp
               placeholder="max"
               aria-label={`Set ${spec.set_number} max reps`}
               className={cn("h-7 min-w-0 flex-1 px-1 text-center font-mono-display text-[11px]", FOCUS_RING)}
-              onBlur={(e) => update({ reps_max: commitNum(e, { min: 0, max: 100, int: true }) })}
+              onFocus={(e) => {
+                e.target.select();
+              }}
+              onBlur={(e) => {
+                const v = commitNum(e, { min: 0, max: 100, int: true });
+                if (v === null) {
+                  e.target.value = spec.reps_max == null ? "" : String(spec.reps_max);
+                  return;
+                }
+                update({ reps_max: v });
+              }}
             />
           </div>
         )}
@@ -190,16 +214,6 @@ export function SetRowEditor({ spec, index, disabled, onEdit }: SetRowEditorProp
           aria-label={`Set ${spec.set_number} RPE`}
           className={cn("h-7 px-1 text-center font-mono-display text-[11px]", FOCUS_RING)}
           onBlur={(e) => update({ rpe_target: commitNum(e, { min: 0, max: 10 }) })}
-        />
-
-        <Input
-          disabled={disabled}
-          maxLength={20}
-          defaultValue={spec.tempo ?? ""}
-          placeholder="3010"
-          aria-label={`Set ${spec.set_number} tempo`}
-          className={cn("h-7 px-1 text-center font-mono-display text-[11px]", FOCUS_RING)}
-          onBlur={(e) => update({ tempo: e.target.value.trim() || null })}
         />
 
         <Input

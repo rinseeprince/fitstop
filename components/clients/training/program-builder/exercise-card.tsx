@@ -154,7 +154,6 @@ export function ExerciseCard({
             <span>Reps</span>
             <span>Load</span>
             <span>RPE</span>
-            <span>Tempo</span>
             <span>Rest s</span>
             <span />
           </div>

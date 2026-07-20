@@ -91,7 +91,13 @@ export function SessionEditorBody({
             disabled={!editable}
             maxLength={100}
             defaultValue={session.name}
-            className={cn("h-8 text-sm font-semibold", FOCUS_RING)}
+            className={cn("h-8 text-xs", FOCUS_RING)}
+            onFocus={(e) => {
+              // Select-all on focus so the coach types over the name without
+              // deleting (a programmatic focus-on-open just highlights, never
+              // wipes); blur reverts to the committed name if left blank.
+              e.target.select();
+            }}
             onBlur={(e) => {
               const value = e.target.value.trim() || session.name;
               // Sync the DOM so a cleared field snaps back to the

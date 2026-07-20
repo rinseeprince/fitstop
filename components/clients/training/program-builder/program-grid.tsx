@@ -48,7 +48,7 @@ export function ProgramGrid({
     "bg-[#f4f7f6] after:absolute after:left-full after:top-0 after:h-full after:w-2 after:bg-[#f4f7f6]";
 
   return (
-    <div className="scrollbar-none relative max-h-[calc(100vh-16rem)] overflow-auto">
+    <div className="scrollbar-none relative min-h-0 flex-1 overflow-auto">
       <div className="min-w-[1220px]">
         {/* Day header row — positional Day 1–7, never weekdays. */}
         <div className={cn(GRID_COLS, "sticky top-0 z-30 bg-[#f4f7f6] pb-1.5")}>
@@ -83,21 +83,30 @@ export function ProgramGrid({
             ))}
           </SortableContext>
         </div>
+      </div>
 
-        {mode === "edit" && (
+      {/* Add-week lives OUTSIDE the min-w-[1220px] scroll content and is
+          sticky left-0, so it spans the VISIBLE width (its dashed sides stay on
+          screen) instead of the 1220px grid width whose edges scroll off. It
+          still scrolls vertically with the weeks (no top/bottom offset). */}
+      {mode === "edit" && (
+        <div className="sticky left-0 pt-2">
           <button
             type="button"
             disabled={draft.weeks.length >= MAX_WEEKS}
             className={cn(
-              "mt-2 flex w-full items-center justify-center gap-1.5 rounded-[6px] border border-dashed border-[rgba(13,148,136,0.2)] py-2 text-xs transition-colors hover:border-[#0d9488] hover:bg-[rgba(13,148,136,0.05)] disabled:cursor-not-allowed disabled:opacity-50",
+              "flex w-full items-center justify-center gap-1.5 rounded-[6px] border border-dashed border-[rgba(13,148,136,0.2)] py-2 text-xs transition-colors hover:border-[#0d9488] hover:bg-[rgba(13,148,136,0.05)] disabled:cursor-not-allowed disabled:opacity-50",
               TEXT_SECONDARY,
             )}
             onClick={onAddWeek}
           >
             <Plus className="h-3.5 w-3.5" strokeWidth={1.5} /> Add week
           </button>
-        )}
-      </div>
+        </div>
+      )}
+
+      {/* Bottom breathing room in both modes (mirrors the right column pt-5). */}
+      <div className="h-5" />
     </div>
   );
 }

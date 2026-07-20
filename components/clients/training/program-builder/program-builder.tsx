@@ -154,10 +154,6 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
     mode === "edit"
       ? (draft.weeks.find((w) => w.uid === progressionWeekUid) ?? null)
       : null;
-  const editingSlotUid =
-    draft.weeks
-      .flatMap((w) => w.days)
-      .find((s) => s.session?.uid === editingSessionUid)?.uid ?? null;
 
   const trainingCount = draft.weeks.reduce(
     (sum, w) => sum + w.days.filter((d) => !d.isRest).length,
@@ -176,8 +172,10 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
     // Full-bleed within the programs shell: cancel its px-8/py padding so the
     // library panel sits flush against the icon rail and spans top-to-bottom
     // (the reference 3-column frame; the panel's right border separates it
-    // from the grey main column). The section topbar hides on this route.
-    <div className="-mx-8 -mt-5 -mb-[60px]">
+    // from the grey main column). The section topbar hides on this route, so
+    // the builder root fills main's 100vh box; `flex h-screen flex-col` lets
+    // the grid fill the real remaining height (see program-grid's flex-1).
+    <div className="-mx-8 -mt-5 -mb-[60px] flex h-screen flex-col">
       <DndContext
         sensors={dnd.sensors}
         collisionDetection={dnd.collisionDetection}
@@ -185,9 +183,9 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
         onDragEnd={dnd.handleDragEnd}
         onDragCancel={dnd.handleDragCancel}
       >
-        <div className="flex items-start">
+        <div className="flex min-h-0 flex-1">
           <BuilderLibraryPanel mode={mode} />
-          <div className="min-w-0 flex-1 px-6 pt-5">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col px-6 pt-5">
             <ProgramTopBar
               draft={draft}
               mode={mode}
@@ -357,9 +355,6 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
         onEditExercise={updateExercise}
         onReorderExercise={reorderExercise}
         onSpecEdit={editSetSpec}
-        onClearToRest={() => {
-          if (editingSlotUid) clearSlot(editingSlotUid);
-        }}
         onSaveAsWorkout={(uid) => void saveDayAsWorkout(uid)}
         isSavingWorkout={isSavingWorkout}
       />
