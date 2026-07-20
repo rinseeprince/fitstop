@@ -16,6 +16,10 @@ import { projectExerciseCompact } from "@/utils/exercise-set-specs";
 import type { SetSpec } from "@/utils/exercise-set-specs";
 import type {
   SavedPlan,
+  SavedPlanListItem,
+  SavedPlansSummary,
+  SavedPlanSource,
+  SavedPlanStatus,
   AIGeneratedPlan,
   ManualSessionDraft,
 } from "@/types/training";
@@ -158,8 +162,9 @@ export async function createSavedPlanFromAI(
 export async function createSavedPlanManual(
   coachId: string,
   name: string,
-  splitType: string,
-  sessions: ManualSessionDraft[]
+  splitType: string | null,
+  sessions: ManualSessionDraft[],
+  opts?: { description?: string | null; defaultSurplusPercentage?: number | null }
 ): Promise<string> {
   // Only collect names from training sessions — rest days have no exercises.
   const allNames: string[] = [];
@@ -180,6 +185,8 @@ export async function createSavedPlanManual(
     coach_id: coachId,
     name,
     split_type: splitType,
+    description: opts?.description ?? null,
+    default_surplus_percentage: opts?.defaultSurplusPercentage ?? null,
     frequency_per_week: trainingCount,
     status: "draft",
     cycle_length: cycleLength,
@@ -752,5 +759,154 @@ export async function getSavedPlanAssignments(coachId: string): Promise<{
     })),
     totalAssignments: rows.length,
     distinctClients: clients.size,
+  };
+}
+
+// =============================================================================
+// Paginated / summary reads for the Programs library (offset pagination, lean).
+// The list never renders sessions/exercises, and every column + stat-band KPI
+// derives from stored plan scalars (cycle_length / rest_pattern / …), so these
+// skip the nested-tree fetch getSavedPlans does. See the saved-plans route
+// (opt-in ?limit/?offset) + /summary route.
+// =============================================================================
+
+const SLOTS_PER_WEEK = 7; // every authored week is exactly 7 positional day-slots
+
+type SavedPlanListRow = {
+  id: string;
+  name: string;
+  description: string | null;
+  split_type: string | null;
+  source: string | null;
+  status: string | null;
+  updated_at: string;
+  created_at: string;
+  cycle_length: number | null;
+  rest_pattern: number[] | null;
+  frequency_per_week: number | null;
+};
+
+function mapSavedPlanListRow(row: SavedPlanListRow): SavedPlanListItem {
+  const totalSlots = row.cycle_length ?? 0;
+  const restCount = (row.rest_pattern ?? []).length;
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description ?? null,
+    splitType: row.split_type ?? null,
+    source: (row.source ?? "manual") as SavedPlanSource,
+    status: (row.status ?? "draft") as SavedPlanStatus,
+    frequencyPerWeek: row.frequency_per_week ?? null,
+    // cycle_length = 7 × weeks (every week is a full 7-slot row set), so weeks =
+    // slots / 7. round() keeps legacy non-7-multiple plans sensible.
+    weekCount: Math.max(1, Math.round(totalSlots / SLOTS_PER_WEEK)),
+    totalSlots,
+    restCount,
+    trainingCount: totalSlots - restCount,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+// Strip the characters PostgREST parses inside .or() so a free-text search term
+// can't inject extra filters (defense-in-depth, like lib/cursor's validation).
+function sanitizePlanSearch(raw: string | undefined): string {
+  if (!raw) return "";
+  return raw.replace(/[,()\\]/g, "").trim().slice(0, 100);
+}
+
+export async function getSavedPlansPage(
+  coachId: string,
+  opts: {
+    includeDrafts?: boolean;
+    limit: number;
+    offset: number;
+    search?: string;
+    source?: "custom" | "ai";
+    sort?: "updated" | "name" | "longest";
+  },
+): Promise<{ plans: SavedPlanListItem[]; total: number }> {
+  const statuses = opts.includeDrafts ? ["saved", "draft"] : ["saved"];
+
+  let filter = supabaseAdmin
+    .from("coach_saved_plans")
+    .select(
+      "id, name, description, split_type, source, status, updated_at, created_at, cycle_length, rest_pattern, frequency_per_week",
+      { count: "exact" },
+    )
+    .eq("coach_id", coachId)
+    .in("status", statuses);
+
+  // Segment: 'ai' = AI-generated; 'custom' = everything else.
+  if (opts.source === "ai") filter = filter.eq("source", "ai");
+  else if (opts.source === "custom") filter = filter.neq("source", "ai");
+
+  const term = sanitizePlanSearch(opts.search);
+  if (term) {
+    filter = filter.or(`name.ilike.%${term}%,description.ilike.%${term}%`);
+  }
+
+  // 'longest' orders by cycle_length (∝ week count, 7 slots/week).
+  const orderCol =
+    opts.sort === "name" ? "name" : opts.sort === "longest" ? "cycle_length" : "updated_at";
+  const orderAsc = opts.sort === "name";
+
+  const { data, error, count } = await filter
+    .order(orderCol, { ascending: orderAsc, nullsFirst: false })
+    .order("id", { ascending: false }) // deterministic tiebreak for stable paging
+    .range(opts.offset, opts.offset + opts.limit - 1);
+
+  if (error) {
+    throw new Error(`Failed to fetch saved plans page: ${error.message}`);
+  }
+
+  const rows = (data ?? []) as unknown as SavedPlanListRow[];
+  return { plans: rows.map(mapSavedPlanListRow), total: count ?? 0 };
+}
+
+export async function getSavedPlansSummary(
+  coachId: string,
+  opts?: { includeDrafts?: boolean },
+): Promise<SavedPlansSummary> {
+  const statuses = opts?.includeDrafts ? ["saved", "draft"] : ["saved"];
+
+  // Lean scan (2 columns), paged past PostgREST's ~1000-row cap so counts stay
+  // correct at scale (mirrors getSavedPlanAssignments).
+  const rows: Array<{ source: string | null; cycle_length: number | null }> = [];
+  const PAGE = 1000;
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabaseAdmin
+      .from("coach_saved_plans")
+      .select("source, cycle_length")
+      .eq("coach_id", coachId)
+      .in("status", statuses)
+      .range(from, from + PAGE - 1);
+    if (error) {
+      throw new Error(`Failed to fetch saved plans summary: ${error.message}`);
+    }
+    if (!data || data.length === 0) break;
+    rows.push(
+      ...(data as unknown as Array<{ source: string | null; cycle_length: number | null }>),
+    );
+    if (data.length < PAGE) break;
+  }
+
+  const total = rows.length;
+  const aiCount = rows.filter((r) => r.source === "ai").length;
+  const weekCounts = rows.map((r) =>
+    Math.max(1, Math.round((r.cycle_length ?? 0) / SLOTS_PER_WEEK)),
+  );
+  const avgWeeks =
+    weekCounts.length > 0
+      ? Math.round((weekCounts.reduce((a, b) => a + b, 0) / weekCounts.length) * 10) / 10
+      : null;
+
+  return {
+    total,
+    aiCount,
+    customCount: total - aiCount,
+    avgWeeks,
+    minWeeks: weekCounts.length > 0 ? Math.min(...weekCounts) : 0,
+    maxWeeks: weekCounts.length > 0 ? Math.max(...weekCounts) : 0,
   };
 }

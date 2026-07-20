@@ -396,6 +396,37 @@ export type SavedPlan = {
   updatedAt: string;
 };
 
+// Lean list-row for the paginated Programs library — plan scalars + counts
+// derived server-side from cycle_length / rest_pattern, with NO nested sessions
+// or exercises (the list never renders them). See getSavedPlansPage. splitType
+// is free text here (a descriptive focus), stored in the free-string column.
+export type SavedPlanListItem = {
+  id: string;
+  name: string;
+  description: string | null;
+  splitType: string | null;
+  source: SavedPlanSource;
+  status: SavedPlanStatus;
+  frequencyPerWeek: number | null;
+  weekCount: number;
+  totalSlots: number;
+  restCount: number;
+  trainingCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+// Aggregate stats over ALL of a coach's plans, for the Programs stat band —
+// decoupled from list pagination (see getSavedPlansSummary).
+export type SavedPlansSummary = {
+  total: number;
+  aiCount: number;
+  customCount: number;
+  avgWeeks: number | null;
+  minWeeks: number;
+  maxWeeks: number;
+};
+
 export type SavedSession = {
   id: string;
   coachId: string;

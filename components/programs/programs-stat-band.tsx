@@ -1,35 +1,24 @@
 "use client"
 
-import { useSavedPlans } from "@/hooks/use-saved-plans"
+import { useSavedPlansSummary } from "@/hooks/use-saved-plans-summary"
 import { useSavedPlanAssignments } from "@/hooks/use-saved-plan-assignments"
 import { StatBand, type StatBandCell } from "./shared/stat-band"
-import { abbreviateFocus, getMode, getWeekCount } from "./shared/derive-plan-stats"
 
-// Programs-page KPI band. Everything except assignments is derived
-// client-side from the (full-tree) saved-plans list payload.
+// Programs-page KPI band. Aggregates come from a lean summary endpoint (so they
+// stay correct while the list paginates); assignments come from their own
+// endpoint. "Most used focus" was dropped (low-value) — three cells now.
 export function ProgramsStatBand() {
-  const { plans, isLoading } = useSavedPlans({ includeDrafts: true })
+  const { summary } = useSavedPlansSummary(true)
   const { assignments } = useSavedPlanAssignments()
-
-  const aiCount = plans.filter((p) => p.source === "ai").length
-  const customCount = plans.length - aiCount
-
-  const weekCounts = plans.map(getWeekCount)
-  const avgWeeks =
-    weekCounts.length > 0
-      ? (weekCounts.reduce((a, b) => a + b, 0) / weekCounts.length).toFixed(1)
-      : null
-  const minWeeks = weekCounts.length > 0 ? Math.min(...weekCounts) : 0
-  const maxWeeks = weekCounts.length > 0 ? Math.max(...weekCounts) : 0
-
-  const focusMode = getMode(plans, (p) => p.splitType?.replace(/_/g, " ") ?? null)
 
   const cells: StatBandCell[] = [
     {
       label: "Total programs",
-      value: isLoading ? "—" : String(plans.length),
-      valueMuted: isLoading,
-      sub: isLoading ? undefined : `${aiCount} ai · ${customCount} custom`,
+      value: summary ? String(summary.total) : "—",
+      valueMuted: !summary,
+      sub: summary
+        ? `${summary.aiCount} ai · ${summary.customCount} custom`
+        : undefined,
     },
     {
       label: "Active assignments",
@@ -41,16 +30,13 @@ export function ProgramsStatBand() {
     },
     {
       label: "Avg length",
-      value: avgWeeks ?? "—",
-      valueMuted: avgWeeks === null,
-      unit: avgWeeks !== null ? "wks" : undefined,
-      sub: avgWeeks !== null ? `range ${minWeeks}–${maxWeeks} weeks` : undefined,
-    },
-    {
-      label: "Most used focus",
-      value: focusMode ? abbreviateFocus(focusMode.value) : "—",
-      valueMuted: !focusMode,
-      sub: focusMode ? `${focusMode.count} of ${plans.length} programs` : undefined,
+      value: summary?.avgWeeks != null ? summary.avgWeeks.toFixed(1) : "—",
+      valueMuted: summary?.avgWeeks == null,
+      unit: summary?.avgWeeks != null ? "wks" : undefined,
+      sub:
+        summary?.avgWeeks != null
+          ? `range ${summary.minWeeks}–${summary.maxWeeks} weeks`
+          : undefined,
     },
   ]
 

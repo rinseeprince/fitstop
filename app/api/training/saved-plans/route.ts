@@ -4,8 +4,10 @@ import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import {
   getSavedPlans,
+  getSavedPlansPage,
   createSavedPlanManual,
 } from "@/services/coach-saved-plan-service";
+import { parsePaginationParams } from "@/lib/api-utils";
 import { createSavedPlanSchema } from "@/lib/validations/training";
 import type { ManualSessionDraft } from "@/types/training";
 
@@ -22,8 +24,34 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const includeDrafts =
-      request.nextUrl.searchParams.get("status") === "all";
+    const sp = request.nextUrl.searchParams;
+    const includeDrafts = sp.get("status") === "all";
+
+    // Opt-in offset pagination (the Programs table): with ?limit/?offset present
+    // return LEAN rows + total (no nested sessions/exercises). Absent → the full
+    // nested list (calendar library panel + backward compat).
+    if (sp.has("limit") || sp.has("offset")) {
+      const pagination = parsePaginationParams(sp);
+      if (!pagination.valid) {
+        return NextResponse.json(
+          { success: false, error: pagination.error },
+          { status: 400 },
+        );
+      }
+      const sortParam = sp.get("sort");
+      const sourceParam = sp.get("source");
+      const { plans, total } = await getSavedPlansPage(coachId, {
+        includeDrafts,
+        limit: pagination.limit,
+        offset: pagination.offset,
+        search: sp.get("search") ?? undefined,
+        source:
+          sourceParam === "ai" || sourceParam === "custom" ? sourceParam : undefined,
+        sort: sortParam === "name" || sortParam === "longest" ? sortParam : "updated",
+      });
+      return NextResponse.json({ success: true, plans, total }, { status: 200 });
+    }
+
     const plans = await getSavedPlans(coachId, { includeDrafts });
     return NextResponse.json({ success: true, plans }, { status: 200 });
   } catch (error) {
@@ -59,8 +87,12 @@ export async function POST(request: NextRequest) {
     const planId = await createSavedPlanManual(
       coachId,
       parsed.data.name,
-      parsed.data.splitType,
-      parsed.data.sessions as ManualSessionDraft[]
+      parsed.data.splitType ?? null,
+      parsed.data.sessions as ManualSessionDraft[],
+      {
+        description: parsed.data.description ?? null,
+        defaultSurplusPercentage: parsed.data.defaultSurplusPercentage ?? null,
+      }
     );
 
     return NextResponse.json({ success: true, planId }, { status: 201 });

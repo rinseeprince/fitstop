@@ -2,9 +2,9 @@
 
 import { cn } from "@/lib/utils"
 
-// Dark 4-cell KPI band for the library pages — the established dark
-// summary-card pattern (model: check-in/kpi-ribbon.tsx), minus the status
-// dots: library stats are descriptive, not statuses.
+// Dark KPI band for the library pages — the established dark summary-card
+// pattern (model: check-in/kpi-ribbon.tsx), minus the status dots: library
+// stats are descriptive, not statuses. Adapts to the number of cells.
 export type StatBandCell = {
   label: string
   value: string
@@ -20,10 +20,20 @@ const SUB_TONE_CLASS: Record<NonNullable<StatBandCell["subTone"]>, string> = {
   up: "text-[#0d9488]",
 }
 
+// Static classes so Tailwind's JIT picks them up (no dynamic grid-cols-${n}).
+const GRID_COLS: Record<number, string> = {
+  2: "grid-cols-2",
+  3: "grid-cols-3",
+  4: "grid-cols-4",
+}
+
 export function StatBand({ cells }: { cells: StatBandCell[] }) {
   return (
     <div
-      className="bg-[#0f2027] rounded-[6px] p-5 grid grid-cols-4 animate-card-in"
+      className={cn(
+        "bg-[#0f2027] rounded-[6px] p-5 grid animate-card-in",
+        GRID_COLS[cells.length] ?? "grid-cols-4",
+      )}
       data-slot="stat-band"
     >
       {cells.map((cell, i) => (

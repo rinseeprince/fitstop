@@ -1,72 +1,68 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { ProgramsTable } from "./programs-table";
-import type { SavedPlan } from "@/types/training";
+import type { SavedPlanListItem } from "@/types/training";
 
 const mockPush = vi.fn();
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: mockPush }),
 }));
 
+// The table now drives server-side pagination — the hook is called with the
+// live search/segment/sort/page params (captured here) and returns lean rows.
 const mockMutate = vi.fn();
-let mockPlans: SavedPlan[] = [];
-vi.mock("@/hooks/use-saved-plans", () => ({
-  useSavedPlans: () => ({ plans: mockPlans, isLoading: false, mutate: mockMutate }),
+let mockPlans: SavedPlanListItem[] = [];
+let mockTotal = 0;
+const lastParams: { current: Record<string, unknown> | null } = { current: null };
+vi.mock("@/hooks/use-saved-plans-page", () => ({
+  useSavedPlansPage: (params: Record<string, unknown>) => {
+    lastParams.current = params;
+    return {
+      plans: mockPlans,
+      total: mockTotal,
+      isLoading: false,
+      isValidating: false,
+      mutate: mockMutate,
+    };
+  },
 }));
 
-function makePlan(overrides: Partial<SavedPlan>): SavedPlan {
+function makeItem(overrides: Partial<SavedPlanListItem>): SavedPlanListItem {
   return {
     id: "plan-1",
     name: "PPL Program",
     description: null,
     splitType: "push_pull_legs",
-    frequencyPerWeek: 3,
-    status: "saved",
     source: "manual",
-    coachPrompt: null,
-    cycleLength: 7,
-    restPattern: [],
-    defaultSurplusPercentage: null,
-    programDurationWeeks: null,
+    status: "saved",
+    frequencyPerWeek: 3,
+    weekCount: 1,
+    totalSlots: 7,
+    restCount: 0,
+    trainingCount: 7,
     createdAt: "2026-07-01T00:00:00Z",
     updatedAt: "2026-07-01T00:00:00Z",
-    sessions: [
-      {
-        id: "s1",
-        savedPlanId: "plan-1",
-        name: "Push",
-        focus: null,
-        orderIndex: 0,
-        weekIndex: 0,
-        isRest: false,
-        estimatedDurationMinutes: null,
-        calorieSurplusPercentage: null,
-        notes: null,
-        sessionType: "training",
-        createdAt: "2026-07-01T00:00:00Z",
-        updatedAt: "2026-07-01T00:00:00Z",
-        exercises: [],
-      },
-    ],
     ...overrides,
-  } as SavedPlan;
+  };
 }
 
 describe("ProgramsTable", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    lastParams.current = null;
     mockPlans = [
-      makePlan({ id: "plan-1", name: "PPL Program", source: "manual" }),
-      makePlan({ id: "plan-2", name: "Glute Focus", source: "ai" }),
-      makePlan({ id: "plan-3", name: "Old Draft", status: "draft" }),
+      makeItem({ id: "plan-1", name: "PPL Program", source: "manual" }),
+      makeItem({ id: "plan-2", name: "Glute Focus", source: "ai" }),
+      makeItem({ id: "plan-3", name: "Old Draft", status: "draft" }),
     ];
+    mockTotal = 3;
   });
 
   afterEach(() => {
     cleanup();
   });
 
-  it("shows all plans including drafts with a Draft badge", () => {
+  it("renders the page rows including a Draft badge + the server total", () => {
     render(<ProgramsTable />);
     expect(screen.getByText("PPL Program")).toBeDefined();
     expect(screen.getByText("Old Draft")).toBeDefined();
@@ -74,25 +70,20 @@ describe("ProgramsTable", () => {
     expect(screen.getByText("Showing 3 of 3 programs")).toBeDefined();
   });
 
-  it("filters by search query and updates the count", () => {
+  it("threads the source segment to the server hook", () => {
+    render(<ProgramsTable />);
+    fireEvent.click(screen.getByRole("button", { name: "AI generated" }));
+    expect(lastParams.current?.segment).toBe("ai");
+  });
+
+  it("debounces the search into the server hook", async () => {
     render(<ProgramsTable />);
     fireEvent.change(screen.getByPlaceholderText("Search programs"), {
       target: { value: "glute" },
     });
-    expect(screen.queryByText("PPL Program")).toBeNull();
-    expect(screen.getByText("Glute Focus")).toBeDefined();
-    expect(screen.getByText("Showing 1 of 3 programs")).toBeDefined();
-  });
-
-  it("filters by source via the segmented control", () => {
-    render(<ProgramsTable />);
-    fireEvent.click(screen.getByRole("button", { name: "AI generated" }));
-    expect(screen.queryByText("PPL Program")).toBeNull();
-    expect(screen.getByText("Glute Focus")).toBeDefined();
-
-    fireEvent.click(screen.getByRole("button", { name: "Custom" }));
-    expect(screen.getByText("PPL Program")).toBeDefined();
-    expect(screen.queryByText("Glute Focus")).toBeNull();
+    await waitFor(() => {
+      expect(lastParams.current?.search).toBe("glute");
+    });
   });
 
   it("opens the builder on row click", () => {
@@ -119,34 +110,25 @@ describe("ProgramsTable", () => {
     vi.unstubAllGlobals();
   });
 
-  it("shows the empty state when there are no programs", () => {
-    mockPlans = [];
-    render(<ProgramsTable />);
-    expect(screen.getByText("No programs yet")).toBeDefined();
-  });
-
-  it("divider + POSTs a 7-rest-day draft and navigates to it", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ planId: "plan-42" }),
-    });
+  it("the + button opens the create modal without creating anything", () => {
+    const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-
     render(<ProgramsTable />);
+
     fireEvent.click(screen.getByLabelText("New program"));
 
-    await waitFor(() => {
-      expect(mockPush).toHaveBeenCalledWith("/dashboard/programs/plan-42");
-    });
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe("/api/training/saved-plans");
-    const body = JSON.parse(String(init.body)) as {
-      name: string;
-      sessions: Array<{ isRest: boolean }>;
-    };
-    expect(body.name).toBe("Untitled program");
-    expect(body.sessions).toHaveLength(7);
-    expect(body.sessions.every((s) => s.isRest)).toBe(true);
+    // The modal is open (its submit button is present) ...
+    expect(screen.getByRole("button", { name: "Create program" })).toBeDefined();
+    // ... and merely opening it neither POSTs nor navigates.
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(mockPush).not.toHaveBeenCalled();
     vi.unstubAllGlobals();
+  });
+
+  it("shows the empty state when there are no programs", () => {
+    mockPlans = [];
+    mockTotal = 0;
+    render(<ProgramsTable />);
+    expect(screen.getByText("No programs yet")).toBeDefined();
   });
 });

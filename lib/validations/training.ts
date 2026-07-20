@@ -211,7 +211,12 @@ export const updateSavedPlanSchema = z.object({
 
 export const createSavedPlanSchema = z.object({
   name: z.string().min(1).max(100),
-  splitType: splitTypeSchema,
+  // Focus is free text (a descriptive focus like "Glute hypertrophy"), stored
+  // in the free-string split_type column. splitTypeSchema stays the enum for
+  // the AI + update paths.
+  splitType: z.string().max(100).nullish(),
+  description: z.string().max(500).nullish(),
+  defaultSurplusPercentage: z.number().min(0).max(100).nullish(),
   sessions: z.array(z.object({
     tempId: z.string().optional(),
     name: z.string().min(1).max(100),
