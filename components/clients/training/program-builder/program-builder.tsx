@@ -67,6 +67,7 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
     discardChanges,
     setName,
     setSplitType,
+    setDescription,
     setDefaultSurplus,
     addWeek,
     duplicateWeek,
@@ -226,6 +227,7 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
               identityEditable={!isClientDraft}
               onRename={setName}
               onFocusChange={setSplitType}
+              onDescriptionChange={setDescription}
               onDefaultSurplusChange={setDefaultSurplus}
             />
             <SectionLabel

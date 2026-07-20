@@ -260,8 +260,8 @@ function draftToSessionInputs(draft: ProgramDraft): ProgramOverwriteBody["sessio
  * Serialize the whole draft tree into the library overwrite body (POST
  * /api/training/saved-plans/[id]/overwrite). AI-sourced plans can carry names
  * ≤200 / descriptions ≤1000 (their gen schema is looser), but overwrite caps
- * them at 100/500 — truncate rather than hard-block the save of a plan whose
- * description the builder doesn't even surface.
+ * them at 100/500 (matching the header's edit limits) — truncate rather than
+ * hard-block the save of a plan seeded from a looser AI draft.
  */
 export function draftToOverwriteBody(draft: ProgramDraft): ProgramOverwriteBody {
   return {

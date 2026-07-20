@@ -2,6 +2,7 @@
 
 import { ArrowLeft } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { ProgramDraft } from "./program-builder-types";
@@ -24,6 +25,7 @@ type ProgramTopBarProps = {
   identityEditable?: boolean;
   onRename: (name: string) => void;
   onFocusChange: (focus: string | null) => void;
+  onDescriptionChange: (description: string | null) => void;
   onDefaultSurplusChange: (pct: number | null) => void;
 };
 
@@ -35,6 +37,12 @@ const STAT_MUTE = "text-[rgba(255,255,255,0.4)]";
 const INLINE_EDIT_CLASS =
   "-ml-1.5 h-auto w-full rounded-[4px] border-0 bg-transparent px-1.5 py-0.5 text-white shadow-none outline-none transition-colors placeholder:text-[rgba(255,255,255,0.35)] focus:bg-[rgba(255,255,255,0.08)]";
 
+// Multiline description on the dark band — same inline-edit language as name/
+// focus, but muted and small so it reads as secondary. Overrides the shared
+// Textarea's light border + min-height; caps its own height with a soft scroll.
+const INLINE_DESC_CLASS =
+  "-ml-1.5 mt-0.5 min-h-0 max-h-20 w-full resize-none overflow-y-auto rounded-[4px] border-0 bg-transparent px-1.5 py-0.5 text-[11.5px] leading-snug text-[rgba(255,255,255,0.72)] shadow-none outline-none transition-colors placeholder:text-[rgba(255,255,255,0.3)] focus:bg-[rgba(255,255,255,0.08)] focus:ring-0";
+
 export function ProgramTopBar({
   draft,
   mode,
@@ -43,6 +51,7 @@ export function ProgramTopBar({
   identityEditable = true,
   onRename,
   onFocusChange,
+  onDescriptionChange,
   onDefaultSurplusChange,
 }: ProgramTopBarProps) {
   return (
@@ -104,6 +113,20 @@ export function ProgramTopBar({
                 onFocusChange(value === "" ? null : value);
               }}
             />
+            <Textarea
+              // Uncontrolled + keyed like name/focus; empty commits null.
+              key={`desc-${draft.id}`}
+              defaultValue={draft.description ?? ""}
+              maxLength={500}
+              rows={2}
+              aria-label="Program description"
+              placeholder="Add a description (optional)"
+              className={INLINE_DESC_CLASS}
+              onBlur={(e) => {
+                const value = e.target.value.trim();
+                onDescriptionChange(value === "" ? null : value);
+              }}
+            />
           </>
         ) : (
           <>
@@ -113,6 +136,11 @@ export function ProgramTopBar({
             {draft.splitType && (
               <span className="truncate text-[12.5px] leading-tight text-[rgba(255,255,255,0.55)]">
                 {draft.splitType}
+              </span>
+            )}
+            {draft.description && (
+              <span className="line-clamp-2 text-[11.5px] leading-snug text-[rgba(255,255,255,0.5)]">
+                {draft.description}
               </span>
             )}
           </>

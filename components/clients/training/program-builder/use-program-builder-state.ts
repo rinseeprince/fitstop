@@ -111,6 +111,13 @@ export function useProgramBuilderState() {
       apply((d) => (d.splitType === splitType ? d : { ...d, splitType })),
     [apply],
   );
+  const setDescription = useCallback(
+    (description: string | null) =>
+      apply((d) =>
+        d.description === description ? d : { ...d, description },
+      ),
+    [apply],
+  );
   const setDefaultSurplus = useCallback(
     (pct: number | null) =>
       apply((d) =>
@@ -359,6 +366,7 @@ export function useProgramBuilderState() {
     markSaved,
     setName,
     setSplitType,
+    setDescription,
     setDefaultSurplus,
     addWeek,
     duplicateWeek,

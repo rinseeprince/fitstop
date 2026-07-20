@@ -200,9 +200,10 @@ describe("ProgramBuilder save flow", () => {
     expect(screen.getByLabelText("Save program")).toBeInTheDocument();
     expect(screen.getByText("Push")).toBeInTheDocument();
     expect(screen.getAllByText("Rest")).toHaveLength(6);
-    // Header: editable name + focus, and the redundant stat row is gone.
+    // Header: editable name + focus + description, and the stat row is gone.
     expect(screen.getByLabelText("Program name")).toBeInTheDocument();
     expect(screen.getByLabelText("Program focus")).toBeInTheDocument();
+    expect(screen.getByLabelText("Program description")).toBeInTheDocument();
     expect(screen.queryByText(/active client/)).toBeNull();
   });
 
@@ -571,6 +572,7 @@ describe("ProgramBuilder client-draft mode (Phase 5)", () => {
     // Even in edit mode the program identity isn't editable here — no inputs.
     expect(screen.queryByLabelText("Program name")).toBeNull();
     expect(screen.queryByLabelText("Program focus")).toBeNull();
+    expect(screen.queryByLabelText("Program description")).toBeNull();
     // But the surplus (client-specific) is adjustable.
     expect(
       screen.getByLabelText("Default calorie surplus percent"),

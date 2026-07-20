@@ -5,6 +5,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { useTrainingBuilderContext } from "@/contexts/training-builder-context";
 import { ProgramDraftProvider } from "@/components/clients/training/program-builder/program-draft-provider";
 import { ProgramBuilder } from "@/components/clients/training/program-builder/program-builder";
+import { ClientDraftLeaveGuard } from "./client-draft-leave-guard";
 import { useSavedPlans } from "@/hooks/use-saved-plans";
 import { Badge } from "@/components/ui/badge";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -61,6 +62,10 @@ export function TrainingPlanBuilderOverlay({
   return (
     <DialogPrimitive.Root
       open={open}
+      // Editor mode is non-modal so the app's 52px nav rail stays clickable
+      // (the ClientDraftLeaveGuard below confirms before dropping a dirty
+      // draft). The library drawer stays modal (dim + trap + click-out close).
+      modal={!hasDraft}
       onOpenChange={(next) => (next ? onOpenChange(true) : handleClose())}
     >
       <DialogPrimitive.Portal>
@@ -68,9 +73,10 @@ export function TrainingPlanBuilderOverlay({
           className={cn(
             "fixed inset-0 z-50 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=open]:duration-200 data-[state=closed]:duration-200",
             // Editor mode keeps the app's 52px nav rail visible (matching the
-            // /dashboard/programs builder) — no dim/blur over it. The library
-            // drawer keeps the normal modal backdrop.
-            hasDraft ? "" : "bg-[rgba(15,32,39,0.35)] backdrop-blur-[2px]",
+            // /dashboard/programs builder) — no dim/blur, and pointer-events-none
+            // so the transparent overlay doesn't swallow clicks to the rail. The
+            // library drawer keeps the normal modal backdrop.
+            hasDraft ? "pointer-events-none" : "bg-[rgba(15,32,39,0.35)] backdrop-blur-[2px]",
           )}
         />
         <DialogPrimitive.Content
@@ -121,6 +127,7 @@ export function TrainingPlanBuilderOverlay({
                 onOpenChange(false);
               }}
             >
+              <ClientDraftLeaveGuard />
               <ProgramBuilder onExit={backToLibrary} />
             </ProgramDraftProvider>
           ) : (

@@ -382,10 +382,31 @@ describe("useProgramBuilderState — no-op mutations + revision tracking", () =>
     // Blur-without-change commits.
     act(() => result.current.updateSession(sessionUid, { name: "Day 1" }));
     act(() => result.current.setName("P"));
+    act(() => result.current.setDescription(null));
     act(() => result.current.setDefaultSurplus(null));
     // Add onto an occupied slot.
     act(() => result.current.addSessionToSlot(slot.uid));
     expect(result.current.isDirty).toBe(false);
+  });
+
+  it("setDescription updates the description and dirties the tree", () => {
+    const { result } = setup(1);
+    expect(result.current.isDirty).toBe(false);
+
+    act(() => result.current.setDescription("4-day upper/lower for hypertrophy"));
+    expect(result.current.draft!.description).toBe(
+      "4-day upper/lower for hypertrophy",
+    );
+    expect(result.current.isDirty).toBe(true);
+
+    // Clearing back to null is a real change too.
+    act(() => {
+      result.current.markSaved(result.current.getRevision());
+    });
+    expect(result.current.isDirty).toBe(false);
+    act(() => result.current.setDescription(null));
+    expect(result.current.draft!.description).toBeNull();
+    expect(result.current.isDirty).toBe(true);
   });
 
   it("markSaved clears dirty only when nothing mutated since the snapshot", () => {
