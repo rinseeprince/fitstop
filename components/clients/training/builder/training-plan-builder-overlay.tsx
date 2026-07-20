@@ -22,11 +22,15 @@ import type { SavedPlan } from "@/types/training";
 type TrainingPlanBuilderOverlayProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  // Titles the client editor's library panel ("Editing for {name}") so it reads
+  // as the client editor, not the generic /dashboard/programs builder.
+  clientName?: string;
 };
 
 export function TrainingPlanBuilderOverlay({
   open,
   onOpenChange,
+  clientName,
 }: TrainingPlanBuilderOverlayProps) {
   const builder = useTrainingBuilderContext();
   const hasDraft = !!builder.savedPlanId;
@@ -105,6 +109,7 @@ export function TrainingPlanBuilderOverlay({
               savedPlanId={builder.savedPlanId!}
               target="client-draft"
               clientId={builder.clientId}
+              clientName={clientName}
               onApplied={() => {
                 // The plan landed on the client's calendar — refresh the
                 // client's plan view and return to it by CLOSING the drawer

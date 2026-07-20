@@ -148,6 +148,23 @@ describe("BuilderLibraryPanel", () => {
     expect(screen.getByRole("button", { name: /New session/ })).toBeInTheDocument();
   });
 
+  it("titles with the client's name in the client-draft remount (not 'Program Builder')", () => {
+    render(
+      <DndContext>
+        <BuilderLibraryPanel mode="edit" showBackLink={false} clientName="Jane Doe" />
+      </DndContext>,
+    );
+    expect(screen.getByText("Editing for")).toBeInTheDocument();
+    expect(screen.getByText("Jane Doe")).toBeInTheDocument();
+    expect(screen.queryByText("Program Builder")).toBeNull();
+  });
+
+  it("shows the generic 'Program Builder' title without a client name (library mode)", () => {
+    renderPanel();
+    expect(screen.getByText("Program Builder")).toBeInTheDocument();
+    expect(screen.queryByText("Editing for")).toBeNull();
+  });
+
   it("Exercises tab caps a huge catalog at the 10 most recent; search surfaces the rest", () => {
     // A large catalog is the whole reason for the cap — 30 rows, createdAt
     // increasing so "Exercise 29" is the newest.

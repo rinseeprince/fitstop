@@ -38,6 +38,7 @@ export type ProgramDraftContextValue = ProgramBuilderState & {
   // ProgramBuilder is also mounted on /dashboard/programs, where that context
   // is absent, so reading it there would throw.
   clientId: string | null;
+  clientName: string | null;
   onApplied?: () => void;
   plan: SavedPlan | null;
   isPlanLoading: boolean;
@@ -68,6 +69,7 @@ type ProgramDraftProviderProps = {
   target: BuilderTarget;
   // Present only for target="client-draft" (the client editor's apply target).
   clientId?: string;
+  clientName?: string;
   onApplied?: () => void;
   children: ReactNode;
 };
@@ -76,6 +78,7 @@ export function ProgramDraftProvider({
   savedPlanId,
   target,
   clientId,
+  clientName,
   onApplied,
   children,
 }: ProgramDraftProviderProps) {
@@ -155,6 +158,7 @@ export function ProgramDraftProvider({
     savedPlanId,
     target,
     clientId: clientId ?? null,
+    clientName: clientName ?? null,
     onApplied,
     plan: plan ?? null,
     isPlanLoading,

@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { SegmentedControl } from "@/components/programs/shared/segmented-control";
 import { LibrarySessionList } from "./library-session-list";
 import { LibraryExerciseList } from "./library-exercise-list";
-import { TEXT_PRIMARY, TEXT_SECONDARY } from "./builder-tokens";
+import { MONO_LABEL_CLASS, TEXT_PRIMARY, TEXT_SECONDARY } from "./builder-tokens";
 
 // The builder's single tabbed library panel (S4.5/S4.75) — the left column of
 // the 3-column frame (icon strip · panel · builder), matched to the reference
@@ -30,9 +30,14 @@ export function BuilderLibraryPanel({
   // link would navigate away from the client page — hide it (the builder's own
   // back arrow returns to the library list).
   showBackLink = true,
+  // Present only in the client-draft remount: titles the panel with the
+  // client's name ("Editing for {name}") so the coach can tell this apart from
+  // the generic /dashboard/programs "Program Builder".
+  clientName,
 }: {
   mode: "view" | "edit";
   showBackLink?: boolean;
+  clientName?: string;
 }) {
   const [tab, setTab] = useState<LibraryTab>("sessions");
   const editable = mode === "edit";
@@ -52,9 +57,23 @@ export function BuilderLibraryPanel({
             All programs
           </Link>
         )}
-        <h2 className={cn("mb-3.5 text-base font-semibold tracking-[-0.01em]", TEXT_PRIMARY)}>
-          Program Builder
-        </h2>
+        {clientName ? (
+          <div className="mb-3.5">
+            <p className={MONO_LABEL_CLASS}>Editing for</p>
+            <h2
+              className={cn(
+                "mt-0.5 truncate text-base font-semibold tracking-[-0.01em]",
+                TEXT_PRIMARY,
+              )}
+            >
+              {clientName}
+            </h2>
+          </div>
+        ) : (
+          <h2 className={cn("mb-3.5 text-base font-semibold tracking-[-0.01em]", TEXT_PRIMARY)}>
+            Program Builder
+          </h2>
+        )}
         <div className="mb-3">
           <SegmentedControl
             fullWidth

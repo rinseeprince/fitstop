@@ -86,6 +86,7 @@ export function TrainingPlanBuilder({
         <TrainingPlanBuilderOverlay
           open={drawerOpen}
           onOpenChange={setDrawerOpen}
+          clientName={client.name}
         />
       </TrainingBuilderProvider>
     </ErrorBoundary>

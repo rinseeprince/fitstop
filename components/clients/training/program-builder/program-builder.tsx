@@ -54,6 +54,7 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
     savedPlanId,
     target,
     clientId,
+    clientName,
     onApplied,
     plan,
     isPlanLoading,
@@ -207,7 +208,11 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
         onDragCancel={dnd.handleDragCancel}
       >
         <div className="flex min-h-0 flex-1">
-          <BuilderLibraryPanel mode={mode} showBackLink={!isClientDraft} />
+          <BuilderLibraryPanel
+            mode={mode}
+            showBackLink={!isClientDraft}
+            clientName={clientName ?? undefined}
+          />
           <div className="flex min-h-0 min-w-0 flex-1 flex-col px-6 pt-5">
             <ProgramTopBar
               draft={draft}

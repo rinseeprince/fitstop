@@ -448,6 +448,7 @@ describe("ProgramBuilder client-draft mode (Phase 5)", () => {
         savedPlanId="plan-1"
         target="client-draft"
         clientId="client-1"
+        clientName="Jane Doe"
       >
         <ProgramBuilder />
       </ProgramDraftProvider>,
@@ -478,6 +479,10 @@ describe("ProgramBuilder client-draft mode (Phase 5)", () => {
     expect(screen.queryByLabelText("Save program")).toBeNull();
     expect(screen.queryByLabelText("Delete program")).toBeNull();
     expect(screen.queryByText("All programs")).toBeNull();
+    // The panel titles with the client, not the generic "Program Builder".
+    expect(screen.getByText("Editing for")).toBeInTheDocument();
+    expect(screen.getByText("Jane Doe")).toBeInTheDocument();
+    expect(screen.queryByText("Program Builder")).toBeNull();
   });
 
   it("Apply with no edits places the pristine template (type:plan; no inline body, template untouched)", async () => {
