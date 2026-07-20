@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { useTrainingBuilderContext } from "@/contexts/training-builder-context";
 import { ProgramDraftProvider } from "@/components/clients/training/program-builder/program-draft-provider";
@@ -30,6 +30,15 @@ export function TrainingPlanBuilderOverlay({
 }: TrainingPlanBuilderOverlayProps) {
   const builder = useTrainingBuilderContext();
   const hasDraft = !!builder.savedPlanId;
+  const { setSavedPlanId } = builder;
+
+  // Each fresh open starts at the library list. After an apply-and-close (or any
+  // editor close) savedPlanId is deliberately LEFT set so the full-screen editor
+  // fades out cleanly instead of morphing into the 920px drawer mid-exit; reset
+  // it here on the next open so a stale editor never re-shows.
+  useEffect(() => {
+    if (open) setSavedPlanId(null);
+  }, [open, setSavedPlanId]);
 
   const title = hasDraft ? "Edit training program for client" : "Apply a program";
 
@@ -51,13 +60,24 @@ export function TrainingPlanBuilderOverlay({
       onOpenChange={(next) => (next ? onOpenChange(true) : handleClose())}
     >
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-[rgba(15,32,39,0.35)] backdrop-blur-[2px] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=open]:duration-200 data-[state=closed]:duration-200" />
+        <DialogPrimitive.Overlay
+          className={cn(
+            "fixed inset-0 z-50 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=open]:duration-200 data-[state=closed]:duration-200",
+            // Editor mode keeps the app's 52px nav rail visible (matching the
+            // /dashboard/programs builder) — no dim/blur over it. The library
+            // drawer keeps the normal modal backdrop.
+            hasDraft ? "" : "bg-[rgba(15,32,39,0.35)] backdrop-blur-[2px]",
+          )}
+        />
         <DialogPrimitive.Content
           className={cn(
             "fixed z-50 flex flex-col bg-[#f4f7f6] outline-none",
             "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:duration-250 data-[state=closed]:duration-200",
             hasDraft
-              ? "inset-0 w-full data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0"
+              // Full-screen minus the fixed 52px app icon strip (lg+ only; the
+              // strip is hidden below lg) so the editor sits beside the nav rail
+              // exactly like the /dashboard/programs builder.
+              ? "inset-y-0 right-0 left-0 lg:left-[52px] data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0"
               : "inset-y-0 right-0 w-[920px] max-w-[100vw] shadow-[-8px_0_24px_rgba(15,32,39,0.12)] data-[state=open]:slide-in-from-right data-[state=closed]:slide-out-to-right",
           )}
           // Two-close semantics while editing: exit-the-editor-back-to-the-list
@@ -85,7 +105,16 @@ export function TrainingPlanBuilderOverlay({
               savedPlanId={builder.savedPlanId!}
               target="client-draft"
               clientId={builder.clientId}
-              onApplied={() => void builder.fetchPlan()}
+              onApplied={() => {
+                // The plan landed on the client's calendar — refresh the
+                // client's plan view and return to it by CLOSING the drawer
+                // (not the back arrow, so the confirm-leave guard never fires;
+                // there is nothing to discard once applied). savedPlanId stays
+                // set for a clean editor fade-out — the open-effect above resets
+                // it on the next open.
+                void builder.fetchPlan();
+                onOpenChange(false);
+              }}
             >
               <ProgramBuilder onExit={backToLibrary} />
             </ProgramDraftProvider>
