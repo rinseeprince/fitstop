@@ -480,7 +480,11 @@ describe("ProgramBuilder client-draft mode (Phase 5)", () => {
     );
 
   type ApplyProps = {
-    inlinePlan?: { name: string; sessions: unknown[] } | null;
+    inlinePlan?: {
+      name: string;
+      sessions: unknown[];
+      defaultSurplusPercentage?: number | null;
+    } | null;
     savedPlan: { id: string };
     preselectedClientId?: string;
   };
@@ -529,10 +533,11 @@ describe("ProgramBuilder client-draft mode (Phase 5)", () => {
   it("Apply with unsaved edits places the edited copy inline (type:inline; template untouched)", async () => {
     renderClientDraft();
     fireEvent.click(screen.getByLabelText("Edit program"));
-    // Any edit dirties the draft; a rename commits on blur.
-    const nameInput = screen.getByLabelText("Program name");
-    fireEvent.change(nameInput, { target: { value: "Jane's Push/Pull" } });
-    fireEvent.blur(nameInput);
+    // Name/focus are template identity (read-only here) — dirty via the
+    // per-client surplus instead.
+    const surplusInput = screen.getByLabelText("Default calorie surplus percent");
+    fireEvent.change(surplusInput, { target: { value: "35" } });
+    fireEvent.blur(surplusInput);
 
     openApplyDialog();
 
@@ -541,7 +546,7 @@ describe("ProgramBuilder client-draft mode (Phase 5)", () => {
     );
     const props = lastApplyProps()!;
     expect(props.inlinePlan).toBeTruthy();
-    expect(props.inlinePlan!.name).toBe("Jane's Push/Pull");
+    expect(props.inlinePlan!.defaultSurplusPercentage).toBe(35);
     // Every slot serializes (rest rows included) — 7 for the one-week template.
     expect(props.inlinePlan!.sessions).toHaveLength(7);
     // Editing the client's copy never overwrites or deletes the library template.
@@ -552,11 +557,23 @@ describe("ProgramBuilder client-draft mode (Phase 5)", () => {
   it("Apply is reachable while dirty (the old draft-editor disabled it)", () => {
     renderClientDraft();
     fireEvent.click(screen.getByLabelText("Edit program"));
-    const nameInput = screen.getByLabelText("Program name");
-    fireEvent.change(nameInput, { target: { value: "Edited" } });
-    fireEvent.blur(nameInput);
+    const surplusInput = screen.getByLabelText("Default calorie surplus percent");
+    fireEvent.change(surplusInput, { target: { value: "35" } });
+    fireEvent.blur(surplusInput);
     expect(
       screen.getByRole("button", { name: "Apply to client" }),
+    ).not.toBeDisabled();
+  });
+
+  it("keeps program name + focus read-only in the client editor (template identity)", () => {
+    renderClientDraft();
+    fireEvent.click(screen.getByLabelText("Edit program"));
+    // Even in edit mode the program identity isn't editable here — no inputs.
+    expect(screen.queryByLabelText("Program name")).toBeNull();
+    expect(screen.queryByLabelText("Program focus")).toBeNull();
+    // But the surplus (client-specific) is adjustable.
+    expect(
+      screen.getByLabelText("Default calorie surplus percent"),
     ).not.toBeDisabled();
   });
 

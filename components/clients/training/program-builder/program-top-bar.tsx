@@ -18,6 +18,10 @@ type ProgramTopBarProps = {
   onBack: () => void;
   // Client-draft returns to the library list, not /dashboard/programs.
   backLabel?: string;
+  // Name + focus are TEMPLATE identity — editable in the program builder, but
+  // read-only in the client editor (the coach applies the template + adjusts
+  // the training/surplus for the client, they don't rename the template).
+  identityEditable?: boolean;
   onRename: (name: string) => void;
   onFocusChange: (focus: string | null) => void;
   onDefaultSurplusChange: (pct: number | null) => void;
@@ -36,6 +40,7 @@ export function ProgramTopBar({
   mode,
   onBack,
   backLabel = "Back to programs",
+  identityEditable = true,
   onRename,
   onFocusChange,
   onDefaultSurplusChange,
@@ -65,7 +70,7 @@ export function ProgramTopBar({
             </Badge>
           )}
         </span>
-        {mode === "edit" ? (
+        {mode === "edit" && identityEditable ? (
           <>
             <Input
               // Uncontrolled + keyed so reseeding picks up a fresh name; commit

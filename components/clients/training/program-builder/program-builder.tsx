@@ -223,6 +223,7 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
                 else exit();
               }}
               backLabel={isClientDraft ? "Back to library" : "Back to programs"}
+              identityEditable={!isClientDraft}
               onRename={setName}
               onFocusChange={setSplitType}
               onDefaultSurplusChange={setDefaultSurplus}
@@ -407,6 +408,7 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
       <SessionEditorSheet
         session={editingSession}
         mode={mode}
+        identityEditable={!isClientDraft}
         defaultSurplusPercentage={draft.defaultSurplusPercentage}
         onClose={() => setEditingSessionUid(null)}
         onUpdateSession={updateSession}

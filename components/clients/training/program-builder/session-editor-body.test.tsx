@@ -97,3 +97,27 @@ describe("SessionEditorBody — expand-on-add", () => {
     expect(screen.queryByLabelText("Set 1 type")).toBeNull();
   });
 });
+
+describe("SessionEditorBody — identity editability", () => {
+  beforeEach(() => cleanup());
+
+  it("keeps name + focus editable by default (the program builder)", () => {
+    render(<SessionEditorBody session={makeSession("s-1", [])} {...bodyProps} />);
+    expect(screen.getByLabelText("Session name")).not.toBeDisabled();
+    expect(screen.getByLabelText("Focus")).not.toBeDisabled();
+  });
+
+  it("locks name + focus (not the training) when identityEditable is false — the client editor", () => {
+    render(
+      <SessionEditorBody
+        session={makeSession("s-1", [])}
+        {...bodyProps}
+        identityEditable={false}
+      />,
+    );
+    expect(screen.getByLabelText("Session name")).toBeDisabled();
+    expect(screen.getByLabelText("Focus")).toBeDisabled();
+    // The training itself stays editable — the surplus field is not disabled.
+    expect(screen.getByLabelText(/Calorie surplus/)).not.toBeDisabled();
+  });
+});

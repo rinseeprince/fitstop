@@ -29,6 +29,10 @@ import { FOCUS_RING, LABEL_CLASS } from "./builder-tokens";
 export type SessionEditorBodyProps = {
   session: SessionDraft;
   mode: "view" | "edit";
+  // Session name + focus are TEMPLATE identity — read-only in the client editor
+  // (false), editable in the program builder (default). The training itself
+  // (exercises, sets, surplus, duration) stays editable either way.
+  identityEditable?: boolean;
   defaultSurplusPercentage: number | null;
   // Helper line under the surplus field. The default speaks program language;
   // the standalone Sessions-page editor overrides it (no program to inherit
@@ -48,6 +52,7 @@ export type SessionEditorBodyProps = {
 export function SessionEditorBody({
   session,
   mode,
+  identityEditable = true,
   defaultSurplusPercentage,
   surplusHelpText = "Leave blank to use the program default",
   onUpdateSession,
@@ -88,7 +93,7 @@ export function SessionEditorBody({
           Session name
           <Input
             key={`name-${session.uid}`}
-            disabled={!editable}
+            disabled={!editable || !identityEditable}
             maxLength={100}
             defaultValue={session.name}
             className={cn("h-8 text-xs", FOCUS_RING)}
@@ -111,7 +116,7 @@ export function SessionEditorBody({
           Focus
           <Input
             key={`focus-${session.uid}`}
-            disabled={!editable}
+            disabled={!editable || !identityEditable}
             maxLength={200}
             defaultValue={session.focus ?? ""}
             placeholder="e.g. Chest & triceps"
