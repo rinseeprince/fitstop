@@ -72,6 +72,7 @@ export function ProgramGrid({
                 mode={mode}
                 collapsed={collapsedWeeks.has(week.uid)}
                 canDelete={canDelete}
+                defaultSurplusPercentage={draft.defaultSurplusPercentage}
                 onToggleCollapse={onToggleCollapse}
                 onDuplicateWeek={onDuplicateWeek}
                 onDuplicateWeekWithProgression={onDuplicateWeekWithProgression}

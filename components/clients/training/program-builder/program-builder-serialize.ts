@@ -69,7 +69,11 @@ function sessionToDraft(s: SavedSession): SessionDraft {
  * the library row, so later library edits can't touch placed programs.
  */
 export function savedSessionToDraft(s: SavedSession): SessionDraft {
-  return sessionToDraft(s);
+  // Surplus is a PROGRAM-level (and per-client) decision, not a movement-
+  // template attribute — the training is the constant, the surplus is dynamic.
+  // So a library session dragged into a program inherits the program default;
+  // it never carries its own stored surplus as a silent per-day override.
+  return { ...sessionToDraft(s), calorieSurplusPercentage: null };
 }
 
 function slotFromSession(
@@ -212,7 +216,10 @@ export function sessionDraftToStandalonePayload(
     name: session.name.slice(0, 100),
     focus: session.focus,
     estimatedDurationMinutes: session.estimatedDurationMinutes,
-    calorieSurplusPercentage: session.calorieSurplusPercentage,
+    // A saved workout is a reusable movement template — surplus is a program/
+    // client decision, so it never travels with the workout. It inherits the
+    // program default wherever it is next placed.
+    calorieSurplusPercentage: null,
     notes: session.notes,
     exercises: session.exercises.map(exerciseDraftToInput),
   };

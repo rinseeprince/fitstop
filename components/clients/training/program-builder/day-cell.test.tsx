@@ -34,6 +34,7 @@ function renderCell(props: Partial<Parameters<typeof DayCell>[0]> = {}) {
         slot={makeSlot()}
         mode="edit"
         collapsed={false}
+        defaultSurplusPercentage={null}
         {...handlers}
         {...props}
       />
@@ -92,10 +93,33 @@ describe("DayCell — session state", () => {
     expect(screen.getByText("Bench")).toBeInTheDocument();
     expect(screen.getAllByText("3×8-12")).toHaveLength(2);
     expect(screen.getByText("2 exercises")).toBeInTheDocument();
-    // Per-session surplus indicator on the card.
+    // Custom (per-day override) surplus reads in teal on the card.
     expect(screen.getByText("+12%")).toBeInTheDocument();
     fireEvent.click(screen.getByText("Push"));
     expect(handlers.onOpenSession).toHaveBeenCalledWith("sess-1");
+  });
+
+  it("inherits the program default surplus when the session has no override", () => {
+    renderCell({
+      slot: makeSlot({
+        isRest: false,
+        session: makeSession({ calorieSurplusPercentage: null }),
+      }),
+      defaultSurplusPercentage: 20,
+    });
+    // The effective surplus shows the program default (inherited).
+    expect(screen.getByText("+20%")).toBeInTheDocument();
+  });
+
+  it("shows no surplus badge when neither the session nor the program has one", () => {
+    renderCell({
+      slot: makeSlot({
+        isRest: false,
+        session: makeSession({ calorieSurplusPercentage: null }),
+      }),
+      defaultSurplusPercentage: null,
+    });
+    expect(screen.queryByText(/^\+\d+%$/)).toBeNull();
   });
 
   it("quick-clear turns the cell back into rest without opening the editor", () => {

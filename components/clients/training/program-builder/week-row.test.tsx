@@ -43,6 +43,7 @@ function renderRow(props: Partial<Parameters<typeof WeekRow>[0]> = {}) {
           mode="edit"
           collapsed={false}
           canDelete
+          defaultSurplusPercentage={null}
           {...handlers}
           {...props}
         />

@@ -25,6 +25,9 @@ type DayCellProps = {
   slot: DaySlotDraft;
   mode: "view" | "edit";
   collapsed: boolean;
+  // Program-level default surplus — the value a session inherits when it has no
+  // per-day override. Drives the effective-surplus badge.
+  defaultSurplusPercentage: number | null;
   onOpenSession: (sessionUid: string) => void;
   onRequestAddSession: (slot: DaySlotDraft, anchorEl: HTMLElement) => void;
   onClearSlot: (slotUid: string) => void;
@@ -50,12 +53,21 @@ export function DayCell({
   slot,
   mode,
   collapsed,
+  defaultSurplusPercentage,
   onOpenSession,
   onRequestAddSession,
   onClearSlot,
 }: DayCellProps) {
   const editable = mode === "edit";
   const session = slot.session;
+  // Effective surplus = this day's own value, or the program default it
+  // inherits. A custom day (own value) reads in teal; an inherited day reads
+  // muted — so the coach can see the program surplus applies everywhere and
+  // which days deliberately override it.
+  const surplusValue = session
+    ? session.calorieSurplusPercentage ?? defaultSurplusPercentage
+    : null;
+  const surplusIsCustom = session?.calorieSurplusPercentage != null;
 
   const dropData: SlotDropData = {
     type: "day-slot",
@@ -161,9 +173,19 @@ export function DayCell({
               <span className={cn("min-w-0 flex-1 truncate text-[13px] font-semibold", TEXT_PRIMARY)}>
                 {session.name}
               </span>
-              {session.calorieSurplusPercentage != null && (
-                <span className="shrink-0 font-mono-display text-[10px] font-medium text-[#0d9488]">
-                  +{session.calorieSurplusPercentage}%
+              {surplusValue != null && (
+                <span
+                  className={cn(
+                    "shrink-0 font-mono-display text-[10px] font-medium",
+                    surplusIsCustom ? "text-[#0d9488]" : TEXT_MUTED,
+                  )}
+                  title={
+                    surplusIsCustom
+                      ? "Custom surplus for this day"
+                      : "Program default surplus"
+                  }
+                >
+                  +{surplusValue}%
                 </span>
               )}
               {editable && (

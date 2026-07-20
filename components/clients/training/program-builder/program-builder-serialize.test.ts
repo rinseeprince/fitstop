@@ -431,7 +431,10 @@ describe("savedSessionToDraft (library insert clone)", () => {
 
     expect(a.uid).not.toBe(b.uid); // fresh identity per clone
     expect(a.name).toBe("Push Day A");
-    expect(a.calorieSurplusPercentage).toBe(12);
+    // Surplus is a program/client decision, not a session-template attribute:
+    // a dragged-in library session drops its own surplus and inherits the
+    // program default wherever it lands.
+    expect(a.calorieSurplusPercentage).toBeNull();
     expect(a.exercises[0].exerciseId).toBe("cat-1");
     expect(a.exercises[0].setSpecs).toEqual(SPECS);
     // [] specs normalize to null (an empty array would 400 the save).
@@ -463,7 +466,9 @@ describe("sessionDraftToStandalonePayload (create-blank save)", () => {
     expect(payload.name).toBe("Untitled session");
     expect(payload.focus).toBe("legs");
     expect(payload.estimatedDurationMinutes).toBe(40);
-    expect(payload.calorieSurplusPercentage).toBe(8);
+    // A saved workout is a movement template — it carries no surplus (inherits
+    // the program default wherever it's next placed).
+    expect(payload.calorieSurplusPercentage).toBeNull();
     expect(payload.exercises).toHaveLength(1);
     expect(payload.exercises[0]).toMatchObject({
       exerciseId: "cat-9",

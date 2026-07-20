@@ -17,6 +17,7 @@ type WeekRowProps = {
   mode: "view" | "edit";
   collapsed: boolean;
   canDelete: boolean;
+  defaultSurplusPercentage: number | null;
   onToggleCollapse: (weekUid: string) => void;
   onDuplicateWeek: (weekUid: string) => void;
   onDuplicateWeekWithProgression: (weekUid: string) => void;
@@ -31,6 +32,7 @@ export function WeekRow({
   mode,
   collapsed,
   canDelete,
+  defaultSurplusPercentage,
   onToggleCollapse,
   onDuplicateWeek,
   onDuplicateWeekWithProgression,
@@ -81,6 +83,7 @@ export function WeekRow({
           slot={slot}
           mode={mode}
           collapsed={collapsed}
+          defaultSurplusPercentage={defaultSurplusPercentage}
           onOpenSession={onOpenSession}
           onRequestAddSession={onRequestAddSession}
           onClearSlot={onClearSlot}
