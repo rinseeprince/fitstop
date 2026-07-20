@@ -1,33 +1,14 @@
 "use client";
 
-import { useMemo, memo } from "react";
-import useSWR from "swr";
-import { swrFetcher } from "@/lib/swr-fetcher";
+import { memo } from "react";
 import { useTrainingBuilderContext } from "@/contexts/training-builder-context";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import {
-  Loader2,
-  AlertTriangle,
-  RefreshCw,
-  Sparkles,
-  Info,
-} from "lucide-react";
+import { Loader2, AlertTriangle, RefreshCw, Sparkles } from "lucide-react";
 import { TrainingCalendarView } from "../calendar/training-calendar-view";
-import { SPLIT_TYPE_LABELS } from "@/lib/training-constants";
-import type { TrainingHistoryRow } from "@/types/history";
+import { TrainingSummaryHero } from "@/components/clients/training/training-summary-hero";
 
 type TrainingBuilderRightPanelProps = {
   clientId: string;
   onOpenGenerator?: () => void;
-};
-
-type HistoryResponse = {
-  rows: TrainingHistoryRow[];
-  total: number;
 };
 
 export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel({
@@ -36,64 +17,6 @@ export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel
 }: TrainingBuilderRightPanelProps) {
   const builder = useTrainingBuilderContext();
   const { editMode } = builder;
-
-  // Fetch training history for completion stats
-  const { data: historyData } = useSWR<HistoryResponse>(
-    `/api/clients/${clientId}/history/training?limit=50&offset=0`,
-    swrFetcher,
-    { revalidateOnFocus: false, dedupingInterval: 10000 }
-  );
-
-  // Compute plan-focused summary stats
-  const summaryStats = useMemo(() => {
-    const sessions = builder.trainingSessions;
-    const sessionCount = sessions.length;
-
-    // Count training vs rest days
-    const assignedDays = new Set(
-      sessions.filter((s) => s.dayOfWeek).map((s) => s.dayOfWeek)
-    );
-    const trainingDays = assignedDays.size;
-    const restDays = 7 - trainingDays;
-
-    // Total volume (minutes)
-    const totalMinutes = sessions.reduce(
-      (sum, s) => sum + (s.estimatedDurationMinutes || 0),
-      0
-    );
-    const avgMinutes =
-      sessionCount > 0 ? Math.round(totalMinutes / sessionCount) : 0;
-
-    // Total exercises
-    const totalExercises = sessions.reduce(
-      (sum, s) => sum + (s.exercises?.length || 0),
-      0
-    );
-    const avgExercises =
-      sessionCount > 0 ? Math.round(totalExercises / sessionCount) : 0;
-
-    // Completion from history
-    const rows = historyData?.rows ?? [];
-    const completedCount = rows.filter(
-      (r) => r.completion_quality === "full"
-    ).length;
-    const totalLogged = rows.length;
-    const completionPct =
-      totalLogged > 0 ? Math.round((completedCount / totalLogged) * 100) : null;
-
-    return {
-      sessionCount,
-      trainingDays,
-      restDays,
-      totalMinutes,
-      avgMinutes,
-      totalExercises,
-      avgExercises,
-      completionPct,
-      completedCount,
-      totalLogged,
-    };
-  }, [builder.trainingSessions, historyData]);
 
   // Loading state
   if (builder.isLoading) {
@@ -148,112 +71,11 @@ export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel
   // plan-builder header ("Delete future sessions") and the calendar week menu.
   return (
     <div className="flex flex-col gap-4">
-      {/* Dark summary strip — only when a plan exists */}
-      {builder.plan && (
-      <div className="bg-[#0f2027] rounded-[6px] p-5">
-        {/* Program info row */}
-        <div className="mb-3 pb-3 border-b border-[rgba(255,255,255,0.06)]">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5">
-              <span className="text-[12px] font-medium text-[rgba(255,255,255,0.5)]">
-                {builder.plan.name}
-              </span>
-              {builder.plan.description && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Info className="h-3 w-3 text-[rgba(255,255,255,0.3)] cursor-help" />
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" className="max-w-xs">
-                    <p className="text-sm">{builder.plan.description}</p>
-                  </TooltipContent>
-                </Tooltip>
-              )}
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="bg-[rgba(255,255,255,0.12)] text-[rgba(255,255,255,0.4)] text-[10px] px-1.5 py-0.5 rounded-[3px] font-medium">
-                {SPLIT_TYPE_LABELS[builder.plan.splitType] || builder.plan.splitType}
-              </span>
-              <span className="bg-[rgba(255,255,255,0.12)] text-[rgba(255,255,255,0.4)] text-[10px] px-1.5 py-0.5 rounded-[3px] font-medium">
-                {builder.plan.frequencyPerWeek}x/week
-              </span>
-              {builder.plan.programDurationWeeks && (
-                <span className="bg-[rgba(255,255,255,0.12)] text-[rgba(255,255,255,0.4)] text-[10px] px-1.5 py-0.5 rounded-[3px] font-medium">
-                  {builder.plan.programDurationWeeks} weeks
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-        {/* Stat columns */}
-        <div className="grid grid-cols-[1fr_1fr_1fr_1fr]">
-        {/* THIS WEEK */}
-        <div className="flex flex-col pr-5 border-r border-[rgba(255,255,255,0.08)]">
-          <p className="text-[10px] uppercase tracking-[0.06em] text-[rgba(255,255,255,0.35)] font-medium">
-            This Week
-          </p>
-          <p className="text-[32px] font-bold leading-tight mt-1 text-white">
-            {summaryStats.sessionCount}
-          </p>
-          <p className="text-[11px] text-[rgba(255,255,255,0.35)]">sessions</p>
-          <p className="text-[11px] text-[rgba(255,255,255,0.35)] font-mono-display mt-auto pt-2">
-            {summaryStats.trainingDays}T {summaryStats.restDays}R
-          </p>
-        </div>
-
-        {/* TOTAL VOLUME */}
-        <div className="flex flex-col pl-5 pr-5 border-r border-[rgba(255,255,255,0.06)]">
-          <p className="text-[10px] uppercase tracking-[0.06em] text-[rgba(255,255,255,0.35)] font-medium">
-            Total Volume
-          </p>
-          <p className="text-[22px] font-bold text-white mt-1">
-            {summaryStats.totalMinutes}
-            <span className="text-[13px] font-medium text-[rgba(255,255,255,0.25)] ml-0.5">
-              min
-            </span>
-          </p>
-          <p className="text-[11px] text-[rgba(255,255,255,0.3)] font-mono-display mt-1">
-            {summaryStats.avgMinutes}min avg
-          </p>
-        </div>
-
-        {/* EXERCISES */}
-        <div className="flex flex-col pl-5 pr-5 border-r border-[rgba(255,255,255,0.06)]">
-          <p className="text-[10px] uppercase tracking-[0.06em] text-[rgba(255,255,255,0.35)] font-medium">
-            Exercises
-          </p>
-          <p className="text-[22px] font-bold text-white mt-1">
-            {summaryStats.totalExercises}
-            <span className="text-[13px] font-medium text-[rgba(255,255,255,0.25)] ml-0.5">
-              total
-            </span>
-          </p>
-          <p className="text-[11px] text-[rgba(255,255,255,0.3)] font-mono-display mt-1">
-            {summaryStats.avgExercises}/session avg
-          </p>
-        </div>
-
-        {/* COMPLETION */}
-        <div className="flex flex-col pl-5">
-          <p className="text-[10px] uppercase tracking-[0.06em] text-[rgba(255,255,255,0.35)] font-medium">
-            Completion
-          </p>
-          <p className="text-[22px] font-bold text-white mt-1">
-            {summaryStats.completionPct != null ? summaryStats.completionPct : "—"}
-            {summaryStats.completionPct != null && (
-              <span className="text-[13px] font-medium text-[rgba(255,255,255,0.25)] ml-0.5">
-                %
-              </span>
-            )}
-          </p>
-          <p className="text-[11px] text-[rgba(255,255,255,0.3)] font-mono-display mt-1">
-            {summaryStats.totalLogged > 0
-              ? `${summaryStats.completedCount}/${summaryStats.totalLogged} logged`
-              : "No data yet"}
-          </p>
-        </div>
-        </div>
-      </div>
-      )}
+      {/* Accurate week summary (Sessions Completed / Adherence / Missed) — the
+          same hero the Data tab shows. Replaces the old dayOfWeek-derived strip,
+          which always read a wrong 0-training / 7-rest count because placement
+          never sets day_of_week. */}
+      {builder.plan && <TrainingSummaryHero clientId={clientId} />}
 
       {/* Empty-state hero — shown when no plan exists */}
       {!builder.plan && (
@@ -267,7 +89,7 @@ export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel
                 No training plan yet
               </p>
               <p className="text-[11.5px] text-[rgba(255,255,255,0.5)] mt-0.5">
-                Generate a customized training plan using AI or create one manually.
+                Apply a program from your library to this client&apos;s calendar.
               </p>
             </div>
           </div>
@@ -277,7 +99,7 @@ export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[12.5px] font-medium text-white bg-[#0d9488] rounded-[6px] hover:bg-[#0f766e] transition-colors flex-shrink-0"
             >
               <Sparkles className="h-3.5 w-3.5" />
-              Generate Plan
+              Browse programs
             </button>
           )}
         </div>

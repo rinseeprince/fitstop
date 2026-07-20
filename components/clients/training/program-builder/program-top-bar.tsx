@@ -19,6 +19,8 @@ type ProgramTopBarProps = {
   draft: ProgramDraft;
   mode: "view" | "edit";
   onBack: () => void;
+  // Client-draft returns to the library list, not /dashboard/programs.
+  backLabel?: string;
   onRename: (name: string) => void;
   onDefaultSurplusChange: (pct: number | null) => void;
 };
@@ -35,6 +37,7 @@ export function ProgramTopBar({
   draft,
   mode,
   onBack,
+  backLabel = "Back to programs",
   onRename,
   onDefaultSurplusChange,
 }: ProgramTopBarProps) {
@@ -53,7 +56,7 @@ export function ProgramTopBar({
     <div className="mb-4 flex items-center gap-4 overflow-hidden rounded-[6px] bg-[#0f2027] px-5 py-3">
       <button
         type="button"
-        aria-label="Back to programs"
+        aria-label={backLabel}
         className="shrink-0 rounded p-1 text-[rgba(255,255,255,0.45)] transition-colors hover:text-white"
         onClick={onBack}
       >

@@ -57,6 +57,22 @@ vi.mock("@/hooks/use-exercise-catalog", () => ({
   }),
 }));
 
+// Stub the shared apply dialog: capture the props ProgramBuilder passes it
+// (inlinePlan present ⇒ type:"inline"; absent ⇒ type:"plan") without dragging
+// in its SWR / nutrition-calendar / date-helper machinery.
+const { applyDialogSpy } = vi.hoisted(() => ({ applyDialogSpy: vi.fn() }));
+vi.mock("@/components/training-library/apply-to-client-dialog", () => ({
+  ApplyToClientDialog: (props: {
+    open: boolean;
+    savedPlan: { id: string };
+    inlinePlan?: { name: string; sessions: unknown[] } | null;
+    preselectedClientId?: string;
+  }) => {
+    if (props.open) applyDialogSpy(props);
+    return props.open ? <div data-testid="apply-dialog" /> : null;
+  },
+}));
+
 type FetchCall = { url: string; method: string; body: unknown };
 const fetchCalls: FetchCall[] = [];
 let promoteStatus = 200;
@@ -412,5 +428,118 @@ describe("ProgramBuilder save flow", () => {
 
     await waitFor(() => expect(savedSessionPost()).toHaveLength(1));
     expect(savedSessionPost()[0].body).toMatchObject({ dedupeName: true });
+  });
+});
+
+describe("ProgramBuilder client-draft mode (Phase 5)", () => {
+  beforeEach(() => {
+    cleanup();
+    fetchCalls.length = 0;
+    // A saved library template — the client editor opens it in view mode.
+    planFixture = { ...makeDraftPlan(), status: "saved" };
+    mutateMock.mockClear();
+    pushMock.mockClear();
+    applyDialogSpy.mockClear();
+  });
+
+  const renderClientDraft = () =>
+    render(
+      <ProgramDraftProvider
+        savedPlanId="plan-1"
+        target="client-draft"
+        clientId="client-1"
+      >
+        <ProgramBuilder />
+      </ProgramDraftProvider>,
+    );
+
+  type ApplyProps = {
+    inlinePlan?: { name: string; sessions: unknown[] } | null;
+    savedPlan: { id: string };
+    preselectedClientId?: string;
+  };
+  const lastApplyProps = () =>
+    applyDialogSpy.mock.calls.at(-1)?.[0] as ApplyProps | undefined;
+
+  const openApplyDialog = () => {
+    fireEvent.click(screen.getByRole("button", { name: "Apply to client" }));
+    // The reapply confirmation precedes the dialog (date-agnostic copy).
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+  };
+
+  it("mounts a saved template as the client editor: Apply, no library commit or back link", () => {
+    renderClientDraft();
+    expect(
+      screen.getByRole("button", { name: "Apply to client" }),
+    ).toBeInTheDocument();
+    // View mode with Edit available.
+    expect(screen.getByLabelText("Edit program")).toBeInTheDocument();
+    // Library-only chrome is gone.
+    expect(screen.queryByLabelText("Save program")).toBeNull();
+    expect(screen.queryByLabelText("Delete program")).toBeNull();
+    expect(screen.queryByText("All programs")).toBeNull();
+  });
+
+  it("Apply with no edits places the pristine template (type:plan; no inline body, template untouched)", async () => {
+    renderClientDraft();
+    openApplyDialog();
+
+    await waitFor(() =>
+      expect(screen.getByTestId("apply-dialog")).toBeInTheDocument(),
+    );
+    const props = lastApplyProps()!;
+    expect(props.inlinePlan).toBeUndefined();
+    expect(props.savedPlan.id).toBe("plan-1");
+    expect(props.preselectedClientId).toBe("client-1");
+    // The library template is never overwritten or deleted.
+    expect(fetchCalls.some((c) => c.url.endsWith("/overwrite"))).toBe(false);
+    expect(fetchCalls.some((c) => c.method === "DELETE")).toBe(false);
+  });
+
+  it("Apply with unsaved edits places the edited copy inline (type:inline; template untouched)", async () => {
+    renderClientDraft();
+    fireEvent.click(screen.getByLabelText("Edit program"));
+    // Any edit dirties the draft; a rename commits on blur.
+    const nameInput = screen.getByLabelText("Program name");
+    fireEvent.change(nameInput, { target: { value: "Jane's Push/Pull" } });
+    fireEvent.blur(nameInput);
+
+    openApplyDialog();
+
+    await waitFor(() =>
+      expect(screen.getByTestId("apply-dialog")).toBeInTheDocument(),
+    );
+    const props = lastApplyProps()!;
+    expect(props.inlinePlan).toBeTruthy();
+    expect(props.inlinePlan!.name).toBe("Jane's Push/Pull");
+    // Every slot serializes (rest rows included) — 7 for the one-week template.
+    expect(props.inlinePlan!.sessions).toHaveLength(7);
+    // Editing the client's copy never overwrites or deletes the library template.
+    expect(fetchCalls.some((c) => c.url.endsWith("/overwrite"))).toBe(false);
+    expect(fetchCalls.some((c) => c.method === "DELETE")).toBe(false);
+  });
+
+  it("Apply is reachable while dirty (the old draft-editor disabled it)", () => {
+    renderClientDraft();
+    fireEvent.click(screen.getByLabelText("Edit program"));
+    const nameInput = screen.getByLabelText("Program name");
+    fireEvent.change(nameInput, { target: { value: "Edited" } });
+    fireEvent.blur(nameInput);
+    expect(
+      screen.getByRole("button", { name: "Apply to client" }),
+    ).not.toBeDisabled();
+  });
+
+  it("create-blank builds the session in-memory (no /dashboard/programs route push)", () => {
+    renderClientDraft();
+    fireEvent.click(screen.getByLabelText("Edit program"));
+    expect(screen.getAllByText("Rest")).toHaveLength(6);
+
+    fireEvent.click(screen.getByLabelText("Add session to day 2"));
+    fireEvent.click(screen.getByRole("button", { name: "Create blank session" }));
+
+    // Placed in-memory; the routed create-blank slide-over is never navigated to.
+    expect(pushMock).not.toHaveBeenCalled();
+    expect(screen.getAllByText("Rest")).toHaveLength(5);
   });
 });

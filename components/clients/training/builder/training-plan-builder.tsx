@@ -28,7 +28,6 @@ import { useToast } from "@/hooks/use-toast";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
 import { format } from "date-fns";
 import type { Client } from "@/types/check-in";
-import { weightToKg } from "@/utils/nutrition-helpers";
 
 type TrainingPlanBuilderProps = {
   client: Client;
@@ -53,10 +52,6 @@ export function TrainingPlanBuilder({
     params.set("subtab", tab);
     router.replace(`?${params.toString()}`, { scroll: false });
   };
-
-  const clientWeightKg = client.currentWeight
-    ? weightToKg(client.currentWeight, client.weightUnit || "lbs")
-    : 70;
 
   return (
     <ErrorBoundary>
@@ -91,8 +86,6 @@ export function TrainingPlanBuilder({
         <TrainingPlanBuilderOverlay
           open={drawerOpen}
           onOpenChange={setDrawerOpen}
-          clientWeightKg={clientWeightKg}
-          weightUnit={client.weightUnit || "lbs"}
         />
       </TrainingBuilderProvider>
     </ErrorBoundary>
@@ -114,17 +107,8 @@ function TopContentBar({
   const { plan, editMode, setEditMode, activePhase } = builder;
   const { toast } = useToast();
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
-  const [showGenerateConfirm, setShowGenerateConfirm] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
-
-  const handleGenerateClick = () => {
-    if (plan) {
-      setShowGenerateConfirm(true);
-    } else {
-      onOpenGenerator();
-    }
-  };
 
   const handleClearPlan = async () => {
     if (!plan) return;
@@ -245,11 +229,11 @@ function TopContentBar({
               <>
                 <EditModeButton editMode={editMode} setEditMode={setEditMode} clientId={client.id} />
                 <button
-                  onClick={handleGenerateClick}
+                  onClick={onOpenGenerator}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[12.5px] font-medium text-[#5a7d82] bg-white border border-[rgba(13,148,136,0.08)] rounded-[6px] hover:bg-[#f0f5f4] transition-colors"
                 >
                   <Sparkles className="h-3.5 w-3.5" />
-                  Regenerate
+                  Apply program
                 </button>
                 <button
                   onClick={() => setShowClearConfirm(true)}
@@ -263,36 +247,6 @@ function TopContentBar({
           </div>
         </>
       )}
-
-      <Dialog open={showGenerateConfirm} onOpenChange={setShowGenerateConfirm}>
-        <DialogContent>
-          <DialogHeader>
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-full bg-[rgba(192,96,96,0.08)] flex items-center justify-center">
-                <AlertTriangle className="h-4 w-4 text-[#c06060]" />
-              </div>
-              <DialogTitle>Generate a new plan?</DialogTitle>
-            </div>
-            <DialogDescription className="pt-2">
-              Generating a new plan will archive your current plan and delete all future scheduled sessions. This cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowGenerateConfirm(false)}>
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => {
-                setShowGenerateConfirm(false);
-                onOpenGenerator();
-              }}
-            >
-              Generate New Plan
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <Dialog open={showClearConfirm} onOpenChange={setShowClearConfirm}>
         <DialogContent>

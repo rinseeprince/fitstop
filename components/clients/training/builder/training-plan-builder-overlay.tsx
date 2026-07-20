@@ -3,81 +3,46 @@
 import { useState } from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { useTrainingBuilderContext } from "@/contexts/training-builder-context";
-import { AIPromptPanel } from "./ai-prompt-panel";
-import { ManualWorkoutBuilder } from "./manual-workout-builder";
-import { DraftEditor } from "./draft-editor";
+import { ProgramDraftProvider } from "@/components/clients/training/program-builder/program-draft-provider";
+import { ProgramBuilder } from "@/components/clients/training/program-builder/program-builder";
 import { useSavedPlans } from "@/hooks/use-saved-plans";
 import { Badge } from "@/components/ui/badge";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { cn } from "@/lib/utils";
-import {
-  Sparkles,
-  BookOpen,
-  Pencil,
-  X,
-  Loader2,
-  ArrowLeft,
-  ArrowRight,
-  Save,
-  Trash2,
-} from "lucide-react";
+import { BookOpen, X, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import type { BuilderMode, SavedPlan } from "@/types/training";
+import type { SavedPlan } from "@/types/training";
 
+// The client-attached training drawer (Phase 5). From-scratch authoring
+// (AI / Manual) is gone — authoring lives only in /dashboard/programs. This
+// drawer is a library browser: pick a template, and it opens the SHARED
+// Program builder in client-draft mode (full-screen) as a per-client editor.
+// Apply materializes the edited copy onto the client's calendar; the library
+// template is never mutated (see ProgramBuilder's client-draft branch).
 type TrainingPlanBuilderOverlayProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  clientWeightKg: number;
-  weightUnit?: "lbs" | "kg";
 };
-
-const MODE_OPTIONS: { value: BuilderMode; label: string; Icon: typeof Sparkles; description: string }[] = [
-  {
-    value: "ai",
-    label: "AI Generation",
-    Icon: Sparkles,
-    description: "Describe your goals, let AI draft the programme.",
-  },
-  {
-    value: "manual",
-    label: "Manual Creation",
-    Icon: Pencil,
-    description: "Build sessions and exercises from scratch.",
-  },
-  {
-    value: "saved",
-    label: "Saved Plans",
-    Icon: BookOpen,
-    description: "Apply an existing plan from your library.",
-  },
-];
 
 export function TrainingPlanBuilderOverlay({
   open,
   onOpenChange,
-  clientWeightKg,
-  weightUnit: _weightUnit = "lbs",
 }: TrainingPlanBuilderOverlayProps) {
   const builder = useTrainingBuilderContext();
   const hasDraft = !!builder.savedPlanId;
 
-  const title = hasDraft
-    ? "Review Plan"
-    : builder.plan
-      ? "Regenerate Training Plan"
-      : "Create Training Plan";
+  const title = hasDraft ? "Edit training program for client" : "Apply a program";
+
+  // The library browser is a 920px right drawer; opening a template for editing
+  // expands to a full-screen surface (the 3-column builder needs the width).
+  const backToLibrary = () => builder.setSavedPlanId(null);
 
   const handleClose = () => {
-    // If a draft is loaded, clear it. If the user closes the overlay completely,
-    // reset builder state so next open starts fresh.
-    if (hasDraft) {
-      builder.setSavedPlanId(null);
-    }
+    // Closing the whole overlay from the library list. (While the editor is
+    // open, the outer dialog's close is neutralized — see the Content guards —
+    // so this only fires from the library browse state.)
+    if (hasDraft) builder.setSavedPlanId(null);
     onOpenChange(false);
-  };
-
-  const handleBackToBuilder = () => {
-    builder.setSavedPlanId(null);
   };
 
   return (
@@ -86,51 +51,52 @@ export function TrainingPlanBuilderOverlay({
       onOpenChange={(next) => (next ? onOpenChange(true) : handleClose())}
     >
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay
-          className="fixed inset-0 z-50 bg-[rgba(15,32,39,0.35)] backdrop-blur-[2px] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=open]:duration-200 data-[state=closed]:duration-200"
-        />
+        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-[rgba(15,32,39,0.35)] backdrop-blur-[2px] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=open]:duration-200 data-[state=closed]:duration-200" />
         <DialogPrimitive.Content
-          className="fixed inset-y-0 right-0 z-50 w-[920px] max-w-[100vw] flex flex-col bg-[#f4f7f6] shadow-[-8px_0_24px_rgba(15,32,39,0.12)] outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:slide-in-from-right data-[state=closed]:slide-out-to-right data-[state=open]:duration-250 data-[state=closed]:duration-200"
+          className={cn(
+            "fixed z-50 flex flex-col bg-[#f4f7f6] outline-none",
+            "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:duration-250 data-[state=closed]:duration-200",
+            hasDraft
+              ? "inset-0 w-full data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0"
+              : "inset-y-0 right-0 w-[920px] max-w-[100vw] shadow-[-8px_0_24px_rgba(15,32,39,0.12)] data-[state=open]:slide-in-from-right data-[state=closed]:slide-out-to-right",
+          )}
+          // Two-close semantics while editing: exit-the-editor-back-to-the-list
+          // (the builder's own back arrow, guarded by its confirm-leave) vs.
+          // close-the-whole-overlay. Neutralize the outer dialog's Escape /
+          // outside-click so a stray key or click can NEVER silently drop the
+          // in-memory client draft — the coach leaves via the builder's back
+          // arrow, which confirms when there are unsaved edits. (Nested dialogs
+          // — the session editor, confirm, apply — still handle Escape first.)
+          onEscapeKeyDown={hasDraft ? (e) => e.preventDefault() : undefined}
+          onPointerDownOutside={hasDraft ? (e) => e.preventDefault() : undefined}
+          onInteractOutside={hasDraft ? (e) => e.preventDefault() : undefined}
         >
           <DialogPrimitive.Title className="sr-only">{title}</DialogPrimitive.Title>
           <DialogPrimitive.Description className="sr-only">
-            Build or review a training plan for this client.
+            Browse your program library and apply a program to this client.
           </DialogPrimitive.Description>
 
-          <OverlayHeader
-            title={title}
-            hasDraft={hasDraft}
-            onBack={handleBackToBuilder}
-            onClose={handleClose}
-          />
-
-          <div className="flex-1 min-h-0 overflow-hidden">
-            {hasDraft ? (
-              <DraftEditor
-                // Keying on savedPlanId forces a full unmount/mount when the
-                // active plan changes. This is the canonical React pattern
-                // for resetting per-entity component state and prevents any
-                // working-copy edits from the previous plan from leaking in.
-                key={builder.savedPlanId}
-                savedPlanId={builder.savedPlanId!}
-                clientId={builder.clientId}
-                onDiscard={() => {
-                  builder.setSavedPlanId(null);
-                  void builder.fetchPlan();
-                }}
-                onApplied={() => {
-                  // Refresh the client's active-plan view — the apply landed
-                  // something on the calendar. Keep the editor open so the
-                  // coach can continue working.
-                  void builder.fetchPlan();
-                }}
-              />
-            ) : (
-              <BuilderBody clientWeightKg={clientWeightKg} />
-            )}
-          </div>
-
-          {!hasDraft && <OverlayFooter />}
+          {hasDraft ? (
+            <ProgramDraftProvider
+              // Keyed so switching templates fully resets the working tree (the
+              // /dashboard/programs [savedPlanId] layout remount does this there;
+              // the drawer has no such layout, so the key is load-bearing).
+              key={builder.savedPlanId}
+              savedPlanId={builder.savedPlanId!}
+              target="client-draft"
+              clientId={builder.clientId}
+              onApplied={() => void builder.fetchPlan()}
+            >
+              <ProgramBuilder onExit={backToLibrary} />
+            </ProgramDraftProvider>
+          ) : (
+            <>
+              <LibraryHeader onClose={handleClose} />
+              <div className="flex-1 min-h-0 overflow-y-auto px-7 py-6">
+                <SavedPlansList />
+              </div>
+            </>
+          )}
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>
@@ -138,41 +104,22 @@ export function TrainingPlanBuilderOverlay({
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Header
+// Library header (browse state only — the editor owns its own chrome)
 // ═══════════════════════════════════════════════════════════════════════════
 
-function OverlayHeader({
-  title,
-  hasDraft,
-  onBack,
-  onClose,
-}: {
-  title: string;
-  hasDraft: boolean;
-  onBack: () => void;
-  onClose: () => void;
-}) {
+function LibraryHeader({ onClose }: { onClose: () => void }) {
   return (
     <div className="bg-[#0f2027] px-6 py-4 flex-shrink-0 flex items-center gap-4">
-      {hasDraft && (
-        <button
-          onClick={onBack}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-[6px] bg-[rgba(255,255,255,0.06)] hover:bg-[rgba(255,255,255,0.1)] text-[rgba(255,255,255,0.7)] text-[12.5px] font-medium transition-colors"
-        >
-          <ArrowLeft className="h-3.5 w-3.5" />
-          Back
-        </button>
-      )}
       <div className="flex items-center gap-3 flex-1 min-w-0">
         <div className="w-[36px] h-[36px] rounded-[6px] bg-[rgba(13,148,136,0.15)] flex items-center justify-center flex-shrink-0">
-          <Sparkles className="w-[18px] h-[18px] text-[#0d9488]" strokeWidth={1.5} />
+          <BookOpen className="w-[18px] h-[18px] text-[#0d9488]" strokeWidth={1.5} />
         </div>
         <div className="min-w-0">
-          <h2 className="text-[17px] font-bold text-white leading-tight truncate">{title}</h2>
+          <h2 className="text-[17px] font-bold text-white leading-tight truncate">
+            Apply a program
+          </h2>
           <p className="text-[12px] text-[rgba(255,255,255,0.5)] mt-0.5 leading-[1.4] truncate">
-            {hasDraft
-              ? "Edit sessions and exercises, then save or apply to the client."
-              : "Build a structured training programme. Your current plan stays active until you apply the new one."}
+            Pick a program from your library, customize it for this client, then apply it.
           </p>
         </div>
       </div>
@@ -188,80 +135,7 @@ function OverlayHeader({
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Builder body (shown when no draft is loaded)
-// ═══════════════════════════════════════════════════════════════════════════
-
-function BuilderBody({ clientWeightKg }: { clientWeightKg: number }) {
-  const builder = useTrainingBuilderContext();
-
-  return (
-    <div className="grid h-full grid-cols-[240px_1fr]">
-      {/* Left rail: mode toggle */}
-      <aside className="border-r border-[rgba(13,148,136,0.08)] bg-white/60 p-5 overflow-y-auto">
-        <div className="space-y-2">
-          <h3 className="text-[11px] font-semibold uppercase tracking-wide text-[#5a7d82] mb-3">
-            Builder Mode
-          </h3>
-          {MODE_OPTIONS.map(({ value, label, Icon, description }) => {
-            const active = builder.mode === value;
-            return (
-              <button
-                key={value}
-                onClick={() => builder.setMode(value)}
-                className={cn(
-                  "w-full text-left p-3 rounded-[8px] transition-all border",
-                  active
-                    ? "bg-white border-[rgba(13,148,136,0.3)] shadow-[0_1px_3px_rgba(0,0,0,0.05)]"
-                    : "bg-transparent border-transparent hover:bg-white/80 hover:border-[rgba(13,148,136,0.1)]"
-                )}
-              >
-                <div className="flex items-center gap-2.5">
-                  <Icon
-                    className={cn(
-                      "h-4 w-4 flex-shrink-0",
-                      active ? "text-[#0d9488]" : "text-[#5a7d82]"
-                    )}
-                    strokeWidth={1.8}
-                  />
-                  <span
-                    className={cn(
-                      "text-[13.5px] font-semibold",
-                      active ? "text-[#0c1a1e]" : "text-[#5a7d82]"
-                    )}
-                  >
-                    {label}
-                  </span>
-                </div>
-                <p
-                  className={cn(
-                    "text-[12px] mt-1.5 leading-[1.4]",
-                    active ? "text-[#5a7d82]" : "text-[#93b0b4]"
-                  )}
-                >
-                  {description}
-                </p>
-              </button>
-            );
-          })}
-        </div>
-      </aside>
-
-      {/* Main pane */}
-      <main className="overflow-y-auto">
-        <div className="px-7 py-6">
-          {builder.mode === "ai" && <AIPromptPanel clientWeightKg={clientWeightKg} />}
-          {builder.mode === "manual" && (
-            <ManualWorkoutBuilder clientWeightKg={clientWeightKg} />
-          )}
-          {builder.mode === "saved" && <SavedPlansList />}
-        </div>
-      </main>
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Saved plans list (extracted from drawer-form-body.tsx)
+// Saved plans list (the library browse — click a plan to open the editor)
 // ═══════════════════════════════════════════════════════════════════════════
 
 function SavedPlansList() {
@@ -314,7 +188,7 @@ function SavedPlansList() {
       <div className="text-center py-20">
         <BookOpen className="w-10 h-10 text-[#93b0b4] mx-auto mb-4" strokeWidth={1.5} />
         <p className="text-[13px] text-[#5a7d82] leading-[1.5] max-w-sm mx-auto">
-          No saved plans yet. Generate a plan with AI or build one manually, then save it to your library for reuse.
+          No saved programs yet. Build one in the Programs section, then apply it to your clients from here.
         </p>
       </div>
     );
@@ -381,120 +255,5 @@ function SavedPlansList() {
         }}
       />
     </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Footer (Generate / Save button - hidden in saved-plans mode)
-// ═══════════════════════════════════════════════════════════════════════════
-
-function OverlayFooter() {
-  const builder = useTrainingBuilderContext();
-  const [showConfirm, setShowConfirm] = useState(false);
-  const [showTemplateConfirm, setShowTemplateConfirm] = useState(false);
-
-  if (builder.mode === "saved") return null;
-
-  const isAiMode = builder.mode === "ai";
-  const isScratchMode = builder.mode === "manual" && builder.manualMode === "scratch";
-  const isGenerating = builder.isGenerating;
-  const isSaving = builder.isSavingManual;
-  const isSavingTemplate = builder.isSavingTemplate;
-  const isBusy = isGenerating || isSaving || isSavingTemplate;
-  const hasPlan = !!builder.plan;
-
-  const planNameFilled = builder.planName.trim().length > 0;
-
-  const isPrimaryDisabled =
-    isBusy ||
-    (isAiMode && !builder.prompt.trim()) ||
-    (!isAiMode && builder.manualSessions.length === 0) ||
-    // Scratch requires a plan name (template mode falls back to template name)
-    (isScratchMode && !planNameFilled);
-
-  const doPrimary = () => {
-    if (isAiMode) {
-      void builder.generate();
-    } else {
-      void builder.saveManualPlan();
-    }
-  };
-
-  const handlePrimaryClick = () => {
-    if (hasPlan) {
-      setShowConfirm(true);
-    } else {
-      doPrimary();
-    }
-  };
-
-  const primaryLabel = isGenerating
-    ? "Generating..."
-    : isSaving
-      ? "Saving..."
-      : isAiMode
-        ? "Generate Plan"
-        : "Add Exercises";
-
-  const PrimaryIcon = isAiMode ? Sparkles : ArrowRight;
-
-  return (
-    <>
-      <div className="flex-shrink-0 border-t border-[rgba(13,148,136,0.08)] bg-white px-6 py-4 flex items-center justify-end gap-3">
-        {/* Secondary: Save as Template — only in scratch mode with at least one session */}
-        {isScratchMode && builder.manualSessions.length > 0 && (
-          <button
-            onClick={() => setShowTemplateConfirm(true)}
-            disabled={isBusy || !planNameFilled}
-            className="inline-flex items-center gap-2 text-[#5a7d82] border border-[rgba(13,148,136,0.2)] text-[13px] font-medium rounded-[6px] px-4 py-2.5 transition-colors hover:bg-[rgba(13,148,136,0.04)] hover:text-[#0c1a1e] hover:border-[rgba(13,148,136,0.35)] disabled:opacity-50 disabled:pointer-events-none bg-white"
-          >
-            {isSavingTemplate ? (
-              <Loader2 className="w-4 h-4 animate-spin" strokeWidth={1.5} />
-            ) : (
-              <Save className="w-4 h-4" strokeWidth={1.8} />
-            )}
-            Save as Template
-          </button>
-        )}
-
-        {/* Primary action */}
-        <button
-          onClick={handlePrimaryClick}
-          disabled={isPrimaryDisabled}
-          className="inline-flex items-center gap-2 bg-[#0d9488] text-white text-[13.5px] font-semibold rounded-[6px] px-5 py-2.5 transition-all hover:-translate-y-px hover:shadow-[0_4px_16px_rgba(13,148,136,0.25)] hover:bg-gradient-to-br hover:from-[#0d9488] hover:to-[#0a7c72] disabled:opacity-50 disabled:pointer-events-none"
-        >
-          {isBusy && !isSavingTemplate ? (
-            <Loader2 className="w-4 h-4 animate-spin" strokeWidth={1.5} />
-          ) : (
-            <PrimaryIcon className="w-4 h-4" strokeWidth={1.5} />
-          )}
-          {primaryLabel}
-        </button>
-      </div>
-
-      <ConfirmDialog
-        open={showConfirm}
-        onOpenChange={setShowConfirm}
-        title="Create new draft?"
-        description="This will create a new draft in your library. Your current plan stays active until you apply the new one."
-        confirmLabel="Continue"
-        onConfirm={() => {
-          setShowConfirm(false);
-          doPrimary();
-        }}
-      />
-
-      <ConfirmDialog
-        open={showTemplateConfirm}
-        onOpenChange={setShowTemplateConfirm}
-        title="Save this structure to your library?"
-        description="This saves the sessions as a reusable template (no exercises). You can add exercises later from Saved Plans."
-        confirmLabel="Save as Template"
-        onConfirm={() => {
-          setShowTemplateConfirm(false);
-          void builder.saveManualPlanAsTemplate();
-        }}
-      />
-    </>
   );
 }

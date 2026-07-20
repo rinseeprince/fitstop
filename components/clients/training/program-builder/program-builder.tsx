@@ -7,15 +7,22 @@ import { Ban, Loader2, Pencil, Save, Trash2 } from "lucide-react";
 import { DndContext, DragOverlay } from "@dnd-kit/core";
 import { useToast } from "@/hooks/use-toast";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { ApplyToClientDialog } from "@/components/training-library/apply-to-client-dialog";
 import { SectionLabel } from "@/components/programs/shared/section-label";
 import { cn } from "@/lib/utils";
 import type { Exercise, SavedSession } from "@/types/training";
-import { MAX_WEEKS, type DaySlotDraft } from "./program-builder-types";
+import {
+  MAX_WEEKS,
+  newUid,
+  type DaySlotDraft,
+  type SessionDraft,
+} from "./program-builder-types";
 import { savedSessionToDraft } from "./program-builder-serialize";
 import { defaultExerciseDraftFromCatalog, findSession } from "./program-builder-model";
 import { useProgramDnd } from "./use-program-dnd";
 import { useSaveDayAsWorkout } from "./use-save-day-as-workout";
 import { useProgramDraft } from "./program-draft-provider";
+import { useClientApply } from "./use-client-apply";
 import { ProgramTopBar } from "./program-top-bar";
 import { ProgramGrid } from "./program-grid";
 import { DuplicateWeekDialog } from "./duplicate-week-dialog";
@@ -45,6 +52,9 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
   const { toast } = useToast();
   const {
     savedPlanId,
+    target,
+    clientId,
+    onApplied,
     plan,
     isPlanLoading,
     draft,
@@ -71,6 +81,15 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
     editSetSpec,
     insertWeekAfter,
   } = useProgramDraft();
+
+  // Client-draft mode (Phase 5): the shared builder mounted inside the coach's
+  // client drawer as a per-client editor. The library chrome (Save/Delete to
+  // the template, the /dashboard/programs create-blank route, the "All
+  // programs" link) is swapped for an Apply-to-client flow; the template is
+  // never mutated — Apply materializes the edited copy onto the client's
+  // calendar.
+  const isClientDraft = target === "client-draft";
+  const apply = useClientApply({ draft, isDirty, clientId, plan });
 
   const [collapsedWeeks, setCollapsedWeeks] = useState<Set<string>>(new Set());
   const [editingSessionUid, setEditingSessionUid] = useState<string | null>(null);
@@ -169,13 +188,17 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
   };
 
   return (
-    // Full-bleed within the programs shell: cancel its px-8/py padding so the
-    // library panel sits flush against the icon rail and spans top-to-bottom
-    // (the reference 3-column frame; the panel's right border separates it
-    // from the grey main column). The section topbar hides on this route, so
-    // the builder root fills main's 100vh box; `flex h-screen flex-col` lets
-    // the grid fill the real remaining height (see program-grid's flex-1).
-    <div className="-mx-8 -mt-5 -mb-[60px] flex h-screen flex-col">
+    // Library: full-bleed within the programs shell — cancel its px-8/py
+    // padding so the library panel sits flush against the icon rail and the
+    // grid fills main's 100vh box (`h-screen`; the section topbar hides on this
+    // route). Client-draft: the host is a full-screen drawer dialog with no
+    // shell padding to cancel, so fill its own box (`h-full`).
+    <div
+      className={cn(
+        "flex flex-col",
+        isClientDraft ? "h-full" : "-mx-8 -mt-5 -mb-[60px] h-screen",
+      )}
+    >
       <DndContext
         sensors={dnd.sensors}
         collisionDetection={dnd.collisionDetection}
@@ -184,7 +207,7 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
         onDragCancel={dnd.handleDragCancel}
       >
         <div className="flex min-h-0 flex-1">
-          <BuilderLibraryPanel mode={mode} />
+          <BuilderLibraryPanel mode={mode} showBackLink={!isClientDraft} />
           <div className="flex min-h-0 min-w-0 flex-1 flex-col px-6 pt-5">
             <ProgramTopBar
               draft={draft}
@@ -193,6 +216,7 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
                 if (isDirty && mode === "edit") setConfirmLeaveOpen(true);
                 else exit();
               }}
+              backLabel={isClientDraft ? "Back to library" : "Back to programs"}
               onRename={setName}
               onDefaultSurplusChange={setDefaultSurplus}
             />
@@ -202,8 +226,20 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
               actions={
                 // Roadmap-divider pattern: ALL program actions live on the
                 // rule, not in the hero band — icons for edit/delete, small
-                // uppercase text for the edit-mode commit actions.
+                // uppercase text for the edit-mode commit actions. Client-draft
+                // swaps the library commit (Save/Delete to the template) for an
+                // Apply-to-client button; the template is never mutated here.
                 <div className="flex items-center gap-3">
+                  {isClientDraft && (
+                    <button
+                      type="button"
+                      className="rounded-[6px] bg-[#0d9488] px-3 py-1.5 text-[12px] font-semibold text-white transition-colors hover:bg-[#0b7f75] disabled:opacity-50"
+                      disabled={!apply.canApply}
+                      onClick={apply.requestApply}
+                    >
+                      Apply to client
+                    </button>
+                  )}
                   {mode === "view" && (
                     <button
                       type="button"
@@ -215,19 +251,24 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
                       <Pencil className="h-3.5 w-3.5" strokeWidth={1.5} />
                     </button>
                   )}
-                  <button
-                    type="button"
-                    aria-label="Delete program"
-                    title="Delete program"
-                    disabled={isSaving}
-                    className="rounded p-1 text-[#93b0b4] transition-colors hover:text-[#c06060] disabled:opacity-50"
-                    onClick={() => setConfirmDeleteOpen(true)}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
-                  </button>
+                  {!isClientDraft && (
+                    <button
+                      type="button"
+                      aria-label="Delete program"
+                      title="Delete program"
+                      disabled={isSaving}
+                      className="rounded p-1 text-[#93b0b4] transition-colors hover:text-[#c06060] disabled:opacity-50"
+                      onClick={() => setConfirmDeleteOpen(true)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+                    </button>
+                  )}
                   {mode === "edit" && (
                     <>
-                      {draft.status === "draft" ? (
+                      {/* Draft-discard (delete) is library-only; a client-draft
+                          is always a saved template, so it only ever shows the
+                          revert-my-edits Discard-changes control. */}
+                      {!isClientDraft && draft.status === "draft" ? (
                         <button
                           type="button"
                           aria-label="Discard draft"
@@ -250,20 +291,22 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
                           <Ban className="h-3.5 w-3.5" strokeWidth={1.5} />
                         </button>
                       )}
-                      <button
-                        type="button"
-                        aria-label="Save program"
-                        title="Save program"
-                        disabled={isSaving}
-                        className="rounded p-1 text-[#0d9488] transition-colors hover:text-[#0b7f75] disabled:opacity-50"
-                        onClick={() => void saveProgram()}
-                      >
-                        {isSaving ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <Save className="h-3.5 w-3.5" strokeWidth={1.5} />
-                        )}
-                      </button>
+                      {!isClientDraft && (
+                        <button
+                          type="button"
+                          aria-label="Save program"
+                          title="Save program"
+                          disabled={isSaving}
+                          className="rounded p-1 text-[#0d9488] transition-colors hover:text-[#0b7f75] disabled:opacity-50"
+                          onClick={() => void saveProgram()}
+                        >
+                          {isSaving ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Save className="h-3.5 w-3.5" strokeWidth={1.5} />
+                          )}
+                        </button>
+                      )}
                     </>
                   )}
                 </div>
@@ -381,10 +424,30 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
           placeSession(target.slotUid, savedSessionToDraft(session));
           setAddTarget(null);
         }}
-        onCreateBlank={(target) => {
+        onCreateBlank={(t) => {
           setAddTarget(null);
+          if (isClientDraft) {
+            // No intercepted /dashboard/programs modal route exists in the
+            // client drawer — build the blank session in-memory (uid held here,
+            // so we can open it) and place it. Library create-blank persists a
+            // standalone session; a client draft's stays in-memory, which is
+            // correct for a per-client edit.
+            const blank: SessionDraft = {
+              uid: newUid("sess"),
+              name: `Day ${t.dayIndex + 1}`,
+              focus: null,
+              estimatedDurationMinutes: null,
+              calorieSurplusPercentage: null,
+              notes: null,
+              sessionType: "training",
+              exercises: [],
+            };
+            placeSession(t.slotUid, blank);
+            setEditingSessionUid(blank.uid);
+            return;
+          }
           router.push(
-            `/dashboard/programs/${savedPlanId}/sessions/new?w=${target.weekIndex}&d=${target.dayIndex}`,
+            `/dashboard/programs/${savedPlanId}/sessions/new?w=${t.weekIndex}&d=${t.dayIndex}`,
           );
         }}
       />
@@ -393,38 +456,76 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
         open={confirmLeaveOpen}
         onOpenChange={setConfirmLeaveOpen}
         title="Discard unsaved changes?"
-        description="You have edits that haven't been saved to the library yet. Leaving now will lose them."
-        confirmLabel="Leave without saving"
+        description={
+          isClientDraft
+            ? "You have unsaved edits for this client. Leaving now will discard them."
+            : "You have edits that haven't been saved to the library yet. Leaving now will lose them."
+        }
+        confirmLabel={isClientDraft ? "Leave without applying" : "Leave without saving"}
         destructive
         onConfirm={exit}
       />
-      <ConfirmDialog
-        open={confirmDiscardOpen}
-        onOpenChange={setConfirmDiscardOpen}
-        title="Discard this draft?"
-        description="The draft program and everything in it will be permanently deleted."
-        confirmLabel="Discard draft"
-        destructive
-        onConfirm={() => void deletePlan("Draft discarded")}
-      />
+      {!isClientDraft && (
+        <ConfirmDialog
+          open={confirmDiscardOpen}
+          onOpenChange={setConfirmDiscardOpen}
+          title="Discard this draft?"
+          description="The draft program and everything in it will be permanently deleted."
+          confirmLabel="Discard draft"
+          destructive
+          onConfirm={() => void deletePlan("Draft discarded")}
+        />
+      )}
       <ConfirmDialog
         open={confirmDiscardChangesOpen}
         onOpenChange={setConfirmDiscardChangesOpen}
         title="Discard unsaved changes?"
-        description="The program goes back to its last saved state."
+        description={
+          isClientDraft
+            ? "Your edits for this client will be discarded and the program reset to the library version."
+            : "The program goes back to its last saved state."
+        }
         confirmLabel="Discard changes"
         destructive
         onConfirm={discardChanges}
       />
-      <ConfirmDialog
-        open={confirmDeleteOpen}
-        onOpenChange={setConfirmDeleteOpen}
-        title="Delete this program?"
-        description="The program and everything in it will be permanently removed from your library. Clients it was already applied to keep their calendars."
-        confirmLabel="Delete program"
-        destructive
-        onConfirm={() => void deletePlan("Program deleted")}
-      />
+      {!isClientDraft && (
+        <ConfirmDialog
+          open={confirmDeleteOpen}
+          onOpenChange={setConfirmDeleteOpen}
+          title="Delete this program?"
+          description="The program and everything in it will be permanently removed from your library. Clients it was already applied to keep their calendars."
+          confirmLabel="Delete program"
+          destructive
+          onConfirm={() => void deletePlan("Program deleted")}
+        />
+      )}
+
+      {/* Client-draft apply flow (Phase 5): a reapply confirmation → the shared
+          ApplyToClientDialog. The library template is never touched — Apply
+          materializes the edited copy onto the client's calendar. The confirm
+          precedes the dialog (start date/repeat are chosen inside it), so its
+          copy stays date-agnostic. */}
+      {isClientDraft && plan && (
+        <>
+          <ConfirmDialog
+            open={apply.confirmOpen}
+            onOpenChange={apply.setConfirmOpen}
+            title="Apply this program to your client?"
+            description="This adds another program to the client's calendar and may overlap existing sessions."
+            confirmLabel="Continue"
+            onConfirm={apply.confirmApply}
+          />
+          <ApplyToClientDialog
+            open={apply.dialogOpen}
+            onOpenChange={apply.setDialogOpen}
+            savedPlan={plan}
+            inlinePlan={apply.inlinePlan}
+            preselectedClientId={clientId ?? undefined}
+            onSuccess={() => onApplied?.()}
+          />
+        </>
+      )}
     </div>
   );
 }

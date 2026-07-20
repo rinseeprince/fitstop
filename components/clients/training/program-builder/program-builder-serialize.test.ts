@@ -1,9 +1,15 @@
 import { describe, it, expect } from "vitest";
-import type { SavedPlan, SavedSession, SavedExercise } from "@/types/training";
+import type {
+  SavedPlan,
+  SavedSession,
+  SavedExercise,
+  TrainingSplitType,
+} from "@/types/training";
 import type { SetSpec } from "@/utils/exercise-set-specs";
 import {
   savedPlanToDraft,
   draftToOverwriteBody,
+  draftToInlinePlanBody,
   savedSessionToDraft,
   sessionDraftToStandalonePayload,
 } from "./program-builder-serialize";
@@ -470,5 +476,83 @@ describe("sessionDraftToStandalonePayload (create-blank save)", () => {
   it("caps the name at the create schema's 100 chars", () => {
     const draft = savedSessionToDraft(makeSession({ name: "x".repeat(150) }));
     expect(sessionDraftToStandalonePayload(draft).name).toHaveLength(100);
+  });
+});
+
+// =============================================================================
+// draftToInlinePlanBody (client-apply inline placement — Phase 5)
+// =============================================================================
+
+describe("draftToInlinePlanBody", () => {
+  it("emits every slot with weekIndex + per-set data surviving verbatim", () => {
+    const draft = savedPlanToDraft(makeWeekShapedPlan(2));
+    const body = draftToInlinePlanBody(draft);
+
+    expect(body.name).toBe("Test Program");
+    expect(body.defaultSurplusPercentage).toBe(12.5);
+    expect(body.sessions).toHaveLength(14);
+
+    // Week-2 rows carry weekIndex 1; rest rows are real empty rows.
+    const week2Push = body.sessions[7];
+    expect(week2Push.weekIndex).toBe(1);
+    expect(week2Push.name).toBe("Push W2");
+    const rest = body.sessions[1];
+    expect(rest.isRest).toBe(true);
+    expect(rest.exercises).toEqual([]);
+
+    // The first exercise's per-set prescription survives byte-for-byte.
+    const ex = body.sessions[0].exercises[0];
+    expect(ex.setSpecs).toEqual(SPECS);
+    expect(ex.videoUrl).toBe("https://example.com/bench");
+    expect(ex.exerciseId).toBe("cat-1");
+  });
+
+  it("shares session serialization with the overwrite path (no drift)", () => {
+    const draft = savedPlanToDraft(makeWeekShapedPlan(2));
+    expect(draftToInlinePlanBody(draft).sessions).toEqual(
+      draftToOverwriteBody(draft).sessions,
+    );
+  });
+
+  it("sanitizes a free-text splitType to null, passes a valid enum through", () => {
+    // ProgramDraft.splitType is TYPED as the enum, but split_type is a free-text
+    // column at runtime (builder plans store a focus there) — the cast
+    // reproduces that reality; the safe-parse is the belt that must null it.
+    const base: Omit<ProgramDraft, "splitType"> = {
+      id: "plan-1",
+      name: "P",
+      description: null,
+      status: "saved",
+      programDurationWeeks: null,
+      defaultSurplusPercentage: null,
+      weeks: [makeRestWeek(0)],
+    };
+    expect(
+      draftToInlinePlanBody({
+        ...base,
+        splitType: "Glute hypertrophy" as TrainingSplitType,
+      }).splitType,
+    ).toBeNull();
+    expect(
+      draftToInlinePlanBody({ ...base, splitType: "push_pull_legs" }).splitType,
+    ).toBe("push_pull_legs");
+    expect(draftToInlinePlanBody({ ...base, splitType: null }).splitType).toBeNull();
+  });
+
+  it("falls back to the week count when programDurationWeeks is null, else preserves it", () => {
+    const fallback: ProgramDraft = {
+      id: "plan-1",
+      name: "P",
+      description: null,
+      status: "saved",
+      splitType: null,
+      programDurationWeeks: null,
+      defaultSurplusPercentage: null,
+      weeks: [makeRestWeek(0), makeRestWeek(1)],
+    };
+    expect(draftToInlinePlanBody(fallback).programDurationWeeks).toBe(2);
+
+    const explicit: ProgramDraft = { ...fallback, programDurationWeeks: 5 };
+    expect(draftToInlinePlanBody(explicit).programDurationWeeks).toBe(5);
   });
 });

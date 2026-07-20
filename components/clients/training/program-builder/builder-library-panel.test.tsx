@@ -136,6 +136,18 @@ describe("BuilderLibraryPanel", () => {
     expect(screen.getByRole("button", { name: /New session/ })).toBeInTheDocument();
   });
 
+  it("hides the 'All programs' link when embedded (client-draft), keeping drag sources", () => {
+    render(
+      <DndContext>
+        <BuilderLibraryPanel mode="edit" showBackLink={false} />
+      </DndContext>,
+    );
+    expect(screen.queryByRole("link", { name: /All programs/ })).toBeNull();
+    // Drag sources + session CRUD stay reachable in the embedded panel.
+    expect(screen.getByLabelText("Drag Push Day A")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /New session/ })).toBeInTheDocument();
+  });
+
   it("Exercises tab caps a huge catalog at the 10 most recent; search surfaces the rest", () => {
     // A large catalog is the whole reason for the cap — 30 rows, createdAt
     // increasing so "Exercise 29" is the newest.

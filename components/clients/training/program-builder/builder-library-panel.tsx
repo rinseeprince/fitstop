@@ -23,23 +23,35 @@ const TAB_OPTIONS = [
   { value: "exercises", label: "Exercises" },
 ];
 
-export function BuilderLibraryPanel({ mode }: { mode: "view" | "edit" }) {
+export function BuilderLibraryPanel({
+  mode,
+  // Library mode links back to /dashboard/programs. In the client-draft
+  // remount (Phase 5) the panel lives in the coach's client drawer, where that
+  // link would navigate away from the client page — hide it (the builder's own
+  // back arrow returns to the library list).
+  showBackLink = true,
+}: {
+  mode: "view" | "edit";
+  showBackLink?: boolean;
+}) {
   const [tab, setTab] = useState<LibraryTab>("sessions");
   const editable = mode === "edit";
 
   return (
     <aside className="sticky top-0 flex h-screen w-[296px] shrink-0 flex-col border-r border-[rgba(13,148,136,0.08)] bg-white">
       <div className="px-[18px] pt-[18px]">
-        <Link
-          href="/dashboard/programs"
-          className={cn(
-            "mb-3.5 inline-flex items-center gap-1.5 rounded text-[12.5px] font-medium transition-colors hover:text-[#0a5c55]",
-            TEXT_SECONDARY,
-          )}
-        >
-          <ChevronLeft className="h-3.5 w-3.5" strokeWidth={2} />
-          All programs
-        </Link>
+        {showBackLink && (
+          <Link
+            href="/dashboard/programs"
+            className={cn(
+              "mb-3.5 inline-flex items-center gap-1.5 rounded text-[12.5px] font-medium transition-colors hover:text-[#0a5c55]",
+              TEXT_SECONDARY,
+            )}
+          >
+            <ChevronLeft className="h-3.5 w-3.5" strokeWidth={2} />
+            All programs
+          </Link>
+        )}
         <h2 className={cn("mb-3.5 text-base font-semibold tracking-[-0.01em]", TEXT_PRIMARY)}>
           Program Builder
         </h2>

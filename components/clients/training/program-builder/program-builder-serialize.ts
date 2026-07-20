@@ -1,7 +1,9 @@
 import type { z } from "zod";
-import type {
-  createStandaloneSessionSchema,
-  overwriteSavedPlanSchema,
+import {
+  splitTypeSchema,
+  type createStandaloneSessionSchema,
+  type InlinePlanBody,
+  type overwriteSavedPlanSchema,
 } from "@/lib/validations/training";
 import type { SavedPlan, SavedSession, SavedExercise } from "@/types/training";
 import {
@@ -17,14 +19,12 @@ import {
 
 // Serialization boundary between the builder's draft tree and the saved-plan
 // API. draftToOverwriteBody targets POST /api/training/saved-plans/[id]/overwrite
-// exactly (same zod schema), with a globally monotonic order_index
+// and draftToInlinePlanBody targets the client-apply inline placement — both
+// off the shared draftToSessionInputs, with a globally monotonic order_index
 // (weekIndex * 7 + dayPosition) so the library read — which sorts by
 // order_index ALONE — returns slots in program order without a backend change.
-//
-// Coexistence caveat (until Phase 5 retires it): the old client-drawer editor
-// serializes WITHOUT weekIndex/setSpecs/videoUrl, so saving a builder-authored
-// program from that surface would flatten it. draft-editor.tsx guards this by
-// disabling its overwrite/apply for week-model or set-spec plans.
+// (The old lossy client-drawer editor that flattened weekIndex/setSpecs/videoUrl
+// was retired in Phase 5; this shared builder is now the only client editor.)
 
 export type ProgramOverwriteBody = z.infer<typeof overwriteSavedPlanSchema>;
 
@@ -219,13 +219,17 @@ export function sessionDraftToStandalonePayload(
 }
 
 /**
- * Serialize the whole draft tree into the overwrite body. Every slot becomes a
- * real session row — rest rows included (the placement date-walk needs all 7
- * rows per week or every later date slides). Throws rather than emit an empty
- * sessions array: overwrite is delete-then-reinsert, so an empty body would
- * wipe the program (normalize's min-1-week invariant makes this unreachable).
+ * Serialize the whole draft tree into the API session-input array — every slot
+ * becomes a real session row, rest rows included (the placement date-walk needs
+ * all 7 rows per week or every later date slides). Globally-monotonic
+ * orderIndex (weekIndex * 7 + dayPosition). Shared by BOTH write paths — the
+ * library overwrite body and the client-apply inline body — so a field missed
+ * on one side can't silently drop per-set data on the other. Throws rather than
+ * emit an empty array (normalize's min-1-week invariant makes this unreachable):
+ * overwrite is delete-then-reinsert and inline placement of nothing is equally
+ * wrong.
  */
-export function draftToOverwriteBody(draft: ProgramDraft): ProgramOverwriteBody {
+function draftToSessionInputs(draft: ProgramDraft): ProgramOverwriteBody["sessions"] {
   const sessions = draft.weeks.flatMap((week) =>
     week.days.map((slot, day) => ({
       name: slot.session?.name ?? "Rest",
@@ -241,16 +245,45 @@ export function draftToOverwriteBody(draft: ProgramDraft): ProgramOverwriteBody 
     })),
   );
   if (sessions.length === 0) {
-    throw new Error("Refusing to serialize an empty program (overwrite would wipe it)");
+    throw new Error("Refusing to serialize an empty program (nothing to place or save)");
   }
+  return sessions;
+}
+
+/**
+ * Serialize the whole draft tree into the library overwrite body (POST
+ * /api/training/saved-plans/[id]/overwrite). AI-sourced plans can carry names
+ * ≤200 / descriptions ≤1000 (their gen schema is looser), but overwrite caps
+ * them at 100/500 — truncate rather than hard-block the save of a plan whose
+ * description the builder doesn't even surface.
+ */
+export function draftToOverwriteBody(draft: ProgramDraft): ProgramOverwriteBody {
   return {
-    // AI-sourced plans can carry names ≤200 / descriptions ≤1000 (their gen
-    // schema is looser), but overwrite caps them at 100/500 — truncate rather
-    // than hard-block the save of a plan whose description the builder
-    // doesn't even surface.
     name: draft.name.slice(0, 100),
     description: draft.description ? draft.description.slice(0, 500) : draft.description,
     defaultSurplusPercentage: draft.defaultSurplusPercentage,
-    sessions,
+    sessions: draftToSessionInputs(draft),
+  };
+}
+
+/**
+ * Serialize the whole draft tree into the inline-placement body (client apply —
+ * POST /api/clients/[id]/training/place-from-library, type:"inline"). Shares
+ * draftToSessionInputs with the overwrite path, so per-set specs / video /
+ * weekIndex / rest rows land on the client's calendar verbatim. Two field notes:
+ * splitType is sanitized because builder-authored plans store a FREE-TEXT focus
+ * in split_type, but inlinePlanBodySchema.splitType is the strict enum — a raw
+ * pass-through would 400 the apply; programDurationWeeks is metadata only (the
+ * placement window is the apply-time repeat count × the whole-program slot
+ * count, NOT this field), so fall back to the authored week count.
+ */
+export function draftToInlinePlanBody(draft: ProgramDraft): InlinePlanBody {
+  const splitType = splitTypeSchema.safeParse(draft.splitType);
+  return {
+    name: draft.name.slice(0, 100),
+    splitType: splitType.success ? splitType.data : null,
+    programDurationWeeks: draft.programDurationWeeks ?? draft.weeks.length,
+    defaultSurplusPercentage: draft.defaultSurplusPercentage,
+    sessions: draftToSessionInputs(draft),
   };
 }

@@ -33,6 +33,12 @@ import { useProgramSave } from "./use-program-save";
 export type ProgramDraftContextValue = ProgramBuilderState & {
   savedPlanId: string;
   target: BuilderTarget;
+  // Client scope for target="client-draft" (null in library mode). Threading it
+  // through the provider — not TrainingBuilderProvider — is deliberate:
+  // ProgramBuilder is also mounted on /dashboard/programs, where that context
+  // is absent, so reading it there would throw.
+  clientId: string | null;
+  onApplied?: () => void;
   plan: SavedPlan | null;
   isPlanLoading: boolean;
   mutatePlan: () => Promise<unknown>;
@@ -60,12 +66,17 @@ export function useProgramDraft(): ProgramDraftContextValue {
 type ProgramDraftProviderProps = {
   savedPlanId: string;
   target: BuilderTarget;
+  // Present only for target="client-draft" (the client editor's apply target).
+  clientId?: string;
+  onApplied?: () => void;
   children: ReactNode;
 };
 
 export function ProgramDraftProvider({
   savedPlanId,
   target,
+  clientId,
+  onApplied,
   children,
 }: ProgramDraftProviderProps) {
   const { toast } = useToast();
@@ -77,12 +88,14 @@ export function ProgramDraftProvider({
   const { isSaving, save } = useProgramSave({ savedPlanId, plan, mutatePlan });
   const editSetSpec = useSetSpecMutations(updateExercise);
 
-  // The sub-sidebar's Builder item returns to the last opened program.
+  // The Programs section's Builder item returns to the last opened program.
+  // Library only — writing it from the client-draft remount would silently
+  // repoint the coach's Programs "Builder" nav to this client's template.
   useEffect(() => {
-    if (savedPlanId) {
+    if (savedPlanId && target === "library") {
       sessionStorage.setItem(LAST_PLAN_STORAGE_KEY, savedPlanId);
     }
-  }, [savedPlanId]);
+  }, [savedPlanId, target]);
 
   // Seed the working tree from server state exactly once (the !draft gate
   // makes SWR refreshes no-ops). Cross-plan cleanup is the layout's
@@ -95,17 +108,19 @@ export function ProgramDraftProvider({
     }
   }, [plan, draft, seed]);
 
-  // Refresh/close guard while there are unsaved edits. (In-app sidebar nav
-  // isn't interceptable in the App Router — only this and the back link are
-  // guarded, same exposure as the existing drawer.)
+  // Refresh/close guard while there are unsaved edits. Library only: a
+  // client-draft never "saves" (edits materialize onto the calendar via Apply,
+  // they are not persisted here), so isDirty stays true after Apply and this
+  // would nag forever; the in-app back + Escape guards cover intentional exit
+  // from the client editor.
   useEffect(() => {
-    if (!(isDirty && mode === "edit")) return;
+    if (!(isDirty && mode === "edit" && target === "library")) return;
     const handler = (e: BeforeUnloadEvent) => {
       e.preventDefault();
     };
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
-  }, [isDirty, mode]);
+  }, [isDirty, mode, target]);
 
   const saveProgram = useCallback(async () => {
     const current = draft;
@@ -139,6 +154,8 @@ export function ProgramDraftProvider({
     ...state,
     savedPlanId,
     target,
+    clientId: clientId ?? null,
+    onApplied,
     plan: plan ?? null,
     isPlanLoading,
     mutatePlan,
