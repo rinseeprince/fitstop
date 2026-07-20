@@ -202,7 +202,7 @@ describe("ProgramBuilder save flow", () => {
     expect(screen.getAllByText("Rest")).toHaveLength(6);
   });
 
-  it("Save program posts the whole tree (surplus 0 preserved), PATCHes duration, promotes, then leaves edit mode", async () => {
+  it("Save program posts the whole tree (surplus 0 preserved), PATCHes duration, promotes, then returns to the programs list", async () => {
     render(
       <ProgramDraftProvider savedPlanId="plan-1" target="library">
         <ProgramBuilder />
@@ -210,7 +210,10 @@ describe("ProgramBuilder save flow", () => {
     );
     fireEvent.click(screen.getByLabelText("Save program"));
 
-    await waitFor(() => expect(screen.getByLabelText("Edit program")).toBeInTheDocument());
+    // A clean save navigates back to the programs list.
+    await waitFor(() =>
+      expect(pushMock).toHaveBeenCalledWith("/dashboard/programs"),
+    );
 
     const overwrite = overwriteCall()!;
     expect(overwrite.method).toBe("POST");
@@ -258,9 +261,11 @@ describe("ProgramBuilder save flow", () => {
 
     await waitFor(() => expect(promoteCall()).toBeTruthy());
     expect(overwriteCall()).toBeTruthy();
-    // Still in edit mode — Save stays available for the rename-and-retry.
+    // Still in edit mode — Save stays available for the rename-and-retry; a
+    // non-clean save must NOT navigate away.
     expect(screen.getByLabelText("Save program")).toBeInTheDocument();
     expect(screen.queryByLabelText("Edit program")).toBeNull();
+    expect(pushMock).not.toHaveBeenCalled();
   });
 
   it("keeps the local draft and edit mode when the overwrite 500s", async () => {
@@ -273,10 +278,11 @@ describe("ProgramBuilder save flow", () => {
     fireEvent.click(screen.getByLabelText("Save program"));
 
     await waitFor(() => expect(overwriteCall()).toBeTruthy());
-    // No promote attempt, no mode flip, grid content intact.
+    // No promote attempt, no mode flip, grid content intact, no navigation.
     expect(promoteCall()).toBeUndefined();
     expect(screen.getByLabelText("Save program")).toBeInTheDocument();
     expect(screen.getByText("Push")).toBeInTheDocument();
+    expect(pushMock).not.toHaveBeenCalled();
   });
 
   it("saved plans open read-only; Edit enables authoring", () => {

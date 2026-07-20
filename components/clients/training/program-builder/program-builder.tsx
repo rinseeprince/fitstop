@@ -303,7 +303,11 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
                           title="Save program"
                           disabled={isSaving}
                           className="rounded p-1 text-[#0d9488] transition-colors hover:text-[#0b7f75] disabled:opacity-50"
-                          onClick={() => void saveProgram()}
+                          onClick={async () => {
+                            // A clean save returns to the programs list; a
+                            // 409/error keeps the coach in the builder to retry.
+                            if ((await saveProgram()) === "saved") exit();
+                          }}
                         >
                           {isSaving ? (
                             <Loader2 className="h-3.5 w-3.5 animate-spin" />

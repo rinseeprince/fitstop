@@ -46,7 +46,10 @@ export type ProgramDraftContextValue = ProgramBuilderState & {
   mode: "view" | "edit";
   setMode: (mode: "view" | "edit") => void;
   isSaving: boolean;
-  saveProgram: () => Promise<void>;
+  // "saved" only when the whole tree persisted cleanly (the caller navigates
+  // back to the programs list on that); "kept-draft"/"error" stay in the
+  // builder; "skipped" = not a library save (client-draft applies instead).
+  saveProgram: () => Promise<"saved" | "kept-draft" | "error" | "skipped">;
   // Re-seed the working tree from the last server state (saved plans' Discard
   // changes). Re-seeding regenerates uids, so any open session editor closes
   // itself (its uid no longer resolves).
@@ -125,9 +128,11 @@ export function ProgramDraftProvider({
     return () => window.removeEventListener("beforeunload", handler);
   }, [isDirty, mode, target]);
 
-  const saveProgram = useCallback(async () => {
+  const saveProgram = useCallback(async (): Promise<
+    "saved" | "kept-draft" | "error" | "skipped"
+  > => {
     const current = draft;
-    if (!current || target !== "library") return;
+    if (!current || target !== "library") return "skipped";
     // Snapshot the mutation counter: the grid stays interactive while the
     // save is in flight, and an edit landing mid-save must NOT be marked
     // clean (it was never serialized — clearing dirty would silently lose it).
@@ -137,14 +142,17 @@ export function ProgramDraftProvider({
       const clean = markSaved(revision);
       if (clean) {
         setMode("view");
-      } else {
-        toast({
-          title: "You made edits while saving",
-          description: "Save again to include them.",
-        });
+        return "saved";
       }
+      // Edits landed mid-save — stay so the coach can re-save (don't navigate).
+      toast({
+        title: "You made edits while saving",
+        description: "Save again to include them.",
+      });
+      return "kept-draft";
     }
     // "kept-draft" / "error": stay in edit mode with the draft intact.
+    return result;
   }, [draft, target, getRevision, save, markSaved, toast]);
 
   const discardChanges = useCallback(() => {
