@@ -304,6 +304,21 @@ describe("ProgramBuilder save flow", () => {
     expect(screen.getByLabelText("Save program")).toBeInTheDocument();
   });
 
+  it("Cancel editing exits to view mode when there are no changes (never stuck)", () => {
+    planFixture = { ...makeDraftPlan(), status: "saved" };
+    render(
+      <ProgramDraftProvider savedPlanId="plan-1" target="library">
+        <ProgramBuilder />
+      </ProgramDraftProvider>,
+    );
+    fireEvent.click(screen.getByLabelText("Edit program"));
+    expect(screen.getByLabelText("Save program")).toBeInTheDocument();
+    // Not dirty → the control reads "Cancel editing" and leaves edit mode.
+    fireEvent.click(screen.getByLabelText("Cancel editing"));
+    expect(screen.getByLabelText("Edit program")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Save program")).toBeNull();
+  });
+
   it("duplicate-with-progression previews, commits a progressed week, and saves it without touching week 0", async () => {
     const benchSpecs: SetSpec[] = [
       { set_number: 1, set_type: "warmup", load_type: "absolute", load_value: 60 },

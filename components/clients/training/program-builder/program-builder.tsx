@@ -289,11 +289,17 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
                       ) : (
                         <button
                           type="button"
-                          aria-label="Discard changes"
-                          title="Discard changes"
-                          disabled={isSaving || !isDirty}
+                          aria-label={isDirty ? "Discard changes" : "Cancel editing"}
+                          title={isDirty ? "Discard changes" : "Cancel editing"}
+                          disabled={isSaving}
                           className="rounded p-1 text-[#93b0b4] transition-colors hover:text-[#c06060] disabled:opacity-50"
-                          onClick={() => setConfirmDiscardChangesOpen(true)}
+                          onClick={() => {
+                            // With unsaved edits, confirm the revert; with none,
+                            // just leave edit mode (nothing to discard) so the
+                            // coach is never stuck in edit mode.
+                            if (isDirty) setConfirmDiscardChangesOpen(true);
+                            else setMode("view");
+                          }}
                         >
                           <Ban className="h-3.5 w-3.5" strokeWidth={1.5} />
                         </button>

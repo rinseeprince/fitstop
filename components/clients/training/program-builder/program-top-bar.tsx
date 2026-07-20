@@ -29,7 +29,7 @@ const STAT_MUTE = "text-[rgba(255,255,255,0.4)]";
 // Inline-editable text on the dark band — no boxy ring, a faint white wash on
 // focus so it reads as an editable field without looking like a form input.
 const INLINE_EDIT_CLASS =
-  "-ml-1.5 h-auto rounded-[4px] border-0 bg-transparent px-1.5 py-0.5 text-white shadow-none outline-none transition-colors placeholder:text-[rgba(255,255,255,0.35)] focus:bg-[rgba(255,255,255,0.08)]";
+  "-ml-1.5 h-auto w-full rounded-[4px] border-0 bg-transparent px-1.5 py-0.5 text-white shadow-none outline-none transition-colors placeholder:text-[rgba(255,255,255,0.35)] focus:bg-[rgba(255,255,255,0.08)]";
 
 export function ProgramTopBar({
   draft,
@@ -51,8 +51,9 @@ export function ProgramTopBar({
         <ArrowLeft className="h-4 w-4" strokeWidth={1.5} />
       </button>
 
-      {/* Eyebrow + name + focus */}
-      <div className="flex min-w-0 shrink flex-col gap-0.5">
+      {/* Eyebrow + name + focus — fills the width up to the surplus pill so a
+          long focus doesn't truncate at half the header. */}
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="flex items-center gap-2">
           <span className={HEADER_EYEBROW_CLASS}>Program</span>
           {draft.status === "draft" && (
