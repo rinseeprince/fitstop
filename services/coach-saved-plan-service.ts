@@ -419,6 +419,7 @@ export async function updateSavedPlan(
 export type OverwriteSavedPlanInput = {
   name?: string;
   description?: string | null;
+  splitType?: string | null;
   defaultSurplusPercentage?: number | null;
   sessions: Array<{
     name: string;
@@ -492,6 +493,7 @@ export async function overwriteSavedPlan(
     .update({
       ...(input.name !== undefined && { name: input.name }),
       ...(input.description !== undefined && { description: input.description }),
+      ...(input.splitType !== undefined && { split_type: input.splitType }),
       ...(input.defaultSurplusPercentage !== undefined && {
         default_surplus_percentage: input.defaultSurplusPercentage,
       }),

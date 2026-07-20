@@ -275,6 +275,9 @@ export const updateCatalogExerciseSchema = z.object({
 export const overwriteSavedPlanSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   description: z.string().max(500).nullish(),
+  // Free-text program focus (stored in split_type, e.g. "Push/Pull") — the
+  // builder header edits it. Free text like createSavedPlanSchema, NOT the enum.
+  splitType: z.string().max(100).nullish(),
   defaultSurplusPercentage: z.number().min(0).max(100).nullish(),
   sessions: z.array(savedSessionInputSchema),
 });
@@ -287,7 +290,10 @@ export const overwriteSavedPlanSchema = z.object({
 // are NOT sent — the placement service re-derives them from the sessions.
 export const inlinePlanBodySchema = z.object({
   name: z.string().min(1).max(100),
-  splitType: splitTypeSchema.nullish(),
+  // Free-text program focus (stored in split_type). Free text — training_plans
+  // .split_type already accepts it (the pristine place-from-library path copies
+  // the template's free-text focus into it).
+  splitType: z.string().max(100).nullish(),
   programDurationWeeks: z.number().int().min(1).max(52).nullish(),
   defaultSurplusPercentage: z.number().min(0).max(100).nullish(),
   sessions: z.array(savedSessionInputSchema),

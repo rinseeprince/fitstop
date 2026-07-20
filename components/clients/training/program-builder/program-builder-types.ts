@@ -1,5 +1,5 @@
 import type { SetSpec } from "@/utils/exercise-set-specs";
-import type { SavedPlanStatus, TrainingSplitType } from "@/types/training";
+import type { SavedPlanStatus } from "@/types/training";
 
 // In-memory draft tree for the full-page Program builder (builder S2.5). The
 // coach edits this working copy; nothing persists until "Save program"
@@ -84,7 +84,9 @@ export type ProgramDraft = {
   name: string;
   description: string | null;
   status: SavedPlanStatus;
-  splitType: TrainingSplitType | null; // passthrough, not edited here
+  // Free-text program focus (stored in the split_type column, e.g. "Push/Pull"
+  // or "Glute hypertrophy"). Editable in the header; NOT the strict enum.
+  splitType: string | null;
   programDurationWeeks: number | null; // kept accurate via post-save PATCH
   // Program-level default surplus; used wherever a session leaves its own
   // surplus null. Must survive Save program (round-trip tested).

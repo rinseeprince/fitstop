@@ -66,6 +66,7 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
     saveProgram,
     discardChanges,
     setName,
+    setSplitType,
     setDefaultSurplus,
     addWeek,
     duplicateWeek,
@@ -223,6 +224,7 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
               }}
               backLabel={isClientDraft ? "Back to library" : "Back to programs"}
               onRename={setName}
+              onFocusChange={setSplitType}
               onDefaultSurplusChange={setDefaultSurplus}
             />
             <SectionLabel

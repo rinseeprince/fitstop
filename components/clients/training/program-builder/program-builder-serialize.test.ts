@@ -1,10 +1,5 @@
 import { describe, it, expect } from "vitest";
-import type {
-  SavedPlan,
-  SavedSession,
-  SavedExercise,
-  TrainingSplitType,
-} from "@/types/training";
+import type { SavedPlan, SavedSession, SavedExercise } from "@/types/training";
 import type { SetSpec } from "@/utils/exercise-set-specs";
 import {
   savedPlanToDraft,
@@ -206,6 +201,8 @@ describe("savedPlanToDraft / draftToOverwriteBody parity (week-shaped)", () => {
 
     expect(body.name).toBe("Test Program");
     expect(body.description).toBe("A program");
+    // The free-text focus persists on save (it's editable in the header now).
+    expect(body.splitType).toBe("custom");
     expect(body.defaultSurplusPercentage).toBe(12.5);
     expect(body.sessions).toHaveLength(14);
 
@@ -519,10 +516,9 @@ describe("draftToInlinePlanBody", () => {
     );
   });
 
-  it("sanitizes a free-text splitType to null, passes a valid enum through", () => {
-    // ProgramDraft.splitType is TYPED as the enum, but split_type is a free-text
-    // column at runtime (builder plans store a focus there) — the cast
-    // reproduces that reality; the safe-parse is the belt that must null it.
+  it("carries the free-text program focus through verbatim", () => {
+    // splitType is the free-text focus now — it rides onto the client's placed
+    // plan; empty/null stays null.
     const base: Omit<ProgramDraft, "splitType"> = {
       id: "plan-1",
       name: "P",
@@ -533,11 +529,8 @@ describe("draftToInlinePlanBody", () => {
       weeks: [makeRestWeek(0)],
     };
     expect(
-      draftToInlinePlanBody({
-        ...base,
-        splitType: "Glute hypertrophy" as TrainingSplitType,
-      }).splitType,
-    ).toBeNull();
+      draftToInlinePlanBody({ ...base, splitType: "Glute hypertrophy" }).splitType,
+    ).toBe("Glute hypertrophy");
     expect(
       draftToInlinePlanBody({ ...base, splitType: "push_pull_legs" }).splitType,
     ).toBe("push_pull_legs");

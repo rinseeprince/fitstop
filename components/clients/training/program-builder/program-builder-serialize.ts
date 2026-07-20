@@ -1,9 +1,8 @@
 import type { z } from "zod";
-import {
-  splitTypeSchema,
-  type createStandaloneSessionSchema,
-  type InlinePlanBody,
-  type overwriteSavedPlanSchema,
+import type {
+  createStandaloneSessionSchema,
+  InlinePlanBody,
+  overwriteSavedPlanSchema,
 } from "@/lib/validations/training";
 import type { SavedPlan, SavedSession, SavedExercise } from "@/types/training";
 import {
@@ -268,6 +267,7 @@ export function draftToOverwriteBody(draft: ProgramDraft): ProgramOverwriteBody 
   return {
     name: draft.name.slice(0, 100),
     description: draft.description ? draft.description.slice(0, 500) : draft.description,
+    splitType: draft.splitType ? draft.splitType.slice(0, 100) : draft.splitType,
     defaultSurplusPercentage: draft.defaultSurplusPercentage,
     sessions: draftToSessionInputs(draft),
   };
@@ -278,17 +278,15 @@ export function draftToOverwriteBody(draft: ProgramDraft): ProgramOverwriteBody 
  * POST /api/clients/[id]/training/place-from-library, type:"inline"). Shares
  * draftToSessionInputs with the overwrite path, so per-set specs / video /
  * weekIndex / rest rows land on the client's calendar verbatim. Two field notes:
- * splitType is sanitized because builder-authored plans store a FREE-TEXT focus
- * in split_type, but inlinePlanBodySchema.splitType is the strict enum — a raw
- * pass-through would 400 the apply; programDurationWeeks is metadata only (the
- * placement window is the apply-time repeat count × the whole-program slot
- * count, NOT this field), so fall back to the authored week count.
+ * splitType is the free-text program focus (carried through so a client's placed
+ * plan keeps it); programDurationWeeks is metadata only (the placement window is
+ * the apply-time repeat count × the whole-program slot count, NOT this field),
+ * so fall back to the authored week count.
  */
 export function draftToInlinePlanBody(draft: ProgramDraft): InlinePlanBody {
-  const splitType = splitTypeSchema.safeParse(draft.splitType);
   return {
     name: draft.name.slice(0, 100),
-    splitType: splitType.success ? splitType.data : null,
+    splitType: draft.splitType ? draft.splitType.slice(0, 100) : draft.splitType,
     programDurationWeeks: draft.programDurationWeeks ?? draft.weeks.length,
     defaultSurplusPercentage: draft.defaultSurplusPercentage,
     sessions: draftToSessionInputs(draft),

@@ -4,17 +4,14 @@ import { ArrowLeft } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { useSavedPlanAssignments } from "@/hooks/use-saved-plan-assignments";
 import type { ProgramDraft } from "./program-builder-types";
 import { FOCUS_RING, HEADER_EYEBROW_CLASS } from "./builder-tokens";
 
-// Builder hero — the slim dark program header (mockup `.prog-head`): back
-// arrow · eyebrow + inline-editable name · a mono stat row (weeks · sessions ·
-// per-week · assignments) · the default-surplus control as a bordered pill on
-// the right. Flat #0f2027 (design system — NOT the mockup's gradient/glow),
-// rgba-white mutes. ALL program actions (Edit/Delete/Discard/Save) live on the
-// SCHEDULE divider (roadmap pattern) — the header carries no buttons. No
-// assign-to-client here (assignment lives in the client's planner, Phase 5).
+// Builder hero — the slim dark program header. Back arrow · eyebrow + the
+// program NAME and FOCUS (both inline-editable in edit mode) · the default-
+// surplus pill on the right. The weeks/sessions/per-week/assignments stat row
+// was removed — it duplicated the Schedule divider on the right. Flat #0f2027
+// (design system — NOT the mockup's gradient/glow).
 type ProgramTopBarProps = {
   draft: ProgramDraft;
   mode: "view" | "edit";
@@ -22,16 +19,17 @@ type ProgramTopBarProps = {
   // Client-draft returns to the library list, not /dashboard/programs.
   backLabel?: string;
   onRename: (name: string) => void;
+  onFocusChange: (focus: string | null) => void;
   onDefaultSurplusChange: (pct: number | null) => void;
 };
 
-// rgba-white mutes on the dark band (design-system dark-surface text scale).
+// rgba-white mute on the dark band (design-system dark-surface text scale).
 const STAT_MUTE = "text-[rgba(255,255,255,0.4)]";
-const STAT_STRONG = "text-[rgba(255,255,255,0.92)] font-medium";
 
-function Dot() {
-  return <span className="h-[3px] w-[3px] shrink-0 rounded-full bg-[rgba(255,255,255,0.2)]" />;
-}
+// Inline-editable text on the dark band — no boxy ring, a faint white wash on
+// focus so it reads as an editable field without looking like a form input.
+const INLINE_EDIT_CLASS =
+  "-ml-1.5 h-auto rounded-[4px] border-0 bg-transparent px-1.5 py-0.5 text-white shadow-none outline-none transition-colors placeholder:text-[rgba(255,255,255,0.35)] focus:bg-[rgba(255,255,255,0.08)]";
 
 export function ProgramTopBar({
   draft,
@@ -39,19 +37,9 @@ export function ProgramTopBar({
   onBack,
   backLabel = "Back to programs",
   onRename,
+  onFocusChange,
   onDefaultSurplusChange,
 }: ProgramTopBarProps) {
-  const { assignments } = useSavedPlanAssignments();
-  const assignmentCount =
-    assignments?.perPlan.find((p) => p.savedPlanId === draft.id)?.count ?? null;
-
-  const trainingCount = draft.weeks.reduce(
-    (sum, w) => sum + w.days.filter((d) => !d.isRest).length,
-    0,
-  );
-  // Always one decimal ("4.3/wk").
-  const perWeek = (trainingCount / draft.weeks.length).toFixed(1);
-
   return (
     <div className="mb-4 flex items-center gap-4 overflow-hidden rounded-[6px] bg-[#0f2027] px-5 py-3">
       <button
@@ -63,8 +51,8 @@ export function ProgramTopBar({
         <ArrowLeft className="h-4 w-4" strokeWidth={1.5} />
       </button>
 
-      {/* Eyebrow + name */}
-      <div className="flex min-w-0 shrink flex-col">
+      {/* Eyebrow + name + focus */}
+      <div className="flex min-w-0 shrink flex-col gap-0.5">
         <span className="flex items-center gap-2">
           <span className={HEADER_EYEBROW_CLASS}>Program</span>
           {draft.status === "draft" && (
@@ -77,57 +65,52 @@ export function ProgramTopBar({
           )}
         </span>
         {mode === "edit" ? (
-          <Input
-            // Uncontrolled + keyed so reseeding picks up a fresh name; commit
-            // on blur (empty falls back rather than violating name min(1)).
-            key={`name-${draft.id}`}
-            defaultValue={draft.name}
-            maxLength={100}
-            aria-label="Program name"
-            className={cn(
-              "mt-0.5 h-auto border-0 bg-transparent p-0 text-[17px] font-semibold leading-tight tracking-[-0.01em] text-white shadow-none placeholder:text-[rgba(255,255,255,0.35)]",
-              FOCUS_RING,
-            )}
-            onBlur={(e) => {
-              const value = e.target.value.trim() || "Untitled program";
-              // Write the committed value back so the (uncontrolled) input
-              // can never display blank while the draft holds the fallback.
-              e.target.value = value;
-              onRename(value);
-            }}
-          />
+          <>
+            <Input
+              // Uncontrolled + keyed so reseeding picks up a fresh name; commit
+              // on blur (empty falls back rather than violating name min(1)).
+              key={`name-${draft.id}`}
+              defaultValue={draft.name}
+              maxLength={100}
+              aria-label="Program name"
+              className={cn(
+                "text-[17px] font-semibold leading-tight tracking-[-0.01em]",
+                INLINE_EDIT_CLASS,
+              )}
+              onBlur={(e) => {
+                const value = e.target.value.trim() || "Untitled program";
+                // Write the committed value back so the (uncontrolled) input
+                // can never display blank while the draft holds the fallback.
+                e.target.value = value;
+                onRename(value);
+              }}
+            />
+            <Input
+              // Free-text focus; empty commits null (no focus).
+              key={`focus-${draft.id}`}
+              defaultValue={draft.splitType ?? ""}
+              maxLength={100}
+              aria-label="Program focus"
+              placeholder="Add a focus (e.g. Push/Pull)"
+              className={cn("text-[12.5px] leading-tight", INLINE_EDIT_CLASS)}
+              onBlur={(e) => {
+                const value = e.target.value.trim();
+                onFocusChange(value === "" ? null : value);
+              }}
+            />
+          </>
         ) : (
-          <span className="mt-0.5 truncate text-[17px] font-semibold leading-tight tracking-[-0.01em] text-white">
-            {draft.name}
-          </span>
+          <>
+            <span className="truncate text-[17px] font-semibold leading-tight tracking-[-0.01em] text-white">
+              {draft.name}
+            </span>
+            {draft.splitType && (
+              <span className="truncate text-[12.5px] leading-tight text-[rgba(255,255,255,0.55)]">
+                {draft.splitType}
+              </span>
+            )}
+          </>
         )}
-      </div>
-
-      {/* Inline stat row */}
-      <div
-        className={cn(
-          "ml-1 hidden shrink-0 items-center gap-2 whitespace-nowrap font-mono-display text-[11px] md:flex",
-          STAT_MUTE,
-        )}
-      >
-        <span>
-          <b className={STAT_STRONG}>{draft.weeks.length}</b>{" "}
-          {draft.weeks.length === 1 ? "week" : "weeks"}
-        </span>
-        <Dot />
-        <span>
-          <b className={STAT_STRONG}>{trainingCount}</b>{" "}
-          {trainingCount === 1 ? "session" : "sessions"}
-        </span>
-        <Dot />
-        <span>
-          <b className={STAT_STRONG}>{perWeek}</b>/wk
-        </span>
-        <Dot />
-        <span>
-          <b className={STAT_STRONG}>{assignmentCount ?? "—"}</b>{" "}
-          {assignmentCount === 1 ? "active client" : "active clients"}
-        </span>
       </div>
 
       {/* Default-surplus pill (editable — the header's only control) */}

@@ -200,6 +200,10 @@ describe("ProgramBuilder save flow", () => {
     expect(screen.getByLabelText("Save program")).toBeInTheDocument();
     expect(screen.getByText("Push")).toBeInTheDocument();
     expect(screen.getAllByText("Rest")).toHaveLength(6);
+    // Header: editable name + focus, and the redundant stat row is gone.
+    expect(screen.getByLabelText("Program name")).toBeInTheDocument();
+    expect(screen.getByLabelText("Program focus")).toBeInTheDocument();
+    expect(screen.queryByText(/active client/)).toBeNull();
   });
 
   it("Save program posts the whole tree (surplus 0 preserved), PATCHes duration, promotes, then returns to the programs list", async () => {
