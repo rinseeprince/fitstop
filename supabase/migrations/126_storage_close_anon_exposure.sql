@@ -1,0 +1,63 @@
+-- Remove every policy on storage.objects. Deny-all; all storage access is admin.
+--
+-- ===========================================================================
+-- CRITICAL, and NOT from the audit: two of these were never in any migration.
+-- ===========================================================================
+-- A live catalog dump (`supabase db dump --linked --schema storage`) surfaced two
+-- policies that exist ONLY as out-of-band Studio drift -- no migration in the
+-- tree creates them, so a source-only audit could not see them:
+--
+--   CREATE POLICY "Allow read access" ON storage.objects
+--     FOR SELECT USING (bucket_id = 'progress-photos');
+--   CREATE POLICY "Allow upload for authenticated users" ON storage.objects
+--     FOR INSERT WITH CHECK (bucket_id = 'progress-photos');
+--
+-- Neither has a TO clause, so both apply to PUBLIC -- which includes `anon`.
+-- progress-photos holds client body photos and the bucket is private
+-- (public=false). VERIFIED against production with only the browser-shipped
+-- NEXT_PUBLIC_SUPABASE_ANON_KEY and no login:
+--   - listing the bucket returned its folder structure (client ids),
+--   - GET of a real photo returned HTTP 200, 60,696 bytes, image/jpeg,
+--   - an unauthenticated POST created an object in the bucket
+--     (a 0-byte test artifact, immediately deleted).
+-- That is unauthenticated read AND write of client health imagery.
+--
+-- ===========================================================================
+-- Also fixes a silent no-op in migration 125.
+-- ===========================================================================
+-- 125 issued DROP POLICY IF EXISTS "Clients can view their coach's content",
+-- which is the name in 029:333. The LIVE policy is named "Clients can view files
+-- from their coach" -- the text of the COMMENT at 029:332. It was recreated in
+-- Studio using the comment line as the name, so the drop matched nothing and
+-- silently did nothing. Both names are dropped below.
+--
+-- ===========================================================================
+-- Scope: the three policies that are a security problem. Nothing else.
+-- ===========================================================================
+-- The live table also carries six coach-side policies (029's originals plus
+-- drifted Studio duplicates under a second naming scheme). They are coach-scoped,
+-- not cross-tenant, and by the same audit they are dead -- zero non-admin
+-- .storage calls exist anywhere in app/, components/, hooks/, lib/, services/ or
+-- contexts/; both buckets are reached only through
+-- services/content-storage-service.ts:14,32,44 and
+-- services/storage-service.ts:17,46,66,100,113,124,135, all on supabaseAdmin,
+-- which bypasses RLS. Clients download content via a server-generated signed URL
+-- (app/api/content/download/[contentId]/route.ts:79), which already enforces
+-- coach-match plus is_library-or-assignment at :49-69.
+--
+-- They are deliberately LEFT IN PLACE here. Removing them closes no hole, and
+-- bundling dead-policy hygiene into an urgent security push would mean that if
+-- anything did break, we could not tell which drop caused it (CONVENTIONS.md
+-- "One fix per change"). Tracked as debt instead.
+--
+-- Re-runnable: every drop is IF EXISTS, and for the content-library client policy
+-- both the source name and the live drift name are listed so a replay onto
+-- either shape converges.
+
+-- progress-photos: unauthenticated read + write (Studio drift, never in source)
+DROP POLICY IF EXISTS "Allow read access"                        ON storage.objects;
+DROP POLICY IF EXISTS "Allow upload for authenticated users"     ON storage.objects;
+
+-- content-library, client side: both the 029 source name and the live drift name
+DROP POLICY IF EXISTS "Clients can view their coach's content"   ON storage.objects;
+DROP POLICY IF EXISTS "Clients can view files from their coach"  ON storage.objects;
