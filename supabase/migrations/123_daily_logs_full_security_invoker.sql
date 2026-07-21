@@ -1,0 +1,30 @@
+-- Pin security_invoker on the daily_logs_full view.
+--
+-- WHY: 056_split_daily_logs.sql:245 creates the view with a bare
+-- CREATE OR REPLACE VIEW and no WITH (security_invoker = on). A Postgres view
+-- defaults to owner-rights, so base-table access is evaluated as the view owner
+-- and the RLS enabled ~85 lines earlier in that same migration -- on daily_logs,
+-- wellness_logs, nutrition_logs and training_logs, the health-PII set -- would
+-- not be applied to reads through the view.
+--
+-- IMPORTANT, so nobody re-files this as a live breach: it is NOT live. Measured
+-- against production before this migration, the view ALREADY carried
+-- WITH ("security_invoker"='on') -- an anon SELECT returns 0 rows while
+-- service_role returns 739. Someone set it out-of-band (Studio), which
+-- CONVENTIONS.md forbids precisely because it drifts from the migration tree.
+--
+-- So this migration closes a REBUILD-time hole, not a running one: replaying the
+-- tree onto a fresh environment (or any CREATE OR REPLACE of this view from
+-- 056's source) recreates it owner-rights and silently launders past RLS.
+-- Codifying the live state in source is the fix.
+--
+-- ALTER VIEW, not DROP+CREATE: adding a reloption does not require recreating
+-- the view, and DROP+CREATE would discard the owner and any grants. Idempotent,
+-- so this is re-runnable.
+--
+-- Behaviour-neutral for the app: all five consumers (daily-logs-service.ts:145
+-- and :163, attention-feed-service.ts:61 and :183, schedule-data-service.ts:110)
+-- read through supabaseAdmin (service_role bypasses RLS) and each already
+-- filters on client_id itself.
+
+ALTER VIEW IF EXISTS public.daily_logs_full SET (security_invoker = on);
