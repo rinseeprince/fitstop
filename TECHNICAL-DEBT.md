@@ -18,7 +18,6 @@ Four routes rewrite `nutrition_events` server-side but currently have **no web c
 Logged: 2026-07-01.
 
 - **`training_plans.frequency_per_week` CHECK (1..7) outlives the week model.** The column (migration 015) predates multi-week programs; a raw non-rest total across N weeks violates it at apply time. S2.5 clamps at derivation (`deriveCycleInfoFromSessions` / `recomputePlanCycleInfo` now store a per-week average clamped to 1..7) and defensively at the placement boundary (`library-placement-service.ts` `createTrainingPlanAtomic` call). **The CHECK is still live in migration 015 and both clamps must stay until it is dropped.** Its nominated owner (CPEP 7.10a, which also rewrites the per-week readers in `phase-transition-service.ts` + display labels) sits in the PARKED roadmap workstream with no date, and builder Phase 7 ships no migrations. Treat as indefinitely open — do not drop it piecemeal, and do not remove either clamp on the assumption it is gone.
-- **`placeSessionOnCalendar` copies a saved session's `week_index` verbatim — NOW REACHABLE (was "deferred to Phase 3/5").** `library-placement-service.ts` still inserts `week_index: savedSession.week_index ?? 0` into whatever plan the session lands in. **Phases 3 and 5 both shipped without the promised normalization**, and as of S3 the calendar's library drop (`training-calendar-view.tsx`, `type:"session"`) is a live caller — so a `week_index > 0` saved session dropped onto a legacy flat plan flips that plan's client read onto the self-describing branch and changes how its rest days render. Fix: resolve the target plan's shape (max `week_index`, or the week containing `targetDate`) and stamp that instead of the template's. **Logged as live during the S7 sweep; not fixed there (S7 was docs + deletions only).**
 ---
 
 ## Training builder progression — pre-existing read cap (builder S4)
@@ -33,18 +32,16 @@ Logged: 2026-07-03.
 
 Logged: 2026-07-02.
 
-- **`PATCH`/`DELETE /api/training/saved-sessions/[savedSessionId]` are not standalone-scoped.** `updateSavedSession`/`removeSavedSession` filter only `.eq(id).eq(coach_id)` (`services/coach-saved-session-service.ts`) because the same functions back the plan-attached `saved-plans/[savedPlanId]/sessions/[sessionId]` routes — so the nominally-standalone route can mutate/delete plan-attached sessions too (same-coach only; no cross-tenant exposure). Harmless today (no UI caller PATCHes standalone sessions; the only DELETE caller is the builder library panel's session list, fed by `GET /api/training/saved-sessions`, which returns standalone rows only — the S4.5 Sessions page that previously owned this is now a redirect stub). **S7 update: the reason not to scope it is gone.** The plan-attached `saved-plans/[savedPlanId]/sessions/**` routes that shared `updateSavedSession`/`removeSavedSession` were deleted as caller-less, so those two functions now have exactly one route each — they can be scoped with `.is("saved_plan_id", null)` without breaking anything, but scope the standalone route with `.is("saved_plan_id", null)` — via a scoped service variant, not by breaking the shared plan-attached callers — before any new caller appears. The S3 overwrite endpoint (`.../overwrite`) is correctly scoped already.
+- **`PATCH`/`DELETE /api/training/saved-sessions/[savedSessionId]` are not standalone-scoped.** `updateSavedSession`/`removeSavedSession` filter only `.eq(id).eq(coach_id)` (`services/coach-saved-session-service.ts`) because the same functions back the plan-attached `saved-plans/[savedPlanId]/sessions/[sessionId]` routes — so the nominally-standalone route can mutate/delete plan-attached sessions too (same-coach only; no cross-tenant exposure). Harmless today (no UI caller PATCHes standalone sessions; the only DELETE caller is the builder library panel's session list, fed by `GET /api/training/saved-sessions`, which returns standalone rows only — the S4.5 Sessions page that previously owned this is now a redirect stub). `updateSavedSession`/`removeSavedSession` now back exactly one route each, so they can be scoped with `.is("saved_plan_id", null)` without breaking another caller, but scope the standalone route with `.is("saved_plan_id", null)` — via a scoped service variant, not by breaking the shared plan-attached callers — before any new caller appears. The S3 overwrite endpoint (`.../overwrite`) is correctly scoped already.
 
 ---
 
-## Retired-but-preserved exercise columns — `superset_group` / `is_warmup` (builder S4.2)
+## Exercise columns with no authoring path — `superset_group` / `is_warmup`
 
-Logged: 2026-07-21 (Phase 7 sweep; retirement decision 2026-07-17). **These are two different problems — the exec-plan ledger treats them as one unit, which is wrong.**
-
-- **`superset_group` is genuinely dead weight.** Zero readers anywhere: every reference is serialize/map/write plumbing. Supersets never became functional. It round-trips through columns and drafts and is displayed nowhere.
-- **`is_warmup` is NOT dead.** It has four live render branches (`components/client-portal/training/exercise-tracker-block.tsx`, `components/clients/training/sessions/training-exercise-row.tsx`) and is **still authored** by the live checkbox in `components/clients/training/sessions/add-exercise-dialog.tsx`, reachable from the calendar's `session-detail-drawer.tsx`. Only the *program builder* retired it (warm-ups there are a per-set `set_type`). Exec-plan ledger `:511` names `client-session-card.tsx` as its live consumer — that component was itself dead and was deleted in S7, so the ledger line is inaccurate.
-- **Why neither is closed:** dropping either column needs a migration plus a data audit ("does anything readable still carry a non-default value?"), and `is_warmup` additionally needs its authoring surface and render branches retired first. Phase 7 ships **no migrations**.
-- **Rule until then:** keep splatting both fields at every clone/insert site — a write path that drops them silently rewrites legacy prescriptions. Add no new UI for either.
+- **`superset_group` has zero readers.** Every reference is serialize/map/write plumbing; nothing renders it. It round-trips through the columns and drafts and is displayed nowhere.
+- **`is_warmup` is read and written, but not from the program builder.** Four live render branches (`components/client-portal/training/exercise-tracker-block.tsx`, `components/clients/training/sessions/training-exercise-row.tsx`) and one live writer: the checkbox in `components/clients/training/sessions/add-exercise-dialog.tsx`, reachable from the calendar's `session-detail-drawer.tsx`. In the program builder a warm-up is a per-set `set_type` inside `set_specs` instead.
+- **Why neither is dropped:** removing either column needs a migration plus a data audit ("does anything readable still carry a non-default value?"), and `is_warmup` additionally needs its authoring surface and render branches retired first.
+- **Rule until then:** keep splatting both fields at every clone/insert site — a write path that drops them silently rewrites existing prescriptions. Add no new UI for either.
 
 ---
 
@@ -331,12 +328,6 @@ Reviewed: 2026-03-18
 
 ---
 
-## Training Plan AI Generation — RETIRED
-
-Reviewed 2026-03-18; **closed 2026-07-21 (builder Phase 7).** All three entries (~60s `generateTrainingPlanAI` latency, poor split day-ordering, flat RPE/rest variation) described the one-shot OpenAI plan generator. That pipeline was UI-orphaned by builder S5 (the client drawer's AI Generation mode was deleted) and superseded by the Anthropic draft assistant in S6a. **Phase 7 deleted the code**: `training-ai-service.ts`, `training-plan-orchestrator.ts`, the `POST /api/clients/[id]/training` generate branch, `/training/suggestions`, `/training/manual`, `createSavedPlanFromAI`, and the `aiGenerated*` schemas/types. Nothing to fix — the code is gone. Assistant-era cost and quality debt is tracked under Production Readiness P1 #1 (spend quota) and "Draft assistant — untriaged review-fleet findings".
-
----
-
 ## Production Readiness Audit - Medium Priority
 
 Reviewed: 2026-03-18
@@ -527,20 +518,20 @@ Reviewed: 2026-05-12
 
 ## Training Builder & Content Library Bloat
 
-Reviewed 2026-04-23; **re-measured 2026-07-21 (builder Phase 7 sweep).** The original three entries are all **Resolved** — every file named is gone: `coach-library-service.ts` (1211) was split across S2.75/S3 into `coach-saved-plan-service.ts` / `coach-saved-session-service.ts` / `coach-standalone-session-service.ts` / `coach-library-helpers.ts`; `draft-editor.tsx` (890) was deleted with the drawer's from-scratch authoring in S5; `content-service.ts` (635) was split into the five `content-*-service.ts` files exactly as prescribed.
+Re-measured 2026-07-21.
 
 ### P1 - File Size Violations (re-measured at HEAD)
 
 | # | File | Lines | Limit | Over By | Status |
 |---|------|-------|-------|---------|--------|
 | 1 | `services/training-log-service.ts` | 934 | 300 | 634 (211%) | Open — worst offender |
-| 2 | `services/coach-saved-plan-service.ts` | 785 | 300 | 485 (162%) | Open (successor to the split `coach-library-service.ts`) |
+| 2 | `services/coach-saved-plan-service.ts` | 785 | 300 | 485 (162%) | Open |
 | 3 | `services/library-placement-service.ts` | 585 | 300 | 285 (95%) | Open — but cohesive (one transactional placement flow) |
 | 4 | `services/exercise-catalog-service.ts` | 571 | 300 | 271 (90%) | Open |
 | 5 | `components/clients/training/program-builder/program-builder.tsx` | 559 | 250 | 309 (124%) | Open — but cohesive (pure orchestrator, one DndContext; its state already lives in `ProgramDraftProvider`) |
 | 6 | `__tests__/helpers/mock-data-builders.ts` | 633 | 250 | 383 (153%) | Open — **worsening** (was 418 in 2026-03) |
 
-**Suggested split (2):** `coach-saved-plan-service.ts` absorbed the whole-tree write surface — `overwriteSavedPlan` (delete-all + row-by-row re-insert), `promoteDraftToSaved`, `duplicateSavedPlan`, `createSavedPlanFromCalendar` — alongside the list/paged/summary reads. Lift the write path into `coach-saved-plan-write-service.ts`, leaving reads + status transitions behind.
+**Suggested split (2):** `coach-saved-plan-service.ts` holds the whole-tree write surface (`overwriteSavedPlan`, `promoteDraftToSaved`, `duplicateSavedPlan`, `createSavedPlanFromCalendar`) alongside the list/paged/summary reads. Lift the write path into `coach-saved-plan-write-service.ts`, leaving reads + status transitions behind.
 
 **Long but cohesive — deliberately left alone** (splitting would prop-drill one flow across files, which §4 itself warns against): `training-calendar-view.tsx` 758, `training-event-calendar-service.ts` 583, `session-detail-drawer.tsx` 575, `content-upload-dialog.tsx` 532, `app/dashboard/content/page.tsx` 497.
 

@@ -7,7 +7,7 @@ import { CheckInNotificationListener } from "@/components/check-in-notification-
 // Section shell for /dashboard/programs/** — the 52px dark icon strip is
 // rendered by PersistentSidebar (root layout); this adds the sticky topbar
 // and the page background. The old 200px sub-sidebar (Builder / Programs /
-// Sessions / Exercises) was retired in S4.5: the Programs list is full-width,
+// The Programs list is full-width,
 // and the builder's own left library panel absorbs Sessions + Exercises.
 // CheckInNotificationListener is re-mounted here because these pages no
 // longer render AppLayout (which normally provides it).

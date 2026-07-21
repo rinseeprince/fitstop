@@ -619,6 +619,83 @@ describe("library-placement-service", () => {
       expect(mockValidatePhaseBounds).toHaveBeenCalledWith("plan-1", "2026-04-20");
     });
 
+    // A saved session's (week_index, order_index) describe the program it was
+    // AUTHORED in. Copying them into a different plan is meaningless, and a
+    // non-zero week_index is actively harmful: getClientTrainingPlan treats a
+    // plan as self-describing if ANY entry has week_index > 0, so one dropped
+    // session could flip a whole flat plan onto that branch and change how its
+    // rest days render. Placement must derive the slot from the TARGET plan.
+    function mockPlaceSession(opts: {
+      templateWeekIndex: number;
+      templateOrderIndex: number;
+      lastSlot: { week_index: number; order_index: number } | null;
+    }) {
+      const savedSessionRow = {
+        id: "ss-1", coach_id: "coach-1", saved_plan_id: null, name: "Push Day", focus: null,
+        order_index: opts.templateOrderIndex, week_index: opts.templateWeekIndex, is_rest: false,
+        estimated_duration_minutes: 60, calorie_surplus_percentage: null, notes: null,
+        session_type: "training", coach_saved_exercises: [],
+      };
+      // The slot lookup ends in .maybeSingle(); the insert ends in .select().single().
+      const trainingSessionsQuery = {
+        ...createMockQuery({ data: { id: "ts-new" }, error: null }),
+        maybeSingle: vi.fn().mockResolvedValue({ data: opts.lastSlot, error: null }),
+        single: vi.fn().mockResolvedValue({ data: { id: "ts-new" }, error: null }),
+      };
+      mockFrom.mockImplementation((table: string) => {
+        if (table === "coach_saved_sessions") return createMockQuery({ data: savedSessionRow, error: null }) as never;
+        if (table === "training_sessions") return trainingSessionsQuery as never;
+        if (table === "training_events") return createMockQuery({ data: { id: "evt-new" }, error: null }) as never;
+        return createMockQuery({ data: null, error: null }) as never;
+      });
+      return trainingSessionsQuery;
+    }
+
+    it("appends after the target plan's last slot instead of copying the template's indices", async () => {
+      const q = mockPlaceSession({
+        templateWeekIndex: 0, templateOrderIndex: 3,
+        lastSlot: { week_index: 2, order_index: 20 },
+      });
+
+      await placeSessionOnCalendar({
+        savedSessionId: "ss-1", coachId: "coach-1", clientId: "client-1", planId: "plan-1", targetDate: "2026-04-20",
+      });
+
+      expect(q.insert).toHaveBeenCalledWith(
+        expect.objectContaining({ week_index: 2, order_index: 21 }),
+      );
+    });
+
+    it("does NOT flip a flat plan's client read when the template was authored in a later week", async () => {
+      const q = mockPlaceSession({
+        templateWeekIndex: 3, templateOrderIndex: 21, // week 4 of some other program
+        lastSlot: { week_index: 0, order_index: 4 },  // target plan is flat
+      });
+
+      await placeSessionOnCalendar({
+        savedSessionId: "ss-1", coachId: "coach-1", clientId: "client-1", planId: "plan-1", targetDate: "2026-04-20",
+      });
+
+      // week_index 0, NOT the template's 3 — the flat plan stays flat.
+      expect(q.insert).toHaveBeenCalledWith(
+        expect.objectContaining({ week_index: 0, order_index: 5 }),
+      );
+    });
+
+    it("starts at slot 0 when the target plan has no sessions yet", async () => {
+      const q = mockPlaceSession({
+        templateWeekIndex: 2, templateOrderIndex: 14, lastSlot: null,
+      });
+
+      await placeSessionOnCalendar({
+        savedSessionId: "ss-1", coachId: "coach-1", clientId: "client-1", planId: "plan-1", targetDate: "2026-04-20",
+      });
+
+      expect(q.insert).toHaveBeenCalledWith(
+        expect.objectContaining({ week_index: 0, order_index: 0 }),
+      );
+    });
+
     it("rejects when phase boundary is violated", async () => {
       mockValidatePhaseBounds.mockRejectedValue(new Error("Target date is outside the current phase"));
       const sessionFetchQuery = createMockQuery({

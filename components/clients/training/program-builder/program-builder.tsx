@@ -360,8 +360,7 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
           </div>
         </div>
 
-        {/* DragOverlay portaled to <body>: pattern inherited from the retired
-            draft-editor (deleted in S5) —
+        {/* DragOverlay portaled to <body>:
             an animated/transformed ancestor would become the containing block
             for the overlay's fixed positioning and offset the drag preview. */}
         {typeof document !== "undefined" &&

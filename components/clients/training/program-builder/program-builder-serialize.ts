@@ -22,8 +22,8 @@ import {
 // off the shared draftToSessionInputs, with a globally monotonic order_index
 // (weekIndex * 7 + dayPosition) so the library read — which sorts by
 // order_index ALONE — returns slots in program order without a backend change.
-// (The old lossy client-drawer editor that flattened weekIndex/setSpecs/videoUrl
-// was retired in Phase 5; this shared builder is now the only client editor.)
+// This builder is the only editor for a client's draft, so weekIndex/setSpecs/
+// videoUrl must survive every path through here.
 
 export type ProgramOverwriteBody = z.infer<typeof overwriteSavedPlanSchema>;
 

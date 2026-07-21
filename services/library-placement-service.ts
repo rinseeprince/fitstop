@@ -363,15 +363,39 @@ export async function placeSessionOnCalendar(params: {
   // 2. Phase boundary validation
   await validatePhaseBounds(planId, targetDate);
 
-  // 3. Clone session
+  // 3. Resolve the slot position from the TARGET plan, never the template.
+  //    A saved session's (week_index, order_index) describe where it sat in the
+  //    program it was authored in; carried into a different plan they are
+  //    meaningless. week_index is the dangerous one: the client read treats a
+  //    plan as self-describing if ANY entry has week_index > 0, so one dropped
+  //    session could flip a whole flat plan onto that branch and change how
+  //    every rest day renders. An ad-hoc drop appends after the plan's last slot.
+  const { data: lastSlot, error: slotError } = await supabaseAdmin
+    .from("training_sessions")
+    .select("week_index, order_index")
+    .eq("plan_id", planId)
+    .eq("is_active", true)
+    .order("week_index", { ascending: false })
+    .order("order_index", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (slotError) {
+    throw new Error(`Failed to resolve plan slot position: ${slotError.message}`);
+  }
+
+  const weekIndex = lastSlot?.week_index ?? 0;
+  const orderIndex = (lastSlot?.order_index ?? -1) + 1;
+
+  // 4. Clone session
   const { data: clonedSession, error: sessionError } = await supabaseAdmin
     .from("training_sessions")
     .insert({
       plan_id: planId,
       name: savedSession.name,
       day_of_week: null,
-      order_index: savedSession.order_index,
-      week_index: savedSession.week_index ?? 0,
+      order_index: orderIndex,
+      week_index: weekIndex,
       is_rest: false,
       focus: savedSession.focus ?? null,
       notes: savedSession.notes ?? null,
@@ -386,7 +410,7 @@ export async function placeSessionOnCalendar(params: {
     throw new Error(`Failed to clone session: ${sessionError?.message}`);
   }
 
-  // 4. Clone exercises
+  // 5. Clone exercises
   const exercises = (savedSession.coach_saved_exercises ?? []).sort(
     (a: CoachSavedExerciseRow, b: CoachSavedExerciseRow) => a.order_index - b.order_index
   );
@@ -420,7 +444,7 @@ export async function placeSessionOnCalendar(params: {
     if (exError) throw new Error(`Failed to clone exercises: ${exError.message}`);
   }
 
-  // 5. Create single event
+  // 6. Create single event
   const { data: event, error: eventError } = await supabaseAdmin
     .from("training_events")
     .insert({

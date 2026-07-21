@@ -8,8 +8,7 @@ import { projectExerciseCompact } from "@/utils/exercise-set-specs";
 
 /**
  * Internal helpers shared across the coach saved-plan and saved-session
- * services. Extracted from the former coach-library-service.ts (split across
- * S2.75/S3; that file no longer exists) so the CRUD
+ * services, kept separate so the CRUD
  * split doesn't force one service to import from the other (which would
  * create a circular dependency the moment a function crossed the line).
  *

@@ -24,8 +24,7 @@ import {
 } from "./builder-tokens";
 
 // Sessions tab of the builder library panel (S4.5). Grew out of the old
-// Evolved from the retired session-library-drawer (S4.5): same grip-only
-// draggable card that inserts a
+// Grip-only draggable card that inserts a
 // clone into a REST day-cell, now with full library CRUD reachable per card
 // (edit/duplicate/delete) plus a "New session" affordance — the standalone
 // Sessions page is retired, so this is the ONLY session-authoring surface.

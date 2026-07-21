@@ -11,14 +11,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // covered in library-placement-service.test.ts; set_type-in-set_logs is covered
 // in training-log-service.test.ts.
 //
-// S7 removed THREE sites from this matrix, all because the write path itself was
-// deleted — not because coverage was dropped:
-//   - addSavedExercise / updateSavedExercise: their only callers were the
-//     saved-plans per-session CRUD routes, which had no UI caller after the
-//     builder moved to whole-tree /overwrite.
-//   - insertTrainingSessions: only reachable from createTrainingPlan, the
-//     one-shot AI generation path retired in S5.
-// Every site that can still write set_specs today is exercised below.
+// Every site that can write set_specs is exercised below. If you add a new
+// exercise insert/update path, add it here.
 
 vi.mock("./supabase-admin", () => ({ supabaseAdmin: { from: vi.fn() } }));
 vi.mock("./exercise-catalog-service", () => ({

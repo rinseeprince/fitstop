@@ -50,7 +50,7 @@ The Daily Pulse is the centerpiece of the client experience, allowing daily logg
 - **Nutrition Tracking**: Log calories and macros (protein, carbs, fat) with dynamic targets
 - **Habit Tracking**: Toggle daily habits on/off with auto-save
 
-**Key Components** (`components/daily-pulse/` does not exist):
+**Key Components**:
 - `components/client-portal/day/` - Day view cards
 - `components/client-portal/training/set-tracker.tsx` - Workout tracker
 
@@ -64,7 +64,7 @@ There is **no combined day save**: wellness, nutrition, habits and training each
 - See per-set prescription (`setSpecs`: set type, reps, load, RPE, tempo, rest) plus an optional demo `videoUrl`
 - Log a prescribed day by tapping its event; log a rest-day workout via `session-logs`
 - Per-exercise history and PRs via `exercise-history`
-- There is **no weekly schedule and no external-activity sessions** — the plan is a positional multi-week program
+- The plan is a **positional multi-week program** — render by `weekIndex` + `orderIndex`, not by weekday
 
 ### 3. Nutrition Plans & Macro Tracking
 **Location**: `/client/nutrition`
@@ -156,12 +156,12 @@ interface AuthContextType {
 All client API endpoints require authentication except where noted.
 
 ### Authentication
-- Login/logout are **Supabase client SDK calls, not app routes** — there is no `/api/auth/*` in this repo. See `contexts/auth-context.tsx`; session cookies are refreshed in `middleware.ts`.
+- Login/logout are **Supabase client SDK calls, not app routes.** See `contexts/auth-context.tsx`; session cookies are refreshed in `middleware.ts`.
 - `GET /api/client/me` - Get current user profile
 
 ### Daily Logs (per-date, split by domain)
 
-> The single combined `daily_logs` POST is **gone**, along with its `trainingData` blob. Reads are one call; writes are per-domain.
+> Reads are one call; writes are per-domain. There is no combined daily-log write.
 
 - `GET /api/client/day-summary?date={YYYY-MM-DD}` - The day read (`DaySummary`, `types/client-day.ts`)
 - `POST /api/client/daily-logs/{date}/wellness` - Mood / energy / sleep / stress / notes
@@ -171,7 +171,7 @@ All client API endpoints require authentication except where noted.
 
 ### Training
 
-> **Events-as-SOT.** There is no `/api/client/training` and no `/completions` endpoint — both were deleted. Prescription lives in `training_events` (one row per calendar date); completion lives in `session_logs`, keyed by `training_event_id`.
+> **Events-as-SOT.** Prescription lives in `training_events` (one row per calendar date); completion lives in `session_logs`, keyed by `training_event_id`.
 
 - `GET /api/client/training-plan` - The active plan, self-describing (`ClientTrainingPlan | null`)
 - `GET /api/client/day-summary?date={YYYY-MM-DD}` - The one read the day view needs: phase, `training: TrainingEventSummary[]`, `trainedFor`, nutrition, wellness, habits. **A rest day returns `training: []`** — rest slots are real DB rows but emit no event
@@ -233,7 +233,7 @@ All client API endpoints require authentication except where noted.
 
 ### Notifications
 - `GET /api/client/notifications` - Get notifications
-- (no mark-read endpoint — `/api/client/notifications` is GET-only and `read` is computed server-side, not client-mutable)
+- `/api/client/notifications` is **GET-only**: `read` is computed server-side and is not client-mutable.
 
 ### Habits
 - `GET /api/client/habits` - Get active habits
@@ -335,7 +335,7 @@ type ClientTrainingExercise = {
 
 > **RN contract — `setSpecs` wins over `sets`/`repsMin`/`repsMax`.** The compact trio is a maintained projection (non-warmup set count; reps span the working sets). A renderer reading only the trio is truthful but lossy — it loses warm-ups, AMRAP/drop/failure sets, per-set loads and per-set rest. Seed the log form from `setSpecs` when present; otherwise synthesize N `working` specs from the trio.
 
-> **RN contract — `sessionType` no longer exists.** Every entry is a training day or a rest day; `external_activity` sessions were removed.
+> **RN contract — every entry is a training day or a rest day.** There is no session-type axis.
 
 ### SetSpec (per-set prescription)
 

@@ -262,9 +262,9 @@ export async function overwriteStandaloneSession(
       estimated_duration_minutes: input.estimatedDurationMinutes ?? null,
       calorie_surplus_percentage: input.calorieSurplusPercentage ?? null,
       notes: input.notes ?? null,
-      // Converge legacy rows to the canonical standalone shape — standalone
-      // sessions aren't slotted, and a stale week_index would leak into plans
-      // on insert (TECHNICAL-DEBT: placeSessionOnCalendar copies it verbatim).
+      // Standalone sessions aren't slotted into a program, so their position
+      // is always 0/0 — a stale index here would be meaningless anywhere it
+      // was later inserted.
       order_index: 0,
       week_index: 0,
       is_rest: false,

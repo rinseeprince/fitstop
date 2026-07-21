@@ -100,8 +100,7 @@ export function useProgramSave({ savedPlanId, plan, mutatePlan }: UseProgramSave
         }
 
         // Refresh the SWR cache BEFORE the caller clears local edit state, so
-        // any reseed reads the committed save (ordering inherited from the
-        // retired draft-editor, deleted in S5).
+        // any reseed reads the committed save.
         await mutatePlan();
         await globalMutate("/api/training/saved-plans");
         toast({ title: "Program saved" });

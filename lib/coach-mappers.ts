@@ -16,8 +16,7 @@ import type { SetSpec } from "@/utils/exercise-set-specs";
 
 /**
  * Pure row-to-domain mappers for the coach saved-plan / saved-session /
- * saved-exercise tables. Extracted from the former services/coach-library-service.ts
- * (split across S2.75/S3; the file no longer exists)
+ * saved-exercise tables.
  * so the same shapes can be reused across the split services without the
  * CRUD file importing itself.
  */

@@ -6,11 +6,8 @@ import { swrFetcher } from "@/lib/swr-fetcher";
 import { useTrainingPlan } from "@/hooks/use-training-plan";
 import type { Phase } from "@/types/roadmap";
 
-// Reads the client's active training plan for the Training tab. This was once a
-// composition hook (`useTrainingBuilder`) wrapping AI-generation and manual
-// authoring; both were retired with the drawer's from-scratch modes (builder
-// S5), leaving a pure passthrough that S7 removed. Authoring state lives in
-// `ProgramDraftProvider`, not here.
+// Read-only: supplies the client's active training plan to the Training tab.
+// Authoring state lives in `ProgramDraftProvider` — do not add authoring here.
 type TrainingBuilderContextType = ReturnType<typeof useTrainingPlan> & {
   editMode: boolean;
   setEditMode: (v: boolean) => void;

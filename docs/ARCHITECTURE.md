@@ -19,7 +19,7 @@ CoachHub is a fitness coaching platform built with Next.js 14 (App Router). It c
 - **Coaches** (role: `trainer`) - manage clients, create training/nutrition plans, review check-ins, monitor wellness alerts. Dashboard at `/dashboard`.
 - **Clients** (role: `client`) - track daily wellness, log workouts (per-set), manage nutrition, and complete weekly check-ins via the day-centric client portal. Home at `/client` (date-driven day view; see Client Portal Architecture).
 
-**Tech stack:** Next.js 14, Supabase (PostgreSQL + RLS + Auth), SWR (coach-side), Upstash Redis (rate limiting), Vitest, Tailwind CSS, shadcn/ui, Lucide icons, Framer Motion. **Two AI providers:** OpenAI GPT-4o (check-in summaries, `services/ai-service.ts`) and Anthropic via `@anthropic-ai/sdk` (the program-builder draft assistant, `services/assistant/`). One-shot AI *training generation* no longer exists — it was superseded by the assistant and deleted in builder S7.
+**Tech stack:** Next.js 14, Supabase (PostgreSQL + RLS + Auth), SWR (coach-side), Upstash Redis (rate limiting), Vitest, Tailwind CSS, shadcn/ui, Lucide icons, Framer Motion. **Two AI providers:** OpenAI GPT-4o (check-in summaries, `services/ai-service.ts`) and Anthropic via `@anthropic-ai/sdk` (the program-builder draft assistant, `services/assistant/`).
 
 ---
 
@@ -378,7 +378,7 @@ Batch resolution via `resolveExercises()` fetches all coach + global exercises i
 
 ## Coach Library
 
-The coach library is the source of reusable training templates. Coaches author programs directly in the full-page builder at `/dashboard/programs` — a new program is created as a `status='draft'` row and promoted to `'saved'` on first successful save. Standalone sessions and the exercise catalog are browsed and edited from the same surface. Nothing *generates* into the library any more (the one-shot AI generator was retired in S5 and deleted in S7).
+The coach library is the source of reusable training templates. Coaches author programs directly in the full-page builder at `/dashboard/programs` — a new program is created as a `status='draft'` row and promoted to `'saved'` on first successful save. Standalone sessions and the exercise catalog are browsed and edited from the same surface.
 
 ```
 coach_saved_plans              -- plan templates (status: draft / saved)
@@ -409,14 +409,14 @@ coach_saved_plans              -- plan templates (status: draft / saved)
 ### `coach_saved_exercises`
 - `saved_session_id` (FK), `exercise_id` (FK to `exercises` catalog, SET NULL)
 - Full prescription fields: `sets`, `reps_min`/`reps_max`/`reps_target`, `rpe_target`, `percentage_1rm`, `tempo`, `rest_seconds`, `superset_group`, `is_warmup`
-- **`superset_group` and `is_warmup` are RETIRED FROM AUTHORING (S4.2).** No builder editor writes them; the draft model seeds `null` / `false` and both round-trip untouched through save, placement and `getClientTrainingPlan`. A warm-up is now a `set_type: 'warmup'` entry inside an exercise's `set_specs`, not a separate exercise. Two caveats: `is_warmup` is still *rendered* (`exercise-tracker-block.tsx`, `training-exercise-row.tsx`) and still *authored* by the calendar drawer's add-exercise dialog, so it is not dead — only retired from the program builder. `superset_group` has no reader at all and is pure round-trip. Do not build new UI on either.
+- **`superset_group` and `is_warmup` have no program-builder authoring path.** The builder's draft model seeds `null` / `false`, and both round-trip untouched through save, placement and `getClientTrainingPlan`. In the builder a warm-up is a `set_type: 'warmup'` entry inside an exercise's `set_specs`, not a separate exercise. They are not dead, though: `is_warmup` is still rendered (`exercise-tracker-block.tsx`, `training-exercise-row.tsx`) and still written by the calendar drawer's add-exercise dialog. `superset_group` has no reader at all. Add no new UI for either.
 - `set_specs` (JSONB, migration 119) + `video_url` (TEXT, migration 119) — **also on `training_exercises`** (same shape in both tiers). `set_specs` is the authoritative per-set prescription list (`{ set_number, set_type, reps_min?, reps_max?, reps_target?, load_type?, load_value?, rpe_target?, tempo?, rest_seconds?, drops? }[]`). When NULL the compact columns are the source of truth and `expandSetSpecs()` synthesizes N `working` specs from them, so every prescription yields per-set rows carrying a `set_type`.
 
   **When specs exist, `sets`/`reps_min`/`reps_max` are a maintained projection, never independent truth.** `projectExerciseCompact()` (`utils/exercise-set-specs.ts`) is the single input-side write helper — it writes `set_specs`/`video_url` verbatim and re-derives the compact trio via `compactFromSpecs` (counting non-warmup sets, clamped to the `training_exercises.sets` CHECK [1,20]). Clone sites splat the source row's columns instead of re-deriving. Editing goes through one pure kernel, `applySetSpecEdit()` (`utils/set-spec-edits.ts`), shared by the builder hook and the assistant's server executors: ≤30 specs, ≤20 drops/set, never all-warmup, and deleting the last set reverts `setSpecs` to `null` (never `[]`).
 
 ### Program authoring surface (`/dashboard/programs`)
 
-All training authoring lives here. There is no `/dashboard/training-library`, no Sessions page and no Exercises page — those three routes are `redirect("/dashboard/programs")` stubs, kept only so old links resolve; the Sessions/Exercises libraries were folded into the builder's tabbed `builder-library-panel.tsx` in S4.5.
+All training authoring lives here. `/dashboard/training-library`, `/dashboard/programs/sessions` and `/dashboard/programs/exercises` are `redirect("/dashboard/programs")` stubs kept so old links resolve — the Sessions and Exercises libraries live in the builder's tabbed `builder-library-panel.tsx`.
 
 - `layout.tsx` wraps the section in `ProgramsShell`; `page.tsx` is the library table (drafts surfaced with a Draft badge; browse/duplicate/delete only — no apply-to-client here).
 - `[savedPlanId]/layout.tsx` mounts `ProgramDraftProvider key={savedPlanId}` with a `{children}{modal}` parallel-route pair, so **program state is owned by the route layout, not the page** — the intercepted `@modal/(.)sessions/new` slide-over mutates the same tree.
@@ -450,7 +450,7 @@ Latency is `iterations x round-trip`, so the levers are structural (fewer round 
 
 **Deployment prerequisite — this route needs a >240s function timeout.** `app/api/training/assistant/route.ts` exports `maxDuration = 300`, deliberately above the SDK client's 240s timeout so a long turn fails as a handled SDK timeout rather than an opaque platform kill. There is **no `vercel.json` in the repo**, so nothing declares this to a host. Any platform capping functions below that (Vercel Hobby is 60s) will kill long turns mid-flight, and it presents to the coach as "the assistant is broken", not as a timeout. Raising either number means raising both. This has never been exercised against a real platform ceiling — the longest recorded turn ran locally.
 
-**Not shipped:** SSE streaming, per-op live apply, and a bulk `set_week` tool were scoped as 6b/6c and **descoped for launch**. A turn is buffered end-to-end, so a slow turn and a hung turn look identical to the coach.
+**A turn is buffered end-to-end** — there is no streaming or per-op live apply, so a slow turn and a hung turn look identical to the coach.
 
 ### Whole-program placement (the date-walk)
 
@@ -576,7 +576,7 @@ Tab changes call `router.replace(/clients/${clientId}?tab=${tab}, { scroll: fals
 ### Builder flows
 
 - **Training (authoring)**: `ProgramDraftProvider` (`components/clients/training/program-builder/`) owns the draft tree, revision-counter dirty tracking, set-spec mutations and the save/apply pipeline. It is the **only** training authoring state, used identically in `target="library"` and `target="client-draft"`. It deliberately lives beside the builder rather than in `contexts/`, because a route layout mounts it.
-- **Training (client tab, read-only)**: `TrainingBuilderProvider` / `useTrainingBuilderContext()` wraps `useTrainingPlan` and supplies the client's current plan + `fetchPlan` to the Plans tab. It was once a composition hook with AI-generation and manual-authoring branches; both were retired in S5 and deleted in S7, so it is now a read surface only — do not add authoring to it.
+- **Training (client tab, read-only)**: `TrainingBuilderProvider` / `useTrainingBuilderContext()` wraps `useTrainingPlan` and supplies the client's current plan + `fetchPlan` to the Plans tab. Read surface only — do not add authoring to it.
 - **Nutrition**: `NutritionBuilderProvider` wraps `useNutritionBuilder`. Manages calorie targets, macro breakdown, custom macros toggle. Calculates adjusted targets from client metrics (BMR, activity level). This is the one remaining `generatePlan()` caller.
 
 Each context is a thin wrapper: it provides the hook's return value, and consumers access it via the context hook.

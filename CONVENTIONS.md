@@ -196,7 +196,7 @@
   Two sibling folders under `components/clients/training/` are easy to confuse:
 
   - **`program-builder/`** — the real authoring surface: the weeks × Day-1-7 grid, session editor, library panel, progression dialog, assistant dock, and `ProgramDraftProvider`. Mounted by `/dashboard/programs/[savedPlanId]` **and** remounted inside the client Training drawer via `target="client-draft"`. All new training authoring goes here.
-  - **`builder/`** — what remains of the old client-attached drawer: `training-plan-builder.tsx` (tabs + chrome) and `training-builder-right-panel.tsx` (calendar + hero). Its from-scratch authoring (AI generation, manual creation, `draft-editor.tsx`, and 9 siblings) was deleted in S5, and the leftover hooks in S7. **It is now browse + apply only** — if you find yourself adding an editor here, you want `program-builder/`.
+  - **`builder/`** — the client-attached drawer: `training-plan-builder.tsx` (tabs + chrome) and `training-builder-right-panel.tsx` (calendar + hero). **Browse + apply only** — if you find yourself adding an editor here, you want `program-builder/`.
 
   Also live under `training/`: `calendar/` (the client's event calendar + session drawer) and `sessions/` (the drawer's add-exercise dialog + exercise row — reached from the calendar, not the builder).
 
@@ -453,7 +453,7 @@
 
   ### OpenAI (one-shot generation + analysis)
   - **`gpt-4o`**: Check-in AI summaries (`services/ai-service.ts`) - higher quality reasoning for nuanced client feedback
-  - Check-in summaries are the **only** OpenAI feature still reachable from the product. The one-shot training-plan generator and its prompt-suggestions endpoint were superseded by the Anthropic assistant and deleted in builder S7; `services/activity-ai-service.ts` and `services/training-calorie-service.ts` no longer exist either.
+  - Check-in summaries are the **only** OpenAI feature in the product. Everything else AI-facing is the Anthropic assistant below.
   - Every OpenAI call must specify an explicit timeout on the call (not the client): 25s for check-in summaries.
   - Env: `OPENAI_API_KEY`.
 
@@ -512,7 +512,7 @@
   ## 16. References
   - **docs/ARCHITECTURE.md**: Database schema diagrams, table hierarchies, JSONB conventions. Evolves with migrations - update when shipping schema changes.
   - **docs/CLIENT-PORTAL-REDESIGN.md** + **docs/CLIENT-PORTAL-EXECUTION-PLAN.md**: Active redesign replacing Daily Pulse with a day-centric, event-driven client portal. These are the source of truth for any client-portal work. Read both before modifying anything under `app/client/**` or `components/client-portal/**`. Where ARCHITECTURE.md and these docs disagree about a client-portal write path or data flow (for example the monolithic `upsert_daily_log_atomic()` write under ARCHITECTURE's "Daily Logs" section), these redesign docs win; ARCHITECTURE describes the legacy path until Session 5.1's doc sweep rewrites it.
-  - **`docs/newdesignsystem.md`**: Visual patterns, colour tokens, spacing, typography. The authoritative source for visual tokens (the old `DESIGNSYSTEM.md` path no longer exists).
+  - **`docs/newdesignsystem.md`**: Visual patterns, colour tokens, spacing, typography. The authoritative source for visual tokens.
   - **docs/TRAINING-BUILDER-EXECUTION-PLAN.md**: The 7-phase Training Program Builder overhaul (all phases shipped). Source of truth for anything under `components/clients/training/**`, `app/dashboard/programs/**`, `services/assistant/**`, or the placement/prescription services. Each phase's STATUS block records what actually shipped — **recorded deviations win over the plan prose above them**. Read it before touching training code.
   - **docs/EVENTS-SOT-OVERHAUL-EXECUTION-PLAN.md**: The events-as-SOT migration §8 codifies. Background for why plans are templates/provenance and placement is additive.
   - **TECHNICAL-DEBT.md**: Known gaps between conventions and current implementation.

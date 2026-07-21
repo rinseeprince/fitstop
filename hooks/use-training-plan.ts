@@ -15,8 +15,6 @@ type UseTrainingPlanProps = {
  *
  * Read-only: authoring lives in the Programs builder (`ProgramDraftProvider`),
  * and a plan reaches a client's calendar through placement, not through here.
- * The one-shot AI generation surface this hook used to expose was retired with
- * the drawer's from-scratch modes (builder S5) and deleted in S7.
  */
 export function useTrainingPlan({ clientId }: UseTrainingPlanProps) {
   const { toast } = useToast();
