@@ -165,84 +165,6 @@ export type TrainingEventSummary = {
   prescribedExerciseCount: number;
 };
 
-// AI generation input
-export type AITrainingPlanInput = {
-  coachPrompt: string;
-  client: {
-    name: string;
-    currentWeightKg?: number;
-    goalWeightKg?: number;
-    bodyFatPercentage?: number;
-    goalBodyFatPercentage?: number;
-    tdee?: number;
-    bmr?: number;
-    gender?: "male" | "female" | "other";
-  };
-  checkInData?: {
-    avgMood?: number;
-    avgEnergy?: number;
-    avgSleep?: number;
-    avgStress?: number;
-    adherencePercentage?: number;
-    recentWorkoutsCompleted?: number;
-    recentChallenges?: string;
-    recentPRs?: string;
-  };
-};
-
-// AI generated plan structure
-export type AIGeneratedPlan = {
-  name: string;
-  description: string;
-  splitType: TrainingSplitType;
-  frequencyPerWeek: number;
-  programDurationWeeks?: number;
-  cycleLength?: number;
-  restDayPositions?: number[];
-  sessions: AIGeneratedSession[];
-};
-
-export type AIGeneratedSession = {
-  name: string;
-  dayOfWeek?: string;
-  focus?: string;
-  notes?: string;
-  estimatedDurationMinutes?: number;
-  exercises: AIGeneratedExercise[];
-};
-
-export type AIGeneratedExercise = {
-  name: string;
-  sets: number;
-  repsMin?: number;
-  repsMax?: number;
-  repsTarget?: string;
-  rpeTarget?: number;
-  percentage1rm?: number;
-  tempo?: string;
-  restSeconds?: number;
-  notes?: string;
-  supersetGroup?: string;
-  isWarmup?: boolean;
-};
-
-// API request/response types
-export type GenerateTrainingPlanRequest = {
-  coachPrompt: string;
-};
-
-export type GenerateTrainingPlanResponse = {
-  success: boolean;
-  plan?: TrainingPlan;
-  errorMessage?: string;
-};
-
-export type GetTrainingPlanResponse = {
-  success: boolean;
-  plan?: TrainingPlan;
-  errorMessage?: string;
-};
-
 export type UpdateTrainingPlanRequest = {
   name?: string;
   description?: string | null;
@@ -259,17 +181,6 @@ export type UpdateSessionRequest = {
   notes?: string | null;
   estimatedDurationMinutes?: number | null;
   calorieSurplusPercentage?: number | null;
-};
-
-// Bulk reorder request type
-export type ReorderSessionItem = {
-  sessionId: string;
-  dayOfWeek?: string | null;
-  orderIndex: number;
-};
-
-export type ReorderSessionsRequest = {
-  sessions: ReorderSessionItem[];
 };
 
 export type UpdateExerciseRequest = {
@@ -289,14 +200,6 @@ export type UpdateExerciseRequest = {
   videoUrl?: string | null;
 };
 
-export type AddSessionRequest = {
-  name: string;
-  dayOfWeek?: string | null;
-  focus?: string | null;
-  notes?: string | null;
-  estimatedDurationMinutes?: number | null;
-};
-
 export type AddExerciseRequest = {
   name: string;
   sets: number;
@@ -312,42 +215,6 @@ export type AddExerciseRequest = {
   isWarmup?: boolean;
   setSpecs?: SetSpec[] | null;
   videoUrl?: string | null;
-};
-
-export type GetTrainingPlanHistoryResponse = {
-  success: boolean;
-  history?: TrainingPlanHistory[];
-  errorMessage?: string;
-};
-
-// Builder mode for training plan creation
-export type BuilderMode = "ai" | "manual" | "saved";
-
-// Manual creation sub-mode
-export type ManualCreationMode = "scratch" | "template";
-
-// Quick suggestion for AI prompt
-export type QuickSuggestion = {
-  id: string;
-  label: string;
-  prompt: string;
-  category: "goal" | "style" | "equipment";
-};
-
-// Workout template for manual creation
-export type WorkoutTemplate = {
-  id: string;
-  name: string;
-  description: string;
-  splitType: TrainingSplitType;
-  frequency: number;
-  sessions: TemplateSession[];
-};
-
-// Template session structure
-export type TemplateSession = {
-  name: string;
-  focus: string;
 };
 
 // Manual session being built (before saving)

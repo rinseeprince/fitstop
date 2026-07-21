@@ -269,8 +269,8 @@ Fix: Add `: Promise<DailyLog | null>` return type annotation
 Issue: Catch clause accesses `error.message` without checking `error instanceof Error`
 Fix: Use `error instanceof Error ? error.message : "Unknown error"` pattern
 
-[CIRCULAR IMPORT] hooks/use-training-builder.ts:3
-Issue: Imports from services/training-ai-service.ts which imports from hooks/use-toast.ts
+[CIRCULAR IMPORT] hooks/use-example-builder.ts:3
+Issue: Imports from services/example-service.ts which imports from hooks/use-toast.ts
 Fix: Remove the hooks dependency from the service — pass toast as a callback instead
 
 [LOOSE TYPE] components/clients/training/training-plan-card.tsx:22

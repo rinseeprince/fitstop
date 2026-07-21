@@ -48,16 +48,14 @@ function createMockQuery<T = unknown>(result: { data: T | null; error: { message
 import { supabaseAdmin } from "./supabase-admin";
 import { resolveExercises } from "./exercise-catalog-service";
 import {
-  createSavedPlanFromAI,
   promoteDraftToSaved,
   getSavedPlans,
 } from "./coach-saved-plan-service";
-import type { AIGeneratedPlan } from "@/types/training";
 
 const mockFrom = vi.mocked(supabaseAdmin.from);
 const mockResolveExercises = vi.mocked(resolveExercises);
 
-describe("coach-library-service", () => {
+describe("coach-saved-plan-service", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useFakeTimers();
@@ -76,138 +74,7 @@ describe("coach-library-service", () => {
   });
 
   // =========================================================================
-  // createSavedPlanFromAI
   // =========================================================================
-
-  describe("createSavedPlanFromAI", () => {
-    it("creates plan with status draft, source ai, and correct cycle_length detection", async () => {
-      const planInsertQuery = createMockQuery({ data: { id: "plan-1" }, error: null });
-      const sessionInsertQuery = createMockQuery({ data: { id: "session-1" }, error: null });
-      const exerciseInsertQuery = createMockQuery({ data: null, error: null });
-
-      mockFrom.mockImplementation((table: string) => {
-        if (table === "coach_saved_plans") return planInsertQuery as any;
-        if (table === "coach_saved_sessions") return sessionInsertQuery as any;
-        if (table === "coach_saved_exercises") return exerciseInsertQuery as any;
-        return createMockQuery({ data: null, error: null }) as any;
-      });
-
-      const aiPlan: AIGeneratedPlan = {
-        name: "PPL Program",
-        description: "Push Pull Legs",
-        splitType: "push_pull_legs",
-        frequencyPerWeek: 3,
-        sessions: [
-          {
-            name: "Push",
-            dayOfWeek: "monday",
-            focus: "chest",
-            exercises: [{ name: "Bench Press", sets: 3, repsTarget: "8-10" }],
-          },
-          {
-            name: "Pull",
-            dayOfWeek: "wednesday",
-            focus: "back",
-            exercises: [{ name: "Deadlift", sets: 3, repsTarget: "5" }],
-          },
-          {
-            name: "Legs",
-            dayOfWeek: "friday",
-            focus: "legs",
-            exercises: [{ name: "Squat", sets: 4, repsTarget: "6-8" }],
-          },
-        ],
-      };
-
-      const planId = await createSavedPlanFromAI("coach-1", aiPlan, "Build me a PPL plan");
-
-      expect(planId).toBe("plan-1");
-      expect(mockFrom).toHaveBeenCalledWith("coach_saved_plans");
-
-      // Verify plan insert had draft status and ai source
-      const planInsertCall = planInsertQuery.insert.mock.calls[0][0];
-      expect(planInsertCall.status).toBe("draft");
-      expect(planInsertCall.source).toBe("ai");
-      expect(planInsertCall.coach_prompt).toBe("Build me a PPL plan");
-      // dayOfWeek assigned: cycle_length should be 7
-      expect(planInsertCall.cycle_length).toBe(7);
-      // rest_pattern should contain unassigned day positions (tue=1, thu=3, sat=5, sun=6)
-      expect(planInsertCall.rest_pattern).toEqual(expect.arrayContaining([1, 3, 5, 6]));
-    });
-
-    it("resolves exercise names to catalog IDs", async () => {
-      const planInsertQuery = createMockQuery({ data: { id: "plan-1" }, error: null });
-      const sessionInsertQuery = createMockQuery({ data: { id: "session-1" }, error: null });
-      const exerciseInsertQuery = createMockQuery({ data: null, error: null });
-
-      mockFrom.mockImplementation((table: string) => {
-        if (table === "coach_saved_plans") return planInsertQuery as any;
-        if (table === "coach_saved_sessions") return sessionInsertQuery as any;
-        if (table === "coach_saved_exercises") return exerciseInsertQuery as any;
-        return createMockQuery({ data: null, error: null }) as any;
-      });
-
-      const aiPlan: AIGeneratedPlan = {
-        name: "Simple Plan",
-        description: "",
-        splitType: "full_body",
-        frequencyPerWeek: 1,
-        sessions: [
-          {
-            name: "Full Body",
-            exercises: [
-              { name: "Bench Press", sets: 3 },
-              { name: "Squat", sets: 3 },
-            ],
-          },
-        ],
-      };
-
-      await createSavedPlanFromAI("coach-1", aiPlan, "prompt");
-
-      // resolveExercises should have been called with all exercise names
-      expect(mockResolveExercises).toHaveBeenCalledWith(
-        ["Bench Press", "Squat"],
-        "coach-1"
-      );
-    });
-
-    it("creates sessions with correct order_index", async () => {
-      const planInsertQuery = createMockQuery({ data: { id: "plan-1" }, error: null });
-      const sessionInsertQuery = createMockQuery({ data: { id: "session-1" }, error: null });
-      const exerciseInsertQuery = createMockQuery({ data: null, error: null });
-
-      mockFrom.mockImplementation((table: string) => {
-        if (table === "coach_saved_plans") return planInsertQuery as any;
-        if (table === "coach_saved_sessions") return sessionInsertQuery as any;
-        if (table === "coach_saved_exercises") return exerciseInsertQuery as any;
-        return createMockQuery({ data: null, error: null }) as any;
-      });
-
-      const aiPlan: AIGeneratedPlan = {
-        name: "Plan",
-        description: "",
-        splitType: "push_pull",
-        frequencyPerWeek: 2,
-        sessions: [
-          { name: "Push", exercises: [{ name: "Bench Press", sets: 3 }] },
-          { name: "Pull", exercises: [{ name: "Deadlift", sets: 3 }] },
-        ],
-      };
-
-      await createSavedPlanFromAI("coach-1", aiPlan, "prompt");
-
-      // 2 training sessions + 1 rest day session (cycleLength = 3, restPattern = [2])
-      const sessionCalls = sessionInsertQuery.insert.mock.calls;
-      expect(sessionCalls).toHaveLength(3);
-      expect(sessionCalls[0][0].order_index).toBe(0);
-      expect(sessionCalls[0][0].is_rest).toBe(false);
-      expect(sessionCalls[1][0].order_index).toBe(1);
-      expect(sessionCalls[1][0].is_rest).toBe(false);
-      expect(sessionCalls[2][0].order_index).toBe(2);
-      expect(sessionCalls[2][0].is_rest).toBe(true);
-    });
-  });
 
   // =========================================================================
   // promoteDraftToSaved

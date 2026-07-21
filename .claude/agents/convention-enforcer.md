@@ -161,7 +161,7 @@ useEffect(() => {
 ### 9. API Route Patterns
 
 - **Response format:** `{ success: boolean, data?: T, error?: string }`
-- **Rate limiting first** — every handler must call a rate limit function before any other logic
+- **Rate limiting first** — every handler must call a rate limit function before any other logic. **Two sanctioned exceptions** (do not flag these): client-portal routes run an IP-keyed guard first and a per-client limit after auth; `/api/training/assistant` runs CSRF → auth → `assistantRateLimit` with no first tier, because the limiter keys on the resolved coach id. Both are documented in `CONVENTIONS.md` §9.
 - **Zod validation** — every handler accepting a body must validate with `.safeParse()`
 - **No raw database errors** to the client — catch known error patterns and return friendly messages
 

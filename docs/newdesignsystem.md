@@ -257,7 +257,6 @@ To turn a mono label to normal case (e.g. a meta line), append `normal-case trac
 | Uppercase section-label + hairline (+ meta/actions) | `@/components/programs/shared/section-label` → `<SectionLabel />` |
 | White table card + "Showing X of Y" pager | `@/components/programs/shared/library-table-shell` → `<LibraryTableShell />` (`LIBRARY_PAGE_SIZE = 25`) |
 | Hover-revealed row action cluster | `@/components/programs/shared/row-actions` → `<RowActions actions={…} />` (row needs `group/row`) |
-| Toggle filter chips | `@/components/programs/shared/filter-chips` → `<FilterChips />` |
 | Search input (icon + field) | `@/components/programs/shared/library-search-input` → `<LibrarySearchInput />` |
 | Relative "updated" formatting | `@/components/programs/shared/format-relative` → `formatRelativeUpdated()` |
 | Dialog / Sheet / Popover / Button / Badge / Input / Select / Table | `@/components/ui/*` (already Teal-Summit-styled — see Overlays) |

@@ -48,7 +48,6 @@ import {
   matchExerciseInRows,
   suggestExerciseCandidates,
   getExerciseCatalogDelta,
-  getExerciseUsageForCoach,
   updateCatalogExercise,
   deleteCatalogExercise,
 } from "./exercise-catalog-service";
@@ -447,40 +446,7 @@ describe("exercise-catalog-service", () => {
   });
 
   // =========================================================================
-  // getExerciseUsageForCoach
   // =========================================================================
-
-  describe("getExerciseUsageForCoach", () => {
-    it("counts DISTINCT sessions per exercise, scoped via the session join", async () => {
-      const q = createMockQuery({
-        data: [
-          { exercise_id: "ex-1", saved_session_id: "s1" },
-          { exercise_id: "ex-1", saved_session_id: "s1" }, // same session twice
-          { exercise_id: "ex-1", saved_session_id: "s2" },
-          { exercise_id: "ex-2", saved_session_id: "s2" },
-        ],
-        error: null,
-      });
-      mockFrom.mockReturnValueOnce(q as any);
-
-      const result = await getExerciseUsageForCoach("coach-1");
-
-      expect(mockFrom).toHaveBeenCalledWith("coach_saved_exercises");
-      expect(q.eq).toHaveBeenCalledWith("coach_saved_sessions.coach_id", "coach-1");
-      expect(q.not).toHaveBeenCalledWith("exercise_id", "is", null);
-
-      expect(result.perExercise).toContainEqual({ exerciseId: "ex-1", sessionCount: 2 });
-      expect(result.perExercise).toContainEqual({ exerciseId: "ex-2", sessionCount: 1 });
-      expect(result.sessionsWithLinks).toBe(2);
-    });
-
-    it("throws when the query errors", async () => {
-      const q = createMockQuery({ data: null, error: { message: "db down" } });
-      mockFrom.mockReturnValueOnce(q as any);
-
-      await expect(getExerciseUsageForCoach("coach-1")).rejects.toThrow(/db down/);
-    });
-  });
 
   // =========================================================================
   // updateCatalogExercise / deleteCatalogExercise (coach-owned only)

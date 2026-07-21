@@ -154,14 +154,14 @@
   /hooks         - Custom React hooks
   /types         - TypeScript definitions
   /lib           - Constants, helpers, utilities
-    /validations - Zod schemas (auth, check-in, client, nutrition, training, etc.)
-    /constants   - Constant definitions (e.g. days.ts)
-  /contexts      - React context providers (auth, nutrition-builder, training-builder)
+    /validations - Zod schemas (auth, check-in, client, nutrition, training, assistant, etc.)
+    (constants live in the flat `lib/constants.ts`; training-only constants in `lib/training-constants.ts` - there is no `lib/constants/` directory)
+  /contexts      - App-wide React context providers (auth, intake-panel, nutrition-builder, training-builder). Feature-scoped providers mounted by a route layout live beside their feature instead - e.g. `components/clients/training/program-builder/program-draft-provider.tsx`, which owns all training authoring state.
   /emails        - React Email templates (Resend)
   /supabase      - Database migrations and config
   /docs          - Architecture documentation
   /scripts       - Utility scripts
-  /styles        - Global styles
+  /styles        - DEAD. `styles/globals.css` is imported by nothing; `app/layout.tsx` imports `app/globals.css`. Edit the `app/` copy, and verify the change in the emitted bundle rather than the source.
   ```
 
   Key lib files:
@@ -189,7 +189,16 @@
   3. Is this shown to an activated client inside the portal? → `components/client-portal/`.
   4. Never mix audiences in the same file. A component used by both coach and client belongs in `components/` or `components/ui/`.
 
-  `components/clients/daily-pulse/` (coach-side: wellness strip, day-detail card) is legacy and being retired as part of the client portal redesign. Do not add new files there. (The old client-side `components/daily-pulse/` was removed in Session 5.1.) See `docs/CLIENT-PORTAL-REDESIGN.md` for the target structure.
+  `components/clients/daily-pulse/` (coach-side: wellness strip, day-detail card) is frozen legacy — still shipped, no deletion scheduled. Do not add new files there and do not imitate its fetch pattern; if you must edit it, keep its existing pattern rather than mixing in SWR. (The old client-side `components/daily-pulse/` was removed in Session 5.1.) See `docs/CLIENT-PORTAL-REDESIGN.md` for the target structure.
+
+  ### Where training UI lives (post builder overhaul)
+
+  Two sibling folders under `components/clients/training/` are easy to confuse:
+
+  - **`program-builder/`** — the real authoring surface: the weeks × Day-1-7 grid, session editor, library panel, progression dialog, assistant dock, and `ProgramDraftProvider`. Mounted by `/dashboard/programs/[savedPlanId]` **and** remounted inside the client Training drawer via `target="client-draft"`. All new training authoring goes here.
+  - **`builder/`** — what remains of the old client-attached drawer: `training-plan-builder.tsx` (tabs + chrome) and `training-builder-right-panel.tsx` (calendar + hero). Its from-scratch authoring (AI generation, manual creation, `draft-editor.tsx`, and 9 siblings) was deleted in S5, and the leftover hooks in S7. **It is now browse + apply only** — if you find yourself adding an editor here, you want `program-builder/`.
+
+  Also live under `training/`: `calendar/` (the client's event calendar + session drawer) and `sessions/` (the drawer's add-exercise dialog + exercise row — reached from the calendar, not the builder).
 
   ## 7. Data Fetching & State
 
@@ -233,7 +242,7 @@
 
   Every authenticated API handler must execute these steps before any business logic. Order matters (§9 and §10 restate this; it is the same chain).
 
-  1. **Rate limit** — `apiRateLimit` / `coachApiRateLimit` / `clientApiRateLimit` / `authRateLimit` / `checkInRateLimit` / `aiRateLimit` per the route's category.
+  1. **Rate limit** — `apiRateLimit` / `coachApiRateLimit` / `clientApiRateLimit` / `authRateLimit` / `checkInRateLimit` / `aiRateLimit` per the route's category. Two account-keyed tiers (`clientPerClientRateLimit`, `assistantRateLimit`) necessarily run *after* step 3 because they key on the resolved principal — see the sanctioned exceptions in §9.
   2. **CSRF** — `requireCSRFProtection(request)` on any mutating verb (POST / PUT / PATCH / DELETE).
   3. **Authentication** — `getAuthenticatedCoachId()` or `getAuthenticatedClientId()` from `lib/auth-helpers.ts`. 401 on null.
   4. **Authorization / IDOR** — verify the authed principal owns or has permission to access the resource. Coach routes verify `client.coachId === coachId`. Client routes verify the resource's `client_id === authedClientId`. Returns 403 (or 404 to avoid leaking existence) on mismatch.
@@ -311,6 +320,16 @@
   - **Adherence is not unified.** Two divergent live adherence calcs coexist (coach phase-review = `session_logs` / `frequency_per_week`; client check-in = `training_events` count). A periodisation-safe denominator + unifying them is a separate decision — do not change adherence math under the guise of an events-SOT edit.
   - **Prescribed denormalization.** `training_events.calorie_surplus_percentage` is denormalized from the session so the nutrition cascade can read it per date; **every** training event-write path must keep populating it (one dropped write silently falls nutrition back to rest-day calories while the TRAIN badge still renders). See `TECHNICAL-DEBT.md`.
 
+  ### Training prescription model (migrations 119-121)
+
+  - **`set_specs` JSONB is the prescription. `sets` / `reps_min` / `reps_max` are a maintained projection, never independent truth.** Never write the compact three directly. Every insert/update goes through `projectExerciseCompact` (`utils/exercise-set-specs.ts`), which writes `set_specs`/`video_url` verbatim and re-derives the compact trio via `compactFromSpecs` (clamped to the `training_exercises.sets` CHECK [1,20]). Clone sites splat the source row's columns instead — never re-derive on a copy. A write path that sets `sets` by hand silently corrupts the coach's programming, and no test will tell you.
+  - **Read through `expandSetSpecs`, not the columns.** It returns authored specs when present and otherwise synthesizes N `working` specs from the compact columns, so every prescription yields per-set rows carrying a `set_type`. A reader that ignores `set_specs` sees a truthful but lossy summary — it loses warm-ups, AMRAP/drop/failure sets, per-set loads and per-set rest.
+  - **Edits go through the shared kernel.** `applySetSpecEdit` (`utils/set-spec-edits.ts`) is the one pure editing path, used by both the builder hook and the assistant's server executors so they cannot drift. Its invariants are load-bearing: `MAX_SET_SPECS` 30, `MAX_WORKING_SETS` 20, never all-warmup, deleting the last set reverts `setSpecs` to `null` (never `[]`), and a no-op edit returns the same array reference so a blur can't silently materialize specs.
+  - **Set type is coach-prescribed, never client-chosen.** `set_logs.set_type` is seeded from the prescription snapshot; the log schema accepts-but-ignores any client value. Analytics exclude `warmup` from every performance metric; the progression engine touches `working`-type sets only. **These two filters are deliberately different — don't unify them.**
+  - **`superset_group` and `is_warmup` are retired from builder authoring** (S4.2) but are NOT dead: `is_warmup` is still rendered in the client tracker and the coach exercise row, and still written by the calendar drawer's add-exercise dialog. `superset_group` has no reader and is pure round-trip. Both must keep round-tripping through every clone/serialize/placement path; add no new UI for either.
+  - **Days are positional, not weekdays.** The builder authors a weeks × Day-1-7 grid; placement writes `day_of_week: null` and tiles the whole program as a sequential date-walk keyed on `(week_index, order_index)`. Rest days are **real rows** (`is_rest = true`) that advance the cycle position and emit no `training_event` — "empty === rest". A missing rest row collapses the week and slides every later date. Never reintroduce weekday-derived scheduling or a 7-day repeat assumption.
+  - **`training_plans.saved_plan_id` is not a reliable back-link.** Apply-with-edits places `saved_plan_id = NULL`. Don't reason about "which template is this client on" from that column.
+
   ### Migration awareness
   - Don't suggest schema changes that would break existing data
   - If adding a required column, it needs a default value
@@ -365,9 +384,11 @@
   - File uploads: Validate type, size, scan (profile pics, workout plans)
 
   ### Rate Limiting Requirements
-  **ALL new API routes MUST implement rate limiting as the first operation in every handler function.**
+  **ALL new API routes MUST implement rate limiting as the first operation in every handler function.** Exactly two routes deviate, both described below; everything else follows the rule literally.
 
   > **Client-portal two-tier exception (Session 3.10).** Client routes are keyed per *client identity*, but the client id isn't known until auth resolves. So client-portal routes run **two tiers**: a generous IP-keyed burst guard stays the mandatory *first* operation (DoS / carrier-NAT safe), and a tight **per-client** limit is applied immediately *after* `getAuthenticatedClientId()` resolves. This is the one sanctioned place a rate-limit check runs post-auth; the first-operation rule still holds for the IP guard.
+
+  > **Assistant single-tier deviation (builder S6a) — described, not endorsed.** `/api/training/assistant` runs CSRF → auth → `assistantRateLimit(request, coachId)`, and unlike the client-portal exception it has **no IP-keyed first tier at all**. The limiter is coach-keyed with no IP fallback so IP rotation can't buy extra model spend, and the route does no work before the limit — the model call sits behind it. **The missing burst guard is logged as debt in `TECHNICAL-DEBT.md`, not a pattern to copy.** Do not replicate this shape on a route that reads or writes before limiting.
 
   #### Rate Limit Types:
   - `authRateLimit`: Auth/invitation routes (5 requests per 15 minutes)
@@ -415,6 +436,8 @@
   5. Input validation (`schema.safeParse(body)`)
   6. Business logic (wrapped in try/catch)
 
+  The only sanctioned reorderings are the account-keyed rate-limit tiers documented in §9 (client-portal per-client, and `/api/training/assistant`), where the limiter runs after step 3 because it keys on the resolved principal. Steps 2-6 keep their relative order everywhere. If you find a route that deviates, check §9 before "fixing" it.
+
   ### API changes cascade
   - If you change an API response shape, check every file that consumes that endpoint.
   - If you add a required field, update every caller.
@@ -430,8 +453,8 @@
 
   ### OpenAI (one-shot generation + analysis)
   - **`gpt-4o`**: Check-in AI summaries (`services/ai-service.ts`) - higher quality reasoning for nuanced client feedback
-  - **`gpt-4o-mini`**: Activity analysis, calorie calculations (`services/activity-ai-service.ts`, `services/training-calorie-service.ts`) - cost-efficient for structured/formulaic tasks
-  - Every OpenAI call must specify an explicit timeout: 25s check-in summaries, 15s activity analysis.
+  - Check-in summaries are the **only** OpenAI feature still reachable from the product. The one-shot training-plan generator and its prompt-suggestions endpoint were superseded by the Anthropic assistant and deleted in builder S7; `services/activity-ai-service.ts` and `services/training-calorie-service.ts` no longer exist either.
+  - Every OpenAI call must specify an explicit timeout on the call (not the client): 25s for check-in summaries.
   - Env: `OPENAI_API_KEY`.
 
   ### Anthropic (the program assistant — `services/assistant/`)
@@ -482,7 +505,7 @@
   ## 15. Documentation
   - API endpoints: Request/response examples, error codes
   - Complex functions: JSDoc with params, returns, examples
-  - Setup: .env.example with all required variables documented
+  - Setup: **`.env.example` does not exist in this repo** (only `.env.local`). Until someone creates it, a new env var is documented in the section of this file that owns the feature (AI keys in §11) plus a comment at its read site.
   - Database schema: ER diagram, migration strategy
   - README: Local setup in <5 steps
 
@@ -490,6 +513,8 @@
   - **docs/ARCHITECTURE.md**: Database schema diagrams, table hierarchies, JSONB conventions. Evolves with migrations - update when shipping schema changes.
   - **docs/CLIENT-PORTAL-REDESIGN.md** + **docs/CLIENT-PORTAL-EXECUTION-PLAN.md**: Active redesign replacing Daily Pulse with a day-centric, event-driven client portal. These are the source of truth for any client-portal work. Read both before modifying anything under `app/client/**` or `components/client-portal/**`. Where ARCHITECTURE.md and these docs disagree about a client-portal write path or data flow (for example the monolithic `upsert_daily_log_atomic()` write under ARCHITECTURE's "Daily Logs" section), these redesign docs win; ARCHITECTURE describes the legacy path until Session 5.1's doc sweep rewrites it.
   - **`docs/newdesignsystem.md`**: Visual patterns, colour tokens, spacing, typography. The authoritative source for visual tokens (the old `DESIGNSYSTEM.md` path no longer exists).
+  - **docs/TRAINING-BUILDER-EXECUTION-PLAN.md**: The 7-phase Training Program Builder overhaul (all phases shipped). Source of truth for anything under `components/clients/training/**`, `app/dashboard/programs/**`, `services/assistant/**`, or the placement/prescription services. Each phase's STATUS block records what actually shipped — **recorded deviations win over the plan prose above them**. Read it before touching training code.
+  - **docs/EVENTS-SOT-OVERHAUL-EXECUTION-PLAN.md**: The events-as-SOT migration §8 codifies. Background for why plans are templates/provenance and placement is additive.
   - **TECHNICAL-DEBT.md**: Known gaps between conventions and current implementation.
 
   ## 17. Logging
@@ -519,5 +544,5 @@
 
   ## 19. Configuration
   - .env files: .env.local (dev), .env.production
-  - Required vars: Document in .env.example with descriptions
+  - Required vars: there is no `.env.example` to document them in - see §15. The current surface is `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, the optional `ASSISTANT_MODEL` / `ASSISTANT_EFFORT` / `ASSISTANT_THINKING` overrides, and the Supabase + Upstash keys. If you create `.env.example`, backfill it from those.
   - Secrets: Never in code, use vault/secrets manager for prod

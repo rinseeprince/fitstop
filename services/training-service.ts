@@ -1,129 +1,13 @@
 import { supabaseAdmin } from "./supabase-admin";
-import type { TrainingPlan, TrainingSession, TrainingExercise, AIGeneratedPlan, UpdateTrainingPlanRequest } from "@/types/training";
+import type { TrainingPlan, TrainingSession, TrainingExercise, UpdateTrainingPlanRequest } from "@/types/training";
 import type { TrainingPlanUpdate } from "@/lib/database-helpers";
 import { mapExerciseRow, mapSessionRow, mapPlanRow } from "./training-mappers";
 import { getClientTodayString } from "@/services/today-service";
 
 // Re-export moved functions so existing imports continue to work
-export { updateSession, addSession, deleteSession, replaceSessionExercises, getSessionWithExercises, insertTrainingSessions, reorderSessions, updateSessionCalories, updateSurplusForFutureEvents } from "./training-session-service";
+export { updateSession, deleteSession, getSessionWithExercises, updateSurplusForFutureEvents } from "./training-session-service";
 export { updateExercise, addExercise, deleteExercise } from "./training-exercise-service";
-export { saveTrainingPlanHistory, getTrainingPlanHistory } from "./training-plan-history-service";
-
-// Create a new training plan with sessions and exercises
-export const createTrainingPlan = async (
-  clientId: string,
-  coachId: string,
-  aiPlan: AIGeneratedPlan,
-  coachPrompt: string,
-  aiResponseRaw: string,
-  clientMetrics: {
-    weightKg?: number;
-    bodyFatPercentage?: number;
-    goalWeightKg?: number;
-    tdee?: number;
-  },
-  checkInData?: {
-    avgMood?: number;
-    avgEnergy?: number;
-    avgSleep?: number;
-    avgStress?: number;
-    adherencePercentage?: number;
-  },
-  phaseId?: string
-): Promise<TrainingPlan> => {
-  // Insert the plan
-  const { data: planRow, error: planError } = await supabaseAdmin
-    .from("training_plans")
-    .insert({
-      client_id: clientId,
-      coach_id: coachId,
-      name: aiPlan.name,
-      description: aiPlan.description,
-      status: "active",
-      coach_prompt: coachPrompt,
-      ai_response_raw: aiResponseRaw,
-      split_type: aiPlan.splitType,
-      frequency_per_week: aiPlan.frequencyPerWeek,
-      program_duration_weeks: aiPlan.programDurationWeeks ?? null,
-      client_weight_kg: clientMetrics.weightKg ?? null,
-      client_body_fat_percentage: clientMetrics.bodyFatPercentage ?? null,
-      client_goal_weight_kg: clientMetrics.goalWeightKg ?? null,
-      client_tdee: clientMetrics.tdee ?? null,
-      phase_id: phaseId ?? null,
-      avg_mood: checkInData?.avgMood ?? null,
-      avg_energy: checkInData?.avgEnergy ?? null,
-      avg_sleep: checkInData?.avgSleep ?? null,
-      avg_stress: checkInData?.avgStress ?? null,
-      recent_adherence_percentage: checkInData?.adherencePercentage ?? null,
-    })
-    .select()
-    .single();
-
-  if (planError || !planRow) throw new Error(`Failed to create plan: ${planError?.message || "No data returned"}`);
-
-  const planId = planRow.id;
-  const sessions: TrainingSession[] = [];
-
-  // Insert sessions and exercises
-  for (let i = 0; i < aiPlan.sessions.length; i++) {
-    const sessionData = aiPlan.sessions[i];
-
-    const { data: sessionRow, error: sessionError } = await supabaseAdmin
-      .from("training_sessions")
-      .insert({
-        plan_id: planId,
-        name: sessionData.name,
-        day_of_week: sessionData.dayOfWeek || null,
-        order_index: i,
-        focus: sessionData.focus || null,
-        notes: sessionData.notes || null,
-        estimated_duration_minutes: sessionData.estimatedDurationMinutes || null,
-      })
-      .select()
-      .single();
-
-    if (sessionError || !sessionRow) throw new Error(`Failed to create session: ${sessionError?.message || "No data returned"}`);
-
-    const exercises: TrainingExercise[] = [];
-
-    // Insert exercises for this session
-    for (let j = 0; j < sessionData.exercises.length; j++) {
-      const exerciseData = sessionData.exercises[j];
-
-      const { data: exerciseRow, error: exerciseError } = await supabaseAdmin
-        .from("training_exercises")
-        .insert({
-          session_id: sessionRow.id,
-          name: exerciseData.name,
-          order_index: j,
-          sets: exerciseData.sets,
-          reps_min: exerciseData.repsMin || null,
-          reps_max: exerciseData.repsMax || null,
-          reps_target: exerciseData.repsTarget || null,
-          rpe_target: exerciseData.rpeTarget || null,
-          percentage_1rm: exerciseData.percentage1rm || null,
-          tempo: exerciseData.tempo || null,
-          rest_seconds: exerciseData.restSeconds || null,
-          notes: exerciseData.notes || null,
-          superset_group: exerciseData.supersetGroup || null,
-          is_warmup: exerciseData.isWarmup || false,
-          // AI generation does not author per-set specs; keep the columns null.
-          set_specs: null,
-          video_url: null,
-        })
-        .select()
-        .single();
-
-      if (exerciseError || !exerciseRow) throw new Error(`Failed to create exercise: ${exerciseError?.message || "No data returned"}`);
-
-      exercises.push(mapExerciseRow(exerciseRow));
-    }
-
-    sessions.push(mapSessionRow(sessionRow, exercises));
-  }
-
-  return mapPlanRow(planRow, sessions);
-};
+export { getTrainingPlanHistory } from "./training-plan-history-service";
 
 // Fetch sessions with exercises for a plan (shared helper)
 const fetchSessionsWithExercises = async (planId: string): Promise<TrainingSession[]> => {

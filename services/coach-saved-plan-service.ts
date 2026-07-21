@@ -8,7 +8,6 @@ import {
 import {
   copySavedExerciseRows,
   dedupeCopyName,
-  detectCycleInfoFallback,
   deriveCycleInfoFromSessions,
   insertSavedExercises,
 } from "./coach-library-helpers";
@@ -20,7 +19,6 @@ import type {
   SavedPlansSummary,
   SavedPlanSource,
   SavedPlanStatus,
-  AIGeneratedPlan,
   ManualSessionDraft,
 } from "@/types/training";
 import type {
@@ -31,133 +29,6 @@ import type {
   CoachSavedSessionInsert,
   CoachSavedExerciseInsert,
 } from "@/lib/database-helpers";
-
-// --- Helper: collect all exercise names from AI sessions ---
-
-function collectExerciseNames(
-  sessions: AIGeneratedPlan["sessions"]
-): string[] {
-  const names: string[] = [];
-  for (const s of sessions) {
-    for (const e of s.exercises) {
-      names.push(e.name);
-    }
-  }
-  return names;
-}
-
-// --- Plan creation ---
-
-export async function createSavedPlanFromAI(
-  coachId: string,
-  aiPlan: AIGeneratedPlan,
-  coachPrompt: string,
-  coachSuppliedName?: string
-): Promise<string> {
-  // Use AI-provided cycle info if available, otherwise fall back to heuristic
-  let cycleLength: number;
-  let restPattern: number[];
-
-  if (aiPlan.cycleLength && aiPlan.restDayPositions) {
-    // Sanity check: training sessions must equal cycleLength minus rest positions
-    const expectedTraining = aiPlan.cycleLength - aiPlan.restDayPositions.length;
-    if (expectedTraining === aiPlan.sessions.length && aiPlan.cycleLength > 0) {
-      cycleLength = aiPlan.cycleLength;
-      restPattern = aiPlan.restDayPositions;
-    } else {
-      // AI provided inconsistent data — fall back
-      ({ cycleLength, restPattern } = detectCycleInfoFallback(
-        aiPlan.sessions,
-        aiPlan.frequencyPerWeek
-      ));
-    }
-  } else {
-    ({ cycleLength, restPattern } = detectCycleInfoFallback(
-      aiPlan.sessions,
-      aiPlan.frequencyPerWeek
-    ));
-  }
-
-  // Batch-resolve all exercise names
-  const allNames = collectExerciseNames(aiPlan.sessions);
-  const exerciseIdMap = await resolveExercises(allNames, coachId);
-
-  // Insert plan
-  const resolvedName = coachSuppliedName?.trim() || aiPlan.name;
-  const planRow: CoachSavedPlanInsert = {
-    coach_id: coachId,
-    name: resolvedName,
-    description: aiPlan.description ?? null,
-    split_type: aiPlan.splitType ?? null,
-    frequency_per_week: aiPlan.frequencyPerWeek ?? null,
-    status: "draft",
-    cycle_length: cycleLength,
-    rest_pattern: restPattern,
-    source: "ai",
-    coach_prompt: coachPrompt,
-    program_duration_weeks: aiPlan.programDurationWeeks ?? null,
-  };
-
-  const { data: plan, error: planError } = await supabaseAdmin
-    .from("coach_saved_plans")
-    .insert(planRow)
-    .select("id")
-    .single();
-  if (planError || !plan) throw new Error(`Failed to create saved plan: ${planError?.message}`);
-
-  // Build session order: interleave training sessions with rest day sessions
-  // at the positions indicated by restPattern
-  const restPositions = new Set(restPattern);
-  let trainingIdx = 0;
-
-  for (let pos = 0; pos < cycleLength; pos++) {
-    if (restPositions.has(pos)) {
-      // Insert rest day session
-      const { error: restError } = await supabaseAdmin
-        .from("coach_saved_sessions")
-        .insert({
-          coach_id: coachId,
-          saved_plan_id: plan.id,
-          name: "Rest",
-          focus: null,
-          order_index: pos,
-          is_rest: true,
-          estimated_duration_minutes: null,
-          notes: null,
-          session_type: "training",
-        });
-      if (restError) throw new Error(`Failed to create rest session: ${restError.message}`);
-    } else {
-      // Insert training session
-      const s = aiPlan.sessions[trainingIdx];
-      if (!s) continue;
-
-      const sessionRow: CoachSavedSessionInsert = {
-        coach_id: coachId,
-        saved_plan_id: plan.id,
-        name: s.name,
-        focus: s.focus ?? null,
-        order_index: pos,
-        is_rest: false,
-        estimated_duration_minutes: s.estimatedDurationMinutes ?? null,
-        notes: s.notes ?? null,
-        session_type: "training",
-      };
-
-      const { data: session, error: sessionError } = await supabaseAdmin
-        .from("coach_saved_sessions")
-        .insert(sessionRow)
-        .select("id")
-        .single();
-      if (sessionError || !session) throw new Error(`Failed to create saved session: ${sessionError?.message}`);
-
-      await insertSavedExercises(session.id, s.exercises, exerciseIdMap);
-      trainingIdx++;
-    }
-  }
-
-  return plan.id;
-}
 
 export async function createSavedPlanManual(
   coachId: string,

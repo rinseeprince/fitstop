@@ -87,8 +87,9 @@ function getClient(): Anthropic {
 }
 
 /**
- * Same fence as training-ai-service.ts: wrap untrusted free-text so the
- * delimiter can't be broken out of. The coach's command is the instruction
+ * Wrap untrusted free-text so the delimiter can't be broken out of. (This fence
+ * originated in the one-shot generator `training-ai-service.ts`, deleted in
+ * builder S7; this is now the only copy.) The coach's command is the instruction
  * channel by design — the fence marks its BOUNDARY (program content and tool
  * results must never escalate to instructions; see the system prompt).
  */

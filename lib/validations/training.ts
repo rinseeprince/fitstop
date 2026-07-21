@@ -1,15 +1,6 @@
 import { z } from "zod";
 import type { TrainingPlan } from "@/types/training";
 
-export const splitTypeSchema = z.enum([
-  "push_pull_legs",
-  "upper_lower",
-  "full_body",
-  "bro_split",
-  "push_pull",
-  "custom",
-]);
-
 export const planStatusSchema = z.enum(["active", "archived", "draft", "planned"]);
 
 export const dayOfWeekSchema = z.enum([
@@ -47,55 +38,6 @@ export const sessionSchema = z.object({
   calorieSurplusPercentage: z.number().min(0).max(100).optional().nullable(),
 });
 
-// Validation for AI-generated training-plan JSON BEFORE it is persisted (the
-// model output is untrusted). `.catch()` coerces a slightly-off scalar to a safe
-// default (replacing the old ad-hoc clamps) so one bad field doesn't reject the
-// whole plan; a structurally broken plan (no sessions) still fails. Field types
-// are `optional` (not `nullable`) to stay assignable to AIGenerated* types.
-export const aiGeneratedExerciseSchema = z.object({
-  name: z.string().min(1).max(200).catch("Exercise"),
-  sets: z.number().int().min(1).max(20).catch(3),
-  repsMin: z.number().int().min(1).max(100).optional().catch(undefined),
-  repsMax: z.number().int().min(1).max(100).optional().catch(undefined),
-  repsTarget: z.string().max(20).optional().catch(undefined),
-  rpeTarget: z.number().min(1).max(10).optional().catch(undefined),
-  percentage1rm: z.number().min(0).max(100).optional().catch(undefined),
-  tempo: z.string().max(20).optional().catch(undefined),
-  restSeconds: z.number().int().min(0).max(600).optional().catch(undefined),
-  notes: z.string().max(500).optional().catch(undefined),
-  supersetGroup: z.string().max(10).optional().catch(undefined),
-  isWarmup: z.boolean().optional().default(false),
-});
-
-export const aiGeneratedSessionSchema = z.object({
-  name: z.string().min(1).max(100).catch("Workout Session"),
-  dayOfWeek: z.string().max(20).optional().catch(undefined),
-  focus: z.string().max(200).optional().catch(undefined),
-  notes: z.string().max(1000).optional().catch(undefined),
-  estimatedDurationMinutes: z.number().int().min(10).max(180).optional().catch(undefined),
-  exercises: z.array(aiGeneratedExerciseSchema).default([]),
-});
-
-export const aiGeneratedPlanSchema = z.object({
-  name: z.string().min(1).max(200).catch("Training Program"),
-  description: z.string().max(1000).catch(""),
-  splitType: splitTypeSchema.catch("custom"),
-  frequencyPerWeek: z.number().int().min(1).max(7).catch(3),
-  programDurationWeeks: z.number().int().min(1).max(52).optional().catch(undefined),
-  cycleLength: z.number().int().min(1).max(14).optional().catch(undefined),
-  restDayPositions: z.array(z.number().int().min(0)).optional().catch(undefined),
-  sessions: z.array(aiGeneratedSessionSchema).min(1, "AI generated plan with no sessions"),
-});
-
-export const generateTrainingPlanSchema = z.object({
-  coachPrompt: z
-    .string()
-    .min(10, "Please provide more detail in your prompt (at least 10 characters)")
-    .max(2000, "Prompt is too long (maximum 2000 characters)"),
-  name: z.string().trim().min(1).max(80).optional(),
-  effectiveFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format").optional(),
-});
-
 export const updateTrainingPlanSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   description: z.string().max(500).optional().nullable(),
@@ -107,15 +49,6 @@ export const updateTrainingPlanSchema = z.object({
 export const updateSessionSchema = sessionSchema.partial();
 
 export const updateExerciseSchema = exerciseSchema.partial();
-
-// Schema for bulk reordering sessions
-export const reorderSessionSchema = z.object({
-  sessionId: z.string().uuid(),
-  dayOfWeek: dayOfWeekSchema.optional().nullable(),
-  orderIndex: z.number().int().min(0),
-});
-
-export const reorderSessionsSchema = z.array(reorderSessionSchema);
 
 // =============================================================================
 // Coach library (saved-plan / saved-session) mutation schemas
@@ -313,30 +246,6 @@ export const updateSavedSessionSchema = z.object({
   sessionType: z.string().max(50).optional(),
 });
 
-export const updateSavedExerciseSchema = z.object({
-  name: z.string().min(1).max(200).optional(),
-  sets: z.number().int().min(1).max(20).optional(),
-  repsMin: z.number().int().min(0).max(100).nullish(),
-  repsMax: z.number().int().min(0).max(100).nullish(),
-  repsTarget: z.string().max(20).nullish(),
-  rpeTarget: z.number().min(0).max(10).nullish(),
-  percentage1rm: z.number().min(0).max(100).nullish(),
-  tempo: z.string().max(20).nullish(),
-  restSeconds: z.number().int().min(0).max(600).nullish(),
-  notes: z.string().max(500).nullish(),
-  supersetGroup: z.string().max(10).nullish(),
-  isWarmup: z.boolean().optional(),
-  setSpecs: setSpecsArraySchema.nullish(),
-  videoUrl: videoUrlSchema,
-});
-
-export const reorderSavedSessionsSchema = z.object({
-  order: z.array(z.object({
-    sessionId: z.string().uuid(),
-    orderIndex: z.number().int().min(0),
-  })).min(1),
-});
-
 // =============================================================================
 // Event-keyed training log schemas (Session 1.1)
 // Quick log = { completionQuality, notes? } — no exercises array.
@@ -400,28 +309,6 @@ export type ExercisePerformanceInput = z.infer<typeof exercisePerformanceSchema>
 export type LogTrainingEventInput = z.infer<typeof logTrainingEventSchema>;
 export type LogSessionForDateInput = z.infer<typeof logSessionForDateSchema>;
 
-// Validation function to ensure client has basic data for training plan
-export function validateClientForTraining(client: {
-  currentWeight?: number;
-  goalWeight?: number;
-}): { valid: boolean; errors: string[] } {
-  const errors: string[] = [];
-
-  if (!client.currentWeight) {
-    errors.push("Client must have a current weight recorded");
-  }
-
-  // Goal weight is helpful but not strictly required
-  if (!client.goalWeight) {
-    errors.push("Client should have a goal weight set for better recommendations");
-  }
-
-  return {
-    valid: errors.length === 0,
-    errors,
-  };
-}
-
 // =============================================================================
 // API Response Validation Schemas
 // =============================================================================
@@ -471,28 +358,6 @@ const getTrainingPlanApiResponseSchema = z.object({
   errorMessage: z.string().optional(),
 });
 
-// POST /api/clients/[id]/training response (generate) - returns savedPlanId (library draft)
-const generateTrainingPlanApiResponseSchema = z.object({
-  success: z.boolean(),
-  savedPlanId: z.string().optional(),
-  error: z.string().optional(),
-  errorMessage: z.string().optional(),
-});
-
-// POST /api/clients/[id]/training/manual response - returns savedPlanId (library draft)
-const saveManualPlanApiResponseSchema = z.object({
-  success: z.boolean(),
-  savedPlanId: z.string().optional(),
-  error: z.string().optional(),
-});
-
-// POST /api/clients/[id]/training/suggestions response
-const suggestionsApiResponseSchema = z.object({
-  success: z.boolean(),
-  suggestions: z.array(z.string()).optional(),
-  error: z.string().optional(),
-});
-
 // Response types for API calls
 export type UpcomingTrainingPlan = {
   id: string;
@@ -513,25 +378,6 @@ export type GetPlanApiResponse = {
   errorMessage?: string;
 };
 
-export type GeneratePlanApiResponse = {
-  success: boolean;
-  savedPlanId?: string;
-  error?: string;
-  errorMessage?: string;
-};
-
-export type SaveManualPlanApiResponse = {
-  success: boolean;
-  savedPlanId?: string;
-  error?: string;
-};
-
-export type SuggestionsApiResponse = {
-  success: boolean;
-  suggestions?: string[];
-  error?: string;
-};
-
 // Safe parse helpers - validate structure and cast to correct types
 export function parseGetPlanResponse(data: unknown): GetPlanApiResponse | null {
   const result = getTrainingPlanApiResponseSchema.safeParse(data);
@@ -540,32 +386,5 @@ export function parseGetPlanResponse(data: unknown): GetPlanApiResponse | null {
     return null;
   }
   return result.data as unknown as GetPlanApiResponse;
-}
-
-export function parseGeneratePlanResponse(data: unknown): GeneratePlanApiResponse | null {
-  const result = generateTrainingPlanApiResponseSchema.safeParse(data);
-  if (!result.success) {
-    console.error("Validation error:", result.error.issues);
-    return null;
-  }
-  return result.data as unknown as GeneratePlanApiResponse;
-}
-
-export function parseSaveManualResponse(data: unknown): SaveManualPlanApiResponse | null {
-  const result = saveManualPlanApiResponseSchema.safeParse(data);
-  if (!result.success) {
-    console.error("Validation error:", result.error.issues);
-    return null;
-  }
-  return result.data as unknown as SaveManualPlanApiResponse;
-}
-
-export function parseSuggestionsResponse(data: unknown): SuggestionsApiResponse | null {
-  const result = suggestionsApiResponseSchema.safeParse(data);
-  if (!result.success) {
-    console.error("Validation error:", result.error.issues);
-    return null;
-  }
-  return result.data;
 }
 

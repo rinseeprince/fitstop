@@ -7,11 +7,11 @@ A modern fitness coaching platform that helps trainers manage clients, create pe
 - **Client Management** - Add, edit, and organize clients with detailed profiles including fitness goals, body metrics, and activity levels
 - **Client Invitations** - Token-based invitation system with email integration for seamless client onboarding
 - **Nutrition Planning** - AI-powered meal plan generation with customizable macros, BMR calculations, and dietary preferences
-- **Training Plans** - Create structured workout programs with exercise tracking, sets/reps, and progression
+- **Training Plans** - Author reusable multi-week programs in a full-page builder (per-set prescription, progression rules, drag-and-drop scheduling), then place them onto any client's calendar
+- **AI Draft Assistant** - A chat copilot inside the program builder that executes natural-language edits on the program you're authoring ("duplicate this week but add 2kg and an extra set")
 - **Check-in System** - Scheduled client check-ins with progress photos, measurements, and goal tracking
 - **Reminders & Notifications** - Automated reminder system for overdue check-ins
 - **Progress Analytics** - Visual dashboards showing client progress over time with comparison tools
-- **External Activity Tracking** - Log activities outside of structured training (cardio, sports, etc.)
 
 ## Tech Stack
 
@@ -50,9 +50,9 @@ A modern fitness coaching platform that helps trainers manage clients, create pe
 
 2. **Configure environment variables**
    ```bash
-   cp .env.example .env.local
+   touch .env.local
    ```
-   Then fill in your credentials (see Environment Variables below)
+   There is no `.env.example` in the repo yet — populate `.env.local` from the Environment Variables section below.
 
 3. **Set up Supabase**
    - Create a new Supabase project
@@ -75,8 +75,15 @@ NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 
-# OpenAI Configuration
+# OpenAI Configuration (check-in AI summaries)
 OPENAI_API_KEY=your_openai_api_key
+
+# Anthropic Configuration (the program-builder draft assistant)
+ANTHROPIC_API_KEY=your_anthropic_api_key
+# Optional overrides — the assistant returns a clear 500 without the key above.
+# ASSISTANT_MODEL=claude-opus-4-8      # cost/quality knob; cheaper tiers measured at parity
+# ASSISTANT_EFFORT=medium              # low | medium | high | xhigh | max
+# ASSISTANT_THINKING=off               # strongest latency lever after model choice
 
 # Email Service Configuration
 RESEND_API_KEY=your_resend_api_key

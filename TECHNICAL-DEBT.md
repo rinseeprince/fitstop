@@ -17,9 +17,8 @@ Four routes rewrite `nutrition_events` server-side but currently have **no web c
 
 Logged: 2026-07-01.
 
-- **`training_plans.frequency_per_week` CHECK (1..7) outlives the week model.** The column (migration 015) predates multi-week programs; a raw non-rest total across N weeks violates it at apply time. S2.5 clamps at derivation (`deriveCycleInfoFromSessions` / `recomputePlanCycleInfo` now store a per-week average clamped to 1..7) and defensively at the placement boundary (`library-placement-service.ts` `createTrainingPlanAtomic` call). The CHECK itself gets **dropped in the adherence/phase rewrite (CPEP 7.10a)**, where its per-week readers (`phase-transition-service.ts` ~L142-143 per-week math + display labels) are rewritten — do not drop it piecemeal before that.
-- **`placeSessionOnCalendar` copies a saved session's `week_index` verbatim** (`library-placement-service.ts:373`, `week_index: savedSession.week_index ?? 0`) into whatever plan it lands in. A `week_index > 0` session dropped into a legacy flat plan flips that plan's client read (`getClientTrainingPlan`'s `is_rest || week_index > 0` heuristic) onto the self-describing branch, changing how rest days render. Unreachable from the S2.5 builder (no session placement there), but it bites Phase 3 (saved-workout insert into a day) and Phase 5 — normalize `week_index` to the target plan's shape when those land.
-
+- **`training_plans.frequency_per_week` CHECK (1..7) outlives the week model.** The column (migration 015) predates multi-week programs; a raw non-rest total across N weeks violates it at apply time. S2.5 clamps at derivation (`deriveCycleInfoFromSessions` / `recomputePlanCycleInfo` now store a per-week average clamped to 1..7) and defensively at the placement boundary (`library-placement-service.ts` `createTrainingPlanAtomic` call). **The CHECK is still live in migration 015 and both clamps must stay until it is dropped.** Its nominated owner (CPEP 7.10a, which also rewrites the per-week readers in `phase-transition-service.ts` + display labels) sits in the PARKED roadmap workstream with no date, and builder Phase 7 ships no migrations. Treat as indefinitely open — do not drop it piecemeal, and do not remove either clamp on the assumption it is gone.
+- **`placeSessionOnCalendar` copies a saved session's `week_index` verbatim — NOW REACHABLE (was "deferred to Phase 3/5").** `library-placement-service.ts` still inserts `week_index: savedSession.week_index ?? 0` into whatever plan the session lands in. **Phases 3 and 5 both shipped without the promised normalization**, and as of S3 the calendar's library drop (`training-calendar-view.tsx`, `type:"session"`) is a live caller — so a `week_index > 0` saved session dropped onto a legacy flat plan flips that plan's client read onto the self-describing branch and changes how its rest days render. Fix: resolve the target plan's shape (max `week_index`, or the week containing `targetDate`) and stamp that instead of the template's. **Logged as live during the S7 sweep; not fixed there (S7 was docs + deletions only).**
 ---
 
 ## Training builder progression — pre-existing read cap (builder S4)
@@ -34,7 +33,73 @@ Logged: 2026-07-03.
 
 Logged: 2026-07-02.
 
-- **`PATCH`/`DELETE /api/training/saved-sessions/[savedSessionId]` are not standalone-scoped.** `updateSavedSession`/`removeSavedSession` filter only `.eq(id).eq(coach_id)` (`services/coach-saved-session-service.ts`) because the same functions back the plan-attached `saved-plans/[savedPlanId]/sessions/[sessionId]` routes — so the nominally-standalone route can mutate/delete plan-attached sessions too (same-coach only; no cross-tenant exposure). Harmless today (no UI caller PATCHes standalone sessions, and the Sessions table's DELETE only ever sees standalone rows), but scope the standalone route with `.is("saved_plan_id", null)` — via a scoped service variant, not by breaking the shared plan-attached callers — before any new caller appears. The S3 overwrite endpoint (`.../overwrite`) is correctly scoped already.
+- **`PATCH`/`DELETE /api/training/saved-sessions/[savedSessionId]` are not standalone-scoped.** `updateSavedSession`/`removeSavedSession` filter only `.eq(id).eq(coach_id)` (`services/coach-saved-session-service.ts`) because the same functions back the plan-attached `saved-plans/[savedPlanId]/sessions/[sessionId]` routes — so the nominally-standalone route can mutate/delete plan-attached sessions too (same-coach only; no cross-tenant exposure). Harmless today (no UI caller PATCHes standalone sessions; the only DELETE caller is the builder library panel's session list, fed by `GET /api/training/saved-sessions`, which returns standalone rows only — the S4.5 Sessions page that previously owned this is now a redirect stub). **S7 update: the reason not to scope it is gone.** The plan-attached `saved-plans/[savedPlanId]/sessions/**` routes that shared `updateSavedSession`/`removeSavedSession` were deleted as caller-less, so those two functions now have exactly one route each — they can be scoped with `.is("saved_plan_id", null)` without breaking anything, but scope the standalone route with `.is("saved_plan_id", null)` — via a scoped service variant, not by breaking the shared plan-attached callers — before any new caller appears. The S3 overwrite endpoint (`.../overwrite`) is correctly scoped already.
+
+---
+
+## Retired-but-preserved exercise columns — `superset_group` / `is_warmup` (builder S4.2)
+
+Logged: 2026-07-21 (Phase 7 sweep; retirement decision 2026-07-17). **These are two different problems — the exec-plan ledger treats them as one unit, which is wrong.**
+
+- **`superset_group` is genuinely dead weight.** Zero readers anywhere: every reference is serialize/map/write plumbing. Supersets never became functional. It round-trips through columns and drafts and is displayed nowhere.
+- **`is_warmup` is NOT dead.** It has four live render branches (`components/client-portal/training/exercise-tracker-block.tsx`, `components/clients/training/sessions/training-exercise-row.tsx`) and is **still authored** by the live checkbox in `components/clients/training/sessions/add-exercise-dialog.tsx`, reachable from the calendar's `session-detail-drawer.tsx`. Only the *program builder* retired it (warm-ups there are a per-set `set_type`). Exec-plan ledger `:511` names `client-session-card.tsx` as its live consumer — that component was itself dead and was deleted in S7, so the ledger line is inaccurate.
+- **Why neither is closed:** dropping either column needs a migration plus a data audit ("does anything readable still carry a non-default value?"), and `is_warmup` additionally needs its authoring surface and render branches retired first. Phase 7 ships **no migrations**.
+- **Rule until then:** keep splatting both fields at every clone/insert site — a write path that drops them silently rewrites legacy prescriptions. Add no new UI for either.
+
+---
+
+## Dead-but-undeletable fallback — `getClientTrainingPlan` path B
+
+Logged: 2026-07-21 (Phase 7 sweep).
+
+- **`services/client-training-plan-service.ts` (~191-235) splices synthetic rest entries** from the library template's `cycle_length`/`rest_pattern`. It runs only when path A does not trigger (no entry has `isRest` or `weekIndex > 0`) AND `saved_plan_id` is set AND the template carries both metadata columns.
+- **It is reachable, not dead** — an adversarial verification pass during the S7 sweep specifically refuted the "unreachable post-121" assumption. A clean single-week, all-training program (no rest days, `weekIndex` 0) placed via `type:"plan"` lands here. The spliced result is equivalent to the flat path in that case, so the effect is benign, but **do not delete it as unreachable** and do not "simplify" the three-path read.
+- It is the **last reader of `training_plans.saved_plan_id`**. Removing it is a data question, not a code question: it needs an audit that no live `training_plans` row predates migration 121 with rest-bearing template metadata.
+
+---
+
+## Draft assistant — untriaged review-fleet findings (builder S6a)
+
+Logged: 2026-07-21 (Phase 7 sweep). Source: the 6a pre-commit adversarial fleet — 63 findings, 28 survived verification; the 4 HIGH + 6 MEDIUM were fixed in `56464f5`. **~18 LOW/unverified were never triaged** and live only in a workflow journal, which is not a durable location. Named here so the path doesn't rot.
+
+| # | Issue | File(s) | Details | Status |
+|---|-------|---------|---------|--------|
+| 1 | No runtime validation of tool inputs | `services/assistant/draft-*-tools.ts` | `betaTool`'s `parse` is a passthrough — the JSON schema is advisory to the model, not enforced at execution. The only real guard is the client-side zod belt, which runs AFTER the server has mutated its workspace and narrated the turn, so a malformed input voids the whole turn instead of failing at the tool. Add per-tool zod parsing in the executor bodies — **which must stay synchronous** (see the sync-executor constraint below). | Open |
+| 2 | Truncated tool call can execute on partial input | `services/assistant/draft-agent-service.ts` | `max_tokens: 16000`; a `tool_use` block cut off mid-JSON can reach an executor with a partial argument object. With #1 unfixed nothing rejects it. Check `stop_reason === "max_tokens"` before running a response's tools. | Open |
+| 3 | Transcript history is not `asUntrusted`-fenced | `services/assistant/draft-agent-service.ts` | Only the live `command` is fenced. Prior turns replayed from the client-supplied transcript (≤24 × ≤4000 chars) enter the prompt unfenced, so an injection payload only has to survive one round trip to become unfenced context. | Open |
+| 4 | Missing IP burst guard on the assistant route | `app/api/training/assistant/route.ts` | Unlike the client-portal two-tier pattern, this route has no IP-keyed first tier — only the post-auth coach-keyed `assistantRateLimit`. Documented as a deviation in CONVENTIONS §9; logged here so it is not mistaken for an endorsed pattern. | Open |
+| 5 | Remaining ~15 LOW/unverified findings not read out | workflow journal | Read the journal, triage into this table or discard with a reason, before it is pruned. | Open |
+| 6 | Owed verification from 6a | — | Live browser smoke of both assistant dock mounts, and `usage.cache_read_input_tokens` confirmed non-zero against the real API. Also still owed from earlier phases: manual smoke of 2.5-apply-to-client, 2.75, S3, and the full-screen client-draft apply. | Open |
+
+**Two silent-failure constraints — do not "tidy" these:**
+1. **Prompt-cache floor.** The cacheable tools+system prefix must stay above the model's cache minimum (4096 tokens on Opus 4.8). Below it the API caches nothing with **no error** — cost rises and no test fails. `services/assistant/prompt-size.test.ts` guards the size; the telemetry's `cacheEngaged` flag is the live check. Shortening the system prompt is a cost regression nothing will announce.
+2. **Tool executors must stay synchronous.** The SDK runs a response's tool calls through `Promise.all` and the prompt encourages batching; that is safe only because a sync body gives the event loop no interleave point while mutating the shared workspace. Adding an `await` inside any tool `run` lets batched calls clobber each other. This is currently unreachable because the assistant never reads the DB (the catalog is preloaded once per turn) — a future tool needing a DB read must either serialize tool execution first or preload its data the same way.
+
+---
+
+## Deployment prerequisite — assistant route needs a >240s function timeout
+
+Logged: 2026-07-21 (Phase 7 sweep). **Not debt so much as an undeclared requirement.**
+
+- `app/api/training/assistant/route.ts` exports `maxDuration = 300`, deliberately above the SDK client's 240s timeout so a long turn fails as a handled SDK timeout rather than an opaque platform kill. **There is no `vercel.json` and no `.vercel/` in the repo**, so nothing declares this to a host.
+- Any platform capping functions below 300s (Vercel Hobby is 60s) will kill long turns mid-flight; to the coach it presents as "the assistant is broken", not as a timeout. Raising either number means raising both.
+- **This has never been exercised against a real platform ceiling** — the longest recorded turn (~5 minutes, from the 6a record) ran locally. Add a `vercel.json` when a deploy target is chosen, so the requirement is version-controlled rather than tribal.
+
+---
+
+## `savePlanFromCalendar` flattens multi-week programs
+
+Logged: 2026-07-21 (Phase 7 sweep). Behavior bug, observed not fixed (S7 was docs + deletions only).
+
+- `services/coach-library-calendar-service.ts` hardcodes `is_rest: false` on every copied session and writes no `week_index`. Saving a placed multi-week program back to the library therefore **flattens it into one week and turns rest rows into ordinary sessions named "Rest"** — which then place as training days on the next apply.
+
+---
+
+## `SET_TYPE_OPTIONS` is not in `utils/set-spec-edits.ts`
+
+Logged: 2026-07-21 (Phase 7 sweep). A trap for whoever collapses the re-exports.
+
+- The exec plan asks a future session to collapse `use-set-spec-mutations.ts`'s re-exports onto direct `utils/set-spec-edits` imports at the call sites. **`SET_TYPE_OPTIONS` is defined in `use-set-spec-mutations.ts` and does not exist in `utils/set-spec-edits.ts`** (it is UI label data, not edit logic), so a blanket find-and-replace fails `tsc`. S7 removed the one genuinely unused re-export (`MAX_DROPS`) and left the rest.
 
 ---
 
@@ -242,7 +307,7 @@ Reviewed: 2026-03-18
 
 | # | Issue | File(s) | Details | Status |
 |---|-------|---------|---------|--------|
-| 1 | Add per-coach daily AI call quota | `services/ai-service.ts`, `services/training-ai-service.ts`, `services/activity-ai-service.ts` | Track AI usage per coach in the database and enforce daily/monthly limits to cap OpenAI costs. Currently rate limiting is IP-based and per-minute only, which prevents burst abuse but not sustained cost accumulation over a billing period. **Deferred to post-launch** - needs usage data to calibrate limits. | Open |
+| 1 | **Per-coach AI spend quota — PRIMARY unbuilt cost control** | `app/api/training/assistant/route.ts`, `services/assistant/draft-agent-service.ts`, `services/ai-service.ts` | The draft assistant bills **per coach message**: a tool loop up to 30 iterations x 16000 max_tokens, model set by the `ASSISTANT_MODEL` env knob (default `claude-opus-4-8`). Owner measurement puts a working coach at **~$6/month on Haiku 4.5 vs ~$30 on Opus 4.8**. Because the tier is an env var, the quota — not the model choice — is what makes that number bounded rather than estimated. What exists: `assistantRateLimit` (20 req / 5 min, coach-keyed — burst control, not spend) and per-turn telemetry already logging iterations, token counts, `cacheEngaged` and `estimatedUsd`. What is missing: persisting that telemetry per coach + a daily/monthly USD ceiling enforced before the loop starts. Build on the existing `estimatedUsd` — no new measurement needed. Was deferred post-launch pending calibration data; **the telemetry IS the calibration data**. Raised from deferred by builder S6a/S7 (2026-07-21). The two OpenAI files it originally named are deleted. | Open — do first |
 | 2 | Transaction wrapping for check-in submission | `app/api/check-in/submit/[token]/route.ts` | Token claiming + check-in creation + token update are separate queries, not wrapped in a Postgres transaction. If check-in creation fails after token claim, the token is consumed without a check-in being created. Add compensation logic to release the token on failure, or wrap in a Supabase RPC function for atomicity. | Open |
 | 3 | Add structured logging | All API routes, services | All logging is `console.error`/`console.log` with unstructured messages. Adopt JSON-format structured logging with request IDs for better debugging and log aggregation in production. Currently relies on Sentry for error tracking but has no request tracing for non-error debugging. | Open |
 | 4 | Monitor RLS query performance | `supabase/migrations/015_*.sql`, `supabase/migrations/044_*.sql`, `supabase/migrations/075_*.sql`, `supabase/migrations/077_*.sql` | Nested subquery RLS policies on `training_exercises`, `nutrition_plan_daily_targets`, `training_events`, and `nutrition_events` join through multiple tables (exercises -> sessions -> plans -> clients -> user_id). May degrade at scale. Set up query profiling to monitor these policies and consider denormalizing if latency increases. | Open |
@@ -266,24 +331,9 @@ Reviewed: 2026-03-18
 
 ---
 
-## Training Plan AI Generation
+## Training Plan AI Generation — RETIRED
 
-Reviewed: 2026-03-18
-
-### P1 - Performance
-
-| # | Issue | File(s) | Details | Status |
-|---|-------|---------|---------|--------|
-| 1 | `generateTrainingPlanAI` takes ~60s even with gpt-4o-mini | `services/training-ai-service.ts` | The full plan generation call takes ~60s despite switching from gpt-4o to gpt-4o-mini and stripping coaching notes from the output. Investigate: (a) Log input/output token counts to see how large the prompt is. (b) Could the plan be generated in stages (structure first, then exercises per session) with parallel calls? (c) Could we stream the response so the UI renders progressively? (d) Test if a simpler response format (JSON array vs nested object) reduces latency. | Open |
-
----
-
-### P2 - Output Quality
-
-| # | Issue | File(s) | Details | Status |
-|---|-------|---------|---------|--------|
-| 1 | AI produces poor day ordering for splits | `services/training-ai-service.ts` | The model doesn't produce sensible day ordering. E.g. push/pull/legs should alternate properly, not stack similar muscle groups on consecutive days. Options: (a) Add explicit day ordering rules to the prompt. (b) Let the AI generate sessions unordered, then apply ordering logic in application code based on the split type. (c) Let coaches drag to reorder days after generation. | Open |
-| 2 | RPE and rest periods still lack variation | `services/training-ai-service.ts` | Despite adding prescriptive rest/RPE rules to the prompt, verify the model is actually producing varied rest periods (2-3min for compounds, 60-90s for isolation) and meaningful RPE targets rather than blanket values across all exercises. May need stronger prompt constraints or post-processing validation. | Open |
+Reviewed 2026-03-18; **closed 2026-07-21 (builder Phase 7).** All three entries (~60s `generateTrainingPlanAI` latency, poor split day-ordering, flat RPE/rest variation) described the one-shot OpenAI plan generator. That pipeline was UI-orphaned by builder S5 (the client drawer's AI Generation mode was deleted) and superseded by the Anthropic draft assistant in S6a. **Phase 7 deleted the code**: `training-ai-service.ts`, `training-plan-orchestrator.ts`, the `POST /api/clients/[id]/training` generate branch, `/training/suggestions`, `/training/manual`, `createSavedPlanFromAI`, and the `aiGenerated*` schemas/types. Nothing to fix — the code is gone. Assistant-era cost and quality debt is tracked under Production Readiness P1 #1 (spend quota) and "Draft assistant — untriaged review-fleet findings".
 
 ---
 
@@ -351,6 +401,8 @@ Reviewed: 2026-03-22
 | 1 | Parallel entry for training completions | `check_in_session_completions`, `session_logs` | `check_in_session_completions` should pre-populate from `session_logs` for the check-in period instead of being a parallel entry system. Currently clients can enter conflicting completion data between the daily flow and the check-in form. **Addressed by Session 6.4 of the client portal redesign**: daily logs become the source of truth for the check-in, the form locks fields for logged days, unlogged-day edits route through the canonical per-card write endpoints, and the table is dropped in the same migration. Mark Resolved once 6.4 commits. | Scheduled |
 
 ### Post-Phase-7 Column Retirement
+
+> **"Phase 7" here means CLIENT-PORTAL Phase 7 (`docs/CLIENT-PORTAL-EXECUTION-PLAN.md`), NOT the Training Builder Phase 7 that shipped 2026-07-21.** They are different workstreams. The training-builder sweep does not unblock this entry, and `training_logs.trained` still has two live readers — do not drop it on the strength of the builder phase completing.
 
 The client portal redesign (Phase 1 Session 1.7) rewires the attention feed's training signals to read `training_events.status` directly. The legacy `training_logs.trained` column becomes dead data once Phase 7 (coach-side metrics + progression) ships and no reader remains.
 
@@ -475,25 +527,22 @@ Reviewed: 2026-05-12
 
 ## Training Builder & Content Library Bloat
 
-Reviewed: 2026-04-23
+Reviewed 2026-04-23; **re-measured 2026-07-21 (builder Phase 7 sweep).** The original three entries are all **Resolved** — every file named is gone: `coach-library-service.ts` (1211) was split across S2.75/S3 into `coach-saved-plan-service.ts` / `coach-saved-session-service.ts` / `coach-standalone-session-service.ts` / `coach-library-helpers.ts`; `draft-editor.tsx` (890) was deleted with the drawer's from-scratch authoring in S5; `content-service.ts` (635) was split into the five `content-*-service.ts` files exactly as prescribed.
 
-These three files were identified in a codebase-wide bloat audit as genuinely painful to work in — not "long but cohesive," but files mixing multiple concerns where the next change is meaningfully harder because of the file's shape. CONVENTIONS.md §4 caps are loose guidelines, so these are the three that would be worth splitting even under a generous reading. Other long files found in the same audit (`training-calendar-view.tsx` 682, `training-event-calendar-service.ts` 571, `session-detail-drawer.tsx` 565, `content-upload-dialog.tsx` 532, `app/dashboard/content/page.tsx` 501) are long but cohesive — splitting them would prop-drill one flow across multiple files, which §4 itself warns against. Leave those alone.
-
-### P1 - File Size Violations
+### P1 - File Size Violations (re-measured at HEAD)
 
 | # | File | Lines | Limit | Over By | Status |
 |---|------|-------|-------|---------|--------|
-| 1 | `services/coach-library-service.ts` | 1211 | 300 | 911 (304%) | Open |
-| 2 | `components/clients/training/builder/draft-editor.tsx` | 890 | 250 | 640 (256%) | Open |
-| 3 | `services/content-service.ts` | 635 | 300 | 335 (112%) | Open |
+| 1 | `services/training-log-service.ts` | 934 | 300 | 634 (211%) | Open — worst offender |
+| 2 | `services/coach-saved-plan-service.ts` | 785 | 300 | 485 (162%) | Open (successor to the split `coach-library-service.ts`) |
+| 3 | `services/library-placement-service.ts` | 585 | 300 | 285 (95%) | Open — but cohesive (one transactional placement flow) |
+| 4 | `services/exercise-catalog-service.ts` | 571 | 300 | 271 (90%) | Open |
+| 5 | `components/clients/training/program-builder/program-builder.tsx` | 559 | 250 | 309 (124%) | Open — but cohesive (pure orchestrator, one DndContext; its state already lives in `ProgramDraftProvider`) |
+| 6 | `__tests__/helpers/mock-data-builders.ts` | 633 | 250 | 383 (153%) | Open — **worsening** (was 418 in 2026-03) |
 
-**Suggested splits:**
+**Suggested split (2):** `coach-saved-plan-service.ts` absorbed the whole-tree write surface — `overwriteSavedPlan` (delete-all + row-by-row re-insert), `promoteDraftToSaved`, `duplicateSavedPlan`, `createSavedPlanFromCalendar` — alongside the list/paged/summary reads. Lift the write path into `coach-saved-plan-write-service.ts`, leaving reads + status transitions behind.
 
-1. **`services/coach-library-service.ts`** — Mixes three concerns on top of 8+ CRUD functions for saved plans, sessions, and standalone sessions: row-to-model mappers (~lines 21-42), insertion helpers (~144-185), and cycle-length detection (~106-140). Extract mappers to `lib/coach-mappers.ts` first — lowest-risk ~200 LOC win with zero coupling to the CRUD surface. Move cycle-length detection to `utils/plan-cycle-helpers.ts`. Then split remaining CRUD into `coach-saved-plan-service.ts` and `coach-saved-session-service.ts`. The three stages can land as three separate PRs.
-
-2. **`components/clients/training/builder/draft-editor.tsx`** — 8 `useState` calls plus inline DnD sensors, form modal, fetch-based mutations, and promote/discard flow. The session mutation cluster (`patchSession`, `patchExercise`, `removeSession`, `removeExercise`) is a self-contained unit that lifts cleanly to a `useSessionMutations()` hook. DnD sensors + `DndContext` wiring lift to `useSessionDragDrop()`. Session form modal becomes `SessionFormDialog`. Target shape: render + promote/discard only, ~400 LOC.
-
-3. **`services/content-service.ts`** — 20+ exports spanning five decoupled concerns: folders, items, assignments, metadata fetching (video/link), and S3 storage (upload/signed URLs). Unlike the training builder, these concerns are genuinely independent — a folder rename does not touch S3. Split into `content-folder-service.ts`, `content-item-service.ts`, `content-assignment-service.ts`, `content-metadata-service.ts`, `content-storage-service.ts`. No prop-drilling risk.
+**Long but cohesive — deliberately left alone** (splitting would prop-drill one flow across files, which §4 itself warns against): `training-calendar-view.tsx` 758, `training-event-calendar-service.ts` 583, `session-detail-drawer.tsx` 575, `content-upload-dialog.tsx` 532, `app/dashboard/content/page.tsx` 497.
 
 ---
 

@@ -5,11 +5,15 @@ import type { Json } from "@/types/database";
 // A prescription exercise can carry an authoritative per-set list (`set_specs`
 // JSONB on coach_saved_exercises / training_exercises). When it is absent the
 // compact columns (`sets` / `reps_min` / `reps_max`) remain the source of truth
-// (expand-on-read). In Phase 1 nothing authors `set_specs` yet, so this file
-// ships only the read-side primitive the analytics needs; the log-form
-// expansion (`expandSetSpecs`) and the clamped insert-side compact projection
-// (`compactFromSpecs`, which must satisfy the training_exercises CHECK [1,20])
-// arrive with their consumers in Phase 2.
+// (expand-on-read).
+//
+// `set_specs` IS authored today — the program builder writes it, and
+// `set_logs.set_type` is seeded from it at log time. When specs exist the
+// compact columns are a MAINTAINED PROJECTION, never independent truth:
+// `projectExerciseCompact` re-derives them via `compactFromSpecs` (clamped to
+// the `training_exercises.sets` CHECK [1,20]) on every input-side write, while
+// clone sites splat the source row's columns verbatim. Writing the compact
+// three by hand silently corrupts a coach's programming.
 
 export type SetType = "warmup" | "working" | "amrap" | "drop" | "failure";
 
@@ -38,8 +42,8 @@ export type SetSpec = {
  * snapshot's `set_specs`). A spec missing an explicit `set_type` counts as
  * non-warmup (matching the analytics default of `'working'`).
  *
- * Read-side only. The insert-side compact projection that must clamp to the
- * `training_exercises.sets` CHECK is a separate Phase 2 helper.
+ * Read-side only. The insert-side compact projection that clamps to the
+ * `training_exercises.sets` CHECK is `compactFromSpecs` below.
  */
 export function countWorkingSets(setSpecs: unknown, fallbackSets: number): number {
   if (!Array.isArray(setSpecs) || setSpecs.length === 0) return fallbackSets;

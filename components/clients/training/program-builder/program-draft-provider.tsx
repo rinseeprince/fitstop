@@ -10,7 +10,6 @@ import {
 } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useSavedPlan } from "@/hooks/use-saved-plan";
-import { LAST_PLAN_STORAGE_KEY } from "@/lib/programs-nav";
 import type { SavedPlan } from "@/types/training";
 import type {
   BuilderTarget,
@@ -99,15 +98,6 @@ export function ProgramDraftProvider({
   const [assistantBusy, setAssistantBusy] = useState(false);
   const { isSaving, save } = useProgramSave({ savedPlanId, plan, mutatePlan });
   const editSetSpec = useSetSpecMutations(updateExercise);
-
-  // The Programs section's Builder item returns to the last opened program.
-  // Library only — writing it from the client-draft remount would silently
-  // repoint the coach's Programs "Builder" nav to this client's template.
-  useEffect(() => {
-    if (savedPlanId && target === "library") {
-      sessionStorage.setItem(LAST_PLAN_STORAGE_KEY, savedPlanId);
-    }
-  }, [savedPlanId, target]);
 
   // Seed the working tree from server state exactly once (the !draft gate
   // makes SWR refreshes no-ops). Cross-plan cleanup is the layout's

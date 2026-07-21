@@ -51,21 +51,6 @@ export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel
     );
   }
 
-  // Generating state
-  if (builder.isGenerating) {
-    return (
-      <div className="flex flex-col items-center justify-center py-16">
-        <div className="w-12 h-12 rounded-full bg-[#e6f5f3] flex items-center justify-center mb-4">
-          <Sparkles className="h-6 w-6 text-[#0d9488] animate-pulse" />
-        </div>
-        <p className="text-[#0c1a1e] font-medium">
-          Generating your training plan...
-        </p>
-        <p className="text-sm text-[#93b0b4] mt-1">This may take a moment</p>
-      </div>
-    );
-  }
-
   // Calendar is always visible — plan-specific UI renders only when plan exists.
   // Coexisting plans render plainly via the calendar; deletion lives on the
   // plan-builder header ("Delete future sessions") and the calendar week menu.

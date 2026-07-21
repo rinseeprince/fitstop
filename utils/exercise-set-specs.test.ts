@@ -40,7 +40,7 @@ describe("countWorkingSets", () => {
     expect(countWorkingSets(specs, 99)).toBe(5);
   });
 
-  it("returns 0 for an all-warmup exercise (authoring forbids this in Phase 2)", () => {
+  it("returns 0 for an all-warmup exercise (authoring forbids an all-warmup list)", () => {
     expect(countWorkingSets([spec("warmup", 1), spec("warmup", 2)], 4)).toBe(0);
   });
 

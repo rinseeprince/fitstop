@@ -22,7 +22,6 @@ function baseCtx(overrides: Record<string, unknown> = {}) {
     editMode: false,
     isLoading: false,
     loadError: null,
-    isGenerating: false,
     phases: [],
     clientTimezone: "UTC",
     fetchPlan: vi.fn(),

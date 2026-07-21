@@ -5,7 +5,6 @@ import { useToast } from "@/hooks/use-toast";
 import { MAX_SET_SPECS, type SetType } from "@/utils/exercise-set-specs";
 import {
   applySetSpecEdit,
-  MAX_DROPS,
   type SetSpecEdit,
 } from "@/utils/set-spec-edits";
 import type { ExerciseDraft } from "./program-builder-types";
@@ -15,7 +14,7 @@ import type { ExerciseDraft } from "./program-builder-types";
 // server-side tool executors share the exact same edit semantics — the two
 // sides must never drift). Re-exports keep existing importers working.
 
-export { MAX_SET_SPECS, MAX_DROPS, applySetSpecEdit };
+export { MAX_SET_SPECS, applySetSpecEdit };
 export type { SetSpecEdit };
 
 /** Set types in authoring order for the set-type select. */

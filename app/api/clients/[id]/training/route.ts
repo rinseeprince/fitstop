@@ -10,59 +10,12 @@ import { cascadeNutritionAfterTrainingChange } from "@/services/nutrition-event-
 import { getClientTodayString } from "@/services/today-service";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
-import { aiRateLimit, coachApiRateLimit } from "@/lib/rate-limit";
+import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
-import { generateTrainingPlanSchema } from "@/lib/validations/training";
-import {
-  orchestrateTrainingPlanGeneration,
-  TrainingPlanError,
-} from "@/services/training-plan-orchestrator";
 
-// POST - Generate new training plan via AI
-export async function POST(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const rateLimitResult = await aiRateLimit(request);
-  if (rateLimitResult) return rateLimitResult;
-
-  const csrfError = await requireCSRFProtection(request);
-  if (csrfError) return csrfError;
-
-  try {
-    const coachId = await getAuthenticatedCoachId();
-    if (!coachId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const { id: clientId } = await params;
-
-    const body = await request.json();
-    const validation = generateTrainingPlanSchema.safeParse(body);
-
-    if (!validation.success) {
-      console.error("Training plan validation errors:", validation.error.errors);
-      return NextResponse.json({ error: "Invalid input" }, { status: 400 });
-    }
-
-    const result = await orchestrateTrainingPlanGeneration(clientId, coachId, {
-      coachPrompt: validation.data.coachPrompt,
-      coachSuppliedName: validation.data.name,
-      effectiveFrom: validation.data.effectiveFrom,
-    });
-
-    return NextResponse.json(result, { status: 201 });
-  } catch (error) {
-    if (error instanceof TrainingPlanError) {
-      return NextResponse.json({ error: error.message }, { status: error.statusCode });
-    }
-    console.error("Error generating training plan:", error);
-    return NextResponse.json(
-      { error: "Failed to generate training plan" },
-      { status: 500 }
-    );
-  }
-}
+// POST (one-shot AI plan generation) was removed in builder S7: its UI was
+// deleted with the drawer's AI-generation mode in S5, and authoring moved to the
+// Programs builder + draft assistant. GET and DELETE below are live.
 
 // GET - Get active training plan
 export async function GET(

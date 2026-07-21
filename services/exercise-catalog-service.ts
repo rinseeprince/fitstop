@@ -423,55 +423,6 @@ export async function getExerciseCatalogDelta(
   return out;
 }
 
-/**
- * Usage counts for the Exercises library: distinct saved sessions per
- * catalog exercise, scoped to the coach via the session join. Rows with
- * exercise_id NULL (free-text prescriptions that never resolved) are
- * invisible here by definition. Pages through PostgREST's row cap — this
- * table genuinely can exceed it.
- */
-export async function getExerciseUsageForCoach(coachId: string): Promise<{
-  perExercise: Array<{ exerciseId: string; sessionCount: number }>;
-  sessionsWithLinks: number;
-}> {
-  const PAGE = 1000;
-  const rows: Array<{ exercise_id: string | null; saved_session_id: string }> = [];
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await supabaseAdmin
-      .from("coach_saved_exercises")
-      .select("exercise_id, saved_session_id, coach_saved_sessions!inner(coach_id)")
-      .eq("coach_saved_sessions.coach_id", coachId)
-      .not("exercise_id", "is", null)
-      .range(from, from + PAGE - 1);
-    if (error) throw new Error(`Failed to fetch exercise usage: ${error.message}`);
-    rows.push(...(data ?? []));
-    if (!data || data.length < PAGE) break;
-  }
-
-  const perExerciseSessions = new Map<string, Set<string>>();
-  const allSessions = new Set<string>();
-  for (const row of rows) {
-    if (!row.exercise_id) continue;
-    let set = perExerciseSessions.get(row.exercise_id);
-    if (!set) {
-      set = new Set();
-      perExerciseSessions.set(row.exercise_id, set);
-    }
-    set.add(row.saved_session_id);
-    allSessions.add(row.saved_session_id);
-  }
-
-  return {
-    perExercise: [...perExerciseSessions.entries()].map(
-      ([exerciseId, sessions]) => ({
-        exerciseId,
-        sessionCount: sessions.size,
-      })
-    ),
-    sessionsWithLinks: allSessions.size,
-  };
-}
-
 export type RecentExercise = {
   exerciseId: string;
   name: string;

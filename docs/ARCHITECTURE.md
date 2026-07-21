@@ -19,7 +19,7 @@ CoachHub is a fitness coaching platform built with Next.js 14 (App Router). It c
 - **Coaches** (role: `trainer`) - manage clients, create training/nutrition plans, review check-ins, monitor wellness alerts. Dashboard at `/dashboard`.
 - **Clients** (role: `client`) - track daily wellness, log workouts (per-set), manage nutrition, and complete weekly check-ins via the day-centric client portal. Home at `/client` (date-driven day view; see Client Portal Architecture).
 
-**Tech stack:** Next.js 14, Supabase (PostgreSQL + RLS + Auth), SWR (coach-side), Upstash Redis (rate limiting), OpenAI GPT-4o / GPT-4o-mini (AI summaries, training generation), Vitest, Tailwind CSS, shadcn/ui, Lucide icons, Framer Motion.
+**Tech stack:** Next.js 14, Supabase (PostgreSQL + RLS + Auth), SWR (coach-side), Upstash Redis (rate limiting), Vitest, Tailwind CSS, shadcn/ui, Lucide icons, Framer Motion. **Two AI providers:** OpenAI GPT-4o (check-in summaries, `services/ai-service.ts`) and Anthropic via `@anthropic-ai/sdk` (the program-builder draft assistant, `services/assistant/`). One-shot AI *training generation* no longer exists — it was superseded by the assistant and deleted in builder S7.
 
 ---
 
@@ -256,6 +256,21 @@ The events-as-SOT overhaul (Sessions 1-5, migrations 113-118) demoted plans from
 
 `training_sessions.calorie_surplus_percentage` (NUMERIC, nullable) is the **origin** of the surplus: it is copied onto each `training_events.calorie_surplus_percentage` at event generation, and the nutrition cascade then reads it from the event (not from the session). Rest-day sessions have NULL.
 
+### Client-side plan tier (`training_sessions` / `training_exercises`)
+
+The placed mirror of the library tier — same shape, one row per authored slot:
+
+- `week_index` (INTEGER NOT NULL DEFAULT 0, migration 121) and `order_index` — ordering is always `(week_index, order_index)`. **`day_of_week` is always NULL** for anything placed post-121; placement is a sequential date-walk, not a weekday map. (The seed script `scripts/seed-scale-client.ts` still authors the pre-121 weekday shape, so fixture data is the one place you may see it set.)
+- `is_rest` (BOOLEAN NOT NULL DEFAULT false, migration 121) — rest slots are **real rows**, so the client read is self-describing. They carry no exercises and spawn no `training_event`. Applied-side readers that count workouts filter `is_rest = false`.
+- `set_specs` (JSONB) + `video_url` (TEXT), migration 119 — identical shape to `coach_saved_exercises`; see "Coach Library".
+
+**Client read — `getClientTrainingPlan` (`services/client-training-plan-service.ts`) has three paths.**
+- **(A) Self-describing** — if any entry has `isRest` or `weekIndex > 0`, the entries are returned as-is with `cycleLength = entries.length`. This is the path for anything placed post-121.
+- **(B) Legacy splice** — only when (A) does not trigger AND `saved_plan_id` is set AND the template carries `cycle_length` + `rest_pattern`. It reconstructs synthetic rest entries from that metadata. Still reachable today (a single-week, all-training program placed by `type:"plan"` has no rest rows and `weekIndex` 0), though the result is equivalent; it is the last reader of `saved_plan_id`.
+- **(C) Flat** — `cycleLength = entries.length`, `restPattern = []`.
+
+Note the asymmetry with the coach side: coach-side "active plan" resolves **by date** (`getTrainingPlanForDate`), while this client reader takes the newest open-ended active row.
+
 ### Nutrition plan (durable) + daily-targets template
 
 The single durable `nutrition_plans` row per client is the **template** that generates `nutrition_events`. It holds the plan-level prescription — `baseline_calories`, `protein_target_g` / `carb_target_g` / `fat_target_g`, `diet_type`, `protein_target_g_per_kg`, the custom-macros override (`custom_macros_enabled` + `custom_calories`/`custom_protein_g`/`custom_carb_g`/`custom_fat_g`), the calculator inputs (`base_weight_kg`, `bmr`, `tdee`, `work_activity_level`, `training_volume_hours`), and the goal snapshot (`goal_weight_kg`, `goal_deadline`, `goal_source`) that drives the "active since {date}" / weight-drift banners. `nutrition_plan_daily_targets` is its **per-weekday grid** (`(nutrition_plan_id, day_of_week)` → `calories`, `protein_g`, `carb_g`, `fat_g`) — the source used to generate/regenerate the dense per-date `nutrition_events`. It is replaced **DELETE-then-INSERT** on each plan upsert and is **not** the display SOT (events are). See `docs/NUTRITION_PLAN_CALCULATOR.md` for the TDEE/macro formula that computes these values. The plan is edited **in place** (`create_nutrition_plan_atomic` upsert, migration 115): a cascade/in-place regen (`p_recalc_snapshots=false`) preserves the goal snapshot + `created_at`/`effective_from`; only an explicit "Recalculate plan" (`p_recalc_snapshots=true`) re-stamps them.
@@ -323,7 +338,7 @@ training_logs            -- did the client train today? (1:1 per day, child of d
 - `exercise_logs.training_exercise_id` is SET NULL on delete (nullable). History preserved via `prescribed_exercise_snapshot` JSONB
 - Snapshots are written at completion time and backfilled for existing data
 - `set_logs` (migration 090) holds per-set actuals: `(set_number, reps, weight, rpe)`. Replaces the legacy scalar aggregates `actual_sets`/`actual_reps`(csv)/`actual_weight` that lived on `exercise_logs` before 090. ON DELETE CASCADE from `exercise_logs`.
-- `set_logs.set_type` (migration 119) — `TEXT NOT NULL DEFAULT 'working' CHECK (set_type IN ('warmup','working','amrap','drop','failure'))`. The per-set type of a logged set. It is **coach-prescribed** (seeded from the prescription's `set_specs` at log time), not client-chosen; until the Phase 2 builder authors `set_specs`, every real log is `'working'` (the default). The analytics RPCs (`get_exercise_progression_window` returns it; `get_exercise_prs` filters on it — migration 120) exclude warm-up sets from volume/compliance/PRs; `services/exercise-analytics-service.ts` counts only non-warmup sets and reads the prescribed working-set count from the snapshot's `set_specs`.
+- `set_logs.set_type` (migration 119) — `TEXT NOT NULL DEFAULT 'working' CHECK (set_type IN ('warmup','working','amrap','drop','failure'))`. The per-set type of a logged set. It is **coach-prescribed** (seeded from the prescription's `set_specs` at log time), not client-chosen — the log schema accepts-but-ignores any client value, and the writer seeds each row from the prescription snapshot's per-set specs. Warm-up / AMRAP / drop rows are written today. The analytics RPCs (`get_exercise_progression_window` returns it; `get_exercise_prs` filters on it — migration 120) exclude warm-up sets from volume/compliance/PRs; `services/exercise-analytics-service.ts` counts only non-warmup sets and reads the prescribed working-set count from the snapshot's `set_specs`.
 - `exercise_logs.exercise_id` (added in 090) is a nullable FK to the global `exercises` catalog. Populated when the client picked an exercise from the typeahead picker (Add unplanned, Swap). NULL for prescribed-without-swap (catalog identity is reachable via `training_exercise_id → training_exercises.exercise_id`) and for freehand entries.
 - `exercise_logs.performed_name` (added in 090) is the canonical display name for the logged exercise. Differs from `prescribed_exercise_snapshot.name` when the client swapped a prescribed exercise or added a freehand unplanned one. Display rule: `performed_name ?? prescribed_exercise_snapshot?.name ?? "Unknown exercise"`. This is the per-**exercise** swap (Session 1.5), independent of the per-**session** swap above.
 - Session-level status: `training_events.status` maps directly from `payload.completionQuality` (full→completed / partial / skipped). Per-exercise data does NOT override the client's tap — clients have legitimate reasons to mark "complete" with partial set data.
@@ -363,7 +378,7 @@ Batch resolution via `resolveExercises()` fetches all coach + global exercises i
 
 ## Coach Library
 
-The coach library is the source of reusable training templates. AI or manual generation lands here as a draft; the coach previews, edits, and either saves or places the plan onto a client calendar.
+The coach library is the source of reusable training templates. Coaches author programs directly in the full-page builder at `/dashboard/programs` — a new program is created as a `status='draft'` row and promoted to `'saved'` on first successful save. Standalone sessions and the exercise catalog are browsed and edited from the same surface. Nothing *generates* into the library any more (the one-shot AI generator was retired in S5 and deleted in S7).
 
 ```
 coach_saved_plans              -- plan templates (status: draft / saved)
@@ -375,27 +390,45 @@ coach_saved_plans              -- plan templates (status: draft / saved)
 - `coach_id` (FK), `name`, `description`
 - `split_type`, `frequency_per_week`
 - `status`: `'draft'` (generated, awaiting coach review) | `'saved'` (coach-confirmed)
-- `cycle_length` (INTEGER) — number of days in the training cycle. Non-weekly splits like PPL+Rest are `4`
-- `rest_pattern` (INTEGER[]) — which slots in the cycle are rest days (0-indexed)
+- `cycle_length` (INTEGER) — **derived metadata**: the total slot count across ALL weeks (`weeks × 7` for a fully-authored program). The whole program is the repeat unit; this is not a 7-day or per-week number
+- `rest_pattern` (INTEGER[]) — the 0-indexed rest slots within that whole-program cycle, in `(week_index, order_index)` order
+- `frequency_per_week` — a per-week **average** of non-rest slots, clamped 1..7 (a raw multi-week total violates `training_plans.frequency_per_week`'s CHECK at placement)
+- All three are re-derived from the session list on every save/overwrite/inline-placement by `deriveCycleInfoFromSessions()` (`services/coach-library-helpers.ts`), so the paths cannot drift
 - `default_surplus_percentage`, `source`, `coach_prompt`, `program_duration_weeks`
+
+> **What reads `cycle_length` / `rest_pattern`.** Treat them as a **denormalized length cache**, not a cycle definition: the Programs library table derives its Length column (`weekCount = round(cycle_length / 7)`) and its "longest" sort from them. **Placement does not read them at all** — it builds its own `cycleSlots` from the session rows. The one genuine exception is `getClientTrainingPlan`'s legacy splice branch (`services/client-training-plan-service.ts` ~191-235), which *does* use `rest_pattern` as a real cycle definition to reconstruct rest days for plans placed before migration 121. Don't generalise from that branch.
 
 ### `coach_saved_sessions`
 - `saved_plan_id` (FK, nullable) — NULL means a standalone session usable for mix-and-match
 - `name`, `focus`
-- `order_index` — position in the cycle
-- `is_rest` (BOOLEAN) — marks a rest day slot
+- `week_index` (INTEGER NOT NULL DEFAULT 0, migration 121) — which authored week the slot belongs to. **No calendar/Mon–Sun meaning**; it is slot ordering only. Ordering everywhere is `(week_index, order_index)`
+- `order_index` — position within the whole program. The builder writes a global `weekIndex * 7 + day`
+- `is_rest` (BOOLEAN) — marks a rest slot. **Every day of an authored week is a real row** (session or `is_rest = true`): "empty === rest", there is no implicit gap
 - `estimated_duration_minutes`, `calorie_surplus_percentage`, `session_type`
 
 ### `coach_saved_exercises`
 - `saved_session_id` (FK), `exercise_id` (FK to `exercises` catalog, SET NULL)
 - Full prescription fields: `sets`, `reps_min`/`reps_max`/`reps_target`, `rpe_target`, `percentage_1rm`, `tempo`, `rest_seconds`, `superset_group`, `is_warmup`
-- `set_specs` (JSONB, migration 119) + `video_url` (TEXT, migration 119) — **also on `training_exercises`** (same shape in both tiers). `set_specs` is the authoritative per-set prescription list (`{ set_number, set_type, reps_min?, reps_max?, reps_target?, load_type?, load_value?, rpe_target?, tempo?, rest_seconds?, drops? }[]`); **when NULL the compact columns above remain the source of truth (expand-on-read).** Nothing authors `set_specs` until the Phase 2 builder — the columns are dormant plumbing. Once authored, the compact columns must be maintained as a projection of `set_specs` (recompute on every write) or legacy readers show stale prescriptions. The write-side splat of `set_specs`/`video_url` across the ~16 clone/insert sites + the clamped compact projection are Phase 2 work (see `docs/TRAINING-BUILDER-EXECUTION-PLAN.md`).
+- **`superset_group` and `is_warmup` are RETIRED FROM AUTHORING (S4.2).** No builder editor writes them; the draft model seeds `null` / `false` and both round-trip untouched through save, placement and `getClientTrainingPlan`. A warm-up is now a `set_type: 'warmup'` entry inside an exercise's `set_specs`, not a separate exercise. Two caveats: `is_warmup` is still *rendered* (`exercise-tracker-block.tsx`, `training-exercise-row.tsx`) and still *authored* by the calendar drawer's add-exercise dialog, so it is not dead — only retired from the program builder. `superset_group` has no reader at all and is pure round-trip. Do not build new UI on either.
+- `set_specs` (JSONB, migration 119) + `video_url` (TEXT, migration 119) — **also on `training_exercises`** (same shape in both tiers). `set_specs` is the authoritative per-set prescription list (`{ set_number, set_type, reps_min?, reps_max?, reps_target?, load_type?, load_value?, rpe_target?, tempo?, rest_seconds?, drops? }[]`). When NULL the compact columns are the source of truth and `expandSetSpecs()` synthesizes N `working` specs from them, so every prescription yields per-set rows carrying a `set_type`.
 
-### Library-first generation flow
-1. AI generator or manual builder creates a `coach_saved_plans` row with `status = 'draft'` plus its sessions and exercises
-2. Coach opens the full-page preview editor, tweaks sessions/exercises/surplus, then saves (sets `status = 'saved'` and creates standalone copies of each non-rest session for reuse) or discards
-3. Placement creates fresh client-side rows — `training_plans`, `training_sessions`, `training_exercises`, `training_events` — from the library template. Library templates are never referenced live; each placement is a copy
-4. `training_plans.saved_plan_id` FK (nullable, SET NULL) tracks which library plan was placed (provenance for analytics and reapply)
+  **When specs exist, `sets`/`reps_min`/`reps_max` are a maintained projection, never independent truth.** `projectExerciseCompact()` (`utils/exercise-set-specs.ts`) is the single input-side write helper — it writes `set_specs`/`video_url` verbatim and re-derives the compact trio via `compactFromSpecs` (counting non-warmup sets, clamped to the `training_exercises.sets` CHECK [1,20]). Clone sites splat the source row's columns instead of re-deriving. Editing goes through one pure kernel, `applySetSpecEdit()` (`utils/set-spec-edits.ts`), shared by the builder hook and the assistant's server executors: ≤30 specs, ≤20 drops/set, never all-warmup, and deleting the last set reverts `setSpecs` to `null` (never `[]`).
+
+### Program authoring surface (`/dashboard/programs`)
+
+All training authoring lives here. There is no `/dashboard/training-library`, no Sessions page and no Exercises page — those three routes are `redirect("/dashboard/programs")` stubs, kept only so old links resolve; the Sessions/Exercises libraries were folded into the builder's tabbed `builder-library-panel.tsx` in S4.5.
+
+- `layout.tsx` wraps the section in `ProgramsShell`; `page.tsx` is the library table (drafts surfaced with a Draft badge; browse/duplicate/delete only — no apply-to-client here).
+- `[savedPlanId]/layout.tsx` mounts `ProgramDraftProvider key={savedPlanId}` with a `{children}{modal}` parallel-route pair, so **program state is owned by the route layout, not the page** — the intercepted `@modal/(.)sessions/new` slide-over mutates the same tree.
+- The builder is a weeks × **Day 1–7** grid inside one `DndContext` (`MAX_WEEKS = 52`). Days are **positional, not weekdays** — nothing writes `day_of_week`. A day holds ONE session or is rest; there is no third state.
+- One component tree, two `target` modes: `library` (this route) and `client-draft` (remounted full-screen inside the client Training drawer; Save/Delete hidden, "Apply to client" shown, program/session name+focus locked as template identity). Apply is wired **through the provider** (`use-client-apply.ts`) — `onApply` is not a prop.
+
+### Authoring + save pipeline
+
+1. `POST /api/training/saved-plans` creates a `status='draft'` row; the coach edits it in the builder. Draft state is seeded ONCE from SWR — refreshes are deliberate no-ops so a revalidation can't clobber unsaved edits.
+2. **Save is a 3-step, non-atomic pipeline** (`use-program-save.ts`): client-side zod belt → `POST …/overwrite` (whole tree; delete-all then row-by-row insert) → `PATCH` for `programDurationWeeks` (overwrite never writes it) → if still a draft, `POST …/promote`. Promote is called with **no `saveSessionsIndividually` flag** — a pure status flip, no standalone session copies. A **409 from promote means the content COMMITTED** and only the name collides; never report it as "nothing saved". Because the pipeline is non-atomic, the in-memory draft is the only full copy until success and is never discarded on error.
+3. Placement creates fresh client-side rows — `training_plans`, `training_sessions`, `training_exercises`, `training_events`. Library templates are never referenced live; each placement is a copy.
+4. `training_plans.saved_plan_id` (nullable, SET NULL) records provenance **only for `type:"plan"` placements**. Every apply-with-edits places `type:"inline"` with `saved_plan_id = NULL` (an edited copy is a copy of no single template). **Do not reason about "which template is this client on" from `saved_plan_id`** — it is NULL for the dominant path.
 
 ### AI program assistant (`services/assistant/`, builder S6a)
 
@@ -413,14 +446,29 @@ A chat assistant docked in the program builder executes natural-language edits o
 
 Latency is `iterations x round-trip`, so the levers are structural (fewer round trips: front-loaded program context, batched parallel tool calls, tools expressive enough to avoid one-call-per-week) before they are model choice. Every turn logs `assistant_turn` telemetry; read it before optimising.
 
-### Cycle-aware placement
-`coach_saved_plans.cycle_length` + session `order_index` let placement map any start date onto the correct position. For example, a PPL+Rest plan (cycle_length=4) starting on a Wednesday places Push/Pull/Legs/Rest/Push/... from that Wednesday onward, regardless of calendar week boundaries.
+**Operational surface.** Guards run in order: CSRF → `getAuthenticatedCoachId(request)` → `assistantRateLimit(request, coachId)` (a dedicated tier, 20 req / 5 min, coach-keyed) → zod `safeParse` → when `clientId` is present, an IDOR ownership check. The request body carries `{ command, transcript, draft snapshot, target }`, and `clientId` is **required** when `target: "client-draft"`. Caps: command 1..2000 chars, transcript ≤24 messages × ≤4000 chars. The dock is mounted once (`program-builder.tsx`) and reached from both surfaces. Env: `ANTHROPIC_API_KEY`, plus optional `ASSISTANT_MODEL` (default `claude-opus-4-8`), `ASSISTANT_EFFORT`, `ASSISTANT_THINKING`.
+
+**Deployment prerequisite — this route needs a >240s function timeout.** `app/api/training/assistant/route.ts` exports `maxDuration = 300`, deliberately above the SDK client's 240s timeout so a long turn fails as a handled SDK timeout rather than an opaque platform kill. There is **no `vercel.json` in the repo**, so nothing declares this to a host. Any platform capping functions below that (Vercel Hobby is 60s) will kill long turns mid-flight, and it presents to the coach as "the assistant is broken", not as a timeout. Raising either number means raising both. This has never been exercised against a real platform ceiling — the longest recorded turn ran locally.
+
+**Not shipped:** SSE streaming, per-op live apply, and a bulk `set_week` tool were scoped as 6b/6c and **descoped for launch**. A turn is buffered end-to-end, so a slow turn and a hung turn look identical to the coach.
+
+### Whole-program placement (the date-walk)
+
+**The whole authored program is the repeat unit** — not a 7-day week and not a short rotating cycle. `placePlaceablePlanOnCalendar` (`services/library-placement-service.ts`) builds `cycleSlots` = ALL sessions across ALL weeks sorted by `(week_index, order_index)`, then:
+
+1. **Computes the window first** — `calculatePlacementEndDate()` = `max(1, cycleSlots.length) × (repeatCycles ?? 1)` days, then **capped, never stretched**, by the client's containing phase end AND by `getNextPlanStartCap` (the start of the next coexisting plan). An empty "Repeat cycles" box places exactly **one pass**.
+2. **Clones EVERY slot — training and rest** — into `training_sessions` with `day_of_week: null`, `week_index`, `is_rest`. Rest rows are forced to name "Rest", null focus, null surplus, and carry no exercises. Exercises clone only for non-rest slots, splatting `set_specs`/`video_url` verbatim.
+3. `generateCycleAwareEvents` walks calendar dates start→end tiling `cycleSlots[cyclePosition]`: **a rest slot advances the position but emits no `training_event`.** The upsert is `onConflict: (client_id, training_session_id, date), ignoreDuplicates: true`, so re-placing the same window is idempotent. Per-event surplus = session override ?? plan default.
+
+> **Load-bearing invariant — every day-slot is a materialized row; empty === rest.** The date-walk relies on every authored week being a full 7 rows. A missing or implicit rest slot collapses the week to fewer than 7 days and slides every later date. This is why the builder has no "empty" cell state and why placement clones rest rows it will never emit an event for.
+
+The library plan's `cycle_length` / `rest_pattern` are derived metadata; the rotation is **not** driven by them. The placed rows describe themselves.
 
 ### Atomic placement (additive — migration 114)
 `create_training_plan_atomic()` (the 23-arg signature, with `p_window_end`) inserts the new plan + sessions + events in one transaction as a **coexisting provenance row** (`status='active'`, `effective_until=NULL`). Placement is **additive**: it deletes only **future `scheduled` events within the incoming plan's own date window** (`GREATEST(effective_from, today) … p_window_end`) so the freshly generated events have empty slots to land in. There is **no STEP-0 cross-plan wipe and no archival of the previous plan** (the old behavior of migration 087); non-overlapping plans coexist and reads resolve "active" by date. `services/library-placement-service.ts` computes the window via `calculatePlacementEndDate()` and caps it at the start of the next coexisting plan (`getNextPlanStartCap`) so two placements never bleed into each other. Every generated event keeps carrying `calorie_surplus_percentage` (the nutrition-cascade contract).
 
 ### Stale drafts
-EL-1 (not currently in scope) specifies a cron that deletes draft plans older than 7 days. Until then, abandoned drafts accumulate in `coach_saved_plans` with `status = 'draft'`.
+EL-1 (not currently in scope) specifies a cron that deletes draft plans older than 7 days. Until then abandoned drafts accumulate, but they are **no longer invisible**: the Programs library table surfaces them with a Draft badge (reads default to saved-only; `?status=all` / `includeDrafts` opts them in), so a coach can open or delete them. Only `status='saved'` plans can be placed by id — `placePlanOnCalendar` throws otherwise.
 
 ---
 
@@ -517,7 +565,7 @@ All coach-side data fetching uses SWR with:
 | Overview | `ClientOverviewTab` | Quick metrics, wellness strip, recent check-ins |
 | Roadmap | `RoadmapTabContent` | Phase timeline, create/transition dialogs |
 | Metrics | `MetricsTabContent` | Body metrics charts, check-in history |
-| Training Plan | `TrainingPlanCard` + `TrainingHistoryTable` | Plan builder, session history |
+| Training Plan | `TrainingPlanCard` → `TrainingPlanBuilder` (Data / Plans / Exercise Data) | Calendar + summary hero, plan history, exercise analytics. "Apply program" opens the library drawer, which remounts the shared `/dashboard/programs` builder in `client-draft` mode |
 | Nutrition | `NutritionCalculatorCardEnhanced` + `NutritionHistoryTable` | Plan builder, per-day nutrition calendar, weekly adherence history |
 | Wellness | `WellnessTabContent` | Wellness trends and analysis |
 | Daily Habits | `HabitsTabContent` + `HabitsHistoryTable` | Habit management, analytics |
@@ -527,12 +575,11 @@ Tab changes call `router.replace(/clients/${clientId}?tab=${tab}, { scroll: fals
 
 ### Builder flows
 
-Plan creation uses context providers wrapping custom hooks:
+- **Training (authoring)**: `ProgramDraftProvider` (`components/clients/training/program-builder/`) owns the draft tree, revision-counter dirty tracking, set-spec mutations and the save/apply pipeline. It is the **only** training authoring state, used identically in `target="library"` and `target="client-draft"`. It deliberately lives beside the builder rather than in `contexts/`, because a route layout mounts it.
+- **Training (client tab, read-only)**: `TrainingBuilderProvider` / `useTrainingBuilderContext()` wraps `useTrainingPlan` and supplies the client's current plan + `fetchPlan` to the Plans tab. It was once a composition hook with AI-generation and manual-authoring branches; both were retired in S5 and deleted in S7, so it is now a read surface only — do not add authoring to it.
+- **Nutrition**: `NutritionBuilderProvider` wraps `useNutritionBuilder`. Manages calorie targets, macro breakdown, custom macros toggle. Calculates adjusted targets from client metrics (BMR, activity level). This is the one remaining `generatePlan()` caller.
 
-- **Training**: `TrainingBuilderProvider` wraps `useTrainingBuilder` hook. Manages sessions, exercises, reorder, add/edit/delete. State stored in context, consumed via `useTrainingBuilderContext()`.
-- **Nutrition**: `NutritionBuilderProvider` wraps `useNutritionBuilder` hook. Manages calorie targets, macro breakdown, custom macros toggle. Calculates adjusted targets from client metrics (BMR, activity level).
-
-Both contexts are thin wrappers: the context provides the hook's return value, and consumers access it via the context hook.
+Each context is a thin wrapper: it provides the hook's return value, and consumers access it via the context hook.
 
 ### Attention feed
 

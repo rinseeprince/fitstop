@@ -56,7 +56,6 @@ import {
   duplicateEvent,
   moveEvent,
   moveEventAndFuture,
-  countModifiedFutureEvents,
 } from "./training-event-calendar-service";
 
 const mockFrom = vi.mocked(supabaseAdmin.from);
@@ -862,13 +861,5 @@ describe("training-event-calendar-service", () => {
       expect(mockGetClientTodayString).toHaveBeenCalledWith(clientId);
     });
 
-    it("countModifiedFutureEvents anchors its window at the client's local today", async () => {
-      const countQuery = createMockQuery({ data: null, error: null, count: 3 });
-      mockFrom.mockReturnValue(countQuery as any);
-
-      await expect(countModifiedFutureEvents(clientId, planId)).resolves.toBe(3);
-      expect(mockGetClientTodayString).toHaveBeenCalledWith(clientId);
-      expect(countQuery.gte).toHaveBeenCalledWith("date", "2026-06-09");
-    });
   });
 });

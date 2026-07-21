@@ -3,10 +3,15 @@
 import { createContext, useContext, useState, useMemo, type ReactNode } from "react";
 import useSWR from "swr";
 import { swrFetcher } from "@/lib/swr-fetcher";
-import { useTrainingBuilder } from "@/hooks/use-training-builder";
+import { useTrainingPlan } from "@/hooks/use-training-plan";
 import type { Phase } from "@/types/roadmap";
 
-type TrainingBuilderContextType = ReturnType<typeof useTrainingBuilder> & {
+// Reads the client's active training plan for the Training tab. This was once a
+// composition hook (`useTrainingBuilder`) wrapping AI-generation and manual
+// authoring; both were retired with the drawer's from-scratch modes (builder
+// S5), leaving a pure passthrough that S7 removed. Authoring state lives in
+// `ProgramDraftProvider`, not here.
+type TrainingBuilderContextType = ReturnType<typeof useTrainingPlan> & {
   editMode: boolean;
   setEditMode: (v: boolean) => void;
   activePhase: Phase | null;
@@ -26,7 +31,7 @@ export function TrainingBuilderProvider({
   clientId,
   onUpdate,
 }: TrainingBuilderProviderProps) {
-  const builder = useTrainingBuilder({ clientId, onUpdate });
+  const builder = useTrainingPlan({ clientId, onUpdate });
   const [editMode, setEditMode] = useState(false);
 
   // Fetch phases (same pattern as nutrition builder)

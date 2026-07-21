@@ -4,13 +4,21 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 //
 // Every exercise clone/insert site must carry set_specs + video_url through, or
 // per-set data is silently dropped on apply. This file exercises the INPUT sites
-// (which re-project the compact columns via projectExerciseCompact), the CLONE
-// sites that copy an existing row, and the AI sites (which write NULL — AI does
-// not author per-set specs until Phase 6).
+// (which re-project the compact columns via projectExerciseCompact) and the
+// CLONE sites that copy an existing row.
 //
 // The placement clone sites (pristine apply, inline apply, place-session) are
 // covered in library-placement-service.test.ts; set_type-in-set_logs is covered
 // in training-log-service.test.ts.
+//
+// S7 removed THREE sites from this matrix, all because the write path itself was
+// deleted — not because coverage was dropped:
+//   - addSavedExercise / updateSavedExercise: their only callers were the
+//     saved-plans per-session CRUD routes, which had no UI caller after the
+//     builder moved to whole-tree /overwrite.
+//   - insertTrainingSessions: only reachable from createTrainingPlan, the
+//     one-shot AI generation path retired in S5.
+// Every site that can still write set_specs today is exercised below.
 
 vi.mock("./supabase-admin", () => ({ supabaseAdmin: { from: vi.fn() } }));
 vi.mock("./exercise-catalog-service", () => ({
@@ -20,11 +28,9 @@ vi.mock("./exercise-catalog-service", () => ({
 
 import { supabaseAdmin } from "./supabase-admin";
 import { insertSavedExercises } from "./coach-library-helpers";
-import { addSavedExercise, updateSavedExercise } from "./coach-saved-session-service";
 import { addExercise, updateExercise } from "./training-exercise-service";
 import { saveSessionFromCalendar } from "./coach-library-calendar-service";
 import { overwriteSavedPlan } from "./coach-saved-plan-service";
-import { insertTrainingSessions } from "./training-session-service";
 
 const mockFrom = vi.mocked(supabaseAdmin.from);
 
@@ -88,40 +94,6 @@ describe("set_specs / video_url survival matrix", () => {
     expect((ex.inserts[0] as Record<string, unknown>[])[0]).toMatchObject({
       set_specs: SPECS, video_url: VIDEO, sets: 3, reps_min: 6, reps_max: 8,
     });
-  });
-
-  it("INPUT — addSavedExercise", async () => {
-    const sess = tableMock({ single: { data: { id: "sess-1" }, error: null } });
-    const exercises = tableMock({
-      single: { data: { id: "new" }, error: null },
-      maybeSingle: { data: null, error: null },
-    });
-    mockFrom.mockImplementation((t: string) =>
-      (t === "coach_saved_sessions" ? sess.base : exercises.base) as never,
-    );
-
-    await addSavedExercise("sess-1", "coach-1", {
-      name: "Bench", sets: 99, setSpecs: SPECS as never, videoUrl: VIDEO,
-    });
-
-    expectInputProjection(exercises.inserts[0] as Record<string, unknown>);
-  });
-
-  it("INPUT — updateSavedExercise re-projects compact on a set_specs change", async () => {
-    const exercises = tableMock({ single: { data: { saved_session_id: "sess-1" }, error: null } });
-    const sess = tableMock({ single: { data: { id: "sess-1" }, error: null } });
-    mockFrom.mockImplementation((t: string) =>
-      (t === "coach_saved_sessions" ? sess.base : exercises.base) as never,
-    );
-
-    await updateSavedExercise("ex-1", "coach-1", { setSpecs: SPECS as never, videoUrl: VIDEO });
-
-    const patch = exercises.updates[0] as Record<string, unknown>;
-    expect(patch.set_specs).toEqual(SPECS);
-    expect(patch.video_url).toBe(VIDEO);
-    expect(patch.sets).toBe(3);
-    expect(patch.reps_min).toBe(6);
-    expect(patch.reps_max).toBe(8);
   });
 
   it("INPUT — addExercise (applied side)", async () => {
@@ -197,21 +169,4 @@ describe("set_specs / video_url survival matrix", () => {
     expectInputProjection((exercises.inserts[0] as Record<string, unknown>[])[0]);
   });
 
-  it("AI — insertTrainingSessions writes set_specs/video_url = null (Phase 6 populates)", async () => {
-    const sessions = tableMock({ single: { data: { id: "s" }, error: null } });
-    const exercises = tableMock({ single: { data: { id: "e" }, error: null } });
-    mockFrom.mockImplementation((t: string) =>
-      (t === "training_sessions" ? sessions.base : exercises.base) as never,
-    );
-
-    await insertTrainingSessions(
-      "plan-1",
-      [{ name: "Day1", exercises: [{ name: "Bench", sets: 3 }] } as never],
-      "coach-1",
-    );
-
-    const row = exercises.inserts[0] as Record<string, unknown>;
-    expect(row.set_specs).toBeNull();
-    expect(row.video_url).toBeNull();
-  });
 });

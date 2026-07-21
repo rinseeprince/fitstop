@@ -1,5 +1,4 @@
 import { supabaseAdmin } from "./supabase-admin";
-import type { AIGeneratedPlan } from "@/types/training";
 import type {
   CoachSavedExerciseInsert,
   CoachSavedExerciseRow,
@@ -9,49 +8,14 @@ import { projectExerciseCompact } from "@/utils/exercise-set-specs";
 
 /**
  * Internal helpers shared across the coach saved-plan and saved-session
- * services. Extracted from the old coach-library-service.ts so the CRUD
+ * services. Extracted from the former coach-library-service.ts (split across
+ * S2.75/S3; that file no longer exists) so the CRUD
  * split doesn't force one service to import from the other (which would
  * create a circular dependency the moment a function crossed the line).
  *
  * Not part of the public service surface — API routes should not import
  * from this file directly.
  */
-
-/**
- * Fallback cycle detection when AI doesn't provide cycleLength/restDayPositions.
- * If sessions have dayOfWeek tags, derive a 7-day cycle with the unassigned
- * days becoming rest days. Otherwise fall back to "trainingDays + 1 rest at
- * the end" as a simple heuristic.
- */
-export function detectCycleInfoFallback(
-  sessions: AIGeneratedPlan["sessions"],
-  _frequencyPerWeek: number | undefined,
-): { cycleLength: number; restPattern: number[] } {
-  const hasDayOfWeek = sessions.some((s) => s.dayOfWeek);
-  if (hasDayOfWeek) {
-    const dayMap: Record<string, number> = {
-      monday: 0, tuesday: 1, wednesday: 2, thursday: 3,
-      friday: 4, saturday: 5, sunday: 6,
-    };
-    const assigned = new Set(
-      sessions
-        .filter((s) => s.dayOfWeek)
-        .map((s) => dayMap[s.dayOfWeek!.toLowerCase()] ?? -1)
-        .filter((d) => d >= 0),
-    );
-    const restDays: number[] = [];
-    for (let i = 0; i < 7; i++) {
-      if (!assigned.has(i)) restDays.push(i);
-    }
-    return { cycleLength: 7, restPattern: restDays };
-  }
-
-  // Simple fallback: sessions + 1 rest day at the end
-  const trainingDays = sessions.length;
-  if (trainingDays >= 7) return { cycleLength: trainingDays, restPattern: [] };
-
-  return { cycleLength: trainingDays + 1, restPattern: [trainingDays] };
-}
 
 /**
  * Derive cycle_length / rest_pattern / frequency_per_week from an in-memory

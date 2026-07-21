@@ -3,24 +3,27 @@
 import { useState, useEffect, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
 import type { TrainingPlan } from "@/types/training";
-import { parseGetPlanResponse, parseGeneratePlanResponse } from "@/lib/validations/training";
-import type { UpcomingTrainingPlan } from "@/lib/validations/training";
+import { parseGetPlanResponse } from "@/lib/validations/training";
 
 type UseTrainingPlanProps = {
   clientId: string;
   onUpdate?: () => void;
 };
 
-export function useTrainingPlan({ clientId, onUpdate }: UseTrainingPlanProps) {
+/**
+ * Reads a client's active training plan for the coach-side Training tab.
+ *
+ * Read-only: authoring lives in the Programs builder (`ProgramDraftProvider`),
+ * and a plan reaches a client's calendar through placement, not through here.
+ * The one-shot AI generation surface this hook used to expose was retired with
+ * the drawer's from-scratch modes (builder S5) and deleted in S7.
+ */
+export function useTrainingPlan({ clientId }: UseTrainingPlanProps) {
   const { toast } = useToast();
   const [plan, setPlan] = useState<TrainingPlan | null>(null);
-  const [upcomingPlan, setUpcomingPlan] = useState<UpcomingTrainingPlan | null>(null);
-  const [scheduledFor, setScheduledFor] = useState<string | null>(null);
   const [clientTimezone, setClientTimezone] = useState<string | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(true);
-  const [isGenerating, setIsGenerating] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [prompt, setPrompt] = useState("");
   const [savedPlanId, setSavedPlanId] = useState<string | null>(null);
 
   const fetchPlan = useCallback(async () => {
@@ -39,8 +42,6 @@ export function useTrainingPlan({ clientId, onUpdate }: UseTrainingPlanProps) {
       }
       if (data.success) {
         setPlan(data.plan || null);
-        setUpcomingPlan((data.upcomingPlan as UpcomingTrainingPlan) || null);
-        setScheduledFor(data.scheduledFor ?? null);
         setClientTimezone(data.clientTimezone);
       }
     } catch (error) {
@@ -61,80 +62,14 @@ export function useTrainingPlan({ clientId, onUpdate }: UseTrainingPlanProps) {
     fetchPlan();
   }, [fetchPlan]);
 
-  const generate = async (options: { planName?: string; effectiveFrom?: string | null } = {}) => {
-    if (!prompt.trim() || prompt.length < 10) {
-      toast({
-        title: "Please provide more detail",
-        description: "Describe the client's goals, preferences, and any constraints",
-        variant: "destructive",
-      });
-      return false;
-    }
-
-    const trimmedName = options.planName?.trim();
-
-    setIsGenerating(true);
-    try {
-      const res = await fetch(`/api/clients/${clientId}/training`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          coachPrompt: prompt,
-          name: trimmedName || undefined,
-          effectiveFrom: options.effectiveFrom ?? undefined,
-        }),
-      });
-
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.error || `Server error: ${res.status}`);
-      }
-
-      const rawData = await res.json();
-      const data = parseGeneratePlanResponse(rawData);
-
-      if (!data) {
-        console.error("Invalid API response structure:", rawData);
-        throw new Error("Invalid response from server");
-      }
-
-      if (data.success && data.savedPlanId) {
-        setSavedPlanId(data.savedPlanId);
-        setPrompt("");
-        toast({ title: "Plan draft created" });
-        return true;
-      } else {
-        throw new Error(data.error || data.errorMessage || "Failed to generate plan");
-      }
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to generate plan",
-        variant: "destructive",
-      });
-      return false;
-    } finally {
-      setIsGenerating(false);
-    }
-  };
-
-  const trainingSessions = plan?.sessions ?? [];
-
   return {
     clientId,
     plan,
-    upcomingPlan,
-    scheduledFor,
     clientTimezone,
     isLoading,
-    isGenerating,
     loadError,
-    prompt,
-    setPrompt,
     savedPlanId,
     setSavedPlanId,
-    generate,
     fetchPlan,
-    trainingSessions,
   };
 }

@@ -61,7 +61,7 @@ GET handlers are exempt (idempotent).
 
 ### Rate Limiting
 
-`lib/rate-limit.ts` provides six rate limit functions. Each returns `null` (allow) or a 429 `NextResponse` (block).
+`lib/rate-limit.ts` provides eight rate limit functions. Each returns `null` (allow) or a 429 `NextResponse` (block). Beyond the six below, two are **account-keyed and run after auth**: `clientPerClientRateLimit` (30 req / 10s, client id) and `assistantRateLimit` (20 req / 5 min, coach id).
 
 | Function | Window | Max | Use for |
 |---|---|---|---|
@@ -133,7 +133,7 @@ When invoked, scan the files or directories the user specifies (or scan all `app
 
 ### Critical Severity
 1. **Missing auth check** — A protected API handler that never calls `getAuthenticatedCoachId()` or `getAuthenticatedClientId()`. Exception: intentionally public routes like check-in submission (token-based) and invitation flows.
-2. **Missing rate limiting** — An API handler with no rate limit call as its first operation.
+2. **Missing rate limiting** — An API handler with no rate limit call as its first operation. **Exceptions, both documented in `CONVENTIONS.md` §9 — do not report these as findings:** client-portal routes (IP guard first, per-client limit after auth) and `/api/training/assistant` (coach-keyed `assistantRateLimit` after auth, no first tier — deliberate, so IP rotation can't buy model spend). The assistant's *missing IP burst guard* is already tracked in `TECHNICAL-DEBT.md`; re-reporting it is noise.
 3. **Missing CSRF protection** — A POST, PUT, PATCH, or DELETE handler that never calls `requireCSRFProtection()`. Exception: intentionally public token-based endpoints that already use token validation as their auth mechanism.
 4. **Hardcoded secrets** — API keys, passwords, or tokens in source code instead of environment variables.
 

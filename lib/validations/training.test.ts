@@ -1,44 +1,15 @@
 import { describe, it, expect } from 'vitest'
 import {
-  splitTypeSchema,
   planStatusSchema,
   dayOfWeekSchema,
   exerciseSchema,
   sessionSchema,
-  generateTrainingPlanSchema,
   updateTrainingPlanSchema,
-  reorderSessionsSchema,
-  validateClientForTraining,
   parseGetPlanResponse,
-  parseGeneratePlanResponse,
-  parseSuggestionsResponse,
   logTrainingEventSchema,
 } from './training'
 
 describe('Training Validation Schemas', () => {
-  describe('splitTypeSchema', () => {
-    it('validates all split types', () => {
-      const validSplits = [
-        'push_pull_legs',
-        'upper_lower',
-        'full_body',
-        'bro_split',
-        'push_pull',
-        'custom',
-      ]
-
-      validSplits.forEach((split) => {
-        const result = splitTypeSchema.safeParse(split)
-        expect(result.success).toBe(true)
-      })
-    })
-
-    it('rejects invalid split type', () => {
-      const result = splitTypeSchema.safeParse('invalid_split')
-      expect(result.success).toBe(false)
-    })
-  })
-
   describe('planStatusSchema', () => {
     it('validates all plan statuses', () => {
       const validStatuses = ['active', 'archived', 'draft']
@@ -227,29 +198,6 @@ describe('Training Validation Schemas', () => {
     })
   })
 
-  describe('generateTrainingPlanSchema', () => {
-    it('validates a minimal generation request', () => {
-      const data = {
-        coachPrompt: 'Create a push pull legs program',
-      }
-
-      const result = generateTrainingPlanSchema.safeParse(data)
-      expect(result.success).toBe(true)
-    })
-
-    it('rejects prompt under 10 characters', () => {
-      const data = { coachPrompt: 'Short' }
-      const result = generateTrainingPlanSchema.safeParse(data)
-      expect(result.success).toBe(false)
-    })
-
-    it('rejects prompt over 2000 characters', () => {
-      const data = { coachPrompt: 'A'.repeat(2001) }
-      const result = generateTrainingPlanSchema.safeParse(data)
-      expect(result.success).toBe(false)
-    })
-  })
-
   describe('updateTrainingPlanSchema', () => {
     it('validates an empty update (all optional)', () => {
       const result = updateTrainingPlanSchema.safeParse({})
@@ -285,97 +233,6 @@ describe('Training Validation Schemas', () => {
       const data = { programDurationWeeks: 60 }
       const result = updateTrainingPlanSchema.safeParse(data)
       expect(result.success).toBe(false)
-    })
-  })
-
-  describe('reorderSessionsSchema', () => {
-    it('validates a reorder request', () => {
-      const data = [
-        {
-          sessionId: '550e8400-e29b-41d4-a716-446655440000',
-          dayOfWeek: 'monday',
-          orderIndex: 0,
-        },
-        {
-          sessionId: '550e8400-e29b-41d4-a716-446655440001',
-          dayOfWeek: 'wednesday',
-          orderIndex: 1,
-        },
-      ]
-
-      const result = reorderSessionsSchema.safeParse(data)
-      expect(result.success).toBe(true)
-    })
-
-    it('allows null dayOfWeek', () => {
-      const data = [
-        {
-          sessionId: '550e8400-e29b-41d4-a716-446655440000',
-          dayOfWeek: null,
-          orderIndex: 0,
-        },
-      ]
-
-      const result = reorderSessionsSchema.safeParse(data)
-      expect(result.success).toBe(true)
-    })
-
-    it('rejects invalid UUID', () => {
-      const data = [
-        {
-          sessionId: 'not-a-uuid',
-          orderIndex: 0,
-        },
-      ]
-
-      const result = reorderSessionsSchema.safeParse(data)
-      expect(result.success).toBe(false)
-    })
-
-    it('rejects negative orderIndex', () => {
-      const data = [
-        {
-          sessionId: '550e8400-e29b-41d4-a716-446655440000',
-          orderIndex: -1,
-        },
-      ]
-
-      const result = reorderSessionsSchema.safeParse(data)
-      expect(result.success).toBe(false)
-    })
-  })
-
-  describe('validateClientForTraining', () => {
-    it('returns valid for client with weight and goal', () => {
-      const client = { currentWeight: 180, goalWeight: 170 }
-      const result = validateClientForTraining(client)
-
-      expect(result.valid).toBe(true)
-      expect(result.errors).toHaveLength(0)
-    })
-
-    it('returns errors for missing current weight', () => {
-      const client = { goalWeight: 170 }
-      const result = validateClientForTraining(client)
-
-      expect(result.valid).toBe(false)
-      expect(result.errors).toContain('Client must have a current weight recorded')
-    })
-
-    it('returns warning for missing goal weight', () => {
-      const client = { currentWeight: 180 }
-      const result = validateClientForTraining(client)
-
-      expect(result.valid).toBe(false)
-      expect(result.errors).toContain('Client should have a goal weight set for better recommendations')
-    })
-
-    it('returns all errors for empty client', () => {
-      const client = {}
-      const result = validateClientForTraining(client)
-
-      expect(result.valid).toBe(false)
-      expect(result.errors).toHaveLength(2)
     })
   })
 
@@ -447,59 +304,6 @@ describe('Training Validation Schemas', () => {
       })
     })
 
-    describe('parseGeneratePlanResponse', () => {
-      it('parses a successful generation response with savedPlanId', () => {
-        const data = {
-          success: true,
-          savedPlanId: 'saved-plan-123',
-        }
-
-        const result = parseGeneratePlanResponse(data)
-        expect(result).not.toBeNull()
-        expect(result?.success).toBe(true)
-        expect(result?.savedPlanId).toBe('saved-plan-123')
-      })
-
-      it('parses an error response', () => {
-        const data = {
-          success: false,
-          error: 'Generation failed',
-          errorMessage: 'AI service unavailable',
-        }
-
-        const result = parseGeneratePlanResponse(data)
-        expect(result).not.toBeNull()
-        expect(result?.success).toBe(false)
-      })
-    })
-
-    describe('parseSuggestionsResponse', () => {
-      it('parses successful suggestions', () => {
-        const data = {
-          success: true,
-          suggestions: [
-            'Add more compound movements',
-            'Include mobility work',
-          ],
-        }
-
-        const result = parseSuggestionsResponse(data)
-        expect(result).not.toBeNull()
-        expect(result?.success).toBe(true)
-        expect(result?.suggestions).toHaveLength(2)
-      })
-
-      it('parses error response', () => {
-        const data = {
-          success: false,
-          error: 'Failed to generate suggestions',
-        }
-
-        const result = parseSuggestionsResponse(data)
-        expect(result).not.toBeNull()
-        expect(result?.success).toBe(false)
-      })
-    })
   })
 
   describe('logTrainingEventSchema', () => {

@@ -13,13 +13,16 @@ import type { InlinePlanBody } from "@/lib/validations/training";
 
 // --- Shape used by both DB-backed and inline (in-memory) placements ---
 
+// NOTE: no cycleLength/restPattern here. The whole authored program is the
+// repeat unit, and placement derives its own `cycleSlots` from the session rows
+// (see placePlaceablePlanOnCalendar). The library plan's cycle_length /
+// rest_pattern COLUMNS still exist as derived metadata, but placement does not
+// read them — carrying them on this shape only invited that mistake.
 export type PlaceablePlan = {
   name: string;
   splitType: string | null;
   frequencyPerWeek: number | null;
   programDurationWeeks: number | null;
-  cycleLength: number | null;
-  restPattern: number[];
   defaultSurplusPercentage: number | null;
   sessions: SavedSession[];
 };
@@ -74,7 +77,7 @@ export async function placeInlineEditedPlanOnCalendar(params: {
 }): Promise<{ planId: string; sessionsCreated: number; eventsCreated: number }> {
   const { plan, coachId, clientId, startDate, repeatCycles, phaseId } = params;
 
-  const { cycleLength, restPattern, frequencyPerWeek } = deriveCycleInfoFromSessions(
+  const { frequencyPerWeek } = deriveCycleInfoFromSessions(
     plan.sessions.map((s) => ({
       weekIndex: s.weekIndex,
       orderIndex: s.orderIndex,
@@ -89,8 +92,6 @@ export async function placeInlineEditedPlanOnCalendar(params: {
     splitType: plan.splitType ?? null,
     frequencyPerWeek,
     programDurationWeeks: plan.programDurationWeeks ?? null,
-    cycleLength,
-    restPattern,
     defaultSurplusPercentage: plan.defaultSurplusPercentage ?? null,
     sessions: plan.sessions.map((s) => inlineSessionToSaved(s, ownedExerciseIds)),
   };

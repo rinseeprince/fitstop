@@ -41,8 +41,8 @@ The client app is a fitness coaching platform where clients can:
 
 ## Core Features
 
-### 1. Daily Pulse (Daily Tracking System)
-**Primary Feature** - Located at `/client/dashboard`
+### 1. Day View (daily tracking)
+**Primary Feature** — home route `/client` (there is no `/client/dashboard`)
 
 The Daily Pulse is the centerpiece of the client experience, allowing daily logging of:
 - **Wellness Metrics**: Mood (1-5 emoji scale), Energy (1-10), Sleep (1-10), Stress (1-10), Notes
@@ -50,19 +50,21 @@ The Daily Pulse is the centerpiece of the client experience, allowing daily logg
 - **Nutrition Tracking**: Log calories and macros (protein, carbs, fat) with dynamic targets
 - **Habit Tracking**: Toggle daily habits on/off with auto-save
 
-**Key Components**:
-- `components/daily-pulse/daily-pulse.tsx` - Main container owning all state
-- `components/daily-pulse/daily-pulse-content.tsx` - Layout orchestrator
-- See [DAILY-PULSE-README.md](./DAILY-PULSE-README.md) for complete architecture
+**Key Components** (`components/daily-pulse/` does not exist):
+- `components/client-portal/day/` - Day view cards
+- `components/client-portal/training/set-tracker.tsx` - Workout tracker
+
+There is **no combined day save**: wellness, nutrition, habits and training each write to their own endpoint and revalidate the shared `day-summary` SWR key.
+- See `docs/CLIENT-PORTAL-REDESIGN.md` for the portal's architecture
 
 ### 2. Training Plans & Workout Logging
-**Location**: `/client/training`
+**Locations**: `/client/program/training` (full plan), `/client` day view (today's events), `/client/training` (tracker)
 
-- View active training plan with weekly schedule
-- See exercise details (sets, reps, RPE targets, rest periods)
-- Mark sessions complete
-- Track weekly completion progress
-- Support for both structured workouts and external activities
+- View the active program as ordered day-slots grouped by `weekIndex` — rest days appear as real "Rest" entries
+- See per-set prescription (`setSpecs`: set type, reps, load, RPE, tempo, rest) plus an optional demo `videoUrl`
+- Log a prescribed day by tapping its event; log a rest-day workout via `session-logs`
+- Per-exercise history and PRs via `exercise-history`
+- There is **no weekly schedule and no external-activity sessions** — the plan is a positional multi-week program
 
 ### 3. Nutrition Plans & Macro Tracking
 **Location**: `/client/nutrition`
@@ -143,7 +145,7 @@ interface AuthContextType {
 
 - Routes starting with `/client/*` require `role === "client"`
 - Automatic redirection based on role:
-  - Clients → `/client/dashboard`
+  - Clients → `/client`
   - Trainers → `/dashboard`
 - Public routes: `/check-in/[token]`, `/invite/[token]`
 
@@ -154,40 +156,31 @@ interface AuthContextType {
 All client API endpoints require authentication except where noted.
 
 ### Authentication
-- `POST /api/auth/login` - Email/password login
-- `POST /api/auth/logout` - Logout
+- Login/logout are **Supabase client SDK calls, not app routes** — there is no `/api/auth/*` in this repo. See `contexts/auth-context.tsx`; session cookies are refreshed in `middleware.ts`.
 - `GET /api/client/me` - Get current user profile
 
-### Daily Logs (Daily Pulse)
-- `GET /api/client/daily-logs?date={YYYY-MM-DD}` - Get logs for date range
-- `POST /api/client/daily-logs` - Create/update daily log
-  ```json
-  {
-    "date": "2024-01-01",
-    "mood": 4,
-    "energy": 7,
-    "sleep": 8,
-    "stress": 3,
-    "notes": "Felt great today",
-    "caloriesConsumed": 2400,
-    "proteinG": 180,
-    "carbsG": 250,
-    "fatG": 65,
-    "trainingData": {
-      "sessionCompleted": true,
-      "trainingSessionId": "session-123",
-      "trainingSessionName": "Push Day",
-      "isAlternativeSession": false,
-      "activityStatuses": {},
-      "unplannedActivities": []
-    }
-  }
-  ```
+### Daily Logs (per-date, split by domain)
+
+> The single combined `daily_logs` POST is **gone**, along with its `trainingData` blob. Reads are one call; writes are per-domain.
+
+- `GET /api/client/day-summary?date={YYYY-MM-DD}` - The day read (`DaySummary`, `types/client-day.ts`)
+- `POST /api/client/daily-logs/{date}/wellness` - Mood / energy / sleep / stress / notes
+- `POST /api/client/daily-logs/{date}/nutrition` - Calories + macros for that date
+- Training is **not** part of a daily log — see the Training section
+- Habits are **not** part of a daily log — see the Habits section
 
 ### Training
-- `GET /api/client/training` - Get active training plan
-- `GET /api/client/training/completions?weekStartDate={date}` - Get week's completions
-- `POST /api/client/training/completions` - Mark session complete
+
+> **Events-as-SOT.** There is no `/api/client/training` and no `/completions` endpoint — both were deleted. Prescription lives in `training_events` (one row per calendar date); completion lives in `session_logs`, keyed by `training_event_id`.
+
+- `GET /api/client/training-plan` - The active plan, self-describing (`ClientTrainingPlan | null`)
+- `GET /api/client/day-summary?date={YYYY-MM-DD}` - The one read the day view needs: phase, `training: TrainingEventSummary[]`, `trainedFor`, nutrition, wellness, habits. **A rest day returns `training: []`** — rest slots are real DB rows but emit no event
+- `GET /api/client/program` - Roadmap/phase + program summary card data
+- `GET /api/client/training/events/{eventId}` - Event detail: `{ event, session, exercises, sessionLog, exerciseLogs }`
+- `POST /api/client/training/events/{eventId}/log` - Log a prescribed event. `201 {sessionLogId}` · `403` day locked · `404` not found / not this client
+- `POST /api/client/training/session-logs` - Event-less log: the client trained on a date with no prescribed event (rest-day training). One log per date — a second submission for the same date EDITS the existing log
+- `GET /api/client/training/sessions/{sessionId}` - Session + exercises; 404 unless the session belongs to the client's ACTIVE plan. Powers the rest-day picker
+- `GET /api/client/training/exercise-history?metric=list|progression|prs` - `progression`/`prs` also take `exerciseId` or `exerciseName`. **Warm-up sets are excluded from every metric**
 
 ### Nutrition
 - `GET /api/client/nutrition` (alias: `GET /api/client/nutrition-plan`) - Get nutrition targets (`getClientNutritionTargets`)
@@ -240,11 +233,12 @@ All client API endpoints require authentication except where noted.
 
 ### Notifications
 - `GET /api/client/notifications` - Get notifications
-- `POST /api/client/notifications/mark-read` - Mark as read
+- (no mark-read endpoint — `/api/client/notifications` is GET-only and `read` is computed server-side, not client-mutable)
 
 ### Habits
 - `GET /api/client/habits` - Get active habits
-- `POST /api/client/habits/{id}/log` - Log habit completion
+- `POST /api/client/habits/log` - Log a habit (the habit id travels in the **body**, not the path)
+- `GET /api/client/habits/logs` · `GET /api/client/habits/logs/today` - Habit log history / today's state
 
 ---
 
@@ -297,39 +291,99 @@ type DailyLog = {
 ```
 
 ### TrainingPlan
+Source of truth: `types/client-training-plan.ts`. This is the **client read shape** returned by `GET /api/client/training-plan` — it is not the coach-side `types/training.ts` `TrainingPlan`.
+
 ```typescript
-type TrainingPlan = {
-  id: string
-  clientId: string
-  name: string
-  status: "active" | "archived" | "draft"
-  frequencyPerWeek: number
-  sessions: TrainingSession[]
+type ClientTrainingPlan = {
+  planId: string
+  planName: string
+  cycleLength: number   // day-slots in one pass of the program
+  restPattern: number[] // indices into `sessions` that are rest days
+  sessions: ClientTrainingSessionEntry[] // ordered by (weekIndex, orderIndex)
 }
 
-type TrainingSession = {
+type ClientTrainingSessionEntry = {
   id: string
-  name: string
-  dayOfWeek?: string
+  name: string           // "Rest" on rest entries
+  focus: string | null
   orderIndex: number
-  estimatedDurationMinutes?: number
-  estimatedCalories?: number
-  exercises: TrainingExercise[]
-  sessionType: "training" | "external_activity"
+  weekIndex?: number     // 0-based; group under "Week N" dividers
+  isRest: boolean        // rest days are REAL entries, not gaps
+  estimatedDurationMinutes: number | null
+  exercises: ClientTrainingExercise[] // [] when isRest
 }
 
-type TrainingExercise = {
+type ClientTrainingExercise = {
   id: string
   name: string
-  sets: number
-  repsMin?: number
-  repsMax?: number
-  rpeTarget?: number
-  restSeconds?: number
-  notes?: string
-  supersetGroup?: string
+  orderIndex: number
+  sets: number            // PROJECTION of setSpecs — never independent truth
+  repsMin: number | null  // PROJECTION
+  repsMax: number | null  // PROJECTION
+  repsTarget: string | null
+  rpeTarget: number | null
+  tempo: string | null
+  restSeconds: number | null
+  isWarmup: boolean       // legacy; always false on builder-authored content
+  supersetGroup: string | null // legacy; always null on new content
+  setSpecs: SetSpec[] | null   // AUTHORITATIVE per-set prescription when non-null
+  videoUrl: string | null      // optional demo video
 }
 ```
+
+> **RN contract — days are POSITIONAL, not weekdays.** `dayOfWeek` is gone: placement writes `day_of_week: null` and tiles the whole authored program as a sequential date-walk. Render by `weekIndex` + `orderIndex`, never by weekday name.
+
+> **RN contract — `setSpecs` wins over `sets`/`repsMin`/`repsMax`.** The compact trio is a maintained projection (non-warmup set count; reps span the working sets). A renderer reading only the trio is truthful but lossy — it loses warm-ups, AMRAP/drop/failure sets, per-set loads and per-set rest. Seed the log form from `setSpecs` when present; otherwise synthesize N `working` specs from the trio.
+
+> **RN contract — `sessionType` no longer exists.** Every entry is a training day or a rest day; `external_activity` sessions were removed.
+
+### SetSpec (per-set prescription)
+
+```typescript
+type SetType = "warmup" | "working" | "amrap" | "drop" | "failure"
+
+type SetSpec = {
+  set_number: number
+  set_type: SetType
+  reps_min?: number | null
+  reps_max?: number | null
+  reps_target?: string | null
+  load_type?: "absolute" | "pct_1rm" | "pct_top" | null
+  load_value?: number | null
+  rpe_target?: number | null
+  tempo?: string | null
+  rest_seconds?: number | null
+  drops?: unknown[]
+}
+```
+
+Invariants RN must respect:
+- Max 30 specs per exercise; at least one non-warmup spec is always present.
+- `setSpecs === null` means "not authored per-set" — synthesize from the compact trio rather than showing nothing.
+- **Warm-up sets are excluded from every performance metric and from compliance.** Show them in the tracker; exclude them from PR/volume/e1RM display.
+
+### Training log payload (`POST /api/client/training/events/{eventId}/log`)
+
+```typescript
+type LogTrainingEventInput = {
+  completionQuality: "full" | "partial" | "skipped"
+  notes?: string              // <= 1000
+  performedSessionId?: string // only when the client swapped sessions
+  exercises?: Array<{
+    trainingExerciseId?: string
+    exerciseId?: string
+    exerciseName: string
+    sets: Array<{ setNumber, reps?, weight?, rpe?, setType? }>
+    weightUnit: "lbs" | "kg"
+    notes?: string
+    skipped?: boolean         // sets may be empty only when skipped === true
+  }>
+}
+```
+
+> **RN contract — `setType` is coach-prescribed, never client-chosen.** The schema accepts a `setType` per set and the server **ignores it**: `set_logs.set_type` is seeded from the prescription snapshot. Do not build a set-type picker.
+
+> **RN contract — every save FULLY REPLACES the log's exercises.** The writer deletes all `exercise_logs` for the log (set_logs cascade) and re-inserts. Send the complete list, never a delta.
 
 ### CheckIn
 ```typescript
@@ -451,10 +505,15 @@ graph LR
 // Daily targets adjust based on activity
 adjustedCalories = baselineCalories + trainingCalories + activityCalories
 
-// Macros scale proportionally
-proteinG = baseProteinG // Stays constant
-carbsG = baseCarbsG + (additionalCalories * 0.60 / 4) // 60% from carbs
-fatG = baseFatG + (additionalCalories * 0.40 / 9) // 40% from fat
+// Protein is ALWAYS held. Carbs/fat split by DIET TYPE, not a fixed 60/40:
+//   balanced 50/50 · high_carb 65/35 · low_carb 25/75 · keto 10/90 · custom 50/50
+//
+// Training-day surplus (applySurplusSplit — the single source of truth):
+//   surplusAsCarbs === false -> carbs + fat scale to the higher total,
+//     PRESERVING their stored ratio (a keto client stays keto)
+//   surplusAsCarbs === true  -> fat is held too; carbs absorb the whole surplus
+//
+// Do NOT re-derive client-side: the API already returns final grams per date.
 ```
 
 **Training Day Adjustments**:
@@ -465,9 +524,11 @@ fatG = baseFatG + (additionalCalories * 0.40 / 9) // 40% from fat
 ### Adherence Calculations
 
 **Nutrition Adherence**:
-- "hit" = Within 10% of target calories
-- "partial" = Within 20% of target
-- "missed" = Over 20% deviation or not logged
+- "hit" = within **50 kcal** of target (`NUTRITION_ADHERENCE_HIT_THRESHOLD`)
+- "partial" = within **200 kcal** (`NUTRITION_ADHERENCE_PARTIAL_THRESHOLD`)
+- "missed" = beyond 200 kcal, or not logged
+
+These are **absolute calorie deltas from `lib/constants.ts`, not percentages.**
 
 **Training Adherence**:
 - Based on sessions completed / sessions planned
@@ -759,7 +820,7 @@ Coaches receive alerts when:
 
 ## Related Documentation
 
-- [DAILY-PULSE-README.md](./DAILY-PULSE-README.md) - Detailed Daily Pulse architecture
+- [docs/TRAINING-BUILDER-EXECUTION-PLAN.md](./docs/TRAINING-BUILDER-EXECUTION-PLAN.md) - The program builder, `set_specs` / `weekIndex` / `isRest` model
 - [CONVENTIONS.md](./CONVENTIONS.md) - Code style and conventions
 - API documentation in individual route files
 

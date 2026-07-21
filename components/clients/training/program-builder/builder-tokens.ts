@@ -15,7 +15,6 @@ export const GRID_COLS =
 
 // Day-card treatments (docs/newdesignsystem.md "training vs rest day cards").
 export const TRAINING_CARD_BORDER = "border border-[rgba(13,148,136,0.08)]";
-export const REST_CARD_BORDER = "border border-dashed border-[rgba(13,148,136,0.10)]";
 
 // Brand-teal focus ring for builder inputs.
 export const FOCUS_RING =

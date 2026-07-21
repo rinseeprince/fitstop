@@ -301,28 +301,6 @@ export async function updateEventSurplus(
 }
 
 /**
- * Count future scheduled events that have been manually modified (moved/duplicated).
- */
-export async function countModifiedFutureEvents(
-  clientId: string,
-  planId: string
-): Promise<number> {
-  const today = await getClientTodayString(clientId);
-
-  const { count, error } = await supabaseAdmin
-    .from("training_events")
-    .select("*", { count: "exact", head: true })
-    .eq("training_plan_id", planId)
-    .eq("client_id", clientId)
-    .eq("is_modified", true)
-    .eq("status", "scheduled")
-    .gte("date", today);
-
-  if (error) throw error;
-  return count ?? 0;
-}
-
-/**
  * Duplicate an entire week of training events to a target week.
  * Clones sessions and exercises so each week is independent.
  */
