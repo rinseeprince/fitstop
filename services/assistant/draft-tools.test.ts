@@ -25,6 +25,7 @@ import {
 import { normalizeDraft } from "@/components/clients/training/program-builder/program-builder-model";
 import type { SetSpec } from "@/utils/exercise-set-specs";
 import { buildWorkspaceFromRows, finalizeAssistantOps } from "./draft-workspace";
+import { programContext } from "./draft-tool-helpers";
 import { buildWeekTools } from "./draft-week-tools";
 import { buildSessionTools } from "./draft-session-tools";
 import { buildExerciseTools } from "./draft-exercise-tools";
@@ -483,5 +484,51 @@ describe("duplicate_week insertAfterWeek (deload-then-resume)", () => {
     const out = await dup.run({ week: 1, count: 1, insertAfterWeek: 9 } as never);
     expect(out).toMatch(/Week 9 doesn't exist/);
     expect(ws.ops).toHaveLength(0);
+  });
+});
+
+describe("programContext front-loading (latency)", () => {
+  it("inlines the FULL prescription for a normal program so no read round trips are needed", async () => {
+    const ws = makeWs();
+    const dup = tool(buildWeekTools(ws), "duplicate_week");
+    await dup.run({ week: 1, count: 3 } as never); // 4-week program
+    const ctx = programContext(ws.draft);
+    expect(ctx.complete).toBe(true);
+    // Every exercise the model would otherwise have to fetch is already there.
+    expect(ctx.text).toContain("Back Squat");
+    expect(ctx.text).toContain("Leg Curl");
+    expect(ctx.text).toContain("Week 4:");
+    expect(ctx.text).toContain("Day 2: rest");
+  });
+
+  it("falls back to the skeleton when a program is too large to inline", () => {
+    const ws = makeWs();
+    const big = normalizeDraft({
+      ...ws.draft,
+      weeks: Array.from({ length: 52 }, (_, i) => {
+        const w = makeRestWeek(i);
+        w.days[0] = {
+          ...makeRestSlot(0),
+          isRest: false,
+          session: {
+            uid: newUid("sess"),
+            name: `Session ${i}`,
+            focus: "full body",
+            estimatedDurationMinutes: 60,
+            calorieSurplusPercentage: null,
+            notes: null,
+            sessionType: "training",
+            exercises: Array.from({ length: 8 }, () =>
+              exercise("Back Squat", SQUAT_ID, [workingSet(100)]),
+            ),
+          },
+        };
+        return w;
+      }),
+    });
+    const ctx = programContext(big);
+    expect(ctx.complete).toBe(false);
+    expect(ctx.text).toContain("W1:"); // one line per week
+    expect(ctx.text.length).toBeLessThan(12_000);
   });
 });

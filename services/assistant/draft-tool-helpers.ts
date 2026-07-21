@@ -29,6 +29,19 @@ import type { DraftWorkspace } from "./draft-workspace";
  * then normalizeDraft, so the server's working copy and the client's draft
  * stay byte-identical.
  */
+/**
+ * CONCURRENCY INVARIANT — tool `run` functions must stay SYNCHRONOUS.
+ *
+ * The SDK executes a response's tool_use blocks via Promise.all, and the
+ * system prompt now actively encourages the model to batch independent calls
+ * into one response (each response is a ~10-30s round trip the coach waits on).
+ * That is safe only because every executor's body runs to completion before the
+ * next one starts: a sync body has no await point for the event loop to
+ * interleave at, so ws.draft mutations stay serialized. Introducing an `await`
+ * inside a tool executor would let two calls read the same ws.draft and clobber
+ * each other's edits — if a tool ever needs async work, snapshot-and-merge or
+ * serialize the batch explicitly instead.
+ */
 export function commitOp(ws: DraftWorkspace, op: DraftOp): string | null {
   const outcome = applyDraftOp(ws.draft, op, { target: ws.target });
   if (outcome.skipped) return outcome.skipped;
@@ -189,6 +202,66 @@ export function weekOneLiner(week: WeekDraft): string {
     )
     .join(" | ");
   return `W${week.weekIndex + 1}: ${days}`;
+}
+
+// Front-loading budget, in characters (~3.4k tokens). Every read tool call the
+// model has to make is a FULL sequential round trip — tens of seconds of the
+// coach staring at a spinner. Shipping the whole program up front instead costs
+// a fraction of a cent in input tokens, so the trade is lopsided: pay tokens,
+// buy latency. Only genuinely large programs fall back to the skeleton.
+const FULL_DETAIL_BUDGET_CHARS = 12_000;
+
+/**
+ * The program state the model receives with the command. Returns the FULL
+ * prescription when it fits the budget (`complete: true` — the model can plan
+ * every edit without a single read call), otherwise the per-week skeleton it
+ * must drill into with get_week / get_session.
+ */
+export function programContext(draft: ProgramDraft): {
+  text: string;
+  complete: boolean;
+} {
+  const full = programFullDetail(draft);
+  if (full.length <= FULL_DETAIL_BUDGET_CHARS) {
+    return { text: full, complete: true };
+  }
+  return { text: programSkeleton(draft), complete: false };
+}
+
+function programFullDetail(draft: ProgramDraft): string {
+  const lines: string[] = [programHeader(draft)];
+  draft.weeks.forEach((week, w) => {
+    lines.push(`Week ${w + 1}:`);
+    week.days.forEach((slot, d) => {
+      if (!slot.session) {
+        lines.push(`  Day ${d + 1}: rest`);
+        return;
+      }
+      const s = slot.session;
+      const meta = [
+        s.focus ? s.focus : null,
+        s.calorieSurplusPercentage != null ? `surplus ${s.calorieSurplusPercentage}%` : null,
+      ]
+        .filter(Boolean)
+        .join(", ");
+      lines.push(`  Day ${d + 1}: "${s.name}"${meta ? ` (${meta})` : ""}`);
+      s.exercises.forEach((ex, i) => lines.push(`    ${exerciseLine(ex, i + 1)}`));
+    });
+  });
+  return lines.join("\n");
+}
+
+function programHeader(draft: ProgramDraft): string {
+  return [
+    `Program "${draft.name}"`,
+    draft.splitType ? `focus: ${draft.splitType}` : null,
+    `${draft.weeks.length} week(s)`,
+    draft.defaultSurplusPercentage != null
+      ? `default surplus ${draft.defaultSurplusPercentage}%`
+      : "no default surplus",
+  ]
+    .filter(Boolean)
+    .join(" — ");
 }
 
 export function programSkeleton(draft: ProgramDraft): string {
