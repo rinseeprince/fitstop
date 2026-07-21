@@ -85,7 +85,12 @@ export async function placeInlineEditedPlanOnCalendar(params: {
     })),
   );
 
-  const ownedExerciseIds = await fetchOwnedExerciseIds(coachId);
+  const referencedExerciseIds = plan.sessions.flatMap((s) =>
+    s.exercises
+      .map((e) => e.exerciseId)
+      .filter((id): id is string => Boolean(id)),
+  );
+  const ownedExerciseIds = await fetchVisibleExerciseIds(coachId, referencedExerciseIds);
 
   const placeable: PlaceablePlan = {
     name: plan.name,
@@ -107,14 +112,41 @@ export async function placeInlineEditedPlanOnCalendar(params: {
   });
 }
 
-/** Set of exercise ids the coach may reference: their own + global catalog. */
-async function fetchOwnedExerciseIds(coachId: string): Promise<Set<string>> {
-  const { data, error } = await supabaseAdmin
-    .from("exercises")
-    .select("id")
-    .or(`coach_id.eq.${coachId},coach_id.is.null`);
-  if (error) throw new Error(`Failed to load exercise catalog: ${error.message}`);
-  return new Set((data ?? []).map((r) => r.id));
+// Max ids per `.in()` request. Neither `sessions[]` nor `exercises[]` is capped
+// by the zod schema, so a long program's id list must be chunked to stay under
+// the PostgREST request-line length ceiling.
+const EXERCISE_ID_CHUNK = 150;
+
+/**
+ * Of `referencedIds`, the subset the coach may actually reference (their own +
+ * the global catalog).
+ *
+ * Inverted on purpose. The previous shape loaded the WHOLE catalog and checked
+ * membership, which silently truncated at PostgREST's 1000-row cap — the global
+ * tier alone is 1512 rows, so ~512 valid ids fell out of the set and were nulled
+ * as "foreign" on every placement, unrecoverably. Filtering by the ids this plan
+ * actually references is bounded by plan size, not catalog size, and stays
+ * correct at any scale. Same shape as coach-standalone-session-service.ts:67.
+ */
+async function fetchVisibleExerciseIds(
+  coachId: string,
+  referencedIds: string[],
+): Promise<Set<string>> {
+  const unique = [...new Set(referencedIds)];
+  const visible = new Set<string>();
+
+  for (let i = 0; i < unique.length; i += EXERCISE_ID_CHUNK) {
+    const chunk = unique.slice(i, i + EXERCISE_ID_CHUNK);
+    const { data, error } = await supabaseAdmin
+      .from("exercises")
+      .select("id")
+      .in("id", chunk)
+      .or(`coach_id.eq.${coachId},coach_id.is.null`);
+    if (error) throw new Error(`Failed to validate exercise ids: ${error.message}`);
+    for (const row of data ?? []) visible.add(row.id);
+  }
+
+  return visible;
 }
 
 // Map a validated inline-body session/exercise to the SavedSession/SavedExercise
