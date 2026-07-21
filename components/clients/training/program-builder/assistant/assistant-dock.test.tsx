@@ -130,17 +130,35 @@ describe("suggestion chips", () => {
     mockChat.messages = [];
   });
 
-  it("fills the composer (rather than sending) when a starter is picked", () => {
+  it("sends immediately when a starter is picked", () => {
     render(<AssistantDock />);
     fireEvent.click(screen.getByRole("button", { name: /open the program assistant/i }));
 
     fireEvent.click(screen.getByRole("button", { name: "Add 2 more weeks" }));
 
-    // Populates the input for editing; the coach still presses send.
-    expect(screen.getByPlaceholderText(/describe the change/i)).toHaveValue(
-      "Add 2 more weeks",
-    );
-    expect(mockChat.send).not.toHaveBeenCalled();
+    expect(mockChat.send).toHaveBeenCalledWith("Add 2 more weeks");
+  });
+
+  it("hides the starters when a send would be a no-op (view mode, busy, saving)", () => {
+    for (const state of [
+      { mode: "view" as const, busy: false, isSaving: false },
+      { mode: "edit" as const, busy: true, isSaving: false },
+      { mode: "edit" as const, busy: false, isSaving: true },
+    ]) {
+      mockContext.mode = state.mode;
+      mockContext.isSaving = state.isSaving;
+      mockChat.busy = state.busy;
+      const { unmount } = render(<AssistantDock />);
+      fireEvent.click(
+        screen.getByRole("button", { name: /open the program assistant/i }),
+      );
+      expect(
+        screen.queryByRole("button", { name: "Add 2 more weeks" }),
+      ).not.toBeInTheDocument();
+      unmount();
+    }
+    mockContext.isSaving = false;
+    mockChat.busy = false;
   });
 
   it("hides the starters once a conversation exists", () => {

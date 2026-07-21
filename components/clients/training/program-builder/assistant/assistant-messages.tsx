@@ -11,18 +11,19 @@ import type {
 // Message thread + the preview-gate panel for the assistant dock. Pure
 // presentation — all state lives in use-assistant-chat.
 
-// Starter commands for the empty state. Each is a real, runnable instruction
-// that maps onto the assistant's tools — they double as a lesson in the command
-// style, so they're phrased the way a coach would actually speak. Picking one
-// fills the composer rather than sending: most need a specific target ("a set"
-// on which exercise?), and it keeps the coach the author of anything that
-// mutates their program.
+// Starter commands for the empty state. Picking one SENDS it, so every entry
+// must be a complete, self-contained instruction — nothing that needs the coach
+// to name a target first ("swap an exercise" for what?), or the assistant would
+// have to come back asking, which is worse than the friction it saved. They
+// double as a lesson in the command style, so they're phrased the way a coach
+// actually speaks, and each maps onto a different tool so the set demonstrates
+// range rather than five ways to do one thing.
 const SUGGESTIONS = [
   "Add 2 more weeks",
   "Increase load 5% each week",
   "Add a set to every compound",
+  "Add a warm-up set to every compound",
   "Make the last week a deload",
-  "Swap an exercise",
 ] as const;
 
 type AssistantMessagesProps = {
@@ -57,19 +58,22 @@ export function AssistantMessages({
           <p className={cn("text-center text-[12px]", TEXT_SECONDARY)}>
             Tell me what to change.
           </p>
+          {/* No handler = not sendable right now (view mode, or a turn in
+              flight): show the prompt without starters that would do nothing. */}
           <div className="flex flex-wrap justify-center gap-1.5">
-            {SUGGESTIONS.map((suggestion) => (
-              <button
-                key={suggestion}
-                type="button"
-                // rounded-[6px], not a pill: the design system reserves
-                // rounded-full for circles.
-                className="rounded-[6px] border border-[rgba(13,148,136,0.15)] bg-white px-2.5 py-1.5 text-[11px] font-medium text-[#5a7d82] transition-colors hover:border-[#0d9488] hover:text-[#0d9488]"
-                onClick={() => onPickSuggestion?.(suggestion)}
-              >
-                {suggestion}
-              </button>
-            ))}
+            {onPickSuggestion &&
+              SUGGESTIONS.map((suggestion) => (
+                <button
+                  key={suggestion}
+                  type="button"
+                  // rounded-[6px], not a pill: the design system reserves
+                  // rounded-full for circles.
+                  className="rounded-[6px] border border-[rgba(13,148,136,0.15)] bg-white px-2.5 py-1.5 text-[11px] font-medium text-[#5a7d82] transition-colors hover:border-[#0d9488] hover:text-[#0d9488]"
+                  onClick={() => onPickSuggestion(suggestion)}
+                >
+                  {suggestion}
+                </button>
+              ))}
           </div>
         </div>
       )}

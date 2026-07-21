@@ -79,13 +79,14 @@ export function AssistantDock() {
             busy={chat.busy}
             onApplyPending={chat.applyPending}
             onDismissPending={chat.dismissPending}
-            onPickSuggestion={(text) => {
-              // Fill and focus rather than send: most starters need a target
-              // ("a set" on which exercise?), and the coach stays the author of
-              // anything that edits their program.
-              setInput(text);
-              inputRef.current?.focus();
-            }}
+            // Only wired in edit mode — AssistantMessages hides the starters
+            // without a handler, so a click can never land on send()'s silent
+            // mode guard and look like the button is broken.
+            onPickSuggestion={
+              mode === "edit" && !chat.busy && !isSaving
+                ? (text) => void chat.send(text)
+                : undefined
+            }
           />
 
           {mode === "view" ? (
