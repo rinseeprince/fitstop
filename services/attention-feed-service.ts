@@ -15,7 +15,7 @@ import type { ClientWithAlerts, AttentionAlert } from "@/types/attention-feed"
 import { getDateDaysFrom } from "@/lib/date-helpers"
 import { getCoachTodayString } from "./today-service"
 import { groupClientData, evaluateAndSortTriggers, filterDismissedAlerts } from "@/lib/attention-feed-helpers"
-import { fetchAllPages } from "@/lib/paged-fetch"
+import { fetchAllPages, fetchAllByChunkedIds } from "@/lib/paged-fetch"
 import type { DailyLogRow } from "@/lib/attention-feed-helpers"
 
 type ClientRow = Database["public"]["Tables"]["clients"]["Row"]
@@ -32,15 +32,25 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
   const startDate = getDateDaysFrom(new Date(endDate + "T00:00:00"), -28)
   const dateRange = { start: startDate, end: endDate }
 
-  // 1. Get all clients for this coach
-  const { data: clients, error: clientsError } = await supabaseAdmin
-    .from("clients")
-    .select("id, name, avatar_url, expected_check_in_day, start_date")
-    .eq("coach_id", coachId)
-    .eq("active", true)
-    .eq("onboarding_status", "active")
-
-  if (clientsError || !clients) {
+  // 1. Get all clients for this coach.
+  // PAGED: unpaged this dropped clients past ~1000 from both the feed and
+  // totalClientCount. It is also load-bearing for the reads below: that 1000-row
+  // truncation used to incidentally cap the id list, and now that those reads
+  // chunk the ids properly, nothing else bounds this one.
+  let clients: ClientInfoWithCheckIn[]
+  try {
+    clients = await fetchAllPages<ClientInfoWithCheckIn>((from, to) =>
+      supabaseAdmin
+        .from("clients")
+        .select("id, name, avatar_url, expected_check_in_day, start_date")
+        .eq("coach_id", coachId)
+        .eq("active", true)
+        .eq("onboarding_status", "active")
+        .order("id", { ascending: true })
+        .range(from, to),
+      { errorLabel: "clients for attention feed" },
+    )
+  } catch {
     throw new Error("Failed to fetch clients for attention feed")
   }
 
@@ -56,11 +66,23 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
   // Fetch all data sources in parallel (Q2-Q6 are independent after Q1)
   // Uses Promise.allSettled to preserve graceful degradation: logs are required,
   // but habits/events/dismissals degrade gracefully if they fail
-  // Every cross-client read below is PAGED. Unpaged, PostgREST truncated each at
-  // ~1000 rows with no error: at 5 habits x 29 dates = 145 rows/client the habit
-  // logs were losing rows from the SEVENTH client onward, which silently skewed
-  // the habit-dropoff percentage a coach is shown. This was live at ordinary
-  // roster size, not a 2,000-client problem.
+  // Every cross-client read below is CHUNKED BY CLIENT ID *and* PAGED, because
+  // these reads have two independent ceilings and fixing one leaves the other:
+  //
+  //  - ROW cap: PostgREST truncates an unpaged response at ~1000 rows with no
+  //    error. At 5 habits x 29 dates = 145 rows/client the habit logs were
+  //    losing rows from the SEVENTH client onward, silently skewing the
+  //    habit-dropoff percentage shown to the coach.
+  //  - URL cap: inlining every client id into `.in()` costs ~38 B/uuid, so the
+  //    request line passes a typical 8 KB proxy limit at ~205 clients and 16 KB
+  //    at ~425. Paging does NOT help — the loop re-sends the whole id list on
+  //    every page. The daily-logs read is the REQUIRED one (a rejection throws),
+  //    so a 414 there fails the entire feed for that coach rather than degrading.
+  //
+  // Chunking by client_id is safe for these consumers: every row for a given
+  // client falls inside exactly one chunk and that chunk is paged to completion,
+  // so the per-client date-DESC ordering the triggers depend on is preserved.
+  // groupClientData re-buckets by client, so cross-chunk global order is moot.
   //
   // daily_logs_full is ordered date DESC (it was ASC): under truncation ASC kept
   // the OLDEST dates and discarded exactly the recent end that every trigger
@@ -68,11 +90,11 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
   // The `id` tiebreak keeps offset paging stable across pages.
   const [logsResult, habitsResult, habitLogsResult, eventsResult, dismissalsResult] = await Promise.allSettled([
     // 2. Daily logs (cross-domain view, required for core triggers)
-    fetchAllPages<DailyLogRow>((from, to) =>
+    fetchAllByChunkedIds<DailyLogRow, string>(clientIds, (chunk, from, to) =>
       supabaseAdmin
         .from("daily_logs_full")
         .select("*")
-        .in("client_id", clientIds)
+        .in("client_id", chunk)
         .gte("date", startDate)
         .lte("date", endDate)
         .order("date", { ascending: false })
@@ -81,22 +103,22 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
       { errorLabel: "daily logs" },
     ),
     // 3. Habit definitions (graceful degradation)
-    fetchAllPages((from, to) =>
+    fetchAllByChunkedIds(clientIds, (chunk, from, to) =>
       supabaseAdmin
         .from("daily_habits")
         .select("*")
-        .in("client_id", clientIds)
+        .in("client_id", chunk)
         .eq("is_active", true)
         .order("id", { ascending: true })
         .range(from, to),
       { errorLabel: "habits" },
     ),
     // 4. Habit logs (graceful degradation)
-    fetchAllPages((from, to) =>
+    fetchAllByChunkedIds(clientIds, (chunk, from, to) =>
       supabaseAdmin
         .from("daily_habit_logs")
         .select("*")
-        .in("client_id", clientIds)
+        .in("client_id", chunk)
         .gte("date", startDate)
         .lte("date", endDate)
         .order("date", { ascending: false })
@@ -105,11 +127,11 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
       { errorLabel: "habit logs" },
     ),
     // 5. Training events (graceful degradation)
-    fetchAllPages((from, to) =>
+    fetchAllByChunkedIds(clientIds, (chunk, from, to) =>
       supabaseAdmin
         .from("training_events")
         .select("client_id, date, status, estimated_calories, id")
-        .in("client_id", clientIds)
+        .in("client_id", chunk)
         .gte("date", startDate)
         .lte("date", endDate)
         .order("date", { ascending: false })
@@ -162,7 +184,7 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
 
   // Group all query results by client
   const clientDataMap = groupClientData(
-    clients as ClientInfoWithCheckIn[],
+    clients,
     allLogs,
     allHabits,
     allHabitLogs,

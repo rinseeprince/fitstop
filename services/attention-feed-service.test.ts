@@ -213,6 +213,59 @@ describe("attention-feed-service", () => {
       expect(getCoachTodayString).toHaveBeenCalledWith("coach-1")
       expect(result.clients).toEqual([])
     })
+
+    it("chunks the client-id list so a large roster cannot blow the request-line limit (H4)", async () => {
+      // 250 clients inlined into .in() would be ~9.5KB of URL, past a typical
+      // 8KB proxy limit -> 414 on the REQUIRED daily-logs read -> whole feed
+      // fails. Paging alone does not help: the page loop re-sends the full id
+      // list every page. Assert the ids are chunked AND that every client
+      // survives exactly once, so chunking cannot silently drop a roster tail.
+      const clientRows = Array.from({ length: 250 }, (_, i) => ({
+        id: `client-${i}`, name: `C${i}`, avatar_url: null,
+        expected_check_in_day: null, start_date: null,
+      }))
+
+      const inCalls: string[][] = []
+      let rosterServed = false
+
+      const makeQuery = (table: string) => {
+        const q: Record<string, unknown> = {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          gte: vi.fn().mockReturnThis(),
+          lte: vi.fn().mockReturnThis(),
+          order: vi.fn().mockReturnThis(),
+          range: vi.fn().mockReturnThis(),
+          in: vi.fn((_col: string, ids: string[]) => { inCalls.push(ids); return q }),
+        }
+        Object.defineProperty(q, "then", {
+          value: (resolve: (v: { data: unknown[]; error: null }) => void) => {
+            // Serve the roster once, then empty pages so every loop terminates.
+            if (table === "clients" && !rosterServed) {
+              rosterServed = true
+              return Promise.resolve({ data: clientRows, error: null }).then(resolve)
+            }
+            return Promise.resolve({ data: [], error: null }).then(resolve)
+          },
+        })
+        return q
+      }
+      vi.mocked(supabaseAdmin.from).mockImplementation(((t: string) => makeQuery(t)) as never)
+
+      const result = await evaluateAllClientTriggers("coach-1")
+
+      expect(result.totalClientCount).toBe(250)
+      expect(inCalls.length).toBeGreaterThan(0)
+      // No chunk may exceed the 100-id default.
+      expect(Math.max(...inCalls.map((c) => c.length))).toBeLessThanOrEqual(100)
+      // Chunking must be lossless: the union of every chunk is the full roster,
+      // so no client is silently dropped. (The four cross-client reads run under
+      // Promise.allSettled, so their chunks interleave — assert on the union,
+      // not on a positional slice.)
+      expect(new Set(inCalls.flat()).size).toBe(250)
+      // Each read covers all 250 ids across 3 chunks (100/100/50), 4 reads.
+      expect(inCalls.length).toBe(12)
+    })
   })
 
   describe("filterDismissedAlerts", () => {
