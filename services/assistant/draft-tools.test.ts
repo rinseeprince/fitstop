@@ -532,3 +532,50 @@ describe("programContext front-loading (latency)", () => {
     expect(ctx.text.length).toBeLessThan(12_000);
   });
 });
+
+describe("duplicate_week reports STORED loads, not recomputed arithmetic", () => {
+  it("quotes the plate-rounded values the engine actually saved", async () => {
+    const ws = makeWs();
+    // Reproduces the live 12-week case: 80kg bench, +5%/week. Raw arithmetic
+    // gives 84 / 88.2 / 92.61; the engine snaps to the nearest 0.5kg, so the
+    // tool result must say 88 and 92.5 — those are what the grid holds.
+    const sessionUid = ws.draft.weeks[0].days[0].session!.uid;
+    ws.draft = normalizeDraft({
+      ...ws.draft,
+      weeks: ws.draft.weeks.map((w) => ({
+        ...w,
+        days: w.days.map((slot) =>
+          slot.session?.uid === sessionUid
+            ? {
+                ...slot,
+                session: {
+                  ...slot.session,
+                  exercises: [exercise("Back Squat", SQUAT_ID, [workingSet(80)])],
+                },
+              }
+            : slot,
+        ),
+      })),
+    });
+
+    const dup = tool(buildWeekTools(ws), "duplicate_week");
+    const out = await dup.run({
+      week: 1,
+      count: 3,
+      rules: [{ kind: "load_percent", amount: 5 }],
+    } as never);
+
+    expect(out).toContain("Resulting loads:");
+    expect(out).toContain("Back Squat");
+    // Stored, plate-rounded chain — never the raw 88.2 / 92.61.
+    expect(out).toContain("84");
+    expect(out).toContain("88");
+    expect(out).toContain("92.5");
+    expect(out).not.toContain("88.2");
+    expect(out).not.toContain("92.6");
+
+    const loads = (w: number) =>
+      ws.draft.weeks[w].days[0].session!.exercises[0].setSpecs![0].load_value;
+    expect([loads(1), loads(2), loads(3)]).toEqual([84, 88, 92.5]);
+  });
+});

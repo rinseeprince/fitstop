@@ -12,9 +12,44 @@ import {
   type ProgressionRule,
   type ProgressionScope,
 } from "@/utils/progression-rules";
+import { formatLoads } from "@/components/clients/training/program-builder/progression-preview-model";
 import { matchExerciseInRows } from "@/services/exercise-catalog-service";
 import type { DraftWorkspace } from "./draft-workspace";
 import { commitOp, resolveWeek } from "./draft-tool-helpers";
+
+/**
+ * Actual before → after loads for the exercises a step changed.
+ *
+ * Without this the model narrates progressions from its OWN arithmetic
+ * (80 x 1.05^n) and drifts from what was really stored: the engine snaps
+ * percentage moves to the nearest 0.5kg as plate math, so a chat message
+ * saying "88.2kg" describes a grid that holds 88kg. Feeding the stored values
+ * back means the assistant reports the program that exists, not the one it
+ * calculated.
+ *
+ * Positional pairing is safe — progressWeek never adds, removes, or reorders
+ * exercises. Capped so a 12-week fan-out can't flood the tool result.
+ */
+const MAX_REPORTED_EXERCISES = 5;
+
+function loadChanges(before: WeekDraft, after: WeekDraft): string[] {
+  const seen = new Map<string, string>();
+  before.days.forEach((slot, d) => {
+    const afterSession = after.days[d]?.session;
+    if (!slot.session || !afterSession) return;
+    slot.session.exercises.forEach((ex, i) => {
+      const next = afterSession.exercises[i];
+      if (!next || seen.has(ex.name)) return;
+      const from = formatLoads(ex);
+      const to = formatLoads(next);
+      if (from !== to) seen.set(ex.name, `${ex.name} ${from} → ${to}`);
+    });
+  });
+  const all = [...seen.values()];
+  return all.length > MAX_REPORTED_EXERCISES
+    ? [...all.slice(0, MAX_REPORTED_EXERCISES), `+${all.length - MAX_REPORTED_EXERCISES} more`]
+    : all;
+}
 
 // Week-level WRITE tools, including the headline duplicate_week with
 // progression rules — a thin orchestration over the tested S4 engine
@@ -189,11 +224,17 @@ export function buildWeekTools(ws: DraftWorkspace) {
             ? `Stopped after ${reports.length} copies: ${err}\n${reports.join("\n")}`
             : err;
         }
-        reports.push(
-          due.length > 0
-            ? `Copy ${step}: ${due.map(ruleSummary).join(", ")} — ${changedCount}/${inScope} in-scope exercises changed${changedCount < inScope ? " (unchanged ones have no absolute-kg load for load_kg, or the rule was a no-op)" : ""}`
-            : `Copy ${step}: exact duplicate`,
-        );
+        if (due.length > 0) {
+          const changes = loadChanges(prev, generated);
+          reports.push(
+            `Copy ${step} (week ${ws.draft.weeks.length}): ${due.map(ruleSummary).join(", ")} — ${changedCount}/${inScope} in-scope exercises changed${changedCount < inScope ? " (unchanged ones have no absolute-kg load for load_kg, or the rule was a no-op)" : ""}` +
+              // The RESULTING loads, so the reply quotes real stored values
+              // (plate-rounded) instead of recomputed arithmetic.
+              (changes.length > 0 ? `\n    Resulting loads: ${changes.join("; ")}` : ""),
+          );
+        } else {
+          reports.push(`Copy ${step} (week ${ws.draft.weeks.length}): exact duplicate`);
+        }
         prev = generated;
         anchorUid = generated.uid;
       }
