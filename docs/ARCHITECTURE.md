@@ -6,7 +6,7 @@ This file documents the platform architecture, database schema, and data flow pa
 >
 > | Section | Status | Authoritative source |
 > |---------|--------|----------------------|
-> | Auth Model → "Database clients" | **Accurate / migrated** — the codebase is on **Shape B**: services default to `supabaseAdmin`, the route layer is the security perimeter. RLS is a safety net for route/service bugs, not a second line of defense (if the route layer is broken RLS does nothing — `service_role` bypasses it). Migrations 105–108 (2026-06-10) hardened RLS: dropped permissive policies, locked `SECURITY DEFINER` RPCs to `service_role`. | **CONVENTIONS.md §8** |
+> | Auth Model → "Database clients" | **Accurate / migrated** — the codebase is on **Shape B**: services default to `supabaseAdmin`, the route layer is the security perimeter. RLS is a safety net **for the app path only** — `service_role` bypasses it, so if the route layer is broken RLS does nothing there. **It is NOT merely defence-in-depth overall:** the anon key ships in the browser bundle, so for any request that reaches PostgREST directly (`/rest/v1/…`) RLS is the *only* perimeter. Migrations 105–108 (2026-06-10) and 122–126 (2026-07-21) hardened it: enabled RLS on five tables that never had it, dropped permissive and anon-reachable policies, pinned `security_invoker` on `daily_logs_full`, locked `SECURITY DEFINER` RPCs to `service_role`. Check the current state with `npm run check:rls`, which reads the live catalog rather than the migration tree. | **CONVENTIONS.md §8** |
 > | "JSONB Conventions" (`training_data`/`activityStatuses`) | **Orphaned cache** — legacy `training_logs` rows only; no active read/write path. | redesign docs |
 > | "Activation Flow" · "Training Completion Hierarchy" (`session_logs` identity) | **Accurate / landed** — `session_logs` event-keyed identity shipped (migration 097, Session 5.2); the onboarding walkthrough was reworked for the day-centric portal (Session 6.1). | this file |
 
@@ -851,3 +851,49 @@ After submission, `triggerAISummaryGeneration()` (`services/client-check-in-serv
 1. Updates `clients` table with current_weight, current_body_fat_percentage (denormalized cache)
 2. Recalculates BMR and TDEE from updated client data
 3. Writes immutable event to `body_metrics` table with `source: 'check_in'`
+
+---
+
+## Runbook: building an index on a large table (`CREATE INDEX CONCURRENTLY`)
+
+**A plain `CREATE INDEX` takes a `SHARE` lock**, which conflicts with `ROW EXCLUSIVE`. For the whole
+build every `INSERT`/`UPDATE`/`DELETE` on that table blocks — and because the Postgres lock queue is
+FIFO, readers queued behind those writers stall too. It presents as a total outage of the table, not
+a slowdown.
+
+**This has never hurt us because all 116 index builds in the tree sit in the same migration that
+`CREATE TABLE`s an empty relation.** The moment an index is retro-fitted onto a populated table —
+`set_logs` (projected 9.8M rows in year 1), `training_exercises` (2.5M), `exercise_logs` (2.4M) — the
+same one-liner is a multi-minute write outage.
+
+**`CREATE INDEX CONCURRENTLY` cannot go in a migration file.** The Supabase CLI wraps each file in a
+transaction (`097_session_logs_event_keyed.sql:10` states this), and `CONCURRENTLY` is illegal inside
+a transaction block. Dropped into a migration it hard-errors the push — it does not silently degrade.
+There are zero `BEGIN`/`COMMIT` statements in the tree, so nothing opts out of that wrapping.
+
+### Procedure
+
+1. **Do not use the pooler.** The connection string recorded for this project is port **6543**
+   (transaction mode), which also forbids `CONCURRENTLY`. Use the **direct connection on 5432**.
+2. Run the build outside the migration runner, via `psql`:
+   ```
+   psql "<direct 5432 connection string>" \
+     -c "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_foo ON public.foo (bar);"
+   ```
+3. **Verify it is valid.** A failed concurrent build leaves an **INVALID** index behind that still
+   occupies the name, and `CREATE INDEX IF NOT EXISTS` will *not* retry it — it sees the name and
+   reports success. Always check:
+   ```sql
+   SELECT c.relname, i.indisvalid
+   FROM pg_class c JOIN pg_index i ON i.indexrelid = c.oid
+   WHERE c.relname = 'idx_foo';
+   ```
+   If `indisvalid = false`: `DROP INDEX CONCURRENTLY idx_foo;` and start again.
+4. **Record it in a migration anyway**, as a plain `CREATE INDEX IF NOT EXISTS`, so a rebuild from
+   the tree produces the same schema. On an already-indexed production DB it is a no-op; on an empty
+   fresh environment the non-concurrent build is instant. Note in the migration comment that prod
+   was built concurrently out-of-band.
+
+Step 4 is the part that keeps this from becoming the Studio-drift problem in another costume: the
+live catalog and the tree must still agree at the end. Verify with `npm run check:rls` and a
+`supabase db dump` diff.

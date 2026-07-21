@@ -272,9 +272,14 @@
 
   #### RLS policies
 
-  - RLS is enabled on most tables. Policies exist as a safety net for bugs in the route or service layers.
+  - RLS is enabled on **every** table in `public` (verified against the live catalog by `npm run check:rls`). For the app path it is a safety net, because service_role bypasses it. For anyone hitting PostgREST directly with the browser-shipped anon key, **it is the only perimeter**.
   - Do NOT write new app-code that relies on RLS to enforce access. If the route layer is broken, RLS under service_role does nothing (service_role bypasses RLS entirely — which is most of our DB traffic).
-  - When adding a new table, enable RLS with simple deny-by-default plus authenticated-allow policies. Do not write nested-subquery policies that try to replicate the IDOR chain — those have a performance cost and no practical benefit because service_role bypasses them. See `TECHNICAL-DEBT.md → Auth Architecture Hygiene H3 #1` for the simplification plan for legacy policies.
+  - **When adding a new table: `ALTER TABLE … ENABLE ROW LEVEL SECURITY` and write NO policies.** Deny-all is the default posture, because every service read and write goes through `supabaseAdmin`, which bypasses RLS — so a policy grants access that nothing in the app needs. Precedent: `108_create_audit_logs.sql:37`, and migrations 122/125/126. Only add a policy when a specific non-service_role caller provably needs the table, and scope it to the owner.
+  - **NEVER write `TO authenticated USING (true)`.** It is not "deny-by-default"; it is a platform-wide cross-tenant read and write. The anon key ships in the browser bundle and any logged-in user holds an `authenticated` JWT, so such a policy is directly exploitable via `/rest/v1/…`. This convention previously *prescribed* that shape; migrations 091 and 101 followed it and both had to be dropped in 125. See `TECHNICAL-DEBT.md → Known RLS Gaps`.
+  - **Always add an explicit `TO` clause.** A policy with no `TO` defaults to `PUBLIC`, which includes `anon`. That is only safe if the qual references `auth.uid()` (NULL without a JWT ⇒ fails closed). A no-`TO` policy whose qual does not reference the caller — e.g. `USING (bucket_id = '…')` — is unauthenticated access; that exact shape exposed the private progress-photos bucket until migration 126.
+  - Avoid nested-subquery policies that replicate the IDOR chain: they cost at scale for no benefit under service_role. If a table genuinely needs both coach- and client-side reads, write **one** policy with a single qual rather than two permissive ones — two permissive policies OR together, and a sublink under an `OR` never pulls up to a semi-join.
+  - **Views need `WITH (security_invoker = on)`.** Postgres defaults a view to owner-rights, which launders past the RLS on its base tables. `daily_logs_full` (migration 056) shipped without it over the health-PII tables; `123` pins it.
+  - **Never change a policy in the Supabase Studio SQL editor.** Drift is not theoretical here: it has silently renamed a policy (making a later `DROP POLICY IF EXISTS` a no-op) and silently added two anon-reachable ones that appeared in no migration. Verify every policy change against a fresh `npx supabase db dump --linked`, not against `db push` exiting 0.
 
   #### Audit logging (migration 108)
 
