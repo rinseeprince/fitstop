@@ -18,6 +18,12 @@ import {
   normalizeDraft,
   patchChanges,
 } from "./program-builder-model";
+import {
+  applyDraftOps,
+  type DraftOp,
+  type DraftOpsResult,
+} from "./program-builder-ops";
+import type { BuilderTarget } from "./program-builder-types";
 
 export { findSession } from "./program-builder-model";
 
@@ -82,6 +88,46 @@ export function useProgramBuilderState() {
 
   /** Snapshot the mutation counter right before a save request. */
   const getRevision = useCallback(() => revisionRef.current, []);
+
+  /**
+   * Synchronous read of the current tree for flows that snapshot it (the
+   * assistant's undo stack). The tree is immutable — every mutation builds new
+   * objects — so holding the returned reference IS the snapshot; no clone.
+   */
+  const getDraft = useCallback(() => draftRef.current, []);
+
+  /**
+   * Wholesale tree replacement through the NORMAL mutation path (assistant
+   * undo). Unlike seed(), this bumps the revision counter and dirties the
+   * tree — an undo landing while a save is in flight must make
+   * markSaved(savedRevision) see a moved counter, or the reverted tree would
+   * be silently stamped clean/saved (the exact race the counter exists to
+   * prevent). Callers that restored to a known-clean snapshot follow up with
+   * restoreDirty(false).
+   */
+  const replaceDraft = useCallback(
+    (next: ProgramDraft) => apply(() => next),
+    [apply],
+  );
+
+  /**
+   * Replay an assistant turn's ops through the SAME pure module the server
+   * executed them with (program-builder-ops) — one apply() commit, so the
+   * whole turn is a single revision bump / re-render / dirty transition, with
+   * identical semantics to a hand edit. The reduction runs OUT HERE, not
+   * inside a reducer: skip-collection is a result we return, and reducers
+   * must stay side-effect free. Vanished-target ops skip loudly in the result.
+   */
+  const applyAssistantOps = useCallback(
+    (ops: DraftOp[], target: BuilderTarget): DraftOpsResult | null => {
+      const current = draftRef.current;
+      if (!current) return null;
+      const result = applyDraftOps(current, ops, { target });
+      if (result.draft !== current) apply(() => result.draft);
+      return result;
+    },
+    [apply],
+  );
 
   /**
    * Commit a successful save. Returns true when the tree is clean (no
@@ -361,8 +407,11 @@ export function useProgramBuilderState() {
     isDirty,
     seed,
     getRevision,
+    getDraft,
     getDirty,
     restoreDirty,
+    replaceDraft,
+    applyAssistantOps,
     markSaved,
     setName,
     setSplitType,

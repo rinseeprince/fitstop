@@ -45,6 +45,8 @@ import {
   resolveExercise,
   resolveExercises,
   normalizeExerciseName,
+  matchExerciseInRows,
+  suggestExerciseCandidates,
   getExerciseCatalogDelta,
   getExerciseUsageForCoach,
   updateCatalogExercise,
@@ -540,6 +542,29 @@ describe("exercise-catalog-service", () => {
       await expect(deleteCatalogExercise("ex-global", "coach-1")).rejects.toThrow(
         "Exercise not found"
       );
+    });
+  });
+
+  describe("matchExerciseInRows / suggestExerciseCandidates (read-only, builder S6a)", () => {
+    const rows = [
+      { id: "e1", coach_id: null, name: "Bench Press", aliases: ["bp"], muscle_group: null, equipment: null, category: "compound", created_at: "", updated_at: "" },
+      { id: "e2", coach_id: "coach-1", name: "Romanian Deadlift", aliases: [], muscle_group: null, equipment: null, category: null, created_at: "", updated_at: "" },
+    ] as never[];
+
+    it("matches exact, alias, and abbreviation-normalized names without inserting", () => {
+      expect(matchExerciseInRows(rows as never, "bench press")?.id).toBe("e1");
+      expect(matchExerciseInRows(rows as never, "BP")?.id).toBe("e1");
+      expect(matchExerciseInRows(rows as never, "rdl")?.id).toBe("e2");
+      expect(matchExerciseInRows(rows as never, "Nonsense Movement")).toBeNull();
+      // Pure matcher: the DB was never touched.
+      expect(mockFrom).not.toHaveBeenCalled();
+    });
+
+    it("suggests deterministic repair candidates by word overlap", () => {
+      const candidates = suggestExerciseCandidates(rows as never, "incline bench press machine");
+      expect(candidates[0]?.name).toBe("Bench Press");
+      expect(suggestExerciseCandidates(rows as never, "xyz")).toEqual([]);
+      expect(mockFrom).not.toHaveBeenCalled();
     });
   });
 });

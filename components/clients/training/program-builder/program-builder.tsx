@@ -22,6 +22,7 @@ import { defaultExerciseDraftFromCatalog, findSession } from "./program-builder-
 import { useProgramDnd } from "./use-program-dnd";
 import { useSaveDayAsWorkout } from "./use-save-day-as-workout";
 import { useProgramDraft } from "./program-draft-provider";
+import { AssistantDock } from "./assistant/assistant-dock";
 import { useClientApply } from "./use-client-apply";
 import { ProgramTopBar } from "./program-top-bar";
 import { ProgramGrid } from "./program-grid";
@@ -63,6 +64,7 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
     mode,
     setMode,
     isSaving,
+    assistantBusy,
     saveProgram,
     discardChanges,
     setName,
@@ -244,7 +246,10 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
                     <button
                       type="button"
                       className="rounded-[6px] bg-[#0d9488] px-3 py-1.5 text-[12px] font-semibold text-white transition-colors hover:bg-[#0b7f75] disabled:opacity-50"
-                      disabled={!apply.canApply}
+                      // assistantBusy: an in-flight AI turn's ops replay against
+                      // the current tree — applying mid-turn would materialize a
+                      // calendar the turn then diverges from.
+                      disabled={!apply.canApply || assistantBusy}
                       onClick={apply.requestApply}
                     >
                       Apply to client
@@ -312,7 +317,7 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
                           type="button"
                           aria-label="Save program"
                           title="Save program"
-                          disabled={isSaving}
+                          disabled={isSaving || assistantBusy}
                           className="rounded p-1 text-[#0d9488] transition-colors hover:text-[#0b7f75] disabled:opacity-50"
                           onClick={async () => {
                             // A clean save returns to the programs list; a
@@ -527,6 +532,8 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
           materializes the edited copy onto the client's calendar. The confirm
           precedes the dialog (start date/repeat are chosen inside it), so its
           copy stays date-agnostic. */}
+      <AssistantDock />
+
       {isClientDraft && plan && (
         <>
           <ConfirmDialog

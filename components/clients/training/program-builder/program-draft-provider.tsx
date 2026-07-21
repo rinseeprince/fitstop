@@ -55,6 +55,11 @@ export type ProgramDraftContextValue = ProgramBuilderState & {
   // itself (its uid no longer resolves).
   discardChanges: () => void;
   editSetSpec: (sessionUid: string, exercise: ExerciseDraft, edit: SetSpecEdit) => void;
+  // True while an AI-assistant turn is in flight. Soft-lock only: the grid
+  // stays editable (ops compose with manual edits), but Save/Apply and the
+  // chat send are disabled so a save can't interleave with an op replay.
+  assistantBusy: boolean;
+  setAssistantBusy: (busy: boolean) => void;
 };
 
 const ProgramDraftContext = createContext<ProgramDraftContextValue | null>(null);
@@ -91,6 +96,7 @@ export function ProgramDraftProvider({
   const { draft, seed, isDirty, getRevision, markSaved, updateExercise } = state;
 
   const [mode, setMode] = useState<"view" | "edit">("view");
+  const [assistantBusy, setAssistantBusy] = useState(false);
   const { isSaving, save } = useProgramSave({ savedPlanId, plan, mutatePlan });
   const editSetSpec = useSetSpecMutations(updateExercise);
 
@@ -177,6 +183,8 @@ export function ProgramDraftProvider({
     saveProgram,
     discardChanges,
     editSetSpec,
+    assistantBusy,
+    setAssistantBusy,
   };
 
   return (

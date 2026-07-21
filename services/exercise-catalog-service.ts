@@ -90,7 +90,7 @@ function dedupeRowsById(rows: ExerciseRow[]): ExerciseRow[] {
  * (duplicate coach customs, split usage counts). The `id` tiebreak keeps
  * offset paging stable within the coach/global groups.
  */
-async function fetchCatalogRowsForResolve(
+export async function fetchCatalogRowsForResolve(
   coachId: string
 ): Promise<ExerciseRow[]> {
   const PAGE = 1000;
@@ -113,6 +113,61 @@ async function fetchCatalogRowsForResolve(
 }
 
 // --- Public API ---
+
+/**
+ * READ-ONLY resolution over pre-fetched catalog rows — the AI assistant's
+ * matcher (builder S6a / the Phase-6 catalog constraint). Same pipeline as
+ * resolveExercise (exact name → alias → abbreviation-normalized retry) but
+ * NEVER creates a row on a miss: the assistant must repair or ask, not mint
+ * coach-specific catalog entries. The shared resolveExercises create-on-miss
+ * default is deliberately untouched (manual/overwrite/standalone save paths
+ * depend on it).
+ */
+export function matchExerciseInRows(
+  rows: ExerciseRow[],
+  name: string
+): ExerciseRow | null {
+  const lower = name.trim().toLowerCase();
+  if (!lower) return null;
+  const exact = findMatch(rows, lower);
+  if (exact) return exact;
+  const normalized = normalizeExerciseName(name);
+  if (normalized !== lower) {
+    const normalizedMatch = findMatch(rows, normalized);
+    if (normalizedMatch) return normalizedMatch;
+  }
+  return null;
+}
+
+/**
+ * Best-effort repair candidates for an unresolved name — surfaced to the
+ * assistant so it can pick a real catalog exercise or ask the coach. Scored by
+ * simple containment over the normalized name + aliases; deterministic order.
+ */
+export function suggestExerciseCandidates(
+  rows: ExerciseRow[],
+  name: string,
+  limit = 5
+): Array<{ id: string; name: string }> {
+  const normalized = normalizeExerciseName(name);
+  const words = normalized.split(/\s+/).filter((w) => w.length > 2);
+  if (words.length === 0) return [];
+
+  const scored: Array<{ id: string; name: string; score: number }> = [];
+  for (const row of rows) {
+    const haystacks = [row.name, ...(row.aliases ?? [])].map((h) =>
+      h.toLowerCase()
+    );
+    let score = 0;
+    for (const word of words) {
+      if (haystacks.some((h) => h.includes(word))) score += 1;
+    }
+    if (haystacks.some((h) => h === normalized)) score += words.length;
+    if (score > 0) scored.push({ id: row.id, name: row.name, score });
+  }
+  scored.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+  return scored.slice(0, limit).map(({ id, name: n }) => ({ id, name: n }));
+}
 
 /**
  * Resolve a single exercise name to an exercise ID.

@@ -295,6 +295,59 @@ export async function aiRateLimit(request: NextRequest, userId?: string): Promis
   }
 }
 /**
+ * Rate limit for the AI draft assistant's chat turns (builder S6a). Its own
+ * tier + prefix (owner-approved 2026-07-21): aiRateLimit's 10/min is sized for
+ * one-shot generations and would 429 a coach mid-conversation, while 20 per
+ * 5 minutes still caps runaway model spend. Always keyed on the authenticated
+ * coach id (the route resolves auth before limiting — no IP fallback).
+ */
+export async function assistantRateLimit(request: NextRequest, coachId: string): Promise<NextResponse | null> {
+  const config: RateLimitConfig = { windowMs: 5 * 60 * 1000, maxRequests: 20 };
+  const redisClient = getRedisClient();
+  const rateLimitKey = `assistant:${coachId}`;
+
+  if (!redisClient) {
+    const result = inMemoryRateLimit(rateLimitKey, config.maxRequests, config.windowMs);
+    if (!result.success) {
+      return NextResponse.json(
+        { error: "Too many requests", message: "Rate limit exceeded. Please try again later.", retryAfter: result.retryAfter },
+        { status: 429, headers: { "Retry-After": result.retryAfter.toString() } }
+      );
+    }
+    return null;
+  }
+
+  const ratelimit = new Ratelimit({
+    redis: redisClient,
+    limiter: Ratelimit.slidingWindow(config.maxRequests, `${config.windowMs} ms`),
+    prefix: "ratelimit:assistant",
+    analytics: true,
+  });
+
+  try {
+    const { success, limit, remaining, reset } = await ratelimit.limit(rateLimitKey);
+    if (!success) {
+      const retryAfter = Math.ceil((reset - Date.now()) / 1000);
+      return NextResponse.json(
+        { error: "Too many requests", message: "Rate limit exceeded. Please try again later.", retryAfter },
+        { status: 429, headers: { "Retry-After": retryAfter.toString(), "X-RateLimit-Limit": limit.toString(), "X-RateLimit-Remaining": remaining.toString(), "X-RateLimit-Reset": reset.toString() } }
+      );
+    }
+    return null;
+  } catch (error) {
+    console.error("Assistant rate limiting error, falling back to in-memory:", error instanceof Error ? error.message : "Unknown error");
+    const fallbackResult = inMemoryRateLimit(rateLimitKey, config.maxRequests, config.windowMs);
+    if (!fallbackResult.success) {
+      return NextResponse.json(
+        { error: "Too many requests", message: "Rate limit exceeded. Please try again later.", retryAfter: fallbackResult.retryAfter },
+        { status: 429, headers: { "Retry-After": fallbackResult.retryAfter.toString() } }
+      );
+    }
+    return null;
+  }
+}
+
+/**
  * Per-client rate limit for authenticated client-portal routes (Session 3.10).
  * Always keyed on the resolved client id (no IP fallback), so it composes on
  * top of the loose IP-keyed clientApiRateLimit burst guard as the tight,

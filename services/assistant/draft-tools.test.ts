@@ -1,0 +1,367 @@
+import { describe, it, expect } from "vitest";
+
+// The tool layer is pure over a workspace built from fixture rows — no DB.
+// (supabase-admin is mocked because the catalog service imports it at module
+// top; nothing in these tests may touch it, which is itself the point: the
+// assistant NEVER writes to the catalog.)
+import { vi } from "vitest";
+vi.mock("@/services/supabase-admin", () => ({
+  supabaseAdmin: {
+    from: vi.fn(() => {
+      throw new Error("assistant tools must never touch the database");
+    }),
+  },
+}));
+
+import type { ExerciseRow } from "@/lib/database-helpers";
+import {
+  makeRestSlot,
+  makeRestWeek,
+  newUid,
+  type ExerciseDraft,
+  type ProgramDraft,
+  type SessionDraft,
+} from "@/components/clients/training/program-builder/program-builder-types";
+import { normalizeDraft } from "@/components/clients/training/program-builder/program-builder-model";
+import type { SetSpec } from "@/utils/exercise-set-specs";
+import { buildWorkspaceFromRows, finalizeAssistantOps } from "./draft-workspace";
+import { buildWeekTools } from "./draft-week-tools";
+import { buildSessionTools } from "./draft-session-tools";
+import { buildExerciseTools } from "./draft-exercise-tools";
+
+const SQUAT_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const CURL_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+const BENCH_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+
+function row(overrides: Partial<ExerciseRow> & Pick<ExerciseRow, "id" | "name">): ExerciseRow {
+  return {
+    coach_id: null,
+    muscle_group: null,
+    equipment: null,
+    category: null,
+    aliases: [],
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+    ...overrides,
+  } as ExerciseRow;
+}
+
+const CATALOG: ExerciseRow[] = [
+  row({ id: SQUAT_ID, name: "Back Squat", category: "Compound", aliases: ["squat"] }),
+  row({ id: CURL_ID, name: "Leg Curl", category: "isolation" }),
+  row({ id: BENCH_ID, name: "Bench Press", category: "compound", aliases: ["bp"] }),
+];
+
+const workingSet = (load: number): SetSpec => ({
+  set_number: 1,
+  set_type: "working",
+  reps_min: 5,
+  reps_max: 5,
+  reps_target: null,
+  load_type: "absolute",
+  load_value: load,
+  rpe_target: null,
+  tempo: null,
+  rest_seconds: 180,
+  drops: null,
+});
+
+function exercise(
+  name: string,
+  exerciseId: string | null,
+  specs: SetSpec[] | null,
+): ExerciseDraft {
+  return {
+    uid: newUid("ex"),
+    exerciseId,
+    name,
+    setSpecs: specs?.map((s, i) => ({ ...s, set_number: i + 1 })) ?? null,
+    sets: specs ? specs.filter((s) => s.set_type !== "warmup").length : 3,
+    repsMin: 5,
+    repsMax: 5,
+    repsTarget: null,
+    rpeTarget: null,
+    percentage1rm: null,
+    tempo: null,
+    restSeconds: null,
+    supersetGroup: null,
+    isWarmup: false,
+    notes: null,
+    videoUrl: null,
+  };
+}
+
+function makeDraft(): ProgramDraft {
+  const session: SessionDraft = {
+    uid: newUid("sess"),
+    name: "Lower A",
+    focus: "legs",
+    estimatedDurationMinutes: null,
+    calorieSurplusPercentage: null,
+    notes: null,
+    sessionType: "training",
+    exercises: [
+      exercise("Back Squat", SQUAT_ID, [workingSet(100), workingSet(100)]),
+      exercise("Leg Curl", CURL_ID, [workingSet(40), workingSet(40)]),
+    ],
+  };
+  const week = makeRestWeek(0);
+  week.days[0] = { ...makeRestSlot(0), isRest: false, session };
+  return normalizeDraft({
+    id: "44444444-4444-4444-8444-444444444444",
+    name: "Strength Block",
+    description: null,
+    status: "saved",
+    splitType: "Strength",
+    programDurationWeeks: null,
+    defaultSurplusPercentage: null,
+    weeks: [week],
+  });
+}
+
+function makeWs(target: "library" | "client-draft" = "library") {
+  return buildWorkspaceFromRows({ target, draft: makeDraft(), catalog: CATALOG });
+}
+
+const tool = (tools: Array<{ name: string }>, name: string) => {
+  const found = tools.find((t) => t.name === name);
+  if (!found) throw new Error(`missing tool ${name}`);
+  return found as unknown as { run: (input: never) => Promise<string> | string };
+};
+
+const squatLoads = (ws: ReturnType<typeof makeWs>, weekIndex: number): number[] => {
+  const session = ws.draft.weeks[weekIndex].days[0].session;
+  return (session?.exercises[0].setSpecs ?? []).map((s) => s.load_value ?? -1);
+};
+
+describe("duplicate_week with progression", () => {
+  it("compounds per-step load rules cumulatively (+2kg per generated week)", async () => {
+    const ws = makeWs();
+    const dup = tool(buildWeekTools(ws), "duplicate_week");
+    const out = await dup.run({
+      week: 1,
+      count: 3,
+      rules: [{ kind: "load_kg", amount: 2 }],
+    } as never);
+    expect(out).toMatch(/Inserted 3 week/);
+    expect(ws.ops).toHaveLength(3);
+    expect(ws.ops.every((op) => op.type === "insert_week")).toBe(true);
+    expect(squatLoads(ws, 1)).toEqual([102, 102]);
+    expect(squatLoads(ws, 2)).toEqual([104, 104]);
+    expect(squatLoads(ws, 3)).toEqual([106, 106]);
+  });
+
+  it("fires everyNWeeks rules only on their cadence (extra set every other week)", async () => {
+    const ws = makeWs();
+    const dup = tool(buildWeekTools(ws), "duplicate_week");
+    await dup.run({
+      week: 1,
+      count: 4,
+      rules: [{ kind: "sets", amount: 1, everyNWeeks: 2 }],
+    } as never);
+    const setCount = (w: number) =>
+      ws.draft.weeks[w].days[0].session?.exercises[0].setSpecs?.length;
+    expect(setCount(1)).toBe(2); // step 1: rule not due
+    expect(setCount(2)).toBe(3); // step 2: +1
+    expect(setCount(3)).toBe(3); // step 3: not due
+    expect(setCount(4)).toBe(4); // step 4: +1 again (cumulative)
+  });
+
+  it("scopes 'compounds' via the catalog category (case-insensitive)", async () => {
+    const ws = makeWs();
+    const dup = tool(buildWeekTools(ws), "duplicate_week");
+    await dup.run({
+      week: 1,
+      count: 1,
+      rules: [{ kind: "load_kg", amount: 5 }],
+      scope: "compounds",
+    } as never);
+    const session = ws.draft.weeks[1].days[0].session!;
+    expect(session.exercises[0].setSpecs?.[0].load_value).toBe(105); // Back Squat (Compound)
+    expect(session.exercises[1].setSpecs?.[0].load_value).toBe(40); // Leg Curl untouched
+  });
+
+  it("relays the MAX_WEEKS belt instead of silently no-opping", async () => {
+    const ws = makeWs();
+    ws.draft = normalizeDraft({
+      ...ws.draft,
+      weeks: Array.from({ length: 52 }, (_, i) => makeRestWeek(i)),
+    });
+    const dup = tool(buildWeekTools(ws), "duplicate_week");
+    const out = await dup.run({ week: 1, count: 1 } as never);
+    expect(out).toMatch(/cap/);
+    expect(ws.ops).toHaveLength(0);
+  });
+});
+
+describe("delete_week / add_session belts", () => {
+  it("refuses to delete the last week, loudly", async () => {
+    const ws = makeWs();
+    const del = tool(buildWeekTools(ws), "delete_week");
+    const out = await del.run({ week: 1 } as never);
+    expect(out).toMatch(/at least one week/);
+    expect(ws.ops).toHaveLength(0);
+  });
+
+  it("refuses to add a session onto an occupied day", async () => {
+    const ws = makeWs();
+    const add = tool(buildSessionTools(ws), "add_session");
+    const out = await add.run({ week: 1, day: 1, name: "Second" } as never);
+    expect(out).toMatch(/already has a session/);
+    expect(ws.ops).toHaveLength(0);
+  });
+});
+
+describe("catalog constraint (add_exercise)", () => {
+  it("resolves via alias and stamps the CANONICAL catalog name + id", async () => {
+    const ws = makeWs();
+    const add = tool(buildExerciseTools(ws), "add_exercise");
+    const out = await add.run({ week: 1, day: 1, name: "bp" } as never);
+    expect(out).toMatch(/Bench Press/);
+    expect(ws.ops).toHaveLength(1);
+    const op = ws.ops[0];
+    if (op.type !== "add_exercise") throw new Error("expected add_exercise");
+    expect(op.exercise.exerciseId).toBe(BENCH_ID);
+    expect(op.exercise.name).toBe("Bench Press");
+  });
+
+  it("rejects an unresolvable name with repair candidates and constructs NO op", async () => {
+    const ws = makeWs();
+    const add = tool(buildExerciseTools(ws), "add_exercise");
+    const out = await add.run({ week: 1, day: 1, name: "Bulgarian Ring Squat" } as never);
+    expect(out).toMatch(/not in the exercise catalog/);
+    expect(out).toMatch(/Back Squat/); // candidate surfaced
+    expect(ws.ops).toHaveLength(0);
+  });
+});
+
+describe("template identity (client-draft)", () => {
+  it("update_program name/focus and update_session_details name/focus are refused", async () => {
+    const ws = makeWs("client-draft");
+    const program = tool(buildSessionTools(ws), "update_program");
+    const session = tool(buildSessionTools(ws), "update_session_details");
+    expect(await program.run({ name: "Hacked" } as never)).toMatch(/identity/);
+    expect(await session.run({ week: 1, day: 1, focus: "renamed" } as never)).toMatch(
+      /identity/,
+    );
+    expect(ws.ops).toHaveLength(0);
+
+    // Non-identity fields still work in client-draft mode.
+    const ok = await session.run({ week: 1, day: 1, surplusPercentage: 15 } as never);
+    expect(ok).toMatch(/Updated/);
+    expect(ws.ops).toHaveLength(1);
+  });
+});
+
+describe("set programming tools", () => {
+  it("set_exercise_sets builds specs with the compact projection in the op payload", async () => {
+    const ws = makeWs();
+    const setSets = tool(buildExerciseTools(ws), "set_exercise_sets");
+    const out = await setSets.run({
+      week: 1,
+      day: 1,
+      exerciseName: "Back Squat",
+      sets: [
+        { setType: "warmup", repsMin: 10, repsMax: 10, loadKg: 60 },
+        { setType: "working", repsMin: 5, repsMax: 5, loadKg: 120, rpe: 8 },
+        { setType: "working", repsMin: 5, repsMax: 8, loadKg: 110 },
+      ],
+    } as never);
+    expect(out).toMatch(/3 sets \(2 working\)/);
+    const op = ws.ops[0];
+    if (op.type !== "update_exercise") throw new Error("expected update_exercise");
+    expect(op.patch.setSpecs).toHaveLength(3);
+    expect(op.patch.sets).toBe(2); // compact = working count (landmine #2)
+    expect(op.patch.repsMin).toBe(5);
+    expect(op.patch.repsMax).toBe(8);
+  });
+
+  it("rejects an all-warmup set list", async () => {
+    const ws = makeWs();
+    const setSets = tool(buildExerciseTools(ws), "set_exercise_sets");
+    const out = await setSets.run({
+      week: 1,
+      day: 1,
+      exercisePosition: 1,
+      sets: [{ setType: "warmup" }],
+    } as never);
+    expect(out).toMatch(/non-warmup/);
+    expect(ws.ops).toHaveLength(0);
+  });
+
+  it("update_exercise loadKg sets a uniform working-set load with compact re-projection", async () => {
+    const ws = makeWs();
+    const update = tool(buildExerciseTools(ws), "update_exercise");
+    const out = await update.run({
+      week: 1,
+      day: 1,
+      exerciseName: "Leg Curl",
+      loadKg: 45,
+    } as never);
+    expect(out).toMatch(/Updated/);
+    const op = ws.ops[0];
+    if (op.type !== "update_exercise") throw new Error("expected update_exercise");
+    expect(op.patch.setSpecs?.every((s) => s.load_value === 45)).toBe(true);
+  });
+});
+
+describe("finalizeAssistantOps sweeps", () => {
+  it("discards the whole turn when an unresolved NEW exercise leaks into the draft", () => {
+    const ws = makeWs();
+    // Simulate an executor bug: an exercise with no catalog identity and a
+    // name that did not exist at entry lands in the working copy.
+    const rogue = exercise("Invented Movement", null, null);
+    const sessionUid = ws.draft.weeks[0].days[0].session!.uid;
+    ws.draft = normalizeDraft({
+      ...ws.draft,
+      weeks: ws.draft.weeks.map((w) => ({
+        ...w,
+        days: w.days.map((slot) =>
+          slot.session?.uid === sessionUid
+            ? {
+                ...slot,
+                session: {
+                  ...slot.session,
+                  exercises: [...slot.session.exercises, rogue],
+                },
+              }
+            : slot,
+        ),
+      })),
+    });
+    ws.ops.push({ type: "add_exercise", sessionUid, exercise: rogue });
+
+    const { ops, notes } = finalizeAssistantOps(ws);
+    expect(ops).toEqual([]);
+    expect(notes.join(" ")).toMatch(/Invented Movement/);
+  });
+
+  it("keeps clones of pre-existing content even when their exerciseId is null", () => {
+    const ws = buildWorkspaceFromRows({
+      target: "library",
+      draft: (() => {
+        const d = makeDraft();
+        d.weeks[0].days[0].session!.exercises[0] = exercise("Coach Special", null, null);
+        return normalizeDraft(d);
+      })(),
+      catalog: CATALOG,
+    });
+    // duplicate_week clones "Coach Special" with a fresh uid — legal.
+    const dup = tool(buildWeekTools(ws), "duplicate_week");
+    return (async () => {
+      await dup.run({ week: 1, count: 1 } as never);
+      const { ops } = finalizeAssistantOps(ws);
+      expect(ops).toHaveLength(1);
+    })();
+  });
+
+  it("discards the turn if template identity broke in client-draft mode", () => {
+    const ws = makeWs("client-draft");
+    // Bypass every per-tool guard by mutating the working copy directly.
+    ws.draft = normalizeDraft({ ...ws.draft, name: "Sneaky Rename" });
+    ws.ops.push({ type: "set_program_meta", patch: { description: "cover" } });
+    const { ops, notes } = finalizeAssistantOps(ws);
+    expect(ops).toEqual([]);
+    expect(notes.join(" ")).toMatch(/identity/);
+  });
+});

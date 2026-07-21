@@ -432,3 +432,61 @@ describe("useProgramBuilderState — no-op mutations + revision tracking", () =>
     expect(result.current.isDirty).toBe(false);
   });
 });
+
+describe("useProgramBuilderState — assistant additions (builder S6a)", () => {
+  const makeSessionOps = (sessionUid: string) => [
+    {
+      type: "update_session" as const,
+      sessionUid,
+      patch: { notes: "from the assistant" },
+    },
+    {
+      type: "update_session" as const,
+      sessionUid: "sess-vanished",
+      patch: { notes: "never lands" },
+    },
+  ];
+
+  it("applyAssistantOps applies a whole turn as ONE revision bump and surfaces skips", () => {
+    const { result } = setup(1);
+    act(() => result.current.addSessionToSlot(result.current.draft!.weeks[0].days[0].uid));
+    const sessionUid = result.current.draft!.weeks[0].days[0].session!.uid;
+
+    const before = result.current.getRevision();
+    let opsResult: ReturnType<typeof result.current.applyAssistantOps> = null;
+    act(() => {
+      opsResult = result.current.applyAssistantOps(makeSessionOps(sessionUid), "library");
+    });
+    expect(opsResult!.applied).toBe(1);
+    expect(opsResult!.skipped).toHaveLength(1);
+    expect(opsResult!.skipped[0].reason).toMatch(/no longer exists/);
+    expect(result.current.draft!.weeks[0].days[0].session!.notes).toBe("from the assistant");
+    // One bump for the whole turn — markSaved semantics identical to a hand edit.
+    expect(result.current.getRevision()).toBe(before + 1);
+    expect(result.current.isDirty).toBe(true);
+  });
+
+  it("replaceDraft restores a snapshot THROUGH apply (revision moves — the markSaved race is closed)", () => {
+    const { result } = setup(1);
+    act(() => result.current.addSessionToSlot(result.current.draft!.weeks[0].days[0].uid));
+    const snapshot = result.current.getDraft()!;
+    const wasDirty = result.current.getDirty();
+
+    act(() => result.current.addSessionToSlot(result.current.draft!.weeks[0].days[1].uid));
+    const saveRevision = result.current.getRevision();
+
+    // Undo lands while a save is in flight…
+    act(() => {
+      result.current.replaceDraft(snapshot);
+      result.current.restoreDirty(wasDirty);
+    });
+    // …so markSaved MUST see a moved counter and refuse to mark clean.
+    let clean = true;
+    act(() => {
+      clean = result.current.markSaved(saveRevision);
+    });
+    expect(clean).toBe(false);
+    expect(result.current.draft!.weeks[0].days[1].session).toBeNull(); // restored tree
+    expect(result.current.draft!.weeks[0].days[0].session).not.toBeNull();
+  });
+});
