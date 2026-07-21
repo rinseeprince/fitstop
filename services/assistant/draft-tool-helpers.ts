@@ -33,14 +33,25 @@ import type { DraftWorkspace } from "./draft-workspace";
  * CONCURRENCY INVARIANT — tool `run` functions must stay SYNCHRONOUS.
  *
  * The SDK executes a response's tool_use blocks via Promise.all, and the
- * system prompt now actively encourages the model to batch independent calls
- * into one response (each response is a ~10-30s round trip the coach waits on).
+ * system prompt actively encourages the model to batch independent calls into
+ * one response (each response is a ~10-30s round trip the coach waits on).
  * That is safe only because every executor's body runs to completion before the
  * next one starts: a sync body has no await point for the event loop to
- * interleave at, so ws.draft mutations stay serialized. Introducing an `await`
- * inside a tool executor would let two calls read the same ws.draft and clobber
- * each other's edits — if a tool ever needs async work, snapshot-and-merge or
- * serialize the batch explicitly instead.
+ * interleave at, so ws.draft mutations stay serialized. An `await` inside an
+ * executor would let two batched calls read the same ws.draft and overwrite
+ * each other — the coach asks for three edits, two land, and the assistant
+ * reports three.
+ *
+ * This is currently UNREACHABLE by design, not by luck: the assistant is
+ * scoped to the program in the builder and never reads client logs, history,
+ * or metrics (owner decision 2026-07-21), and the exercise catalog is
+ * preloaded once per turn — so no tool has anything to await. Serialization
+ * was designed and deliberately not built on that basis.
+ *
+ * THEREFORE: adding a tool that needs a DB read (e.g. "what did this client
+ * lift last week", "use their current 1RM") is not a drop-in change. Either
+ * serialize execution at the tool-composition point first, or keep the tool
+ * synchronous by preloading its data into the workspace like the catalog.
  */
 export function commitOp(ws: DraftWorkspace, op: DraftOp): string | null {
   const outcome = applyDraftOp(ws.draft, op, { target: ws.target });
