@@ -106,10 +106,16 @@ export async function runAssistantTurn(opts: {
 
   // Prior turns are text-only context: each turn re-uploads a fresh snapshot,
   // so old tool traffic is stale by construction and never resent.
-  const history: Anthropic.Beta.BetaMessageParam[] = opts.transcript.map((t) => ({
-    role: t.role,
-    content: t.text,
-  }));
+  //
+  // Two guards on the window the client sends: the Messages API rejects a
+  // history whose FIRST message is an assistant turn (400), and the client's
+  // transcript legitimately contains unpaired assistant entries (undo/dismiss
+  // confirmations) that a rolling slice can land on — so drop any leading
+  // assistant messages. Empty strings are dropped too (empty content 400s).
+  const history: Anthropic.Beta.BetaMessageParam[] = opts.transcript
+    .filter((t) => t.text.trim().length > 0)
+    .map((t) => ({ role: t.role, content: t.text }));
+  while (history.length > 0 && history[0].role === "assistant") history.shift();
 
   const currentTurn = `Current program state (one line per week — pull detail with the read tools):
 ${programSkeleton(ws.draft)}

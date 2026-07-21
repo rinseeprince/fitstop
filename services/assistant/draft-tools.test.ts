@@ -365,3 +365,85 @@ describe("finalizeAssistantOps sweeps", () => {
     expect(notes.join(" ")).toMatch(/identity/);
   });
 });
+
+describe("review-fleet regressions (S6a follow-up)", () => {
+  it("update_exercise applies compact fields BEFORE materializing a load (compact/specs can't contradict)", async () => {
+    const ws = makeWs();
+    // Compact-only exercise: setSpecs null, 3 sets 8-12.
+    const sessionUid = ws.draft.weeks[0].days[0].session!.uid;
+    ws.draft = normalizeDraft({
+      ...ws.draft,
+      weeks: ws.draft.weeks.map((w) => ({
+        ...w,
+        days: w.days.map((slot) =>
+          slot.session?.uid === sessionUid
+            ? {
+                ...slot,
+                session: {
+                  ...slot.session,
+                  exercises: [exercise("Back Squat", SQUAT_ID, null)],
+                },
+              }
+            : slot,
+        ),
+      })),
+    });
+
+    const update = tool(buildExerciseTools(ws), "update_exercise");
+    // "make it 5 sets of 5 at 100kg" — load AND compact fields in one call.
+    await update.run({
+      week: 1,
+      day: 1,
+      exercisePosition: 1,
+      sets: 5,
+      repsMin: 5,
+      repsMax: 5,
+      loadKg: 100,
+    } as never);
+
+    const op = ws.ops[0];
+    if (op.type !== "update_exercise") throw new Error("expected update_exercise");
+    // The specs must carry the REQUESTED 5 sets at 5 reps @100kg…
+    expect(op.patch.setSpecs).toHaveLength(5);
+    expect(op.patch.setSpecs?.every((s) => s.load_value === 100)).toBe(true);
+    expect(op.patch.setSpecs?.every((s) => s.reps_min === 5 && s.reps_max === 5)).toBe(true);
+    // …and the compact columns must be the projection OF those specs, so the
+    // save path's re-derivation can't silently revert the coach's 5x5.
+    expect(op.patch.sets).toBe(5);
+    expect(op.patch.repsMin).toBe(5);
+    expect(op.patch.repsMax).toBe(5);
+  });
+
+  it("clamps op labels to the wire cap so one long name can't void the whole turn", async () => {
+    const ws = makeWs();
+    const longName = "X".repeat(190);
+    ws.draft = normalizeDraft({
+      ...ws.draft,
+      weeks: ws.draft.weeks.map((w) => ({
+        ...w,
+        days: w.days.map((slot) =>
+          slot.session
+            ? { ...slot, session: { ...slot.session, name: longName } }
+            : slot,
+        ),
+      })),
+    });
+    const clear = tool(buildSessionTools(ws), "clear_day");
+    await clear.run({ week: 1, day: 1 } as never);
+    expect(ws.ops).toHaveLength(1);
+    expect(ws.ops[0].label!.length).toBeLessThanOrEqual(200);
+  });
+
+  it("clamps an out-of-range move_week target instead of emitting a wire-invalid index", async () => {
+    const ws = makeWs();
+    const dup = tool(buildWeekTools(ws), "duplicate_week");
+    await dup.run({ week: 1, count: 2 } as never); // 3 weeks total
+    ws.ops.length = 0;
+    const move = tool(buildWeekTools(ws), "move_week");
+    const out = await move.run({ week: 1, toPosition: 99 } as never);
+    const op = ws.ops[0];
+    if (op.type !== "move_week") throw new Error("expected move_week");
+    expect(op.toIndex).toBe(2); // clamped to the last real position
+    expect(out).toMatch(/position 3/); // narration matches what happened
+  });
+});

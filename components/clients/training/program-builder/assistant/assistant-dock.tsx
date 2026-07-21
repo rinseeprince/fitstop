@@ -95,6 +95,9 @@ export function AssistantDock() {
               <textarea
                 rows={2}
                 value={input}
+                // Mirrors the route's zod cap so an over-long command is
+                // prevented, not rejected with a generic 400.
+                maxLength={2000}
                 placeholder="Describe the change…"
                 className={cn(
                   "min-h-[38px] flex-1 resize-none rounded-[6px] border border-[rgba(13,148,136,0.15)] bg-white px-2 py-1.5 text-[12px] leading-snug text-[#0c1a1e] placeholder:text-[#93b0b4]",
@@ -110,7 +113,13 @@ export function AssistantDock() {
                     setOpen(false);
                     return;
                   }
-                  if (e.key === "Enter" && !e.shiftKey) {
+                  // nativeEvent.isComposing: Enter during IME composition
+                  // commits the candidate word, it doesn't send the message.
+                  if (
+                    e.key === "Enter" &&
+                    !e.shiftKey &&
+                    !e.nativeEvent.isComposing
+                  ) {
                     e.preventDefault();
                     submit();
                   }

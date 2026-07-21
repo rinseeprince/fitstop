@@ -111,11 +111,16 @@ export function buildExerciseTools(ws: DraftWorkspace) {
       });
       if (err) return err;
       if (input.position != null) {
+        // Clamp to the session's real length — an out-of-range toIndex is
+        // schema-invalid on the client and would discard the whole turn
+        // (including the add above) while this tool reported success.
+        const count = session.value.exercises.length + 1;
+        const target = Math.min(Math.max(input.position, 1), count);
         const reorderErr = commitOp(ws, {
           type: "reorder_exercise",
           sessionUid: session.value.uid,
           exerciseUid: exercise.uid,
-          toIndex: input.position - 1,
+          toIndex: target - 1,
           label: `W${input.week} D${input.day}: ${row.name} to position ${input.position}`,
         });
         if (reorderErr) return `Added ${row.name}, but couldn't reposition it: ${reorderErr}`;
@@ -170,10 +175,34 @@ export function buildExerciseTools(ws: DraftWorkspace) {
         return `"${exercise.name}" has per-set programming (${exercise.setSpecs.length} sets) — read it with get_session and reshape it with set_exercise_sets; only notes and loadKg/loadPercent1rm apply here.`;
       }
 
+      // ORDER IS LOAD-BEARING: compact fields land FIRST, then a load
+      // materializes specs from the POST-patch values. Materializing first
+      // would expand stale sets/reps and the later compact writes would then
+      // contradict the specs the same op ships (landmine #2) — "5 sets of 5 at
+      // 100kg" on a 3×8-12 exercise silently reverted to 3×8-12 on save.
+      const base: ExerciseDraft = { ...exercise };
+      if (!exercise.setSpecs) {
+        if (input.sets !== undefined) base.sets = input.sets;
+        if (input.repsMin !== undefined) base.repsMin = input.repsMin;
+        if (input.repsMax !== undefined) base.repsMax = input.repsMax;
+        if (input.rpeTarget !== undefined) base.rpeTarget = input.rpeTarget;
+        if (input.percentage1rm !== undefined) base.percentage1rm = input.percentage1rm;
+        if (input.tempo !== undefined) base.tempo = input.tempo;
+        if (input.restSeconds !== undefined) base.restSeconds = input.restSeconds;
+        if (input.sets !== undefined) patch.sets = base.sets;
+        if (input.repsMin !== undefined) patch.repsMin = base.repsMin;
+        if (input.repsMax !== undefined) patch.repsMax = base.repsMax;
+        if (input.rpeTarget !== undefined) patch.rpeTarget = base.rpeTarget;
+        if (input.percentage1rm !== undefined) patch.percentage1rm = base.percentage1rm;
+        if (input.tempo !== undefined) patch.tempo = base.tempo;
+        if (input.restSeconds !== undefined) patch.restSeconds = base.restSeconds;
+      }
+
       if (load) {
         // Uniform working-set load. Compact-only exercises materialize their
-        // specs here (that's what "set bench to 100kg" means on one).
-        const specs = exercise.setSpecs ?? expandSetSpecs(exercise);
+        // specs here (that's what "set bench to 100kg" means on one) — from
+        // `base`, so the specs carry the sets/reps the coach just asked for.
+        const specs = base.setSpecs ?? expandSetSpecs(base);
         const nextSpecs = specs.map((s) =>
           (s.set_type ?? "working") === "working"
             ? { ...s, load_type: load.type, load_value: load.value }
@@ -185,16 +214,6 @@ export function buildExerciseTools(ws: DraftWorkspace) {
         patch.repsMin = compact.repsMin;
         patch.repsMax = compact.repsMax;
         if (load.type === "pct_1rm") patch.percentage1rm = load.value;
-      }
-
-      if (!exercise.setSpecs) {
-        if (input.sets !== undefined) patch.sets = input.sets;
-        if (input.repsMin !== undefined) patch.repsMin = input.repsMin;
-        if (input.repsMax !== undefined) patch.repsMax = input.repsMax;
-        if (input.rpeTarget !== undefined) patch.rpeTarget = input.rpeTarget;
-        if (input.percentage1rm !== undefined) patch.percentage1rm = input.percentage1rm;
-        if (input.tempo !== undefined) patch.tempo = input.tempo;
-        if (input.restSeconds !== undefined) patch.restSeconds = input.restSeconds;
       }
       if (input.notes !== undefined) patch.notes = input.notes;
 

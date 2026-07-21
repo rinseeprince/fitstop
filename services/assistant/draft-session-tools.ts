@@ -22,9 +22,9 @@ export function buildSessionTools(ws: DraftWorkspace) {
     inputSchema: {
       type: "object",
       properties: {
-        name: { type: "string", minLength: 1, maxLength: 200 },
+        name: { type: "string", minLength: 1, maxLength: 100 },
         focus: { type: ["string", "null"], maxLength: 100 },
-        description: { type: ["string", "null"], maxLength: 1000 },
+        description: { type: ["string", "null"], maxLength: 500 },
         defaultSurplusPercentage: { type: ["number", "null"], minimum: 0, maximum: 100 },
       },
       additionalProperties: false,
@@ -63,7 +63,7 @@ export function buildSessionTools(ws: DraftWorkspace) {
       properties: {
         week: { type: "integer", minimum: 1 },
         day: { type: "integer", minimum: 1, maximum: 7 },
-        name: { type: "string", minLength: 1, maxLength: 200 },
+        name: { type: "string", minLength: 1, maxLength: 100 },
         focus: { type: "string", maxLength: 200 },
       },
       required: ["week", "day", "name"],
@@ -162,7 +162,7 @@ export function buildSessionTools(ws: DraftWorkspace) {
       properties: {
         week: { type: "integer", minimum: 1 },
         day: { type: "integer", minimum: 1, maximum: 7 },
-        name: { type: "string", minLength: 1, maxLength: 200 },
+        name: { type: "string", minLength: 1, maxLength: 100 },
         focus: { type: ["string", "null"], maxLength: 200 },
         durationMinutes: { type: ["integer", "null"], minimum: 0, maximum: 480 },
         surplusPercentage: { type: ["number", "null"], minimum: 0, maximum: 100 },

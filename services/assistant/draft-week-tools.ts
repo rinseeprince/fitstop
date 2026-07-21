@@ -219,13 +219,17 @@ export function buildWeekTools(ws: DraftWorkspace) {
     run: ({ week, toPosition }) => {
       const w = resolveWeek(ws, week);
       if (!w.ok) return w.error;
+      // Clamp HERE, not just in applyDraftOp: an out-of-range toIndex is
+      // schema-invalid on the client, which would discard the entire turn
+      // while this tool reported success.
+      const target = Math.min(Math.max(toPosition, 1), ws.draft.weeks.length);
       const err = commitOp(ws, {
         type: "move_week",
         weekUid: w.value.uid,
-        toIndex: toPosition - 1,
-        label: `Moved week ${week} to position ${toPosition}`,
+        toIndex: target - 1,
+        label: `Moved week ${week} to position ${target}`,
       });
-      return err ?? `Moved week ${week} to position ${toPosition}.`;
+      return err ?? `Moved week ${week} to position ${target}.`;
     },
   });
 

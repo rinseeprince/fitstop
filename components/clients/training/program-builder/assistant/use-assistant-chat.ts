@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import {
   draftOpSchema,
@@ -79,6 +79,15 @@ export function useAssistantChat() {
   const [pending, setPending] = useState<PendingAssistantOps | null>(null);
   const undoStackRef = useRef<Array<{ draft: ProgramDraft; dirty: boolean }>>([]);
   const [undoDepth, setUndoDepth] = useState(0);
+  // Latest-value mirror: send()'s closure captures `mode` at call time, but the
+  // coach can leave edit mode (Cancel editing / Discard changes) while a turn is
+  // in flight, and ops must never auto-apply into a view-mode tree.
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
+  // A save that COMPLETED between an AI edit and an undo means the DB holds the
+  // AI-edited tree; restoring the pre-AI snapshot as "clean" would disarm the
+  // leave guards over a tree that no longer matches what was persisted.
+  const savedSinceUndoEntryRef = useRef(false);
 
   const pushMessage = useCallback((message: Omit<AssistantChatMessage, "id">) => {
     setMessages((prev) => [...prev, { ...message, id: crypto.randomUUID() }]);
@@ -88,15 +97,21 @@ export function useAssistantChat() {
   const applyOps = useCallback(
     (ops: DraftOp[]): { applied: number; skipped: string[] } => {
       const before = getDraft();
-      if (before) {
-        undoStackRef.current = [
-          ...undoStackRef.current.slice(-(UNDO_DEPTH - 1)),
-          { draft: before, dirty: getDirty() },
-        ];
-        setUndoDepth(undoStackRef.current.length);
-      }
+      const wasDirty = getDirty();
       const result = applyAssistantOps(ops, target);
       if (!result) return { applied: 0, skipped: ["The program isn't loaded yet"] };
+      // Snapshot AFTER the fact and only when something actually changed: a
+      // turn whose ops all skipped leaves the tree untouched, and an undo entry
+      // for it would later revert the coach's own subsequent manual edits under
+      // the label "Undo the last AI edit".
+      if (before && result.draft !== before) {
+        undoStackRef.current = [
+          ...undoStackRef.current.slice(-(UNDO_DEPTH - 1)),
+          { draft: before, dirty: wasDirty },
+        ];
+        setUndoDepth(undoStackRef.current.length);
+        savedSinceUndoEntryRef.current = false;
+      }
       return {
         applied: result.applied,
         skipped: result.skipped.map((s) => s.reason),
@@ -104,6 +119,11 @@ export function useAssistantChat() {
     },
     [applyAssistantOps, getDirty, getDraft, target],
   );
+
+  // Any completed save invalidates the "restore the old clean flag" shortcut.
+  useEffect(() => {
+    if (isSaving) savedSinceUndoEntryRef.current = true;
+  }, [isSaving]);
 
   const send = useCallback(
     async (command: string) => {
@@ -114,6 +134,11 @@ export function useAssistantChat() {
       pushMessage({ role: "user", text: trimmed });
       setAssistantBusy(true);
       const sentRevision = getRevision();
+      // Reference identity catches what the counter can't: seed() (Discard
+      // changes / Discard draft) replaces the whole tree WITHOUT bumping the
+      // revision, so a mid-turn discard would otherwise read as "no drift" and
+      // the turn's ops would auto-apply onto the freshly reverted tree.
+      const sentDraft = draft;
       // Text-only prior turns; the fresh snapshot supersedes old tool traffic.
       const transcript = messages
         .slice(-24)
@@ -157,7 +182,10 @@ export function useAssistantChat() {
         const ops = parsedOps.data as DraftOp[];
         const serverNotes = data.skipped;
 
-        const drift = getRevision() !== sentRevision;
+        const drift =
+          getRevision() !== sentRevision ||
+          getDraft() !== sentDraft ||
+          modeRef.current !== "edit";
         const destructive = ops.some(isDestructiveOp);
         if (ops.length > 0 && (drift || destructive)) {
           setPending({
@@ -180,7 +208,7 @@ export function useAssistantChat() {
             role: "assistant",
             text:
               data.stopReason === "max_iterations"
-                ? `${data.assistantText}`
+                ? `${data.assistantText}\n\n(I stopped at my step limit — ask me to continue.)`
                 : data.assistantText,
             applied: result.applied,
             skipped: [...serverNotes, ...result.skipped],
@@ -239,7 +267,11 @@ export function useAssistantChat() {
     setUndoDepth(undoStackRef.current.length);
     if (!entry) return;
     replaceDraft(entry.draft);
-    restoreDirty(entry.dirty);
+    // If a save landed since this entry was captured, the persisted tree now
+    // holds the AI edit — the restored tree DIFFERS from it, so it must stay
+    // dirty (restoring a stale clean flag would disarm the leave guards and
+    // the coach would exit believing the undo persisted).
+    restoreDirty(savedSinceUndoEntryRef.current || entry.dirty);
     pushMessage({ role: "assistant", text: "Undone — the program is back to how it was before that edit." });
   }, [assistantBusy, isSaving, pushMessage, replaceDraft, restoreDirty]);
 

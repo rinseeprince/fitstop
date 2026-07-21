@@ -33,9 +33,21 @@ export function commitOp(ws: DraftWorkspace, op: DraftOp): string | null {
   const outcome = applyDraftOp(ws.draft, op, { target: ws.target });
   if (outcome.skipped) return outcome.skipped;
   if (outcome.draft !== ws.draft) ws.draft = normalizeDraft(outcome.draft);
-  ws.ops.push(op);
+  // Labels interpolate session/exercise names (schema-legal up to 200 chars),
+  // so a long name can push a label past draftOpSchema's 200-char cap — which
+  // would make the CLIENT reject the whole turn after the server already
+  // applied it and the model told the coach it landed. Clamp centrally: every
+  // op passes through here, so no label template can reopen this.
+  ws.ops.push(
+    op.label && op.label.length > MAX_OP_LABEL
+      ? { ...op, label: `${op.label.slice(0, MAX_OP_LABEL - 1)}…` }
+      : op,
+  );
   return null;
 }
+
+// Mirrors opLabel's .max(200) in lib/validations/assistant.ts.
+const MAX_OP_LABEL = 200;
 
 export type Resolved<T> = { ok: true; value: T } | { ok: false; error: string };
 
