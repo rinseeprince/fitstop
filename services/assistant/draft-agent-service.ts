@@ -17,15 +17,30 @@ import { programSkeleton } from "./draft-tool-helpers";
 // DraftOps ride back for the client to replay. Buffered in 6a (the route
 // returns one JSON body); 6b streams the same loop.
 
-const MODEL = "claude-opus-4-8";
 const MAX_ITERATIONS = 30;
 
-// Thinking depth / token spend. Default is "high", which is generous for what
-// most turns are: parse a command, call 1-5 tools, relay the results. "medium"
-// cuts the output bill (thinking bills at the output rate) with little cost to
-// mechanical edits. Raise to "high"/"xhigh" if multi-step planning degrades —
-// this constant is the one knob.
-const EFFORT = "medium" as const;
+// Model + effort are env-overridable so the cost/quality tradeoff can be
+// A/B'd on real commands without a code change — the per-turn telemetry below
+// logs both, so two runs of the same command are directly comparable.
+//
+//   ASSISTANT_MODEL=claude-sonnet-5   (~40% cheaper than Opus 4.8, faster)
+//   ASSISTANT_EFFORT=low|medium|high|xhigh|max
+//
+// Defaults are Opus 4.8 + medium. What this feature actually asks of a model
+// is structured tool selection against a prescriptive prompt, NOT open-ended
+// reasoning, so a Sonnet tier is a genuine candidate — test before assuming
+// either way. Watch `cacheEngaged` in the telemetry when switching: cache
+// floors differ per model, and a prefix that caches on one may silently fail
+// to on another.
+const ALLOWED_EFFORT = ["low", "medium", "high", "xhigh", "max"] as const;
+type Effort = (typeof ALLOWED_EFFORT)[number];
+
+const MODEL = process.env.ASSISTANT_MODEL?.trim() || "claude-opus-4-8";
+const EFFORT: Effort = ALLOWED_EFFORT.includes(
+  (process.env.ASSISTANT_EFFORT ?? "") as Effort,
+)
+  ? (process.env.ASSISTANT_EFFORT as Effort)
+  : "medium";
 
 // Lazy so importing the module never throws — the missing-key error surfaces
 // as a clear 500 at call time (and tests mock this module entirely).
@@ -229,13 +244,22 @@ ${asUntrusted(opts.command)}`;
     cacheWriteTokens += u.cache_creation_input_tokens ?? 0;
   }
 
-  // Opus 4.8 list prices per million tokens; cache reads bill at 0.1x input
-  // and cache writes at 1.25x. An estimate for triage, not an invoice.
+  // List prices per million tokens; cache reads bill at 0.1x input and cache
+  // writes at 1.25x. An estimate for triage, not an invoice — and it stays
+  // honest when ASSISTANT_MODEL changes, which is the point of logging it.
+  const PRICES: Record<string, { in: number; out: number }> = {
+    "claude-opus-4-8": { in: 5, out: 25 },
+    "claude-opus-4-7": { in: 5, out: 25 },
+    "claude-sonnet-5": { in: 3, out: 15 },
+    "claude-sonnet-4-6": { in: 3, out: 15 },
+    "claude-haiku-4-5": { in: 1, out: 5 },
+  };
+  const price = PRICES[MODEL] ?? PRICES["claude-opus-4-8"];
   const estimatedUsd =
-    (inputTokens * 5 +
-      outputTokens * 25 +
-      cacheReadTokens * 0.5 +
-      cacheWriteTokens * 6.25) /
+    (inputTokens * price.in +
+      outputTokens * price.out +
+      cacheReadTokens * price.in * 0.1 +
+      cacheWriteTokens * price.in * 1.25) /
     1_000_000;
 
   console.info("assistant_turn", {
