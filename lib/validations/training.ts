@@ -436,7 +436,12 @@ const trainingPlanResponseSchema = z.object({
   status: planStatusSchema,
   coachPrompt: z.string(),
   aiResponseRaw: z.string().nullable().optional(),
-  splitType: splitTypeSchema,
+  // Free-text program focus: builder-authored plans store the coach's typed
+  // focus (e.g. "Push Pull Legs (Hypertrophy Focus)") in split_type, so a
+  // pristine apply carries free text onto training_plans.split_type. The enum
+  // is legacy only; the render layer already falls back to the raw label
+  // (SPLIT_TYPE_LABELS[x] || x), so validate as a lenient string, not the enum.
+  splitType: z.string().nullish(),
   frequencyPerWeek: z.number(),
   programDurationWeeks: z.number().nullable().optional(),
   sessions: z.array(z.object({
