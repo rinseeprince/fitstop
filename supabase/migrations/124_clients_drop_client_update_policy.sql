@@ -1,0 +1,41 @@
+-- Remove the client-side whole-row UPDATE policy on public.clients.
+--
+-- WHY: 023_add_user_id_to_clients.sql:13-17 created
+--   CREATE POLICY "Clients can update own profile" ON public.clients FOR UPDATE
+--     USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+-- The comment above it says "limited fields". Nothing limits fields: Postgres RLS
+-- has no column granularity and no column-level GRANT on clients exists anywhere
+-- in the tree. So the WITH CHECK constrained user_id and nothing else, and a
+-- client holding their own JWT could PATCH /rest/v1/clients?id=eq.<self> with
+-- ANY column and still satisfy it -- including coach_id.
+--
+-- clients is the tenancy root: `client_id IN (SELECT id FROM clients WHERE ...)`
+-- is the join every other policy in the tree hangs off (005, 008, 015, 017, 026,
+-- 029, 030, 036, 042, 043, 044, 051, 055, 056, 064, 077, 090). Re-parenting one
+-- row therefore moves the client's whole data graph into another coach's tenant.
+-- Beyond coach_id, the row also exposed bmr, tdee, the manual overrides,
+-- check_in_adherence_rate, current_streak, active, surplus_as_carbs, timezone and
+-- the coach's private notes to client-side writes.
+--
+-- WHY DROP RATHER THAN PIN COLUMNS: pinning coach_id (and each other coach-owned
+-- column) in WITH CHECK -- the shape 107:77-84 used for profiles.role -- works,
+-- but it is a whitelist that silently rots every time a column is added to
+-- clients. Dropping the policy closes every column at once and permanently.
+--
+-- THE ONE AFFECTED CODE PATH, rewired in the same commit:
+-- app/api/client/walkthrough-seen/route.ts was the only client-facing write that
+-- used the session (anon-key) client and therefore depended on this policy. It
+-- now writes through supabaseAdmin, still scoped by an explicit
+-- .eq("id", auth.clientId) where auth.clientId is resolved from the
+-- server-validated JWT and is never user-supplied. Every other client-facing
+-- write to clients already used supabaseAdmin and is unaffected.
+--
+-- DELIBERATELY NOT TOUCHED: "Clients can view own profile" (023:9-11). It is
+-- load-bearing -- lib/auth-helpers.ts:189-193 resolves clientId from user_id
+-- through the session client, so dropping the SELECT policy breaks all
+-- client-portal authentication. Its whole-row read (the coach's `notes` column is
+-- client-readable) is a real but separate finding.
+--
+-- Re-runnable via IF EXISTS.
+
+DROP POLICY IF EXISTS "Clients can update own profile" ON public.clients;

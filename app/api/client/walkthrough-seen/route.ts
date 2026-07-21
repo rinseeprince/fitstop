@@ -1,14 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireClientAuth } from "@/lib/require-client-auth";
-import { createServerSupabaseClient } from "@/lib/supabase-server";
+import { supabaseAdmin } from "@/services/supabase-admin";
 
 export async function POST(request: NextRequest) {
   const auth = await requireClientAuth(request);
   if (!auth.ok) return auth.response;
 
   try {
-    const supabase = await createServerSupabaseClient();
-    const { error } = await supabase
+    // Scope is explicit and server-derived: auth.clientId comes from
+    // requireClientAuth -> getAuthenticatedClientId(request), which resolves
+    // clients.id from the server-validated JWT. It is never user-supplied, and
+    // this .eq() is what keeps the admin write narrow now that RLS no longer
+    // constrains it.
+    const { error } = await supabaseAdmin
       .from("clients")
       .update({ walkthrough_completed_at: new Date().toISOString() })
       .eq("id", auth.clientId);
