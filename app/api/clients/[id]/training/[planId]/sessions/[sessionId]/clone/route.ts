@@ -94,6 +94,7 @@ export async function POST(
       sessionId,
       validation.data.eventId,
       clientId,
+      coachId,
       exerciseOverrides
     );
 

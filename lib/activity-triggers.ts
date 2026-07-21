@@ -131,12 +131,23 @@ export function evaluateActivityCalMismatch(
     })
 
     if (hasRecentMismatch) {
+      // Sort explicitly rather than trusting the order rows arrived in. These
+      // two lines are built by iterating `recentLogs`, so they inherited the
+      // query's ORDER BY — and when the attention feed's daily_logs_full read
+      // was flipped to date DESC (to stop truncation discarding the recent end),
+      // `slice(-7)` silently started returning the OLDEST 7 points instead of
+      // the newest. Sorting here makes both correct regardless of caller.
+      const byDateAsc = <T extends { date: string }>(rows: T[]) =>
+        [...rows].sort((a, b) => a.date.localeCompare(b.date))
+
+      const orderedDays = [...mismatchDays].sort((a, b) => a.localeCompare(b))
+
       return {
         type: "activity_cal_mismatch",
         severity: "high",
         message: `Calorie intake matched planned activities despite skipping them on ${mismatchDays.length} days`,
-        affectedDays: mismatchDays.slice(0, ACTIVITY_CAL_MISMATCH_DAY_COUNT),
-        metricData: metricData.slice(-7) // Last 7 data points
+        affectedDays: orderedDays.slice(0, ACTIVITY_CAL_MISMATCH_DAY_COUNT),
+        metricData: byDateAsc(metricData).slice(-7) // most recent 7 data points
       }
     }
   }

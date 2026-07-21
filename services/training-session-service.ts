@@ -140,13 +140,37 @@ export type ExerciseInput = {
   videoUrl?: string | null;
 };
 
-function buildExerciseInserts(sessionId: string, exercises: ExerciseInput[]) {
+/**
+ * Catalog ids for the exercises that arrived without one, keyed by name.
+ *
+ * An explicit `exerciseId` from the caller always wins; only unresolved names
+ * are looked up, so an already-linked prescription never mints a duplicate
+ * catalog row. Same shape as coach-standalone-session-service.ts:97 and
+ * coach-saved-plan-service.ts:46.
+ */
+async function resolveMissingExerciseIds(
+  exercises: ExerciseInput[],
+  coachId: string,
+): Promise<Map<string, string>> {
+  const unresolvedNames = exercises.filter((e) => !e.exerciseId).map((e) => e.name);
+  if (unresolvedNames.length === 0) return new Map();
+  return resolveExercises(unresolvedNames, coachId);
+}
+
+function buildExerciseInserts(
+  sessionId: string,
+  exercises: ExerciseInput[],
+  exerciseIdMap: Map<string, string>,
+) {
   return exercises.map((ex) => {
     const w = projectExerciseCompact(ex);
     return {
       session_id: sessionId,
       name: ex.name,
-      exercise_id: ex.exerciseId ?? null,
+      // Explicit id wins; otherwise fall back to the name-resolved catalog id.
+      // Writing a bare `ex.exerciseId ?? null` here is what left 574
+      // training_exercises rows with a NULL catalog link.
+      exercise_id: ex.exerciseId ?? exerciseIdMap.get(ex.name) ?? null,
       order_index: ex.orderIndex,
       sets: w.sets,
       reps_min: w.reps_min,
@@ -172,6 +196,7 @@ export async function cloneSessionForEvent(
   sessionId: string,
   eventId: string,
   clientId: string,
+  coachId: string,
   exerciseOverrides?: ExerciseInput[]
 ): Promise<string> {
   // 0. Verify the target event belongs to this client BEFORE doing any work, so a
@@ -229,7 +254,8 @@ export async function cloneSessionForEvent(
   // 3. Insert exercises (overrides or cloned from original)
   if (exerciseOverrides) {
     if (exerciseOverrides.length > 0) {
-      const inserts = buildExerciseInserts(clonedSession.id, exerciseOverrides);
+      const exerciseIdMap = await resolveMissingExerciseIds(exerciseOverrides, coachId);
+      const inserts = buildExerciseInserts(clonedSession.id, exerciseOverrides, exerciseIdMap);
       const { error: exError } = await supabaseAdmin.from("training_exercises").insert(inserts);
       if (exError) throw new Error(`Failed to insert exercises: ${exError.message}`);
     }
@@ -287,7 +313,8 @@ export async function cloneSessionForEvent(
 // Bulk replace all exercises for a session (soft-delete old, insert new)
 export async function bulkReplaceExercises(
   sessionId: string,
-  exercises: ExerciseInput[]
+  exercises: ExerciseInput[],
+  coachId: string
 ): Promise<void> {
   // Soft-delete existing exercises
   const { error: deleteError } = await supabaseAdmin
@@ -300,7 +327,8 @@ export async function bulkReplaceExercises(
 
   // Insert new exercises
   if (exercises.length > 0) {
-    const inserts = buildExerciseInserts(sessionId, exercises);
+    const exerciseIdMap = await resolveMissingExerciseIds(exercises, coachId);
+    const inserts = buildExerciseInserts(sessionId, exercises, exerciseIdMap);
     const { error: insertError } = await supabaseAdmin.from("training_exercises").insert(inserts);
     if (insertError) throw new Error(`Failed to insert exercises: ${insertError.message}`);
   }

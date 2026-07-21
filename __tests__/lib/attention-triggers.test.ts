@@ -352,6 +352,39 @@ describe('attention-triggers', () => {
       expect(result?.affectedDays).toHaveLength(2)
     })
 
+    it('returns the most recent metricData regardless of the order rows arrive in', () => {
+      // Regression (2026-07-21): metricData/affectedDays were built by iterating
+      // the logs array, so they inherited the query's ORDER BY. When the
+      // attention feed flipped daily_logs_full to date DESC, `slice(-7)`
+      // silently began returning the OLDEST 7 points. Feeding the same logs in
+      // both orders must produce identical output.
+      const today = new Date()
+      const days = Array.from({ length: 9 }, (_, i) => {
+        const d = new Date(today)
+        d.setDate(today.getDate() - (i + 1))
+        return d.toISOString().split('T')[0]
+      })
+
+      const logsAsc: DailyLog[] = [...days].reverse().map((date, i) => ({
+        id: String(i), clientId: 'c1', date,
+        caloriesConsumed: 2000 + i, targetCalories: 2000 + i,
+        createdAt: '', updatedAt: '',
+      }))
+      const events: TrainingEventRow[] = days.map((date) => ({
+        client_id: 'c1', date, status: 'skipped', estimated_calories: 400,
+      }))
+
+      const ascResult = evaluateActivityCalMismatch(logsAsc, events)
+      const descResult = evaluateActivityCalMismatch([...logsAsc].reverse(), events)
+
+      expect(ascResult?.metricData).toEqual(descResult?.metricData)
+      expect(ascResult?.affectedDays).toEqual(descResult?.affectedDays)
+
+      // 9 mismatch days, capped at 7 -> must be the SEVEN MOST RECENT.
+      const sevenNewest = [...days].sort().slice(-7)
+      expect(ascResult?.metricData?.map((m) => m.date)).toEqual(sevenNewest)
+    })
+
     it('should not trigger when events are completed', () => {
       const today = new Date()
       const date1 = new Date(today)

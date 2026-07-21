@@ -217,7 +217,10 @@ export async function evaluateSingleClientAlerts(
         .eq("client_id", clientId)
         .gte("date", startDate)
         .lte("date", endDate)
-        .order("date", { ascending: true }) as unknown as Promise<{ data: DailyLogRow[] | null; error: { message: string } | null }>,
+        // date DESC to match evaluateAllClientTriggers, so the two entry points
+        // hand the same trigger functions rows in the same order. Single-client
+        // and 29 days, so unlike the cross-client path this one cannot truncate.
+        .order("date", { ascending: false }) as unknown as Promise<{ data: DailyLogRow[] | null; error: { message: string } | null }>,
       supabaseAdmin.from("daily_habits").select("*").eq("client_id", clientId).eq("is_active", true),
       supabaseAdmin
         .from("daily_habit_logs")

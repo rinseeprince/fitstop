@@ -134,7 +134,7 @@ export async function PUT(
       percentage1rm: e.percentage1rm ?? null,
       supersetGroup: e.supersetGroup ?? null,
       notes: e.notes ?? null,
-    })));
+    })), coachId);
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {
