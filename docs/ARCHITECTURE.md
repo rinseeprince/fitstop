@@ -352,6 +352,8 @@ When an exercise name is encountered (AI generation, manual add, import):
 
 Batch resolution via `resolveExercises()` fetches all coach + global exercises in one query and matches in memory.
 
+**Step 4 is create-on-miss, and that default is load-bearing** — manual/overwrite/standalone save paths rely on it so a coach can type a free-text exercise name and have it stick. The AI assistant is the one caller that must NOT create: an invented exercise name would silently pollute the catalog. It uses the read-only `matchExerciseInRows()` / `suggestExerciseCandidates()` pair instead (steps 1-3 only, then repair candidates). Never "unify" these by flipping the shared resolver's default.
+
 ### Schema
 - Unique index: `COALESCE(coach_id, '00000000-...'), LOWER(name)` - one exercise per name per coach (or globally)
 - `exercise_id` FK on `training_exercises` is nullable for backward compatibility (pre-EX-1 exercises have `exercise_id = NULL`)
@@ -394,6 +396,20 @@ coach_saved_plans              -- plan templates (status: draft / saved)
 2. Coach opens the full-page preview editor, tweaks sessions/exercises/surplus, then saves (sets `status = 'saved'` and creates standalone copies of each non-rest session for reuse) or discards
 3. Placement creates fresh client-side rows — `training_plans`, `training_sessions`, `training_exercises`, `training_events` — from the library template. Library templates are never referenced live; each placement is a copy
 4. `training_plans.saved_plan_id` FK (nullable, SET NULL) tracks which library plan was placed (provenance for analytics and reapply)
+
+### AI program assistant (`services/assistant/`, builder S6a)
+
+A chat assistant docked in the program builder executes natural-language edits on the coach's draft ("duplicate week 1 twelve times, week 6 a deload, +5% bench each week"). Its shape is **unlike every other AI feature here** — one-shot generation writes to the DB; this writes nothing.
+
+**The turn.** The draft lives only in browser memory (`ProgramDraftProvider`). Each turn POSTs `{command, text-only transcript, full draft snapshot}` to `POST /api/training/assistant`. The route runs an Anthropic tool loop over a **per-request workspace** (validated snapshot + the coach's catalog, fetched once) and returns `{assistantText, ops, skipped, stopReason}`. **The server performs no database write anywhere in a turn** — the entire blast radius of a bad turn is the returned op list, which the client re-validates before applying. There is no server-side draft state between turns; each turn re-uploads, so mid-turn manual edits are automatically visible to the next command with nothing to reconcile.
+
+**One shared mutation module.** Tool executors (server) and op replay (client) both go through `program-builder-ops.ts` (`applyDraftOp`). This is the load-bearing decision: the two sides cannot drift semantically, and replay runs through the provider's normal `apply()` path, so AI edits get identical dirty-tracking, revision-counter, save and inline-apply semantics to a hand edit. Ops are **uid-addressed with server-minted uids in fully-materialized payloads** — `applyDraftOp` never mints a uid, because a uid minted at replay time would differ from the server's copy and break every later op in the same turn. An op whose target uid vanished (the coach edited mid-turn) **skips with a reason**; it never clobbers.
+
+**Four belts keep AI content out of the catalog.** Read-only resolution at the tool → non-null `exerciseId` required by the op schema → a pre-return sweep that discards the whole turn if an unresolved exercise leaks → client-side re-validation. Template identity in the client editor (program/session name + focus) is likewise enforced per-tool, inside `applyDraftOp`, and by a final diff sweep — a bulk tool cannot bypass it.
+
+**Two silent-failure invariants.** (1) The cacheable tools+system prefix must stay above the model's prompt-cache floor (4096 tokens on Opus 4.8); below it the API caches nothing with **no error** — cost rises and no test fails. `prompt-size.test.ts` guards the size; the telemetry's `cacheEngaged` flag is the live check. (2) Tool `run` bodies must stay **synchronous**: the SDK executes a response's tool calls via `Promise.all` and the prompt encourages batching, which is safe only because a sync body gives the event loop no interleave point while mutating the shared workspace.
+
+Latency is `iterations x round-trip`, so the levers are structural (fewer round trips: front-loaded program context, batched parallel tool calls, tools expressive enough to avoid one-call-per-week) before they are model choice. Every turn logs `assistant_turn` telemetry; read it before optimising.
 
 ### Cycle-aware placement
 `coach_saved_plans.cycle_length` + session `order_index` let placement map any start date onto the correct position. For example, a PPL+Rest plan (cycle_length=4) starting on a Wednesday places Push/Pull/Legs/Rest/Push/... from that Wednesday onward, regardless of calendar week boundaries.

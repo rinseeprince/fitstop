@@ -375,7 +375,8 @@
   - `coachApiRateLimit`: Coach-side client routes (30 requests per 10 seconds, allows burst traffic)
   - `clientApiRateLimit`: Client portal routes (first tier) — a loose, abuse-only IP burst guard (~1000 req/10s) set above any plausible carrier-NAT aggregate. Paired with a tight **per-client** limit (`clientPerClientRateLimit`, 30 req/10s, keyed by client id) applied post-auth. The per-client tier composes on top of any first-tier override; it is never replaced by one.
   - `checkInRateLimit`: Public check-in endpoints (30 requests per minute)
-  - `aiRateLimit`: AI-powered endpoints using OpenAI (10 requests per minute) - prevents cost abuse
+  - `aiRateLimit`: One-shot AI endpoints (10 requests per minute) - prevents cost abuse
+  - `assistantRateLimit`: The AI program assistant's chat turns (20 requests per 5 minutes, prefix `ratelimit:assistant`, always keyed by coach id). Its own tier because `aiRateLimit` is sized for one-shot generations and would 429 a coach mid-conversation; the wider window still caps runaway model spend. **Runs after auth**, not first, because it keys on the resolved coach id (the same sanctioned exception as the client-portal per-client tier).
 
   #### Required Pattern:
   ```typescript
@@ -394,7 +395,8 @@
   - **coachApiRateLimit**: `/api/clients/*` (coach viewing/managing client data)
   - **clientApiRateLimit**: `/api/client/*` (client portal endpoints)
   - **checkInRateLimit**: Public check-in submission endpoints
-  - **aiRateLimit**: AI-powered endpoints (check-in summaries, training generation, activity analysis)
+  - **aiRateLimit**: One-shot AI endpoints (check-in summaries, activity analysis)
+  - **assistantRateLimit**: The program assistant's chat route (`/api/training/assistant`) — conversational, so it needs a wider window than `aiRateLimit`
   - **apiRateLimit**: All other routes (default choice)
 
   ## 10. API Design
@@ -424,18 +426,26 @@
 
   ## 11. AI Services
 
-  ### Model Selection
-  - **`gpt-4o`**: Check-in AI summaries (`services/ai-service.ts`) - higher quality reasoning for nuanced client feedback
-  - **`gpt-4o-mini`**: Training plans, activity analysis, calorie calculations (`services/training-ai-service.ts`, `services/activity-ai-service.ts`, `services/training-calorie-service.ts`) - cost-efficient for structured/formulaic tasks
+  **Two providers.** OpenAI serves the one-shot, single-call features. Anthropic serves the program assistant, which is an agentic tool loop rather than a single call — a different shape with different rules, so don't generalise one section onto the other.
 
-  ### Timeout Budgets
-  All OpenAI calls must specify an explicit timeout:
-  - 25s for check-in summaries
-  - 15s for activity analysis
-  - 45s for training plan generation
+  ### OpenAI (one-shot generation + analysis)
+  - **`gpt-4o`**: Check-in AI summaries (`services/ai-service.ts`) - higher quality reasoning for nuanced client feedback
+  - **`gpt-4o-mini`**: Activity analysis, calorie calculations (`services/activity-ai-service.ts`, `services/training-calorie-service.ts`) - cost-efficient for structured/formulaic tasks
+  - Every OpenAI call must specify an explicit timeout: 25s check-in summaries, 15s activity analysis.
+  - Env: `OPENAI_API_KEY`.
+
+  ### Anthropic (the program assistant — `services/assistant/`)
+  - Default **`claude-opus-4-8`**, overridable per deployment. The workload is structured tool selection against a prescriptive prompt, NOT open-ended reasoning, so cheaper tiers are viable and have been measured at quality parity — treat the model as a cost knob, not an architectural decision.
+  - Env: `ANTHROPIC_API_KEY` (**required** — the route returns a clear 500 without it), plus optional `ASSISTANT_MODEL`, `ASSISTANT_EFFORT` (`low|medium|high|xhigh|max`), `ASSISTANT_THINKING` (`off`).
+  - **Request params are built per model** (`draft-agent-service.ts`). Older tiers reject `output_config.effort` outright and predate adaptive thinking; Fable/Mythos reject an explicit `thinking: disabled`. An unsupported field is a hard 400, not an ignored hint — never send them unconditionally.
+  - Timeout is on the SDK client (240s), not per call: an agentic turn is many sequential model round trips, so per-call budgets like OpenAI's don't apply.
+  - Every turn logs `assistant_turn` telemetry (iterations, duration, tokens, `cacheEngaged`, estimated cost). Read it before optimising — the loop is otherwise invisible, and a slow turn may be many cheap iterations rather than one expensive one.
 
   ### Rate Limiting
-  All AI endpoints must use `aiRateLimit` (10 req/min) to prevent cost abuse from repeated requests.
+  One-shot AI endpoints use `aiRateLimit` (10 req/min). The assistant's chat route uses `assistantRateLimit` (20 req / 5 min, coach-keyed) — a conversation would trip the one-shot tier mid-flow.
+
+  ### Cost
+  The assistant bills per coach message, so cost scales with usage rather than headcount. Per-coach spend quotas are still unbuilt (see `TECHNICAL-DEBT.md`) — until they exist the ceiling is the rate limit, not a budget.
 
   ## 12. Error Handling
   - All API routes: try-catch with proper error codes
