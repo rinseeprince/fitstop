@@ -42,6 +42,36 @@ const EFFORT: Effort = ALLOWED_EFFORT.includes(
   ? (process.env.ASSISTANT_EFFORT as Effort)
   : "medium";
 
+// ASSISTANT_THINKING=off is the strongest latency lever after model choice:
+// thinking tokens are generated BEFORE every tool call, so they sit directly
+// in the coach's wait. The tradeoff is real — with thinking off, models reach
+// for tools less readily — which this feature's very prescriptive prompt and
+// worked examples are meant to absorb. Test it; don't assume it.
+const THINKING_OFF = process.env.ASSISTANT_THINKING?.trim().toLowerCase() === "off";
+
+// Request-surface differences between model generations. Getting these wrong
+// doesn't degrade quality — it 400s every turn, so a model swap that looks
+// like a one-line env change silently becomes "the assistant is broken".
+//   - Adaptive thinking is 4.6+. Older tiers use budget_tokens, which this
+//     service doesn't offer; for them "no thinking" is the honest mapping.
+//   - output_config.effort errors outright on Sonnet 4.5 / Haiku 4.5.
+//   - Fable/Mythos 5 think ALWAYS: an explicit {type:"disabled"} is a 400,
+//     so "off" there means omitting the field, not disabling it.
+const NO_ADAPTIVE = new Set([
+  "claude-sonnet-4-5",
+  "claude-haiku-4-5",
+  "claude-opus-4-5",
+]);
+const NO_EFFORT = new Set(["claude-sonnet-4-5", "claude-haiku-4-5"]);
+const THINKING_ALWAYS_ON = MODEL.startsWith("claude-fable") || MODEL.startsWith("claude-mythos");
+
+function thinkingParam(): Anthropic.Beta.BetaThinkingConfigParam | undefined {
+  if (THINKING_ALWAYS_ON) return undefined; // always on; disabling is a 400
+  if (THINKING_OFF) return { type: "disabled" };
+  if (NO_ADAPTIVE.has(MODEL)) return undefined; // no adaptive on this tier
+  return { type: "adaptive" };
+}
+
 // Lazy so importing the module never throws — the missing-key error surfaces
 // as a clear 500 at call time (and tests mock this module entirely).
 let client: Anthropic | null = null;
@@ -210,8 +240,10 @@ ${asUntrusted(opts.command)}`;
   const runner = getClient().beta.messages.toolRunner({
     model: MODEL,
     max_tokens: 16000,
-    thinking: { type: "adaptive" },
-    output_config: { effort: EFFORT },
+    // Both spread conditionally — an unsupported field is a hard 400 on the
+    // older tiers, not a silently ignored hint.
+    ...(thinkingParam() ? { thinking: thinkingParam() } : {}),
+    ...(NO_EFFORT.has(MODEL) ? {} : { output_config: { effort: EFFORT } }),
     // Cache the stable prefix (tools render before system, so one breakpoint
     // on the system block covers both). CACHE FLOOR: Opus 4.8 refuses to cache
     // a prefix under 4096 tokens — SILENTLY, with no error and no cache-read
@@ -276,7 +308,8 @@ ${asUntrusted(opts.command)}`;
   console.info("assistant_turn", {
     target: opts.target,
     model: MODEL,
-    effort: EFFORT,
+    effort: NO_EFFORT.has(MODEL) ? "n/a" : EFFORT,
+    thinking: thinkingParam()?.type ?? "omitted",
     iterations,
     durationMs: Date.now() - startedAt,
     opsReturned: ws.ops.length,
