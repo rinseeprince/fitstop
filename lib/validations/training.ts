@@ -201,7 +201,10 @@ export const savedSessionInputSchema = z.object({
 export const updateSavedPlanSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   description: z.string().max(500).nullish(),
-  splitType: splitTypeSchema.nullish(),
+  // Free-text program focus (see createSavedPlanSchema) — the builder's editable
+  // focus can reach this PATCH path too, so accept the same free string as the
+  // create/overwrite paths, not the legacy enum.
+  splitType: z.string().max(100).nullish(),
   frequencyPerWeek: z.number().int().min(1).max(7).nullish(),
   cycleLength: z.number().int().min(1).max(52).nullish(),
   restPattern: z.array(z.number().int()).optional(),
@@ -212,8 +215,8 @@ export const updateSavedPlanSchema = z.object({
 export const createSavedPlanSchema = z.object({
   name: z.string().min(1).max(100),
   // Focus is free text (a descriptive focus like "Glute hypertrophy"), stored
-  // in the free-string split_type column. splitTypeSchema stays the enum for
-  // the AI + update paths.
+  // in the free-string split_type column. splitTypeSchema stays the enum only
+  // for the AI generation path (aiGeneratedPlanSchema).
   splitType: z.string().max(100).nullish(),
   description: z.string().max(500).nullish(),
   defaultSurplusPercentage: z.number().min(0).max(100).nullish(),
