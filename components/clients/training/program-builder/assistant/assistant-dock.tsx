@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown, RotateCcw, SendHorizontal, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -24,6 +24,7 @@ export function AssistantDock() {
   const chat = useAssistantChat();
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
   if (typeof document === "undefined") return null;
 
@@ -38,7 +39,10 @@ export function AssistantDock() {
   return createPortal(
     <div className="fixed bottom-5 right-5 z-[60] flex flex-col items-end">
       {open ? (
-        <div className="flex max-h-[560px] w-[380px] flex-col overflow-hidden rounded-[6px] border border-[rgba(13,148,136,0.15)] bg-white shadow-[0_10px_40px_rgba(13,148,136,0.18)]">
+        // Fixed height, not max-height: with max-h the panel collapsed to its
+        // content, so an empty conversation opened as a sliver and squashed the
+        // composer. The viewport cap keeps it usable on short screens.
+        <div className="flex h-[540px] max-h-[calc(100vh-7rem)] w-[380px] flex-col overflow-hidden rounded-[6px] border border-[rgba(13,148,136,0.15)] bg-white shadow-[0_10px_40px_rgba(13,148,136,0.18)]">
           <div className="flex items-center justify-between bg-[#0f2027] px-3 py-2.5">
             <div className="flex flex-col">
               <span className={HEADER_EYEBROW_CLASS}>Assistant</span>
@@ -75,6 +79,13 @@ export function AssistantDock() {
             busy={chat.busy}
             onApplyPending={chat.applyPending}
             onDismissPending={chat.dismissPending}
+            onPickSuggestion={(text) => {
+              // Fill and focus rather than send: most starters need a target
+              // ("a set" on which exercise?), and the coach stays the author of
+              // anything that edits their program.
+              setInput(text);
+              inputRef.current?.focus();
+            }}
           />
 
           {mode === "view" ? (
@@ -93,6 +104,7 @@ export function AssistantDock() {
           ) : (
             <div className="flex items-end gap-2 border-t border-[rgba(13,148,136,0.08)] px-3 py-2.5">
               <textarea
+                ref={inputRef}
                 rows={2}
                 value={input}
                 // Mirrors the route's zod cap so an over-long command is

@@ -11,12 +11,27 @@ import type {
 // Message thread + the preview-gate panel for the assistant dock. Pure
 // presentation — all state lives in use-assistant-chat.
 
+// Starter commands for the empty state. Each is a real, runnable instruction
+// that maps onto the assistant's tools — they double as a lesson in the command
+// style, so they're phrased the way a coach would actually speak. Picking one
+// fills the composer rather than sending: most need a specific target ("a set"
+// on which exercise?), and it keeps the coach the author of anything that
+// mutates their program.
+const SUGGESTIONS = [
+  "Add 2 more weeks",
+  "Increase load 5% each week",
+  "Add a set to every compound",
+  "Make the last week a deload",
+  "Swap an exercise",
+] as const;
+
 type AssistantMessagesProps = {
   messages: AssistantChatMessage[];
   pending: PendingAssistantOps | null;
   busy: boolean;
   onApplyPending: () => void;
   onDismissPending: () => void;
+  onPickSuggestion?: (text: string) => void;
 };
 
 export function AssistantMessages({
@@ -25,6 +40,7 @@ export function AssistantMessages({
   busy,
   onApplyPending,
   onDismissPending,
+  onPickSuggestion,
 }: AssistantMessagesProps) {
   const endRef = useRef<HTMLDivElement | null>(null);
 
@@ -36,11 +52,26 @@ export function AssistantMessages({
   return (
     <div className="scrollbar-none flex-1 space-y-2.5 overflow-y-auto px-3 py-3">
       {messages.length === 0 && !busy && (
-        <p className={cn("px-1 py-2 text-[12px] leading-relaxed", TEXT_SECONDARY)}>
-          Tell me what to change — &ldquo;duplicate week 2 three times, adding 2kg
-          each week&rdquo;, &ldquo;swap leg press for hack squat in week 1&rdquo;,
-          &ldquo;add a warm-up set to every compound&rdquo;.
-        </p>
+        // Centred in the empty panel so the composer keeps its full height.
+        <div className="flex h-full flex-col items-center justify-center gap-3 px-2">
+          <p className={cn("text-center text-[12px]", TEXT_SECONDARY)}>
+            Tell me what to change.
+          </p>
+          <div className="flex flex-wrap justify-center gap-1.5">
+            {SUGGESTIONS.map((suggestion) => (
+              <button
+                key={suggestion}
+                type="button"
+                // rounded-[6px], not a pill: the design system reserves
+                // rounded-full for circles.
+                className="rounded-[6px] border border-[rgba(13,148,136,0.15)] bg-white px-2.5 py-1.5 text-[11px] font-medium text-[#5a7d82] transition-colors hover:border-[#0d9488] hover:text-[#0d9488]"
+                onClick={() => onPickSuggestion?.(suggestion)}
+              >
+                {suggestion}
+              </button>
+            ))}
+          </div>
+        </div>
       )}
       {messages.map((message) =>
         message.role === "user" ? (

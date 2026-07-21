@@ -120,3 +120,37 @@ describe("AssistantMessages", () => {
     expect(screen.getByText(/no longer exists/)).toBeInTheDocument();
   });
 });
+
+describe("suggestion chips", () => {
+  beforeEach(() => {
+    // Own reset: the mocks are module-scoped, so without this the send()
+    // assertion below sees the call made by the Enter-key test above.
+    vi.clearAllMocks();
+    mockContext.mode = "edit";
+    mockChat.messages = [];
+  });
+
+  it("fills the composer (rather than sending) when a starter is picked", () => {
+    render(<AssistantDock />);
+    fireEvent.click(screen.getByRole("button", { name: /open the program assistant/i }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Add 2 more weeks" }));
+
+    // Populates the input for editing; the coach still presses send.
+    expect(screen.getByPlaceholderText(/describe the change/i)).toHaveValue(
+      "Add 2 more weeks",
+    );
+    expect(mockChat.send).not.toHaveBeenCalled();
+  });
+
+  it("hides the starters once a conversation exists", () => {
+    mockContext.mode = "edit";
+    mockChat.messages = [{ id: "1", role: "user", text: "hi" }];
+    render(<AssistantDock />);
+    fireEvent.click(screen.getByRole("button", { name: /open the program assistant/i }));
+    expect(
+      screen.queryByRole("button", { name: "Add 2 more weeks" }),
+    ).not.toBeInTheDocument();
+    mockChat.messages = [];
+  });
+});
