@@ -79,6 +79,11 @@ export function systemPrompt(target: BuilderTarget): string {
 - "…but only the big lifts" → same call plus scope:"compounds".
 - "…and an extra set every other week" → same call with a second rule {kind:"sets", amount:1, everyNWeeks:2}.
 - "make the next week a deload, 20% lighter" → duplicate_week{week:<current>, count:1, rules:[{kind:"load_percent", amount:-20}]}.
+- "turn week 1 into a 12-week plan, +5% bench each week, week 6 a 50% deload" → THREE calls, not eleven:
+  1. duplicate_week{week:1, count:4, rules:[{kind:"load_percent", amount:5}], scope:"selected", scopeExercises:["Barbell Bench Press"]} → weeks 2-5
+  2. duplicate_week{week:5, count:1, rules:[{kind:"load_percent", amount:-50}]} → week 6, the deload
+  3. duplicate_week{week:5, count:6, rules:[{kind:"load_percent", amount:5}], scope:"selected", scopeExercises:["Barbell Bench Press"], insertAfterWeek:6} → weeks 7-12, continuing from week 5's loads rather than the deload's
+  The insertAfterWeek on the third call is the whole trick: clone from BEFORE the deload, place AFTER it. Building a long program one week per call is wrong — it is slow and the coach waits on every round trip.
 - "bench should be 5 sets of 5 at 100kg" → ONE update_exercise{sets:5, repsMin:5, repsMax:5, loadKg:100}. Only reach for set_exercise_sets when the sets differ FROM EACH OTHER.
 - "add a warm-up set to the squat" → set_exercise_sets with the full list (a warm-up changes the set list, so send every set, warm-up first).
 - "swap leg press for hack squat on day 3" → get_week to locate it, then remove_exercise + add_exercise (use position to keep the order).
@@ -202,10 +207,54 @@ ${asUntrusted(opts.command)}`;
     stream: true,
   });
 
+  // Per-turn telemetry. The agentic loop is the cost and latency centre of
+  // this feature and it is otherwise invisible: a slow turn could be many
+  // cheap iterations or one expensive one, and a dead prompt cache looks
+  // exactly like a working one. Measure both.
+  const startedAt = Date.now();
+  let iterations = 0;
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let cacheReadTokens = 0;
+  let cacheWriteTokens = 0;
+
   let finalMessage: Anthropic.Beta.BetaMessage | null = null;
   for await (const messageStream of runner) {
     finalMessage = await messageStream.finalMessage();
+    iterations += 1;
+    const u = finalMessage.usage;
+    inputTokens += u.input_tokens ?? 0;
+    outputTokens += u.output_tokens ?? 0;
+    cacheReadTokens += u.cache_read_input_tokens ?? 0;
+    cacheWriteTokens += u.cache_creation_input_tokens ?? 0;
   }
+
+  // Opus 4.8 list prices per million tokens; cache reads bill at 0.1x input
+  // and cache writes at 1.25x. An estimate for triage, not an invoice.
+  const estimatedUsd =
+    (inputTokens * 5 +
+      outputTokens * 25 +
+      cacheReadTokens * 0.5 +
+      cacheWriteTokens * 6.25) /
+    1_000_000;
+
+  console.info("assistant_turn", {
+    target: opts.target,
+    model: MODEL,
+    effort: EFFORT,
+    iterations,
+    durationMs: Date.now() - startedAt,
+    opsReturned: ws.ops.length,
+    inputTokens,
+    outputTokens,
+    cacheReadTokens,
+    cacheWriteTokens,
+    // Zero cache reads across a multi-iteration turn means the prompt cache
+    // never engaged (prefix under the model's floor, or a changing prefix) —
+    // every iteration re-paid full price for the tools+system block.
+    cacheEngaged: cacheReadTokens > 0,
+    estimatedUsd: Number(estimatedUsd.toFixed(4)),
+  });
 
   const { ops, notes } = finalizeAssistantOps(ws);
   // A final message still asking for tools = the iteration cap cut the turn.

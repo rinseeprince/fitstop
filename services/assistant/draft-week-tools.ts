@@ -101,12 +101,18 @@ export function buildWeekTools(ws: DraftWorkspace) {
   const duplicateWeek = betaTool({
     name: "duplicate_week",
     description:
-      "Duplicate a week one or more times, optionally progressing each copy with rules. Copies insert right after the source; rules COMPOUND week over week (load_kg +2 = source+2, source+4, ...). everyNWeeks makes a rule fire only on those steps (2 = every other generated week). Progression touches WORKING sets only; load_kg only moves absolute-kg loads (percent-loaded sets need load_percent). scope 'compounds' uses the catalog's compound category; 'selected' progresses only scopeExercises.",
+      "Duplicate a week one or more times, optionally progressing each copy with rules. Rules COMPOUND week over week (load_kg +2 = source+2, source+4, ...). everyNWeeks makes a rule fire only on those steps (2 = every other generated week). Progression touches WORKING sets only; load_kg only moves absolute-kg loads (percent-loaded sets need load_percent). scope 'compounds' uses the catalog's compound category; 'selected' progresses only scopeExercises. Copies land after the source week unless insertAfterWeek says otherwise — use that to resume a progression PAST a deload: e.g. weeks 2-5 from week 1 (+5%), then week 6 as a deload off week 5, then the rest cloned from week 5 again with insertAfterWeek:6 so they continue from pre-deload loads instead of the deload's. Build a long program in a FEW calls like that, never one week per call.",
     inputSchema: {
       type: "object",
       properties: {
-        week: { type: "integer", minimum: 1, description: "1-based source week" },
+        week: { type: "integer", minimum: 1, description: "1-based source week — what gets cloned" },
         count: { type: "integer", minimum: 1, maximum: 12, description: "How many copies (default 1)" },
+        insertAfterWeek: {
+          type: "integer",
+          minimum: 1,
+          description:
+            "1-based week the copies are placed AFTER (default: the source week). Lets you clone one week's content but position the copies elsewhere.",
+        },
         rules: {
           type: "array",
           maxItems: 4,
@@ -131,13 +137,24 @@ export function buildWeekTools(ws: DraftWorkspace) {
       required: ["week"],
       additionalProperties: false,
     } as const,
-    run: ({ week, count, rules, scope, scopeExercises }) => {
+    run: ({ week, count, insertAfterWeek, rules, scope, scopeExercises }) => {
       const source = resolveWeek(ws, week);
       if (!source.ok) return source.error;
       const wireRules = (rules ?? []) as WireRule[];
       const scopeResult = buildScope(ws, scope ?? "all", scopeExercises);
       if ("error" in scopeResult) return scopeResult.error;
       const predicate = buildScopePredicate(scopeResult.value, ws.isCompound);
+
+      // Two independent chains: `prev` is what each copy is CLONED from
+      // (so rules compound), `anchorUid` is where it's PLACED. They diverge
+      // only on the first copy when insertAfterWeek is given — after that,
+      // copies stack in order behind the one before them.
+      let anchorUid = source.value.uid;
+      if (insertAfterWeek != null) {
+        const anchor = resolveWeek(ws, insertAfterWeek);
+        if (!anchor.ok) return anchor.error;
+        anchorUid = anchor.value.uid;
+      }
 
       const copies = count ?? 1;
       let prev: WeekDraft = source.value;
@@ -163,7 +180,7 @@ export function buildWeekTools(ws: DraftWorkspace) {
             : `Week ${week} duplicated`;
         const err = commitOp(ws, {
           type: "insert_week",
-          afterWeekUid: prev.uid,
+          afterWeekUid: anchorUid,
           week: generated,
           label,
         });
@@ -178,8 +195,10 @@ export function buildWeekTools(ws: DraftWorkspace) {
             : `Copy ${step}: exact duplicate`,
         );
         prev = generated;
+        anchorUid = generated.uid;
       }
-      return `Inserted ${copies} week(s) after week ${week}. The program now has ${ws.draft.weeks.length} weeks.\n${reports.join("\n")}`;
+      const placedAfter = insertAfterWeek ?? week;
+      return `Inserted ${copies} week(s) after week ${placedAfter}${insertAfterWeek != null && insertAfterWeek !== week ? ` (cloned from week ${week})` : ""}. The program now has ${ws.draft.weeks.length} weeks.\n${reports.join("\n")}`;
     },
   });
 

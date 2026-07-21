@@ -447,3 +447,41 @@ describe("review-fleet regressions (S6a follow-up)", () => {
     expect(out).toMatch(/position 3/); // narration matches what happened
   });
 });
+
+describe("duplicate_week insertAfterWeek (deload-then-resume)", () => {
+  it("clones from BEFORE a deload and places the copies AFTER it, in order", async () => {
+    const ws = makeWs();
+    const dup = tool(buildWeekTools(ws), "duplicate_week");
+
+    // W2-W3 progressing +10kg off W1.
+    await dup.run({ week: 1, count: 2, rules: [{ kind: "load_kg", amount: 10 }] } as never);
+    expect(squatLoads(ws, 1)).toEqual([110, 110]);
+    expect(squatLoads(ws, 2)).toEqual([120, 120]);
+
+    // W4 = deload off W3.
+    await dup.run({ week: 3, count: 1, rules: [{ kind: "load_kg", amount: -60 }] } as never);
+    expect(squatLoads(ws, 3)).toEqual([60, 60]);
+
+    // W5-W6 resume from W3's PRE-deload loads, placed after the deload.
+    const out = await dup.run({
+      week: 3,
+      count: 2,
+      insertAfterWeek: 4,
+      rules: [{ kind: "load_kg", amount: 10 }],
+    } as never);
+
+    expect(ws.draft.weeks).toHaveLength(6);
+    expect(squatLoads(ws, 3)).toEqual([60, 60]); // deload still sits at position 4
+    expect(squatLoads(ws, 4)).toEqual([130, 130]); // resumed from 120, not 60
+    expect(squatLoads(ws, 5)).toEqual([140, 140]); // and keeps compounding
+    expect(out).toMatch(/cloned from week 3/);
+  });
+
+  it("rejects an insertAfterWeek that doesn't exist instead of guessing", async () => {
+    const ws = makeWs();
+    const dup = tool(buildWeekTools(ws), "duplicate_week");
+    const out = await dup.run({ week: 1, count: 1, insertAfterWeek: 9 } as never);
+    expect(out).toMatch(/Week 9 doesn't exist/);
+    expect(ws.ops).toHaveLength(0);
+  });
+});

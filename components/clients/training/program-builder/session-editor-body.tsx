@@ -187,7 +187,11 @@ export function SessionEditorBody({
         </label>
       </div>
 
-      <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1">
+      {/* px-1, not pr-1: overflow-y-auto clips the X axis too (CSS forces the
+          other axis away from `visible`), and focus rings draw OUTSIDE the
+          element box — with no left padding the exercise-picker input's ring
+          was shaved flat against the container edge. */}
+      <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto px-1">
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
