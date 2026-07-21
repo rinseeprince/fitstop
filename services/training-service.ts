@@ -3,6 +3,7 @@ import type { TrainingPlan, TrainingSession, TrainingExercise, UpdateTrainingPla
 import type { TrainingPlanUpdate } from "@/lib/database-helpers";
 import { mapExerciseRow, mapSessionRow, mapPlanRow } from "./training-mappers";
 import { getClientTodayString } from "@/services/today-service";
+import { fetchAllByChunkedIds } from "@/lib/paged-fetch";
 
 // Re-export moved functions so existing imports continue to work
 export { updateSession, deleteSession, getSessionWithExercises, updateSurplusForFutureEvents } from "./training-session-service";
@@ -27,16 +28,28 @@ const fetchSessionsWithExercises = async (planId: string): Promise<TrainingSessi
   if (sessionList.length === 0) return [];
 
   const sessionIds = sessionList.map((s) => s.id);
-  const { data: exerciseRows, error: exerciseError } = await supabaseAdmin
-    .from("training_exercises")
-    .select("*")
-    .in("session_id", sessionIds)
-    .eq("is_active", true)
-    .order("order_index", { ascending: true });
+  // Chunked AND paged. Unpaged this truncated at PostgREST's ~1000-row cap,
+  // reached by a 5-day program at 29 weeks (5 sessions x 7 exercises = 35
+  // rows/week). Because the order was `order_index` alone, the cut was not a
+  // tail but a horizontal slice across ALL sessions: every session past the
+  // threshold showed its first few exercises and then stopped. This read feeds
+  // getActiveTrainingPlan, which reaches the client dashboard, the coach
+  // nutrition page and the check-in AI prompt.
+  const exerciseRows = await fetchAllByChunkedIds(sessionIds, (chunk, from, to) =>
+    supabaseAdmin
+      .from("training_exercises")
+      .select("*")
+      .in("session_id", chunk)
+      .eq("is_active", true)
+      .order("session_id", { ascending: true })
+      .order("order_index", { ascending: true })
+      .order("id", { ascending: true })
+      .range(from, to),
+    { errorLabel: "exercises" },
+  );
 
-  if (exerciseError) throw new Error(`Failed to fetch exercises: ${exerciseError.message}`);
   const exercisesBySession = new Map<string, TrainingExercise[]>();
-  for (const row of exerciseRows || []) {
+  for (const row of exerciseRows) {
     const sessionId = row.session_id;
     if (!exercisesBySession.has(sessionId)) {
       exercisesBySession.set(sessionId, []);

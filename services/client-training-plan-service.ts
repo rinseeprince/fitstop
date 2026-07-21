@@ -5,6 +5,7 @@ import type {
   ClientTrainingExercise,
 } from "@/types/client-training-plan";
 import type { SetSpec } from "@/utils/exercise-set-specs";
+import { fetchAllByChunkedIds } from "@/lib/paged-fetch";
 
 type TrainingSessionRow = {
   id: string;
@@ -138,20 +139,24 @@ export async function getClientTrainingPlan(
   const exercisesBySession = new Map<string, ClientTrainingExercise[]>();
   if (sessions.length > 0) {
     const sessionIds = sessions.map((s) => s.id);
-    const { data: exerciseRows, error: exerciseErr } = await supabaseAdmin
-      .from("training_exercises")
-      .select(
-        "id, session_id, name, order_index, sets, reps_min, reps_max, reps_target, rpe_target, tempo, rest_seconds, is_warmup, superset_group, set_specs, video_url"
-      )
-      .in("session_id", sessionIds)
-      .eq("is_active", true)
-      .order("order_index", { ascending: true });
-
-    if (exerciseErr) {
-      throw new Error(
-        `Failed to fetch training exercises: ${exerciseErr.message}`
-      );
-    }
+    // Chunked AND paged -- same silent truncation as training-service.ts, and
+    // worse here because this read has no is_rest filter, so it carries more
+    // sessions. Unpaged, a long program lost a horizontal slice of exercises
+    // across every session with no error.
+    const exerciseRows = await fetchAllByChunkedIds(sessionIds, (chunk, from, to) =>
+      supabaseAdmin
+        .from("training_exercises")
+        .select(
+          "id, session_id, name, order_index, sets, reps_min, reps_max, reps_target, rpe_target, tempo, rest_seconds, is_warmup, superset_group, set_specs, video_url"
+        )
+        .in("session_id", chunk)
+        .eq("is_active", true)
+        .order("session_id", { ascending: true })
+        .order("order_index", { ascending: true })
+        .order("id", { ascending: true })
+        .range(from, to),
+      { errorLabel: "training exercises" },
+    );
 
     for (const row of (exerciseRows ?? []) as TrainingExerciseRow[]) {
       const list = exercisesBySession.get(row.session_id) ?? [];

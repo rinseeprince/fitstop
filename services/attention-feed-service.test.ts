@@ -202,6 +202,7 @@ describe("attention-feed-service", () => {
         gte: vi.fn().mockReturnThis(),
         lte: vi.fn().mockReturnThis(),
         order: vi.fn().mockReturnThis(),
+        range: vi.fn().mockReturnThis(),
         then: (resolve: (v: { data: unknown[]; error: null }) => void) =>
           Promise.resolve({ data: [], error: null }).then(resolve),
       }

@@ -3,6 +3,7 @@ import type { TrainingEvent, TrainingEventStatus, TrainingEventSummary } from "@
 import type { SessionCompletionQuality } from "@/types/check-in";
 import type { TrainingEventRow, TrainingEventInsert } from "@/lib/database-helpers";
 import { getTodayDateString, getDateString, DAY_NUM } from "@/lib/date-helpers";
+import { fetchAllByChunkedIds } from "@/lib/paged-fetch";
 
 // --- Row mapper ---
 
@@ -469,26 +470,38 @@ export async function getEventSummariesForDate(
   const prescribedCountMap = new Map<string, number>();
   const sessionNameById = new Map<string, string>();
   if (displaySessionIds.length > 0) {
-    const [exerciseRes, sessionRes] = await Promise.all([
-      supabaseAdmin
-        .from("training_exercises")
-        .select("session_id")
-        .in("session_id", displaySessionIds)
-        .eq("is_active", true),
-      supabaseAdmin
-        .from("training_sessions")
-        .select("id, name")
-        .in("id", displaySessionIds),
+    // Both chunked AND paged: this feeds a prescribed-exercise COUNT per session,
+    // so an unpaged read did not just drop rows, it under-reported the count the
+    // coach sees. Same truncation class as training-service.ts.
+    const [exerciseRows, sessionRows] = await Promise.all([
+      fetchAllByChunkedIds(displaySessionIds, (chunk, from, to) =>
+        supabaseAdmin
+          .from("training_exercises")
+          .select("session_id, id")
+          .in("session_id", chunk)
+          .eq("is_active", true)
+          .order("session_id", { ascending: true })
+          .order("id", { ascending: true })
+          .range(from, to),
+        { errorLabel: "training exercises" },
+      ),
+      fetchAllByChunkedIds(displaySessionIds, (chunk, from, to) =>
+        supabaseAdmin
+          .from("training_sessions")
+          .select("id, name")
+          .in("id", chunk)
+          .order("id", { ascending: true })
+          .range(from, to),
+        { errorLabel: "training sessions" },
+      ),
     ]);
-    if (exerciseRes.error) throw exerciseRes.error;
-    if (sessionRes.error) throw sessionRes.error;
-    for (const row of exerciseRes.data ?? []) {
+    for (const row of exerciseRows) {
       prescribedCountMap.set(
         row.session_id,
         (prescribedCountMap.get(row.session_id) ?? 0) + 1
       );
     }
-    for (const row of sessionRes.data ?? []) {
+    for (const row of sessionRows) {
       sessionNameById.set(row.id, row.name);
     }
   }

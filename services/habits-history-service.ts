@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "./supabase-admin";
 import type { HabitMeta, HabitsHistoryRow } from "@/types/history";
+import { fetchAllPages } from "@/lib/paged-fetch";
 
 /**
  * Fetches habits history with pivoted rows (one row per date, one column per habit).
@@ -43,34 +44,44 @@ export async function getHabitsHistory(
     return { habits, rows: [], total: 0 };
   }
 
-  // Query 2: Fetch all log dates to compute distinct dates for pagination
-  const { data: allDateRows, error: datesError } = await supabaseAdmin
-    .from("daily_habit_logs")
-    .select("date")
-    .eq("client_id", clientId)
-    .order("date", { ascending: false });
+  // Query 2: Fetch all log dates to compute distinct dates for pagination.
+  // PAGED: this enumerates one row per habit per date over the client's whole
+  // tenure purely to derive distinct dates, so unpaged it capped at ~1000 rows
+  // and `total` below silently understated history -- for a 5-habit client that
+  // is only ~200 reachable days, i.e. wrong from year 1, and it dropped whole
+  // pages off the end without any error.
+  const allDateRows = await fetchAllPages((from, to) =>
+    supabaseAdmin
+      .from("daily_habit_logs")
+      .select("date, id")
+      .eq("client_id", clientId)
+      .order("date", { ascending: false })
+      .order("id", { ascending: true })
+      .range(from, to),
+    { errorLabel: "habit log dates" },
+  );
 
-  if (datesError) {
-    throw new Error(`Failed to fetch habit log dates: ${datesError.message}`);
-  }
-
-  const allDates = [...new Set((allDateRows || []).map((d) => d.date))];
+  const allDates = [...new Set(allDateRows.map((d) => d.date))];
   const paginatedDates = allDates.slice(offset, offset + limit);
 
   if (paginatedDates.length === 0) {
     return { habits, rows: [], total: allDates.length };
   }
 
-  // Query 3: Fetch logs for the paginated dates
-  const { data: logs, error: logsError } = await supabaseAdmin
-    .from("daily_habit_logs")
-    .select("date, daily_habit_id, completed, value, notes")
-    .eq("client_id", clientId)
-    .in("date", paginatedDates);
-
-  if (logsError) {
-    throw new Error(`Failed to fetch habit logs: ${logsError.message}`);
-  }
+  // Query 3: Fetch logs for the paginated dates.
+  // PAGED: returns (dates x habits) rows, so with MAX_PAGE_LIMIT = 100 dates it
+  // truncates on page 1 for any client with >= 11 habits.
+  const logs = await fetchAllPages((from, to) =>
+    supabaseAdmin
+      .from("daily_habit_logs")
+      .select("date, daily_habit_id, completed, value, notes, id")
+      .eq("client_id", clientId)
+      .in("date", paginatedDates)
+      .order("date", { ascending: false })
+      .order("id", { ascending: true })
+      .range(from, to),
+    { errorLabel: "habit logs" },
+  );
 
   // Pivot: group logs by date into rows
   const habitIds = new Set(habits.map((h) => h.id));
@@ -85,7 +96,7 @@ export async function getHabitsHistory(
     });
   }
 
-  for (const log of logs || []) {
+  for (const log of logs) {
     const row = dateMap.get(log.date);
     if (!row) continue;
     if (!habitIds.has(log.daily_habit_id)) continue;

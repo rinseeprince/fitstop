@@ -15,6 +15,7 @@ import type { ClientWithAlerts, AttentionAlert } from "@/types/attention-feed"
 import { getDateDaysFrom } from "@/lib/date-helpers"
 import { getCoachTodayString } from "./today-service"
 import { groupClientData, evaluateAndSortTriggers, filterDismissedAlerts } from "@/lib/attention-feed-helpers"
+import { fetchAllPages } from "@/lib/paged-fetch"
 import type { DailyLogRow } from "@/lib/attention-feed-helpers"
 
 type ClientRow = Database["public"]["Tables"]["clients"]["Row"]
@@ -55,77 +56,108 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
   // Fetch all data sources in parallel (Q2-Q6 are independent after Q1)
   // Uses Promise.allSettled to preserve graceful degradation: logs are required,
   // but habits/events/dismissals degrade gracefully if they fail
+  // Every cross-client read below is PAGED. Unpaged, PostgREST truncated each at
+  // ~1000 rows with no error: at 5 habits x 29 dates = 145 rows/client the habit
+  // logs were losing rows from the SEVENTH client onward, which silently skewed
+  // the habit-dropoff percentage a coach is shown. This was live at ordinary
+  // roster size, not a 2,000-client problem.
+  //
+  // daily_logs_full is ordered date DESC (it was ASC): under truncation ASC kept
+  // the OLDEST dates and discarded exactly the recent end that every trigger
+  // reads (dropoff = last 7 days, no_engagement = last 3, cal-mismatch = 28).
+  // The `id` tiebreak keeps offset paging stable across pages.
   const [logsResult, habitsResult, habitLogsResult, eventsResult, dismissalsResult] = await Promise.allSettled([
     // 2. Daily logs (cross-domain view, required for core triggers)
-    supabaseAdmin
-      .from("daily_logs_full")
-      .select("*")
-      .in("client_id", clientIds)
-      .gte("date", startDate)
-      .lte("date", endDate)
-      .order("date", { ascending: true }) as unknown as Promise<{ data: DailyLogRow[] | null; error: { message: string } | null }>,
+    fetchAllPages<DailyLogRow>((from, to) =>
+      supabaseAdmin
+        .from("daily_logs_full")
+        .select("*")
+        .in("client_id", clientIds)
+        .gte("date", startDate)
+        .lte("date", endDate)
+        .order("date", { ascending: false })
+        .order("id", { ascending: true })
+        .range(from, to) as unknown as PromiseLike<{ data: DailyLogRow[] | null; error: { message: string } | null }>,
+      { errorLabel: "daily logs" },
+    ),
     // 3. Habit definitions (graceful degradation)
-    supabaseAdmin
-      .from("daily_habits")
-      .select("*")
-      .in("client_id", clientIds)
-      .eq("is_active", true),
+    fetchAllPages((from, to) =>
+      supabaseAdmin
+        .from("daily_habits")
+        .select("*")
+        .in("client_id", clientIds)
+        .eq("is_active", true)
+        .order("id", { ascending: true })
+        .range(from, to),
+      { errorLabel: "habits" },
+    ),
     // 4. Habit logs (graceful degradation)
-    supabaseAdmin
-      .from("daily_habit_logs")
-      .select("*")
-      .in("client_id", clientIds)
-      .gte("date", startDate)
-      .lte("date", endDate),
+    fetchAllPages((from, to) =>
+      supabaseAdmin
+        .from("daily_habit_logs")
+        .select("*")
+        .in("client_id", clientIds)
+        .gte("date", startDate)
+        .lte("date", endDate)
+        .order("date", { ascending: false })
+        .order("id", { ascending: true })
+        .range(from, to),
+      { errorLabel: "habit logs" },
+    ),
     // 5. Training events (graceful degradation)
-    supabaseAdmin
-      .from("training_events")
-      .select("client_id, date, status, estimated_calories")
-      .in("client_id", clientIds)
-      .gte("date", startDate)
-      .lte("date", endDate),
+    fetchAllPages((from, to) =>
+      supabaseAdmin
+        .from("training_events")
+        .select("client_id, date, status, estimated_calories, id")
+        .in("client_id", clientIds)
+        .gte("date", startDate)
+        .lte("date", endDate)
+        .order("date", { ascending: false })
+        .order("id", { ascending: true })
+        .range(from, to),
+      { errorLabel: "training events" },
+    ),
     // 6. Dismissed alerts (graceful degradation)
-    supabaseAdmin
-      .from("attention_dismissals")
-      .select("client_id, alert_type, dismissed_at")
-      .eq("coach_id", coachId),
+    fetchAllPages((from, to) =>
+      supabaseAdmin
+        .from("attention_dismissals")
+        .select("client_id, alert_type, dismissed_at")
+        .eq("coach_id", coachId)
+        .order("client_id", { ascending: true })
+        .order("alert_type", { ascending: true })
+        .range(from, to),
+      { errorLabel: "dismissals" },
+    ),
   ])
 
-  // Extract results, preserving original error semantics:
-  // logs are required (throw), others degrade gracefully (log and continue)
+  // Extract results, preserving original error semantics: logs are required
+  // (throw), others degrade gracefully (log and continue). fetchAllPages throws
+  // on a page error rather than returning { error }, so a failure now surfaces
+  // as a rejected settlement -- the two old branches collapse into one.
   if (logsResult.status === "rejected") {
     throw new Error("Failed to fetch daily logs for attention feed")
   }
-  const { data: allLogs, error: logsError } = logsResult.value
-  if (logsError) {
-    throw new Error("Failed to fetch daily logs for attention feed")
-  }
+  const allLogs = logsResult.value
 
   let allHabits = null
   if (habitsResult.status === "fulfilled") {
-    if (habitsResult.value.error) {
-      console.error("Error fetching habits:", habitsResult.value.error)
-    } else {
-      allHabits = habitsResult.value.data
-    }
+    allHabits = habitsResult.value
+  } else {
+    console.error("Error fetching habits:", habitsResult.reason)
   }
 
   let allHabitLogs = null
   if (habitLogsResult.status === "fulfilled") {
-    if (habitLogsResult.value.error) {
-      console.error("Error fetching habit logs:", habitLogsResult.value.error)
-    } else {
-      allHabitLogs = habitLogsResult.value.data
-    }
+    allHabitLogs = habitLogsResult.value
+  } else {
+    console.error("Error fetching habit logs:", habitLogsResult.reason)
   }
 
   let eventRows = null
   if (eventsResult.status === "fulfilled") {
-    if (eventsResult.value.error) {
-      console.error("Error fetching training events:", eventsResult.value.error)
-    } else {
-      eventRows = eventsResult.value.data
-    }
+    eventRows = eventsResult.value
+  } else {
+    console.error("Error fetching training events:", eventsResult.reason)
   }
 
   // Group all query results by client
@@ -142,8 +174,8 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
 
   // Filter out dismissed alerts that haven't resurfaced
   let dismissals = null
-  if (dismissalsResult.status === "fulfilled" && !dismissalsResult.value.error) {
-    dismissals = dismissalsResult.value.data
+  if (dismissalsResult.status === "fulfilled") {
+    dismissals = dismissalsResult.value
   }
 
   const filteredClients = filterDismissedAlerts(clientsWithAlerts, dismissals)

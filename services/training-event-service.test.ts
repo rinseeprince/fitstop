@@ -32,6 +32,8 @@ function createMockQuery<T = unknown>(result: { data: T | null; error: { message
     lte: vi.fn().mockReturnThis(),
     order: vi.fn().mockReturnThis(),
     limit: vi.fn().mockReturnThis(),
+    // Paged reads (lib/paged-fetch) call .range(); one short page ends the loop.
+    range: vi.fn().mockReturnThis(),
     single: vi.fn().mockResolvedValue(result),
     maybeSingle: vi.fn().mockResolvedValue(result),
     then: vi.fn(),

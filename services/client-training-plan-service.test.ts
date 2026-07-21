@@ -23,6 +23,10 @@ function awaitableQuery<T>(result: MockResult<T>) {
     is: vi.fn().mockReturnThis(),
     order: vi.fn().mockReturnThis(),
     limit: vi.fn().mockReturnThis(),
+    // Paged reads (lib/paged-fetch) call .range(); the fetcher stops when a page
+    // comes back short, and this mock resolves the same result for any range, so
+    // one short page ends the loop.
+    range: vi.fn().mockReturnThis(),
     maybeSingle: vi.fn().mockResolvedValue(result),
   };
   Object.defineProperty(q, "then", {
