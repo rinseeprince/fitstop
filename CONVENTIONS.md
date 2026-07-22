@@ -53,6 +53,12 @@
   ### Don't install packages without asking
   - If a task can be done with what's already in the project, don't add a new dependency. Always ask before running `npm install`.
 
+  ### Never run `npm audit fix --force`
+  - `npm audit fix` (no flag) is safe — it only takes semver-compatible bumps. Run it, then `npx vitest run`, then commit the lockfile.
+  - `--force` installs breaking majors and npm's resolver walks *backwards* to find a version without the advisory. On 2026-07-22 it proposed `next@9.3.3` — a 2020 release, seven majors back — to clear a transitive `sharp`/`postcss` advisory. It would have destroyed the app.
+  - Audit production dependencies with `npm audit --omit=dev`. Dev-only advisories (vitest, esbuild, build tooling) don't ship to users and are noise for a launch check.
+  - Before acting on any advisory, check it is **reachable in this app** rather than merely present. `next.config.mjs` sets `images.unoptimized = true` and nothing imports `next/image`, so `sharp` is never invoked and its libvips CVEs have no path; `postcss` is build-time only and our CSS is first-party. Record the reachability finding in the commit message so the next person doesn't re-litigate it or panic-run `--force`.
+
   ### Respect existing architecture
   - Don't switch from snake_case to camelCase mid-file.
   - Don't introduce a new state management library when one is already in use.
