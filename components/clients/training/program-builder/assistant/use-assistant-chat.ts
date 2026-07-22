@@ -98,7 +98,7 @@ export function useAssistantChat() {
     (ops: DraftOp[]): { applied: number; skipped: string[] } => {
       const before = getDraft();
       const wasDirty = getDirty();
-      const result = applyAssistantOps(ops, target);
+      const result = applyAssistantOps(ops, { target });
       if (!result) return { applied: 0, skipped: ["The program isn't loaded yet"] };
       // Snapshot AFTER the fact and only when something actually changed: a
       // turn whose ops all skipped leaves the tree untouched, and an undo entry

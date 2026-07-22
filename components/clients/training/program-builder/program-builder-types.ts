@@ -7,7 +7,10 @@ import type { SavedPlanStatus } from "@/types/training";
 // delete-and-reinsert server-side, so server row ids never survive a save —
 // `uid`s below are client-only identity for React keys + dnd).
 
-export type BuilderTarget = "library" | "client-draft";
+// "library" edits a saved-plan template; "client-draft" edits a working copy
+// before placement (template identity locked); "placed-plan" amends a plan
+// already on a client's calendar (past slots locked, identity editable).
+export type BuilderTarget = "library" | "client-draft" | "placed-plan";
 
 export const DAYS_PER_WEEK = 7;
 

@@ -342,3 +342,209 @@ describe("wire-schema round trip (drift belt)", () => {
     expect(programDraftSnapshotSchema.safeParse(short).success).toBe(false);
   });
 });
+
+// =============================================================================
+// Placed-plan lock enforcement (ctx.lockedSlotUids) — every structural and
+// session/exercise op refuses history with PAST_LOCKED; identity stays editable
+// (IDENTITY_LOCKED is client-draft-only).
+// =============================================================================
+
+describe("applyDraftOp locked slots (placed-plan)", () => {
+  // Week 0 = elapsed (all 7 slots locked, session in day 0); week 1+ = future.
+  function makeLockedFixture(weekCount = 2) {
+    const pastSession = makeSession({ name: "Past Day" });
+    const futureSession = makeSession({ name: "Future Day" });
+    const weeks = [weekWithSession(pastSession, 0)];
+    for (let w = 1; w < weekCount; w++) {
+      weeks.push(w === 1 ? weekWithSession(futureSession, 1) : makeRestWeek(w));
+    }
+    const draft = makeDraft(weeks);
+    const lockedSlotUids = new Set(draft.weeks[0].days.map((d) => d.uid));
+    const ctx = { target: "placed-plan" as const, lockedSlotUids };
+    return { draft, ctx, lockedSlotUids };
+  }
+
+  it("place_session into a locked (past rest) slot skips", () => {
+    const { draft, ctx } = makeLockedFixture();
+    const out = applyDraftOp(
+      draft,
+      { type: "place_session", slotUid: draft.weeks[0].days[3].uid, session: makeSession() },
+      ctx,
+    );
+    expect(out.skipped).toMatch(/locked/);
+    expect(out.draft).toBe(draft);
+  });
+
+  it("clear_slot on a locked slot skips", () => {
+    const { draft, ctx } = makeLockedFixture();
+    const out = applyDraftOp(
+      draft,
+      { type: "clear_slot", slotUid: draft.weeks[0].days[0].uid },
+      ctx,
+    );
+    expect(out.skipped).toMatch(/locked/);
+  });
+
+  it("move_session skips when the SOURCE slot is locked", () => {
+    const { draft, ctx } = makeLockedFixture();
+    const pastUid = draft.weeks[0].days[0].session!.uid;
+    const out = applyDraftOp(
+      draft,
+      { type: "move_session", sessionUid: pastUid, targetSlotUid: draft.weeks[1].days[2].uid },
+      ctx,
+    );
+    expect(out.skipped).toMatch(/locked/);
+  });
+
+  it("move_session skips when the TARGET slot is locked", () => {
+    const { draft, ctx } = makeLockedFixture();
+    const futureUid = draft.weeks[1].days[0].session!.uid;
+    const out = applyDraftOp(
+      draft,
+      { type: "move_session", sessionUid: futureUid, targetSlotUid: draft.weeks[0].days[3].uid },
+      ctx,
+    );
+    expect(out.skipped).toMatch(/locked/);
+  });
+
+  it("move_session between future slots still applies", () => {
+    const { draft, ctx } = makeLockedFixture();
+    const futureUid = draft.weeks[1].days[0].session!.uid;
+    const out = applyDraftOp(
+      draft,
+      { type: "move_session", sessionUid: futureUid, targetSlotUid: draft.weeks[1].days[4].uid },
+      ctx,
+    );
+    expect(out.skipped).toBeUndefined();
+    expect(out.draft.weeks[1].days[4].session?.uid).toBe(futureUid);
+  });
+
+  it("session/exercise ops on a locked session skip; on a future session apply", () => {
+    const { draft, ctx } = makeLockedFixture();
+    const pastUid = draft.weeks[0].days[0].session!.uid;
+    const pastExUid = draft.weeks[0].days[0].session!.exercises[0].uid;
+    const futureUid = draft.weeks[1].days[0].session!.uid;
+
+    const lockedOps: DraftOp[] = [
+      { type: "update_session", sessionUid: pastUid, patch: { notes: "x" } },
+      { type: "add_exercise", sessionUid: pastUid, exercise: makeExercise() },
+      { type: "update_exercise", sessionUid: pastUid, exerciseUid: pastExUid, patch: { sets: 5 } },
+      { type: "remove_exercise", sessionUid: pastUid, exerciseUid: pastExUid },
+      { type: "reorder_exercise", sessionUid: pastUid, exerciseUid: pastExUid, toIndex: 0 },
+    ];
+    for (const op of lockedOps) {
+      const out = applyDraftOp(draft, op, ctx);
+      expect(out.skipped, op.type).toMatch(/locked/);
+      expect(out.draft).toBe(draft);
+    }
+
+    const ok = applyDraftOp(
+      draft,
+      { type: "update_session", sessionUid: futureUid, patch: { notes: "x" } },
+      ctx,
+    );
+    expect(ok.skipped).toBeUndefined();
+  });
+
+  it("remove_week refuses a week containing history but deletes a future week", () => {
+    const { draft, ctx } = makeLockedFixture(3);
+    const lockedOut = applyDraftOp(
+      draft,
+      { type: "remove_week", weekUid: draft.weeks[0].uid },
+      ctx,
+    );
+    expect(lockedOut.skipped).toMatch(/locked/);
+
+    const futureOut = applyDraftOp(
+      draft,
+      { type: "remove_week", weekUid: draft.weeks[2].uid },
+      ctx,
+    );
+    expect(futureOut.skipped).toBeUndefined();
+    expect(futureOut.draft.weeks).toHaveLength(2);
+  });
+
+  it("move_week refuses touching the boundary but reorders future weeks", () => {
+    const { draft, ctx } = makeLockedFixture(3);
+    const lockedFrom = applyDraftOp(
+      draft,
+      { type: "move_week", weekUid: draft.weeks[0].uid, toIndex: 2 },
+      ctx,
+    );
+    expect(lockedFrom.skipped).toMatch(/locked/);
+
+    const lockedTo = applyDraftOp(
+      draft,
+      { type: "move_week", weekUid: draft.weeks[2].uid, toIndex: 0 },
+      ctx,
+    );
+    expect(lockedTo.skipped).toMatch(/locked/);
+
+    const ok = applyDraftOp(
+      draft,
+      { type: "move_week", weekUid: draft.weeks[2].uid, toIndex: 1 },
+      ctx,
+    );
+    expect(ok.skipped).toBeUndefined();
+  });
+
+  it("insert_week is allowed after the boundary week, refused before it", () => {
+    // Weeks 0 AND 1 fully locked → boundary index 1.
+    const { draft } = makeLockedFixture(3);
+    const lockedSlotUids = new Set([
+      ...draft.weeks[0].days.map((d) => d.uid),
+      ...draft.weeks[1].days.map((d) => d.uid),
+    ]);
+    const ctx = { target: "placed-plan" as const, lockedSlotUids };
+
+    const before = applyDraftOp(
+      draft,
+      { type: "insert_week", afterWeekUid: draft.weeks[0].uid, week: makeRestWeek(0) },
+      ctx,
+    );
+    expect(before.skipped).toMatch(/locked/);
+
+    const after = applyDraftOp(
+      draft,
+      { type: "insert_week", afterWeekUid: draft.weeks[1].uid, week: makeRestWeek(0) },
+      ctx,
+    );
+    expect(after.skipped).toBeUndefined();
+
+    const append = applyDraftOp(
+      draft,
+      { type: "insert_week", afterWeekUid: null, week: makeRestWeek(0) },
+      ctx,
+    );
+    expect(append.skipped).toBeUndefined();
+  });
+
+  it("identity stays editable on placed-plan (IDENTITY_LOCKED is client-draft-only)", () => {
+    const { draft, ctx } = makeLockedFixture();
+    const meta = applyDraftOp(
+      draft,
+      { type: "set_program_meta", patch: { name: "Renamed", splitType: "Upper/Lower" } },
+      ctx,
+    );
+    expect(meta.skipped).toBeUndefined();
+    expect(meta.draft.name).toBe("Renamed");
+
+    const futureUid = draft.weeks[1].days[0].session!.uid;
+    const rename = applyDraftOp(
+      draft,
+      { type: "update_session", sessionUid: futureUid, patch: { name: "Renamed Day" } },
+      ctx,
+    );
+    expect(rename.skipped).toBeUndefined();
+  });
+
+  it("without lockedSlotUids the placed-plan target behaves like library", () => {
+    const { draft } = makeLockedFixture();
+    const out = applyDraftOp(
+      draft,
+      { type: "clear_slot", slotUid: draft.weeks[0].days[0].uid },
+      { target: "placed-plan" },
+    );
+    expect(out.skipped).toBeUndefined();
+  });
+});

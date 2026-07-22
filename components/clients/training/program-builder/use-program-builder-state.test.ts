@@ -455,7 +455,9 @@ describe("useProgramBuilderState — assistant additions (builder S6a)", () => {
     const before = result.current.getRevision();
     let opsResult: ReturnType<typeof result.current.applyAssistantOps> = null;
     act(() => {
-      opsResult = result.current.applyAssistantOps(makeSessionOps(sessionUid), "library");
+      opsResult = result.current.applyAssistantOps(makeSessionOps(sessionUid), {
+        target: "library",
+      });
     });
     expect(opsResult!.applied).toBe(1);
     expect(opsResult!.skipped).toHaveLength(1);

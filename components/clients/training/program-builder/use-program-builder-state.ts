@@ -21,9 +21,9 @@ import {
 import {
   applyDraftOps,
   type DraftOp,
+  type DraftOpContext,
   type DraftOpsResult,
 } from "./program-builder-ops";
-import type { BuilderTarget } from "./program-builder-types";
 
 export { findSession } from "./program-builder-model";
 
@@ -119,10 +119,10 @@ export function useProgramBuilderState() {
    * must stay side-effect free. Vanished-target ops skip loudly in the result.
    */
   const applyAssistantOps = useCallback(
-    (ops: DraftOp[], target: BuilderTarget): DraftOpsResult | null => {
+    (ops: DraftOp[], ctx: DraftOpContext): DraftOpsResult | null => {
       const current = draftRef.current;
       if (!current) return null;
-      const result = applyDraftOps(current, ops, { target });
+      const result = applyDraftOps(current, ops, ctx);
       if (result.draft !== current) apply(() => result.draft);
       return result;
     },
