@@ -142,7 +142,15 @@ These replace the old Tailwind defaults (`#3b82f6`, `#f59e0b`, `#ef4444`) everyw
 | UI text | **Instrument Sans** | Default body font (`app/layout.tsx` sets it on `<body>`) — no class needed |
 | Numerical data & micro-labels | **JetBrains Mono** | `font-mono-display` utility (`--font-mono-display`, fallback `ui-monospace, monospace`) |
 
-`font-mono-display` is mandatory for: calories, macros, reps/sets/loads/RPE, averages, dates, counts, stat values, and uppercase mono labels.
+`font-mono-display` is mandatory for: calories, macros, reps/sets/loads/RPE, averages, dates, counts, stat values, and uppercase mono labels — **when they stand alone as data** (card metas, stat rows, table cells, chips, numerals, labeled key-value lines).
+
+### Prose vs data — where mono is allowed
+
+**Never set a word, date, or number in `font-mono-display` inside a running sentence.** Sentences — dialog descriptions, toast text, empty states, help text, banners — are 100% Instrument Sans, including any dates or names they contain (bold sans is fine for emphasis).
+
+- ✅ `Removes Push Day on Sun, Aug 2 from the calendar.` (all sans; "Push Day" may be `font-semibold`)
+- ❌ `Removes Push Day on `<code>Sun, Aug 2</code>` from the calendar.` (mono date mid-sentence reads as broken kerning)
+- ✅ A card meta line `Wed, Jul 22 · on 3 upcoming days` in `MONO_LABEL_CLASS` — that's standalone data, not a sentence.
 
 ### Type scale (px → role)
 
@@ -254,7 +262,7 @@ To turn a mono label to normal case (e.g. a meta line), append `normal-case trac
 |---------|-------------|
 | Dark KPI / stat band | `@/components/programs/shared/stat-band` → `<StatBand cells={…} />` |
 | Segmented pill toggle | `@/components/programs/shared/segmented-control` → `<SegmentedControl />` (`fullWidth` opt) |
-| Uppercase section-label + hairline (+ meta/actions) | `@/components/programs/shared/section-label` → `<SectionLabel />` |
+| Uppercase section-label + hairline (+ meta/actions) | `@/components/programs/shared/section-label` → `<SectionLabel />` — the `actions` slot may host a full control cluster (month nav, chips, a SegmentedControl); the training calendar's toolbar-in-divider is the reference |
 | White table card + "Showing X of Y" pager | `@/components/programs/shared/library-table-shell` → `<LibraryTableShell />` (`LIBRARY_PAGE_SIZE = 25`) |
 | Hover-revealed row action cluster | `@/components/programs/shared/row-actions` → `<RowActions actions={…} />` (row needs `group/row`) |
 | Search input (icon + field) | `@/components/programs/shared/library-search-input` → `<LibrarySearchInput />` |
@@ -367,6 +375,27 @@ Overlay is `bg-black/50`. Slide-over footer uses `justify-end` (Cancel ghost + S
 ### Popover (320px pattern)
 
 `<PopoverContent align="start" sideOffset={6} className="w-[320px] rounded-[6px] border-[rgba(13,148,136,0.08)] p-0">` — header `px-3.5 pb-2 pt-3` (title `text-sm font-semibold` + `MONO_LABEL_CLASS` subtitle + close X), scroll body `max-h-[260px] overflow-y-auto px-1.5 pb-1.5`, footer `border-t border-[rgba(13,148,136,0.06)] p-1.5` with a teal-text action.
+
+### Destructive confirm dialog
+
+Reference: `components/clients/training/calendar/delete-event-dialog.tsx`. Use the styled `Dialog` primitive (never `ConfirmDialog`/AlertDialog — un-migrated OKLCH).
+
+- Header row: danger thumb `grid h-9 w-9 shrink-0 place-items-center rounded-[6px] bg-[rgba(192,96,96,0.08)]` + `Trash2 h-4 w-4 text-[#c06060]` (strokeWidth 1.5) beside the `DialogTitle`.
+- Body: ONE plain-sans sentence (`text-sm text-[#5a7d82]`) naming exactly what happens and what is preserved ("Completed and past sessions are kept."). No mono. The subject may be `font-semibold text-[#0c1a1e]`.
+- Footer: Cancel (`variant="ghost"`) + danger-outline CTA: `variant="outline"` + `border-[rgba(192,96,96,0.3)] text-[#c06060] hover:bg-[rgba(192,96,96,0.08)] hover:text-[#c06060]`, `Loader2` spinner while pending. **There is no filled destructive button in this system — never invent one.** CTA label repeats the verb ("Remove session", "Clear week"), never "OK"/"Confirm".
+
+### Scope / choice dialog (pick-one actions)
+
+Reference: the placed-session tray's save-scope dialog. `sm:max-w-md`; a one-sentence sans intro; then full-width option buttons: `flex w-full items-center gap-3 rounded-[6px] border border-[rgba(13,148,136,0.08)] p-3 text-left hover:bg-[rgba(13,148,136,0.03)]` — leading `h-4 w-4` radio circle (`border-2 border-[#0d9488]` for the primary option, `border-[#93b0b4]` otherwise; swaps to a teal `Loader2` while that option saves), title `text-sm font-medium text-[#0c1a1e]`, subline `text-[11px] text-[#93b0b4]`. Footer: ghost Cancel only (choosing an option IS the confirm). Radio-input variants (e.g. move-scope) use `accent-[#0d9488]` and tint the selected row `border-[rgba(13,148,136,0.2)] bg-[rgba(13,148,136,0.05)]`.
+
+### Toasts
+
+Always `const { toast } = useToast()` — never a bespoke notification surface.
+
+- Title: a short sans fragment stating the outcome — `Session saved`, `Week cleared`, `"{name}" updated`. Quote user-named things with `"…"`.
+- Description (optional): one plain sans sentence of consequence — `Programs that already use a copy of this session are unchanged.`
+- Failures: `variant: "destructive"` with `title: "Save failed"` (or similar) + the reason as description.
+- Never: markup, mono spans, raw error strings, IDs, or dates set in mono. Toast text obeys the prose rule above in full.
 
 ---
 
@@ -585,3 +614,4 @@ White card, no border, 6px radius; header clickable (600 title + count badge on 
 - ❌ Rebuild StatBand / SegmentedControl / LibraryTableShell / SectionLabel / RowActions from scratch. ✅ Import them.
 - ❌ Style a Teal-Summit surface off the OKLCH tokens (`bg-background`, `bg-primary`, `rounded-lg`). ✅ Author with the hex values here.
 - ❌ Copy values from the `atletafit-*.html` mockups. ✅ Match the shipped Programs/Builder code.
+- ❌ Set a date, name, or number in `font-mono-display` inside a running sentence (dialog/toast/empty-state prose). ✅ Mono is for standalone data only — see "Prose vs data".

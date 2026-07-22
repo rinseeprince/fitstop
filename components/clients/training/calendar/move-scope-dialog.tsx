@@ -46,8 +46,7 @@ export function MoveScopeDialog({
         </DialogHeader>
 
         <p className="text-sm text-[#5a7d82]">
-          From <span className="font-mono-display">{formattedSource}</span> to{" "}
-          <span className="font-mono-display">{formattedTarget}</span>
+          From {formattedSource} to {formattedTarget}
         </p>
 
         <div className="space-y-2 py-2">

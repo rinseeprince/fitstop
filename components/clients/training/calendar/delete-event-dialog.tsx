@@ -55,8 +55,7 @@ export function DeleteEventDialog({
         {event && (
           <p className="text-sm text-[#5a7d82]">
             Removes <span className="font-semibold text-[#0c1a1e]">{event.sessionName}</span> on{" "}
-            <span className="font-mono-display">{formatDay(event.date)}</span> from the
-            calendar.
+            {formatDay(event.date)} from the calendar.
           </p>
         )}
         <DialogFooter>
@@ -106,8 +105,7 @@ export function ClearWeekDialog({
         {weekStartDate && (
           <p className="text-sm text-[#5a7d82]">
             Removes all scheduled sessions from the week of{" "}
-            <span className="font-mono-display">{formatDay(weekStartDate)}</span>.
-            Completed and past sessions are kept.
+            {formatDay(weekStartDate)}. Completed and past sessions are kept.
           </p>
         )}
         <DialogFooter>
