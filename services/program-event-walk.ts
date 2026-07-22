@@ -1,0 +1,151 @@
+import { supabaseAdmin } from "./supabase-admin";
+import { getNextPlanStartCap } from "./training-event-service";
+import { getDateString } from "@/lib/date-helpers";
+import type { TrainingEventInsert } from "@/lib/database-helpers";
+
+// The ordered program the date-walk maps onto calendar dates. One entry per
+// authored slot (training AND rest), referencing the placed training_sessions
+// row id.
+export type ProgramSlot = {
+  id: string;
+  isRest: boolean;
+  name: string;
+  focus: string | null;
+  calorieSurplusPercentage: number | null;
+  estimatedCalories: number | null;
+};
+
+/**
+ * Generate training events by walking calendar dates through the ordered program
+ * slots — a sequential date-walk over the whole authored program. Each calendar
+ * day maps to programSlots[slotPosition]; a rest slot advances the position but
+ * emits NO event, so a rest day never spawns a training_event (it still consumes
+ * its date). Each slot references a distinct cloned session id and the
+ * (client, session, date) upsert is idempotent.
+ *
+ * `startPosition` resumes the walk mid-program: the first calendar date maps to
+ * programSlots[startPosition]. A plan amendment re-walks only the future window
+ * (startDate = the today floor) while keeping every elapsed slot's date
+ * arithmetic intact — slotPosition = daysBetween(effective_from, date).
+ */
+export async function generateProgramEvents(params: {
+  clientId: string;
+  planId: string;
+  programSlots: ProgramSlot[];
+  startDate: string;
+  endDate: string;
+  startPosition?: number;
+}): Promise<number> {
+  const { clientId, planId, programSlots, startDate, endDate, startPosition } = params;
+
+  const slotCount = programSlots.length;
+  if (slotCount === 0) return 0;
+
+  const rows: TrainingEventInsert[] = [];
+  const start = new Date(startDate + "T00:00:00");
+  const end = new Date(endDate + "T00:00:00");
+  let slotPosition = startPosition ?? 0;
+
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    const slot = programSlots[slotPosition];
+    if (!slot.isRest) {
+      rows.push({
+        client_id: clientId,
+        training_plan_id: planId,
+        training_session_id: slot.id,
+        date: getDateString(d),
+        session_name: slot.name,
+        session_focus: slot.focus ?? null,
+        estimated_calories: slot.estimatedCalories ?? null,
+        calorie_surplus_percentage: slot.calorieSurplusPercentage ?? null,
+        status: "scheduled",
+        is_modified: false,
+      });
+    }
+    // The window never exceeds the program length (calculatePlacementEndDate),
+    // so the walk cannot run off the end; the modulo is a cheap guard.
+    slotPosition = (slotPosition + 1) % slotCount;
+  }
+
+  if (rows.length === 0) return 0;
+
+  const { error } = await supabaseAdmin
+    .from("training_events")
+    .upsert(rows, {
+      onConflict: "client_id,training_session_id,date",
+      ignoreDuplicates: true,
+    });
+
+  if (error) throw new Error(`Failed to generate events: ${error.message}`);
+
+  return rows.length;
+}
+
+/**
+ * Calculate the placement window end date. The authored program length is the
+ * ONLY length knob: the whole-program slot count in days, placed exactly once.
+ * There is deliberately no programDurationWeeks or 8-week fallback. The client's
+ * containing phase end is a MAXIMUM cap only (a program never runs past it and
+ * never stretches to fill it), as is the start of the next coexisting plan.
+ */
+export async function calculatePlacementEndDate(params: {
+  phaseId?: string;
+  clientId: string;
+  slotCount: number;
+  startDate: string;
+}): Promise<string> {
+  const { phaseId, clientId, slotCount, startDate } = params;
+
+  // Program length = the whole-program slot count, one pass.
+  const days = Math.max(1, slotCount);
+  const durationEnd = new Date(startDate + "T00:00:00");
+  durationEnd.setDate(durationEnd.getDate() + days - 1);
+  let computedEnd = getDateString(durationEnd);
+
+  // Resolve the client's containing phase end (explicit phase, else the phase that
+  // contains startDate) and apply it as a MAX cap only.
+  let phaseEndDate: string | null = null;
+  if (phaseId) {
+    const { data: phase } = await supabaseAdmin
+      .from("phases")
+      .select("end_date, start_date, duration_weeks")
+      .eq("id", phaseId)
+      .maybeSingle();
+
+    if (phase?.end_date) {
+      phaseEndDate = phase.end_date;
+    } else if (phase?.start_date && phase?.duration_weeks) {
+      const d = new Date(phase.start_date + "T00:00:00");
+      d.setDate(d.getDate() + phase.duration_weeks * 7 - 1);
+      phaseEndDate = getDateString(d);
+    }
+  } else {
+    // No explicit phase — look up the client's phase containing startDate and cap by it.
+    const { data: containingPhase } = await supabaseAdmin
+      .from("phases")
+      .select("end_date, start_date, duration_weeks")
+      .eq("client_id", clientId)
+      .in("status", ["active", "planned"])
+      .lte("start_date", startDate)
+      .gte("end_date", startDate)
+      .order("start_date", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (containingPhase?.end_date) {
+      phaseEndDate = containingPhase.end_date;
+    } else if (containingPhase?.start_date && containingPhase?.duration_weeks) {
+      const d = new Date(containingPhase.start_date + "T00:00:00");
+      d.setDate(d.getDate() + containingPhase.duration_weeks * 7 - 1);
+      phaseEndDate = getDateString(d);
+    }
+  }
+
+  if (phaseEndDate && phaseEndDate < computedEnd) computedEnd = phaseEndDate;
+
+  // Additive placement: never let this plan's window bleed past the start of a
+  // later coexisting plan.
+  const nextPlanCap = await getNextPlanStartCap(clientId, startDate);
+  if (nextPlanCap && nextPlanCap < computedEnd) return nextPlanCap;
+  return computedEnd;
+}
