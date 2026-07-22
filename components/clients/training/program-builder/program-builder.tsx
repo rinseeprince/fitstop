@@ -19,6 +19,8 @@ import {
 } from "./program-builder-types";
 import { savedSessionToDraft } from "./program-builder-serialize";
 import { defaultExerciseDraftFromCatalog, findSession } from "./program-builder-model";
+import { isSessionLocked } from "./program-builder-lock-model";
+import { AmendConfirmDialog, AmendDriftDialog } from "./amend-plan-dialogs";
 import { useProgramDnd } from "./use-program-dnd";
 import { useSaveDayAsWorkout } from "./use-save-day-as-workout";
 import { useProgramDraft } from "./program-draft-provider";
@@ -85,6 +87,11 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
     reorderExercise,
     editSetSpec,
     insertWeekAfter,
+    lockedSlotUids,
+    fullyLocked,
+    futureModifiedEvents,
+    placedLoadError,
+    amend,
   } = useProgramDraft();
 
   // Client-draft mode (Phase 5): the shared builder mounted inside the coach's
@@ -93,7 +100,12 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
   // programs" link) is swapped for an Apply-to-client flow; the template is
   // never mutated — Apply materializes the edited copy onto the client's
   // calendar.
+  // Placed-plan mode (Job 2): the same builder over a client's LIVE placed
+  // program — past slots locked, identity editable, saves go through the
+  // amendment PUT ("Save changes to plan").
   const isClientDraft = target === "client-draft";
+  const isPlacedPlan = target === "placed-plan";
+  const isLibrary = target === "library";
   const apply = useClientApply({ draft, isDirty, clientId, plan });
 
   const [collapsedWeeks, setCollapsedWeeks] = useState<Set<string>>(new Set());
@@ -136,6 +148,7 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
     moveSession,
     placeLibrarySession,
     placeLibraryExercise,
+    lockedSlotUids: isPlacedPlan ? lockedSlotUids : undefined,
   });
   const { isSavingWorkout, saveDayAsWorkout } = useSaveDayAsWorkout(draft);
 
@@ -158,17 +171,20 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
     }
   };
 
-  if (isPlanLoading || (!draft && plan)) {
+  // The seeding gap (read arrived, draft seeds on the next effect tick) shows
+  // the spinner too; a placed-plan load failure falls through to the message.
+  const stillSeeding = isPlacedPlan ? !draft && !placedLoadError : !draft && !!plan;
+  if (isPlanLoading || stillSeeding) {
     return (
       <div className="flex items-center justify-center py-24">
         <Loader2 className="h-6 w-6 animate-spin text-[#93b0b4]" />
       </div>
     );
   }
-  if (!plan || !draft) {
+  if (!draft || (!isPlacedPlan && !plan)) {
     return (
       <div className={cn("py-24 text-center text-sm", TEXT_SECONDARY)}>
-        Program not found.
+        {isPlacedPlan ? (placedLoadError ?? "Plan not found.") : "Program not found."}
       </div>
     );
   }
@@ -214,7 +230,7 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
         <div className="flex min-h-0 flex-1">
           <BuilderLibraryPanel
             mode={mode}
-            showBackLink={!isClientDraft}
+            showBackLink={isLibrary}
             clientName={clientName ?? undefined}
           />
           <div className="flex min-h-0 min-w-0 flex-1 flex-col px-6 pt-5">
@@ -225,7 +241,13 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
                 if (isDirty && mode === "edit") setConfirmLeaveOpen(true);
                 else exit();
               }}
-              backLabel={isClientDraft ? "Back to library" : "Back to programs"}
+              backLabel={
+                isClientDraft
+                  ? "Back to library"
+                  : isPlacedPlan
+                    ? "Back to calendar"
+                    : "Back to programs"
+              }
               identityEditable={!isClientDraft}
               onRename={setName}
               onFocusChange={setSplitType}
@@ -255,6 +277,18 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
                       Apply to client
                     </button>
                   )}
+                  {isPlacedPlan && (
+                    <button
+                      type="button"
+                      className="rounded-[6px] bg-[#0d9488] px-3 py-1.5 text-[12px] font-semibold text-white transition-colors hover:bg-[#0b7f75] disabled:opacity-50"
+                      // fullyLocked: an ended plan has nothing future to
+                      // rewrite; assistantBusy mirrors the apply button.
+                      disabled={!isDirty || amend.isAmending || assistantBusy || fullyLocked}
+                      onClick={amend.request}
+                    >
+                      Save changes to plan
+                    </button>
+                  )}
                   {mode === "view" && (
                     <button
                       type="button"
@@ -271,7 +305,7 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
                       trash must never change sides when entering edit mode. */}
                   {mode === "edit" && (
                     <>
-                      {!isClientDraft && (
+                      {isLibrary && (
                         <button
                           type="button"
                           aria-label="Save program"
@@ -291,10 +325,10 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
                           )}
                         </button>
                       )}
-                      {/* Draft-discard (delete) is library-only; a client-draft
-                          is always a saved template, so it only ever shows the
+                      {/* Draft-discard (delete) is library-only; client-draft
+                          and placed-plan surfaces only ever show the
                           revert-my-edits Discard-changes control. */}
-                      {!isClientDraft && draft.status === "draft" ? (
+                      {isLibrary && draft.status === "draft" ? (
                         <button
                           type="button"
                           aria-label="Discard draft"
@@ -325,7 +359,7 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
                       )}
                     </>
                   )}
-                  {!isClientDraft && (
+                  {isLibrary && (
                     <button
                       type="button"
                       aria-label="Delete program"
@@ -340,9 +374,16 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
                 </div>
               }
             />
+            {isPlacedPlan && fullyLocked && (
+              <div className="mb-2 rounded-[6px] border border-[rgba(13,148,136,0.2)] bg-[rgba(13,148,136,0.05)] px-3 py-2 text-[12.5px] text-[#0a5c55]">
+                This plan has ended — nothing left to edit. Apply a new program
+                to continue.
+              </div>
+            )}
             <ProgramGrid
               draft={draft}
               mode={mode}
+              lockedSlotUids={isPlacedPlan ? lockedSlotUids : undefined}
               collapsedWeeks={collapsedWeeks}
               onToggleCollapse={(weekUid) =>
                 setCollapsedWeeks((prev) => {
@@ -417,7 +458,15 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
 
       <SessionEditorSheet
         session={editingSession}
-        mode={mode}
+        // A locked (elapsed / already-logged) session opens read-only — its
+        // day is history; the locked mutators would refuse edits anyway.
+        mode={
+          editingSession &&
+          isPlacedPlan &&
+          isSessionLocked(draft, lockedSlotUids, editingSession.uid)
+            ? "view"
+            : mode
+        }
         identityEditable={!isClientDraft}
         defaultSurplusPercentage={draft.defaultSurplusPercentage}
         onClose={() => setEditingSessionUid(null)}
@@ -455,7 +504,7 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
         }}
         onCreateBlank={(t) => {
           setAddTarget(null);
-          if (isClientDraft) {
+          if (!isLibrary) {
             // No intercepted /dashboard/programs modal route exists in the
             // client drawer — build the blank session in-memory (uid held here,
             // so we can open it) and place it. Library create-blank persists a
@@ -488,13 +537,15 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
         description={
           isClientDraft
             ? "You have unsaved edits for this client. Leaving now will discard them."
-            : "You have edits that haven't been saved to the library yet. Leaving now will lose them."
+            : isPlacedPlan
+              ? "You have unsaved changes to this plan. Leaving now will discard them."
+              : "You have edits that haven't been saved to the library yet. Leaving now will lose them."
         }
         confirmLabel={isClientDraft ? "Leave without applying" : "Leave without saving"}
         destructive
         onConfirm={exit}
       />
-      {!isClientDraft && (
+      {isLibrary && (
         <ConfirmDialog
           open={confirmDiscardOpen}
           onOpenChange={setConfirmDiscardOpen}
@@ -512,13 +563,15 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
         description={
           isClientDraft
             ? "Your edits for this client will be discarded and the program reset to the library version."
-            : "The program goes back to its last saved state."
+            : isPlacedPlan
+              ? "Your changes will be discarded and the plan reset to what's on the calendar."
+              : "The program goes back to its last saved state."
         }
         confirmLabel="Discard changes"
         destructive
         onConfirm={discardChanges}
       />
-      {!isClientDraft && (
+      {isLibrary && (
         <ConfirmDialog
           open={confirmDeleteOpen}
           onOpenChange={setConfirmDeleteOpen}
@@ -536,6 +589,26 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
           precedes the dialog (start date/repeat are chosen inside it), so its
           copy stays date-agnostic. */}
       <AssistantDock />
+
+      {/* Placed-plan save flow (Job 2): confirm (with the moved-events
+          warning) → PUT; a 409 opens the drift dialog with the draft intact. */}
+      {isPlacedPlan && (
+        <>
+          <AmendConfirmDialog
+            open={amend.confirmOpen}
+            onOpenChange={amend.setConfirmOpen}
+            clientName={clientName}
+            futureModifiedEvents={futureModifiedEvents}
+            isAmending={amend.isAmending}
+            onConfirm={() => void amend.confirm()}
+          />
+          <AmendDriftDialog
+            open={amend.driftOpen}
+            onOpenChange={amend.setDriftOpen}
+            onReload={amend.reloadAndDiscard}
+          />
+        </>
+      )}
 
       {isClientDraft && plan && (
         <>

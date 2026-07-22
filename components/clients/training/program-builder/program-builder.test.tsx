@@ -24,6 +24,18 @@ vi.mock("@/hooks/use-saved-plan", () => ({
   useSavedPlan: () => ({ plan: planFixture, isLoading: false, mutate: mutateMock }),
 }));
 
+// Placed-plan target: the amendment GET feeding usePlacedPlanSource.
+let placedPlanFixture: unknown = null;
+const placedMutateMock = vi.fn(() => Promise.resolve(placedPlanFixture));
+vi.mock("@/hooks/use-placed-plan", () => ({
+  usePlacedPlan: (clientId: string | null, planId: string | null) => ({
+    placedPlan: clientId && planId ? placedPlanFixture : null,
+    isLoading: false,
+    error: null,
+    mutate: placedMutateMock,
+  }),
+}));
+
 // The session-library drawer + add-session popover read the standalone list.
 vi.mock("@/hooks/use-standalone-sessions", () => ({
   useStandaloneSessions: () => ({
@@ -77,6 +89,7 @@ type FetchCall = { url: string; method: string; body: unknown };
 const fetchCalls: FetchCall[] = [];
 let promoteStatus = 200;
 let overwriteStatus = 200;
+let amendStatus = 200;
 
 const jsonResponse = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), {
@@ -107,6 +120,16 @@ vi.stubGlobal(
       // Save-day-as-workout: the server deduped the name server-side.
       return Promise.resolve(
         jsonResponse(201, { success: true, sessionId: "s-new", name: "Push (copy)" }),
+      );
+    }
+    if (u.endsWith("/amendment") && init?.method === "PUT") {
+      return Promise.resolve(
+        jsonResponse(
+          amendStatus,
+          amendStatus === 200
+            ? { success: true, floor: "2026-07-22", offset: 7, eventsCreated: 3 }
+            : { error: "This plan changed while you were editing" },
+        ),
       );
     }
     return Promise.resolve(jsonResponse(200, { success: true }));
@@ -588,5 +611,183 @@ describe("ProgramBuilder client-draft mode (Phase 5)", () => {
     // Placed in-memory; the routed create-blank slide-over is never navigated to.
     expect(pushMock).not.toHaveBeenCalled();
     expect(screen.getAllByText("Rest")).toHaveLength(5);
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Placed-plan target (Job 2): the amendment surface's chrome + save flow.
+// ═════════════════════════════════════════════════════════════════════════════
+
+const isTrainingPos = (i: number) => i % 7 === 0 || i % 7 === 2 || i % 7 === 4;
+
+function placedDate(position: number): string {
+  const d = new Date("2026-07-15T00:00:00");
+  d.setDate(d.getDate() + position);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/** A 2-week placed read: effective 2026-07-15, client today 2026-07-22 →
+ *  week 1 elapsed (locked), week 2 open. */
+function makePlacedRead() {
+  return {
+    plan: {
+      id: "plan-1",
+      name: "PPL Block",
+      splitType: "Push/Pull",
+      programDurationWeeks: 2,
+      frequencyPerWeek: 3,
+      effectiveFrom: "2026-07-15",
+      phaseId: null,
+      savedPlanId: null,
+      status: "active",
+      updatedAt: "2026-07-20T00:00:00Z",
+    },
+    clientToday: "2026-07-22",
+    windowEnd: "2026-07-28",
+    isFullyPast: false,
+    amendmentToken: "tok-1",
+    sessions: Array.from({ length: 14 }, (_, i) => ({
+      id: `cur-${i}`,
+      name: isTrainingPos(i) ? `Session ${i}` : "Rest",
+      focus: isTrainingPos(i) ? "strength" : null,
+      weekIndex: Math.floor(i / 7),
+      orderIndex: i,
+      isRest: !isTrainingPos(i),
+      estimatedDurationMinutes: null,
+      calorieSurplusPercentage: isTrainingPos(i) ? 15 : null,
+      notes: null,
+      sessionType: "training",
+      createdAt: "2026-07-15T00:00:00Z",
+      exercises: [],
+      events: [
+        // Week-1 training days completed; week-2 still scheduled.
+        {
+          id: `ev-${i}`,
+          date: placedDate(i),
+          status: i < 7 ? "completed" : "scheduled",
+          isModified: false,
+        },
+      ].filter(() => isTrainingPos(i)),
+    })),
+    futureModifiedEvents: [
+      { id: "ev-9", date: "2026-07-24", sessionName: "Session 9" },
+    ],
+  };
+}
+
+function renderPlaced() {
+  return render(
+    <ProgramDraftProvider
+      placedPlanId="plan-1"
+      target="placed-plan"
+      clientId="client-1"
+      clientName="Casey Client"
+    >
+      <ProgramBuilder />
+    </ProgramDraftProvider>,
+  );
+}
+
+const amendPut = () =>
+  fetchCalls.find((c) => c.url.endsWith("/amendment") && c.method === "PUT");
+
+describe("ProgramBuilder placed-plan target", () => {
+  beforeEach(() => {
+    cleanup();
+    fetchCalls.length = 0;
+    amendStatus = 200;
+    planFixture = null; // useSavedPlan is disabled for this target
+    placedPlanFixture = makePlacedRead();
+    toastSpy.mockClear();
+    placedMutateMock.mockClear();
+  });
+
+  it("shows the amendment chrome: save-changes present, library commit absent, calendar back label", async () => {
+    renderPlaced();
+    expect(
+      await screen.findByRole("button", { name: "Save changes to plan" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText("Save program")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Delete program")).not.toBeInTheDocument();
+    expect(screen.queryByText("Apply to client")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Back to calendar")).toBeInTheDocument();
+    // Opens straight into edit mode: the identity input is live.
+    expect(screen.getByLabelText("Program name")).toBeInTheDocument();
+  });
+
+  it("save is disabled until dirty, then PUTs the grid + token + identity patch through the confirm", async () => {
+    renderPlaced();
+    const saveBtn = await screen.findByRole("button", { name: "Save changes to plan" });
+    expect(saveBtn).toBeDisabled();
+
+    // The identity input commits on blur (uncontrolled).
+    const nameInput = screen.getByLabelText("Program name");
+    fireEvent.change(nameInput, { target: { value: "PPL Block v2" } });
+    fireEvent.blur(nameInput);
+    expect(saveBtn).not.toBeDisabled();
+
+    fireEvent.click(saveBtn);
+    // Confirm dialog with the moved-events warning list.
+    expect(await screen.findByText("Save changes to this plan?")).toBeInTheDocument();
+    expect(screen.getByText(/manually-moved upcoming session/)).toBeInTheDocument();
+    // The moved session is named in the dialog list (it also renders in the
+    // grid behind the dialog, hence All).
+    expect(screen.getAllByText("Session 9").length).toBeGreaterThan(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(amendPut()).toBeDefined());
+
+    const body = amendPut()!.body as {
+      expectedToken: string;
+      plan?: { name?: string };
+      sessions: Array<{ orderIndex: number; weekIndex?: number; isRest: boolean }>;
+    };
+    expect(body.expectedToken).toBe("tok-1");
+    expect(body.plan?.name).toBe("PPL Block v2");
+    expect(body.sessions).toHaveLength(14);
+    body.sessions.forEach((s, i) => {
+      expect(s.orderIndex).toBe(i);
+      expect(s.weekIndex).toBe(Math.floor(i / 7));
+    });
+    await waitFor(() =>
+      expect(toastSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ title: "Plan updated" }),
+      ),
+    );
+  });
+
+  it("a 409 opens the drift dialog and keeps the draft", async () => {
+    amendStatus = 409;
+    renderPlaced();
+    const nameInput = await screen.findByLabelText("Program name");
+    fireEvent.change(nameInput, { target: { value: "PPL Block v2" } });
+    fireEvent.blur(nameInput);
+    fireEvent.click(screen.getByRole("button", { name: "Save changes to plan" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Save changes" }));
+
+    expect(
+      await screen.findByText("This plan changed while you were editing"),
+    ).toBeInTheDocument();
+    // Draft intact — the edited name survived and the tree is still dirty.
+    expect(screen.getByLabelText("Program name")).toHaveValue("PPL Block v2");
+    // "Keep editing" dismisses without touching the tree.
+    fireEvent.click(screen.getByRole("button", { name: "Keep editing" }));
+    await waitFor(() =>
+      expect(
+        screen.queryByText("This plan changed while you were editing"),
+      ).not.toBeInTheDocument(),
+    );
+    expect(
+      screen.getByRole("button", { name: "Save changes to plan" }),
+    ).not.toBeDisabled();
+  });
+
+  it("locked (elapsed) day cells render inert; future cells stay editable", async () => {
+    renderPlaced();
+    await screen.findByRole("button", { name: "Save changes to plan" });
+    // Week-1 training cards carry the lock marker; week-2 cards don't.
+    expect(screen.getAllByTitle("This day already happened")).toHaveLength(3);
+    // Clear-X only on the 3 unlocked week-2 session cards.
+    expect(screen.getAllByLabelText("Clear session (back to rest)")).toHaveLength(3);
   });
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { Dumbbell, GripVertical, Plus, X } from "lucide-react";
+import { Dumbbell, GripVertical, Lock, Plus, X } from "lucide-react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { cn } from "@/lib/utils";
 import type { DaySlotDraft } from "./program-builder-types";
@@ -24,6 +24,10 @@ import {
 type DayCellProps = {
   slot: DaySlotDraft;
   mode: "view" | "edit";
+  // Placed-plan target: this slot's calendar day is history. The cell renders
+  // inert (no drop/drag/clear/add) at reduced opacity with a lock marker; a
+  // locked session card stays CLICKABLE — it opens the editor in view mode.
+  locked?: boolean;
   collapsed: boolean;
   // Program-level default surplus — the value a session inherits when it has no
   // per-day override. Drives the effective-surplus badge.
@@ -52,13 +56,14 @@ const pressable = (action: (target: HTMLElement) => void) => ({
 export function DayCell({
   slot,
   mode,
+  locked = false,
   collapsed,
   defaultSurplusPercentage,
   onOpenSession,
   onRequestAddSession,
   onClearSlot,
 }: DayCellProps) {
-  const editable = mode === "edit";
+  const editable = mode === "edit" && !locked;
   const session = slot.session;
   // Effective surplus = this day's own value, or the program default it
   // inherits. A custom day (own value) reads in teal; an inherited day reads
@@ -108,6 +113,7 @@ export function DayCell({
             // a dashed teal border only on hover / drag-over.
             "group/rest flex h-full flex-col items-center justify-center rounded-[6px] border border-dashed border-transparent bg-transparent transition-colors",
             heightClass,
+            locked && "opacity-60",
             isOver && "border-[#0d9488] bg-[rgba(13,148,136,0.05)]",
             editable && "cursor-pointer hover:border-[rgba(13,148,136,0.25)] hover:bg-[rgba(13,148,136,0.03)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0d9488]/35",
           )}
@@ -152,9 +158,11 @@ export function DayCell({
           "group/cell relative flex h-full cursor-pointer flex-col rounded-[6px] bg-white px-[11px] py-2.5 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0d9488]/35",
           TRAINING_CARD_BORDER,
           heightClass,
+          locked && "opacity-60",
           isOver && "border-[#0d9488]",
           isDragging && "opacity-40",
-          !collapsed && "hover:-translate-y-px hover:shadow-[0_6px_20px_rgba(13,148,136,0.08)]",
+          !collapsed && !locked &&
+            "hover:-translate-y-px hover:shadow-[0_6px_20px_rgba(13,148,136,0.08)]",
         )}
         aria-label={`Open session ${session.name}`}
         onClick={() => onOpenSession(session.uid)}
@@ -173,6 +181,11 @@ export function DayCell({
               <span className={cn("min-w-0 flex-1 truncate text-[13px] font-semibold", TEXT_PRIMARY)}>
                 {session.name}
               </span>
+              {locked && (
+                <span title="This day already happened" className={cn("shrink-0", TEXT_MUTED)}>
+                  <Lock className="h-3 w-3" strokeWidth={1.5} />
+                </span>
+              )}
               {surplusValue != null && (
                 <span
                   className={cn(

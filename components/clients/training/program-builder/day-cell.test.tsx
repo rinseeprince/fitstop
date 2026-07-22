@@ -141,3 +141,46 @@ describe("DayCell — session state", () => {
     expect(screen.queryByText("2 exercises")).toBeNull();
   });
 });
+
+describe("DayCell — locked (placed-plan history)", () => {
+  beforeEach(() => cleanup());
+
+  it("a locked rest cell is inert: no add affordance, no popover on click", () => {
+    const handlers = renderCell({ locked: true });
+    expect(screen.getByText("Rest")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Rest"));
+    expect(handlers.onRequestAddSession).not.toHaveBeenCalled();
+    expect(screen.queryByText("Add session")).not.toBeInTheDocument();
+  });
+
+  it("a locked session card shows the lock marker and hides clear/grip", () => {
+    renderCell({
+      locked: true,
+      slot: makeSlot({ isRest: false, session: makeSession() }),
+    });
+    expect(screen.getByTitle("This day already happened")).toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("Clear session (back to rest)"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Drag session")).not.toBeInTheDocument();
+  });
+
+  it("a locked session card STAYS clickable (opens the editor read-only)", () => {
+    const handlers = renderCell({
+      locked: true,
+      slot: makeSlot({ isRest: false, session: makeSession() }),
+    });
+    fireEvent.click(screen.getByLabelText("Open session Push"));
+    expect(handlers.onOpenSession).toHaveBeenCalledWith("sess-1");
+  });
+
+  it("an unlocked session card keeps its edit affordances", () => {
+    renderCell({
+      slot: makeSlot({ isRest: false, session: makeSession() }),
+    });
+    expect(screen.queryByTitle("This day already happened")).not.toBeInTheDocument();
+    expect(
+      screen.getByLabelText("Clear session (back to rest)"),
+    ).toBeInTheDocument();
+  });
+});

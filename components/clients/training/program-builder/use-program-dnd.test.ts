@@ -133,3 +133,107 @@ describe("useProgramDnd handleDragEnd", () => {
     expect(s.placeLibraryExercise).not.toHaveBeenCalled();
   });
 });
+
+// -- placed-plan locking ------------------------------------------------------
+
+describe("locked slots (placed-plan)", () => {
+  const locked = new Set(["slot-locked"]);
+
+  it("slotAcceptsDrag refuses every drag type on a locked slot", () => {
+    const lockedRest = { type: "day-slot", occupied: false, slotUid: "slot-locked" };
+    const lockedOccupied = { type: "day-slot", occupied: true, slotUid: "slot-locked" };
+    const openRest = { type: "day-slot", occupied: false, slotUid: "slot-open" };
+    expect(slotAcceptsDrag("session", lockedRest, locked)).toBe(false);
+    expect(slotAcceptsDrag("session", lockedOccupied, locked)).toBe(false);
+    expect(slotAcceptsDrag("library-session", lockedRest, locked)).toBe(false);
+    expect(slotAcceptsDrag("library-exercise", lockedOccupied, locked)).toBe(false);
+    expect(slotAcceptsDrag("session", openRest, locked)).toBe(true);
+    // Without a locked set the matrix is unchanged.
+    expect(slotAcceptsDrag("session", lockedRest)).toBe(true);
+  });
+
+  function setupLocked() {
+    const reorderWeek = vi.fn();
+    const moveSession = vi.fn();
+    const placeLibrarySession = vi.fn();
+    const placeLibraryExercise = vi.fn();
+    const draft = {
+      id: "p",
+      name: "P",
+      description: null,
+      status: "saved",
+      splitType: null,
+      programDurationWeeks: null,
+      defaultSurplusPercentage: null,
+      weeks: [
+        {
+          uid: "wk-locked",
+          weekIndex: 0,
+          days: [{ uid: "slot-locked", orderIndex: 0, isRest: true, session: null }],
+        },
+        {
+          uid: "wk-open",
+          weekIndex: 1,
+          days: [{ uid: "slot-open", orderIndex: 0, isRest: true, session: null }],
+        },
+      ],
+    } as never;
+    const { result } = renderHook(() =>
+      useProgramDnd({
+        draft,
+        reorderWeek,
+        moveSession,
+        placeLibrarySession,
+        placeLibraryExercise,
+        lockedSlotUids: locked,
+      }),
+    );
+    return { result, reorderWeek, moveSession, placeLibrarySession, placeLibraryExercise };
+  }
+
+  it("handleDragEnd belt: a drop ONTO a locked slot is inert for every type", () => {
+    const s = setupLocked();
+    const overLocked = {
+      id: "slot-locked",
+      data: { current: { type: "day-slot", slotUid: "slot-locked", occupied: false } },
+    };
+    s.result.current.handleDragEnd(
+      end({ id: "lib-s1", data: { current: { type: "library-session", session } } }, overLocked),
+    );
+    s.result.current.handleDragEnd(
+      end({ id: "libex-e1", data: { current: { type: "library-exercise", exercise } } }, overLocked),
+    );
+    s.result.current.handleDragEnd(
+      end(
+        { id: "sess-1", data: { current: { type: "session", sessionUid: "sess-1", fromSlotUid: "slot-open" } } },
+        overLocked,
+      ),
+    );
+    expect(s.placeLibrarySession).not.toHaveBeenCalled();
+    expect(s.placeLibraryExercise).not.toHaveBeenCalled();
+    expect(s.moveSession).not.toHaveBeenCalled();
+  });
+
+  it("handleDragEnd belt: a session dragged FROM a locked slot never moves", () => {
+    const s = setupLocked();
+    s.result.current.handleDragEnd(
+      end(
+        { id: "sess-1", data: { current: { type: "session", sessionUid: "sess-1", fromSlotUid: "slot-locked" } } },
+        daySlotOver("slot-open"),
+      ),
+    );
+    expect(s.moveSession).not.toHaveBeenCalled();
+  });
+
+  it("handleDragEnd belt: week reorder refuses a locked endpoint but allows open weeks", () => {
+    const s = setupLocked();
+    const weekEvt = (a: string, b: string) =>
+      end(
+        { id: a, data: { current: { type: "week", weekUid: a } } },
+        { id: b, data: { current: { type: "week", weekUid: b } } },
+      );
+    s.result.current.handleDragEnd(weekEvt("wk-locked", "wk-open"));
+    s.result.current.handleDragEnd(weekEvt("wk-open", "wk-locked"));
+    expect(s.reorderWeek).not.toHaveBeenCalled();
+  });
+});

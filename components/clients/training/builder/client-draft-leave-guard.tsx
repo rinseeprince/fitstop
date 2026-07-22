@@ -18,7 +18,13 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 //
 // Mounted INSIDE ProgramDraftProvider so it can read the live dirty/mode state.
 // Scoped to the rail only — links inside the editor (role="dialog") pass through.
-export function ClientDraftLeaveGuard() {
+// `description` lets the amendment overlay swap the apply-specific copy for
+// its save-specific one.
+export function ClientDraftLeaveGuard({
+  description = "You have unsaved changes to this program. Leaving now will discard them — they're only saved to the client once you apply.",
+}: {
+  description?: string;
+}) {
   const router = useRouter();
   const { isDirty, mode } = useProgramDraft();
   const [pendingHref, setPendingHref] = useState<string | null>(null);
@@ -73,7 +79,7 @@ export function ClientDraftLeaveGuard() {
       open={pendingHref !== null}
       onOpenChange={(open) => !open && setPendingHref(null)}
       title="Discard unsaved changes?"
-      description="You have unsaved changes to this program. Leaving now will discard them — they're only saved to the client once you apply."
+      description={description}
       confirmLabel="Leave without applying"
       onConfirm={() => {
         const dest = pendingHref;

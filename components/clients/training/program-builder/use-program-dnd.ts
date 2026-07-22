@@ -56,6 +56,17 @@ export type SlotDropData = {
   occupied: boolean;
 };
 
+// A week is drag-locked when any of its slots is history (placed-plan target).
+function weekIsLocked(
+  draft: ProgramDraft | null,
+  lockedSlotUids: ReadonlySet<string> | undefined,
+  weekUid: string,
+): boolean {
+  if (!draft || !lockedSlotUids) return false;
+  const week = draft.weeks.find((w) => w.uid === weekUid);
+  return week != null && week.days.some((slot) => lockedSlotUids.has(slot.uid));
+}
+
 type ActiveDrag =
   | { type: "week"; week: WeekDraft }
   | { type: "session"; session: SessionDraft }
@@ -66,11 +77,14 @@ type ActiveDrag =
 // unit-testable without dnd-kit geometry. A session hits any slot; a
 // library-session only REST slots (one session per cell); a library-exercise
 // only OCCUPIED slots (it appends to an existing session, never conjures one).
+// A locked slot (placed-plan history) accepts nothing.
 export function slotAcceptsDrag(
   activeType: string,
-  slot: { type?: string; occupied?: boolean },
+  slot: { type?: string; occupied?: boolean; slotUid?: string },
+  lockedSlotUids?: ReadonlySet<string>,
 ): boolean {
   if (slot.type !== "day-slot") return false;
+  if (slot.slotUid && lockedSlotUids?.has(slot.slotUid)) return false;
   if (activeType === "library-session" && slot.occupied) return false;
   if (activeType === "library-exercise" && !slot.occupied) return false;
   return true;
@@ -82,6 +96,9 @@ type UseProgramDndParams = {
   moveSession: (sessionUid: string, targetSlotUid: string) => void;
   placeLibrarySession: (session: SavedSession, targetSlotUid: string) => void;
   placeLibraryExercise: (exercise: Exercise, targetSlotUid: string) => void;
+  // Placed-plan target: locked slots never collide or accept drops, and weeks
+  // touching history are excluded from week reordering.
+  lockedSlotUids?: ReadonlySet<string>;
 };
 
 export function useProgramDnd({
@@ -90,6 +107,7 @@ export function useProgramDnd({
   moveSession,
   placeLibrarySession,
   placeLibraryExercise,
+  lockedSlotUids,
 }: UseProgramDndParams) {
   const [activeDrag, setActiveDrag] = useState<ActiveDrag | null>(null);
 
@@ -105,29 +123,35 @@ export function useProgramDnd({
   // as fallback for keyboard/edge cases); a library-session skips occupied
   // slots (one per cell), a library-exercise skips EMPTY slots (it appends to
   // an existing session); a dragged week only collides with week rows.
-  const collisionDetection: CollisionDetection = useCallback((args) => {
-    const activeType = (args.active.data.current as { type?: string } | undefined)?.type;
-    if (
-      activeType === "session" ||
-      activeType === "library-session" ||
-      activeType === "library-exercise"
-    ) {
-      const droppableContainers = args.droppableContainers.filter((c) =>
-        slotAcceptsDrag(
-          activeType,
-          (c.data.current as { type?: string; occupied?: boolean } | undefined) ?? {},
-        ),
+  const collisionDetection: CollisionDetection = useCallback(
+    (args) => {
+      const activeType = (args.active.data.current as { type?: string } | undefined)?.type;
+      if (
+        activeType === "session" ||
+        activeType === "library-session" ||
+        activeType === "library-exercise"
+      ) {
+        const droppableContainers = args.droppableContainers.filter((c) =>
+          slotAcceptsDrag(
+            activeType,
+            (c.data.current as { type?: string; occupied?: boolean; slotUid?: string } | undefined) ?? {},
+            lockedSlotUids,
+          ),
+        );
+        const within = pointerWithin({ ...args, droppableContainers });
+        return within.length > 0
+          ? within
+          : rectIntersection({ ...args, droppableContainers });
+      }
+      const droppableContainers = args.droppableContainers.filter(
+        (c) =>
+          (c.data.current as { type?: string } | undefined)?.type === "week" &&
+          !weekIsLocked(draft, lockedSlotUids, String(c.id)),
       );
-      const within = pointerWithin({ ...args, droppableContainers });
-      return within.length > 0
-        ? within
-        : rectIntersection({ ...args, droppableContainers });
-    }
-    const droppableContainers = args.droppableContainers.filter(
-      (c) => (c.data.current as { type?: string } | undefined)?.type === "week",
-    );
-    return closestCenter({ ...args, droppableContainers });
-  }, []);
+      return closestCenter({ ...args, droppableContainers });
+    },
+    [draft, lockedSlotUids],
+  );
 
   const handleDragStart = useCallback(
     (event: DragStartEvent) => {
@@ -177,12 +201,22 @@ export function useProgramDnd({
       if (!activeData) return;
 
       if (activeData.type === "week") {
-        if (overData?.type === "week" && active.id !== over.id) {
+        if (
+          overData?.type === "week" &&
+          active.id !== over.id &&
+          // Belt: collision already excludes locked weeks; a locked endpoint
+          // slipping through must still never re-date history.
+          !weekIsLocked(draft, lockedSlotUids, String(active.id)) &&
+          !weekIsLocked(draft, lockedSlotUids, String(over.id))
+        ) {
           reorderWeek(String(active.id), String(over.id));
         }
         return;
       }
       if (overData?.type !== "day-slot") return;
+      // Belt on both ends: a locked target never accepts, and a session card
+      // in a locked slot never leaves (its draggable is disabled anyway).
+      if (lockedSlotUids?.has(String(over.id))) return;
       if (activeData.type === "library-session") {
         placeLibrarySession(activeData.session, String(over.id));
         return;
@@ -191,9 +225,10 @@ export function useProgramDnd({
         placeLibraryExercise(activeData.exercise, String(over.id));
         return;
       }
+      if (lockedSlotUids?.has(activeData.fromSlotUid)) return;
       moveSession(activeData.sessionUid, String(over.id));
     },
-    [reorderWeek, moveSession, placeLibrarySession, placeLibraryExercise],
+    [draft, lockedSlotUids, reorderWeek, moveSession, placeLibrarySession, placeLibraryExercise],
   );
 
   return {

@@ -14,20 +14,26 @@ import {
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
+import { usePlacedPlan } from "@/hooks/use-placed-plan";
 import { TrainingCalendarView } from "../calendar/training-calendar-view";
+import { PlanAmendmentOverlay } from "./plan-amendment-overlay";
 import { TrainingPlanHero } from "@/components/clients/training/training-plan-hero";
 
 type TrainingBuilderRightPanelProps = {
   clientId: string;
+  clientName?: string;
   onOpenGenerator?: () => void;
 };
 
 // The Plans-subtab surface: dark hero (both branches) + the month calendar.
 // Owns the client-level "Delete future sessions" flow (relocated from the
 // old TopContentBar) — the trigger renders in the calendar toolbar's
-// Schedule divider, the confirm dialog lives here.
+// Schedule divider, the confirm dialog lives here — and the plan-amendment
+// entry points (hero "Edit plan" + the tray's "Edit whole plan" item), which
+// open the full-screen amendment overlay.
 export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel({
   clientId,
+  clientName,
   onOpenGenerator,
 }: TrainingBuilderRightPanelProps) {
   const builder = useTrainingBuilderContext();
@@ -36,6 +42,16 @@ export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
+  const [amendOpen, setAmendOpen] = useState(false);
+
+  // The amendment GET (shared SWR key with the overlay, so opening the editor
+  // never double-fetches) — here only for the fully-past gate on the entry
+  // points: an ended plan can't be amended ("apply a new program" is the
+  // gesture).
+  const planId = builder.plan?.id ?? null;
+  const { placedPlan } = usePlacedPlan(clientId, planId);
+  const isFullyPast = placedPlan?.isFullyPast ?? false;
+  const openAmend = planId ? () => setAmendOpen(true) : undefined;
 
   const handleClearPlan = async () => {
     if (!builder.plan) return;
@@ -98,7 +114,14 @@ export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel
   // Calendar is always visible — the hero owns both plan/empty branches.
   return (
     <div className="space-y-5">
-      <TrainingPlanHero clientId={clientId} onOpenGenerator={onOpenGenerator} />
+      <TrainingPlanHero
+        clientId={clientId}
+        onOpenGenerator={onOpenGenerator}
+        onEditPlan={openAmend}
+        editPlanDisabledReason={
+          isFullyPast ? "This plan has ended — apply a new program instead" : null
+        }
+      />
 
       <TrainingCalendarView
         clientId={clientId}
@@ -111,6 +134,17 @@ export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel
         onDeleteFuture={
           builder.plan ? () => setShowClearConfirm(true) : undefined
         }
+        // Hidden (not disabled) for an ended plan — the hero's disabled
+        // button carries the explanation.
+        onEditPlan={isFullyPast ? undefined : openAmend}
+      />
+
+      <PlanAmendmentOverlay
+        open={amendOpen}
+        onOpenChange={setAmendOpen}
+        clientId={clientId}
+        planId={planId}
+        clientName={clientName}
       />
 
       <Dialog open={showClearConfirm} onOpenChange={setShowClearConfirm}>

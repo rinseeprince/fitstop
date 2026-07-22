@@ -16,6 +16,9 @@ import { WeekRow } from "./week-row";
 type ProgramGridProps = {
   draft: ProgramDraft;
   mode: "view" | "edit";
+  // Placed-plan target: slots whose calendar day is history render inert
+  // (see program-builder-lock-model). Undefined = no locking.
+  lockedSlotUids?: ReadonlySet<string>;
   collapsedWeeks: Set<string>;
   onToggleCollapse: (weekUid: string) => void;
   onDuplicateWeek: (weekUid: string) => void;
@@ -30,6 +33,7 @@ type ProgramGridProps = {
 export function ProgramGrid({
   draft,
   mode,
+  lockedSlotUids,
   collapsedWeeks,
   onToggleCollapse,
   onDuplicateWeek,
@@ -70,6 +74,7 @@ export function ProgramGrid({
                 key={week.uid}
                 week={week}
                 mode={mode}
+                lockedSlotUids={lockedSlotUids}
                 collapsed={collapsedWeeks.has(week.uid)}
                 canDelete={canDelete}
                 defaultSurplusPercentage={draft.defaultSurplusPercentage}

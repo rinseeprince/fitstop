@@ -17,6 +17,11 @@ type WeekCardProps = {
   mode: "view" | "edit";
   collapsed: boolean;
   canDelete: boolean;
+  // Placed-plan lock policies (default true — no locking): a fully-elapsed
+  // week can't be duplicated/progressed (decision 8); a week touching history
+  // can't be reordered, so its grip hides.
+  canDuplicate?: boolean;
+  canReorder?: boolean;
   onToggleCollapse: () => void;
   onDuplicate: () => void;
   // Opens the progression dialog (duplicate + rule + preview). Plain
@@ -35,6 +40,8 @@ export function WeekCard({
   mode,
   collapsed,
   canDelete,
+  canDuplicate = true,
+  canReorder = true,
   onToggleCollapse,
   onDuplicate,
   onDuplicateWithProgression,
@@ -57,7 +64,7 @@ export function WeekCard({
 
       {/* Hover-revealed control stack — hidden (no layout cost) until hover. */}
       <div className={cn("hidden flex-col items-center gap-0.5 pt-0.5 group-hover/wk:flex", TEXT_SECONDARY)}>
-        {editControls && (
+        {editControls && canReorder && (
           <button
             type="button"
             aria-label={`Drag week ${week.weekIndex + 1}`}
@@ -85,7 +92,12 @@ export function WeekCard({
               type="button"
               aria-label={`Duplicate week ${week.weekIndex + 1}`}
               title="Duplicate week"
-              className={CTRL_BTN}
+              disabled={!canDuplicate}
+              className={cn(
+                CTRL_BTN,
+                !canDuplicate &&
+                  cn(TEXT_MUTED, "cursor-not-allowed opacity-40 hover:bg-transparent"),
+              )}
               onClick={onDuplicate}
             >
               <Copy className="h-3 w-3" strokeWidth={1.5} />
@@ -94,7 +106,12 @@ export function WeekCard({
               type="button"
               aria-label={`Duplicate week ${week.weekIndex + 1} with progression`}
               title="Duplicate with progression"
-              className={CTRL_BTN}
+              disabled={!canDuplicate}
+              className={cn(
+                CTRL_BTN,
+                !canDuplicate &&
+                  cn(TEXT_MUTED, "cursor-not-allowed opacity-40 hover:bg-transparent"),
+              )}
               onClick={onDuplicateWithProgression}
             >
               <TrendingUp className="h-3 w-3" strokeWidth={1.5} />

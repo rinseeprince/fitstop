@@ -58,6 +58,7 @@ export function TrainingPlanBuilder({
             <ErrorBoundary>
               <TrainingBuilderRightPanel
                 clientId={client.id}
+                clientName={client.name}
                 onOpenGenerator={() => setDrawerOpen(true)}
               />
             </ErrorBoundary>

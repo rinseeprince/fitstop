@@ -7,8 +7,11 @@ import { HEADER_EYEBROW_CLASS } from "@/components/clients/training/program-buil
 type TrainingPlanHeroProps = {
   clientId: string;
   onOpenGenerator?: () => void;
-  /** Job 2 wires this — the teal "Edit plan" primary renders only when provided. */
+  /** The teal "Edit plan" primary renders only when provided. */
   onEditPlan?: () => void;
+  /** When set, the Edit-plan button renders disabled with this tooltip
+   *  (e.g. a fully-elapsed plan can't be amended). */
+  editPlanDisabledReason?: string | null;
 };
 
 // The Plans-subtab hero in the program-top-bar's dark language: eyebrow +
@@ -19,6 +22,7 @@ export function TrainingPlanHero({
   clientId: _clientId,
   onOpenGenerator,
   onEditPlan,
+  editPlanDisabledReason,
 }: TrainingPlanHeroProps) {
   const { plan } = useTrainingBuilderContext();
 
@@ -63,8 +67,10 @@ export function TrainingPlanHero({
       <div className="ml-auto flex shrink-0 items-center gap-2">
         {onEditPlan && (
           <button
-            onClick={onEditPlan}
-            className="inline-flex items-center gap-1.5 rounded-[6px] bg-[#0d9488] px-3 py-1.5 text-[12.5px] font-medium text-white transition-colors hover:bg-[#0b7f75]"
+            onClick={editPlanDisabledReason ? undefined : onEditPlan}
+            disabled={!!editPlanDisabledReason}
+            title={editPlanDisabledReason ?? undefined}
+            className="inline-flex items-center gap-1.5 rounded-[6px] bg-[#0d9488] px-3 py-1.5 text-[12.5px] font-medium text-white transition-colors hover:bg-[#0b7f75] disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Pencil className="h-3.5 w-3.5" strokeWidth={1.5} />
             Edit plan
