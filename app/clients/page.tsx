@@ -10,6 +10,7 @@ import { AddClientDialog } from "@/components/add-client-dialog";
 import { OverdueBanner } from "@/components/clients/check-in/overdue-banner";
 import { PendingIntakeBanner } from "@/components/coach/pending-intake-banner";
 import { Search, AlertCircle, Clock, ChevronRight, Users } from "lucide-react";
+import { toast } from "sonner";
 import Link from "next/link";
 import type { ClientWithCheckInInfo } from "@/services/client-service";
 import { useOverdueClients } from "@/hooks/use-check-in-data";
@@ -45,7 +46,28 @@ export default function ClientsPage() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState<"all" | "onboarding" | ClientStatus>("all");
+  const [reactivatingId, setReactivatingId] = useState<string | null>(null);
   const { clients: overdueClients } = useOverdueClients();
+
+  const handleReactivate = async (clientId: string) => {
+    setReactivatingId(clientId);
+    try {
+      const res = await fetch(`/api/clients/${clientId}/reactivate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!res.ok) {
+        toast.error("Couldn't reactivate this client. Please try again.");
+        return;
+      }
+      toast.success("Client reactivated.");
+      await mutate();
+    } catch {
+      toast.error("Couldn't reactivate this client. Please try again.");
+    } finally {
+      setReactivatingId(null);
+    }
+  };
 
   const isClientOverdue = (clientId: string) => {
     return overdueClients.some((c) => c.id === clientId);
@@ -253,12 +275,9 @@ export default function ClientsPage() {
               const daysOverdue = getClientDaysOverdue(client.id);
               const status = getClientStatus(client);
 
-              return (
-                <Link
-                  key={client.id}
-                  href={`/clients/${client.id}`}
-                  className="flex items-center gap-4 p-4 bg-white rounded-[6px] transition-all duration-150 cursor-pointer group hover:-translate-y-px hover:shadow-[0_6px_20px_rgba(13,148,136,0.08)]"
-                >
+              const isInactive = status === "inactive";
+              const rowInner = (
+                <>
                   {/* Avatar */}
                   <div
                     className="w-12 h-12 rounded-[6px] flex items-center justify-center flex-shrink-0 text-white text-sm font-bold"
@@ -284,21 +303,18 @@ export default function ClientsPage() {
                   </div>
 
                   {/* Reactivate (undo Remove) — only for deactivated clients */}
-                  {status === "inactive" && (
+                  {isInactive && (
                     <button
                       type="button"
-                      onClick={async (e) => {
+                      disabled={reactivatingId === client.id}
+                      onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        await fetch(`/api/clients/${client.id}/reactivate`, {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                        });
-                        mutate();
+                        void handleReactivate(client.id);
                       }}
-                      className="inline-flex items-center rounded-[4px] border border-[#0d9488] px-2 py-0.5 text-[11px] font-medium text-[#0d9488] hover:bg-[rgba(13,148,136,0.08)]"
+                      className="inline-flex items-center rounded-[4px] border border-[#0d9488] px-2 py-0.5 text-[11px] font-medium text-[#0d9488] hover:bg-[rgba(13,148,136,0.08)] disabled:opacity-50"
                     >
-                      Reactivate
+                      {reactivatingId === client.id ? "Reactivating…" : "Reactivate"}
                     </button>
                   )}
 
@@ -307,8 +323,30 @@ export default function ClientsPage() {
                     {statusLabel[status]}
                   </span>
 
-                  {/* Arrow */}
-                  <ChevronRight className="w-4 h-4 text-[#93b0b4] group-hover:text-[#5a7d82] transition-colors" strokeWidth={1.5} />
+                  {/* Arrow — only when the row navigates (active clients) */}
+                  {!isInactive && (
+                    <ChevronRight className="w-4 h-4 text-[#93b0b4] group-hover:text-[#5a7d82] transition-colors" strokeWidth={1.5} />
+                  )}
+                </>
+              );
+
+              // An inactive client's detail page 404s (getClientById is
+              // active-filtered), so its row does NOT navigate — the only action
+              // is Reactivate. Active rows link to the detail page as before.
+              return isInactive ? (
+                <div
+                  key={client.id}
+                  className="flex items-center gap-4 p-4 bg-white rounded-[6px]"
+                >
+                  {rowInner}
+                </div>
+              ) : (
+                <Link
+                  key={client.id}
+                  href={`/clients/${client.id}`}
+                  className="flex items-center gap-4 p-4 bg-white rounded-[6px] transition-all duration-150 cursor-pointer group hover:-translate-y-px hover:shadow-[0_6px_20px_rgba(13,148,136,0.08)]"
+                >
+                  {rowInner}
                 </Link>
               );
             })}
