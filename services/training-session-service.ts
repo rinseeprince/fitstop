@@ -314,8 +314,24 @@ export async function cloneSessionForEvent(
 export async function bulkReplaceExercises(
   sessionId: string,
   exercises: ExerciseInput[],
-  coachId: string
+  coachId: string,
+  clientId: string
 ): Promise<void> {
+  // Verify the session belongs to a plan owned by this client (session -> plan
+  // -> client_id), mirroring cloneSessionForEvent. Defense in depth on top of
+  // the route's session-belongs-to-plan check: this service is service-role and
+  // must never trust a bare sessionId, or a foreign sessionId would be wiped.
+  const { data: ownedSession } = await supabaseAdmin
+    .from("training_sessions")
+    .select("id, training_plans!inner(client_id)")
+    .eq("id", sessionId)
+    .eq("training_plans.client_id", clientId)
+    .maybeSingle();
+
+  if (!ownedSession) {
+    throw new Error("Session not found");
+  }
+
   // Soft-delete existing exercises
   const { error: deleteError } = await supabaseAdmin
     .from("training_exercises")
