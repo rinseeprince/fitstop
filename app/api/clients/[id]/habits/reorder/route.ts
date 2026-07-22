@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { apiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
-import { reorderHabits } from "@/services/daily-habits-service";
+import { reorderHabits, HabitOwnershipError } from "@/services/daily-habits-service";
 import { getClientById } from "@/services/client-service";
 import { z } from "zod";
 
@@ -61,13 +61,19 @@ export async function PUT(
       );
     }
 
-    await reorderHabits(validationResult.data.habitIds);
+    await reorderHabits(validationResult.data.habitIds, clientId);
 
     return NextResponse.json({
       success: true,
       data: { message: "Habits reordered successfully" },
     });
   } catch (error) {
+    if (error instanceof HabitOwnershipError) {
+      return NextResponse.json(
+        { success: false, error: "Habit not found" },
+        { status: 404 }
+      );
+    }
     console.error("Error reordering habits:", error);
     return NextResponse.json(
       {

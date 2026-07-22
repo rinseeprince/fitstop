@@ -11,6 +11,14 @@ import {
 export type { HabitLogWithDetails } from "@/types/daily-habit";
 export { calculateCompletionRate, calculateCurrentStreak, mapArrayIndexToSortOrder } from "./daily-habits-logic";
 
+/** Thrown when a body-supplied habit id does not belong to the scoped client. */
+export class HabitOwnershipError extends Error {
+  constructor() {
+    super("One or more habits do not belong to this client");
+    this.name = "HabitOwnershipError";
+  }
+}
+
 // Database functions
 export const getClientHabits = async (clientId: string, includeInactive = false): Promise<DailyHabit[]> => {
   let query = supabaseAdmin
@@ -204,7 +212,25 @@ export const deactivateHabit = async (habitId: string): Promise<void> => {
   }
 };
 
-export const reorderHabits = async (habitIds: string[]): Promise<void> => {
+export const reorderHabits = async (
+  habitIds: string[],
+  clientId: string
+): Promise<void> => {
+  // The habit ids come from the request body. Verify every one belongs to the
+  // path client before touching sort_order, so a coach cannot rewrite another
+  // client's (or coach's) habit ordering via a service_role write.
+  const { data: owned, error: ownErr } = await supabaseAdmin
+    .from("daily_habits")
+    .select("id")
+    .eq("client_id", clientId)
+    .in("id", habitIds);
+  if (ownErr) {
+    throw new Error(`Failed to verify habit ownership: ${ownErr.message}`);
+  }
+  if ((owned?.length ?? 0) !== habitIds.length) {
+    throw new HabitOwnershipError();
+  }
+
   const sortOrderMappings = mapArrayIndexToSortOrder(habitIds);
   const updatePromises = sortOrderMappings.map(({ id, sortOrder }) =>
     supabaseAdmin
@@ -214,6 +240,7 @@ export const reorderHabits = async (habitIds: string[]): Promise<void> => {
         updated_at: new Date().toISOString(),
       })
       .eq("id", id)
+      .eq("client_id", clientId)
   );
 
   const results = await Promise.all(updatePromises);
