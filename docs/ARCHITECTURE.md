@@ -558,7 +558,7 @@ All coach-side data fetching uses SWR with:
 | Overview | `ClientOverviewTab` | Quick metrics, wellness strip, recent check-ins |
 | Roadmap | `RoadmapTabContent` | Phase timeline, create/transition dialogs |
 | Metrics | `MetricsTabContent` | Body metrics charts, check-in history |
-| Training Plan | `TrainingPlanCard` → `TrainingPlanBuilder` (Data / Plans / Exercise Data) | Calendar + summary hero, plan history, exercise analytics. "Apply program" opens the library drawer, which remounts the shared `/dashboard/programs` builder in `client-draft` mode |
+| Training Plan | `TrainingPlanCard` → `TrainingPlanBuilder` (Data / Plans / Exercise Data) | Calendar + hero, exercise analytics. "Apply program" opens the library drawer, which remounts the shared `/dashboard/programs` builder in `client-draft` mode. (The plan-history list below the calendar was removed with the dead `training_plan_history` read chain — the table has had no writer since P7.) |
 | Nutrition | `NutritionCalculatorCardEnhanced` + `NutritionHistoryTable` | Plan builder, per-day nutrition calendar, weekly adherence history |
 | Wellness | `WellnessTabContent` | Wellness trends and analysis |
 | Daily Habits | `HabitsTabContent` + `HabitsHistoryTable` | Habit management, analytics |

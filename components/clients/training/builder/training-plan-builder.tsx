@@ -9,7 +9,6 @@ import {
 import { TrainingBuilderRightPanel } from "./training-builder-right-panel";
 import { TrainingPlanBuilderOverlay } from "./training-plan-builder-overlay";
 import { TrainingHistoryTable } from "../training-history-table";
-import { TrainingPlanHistory } from "../training-plan-history";
 import { ExerciseDataView } from "../exercise-data/exercise-data-view";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { SegmentedControl } from "@/components/programs/shared/segmented-control";
@@ -62,7 +61,6 @@ export function TrainingPlanBuilder({
                 onOpenGenerator={() => setDrawerOpen(true)}
               />
             </ErrorBoundary>
-            <TrainingPlanHistory clientId={client.id} />
           </div>
         )}
 

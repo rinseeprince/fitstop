@@ -103,32 +103,6 @@ export type TrainingPlan = {
   deletedAt?: string;
 };
 
-// Training plan history record
-export type TrainingPlanHistory = {
-  id: string;
-  clientId: string;
-  planId?: string;
-  coachPrompt: string;
-  aiResponseRaw?: string;
-  planSnapshot: TrainingPlan;
-  clientMetricsSnapshot?: {
-    weightKg?: number;
-    bodyFatPercentage?: number;
-    goalWeightKg?: number;
-    tdee?: number;
-  };
-  checkInDataSnapshot?: {
-    avgMood?: number;
-    avgEnergy?: number;
-    avgSleep?: number;
-    avgStress?: number;
-    adherencePercentage?: number;
-  };
-  regenerationReason?: string;
-  createdByCoachId?: string;
-  createdAt: string;
-};
-
 // Training event status
 export type TrainingEventStatus = 'scheduled' | 'completed' | 'partial' | 'missed' | 'skipped';
 
