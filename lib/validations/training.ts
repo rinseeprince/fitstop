@@ -16,8 +16,11 @@ export const dayOfWeekSchema = z.enum([
 export const exerciseSchema = z.object({
   name: z.string().min(1, "Exercise name is required").max(200),
   sets: z.number().int().min(1, "At least 1 set required").max(20, "Maximum 20 sets"),
-  repsMin: z.number().int().min(1).max(100).optional().nullable(),
-  repsMax: z.number().int().min(1).max(100).optional().nullable(),
+  // reps floor is 0 (timed/AMRAP holds), matching the authoring schemas and the
+  // absent reps_min/reps_max DB CHECK — so the single add/edit exercise routes
+  // accept a 0-rep exercise too, not just the bulk/clone paths.
+  repsMin: z.number().int().min(0).max(100).optional().nullable(),
+  repsMax: z.number().int().min(0).max(100).optional().nullable(),
   repsTarget: z.string().max(20).optional().nullable(),
   rpeTarget: z.number().min(1).max(10).optional().nullable(),
   percentage1rm: z.number().min(0).max(100).optional().nullable(),
@@ -136,8 +139,6 @@ export const savedExerciseInputSchema = z.object({
 export const bulkExerciseInputSchema = exerciseSchema.extend({
   orderIndex: z.number().int().min(0),
   exerciseId: z.string().uuid().nullish(),
-  repsMin: z.number().int().min(0).max(100).optional().nullable(),
-  repsMax: z.number().int().min(0).max(100).optional().nullable(),
   setSpecs: setSpecsArraySchema.nullish(),
   videoUrl: videoUrlSchema,
 });
@@ -166,7 +167,7 @@ export const updateSavedPlanSchema = z.object({
   splitType: z.string().max(100).nullish(),
   frequencyPerWeek: z.number().int().min(1).max(7).nullish(),
   cycleLength: z.number().int().min(1).max(52).nullish(),
-  restPattern: z.array(z.number().int()).optional(),
+  restPattern: z.array(z.number().int()).max(364).optional(),
   defaultSurplusPercentage: z.number().min(0).max(100).nullish(),
   programDurationWeeks: z.number().int().min(1).max(52).nullish(),
 });

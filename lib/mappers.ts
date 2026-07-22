@@ -100,24 +100,53 @@ export function mapClientRow(row: ClientRow): Client {
   };
 }
 
-/**
- * Client-facing projection of a Client (M6). Coach-owned columns must never
- * cross into a /api/client/** response body — strip `notes` (the coach's
- * private notes about the client). Apply this to what every client-facing route
- * RETURNS, not only to what the read path selects. Mirrors CLIENT_SELF_COLUMNS
- * in client-portal-service.ts.
- */
-export function toClientSelfView(client: Client): Client {
-  return { ...client, notes: undefined };
+function pickAllowed<T>(source: T, keys: readonly (keyof T)[]): Partial<T> {
+  const out: Partial<T> = {};
+  for (const key of keys) {
+    if (source[key] !== undefined) out[key] = source[key];
+  }
+  return out;
 }
 
-/**
- * Client-facing projection of a ClientIntake (M6). `coachReviewNotes` is the
- * coach's private review field ("Only visible to you" in the coach UI) and is
- * the only coach-owned field on the intake — every other note is client-entered.
- */
-export function toClientFacingIntake(intake: ClientIntake): ClientIntake {
-  return { ...intake, coachReviewNotes: undefined };
+// Client-facing allowlist for a Client (M6). Every field a client may see about
+// themselves is named; `notes` (the coach's private notes) is excluded, and any
+// FUTURE coach-only column is excluded by default rather than shipped — the same
+// "allowlist, don't denylist" posture as CLIENT_SELF_COLUMNS on the read path.
+const CLIENT_SELF_KEYS = [
+  "id", "coachId", "name", "email", "avatarUrl", "active", "createdAt", "updatedAt",
+  "height", "heightUnit", "gender", "dateOfBirth", "goalWeight", "goalBodyFatPercentage",
+  "weightUnit", "currentWeight", "currentBodyFatPercentage", "bmr", "tdee",
+  "checkInFrequency", "checkInFrequencyDays", "expectedCheckInDay", "lastReminderSentAt",
+  "reminderPreferences", "totalCheckInsExpected", "totalCheckInsCompleted",
+  "checkInAdherenceRate", "currentStreak", "longestStreak", "unitPreference",
+  "includeActivityBurn", "surplusAsCarbs", "startingWeight", "startingBodyFatPercentage",
+  "bmrManualOverride", "tdeeManualOverride", "welcomeMessage", "onboardingStatus",
+  "walkthroughCompletedAt", "startDate", "timezone",
+] as const satisfies readonly (keyof Client)[];
+
+export function toClientSelfView(client: Client): Partial<Client> {
+  return pickAllowed(client, CLIENT_SELF_KEYS);
+}
+
+// Client-facing allowlist for a ClientIntake (M6). Excludes `coachReviewNotes`
+// (the coach's private review field, "Only visible to you"); every other field
+// is client-entered or non-sensitive. Allowlist so a future coach-only field is
+// excluded by default.
+const CLIENT_INTAKE_KEYS = [
+  "id", "clientId", "status", "dateOfBirth", "gender", "height", "heightUnit",
+  "currentWeight", "weightUnit", "bodyFatPercentage", "workActivityLevel", "primaryGoal",
+  "goalDetails", "targetWeight", "goalBodyFatPercentage", "goalDeadline", "goalDescription",
+  "motivation", "trainingExperienceLevel", "trainingTimePreference", "trainingLocation",
+  "availableEquipment", "daysPerWeek", "sessionDurationMinutes", "dietaryRequirements",
+  "cookingFrequency", "nutritionNotes", "foodAllergies", "dietDescription",
+  "hasTrackedMacrosBefore", "mealsPerDay", "biggestNutritionChallenge",
+  "injuriesOrLimitations", "medicalNotes", "previousCoachingExperience",
+  "previousCoachingDetails", "anythingElse", "reviewedAt", "reviewedBy", "startedAt",
+  "completedAt", "createdAt", "updatedAt",
+] as const satisfies readonly (keyof ClientIntake)[];
+
+export function toClientFacingIntake(intake: ClientIntake): Partial<ClientIntake> {
+  return pickAllowed(intake, CLIENT_INTAKE_KEYS);
 }
 
 // Client-facing allowlist for a CheckIn. The AI fields (aiSummary, aiInsights,
@@ -140,13 +169,7 @@ const CLIENT_FACING_CHECKIN_KEYS = [
 ] as const satisfies readonly (keyof CheckIn)[];
 
 export function toClientFacingCheckIn(checkIn: CheckIn): Partial<CheckIn> {
-  const out: Partial<CheckIn> = {};
-  for (const key of CLIENT_FACING_CHECKIN_KEYS) {
-    if (checkIn[key] !== undefined) {
-      (out as Record<string, unknown>)[key] = checkIn[key];
-    }
-  }
-  return out;
+  return pickAllowed(checkIn, CLIENT_FACING_CHECKIN_KEYS);
 }
 
 /**

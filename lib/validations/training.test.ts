@@ -12,6 +12,7 @@ import {
   inlinePlanBodySchema,
   createSavedPlanSchema,
   savedSessionInputSchema,
+  updateSavedPlanSchema,
 } from './training'
 
 describe('Training Validation Schemas', () => {
@@ -110,10 +111,9 @@ describe('Training Validation Schemas', () => {
       expect(result.success).toBe(false)
     })
 
-    it('rejects reps below 1', () => {
-      const data = { name: 'Bench Press', sets: 4, repsMin: 0 }
-      const result = exerciseSchema.safeParse(data)
-      expect(result.success).toBe(false)
+    it('accepts 0 reps (timed/AMRAP holds; no reps DB CHECK) but rejects negative', () => {
+      expect(exerciseSchema.safeParse({ name: 'Plank', sets: 4, repsMin: 0 }).success).toBe(true)
+      expect(exerciseSchema.safeParse({ name: 'Bench Press', sets: 4, repsMin: -1 }).success).toBe(false)
     })
 
     it('rejects reps above 100', () => {
@@ -496,6 +496,11 @@ describe('Training Validation Schemas', () => {
       const s = { name: 'Day', exercises: [] }
       expect(createSavedPlanSchema.safeParse({ name: 'P', sessions: Array(365).fill(s) }).success).toBe(false)
       expect(createSavedPlanSchema.safeParse({ name: 'P', sessions: [s] }).success).toBe(true)
+    })
+
+    it('updateSavedPlanSchema caps restPattern at 364', () => {
+      expect(updateSavedPlanSchema.safeParse({ restPattern: Array(365).fill(0) }).success).toBe(false)
+      expect(updateSavedPlanSchema.safeParse({ restPattern: Array(7).fill(0) }).success).toBe(true)
     })
 
     it('savedSessionInputSchema caps exercises at 50 per session', () => {
