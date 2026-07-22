@@ -215,7 +215,11 @@ export const overwriteSavedPlanSchema = z.object({
   // builder header edits it. Free text like createSavedPlanSchema, NOT the enum.
   splitType: z.string().max(100).nullish(),
   defaultSurplusPercentage: z.number().min(0).max(100).nullish(),
-  sessions: z.array(savedSessionInputSchema),
+  // Cap the slot count at the builder's own ceiling (52 weeks x 7 days). The
+  // placement window is driven by this length; without a bound a crafted body
+  // drives an arbitrarily large window/insert loop. .min(1) rejects the empty
+  // program that would clear a day and create nothing.
+  sessions: z.array(savedSessionInputSchema).min(1).max(364),
 });
 
 // Inline (edited working copy) placement body — the coach applies their local
@@ -232,7 +236,10 @@ export const inlinePlanBodySchema = z.object({
   splitType: z.string().max(100).nullish(),
   programDurationWeeks: z.number().int().min(1).max(52).nullish(),
   defaultSurplusPercentage: z.number().min(0).max(100).nullish(),
-  sessions: z.array(savedSessionInputSchema),
+  // Same cap as the overwrite path: 52 weeks x 7 days. This is the attacker-
+  // supplied placement body, so the bound must live here — the placement window
+  // is slot-count-driven. .min(1) rejects the rest-only/empty silent wipe.
+  sessions: z.array(savedSessionInputSchema).min(1).max(364),
 });
 export type InlinePlanBody = z.infer<typeof inlinePlanBodySchema>;
 
