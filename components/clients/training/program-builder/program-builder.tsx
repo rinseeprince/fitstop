@@ -266,20 +266,31 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
                       <Pencil className="h-3.5 w-3.5" strokeWidth={1.5} />
                     </button>
                   )}
-                  {!isClientDraft && (
-                    <button
-                      type="button"
-                      aria-label="Delete program"
-                      title="Delete program"
-                      disabled={isSaving}
-                      className="rounded p-1 text-[#93b0b4] transition-colors hover:text-[#c06060] disabled:opacity-50"
-                      onClick={() => setConfirmDeleteOpen(true)}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
-                    </button>
-                  )}
+                  {/* Icon order is stable across modes: commit action (Save)
+                      leftmost, Discard middle, Delete ALWAYS rightmost — the
+                      trash must never change sides when entering edit mode. */}
                   {mode === "edit" && (
                     <>
+                      {!isClientDraft && (
+                        <button
+                          type="button"
+                          aria-label="Save program"
+                          title="Save program"
+                          disabled={isSaving || assistantBusy}
+                          className="rounded p-1 text-[#0d9488] transition-colors hover:text-[#0b7f75] disabled:opacity-50"
+                          onClick={async () => {
+                            // A clean save returns to the programs list; a
+                            // 409/error keeps the coach in the builder to retry.
+                            if ((await saveProgram()) === "saved") exit();
+                          }}
+                        >
+                          {isSaving ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Save className="h-3.5 w-3.5" strokeWidth={1.5} />
+                          )}
+                        </button>
+                      )}
                       {/* Draft-discard (delete) is library-only; a client-draft
                           is always a saved template, so it only ever shows the
                           revert-my-edits Discard-changes control. */}
@@ -312,27 +323,19 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
                           <Ban className="h-3.5 w-3.5" strokeWidth={1.5} />
                         </button>
                       )}
-                      {!isClientDraft && (
-                        <button
-                          type="button"
-                          aria-label="Save program"
-                          title="Save program"
-                          disabled={isSaving || assistantBusy}
-                          className="rounded p-1 text-[#0d9488] transition-colors hover:text-[#0b7f75] disabled:opacity-50"
-                          onClick={async () => {
-                            // A clean save returns to the programs list; a
-                            // 409/error keeps the coach in the builder to retry.
-                            if ((await saveProgram()) === "saved") exit();
-                          }}
-                        >
-                          {isSaving ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            <Save className="h-3.5 w-3.5" strokeWidth={1.5} />
-                          )}
-                        </button>
-                      )}
                     </>
+                  )}
+                  {!isClientDraft && (
+                    <button
+                      type="button"
+                      aria-label="Delete program"
+                      title="Delete program"
+                      disabled={isSaving}
+                      className="rounded p-1 text-[#93b0b4] transition-colors hover:text-[#c06060] disabled:opacity-50"
+                      onClick={() => setConfirmDeleteOpen(true)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+                    </button>
                   )}
                 </div>
               }

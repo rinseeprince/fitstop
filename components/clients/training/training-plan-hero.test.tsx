@@ -1,6 +1,5 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, cleanup, waitFor } from "@testing-library/react";
-import { SWRConfig } from "swr";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { render, screen, cleanup } from "@testing-library/react";
 import { TrainingPlanHero } from "./training-plan-hero";
 
 const ctx = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
@@ -8,33 +7,13 @@ vi.mock("@/contexts/training-builder-context", () => ({
   useTrainingBuilderContext: () => ctx.value,
 }));
 
-const SUMMARY = {
-  success: true,
-  data: { completed: 3, plannedUpToToday: 4, totalPlanned: 5, missed: 1 },
-};
-
 function renderHero(props: Partial<Parameters<typeof TrainingPlanHero>[0]> = {}) {
-  return render(
-    <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>
-      <TrainingPlanHero clientId="client-1" {...props} />
-    </SWRConfig>,
-  );
+  return render(<TrainingPlanHero clientId="client-1" {...props} />);
 }
 
 describe("TrainingPlanHero", () => {
-  beforeEach(() => {
-    vi.stubGlobal("fetch", () =>
-      Promise.resolve({
-        ok: true,
-        status: 200,
-        json: () => Promise.resolve(SUMMARY),
-      } as Response),
-    );
-  });
-
   afterEach(() => {
     cleanup();
-    vi.unstubAllGlobals();
   });
 
   it("renders the empty branch with the library CTA on the sanctioned hover pair", () => {
@@ -51,7 +30,7 @@ describe("TrainingPlanHero", () => {
     expect(container.innerHTML).toContain("0b7f75");
   });
 
-  it("renders the plan branch with the mono week stats from the summary endpoint", async () => {
+  it("renders the plan branch as name + actions with no stat row (owner call)", () => {
     ctx.value = {
       plan: { id: "p1", name: "PPL", frequencyPerWeek: 4, programDurationWeeks: 8 },
     };
@@ -62,8 +41,8 @@ describe("TrainingPlanHero", () => {
     expect(
       screen.getByRole("button", { name: /Apply program/ }),
     ).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByText("3/4")).toBeInTheDocument());
-    expect(screen.getByText("75%")).toBeInTheDocument();
+    expect(screen.queryByText(/adherence/)).toBeNull();
+    expect(screen.queryByText(/this wk/)).toBeNull();
   });
 
   it("renders the Edit-plan primary only when onEditPlan is provided (Job 2 seam)", () => {

@@ -1,11 +1,8 @@
 "use client";
 
-import useSWR from "swr";
 import { Pencil, Sparkles } from "lucide-react";
 import { useTrainingBuilderContext } from "@/contexts/training-builder-context";
 import { HEADER_EYEBROW_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
-import { swrFetcher } from "@/lib/swr-fetcher";
-import type { TrainingWeekSummary } from "@/types/history";
 
 type TrainingPlanHeroProps = {
   clientId: string;
@@ -14,37 +11,16 @@ type TrainingPlanHeroProps = {
   onEditPlan?: () => void;
 };
 
-function StatDot() {
-  return (
-    <span className="h-[3px] w-[3px] rounded-full bg-[rgba(255,255,255,0.2)]" />
-  );
-}
-
 // The Plans-subtab hero in the program-top-bar's dark language: eyebrow +
-// plan name + a mono week-stat row from the same summary endpoint the Data
-// tab's TrainingSummaryHero reads (that hero is untouched — it still serves
-// the Data subtab). Owns the empty branch too, so the right panel has a
-// single hero mount either way.
+// plan name + actions only — no stat row (owner call; week numbers live on
+// the Data tab's TrainingSummaryHero, which still serves that subtab). Owns
+// the empty branch too, so the right panel has a single hero mount.
 export function TrainingPlanHero({
-  clientId,
+  clientId: _clientId,
   onOpenGenerator,
   onEditPlan,
 }: TrainingPlanHeroProps) {
   const { plan } = useTrainingBuilderContext();
-
-  const { data: summaryResponse } = useSWR<{
-    success: boolean;
-    data: TrainingWeekSummary;
-  }>(
-    plan ? `/api/clients/${clientId}/history/training/summary` : null,
-    swrFetcher,
-    { revalidateOnFocus: false, dedupingInterval: 5000 },
-  );
-  const summary = summaryResponse?.data;
-  const adherencePct =
-    summary && summary.plannedUpToToday > 0
-      ? Math.round((summary.completed / summary.plannedUpToToday) * 100)
-      : 0;
 
   if (!plan) {
     return (
@@ -82,41 +58,6 @@ export function TrainingPlanHero({
         <h2 className="truncate text-[17px] font-semibold leading-tight tracking-[-0.01em] text-white">
           {plan.name}
         </h2>
-      </div>
-
-      {/* Mono week-stat row (hidden on small screens) */}
-      <div className="hidden items-center gap-2 font-mono-display text-[11px] text-[rgba(255,255,255,0.4)] md:flex">
-        <span>
-          <span className="font-medium text-[rgba(255,255,255,0.92)]">
-            {plan.frequencyPerWeek}×
-          </span>
-          /wk
-        </span>
-        {plan.programDurationWeeks != null && (
-          <>
-            <StatDot />
-            <span>
-              <span className="font-medium text-[rgba(255,255,255,0.92)]">
-                {plan.programDurationWeeks}
-              </span>{" "}
-              wk
-            </span>
-          </>
-        )}
-        <StatDot />
-        <span>
-          <span className="font-medium text-[rgba(255,255,255,0.92)]">
-            {summary?.completed ?? 0}/{summary?.plannedUpToToday ?? 0}
-          </span>{" "}
-          this wk
-        </span>
-        <StatDot />
-        <span>
-          <span className="font-medium text-[rgba(255,255,255,0.92)]">
-            {adherencePct}%
-          </span>{" "}
-          adherence
-        </span>
       </div>
 
       <div className="ml-auto flex shrink-0 items-center gap-2">

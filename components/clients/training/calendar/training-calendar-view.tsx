@@ -512,7 +512,6 @@ export function TrainingCalendarView({
           viewYear={viewMonth.year}
           phaseByDate={phaseByDate}
           hasPlan={!!plan}
-          isLoading={isLoading}
           weekRowPlanId={weekRowPlanId}
           onWeekAction={handleWeekAction}
           onCellClick={handleCellClick}

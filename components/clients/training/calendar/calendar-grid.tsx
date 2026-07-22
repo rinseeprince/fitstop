@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useEffect, useRef } from "react";
+import { memo } from "react";
 import { CalendarWeekRow } from "./calendar-week-row";
 import { CAL_GRID_COLS } from "./calendar-tokens";
 import { MONO_LABEL_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
@@ -21,7 +21,6 @@ type CalendarGridProps = {
   viewYear: number;
   phaseByDate: Map<string, PhaseStatus>;
   hasPlan: boolean;
-  isLoading: boolean;
   /** Resolves the single plan a week row belongs to (null = mixed/empty). */
   weekRowPlanId: (days: string[]) => string | null;
   onWeekAction: (weekStartDate: string, action: WeekAction) => void;
@@ -45,7 +44,6 @@ export const CalendarGrid = memo(function CalendarGrid({
   viewYear,
   phaseByDate,
   hasPlan,
-  isLoading,
   weekRowPlanId,
   onWeekAction,
   onCellClick,
@@ -53,17 +51,6 @@ export const CalendarGrid = memo(function CalendarGrid({
   onDuplicate,
   onDelete,
 }: CalendarGridProps) {
-  const todayRowRef = useRef<HTMLDivElement>(null);
-
-  // Scroll today's row into view when the viewed month contains today.
-  useEffect(() => {
-    const viewingCurrentMonth =
-      new Date().getFullYear() === viewYear && new Date().getMonth() === viewMonth;
-    if (viewingCurrentMonth && todayRowRef.current) {
-      todayRowRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
-    }
-  }, [isLoading, viewMonth, viewYear]);
-
   return (
     <div>
       {/* Sticky weekday header — first cell empty over the rail */}
@@ -78,7 +65,6 @@ export const CalendarGrid = memo(function CalendarGrid({
 
       <div className="space-y-2">
         {weeks.map((days, i) => {
-          const containsToday = days.includes(todayDate);
           const rowPlanId = weekRowPlanId(days);
           const rowHasEvents = days.some(
             (d) => (eventsByDate.get(d) ?? []).length > 0,
@@ -90,7 +76,7 @@ export const CalendarGrid = memo(function CalendarGrid({
               ? "Mixed plans — use session menu"
               : undefined;
           return (
-            <div key={days[0]} ref={containsToday ? todayRowRef : undefined}>
+            <div key={days[0]}>
               <CalendarWeekRow
                 days={days}
                 weekNumber={i + 1}
