@@ -9,11 +9,18 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { cn } from "@/lib/utils";
+import { SegmentedControl } from "@/components/programs/shared/segmented-control";
+import {
+  CHIP_NEUTRAL_CLASS,
+  FOCUS_RING,
+  MONO_LABEL_CLASS,
+  THUMB_CLASS,
+  TRAINING_CARD_BORDER,
+} from "@/components/clients/training/program-builder/builder-tokens";
 import { useSavedPlans } from "@/hooks/use-saved-plans";
 import { useStandaloneSessions } from "@/hooks/use-standalone-sessions";
-import { LayoutGrid, Dumbbell, Loader2, GripVertical } from "lucide-react";
+import { LayoutGrid, Dumbbell, Loader2, GripVertical, Search } from "lucide-react";
 import type { SavedPlan, SavedSession } from "@/types/training";
 
 type LibraryPanelProps = {
@@ -21,10 +28,15 @@ type LibraryPanelProps = {
   onOpenChange: (open: boolean) => void;
 };
 
+// Non-modal left Sheet for dragging library plans/sessions onto the calendar.
+// The Sheet mechanics and the drag-data shapes ({type, id, plan|session} —
+// use-calendar-dnd reads `.type` and `.id`) are load-bearing; the card
+// language mirrors the builder's library panel.
 export function LibraryPanel({ open, onOpenChange }: LibraryPanelProps) {
   const { plans, isLoading: plansLoading } = useSavedPlans();
   const { sessions, isLoading: sessionsLoading } = useStandaloneSessions();
   const [search, setSearch] = useState("");
+  const [tab, setTab] = useState<"plans" | "sessions">("plans");
 
   const savedPlans = useMemo(
     () => plans.filter((p) => p.status === "saved"),
@@ -51,63 +63,69 @@ export function LibraryPanel({ open, onOpenChange }: LibraryPanelProps) {
     <Sheet open={open} onOpenChange={onOpenChange} modal={false}>
       <SheetContent
         side="left"
-        className="w-[280px] p-0 flex flex-col"
+        className="flex w-[280px] flex-col gap-0 bg-white p-0"
         overlayClassName="bg-transparent pointer-events-none"
       >
-        <SheetHeader className="p-3 pb-2">
-          <SheetTitle className="text-sm font-semibold">Library</SheetTitle>
-          <Input
-            placeholder="Search..."
-            className="h-7 text-xs"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+        <SheetHeader className="space-y-2 px-[14px] pb-2 pt-[14px]">
+          <SheetTitle className="text-base font-semibold tracking-[-0.01em] text-[#0c1a1e]">
+            Library
+          </SheetTitle>
+          <SegmentedControl
+            fullWidth
+            options={[
+              { value: "plans", label: "Plans" },
+              { value: "sessions", label: "Sessions" },
+            ]}
+            value={tab}
+            onChange={(value) => setTab(value as "plans" | "sessions")}
           />
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#93b0b4]" />
+            <Input
+              placeholder="Search…"
+              className={cn("h-8 pl-8 text-xs", FOCUS_RING)}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
         </SheetHeader>
 
-        <Tabs defaultValue="plans" className="flex-1 flex flex-col overflow-hidden">
-          <TabsList className="mx-3 h-8">
-            <TabsTrigger value="plans" className="text-[11px]">
-              <LayoutGrid className="h-3 w-3 mr-1" /> Plans
-            </TabsTrigger>
-            <TabsTrigger value="sessions" className="text-[11px]">
-              <Dumbbell className="h-3 w-3 mr-1" /> Sessions
-            </TabsTrigger>
-          </TabsList>
+        <p className={cn(MONO_LABEL_CLASS, "px-[14px] pb-1.5")}>
+          Drag onto a calendar day
+        </p>
 
-          <TabsContent value="plans" className="flex-1 overflow-y-auto px-3 pb-3 mt-2">
-            {plansLoading ? (
+        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-[14px] pb-3">
+          {tab === "plans" ? (
+            plansLoading ? (
               <LoadingState />
             ) : filteredPlans.length === 0 ? (
-              <EmptyState label="No saved plans" />
+              <EmptyState icon="plans" label="No saved plans" />
             ) : (
-              <div className="space-y-2">
-                {filteredPlans.map((plan) => (
-                  <DraggablePlanCard key={plan.id} plan={plan} />
-                ))}
-              </div>
-            )}
-          </TabsContent>
-
-          <TabsContent value="sessions" className="flex-1 overflow-y-auto px-3 pb-3 mt-2">
-            {sessionsLoading ? (
-              <LoadingState />
-            ) : filteredSessions.length === 0 ? (
-              <EmptyState label="No standalone sessions" />
-            ) : (
-              <div className="space-y-2">
-                {filteredSessions.map((session) => (
-                  <DraggableSessionCard key={session.id} session={session} />
-                ))}
-              </div>
-            )}
-          </TabsContent>
-        </Tabs>
+              filteredPlans.map((plan) => (
+                <DraggablePlanCard key={plan.id} plan={plan} />
+              ))
+            )
+          ) : sessionsLoading ? (
+            <LoadingState />
+          ) : filteredSessions.length === 0 ? (
+            <EmptyState icon="sessions" label="No standalone sessions" />
+          ) : (
+            filteredSessions.map((session) => (
+              <DraggableSessionCard key={session.id} session={session} />
+            ))
+          )}
+        </div>
       </SheetContent>
     </Sheet>
   );
 }
 
 // --- Draggable cards ---
+
+const CARD_CLASS = cn(
+  "flex cursor-grab items-center gap-2 rounded-[6px] bg-white p-2 pl-1.5 transition-all active:cursor-grabbing hover:-translate-y-px hover:shadow-[0_6px_20px_rgba(13,148,136,0.08)]",
+  TRAINING_CARD_BORDER
+);
 
 function DraggablePlanCard({ plan }: { plan: SavedPlan }) {
   const trainingCount = plan.sessions?.filter((s) => !s.isRest).length ?? 0;
@@ -125,31 +143,28 @@ function DraggablePlanCard({ plan }: { plan: SavedPlan }) {
     <div
       ref={setNodeRef}
       style={style}
-      className={`bg-card border rounded-md p-2 cursor-grab active:cursor-grabbing ${isDragging ? "opacity-50" : ""}`}
+      className={cn(CARD_CLASS, isDragging && "opacity-40")}
       {...attributes}
       {...listeners}
     >
-      <div className="flex items-start gap-1.5">
-        <GripVertical className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 mt-0.5" />
-        <div className="flex-1 min-w-0">
-          <p className="text-xs font-medium line-clamp-1">{plan.name}</p>
-          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-            {plan.splitType && (
-              <Badge variant="outline" className="text-[9px] h-4">
-                {plan.splitType.replace(/_/g, " ")}
-              </Badge>
-            )}
-            <Badge variant="secondary" className="text-[9px] h-4">
-              {trainingCount} sessions
-            </Badge>
-            {plan.programDurationWeeks && (
-              <Badge variant="secondary" className="text-[9px] h-4">
-                {plan.programDurationWeeks} wk
-              </Badge>
-            )}
-          </div>
+      <GripVertical className="h-3.5 w-3.5 shrink-0 text-[#93b0b4]" strokeWidth={1.5} />
+      <div className={cn(THUMB_CLASS, "h-[30px] w-[30px]")}>
+        <LayoutGrid className="h-[15px] w-[15px]" strokeWidth={1.5} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-xs font-semibold text-[#0c1a1e]">{plan.name}</p>
+        <div className="mt-0.5 flex items-center gap-1.5">
+          <span className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal")}>
+            {trainingCount} sessions
+            {plan.programDurationWeeks ? ` · ${plan.programDurationWeeks} wk` : ""}
+          </span>
         </div>
       </div>
+      {plan.splitType && (
+        <span className={cn(CHIP_NEUTRAL_CLASS, "shrink-0 truncate max-w-[72px]")}>
+          {plan.splitType.replace(/_/g, " ")}
+        </span>
+      )}
     </div>
   );
 }
@@ -170,26 +185,27 @@ function DraggableSessionCard({ session }: { session: SavedSession }) {
     <div
       ref={setNodeRef}
       style={style}
-      className={`bg-card border rounded-md p-2 cursor-grab active:cursor-grabbing ${isDragging ? "opacity-50" : ""}`}
+      className={cn(CARD_CLASS, isDragging && "opacity-40")}
       {...attributes}
       {...listeners}
     >
-      <div className="flex items-start gap-1.5">
-        <GripVertical className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 mt-0.5" />
-        <div className="flex-1 min-w-0">
-          <p className="text-xs font-medium line-clamp-1">{session.name}</p>
-          <div className="flex items-center gap-1.5 mt-1">
-            {session.focus && (
-              <Badge variant="outline" className="text-[9px] h-4">
-                {session.focus}
-              </Badge>
-            )}
-            <Badge variant="secondary" className="text-[9px] h-4">
-              {exerciseCount} exercises
-            </Badge>
-          </div>
+      <GripVertical className="h-3.5 w-3.5 shrink-0 text-[#93b0b4]" strokeWidth={1.5} />
+      <div className={cn(THUMB_CLASS, "h-[30px] w-[30px]")}>
+        <Dumbbell className="h-[15px] w-[15px]" strokeWidth={1.5} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-xs font-semibold text-[#0c1a1e]">{session.name}</p>
+        <div className="mt-0.5 flex items-center gap-1.5">
+          <span className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal")}>
+            {exerciseCount} exercises
+          </span>
         </div>
       </div>
+      {session.focus && (
+        <span className={cn(CHIP_NEUTRAL_CLASS, "shrink-0 truncate max-w-[72px]")}>
+          {session.focus}
+        </span>
+      )}
     </div>
   );
 }
@@ -197,15 +213,17 @@ function DraggableSessionCard({ session }: { session: SavedSession }) {
 function LoadingState() {
   return (
     <div className="flex items-center justify-center py-8">
-      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+      <Loader2 className="h-4 w-4 animate-spin text-[#93b0b4]" />
     </div>
   );
 }
 
-function EmptyState({ label }: { label: string }) {
+function EmptyState({ icon, label }: { icon: "plans" | "sessions"; label: string }) {
+  const Icon = icon === "plans" ? LayoutGrid : Dumbbell;
   return (
-    <div className="text-center py-8 text-muted-foreground">
-      <p className="text-xs">{label}</p>
+    <div className="py-8 text-center text-[#5a7d82]">
+      <Icon className="mx-auto mb-2 h-8 w-8 opacity-50" strokeWidth={1.5} />
+      <p className="text-xs text-[#93b0b4]">{label}</p>
     </div>
   );
 }

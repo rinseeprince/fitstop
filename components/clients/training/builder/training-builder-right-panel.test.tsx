@@ -6,20 +6,27 @@ const ctx = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
 vi.mock("@/contexts/training-builder-context", () => ({
   useTrainingBuilderContext: () => ctx.value,
 }));
-// The accurate hero + the calendar are exercised by their own tests; stub them
-// so this test isolates the right panel's plan/empty-state branching.
-vi.mock("@/components/clients/training/training-summary-hero", () => ({
-  TrainingSummaryHero: ({ clientId }: { clientId: string }) => (
-    <div data-testid="summary-hero">{clientId}</div>
+// The hero + the calendar are exercised by their own tests; stub them so this
+// test isolates the right panel's composition (hero always mounted — it owns
+// the plan/empty branching itself now — plus the calendar wiring).
+vi.mock("@/components/clients/training/training-plan-hero", () => ({
+  TrainingPlanHero: ({ clientId }: { clientId: string }) => (
+    <div data-testid="plan-hero">{clientId}</div>
   ),
 }));
 vi.mock("../calendar/training-calendar-view", () => ({
-  TrainingCalendarView: () => <div data-testid="calendar" />,
+  TrainingCalendarView: (props: { onDeleteFuture?: () => void }) => (
+    <div
+      data-testid="calendar"
+      data-can-delete-future={props.onDeleteFuture ? "yes" : "no"}
+    />
+  ),
 }));
 
 function baseCtx(overrides: Record<string, unknown> = {}) {
   return {
     editMode: false,
+    setEditMode: vi.fn(),
     isLoading: false,
     loadError: null,
     phases: [],
@@ -30,31 +37,36 @@ function baseCtx(overrides: Record<string, unknown> = {}) {
   };
 }
 
-describe("TrainingBuilderRightPanel (Plans tab hero)", () => {
+describe("TrainingBuilderRightPanel (Plans tab surface)", () => {
   beforeEach(() => cleanup());
 
-  it("renders the shared accurate summary hero when a plan exists (not the old dayOfWeek strip)", () => {
+  it("mounts the hero and calendar with a plan, and enables the Delete-future trigger", () => {
     ctx.value = baseCtx({ plan: { id: "plan-1", name: "PPL" } });
     render(<TrainingBuilderRightPanel clientId="client-1" />);
 
-    expect(screen.getByTestId("summary-hero")).toHaveTextContent("client-1");
-    // The inaccurate strip's labels are gone.
-    expect(screen.queryByText("This Week")).toBeNull();
-    expect(screen.queryByText("Total Volume")).toBeNull();
-    expect(screen.queryByText("No training plan yet")).toBeNull();
-    expect(screen.getByTestId("calendar")).toBeInTheDocument();
+    expect(screen.getByTestId("plan-hero")).toHaveTextContent("client-1");
+    expect(screen.getByTestId("calendar")).toHaveAttribute(
+      "data-can-delete-future",
+      "yes",
+    );
   });
 
-  it("shows the empty-state CTA (repointed to the library) when there is no plan", () => {
+  it("still mounts the hero with no plan (it owns the empty branch) but withholds Delete-future", () => {
     ctx.value = baseCtx({ plan: null });
-    render(
-      <TrainingBuilderRightPanel clientId="client-1" onOpenGenerator={vi.fn()} />,
-    );
+    render(<TrainingBuilderRightPanel clientId="client-1" />);
 
-    expect(screen.getByText("No training plan yet")).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /Browse programs/ }),
-    ).toBeInTheDocument();
-    expect(screen.queryByTestId("summary-hero")).toBeNull();
+    expect(screen.getByTestId("plan-hero")).toBeInTheDocument();
+    expect(screen.getByTestId("calendar")).toHaveAttribute(
+      "data-can-delete-future",
+      "no",
+    );
+  });
+
+  it("shows only the loader while the plan is loading", () => {
+    ctx.value = baseCtx({ isLoading: true });
+    render(<TrainingBuilderRightPanel clientId="client-1" />);
+
+    expect(screen.queryByTestId("plan-hero")).toBeNull();
+    expect(screen.queryByTestId("calendar")).toBeNull();
   });
 });

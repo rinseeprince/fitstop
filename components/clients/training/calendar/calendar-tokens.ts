@@ -14,8 +14,7 @@ export const CAL_GRID_COLS =
   "grid grid-cols-[42px_repeat(7,minmax(0,1fr))] gap-2";
 
 // Day-cell wash by the phase covering that date. Teal alpha ladder only —
-// replaces the old blue (rgba(59,130,246,…)) and slate (rgba(148,163,184,…))
-// tints. Skipped phases get no tint (same as no phase).
+// never blue or slate tints. Skipped phases get no tint (same as no phase).
 export const PHASE_TINT: Partial<Record<PhaseStatus, string>> = {
   active: "bg-[rgba(13,148,136,0.06)]",
   planned: "bg-[rgba(13,148,136,0.03)]",

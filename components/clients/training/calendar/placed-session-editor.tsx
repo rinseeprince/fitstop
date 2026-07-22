@@ -317,7 +317,7 @@ export function PlacedSessionEditor({
         </DialogContent>
       </Dialog>
 
-      {/* Save-to-library name dialog (replaces the old prompt()) */}
+      {/* Save-to-library name dialog */}
       <Dialog open={libraryDialogOpen} onOpenChange={setLibraryDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>

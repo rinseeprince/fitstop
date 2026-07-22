@@ -12,11 +12,9 @@ import {
 import { Button } from "@/components/ui/button";
 import type { TrainingEvent } from "@/types/training";
 
-// Styled confirms for the two calendar deletes (replacing the browser
-// confirm() on per-event delete, and adding the previously-missing confirm on
-// clear-week). Danger styling stays on the documented pair — #c06060 text +
-// rgba(192,96,96,0.08) washes — there is no filled destructive button in the
-// design system.
+// Styled confirms for the two calendar deletes. Danger styling stays on the
+// documented pair — #c06060 text + rgba(192,96,96,0.08) washes — there is no
+// filled destructive button in the design system.
 const DANGER_CTA =
   "border border-[rgba(192,96,96,0.3)] text-[#c06060] hover:bg-[rgba(192,96,96,0.08)] hover:text-[#c06060]";
 

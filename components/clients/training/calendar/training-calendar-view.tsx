@@ -30,6 +30,10 @@ type TrainingCalendarViewProps = {
   editMode: boolean;
   clientTimezone?: string;
   onUpdate: () => void;
+  /** Renders the toolbar's View/Edit segmented control when provided. */
+  onEditModeChange?: (editMode: boolean) => void;
+  /** Renders the Schedule divider's Delete-future trigger when provided. */
+  onDeleteFuture?: () => void;
   /** Job 2 wires this — threads through to the tray's "Edit whole plan" item. */
   onEditPlan?: () => void;
 };
@@ -73,6 +77,8 @@ export function TrainingCalendarView({
   editMode,
   clientTimezone,
   onUpdate,
+  onEditModeChange,
+  onDeleteFuture,
   onEditPlan,
 }: TrainingCalendarViewProps) {
   const { toast } = useToast();
@@ -319,8 +325,7 @@ export function TrainingCalendarView({
     }
   }, [clientId, eventsByDate, mutate, invalidateNutritionCalendar, toast]);
 
-  // Per-event delete executor — runs after the DeleteEventDialog confirm
-  // (replaces the browser confirm()).
+  // Per-event delete executor — runs only after the DeleteEventDialog confirm.
   const executeDeleteEvent = useCallback(async (event: TrainingEvent) => {
     setIsDeletingEvent(true);
     try {
@@ -489,9 +494,11 @@ export function TrainingCalendarView({
           onToday={goToday}
           isLoading={isLoading}
           editMode={editMode}
+          onEditModeChange={onEditModeChange}
           libraryOpen={libraryOpen}
           onToggleLibrary={() => setLibraryOpen(!libraryOpen)}
           monthSessionCount={monthSessionCount}
+          onDeleteFuture={onDeleteFuture}
         />
 
         <CalendarGrid
@@ -585,7 +592,7 @@ export function TrainingCalendarView({
         }}
       />
 
-      {/* Per-event delete confirm (replaces the browser confirm()) */}
+      {/* Per-event delete confirm */}
       <DeleteEventDialog
         event={deleteTarget}
         isDeleting={isDeletingEvent}
