@@ -17,6 +17,12 @@ import { AUDIT_ACTIONS } from "@/lib/constants";
 import { inlinePlanBodySchema } from "@/lib/validations/training";
 import { z } from "zod";
 
+// A full-length placement clones many sessions + generates a year of events row
+// by row; give it more headroom than the platform default. NOT a correctness
+// guarantee — the placement snapshots + compensates on failure (H3) — but it
+// shrinks the timeout window on the riskier of the two destructive flows.
+export const maxDuration = 60;
+
 const placeFromLibrarySchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("plan"),

@@ -328,10 +328,11 @@ export type OverwriteSavedPlanInput = {
  * Used by "Save and Update Plan" — the coach has been editing an in-memory
  * working copy and is now committing those changes to the library template.
  *
- * Strategy: delete all existing sessions under the plan (cascade-deletes
- * exercises), then insert the new structure. Plan metadata (name, etc.) is
- * patched via updateSavedPlan separately; only sessions/exercises + derived
- * cycle info are handled here.
+ * Strategy (recoverable, H3): insert the NEW sessions first, delete the OLD ones
+ * only after every insert succeeds, then patch plan metadata + derived cycle
+ * info LAST — so a mid-loop failure or a hard timeout leaves the original
+ * template intact (worst case: duplicate sessions, cleared by a re-save), never
+ * a partial wipe. A mid-loop catch rolls back the partial new inserts.
  *
  * Does NOT touch any client-side training_plans / training_events — those
  * reference training_sessions in the applied-calendar tables, which are

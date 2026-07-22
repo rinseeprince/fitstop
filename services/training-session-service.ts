@@ -332,14 +332,18 @@ export async function bulkReplaceExercises(
     throw new Error("Session not found");
   }
 
-  // Soft-delete existing exercises
-  const { error: deleteError } = await supabaseAdmin
+  // H3-class recoverability: capture the current rows, insert the new exercises
+  // FIRST, then soft-delete the OLD ones by id. A failed/out-of-range insert (or
+  // a hard timeout) throws before the delete, leaving the existing exercises
+  // intact — worst case is duplicates cleared by a re-save, never an emptied
+  // session (the old delete-then-insert did the opposite).
+  const { data: oldRows, error: oldErr } = await supabaseAdmin
     .from("training_exercises")
-    .update({ is_active: false, updated_at: new Date().toISOString() })
+    .select("id")
     .eq("session_id", sessionId)
     .eq("is_active", true);
-
-  if (deleteError) throw new Error(`Failed to deactivate exercises: ${deleteError.message}`);
+  if (oldErr) throw new Error(`Failed to read existing exercises: ${oldErr.message}`);
+  const oldIds = (oldRows ?? []).map((r) => r.id);
 
   // Insert new exercises
   if (exercises.length > 0) {
@@ -347,5 +351,14 @@ export async function bulkReplaceExercises(
     const inserts = buildExerciseInserts(sessionId, exercises, exerciseIdMap);
     const { error: insertError } = await supabaseAdmin.from("training_exercises").insert(inserts);
     if (insertError) throw new Error(`Failed to insert exercises: ${insertError.message}`);
+  }
+
+  // Soft-delete the previous rows by id (not by session — the new rows must stay).
+  if (oldIds.length > 0) {
+    const { error: deleteError } = await supabaseAdmin
+      .from("training_exercises")
+      .update({ is_active: false, updated_at: new Date().toISOString() })
+      .in("id", oldIds);
+    if (deleteError) throw new Error(`Failed to deactivate previous exercises: ${deleteError.message}`);
   }
 }
