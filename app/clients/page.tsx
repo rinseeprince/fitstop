@@ -282,6 +282,25 @@ export default function ClientsPage() {
                     </p>
                   </div>
 
+                  {/* Reactivate (undo Remove) — only for deactivated clients */}
+                  {status === "inactive" && (
+                    <button
+                      type="button"
+                      onClick={async (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        await fetch(`/api/clients/${client.id}/reactivate`, {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                        });
+                        mutate();
+                      }}
+                      className="inline-flex items-center rounded-[4px] border border-[#0d9488] px-2 py-0.5 text-[11px] font-medium text-[#0d9488] hover:bg-[rgba(13,148,136,0.08)]"
+                    >
+                      Reactivate
+                    </button>
+                  )}
+
                   {/* Status Badge */}
                   <span className={`inline-flex items-center rounded-[4px] px-2 py-0.5 text-[11px] font-medium ${statusBadgeClass[status]}`}>
                     {statusLabel[status]}

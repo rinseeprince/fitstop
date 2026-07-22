@@ -20,7 +20,9 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const clients = await getClientsForCoach(coachId);
+    // Include inactive clients so the roster's "Inactive" tab can list them and
+    // offer reactivation (the client filters/derives status client-side).
+    const clients = await getClientsForCoach(coachId, true);
 
     return NextResponse.json({ clients, total: clients.length });
   } catch (error) {

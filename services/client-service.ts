@@ -120,11 +120,12 @@ export const createClient = async (
 
 // Get all clients for a coach with last check-in info
 export const getClientsForCoach = async (
-  coachId: string
+  coachId: string,
+  includeInactive = false
 ): Promise<ClientWithCheckInInfo[]> => {
   // Use a single query with relational syntax to fetch clients with their latest check-in
   // This avoids the N+1 query problem
-  const { data: clients, error: clientsError } = await supabaseAdmin
+  let query = supabaseAdmin
     .from("clients")
     .select(`
       *,
@@ -133,9 +134,18 @@ export const getClientsForCoach = async (
         period_end
       )
     `)
-    .eq("coach_id", coachId)
-    .eq("active", true)
-    .order("created_at", { ascending: false });
+    .eq("coach_id", coachId);
+
+  // The roster (Clients page) passes includeInactive so its "Inactive" tab can
+  // populate + offer reactivation; check-in-tracking and reminders keep the
+  // active-only default (you don't track or remind a deactivated client).
+  if (!includeInactive) {
+    query = query.eq("active", true);
+  }
+
+  const { data: clients, error: clientsError } = await query.order("created_at", {
+    ascending: false,
+  });
 
   if (clientsError) {
     console.error("Failed to fetch clients:", clientsError);
@@ -286,6 +296,30 @@ export const deleteClient = async (clientId: string): Promise<void> => {
   // Revoke the deactivated client's cached auth mapping so it cannot keep
   // resolving for up to the cache TTL. user_id may be null (client never
   // accepted an invite) — nothing to bust in that case.
+  if (data?.user_id) {
+    await invalidateClientAuthCache(data.user_id);
+  }
+};
+
+// Reactivate a soft-deleted client (undo deleteClient). Sets active back to true
+// and busts the auth cache so the client can log in again immediately rather
+// than after the 60s TTL (the loaders filter active=true — H6).
+export const reactivateClient = async (clientId: string): Promise<void> => {
+  const { data, error } = await supabaseAdmin
+    .from("clients")
+    .update({
+      active: true,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", clientId)
+    .select("user_id")
+    .maybeSingle();
+
+  if (error) {
+    console.error("Failed to reactivate client:", error);
+    throw new Error("Failed to reactivate client");
+  }
+
   if (data?.user_id) {
     await invalidateClientAuthCache(data.user_id);
   }
