@@ -70,19 +70,6 @@ function mapSession(
   };
 }
 
-function buildRestEntry(orderIndex: number): ClientTrainingSessionEntry {
-  return {
-    id: `rest-${orderIndex}`,
-    name: "Rest",
-    focus: null,
-    orderIndex,
-    weekIndex: 0,
-    isRest: true,
-    estimatedDurationMinutes: null,
-    exercises: [],
-  };
-}
-
 /**
  * Client-facing read of the active training plan for a client.
  *
@@ -93,20 +80,17 @@ function buildRestEntry(orderIndex: number): ClientTrainingSessionEntry {
  * end date regardless of the link. Pulling by `phase_id` would silently drop
  * any plan that was placed without explicit phase selection.
  *
- * Rest resolution (migration 121): placement clones rest slots as real is_rest
- * rows, so a placed plan describes its own rest days inline (the self-describing
- * path) — this also covers inline/edited placements with no template link and
- * multi-week programs (week_index > 0). Plans placed BEFORE migration 121 have no
- * is_rest rows; for those the library template's cycle_length / rest_pattern is
- * joined as a legacy fallback. Anything else (single-week no-rest, or no template)
- * returns a flat list (cycleLength = sessions.length, restPattern = []).
+ * The plan describes itself: placement clones every authored slot — training and
+ * rest alike — as real rows, so the returned entries are the whole program in
+ * `(week_index, order_index)` order with rest days carried as `isRest` rows. No
+ * library-template join is needed.
  */
 export async function getClientTrainingPlan(
   clientId: string
 ): Promise<ClientTrainingPlan | null> {
   const { data: planRow, error: planErr } = await supabaseAdmin
     .from("training_plans")
-    .select("id, name, saved_plan_id")
+    .select("id, name")
     .eq("client_id", clientId)
     .eq("status", "active")
     .is("deleted_at", null)
@@ -169,81 +153,9 @@ export async function getClientTrainingPlan(
     mapSession(row, exercisesBySession.get(row.id) ?? [])
   );
 
-  // Self-describing path (migration 121+): a placement clones rest slots as real
-  // is_rest rows and multi-week programs carry week_index > 0, so the entries
-  // already describe the full cycle inline — no library-template join needed. The
-  // `week_index > 0` guard also protects a multi-week no-rest plan, whose duplicate
-  // order_index across weeks would collide in the order-index-keyed legacy splice.
-  const isSelfDescribing = flatEntries.some(
-    (e) => e.isRest || (e.weekIndex ?? 0) > 0
-  );
-  if (isSelfDescribing) {
-    const restPattern = flatEntries
-      .map((e, i) => (e.isRest ? i : -1))
-      .filter((i) => i >= 0);
-    return {
-      planId: planRow.id,
-      planName: planRow.name,
-      cycleLength: flatEntries.length,
-      restPattern,
-      sessions: flatEntries,
-    };
-  }
-
-  // Legacy fallback: plans placed BEFORE migration 121 have no is_rest rows, so
-  // rest positions come from the library template's cycle metadata (the last
-  // saved_plan_id reader — kept only for those pre-existing placements).
-  if (planRow.saved_plan_id) {
-    const { data: savedPlanRow, error: savedPlanErr } = await supabaseAdmin
-      .from("coach_saved_plans")
-      .select("cycle_length, rest_pattern")
-      .eq("id", planRow.saved_plan_id)
-      .maybeSingle();
-
-    if (savedPlanErr) {
-      throw new Error(
-        `Failed to fetch coach saved plan: ${savedPlanErr.message}`
-      );
-    }
-
-    if (
-      savedPlanRow &&
-      savedPlanRow.cycle_length != null &&
-      savedPlanRow.rest_pattern != null
-    ) {
-      const cycleLength = savedPlanRow.cycle_length;
-      const restPattern = savedPlanRow.rest_pattern;
-      const restSet = new Set(restPattern);
-      const sessionByOrderIndex = new Map<number, ClientTrainingSessionEntry>();
-      for (const entry of flatEntries) {
-        sessionByOrderIndex.set(entry.orderIndex, entry);
-      }
-
-      const spliced: ClientTrainingSessionEntry[] = [];
-      for (let i = 0; i < cycleLength; i++) {
-        if (restSet.has(i)) {
-          spliced.push(buildRestEntry(i));
-          continue;
-        }
-        const real = sessionByOrderIndex.get(i);
-        if (real) spliced.push(real);
-      }
-
-      return {
-        planId: planRow.id,
-        planName: planRow.name,
-        cycleLength,
-        restPattern,
-        sessions: spliced,
-      };
-    }
-  }
-
   return {
     planId: planRow.id,
     planName: planRow.name,
-    cycleLength: flatEntries.length,
-    restPattern: [],
     sessions: flatEntries,
   };
 }

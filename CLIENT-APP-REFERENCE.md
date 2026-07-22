@@ -297,9 +297,7 @@ Source of truth: `types/client-training-plan.ts`. This is the **client read shap
 type ClientTrainingPlan = {
   planId: string
   planName: string
-  cycleLength: number   // day-slots in one pass of the program
-  restPattern: number[] // indices into `sessions` that are rest days
-  sessions: ClientTrainingSessionEntry[] // ordered by (weekIndex, orderIndex)
+  sessions: ClientTrainingSessionEntry[] // ordered by (weekIndex, orderIndex); rest days are real isRest entries
 }
 
 type ClientTrainingSessionEntry = {

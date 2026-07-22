@@ -24,8 +24,6 @@ function planResponse(sessions: SessionEntry[]) {
       data: {
         planId: "p1",
         planName: "Plan",
-        cycleLength: 7,
-        restPattern: [],
         sessions,
       },
     },

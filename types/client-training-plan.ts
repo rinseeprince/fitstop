@@ -24,8 +24,8 @@ export type ClientTrainingSessionEntry = {
   name: string;
   focus: string | null;
   orderIndex: number;
-  // 0-based week within a multi-week program (absent/0 for single-week / legacy
-  // plans). Lets the client program view group entries under "Week N" dividers.
+  // 0-based week within a multi-week program (absent/0 for single-week plans).
+  // Lets the client program view group entries under "Week N" dividers.
   weekIndex?: number;
   isRest: boolean;
   estimatedDurationMinutes: number | null;
@@ -35,7 +35,5 @@ export type ClientTrainingSessionEntry = {
 export type ClientTrainingPlan = {
   planId: string;
   planName: string;
-  cycleLength: number;
-  restPattern: number[];
   sessions: ClientTrainingSessionEntry[];
 };

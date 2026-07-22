@@ -23,8 +23,6 @@ import { getClientTrainingPlan } from "@/services/client-training-plan-service";
 const mockPlan: ClientTrainingPlan = {
   planId: "plan-1",
   planName: "PPL+Rest",
-  cycleLength: 5,
-  restPattern: [2, 4],
   sessions: [
     {
       id: "s-0",
@@ -60,7 +58,7 @@ describe("/api/client/training-plan", () => {
     expect(response.status).toBe(200);
     expect(body.success).toBe(true);
     expect(body.data.planName).toBe("PPL+Rest");
-    expect(body.data.cycleLength).toBe(5);
+    expect(body.data.sessions).toHaveLength(1);
     expect(response.headers.get("Cache-Control")).toBe("no-store");
   });
 

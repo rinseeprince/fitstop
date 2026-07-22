@@ -41,8 +41,6 @@ function makePlan(overrides: Partial<ClientTrainingPlan> = {}): ClientTrainingPl
   return {
     planId: "plan-1",
     planName: "PPL+Rest",
-    cycleLength: 5,
-    restPattern: [2, 4],
     sessions: [
       {
         id: "s-0",
