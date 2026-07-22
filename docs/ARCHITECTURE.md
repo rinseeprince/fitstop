@@ -264,10 +264,7 @@ The placed mirror of the library tier — same shape, one row per authored slot:
 - `is_rest` (BOOLEAN NOT NULL DEFAULT false, migration 121) — rest slots are **real rows**, so the client read is self-describing. They carry no exercises and spawn no `training_event`. Applied-side readers that count workouts filter `is_rest = false`.
 - `set_specs` (JSONB) + `video_url` (TEXT), migration 119 — identical shape to `coach_saved_exercises`; see "Coach Library".
 
-**Client read — `getClientTrainingPlan` (`services/client-training-plan-service.ts`) has three paths.**
-- **(A) Self-describing** — if any entry has `isRest` or `weekIndex > 0`, the entries are returned as-is with `cycleLength = entries.length`. This is the path for anything placed post-121.
-- **(B) Legacy splice** — only when (A) does not trigger AND `saved_plan_id` is set AND the template carries `cycle_length` + `rest_pattern`. It reconstructs synthetic rest entries from that metadata. Still reachable today (a single-week, all-training program placed by `type:"plan"` has no rest rows and `weekIndex` 0), though the result is equivalent; it is the last reader of `saved_plan_id`.
-- **(C) Flat** — `cycleLength = entries.length`, `restPattern = []`.
+**Client read — `getClientTrainingPlan` (`services/client-training-plan-service.ts`) is self-describing.** It returns `{ planId, planName, sessions[] }` — the plan's rows in `(week_index, order_index)` order, rest days carried as real `isRest` entries. No library-template join, no `saved_plan_id` read, no derived metadata on the response.
 
 Note the asymmetry with the coach side: coach-side "active plan" resolves **by date** (`getTrainingPlanForDate`), while this client reader takes the newest open-ended active row.
 
@@ -290,7 +287,7 @@ The single durable `nutrition_plans` row per client is the **template** that gen
 
 ### Event lifecycle
 - **Generation paths** (training):
-  1. AI generator or manual builder → draft in coach library (`coach_saved_plans.status = 'draft'`) → coach previews and edits on full-page editor → place from any start date with cycle-aware placement
+  1. Program builder → draft in coach library (`coach_saved_plans.status = 'draft'`) → coach previews and edits on full-page editor → place from any start date (whole-program date-walk)
   2. Library plan → apply or drag onto calendar (creates fresh client-side `training_plans` + `training_sessions` + `training_exercises` + `training_events`)
   3. Library session → drag individual saved session onto a specific calendar day
   4. Direct plan creation via the legacy builder (still supported)
@@ -326,7 +323,7 @@ training_logs            -- did the client train today? (1:1 per day, child of d
               └── set_logs   -- per-set actuals (added in migration 090)
 ```
 ### Event-keyed identity (migration 097, Session 5.2)
-- `session_logs` is keyed by **`training_event_id`** (FK → `training_events`, `ON DELETE SET NULL`), with a partial unique index `session_logs_training_event_id_key ON (training_event_id) WHERE training_event_id IS NOT NULL`. The old session-week composite `UNIQUE(client_id, training_session_id, week_start_date)` is **dropped** — it silently overwrote two cycle-plan events that shared a session in one week.
+- `session_logs` is keyed by **`training_event_id`** (FK → `training_events`, `ON DELETE SET NULL`), with a partial unique index `session_logs_training_event_id_key ON (training_event_id) WHERE training_event_id IS NOT NULL`. The old session-week composite `UNIQUE(client_id, training_session_id, week_start_date)` is **dropped** — it silently overwrote two events that shared a session in one week.
 - Write semantics (public `logTrainingEvent` / `logTrainingSessionForDate` in `services/training-log-service.ts`, both delegating to the internal `writeSessionLog` helper): if the event already has a `session_log_id` → UPDATE that row by id; else INSERT, stamping `training_event_id = event.id`. A `23505` on the partial index (concurrent submit / half-failed prior link) recovers by updating the conflicting row — never a duplicate. `linkSessionLogToEvent` writes both directions (`event.session_log_id` + status, and `session_log.training_event_id`).
 - `completed_at` is the **attribution date** — `event.date` for event-keyed logs (NOT the entry day), the logged date for event-less. A late backfill therefore attributes to the prescribed day.
 - `session_logs.training_session_id` holds the **performed** session. `prescribed_session_snapshot` captures the **prescribed** session (the event's session for matched logs; the chosen session for unmatched extras). Both SET NULL on delete; history preserved via the snapshot JSONB.
@@ -390,13 +387,9 @@ coach_saved_plans              -- plan templates (status: draft / saved)
 - `coach_id` (FK), `name`, `description`
 - `split_type`, `frequency_per_week`
 - `status`: `'draft'` (generated, awaiting coach review) | `'saved'` (coach-confirmed)
-- `cycle_length` (INTEGER) — **derived metadata**: the total slot count across ALL weeks (`weeks × 7` for a fully-authored program). The whole program is the repeat unit; this is not a 7-day or per-week number
-- `rest_pattern` (INTEGER[]) — the 0-indexed rest slots within that whole-program cycle, in `(week_index, order_index)` order
-- `frequency_per_week` — a per-week **average** of non-rest slots, clamped 1..7 (a raw multi-week total violates `training_plans.frequency_per_week`'s CHECK at placement)
-- All three are re-derived from the session list on every save/overwrite/inline-placement by `deriveCycleInfoFromSessions()` (`services/coach-library-helpers.ts`), so the paths cannot drift
-- `default_surplus_percentage`, `source`, `coach_prompt`, `program_duration_weeks`
-
-> **What reads `cycle_length` / `rest_pattern`.** Treat them as a **denormalized length cache**, not a cycle definition: the Programs library table derives its Length column (`weekCount = round(cycle_length / 7)`) and its "longest" sort from them. **Placement does not read them at all** — it builds its own `cycleSlots` from the session rows. The one genuine exception is `getClientTrainingPlan`'s legacy splice branch (`services/client-training-plan-service.ts` ~191-235), which *does* use `rest_pattern` as a real cycle definition to reconstruct rest days for plans placed before migration 121. Don't generalise from that branch.
+- `frequency_per_week` — a per-week **average** of non-rest slots, clamped 1..7 (a raw multi-week total violates `training_plans.frequency_per_week`'s CHECK at placement). Re-derived from the session list on every save/overwrite/inline-placement by `deriveFrequencyPerWeek()` (`services/coach-library-helpers.ts`), so the paths cannot drift
+- `program_duration_weeks` — the authored program length in weeks, kept truthful by the builder's post-save duration PATCH (and written by every create path). The Programs library derives its Length column and "longest" sort from it; slot/rest counts come from the session rows themselves (migration 128 dropped the old denormalized length columns)
+- `default_surplus_percentage`, `source`, `coach_prompt`
 
 ### `coach_saved_sessions`
 - `saved_plan_id` (FK, nullable) — NULL means a standalone session usable for mix-and-match
@@ -454,15 +447,15 @@ Latency is `iterations x round-trip`, so the levers are structural (fewer round 
 
 ### Whole-program placement (the date-walk)
 
-**The whole authored program is the repeat unit** — not a 7-day week and not a short rotating cycle. `placePlaceablePlanOnCalendar` (`services/library-placement-service.ts`) builds `cycleSlots` = ALL sessions across ALL weeks sorted by `(week_index, order_index)`, then:
+**The whole authored program is placed exactly once** — a sequential date-walk, not a weekday map. `placePlaceablePlanOnCalendar` (`services/library-placement-service.ts`) builds `programSlots` = ALL sessions across ALL weeks sorted by `(week_index, order_index)`, then:
 
-1. **Computes the window first** — `calculatePlacementEndDate()` = `max(1, cycleSlots.length) × (repeatCycles ?? 1)` days, then **capped, never stretched**, by the client's containing phase end AND by `getNextPlanStartCap` (the start of the next coexisting plan). An empty "Repeat cycles" box places exactly **one pass**.
+1. **Computes the window first** — `calculatePlacementEndDate()` = `max(1, programSlots.length)` days (one pass of the program), then **capped, never stretched**, by the client's containing phase end AND by `getNextPlanStartCap` (the start of the next coexisting plan).
 2. **Clones EVERY slot — training and rest** — into `training_sessions` with `day_of_week: null`, `week_index`, `is_rest`. Rest rows are forced to name "Rest", null focus, null surplus, and carry no exercises. Exercises clone only for non-rest slots, splatting `set_specs`/`video_url` verbatim.
-3. `generateCycleAwareEvents` walks calendar dates start→end tiling `cycleSlots[cyclePosition]`: **a rest slot advances the position but emits no `training_event`.** The upsert is `onConflict: (client_id, training_session_id, date), ignoreDuplicates: true`, so re-placing the same window is idempotent. Per-event surplus = session override ?? plan default.
+3. `generateProgramEvents` walks calendar dates start→end mapping each day to `programSlots[slotPosition]`: **a rest slot advances the position but emits no `training_event`.** The upsert is `onConflict: (client_id, training_session_id, date), ignoreDuplicates: true`, so re-placing the same window is idempotent. Per-event surplus = session override ?? plan default.
 
 > **Load-bearing invariant — every day-slot is a materialized row; empty === rest.** The date-walk relies on every authored week being a full 7 rows. A missing or implicit rest slot collapses the week to fewer than 7 days and slides every later date. This is why the builder has no "empty" cell state and why placement clones rest rows it will never emit an event for.
 
-The library plan's `cycle_length` / `rest_pattern` are derived metadata; the rotation is **not** driven by them. The placed rows describe themselves.
+The placed rows describe themselves — nothing but the session rows drives the walk.
 
 ### Atomic placement (additive — migration 114)
 `create_training_plan_atomic()` (the 23-arg signature, with `p_window_end`) inserts the new plan + sessions + events in one transaction as a **coexisting provenance row** (`status='active'`, `effective_until=NULL`). Placement is **additive**: it deletes only **future `scheduled` events within the incoming plan's own date window** (`GREATEST(effective_from, today) … p_window_end`) so the freshly generated events have empty slots to land in. There is **no STEP-0 cross-plan wipe and no archival of the previous plan** (the old behavior of migration 087); non-overlapping plans coexist and reads resolve "active" by date. `services/library-placement-service.ts` computes the window via `calculatePlacementEndDate()` and caps it at the start of the next coexisting plan (`getNextPlanStartCap`) so two placements never bleed into each other. Every generated event keeps carrying `calorie_surplus_percentage` (the nutrition-cascade contract).

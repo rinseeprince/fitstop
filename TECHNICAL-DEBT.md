@@ -17,7 +17,7 @@ Four routes rewrite `nutrition_events` server-side but currently have **no web c
 
 Logged: 2026-07-01.
 
-- **`training_plans.frequency_per_week` CHECK (1..7) outlives the week model.** The column (migration 015) predates multi-week programs; a raw non-rest total across N weeks violates it at apply time. S2.5 clamps at derivation (`deriveCycleInfoFromSessions` / `recomputePlanCycleInfo` now store a per-week average clamped to 1..7) and defensively at the placement boundary (`library-placement-service.ts` `createTrainingPlanAtomic` call). **The CHECK is still live in migration 015 and both clamps must stay until it is dropped.** Its nominated owner (CPEP 7.10a, which also rewrites the per-week readers in `phase-transition-service.ts` + display labels) sits in the PARKED roadmap workstream with no date, and builder Phase 7 ships no migrations. Treat as indefinitely open — do not drop it piecemeal, and do not remove either clamp on the assumption it is gone.
+- **`training_plans.frequency_per_week` CHECK (1..7) outlives the week model.** The column (migration 015) predates multi-week programs; a raw non-rest total across N weeks violates it at apply time. S2.5 clamps at derivation (`deriveFrequencyPerWeek` / `recomputePlanFrequency` store a per-week average clamped to 1..7) and defensively at the placement boundary (`library-placement-service.ts` `createTrainingPlanAtomic` call). **The CHECK is still live in migration 015 and both clamps must stay until it is dropped.** Its nominated owner (CPEP 7.10a, which also rewrites the per-week readers in `phase-transition-service.ts` + display labels) sits in the PARKED roadmap workstream with no date, and builder Phase 7 ships no migrations. Treat as indefinitely open — do not drop it piecemeal, and do not remove either clamp on the assumption it is gone.
 ---
 
 ## Training builder progression — pre-existing read cap (builder S4)
@@ -42,16 +42,6 @@ Logged: 2026-07-02.
 - **`is_warmup` is read and written, but not from the program builder.** Four live render branches (`components/client-portal/training/exercise-tracker-block.tsx`, `components/clients/training/sessions/training-exercise-row.tsx`) and one live writer: the checkbox in `components/clients/training/sessions/add-exercise-dialog.tsx`, reachable from the calendar's `session-detail-drawer.tsx`. In the program builder a warm-up is a per-set `set_type` inside `set_specs` instead.
 - **Why neither is dropped:** removing either column needs a migration plus a data audit ("does anything readable still carry a non-default value?"), and `is_warmup` additionally needs its authoring surface and render branches retired first.
 - **Rule until then:** keep splatting both fields at every clone/insert site — a write path that drops them silently rewrites existing prescriptions. Add no new UI for either.
-
----
-
-## Dead-but-undeletable fallback — `getClientTrainingPlan` path B
-
-Logged: 2026-07-21 (Phase 7 sweep).
-
-- **`services/client-training-plan-service.ts` (~191-235) splices synthetic rest entries** from the library template's `cycle_length`/`rest_pattern`. It runs only when path A does not trigger (no entry has `isRest` or `weekIndex > 0`) AND `saved_plan_id` is set AND the template carries both metadata columns.
-- **It is reachable, not dead** — an adversarial verification pass during the S7 sweep specifically refuted the "unreachable post-121" assumption. A clean single-week, all-training program (no rest days, `weekIndex` 0) placed via `type:"plan"` lands here. The spliced result is equivalent to the flat path in that case, so the effect is benign, but **do not delete it as unreachable** and do not "simplify" the three-path read.
-- It is the **last reader of `training_plans.saved_plan_id`**. Removing it is a data question, not a code question: it needs an audit that no live `training_plans` row predates migration 121 with rest-bearing template metadata.
 
 ---
 
