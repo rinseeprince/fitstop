@@ -45,6 +45,15 @@ Logged: 2026-07-02.
 
 ---
 
+## Plan amendment — deferred tails (placed-plan editing Job 2)
+
+Logged: 2026-07-22.
+
+- **Entry-point gating fetches the full amendment payload for one boolean.** `TrainingBuilderRightPanel` runs the amendment GET (via `usePlacedPlan`) on every Plans-subtab view just to read `isFullyPast` for the hero button's disabled state. The SWR key is shared with the amendment overlay, so opening the editor never double-fetches — but the payload is the whole plan (all exercises). Fine at current plan sizes; if it ever shows up in traces, add a lean `?summary=1` variant rather than a second endpoint.
+- **Move-scope dialog wording predates the amendment surface.** The calendar's move-scope option "This and all future X sessions" is effectively single-event under the 1:1 placement invariant (one session row per day since migration 121; only duplicated events share a session), and bulk mid-plan change is now the amendment surface's job. Re-evaluate that option's wording/presence with the owner — deferred from Job 1, still open after Job 2 (copy decision, not a mechanism).
+
+---
+
 ## Draft assistant — untriaged review-fleet findings (builder S6a)
 
 Logged: 2026-07-21 (Phase 7 sweep). Source: the 6a pre-commit adversarial fleet — 63 findings, 28 survived verification; the 4 HIGH + 6 MEDIUM were fixed in `56464f5`. **~18 LOW/unverified were never triaged** and live only in a workflow journal, which is not a durable location. Named here so the path doesn't rot.

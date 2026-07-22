@@ -239,7 +239,34 @@ Each job session appends on completion: what shipped (commits + hashes), deviati
 
 **Deferred:** move-scope option rewording (Job 2); `superset_group`/`is_warmup` doc notes updated (last `is_warmup` writer deleted with the drawer — see CONVENTIONS §8 / TECHNICAL-DEBT).
 
-<!-- JOB 2 STATUS: pending -->
+<!-- JOB 2 STATUS: SHIPPED 2026-07-22 -->
+
+## JOB 2 STATUS — SHIPPED (2026-07-22)
+
+**Commits (main):**
+1. `b24ee30` 2A.1 — `services/program-event-walk.ts` extracted (`generateProgramEvents` + `calculatePlacementEndDate`, exported, `startPosition` resume) + walk test suite
+2. `e4de6b3` 2A.2–5 — `plan-amendment-service.ts` (reader / `computeAmendmentToken` / 13-step `amendPlacedPlanFuture` + compensator), `GET`+`PUT .../[planId]/amendment` route, `amendPlacedPlanSchema`, `AUDIT_ACTIONS.TRAINING_PLAN_AMEND`; 28-case service suite on a state-mutating interpreted supabase harness + 16-case route suite
+3. `61a9f4f` 2B.1 — `BuilderTarget` + `"placed-plan"`, `program-builder-lock-model.ts`, `placedPlanToDraft`/`draftToAmendBody` in placed-serialize, `DraftOpContext.lockedSlotUids` + per-op PAST_LOCKED skips, `applyAssistantOps(ops, ctx)` signature; lock-model / placed-serialize / ops-lock suites
+4. `75fc7c8` 2B.2–8 — provider placed source (`use-placed-plan`, `use-placed-plan-source`, `use-locked-mutators`, `use-amend-plan`, `amend-plan-dialogs`), grid/dnd lock rendering + belts, placed chrome, `plan-amendment-overlay.tsx`, right-panel entry wiring (hero button + tray item, `isFullyPast` gate); placed chrome / locked dnd / locked day-cell suites
+5. `65db6c5` 2C — assistant `placed-plan` target (schema refine matrix, route plan-ownership 404 + lock-set forwarding, workspace lock materialization + locked sweep, prompt arm, chat-hook body/replay ctx); route + executor-skip + sweep suites
+6. (this commit) docs — ARCHITECTURE amendment section + three stale-reference updates, CONVENTIONS §6 training-UI map, TECHNICAL-DEBT deferrals, this STATUS block
+
+**Gates:** every commit green on `npx tsc --noEmit`, `npx eslint .` (0 errors), full `npx vitest run` (2102 → 2202 tests; `set-tracker.test.tsx` did not flake this session). No migrations; the working tree's pre-existing `types/database.ts` + migration 129 files were left untouched and excluded from every commit.
+
+**Recorded deviations (win over the prose above):**
+1. `library-placement-service.test.ts` needed NO mock updates for the 2A.1 extraction — the new module imports the same mocked deps, so the module-graph mocks held transitively; existing placement tests passed unmodified.
+2. The PUT rejects a fully-elapsed plan against the CURRENT window (`currentWindowEnd < floor` → 422) at the token stage, not only via step 5's NEW-window check — without this, a longer payload could extend an ended plan, violating decision 8's edge-row ("Plan fully past → PUT 422").
+3. `fetchVisibleExerciseIds` was exported from `library-placement-service.ts` and reused (not copied) as the amendment's foreign-exercise belt.
+4. The provider context exposes the full `amend` API group (confirm/drift dialog state + actions) alongside the spec's flat `isAmending`/`amendPlan` keys; the dialogs live in a new `amend-plan-dialogs.tsx` on the styled Dialog primitive (never ConfirmDialog, per the design SOT), with the moved-events warning inside the confirm.
+5. Week lock policies (drag/delete/duplicate) are computed in `week-row.tsx` via the shared lock model, not in `program-builder.tsx` — same single source, less prop plumbing. `canDuplicateWeek` was added to the lock model beyond the spec's export list.
+6. After a save that raced mid-save edits ("kept-draft"), the source hook refreshes the drift token WITHOUT re-seeding (`refreshToken`) so the follow-up save doesn't 409 against our own amendment — the spec's save flow implied but didn't specify this.
+7. `ClientDraftLeaveGuard` gained an optional `description` prop so the amendment overlay's guard copy says "save", not "apply".
+8. The right-panel `isFullyPast` gate reuses the full amendment GET (shared SWR key with the overlay) — logged in TECHNICAL-DEBT as a payload-size tail, not changed.
+9. The assistant's locked sweep also discards when a locked slot VANISHED (its week removed) — "content differs from entry" includes non-existence.
+
+**Test/smoke results:** 2202 tests green across 227 files (~112 new). **Browser smoke NOT run agent-side** — Job 1 recorded a machine-level macOS Desktop-permission failure in the CDP harness, so the Job 2 checklist is handed to the owner (place multi-week program → "Edit plan" from hero → past locked with toast on drag/edit/delete → structural + prescription edit → Save → confirm incl. moved-events warning → calendar re-laid, past untouched, nutrition refreshed → immediate re-amend (token round-trip) → assistant "reduce all remaining loads by 10%" future-only, past-week edit skipped with reason → tray "Edit whole plan" opens the overlay). The amendment cascade + audit are covered by route tests; the token round-trip, resumed walk, and compensation by the service suite.
+
+**Deferred:** move-scope option rewording (owner copy decision — see TECHNICAL-DEBT "Plan amendment — deferred tails"); lean summary variant of the amendment GET if the entry-point gate ever shows in traces.
 
 ---
 
