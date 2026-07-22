@@ -129,8 +129,6 @@ function makePlan(overrides: Partial<SavedPlan> = {}): SavedPlan {
     splitType: "custom",
     frequencyPerWeek: 2,
     status: "saved",
-    cycleLength: null,
-    restPattern: [],
     defaultSurplusPercentage: 12.5,
     source: "manual",
     coachPrompt: null,
@@ -296,27 +294,15 @@ describe("savedPlanToDraft / draftToOverwriteBody parity (week-shaped)", () => {
 });
 
 // =============================================================================
-// Tier 2 — legacy flat plans normalize (contract, not byte parity)
+// Tier 2 — flat plans normalize into the week model (contract, not byte parity)
 // =============================================================================
 
-describe("savedPlanToDraft legacy normalization", () => {
-  it("reconstructs rest slots from cycle_length/rest_pattern and pads to whole weeks", () => {
-    const sessions = Array.from({ length: 7 }, (_, i) =>
-      makeSession({ id: `s-${i}`, name: `S${i + 1}`, orderIndex: i }),
-    );
-    const plan = makePlan({ sessions, cycleLength: 9, restPattern: [2, 5] });
-    const body = draftToOverwriteBody(savedPlanToDraft(plan));
-
-    expect(body.sessions).toHaveLength(14); // 9 slots padded to 2 weeks
-    expect(restPositions(body)).toEqual([2, 5, 9, 10, 11, 12, 13]);
-    expect(nonRestNames(body)).toEqual(["S1", "S2", "S3", "S4", "S5", "S6", "S7"]);
-  });
-
+describe("savedPlanToDraft flat-plan normalization", () => {
   it("pads a flat no-rest list with trailing rest to a multiple of 7", () => {
     const sessions = Array.from({ length: 10 }, (_, i) =>
       makeSession({ id: `s-${i}`, name: `S${i + 1}`, orderIndex: i }),
     );
-    const plan = makePlan({ sessions, cycleLength: 10, restPattern: [] });
+    const plan = makePlan({ sessions });
     const body = draftToOverwriteBody(savedPlanToDraft(plan));
 
     expect(body.sessions).toHaveLength(14);
@@ -335,7 +321,7 @@ describe("savedPlanToDraft legacy normalization", () => {
       makeSession({ id: "s-3", name: "C", orderIndex: 3 }),
       makeSession({ id: "s-4", name: "D", orderIndex: 4 }),
     ];
-    const plan = makePlan({ sessions, cycleLength: 5, restPattern: [2] });
+    const plan = makePlan({ sessions });
     const body = draftToOverwriteBody(savedPlanToDraft(plan));
 
     expect(body.sessions).toHaveLength(7);

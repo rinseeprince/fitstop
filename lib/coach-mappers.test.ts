@@ -11,8 +11,6 @@ function makeRow(overrides: Partial<CoachSavedPlanRow> = {}): CoachSavedPlanRow 
     split_type: null,
     frequency_per_week: null,
     status: "saved",
-    cycle_length: null,
-    rest_pattern: null,
     default_surplus_percentage: null,
     source: "manual",
     coach_prompt: null,

@@ -1,5 +1,5 @@
 import { supabaseAdmin } from "./supabase-admin";
-import { recomputePlanCycleInfo } from "./coach-library-helpers";
+import { recomputePlanFrequency } from "./coach-library-helpers";
 
 // PLAN-ATTACHED session + exercise CRUD. The standalone-session library
 // (saved_plan_id NULL: create/get/duplicate/overwrite/dedup) lives in
@@ -41,9 +41,9 @@ export async function updateSavedSession(
     .eq("coach_id", coachId);
   if (error) throw new Error(`Failed to update session: ${error.message}`);
 
-  // Only recompute when is_rest changed — other field edits don't affect cycle info.
+  // Only recompute when is_rest changed — other field edits don't affect frequency.
   if (updates.isRest !== undefined && existing.saved_plan_id) {
-    await recomputePlanCycleInfo(existing.saved_plan_id, coachId);
+    await recomputePlanFrequency(existing.saved_plan_id, coachId);
   }
 }
 
@@ -64,6 +64,6 @@ export async function removeSavedSession(sessionId: string, coachId: string): Pr
   if (error) throw new Error(`Failed to delete session: ${error.message}`);
 
   if (existing.saved_plan_id) {
-    await recomputePlanCycleInfo(existing.saved_plan_id, coachId);
+    await recomputePlanFrequency(existing.saved_plan_id, coachId);
   }
 }

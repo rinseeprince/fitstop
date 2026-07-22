@@ -252,8 +252,6 @@ export type SavedPlan = {
   splitType: TrainingSplitType | null;
   frequencyPerWeek: number | null;
   status: SavedPlanStatus;
-  cycleLength: number | null;
-  restPattern: number[];
   defaultSurplusPercentage: number | null;
   source: SavedPlanSource;
   coachPrompt: string | null;
@@ -264,9 +262,10 @@ export type SavedPlan = {
 };
 
 // Lean list-row for the paginated Programs library — plan scalars + counts
-// derived server-side from cycle_length / rest_pattern, with NO nested sessions
-// or exercises (the list never renders them). See getSavedPlansPage. splitType
-// is free text here (a descriptive focus), stored in the free-string column.
+// derived server-side from the session rows (is_rest embed) and
+// program_duration_weeks, with NO nested sessions or exercises (the list never
+// renders them). See getSavedPlansPage. splitType is free text here (a
+// descriptive focus), stored in the free-string column.
 export type SavedPlanListItem = {
   id: string;
   name: string;

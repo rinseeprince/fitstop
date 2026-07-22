@@ -292,8 +292,6 @@ describe("coach-saved-plan-service", () => {
           split_type: "push_pull_legs",
           frequency_per_week: 3,
           status: "saved",
-          cycle_length: 7,
-          rest_pattern: [1, 3, 5, 6],
           default_surplus_percentage: 15,
           source: "ai",
           coach_prompt: null,

@@ -89,38 +89,11 @@ function slotFromSession(
 }
 
 /**
- * Reconstruct the ordered slot sequence (session or null = rest) for a plan
- * that predates the week model: rest may live only in the plan's rest_pattern
- * (never materialized as rows). Falls back to the ordered session list —
- * materialized rest rows become rest slots — when the cycle metadata doesn't
- * reconcile with the row count.
- */
-function legacySlotSequence(plan: SavedPlan, ordered: SavedSession[]): Array<SavedSession | null> {
-  const hasMaterializedRest = ordered.some((s) => s.isRest);
-  const cycleLength = plan.cycleLength ?? 0;
-  if (
-    !hasMaterializedRest &&
-    plan.restPattern.length > 0 &&
-    cycleLength === ordered.length + plan.restPattern.length
-  ) {
-    const restSet = new Set(plan.restPattern);
-    const slots: Array<SavedSession | null> = [];
-    let next = 0;
-    for (let i = 0; i < cycleLength; i++) {
-      slots.push(restSet.has(i) ? null : ordered[next++]);
-    }
-    return slots;
-  }
-  return ordered.map((s) => (s.isRest ? null : s));
-}
-
-/**
  * Build the editable draft tree from a SavedPlan. Week-shaped plans (any
  * weekIndex > 0 or is_rest row, AND every week grouping to exactly 7 rows) map
- * positionally. Everything else is a legacy flat plan and gets NORMALIZED into
- * the 7-slot week model: slot sequence reconstructed (see legacySlotSequence),
- * tail padded with rest to a whole week. Deliberate: a non-7-multiple rotating
- * cycle becomes a week-based program — the reshape only persists if the coach
+ * positionally. Everything else is a flat plan and gets NORMALIZED into the
+ * 7-slot week model: materialized rest rows become rest slots, tail padded with
+ * rest to a whole week. Deliberate: the reshape only persists if the coach
  * saves (read-only view never writes).
  */
 export function savedPlanToDraft(plan: SavedPlan): ProgramDraft {
@@ -147,7 +120,9 @@ export function savedPlanToDraft(plan: SavedPlan): ProgramDraft {
   }
 
   if (weeks.length === 0) {
-    const slots = legacySlotSequence(plan, ordered);
+    const slots: Array<SavedSession | null> = ordered.map((s) =>
+      s.isRest ? null : s,
+    );
     while (slots.length % DAYS_PER_WEEK !== 0 || slots.length === 0) {
       slots.push(null);
     }

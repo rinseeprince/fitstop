@@ -166,8 +166,6 @@ export const updateSavedPlanSchema = z.object({
   // create/overwrite paths, not the legacy enum.
   splitType: z.string().max(100).nullish(),
   frequencyPerWeek: z.number().int().min(1).max(7).nullish(),
-  cycleLength: z.number().int().min(1).max(52).nullish(),
-  restPattern: z.array(z.number().int()).max(364).optional(),
   defaultSurplusPercentage: z.number().min(0).max(100).nullish(),
   programDurationWeeks: z.number().int().min(1).max(52).nullish(),
 });

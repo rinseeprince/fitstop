@@ -52,9 +52,12 @@ describe("getSavedPlansPage", () => {
           status: "saved",
           updated_at: "2026-07-01T00:00:00Z",
           created_at: "2026-06-01T00:00:00Z",
-          cycle_length: 21, // 3 weeks × 7 slots
-          rest_pattern: [0, 7, 14],
+          program_duration_weeks: 3,
           frequency_per_week: 4,
+          // 3 weeks × 7 slots, one rest slot per week.
+          coach_saved_sessions: Array.from({ length: 21 }, (_, i) => ({
+            is_rest: i % 7 === 0,
+          })),
         },
       ],
       error: null,
@@ -99,7 +102,7 @@ describe("getSavedPlansPage", () => {
     );
   });
 
-  it("orders by cycle_length for the 'longest' sort", async () => {
+  it("orders by program_duration_weeks for the 'longest' sort", async () => {
     const q = mockQuery({ data: [], error: null, count: 0 });
     mockFrom.mockReturnValue(q as never);
 
@@ -111,7 +114,7 @@ describe("getSavedPlansPage", () => {
     });
 
     expect(q.order).toHaveBeenCalledWith(
-      "cycle_length",
+      "program_duration_weeks",
       expect.objectContaining({ ascending: false }),
     );
   });
@@ -123,9 +126,9 @@ describe("getSavedPlansSummary", () => {
   it("aggregates totals, ai/custom split, and avg/min/max weeks", async () => {
     const q = mockQuery({
       data: [
-        { source: "ai", cycle_length: 7 }, // 1 week
-        { source: "manual", cycle_length: 21 }, // 3 weeks
-        { source: "manual", cycle_length: 14 }, // 2 weeks
+        { source: "ai", program_duration_weeks: 1 },
+        { source: "manual", program_duration_weeks: 3 },
+        { source: "manual", program_duration_weeks: 2 },
       ],
       error: null,
     });

@@ -78,8 +78,6 @@ function makePlan(day2Session = false): SavedPlan {
     splitType: "custom",
     frequencyPerWeek: 1,
     status: "saved",
-    cycleLength: 7,
-    restPattern: [],
     defaultSurplusPercentage: 15,
     source: "manual",
     coachPrompt: null,

@@ -146,8 +146,8 @@ export function evaluateTrainingMisses(
 
 /**
  * Evaluates if a client consistently logs partial completions.
- * Uses event-count-based lookback (not calendar windows) to stay cycle-agnostic —
- * training cycles (e.g. PPL+Rest = 4 days) don't align to 7-day weeks.
+ * Uses event-count-based lookback (not calendar windows) so it works for any
+ * program shape — prescribed training days don't align to 7-day weeks.
  */
 export function evaluatePartialTrainingPattern(
   events: TrainingEventRow[]

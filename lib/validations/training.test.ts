@@ -12,7 +12,6 @@ import {
   inlinePlanBodySchema,
   createSavedPlanSchema,
   savedSessionInputSchema,
-  updateSavedPlanSchema,
 } from './training'
 
 describe('Training Validation Schemas', () => {
@@ -496,11 +495,6 @@ describe('Training Validation Schemas', () => {
       const s = { name: 'Day', exercises: [] }
       expect(createSavedPlanSchema.safeParse({ name: 'P', sessions: Array(365).fill(s) }).success).toBe(false)
       expect(createSavedPlanSchema.safeParse({ name: 'P', sessions: [s] }).success).toBe(true)
-    })
-
-    it('updateSavedPlanSchema caps restPattern at 364', () => {
-      expect(updateSavedPlanSchema.safeParse({ restPattern: Array(365).fill(0) }).success).toBe(false)
-      expect(updateSavedPlanSchema.safeParse({ restPattern: Array(7).fill(0) }).success).toBe(true)
     })
 
     it('savedSessionInputSchema caps exercises at 50 per session', () => {

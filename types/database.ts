@@ -1002,14 +1002,12 @@ export type Database = {
           coach_id: string
           coach_prompt: string | null
           created_at: string
-          cycle_length: number | null
           default_surplus_percentage: number | null
           description: string | null
           frequency_per_week: number | null
           id: string
           name: string
           program_duration_weeks: number | null
-          rest_pattern: number[] | null
           source: string | null
           split_type: string | null
           status: string
@@ -1019,14 +1017,12 @@ export type Database = {
           coach_id: string
           coach_prompt?: string | null
           created_at?: string
-          cycle_length?: number | null
           default_surplus_percentage?: number | null
           description?: string | null
           frequency_per_week?: number | null
           id?: string
           name: string
           program_duration_weeks?: number | null
-          rest_pattern?: number[] | null
           source?: string | null
           split_type?: string | null
           status?: string
@@ -1036,14 +1032,12 @@ export type Database = {
           coach_id?: string
           coach_prompt?: string | null
           created_at?: string
-          cycle_length?: number | null
           default_surplus_percentage?: number | null
           description?: string | null
           frequency_per_week?: number | null
           id?: string
           name?: string
           program_duration_weeks?: number | null
-          rest_pattern?: number[] | null
           source?: string | null
           split_type?: string | null
           status?: string

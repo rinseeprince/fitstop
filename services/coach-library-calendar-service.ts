@@ -34,8 +34,7 @@ export async function savePlanFromCalendar(
       split_type: plan.split_type,
       frequency_per_week: plan.frequency_per_week,
       status: "saved",
-      cycle_length: activeSessions.length,
-      rest_pattern: [],
+      program_duration_weeks: Math.max(1, Math.ceil(activeSessions.length / 7)),
       source: "calendar",
     })
     .select("id")

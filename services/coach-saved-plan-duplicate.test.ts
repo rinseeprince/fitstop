@@ -78,8 +78,6 @@ const sourcePlan = {
   split_type: "push_pull_legs",
   frequency_per_week: 3,
   status: "draft",
-  cycle_length: 7,
-  rest_pattern: [1, 3],
   default_surplus_percentage: 15,
   source: "ai",
   coach_prompt: "prompt",

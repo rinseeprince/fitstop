@@ -8,7 +8,7 @@ import {
 import {
   copySavedExerciseRows,
   dedupeCopyName,
-  deriveCycleInfoFromSessions,
+  deriveFrequencyPerWeek,
   insertSavedExercises,
 } from "./coach-library-helpers";
 import { projectExerciseCompact } from "@/utils/exercise-set-specs";
@@ -45,11 +45,6 @@ export async function createSavedPlanManual(
   }
   const exerciseIdMap = await resolveExercises(allNames, coachId);
 
-  // Derive cycle info from session order: rest_pattern is the indices of rest sessions.
-  const cycleLength = sessions.length;
-  const restPattern = sessions
-    .map((s, i) => (s.isRest ? i : -1))
-    .filter((i) => i >= 0);
   const trainingCount = sessions.filter((s) => !s.isRest).length;
 
   const planRow: CoachSavedPlanInsert = {
@@ -60,8 +55,7 @@ export async function createSavedPlanManual(
     default_surplus_percentage: opts?.defaultSurplusPercentage ?? null,
     frequency_per_week: trainingCount,
     status: "draft",
-    cycle_length: cycleLength,
-    rest_pattern: restPattern,
+    program_duration_weeks: Math.max(1, Math.ceil(sessions.length / 7)),
     source: "manual",
   };
 
@@ -259,8 +253,6 @@ export async function updateSavedPlan(
     description?: string | null;
     splitType?: string | null;
     frequencyPerWeek?: number | null;
-    cycleLength?: number | null;
-    restPattern?: number[];
     defaultSurplusPercentage?: number | null;
     programDurationWeeks?: number | null;
   }
@@ -272,8 +264,6 @@ export async function updateSavedPlan(
       ...(updates.description !== undefined && { description: updates.description }),
       ...(updates.splitType !== undefined && { split_type: updates.splitType }),
       ...(updates.frequencyPerWeek !== undefined && { frequency_per_week: updates.frequencyPerWeek }),
-      ...(updates.cycleLength !== undefined && { cycle_length: updates.cycleLength }),
-      ...(updates.restPattern !== undefined && { rest_pattern: updates.restPattern }),
       ...(updates.defaultSurplusPercentage !== undefined && { default_surplus_percentage: updates.defaultSurplusPercentage }),
       ...(updates.programDurationWeeks !== undefined && { program_duration_weeks: updates.programDurationWeeks }),
     })
@@ -329,8 +319,8 @@ export type OverwriteSavedPlanInput = {
  * working copy and is now committing those changes to the library template.
  *
  * Strategy (recoverable, H3): insert the NEW sessions first, delete the OLD ones
- * only after every insert succeeds, then patch plan metadata + derived cycle
- * info LAST — so a mid-loop failure or a hard timeout leaves the original
+ * only after every insert succeeds, then patch plan metadata + derived
+ * frequency LAST — so a mid-loop failure or a hard timeout leaves the original
  * template intact (worst case: duplicate sessions, cleared by a re-save), never
  * a partial wipe. A mid-loop catch rolls back the partial new inserts.
  *
@@ -352,13 +342,9 @@ export async function overwriteSavedPlan(
     .single();
   if (fetchError || !existing) throw new Error("Plan not found or access denied");
 
-  // Patch plan-level metadata (if provided) and derived cycle info. Shared helper
-  // sorts by (weekIndex, orderIndex) across all weeks before deriving rest
-  // positions, so a multi-week program derives correctly and identically to the
-  // inline placement path and recomputePlanCycleInfo. Legacy single-week
-  // (weekIndex 0) derives byte-identically to before.
-  const { cycleLength, restPattern, frequencyPerWeek } =
-    deriveCycleInfoFromSessions(input.sessions);
+  // Derived frequency: shared helper so this path, the inline placement path,
+  // and recomputePlanFrequency never drift.
+  const frequencyPerWeek = deriveFrequencyPerWeek(input.sessions);
 
   // Collect all exercise names for catalog resolution before touching any rows
   // — we want to preserve exercise_id where the catalog already has them.
@@ -481,7 +467,7 @@ export async function overwriteSavedPlan(
     }
   }
 
-  // Metadata + derived cycle info LAST: if the structural swap failed above, the
+  // Metadata + derived frequency LAST: if the structural swap failed above, the
   // plan header is never left describing content that isn't there.
   const { error: planUpdateError } = await supabaseAdmin
     .from("coach_saved_plans")
@@ -492,8 +478,6 @@ export async function overwriteSavedPlan(
       ...(input.defaultSurplusPercentage !== undefined && {
         default_surplus_percentage: input.defaultSurplusPercentage,
       }),
-      cycle_length: cycleLength,
-      rest_pattern: restPattern,
       frequency_per_week: frequencyPerWeek,
     })
     .eq("id", planId)
@@ -553,8 +537,6 @@ export async function duplicateSavedPlan(
     split_type: plan.split_type,
     frequency_per_week: plan.frequency_per_week,
     status: plan.status, // duplicating a draft yields a draft
-    cycle_length: plan.cycle_length,
-    rest_pattern: plan.rest_pattern,
     default_surplus_percentage: plan.default_surplus_percentage,
     source: plan.source,
     coach_prompt: plan.coach_prompt,
@@ -680,9 +662,9 @@ export async function getSavedPlanAssignments(coachId: string): Promise<{
 
 // =============================================================================
 // Paginated / summary reads for the Programs library (offset pagination, lean).
-// The list never renders sessions/exercises, and every column + stat-band KPI
-// derives from stored plan scalars (cycle_length / rest_pattern / …), so these
-// skip the nested-tree fetch getSavedPlans does. See the saved-plans route
+// The list never renders sessions/exercises — the row counts come from a lean
+// is_rest embed and the length from program_duration_weeks — so these skip the
+// nested-tree fetch getSavedPlans does. See the saved-plans route
 // (opt-in ?limit/?offset) + /summary route.
 // =============================================================================
 
@@ -697,14 +679,15 @@ type SavedPlanListRow = {
   status: string | null;
   updated_at: string;
   created_at: string;
-  cycle_length: number | null;
-  rest_pattern: number[] | null;
+  program_duration_weeks: number | null;
   frequency_per_week: number | null;
+  coach_saved_sessions: Array<{ is_rest: boolean | null }> | null;
 };
 
 function mapSavedPlanListRow(row: SavedPlanListRow): SavedPlanListItem {
-  const totalSlots = row.cycle_length ?? 0;
-  const restCount = (row.rest_pattern ?? []).length;
+  const slots = row.coach_saved_sessions ?? [];
+  const totalSlots = slots.length;
+  const restCount = slots.filter((s) => s.is_rest === true).length;
   return {
     id: row.id,
     name: row.name,
@@ -713,9 +696,11 @@ function mapSavedPlanListRow(row: SavedPlanListRow): SavedPlanListItem {
     source: (row.source ?? "manual") as SavedPlanSource,
     status: (row.status ?? "draft") as SavedPlanStatus,
     frequencyPerWeek: row.frequency_per_week ?? null,
-    // cycle_length = 7 × weeks (every week is a full 7-slot row set), so weeks =
-    // slots / 7. round() keeps legacy non-7-multiple plans sensible.
-    weekCount: Math.max(1, Math.round(totalSlots / SLOTS_PER_WEEK)),
+    // Authored length is the truth; fall back to slots / 7 (every authored week
+    // is a full 7-slot row set) for rows that predate the duration PATCH.
+    weekCount:
+      row.program_duration_weeks ??
+      Math.max(1, Math.round(totalSlots / SLOTS_PER_WEEK)),
     totalSlots,
     restCount,
     trainingCount: totalSlots - restCount,
@@ -747,7 +732,7 @@ export async function getSavedPlansPage(
   let filter = supabaseAdmin
     .from("coach_saved_plans")
     .select(
-      "id, name, description, split_type, source, status, updated_at, created_at, cycle_length, rest_pattern, frequency_per_week",
+      "id, name, description, split_type, source, status, updated_at, created_at, program_duration_weeks, frequency_per_week, coach_saved_sessions(is_rest)",
       { count: "exact" },
     )
     .eq("coach_id", coachId)
@@ -762,9 +747,9 @@ export async function getSavedPlansPage(
     filter = filter.or(`name.ilike.%${term}%,description.ilike.%${term}%`);
   }
 
-  // 'longest' orders by cycle_length (∝ week count, 7 slots/week).
+  // 'longest' orders by the authored program length.
   const orderCol =
-    opts.sort === "name" ? "name" : opts.sort === "longest" ? "cycle_length" : "updated_at";
+    opts.sort === "name" ? "name" : opts.sort === "longest" ? "program_duration_weeks" : "updated_at";
   const orderAsc = opts.sort === "name";
 
   const { data, error, count } = await filter
@@ -788,12 +773,12 @@ export async function getSavedPlansSummary(
 
   // Lean scan (2 columns), paged past PostgREST's ~1000-row cap so counts stay
   // correct at scale (mirrors getSavedPlanAssignments).
-  const rows: Array<{ source: string | null; cycle_length: number | null }> = [];
+  const rows: Array<{ source: string | null; program_duration_weeks: number | null }> = [];
   const PAGE = 1000;
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await supabaseAdmin
       .from("coach_saved_plans")
-      .select("source, cycle_length")
+      .select("source, program_duration_weeks")
       .eq("coach_id", coachId)
       .in("status", statuses)
       .range(from, from + PAGE - 1);
@@ -802,16 +787,14 @@ export async function getSavedPlansSummary(
     }
     if (!data || data.length === 0) break;
     rows.push(
-      ...(data as unknown as Array<{ source: string | null; cycle_length: number | null }>),
+      ...(data as unknown as Array<{ source: string | null; program_duration_weeks: number | null }>),
     );
     if (data.length < PAGE) break;
   }
 
   const total = rows.length;
   const aiCount = rows.filter((r) => r.source === "ai").length;
-  const weekCounts = rows.map((r) =>
-    Math.max(1, Math.round((r.cycle_length ?? 0) / SLOTS_PER_WEEK)),
-  );
+  const weekCounts = rows.map((r) => Math.max(1, r.program_duration_weeks ?? 1));
   const avgWeeks =
     weekCounts.length > 0
       ? Math.round((weekCounts.reduce((a, b) => a + b, 0) / weekCounts.length) * 10) / 10

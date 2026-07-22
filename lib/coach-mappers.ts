@@ -83,8 +83,6 @@ export function mapSavedPlanRow(
     splitType: (row.split_type ?? null) as TrainingSplitType | null,
     frequencyPerWeek: row.frequency_per_week ?? null,
     status: row.status as SavedPlanStatus,
-    cycleLength: row.cycle_length ?? null,
-    restPattern: row.rest_pattern ?? [],
     defaultSurplusPercentage: row.default_surplus_percentage != null
       ? Number(row.default_surplus_percentage)
       : null,

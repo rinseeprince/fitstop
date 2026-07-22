@@ -17,40 +17,23 @@ import { projectExerciseCompact } from "@/utils/exercise-set-specs";
  */
 
 /**
- * Derive cycle_length / rest_pattern / frequency_per_week from an in-memory
- * session list. The whole program is the repeat unit, so cycle_length is the
- * total slot count across ALL weeks and rest_pattern is the 0-indexed rest slots
- * in (week_index, order_index) order. Sorts by (weekIndex, orderIndex) FIRST so an
- * out-of-order sessions array still lands the rest days at the right slots —
- * matching recomputePlanCycleInfo. weekIndex defaults to 0 so single-week / legacy
- * plans derive byte-identically to before. Shared by overwriteSavedPlan (library
- * save), recomputePlanCycleInfo, and the inline placement path so they never drift.
+ * Derive frequency_per_week from an in-memory session list. Shared by
+ * overwriteSavedPlan (library save), recomputePlanFrequency, and the inline
+ * placement path so they never drift.
  *
  * frequency_per_week is a per-week AVERAGE clamped to 1..7: at apply time it is
  * inserted into training_plans.frequency_per_week, which carries
  * CHECK (frequency_per_week >= 1 AND <= 7) (migration 015) — a raw non-rest
  * total across a multi-week program (e.g. 12 for 3 weeks x 4/wk) would make the
- * placement RPC fail. Single-week plans derive identically to the pre-clamp
- * behaviour (weekCount = 1); all-rest programs clamp up to 1.
+ * placement RPC fail. All-rest programs clamp up to 1.
  */
-export function deriveCycleInfoFromSessions(
-  sessions: Array<{ weekIndex?: number; orderIndex: number; isRest: boolean }>,
-): { cycleLength: number; restPattern: number[]; frequencyPerWeek: number } {
-  const ordered = [...sessions].sort(
-    (a, b) => (a.weekIndex ?? 0) - (b.weekIndex ?? 0) || a.orderIndex - b.orderIndex,
-  );
-  const cycleLength = ordered.length;
-  const restPattern = ordered
-    .map((s, i) => (s.isRest ? i : -1))
-    .filter((i) => i >= 0);
+export function deriveFrequencyPerWeek(
+  sessions: Array<{ weekIndex?: number; isRest: boolean }>,
+): number {
   const weekCount =
-    ordered.reduce((max, s) => Math.max(max, s.weekIndex ?? 0), 0) + 1;
-  const nonRestCount = cycleLength - restPattern.length;
-  const frequencyPerWeek = Math.min(
-    7,
-    Math.max(1, Math.round(nonRestCount / weekCount)),
-  );
-  return { cycleLength, restPattern, frequencyPerWeek };
+    sessions.reduce((max, s) => Math.max(max, s.weekIndex ?? 0), 0) + 1;
+  const nonRestCount = sessions.filter((s) => !s.isRest).length;
+  return Math.min(7, Math.max(1, Math.round(nonRestCount / weekCount)));
 }
 
 /**
@@ -163,44 +146,35 @@ export function copySavedExerciseRows(
 }
 
 /**
- * Recompute cycle_length / rest_pattern / frequency_per_week on a saved
- * plan based on the current set of sessions. Called after any mutation
- * that changes the session list (add / delete / rest-day toggle / reorder)
- * so the plan's cycle metadata stays consistent with its sessions — the
- * calendar generator and the AI/manual initial-insert logic both assume
- * this invariant.
+ * Recompute frequency_per_week on a saved plan based on the current set of
+ * sessions. Called after any mutation that changes the session list (add /
+ * delete / rest-day toggle / reorder) so the plan's frequency stays consistent
+ * with its sessions.
  */
-export async function recomputePlanCycleInfo(
+export async function recomputePlanFrequency(
   planId: string,
   coachId: string,
 ): Promise<void> {
   const { data: sessions, error } = await supabaseAdmin
     .from("coach_saved_sessions")
-    .select("is_rest, order_index, week_index")
-    .eq("saved_plan_id", planId)
-    .order("week_index", { ascending: true })
-    .order("order_index", { ascending: true });
-  if (error) throw new Error(`Failed to read sessions for cycle recompute: ${error.message}`);
+    .select("is_rest, week_index")
+    .eq("saved_plan_id", planId);
+  if (error) throw new Error(`Failed to read sessions for frequency recompute: ${error.message}`);
 
   // Delegate to the shared derivation so the 1..7 frequency clamp (see
-  // deriveCycleInfoFromSessions) applies here too — this value flows into the
+  // deriveFrequencyPerWeek) applies here too — this value flows into the
   // CHECK-constrained training_plans.frequency_per_week at apply time.
-  const { cycleLength, restPattern, frequencyPerWeek } = deriveCycleInfoFromSessions(
+  const frequencyPerWeek = deriveFrequencyPerWeek(
     (sessions ?? []).map((s) => ({
       weekIndex: s.week_index ?? 0,
-      orderIndex: s.order_index,
       isRest: s.is_rest ?? false,
     })),
   );
 
   const { error: updateError } = await supabaseAdmin
     .from("coach_saved_plans")
-    .update({
-      cycle_length: cycleLength,
-      rest_pattern: restPattern,
-      frequency_per_week: frequencyPerWeek,
-    })
+    .update({ frequency_per_week: frequencyPerWeek })
     .eq("id", planId)
     .eq("coach_id", coachId);
-  if (updateError) throw new Error(`Failed to update plan cycle info: ${updateError.message}`);
+  if (updateError) throw new Error(`Failed to update plan frequency: ${updateError.message}`);
 }

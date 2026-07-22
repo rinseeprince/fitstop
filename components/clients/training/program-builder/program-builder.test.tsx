@@ -146,8 +146,6 @@ function makeDraftPlan(): SavedPlan {
     splitType: "custom",
     frequencyPerWeek: 1,
     status: "draft",
-    cycleLength: 7,
-    restPattern: [1, 2, 3, 4, 5, 6],
     // 0 on purpose: pins the mapper/serializer 0-vs-null distinction.
     defaultSurplusPercentage: 0,
     source: "manual",

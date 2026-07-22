@@ -3,7 +3,7 @@ import { getSavedPlanById } from "./coach-saved-plan-service";
 import { createTrainingPlanAtomic } from "./training-service";
 import { getNextPlanStartCap } from "./training-event-service";
 import { validatePhaseBounds } from "./training-event-calendar-service";
-import { deriveCycleInfoFromSessions } from "./coach-library-helpers";
+import { deriveFrequencyPerWeek } from "./coach-library-helpers";
 import { getDateString } from "@/lib/date-helpers";
 import type { TrainingEventInsert, TrainingEventRow, CoachSavedExerciseRow } from "@/lib/database-helpers";
 import type { Json } from "@/types/database";
@@ -72,10 +72,9 @@ export async function placeInlineEditedPlanOnCalendar(params: {
 }): Promise<{ planId: string; sessionsCreated: number; eventsCreated: number }> {
   const { plan, coachId, clientId, startDate, phaseId } = params;
 
-  const { frequencyPerWeek } = deriveCycleInfoFromSessions(
+  const frequencyPerWeek = deriveFrequencyPerWeek(
     plan.sessions.map((s) => ({
       weekIndex: s.weekIndex,
-      orderIndex: s.orderIndex,
       isRest: s.isRest,
     })),
   );
