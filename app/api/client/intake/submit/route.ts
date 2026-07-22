@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireClientAuth } from "@/lib/require-client-auth";
 import { submitIntake, IntakeValidationError } from "@/services/client-intake-service";
+import { toClientFacingIntake } from "@/lib/mappers";
 
 export async function POST(request: NextRequest) {
   const auth = await requireClientAuth(request);
@@ -9,7 +10,7 @@ export async function POST(request: NextRequest) {
   try {
     const intake = await submitIntake(auth.clientId);
 
-    return NextResponse.json({ success: true, data: intake });
+    return NextResponse.json({ success: true, data: toClientFacingIntake(intake) });
   } catch (error) {
     if (error instanceof IntakeValidationError) {
       return NextResponse.json(

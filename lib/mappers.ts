@@ -101,6 +101,26 @@ export function mapClientRow(row: ClientRow): Client {
 }
 
 /**
+ * Client-facing projection of a Client (M6). Coach-owned columns must never
+ * cross into a /api/client/** response body — strip `notes` (the coach's
+ * private notes about the client). Apply this to what every client-facing route
+ * RETURNS, not only to what the read path selects. Mirrors CLIENT_SELF_COLUMNS
+ * in client-portal-service.ts.
+ */
+export function toClientSelfView(client: Client): Client {
+  return { ...client, notes: undefined };
+}
+
+/**
+ * Client-facing projection of a ClientIntake (M6). `coachReviewNotes` is the
+ * coach's private review field ("Only visible to you" in the coach UI) and is
+ * the only coach-owned field on the intake — every other note is client-entered.
+ */
+export function toClientFacingIntake(intake: ClientIntake): ClientIntake {
+  return { ...intake, coachReviewNotes: undefined };
+}
+
+/**
  * Map a database coach row to a Coach type
  */
 export function mapCoachRow(row: CoachRow): Coach {

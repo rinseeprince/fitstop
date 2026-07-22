@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireClientAuth } from "@/lib/require-client-auth";
 import { getIntake, createIntake } from "@/services/client-intake-service";
+import { toClientFacingIntake } from "@/lib/mappers";
 import type { ClientIntake } from "@/types/client-intake";
 
 function getCompletedSteps(intake: ClientIntake): number[] {
@@ -50,14 +51,11 @@ export async function GET(request: NextRequest) {
       intake = await createIntake(auth.clientId);
     }
 
-    // coachReviewNotes is the coach's private review field ("Only visible to
-    // you" in the coach UI) — never return it on a client-facing read.
-    const { coachReviewNotes: _coachReviewNotes, ...clientFacingIntake } = intake;
-
     return NextResponse.json({
       success: true,
       data: {
-        intake: clientFacingIntake,
+        // Strip coachReviewNotes — coach-only, never client-facing (M6).
+        intake: toClientFacingIntake(intake),
         stepsComplete: getCompletedSteps(intake),
       },
     });

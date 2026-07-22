@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireClientAuth } from "@/lib/require-client-auth";
 import { saveIntakeStep, IntakeValidationError } from "@/services/client-intake-service";
+import { toClientFacingIntake } from "@/lib/mappers";
 
 export async function PUT(
   request: NextRequest,
@@ -23,7 +24,7 @@ export async function PUT(
     const body = await request.json();
     const intake = await saveIntakeStep(auth.clientId, step, body);
 
-    return NextResponse.json({ success: true, data: intake });
+    return NextResponse.json({ success: true, data: toClientFacingIntake(intake) });
   } catch (error) {
     if (error instanceof IntakeValidationError) {
       return NextResponse.json(

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireClientAuth } from "@/lib/require-client-auth";
 import { updateSettingsSchema } from "@/lib/validations/client";
 import { updateClientSettings } from "@/services/client-service";
+import { toClientSelfView } from "@/lib/mappers";
 
 // PATCH /api/client/settings - Update the authenticated client's settings
 export async function PATCH(request: NextRequest) {
@@ -41,7 +42,7 @@ export async function PATCH(request: NextRequest) {
 
   try {
     const client = await updateClientSettings(auth.clientId, parsed.data);
-    return NextResponse.json({ success: true, data: client });
+    return NextResponse.json({ success: true, data: toClientSelfView(client) });
   } catch (error) {
     console.error("Error updating client settings:", error);
     return NextResponse.json(
