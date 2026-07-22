@@ -1,5 +1,6 @@
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 import type { Client, DietType, UnitPreference } from "@/types/check-in";
+import type { Database } from "@/types/database";
 import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
 import { buildDailyTargetsFromPlan } from "@/utils/build-daily-targets";
 import { mapClientRow } from "@/lib/mappers";
@@ -34,6 +35,21 @@ export type NutritionTargets = {
   dailyTargets?: DailyNutritionTargets[];
 };
 
+// Explicit client-facing allowlist for the client's own profile. Every column a
+// client may see about themselves is named here; coach-private columns (notes)
+// are deliberately excluded so a client-facing read can never leak them, and a
+// future coach-only column is excluded by default rather than shipped.
+const CLIENT_SELF_COLUMNS =
+  "id, coach_id, name, email, avatar_url, active, created_at, updated_at, " +
+  "height, height_unit, gender, date_of_birth, goal_weight, goal_body_fat_percentage, " +
+  "weight_unit, current_weight, current_body_fat_percentage, bmr, tdee, " +
+  "check_in_frequency, check_in_frequency_days, expected_check_in_day, " +
+  "last_reminder_sent_at, reminder_preferences, total_check_ins_expected, " +
+  "total_check_ins_completed, check_in_adherence_rate, current_streak, longest_streak, " +
+  "unit_preference, include_activity_burn, surplus_as_carbs, starting_weight, " +
+  "starting_body_fat_percentage, bmr_manual_override, tdee_manual_override, " +
+  "welcome_message, onboarding_status, walkthrough_completed_at, start_date, timezone";
+
 // Get client record for the authenticated user
 export async function getClientForCurrentUser(): Promise<Client | null> {
   const supabase = await createPortalClient();
@@ -46,14 +62,15 @@ export async function getClientForCurrentUser(): Promise<Client | null> {
 
   const { data, error } = await supabase
     .from("clients")
-    .select("*")
+    .select(CLIENT_SELF_COLUMNS)
     .eq("user_id", user.id)
     .eq("active", true)
     .single();
 
   if (error || !data) return null;
 
-  return mapClientRow(data);
+  // `notes` is not selected, so mapClientRow resolves it to undefined.
+  return mapClientRow(data as unknown as Database["public"]["Tables"]["clients"]["Row"]);
 }
 
 // Get nutrition targets for a client with daily breakdown
