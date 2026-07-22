@@ -222,6 +222,7 @@ Each job session appends on completion: what shipped (commits + hashes), deviati
 4. `5b90454` 1C.7–10,12 — week rail, grid frame (sticky header, page scroll), toolbar, delete-event/clear-week/save-week dialogs, move-scope restyle
 5. `8f5556d` 1C.1–3,11,13 — training-plan-hero, right-panel/chrome slim-down, library-panel restyle, purge grep zero
 6. `8fb2eac` smoke follow-up — mono-in-prose fixes (3 dialogs), toolbar merged into the Schedule divider, design-doc overlay/toast spec
+7. `390822f` divider polish round 2 (owner feedback) — label-less quiet divider + icon edit toggle, Today = month-switch only (scroll-to-today removed), hero stat row removed, builder rail icon order stable (Save left / Delete always rightmost — rule recorded in the design doc)
 
 **Gates:** every commit green on `npx tsc --noEmit`, `npx eslint .` (0 errors), full `npx vitest run` (2076→2088 tests; `set-tracker.test.tsx` flaked once, passed in isolation). Final purge grep (1C.13) = zero.
 
