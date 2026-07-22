@@ -26,6 +26,10 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
+  // Mark the session cookie Secure over https (production) but not over plain
+  // http (local dev), or the browser drops it and dev login breaks.
+  const secureCookie = request.headers.get("x-forwarded-proto") === "https"
+
   // For homepage, login, and signup - check if user is authenticated and redirect to dashboard
   if (pathname === "/" || pathname === "/login" || pathname === "/signup") {
     const response = NextResponse.next()
@@ -39,7 +43,7 @@ export async function middleware(request: NextRequest) {
           },
           setAll(cookiesToSet) {
             cookiesToSet.forEach(({ name, value, options }) =>
-              response.cookies.set(name, value, options)
+              response.cookies.set(name, value, { ...options, secure: secureCookie })
             )
           },
         },
@@ -77,7 +81,7 @@ export async function middleware(request: NextRequest) {
         },
         setAll(cookiesToSet) {
           cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options)
+            response.cookies.set(name, value, { ...options, secure: secureCookie })
           )
         },
       },

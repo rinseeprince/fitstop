@@ -20,6 +20,8 @@ export async function GET(request: NextRequest) {
   }
 
   const cookieStore = await cookies()
+  // Secure over https (production) but not plain http (local dev).
+  const secure = request.headers.get("x-forwarded-proto") === "https"
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -31,7 +33,7 @@ export async function GET(request: NextRequest) {
         },
         setAll(cookiesToSet) {
           cookiesToSet.forEach(({ name, value, options }) =>
-            cookieStore.set(name, value, options)
+            cookieStore.set(name, value, { ...options, secure })
           )
         },
       },
