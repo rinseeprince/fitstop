@@ -143,7 +143,7 @@ export const savedSessionInputSchema = z.object({
   calorieSurplusPercentage: z.number().min(0).max(100).nullish(),
   notes: z.string().max(1000).nullish(),
   sessionType: z.string().max(50).nullish(),
-  exercises: z.array(savedExerciseInputSchema),
+  exercises: z.array(savedExerciseInputSchema).max(50),
 });
 
 export const updateSavedPlanSchema = z.object({
@@ -168,6 +168,9 @@ export const createSavedPlanSchema = z.object({
   splitType: z.string().max(100).nullish(),
   description: z.string().max(500).nullish(),
   defaultSurplusPercentage: z.number().min(0).max(100).nullish(),
+  // Caps mirror the placement paths (H5): a saved plan is the source the
+  // type:"plan" placement counts to derive its window, so bound it at creation.
+  // 52 weeks x 7 = 364 slots; 50 exercises/session (the builder ceiling).
   sessions: z.array(z.object({
     tempId: z.string().optional(),
     name: z.string().min(1).max(100),
@@ -182,8 +185,8 @@ export const createSavedPlanSchema = z.object({
       rpeTarget: z.number().min(0).max(10).optional(),
       restSeconds: z.number().int().min(0).max(600).optional(),
       notes: z.string().max(500).optional(),
-    })),
-  })),
+    })).max(50),
+  })).max(364),
 });
 
 // Full-fat standalone-session body, shared by create and overwrite: the
@@ -199,7 +202,7 @@ const standaloneSessionBodySchema = z.object({
   estimatedDurationMinutes: z.number().int().min(0).max(480).nullish(),
   calorieSurplusPercentage: z.number().min(0).max(100).nullish(),
   notes: z.string().max(1000).nullish(),
-  exercises: z.array(savedExerciseInputSchema.partial({ orderIndex: true })),
+  exercises: z.array(savedExerciseInputSchema.partial({ orderIndex: true })).max(50),
 });
 
 // dedupeName: server-side " (copy N)" rename on name conflict (used by the

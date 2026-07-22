@@ -8,6 +8,10 @@ import {
   parseGetPlanResponse,
   logTrainingEventSchema,
   bulkExerciseInputSchema,
+  overwriteSavedPlanSchema,
+  inlinePlanBodySchema,
+  createSavedPlanSchema,
+  savedSessionInputSchema,
 } from './training'
 
 describe('Training Validation Schemas', () => {
@@ -460,6 +464,34 @@ describe('Training Validation Schemas', () => {
       const r = bulkExerciseInputSchema.safeParse({ ...base, videoUrl: 'https://x.test/v.mp4' })
       expect(r.success).toBe(true)
       if (r.success) expect('videoUrl' in r.data).toBe(false)
+    })
+  })
+
+  describe('placement/create session + exercise caps (H5)', () => {
+    const savedSession = { name: 'Day', orderIndex: 0, isRest: false, exercises: [] }
+
+    it('overwriteSavedPlanSchema bounds sessions to [1, 364]', () => {
+      expect(overwriteSavedPlanSchema.safeParse({ sessions: Array(365).fill(savedSession) }).success).toBe(false)
+      expect(overwriteSavedPlanSchema.safeParse({ sessions: [] }).success).toBe(false)
+      expect(overwriteSavedPlanSchema.safeParse({ sessions: [savedSession] }).success).toBe(true)
+    })
+
+    it('inlinePlanBodySchema bounds sessions to [1, 364]', () => {
+      expect(inlinePlanBodySchema.safeParse({ name: 'P', sessions: Array(365).fill(savedSession) }).success).toBe(false)
+      expect(inlinePlanBodySchema.safeParse({ name: 'P', sessions: [] }).success).toBe(false)
+    })
+
+    it('createSavedPlanSchema caps sessions at 364 (the type:"plan" placement source)', () => {
+      const s = { name: 'Day', exercises: [] }
+      expect(createSavedPlanSchema.safeParse({ name: 'P', sessions: Array(365).fill(s) }).success).toBe(false)
+      expect(createSavedPlanSchema.safeParse({ name: 'P', sessions: [s] }).success).toBe(true)
+    })
+
+    it('savedSessionInputSchema caps exercises at 50 per session', () => {
+      const ex = { name: 'E', orderIndex: 0, sets: 3 }
+      const mk = (n: number) => ({ name: 'Day', orderIndex: 0, isRest: false, exercises: Array(n).fill(ex) })
+      expect(savedSessionInputSchema.safeParse(mk(51)).success).toBe(false)
+      expect(savedSessionInputSchema.safeParse(mk(50)).success).toBe(true)
     })
   })
 })
