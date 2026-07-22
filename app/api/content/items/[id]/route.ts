@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { getContentById, updateContentItem, deleteContentItem } from "@/services/content-item-service";
+import { getCoachFolders } from "@/services/content-folder-service";
 import { apiRateLimit } from "@/lib/rate-limit";
 import { updateContentItemSchema } from "@/lib/validations/content";
 
@@ -122,6 +123,19 @@ export async function PATCH(
 
     // Update content item (storagePath, thumbnailUrl, coachId excluded by schema)
     const { folderId, ...rest } = parsed.data;
+
+    // Verify the target folder (if any) belongs to this coach — a body-supplied
+    // folderId must not attach the item to another coach's folder.
+    if (folderId) {
+      const folders = await getCoachFolders(coach.id);
+      if (!folders.some((f) => f.id === folderId)) {
+        return NextResponse.json(
+          { success: false, error: "Folder not found" },
+          { status: 404 }
+        );
+      }
+    }
+
     const updatedItem = await updateContentItem(id, {
       ...rest,
       ...(folderId !== undefined && { folderId: folderId ?? undefined }),

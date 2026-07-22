@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { createContentItem, getCoachContent } from "@/services/content-item-service";
+import { getCoachFolders } from "@/services/content-folder-service";
 import { apiRateLimit } from "@/lib/rate-limit";
 import { createContentItemSchema } from "@/lib/validations/content";
 
@@ -97,6 +98,18 @@ export async function POST(request: NextRequest) {
     }
 
     const { title, description, type, url, folderId, isLibrary, metadata } = parseResult.data;
+
+    // Verify the target folder (if any) belongs to this coach — a body-supplied
+    // folderId must not attach the item to another coach's folder.
+    if (folderId) {
+      const folders = await getCoachFolders(coach.id);
+      if (!folders.some((f) => f.id === folderId)) {
+        return NextResponse.json(
+          { success: false, error: "Folder not found" },
+          { status: 404 }
+        );
+      }
+    }
 
     // Create content item
     const item = await createContentItem({
