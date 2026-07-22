@@ -28,7 +28,6 @@ const placeFromLibrarySchema = z.discriminatedUnion("type", [
     type: z.literal("plan"),
     savedPlanId: z.string().uuid(),
     startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format"),
-    repeatCycles: z.number().int().min(1).max(52).optional(),
     phaseId: z.string().uuid().optional(),
   }),
   // Apply an edited working copy without overwriting the library template. No
@@ -38,7 +37,6 @@ const placeFromLibrarySchema = z.discriminatedUnion("type", [
     type: z.literal("inline"),
     plan: inlinePlanBodySchema,
     startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format"),
-    repeatCycles: z.number().int().min(1).max(52).optional(),
     phaseId: z.string().uuid().optional(),
   }),
   z.object({
@@ -108,7 +106,6 @@ export async function POST(
         coachId,
         clientId,
         startDate: data.startDate,
-        repeatCycles: data.repeatCycles,
         phaseId: data.phaseId,
       });
 
@@ -157,7 +154,6 @@ export async function POST(
         coachId,
         clientId,
         startDate: data.startDate,
-        repeatCycles: data.repeatCycles,
         phaseId: data.phaseId,
       });
 

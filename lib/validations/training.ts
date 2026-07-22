@@ -255,9 +255,9 @@ export const overwriteSavedPlanSchema = z.object({
 // Inline (edited working copy) placement body — the coach applies their local
 // edits to a client's calendar without overwriting the library template. Carries
 // splitType + programDurationWeeks as plan metadata (RPC args), but the placement
-// WINDOW is driven by the apply-time repeat count (default 1) × the whole-program
-// slot count, NOT programDurationWeeks. cycleLength / restPattern / frequencyPerWeek
-// are NOT sent — the placement service re-derives them from the sessions.
+// WINDOW is the whole-program slot count (one pass), NOT programDurationWeeks.
+// frequencyPerWeek is NOT sent — the placement service re-derives it from the
+// sessions.
 export const inlinePlanBodySchema = z.object({
   name: z.string().min(1).max(100),
   // Free-text program focus (stored in split_type). Free text — training_plans

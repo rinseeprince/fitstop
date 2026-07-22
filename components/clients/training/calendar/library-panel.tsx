@@ -142,9 +142,9 @@ function DraggablePlanCard({ plan }: { plan: SavedPlan }) {
             <Badge variant="secondary" className="text-[9px] h-4">
               {trainingCount} sessions
             </Badge>
-            {plan.cycleLength && (
+            {plan.programDurationWeeks && (
               <Badge variant="secondary" className="text-[9px] h-4">
-                {plan.cycleLength}-day
+                {plan.programDurationWeeks} wk
               </Badge>
             )}
           </div>

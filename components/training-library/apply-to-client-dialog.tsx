@@ -87,7 +87,6 @@ export function ApplyToClientDialog({
   const [clientId, setClientId] = useState(preselectedClientId ?? "");
   const [startDate, setStartDate] = useState(getNextMonday());
   const [phaseId, setPhaseId] = useState<string>("");
-  const [repeatCycles, setRepeatCycles] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Fetch clients (only when no preselected client)
@@ -119,14 +118,16 @@ export function ApplyToClientDialog({
       setClientId(preselectedClientId ?? "");
       setStartDate(getNextMonday());
       setPhaseId("");
-      setRepeatCycles("");
     }
   }, [open, preselectedClientId]);
 
-  const cycleLength =
-    savedPlan.cycleLength ?? savedPlan.sessions.filter((s) => !s.isRest).length;
   const trainingDays = savedPlan.sessions.filter((s) => !s.isRest).length;
-  const restDays = cycleLength - trainingDays;
+  const restDays = savedPlan.sessions.length - trainingDays;
+  const weekCount =
+    savedPlan.programDurationWeeks ??
+    (savedPlan.sessions.length > 0
+      ? Math.max(...savedPlan.sessions.map((s) => s.weekIndex)) + 1
+      : 1);
 
   // Mirror the server guard's anchor (getClientTodayString): a real synced
   // client timezone wins; the 'UTC' never-synced sentinel falls back to the
@@ -163,14 +164,12 @@ export function ApplyToClientDialog({
             plan: inlinePlan,
             startDate,
             ...(phaseId && { phaseId }),
-            ...(repeatCycles && { repeatCycles: parseInt(repeatCycles, 10) }),
           }
         : {
             type: "plan" as const,
             savedPlanId: savedPlan.id,
             startDate,
             ...(phaseId && { phaseId }),
-            ...(repeatCycles && { repeatCycles: parseInt(repeatCycles, 10) }),
           };
 
       const res = await fetch(url, {
@@ -262,7 +261,7 @@ export function ApplyToClientDialog({
             )}
           </div>
 
-          {/* Cycle info */}
+          {/* Program info */}
           <div className="flex items-center gap-2 flex-wrap">
             {savedPlan.splitType && (
               <Badge variant="outline" className="text-xs">
@@ -270,7 +269,7 @@ export function ApplyToClientDialog({
               </Badge>
             )}
             <Badge variant="secondary" className="text-xs">
-              {cycleLength}-day cycle
+              {weekCount} {weekCount === 1 ? "week" : "weeks"}
             </Badge>
             <Badge variant="secondary" className="text-xs">
               {trainingDays} training + {restDays} rest
@@ -297,21 +296,6 @@ export function ApplyToClientDialog({
             </div>
           )}
 
-          {/* Repeat cycles override */}
-          <div className="space-y-1.5">
-            <Label htmlFor="repeat-cycles">Repeat Cycles (optional)</Label>
-            <Input
-              id="repeat-cycles"
-              type="number"
-              min={1}
-              max={52}
-              value={repeatCycles}
-              onChange={(e) => setRepeatCycles(e.target.value)}
-            />
-            <p className="text-[10px] text-muted-foreground">
-              Number of times to repeat the {cycleLength}-day cycle
-            </p>
-          </div>
         </div>
 
         <DialogFooter>

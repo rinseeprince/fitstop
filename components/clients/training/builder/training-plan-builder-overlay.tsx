@@ -264,9 +264,9 @@ function SavedPlansList() {
               <span className="text-[11.5px] text-[#93b0b4]">
                 {plan.sessions.length} session{plan.sessions.length !== 1 && "s"}
               </span>
-              {plan.cycleLength && (
+              {plan.programDurationWeeks && (
                 <span className="text-[11.5px] text-[#93b0b4]">
-                  · {plan.cycleLength}-day cycle
+                  · {plan.programDurationWeeks} wk
                 </span>
               )}
             </div>

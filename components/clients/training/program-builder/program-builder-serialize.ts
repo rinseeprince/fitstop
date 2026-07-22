@@ -280,8 +280,8 @@ export function draftToOverwriteBody(draft: ProgramDraft): ProgramOverwriteBody 
  * weekIndex / rest rows land on the client's calendar verbatim. Two field notes:
  * splitType is the free-text program focus (carried through so a client's placed
  * plan keeps it); programDurationWeeks is metadata only (the placement window is
- * the apply-time repeat count × the whole-program slot count, NOT this field),
- * so fall back to the authored week count.
+ * the whole-program slot count, NOT this field), so fall back to the authored
+ * week count.
  */
 export function draftToInlinePlanBody(draft: ProgramDraft): InlinePlanBody {
   return {

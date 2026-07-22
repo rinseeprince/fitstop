@@ -13,11 +13,9 @@ import type { InlinePlanBody } from "@/lib/validations/training";
 
 // --- Shape used by both DB-backed and inline (in-memory) placements ---
 
-// NOTE: no cycleLength/restPattern here. The whole authored program is the
-// repeat unit, and placement derives its own `cycleSlots` from the session rows
-// (see placePlaceablePlanOnCalendar). The library plan's cycle_length /
-// rest_pattern COLUMNS still exist as derived metadata, but placement does not
-// read them — carrying them on this shape only invited that mistake.
+// NOTE: no derived length metadata here. Placement derives its own ordered
+// `programSlots` from the session rows (see placePlaceablePlanOnCalendar) —
+// the session rows are the only truth about program shape.
 export type PlaceablePlan = {
   name: string;
   splitType: string | null;
@@ -34,10 +32,9 @@ export async function placePlanOnCalendar(params: {
   coachId: string;
   clientId: string;
   startDate: string;
-  repeatCycles?: number;
   phaseId?: string;
 }): Promise<{ planId: string; sessionsCreated: number; eventsCreated: number }> {
-  const { savedPlanId, coachId, clientId, startDate, repeatCycles, phaseId } = params;
+  const { savedPlanId, coachId, clientId, startDate, phaseId } = params;
 
   // 1. Fetch saved plan with sessions + exercises
   const savedPlan = await getSavedPlanById(savedPlanId, coachId);
@@ -50,7 +47,6 @@ export async function placePlanOnCalendar(params: {
     coachId,
     clientId,
     startDate,
-    repeatCycles,
     phaseId,
   });
 }
@@ -62,20 +58,19 @@ export async function placePlanOnCalendar(params: {
  * client's calendar WITHOUT mutating the library template. Stamps
  * saved_plan_id = NULL — an edited copy is not a copy of any single template, so
  * it carries no template link (this is both IDOR-safe, since no body-supplied
- * template id is trusted, and semantically honest; see the Phase 1 plan). Cycle
- * metadata is re-derived from the edited structure so a moved/removed rest day
- * rotates correctly, and any exercise_id from the (client-tampered) working copy
- * that isn't in the coach's own+global catalog is nulled before it is written.
+ * template id is trusted, and semantically honest; see the Phase 1 plan).
+ * frequency_per_week is re-derived from the edited structure, and any
+ * exercise_id from the (client-tampered) working copy that isn't in the coach's
+ * own+global catalog is nulled before it is written.
  */
 export async function placeInlineEditedPlanOnCalendar(params: {
   plan: InlinePlanBody;
   coachId: string;
   clientId: string;
   startDate: string;
-  repeatCycles?: number;
   phaseId?: string;
 }): Promise<{ planId: string; sessionsCreated: number; eventsCreated: number }> {
-  const { plan, coachId, clientId, startDate, repeatCycles, phaseId } = params;
+  const { plan, coachId, clientId, startDate, phaseId } = params;
 
   const { frequencyPerWeek } = deriveCycleInfoFromSessions(
     plan.sessions.map((s) => ({
@@ -107,7 +102,6 @@ export async function placeInlineEditedPlanOnCalendar(params: {
     coachId,
     clientId,
     startDate,
-    repeatCycles,
     phaseId,
   });
 }
@@ -294,7 +288,6 @@ async function placePlaceablePlanOnCalendar(params: {
   coachId: string;
   clientId: string;
   startDate: string;
-  repeatCycles?: number;
   phaseId?: string;
 }): Promise<{ planId: string; sessionsCreated: number; eventsCreated: number }> {
   const {
@@ -303,15 +296,14 @@ async function placePlaceablePlanOnCalendar(params: {
     coachId,
     clientId,
     startDate,
-    repeatCycles,
     phaseId,
   } = params;
 
   // The whole authored program (every week, ordered by (week_index, order_index))
-  // is the repeat unit. Rest slots are cloned too so the placed plan is
+  // placed exactly once. Rest slots are cloned too so the placed plan is
   // self-describing about rest; the event generator below emits for non-rest slots
   // only. Every slot is a real row — a missing rest row would collapse the week.
-  const cycleSlots = [...savedPlan.sessions].sort(
+  const programSlots = [...savedPlan.sessions].sort(
     (a, b) => a.weekIndex - b.weekIndex || a.orderIndex - b.orderIndex,
   );
 
@@ -319,12 +311,11 @@ async function placePlaceablePlanOnCalendar(params: {
   //    coexisting plan's start). It bounds BOTH the RPC's additive delete and the
   //    event generation below to exactly the same range, so re-placing the same
   //    window is idempotent and non-overlapping plans coexist untouched. Length =
-  //    (repeat count, default 1) × the whole-program slot count.
+  //    the whole-program slot count.
   const endDate = await calculatePlacementEndDate({
     phaseId,
     clientId,
-    cycleLength: cycleSlots.length,
-    repeatCycles: repeatCycles ?? null,
+    slotCount: programSlots.length,
     startDate,
   });
 
@@ -364,7 +355,8 @@ async function placePlaceablePlanOnCalendar(params: {
   try {
   // 4. Clone EVERY slot (training + rest) in program order so the placed plan is
   //    self-describing about rest. Rest rows carry is_rest = true, no exercises,
-  //    and null surplus. `clonedSlots` is the ordered cycle the event walk tiles.
+  //    and null surplus. `clonedSlots` is the ordered program the event walk maps
+  //    onto calendar dates.
   const clonedSlots: Array<{
     id: string;
     isRest: boolean;
@@ -374,7 +366,7 @@ async function placePlaceablePlanOnCalendar(params: {
     estimatedCalories: number | null;
   }> = [];
 
-  for (const savedSession of cycleSlots) {
+  for (const savedSession of programSlots) {
     const surplusPercentage = savedSession.isRest
       ? null
       : savedSession.calorieSurplusPercentage ?? savedPlan.defaultSurplusPercentage ?? null;
@@ -445,12 +437,12 @@ async function placePlaceablePlanOnCalendar(params: {
     });
   }
 
-  // 5. Generate cycle-aware events (same window the RPC just cleared). Rest slots
-  //    advance the cycle position but emit no event.
-  const eventsCreated = await generateCycleAwareEvents({
+  // 5. Generate the events (same window the RPC just cleared). Rest slots
+  //    advance the slot position but emit no event.
+  const eventsCreated = await generateProgramEvents({
     clientId,
     planId: newPlanId,
-    cycleSlots: clonedSlots,
+    programSlots: clonedSlots,
     startDate,
     endDate,
   });
@@ -603,18 +595,17 @@ export async function placeSessionOnCalendar(params: {
 // --- Internal helpers ---
 
 /**
- * Generate cycle-aware training events by walking calendar dates and tiling the
- * ordered program slots — the whole authored program (all weeks) is the repeat
- * unit. Each calendar day maps to cycleSlots[cyclePosition]; a rest slot advances
- * the position but emits NO event, so a rest day never spawns a training_event
- * (it still consumes its date). Each slot references a distinct cloned session id,
- * so re-tiling across repeats reuses ids and the (client, session, date) upsert
- * stays idempotent.
+ * Generate training events by walking calendar dates through the ordered program
+ * slots — a sequential date-walk over the whole authored program. Each calendar
+ * day maps to programSlots[slotPosition]; a rest slot advances the position but
+ * emits NO event, so a rest day never spawns a training_event (it still consumes
+ * its date). Each slot references a distinct cloned session id and the
+ * (client, session, date) upsert is idempotent.
  */
-async function generateCycleAwareEvents(params: {
+async function generateProgramEvents(params: {
   clientId: string;
   planId: string;
-  cycleSlots: Array<{
+  programSlots: Array<{
     id: string;
     isRest: boolean;
     name: string;
@@ -625,18 +616,18 @@ async function generateCycleAwareEvents(params: {
   startDate: string;
   endDate: string;
 }): Promise<number> {
-  const { clientId, planId, cycleSlots, startDate, endDate } = params;
+  const { clientId, planId, programSlots, startDate, endDate } = params;
 
-  const cycleLength = cycleSlots.length;
-  if (cycleLength === 0) return 0;
+  const slotCount = programSlots.length;
+  if (slotCount === 0) return 0;
 
   const rows: TrainingEventInsert[] = [];
   const start = new Date(startDate + "T00:00:00");
   const end = new Date(endDate + "T00:00:00");
-  let cyclePosition = 0;
+  let slotPosition = 0;
 
   for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-    const slot = cycleSlots[cyclePosition];
+    const slot = programSlots[slotPosition];
     if (!slot.isRest) {
       rows.push({
         client_id: clientId,
@@ -651,7 +642,9 @@ async function generateCycleAwareEvents(params: {
         is_modified: false,
       });
     }
-    cyclePosition = (cyclePosition + 1) % cycleLength;
+    // The window never exceeds the program length (calculatePlacementEndDate),
+    // so the walk cannot run off the end; the modulo is a cheap guard.
+    slotPosition = (slotPosition + 1) % slotCount;
   }
 
   if (rows.length === 0) return 0;
@@ -669,25 +662,22 @@ async function generateCycleAwareEvents(params: {
 }
 
 /**
- * Calculate the placement window end date. The program length is the ONLY length
- * knob: (repeat count, default 1) × the whole-program slot count in days. There is
- * deliberately no programDurationWeeks or 8-week fallback — an empty "Repeat
- * Cycles" box means place exactly one pass of the authored program. The client's
+ * Calculate the placement window end date. The authored program length is the
+ * ONLY length knob: the whole-program slot count in days, placed exactly once.
+ * There is deliberately no programDurationWeeks or 8-week fallback. The client's
  * containing phase end is a MAXIMUM cap only (a program never runs past it and
  * never stretches to fill it), as is the start of the next coexisting plan.
  */
 async function calculatePlacementEndDate(params: {
   phaseId?: string;
   clientId: string;
-  cycleLength: number;
-  repeatCycles: number | null;
+  slotCount: number;
   startDate: string;
 }): Promise<string> {
-  const { phaseId, clientId, cycleLength, repeatCycles, startDate } = params;
+  const { phaseId, clientId, slotCount, startDate } = params;
 
-  // Program length = (repeat count, default 1) × whole-program slot count.
-  const repeats = repeatCycles && repeatCycles > 0 ? repeatCycles : 1;
-  const days = Math.max(1, cycleLength) * repeats;
+  // Program length = the whole-program slot count, one pass.
+  const days = Math.max(1, slotCount);
   const durationEnd = new Date(startDate + "T00:00:00");
   durationEnd.setDate(durationEnd.getDate() + days - 1);
   let computedEnd = getDateString(durationEnd);

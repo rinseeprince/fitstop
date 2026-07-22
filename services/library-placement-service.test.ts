@@ -209,7 +209,7 @@ describe("library-placement-service", () => {
       });
 
       const result = await placePlanOnCalendar({
-        savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15", repeatCycles: 1,
+        savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15",
       });
 
       expect(mockCreateAtomic).toHaveBeenCalledWith(
@@ -227,7 +227,7 @@ describe("library-placement-service", () => {
       expect(sessionInsertQuery.insert.mock.calls.filter((c) => c[0].is_rest === false)).toHaveLength(3);
       // Only the 3 non-rest slots get exercises.
       expect(exerciseInsertQuery.insert).toHaveBeenCalledTimes(3);
-      // Window = repeat 1 × 4 slots = 4 days → Push, Pull, Legs (rest skipped) = 3 events.
+      // Window = 4 slots = 4 days → Push, Pull, Legs (rest skipped) = 3 events.
       const events = eventUpsertQuery.upsert.mock.calls[0][0];
       expect(events).toHaveLength(3);
       for (const event of events) {
@@ -238,10 +238,9 @@ describe("library-placement-service", () => {
       expect(result.eventsCreated).toBe(3);
     });
 
-    it("defaults to repeat = 1 (one pass of the program) when repeatCycles is omitted", async () => {
+    it("places exactly one pass of the program", async () => {
       mockGetSavedPlanById.mockResolvedValue(
         makeSavedPlan({
-          cycleLength: 3, restPattern: [],
           sessions: [
             makeSession({ id: "a", name: "A", orderIndex: 0, exercises: [] }),
             makeSession({ id: "b", name: "B", orderIndex: 1, exercises: [] }),
@@ -267,7 +266,7 @@ describe("library-placement-service", () => {
     it("copies calorie_surplus_percentage from session, falls back to plan default; rest is null", async () => {
       mockGetSavedPlanById.mockResolvedValue(
         makeSavedPlan({
-          defaultSurplusPercentage: 10, cycleLength: 3, restPattern: [2],
+          defaultSurplusPercentage: 10,
           sessions: [
             makeSession({ id: "ss-1", orderIndex: 0, calorieSurplusPercentage: 20, exercises: [] }),
             makeSession({ id: "ss-2", orderIndex: 1, calorieSurplusPercentage: null, exercises: [] }),
@@ -284,7 +283,7 @@ describe("library-placement-service", () => {
         return createMockQuery({ data: null, error: null }) as never;
       });
 
-      await placePlanOnCalendar({ savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15", repeatCycles: 1 });
+      await placePlanOnCalendar({ savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15" });
 
       expect(sessionInsertQuery.insert.mock.calls[0][0].calorie_surplus_percentage).toBe(20);
       expect(sessionInsertQuery.insert.mock.calls[1][0].calorie_surplus_percentage).toBe(10);
@@ -293,17 +292,18 @@ describe("library-placement-service", () => {
     });
 
     it("passes effectiveFrom + windowEnd to the atomic RPC, capped at the next plan's start", async () => {
-      // 7-day program × repeat 10 would run to ~2026-06-23, but a later plan starts
-      // 2026-05-01 so getNextPlanStartCap caps the window at 2026-04-30.
+      // A 28-slot (4-week) program would run to 2026-05-12, but a later plan
+      // starts 2026-05-01 so getNextPlanStartCap caps the window at 2026-04-30.
       mockGetSavedPlanById.mockResolvedValue(
         makeSavedPlan({
-          cycleLength: 7, restPattern: [],
-          sessions: Array.from({ length: 7 }, (_, i) => makeSession({ id: `d-${i}`, orderIndex: i, exercises: [] })),
+          sessions: Array.from({ length: 28 }, (_, i) =>
+            makeSession({ id: `d-${i}`, weekIndex: Math.floor(i / 7), orderIndex: i % 7, exercises: [] }),
+          ),
         }),
       );
       mockCreateAtomic.mockResolvedValue("new-plan-id");
       mockGetNextPlanStartCap.mockResolvedValue("2026-04-30");
-      const sessionInsertQuery = makeSessionInsertQuery(Array.from({ length: 7 }, (_, i) => `ts-${i}`));
+      const sessionInsertQuery = makeSessionInsertQuery(Array.from({ length: 28 }, (_, i) => `ts-${i}`));
       const eventUpsertQuery = createMockQuery({ data: [], error: null });
       mockFrom.mockImplementation((table: string) => {
         if (table === "training_sessions") return sessionInsertQuery as never;
@@ -311,7 +311,7 @@ describe("library-placement-service", () => {
         return createMockQuery({ data: null, error: null }) as never;
       });
 
-      await placePlanOnCalendar({ savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15", repeatCycles: 10 });
+      await placePlanOnCalendar({ savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15" });
 
       expect(mockGetNextPlanStartCap).toHaveBeenCalledWith("client-1", "2026-04-15");
       expect(mockCreateAtomic).toHaveBeenCalledWith(
@@ -321,7 +321,6 @@ describe("library-placement-service", () => {
 
     it("is idempotent on re-place: same window + same event count across two placements", async () => {
       const savedPlan = makeSavedPlan({
-        cycleLength: 1, restPattern: [],
         sessions: [makeSession({ id: "ss-1", orderIndex: 0, calorieSurplusPercentage: 15, exercises: [] })],
       });
       mockGetSavedPlanById.mockResolvedValue(savedPlan);
@@ -333,7 +332,7 @@ describe("library-placement-service", () => {
         return createMockQuery({ data: null, error: null }) as never;
       });
 
-      const args = { savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15", repeatCycles: 2 };
+      const args = { savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15" };
       await placePlanOnCalendar(args);
       await placePlanOnCalendar(args);
 
@@ -350,19 +349,23 @@ describe("library-placement-service", () => {
     it("writes calorie_surplus_percentage onto generated event rows (INVARIANT 2)", async () => {
       mockGetSavedPlanById.mockResolvedValue(
         makeSavedPlan({
-          defaultSurplusPercentage: 10, cycleLength: 1, restPattern: [],
-          sessions: [makeSession({ id: "ss-1", orderIndex: 0, calorieSurplusPercentage: 25, exercises: [] })],
+          defaultSurplusPercentage: 10,
+          sessions: [
+            makeSession({ id: "ss-1", orderIndex: 0, calorieSurplusPercentage: 25, exercises: [] }),
+            makeSession({ id: "ss-2", orderIndex: 1, calorieSurplusPercentage: 25, exercises: [] }),
+            makeSession({ id: "ss-3", orderIndex: 2, calorieSurplusPercentage: 25, exercises: [] }),
+          ],
         }),
       );
       mockCreateAtomic.mockResolvedValue("new-plan-id");
       const eventUpsertQuery = createMockQuery({ data: [], error: null });
       mockFrom.mockImplementation((table: string) => {
-        if (table === "training_sessions") return makeSessionInsertQuery(["ts-1"]) as never;
+        if (table === "training_sessions") return makeSessionInsertQuery(["ts-1", "ts-2", "ts-3"]) as never;
         if (table === "training_events") return eventUpsertQuery as never;
         return createMockQuery({ data: null, error: null }) as never;
       });
 
-      await placePlanOnCalendar({ savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15", repeatCycles: 3 });
+      await placePlanOnCalendar({ savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15" });
 
       const eventRows = eventUpsertQuery.upsert.mock.calls[0][0];
       expect(eventRows.length).toBe(3);
@@ -372,7 +375,6 @@ describe("library-placement-service", () => {
     it("preserves exercise_id FK from saved exercises", async () => {
       mockGetSavedPlanById.mockResolvedValue(
         makeSavedPlan({
-          cycleLength: 1, restPattern: [],
           sessions: [
             makeSession({
               id: "ss-1", orderIndex: 0,
@@ -393,7 +395,7 @@ describe("library-placement-service", () => {
         return createMockQuery({ data: null, error: null }) as never;
       });
 
-      await placePlanOnCalendar({ savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15", repeatCycles: 1 });
+      await placePlanOnCalendar({ savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15" });
 
       const exerciseCall = exerciseInsertQuery.insert.mock.calls[0][0];
       expect(exerciseCall[0].exercise_id).toBe("catalog-abc");
@@ -408,7 +410,6 @@ describe("library-placement-service", () => {
       ];
       mockGetSavedPlanById.mockResolvedValue(
         makeSavedPlan({
-          cycleLength: 1, restPattern: [],
           sessions: [
             makeSession({
               id: "ss-1", orderIndex: 0,
@@ -426,7 +427,7 @@ describe("library-placement-service", () => {
         return createMockQuery({ data: null, error: null }) as never;
       });
 
-      await placePlanOnCalendar({ savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15", repeatCycles: 1 });
+      await placePlanOnCalendar({ savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15" });
 
       const inserted = exerciseInsertQuery.insert.mock.calls[0][0];
       expect(inserted[0].set_specs).toEqual(specs);
@@ -435,15 +436,14 @@ describe("library-placement-service", () => {
   });
 
   // =========================================================================
-  // cycle-aware event generation (whole program = repeat unit)
+  // program event generation (the date-walk over the whole authored program)
   // =========================================================================
 
-  describe("cycle-aware event generation", () => {
-    it("legacy single-week plan places identically (explicit repeat count)", async () => {
-      // PPL + Rest: Push(0), Pull(1), Legs(2), Rest(3); repeat 2 = 8 days.
+  describe("program event generation", () => {
+    it("single-week program places one pass via the date-walk", async () => {
+      // PPL + Rest: Push(0), Pull(1), Legs(2), Rest(3) → 4 days, rest emits nothing.
       mockGetSavedPlanById.mockResolvedValue(
         makeSavedPlan({
-          cycleLength: 4, restPattern: [3],
           sessions: [
             makeSession({ id: "ss-push", name: "Push", orderIndex: 0, exercises: [] }),
             makeSession({ id: "ss-pull", name: "Pull", orderIndex: 1, exercises: [] }),
@@ -461,28 +461,31 @@ describe("library-placement-service", () => {
         return createMockQuery({ data: null, error: null }) as never;
       });
 
-      await placePlanOnCalendar({ savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15", repeatCycles: 2 });
+      await placePlanOnCalendar({ savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15" });
 
       const events = eventUpsertQuery.upsert.mock.calls[0][0] as { date: string }[];
-      // 8 days; rest on day 3 (04-18) and day 7 (04-22) → 6 events.
+      // 4 days; rest on day 3 (04-18) → 3 events.
       expect(events.map((e) => e.date)).toEqual([
         "2026-04-15", "2026-04-16", "2026-04-17",
-        "2026-04-19", "2026-04-20", "2026-04-21",
       ]);
     });
 
     it("GUARDRAIL: a rest slot never emits a training_event", async () => {
+      // Alternating workout/rest across 6 slots → 6 days, 3 events, none for rest.
       mockGetSavedPlanById.mockResolvedValue(
         makeSavedPlan({
-          cycleLength: 2, restPattern: [1],
           sessions: [
-            makeSession({ id: "ss-w", name: "Workout", orderIndex: 0, exercises: [] }),
-            makeSession({ id: "ss-r", name: "Rest", orderIndex: 1, isRest: true, exercises: [] }),
+            makeSession({ id: "ss-w0", name: "Workout", orderIndex: 0, exercises: [] }),
+            makeSession({ id: "ss-r1", name: "Rest", orderIndex: 1, isRest: true, exercises: [] }),
+            makeSession({ id: "ss-w2", name: "Workout", orderIndex: 2, exercises: [] }),
+            makeSession({ id: "ss-r3", name: "Rest", orderIndex: 3, isRest: true, exercises: [] }),
+            makeSession({ id: "ss-w4", name: "Workout", orderIndex: 4, exercises: [] }),
+            makeSession({ id: "ss-r5", name: "Rest", orderIndex: 5, isRest: true, exercises: [] }),
           ],
         }),
       );
       mockCreateAtomic.mockResolvedValue("new-plan-id");
-      const sessionInsertQuery = makeSessionInsertQuery(["ts-w", "ts-r"]);
+      const sessionInsertQuery = makeSessionInsertQuery(["ts-w0", "ts-r1", "ts-w2", "ts-r3", "ts-w4", "ts-r5"]);
       const eventUpsertQuery = createMockQuery({ data: [], error: null });
       mockFrom.mockImplementation((table: string) => {
         if (table === "training_sessions") return sessionInsertQuery as never;
@@ -490,19 +493,17 @@ describe("library-placement-service", () => {
         return createMockQuery({ data: null, error: null }) as never;
       });
 
-      await placePlanOnCalendar({ savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15", repeatCycles: 3 });
+      await placePlanOnCalendar({ savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15" });
 
       const events = eventUpsertQuery.upsert.mock.calls[0][0] as { training_session_id: string }[];
-      // 6 days, every other day rest → 3 workout events, none for the rest slot.
       expect(events).toHaveLength(3);
-      expect(events.every((e) => e.training_session_id === "ts-w")).toBe(true);
+      expect(events.map((e) => e.training_session_id)).toEqual(["ts-w0", "ts-w2", "ts-w4"]);
     });
 
-    it("multi-week program: the whole program (all weeks) is the repeat unit", async () => {
-      // Week 0: A(0), B(1); Week 1: C(0), D(1). Ordered cycle = A,B,C,D.
+    it("multi-week program: all weeks place in (week_index, order_index) order", async () => {
+      // Week 0: A(0), B(1); Week 1: C(0), D(1). Ordered program = A,B,C,D.
       mockGetSavedPlanById.mockResolvedValue(
         makeSavedPlan({
-          cycleLength: 4, restPattern: [],
           sessions: [
             makeSession({ id: "a", name: "A", weekIndex: 0, orderIndex: 0, exercises: [] }),
             makeSession({ id: "b", name: "B", weekIndex: 0, orderIndex: 1, exercises: [] }),
@@ -520,20 +521,20 @@ describe("library-placement-service", () => {
         return createMockQuery({ data: null, error: null }) as never;
       });
 
-      await placePlanOnCalendar({ savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15", repeatCycles: 2 });
+      await placePlanOnCalendar({ savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15" });
 
       // Session inserts are ordered by (week_index, order_index).
       expect(sessionInsertQuery.insert.mock.calls.map((c) => c[0].name)).toEqual(["A", "B", "C", "D"]);
       expect(sessionInsertQuery.insert.mock.calls.map((c) => c[0].week_index)).toEqual([0, 0, 1, 1]);
       const events = eventUpsertQuery.upsert.mock.calls[0][0] as { training_session_id: string }[];
       expect(events.map((e) => e.training_session_id)).toEqual([
-        "ts-a", "ts-b", "ts-c", "ts-d", "ts-a", "ts-b", "ts-c", "ts-d",
+        "ts-a", "ts-b", "ts-c", "ts-d",
       ]);
     });
 
     it("NO COMPRESSION: an all-rest week in the middle + a trailing rest still land dates correctly", async () => {
       // Week 0: A(0), B(1); Week 1: Rest(0), Rest(1) [all-rest]; Week 2: C(0), Rest(1) [trailing].
-      // Ordered cycle = A, B, rest, rest, C, rest (6 slots). Repeat 2 = 12 days.
+      // Ordered program = A, B, rest, rest, C, rest (6 slots) = 6 days.
       mockGetSavedPlanById.mockResolvedValue(
         makeSavedPlan({
           sessions: [
@@ -555,15 +556,14 @@ describe("library-placement-service", () => {
         return createMockQuery({ data: null, error: null }) as never;
       });
 
-      await placePlanOnCalendar({ savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15", repeatCycles: 2 });
+      await placePlanOnCalendar({ savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15" });
 
       const events = eventUpsertQuery.upsert.mock.calls[0][0] as { date: string }[];
       const dates = events.map((e) => e.date);
-      // Rest days consume their date but emit no event; C lands AFTER the all-rest
-      // week, and the next repeat's A lands AFTER the trailing rest — no compression.
+      // Rest days consume their date but emit no event; C lands AFTER the
+      // all-rest week — no compression.
       expect(dates).toEqual([
         "2026-04-15", "2026-04-16", "2026-04-19", // week0 A,B ; week2 C
-        "2026-04-21", "2026-04-22", "2026-04-25", // repeat: A,B,C
       ]);
       expect(dates).not.toContain("2026-04-17"); // all-rest week
       expect(dates).not.toContain("2026-04-18");
@@ -762,7 +762,7 @@ describe("library-placement-service", () => {
       const { sessionInsertQuery, eventUpsertQuery, libraryQuery } = wireInlineMocks(["catalog-1"]);
 
       const result = await placeInlineEditedPlanOnCalendar({
-        plan: makeInlinePlan(), coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15", repeatCycles: 1,
+        plan: makeInlinePlan(), coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15",
       });
 
       expect(mockCreateAtomic).toHaveBeenCalledWith(expect.objectContaining({ savedPlanId: undefined }));
@@ -777,14 +777,14 @@ describe("library-placement-service", () => {
       expect(result.planId).toBe("new-plan-id");
     });
 
-    it("repeat count drives the window (programDurationWeeks does NOT extend it)", async () => {
+    it("the authored slot count drives the window (programDurationWeeks does NOT extend it)", async () => {
       mockCreateAtomic.mockResolvedValue("new-plan-id");
       wireInlineMocks(["catalog-1"]);
 
-      // A 1-slot program with programDurationWeeks = 12 but repeatCycles = 1 places
-      // exactly ONE day — the repeat count is the only length knob.
+      // A 1-slot program with programDurationWeeks = 12 places exactly ONE day —
+      // the authored slot count is the only length knob.
       await placeInlineEditedPlanOnCalendar({
-        plan: makeInlinePlan({ programDurationWeeks: 12 }), coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15", repeatCycles: 1,
+        plan: makeInlinePlan({ programDurationWeeks: 12 }), coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15",
       });
 
       expect(mockCreateAtomic.mock.calls[0][0].windowEnd).toBe("2026-04-15");
@@ -807,7 +807,7 @@ describe("library-placement-service", () => {
             },
           ],
         }),
-        coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15", repeatCycles: 1,
+        coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15",
       });
 
       const inserted = exerciseInsertQuery.insert.mock.calls[0][0];
