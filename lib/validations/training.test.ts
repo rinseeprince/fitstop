@@ -12,6 +12,8 @@ import {
   inlinePlanBodySchema,
   createSavedPlanSchema,
   savedSessionInputSchema,
+  updateExerciseSchema,
+  replaceSessionSchema,
 } from './training'
 
 describe('Training Validation Schemas', () => {
@@ -502,6 +504,83 @@ describe('Training Validation Schemas', () => {
       const mk = (n: number) => ({ name: 'Day', orderIndex: 0, isRest: false, exercises: Array(n).fill(ex) })
       expect(savedSessionInputSchema.safeParse(mk(51)).success).toBe(false)
       expect(savedSessionInputSchema.safeParse(mk(50)).success).toBe(true)
+    })
+  })
+
+  describe('updateExerciseSchema (setSpecs/videoUrl wipe regression)', () => {
+    const specs = [
+      { set_number: 1, set_type: 'warmup', reps_min: 10, reps_max: 12 },
+      { set_number: 2, set_type: 'working', reps_min: 5, reps_max: 8 },
+    ]
+
+    it('passes setSpecs and videoUrl through instead of stripping them', () => {
+      const result = updateExerciseSchema.safeParse({
+        setSpecs: specs,
+        videoUrl: 'https://example.com/demo.mp4',
+      })
+      expect(result.success).toBe(true)
+      if (result.success) {
+        expect(result.data.setSpecs).toEqual(specs)
+        expect(result.data.videoUrl).toBe('https://example.com/demo.mp4')
+      }
+    })
+
+    it('still accepts a compact-only partial patch', () => {
+      const result = updateExerciseSchema.safeParse({ sets: 4 })
+      expect(result.success).toBe(true)
+      if (result.success) {
+        expect(result.data).not.toHaveProperty('setSpecs')
+      }
+    })
+
+    it('accepts explicit null to clear specs and rejects an all-warmup array', () => {
+      expect(updateExerciseSchema.safeParse({ setSpecs: null }).success).toBe(true)
+      expect(
+        updateExerciseSchema.safeParse({
+          setSpecs: [{ set_number: 1, set_type: 'warmup' }],
+        }).success,
+      ).toBe(false)
+    })
+  })
+
+  describe('replaceSessionSchema (placed-session full edit)', () => {
+    const exercise = {
+      name: 'Bench Press',
+      sets: 3,
+      orderIndex: 0,
+      setSpecs: [{ set_number: 1, set_type: 'working', reps_min: 5, reps_max: 8 }],
+      videoUrl: 'https://example.com/bench.mp4',
+    }
+    const base = {
+      name: 'Push Day',
+      focus: 'Chest',
+      estimatedDurationMinutes: 45,
+      calorieSurplusPercentage: 15,
+      notes: null,
+      exercises: [exercise],
+    }
+
+    it('accepts a full body and preserves per-set fields', () => {
+      const result = replaceSessionSchema.safeParse(base)
+      expect(result.success).toBe(true)
+      if (result.success) {
+        expect(result.data.exercises[0].setSpecs).toEqual(exercise.setSpecs)
+        expect(result.data.exercises[0].videoUrl).toBe(exercise.videoUrl)
+      }
+    })
+
+    it('uses the authoring duration bounds (0..480), not legacy 10..180', () => {
+      expect(replaceSessionSchema.safeParse({ ...base, estimatedDurationMinutes: 0 }).success).toBe(true)
+      expect(replaceSessionSchema.safeParse({ ...base, estimatedDurationMinutes: 480 }).success).toBe(true)
+      expect(replaceSessionSchema.safeParse({ ...base, estimatedDurationMinutes: 481 }).success).toBe(false)
+    })
+
+    it('requires a name and caps exercises at 50', () => {
+      expect(replaceSessionSchema.safeParse({ ...base, name: '' }).success).toBe(false)
+      expect(
+        replaceSessionSchema.safeParse({ ...base, exercises: Array(51).fill(exercise) }).success,
+      ).toBe(false)
+      expect(replaceSessionSchema.safeParse({ ...base, exercises: [] }).success).toBe(true)
     })
   })
 })

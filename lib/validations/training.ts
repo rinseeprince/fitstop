@@ -51,7 +51,8 @@ export const updateTrainingPlanSchema = z.object({
 
 export const updateSessionSchema = sessionSchema.partial();
 
-export const updateExerciseSchema = exerciseSchema.partial();
+// updateExerciseSchema lives below setSpecsArraySchema/videoUrlSchema — it needs
+// both at module-load time.
 
 // =============================================================================
 // Coach library (saved-plan / saved-session) mutation schemas
@@ -109,6 +110,15 @@ export const videoUrlSchema = z
   .refine((u) => /^https?:\/\//i.test(u), { message: "Video URL must be http(s)" })
   .nullish();
 
+// The single-exercise PATCH must carry setSpecs/videoUrl: the service writes
+// through projectExerciseCompact, which writes whatever it receives — a schema
+// that strips these fields silently NULLs the coach's per-set programming on
+// every save. (exerciseSchema itself predates the set model and never had them.)
+export const updateExerciseSchema = exerciseSchema.partial().extend({
+  setSpecs: setSpecsArraySchema.nullish(),
+  videoUrl: videoUrlSchema,
+});
+
 export const savedExerciseInputSchema = z.object({
   name: z.string().min(1).max(200),
   exerciseId: z.string().uuid().nullish(),
@@ -141,6 +151,20 @@ export const bulkExerciseInputSchema = exerciseSchema.extend({
   exerciseId: z.string().uuid().nullish(),
   setSpecs: setSpecsArraySchema.nullish(),
   videoUrl: videoUrlSchema,
+});
+
+// Full replace of a PLACED session (meta + exercises) — the calendar tray's
+// "All occurrences" save (PUT sessions/[sessionId]). Duration uses the authoring
+// bounds (0..480, matching what placement writes from savedSessionInputSchema),
+// NOT legacy sessionSchema's 10..180 — a placed row authored at 8 or 240 minutes
+// must round-trip through the tray without a phantom validation error.
+export const replaceSessionSchema = z.object({
+  name: z.string().min(1).max(100),
+  focus: z.string().max(200).nullish(),
+  estimatedDurationMinutes: z.number().int().min(0).max(480).nullish(),
+  calorieSurplusPercentage: z.number().min(0).max(100).nullish(),
+  notes: z.string().max(1000).nullish(),
+  exercises: z.array(bulkExerciseInputSchema).max(50),
 });
 
 export const savedSessionInputSchema = z.object({
