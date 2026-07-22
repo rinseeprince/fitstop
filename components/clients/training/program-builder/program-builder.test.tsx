@@ -702,6 +702,17 @@ describe("ProgramBuilder placed-plan target", () => {
     placedMutateMock.mockClear();
   });
 
+  it("fills the overlay box (h-full) — never the library's shell-cancelling negative margins", async () => {
+    const { container } = renderPlaced();
+    await screen.findByRole("button", { name: "Save changes to plan" });
+    const root = container.firstElementChild as HTMLElement;
+    // The -mx-8 shift exists to cancel the programs shell's padding; inside
+    // the full-screen overlay it slides the editor over the nav rail and
+    // pushes Day 7 off screen (owner smoke finding).
+    expect(root.className).toContain("h-full");
+    expect(root.className).not.toContain("-mx-8");
+  });
+
   it("shows the amendment chrome: save-changes present, library commit absent, calendar back label", async () => {
     renderPlaced();
     expect(

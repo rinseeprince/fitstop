@@ -212,12 +212,14 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
     // Library: full-bleed within the programs shell — cancel its px-8/py
     // padding so the library panel sits flush against the icon rail and the
     // grid fills main's 100vh box (`h-screen`; the section topbar hides on this
-    // route). Client-draft: the host is a full-screen drawer dialog with no
-    // shell padding to cancel, so fill its own box (`h-full`).
+    // route). Client-draft AND placed-plan: the host is a full-screen overlay
+    // dialog with no shell padding to cancel — the library-mode negative
+    // margins would shift the editor over the nav rail and push Day 7 off
+    // screen — so fill the overlay's own box (`h-full`).
     <div
       className={cn(
         "flex flex-col",
-        isClientDraft ? "h-full" : "-mx-8 -mt-5 -mb-[60px] h-screen",
+        isLibrary ? "-mx-8 -mt-5 -mb-[60px] h-screen" : "h-full",
       )}
     >
       <DndContext

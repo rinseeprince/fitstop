@@ -266,6 +266,8 @@ Each job session appends on completion: what shipped (commits + hashes), deviati
 
 **Test/smoke results:** 2202 tests green across 227 files (~112 new). **Browser smoke NOT run agent-side** — Job 1 recorded a machine-level macOS Desktop-permission failure in the CDP harness, so the Job 2 checklist is handed to the owner (place multi-week program → "Edit plan" from hero → past locked with toast on drag/edit/delete → structural + prescription edit → Save → confirm incl. moved-events warning → calendar re-laid, past untouched, nutrition refreshed → immediate re-amend (token round-trip) → assistant "reduce all remaining loads by 10%" future-only, past-week edit skipped with reason → tray "Edit whole plan" opens the overlay). The amendment cascade + audit are covered by route tests; the token round-trip, resumed walk, and compensation by the service suite.
 
+**Owner smoke findings:** (a) the amendment editor rendered shifted over the nav rail with Day 7 pushed off screen — the builder root's container class gated on `isClientDraft`, so the placed target fell into the LIBRARY branch's shell-cancelling negative margins (`-mx-8 -mt-5 -mb-[60px]`), which have nothing to cancel inside the full-screen overlay. FIXED (follow-up commit): the gate is now `isLibrary` — both overlay-hosted targets fill their own box (`h-full`) — with a regression assertion in the placed chrome suite.
+
 **Deferred:** move-scope option rewording (owner copy decision — see TECHNICAL-DEBT "Plan amendment — deferred tails"); lean summary variant of the amendment GET if the entry-point gate ever shows in traces.
 
 ---
