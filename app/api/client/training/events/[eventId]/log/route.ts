@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireClientAuth } from "@/lib/require-client-auth";
 import { logTrainingEventSchema } from "@/lib/validations/training";
-import { logTrainingEvent } from "@/services/training-log-service";
+import { logTrainingEvent, TrainingLogOwnershipError } from "@/services/training-log-service";
 import { DayLockedError } from "@/lib/daily-log-permissions";
 
 export async function POST(
@@ -51,6 +51,14 @@ export async function POST(
       return NextResponse.json(
         { success: false, error: error.message },
         { status: 403 },
+      );
+    }
+    // Body-supplied performedSessionId / trainingExerciseId not owned by this
+    // client — collapse to 404 (no existence oracle), same as a foreign event.
+    if (error instanceof TrainingLogOwnershipError) {
+      return NextResponse.json(
+        { success: false, error: "Not found" },
+        { status: 404 },
       );
     }
     const message = error instanceof Error ? error.message : "";

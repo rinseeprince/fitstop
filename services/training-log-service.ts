@@ -28,6 +28,19 @@ import type {
   LogTrainingEventInput,
   SetPerformanceInput,
 } from "@/lib/validations/training";
+
+/**
+ * Thrown when a body-supplied performedSessionId / trainingExerciseId does not
+ * resolve to a resource owned by the authenticated client (session -> plan ->
+ * client_id). Routes map this to 404 so it can't be used as a cross-tenant read
+ * primitive or a foreign-FK write.
+ */
+export class TrainingLogOwnershipError extends Error {
+  constructor() {
+    super("Referenced session or exercise not found for this client");
+    this.name = "TrainingLogOwnershipError";
+  }
+}
 import type {
   ExerciseLog,
   LogTrainingEventResponse,
@@ -268,6 +281,30 @@ async function writeSessionLog(params: {
     payload,
   } = params;
 
+  // Ownership: performedSessionId is body-supplied on both the event and
+  // event-less paths, is written into session_logs.training_session_id, and
+  // (event-less) drives the prescription snapshot below. Validate it resolves
+  // to THIS client (session -> plan -> client_id, the cloneSessionForEvent
+  // shape) or reject — otherwise a foreign id is a cross-tenant read primitive
+  // and a dangling-FK write. eventId + the event's own session are already
+  // client-scoped by the caller, so only this free id needs checking.
+  if (performedSessionId !== null) {
+    const { data: ownedSession, error: ownErr } = await supabaseAdmin
+      .from("training_sessions")
+      .select("id, training_plans!inner(client_id)")
+      .eq("id", performedSessionId)
+      .eq("training_plans.client_id", clientId)
+      .maybeSingle();
+    if (ownErr) {
+      throw new Error(
+        `Failed to verify performed session ownership: ${ownErr.message}`,
+      );
+    }
+    if (!ownedSession) {
+      throw new TrainingLogOwnershipError();
+    }
+  }
+
   // 3. Fresh session-prescription snapshot.
   // NOTE: Do NOT filter by is_active here. A coach soft-deleting a session
   // shouldn't cause a client log write to capture a null snapshot (and on the
@@ -305,22 +342,57 @@ async function writeSessionLog(params: {
 
   const freshExerciseSnapshotMap = new Map<string, ExerciseSnapshot>();
   if (isDetailedMode) {
-    const exerciseIds = (payload.exercises ?? [])
-      .map((e) => e.trainingExerciseId)
-      .filter((id): id is string => typeof id === "string");
-    if (exerciseIds.length > 0) {
-      const { data: exerciseRows, error: exerciseErr } = await supabaseAdmin
-        .from("training_exercises")
-        .select(
-          "id, name, sets, reps_min, reps_max, reps_target, rpe_target, percentage_1rm, tempo, rest_seconds, notes, superset_group, is_warmup, set_specs",
-        )
-        .in("id", exerciseIds);
-      if (exerciseErr) {
-        throw new Error(
-          `Failed to load training exercises for snapshot: ${exerciseErr.message}`,
-        );
+    const distinctExerciseIds = [
+      ...new Set(
+        (payload.exercises ?? [])
+          .map((e) => e.trainingExerciseId)
+          .filter((id): id is string => typeof id === "string"),
+      ),
+    ];
+    if (distinctExerciseIds.length > 0) {
+      // Scope the read to THIS client via exercise -> session -> plan ->
+      // client_id (!inner filters out anything not owned), so a body-supplied
+      // foreign exercise id can't leak another client's prescription. Chunk the
+      // .in() so a large owned set is never silently truncated at the PostgREST
+      // cap. Any id that doesn't come back is foreign -> reject.
+      const exerciseRows: Array<{
+        id: string;
+        name: string;
+        sets: number;
+        reps_min: number | null;
+        reps_max: number | null;
+        reps_target: string | null;
+        rpe_target: number | null;
+        percentage_1rm: number | null;
+        tempo: string | null;
+        rest_seconds: number | null;
+        notes: string | null;
+        superset_group: string | null;
+        is_warmup: boolean | null;
+        set_specs: Json | null;
+      }> = [];
+      for (let i = 0; i < distinctExerciseIds.length; i += 100) {
+        const chunk = distinctExerciseIds.slice(i, i + 100);
+        const { data, error: exerciseErr } = await supabaseAdmin
+          .from("training_exercises")
+          .select(
+            "id, name, sets, reps_min, reps_max, reps_target, rpe_target, percentage_1rm, tempo, rest_seconds, notes, superset_group, is_warmup, set_specs, training_sessions!inner(training_plans!inner(client_id))",
+          )
+          .in("id", chunk)
+          .eq("training_sessions.training_plans.client_id", clientId);
+        if (exerciseErr) {
+          throw new Error(
+            `Failed to load training exercises for snapshot: ${exerciseErr.message}`,
+          );
+        }
+        for (const row of data ?? []) {
+          exerciseRows.push(row as unknown as (typeof exerciseRows)[number]);
+        }
       }
-      for (const row of exerciseRows ?? []) {
+      if (exerciseRows.length < distinctExerciseIds.length) {
+        throw new TrainingLogOwnershipError();
+      }
+      for (const row of exerciseRows) {
         freshExerciseSnapshotMap.set(row.id, {
           name: row.name,
           sets: row.sets,

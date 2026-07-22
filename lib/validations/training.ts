@@ -278,7 +278,7 @@ export const exercisePerformanceSchema = z
     trainingExerciseId: z.string().uuid().optional(),
     exerciseId: z.string().uuid().optional(),
     exerciseName: z.string().min(1).max(200),
-    sets: z.array(setPerformanceSchema),
+    sets: z.array(setPerformanceSchema).max(50),
     weightUnit: z.enum(["lbs", "kg"]),
     notes: z.string().max(1000).optional(),
     skipped: z.boolean().optional(),
@@ -291,7 +291,7 @@ export const exercisePerformanceSchema = z
 export const logTrainingEventSchema = z.object({
   completionQuality: completionQualitySchema,
   notes: z.string().max(1000).optional(),
-  exercises: z.array(exercisePerformanceSchema).optional(),
+  exercises: z.array(exercisePerformanceSchema).max(50).optional(),
   // Session-level swap: the session the client actually performed, when it
   // differs from what was prescribed (planned-day swap or rest-day training).
   // Absent on a normal prescribed log — the writer defaults it to the event's
@@ -308,7 +308,7 @@ export const logSessionForDateSchema = z.object({
   performedSessionId: z.string().uuid(),
   completionQuality: completionQualitySchema,
   notes: z.string().max(1000).optional(),
-  exercises: z.array(exercisePerformanceSchema).optional(),
+  exercises: z.array(exercisePerformanceSchema).max(50).optional(),
 });
 
 export type SetPerformanceInput = z.infer<typeof setPerformanceSchema>;

@@ -7,7 +7,7 @@ import {
   NoActivePlanError,
 } from "@/services/daily-context-service";
 import { DayLockedError } from "@/lib/daily-log-permissions";
-import { logTrainingSessionForDate } from "@/services/training-log-service";
+import { logTrainingSessionForDate, TrainingLogOwnershipError } from "@/services/training-log-service";
 
 /**
  * Event-less training log (Session 5.3/5.4): the client trained on a day with
@@ -71,6 +71,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { success: false, error: error.message },
         { status: 422 },
+      );
+    }
+    // Body-supplied performedSessionId / trainingExerciseId not owned by this
+    // client — 404 (no existence oracle).
+    if (error instanceof TrainingLogOwnershipError) {
+      return NextResponse.json(
+        { success: false, error: "Not found" },
+        { status: 404 },
       );
     }
     console.error("Error logging training session for date:", error);
