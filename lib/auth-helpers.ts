@@ -128,11 +128,14 @@ export async function getAuthenticatedClientId(
     }
 
     const clientId = await getCachedClientId(user.id, async () => {
-      // Use maybeSingle() to avoid throwing PGRST116 when no client found
+      // Use maybeSingle() to avoid throwing PGRST116 when no client found.
+      // active=true excludes deactivated clients (H6); the cache is busted on
+      // deactivation so a previously-cached mapping cannot outlive it past the TTL.
       const { data: client, error } = await supabase
         .from("clients")
         .select("id")
         .eq("user_id", user.id)
+        .eq("active", true)
         .maybeSingle();
 
       if (error) {
@@ -187,10 +190,12 @@ export async function getAuthenticatedClientWithCheckInDay(
     }
 
     return await getCachedClientWithCheckInDay(user.id, async () => {
+      // active=true excludes deactivated clients (H6) — see getAuthenticatedClientId.
       const { data: client, error } = await supabase
         .from("clients")
         .select("id, expected_check_in_day")
         .eq("user_id", user.id)
+        .eq("active", true)
         .maybeSingle();
 
       if (error) {

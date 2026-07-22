@@ -66,3 +66,19 @@ export async function getCachedClientWithCheckInDay(
 ): Promise<CachedClientWithCheckInDay | null> {
   return getCachedAuthValue("authmap:clientcid:" + userId, loader);
 }
+
+/**
+ * Invalidate a user's cached auth mappings. Call this on client deactivation:
+ * the mapping is cached only while the client was active, so without a bust a
+ * just-deactivated client keeps resolving (loader/DB skipped) for up to the TTL.
+ * Best-effort — a Redis miss falls back to the 60s TTL.
+ */
+export async function invalidateClientAuthCache(userId: string): Promise<void> {
+  const redis = getRedisClient();
+  if (!redis) return;
+  try {
+    await redis.del("authmap:client:" + userId, "authmap:clientcid:" + userId);
+  } catch {
+    /* swallow — TTL will expire the entries within 60s */
+  }
+}

@@ -10,6 +10,7 @@ import type { ClientRow } from "@/lib/database-helpers";
 import { mapClientRow } from "@/lib/mappers";
 import { createIntake } from "@/services/client-intake-service";
 import { sendInvitation } from "@/services/invitation-service";
+import { invalidateClientAuthCache } from "@/lib/auth-cache";
 import { recordBodyMetrics } from "@/services/body-metrics-service";
 import { updateGoals } from "@/services/client-goals-service";
 
@@ -230,6 +231,12 @@ export const updateClient = async (
 
   const client = mapClientRow(data);
 
+  // If this update deactivated the client, bust its cached auth mapping too
+  // (the PATCH /api/clients/[id] active:false path, distinct from deleteClient).
+  if (clientData.active === false && data.user_id) {
+    await invalidateClientAuthCache(data.user_id);
+  }
+
   // Dual-write body metrics (non-blocking)
   if (clientData.currentWeight !== undefined || clientData.currentBodyFatPercentage !== undefined) {
     try {
@@ -261,17 +268,26 @@ export const updateClient = async (
 
 // Delete a client (soft delete - set active to false)
 export const deleteClient = async (clientId: string): Promise<void> => {
-  const { error } = await supabaseAdmin
+  const { data, error } = await supabaseAdmin
     .from("clients")
     .update({
       active: false,
       updated_at: new Date().toISOString(),
     })
-    .eq("id", clientId);
+    .eq("id", clientId)
+    .select("user_id")
+    .maybeSingle();
 
   if (error) {
     console.error("Failed to delete client:", error);
     throw new Error("Failed to delete client");
+  }
+
+  // Revoke the deactivated client's cached auth mapping so it cannot keep
+  // resolving for up to the cache TTL. user_id may be null (client never
+  // accepted an invite) — nothing to bust in that case.
+  if (data?.user_id) {
+    await invalidateClientAuthCache(data.user_id);
   }
 };
 

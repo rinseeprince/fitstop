@@ -40,11 +40,14 @@ export async function GET(
     if (!coachError && coach && coach.id === content.coachId) {
       hasAccess = true;
     } else {
-      // Check if user is a client with access to this content
+      // Check if user is a client with access to this content. active=true so a
+      // deactivated client (H6) can no longer resolve here — this route reads
+      // clients directly, bypassing the auth helpers' active filter.
       const { data: client, error: clientError } = await supabase
         .from("clients")
         .select("id, coach_id")
         .eq("user_id", user.id)
+        .eq("active", true)
         .single();
 
       if (!clientError && client && client.coach_id === content.coachId) {
