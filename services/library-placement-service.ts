@@ -5,7 +5,7 @@ import { getNextPlanStartCap } from "./training-event-service";
 import { validatePhaseBounds } from "./training-event-calendar-service";
 import { deriveCycleInfoFromSessions } from "./coach-library-helpers";
 import { getDateString } from "@/lib/date-helpers";
-import type { TrainingEventInsert, CoachSavedExerciseRow } from "@/lib/database-helpers";
+import type { TrainingEventInsert, TrainingEventRow, CoachSavedExerciseRow } from "@/lib/database-helpers";
 import type { Json } from "@/types/database";
 import type { SavedSession, SavedExercise } from "@/types/training";
 import type { SetSpec } from "@/utils/exercise-set-specs";
@@ -206,6 +206,88 @@ function inlineExerciseToSaved(
   };
 }
 
+// H3 recoverability: `createTrainingPlanAtomic` commits its window DELETE +
+// plan INSERT, then the service clones sessions and generates events OUTSIDE any
+// transaction. A failure between them would leave the client's scheduled events
+// deleted with nothing (or a partial plan) to replace them. Snapshot the
+// scheduled events the RPC is about to delete BEFORE calling it, and restore
+// them if the post-RPC work throws. Best-effort: a hard process kill between the
+// RPC and the catch still loses the window (repair = re-place, event gen is an
+// idempotent upsert). Bounded to <= ~1yr of events by the H5 window cap; paged.
+async function snapshotWindowEvents(
+  clientId: string,
+  from: string,
+  to: string,
+): Promise<TrainingEventRow[]> {
+  const rows: TrainingEventRow[] = [];
+  const PAGE = 1000;
+  for (let offset = 0; ; offset += PAGE) {
+    const { data, error } = await supabaseAdmin
+      .from("training_events")
+      .select("*")
+      .eq("client_id", clientId)
+      .eq("status", "scheduled")
+      .gte("date", from)
+      .lte("date", to)
+      .order("id", { ascending: true })
+      .range(offset, offset + PAGE - 1);
+    if (error) {
+      throw new Error(`Failed to snapshot placement window: ${error.message}`);
+    }
+    if (!data || data.length === 0) break;
+    rows.push(...(data as TrainingEventRow[]));
+    if (data.length < PAGE) break;
+  }
+  return rows;
+}
+
+// Undo a failed placement: remove the partially-created plan (events FIRST — the
+// event->plan FK is ON DELETE SET NULL, so deleting the plan first would strand
+// ghost events), then restore the pre-RPC window snapshot. Never shadows the
+// root cause — on a cleanup failure it augments the thrown message with the
+// repair path.
+async function compensatePlacement(params: {
+  newPlanId: string;
+  snapshot: TrainingEventRow[];
+  rootErr: unknown;
+}): Promise<never> {
+  const { newPlanId, snapshot, rootErr } = params;
+  const problems: string[] = [];
+
+  const { error: evErr } = await supabaseAdmin
+    .from("training_events")
+    .delete()
+    .eq("training_plan_id", newPlanId);
+  if (evErr) problems.push(`event cleanup: ${evErr.message}`);
+
+  const { error: planErr } = await supabaseAdmin
+    .from("training_plans")
+    .delete()
+    .eq("id", newPlanId);
+  if (planErr) problems.push(`plan cleanup: ${planErr.message}`);
+
+  // The window is now clear of scheduled events (RPC deleted the old ones; the
+  // step above deleted the new plan's). Re-insert the snapshot verbatim.
+  for (let i = 0; i < snapshot.length; i += 500) {
+    const chunk = snapshot.slice(i, i + 500) as unknown as TrainingEventInsert[];
+    const { error: restoreErr } = await supabaseAdmin
+      .from("training_events")
+      .insert(chunk);
+    if (restoreErr) {
+      problems.push(`window restore: ${restoreErr.message}`);
+      break;
+    }
+  }
+
+  const rootMsg = rootErr instanceof Error ? rootErr.message : String(rootErr);
+  if (problems.length > 0) {
+    throw new Error(
+      `${rootMsg}; placement compensation incomplete (${problems.join("; ")}) — re-place the plan to repair the calendar window`,
+    );
+  }
+  throw rootErr instanceof Error ? rootErr : new Error(rootMsg);
+}
+
 async function placePlaceablePlanOnCalendar(params: {
   plan: PlaceablePlan;
   savedPlanId: string | null;
@@ -246,6 +328,12 @@ async function placePlaceablePlanOnCalendar(params: {
     startDate,
   });
 
+  // H3: snapshot the scheduled events the RPC is about to delete, BEFORE it
+  // commits, so a failure in the non-transactional clone/event-gen below can
+  // restore them. Floor at startDate (a superset of the RPC's GREATEST(from,
+  // today) delete) so the restore is exact regardless of the today boundary.
+  const windowSnapshot = await snapshotWindowEvents(clientId, startDate, endDate);
+
   // 3. Additively insert the new plan as provenance and clear ONLY its own
   //    future window (the RPC no longer archives prior plans or wipes the
   //    calendar). Non-overlapping plans coexist; an overlapping placement wins
@@ -271,6 +359,9 @@ async function placePlaceablePlanOnCalendar(params: {
     savedPlanId: savedPlanId ?? undefined,
   });
 
+  // Everything below runs OUTSIDE the RPC's committed transaction. On any
+  // failure, undo the partial plan and restore the pre-RPC window snapshot (H3).
+  try {
   // 4. Clone EVERY slot (training + rest) in program order so the placed plan is
   //    self-describing about rest. Rest rows carry is_rest = true, no exercises,
   //    and null surplus. `clonedSlots` is the ordered cycle the event walk tiles.
@@ -369,6 +460,15 @@ async function placePlaceablePlanOnCalendar(params: {
     sessionsCreated: clonedSlots.filter((s) => !s.isRest).length,
     eventsCreated,
   };
+  } catch (err) {
+    // Restore the calendar to its pre-placement state, then rethrow (never
+    // shadows the root cause; augments it if cleanup itself fails).
+    return await compensatePlacement({
+      newPlanId,
+      snapshot: windowSnapshot,
+      rootErr: err,
+    });
+  }
 }
 
 // --- Place a single saved session onto a client's calendar ---

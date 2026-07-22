@@ -8,6 +8,12 @@ import {
 } from "@/services/coach-saved-plan-service";
 import { overwriteSavedPlanSchema } from "@/lib/validations/training";
 
+// A full 52-week overwrite is a long row-by-row insert; give it more headroom
+// than the platform default. NOT a correctness guarantee — overwriteSavedPlan is
+// insert-new-first / delete-old-after, so even a hard timeout leaves the
+// original template intact (worst case: duplicate sessions, cleared by re-save).
+export const maxDuration = 60;
+
 /**
  * POST - Replace a saved plan's sessions + exercises with a new working-copy
  * structure. Called by the DraftEditor's "Save and Update Plan" button when a

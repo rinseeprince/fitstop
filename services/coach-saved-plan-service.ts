@@ -359,6 +359,129 @@ export async function overwriteSavedPlan(
   const { cycleLength, restPattern, frequencyPerWeek } =
     deriveCycleInfoFromSessions(input.sessions);
 
+  // Collect all exercise names for catalog resolution before touching any rows
+  // — we want to preserve exercise_id where the catalog already has them.
+  const allNames: string[] = [];
+  for (const s of input.sessions) {
+    if (s.isRest) continue;
+    for (const e of s.exercises) {
+      // Only resolve names that don't already carry an exerciseId.
+      if (!e.exerciseId) allNames.push(e.name);
+    }
+  }
+  const exerciseIdMap = await resolveExercises(allNames, coachId);
+
+  // H3 recoverability: insert the NEW tree first, then delete only the OLD
+  // sessions once every insert succeeded, then write metadata last. The old
+  // library template is never deleted until the replacement is fully in place,
+  // so a mid-loop failure — or a hard timeout that never runs the catch —
+  // leaves the original program intact. Worst case is duplicate sessions, which
+  // a re-save cleans up; there is no unrecoverable wipe. (Delete-then-insert
+  // did the opposite: a 5xx at session 100 permanently destroyed the template.)
+  const { data: oldRows, error: oldErr } = await supabaseAdmin
+    .from("coach_saved_sessions")
+    .select("id")
+    .eq("saved_plan_id", planId);
+  if (oldErr) {
+    throw new Error(`Failed to read existing sessions: ${oldErr.message}`);
+  }
+  const oldSessionIds = (oldRows ?? []).map((r) => r.id);
+
+  // Insert the new structure, tracking new ids so a mid-loop failure can be
+  // rolled back without touching the old sessions.
+  const newSessionIds: string[] = [];
+  try {
+    for (const s of input.sessions) {
+      const sessionRow: CoachSavedSessionInsert = {
+        coach_id: coachId,
+        saved_plan_id: planId,
+        name: s.isRest ? "Rest" : s.name,
+        focus: s.isRest ? null : (s.focus ?? null),
+        order_index: s.orderIndex,
+        week_index: s.weekIndex ?? 0,
+        is_rest: s.isRest,
+        estimated_duration_minutes: s.estimatedDurationMinutes ?? null,
+        calorie_surplus_percentage: s.calorieSurplusPercentage ?? null,
+        notes: s.notes ?? null,
+        session_type: s.sessionType ?? "training",
+      };
+
+      const { data: newSession, error: sessionError } = await supabaseAdmin
+        .from("coach_saved_sessions")
+        .insert(sessionRow)
+        .select("id")
+        .single();
+      if (sessionError || !newSession) {
+        throw new Error(`Failed to insert session "${s.name}": ${sessionError?.message}`);
+      }
+      newSessionIds.push(newSession.id);
+
+      if (s.isRest || s.exercises.length === 0) continue;
+
+      // coach_saved_exercises has no coach_id column — ownership is inferred
+      // via saved_session_id → coach_saved_sessions → coach_id.
+      const exerciseRows = s.exercises.map((e) => {
+        const w = projectExerciseCompact(e);
+        return {
+          saved_session_id: newSession.id,
+          exercise_id: e.exerciseId ?? exerciseIdMap.get(e.name) ?? null,
+          name: e.name,
+          order_index: e.orderIndex,
+          sets: w.sets,
+          reps_min: w.reps_min,
+          reps_max: w.reps_max,
+          reps_target: e.repsTarget ?? null,
+          rpe_target: e.rpeTarget ?? null,
+          percentage_1rm: e.percentage1rm ?? null,
+          tempo: e.tempo ?? null,
+          rest_seconds: e.restSeconds ?? null,
+          superset_group: e.supersetGroup ?? null,
+          is_warmup: e.isWarmup ?? false,
+          notes: e.notes ?? null,
+          set_specs: w.set_specs,
+          video_url: w.video_url,
+        };
+      });
+
+      const { error: exError } = await supabaseAdmin
+        .from("coach_saved_exercises")
+        .insert(exerciseRows);
+      if (exError) {
+        throw new Error(`Failed to insert exercises for "${s.name}": ${exError.message}`);
+      }
+    }
+  } catch (err) {
+    // Roll back the partially-inserted NEW sessions (cascades their exercises)
+    // so the original program survives. Never shadow the root cause.
+    if (newSessionIds.length > 0) {
+      const { error: rbErr } = await supabaseAdmin
+        .from("coach_saved_sessions")
+        .delete()
+        .in("id", newSessionIds);
+      if (rbErr) {
+        const rootMsg = err instanceof Error ? err.message : String(err);
+        throw new Error(
+          `${rootMsg}; rollback of partial insert also failed: ${rbErr.message}`,
+        );
+      }
+    }
+    throw err;
+  }
+
+  // New tree committed — now remove the old sessions (cascade-deletes their
+  // exercises). A failure here leaves duplicates, which a re-save resolves.
+  if (oldSessionIds.length > 0) {
+    const { error: deleteError } = await supabaseAdmin
+      .from("coach_saved_sessions")
+      .delete()
+      .in("id", oldSessionIds);
+    if (deleteError) {
+      throw new Error(`Failed to clear previous sessions: ${deleteError.message}`);
+    }
+  }
+
+  // Metadata + derived cycle info LAST: if the structural swap failed above, the
+  // plan header is never left describing content that isn't there.
   const { error: planUpdateError } = await supabaseAdmin
     .from("coach_saved_plans")
     .update({
@@ -376,87 +499,6 @@ export async function overwriteSavedPlan(
     .eq("coach_id", coachId);
   if (planUpdateError) {
     throw new Error(`Failed to update plan metadata: ${planUpdateError.message}`);
-  }
-
-  // Collect all exercise names for catalog resolution before wiping the old
-  // rows — we want to preserve exercise_id where the catalog already has them.
-  const allNames: string[] = [];
-  for (const s of input.sessions) {
-    if (s.isRest) continue;
-    for (const e of s.exercises) {
-      // Only resolve names that don't already carry an exerciseId.
-      if (!e.exerciseId) allNames.push(e.name);
-    }
-  }
-  const exerciseIdMap = await resolveExercises(allNames, coachId);
-
-  // Wipe existing sessions (cascade-deletes their exercises).
-  const { error: deleteError } = await supabaseAdmin
-    .from("coach_saved_sessions")
-    .delete()
-    .eq("saved_plan_id", planId);
-  if (deleteError) {
-    throw new Error(`Failed to clear existing sessions: ${deleteError.message}`);
-  }
-
-  // Insert the new structure in order.
-  for (const s of input.sessions) {
-    const sessionRow: CoachSavedSessionInsert = {
-      coach_id: coachId,
-      saved_plan_id: planId,
-      name: s.isRest ? "Rest" : s.name,
-      focus: s.isRest ? null : (s.focus ?? null),
-      order_index: s.orderIndex,
-      week_index: s.weekIndex ?? 0,
-      is_rest: s.isRest,
-      estimated_duration_minutes: s.estimatedDurationMinutes ?? null,
-      calorie_surplus_percentage: s.calorieSurplusPercentage ?? null,
-      notes: s.notes ?? null,
-      session_type: s.sessionType ?? "training",
-    };
-
-    const { data: newSession, error: sessionError } = await supabaseAdmin
-      .from("coach_saved_sessions")
-      .insert(sessionRow)
-      .select("id")
-      .single();
-    if (sessionError || !newSession) {
-      throw new Error(`Failed to insert session "${s.name}": ${sessionError?.message}`);
-    }
-
-    if (s.isRest || s.exercises.length === 0) continue;
-
-    // coach_saved_exercises has no coach_id column — ownership is inferred
-    // via saved_session_id → coach_saved_sessions → coach_id.
-    const exerciseRows = s.exercises.map((e) => {
-      const w = projectExerciseCompact(e);
-      return {
-        saved_session_id: newSession.id,
-        exercise_id: e.exerciseId ?? exerciseIdMap.get(e.name) ?? null,
-        name: e.name,
-        order_index: e.orderIndex,
-        sets: w.sets,
-        reps_min: w.reps_min,
-        reps_max: w.reps_max,
-        reps_target: e.repsTarget ?? null,
-        rpe_target: e.rpeTarget ?? null,
-        percentage_1rm: e.percentage1rm ?? null,
-        tempo: e.tempo ?? null,
-        rest_seconds: e.restSeconds ?? null,
-        superset_group: e.supersetGroup ?? null,
-        is_warmup: e.isWarmup ?? false,
-        notes: e.notes ?? null,
-        set_specs: w.set_specs,
-        video_url: w.video_url,
-      };
-    });
-
-    const { error: exError } = await supabaseAdmin
-      .from("coach_saved_exercises")
-      .insert(exerciseRows);
-    if (exError) {
-      throw new Error(`Failed to insert exercises for "${s.name}": ${exError.message}`);
-    }
   }
 }
 

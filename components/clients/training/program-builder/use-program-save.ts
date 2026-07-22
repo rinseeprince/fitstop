@@ -10,9 +10,9 @@ import { draftToOverwriteBody } from "./program-builder-serialize";
 
 // "Save program" flow: overwrite (whole tree) → keep programDurationWeeks
 // accurate → promote drafts. On ANY failure the local draft is kept and the
-// coach is prompted to re-save — overwrite is non-atomic server-side
-// (delete-all then row-by-row inserts), so the in-memory draft is the only
-// full copy until a save fully succeeds. Never discard it on error.
+// coach is prompted to re-save. Overwrite is non-atomic server-side but
+// recoverable (insert-new-first, delete-old-after), so a failed save never
+// destroys the saved template — keep the local draft anyway and re-save.
 type SaveResult = "saved" | "kept-draft" | "error";
 
 type UseProgramSaveParams = {

@@ -188,8 +188,8 @@ export async function getStandaloneSessions(coachId: string): Promise<SavedSessi
  * first destructive write, the child swap restores the snapshot on failure,
  * and a failed final field-update unwinds the child swap too (the fields
  * themselves were never written if that UPDATE failed). Best-effort — there
- * is no transaction without an RPC — but strictly safer than
- * overwriteSavedPlan's fields-first, no-rollback sequence.
+ * is no transaction without an RPC. (overwriteSavedPlan uses the same class of
+ * best-effort recovery: insert-new-first, delete-old-after, metadata last.)
  */
 export async function overwriteStandaloneSession(
   sessionId: string,
