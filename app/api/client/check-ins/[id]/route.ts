@@ -74,10 +74,8 @@ export async function GET(
         challenges: checkIn.challenges,
         nutritionDaysOnTarget: checkIn.nutrition_days_on_target,
         nutritionNotes: checkIn.nutrition_notes,
-        aiSummary: checkIn.ai_summary,
-        aiInsights: checkIn.ai_insights,
-        aiRecommendations: checkIn.ai_recommendations,
-        aiProcessedAt: checkIn.ai_processed_at,
+        // AI fields (ai_summary/insights/recommendations/response_draft) are
+        // coach-only analysis — deliberately NOT returned to the client (M6).
         coachResponse: checkIn.coach_response,
         coachReviewedAt: checkIn.coach_reviewed_at,
         responseSentAt: checkIn.response_sent_at,

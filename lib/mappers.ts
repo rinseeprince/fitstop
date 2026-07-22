@@ -120,6 +120,35 @@ export function toClientFacingIntake(intake: ClientIntake): ClientIntake {
   return { ...intake, coachReviewNotes: undefined };
 }
 
+// Client-facing allowlist for a CheckIn. The AI fields (aiSummary, aiInsights,
+// aiRecommendations, aiResponseDraft, aiProcessedAt) are coach-only analysis —
+// the AI prompt targets the coach and surfaces disordered-eating/injury risk,
+// and aiResponseDraft is the coach's UNSENT drafted reply. coachResponse stays
+// (it is the coach's reply TO the client). Allowlist, not denylist, so a future
+// coach-only column is excluded by default rather than shipped.
+const CLIENT_FACING_CHECKIN_KEYS = [
+  "id", "clientId", "clientName", "clientAvatarUrl", "status",
+  "mood", "energy", "sleep", "stress", "notes",
+  "weight", "weightUnit", "bodyFatPercentage", "waist", "hips", "chest", "arms",
+  "thighs", "measurementUnit",
+  "photoFront", "photoSide", "photoBack",
+  "workoutsCompleted", "adherencePercentage", "prs", "challenges",
+  "nutritionDaysOnTarget", "nutritionNotes",
+  "coachResponse", "coachReviewedAt", "responseSentAt",
+  "periodStart", "periodEnd", "periodSnapshot",
+  "createdAt", "updatedAt",
+] as const satisfies readonly (keyof CheckIn)[];
+
+export function toClientFacingCheckIn(checkIn: CheckIn): Partial<CheckIn> {
+  const out: Partial<CheckIn> = {};
+  for (const key of CLIENT_FACING_CHECKIN_KEYS) {
+    if (checkIn[key] !== undefined) {
+      (out as Record<string, unknown>)[key] = checkIn[key];
+    }
+  }
+  return out;
+}
+
 /**
  * Map a database coach row to a Coach type
  */

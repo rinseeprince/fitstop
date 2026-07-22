@@ -8,6 +8,7 @@ import { updateClientAdherenceStats } from "@/services/check-in-adherence-servic
 import { clientSubmitCheckInSchema } from "@/lib/validations/check-in";
 import { decodeCursor, encodeCursor } from "@/lib/cursor";
 import { supabaseAdmin } from "@/services/supabase-admin";
+import { toClientFacingCheckIn } from "@/lib/mappers";
 import { generateAndSaveCheckInSnapshot } from "@/services/check-in-snapshot-service";
 import { captureApiError } from "@/lib/error-handler";
 import type { SubmitCheckInResponse } from "@/types/check-in";
@@ -49,7 +50,7 @@ export async function GET(request: NextRequest) {
 
       return NextResponse.json({
         success: true,
-        data: result.checkIns,
+        data: result.checkIns.map(toClientFacingCheckIn),
         pagination: {
           limit,
           offset,
@@ -76,7 +77,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      data: result.checkIns,
+      data: result.checkIns.map(toClientFacingCheckIn),
       pagination: {
         limit,
         count: result.checkIns.length,
