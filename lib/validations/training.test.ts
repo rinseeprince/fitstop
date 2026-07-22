@@ -7,6 +7,7 @@ import {
   updateTrainingPlanSchema,
   parseGetPlanResponse,
   logTrainingEventSchema,
+  bulkExerciseInputSchema,
 } from './training'
 
 describe('Training Validation Schemas', () => {
@@ -428,6 +429,37 @@ describe('Training Validation Schemas', () => {
         ],
       })
       expect(result.success).toBe(false)
+    })
+  })
+
+  describe('bulkExerciseInputSchema (PUT/clone exercise item)', () => {
+    const base = { name: 'Squat', sets: 5, orderIndex: 0 }
+
+    it('accepts a 0-rep exercise (reps floor relaxed to match authoring + absent DB CHECK)', () => {
+      const r = bulkExerciseInputSchema.safeParse({ ...base, repsMin: 0, repsMax: 0 })
+      expect(r.success).toBe(true)
+    })
+
+    it('rejects rpeTarget: 0 (training_exercises has CHECK rpe_target >= 1)', () => {
+      const r = bulkExerciseInputSchema.safeParse({ ...base, rpeTarget: 0 })
+      expect(r.success).toBe(false)
+    })
+
+    it('accepts rpeTarget within [1, 10]', () => {
+      expect(bulkExerciseInputSchema.safeParse({ ...base, rpeTarget: 1 }).success).toBe(true)
+      expect(bulkExerciseInputSchema.safeParse({ ...base, rpeTarget: 10 }).success).toBe(true)
+    })
+
+    it('bounds sets to the DB CHECK [1, 20] and rejects a negative orderIndex', () => {
+      expect(bulkExerciseInputSchema.safeParse({ ...base, sets: 21 }).success).toBe(false)
+      expect(bulkExerciseInputSchema.safeParse({ ...base, sets: 0 }).success).toBe(false)
+      expect(bulkExerciseInputSchema.safeParse({ ...base, orderIndex: -1 }).success).toBe(false)
+    })
+
+    it('does not accept a videoUrl (these routes strip it; savedExerciseInputSchema would let a javascript: url through)', () => {
+      const r = bulkExerciseInputSchema.safeParse({ ...base, videoUrl: 'https://x.test/v.mp4' })
+      expect(r.success).toBe(true)
+      if (r.success) expect('videoUrl' in r.data).toBe(false)
     })
   })
 })

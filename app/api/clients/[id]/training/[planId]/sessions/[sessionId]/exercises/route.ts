@@ -8,7 +8,7 @@ import { bulkReplaceExercises } from "@/services/training-session-service";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { apiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
-import { exerciseSchema } from "@/lib/validations/training";
+import { exerciseSchema, bulkExerciseInputSchema } from "@/lib/validations/training";
 import { z } from "zod";
 
 // POST - Add new exercise to session
@@ -65,20 +65,11 @@ export async function POST(
   }
 }
 
-// Reuse the shared bounded exerciseSchema (which matches the training_exercises
-// DB CHECKs, e.g. rpe_target >= 1) plus the two fields the bulk payload adds.
-// Do NOT use savedExerciseInputSchema here: it targets coach_saved_exercises
-// (rpe_target allows 0, rejected by this table's CHECK) and pulls in a
-// z.string().url() videoUrl these routes deliberately strip.
+// Shared bounded item schema (rpeTarget keeps its min(1) DB-CHECK match; reps
+// floor relaxed to 0 to match authoring + the absent reps DB CHECK). The clone
+// route uses the same item schema so the two save-scope buttons agree.
 const bulkExerciseSchema = z.object({
-  exercises: z
-    .array(
-      exerciseSchema.extend({
-        orderIndex: z.number().int().min(0),
-        exerciseId: z.string().uuid().nullish(),
-      })
-    )
-    .max(50),
+  exercises: z.array(bulkExerciseInputSchema).max(50),
 });
 
 // PUT - Bulk replace all exercises for a session

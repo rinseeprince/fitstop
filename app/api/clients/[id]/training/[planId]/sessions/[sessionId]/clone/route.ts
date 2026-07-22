@@ -5,28 +5,15 @@ import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { cloneSessionForEvent } from "@/services/training-session-service";
+import { bulkExerciseInputSchema } from "@/lib/validations/training";
 import { z } from "zod";
 
-const exerciseSchema = z.object({
-  name: z.string(),
-  sets: z.number(),
-  orderIndex: z.number(),
-  exerciseId: z.string().uuid().nullish(),
-  repsMin: z.number().nullish(),
-  repsMax: z.number().nullish(),
-  repsTarget: z.string().nullish(),
-  rpeTarget: z.number().nullish(),
-  restSeconds: z.number().nullish(),
-  tempo: z.string().nullish(),
-  percentage1rm: z.number().nullish(),
-  supersetGroup: z.string().nullish(),
-  isWarmup: z.boolean().optional(),
-  notes: z.string().nullish(),
-});
-
+// Same bounded item schema as the sibling PUT exercises route (M13) — the two
+// buttons of the save-scope dialog are fed by the same payload builder and must
+// validate identically.
 const cloneSchema = z.object({
   eventId: z.string().uuid(),
-  exercises: z.array(exerciseSchema).optional(),
+  exercises: z.array(bulkExerciseInputSchema).max(50).optional(),
 });
 
 /**
@@ -100,8 +87,8 @@ export async function POST(
 
     return NextResponse.json({ success: true, newSessionId }, { status: 200 });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to clone session";
+    // Don't echo raw error.message — it leaks Postgres CHECK-violation text.
     console.error("Error cloning session:", error);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: "Failed to clone session" }, { status: 500 });
   }
 }

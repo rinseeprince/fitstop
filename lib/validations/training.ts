@@ -28,6 +28,21 @@ export const exerciseSchema = z.object({
   isWarmup: z.boolean().optional().default(false),
 });
 
+// Per-exercise item for the "replace exercises" (PUT) and "clone-with-overrides"
+// paths — the two buttons of the same save-scope dialog, so they MUST validate
+// identically. Reuses the bounded exerciseSchema (rpeTarget keeps its min(1) —
+// training_exercises has CHECK rpe_target >= 1) but relaxes the reps floor to 0
+// to match the authoring schemas (savedExerciseInputSchema / setSpecSchema allow
+// 0 reps) and the ABSENT reps_min/reps_max DB CHECK, so a legitimately-authored
+// 0-rep exercise round-trips instead of 400-ing the whole save. Adds orderIndex
+// + exerciseId, which these payloads carry and the base schema doesn't.
+export const bulkExerciseInputSchema = exerciseSchema.extend({
+  orderIndex: z.number().int().min(0),
+  exerciseId: z.string().uuid().nullish(),
+  repsMin: z.number().int().min(0).max(100).optional().nullable(),
+  repsMax: z.number().int().min(0).max(100).optional().nullable(),
+});
+
 export const sessionSchema = z.object({
   name: z.string().min(1, "Session name is required").max(100),
   dayOfWeek: dayOfWeekSchema.optional().nullable(),
