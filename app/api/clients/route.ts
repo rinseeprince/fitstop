@@ -20,9 +20,12 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Include inactive clients so the roster's "Inactive" tab can list them and
-    // offer reactivation (the client filters/derives status client-side).
-    const clients = await getClientsForCoach(coachId, true);
+    // Opt-in: only the roster (?includeInactive=true) wants deactivated clients
+    // so its "Inactive" tab + reactivation work. The content-assignment and
+    // apply-to-client pickers share this endpoint and must stay active-only.
+    const includeInactive =
+      new URL(request.url).searchParams.get("includeInactive") === "true";
+    const clients = await getClientsForCoach(coachId, includeInactive);
 
     return NextResponse.json({ clients, total: clients.length });
   } catch (error) {

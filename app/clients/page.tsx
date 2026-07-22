@@ -36,7 +36,8 @@ import { swrFetcher } from "@/lib/swr-fetcher";
 
 export default function ClientsPage() {
   const { data, error, isLoading, mutate } = useSWR<{ clients: ClientWithCheckInInfo[] }>(
-    "/api/clients",
+    // Roster only: include deactivated clients so the "Inactive" tab + reactivation work.
+    "/api/clients?includeInactive=true",
     swrFetcher,
     { revalidateOnFocus: false }
   );
