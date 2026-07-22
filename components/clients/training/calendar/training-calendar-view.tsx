@@ -1,35 +1,27 @@
 "use client";
 
-import { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { DndContext, DragOverlay, closestCenter } from "@dnd-kit/core";
 import { useCalendarEvents } from "@/hooks/use-calendar-events";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
 import { useCalendarDnd } from "@/hooks/use-calendar-dnd";
-import { CalendarWeekRow } from "./calendar-week-row";
+import { CalendarGrid } from "./calendar-grid";
+import { CalendarToolbar } from "./calendar-toolbar";
 import { CalendarEventCard } from "./calendar-event-card";
 import { MoveScopeDialog } from "./move-scope-dialog";
+import { ClearWeekDialog, DeleteEventDialog } from "./delete-event-dialog";
+import { SaveWeekDialog } from "./save-week-dialog";
 import { PlacedSessionEditor } from "./placed-session-editor";
 import { LibraryPanel } from "./library-panel";
 import { ApplyToClientDialog } from "@/components/training-library/apply-to-client-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useSavedPlans } from "@/hooks/use-saved-plans";
 import { getTodayDateString, getTodayDateStringInTimezone, getDateString } from "@/lib/date-helpers";
-import { BookOpen, Loader2, X, ChevronLeft, ChevronRight } from "lucide-react";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
+import { Loader2, X } from "lucide-react";
 import { format } from "date-fns";
+import type { WeekAction } from "./calendar-week-rail";
 import type { TrainingPlan, TrainingEvent } from "@/types/training";
 import type { Phase, PhaseStatus } from "@/types/roadmap";
-
-const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 type TrainingCalendarViewProps = {
   clientId: string;
@@ -94,8 +86,6 @@ export function TrainingCalendarView({
     clientTimezone && clientTimezone !== "UTC"
       ? getTodayDateStringInTimezone(clientTimezone)
       : todayDate;
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const todayRowRef = useRef<HTMLDivElement>(null);
 
   // Month nav state — defaults to the current month
   const [viewMonth, setViewMonth] = useState(() => {
@@ -109,6 +99,10 @@ export function TrainingCalendarView({
   const [isWeekActionLoading, setIsWeekActionLoading] = useState(false);
   const [saveDialogWeek, setSaveDialogWeek] = useState<string | null>(null);
   const [savePlanName, setSavePlanName] = useState("");
+  const [isSavingWeek, setIsSavingWeek] = useState(false);
+  const [pendingClearWeek, setPendingClearWeek] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<TrainingEvent | null>(null);
+  const [isDeletingEvent, setIsDeletingEvent] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [applyFromDrop, setApplyFromDrop] = useState<{ planId: string; startDate: string } | null>(null);
 
@@ -186,16 +180,6 @@ export function TrainingCalendarView({
       })();
     },
   });
-
-  // Scroll today row into view when the viewed month contains today
-  useEffect(() => {
-    const viewingCurrentMonth =
-      new Date().getFullYear() === viewMonth.year &&
-      new Date().getMonth() === viewMonth.month;
-    if (viewingCurrentMonth && todayRowRef.current) {
-      todayRowRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
-    }
-  }, [isLoading, viewMonth]);
 
   // Escape key to cancel duplicate mode
   useEffect(() => {
@@ -294,10 +278,76 @@ export function TrainingCalendarView({
     [eventsByDate]
   );
 
+  // Clear-week executor — runs only after the ClearWeekDialog confirm (the
+  // action was previously unconfirmed; a mis-click wiped the week).
+  const executeClearWeek = useCallback(async (weekStartDate: string) => {
+    const weekDays: string[] = [];
+    const ws = new Date(weekStartDate + "T00:00:00");
+    for (let d = 0; d < 7; d++) {
+      weekDays.push(getDateString(ws));
+      ws.setDate(ws.getDate() + 1);
+    }
+    setIsWeekActionLoading(true);
+    try {
+      const weekEvents: TrainingEvent[] = [];
+      for (const date of weekDays) {
+        const dayEvents = eventsByDate.get(date) ?? [];
+        weekEvents.push(...dayEvents.filter((e) => e.status === "scheduled"));
+      }
+      let clearFailed = false;
+      for (const event of weekEvents) {
+        try {
+          const res = await fetch(
+            `/api/clients/${clientId}/training/${event.trainingPlanId}/events/${event.id}`,
+            { method: "DELETE" }
+          );
+          if (!res.ok) clearFailed = true;
+        } catch {
+          clearFailed = true;
+        }
+      }
+      if (clearFailed) {
+        toast({ title: "Error", description: "Some events could not be deleted", variant: "destructive" });
+      } else {
+        toast({ title: "Week cleared" });
+      }
+      await mutate();
+      void invalidateNutritionCalendar(clientId);
+    } finally {
+      setIsWeekActionLoading(false);
+      setPendingClearWeek(null);
+    }
+  }, [clientId, eventsByDate, mutate, invalidateNutritionCalendar, toast]);
+
+  // Per-event delete executor — runs after the DeleteEventDialog confirm
+  // (replaces the browser confirm()).
+  const executeDeleteEvent = useCallback(async (event: TrainingEvent) => {
+    setIsDeletingEvent(true);
+    try {
+      const res = await fetch(
+        `/api/clients/${clientId}/training/${event.trainingPlanId}/events/${event.id}`,
+        { method: "DELETE" }
+      );
+      if (!res.ok) {
+        const data = await res.json();
+        toast({ title: "Error", description: data.error || "Failed to delete event", variant: "destructive" });
+        return;
+      }
+      await mutate();
+      void invalidateNutritionCalendar(clientId);
+      toast({ title: "Session removed" });
+      setDeleteTarget(null);
+    } catch {
+      toast({ title: "Error", description: "Failed to delete event", variant: "destructive" });
+    } finally {
+      setIsDeletingEvent(false);
+    }
+  }, [clientId, mutate, invalidateNutritionCalendar, toast]);
+
   // Week action handler
   const handleWeekAction = useCallback(async (
     weekStartDate: string,
-    action: "duplicate_next" | "duplicate_remaining" | "save_to_library" | "clear"
+    action: WeekAction
   ) => {
     const weekDays: string[] = [];
     const ws = new Date(weekStartDate + "T00:00:00");
@@ -321,32 +371,14 @@ export function TrainingCalendarView({
       return;
     }
 
+    if (action === "clear") {
+      setPendingClearWeek(weekStartDate);
+      return;
+    }
+
     setIsWeekActionLoading(true);
     try {
-      if (action === "clear") {
-        const weekEvents: TrainingEvent[] = [];
-        for (const date of weekDays) {
-          const dayEvents = eventsByDate.get(date) ?? [];
-          weekEvents.push(...dayEvents.filter((e) => e.status === "scheduled"));
-        }
-        let clearFailed = false;
-        for (const event of weekEvents) {
-          try {
-            const res = await fetch(
-              `/api/clients/${clientId}/training/${event.trainingPlanId}/events/${event.id}`,
-              { method: "DELETE" }
-            );
-            if (!res.ok) clearFailed = true;
-          } catch {
-            clearFailed = true;
-          }
-        }
-        if (clearFailed) {
-          toast({ title: "Error", description: "Some events could not be deleted", variant: "destructive" });
-        } else {
-          toast({ title: "Week cleared" });
-        }
-      } else if (action === "duplicate_next") {
+      if (action === "duplicate_next") {
         const nextWeekStart = new Date(weekStartDate + "T00:00:00");
         nextWeekStart.setDate(nextWeekStart.getDate() + 7);
         const res = await fetch(
@@ -402,9 +434,16 @@ export function TrainingCalendarView({
     } finally {
       setIsWeekActionLoading(false);
     }
-  }, [clientId, plan, eventsByDate, mutate, invalidateNutritionCalendar, toast, weekRowPlanId]);
+  }, [clientId, plan, mutate, invalidateNutritionCalendar, toast, weekRowPlanId]);
 
   const monthLabel = format(new Date(viewMonth.year, viewMonth.month, 1), "MMMM yyyy");
+
+  // Sessions in the viewed month proper (grid-range events include the
+  // adjacent months' spill days).
+  const monthSessionCount = useMemo(() => {
+    const ym = `${viewMonth.year}-${String(viewMonth.month + 1).padStart(2, "0")}`;
+    return events.filter((e) => e.date.startsWith(ym)).length;
+  }, [events, viewMonth]);
 
   const goPrevMonth = () =>
     setViewMonth(({ year, month }) =>
@@ -429,140 +468,61 @@ export function TrainingCalendarView({
       <div className="flex flex-col gap-2">
         {/* Duplicate banner */}
         {pendingDuplicate && (
-          <div className="flex items-center gap-2 px-3 py-2 bg-teal-50 rounded-[6px] border border-teal-200/50">
-            <span className="text-[12px] text-teal-800 flex-1">
+          <div className="flex items-center gap-2 rounded-[6px] border border-[rgba(13,148,136,0.2)] bg-[rgba(13,148,136,0.05)] px-3 py-2">
+            <span className="flex-1 text-[12px] text-[#0a5c55]">
               Click a day to place a copy of <strong>{pendingDuplicate.sessionName}</strong>
             </span>
             <button
               onClick={() => setPendingDuplicate(null)}
-              className="p-1 rounded hover:bg-teal-100 transition-colors"
+              aria-label="Cancel duplicate"
+              className="rounded p-1 transition-colors hover:bg-[rgba(13,148,136,0.08)]"
             >
-              <X className="h-3.5 w-3.5 text-teal-600" />
+              <X className="h-3.5 w-3.5 text-[#0a5c55]" strokeWidth={1.5} />
             </button>
           </div>
         )}
 
-        {/* Month nav toolbar */}
-        <div className="flex items-center gap-2 px-1">
-          <button
-            onClick={goPrevMonth}
-            aria-label="Previous month"
-            className="p-1 rounded hover:bg-[rgba(13,148,136,0.05)] transition-colors"
-          >
-            <ChevronLeft className="h-4 w-4 text-[#5a7d82]" />
-          </button>
-          <span className="text-[13px] font-semibold text-[#0c1a1e] min-w-[120px] text-center">
-            {monthLabel}
-          </span>
-          <button
-            onClick={goNextMonth}
-            aria-label="Next month"
-            className="p-1 rounded hover:bg-[rgba(13,148,136,0.05)] transition-colors"
-          >
-            <ChevronRight className="h-4 w-4 text-[#5a7d82]" />
-          </button>
-          <button
-            onClick={goToday}
-            className="text-[11px] font-medium text-[#5a7d82] hover:text-[#0c1a1e] px-2 py-1 rounded transition-colors"
-          >
-            Today
-          </button>
+        <CalendarToolbar
+          monthLabel={monthLabel}
+          onPrevMonth={goPrevMonth}
+          onNextMonth={goNextMonth}
+          onToday={goToday}
+          isLoading={isLoading}
+          editMode={editMode}
+          libraryOpen={libraryOpen}
+          onToggleLibrary={() => setLibraryOpen(!libraryOpen)}
+          monthSessionCount={monthSessionCount}
+        />
 
-          <div className="ml-auto flex items-center gap-2">
-            {editMode && (
-              <Button
-                variant={libraryOpen ? "default" : "outline"}
-                size="sm"
-                className="h-7 text-[11px]"
-                onClick={() => setLibraryOpen(!libraryOpen)}
-              >
-                <BookOpen className="h-3 w-3 mr-1" />
-                Library
-              </Button>
-            )}
-            {isLoading && (
-              <Loader2 className="h-3.5 w-3.5 animate-spin text-[#93b0b4]" />
-            )}
-          </div>
-        </div>
-
-        {/* Day headers */}
-        <div className="flex gap-1">
-          {editMode && <div className="w-10 flex-shrink-0" />}
-          <div className="flex-1 grid grid-cols-7 gap-1">
-            {DAY_LABELS.map((label) => (
-              <div key={label} className="text-center text-[10px] uppercase tracking-[0.06em] text-[#93b0b4] font-medium py-1">
-                {label}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Week rows */}
-        <div ref={scrollRef} className="flex flex-col gap-1 max-h-[600px] overflow-y-auto">
-          {weeks.map((days, i) => {
-            const containsToday = days.includes(todayDate);
-            const rowPlanId = weekRowPlanId(days);
-            const rowHasEvents = days.some((d) => (eventsByDate.get(d) ?? []).length > 0);
-            const showKebab = !!plan && !!rowPlanId && rowHasEvents;
-            const disabledReason = !rowHasEvents
-              ? undefined
-              : rowPlanId === null
-              ? "Mixed plans — use session menu"
-              : undefined;
-            return (
-              <div key={days[0]} ref={containsToday ? todayRowRef : undefined}>
-                <CalendarWeekRow
-                  days={days}
-                  eventsByDate={eventsByDate}
-                  editMode={editMode}
-                  todayDate={todayDate}
-                  clientToday={clientToday}
-                  duplicateMode={!!pendingDuplicate}
-                  viewMonth={viewMonth.month}
-                  viewYear={viewMonth.year}
-                  phaseByDate={phaseByDate}
-                  showWeekKebab={showKebab}
-                  weekActionDisabledReason={disabledReason}
-                  isLastWeek={i === weeks.length - 1}
-                  onWeekAction={handleWeekAction}
-                  onCellClick={handleCellClick}
-                  onEventClick={(event) => {
-                    if (pendingDuplicate) return;
-                    if (event.trainingSessionId && event.trainingPlanId) {
-                      setSelectedSession({
-                        sessionId: event.trainingSessionId,
-                        eventId: event.id,
-                        planId: event.trainingPlanId,
-                        date: event.date,
-                      });
-                    }
-                  }}
-                  onDuplicate={(event) => setPendingDuplicate(event)}
-                  onDelete={async (event) => {
-                    if (!confirm(`Delete "${event.sessionName}" on ${event.date}?`)) return;
-                    try {
-                      const res = await fetch(
-                        `/api/clients/${clientId}/training/${event.trainingPlanId}/events/${event.id}`,
-                        { method: "DELETE" }
-                      );
-                      if (!res.ok) {
-                        const data = await res.json();
-                        toast({ title: "Error", description: data.error || "Failed to delete event", variant: "destructive" });
-                        return;
-                      }
-                      await mutate();
-                      void invalidateNutritionCalendar(clientId);
-                      toast({ title: "Session removed" });
-                    } catch {
-                      toast({ title: "Error", description: "Failed to delete event", variant: "destructive" });
-                    }
-                  }}
-                />
-              </div>
-            );
-          })}
-        </div>
+        <CalendarGrid
+          weeks={weeks}
+          eventsByDate={eventsByDate}
+          editMode={editMode}
+          todayDate={todayDate}
+          clientToday={clientToday}
+          duplicateMode={!!pendingDuplicate}
+          viewMonth={viewMonth.month}
+          viewYear={viewMonth.year}
+          phaseByDate={phaseByDate}
+          hasPlan={!!plan}
+          isLoading={isLoading}
+          weekRowPlanId={weekRowPlanId}
+          onWeekAction={handleWeekAction}
+          onCellClick={handleCellClick}
+          onEventClick={(event) => {
+            if (pendingDuplicate) return;
+            if (event.trainingSessionId && event.trainingPlanId) {
+              setSelectedSession({
+                sessionId: event.trainingSessionId,
+                eventId: event.id,
+                planId: event.trainingPlanId,
+                date: event.date,
+              });
+            }
+          }}
+          onDuplicate={(event) => setPendingDuplicate(event)}
+          onDelete={(event) => setDeleteTarget(event)}
+        />
 
         {isWeekActionLoading && (
           <div className="flex items-center justify-center py-2">
@@ -597,57 +557,49 @@ export function TrainingCalendarView({
         />
       )}
 
-      {/* Save plan to library dialog */}
-      <Dialog
+      {/* Save week to library dialog */}
+      <SaveWeekDialog
         open={!!saveDialogWeek}
-        onOpenChange={(open) => { if (!open) setSaveDialogWeek(null); }}
-      >
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Save as Plan</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-2 py-2">
-            <Label htmlFor="save-plan-name">Plan Name</Label>
-            <Input
-              id="save-plan-name"
-              value={savePlanName}
-              onChange={(e) => setSavePlanName(e.target.value)}
-              placeholder="Enter plan name"
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setSaveDialogWeek(null)}>
-              Cancel
-            </Button>
-            <Button
-              disabled={!savePlanName.trim()}
-              onClick={async () => {
-                if (!saveDialogWeek || !savePlanName.trim()) return;
-                const rowPlanId = weekRowPlanId(
-                  (() => {
-                    const wd: string[] = [];
-                    const ws = new Date(saveDialogWeek + "T00:00:00");
-                    for (let d = 0; d < 7; d++) {
-                      wd.push(getDateString(ws));
-                      ws.setDate(ws.getDate() + 1);
-                    }
-                    return wd;
-                  })()
-                );
-                if (!rowPlanId) {
-                  toast({ title: "Mixed plans", variant: "destructive" });
-                  setSaveDialogWeek(null);
-                  return;
-                }
-                await handleSavePlanFromCalendar(saveDialogWeek, savePlanName.trim(), rowPlanId);
-                setSaveDialogWeek(null);
-              }}
-            >
-              Save
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        defaultName={savePlanName}
+        isSaving={isSavingWeek}
+        onCancel={() => setSaveDialogWeek(null)}
+        onSave={(name) => {
+          if (!saveDialogWeek) return;
+          const wd: string[] = [];
+          const ws = new Date(saveDialogWeek + "T00:00:00");
+          for (let d = 0; d < 7; d++) {
+            wd.push(getDateString(ws));
+            ws.setDate(ws.getDate() + 1);
+          }
+          const rowPlanId = weekRowPlanId(wd);
+          if (!rowPlanId) {
+            toast({ title: "Mixed plans", variant: "destructive" });
+            setSaveDialogWeek(null);
+            return;
+          }
+          setIsSavingWeek(true);
+          void handleSavePlanFromCalendar(saveDialogWeek, name, rowPlanId).finally(() => {
+            setIsSavingWeek(false);
+            setSaveDialogWeek(null);
+          });
+        }}
+      />
+
+      {/* Per-event delete confirm (replaces the browser confirm()) */}
+      <DeleteEventDialog
+        event={deleteTarget}
+        isDeleting={isDeletingEvent}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={(event) => void executeDeleteEvent(event)}
+      />
+
+      {/* Clear-week confirm (previously unconfirmed) */}
+      <ClearWeekDialog
+        weekStartDate={pendingClearWeek}
+        isClearing={isWeekActionLoading}
+        onCancel={() => setPendingClearWeek(null)}
+        onConfirm={(weekStartDate) => void executeClearWeek(weekStartDate)}
+      />
 
       {/* Placed-session tray */}
       <PlacedSessionEditor
