@@ -28,9 +28,9 @@ type CalendarToolbarProps = {
   onDeleteFuture?: () => void;
 };
 
-// The calendar's control line IS the divider: a bare hairline (no label — the
-// calendar is self-explanatory) with everything right-aligned in the divider's
-// quiet mono voice. The month label matches the meta tone exactly; edit mode
+// The calendar's control line IS the divider: the month nav sits on the left
+// (where a section label would), the hairline runs the middle, and the meta +
+// icon actions right-align — all in the divider's quiet mono voice. Edit mode
 // is a pencil/check icon toggle; Delete-future stays rightmost in both modes.
 export function CalendarToolbar({
   monthLabel,
@@ -47,10 +47,6 @@ export function CalendarToolbar({
 }: CalendarToolbarProps) {
   return (
     <div className="mb-3 flex items-center gap-3">
-      <div className="h-px flex-1 bg-[rgba(13,148,136,0.08)]" />
-      <span className="whitespace-nowrap font-mono-display text-[11px] text-[#93b0b4]">
-        {monthSessionCount} session{monthSessionCount === 1 ? "" : "s"}
-      </span>
       <div className="flex items-center gap-2">
         <button
           onClick={onPrevMonth}
@@ -78,7 +74,14 @@ export function CalendarToolbar({
         {isLoading && (
           <Loader2 className="h-3.5 w-3.5 animate-spin text-[#93b0b4]" />
         )}
+      </div>
 
+      <div className="h-px flex-1 bg-[rgba(13,148,136,0.08)]" />
+
+      <span className="whitespace-nowrap font-mono-display text-[11px] text-[#93b0b4]">
+        {monthSessionCount} session{monthSessionCount === 1 ? "" : "s"}
+      </span>
+      <div className="flex items-center gap-2">
         {editMode && (
           <button
             onClick={onToggleLibrary}
