@@ -460,10 +460,21 @@ describe('Training Validation Schemas', () => {
       expect(bulkExerciseInputSchema.safeParse({ ...base, orderIndex: -1 }).success).toBe(false)
     })
 
-    it('does not accept a videoUrl (these routes strip it; savedExerciseInputSchema would let a javascript: url through)', () => {
-      const r = bulkExerciseInputSchema.safeParse({ ...base, videoUrl: 'https://x.test/v.mp4' })
+    it('carries setSpecs + videoUrl so an edit does not NULL per-set programming', () => {
+      const r = bulkExerciseInputSchema.safeParse({
+        ...base,
+        videoUrl: 'https://x.test/v.mp4',
+        setSpecs: [{ set_number: 1, set_type: 'working', reps_min: 8 }],
+      })
       expect(r.success).toBe(true)
-      if (r.success) expect('videoUrl' in r.data).toBe(false)
+      if (r.success) {
+        expect(r.data.videoUrl).toBe('https://x.test/v.mp4')
+        expect(r.data.setSpecs?.length).toBe(1)
+      }
+    })
+
+    it('rejects a non-http(s) videoUrl (L3 javascript: sink)', () => {
+      expect(bulkExerciseInputSchema.safeParse({ ...base, videoUrl: 'javascript:alert(1)' }).success).toBe(false)
     })
   })
 
