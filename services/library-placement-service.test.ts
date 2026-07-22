@@ -62,6 +62,7 @@ function createMockQuery<T = unknown>(result: { data: T | null; error: { message
     or: vi.fn().mockReturnThis(),
     order: vi.fn().mockReturnThis(),
     limit: vi.fn().mockReturnThis(),
+    range: vi.fn().mockReturnThis(),
     single: vi.fn().mockResolvedValue(result),
     maybeSingle: vi.fn().mockResolvedValue(result),
     then: vi.fn(),

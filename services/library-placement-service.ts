@@ -234,7 +234,7 @@ async function snapshotWindowEvents(
     if (error) {
       throw new Error(`Failed to snapshot placement window: ${error.message}`);
     }
-    if (!data || data.length === 0) break;
+    if (!Array.isArray(data) || data.length === 0) break;
     rows.push(...(data as TrainingEventRow[]));
     if (data.length < PAGE) break;
   }

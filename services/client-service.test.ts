@@ -514,7 +514,10 @@ describe('Client Service', () => {
     it('soft deletes client by setting active to false', async () => {
       const mockQuery = {
         update: vi.fn().mockReturnThis(),
-        eq: vi.fn().mockResolvedValue({ data: {}, error: null }),
+        eq: vi.fn().mockReturnThis(),
+        select: vi.fn().mockReturnThis(),
+        // user_id null -> no cached auth mapping to bust
+        maybeSingle: vi.fn().mockResolvedValue({ data: { user_id: null }, error: null }),
       }
 
       vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
@@ -529,7 +532,9 @@ describe('Client Service', () => {
     it('throws error on failure', async () => {
       const mockQuery = {
         update: vi.fn().mockReturnThis(),
-        eq: vi.fn().mockResolvedValue({ data: null, error: { message: 'Delete failed' } }),
+        eq: vi.fn().mockReturnThis(),
+        select: vi.fn().mockReturnThis(),
+        maybeSingle: vi.fn().mockResolvedValue({ data: null, error: { message: 'Delete failed' } }),
       }
 
       vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
