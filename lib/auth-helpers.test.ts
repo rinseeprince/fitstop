@@ -33,7 +33,10 @@ function makeSupabase(opts: {
   result?: MaybeSingleResult;
 }) {
   const maybeSingle = vi.fn().mockResolvedValue(opts.result ?? { data: null, error: null });
-  const eq = vi.fn().mockReturnValue({ maybeSingle });
+  // eq is chainable (the loaders now chain .eq("user_id", …).eq("active", true)).
+  const eqReturn: { eq?: unknown; maybeSingle: typeof maybeSingle } = { maybeSingle };
+  const eq = vi.fn().mockReturnValue(eqReturn);
+  eqReturn.eq = eq;
   const select = vi.fn().mockReturnValue({ eq });
   const from = vi.fn().mockReturnValue({ select });
   const getUser = vi.fn().mockResolvedValue({
@@ -93,6 +96,7 @@ describe("getAuthenticatedClientId", () => {
     expect(from).toHaveBeenCalledWith("clients");
     expect(select).toHaveBeenCalledWith("id");
     expect(eq).toHaveBeenCalledWith("user_id", "user-9");
+    expect(eq).toHaveBeenCalledWith("active", true);
     expect(maybeSingle).toHaveBeenCalled();
   });
 });
@@ -153,6 +157,7 @@ describe("getAuthenticatedClientWithCheckInDay", () => {
     expect(from).toHaveBeenCalledWith("clients");
     expect(select).toHaveBeenCalledWith("id, expected_check_in_day");
     expect(eq).toHaveBeenCalledWith("user_id", "user-9");
+    expect(eq).toHaveBeenCalledWith("active", true);
     expect(maybeSingle).toHaveBeenCalled();
   });
 });

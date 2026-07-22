@@ -21,6 +21,7 @@ vi.mock("@/lib/auth-helpers", () => ({
 
 vi.mock("@/services/training-log-service", () => ({
   logTrainingEvent: vi.fn(),
+  TrainingLogOwnershipError: class TrainingLogOwnershipError extends Error {},
 }));
 
 import { POST } from "./route";

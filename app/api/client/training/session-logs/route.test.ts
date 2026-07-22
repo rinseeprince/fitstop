@@ -47,6 +47,7 @@ vi.mock("@/lib/daily-log-permissions", () => ({ DayLockedError }));
 
 vi.mock("@/services/training-log-service", () => ({
   logTrainingSessionForDate: vi.fn(),
+  TrainingLogOwnershipError: class TrainingLogOwnershipError extends Error {},
 }));
 
 import { POST } from "./route";
