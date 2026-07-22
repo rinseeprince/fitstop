@@ -1,14 +1,17 @@
 "use client";
 
-import { memo } from "react";
+import { memo, useState } from "react";
 import { useDroppable } from "@dnd-kit/core";
+import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { CalendarEventCard } from "./calendar-event-card";
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { MONO_LABEL_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
+import { PHASE_TINT } from "./calendar-tokens";
 import type { TrainingEvent } from "@/types/training";
 import type { PhaseStatus } from "@/types/roadmap";
 
@@ -30,20 +33,7 @@ type CalendarDayCellProps = {
   onDelete: (event: TrainingEvent) => void;
 };
 
-const MAX_VISIBLE_EVENTS = 2;
-
-function phaseTintClass(status: PhaseStatus | null | undefined): string {
-  switch (status) {
-    case "active":
-      return "bg-[rgba(13,148,136,0.06)]";
-    case "completed":
-      return "bg-[rgba(148,163,184,0.08)]";
-    case "planned":
-      return "bg-[rgba(59,130,246,0.06)]";
-    default:
-      return "";
-  }
-}
+const MAX_VISIBLE_EVENTS = 3;
 
 export const CalendarDayCell = memo(function CalendarDayCell({
   date,
@@ -66,6 +56,8 @@ export const CalendarDayCell = memo(function CalendarDayCell({
     disabled: isPast,
   });
 
+  const [overflowOpen, setOverflowOpen] = useState(false);
+
   const hasOverflow = events.length > MAX_VISIBLE_EVENTS;
   const visibleEvents = hasOverflow ? events.slice(0, MAX_VISIBLE_EVENTS) : events;
   const overflowCount = events.length - MAX_VISIBLE_EVENTS;
@@ -74,12 +66,14 @@ export const CalendarDayCell = memo(function CalendarDayCell({
     <div
       ref={setNodeRef}
       className={cn(
-        "min-h-[80px] rounded-[4px] border border-[rgba(13,148,136,0.06)] p-1.5 flex flex-col gap-1 relative transition-all",
-        phaseTintClass(phaseStatus),
+        "relative flex min-h-[96px] flex-col gap-1 rounded-[6px] border border-[rgba(13,148,136,0.06)] p-1.5 transition-all",
+        phaseStatus ? PHASE_TINT[phaseStatus] : undefined,
         isOutsideMonth && "opacity-40",
         isPast && !isOutsideMonth && "opacity-60",
-        isToday && "ring-2 ring-teal-500",
-        isOver && !isPast && "ring-2 ring-teal-500/50 bg-[rgba(13,148,136,0.03)]",
+        isToday && "ring-1 ring-[#0d9488]",
+        isOver &&
+          !isPast &&
+          "border-dashed border-[#0d9488] bg-[rgba(13,148,136,0.05)]",
         duplicateMode && !isPast && "cursor-crosshair hover:bg-[rgba(13,148,136,0.05)]"
       )}
       onClick={() => {
@@ -88,11 +82,11 @@ export const CalendarDayCell = memo(function CalendarDayCell({
         }
       }}
     >
-      {/* Date number */}
+      {/* Date numeral */}
       <span
         className={cn(
-          "text-[10px] font-medium self-end leading-none",
-          isToday ? "text-teal-600 font-semibold" : "text-[#93b0b4]"
+          "self-end font-mono-display text-[10px] font-medium leading-none",
+          isToday ? "font-semibold text-[#0d9488]" : "text-[#93b0b4]"
         )}
       >
         {dayOfMonth}
@@ -111,27 +105,55 @@ export const CalendarDayCell = memo(function CalendarDayCell({
         />
       ))}
 
-      {/* Overflow indicator */}
+      {/* Overflow — 320px popover listing the full cards (click-through) */}
       {hasOverflow && (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span className="text-[10px] text-[#93b0b4] font-medium cursor-default">
+        <Popover open={overflowOpen} onOpenChange={setOverflowOpen}>
+          <PopoverTrigger asChild>
+            <button
+              className="self-start rounded px-0.5 font-mono-display text-[10px] font-medium text-[#c2d0cc] transition-colors hover:text-[#0d9488]"
+              onClick={(e) => e.stopPropagation()}
+            >
               +{overflowCount} more
-            </span>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">
-            <div className="space-y-1">
-              {events.slice(MAX_VISIBLE_EVENTS).map((e) => (
-                <p key={e.id} className="text-xs">{e.sessionName}</p>
+            </button>
+          </PopoverTrigger>
+          <PopoverContent
+            align="start"
+            sideOffset={6}
+            className="w-[320px] rounded-[6px] border-[rgba(13,148,136,0.08)] p-0"
+          >
+            <div className="px-3.5 pb-2 pt-3">
+              <p className="text-sm font-semibold text-[#0c1a1e]">
+                {format(new Date(date + "T00:00:00"), "EEEE, MMM d")}
+              </p>
+              <p className={MONO_LABEL_CLASS}>
+                {events.length} sessions
+              </p>
+            </div>
+            <div className="max-h-[260px] space-y-1 overflow-y-auto px-1.5 pb-1.5">
+              {events.map((e) => (
+                <CalendarEventCard
+                  key={e.id}
+                  event={e}
+                  editMode={editMode}
+                  clientToday={clientToday}
+                  onEventClick={(evt) => {
+                    setOverflowOpen(false);
+                    onEventClick(evt);
+                  }}
+                  onDuplicate={onDuplicate}
+                  onDelete={onDelete}
+                />
               ))}
             </div>
-          </TooltipContent>
-        </Tooltip>
+          </PopoverContent>
+        </Popover>
       )}
 
       {/* Rest day label */}
       {events.length === 0 && !isPast && !isOutsideMonth && (
-        <span className="text-[10px] text-[#93b0b4] mt-auto">Rest</span>
+        <div className="flex flex-1 items-center justify-center">
+          <span className={MONO_LABEL_CLASS}>Rest</span>
+        </div>
       )}
     </div>
   );

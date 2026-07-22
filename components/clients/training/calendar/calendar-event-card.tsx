@@ -10,15 +10,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { MoreHorizontal, Pencil, Copy, Trash2 } from "lucide-react";
-import type { TrainingEvent, TrainingEventStatus } from "@/types/training";
-
-const STATUS_COLORS: Record<TrainingEventStatus, string> = {
-  scheduled: "bg-teal-500",
-  completed: "bg-green-500",
-  partial: "bg-amber-500",
-  missed: "bg-red-500",
-  skipped: "bg-gray-400",
-};
+import { STATUS_THUMB } from "./calendar-tokens";
+import type { TrainingEvent } from "@/types/training";
 
 type CalendarEventCardProps = {
   event: TrainingEvent;
@@ -32,6 +25,12 @@ type CalendarEventCardProps = {
   onDelete?: (event: TrainingEvent) => void;
 };
 
+// Builder card language for one calendar event: white card, teal-tinted
+// border, per-status thumb (calendar-tokens), mono meta row. Structural
+// contract (calendar-event-card.test.tsx relies on it): the root stays a
+// <div> (dnd-kit stamps role="button" on it when draggable) and the kebab
+// trigger is the ONLY real <button> element, gated by editMode +
+// isFutureScheduled exactly like the drag.
 export const CalendarEventCard = memo(function CalendarEventCard({
   event,
   editMode,
@@ -61,6 +60,10 @@ export const CalendarEventCard = memo(function CalendarEventCard({
     : undefined;
 
   const dragging = isDragging || localIsDragging;
+  const thumb = STATUS_THUMB[event.status];
+  const ThumbIcon = thumb.icon;
+  const surplus = event.calorieSurplusPercentage;
+  const hasMetaRow = Boolean(event.sessionFocus) || surplus != null;
 
   return (
     <div
@@ -68,8 +71,9 @@ export const CalendarEventCard = memo(function CalendarEventCard({
       style={style}
       {...(editMode && isFutureScheduled ? { ...attributes, ...listeners } : {})}
       className={cn(
-        "group flex items-center gap-1.5 rounded-[4px] border border-[rgba(13,148,136,0.08)] bg-white px-1.5 py-1 cursor-pointer transition-all",
-        dragging && "opacity-50 z-50",
+        "group flex cursor-pointer flex-col gap-1 rounded-[6px] border border-[rgba(13,148,136,0.08)] bg-white px-1.5 py-1.5 transition-all hover:-translate-y-px hover:shadow-[0_6px_20px_rgba(13,148,136,0.08)]",
+        thumb.cardClass,
+        dragging && "z-50 opacity-50",
         editMode && isFutureScheduled && "cursor-grab active:cursor-grabbing"
       )}
       onClick={(e) => {
@@ -77,58 +81,83 @@ export const CalendarEventCard = memo(function CalendarEventCard({
         onEventClick(event);
       }}
     >
-      {/* Status dot */}
-      <span
-        className={cn("w-[5px] h-[5px] rounded-full flex-shrink-0", STATUS_COLORS[event.status])}
-      />
+      <div className="flex items-center gap-1.5">
+        {/* Status thumb */}
+        <span
+          className={cn(
+            "grid h-5 w-5 shrink-0 place-items-center rounded-[6px]",
+            thumb.bg
+          )}
+        >
+          <ThumbIcon
+            className={cn("h-3 w-3", thumb.iconClass)}
+            strokeWidth={thumb.strokeWidth}
+          />
+        </span>
 
-      {/* Session name */}
-      <span className="text-[11px] text-[#0c1a1e] truncate flex-1 leading-tight">
-        {event.sessionName}
-      </span>
+        {/* Session name */}
+        <span className="min-w-0 flex-1 truncate text-[12px] font-semibold leading-tight text-[#0c1a1e]">
+          {event.sessionName}
+        </span>
 
-      {/* Modified indicator */}
-      {event.isModified && (
-        <Pencil className="h-2.5 w-2.5 text-[#93b0b4] flex-shrink-0" />
-      )}
+        {/* Modified indicator */}
+        {event.isModified && (
+          <Pencil className="h-2.5 w-2.5 shrink-0 text-[#93b0b4]" strokeWidth={1.5} />
+        )}
 
-      {/* Action menu - only for future scheduled events in edit mode */}
-      {editMode && isFutureScheduled && (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-[rgba(13,148,136,0.05)] transition-opacity"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <MoreHorizontal className="h-3 w-3 text-[#93b0b4]" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-36">
-            {onDuplicate && (
-              <DropdownMenuItem
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDuplicate(event);
-                }}
+        {/* Action menu - only for future scheduled events in edit mode */}
+        {editMode && isFutureScheduled && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                aria-label="Event actions"
+                className="rounded p-0.5 text-[#93b0b4] opacity-0 transition-opacity hover:bg-[rgba(13,148,136,0.08)] group-hover:opacity-100"
+                onClick={(e) => e.stopPropagation()}
               >
-                <Copy className="h-3.5 w-3.5 mr-2" />
-                Duplicate
-              </DropdownMenuItem>
-            )}
-            {onDelete && (
-              <DropdownMenuItem
-                className="text-red-600 focus:text-red-600"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDelete(event);
-                }}
-              >
-                <Trash2 className="h-3.5 w-3.5 mr-2" />
-                Delete
-              </DropdownMenuItem>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
+                <MoreHorizontal className="h-3 w-3" strokeWidth={1.5} />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-36">
+              {onDuplicate && (
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDuplicate(event);
+                  }}
+                >
+                  <Copy className="mr-2 h-3.5 w-3.5" />
+                  Duplicate
+                </DropdownMenuItem>
+              )}
+              {onDelete && (
+                <DropdownMenuItem
+                  className="text-[#c06060] focus:text-[#c06060]"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDelete(event);
+                  }}
+                >
+                  <Trash2 className="mr-2 h-3.5 w-3.5" />
+                  Delete
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+      </div>
+
+      {/* Mono meta row — focus left, surplus right */}
+      {hasMetaRow && (
+        <div className="flex items-center justify-between gap-1 pl-[26px]">
+          <span className="min-w-0 truncate font-mono-display text-[10px] text-[#93b0b4]">
+            {event.sessionFocus ?? ""}
+          </span>
+          {surplus != null && (
+            <span className="shrink-0 font-mono-display text-[10px] font-medium text-[#0d9488]">
+              +{surplus}%
+            </span>
+          )}
+        </div>
       )}
     </div>
   );
