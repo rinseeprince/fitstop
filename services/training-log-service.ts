@@ -389,9 +389,13 @@ async function writeSessionLog(params: {
           exerciseRows.push(row as unknown as (typeof exerciseRows)[number]);
         }
       }
-      if (exerciseRows.length < distinctExerciseIds.length) {
-        throw new TrainingLogOwnershipError();
-      }
+      // Scoping the read is the whole fix: a foreign exercise id simply doesn't
+      // come back, so its prescription is never captured into this client's
+      // snapshot (the leak). We deliberately do NOT reject on a missing id — an
+      // id can also be legitimately gone (the coach hard-deleted/replaced the
+      // exercise between prescription and log), which must still fall back to the
+      // preserved snapshot, not 404. Unmatched ids get a name-only snapshot from
+      // the caller's own payload — no cross-tenant data either way.
       for (const row of exerciseRows) {
         freshExerciseSnapshotMap.set(row.id, {
           name: row.name,
