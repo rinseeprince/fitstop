@@ -119,8 +119,11 @@ const EXERCISE_ID_CHUNK = 150;
  * as "foreign" on every placement, unrecoverably. Filtering by the ids this plan
  * actually references is bounded by plan size, not catalog size, and stays
  * correct at any scale. Same shape as coach-standalone-session-service.ts:67.
+ *
+ * Exported for the plan-amendment writer, which applies the same foreign-id
+ * belt to its fresh future rows.
  */
-async function fetchVisibleExerciseIds(
+export async function fetchVisibleExerciseIds(
   coachId: string,
   referencedIds: string[],
 ): Promise<Set<string>> {

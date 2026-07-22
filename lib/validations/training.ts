@@ -182,6 +182,27 @@ export const savedSessionInputSchema = z.object({
   exercises: z.array(savedExerciseInputSchema).max(50),
 });
 
+// Amend a PLACED plan's future (PUT .../training/[planId]/amendment). The body
+// is the WHOLE program grid — the server recomputes the elapsed boundary itself
+// and ignores incoming content at past positions, so a stale client cannot
+// rewrite history. min(7): whole weeks only (the serializer emits weekIndex*7+day
+// slots); an all-rest future is legal (an explicit deload). expectedToken is the
+// drift token from the amendment GET — a mismatch means the plan, its events, or
+// the client's "today" moved since the coach loaded the editor (409).
+export const amendPlacedPlanSchema = z.object({
+  sessions: z.array(savedSessionInputSchema).min(7).max(364),
+  plan: z
+    .object({
+      name: z.string().min(1).max(100).optional(),
+      // Free-text program focus (stored in split_type) — same shape as
+      // updateSavedPlanSchema/overwriteSavedPlanSchema.
+      splitType: z.string().max(100).nullish(),
+    })
+    .optional(),
+  expectedToken: z.string().min(1).max(300),
+});
+export type AmendPlacedPlanBody = z.infer<typeof amendPlacedPlanSchema>;
+
 export const updateSavedPlanSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   description: z.string().max(500).nullish(),
