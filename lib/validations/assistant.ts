@@ -209,16 +209,39 @@ export const assistantTranscriptEntrySchema = z.object({
 
 export const assistantChatRequestSchema = z
   .object({
-    target: z.enum(["library", "client-draft"]),
-    // Present (and IDOR-checked by the route) only for the client editor.
+    target: z.enum(["library", "client-draft", "placed-plan"]),
+    // Present (and IDOR-checked by the route) for the client-scoped editors.
     clientId: z.string().uuid().optional(),
+    // Placed-plan only: the client-side training_plans id (the route verifies
+    // it belongs to clientId) and the serialized lock set — the same array the
+    // amendment surface computed at seed, so server executors and client
+    // replay refuse the same history. 400 slots = 52 weeks × 7 + headroom.
+    planId: z.string().uuid().optional(),
+    lockedSlotUids: z.array(z.string().min(1).max(64)).max(400).optional(),
     command: z.string().min(1).max(2000),
     transcript: z.array(assistantTranscriptEntrySchema).max(24),
     draft: programDraftSnapshotSchema,
   })
   .refine((body) => body.target !== "client-draft" || body.clientId != null, {
     message: "clientId is required for the client editor",
-  });
+  })
+  .refine(
+    (body) =>
+      body.target !== "placed-plan" ||
+      (body.clientId != null && body.planId != null && body.lockedSlotUids != null),
+    {
+      message:
+        "clientId, planId and lockedSlotUids are required for the placed-plan editor",
+    },
+  )
+  .refine(
+    (body) =>
+      body.target === "placed-plan" ||
+      (body.planId == null && body.lockedSlotUids == null),
+    {
+      message: "planId and lockedSlotUids are only valid for the placed-plan editor",
+    },
+  );
 
 export type AssistantChatRequest = z.infer<typeof assistantChatRequestSchema>;
 

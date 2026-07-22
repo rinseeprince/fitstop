@@ -4,6 +4,7 @@ import { assistantRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { assistantChatRequestSchema } from "@/lib/validations/assistant";
 import { getClientById } from "@/services/client-service";
+import { getTrainingPlanById } from "@/services/training-service";
 import { runAssistantTurn } from "@/services/assistant/draft-agent-service";
 import type { ProgramDraft } from "@/components/clients/training/program-builder/program-builder-types";
 
@@ -41,8 +42,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // IDOR: the client editor names a client — prove ownership before doing
-    // any work on their behalf (the schema already requires clientId there).
+    // IDOR: the client-scoped editors name a client — prove ownership before
+    // doing any work on their behalf (the schema already requires clientId
+    // there).
     if (parsed.data.clientId) {
       const client = await getClientById(parsed.data.clientId);
       if (!client) {
@@ -56,6 +58,16 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Placed-plan: the named plan must belong to that (already-verified)
+    // client — 404 rather than 403 to avoid leaking a foreign plan's
+    // existence. Still zero DB writes anywhere in a turn.
+    if (parsed.data.target === "placed-plan" && parsed.data.planId) {
+      const plan = await getTrainingPlanById(parsed.data.planId);
+      if (!plan || plan.clientId !== parsed.data.clientId) {
+        return NextResponse.json({ error: "Plan not found" }, { status: 404 });
+      }
+    }
+
     const data = await runAssistantTurn({
       coachId,
       target: parsed.data.target,
@@ -64,6 +76,7 @@ export async function POST(request: NextRequest) {
       draft: parsed.data.draft as ProgramDraft,
       command: parsed.data.command,
       transcript: parsed.data.transcript,
+      lockedSlotUids: parsed.data.lockedSlotUids,
     });
 
     return NextResponse.json({ success: true, data }, { status: 200 });

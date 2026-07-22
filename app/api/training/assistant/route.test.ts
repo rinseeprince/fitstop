@@ -9,6 +9,10 @@ vi.mock("@/services/client-service", () => ({
   getClientById: vi.fn(),
 }));
 
+vi.mock("@/services/training-service", () => ({
+  getTrainingPlanById: vi.fn(),
+}));
+
 vi.mock("@/lib/auth-helpers", () => ({
   getAuthenticatedCoachId: vi.fn(),
 }));
@@ -24,12 +28,14 @@ vi.mock("@/lib/csrf-protection", () => ({
 import { POST } from "./route";
 import { runAssistantTurn } from "@/services/assistant/draft-agent-service";
 import { getClientById } from "@/services/client-service";
+import { getTrainingPlanById } from "@/services/training-service";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { assistantRateLimit } from "@/lib/rate-limit";
 import { makeRestWeek } from "@/components/clients/training/program-builder/program-builder-types";
 
 const mockRun = vi.mocked(runAssistantTurn);
 const mockClient = vi.mocked(getClientById);
+const mockPlan = vi.mocked(getTrainingPlanById);
 const mockAuth = vi.mocked(getAuthenticatedCoachId);
 const mockRate = vi.mocked(assistantRateLimit);
 
@@ -136,5 +142,76 @@ describe("POST /api/training/assistant", () => {
     expect(res.status).toBe(500);
     const json = await res.json();
     expect(json.error).toMatch(/isn't configured/);
+  });
+});
+
+describe("POST /api/training/assistant placed-plan target", () => {
+  const clientId = "55555555-5555-4555-8555-555555555555";
+  const planId = "66666666-6666-4666-8666-666666666666";
+  const placedBody = {
+    ...validBody,
+    target: "placed-plan",
+    clientId,
+    planId,
+    lockedSlotUids: ["slot-a", "slot-b"],
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockAuth.mockResolvedValue("coach-1");
+    mockRate.mockResolvedValue(null);
+    mockRun.mockResolvedValue(turnResult);
+    mockClient.mockResolvedValue({ id: clientId, coachId: "coach-1" } as never);
+    mockPlan.mockResolvedValue({ id: planId, clientId } as never);
+  });
+
+  it("400s when planId or lockedSlotUids are missing (schema refine)", async () => {
+    expect(
+      (await POST(makeRequest({ ...placedBody, planId: undefined }))).status,
+    ).toBe(400);
+    expect(
+      (await POST(makeRequest({ ...placedBody, lockedSlotUids: undefined }))).status,
+    ).toBe(400);
+    expect(
+      (await POST(makeRequest({ ...placedBody, clientId: undefined }))).status,
+    ).toBe(400);
+    expect(mockRun).not.toHaveBeenCalled();
+  });
+
+  it("400s the placed-only fields on other targets (schema refine)", async () => {
+    expect(
+      (await POST(makeRequest({ ...validBody, planId }))).status,
+    ).toBe(400);
+    expect(
+      (await POST(makeRequest({ ...validBody, lockedSlotUids: ["slot-a"] }))).status,
+    ).toBe(400);
+    expect(mockRun).not.toHaveBeenCalled();
+  });
+
+  it("404s a plan that doesn't exist or belongs to another client", async () => {
+    mockPlan.mockResolvedValue(null);
+    expect((await POST(makeRequest(placedBody))).status).toBe(404);
+
+    mockPlan.mockResolvedValue({ id: planId, clientId: "other-client" } as never);
+    expect((await POST(makeRequest(placedBody))).status).toBe(404);
+    expect(mockRun).not.toHaveBeenCalled();
+  });
+
+  it("still verifies client ownership before the plan check", async () => {
+    mockClient.mockResolvedValue({ id: clientId, coachId: "other-coach" } as never);
+    expect((await POST(makeRequest(placedBody))).status).toBe(403);
+    expect(mockPlan).not.toHaveBeenCalled();
+  });
+
+  it("forwards the lock set into the turn", async () => {
+    const res = await POST(makeRequest(placedBody));
+    expect(res.status).toBe(200);
+    expect(mockPlan).toHaveBeenCalledWith(planId);
+    expect(mockRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        target: "placed-plan",
+        lockedSlotUids: ["slot-a", "slot-b"],
+      }),
+    );
   });
 });

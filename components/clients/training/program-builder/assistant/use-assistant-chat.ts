@@ -63,6 +63,8 @@ export function useAssistantChat() {
   const {
     target,
     clientId,
+    placedPlanId,
+    lockedSlotUids,
     mode,
     isSaving,
     assistantBusy,
@@ -98,7 +100,12 @@ export function useAssistantChat() {
     (ops: DraftOp[]): { applied: number; skipped: string[] } => {
       const before = getDraft();
       const wasDirty = getDirty();
-      const result = applyAssistantOps(ops, { target });
+      // Same ctx the server executors used — replay skips exactly what they
+      // skipped (placed-plan history included).
+      const result = applyAssistantOps(ops, {
+        target,
+        lockedSlotUids: target === "placed-plan" ? lockedSlotUids : undefined,
+      });
       if (!result) return { applied: 0, skipped: ["The program isn't loaded yet"] };
       // Snapshot AFTER the fact and only when something actually changed: a
       // turn whose ops all skipped leaves the tree untouched, and an undo entry
@@ -117,7 +124,7 @@ export function useAssistantChat() {
         skipped: result.skipped.map((s) => s.reason),
       };
     },
-    [applyAssistantOps, getDirty, getDraft, target],
+    [applyAssistantOps, getDirty, getDraft, target, lockedSlotUids],
   );
 
   // Any completed save invalidates the "restore the old clean flag" shortcut.
@@ -150,7 +157,10 @@ export function useAssistantChat() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             target,
-            clientId: target === "client-draft" ? (clientId ?? undefined) : undefined,
+            clientId: target !== "library" ? (clientId ?? undefined) : undefined,
+            planId: target === "placed-plan" ? (placedPlanId ?? undefined) : undefined,
+            lockedSlotUids:
+              target === "placed-plan" ? [...lockedSlotUids] : undefined,
             command: trimmed,
             transcript,
             draft,
@@ -229,6 +239,8 @@ export function useAssistantChat() {
       applyOps,
       assistantBusy,
       clientId,
+      placedPlanId,
+      lockedSlotUids,
       getDraft,
       getRevision,
       isSaving,

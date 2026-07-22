@@ -183,7 +183,16 @@ export function systemPrompt(target: BuilderTarget): string {
 - This draft is one client's working copy of a library template. Edits apply to that client's calendar only — the template is never touched.
 - The program name/focus and every existing session's name/focus are template identity: LOCKED. The tools will refuse those edits; offer the allowed alternatives (loads, reps, sets, exercises, structure) instead.`;
 
-  return target === "client-draft" ? base + clientDraft : base;
+  const placedPlan = `
+
+## Placed-plan rules (this session amends a CLIENT'S live placed program)
+- This is a client's placed program, mid-flight on their calendar. Nothing reaches the calendar until the coach saves their changes — you edit the working copy only.
+- Days before the lock boundary are HISTORY: the tools will skip any edit touching them. Work on the remaining (future) days instead, and say so when the coach asks for a change to an elapsed day.
+- Renames ARE allowed here — the program and session names are the coach's to change on a placed plan.`;
+
+  if (target === "client-draft") return base + clientDraft;
+  if (target === "placed-plan") return base + placedPlan;
+  return base;
 }
 
 function extractText(message: Anthropic.Beta.BetaMessage | null): string {
@@ -201,11 +210,14 @@ export async function runAssistantTurn(opts: {
   draft: ProgramDraft;
   command: string;
   transcript: Array<{ role: "user" | "assistant"; text: string }>;
+  // Placed-plan target: the amendment surface's serialized lock set.
+  lockedSlotUids?: string[];
 }): Promise<AssistantChatResponseData> {
   const ws = await createDraftWorkspace({
     coachId: opts.coachId,
     target: opts.target,
     draft: opts.draft,
+    lockedSlotUids: opts.lockedSlotUids,
   });
 
   const tools = [

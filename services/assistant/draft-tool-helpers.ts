@@ -54,7 +54,10 @@ import type { DraftWorkspace } from "./draft-workspace";
  * synchronous by preloading its data into the workspace like the catalog.
  */
 export function commitOp(ws: DraftWorkspace, op: DraftOp): string | null {
-  const outcome = applyDraftOp(ws.draft, op, { target: ws.target });
+  const outcome = applyDraftOp(ws.draft, op, {
+    target: ws.target,
+    lockedSlotUids: ws.lockedSlotUids,
+  });
   if (outcome.skipped) return outcome.skipped;
   if (outcome.draft !== ws.draft) ws.draft = normalizeDraft(outcome.draft);
   // Labels interpolate session/exercise names (schema-legal up to 200 chars),

@@ -22,6 +22,11 @@ export type DraftWorkspace = {
   notes: string[];
   catalog: ExerciseRow[];
   isCompound: (ex: { exerciseId: string | null; name: string }) => boolean;
+  // Placed-plan target: slots whose calendar day is history. Materialized from
+  // the wire array (unknown uids ignored); commitOp passes it into
+  // applyDraftOp's ctx so server executors refuse exactly what client replay
+  // refuses.
+  lockedSlotUids: ReadonlySet<string>;
   // Entry-state fingerprints for the pre-return defense sweeps.
   entry: {
     programName: string;
@@ -29,6 +34,9 @@ export type DraftWorkspace = {
     sessionIdentity: Map<string, { name: string; focus: string | null }>;
     exerciseUids: Set<string>;
     exerciseNames: Set<string>; // lowercase — clones of pre-existing content
+    // Placed-plan: locked slot uid → serialized entry content, so the locked
+    // sweep can prove no locked day's content changed this turn.
+    lockedSlotFingerprints: Map<string, string>;
   };
 };
 
@@ -55,9 +63,15 @@ export async function createDraftWorkspace(opts: {
   coachId: string;
   target: BuilderTarget;
   draft: ProgramDraft;
+  lockedSlotUids?: string[];
 }): Promise<DraftWorkspace> {
   const catalog = await fetchCatalogRowsForResolve(opts.coachId);
-  return buildWorkspaceFromRows({ target: opts.target, draft: opts.draft, catalog });
+  return buildWorkspaceFromRows({
+    target: opts.target,
+    draft: opts.draft,
+    catalog,
+    lockedSlotUids: opts.lockedSlotUids,
+  });
 }
 
 /** Pure assembly (split out so tests build workspaces from fixture rows). */
@@ -65,6 +79,7 @@ export function buildWorkspaceFromRows(opts: {
   target: BuilderTarget;
   draft: ProgramDraft;
   catalog: ExerciseRow[];
+  lockedSlotUids?: string[];
 }): DraftWorkspace {
   const { catalog } = opts;
   const draft = normalizeDraft(opts.draft);
@@ -72,8 +87,10 @@ export function buildWorkspaceFromRows(opts: {
   const sessionIdentity = new Map<string, { name: string; focus: string | null }>();
   const exerciseUids = new Set<string>();
   const exerciseNames = new Set<string>();
+  const draftSlotUids = new Set<string>();
   for (const week of draft.weeks) {
     for (const slot of week.days) {
+      draftSlotUids.add(slot.uid);
       if (!slot.session) continue;
       sessionIdentity.set(slot.session.uid, {
         name: slot.session.name,
@@ -86,6 +103,22 @@ export function buildWorkspaceFromRows(opts: {
     }
   }
 
+  // Materialize the lock set from the wire array; a uid that doesn't resolve
+  // in this draft is ignored (stale client state — nothing to lock).
+  const lockedSlotUids = new Set(
+    (opts.lockedSlotUids ?? []).filter((uid) => draftSlotUids.has(uid)),
+  );
+  const lockedSlotFingerprints = new Map<string, string>();
+  if (lockedSlotUids.size > 0) {
+    for (const week of draft.weeks) {
+      for (const slot of week.days) {
+        if (lockedSlotUids.has(slot.uid)) {
+          lockedSlotFingerprints.set(slot.uid, JSON.stringify(slot));
+        }
+      }
+    }
+  }
+
   return {
     draft,
     target: opts.target,
@@ -93,12 +126,14 @@ export function buildWorkspaceFromRows(opts: {
     notes: [],
     catalog,
     isCompound: buildIsCompoundFromRows(catalog),
+    lockedSlotUids,
     entry: {
       programName: draft.name,
       programSplitType: draft.splitType,
       sessionIdentity,
       exerciseUids,
       exerciseNames,
+      lockedSlotFingerprints,
     },
   };
 }
@@ -112,7 +147,11 @@ export function buildWorkspaceFromRows(opts: {
  *    ops are discarded — "never return an unresolved exercise to the client".
  * 2. IDENTITY (client-draft): the final working copy must keep the entry
  *    program name/focus and every pre-existing session's name/focus
- *    (the b2b970f template-identity rule).
+ *    (the b2b970f template-identity rule). Deliberately NOT applied to the
+ *    placed-plan target — placed identity is the coach's to change.
+ * 3. LOCKED (placed-plan): every locked slot's final content must be
+ *    byte-identical to entry — history can't be edited, and a vanished locked
+ *    slot (its week removed) is equally a violation.
  * Returns the ops to ship, or [] with an explanatory note.
  */
 export function finalizeAssistantOps(ws: DraftWorkspace): {
@@ -162,6 +201,25 @@ export function finalizeAssistantOps(ws: DraftWorkspace): {
           "Discarded this turn's edits: program and session names are template identity and can't change in the client editor.",
         ],
       };
+    }
+  }
+
+  if (ws.target === "placed-plan" && ws.entry.lockedSlotFingerprints.size > 0) {
+    const slotsByUid = new Map<string, unknown>();
+    for (const week of ws.draft.weeks) {
+      for (const slot of week.days) slotsByUid.set(slot.uid, slot);
+    }
+    for (const [slotUid, entryFingerprint] of ws.entry.lockedSlotFingerprints) {
+      const finalSlot = slotsByUid.get(slotUid);
+      if (!finalSlot || JSON.stringify(finalSlot) !== entryFingerprint) {
+        return {
+          ops: [],
+          notes: [
+            ...ws.notes,
+            "Discarded this turn's edits: days that already happened on the client's calendar can't be changed.",
+          ],
+        };
+      }
     }
   }
 

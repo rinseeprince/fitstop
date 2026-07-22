@@ -53,9 +53,9 @@ function toolsWireChars(): number {
 }
 
 describe("assistant prompt cache floor", () => {
-  it("keeps the cacheable tools+system prefix above Opus 4.8's 4096-token floor in BOTH targets", () => {
+  it("keeps the cacheable tools+system prefix above Opus 4.8's 4096-token floor in EVERY target", () => {
     const tools = toolsWireChars();
-    for (const target of ["library", "client-draft"] as const) {
+    for (const target of ["library", "client-draft", "placed-plan"] as const) {
       const prefix = tools + systemPrompt(target).length;
       expect(
         prefix,

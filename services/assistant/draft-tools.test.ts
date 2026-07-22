@@ -579,3 +579,160 @@ describe("duplicate_week reports STORED loads, not recomputed arithmetic", () =>
     expect([loads(1), loads(2), loads(3)]).toEqual([84, 88, 92.5]);
   });
 });
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Placed-plan target: past-slot locking (ops ctx + the locked sweep), with
+// identity deliberately editable.
+// ═════════════════════════════════════════════════════════════════════════════
+
+function makePlacedDraft(): ProgramDraft {
+  const past: SessionDraft = {
+    uid: newUid("sess"),
+    name: "Lower A",
+    focus: "legs",
+    estimatedDurationMinutes: null,
+    calorieSurplusPercentage: null,
+    notes: null,
+    sessionType: "training",
+    exercises: [exercise("Back Squat", SQUAT_ID, [workingSet(100)])],
+  };
+  const future: SessionDraft = {
+    uid: newUid("sess"),
+    name: "Lower B",
+    focus: "legs",
+    estimatedDurationMinutes: null,
+    calorieSurplusPercentage: null,
+    notes: null,
+    sessionType: "training",
+    exercises: [exercise("Leg Curl", CURL_ID, [workingSet(40)])],
+  };
+  const week0 = makeRestWeek(0);
+  week0.days[0] = { ...makeRestSlot(0), isRest: false, session: past };
+  const week1 = makeRestWeek(1);
+  week1.days[0] = { ...makeRestSlot(0), isRest: false, session: future };
+  return normalizeDraft({
+    id: "44444444-4444-4444-8444-444444444444",
+    name: "Placed Block",
+    description: null,
+    status: "saved",
+    splitType: "Strength",
+    programDurationWeeks: null,
+    defaultSurplusPercentage: null,
+    weeks: [week0, week1],
+  });
+}
+
+function makePlacedWs(extraLockedUids: string[] = []) {
+  const draft = makePlacedDraft();
+  // Week 1 is history.
+  const lockedSlotUids = [...draft.weeks[0].days.map((d) => d.uid), ...extraLockedUids];
+  return buildWorkspaceFromRows({
+    target: "placed-plan",
+    draft,
+    catalog: CATALOG,
+    lockedSlotUids,
+  });
+}
+
+describe("placed-plan locked slots (tool executors)", () => {
+  it("edits touching a locked day are skipped; the same edit on a future day lands", async () => {
+    const ws = makePlacedWs();
+    const update = tool(buildExerciseTools(ws), "update_exercise");
+
+    const refused = await update.run({
+      week: 1,
+      day: 1,
+      exerciseName: "Back Squat",
+      loadKg: 90,
+    } as never);
+    expect(refused).toMatch(/locked/);
+    expect(ws.ops).toHaveLength(0);
+
+    const ok = await update.run({
+      week: 2,
+      day: 1,
+      exerciseName: "Leg Curl",
+      loadKg: 45,
+    } as never);
+    expect(ok).toMatch(/Updated/);
+    expect(ws.ops).toHaveLength(1);
+  });
+
+  it("structural ops on history are skipped (delete_week / clear_day)", async () => {
+    const ws = makePlacedWs();
+    const del = tool(buildWeekTools(ws), "delete_week");
+    expect(await del.run({ week: 1 } as never)).toMatch(/locked/);
+
+    const clear = tool(buildSessionTools(ws), "clear_day");
+    expect(await clear.run({ week: 1, day: 1 } as never)).toMatch(/locked/);
+    expect(ws.ops).toHaveLength(0);
+  });
+
+  it("renames ARE allowed on placed plans (identity sweep not applied)", async () => {
+    const ws = makePlacedWs();
+    const program = tool(buildSessionTools(ws), "update_program");
+    const session = tool(buildSessionTools(ws), "update_session_details");
+
+    expect(await program.run({ name: "Renamed Block" } as never)).not.toMatch(/identity/);
+    // A FUTURE session's rename lands too.
+    expect(
+      await session.run({ week: 2, day: 1, name: "Lower B2" } as never),
+    ).toMatch(/Updated/);
+
+    const finalized = finalizeAssistantOps(ws);
+    expect(finalized.ops.length).toBeGreaterThan(0);
+    expect(finalized.notes).toHaveLength(0);
+  });
+
+  it("unknown lock uids from the wire are ignored", () => {
+    const ws = makePlacedWs(["slot-not-in-this-draft"]);
+    expect(ws.lockedSlotUids.has("slot-not-in-this-draft")).toBe(false);
+    const finalized = finalizeAssistantOps(ws);
+    expect(finalized.notes).toHaveLength(0);
+  });
+});
+
+describe("placed-plan locked sweep (finalizeAssistantOps)", () => {
+  it("discards the turn when a locked slot's content changed despite the guards", () => {
+    const ws = makePlacedWs();
+    // Simulate an executor bug mutating history directly (bypassing commitOp).
+    ws.draft = normalizeDraft({
+      ...ws.draft,
+      weeks: ws.draft.weeks.map((w, i) =>
+        i !== 0
+          ? w
+          : {
+              ...w,
+              days: w.days.map((slot) =>
+                slot.session
+                  ? { ...slot, session: { ...slot.session, name: "Rewritten History" } }
+                  : slot,
+              ),
+            },
+      ),
+    });
+
+    const finalized = finalizeAssistantOps(ws);
+    expect(finalized.ops).toHaveLength(0);
+    expect(finalized.notes.join(" ")).toMatch(/already happened/);
+  });
+
+  it("discards the turn when a locked slot vanished (its week removed)", () => {
+    const ws = makePlacedWs();
+    ws.draft = normalizeDraft({ ...ws.draft, weeks: ws.draft.weeks.slice(1) });
+
+    const finalized = finalizeAssistantOps(ws);
+    expect(finalized.ops).toHaveLength(0);
+    expect(finalized.notes.join(" ")).toMatch(/already happened/);
+  });
+
+  it("ships the ops when history is untouched", async () => {
+    const ws = makePlacedWs();
+    const update = tool(buildExerciseTools(ws), "update_exercise");
+    await update.run({ week: 2, day: 1, exerciseName: "Leg Curl", loadKg: 45 } as never);
+
+    const finalized = finalizeAssistantOps(ws);
+    expect(finalized.ops).toHaveLength(1);
+    expect(finalized.notes).toHaveLength(0);
+  });
+});
