@@ -8,7 +8,7 @@ import { useCalendarDnd } from "@/hooks/use-calendar-dnd";
 import { CalendarWeekRow } from "./calendar-week-row";
 import { CalendarEventCard } from "./calendar-event-card";
 import { MoveScopeDialog } from "./move-scope-dialog";
-import { SessionDetailDrawer } from "./session-detail-drawer";
+import { PlacedSessionEditor } from "./placed-session-editor";
 import { LibraryPanel } from "./library-panel";
 import { ApplyToClientDialog } from "@/components/training-library/apply-to-client-dialog";
 import { useToast } from "@/hooks/use-toast";
@@ -26,7 +26,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
-import type { TrainingPlan, TrainingEvent, TrainingSession } from "@/types/training";
+import type { TrainingPlan, TrainingEvent } from "@/types/training";
 import type { Phase, PhaseStatus } from "@/types/roadmap";
 
 const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -38,6 +38,8 @@ type TrainingCalendarViewProps = {
   editMode: boolean;
   clientTimezone?: string;
   onUpdate: () => void;
+  /** Job 2 wires this — threads through to the tray's "Edit whole plan" item. */
+  onEditPlan?: () => void;
 };
 
 /** Returns the Monday on or before the given date (local time). */
@@ -79,6 +81,7 @@ export function TrainingCalendarView({
   editMode,
   clientTimezone,
   onUpdate,
+  onEditPlan,
 }: TrainingCalendarViewProps) {
   const { toast } = useToast();
   const todayDate = getTodayDateString();
@@ -101,7 +104,7 @@ export function TrainingCalendarView({
   });
 
   // State
-  const [selectedSession, setSelectedSession] = useState<{ sessionId: string; eventId: string; planId: string } | null>(null);
+  const [selectedSession, setSelectedSession] = useState<{ sessionId: string; eventId: string; planId: string; date: string } | null>(null);
   const [pendingDuplicate, setPendingDuplicate] = useState<TrainingEvent | null>(null);
   const [isWeekActionLoading, setIsWeekActionLoading] = useState(false);
   const [saveDialogWeek, setSaveDialogWeek] = useState<string | null>(null);
@@ -203,68 +206,6 @@ export function TrainingCalendarView({
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [pendingDuplicate]);
-
-  // Find session from plan for drawer
-  // The clicked event may belong to a coexisting (non-active) plan whose sessions
-  // aren't in `plan.sessions`. Resolve from the active plan when possible; else
-  // lazy-fetch by id, showing an event-snapshot immediately so the drawer never
-  // opens blank (hard floor).
-  const [selectedSessionData, setSelectedSessionData] = useState<TrainingSession | null>(null);
-
-  useEffect(() => {
-    if (!selectedSession) {
-      setSelectedSessionData(null);
-      return;
-    }
-    const local = plan?.sessions.find((s) => s.id === selectedSession.sessionId);
-    if (local) {
-      setSelectedSessionData(local);
-      return;
-    }
-    // Snapshot from the event so the drawer renders something instantly.
-    const evt = events.find((e) => e.id === selectedSession.eventId);
-    setSelectedSessionData(
-      evt
-        ? {
-            id: selectedSession.sessionId,
-            planId: selectedSession.planId,
-            name: evt.sessionName,
-            focus: evt.sessionFocus ?? undefined,
-            orderIndex: 0,
-            exercises: [],
-            estimatedCalories: evt.estimatedCalories ?? undefined,
-            calorieSurplusPercentage: evt.calorieSurplusPercentage,
-            createdAt: "",
-            updatedAt: "",
-          }
-        : null,
-    );
-    // Then fetch the full session (with exercises) for the coexisting plan.
-    let cancelled = false;
-    void (async () => {
-      try {
-        const res = await fetch(
-          `/api/clients/${clientId}/training/${selectedSession.planId}/sessions/${selectedSession.sessionId}`,
-        );
-        if (!res.ok) return;
-        const data = await res.json();
-        if (!cancelled && data?.success && data.session) {
-          setSelectedSessionData(data.session as TrainingSession);
-        }
-      } catch {
-        // Keep the snapshot on failure.
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedSession, plan, events, clientId]);
-
-  // Count events sharing the selected session
-  const sharedEventCount = useMemo(() => {
-    if (!selectedSession) return 0;
-    return events.filter((e) => e.trainingSessionId === selectedSession.sessionId).length;
-  }, [selectedSession, events]);
 
   // Build per-day phase status map for tinting
   const phaseByDate = useMemo(() => {
@@ -593,6 +534,7 @@ export function TrainingCalendarView({
                         sessionId: event.trainingSessionId,
                         eventId: event.id,
                         planId: event.trainingPlanId,
+                        date: event.date,
                       });
                     }
                   }}
@@ -707,29 +649,20 @@ export function TrainingCalendarView({
         </DialogContent>
       </Dialog>
 
-      {/* Session detail drawer */}
-      <SessionDetailDrawer
-        open={!!selectedSession}
-        onOpenChange={(open) => {
-          if (!open) setSelectedSession(null);
-        }}
-        session={selectedSessionData}
-        eventId={selectedSession?.eventId}
-        clientId={clientId}
-        planId={selectedSession?.planId ?? plan?.id ?? ""}
-        sharedEventCount={sharedEventCount}
-        onUpdate={() => {
-          onUpdate();
-          void mutate();
-        }}
+      {/* Placed-session tray */}
+      <PlacedSessionEditor
+        state={selectedSession ? { clientId, ...selectedSession } : null}
+        onClose={() => setSelectedSession(null)}
+        onUpdate={onUpdate}
+        mutateCalendar={mutate}
         onSelectSession={(sessionId, eventId) =>
-          setSelectedSession(
-            selectedSession
-              ? { sessionId, eventId, planId: selectedSession.planId }
-              : null
+          setSelectedSession((prev) =>
+            prev ? { ...prev, sessionId, eventId } : null
           )
         }
+        onEditPlan={onEditPlan}
       />
+
 
       {/* Library panel */}
       <LibraryPanel open={libraryOpen} onOpenChange={setLibraryOpen} />

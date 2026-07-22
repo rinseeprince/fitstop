@@ -149,10 +149,11 @@ export function savedPlanToDraft(plan: SavedPlan): ProgramDraft {
   };
 }
 
-// One exercise-input mapping shared by the overwrite body and the standalone
-// create payload — the two write paths must never drift (a field missed on
-// one side silently drops per-set data on that path).
-function exerciseDraftToInput(e: ExerciseDraft, i: number) {
+// One exercise-input mapping shared by the overwrite body, the standalone
+// create payload and the placed-session payload (placed-serialize.ts) — the
+// write paths must never drift (a field missed on one side silently drops
+// per-set data on that path).
+export function exerciseDraftToInput(e: ExerciseDraft, i: number) {
   return {
     name: e.name,
     exerciseId: e.exerciseId,
@@ -210,7 +211,7 @@ export function sessionDraftToStandalonePayload(
  * overwrite is delete-then-reinsert and inline placement of nothing is equally
  * wrong.
  */
-function draftToSessionInputs(draft: ProgramDraft): ProgramOverwriteBody["sessions"] {
+export function draftToSessionInputs(draft: ProgramDraft): ProgramOverwriteBody["sessions"] {
   const sessions = draft.weeks.flatMap((week) =>
     week.days.map((slot, day) => ({
       name: slot.session?.name ?? "Rest",

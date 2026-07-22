@@ -56,8 +56,9 @@ function clampName(session: SessionDraft): SessionDraft {
 
 // One-week wrapper so normalizeDraft's invariants (min 1 week, 7 slots) hold.
 // The session goes into slot 0 BEFORE seed() — seed clears the dirty flag, so
-// placing it afterwards would mark a freshly-opened editor dirty.
-function makeStandaloneDraft(session: SessionDraft): ProgramDraft {
+// placing it afterwards would mark a freshly-opened editor dirty. Exported for
+// the placed-session tray, which wraps a placed session the same way.
+export function makeStandaloneDraft(session: SessionDraft): ProgramDraft {
   const week = makeRestWeek(0);
   week.days[0] = { ...week.days[0], isRest: false, session };
   return {
