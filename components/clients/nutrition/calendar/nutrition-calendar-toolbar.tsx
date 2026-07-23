@@ -9,7 +9,10 @@ import {
   Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { MONO_LABEL_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
+import {
+  LABEL_CLASS,
+  MONO_LABEL_CLASS,
+} from "@/components/clients/training/program-builder/builder-tokens";
 
 type NutritionCalendarToolbarProps = {
   monthLabel: string;
@@ -50,7 +53,7 @@ export function NutritionCalendarToolbar({
         <span
           className={cn(
             MONO_LABEL_CLASS,
-            "min-w-[80px] whitespace-nowrap text-center normal-case tracking-normal text-[11px]"
+            "min-w-[80px] whitespace-nowrap text-center text-[11px]"
           )}
         >
           {monthLabel}
@@ -64,7 +67,10 @@ export function NutritionCalendarToolbar({
         </button>
         <button
           onClick={onToday}
-          className="rounded-[6px] px-2 py-1 text-[11px] font-medium text-[#93b0b4] transition-colors hover:bg-[rgba(13,148,136,0.05)] hover:text-[#0d9488]"
+          className={cn(
+            LABEL_CLASS,
+            "rounded-[6px] px-2 py-1 text-[11px] transition-colors hover:bg-[rgba(13,148,136,0.05)] hover:text-[#0d9488]"
+          )}
         >
           Today
         </button>
