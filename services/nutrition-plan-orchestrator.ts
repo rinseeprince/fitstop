@@ -21,6 +21,7 @@ import {
 } from "@/services/nutrition-event-service";
 import { captureApiError } from "@/lib/error-handler";
 import { getClientTodayString } from "@/services/today-service";
+import { addDaysToDateString } from "@/lib/date-helpers";
 import { resolveEffectiveGoal } from "@/lib/goals/resolve-effective-goal";
 
 export class NutritionPlanError extends Error {
@@ -73,9 +74,9 @@ export interface NutritionPlanResult {
 
 /**
  * Delete (archive) the client's durable nutrition plan and clear its upcoming
- * scheduled events so no orphaned prescription lingers on the calendar. Past /
- * logged / missed days are untouched; coach-edited (is_modified) FUTURE days
- * go too, deliberately — a deleted plan leaves no forward prescription.
+ * scheduled events so no orphaned prescription lingers on the calendar. Today
+ * and past days are untouched; coach-edited (is_modified) FUTURE days go too,
+ * deliberately — a deleted plan leaves no forward prescription.
  *
  * Events are cleared BEFORE the status flip so a mid-flight failure is
  * retryable: with the plan still active, a re-DELETE resolves it again and
@@ -100,11 +101,17 @@ export async function orchestrateNutritionPlanDeletion(
     throw new NutritionPlanError("No active nutrition plan to delete", 404);
   }
 
-  // Client-local today anchors the "future" cutoff on the client's calendar —
-  // never let the event helper fall back to its UTC default.
+  // Client-local today anchors the cutoff on the client's calendar — never let
+  // the event helper fall back to its UTC default. Delete strictly AFTER
+  // today: nutrition events never leave 'scheduled' status, so a today the
+  // client already part-logged would otherwise be deleted and the per-card
+  // nutrition writer would 422 mid-day (no event, no active plan). The kept
+  // event carries its own plan stamp, and the dialog's "Today and past days
+  // are kept" stays literally true.
   const clientToday = await getClientTodayString(clientId);
+  const deleteFrom = addDaysToDateString(clientToday, 1);
 
-  await deleteFutureNutritionEventsForPlan(planId, clientToday);
+  await deleteFutureNutritionEventsForPlan(planId, deleteFrom);
   await archiveNutritionPlan(planId);
 
   return { planId };

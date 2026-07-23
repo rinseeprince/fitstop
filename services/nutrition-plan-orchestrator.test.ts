@@ -204,11 +204,13 @@ describe("orchestrateNutritionPlanCreation — event-rewrite error propagation",
 });
 
 describe("orchestrateNutritionPlanDeletion", () => {
-  it("clears future events (client-local floor) then archives, and returns the plan id", async () => {
+  it("clears events from TOMORROW (client-local) then archives, and returns the plan id", async () => {
     const result = await orchestrateNutritionPlanDeletion(clientId, coachId);
 
     expect(result).toEqual({ planId: "plan-1" });
-    expect(deleteFutureNutritionEventsForPlan).toHaveBeenCalledWith("plan-1", "2026-07-02");
+    // Floor is the day AFTER the client-local today ('2026-07-02'): today's
+    // event survives so a part-logged day keeps its plan context.
+    expect(deleteFutureNutritionEventsForPlan).toHaveBeenCalledWith("plan-1", "2026-07-03");
     expect(archiveNutritionPlan).toHaveBeenCalledWith("plan-1");
     // Events go first so a mid-flight failure leaves the plan active and retryable.
     expect(

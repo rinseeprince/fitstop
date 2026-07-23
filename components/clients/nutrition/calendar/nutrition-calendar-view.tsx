@@ -179,7 +179,7 @@ export function NutritionCalendarView({
         onDeletePlan={onDeletePlan}
       />
 
-      <div className="flex flex-col gap-2 rounded-[6px] border border-[rgba(13,148,136,0.06)] bg-white p-4">
+      <div className="flex flex-col gap-2 rounded-[6px] border border-[rgba(13,148,136,0.08)] bg-white p-4">
         {/* Selection bar */}
         {edit.editMode && (
           <NutritionCalendarEditBar

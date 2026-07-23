@@ -578,7 +578,7 @@ describe('Nutrition Route DELETE', () => {
     vi.mocked(getClientTodayString).mockResolvedValue('2026-01-15')
   })
 
-  it('archives the plan and clears its future events from the client-local today', async () => {
+  it('archives the plan and clears its events from the day after the client-local today', async () => {
     const response = await DELETE(makeDeleteRequest(), {
       params: Promise.resolve({ id: 'client-1' }),
     })
@@ -586,7 +586,7 @@ describe('Nutrition Route DELETE', () => {
 
     expect(response.status).toBe(200)
     expect(data.success).toBe(true)
-    expect(deleteFutureNutritionEventsForPlan).toHaveBeenCalledWith('plan-1', '2026-01-15')
+    expect(deleteFutureNutritionEventsForPlan).toHaveBeenCalledWith('plan-1', '2026-01-16')
     expect(archiveNutritionPlan).toHaveBeenCalledWith('plan-1')
   })
 

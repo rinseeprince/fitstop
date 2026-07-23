@@ -286,6 +286,17 @@ export function addDays(date: Date, days: number): Date {
 }
 
 /**
+ * Add days to a YYYY-MM-DD date string, returning YYYY-MM-DD. UTC-anchored end
+ * to end so the result never shifts with the server's local timezone (a
+ * parse-UTC/format-local mix loses a day west of UTC).
+ */
+export function addDaysToDateString(dateString: string, days: number): string {
+  const d = new Date(dateString + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
  * Calculate difference in days between two dates
  * Returns positive number if date2 is after date1
  */
