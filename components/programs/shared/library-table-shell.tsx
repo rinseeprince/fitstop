@@ -4,6 +4,7 @@ import type { ReactNode } from "react"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 import { Table } from "@/components/ui/table"
 import { cn } from "@/lib/utils"
+import { MONO_META_CLASS } from "@/components/clients/training/program-builder/builder-tokens"
 
 export const LIBRARY_PAGE_SIZE = 25
 
@@ -53,7 +54,7 @@ export function LibraryTableShell({
     <div className="overflow-hidden rounded-[6px] border border-[rgba(13,148,136,0.08)] bg-white">
       <Table>{children}</Table>
       <div className="flex items-center justify-between border-t border-[rgba(13,148,136,0.06)] px-5 py-2.5">
-        <span className="font-mono-display text-[11px] text-[#93b0b4]">
+        <span className={cn("text-[11px]", MONO_META_CLASS)}>
           Showing {shown} of {total} {noun}
         </span>
         <div className="flex gap-1">

@@ -1,6 +1,11 @@
 "use client"
 
 import type { ReactNode } from "react"
+import { cn } from "@/lib/utils"
+import {
+  MONO_META_CLASS,
+  SECTION_LABEL_CLASS,
+} from "@/components/clients/training/program-builder/builder-tokens"
 
 // Uppercase section label + hairline rule + optional right-aligned mono meta
 // and action buttons (mockup `seclabel`). Shared by the library pages and the
@@ -17,12 +22,12 @@ export function SectionLabel({
 }) {
   return (
     <div className="mb-3 flex items-center gap-3">
-      <span className="whitespace-nowrap text-[10.5px] font-semibold uppercase tracking-[0.07em] text-[#93b0b4]">
+      <span className={cn("whitespace-nowrap", SECTION_LABEL_CLASS)}>
         {label}
       </span>
       <div className="h-px flex-1 bg-[rgba(13,148,136,0.08)]" />
       {meta && (
-        <span className="whitespace-nowrap font-mono-display text-[11px] text-[#93b0b4]">
+        <span className={cn("whitespace-nowrap text-[11px]", MONO_META_CLASS)}>
           {meta}
         </span>
       )}

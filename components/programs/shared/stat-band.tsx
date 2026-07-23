@@ -1,6 +1,11 @@
 "use client"
 
 import { cn } from "@/lib/utils"
+import {
+  MONO,
+  STAT_LABEL_DARK_CLASS,
+  STAT_VALUE_DARK_CLASS,
+} from "@/components/clients/training/program-builder/builder-tokens"
 
 // Dark KPI band for the library pages — the established dark summary-card
 // pattern (model: check-in/kpi-ribbon.tsx), minus the status dots: library
@@ -44,7 +49,7 @@ export function StatBand({ cells }: { cells: StatBandCell[] }) {
             i < cells.length - 1 && "border-r border-[rgba(255,255,255,0.07)]",
           )}
         >
-          <span className="text-[10px] uppercase tracking-[0.06em] text-[rgba(255,255,255,0.35)] font-medium">
+          <span className={STAT_LABEL_DARK_CLASS}>
             {cell.label}
           </span>
           <div className="flex items-baseline gap-1 mt-1.5">
@@ -53,7 +58,7 @@ export function StatBand({ cells }: { cells: StatBandCell[] }) {
                 {cell.value}
               </span>
             ) : (
-              <span className="text-[24px] font-bold font-mono-display text-white leading-tight">
+              <span className={cn("text-[24px] leading-tight", STAT_VALUE_DARK_CLASS)}>
                 {cell.value}
               </span>
             )}
@@ -66,7 +71,8 @@ export function StatBand({ cells }: { cells: StatBandCell[] }) {
           {cell.sub && (
             <span
               className={cn(
-                "text-[10px] font-mono-display mt-1",
+                "text-[10px] mt-1",
+                MONO,
                 SUB_TONE_CLASS[cell.subTone ?? "neutral"],
               )}
             >

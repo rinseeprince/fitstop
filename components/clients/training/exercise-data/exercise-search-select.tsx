@@ -17,6 +17,7 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { Skeleton } from "@/components/ui/skeleton";
+import { HEADER_EYEBROW_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
 import type { ExerciseListItem } from "@/types/training";
 
 type ExerciseSearchSelectProps = {
@@ -59,7 +60,7 @@ export function ExerciseSearchSelect({
           className="flex w-full items-center justify-between bg-[#0f2027] rounded-[6px] px-5 py-[18px] text-left hover:bg-[#132930] transition-colors"
         >
           <div>
-            <p className="text-[10px] uppercase tracking-[0.08em] text-[rgba(255,255,255,0.35)] font-medium">
+            <p className={HEADER_EYEBROW_CLASS}>
               Exercise
             </p>
             <p
