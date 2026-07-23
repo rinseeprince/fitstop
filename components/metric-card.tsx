@@ -6,6 +6,8 @@ import type { LucideIcon } from "lucide-react"
 import { AnimatedCounter } from "./animated-counter"
 import { TrendingUp, TrendingDown } from "lucide-react"
 import { Sparkline } from "./ui/chart"
+import { cn } from "@/lib/utils"
+import { LABEL_CLASS, MONO } from "@/components/clients/training/program-builder/builder-tokens"
 
 interface MetricCardProps {
   title: string
@@ -27,9 +29,9 @@ export function MetricCard({ title, value, icon: Icon, trend, chart, delay = 0, 
     >
       <div className="relative flex items-start justify-between">
         <div className="flex-1">
-          <p className="text-[10px] font-medium uppercase tracking-[0.06em] text-[#93b0b4] mb-3">{title}</p>
+          <p className={cn(LABEL_CLASS, "mb-3")}>{title}</p>
           <div className="flex items-baseline gap-2">
-            <motion.h3 className="text-[32px] font-bold tracking-[-0.02em] font-mono-display text-[#0c1a1e] leading-tight">
+            <motion.h3 className={cn(MONO, "text-[32px] font-bold tracking-[-0.02em] text-[#0c1a1e] leading-tight")}>
               <AnimatedCounter value={value} />
             </motion.h3>
             {trend && (

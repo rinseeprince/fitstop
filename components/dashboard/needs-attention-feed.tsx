@@ -6,6 +6,8 @@ import { motion } from "framer-motion"
 import { CheckCircle, ChevronDown, ChevronUp, X } from "lucide-react"
 import useSWR from "swr"
 import type { AttentionFeedResponse, AttentionAlert, AlertType } from "@/types/attention-feed"
+import { cn } from "@/lib/utils"
+import { MONO } from "@/components/clients/training/program-builder/builder-tokens"
 
 const alertTabMap: Record<AlertType, string> = {
   mood_drop: "wellness",
@@ -223,7 +225,7 @@ export function NeedsAttentionFeed() {
         <h3 className="text-base font-semibold tracking-tight text-[#0c1a1e]">Needs Attention</h3>
         {/* Badge only when data is loaded */}
         {data && (
-          <span className="bg-[rgba(13,148,136,0.08)] text-[#0d9488] text-xs font-medium px-2 py-0.5 rounded-[4px] font-mono-display">
+          <span className={cn(MONO, "bg-[rgba(13,148,136,0.08)] text-[#0d9488] text-xs font-medium px-2 py-0.5 rounded-[4px]")}>
             {clientsOnTrack} of {totalClientCount} clients on track
           </span>
         )}
@@ -278,7 +280,7 @@ export function NeedsAttentionFeed() {
                     {priorityClient.alerts.length > 1 && (
                       <button
                         onClick={() => toggleExpanded(priorityClient.clientId)}
-                        className="flex items-center gap-1 text-xs text-[#93b0b4] hover:text-[#5a7d82] mt-1"
+                        className={cn("flex items-center gap-1 text-xs text-[#93b0b4] hover:text-[#5a7d82] mt-1", !isExpanded && MONO)}
                       >
                         {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                         {isExpanded ? "Hide" : `+${priorityClient.alerts.length - 1} more`} alert{priorityClient.alerts.length > 2 ? "s" : ""}
@@ -325,7 +327,7 @@ export function NeedsAttentionFeed() {
                               hasOnlyMedium
                                 ? "bg-[rgba(245,158,11,0.07)] text-[#d97706]"
                                 : "bg-[rgba(185,28,28,0.08)] text-[#b91c1c]"
-                            } text-xs font-medium px-1.5 py-0.5 rounded-[4px] font-mono-display`}>
+                            } text-xs font-medium px-1.5 py-0.5 rounded-[4px] ${MONO}`}>
                               {client.alerts.length}
                             </span>
                           )}

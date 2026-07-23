@@ -11,6 +11,7 @@ import {
   AlertDialogCancel,
 } from "@/components/ui/alert-dialog";
 import { getTodayDateString } from "@/lib/date-helpers";
+import { LABEL_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
 
 type ApplyDateDialogProps = {
   open: boolean;
@@ -85,7 +86,7 @@ export function ApplyDateDialog({
 
           <div className="flex items-center gap-2">
             <div className="flex-1 h-px bg-[rgba(0,0,0,0.06)]" />
-            <span className="text-[11px] text-[#93b0b4] uppercase tracking-wider">or</span>
+            <span className={LABEL_CLASS}>or</span>
             <div className="flex-1 h-px bg-[rgba(0,0,0,0.06)]" />
           </div>
 

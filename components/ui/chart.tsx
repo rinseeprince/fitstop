@@ -4,6 +4,7 @@ import * as React from 'react'
 import * as RechartsPrimitive from 'recharts'
 
 import { cn } from '@/lib/utils'
+import { MONO } from '@/components/clients/training/program-builder/builder-tokens'
 
 // Format: { THEME_NAME: CSS_SELECTOR }
 const THEMES = { light: '', dark: '.dark' } as const
@@ -257,7 +258,7 @@ function ChartTooltipContent({
                       </span>
                     </div>
                     {item.value && (
-                      <span className="text-foreground font-mono font-medium tabular-nums">
+                      <span className={cn(MONO, 'text-foreground font-medium tabular-nums')}>
                         {item.value.toLocaleString()}
                       </span>
                     )}

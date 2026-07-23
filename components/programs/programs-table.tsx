@@ -21,6 +21,8 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { useToast } from "@/hooks/use-toast"
+import { cn } from "@/lib/utils"
+import { MONO_CELL_CLASS } from "@/components/clients/training/program-builder/builder-tokens"
 import { useSavedPlansPage } from "@/hooks/use-saved-plans-page"
 import type { SavedPlanListItem } from "@/types/training"
 import { LibrarySearchInput } from "./shared/library-search-input"
@@ -268,16 +270,16 @@ export function ProgramsTable() {
                     <span className="text-[#93b0b4]">—</span>
                   )}
                 </TableCell>
-                <TableCell className="font-mono-display text-[12.5px] text-[#5a7d82]">
+                <TableCell className={cn(MONO_CELL_CLASS, "text-[#5a7d82]")}>
                   {plan.weekCount} {plan.weekCount === 1 ? "week" : "weeks"}
                 </TableCell>
-                <TableCell className="font-mono-display text-[12.5px] text-[#5a7d82]">
+                <TableCell className={cn(MONO_CELL_CLASS, "text-[#5a7d82]")}>
                   {plan.frequencyPerWeek ?? "—"}
                 </TableCell>
-                <TableCell className="font-mono-display text-[12.5px] text-[#93b0b4]">
+                <TableCell className={cn(MONO_CELL_CLASS, "text-[#93b0b4]")}>
                   {plan.totalSlots} slots · {plan.restCount} rest
                 </TableCell>
-                <TableCell className="font-mono-display text-[12.5px] text-[#93b0b4]">
+                <TableCell className={cn(MONO_CELL_CLASS, "text-[#93b0b4]")}>
                   {formatRelativeUpdated(plan.updatedAt)}
                 </TableCell>
                 <TableCell>

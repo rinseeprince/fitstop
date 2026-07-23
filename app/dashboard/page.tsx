@@ -11,6 +11,7 @@ import { PendingIntakeBanner } from "@/components/coach/pending-intake-banner"
 import { Users, MessageSquare, PhoneCall, Clock, TrendingUp, AlertCircle } from "lucide-react"
 import { motion } from "framer-motion"
 import { formatRelativeTime } from "@/lib/check-in-utils"
+import { MONO } from "@/components/clients/training/program-builder/builder-tokens"
 import type { CheckInStatus } from "@/types/check-in"
 import Link from "next/link"
 
@@ -134,7 +135,7 @@ export default function DashboardPage() {
                             <p className="font-semibold text-sm text-[#0c1a1e]">{checkIn.clientName}</p>
                             <div className="flex items-center gap-1.5 text-xs text-[#93b0b4]">
                               <Clock className="h-3 w-3" strokeWidth={1.5} />
-                              <span className="font-mono-display">{formatRelativeTime(checkIn.createdAt)}</span>
+                              <span className={MONO}>{formatRelativeTime(checkIn.createdAt)}</span>
                             </div>
                           </div>
                         </div>
@@ -189,7 +190,7 @@ export default function DashboardPage() {
                     <p className="font-semibold text-sm text-[#0c1a1e]">{call.name}</p>
                     <div className="flex items-center gap-1.5 text-xs text-[#93b0b4] mt-0.5">
                       <Clock className="h-3 w-3" strokeWidth={1.5} />
-                      <span className="font-mono-display">{call.time}</span>
+                      <span className={MONO}>{call.time}</span>
                     </div>
                     <p className="text-xs text-[#0d9488] font-medium mt-1">{call.type}</p>
                   </div>

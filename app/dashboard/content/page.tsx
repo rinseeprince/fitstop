@@ -34,6 +34,8 @@ import {
   Download,
 } from "lucide-react";
 import type { ContentLibraryResponse, ContentItem, ContentFolder } from "@/types/content";
+import { cn } from "@/lib/utils";
+import { MONO } from "@/components/clients/training/program-builder/builder-tokens";
 
 export default function ContentLibraryPage() {
   const [library, setLibrary] = useState<ContentLibraryResponse | null>(null);
@@ -452,7 +454,7 @@ export default function ContentLibraryPage() {
                     </p>
                   )}
                   <div className="flex items-center justify-between text-xs">
-                    <span className="text-[#93b0b4] font-mono-display">{new Date(item.createdAt).toLocaleDateString()}</span>
+                    <span className={cn(MONO, "text-[#93b0b4]")}>{new Date(item.createdAt).toLocaleDateString()}</span>
                     {item.isLibrary ? (
                       <span className="inline-flex items-center rounded-[4px] bg-[rgba(13,148,136,0.05)] px-2 py-0.5 text-[11px] font-medium text-[#5a7d82]">Library</span>
                     ) : (
