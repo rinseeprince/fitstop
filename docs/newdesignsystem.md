@@ -106,7 +106,7 @@ Every teal tint is `rgba(13,148,136,α)`. Pick the rung by role:
 
 | Element | Value |
 |---------|-------|
-| Eyebrow (mint) | `#5eead4` |
+| Eyebrow | `rgba(255,255,255,0.35)` — the label scale, NOT teal/mint. On-dark teal is reserved for interactive/active elements; a passive eyebrow in mint out-shouts the title beneath it (`#5eead4` is retired from labels) |
 | Strong value | `rgba(255,255,255,0.92)` |
 | Label / muted | `rgba(255,255,255,0.35)` |
 | Faint / secondary | `rgba(255,255,255,0.3)`–`0.4` |
@@ -244,7 +244,7 @@ The builder tokens are **app-wide** — reuse them anywhere, not just in the bui
 | `FOCUS_RING` | `focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0d9488]/35 focus-visible:ring-offset-0` |
 | `LABEL_CLASS` | `text-[10px] font-medium uppercase tracking-[0.06em] text-[#93b0b4]` |
 | `MONO_LABEL_CLASS` | `font-mono-display text-[10px] font-medium uppercase tracking-[0.08em] text-[#93b0b4]` |
-| `HEADER_EYEBROW_CLASS` | `font-mono-display text-[9.5px] font-medium uppercase tracking-[0.14em] text-[#5eead4]` (on dark) |
+| `HEADER_EYEBROW_CLASS` | `font-mono-display text-[9.5px] font-medium uppercase tracking-[0.14em] text-[rgba(255,255,255,0.35)]` (on dark) |
 | `CHIP_NEUTRAL_CLASS` | `rounded-[4px] bg-[#f0f5f4] px-1.5 py-px text-[10px] font-medium text-[#5a7d82]` |
 | `THUMB_CLASS` | `grid shrink-0 place-items-center rounded-[6px] bg-[rgba(13,148,136,0.08)] text-[#0d9488]` (caller sets `h-/w-`) |
 | `TRAINING_CARD_BORDER` | `border border-[rgba(13,148,136,0.08)]` |
@@ -582,7 +582,7 @@ White card, no border, 6px radius; header clickable (600 title + count badge on 
 - Library: Lucide (planned migration to Phosphor).
 - **Stroke width `1.5` consistently.**
 - Sizes: card grips/search/close/thumbs `h-3.5 w-3.5` (14px); inline action icons `h-3 w-3` (12px); row-action icons `h-[15px] w-[15px]`; sheet-header thumb `h-4 w-4`; loaders `h-4 w-4`/`h-5 w-5`.
-- Colour hierarchy: primary `#0c1a1e`; secondary `#5a7d82`; muted `#93b0b4`; on dark inactive `rgba(255,255,255,0.35)`, active `#0d9488` / eyebrow `#5eead4`.
+- Colour hierarchy: primary `#0c1a1e`; secondary `#5a7d82`; muted `#93b0b4`; on dark inactive `rgba(255,255,255,0.35)`, active `#0d9488` (labels/eyebrows on dark stay muted white — never mint).
 
 ---
 

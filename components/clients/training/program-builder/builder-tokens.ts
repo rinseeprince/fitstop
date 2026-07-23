@@ -45,6 +45,9 @@ export const CHIP_NEUTRAL_CLASS =
 export const THUMB_CLASS =
   "grid shrink-0 place-items-center rounded-[6px] bg-[rgba(13,148,136,0.08)] text-[#0d9488]";
 
-// Mono eyebrow on the dark program header (teal on #0f2027).
+// Mono eyebrow on the dark program header. Muted white (the on-dark LABEL
+// scale, same tone as stat-band labels), NOT the old #5eead4 mint — teal on
+// dark is reserved for interactive/active elements; a passive label in mint
+// out-shouts the title it sits above (owner call, 2026-07-23).
 export const HEADER_EYEBROW_CLASS =
-  "font-mono-display text-[9.5px] font-medium uppercase tracking-[0.14em] text-[#5eead4]";
+  "font-mono-display text-[9.5px] font-medium uppercase tracking-[0.14em] text-[rgba(255,255,255,0.35)]";

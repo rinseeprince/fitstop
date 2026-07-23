@@ -56,7 +56,9 @@ export function AssistantDock() {
                   type="button"
                   title="Undo the last AI edit (also reverts your own edits made since it)"
                   aria-label="Undo the last AI edit"
-                  className="rounded p-1 text-[#5eead4] transition-colors hover:text-white"
+                  // On-dark active-icon teal (#5eead4 mint is retired — see
+                  // the design doc's on-dark table).
+                  className="rounded p-1 text-[#0d9488] transition-colors hover:text-white"
                   onClick={chat.undo}
                 >
                   <RotateCcw className="h-3.5 w-3.5" strokeWidth={1.5} />
