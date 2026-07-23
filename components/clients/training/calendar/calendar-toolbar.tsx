@@ -51,7 +51,8 @@ export function CalendarToolbar({
 }: CalendarToolbarProps) {
   return (
     // mb-1 + the parent's gap-2 = the divider spec's 12px to the grid below.
-    <div className="mb-1 flex items-center gap-3">
+    // min-h matches SectionLabel's pinned row height (this row's natural size).
+    <div className="mb-1 flex min-h-[24.5px] items-center gap-3">
       <div className="flex items-center gap-2">
         <button
           onClick={onPrevMonth}

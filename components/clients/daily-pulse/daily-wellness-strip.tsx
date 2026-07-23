@@ -26,7 +26,7 @@ export function DailyWellnessStrip({ clientId }: DailyWellnessStripProps) {
   if (isLoading) {
     return (
       <div>
-        <div className="flex items-center gap-3 mb-3">
+        <div className="flex min-h-[24.5px] items-center gap-3 mb-3">
           <span className={`${SECTION_LABEL_CLASS} whitespace-nowrap`}>
             Daily Wellness
           </span>
@@ -47,7 +47,7 @@ export function DailyWellnessStrip({ clientId }: DailyWellnessStripProps) {
   if (logs.length === 0) {
     return (
       <div>
-        <div className="flex items-center gap-3 mb-3">
+        <div className="flex min-h-[24.5px] items-center gap-3 mb-3">
           <span className={`${SECTION_LABEL_CLASS} whitespace-nowrap`}>
             Daily Wellness
           </span>
@@ -125,7 +125,7 @@ export function DailyWellnessStrip({ clientId }: DailyWellnessStripProps) {
   return (
     <div className="relative">
       {/* Section title */}
-      <div className="flex items-center gap-3 mb-3">
+      <div className="flex min-h-[24.5px] items-center gap-3 mb-3">
         <span className={`${SECTION_LABEL_CLASS} whitespace-nowrap`}>
           Daily Wellness
         </span>

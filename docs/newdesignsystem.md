@@ -630,6 +630,7 @@ White card, no border, 6px radius; header clickable (600 title + count badge on 
 | Content padding bottom | 60px (`pb-[60px]`) |
 | Above a section divider | 16px — provided by the block above (`mb-4`) or the section rhythm |
 | Below a section divider | 12px — the divider row's OWN `mb-3` (SectionLabel's built-in). Never mount a divider inside a flex `gap-*` parent that adds around it: flex gaps and margins ADD (no collapse), which is how the 28px/0px outliers happened |
+| Divider row height | `min-h-[24.5px]` + `items-center` on EVERY divider row (SectionLabel bakes it in). Equal margins are not enough: the hairline is centered in the row, so a 15.75px bare-label row and a 24.5px toolbar row put the line ~4px apart even at identical margins. 24.5px = the calendar toolbars' natural height (Today button: 11px × 1.5 line-height + `py-1`); pinning it lands the line at exactly 27.75px below / 23.75px above its neighbours on every surface (CDP-measured) |
 | Builder main column | `px-6 pt-5` |
 | Overlay body padding | `px-5 py-4` (sheet) / `p-6` (dialog) |
 

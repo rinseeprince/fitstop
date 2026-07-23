@@ -21,7 +21,10 @@ export function SectionLabel({
   actions?: ReactNode
 }) {
   return (
-    <div className="mb-3 flex items-center gap-3">
+    // min-h pins the row to the calendar toolbars' natural height (Today
+    // button: 11px x 1.5 line-height + py-1 = 24.5px) so the centered hairline
+    // sits at the same offset on every surface, whatever the row's contents.
+    <div className="mb-3 flex min-h-[24.5px] items-center gap-3">
       <span className={cn("whitespace-nowrap", SECTION_LABEL_CLASS)}>
         {label}
       </span>

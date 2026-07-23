@@ -225,7 +225,7 @@ export const RoadmapTabContent = ({ client }: RoadmapTabContentProps) => {
           {/* Section divider header (matches the WELLNESS LOG / TRAINING LOG style):
               label · count · line · minimal text actions, End roadmap rightmost.
               mb-3 = the divider spec's 12px to the content below. */}
-          <div className="flex items-center gap-3 mt-4 mb-3">
+          <div className="flex min-h-[24.5px] items-center gap-3 mt-4 mb-3">
             <span className={cn(SECTION_LABEL_CLASS, "whitespace-nowrap")}>
               Phases
             </span>

@@ -34,7 +34,10 @@ export function ClientOverviewTab({
   const { brief, isLoading: briefLoading } = useOverviewBrief(client.id)
 
   return (
-    <div className="space-y-6">
+    // space-y-4 = the platform section rhythm (16px), which is also what the
+    // divider spec requires above the Daily Wellness divider — no page keeps
+    // a private rhythm.
+    <div className="space-y-4">
       {/* Activation Banner */}
       {client.onboardingStatus === "setup_in_progress" && (
         <ClientActivationBanner
