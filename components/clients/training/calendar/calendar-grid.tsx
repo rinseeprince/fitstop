@@ -79,7 +79,6 @@ export const CalendarGrid = memo(function CalendarGrid({
             <div key={days[0]}>
               <CalendarWeekRow
                 days={days}
-                weekNumber={i + 1}
                 eventsByDate={eventsByDate}
                 editMode={editMode}
                 todayDate={todayDate}

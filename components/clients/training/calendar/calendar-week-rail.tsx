@@ -5,6 +5,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Copy, CopyPlus, MoreVertical, Save, Trash2 } from "lucide-react";
@@ -21,8 +22,8 @@ export type WeekAction =
   | "clear";
 
 type CalendarWeekRailProps = {
-  /** 1-based week number within the displayed month grid. */
-  weekNumber: number;
+  /** Monday of this row (YYYY-MM-DD) — names the row for screen readers. */
+  weekStartDate: string;
   /** Events in this week row (any status). */
   sessionCount: number;
   editMode: boolean;
@@ -33,11 +34,19 @@ type CalendarWeekRailProps = {
   onAction: (action: WeekAction) => void;
 };
 
-// Always-rendered 42px rail (builder week-card language): W# chip + session
-// count, so entering edit mode no longer shifts every column. The kebab is
-// edit-mode-only and hover-revealed (stays visible while its menu is open).
+function formatWeekOf(dateStr: string) {
+  const date = new Date(dateStr + "T00:00:00");
+  return date.toLocaleDateString("en-AU", { day: "numeric", month: "short" });
+}
+
+// Always-rendered 42px rail (builder week-card language), so entering edit
+// mode no longer shifts every column. The chip is the week's session count —
+// a month-grid row has no meaningful week NUMBER (it is neither a program
+// week nor a month week), so the rail shows the one datum that is true.
+// Empty weeks show no chip. The kebab is edit-mode-only and hover-revealed
+// (stays visible while its menu is open).
 export const CalendarWeekRail = memo(function CalendarWeekRail({
-  weekNumber,
+  weekStartDate,
   sessionCount,
   editMode,
   showKebab,
@@ -47,24 +56,23 @@ export const CalendarWeekRail = memo(function CalendarWeekRail({
 }: CalendarWeekRailProps) {
   return (
     <div className="group/wk flex flex-col items-center gap-1 pt-2.5">
-      <span
-        className={cn(
-          MONO_LABEL_CLASS,
-          "normal-case tracking-normal rounded-[6px] bg-[rgba(13,148,136,0.08)] px-[7px] py-1 text-[10.5px] font-semibold text-[#0a5c55]"
-        )}
-      >
-        W{weekNumber}
-      </span>
-      <span className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal text-[9.5px] text-[#c2d0cc]")}>
-        {sessionCount > 0 ? `${sessionCount}×` : ""}
-      </span>
+      {sessionCount > 0 && (
+        <span
+          className={cn(
+            MONO_LABEL_CLASS,
+            "normal-case tracking-normal rounded-[6px] bg-[rgba(13,148,136,0.08)] px-[7px] py-1 text-[10.5px] font-semibold text-[#0a5c55]"
+          )}
+        >
+          {sessionCount}×
+        </span>
+      )}
 
       {editMode &&
         (showKebab ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
-                aria-label={`Week ${weekNumber} actions`}
+                aria-label={`Actions for week of ${formatWeekOf(weekStartDate)}`}
                 className="rounded p-0.5 text-[#93b0b4] opacity-0 transition-opacity hover:bg-[rgba(13,148,136,0.08)] group-hover/wk:opacity-100 data-[state=open]:opacity-100"
               >
                 <MoreVertical className="h-3 w-3" strokeWidth={1.5} />
@@ -73,23 +81,24 @@ export const CalendarWeekRail = memo(function CalendarWeekRail({
             <DropdownMenuContent align="start" className="w-52">
               {!isLastWeek && (
                 <DropdownMenuItem onClick={() => onAction("duplicate_next")}>
-                  <Copy className="mr-2 h-3.5 w-3.5" />
+                  <Copy className="h-3.5 w-3.5" strokeWidth={1.5} />
                   Duplicate to next week
                 </DropdownMenuItem>
               )}
               <DropdownMenuItem onClick={() => onAction("duplicate_remaining")}>
-                <CopyPlus className="mr-2 h-3.5 w-3.5" />
+                <CopyPlus className="h-3.5 w-3.5" strokeWidth={1.5} />
                 Duplicate to all remaining
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => onAction("save_to_library")}>
-                <Save className="mr-2 h-3.5 w-3.5" />
+                <Save className="h-3.5 w-3.5" strokeWidth={1.5} />
                 Save as plan
               </DropdownMenuItem>
+              <DropdownMenuSeparator />
               <DropdownMenuItem
-                className="text-[#c06060] focus:text-[#c06060]"
+                variant="destructive"
                 onClick={() => onAction("clear")}
               >
-                <Trash2 className="mr-2 h-3.5 w-3.5" />
+                <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
                 Clear week
               </DropdownMenuItem>
             </DropdownMenuContent>

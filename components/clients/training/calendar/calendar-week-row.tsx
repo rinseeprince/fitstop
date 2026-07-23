@@ -9,8 +9,6 @@ import type { PhaseStatus } from "@/types/roadmap";
 
 type CalendarWeekRowProps = {
   days: string[];
-  /** 1-based week number within the displayed grid (rail chip). */
-  weekNumber: number;
   eventsByDate: Map<string, TrainingEvent[]>;
   editMode: boolean;
   todayDate: string;
@@ -37,7 +35,6 @@ type CalendarWeekRowProps = {
 
 export const CalendarWeekRow = memo(function CalendarWeekRow({
   days,
-  weekNumber,
   eventsByDate,
   editMode,
   todayDate,
@@ -64,7 +61,7 @@ export const CalendarWeekRow = memo(function CalendarWeekRow({
   return (
     <div className={CAL_GRID_COLS}>
       <CalendarWeekRail
-        weekNumber={weekNumber}
+        weekStartDate={weekStartDate}
         sessionCount={sessionCount}
         editMode={editMode}
         showKebab={showWeekKebab}
