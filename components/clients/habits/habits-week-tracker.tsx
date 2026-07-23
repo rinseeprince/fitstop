@@ -10,6 +10,11 @@ import {
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import {
+  LABEL_CLASS,
+  MONO,
+  MONO_META_CLASS,
+} from "@/components/clients/training/program-builder/builder-tokens";
 import { HabitDayCell } from "./habit-day-cell";
 import type { WeeklyHabitRow } from "@/types/history";
 
@@ -36,7 +41,7 @@ export function HabitsWeekTracker({
   if (isLoading) {
     return (
       <div className="bg-white rounded-[6px] p-5">
-        <p className="text-[10px] uppercase tracking-[0.07em] text-[#93b0b4] font-medium mb-4">
+        <p className={cn(LABEL_CLASS, "mb-4")}>
           Habit Tracker
         </p>
         <div className="space-y-3">
@@ -51,7 +56,7 @@ export function HabitsWeekTracker({
   if (habits.length === 0) {
     return (
       <div className="bg-white rounded-[6px] p-5">
-        <p className="text-[10px] uppercase tracking-[0.07em] text-[#93b0b4] font-medium mb-4">
+        <p className={cn(LABEL_CLASS, "mb-4")}>
           Habit Tracker
         </p>
         <div className="h-24 flex items-center justify-center text-[13px] text-[#93b0b4]">
@@ -63,13 +68,13 @@ export function HabitsWeekTracker({
 
   return (
     <div className="bg-white rounded-[6px] p-5">
-      <p className="text-[10px] uppercase tracking-[0.07em] text-[#93b0b4] font-medium mb-4">
+      <p className={cn(LABEL_CLASS, "mb-4")}>
         Habit Tracker
       </p>
       <Table>
         <TableHeader>
           <TableRow className="border-b border-[rgba(13,148,136,0.08)] hover:bg-transparent">
-            <TableHead className="text-[11px] uppercase tracking-[0.06em] text-[#93b0b4] font-medium min-w-[140px] h-10">
+            <TableHead className={cn(LABEL_CLASS, "min-w-[140px] h-10")}>
               Habit
             </TableHead>
             {weekDays.map((date) => {
@@ -86,7 +91,8 @@ export function HabitsWeekTracker({
                   <div className="text-[10px] text-[#93b0b4] font-medium">{dayAbbr}</div>
                   <div
                     className={cn(
-                      "text-[12px] font-mono-display",
+                      MONO,
+                      "text-[12px]",
                       isToday ? "text-[#0d9488] font-semibold" : "text-[#5a7d82]"
                     )}
                   >
@@ -95,7 +101,7 @@ export function HabitsWeekTracker({
                 </TableHead>
               );
             })}
-            <TableHead className="text-[11px] uppercase tracking-[0.06em] text-[#93b0b4] font-medium text-right min-w-[60px] h-10">
+            <TableHead className={cn(LABEL_CLASS, "text-right min-w-[60px] h-10")}>
               Rate
             </TableHead>
           </TableRow>
@@ -112,7 +118,7 @@ export function HabitsWeekTracker({
                   {habit.habitName}
                 </span>
                 {!habit.isBoolean && habit.targetValue != null && (
-                  <span className="text-[11px] text-[#93b0b4] ml-1.5">
+                  <span className={cn(MONO_META_CLASS, "text-[11px] ml-1.5")}>
                     · {habit.targetValue} {habit.targetUnit}
                   </span>
                 )}
@@ -138,7 +144,8 @@ export function HabitsWeekTracker({
               <TableCell className="text-right py-2.5">
                 <span
                   className={cn(
-                    "text-[13px] font-mono-display font-semibold",
+                    MONO,
+                    "text-[13px] font-semibold",
                     habit.weeklyRate >= 70 ? "text-[#0d9488]" : "text-[#93b0b4]"
                   )}
                 >

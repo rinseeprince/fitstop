@@ -1,5 +1,11 @@
 "use client";
 
+import { cn } from "@/lib/utils";
+import {
+  STAT_LABEL_DARK_CLASS,
+  STAT_VALUE_DARK_CLASS,
+} from "@/components/clients/training/program-builder/builder-tokens";
+
 type HabitsSummaryStripProps = {
   todayCompleted: number | null;
   todayTotal: number | null;
@@ -27,14 +33,14 @@ function StatColumn({
           : "flex flex-col pl-5 pr-5 border-r border-[rgba(255,255,255,0.07)]"
       }
     >
-      <p className="text-[10px] uppercase tracking-[0.06em] text-[rgba(255,255,255,0.35)] font-medium">
+      <p className={STAT_LABEL_DARK_CLASS}>
         {label}
       </p>
-      <p className="text-[28px] font-bold leading-tight mt-1 text-white font-mono-display">
+      <p className={cn(STAT_VALUE_DARK_CLASS, "text-[28px] leading-tight mt-1")}>
         {value}
       </p>
       {sub && (
-        <p className="text-[11px] text-[rgba(255,255,255,0.3)] font-mono-display mt-1">
+        <p className="text-[11px] text-[rgba(255,255,255,0.3)] mt-1">
           {sub}
         </p>
       )}

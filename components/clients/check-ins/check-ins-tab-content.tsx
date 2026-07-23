@@ -8,6 +8,8 @@ import { CheckInDetailModal } from "@/components/check-in/check-in-detail-modal"
 import { CheckInStatusBadge } from "./check-in-status-badge";
 import { useClientCheckInsInfinite } from "@/hooks/use-check-in-data";
 import { getAiPreview } from "@/lib/check-in-helpers";
+import { cn } from "@/lib/utils";
+import { MONO } from "@/components/clients/training/program-builder/builder-tokens";
 import type { Client } from "@/types/check-in";
 
 type CheckInsTabContentProps = {
@@ -79,7 +81,7 @@ export const CheckInsTabContent = ({ client }: CheckInsTabContentProps) => {
             className="w-full text-left flex items-center justify-between gap-3 p-4 bg-white border border-[rgba(13,148,136,0.08)] rounded-[6px] transition-all duration-150 hover:-translate-y-px hover:shadow-[0_6px_20px_rgba(13,148,136,0.08)]"
           >
             <div className="min-w-0">
-              <p className="text-sm font-semibold text-[#0c1a1e] font-mono-display">
+              <p className={cn(MONO, "text-sm font-semibold text-[#0c1a1e]")}>
                 {format(new Date(checkIn.createdAt), "MMM d, yyyy")}
               </p>
               {aiPreview && (

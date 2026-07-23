@@ -1,6 +1,8 @@
 "use client";
 
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { MONO_META_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
 
 type HabitsWeekNavProps = {
   weekOffset: number;
@@ -35,7 +37,7 @@ export function HabitsWeekNav({
       </button>
       <div className="flex items-center gap-2">
         <span className="text-[13px] font-semibold text-[#0c1a1e]">{label}</span>
-        <span className="text-[12px] font-mono-display text-[#93b0b4]">
+        <span className={cn(MONO_META_CLASS, "text-[12px]")}>
           {formatShortDate(weekStart)} – {formatShortDate(weekEnd)}
         </span>
       </div>

@@ -4,6 +4,11 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { CheckInScheduleSection } from "@/components/clients/check-in/check-in-schedule-card"
 import { Edit2, Mail, Phone } from "lucide-react"
+import { cn } from "@/lib/utils"
+import {
+  LABEL_CLASS,
+  MONO,
+} from "@/components/clients/training/program-builder/builder-tokens"
 import type { Client } from "@/types/check-in"
 
 interface ClientScheduleCardProps {
@@ -102,15 +107,20 @@ export function ClientScheduleCard({ client, onClientUpdated }: ClientScheduleCa
               {/* Frequency | Check-in Day */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <p className="text-[10px] uppercase tracking-[0.06em] text-[#93b0b4] font-medium">
+                  <p className={LABEL_CLASS}>
                     Frequency
                   </p>
-                  <p className="text-[13px] font-semibold text-[#0c1a1e] mt-0.5">
+                  <p
+                    className={cn(
+                      "text-[13px] font-semibold text-[#0c1a1e] mt-0.5",
+                      client.checkInFrequency === "custom" && MONO
+                    )}
+                  >
                     {getFrequencyLabel(client)}
                   </p>
                 </div>
                 <div>
-                  <p className="text-[10px] uppercase tracking-[0.06em] text-[#93b0b4] font-medium">
+                  <p className={LABEL_CLASS}>
                     Check-in Day
                   </p>
                   <p className="text-[13px] font-semibold text-[#0c1a1e] mt-0.5">
@@ -121,7 +131,7 @@ export function ClientScheduleCard({ client, onClientUpdated }: ClientScheduleCa
 
               {/* Email */}
               <div>
-                <p className="text-[10px] uppercase tracking-[0.06em] text-[#93b0b4] font-medium">
+                <p className={LABEL_CLASS}>
                   Email
                 </p>
                 <div className="flex items-center gap-1.5 mt-0.5">
@@ -132,7 +142,7 @@ export function ClientScheduleCard({ client, onClientUpdated }: ClientScheduleCa
 
               {/* Phone */}
               <div>
-                <p className="text-[10px] uppercase tracking-[0.06em] text-[#93b0b4] font-medium">
+                <p className={LABEL_CLASS}>
                   Phone
                 </p>
                 <div className="flex items-center gap-1.5 mt-0.5">
@@ -144,12 +154,12 @@ export function ClientScheduleCard({ client, onClientUpdated }: ClientScheduleCa
               {/* Height | Gender */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <p className="text-[10px] uppercase tracking-[0.06em] text-[#93b0b4] font-medium">
+                  <p className={LABEL_CLASS}>
                     Height
                   </p>
                   <p className="text-[13px] font-semibold text-[#0c1a1e] mt-0.5">
                     {client.height ? (
-                      <span className="font-mono-display">
+                      <span className={MONO}>
                         {client.height}
                         <span className="text-[11px] text-[#93b0b4] font-normal ml-0.5">
                           {client.heightUnit || "in"}
@@ -161,7 +171,7 @@ export function ClientScheduleCard({ client, onClientUpdated }: ClientScheduleCa
                   </p>
                 </div>
                 <div>
-                  <p className="text-[10px] uppercase tracking-[0.06em] text-[#93b0b4] font-medium">
+                  <p className={LABEL_CLASS}>
                     Gender
                   </p>
                   <p className="text-[13px] font-semibold text-[#0c1a1e] mt-0.5 capitalize">

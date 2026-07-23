@@ -2,6 +2,12 @@
 
 import { Button } from "@/components/ui/button"
 import { Loader2, Calculator } from "lucide-react"
+import { cn } from "@/lib/utils"
+import {
+  MONO,
+  STAT_LABEL_DARK_CLASS,
+  STAT_VALUE_DARK_CLASS,
+} from "@/components/clients/training/program-builder/builder-tokens"
 import type { Client } from "@/types/check-in"
 
 interface ClientStatusCardProps {
@@ -178,13 +184,13 @@ function MetricCell({
 
   return (
     <div className={showLeftBorder ? "border-l border-[rgba(255,255,255,0.06)] pl-3" : ""}>
-      <p className="text-[9px] uppercase tracking-[0.06em] text-[rgba(255,255,255,0.30)] font-medium">
+      <p className={STAT_LABEL_DARK_CLASS}>
         {label}
       </p>
       <div className="mt-1">
         {value ? (
           <>
-            <span className={`${fontSize} font-bold font-mono-display text-white leading-tight`}>
+            <span className={cn(STAT_VALUE_DARK_CLASS, fontSize, "leading-tight")}>
               {value}
             </span>
             <span className="text-[10px] text-[rgba(255,255,255,0.30)] ml-1">{unit}</span>
@@ -194,12 +200,12 @@ function MetricCell({
         )}
       </div>
       {sub && (
-        <p className={`text-[9px] font-mono-display mt-0.5 ${subColor ?? "text-[rgba(255,255,255,0.25)]"}`}>
+        <p className={cn(MONO, "text-[9px] mt-0.5", subColor ?? "text-[rgba(255,255,255,0.25)]")}>
           {sub}
         </p>
       )}
       {badge && (
-        <span className="inline-block mt-1 text-[9px] font-medium px-1.5 py-0.5 rounded-[4px] bg-[rgba(245,158,11,0.07)] text-[#d97706]">
+        <span className={cn(MONO, "inline-block mt-1 text-[9px] font-medium px-1.5 py-0.5 rounded-[4px] bg-[rgba(245,158,11,0.07)] text-[#d97706]")}>
           {badge}
         </span>
       )}

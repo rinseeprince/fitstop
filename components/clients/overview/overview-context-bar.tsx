@@ -4,6 +4,8 @@ import useSWR from "swr"
 import { Map, Flag } from "lucide-react"
 import { swrFetcher } from "@/lib/swr-fetcher"
 import { format } from "date-fns"
+import { cn } from "@/lib/utils"
+import { MONO } from "@/components/clients/training/program-builder/builder-tokens"
 import { weightToKg, weightFromKg } from "@/utils/nutrition-helpers"
 import type { RoadmapWithPhases } from "@/services/roadmap-service"
 import type { Client } from "@/types/check-in"
@@ -90,22 +92,22 @@ export function OverviewContextBar({ clientId, client }: OverviewContextBarProps
                   {activePhase.name}
                 </span>
                 {phaseDateRange && (
-                  <span className="text-[12px] text-[#93b0b4] shrink-0">
+                  <span className={cn(MONO, "text-[12px] text-[#93b0b4] shrink-0")}>
                     {phaseDateRange}
                   </span>
                 )}
                 {goalWeightDisplay && (
-                  <span className="text-[12px] text-[#5a7d82] shrink-0">
+                  <span className={cn(MONO, "text-[12px] text-[#5a7d82] shrink-0")}>
                     {goalWeightDisplay}
                   </span>
                 )}
                 {phaseGoalProgress && (
-                  <span className="text-[10.5px] font-semibold text-[#d97706] bg-[rgba(245,158,11,0.07)] px-1.5 py-0.5 rounded-[3px] shrink-0">
+                  <span className={cn(MONO, "text-[10.5px] font-semibold text-[#d97706] bg-[rgba(245,158,11,0.07)] px-1.5 py-0.5 rounded-[3px] shrink-0")}>
                     {phaseGoalProgress}
                   </span>
                 )}
                 {getWeeksProgress(activePhase) && (
-                  <span className="text-[11px] font-mono-display text-[#5a7d82] shrink-0">
+                  <span className={cn(MONO, "text-[11px] text-[#5a7d82] shrink-0")}>
                     {getWeeksProgress(activePhase)}
                   </span>
                 )}

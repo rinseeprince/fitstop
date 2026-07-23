@@ -2,6 +2,7 @@
 
 import { Check, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { MONO } from "@/components/clients/training/program-builder/builder-tokens";
 import type { WeeklyHabitDayStatus } from "@/types/history";
 
 type HabitDayCellProps = {
@@ -21,7 +22,7 @@ export function HabitDayCell({ status, value, isBoolean }: HabitDayCellProps) {
     return (
       <div className="w-[28px] h-[28px] mx-auto rounded-[4px] bg-[#0d9488] flex items-center justify-center">
         {!isBoolean && value != null ? (
-          <span className="text-[9px] font-bold text-white font-mono-display leading-none">
+          <span className={cn(MONO, "text-[9px] font-bold text-white leading-none")}>
             {value >= 1000 ? `${(value / 1000).toFixed(1)}k` : value}
           </span>
         ) : (

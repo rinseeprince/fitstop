@@ -7,6 +7,11 @@ import { HistoryTable, type ColumnDef } from "@/components/clients/history-table
 import { useHistoryData } from "@/hooks/use-history-data";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import { cn } from "@/lib/utils";
+import {
+  MONO,
+  SECTION_LABEL_CLASS,
+  STAT_LABEL_DARK_CLASS,
+} from "@/components/clients/training/program-builder/builder-tokens";
 import type { WellnessMetric } from "@/utils/wellness-color-thresholds";
 import type { WellnessHistoryRow } from "@/types/history";
 
@@ -101,7 +106,7 @@ export function WellnessHistoryTable({ clientId }: Props) {
 
   const columns: ColumnDef<WellnessHistoryRow>[] = useMemo(() => [
     { key: "date", label: "Date", render: (_v, row) => (
-      <span className={`font-mono-display ${row.is_logged === false ? "text-[#b8cfd3]" : "text-[#93b0b4]"}`}>{formatDate(row.date)}</span>
+      <span className={cn(MONO, row.is_logged === false ? "text-[#b8cfd3]" : "text-[#93b0b4]")}>{formatDate(row.date)}</span>
     )},
     { key: "day", label: "Day", render: (_v, row) => (
       <span className={row.is_logged === false ? "text-[#b8cfd3] font-medium" : "text-[#0c1a1e] font-medium"}>{formatDay(row.date)}</span>
@@ -159,7 +164,7 @@ export function WellnessHistoryTable({ clientId }: Props) {
                   {warn && (
                     <span className="w-[3px] h-[14px] rounded-[2px] bg-[#d97706]" />
                   )}
-                  <p className="text-[10px] uppercase tracking-[0.06em] text-[rgba(255,255,255,0.35)] font-medium">
+                  <p className={STAT_LABEL_DARK_CLASS}>
                     {label}
                   </p>
                 </div>
@@ -167,13 +172,13 @@ export function WellnessHistoryTable({ clientId }: Props) {
                   <Skeleton className="h-7 w-16 mt-1 bg-white/10" />
                 ) : (
                   <>
-                    <p className="text-[22px] font-bold mt-1 font-mono-display tracking-[-0.03em]" style={{ color }}>
+                    <p className={cn(MONO, "text-[22px] font-bold mt-1 tracking-[-0.03em]")} style={{ color }}>
                       {avg != null ? avg : "-"}
                       <span className="text-[13px] font-medium text-[rgba(255,255,255,0.25)] ml-0.5">
                         / {max}
                       </span>
                     </p>
-                    <p className="text-[11px] text-[rgba(255,255,255,0.3)] font-mono-display mt-1">
+                    <p className={cn(MONO, "text-[11px] text-[rgba(255,255,255,0.3)] mt-1")}>
                       {summary ? `${summary.days_logged}/${summary.days_in_window} days logged` : "-"}
                     </p>
                   </>
@@ -186,7 +191,7 @@ export function WellnessHistoryTable({ clientId }: Props) {
 
       {/* Section header */}
       <div className="flex items-center gap-3 mt-2">
-        <span className="text-[10.5px] uppercase tracking-[0.07em] text-[#93b0b4] font-semibold whitespace-nowrap">
+        <span className={cn(SECTION_LABEL_CLASS, "whitespace-nowrap")}>
           Wellness Log
         </span>
         <div className="flex-1 h-px bg-[rgba(13,148,136,0.08)]" />
@@ -218,7 +223,7 @@ function renderMetricCell(metric: WellnessMetric, value: number | null, max: num
   if (value == null) return <span className="text-[#93b0b4]">-</span>;
   const color = getTableColor(metric, value);
   return (
-    <span className="font-mono-display text-[13px] font-semibold" style={color ? { color } : undefined}>
+    <span className={cn(MONO, "text-[13px] font-semibold")} style={color ? { color } : undefined}>
       {value}
       <span className="font-normal text-[#93b0b4]"> / {max}</span>
     </span>

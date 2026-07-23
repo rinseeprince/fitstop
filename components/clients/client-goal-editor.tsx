@@ -16,6 +16,7 @@ import { Loader2, Pencil } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import { getTodayDateString } from "@/lib/date-helpers";
+import { SECTION_LABEL_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
 import type { ClientGoal } from "@/types/roadmap";
 
 // Coach editor for the client's long-term goal (Session 7.8). Drives the existing
@@ -54,7 +55,7 @@ export function ClientGoalEditor({ clientId, unit }: ClientGoalEditorProps) {
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between">
-        <label className="text-[10.5px] uppercase tracking-[0.07em] font-semibold text-[#93b0b4]">
+        <label className={SECTION_LABEL_CLASS}>
           Goal
         </label>
         <button

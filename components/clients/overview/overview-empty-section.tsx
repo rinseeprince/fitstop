@@ -1,6 +1,8 @@
 "use client"
 
 import type { LucideIcon } from "lucide-react"
+import { cn } from "@/lib/utils"
+import { SECTION_LABEL_CLASS } from "@/components/clients/training/program-builder/builder-tokens"
 
 interface OverviewEmptySectionProps {
   title: string
@@ -18,7 +20,7 @@ export function OverviewEmptySection({
   return (
     <div>
       <div className="flex items-center gap-3 mb-4">
-        <span className="text-[10.5px] uppercase tracking-[0.07em] text-[#93b0b4] font-semibold whitespace-nowrap">
+        <span className={cn(SECTION_LABEL_CLASS, "whitespace-nowrap")}>
           {title}
         </span>
         <div className="flex-1 h-px bg-[rgba(13,148,136,0.08)]" />
