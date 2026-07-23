@@ -8,6 +8,13 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
+import {
+  MONO,
+  MONO_LABEL_CLASS,
+  STAT_LABEL_DARK_CLASS,
+  STAT_VALUE_DARK_CLASS,
+} from "@/components/clients/training/program-builder/builder-tokens";
 import { useTrainingBuilderContext } from "@/contexts/training-builder-context";
 import { SPLIT_TYPE_LABELS } from "@/lib/training-constants";
 import { swrFetcher } from "@/lib/swr-fetcher";
@@ -61,11 +68,11 @@ export function TrainingSummaryHero({ clientId }: { clientId: string }) {
             <span className="bg-[rgba(255,255,255,0.12)] text-[rgba(255,255,255,0.4)] text-[10px] px-1.5 py-0.5 rounded-[3px] font-medium">
               {SPLIT_TYPE_LABELS[plan.splitType] || plan.splitType}
             </span>
-            <span className="bg-[rgba(255,255,255,0.12)] text-[rgba(255,255,255,0.4)] text-[10px] px-1.5 py-0.5 rounded-[3px] font-medium">
+            <span className={cn(MONO, "bg-[rgba(255,255,255,0.12)] text-[rgba(255,255,255,0.4)] text-[10px] px-1.5 py-0.5 rounded-[3px] font-medium")}>
               {plan.frequencyPerWeek}x/week
             </span>
             {plan.programDurationWeeks && (
-              <span className="bg-[rgba(255,255,255,0.12)] text-[rgba(255,255,255,0.4)] text-[10px] px-1.5 py-0.5 rounded-[3px] font-medium">
+              <span className={cn(MONO, "bg-[rgba(255,255,255,0.12)] text-[rgba(255,255,255,0.4)] text-[10px] px-1.5 py-0.5 rounded-[3px] font-medium")}>
                 {plan.programDurationWeeks} weeks
               </span>
             )}
@@ -76,17 +83,17 @@ export function TrainingSummaryHero({ clientId }: { clientId: string }) {
       <div className="grid grid-cols-[1fr_1fr_1fr]">
         {/* SESSIONS COMPLETED */}
         <div className="flex flex-col pr-5 border-r border-[rgba(255,255,255,0.08)]">
-          <p className="text-[10px] uppercase tracking-[0.06em] text-[rgba(255,255,255,0.35)] font-medium">
+          <p className={STAT_LABEL_DARK_CLASS}>
             Sessions Completed
           </p>
           {summaryLoading ? (
             <Skeleton className="h-8 w-20 mt-1 bg-white/10" />
           ) : (
             <>
-              <p className="text-[32px] font-bold leading-tight mt-1 text-white">
+              <p className={cn(STAT_VALUE_DARK_CLASS, "text-[32px] leading-tight mt-1")}>
                 {summary?.completed ?? 0}
               </p>
-              <p className="text-[11px] text-[rgba(255,255,255,0.35)]">
+              <p className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal text-[11px] text-[rgba(255,255,255,0.35)]")}>
                 of {summary?.totalPlanned ?? 0} planned
               </p>
             </>
@@ -95,20 +102,20 @@ export function TrainingSummaryHero({ clientId }: { clientId: string }) {
 
         {/* ADHERENCE */}
         <div className="flex flex-col pl-5 pr-5 border-r border-[rgba(255,255,255,0.06)]">
-          <p className="text-[10px] uppercase tracking-[0.06em] text-[rgba(255,255,255,0.35)] font-medium">
+          <p className={STAT_LABEL_DARK_CLASS}>
             Adherence
           </p>
           {summaryLoading ? (
             <Skeleton className="h-7 w-16 mt-1 bg-white/10" />
           ) : (
             <>
-              <p className="text-[22px] font-bold text-white mt-1">
+              <p className={cn(STAT_VALUE_DARK_CLASS, "text-[22px] mt-1")}>
                 {adherencePct}
                 <span className="text-[13px] font-medium text-[rgba(255,255,255,0.25)] ml-0.5">
                   %
                 </span>
               </p>
-              <p className="text-[11px] text-[rgba(255,255,255,0.3)] font-mono-display mt-1">
+              <p className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal text-[11px] text-[rgba(255,255,255,0.3)] mt-1")}>
                 {summary?.completed ?? 0}/{summary?.plannedUpToToday ?? 0} sessions
               </p>
             </>
@@ -117,13 +124,13 @@ export function TrainingSummaryHero({ clientId }: { clientId: string }) {
 
         {/* MISSED THIS WEEK */}
         <div className="flex flex-col pl-5">
-          <p className="text-[10px] uppercase tracking-[0.06em] text-[rgba(255,255,255,0.35)] font-medium">
+          <p className={STAT_LABEL_DARK_CLASS}>
             Missed This Week
           </p>
           {summaryLoading ? (
             <Skeleton className="h-7 w-16 mt-1 bg-white/10" />
           ) : (
-            <p className="text-[22px] font-bold text-white mt-1">
+            <p className={cn(STAT_VALUE_DARK_CLASS, "text-[22px] mt-1")}>
               {summary?.missed ?? 0}
             </p>
           )}

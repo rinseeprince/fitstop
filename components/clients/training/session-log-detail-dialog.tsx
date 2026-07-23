@@ -10,6 +10,11 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  LABEL_CLASS,
+  MONO,
+  MONO_LABEL_CLASS,
+} from "@/components/clients/training/program-builder/builder-tokens";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import type { SessionLog, ExerciseLog } from "@/types/training";
 
@@ -161,7 +166,9 @@ function ExerciseLogCard({
         {prescribedParts.length > 0 && (
           <p className="text-[11px] text-[#93b0b4] ml-4 whitespace-nowrap shrink-0">
             <span className="text-[#b8cfd3]">Prescribed</span>{" "}
-            {prescribedParts.join(" @ ")}
+            <span className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal text-[11px]")}>
+              {prescribedParts.join(" @ ")}
+            </span>
           </p>
         )}
       </div>
@@ -170,7 +177,7 @@ function ExerciseLogCard({
       {log.sets.length > 0 && (
         <table className="w-full text-[13px]">
           <thead>
-            <tr className="text-[10px] uppercase tracking-[0.06em] text-[#93b0b4] border-t border-[rgba(13,148,136,0.08)]">
+            <tr className={cn(LABEL_CLASS, "border-t border-[rgba(13,148,136,0.08)]")}>
               <th className="text-left font-medium pl-4 pr-2 py-[9px]">Set</th>
               <th className="text-left font-medium px-2 py-[9px]">Reps</th>
               <th className="text-left font-medium px-2 py-[9px]">{weightHeader}</th>
@@ -185,20 +192,26 @@ function ExerciseLogCard({
                   key={set.id}
                   className="border-t border-[rgba(13,148,136,0.06)]"
                 >
-                  <td className="pl-4 pr-2 py-[9px] font-mono-display tabular-nums text-[#93b0b4]">
+                  <td className={cn(MONO, "pl-4 pr-2 py-[9px] tabular-nums text-[#93b0b4]")}>
                     {set.setNumber}
                   </td>
-                  <td className="px-2 py-[9px] font-mono-display tabular-nums text-[#0c1a1e]">
+                  <td className={cn(MONO, "px-2 py-[9px] tabular-nums text-[#0c1a1e]")}>
                     {set.reps ?? <span className="text-[#b8cfd3]">—</span>}
                   </td>
-                  <td className="px-2 py-[9px] font-mono-display tabular-nums text-[#0c1a1e]">
+                  <td className={cn(MONO, "px-2 py-[9px] tabular-nums text-[#0c1a1e]")}>
                     {set.weight != null ? (
                       set.weight
                     ) : (
                       <span className="text-[#b8cfd3]">—</span>
                     )}
                   </td>
-                  <td className={`pl-2 pr-4 py-[9px] font-mono-display tabular-nums text-right ${set.rpe != null ? rpeColor(set.rpe, prescribedRpe) : ""}`}>
+                  <td
+                    className={cn(
+                      MONO,
+                      "pl-2 pr-4 py-[9px] tabular-nums text-right",
+                      set.rpe != null ? rpeColor(set.rpe, prescribedRpe) : ""
+                    )}
+                  >
                     {set.rpe != null ? (
                       set.rpe
                     ) : (
@@ -275,7 +288,7 @@ export function SessionLogDetailDialog({
             {isLoading ? "Loading..." : sessionName}
           </DialogTitle>
           {!isLoading && sessionLog && (
-            <p className="text-[13px] text-[#93b0b4] mt-2 pb-1">
+            <p className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal text-[13px] mt-2 pb-1")}>
               {formatDate(sessionLog.completedAt)}
               {qualityLabel(sessionLog.completionQuality) && (
                 <>
@@ -344,7 +357,7 @@ export function SessionLogDetailDialog({
             {/* Client notes — quoted block */}
             {sessionLog.notes && (
               <div className="mt-3">
-                <p className="text-[10px] uppercase tracking-[0.06em] text-[#93b0b4] font-semibold mb-2">
+                <p className={cn(LABEL_CLASS, "font-semibold mb-2")}>
                   Client Notes
                 </p>
                 <div className="bg-[rgba(13,148,136,0.03)] border-l-2 border-[#0d9488] rounded-r-[4px] px-4 py-3">
@@ -367,7 +380,7 @@ export function SessionLogDetailDialog({
             {/* Detailed / Orphaned state */}
             {exerciseLogs.length > 0 && (
               <div className="mt-[28px]">
-                <p className="text-[10px] uppercase tracking-[0.06em] text-[#93b0b4] font-semibold mb-3">
+                <p className={cn(LABEL_CLASS, "font-semibold mb-3")}>
                   Exercises
                 </p>
                 <div className="flex flex-col gap-[10px]">

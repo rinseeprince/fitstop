@@ -14,6 +14,7 @@ import { SegmentedControl } from "@/components/programs/shared/segmented-control
 import {
   CHIP_NEUTRAL_CLASS,
   FOCUS_RING,
+  LABEL_CLASS,
   MONO_LABEL_CLASS,
   THUMB_CLASS,
   TRAINING_CARD_BORDER,
@@ -90,7 +91,7 @@ export function LibraryPanel({ open, onOpenChange }: LibraryPanelProps) {
           </div>
         </SheetHeader>
 
-        <p className={cn(MONO_LABEL_CLASS, "px-[14px] pb-1.5")}>
+        <p className={cn(LABEL_CLASS, "px-[14px] pb-1.5")}>
           Drag onto a calendar day
         </p>
 

@@ -3,7 +3,7 @@
 import { memo } from "react";
 import { CalendarWeekRow } from "./calendar-week-row";
 import { CAL_GRID_COLS } from "./calendar-tokens";
-import { MONO_LABEL_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
+import { LABEL_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
 import type { WeekAction } from "./calendar-week-rail";
 import type { TrainingEvent } from "@/types/training";
 import type { PhaseStatus } from "@/types/roadmap";
@@ -57,7 +57,7 @@ export const CalendarGrid = memo(function CalendarGrid({
       <div className={`${CAL_GRID_COLS} sticky top-0 z-20 bg-[#f4f7f6] pb-1`}>
         <div />
         {DAY_LABELS.map((label) => (
-          <div key={label} className={`${MONO_LABEL_CLASS} py-1 text-center`}>
+          <div key={label} className={`${LABEL_CLASS} py-1 text-center`}>
             {label}
           </div>
         ))}

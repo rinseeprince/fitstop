@@ -7,6 +7,10 @@ import { ProgramDraftProvider } from "@/components/clients/training/program-buil
 import { ProgramBuilder } from "@/components/clients/training/program-builder/program-builder";
 import { ClientDraftLeaveGuard } from "./client-draft-leave-guard";
 import { useSavedPlans } from "@/hooks/use-saved-plans";
+import {
+  LABEL_CLASS,
+  MONO_LABEL_CLASS,
+} from "@/components/clients/training/program-builder/builder-tokens";
 import { Badge } from "@/components/ui/badge";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { cn } from "@/lib/utils";
@@ -237,7 +241,7 @@ function SavedPlansList() {
 
   return (
     <div className="space-y-2">
-      <h3 className="text-[11px] font-semibold uppercase tracking-wide text-[#5a7d82] mb-3">
+      <h3 className={cn(LABEL_CLASS, "mb-3")}>
         Your Library ({plans.length})
       </h3>
       {plans.map((plan) => (
@@ -261,14 +265,10 @@ function SavedPlansList() {
                   {plan.splitType}
                 </Badge>
               )}
-              <span className="text-[11.5px] text-[#93b0b4]">
+              <span className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal")}>
                 {plan.sessions.length} session{plan.sessions.length !== 1 && "s"}
+                {plan.programDurationWeeks ? ` · ${plan.programDurationWeeks} wk` : ""}
               </span>
-              {plan.programDurationWeeks && (
-                <span className="text-[11.5px] text-[#93b0b4]">
-                  · {plan.programDurationWeeks} wk
-                </span>
-              )}
             </div>
           </button>
           <button

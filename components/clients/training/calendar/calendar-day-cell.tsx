@@ -10,7 +10,11 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { MONO_LABEL_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
+import {
+  LABEL_CLASS,
+  MONO,
+  MONO_LABEL_CLASS,
+} from "@/components/clients/training/program-builder/builder-tokens";
 import { PHASE_TINT } from "./calendar-tokens";
 import type { TrainingEvent } from "@/types/training";
 import type { PhaseStatus } from "@/types/roadmap";
@@ -85,7 +89,8 @@ export const CalendarDayCell = memo(function CalendarDayCell({
       {/* Date numeral */}
       <span
         className={cn(
-          "self-end font-mono-display text-[10px] font-medium leading-none",
+          MONO_LABEL_CLASS,
+          "self-end normal-case tracking-normal leading-none",
           isToday ? "font-semibold text-[#0d9488]" : "text-[#93b0b4]"
         )}
       >
@@ -110,7 +115,10 @@ export const CalendarDayCell = memo(function CalendarDayCell({
         <Popover open={overflowOpen} onOpenChange={setOverflowOpen}>
           <PopoverTrigger asChild>
             <button
-              className="self-start rounded px-0.5 font-mono-display text-[10px] font-medium text-[#c2d0cc] transition-colors hover:text-[#0d9488]"
+              className={cn(
+                MONO_LABEL_CLASS,
+                "self-start rounded px-0.5 normal-case tracking-normal text-[#c2d0cc] transition-colors hover:text-[#0d9488]"
+              )}
               onClick={(e) => e.stopPropagation()}
             >
               +{overflowCount} more
@@ -122,7 +130,7 @@ export const CalendarDayCell = memo(function CalendarDayCell({
             className="w-[320px] rounded-[6px] border-[rgba(13,148,136,0.08)] p-0"
           >
             <div className="px-3.5 pb-2 pt-3">
-              <p className="text-sm font-semibold text-[#0c1a1e]">
+              <p className={cn(MONO, "text-sm font-semibold text-[#0c1a1e]")}>
                 {format(new Date(date + "T00:00:00"), "EEEE, MMM d")}
               </p>
               <p className={MONO_LABEL_CLASS}>
@@ -152,7 +160,7 @@ export const CalendarDayCell = memo(function CalendarDayCell({
       {/* Rest day label */}
       {events.length === 0 && !isPast && !isOutsideMonth && (
         <div className="flex flex-1 items-center justify-center">
-          <span className={MONO_LABEL_CLASS}>Rest</span>
+          <span className={LABEL_CLASS}>Rest</span>
         </div>
       )}
     </div>

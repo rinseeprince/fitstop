@@ -7,6 +7,13 @@ import { HistoryChartDialog } from "@/components/clients/history-table/history-c
 import { useHistoryData } from "@/hooks/use-history-data";
 import { SessionLogDetailDialog } from "@/components/clients/training/session-log-detail-dialog";
 import { TrainingSummaryHero } from "@/components/clients/training/training-summary-hero";
+import { SectionLabel } from "@/components/programs/shared/section-label";
+import { cn } from "@/lib/utils";
+import {
+  CHIP_NEUTRAL_CLASS,
+  LABEL_CLASS,
+  MONO,
+} from "@/components/clients/training/program-builder/builder-tokens";
 import type { TrainingHistoryRow } from "@/types/history";
 
 function formatDate(dateStr: string) {
@@ -134,7 +141,7 @@ export function TrainingHistoryTable({ clientId }: Props) {
         key: "date",
         label: "Date",
         render: (_v, row) => (
-          <span className={`font-mono-display ${row.is_logged === false ? "text-[#b8cfd3]" : "text-[#93b0b4]"}`}>
+          <span className={cn(MONO, "tabular-nums", row.is_logged === false ? "text-[#b8cfd3]" : "text-[#93b0b4]")}>
             {formatDate(row.date)}
           </span>
         ),
@@ -162,7 +169,7 @@ export function TrainingHistoryTable({ clientId }: Props) {
               {row.is_alternative && (
                 <span
                   title="Client logged a different session than prescribed"
-                  className="rounded-[4px] bg-[#e3edee] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#4a7d84]"
+                  className={cn(LABEL_CLASS, CHIP_NEUTRAL_CLASS, "font-semibold")}
                 >
                   Alt
                 </span>
@@ -197,12 +204,7 @@ export function TrainingHistoryTable({ clientId }: Props) {
       <TrainingSummaryHero clientId={clientId} />
 
       {/* Section header: TRAINING LOG */}
-      <div className="flex items-center gap-3 mt-2">
-        <span className="text-[10.5px] uppercase tracking-[0.07em] text-[#93b0b4] font-semibold whitespace-nowrap">
-          Training Log
-        </span>
-        <div className="flex-1 h-px bg-[rgba(13,148,136,0.08)]" />
-      </div>
+      <SectionLabel label="Training Log" />
 
       {/* Table card */}
       <div className="bg-white rounded-[6px] p-5">

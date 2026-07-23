@@ -10,6 +10,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { MONO_LABEL_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
 
 type CalendarToolbarProps = {
   monthLabel: string;
@@ -55,7 +56,12 @@ export function CalendarToolbar({
         >
           <ChevronLeft className="h-3.5 w-3.5" strokeWidth={1.5} />
         </button>
-        <span className="min-w-[80px] whitespace-nowrap text-center font-mono-display text-[11px] text-[#93b0b4]">
+        <span
+          className={cn(
+            MONO_LABEL_CLASS,
+            "min-w-[80px] whitespace-nowrap text-center normal-case tracking-normal text-[11px]"
+          )}
+        >
           {monthLabel}
         </span>
         <button
@@ -78,7 +84,12 @@ export function CalendarToolbar({
 
       <div className="h-px flex-1 bg-[rgba(13,148,136,0.08)]" />
 
-      <span className="whitespace-nowrap font-mono-display text-[11px] text-[#93b0b4]">
+      <span
+        className={cn(
+          MONO_LABEL_CLASS,
+          "whitespace-nowrap normal-case tracking-normal text-[11px]"
+        )}
+      >
         {monthSessionCount} session{monthSessionCount === 1 ? "" : "s"}
       </span>
       <div className="flex items-center gap-2">

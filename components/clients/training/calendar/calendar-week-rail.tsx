@@ -8,6 +8,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Copy, CopyPlus, MoreVertical, Save, Trash2 } from "lucide-react";
+import { cn } from "@/lib/utils";
+import {
+  MONO,
+  MONO_LABEL_CLASS,
+} from "@/components/clients/training/program-builder/builder-tokens";
 
 export type WeekAction =
   | "duplicate_next"
@@ -42,10 +47,15 @@ export const CalendarWeekRail = memo(function CalendarWeekRail({
 }: CalendarWeekRailProps) {
   return (
     <div className="group/wk flex flex-col items-center gap-1 pt-2.5">
-      <span className="rounded-[6px] bg-[rgba(13,148,136,0.08)] px-[7px] py-1 font-mono-display text-[10.5px] font-semibold text-[#0a5c55]">
+      <span
+        className={cn(
+          MONO_LABEL_CLASS,
+          "normal-case tracking-normal rounded-[6px] bg-[rgba(13,148,136,0.08)] px-[7px] py-1 text-[10.5px] font-semibold text-[#0a5c55]"
+        )}
+      >
         W{weekNumber}
       </span>
-      <span className="font-mono-display text-[9.5px] text-[#c2d0cc]">
+      <span className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal text-[9.5px] text-[#c2d0cc]")}>
         {sessionCount > 0 ? `${sessionCount}×` : ""}
       </span>
 
@@ -86,7 +96,7 @@ export const CalendarWeekRail = memo(function CalendarWeekRail({
           </DropdownMenu>
         ) : disabledReason ? (
           <span
-            className="cursor-help font-mono-display text-[10px] text-[#93b0b4]"
+            className={cn(MONO, "cursor-help text-[10px] text-[#93b0b4]")}
             title={disabledReason}
           >
             —

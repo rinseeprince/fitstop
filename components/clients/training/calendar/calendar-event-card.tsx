@@ -10,6 +10,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { MoreHorizontal, Pencil, Copy, Trash2 } from "lucide-react";
+import {
+  LABEL_CLASS,
+  MONO_LABEL_CLASS,
+} from "@/components/clients/training/program-builder/builder-tokens";
 import { STATUS_THUMB } from "./calendar-tokens";
 import type { TrainingEvent } from "@/types/training";
 
@@ -149,11 +153,11 @@ export const CalendarEventCard = memo(function CalendarEventCard({
       {/* Mono meta row — focus left, surplus right */}
       {hasMetaRow && (
         <div className="flex items-center justify-between gap-1 pl-[26px]">
-          <span className="min-w-0 truncate font-mono-display text-[10px] text-[#93b0b4]">
+          <span className={cn(LABEL_CLASS, "min-w-0 truncate normal-case tracking-normal")}>
             {event.sessionFocus ?? ""}
           </span>
           {surplus != null && (
-            <span className="shrink-0 font-mono-display text-[10px] font-medium text-[#0d9488]">
+            <span className={cn(MONO_LABEL_CLASS, "shrink-0 normal-case tracking-normal text-[#0d9488]")}>
               +{surplus}%
             </span>
           )}
