@@ -13,7 +13,13 @@ import { cn } from "@/lib/utils";
 import type { SetSpec } from "@/utils/exercise-set-specs";
 import { SET_TYPE_OPTIONS, type SetSpecEdit } from "./use-set-spec-mutations";
 import { DropSetEditor } from "./drop-set-editor";
-import { FOCUS_RING, TEXT_MUTED, TEXT_SECONDARY } from "./builder-tokens";
+import {
+  FOCUS_RING,
+  MONO,
+  MONO_INPUT_CLASS,
+  TEXT_MUTED,
+  TEXT_SECONDARY,
+} from "./builder-tokens";
 
 // One per-set prescription row. Column template is shared with the header row
 // exercise-card renders above the set list. Numeric caps mirror setSpecSchema
@@ -70,7 +76,7 @@ export function SetRowEditor({ spec, index, disabled, onEdit }: SetRowEditorProp
   return (
     <div>
       <div className={SET_GRID}>
-        <span className={cn("text-center font-mono-display text-[11px]", TEXT_MUTED)}>
+        <span className={cn(MONO, "text-center text-[11px]", TEXT_MUTED)}>
           {spec.set_number}
         </span>
 
@@ -106,7 +112,7 @@ export function SetRowEditor({ spec, index, disabled, onEdit }: SetRowEditorProp
             defaultValue={spec.reps_target ?? ""}
             placeholder={spec.set_type === "amrap" ? "AMRAP" : "To failure"}
             aria-label={`Set ${spec.set_number} rep target`}
-            className={cn("h-7 px-1.5 text-center font-mono-display text-[11px]", FOCUS_RING)}
+            className={cn(MONO_INPUT_CLASS, "h-7 px-1.5 text-[11px]", FOCUS_RING)}
             onBlur={(e) => update({ reps_target: e.target.value.trim() || null })}
           />
         ) : (
@@ -119,7 +125,7 @@ export function SetRowEditor({ spec, index, disabled, onEdit }: SetRowEditorProp
               defaultValue={spec.reps_min ?? ""}
               placeholder="min"
               aria-label={`Set ${spec.set_number} min reps`}
-              className={cn("h-7 min-w-0 flex-1 px-1 text-center font-mono-display text-[11px]", FOCUS_RING)}
+              className={cn(MONO_INPUT_CLASS, "h-7 min-w-0 flex-1 px-1 text-[11px]", FOCUS_RING)}
               onFocus={(e) => {
                 // Select-all on focus so a prefilled value is typed over, not
                 // deleted (programmatic focus just highlights, never wipes).
@@ -145,7 +151,7 @@ export function SetRowEditor({ spec, index, disabled, onEdit }: SetRowEditorProp
               defaultValue={spec.reps_max ?? ""}
               placeholder="max"
               aria-label={`Set ${spec.set_number} max reps`}
-              className={cn("h-7 min-w-0 flex-1 px-1 text-center font-mono-display text-[11px]", FOCUS_RING)}
+              className={cn(MONO_INPUT_CLASS, "h-7 min-w-0 flex-1 px-1 text-[11px]", FOCUS_RING)}
               onFocus={(e) => {
                 e.target.select();
               }}
@@ -198,7 +204,7 @@ export function SetRowEditor({ spec, index, disabled, onEdit }: SetRowEditorProp
             defaultValue={spec.load_value ?? ""}
             placeholder={loadSuffix}
             aria-label={`Set ${spec.set_number} load`}
-            className={cn("h-7 w-16 shrink-0 px-1 text-center font-mono-display text-[11px]", FOCUS_RING)}
+            className={cn(MONO_INPUT_CLASS, "h-7 w-16 shrink-0 px-1 text-[11px]", FOCUS_RING)}
             onBlur={(e) => update({ load_value: commitNum(e, { min: 0, max: 2000 }) })}
           />
         </div>
@@ -212,7 +218,7 @@ export function SetRowEditor({ spec, index, disabled, onEdit }: SetRowEditorProp
           defaultValue={spec.rpe_target ?? ""}
           placeholder="RPE"
           aria-label={`Set ${spec.set_number} RPE`}
-          className={cn("h-7 px-1 text-center font-mono-display text-[11px]", FOCUS_RING)}
+          className={cn(MONO_INPUT_CLASS, "h-7 px-1 text-[11px]", FOCUS_RING)}
           onBlur={(e) => update({ rpe_target: commitNum(e, { min: 0, max: 10 }) })}
         />
 
@@ -224,7 +230,7 @@ export function SetRowEditor({ spec, index, disabled, onEdit }: SetRowEditorProp
           defaultValue={spec.rest_seconds ?? ""}
           placeholder="rest"
           aria-label={`Set ${spec.set_number} rest seconds`}
-          className={cn("h-7 px-1 text-center font-mono-display text-[11px]", FOCUS_RING)}
+          className={cn(MONO_INPUT_CLASS, "h-7 px-1 text-[11px]", FOCUS_RING)}
           onBlur={(e) => update({ rest_seconds: commitNum(e, { min: 0, max: 3600, int: true }) })}
         />
 

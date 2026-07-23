@@ -6,7 +6,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { ProgramDraft } from "./program-builder-types";
-import { FOCUS_RING, HEADER_EYEBROW_CLASS } from "./builder-tokens";
+import {
+  FOCUS_RING,
+  HEADER_EYEBROW_CLASS,
+  MONO_INPUT_CLASS,
+  STAT_LABEL_DARK_CLASS,
+} from "./builder-tokens";
 
 // Builder hero — the slim dark program header. Back arrow · eyebrow + the
 // program NAME and FOCUS (both inline-editable in edit mode) · the default-
@@ -156,7 +161,7 @@ export function ProgramTopBar({
       {/* Default-surplus pill (editable — the header's only control) */}
       {showSurplus && (
       <div className="ml-auto flex shrink-0 items-center gap-1.5 rounded-[6px] border border-[rgba(255,255,255,0.14)] px-2.5 py-1">
-        <span className={cn("font-mono-display text-[10px] uppercase tracking-[0.08em]", STAT_MUTE)}>
+        <span className={STAT_LABEL_DARK_CLASS}>
           Surplus
         </span>
         <Input
@@ -171,7 +176,8 @@ export function ProgramTopBar({
           placeholder="—"
           aria-label="Default calorie surplus percent"
           className={cn(
-            "h-6 w-10 border-0 bg-transparent px-0 text-center font-mono-display text-xs text-white shadow-none placeholder:text-[rgba(255,255,255,0.35)]",
+            MONO_INPUT_CLASS,
+            "h-6 w-10 border-0 bg-transparent px-0 text-xs text-white shadow-none placeholder:text-[rgba(255,255,255,0.35)]",
             FOCUS_RING,
           )}
           onBlur={(e) => {

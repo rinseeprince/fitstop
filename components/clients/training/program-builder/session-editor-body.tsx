@@ -17,7 +17,7 @@ import type { SetSpecEdit } from "./use-set-spec-mutations";
 import { defaultExerciseDraftFromCatalog } from "./program-builder-model";
 import { ExerciseCard } from "./exercise-card";
 import { ExercisePicker } from "./exercise-picker";
-import { FOCUS_RING, LABEL_CLASS } from "./builder-tokens";
+import { FOCUS_RING, LABEL_CLASS, MONO_INPUT_CLASS } from "./builder-tokens";
 
 // Chrome-agnostic session editor body — the fields grid + per-set exercise
 // authoring, shared by the click-to-edit Sheet and the routed create-blank
@@ -137,7 +137,7 @@ export function SessionEditorBody({
             max={480}
             disabled={!editable}
             defaultValue={session.estimatedDurationMinutes ?? ""}
-            className={cn("h-8 text-center font-mono-display text-xs", FOCUS_RING)}
+            className={cn(MONO_INPUT_CLASS, "h-8 text-xs", FOCUS_RING)}
             onBlur={(e) => {
               const raw = e.target.value.trim();
               const n = raw === "" ? null : Number(raw);
@@ -167,7 +167,7 @@ export function SessionEditorBody({
                 ? `Default ${defaultSurplusPercentage}%`
                 : "No default"
             }
-            className={cn("h-8 text-center font-mono-display text-xs", FOCUS_RING)}
+            className={cn(MONO_INPUT_CLASS, "h-8 text-xs", FOCUS_RING)}
             onBlur={(e) => {
               const raw = e.target.value.trim();
               const n = raw === "" ? null : Number(raw);

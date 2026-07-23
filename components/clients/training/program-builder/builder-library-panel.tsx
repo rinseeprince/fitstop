@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { SegmentedControl } from "@/components/programs/shared/segmented-control";
 import { LibrarySessionList } from "./library-session-list";
 import { LibraryExerciseList } from "./library-exercise-list";
-import { MONO_LABEL_CLASS, TEXT_PRIMARY, TEXT_SECONDARY } from "./builder-tokens";
+import { LABEL_CLASS, TEXT_PRIMARY, TEXT_SECONDARY } from "./builder-tokens";
 
 // The builder's single tabbed library panel (S4.5/S4.75) — the left column of
 // the 3-column frame (icon strip · panel · builder), matched to the reference
@@ -59,7 +59,7 @@ export function BuilderLibraryPanel({
         )}
         {clientName ? (
           <div className="mb-3.5">
-            <p className={MONO_LABEL_CLASS}>Editing for</p>
+            <p className={LABEL_CLASS}>Editing for</p>
             <h2
               className={cn(
                 "mt-0.5 truncate text-base font-semibold tracking-[-0.01em]",

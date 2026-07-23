@@ -16,6 +16,7 @@ import type { LibrarySessionDragData } from "./use-program-dnd";
 import {
   CHIP_NEUTRAL_CLASS,
   FOCUS_RING,
+  LABEL_CLASS,
   MONO_LABEL_CLASS,
   TEXT_MUTED,
   TEXT_PRIMARY,
@@ -153,7 +154,7 @@ export function LibrarySessionList({ editable }: { editable: boolean }) {
       </div>
 
       {editable && (
-        <div className={cn("px-[18px] pb-1.5", MONO_LABEL_CLASS)}>
+        <div className={cn("px-[18px] pb-1.5", LABEL_CLASS)}>
           Drag a session onto a day
         </div>
       )}

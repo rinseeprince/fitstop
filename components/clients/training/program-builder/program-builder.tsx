@@ -34,6 +34,8 @@ import { BuilderLibraryPanel } from "./builder-library-panel";
 import { AddSessionPopover, type AddSessionTarget } from "./add-session-popover";
 import {
   CHIP_NEUTRAL_CLASS,
+  MONO,
+  MONO_LABEL_CLASS,
   TEXT_PRIMARY,
   TEXT_SECONDARY,
   TRAINING_CARD_BORDER,
@@ -427,7 +429,7 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
           createPortal(
             <DragOverlay dropAnimation={null}>
               {dnd.activeDrag?.type === "week" ? (
-                <div className={cn("rounded-[6px] bg-white px-3 py-2 text-sm font-semibold shadow-lg", TRAINING_CARD_BORDER, TEXT_PRIMARY)}>
+                <div className={cn(MONO, "rounded-[6px] bg-white px-3 py-2 text-sm font-semibold shadow-lg", TRAINING_CARD_BORDER, TEXT_PRIMARY)}>
                   Week {dnd.activeDrag.week.weekIndex + 1}
                 </div>
               ) : dnd.activeDrag?.type === "session" ? (
@@ -435,7 +437,7 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
                   <div className={cn("text-xs font-semibold", TEXT_PRIMARY)}>
                     {dnd.activeDrag.session.name}
                   </div>
-                  <div className={cn("text-[10px]", TEXT_SECONDARY)}>
+                  <div className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal")}>
                     {dnd.activeDrag.session.exercises.length} exercises
                   </div>
                 </div>
@@ -450,7 +452,7 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
                         {dnd.activeDrag.session.focus}
                       </span>
                     )}
-                    <span className={cn("text-[10px]", TEXT_SECONDARY)}>
+                    <span className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal")}>
                       {dnd.activeDrag.session.exercises.length} exercises
                     </span>
                   </div>

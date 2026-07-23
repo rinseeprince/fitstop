@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils";
 import {
   FOCUS_RING,
   LABEL_CLASS,
+  MONO_INPUT_CLASS,
   MONO_LABEL_CLASS,
   TEXT_MUTED,
   TEXT_SECONDARY,
@@ -60,7 +61,7 @@ const clampOnBlur = (raw: string, lo: number, hi: number, int: boolean): string 
   return String(Math.min(hi, Math.max(lo, int ? Math.round(n) : n)));
 };
 
-const AMOUNT_INPUT_CLASS = cn("h-8 w-20 text-center font-mono-display text-xs", FOCUS_RING);
+const AMOUNT_INPUT_CLASS = cn(MONO_INPUT_CLASS, "h-8 w-20 text-xs", FOCUS_RING);
 
 export function DuplicateWeekDialog({
   week,

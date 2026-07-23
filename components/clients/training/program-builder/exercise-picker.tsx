@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { MIN_SEARCH_CHARS, useExerciseSearch } from "@/hooks/use-exercise-search";
 import { useRecentExercises } from "@/hooks/use-recent-exercises";
-import { FOCUS_RING, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY } from "./builder-tokens";
+import { FOCUS_RING, LABEL_CLASS, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY } from "./builder-tokens";
 
 // Single-EXERCISE catalog picker (saved-session insertion is Phase 3).
 // Instant search over the SWR-cached catalog (name + aliases) — every match
@@ -86,7 +86,7 @@ export function ExercisePicker({ onPick }: ExercisePickerProps) {
                   {exercise.name}
                 </span>
                 {exercise.muscleGroup && (
-                  <span className={cn("shrink-0 text-[10px] uppercase tracking-[0.06em]", TEXT_MUTED)}>
+                  <span className={cn("shrink-0", LABEL_CLASS)}>
                     {exercise.muscleGroup}
                   </span>
                 )}
@@ -117,8 +117,8 @@ export function ExercisePicker({ onPick }: ExercisePickerProps) {
         <div className="mt-1 overflow-hidden rounded-[6px] border border-[rgba(13,148,136,0.08)] bg-white">
           <div
             className={cn(
-              "flex items-center gap-1.5 px-2.5 pb-1 pt-1.5 text-[10px] uppercase tracking-[0.06em]",
-              TEXT_MUTED,
+              "flex items-center gap-1.5 px-2.5 pb-1 pt-1.5",
+              LABEL_CLASS,
             )}
           >
             <History className="h-3 w-3" strokeWidth={1.5} />
@@ -138,7 +138,7 @@ export function ExercisePicker({ onPick }: ExercisePickerProps) {
                 {exercise.name}
               </span>
               {exercise.muscleGroup && (
-                <span className={cn("shrink-0 text-[10px] uppercase tracking-[0.06em]", TEXT_MUTED)}>
+                <span className={cn("shrink-0", LABEL_CLASS)}>
                   {exercise.muscleGroup}
                 </span>
               )}

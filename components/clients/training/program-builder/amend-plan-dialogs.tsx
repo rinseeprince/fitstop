@@ -11,6 +11,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import { MONO } from "./builder-tokens";
 
 // The placed-plan save dialogs, on the styled Dialog primitive (never
 // ConfirmDialog — un-migrated OKLCH). The confirm carries the moved-events
@@ -73,7 +75,7 @@ export function AmendConfirmDialog({
               <ul className="mt-1.5 space-y-0.5">
                 {futureModifiedEvents.slice(0, MAX_LISTED_EVENTS).map((event) => (
                   <li key={event.id} className="flex items-baseline gap-2">
-                    <span className="shrink-0 font-mono-display text-[11px] text-[#d97706]">
+                    <span className={cn(MONO, "shrink-0 text-[11px] text-[#d97706]")}>
                       {format(new Date(event.date + "T00:00:00"), "EEE, MMM d")}
                     </span>
                     <span className="min-w-0 truncate text-[12px] text-[#5a7d82]">
@@ -82,7 +84,7 @@ export function AmendConfirmDialog({
                   </li>
                 ))}
                 {futureModifiedEvents.length > MAX_LISTED_EVENTS && (
-                  <li className="font-mono-display text-[11px] text-[#d97706]">
+                  <li className={cn(MONO, "text-[11px] text-[#d97706]")}>
                     +{futureModifiedEvents.length - MAX_LISTED_EVENTS} more
                   </li>
                 )}

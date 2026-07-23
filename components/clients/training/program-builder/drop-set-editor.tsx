@@ -5,7 +5,13 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import type { SetSpec } from "@/utils/exercise-set-specs";
 import type { SetSpecEdit } from "./use-set-spec-mutations";
-import { FOCUS_RING, LABEL_CLASS, TEXT_MUTED } from "./builder-tokens";
+import {
+  FOCUS_RING,
+  LABEL_CLASS,
+  MONO,
+  MONO_INPUT_CLASS,
+  TEXT_MUTED,
+} from "./builder-tokens";
 
 // Sub-editor for a drop set's weight/reps pairs, rendered under a set row
 // whose set_type === "drop". ≤20 drops (zod cap enforced in the kernel).
@@ -40,7 +46,7 @@ export function DropSetEditor({ drops, setIndex, disabled, onEdit }: DropSetEdit
           key={`${setIndex}-${dropIndex}-${drops.length}`}
           className="flex items-center gap-1.5"
         >
-          <span className={cn("w-10 text-[10px]", TEXT_MUTED)}>Drop {dropIndex + 1}</span>
+          <span className={cn(MONO, "w-10 text-[10px]", TEXT_MUTED)}>Drop {dropIndex + 1}</span>
           <Input
             type="number"
             min={0}
@@ -49,7 +55,7 @@ export function DropSetEditor({ drops, setIndex, disabled, onEdit }: DropSetEdit
             defaultValue={drop.weight ?? ""}
             placeholder="kg"
             aria-label={`Drop ${dropIndex + 1} weight`}
-            className={cn("h-6 w-16 px-1 text-center font-mono-display text-[11px]", FOCUS_RING)}
+            className={cn(MONO_INPUT_CLASS, "h-6 w-16 px-1 text-[11px]", FOCUS_RING)}
             onBlur={(e) =>
               onEdit({
                 kind: "update-drop",
@@ -68,7 +74,7 @@ export function DropSetEditor({ drops, setIndex, disabled, onEdit }: DropSetEdit
             defaultValue={drop.reps ?? ""}
             placeholder="reps"
             aria-label={`Drop ${dropIndex + 1} reps`}
-            className={cn("h-6 w-14 px-1 text-center font-mono-display text-[11px]", FOCUS_RING)}
+            className={cn(MONO_INPUT_CLASS, "h-6 w-14 px-1 text-[11px]", FOCUS_RING)}
             onBlur={(e) =>
               onEdit({
                 kind: "update-drop",

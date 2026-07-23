@@ -7,7 +7,9 @@ import type { DaySlotDraft } from "./program-builder-types";
 import type { SessionDragData, SlotDropData } from "./use-program-dnd";
 import { setsRepsShort } from "./exercise-summary";
 import {
-  MONO_LABEL_CLASS,
+  LABEL_CLASS,
+  MONO,
+  MONO_META_CLASS,
   TEXT_MUTED,
   TEXT_PRIMARY,
   TEXT_SECONDARY,
@@ -132,7 +134,7 @@ export function DayCell({
           ) : (
             <>
               {/* Hover swaps the rest label for the add affordance (mockup). */}
-              <span className={cn(MONO_LABEL_CLASS, editable && "group-hover/rest:hidden")}>
+              <span className={cn(LABEL_CLASS, editable && "group-hover/rest:hidden")}>
                 Rest
               </span>
               {editable && (
@@ -189,7 +191,8 @@ export function DayCell({
               {surplusValue != null && (
                 <span
                   className={cn(
-                    "shrink-0 font-mono-display text-[10px] font-medium",
+                    MONO_META_CLASS,
+                    "shrink-0 text-[10px] font-medium",
                     surplusIsCustom ? "text-[#0d9488]" : TEXT_MUTED,
                   )}
                   title={
@@ -233,19 +236,19 @@ export function DayCell({
               <div className="mt-1.5 min-w-0 flex-1 space-y-[3px] overflow-hidden">
                 {session.exercises.slice(0, 3).map((ex, i) => (
                   <div key={ex.uid} className="flex items-baseline gap-1.5">
-                    <span className="w-2 shrink-0 font-mono-display text-[9.5px] text-[#c2d0cc]">
+                    <span className={cn(MONO, "w-2 shrink-0 text-[9.5px] text-[#c2d0cc]")}>
                       {i + 1}
                     </span>
                     <span className={cn("min-w-0 flex-1 truncate text-[11px]", TEXT_SECONDARY)}>
                       {ex.name}
                     </span>
-                    <span className={cn("shrink-0 font-mono-display text-[10px]", TEXT_MUTED)}>
+                    <span className={cn(MONO_META_CLASS, "shrink-0 text-[10px]")}>
                       {setsRepsShort(ex)}
                     </span>
                   </div>
                 ))}
                 {session.exercises.length > 3 && (
-                  <div className="pl-[14px] font-mono-display text-[10px] text-[#c2d0cc]">
+                  <div className={cn(MONO_META_CLASS, "pl-[14px] text-[10px] text-[#c2d0cc]")}>
                     +{session.exercises.length - 3} more
                   </div>
                 )}
@@ -254,13 +257,13 @@ export function DayCell({
 
             {/* Foot: duration (or exercise count) · focus. */}
             <div className="mt-auto flex items-center justify-between gap-1.5 border-t border-[rgba(13,148,136,0.06)] pt-1.5">
-              <span className={cn("font-mono-display text-[10px]", TEXT_MUTED)}>
+              <span className={cn(MONO_META_CLASS, "text-[10px]")}>
                 {session.estimatedDurationMinutes != null
                   ? `${session.estimatedDurationMinutes} min`
                   : `${session.exercises.length} ${session.exercises.length === 1 ? "exercise" : "exercises"}`}
               </span>
               {session.focus && (
-                <span className={cn("min-w-0 truncate font-mono-display text-[10px]", TEXT_MUTED)}>
+                <span className={cn("min-w-0 truncate text-[10px]", TEXT_MUTED)}>
                   {session.focus}
                 </span>
               )}

@@ -3,7 +3,7 @@
 import { ChevronDown, Copy, GripVertical, Trash2, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { WeekDraft } from "./program-builder-types";
-import { TEXT_MUTED, TEXT_SECONDARY } from "./builder-tokens";
+import { MONO, TEXT_MUTED, TEXT_SECONDARY } from "./builder-tokens";
 
 // The slim 42px week column (reference `.wk`): a `W#` teal chip + the week's
 // session-count frequency, NOT a card. All week controls (grip-reorder,
@@ -53,11 +53,11 @@ export function WeekCard({
 
   return (
     <div className="group/wk flex flex-col items-center gap-1 pt-2.5">
-      <span className="rounded-[6px] bg-[rgba(13,148,136,0.08)] px-[7px] py-1 font-mono-display text-[10.5px] font-semibold text-[#0a5c55]">
+      <span className={cn(MONO, "rounded-[6px] bg-[rgba(13,148,136,0.08)] px-[7px] py-1 text-[10.5px] font-semibold text-[#0a5c55]")}>
         W{week.weekIndex + 1}
       </span>
       {!collapsed && (
-        <span className="font-mono-display text-[9.5px] text-[#c2d0cc]">
+        <span className={cn(MONO, "text-[9.5px] text-[#c2d0cc]")}>
           {trainingCount}×
         </span>
       )}

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
-import { MONO_LABEL_CLASS, TEXT_PRIMARY, TEXT_SECONDARY } from "../builder-tokens";
+import { LABEL_CLASS, MONO_LABEL_CLASS, TEXT_PRIMARY, TEXT_SECONDARY } from "../builder-tokens";
 import type {
   AssistantChatMessage,
   PendingAssistantOps,
@@ -115,7 +115,7 @@ export function AssistantMessages({
 
       {pending && (
         <div className="rounded-[6px] border border-[rgba(13,148,136,0.15)] bg-white p-2.5">
-          <div className={MONO_LABEL_CLASS}>
+          <div className={LABEL_CLASS}>
             {pending.reason === "destructive"
               ? "Review — includes destructive edits"
               : "Review — you edited while I was working"}

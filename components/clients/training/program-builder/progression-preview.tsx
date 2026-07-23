@@ -4,6 +4,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import {
   CHIP_NEUTRAL_CLASS,
+  MONO,
   MONO_LABEL_CLASS,
   TEXT_PRIMARY,
   TEXT_SECONDARY,
@@ -54,7 +55,7 @@ export function ProgressionPreview({
                 {row.name}
               </span>
               {row.changed && row.after ? (
-                <span className="whitespace-nowrap font-mono-display text-[11px]">
+                <span className={cn(MONO, "whitespace-nowrap text-[11px]")}>
                   <span className={TEXT_SECONDARY}>{row.before}</span>
                   <span className={TEXT_SECONDARY}> → </span>
                   <span className="font-semibold text-[#0d9488]">{row.after}</span>

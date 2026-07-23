@@ -15,7 +15,7 @@ import type { Exercise } from "@/types/training";
 import type { LibraryExerciseDragData } from "./use-program-dnd";
 import {
   FOCUS_RING,
-  MONO_LABEL_CLASS,
+  LABEL_CLASS,
   TEXT_MUTED,
   TEXT_PRIMARY,
   THUMB_CLASS,
@@ -82,7 +82,7 @@ function LibraryExerciseCard({
           {exercise.name}
         </div>
         {meta && (
-          <div className={cn("mt-0.5 truncate capitalize", MONO_LABEL_CLASS, "normal-case tracking-normal")}>
+          <div className={cn("mt-0.5 truncate capitalize", LABEL_CLASS, "normal-case tracking-normal")}>
             {meta}
           </div>
         )}
@@ -165,7 +165,7 @@ export function LibraryExerciseList({ editable }: { editable: boolean }) {
       </div>
 
       {editable && (
-        <div className={cn("px-[18px] pb-1.5", MONO_LABEL_CLASS)}>
+        <div className={cn("px-[18px] pb-1.5", LABEL_CLASS)}>
           Drag an exercise into a session
         </div>
       )}

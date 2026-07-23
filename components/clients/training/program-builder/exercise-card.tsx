@@ -13,8 +13,10 @@ import type { SetSpecEdit } from "./use-set-spec-mutations";
 import { exerciseCompactSummary } from "./exercise-summary";
 import { SET_GRID, SetRowEditor } from "./set-row-editor";
 import {
+  CHIP_NEUTRAL_CLASS,
   FOCUS_RING,
   LABEL_CLASS,
+  MONO,
   TEXT_MUTED,
   TEXT_PRIMARY,
   TEXT_SECONDARY,
@@ -101,7 +103,7 @@ export function ExerciseCard({
             <GripVertical className="h-3.5 w-3.5" strokeWidth={1.5} />
           </button>
         )}
-        <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[rgba(13,148,136,0.08)] font-mono-display text-[11px] font-semibold text-[#0a5c55]">
+        <span className={cn(MONO, "grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[rgba(13,148,136,0.08)] text-[11px] font-semibold text-[#0a5c55]")}>
           {ordinal}
         </span>
         <span className={cn(THUMB_CLASS, "h-7 w-7")}>
@@ -111,14 +113,14 @@ export function ExerciseCard({
           {exercise.name}
         </span>
         {exercise.notes && (
-          <span className="shrink-0 rounded-[6px] bg-[rgba(13,148,136,0.08)] px-2 py-0.5 font-mono-display text-[10px] text-[#0a5c55]">
+          <span className={cn("shrink-0", CHIP_NEUTRAL_CLASS)}>
             Notes
           </span>
         )}
         {exercise.videoUrl && (
           <Video className={cn("h-3 w-3 shrink-0", TEXT_SECONDARY)} strokeWidth={1.5} />
         )}
-        <span className={cn("shrink-0 font-mono-display text-[11px]", TEXT_SECONDARY)}>
+        <span className={cn(MONO, "shrink-0 text-[11px]", TEXT_SECONDARY)}>
           {exerciseCompactSummary(exercise)}
         </span>
         {editable && (
