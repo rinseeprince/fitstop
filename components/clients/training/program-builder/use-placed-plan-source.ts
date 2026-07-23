@@ -37,7 +37,7 @@ export function usePlacedPlanSource(params: {
     enabled ? clientId : null,
     enabled ? placedPlanId : null,
   );
-  const { draft, seed } = state;
+  const { draft, seed, isDirty } = state;
 
   const [seedInfo, setSeedInfo] = useState<PlacedPlanSeedInfo>(EMPTY_SEED);
 
@@ -58,8 +58,22 @@ export function usePlacedPlanSource(params: {
   );
 
   useEffect(() => {
-    if (enabled && placedPlan && !draft) applySeed(placedPlan);
-  }, [enabled, placedPlan, draft, applySeed]);
+    if (!enabled || !placedPlan) return;
+    if (!draft) {
+      applySeed(placedPlan);
+      return;
+    }
+    // A fresh read landing while the tree is PRISTINE re-seeds. This covers
+    // reopening the editor from a stale SWR cache (the Plans-subtab hook keeps
+    // the key alive, and our own last save changed the plan): the instant seed
+    // uses the cached snapshot, then the mount revalidation arrives and — no
+    // edits made yet — replaces it, fresh token included. Never while dirty:
+    // edits always win, and real drift then surfaces as a 409 with the
+    // reload-vs-keep-editing dialog.
+    if (!isDirty && placedPlan.amendmentToken !== seedInfo.amendmentToken) {
+      applySeed(placedPlan);
+    }
+  }, [enabled, placedPlan, draft, isDirty, seedInfo.amendmentToken, applySeed]);
 
   // Discard changes = re-seed from the last read (uids regenerate — any open
   // session editor closes itself — and locks recompute with them).

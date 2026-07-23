@@ -93,6 +93,11 @@ export function useAmendPlan({
       setConfirmOpen(false);
       if (markSaved(revision)) {
         toast({ title: "Plan updated" });
+        // Our own save just bumped the token server-side, so the shared
+        // amendment-GET cache is now stale. Revalidate it (fire-and-forget)
+        // or the next editor open would seed the pre-save snapshot and
+        // self-409 on its first save.
+        void refreshToken();
         onAmended?.();
       } else {
         toast({

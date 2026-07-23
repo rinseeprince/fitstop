@@ -770,6 +770,9 @@ describe("ProgramBuilder placed-plan target", () => {
         expect.objectContaining({ title: "Plan updated" }),
       ),
     );
+    // A clean save revalidates the shared amendment-GET cache so the next
+    // editor open can't seed the pre-save snapshot and self-409.
+    expect(placedMutateMock).toHaveBeenCalled();
   });
 
   it("a 409 opens the drift dialog and keeps the draft", async () => {
