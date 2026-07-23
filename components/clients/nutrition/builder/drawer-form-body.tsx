@@ -2,6 +2,11 @@
 
 import { Textarea } from "@/components/ui/textarea";
 import { Info } from "lucide-react";
+import { cn } from "@/lib/utils";
+import {
+  MONO_LABEL_CLASS,
+  SECTION_LABEL_CLASS,
+} from "@/components/clients/training/program-builder/builder-tokens";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useNutritionBuilderContext } from "@/contexts/nutrition-builder-context";
 import { NutritionSettingsForm } from "./nutrition-settings-form";
@@ -125,7 +130,7 @@ function SharedControls() {
       {/* Notes */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <label className="text-[10.5px] uppercase tracking-[0.07em] font-semibold text-[#93b0b4]">
+          <label className={SECTION_LABEL_CLASS}>
             Notes
           </label>
           <span className="text-[10px] text-[#93b0b4]">Optional</span>
@@ -137,7 +142,7 @@ function SharedControls() {
           className="resize-none bg-white border border-[rgba(13,148,136,0.08)] rounded-[6px] text-[13px] font-medium text-[#0c1a1e] placeholder:text-[#93b0b4] placeholder:font-normal focus:border-[rgba(13,148,136,0.25)] focus:shadow-[0_0_0_3px_rgba(13,148,136,0.06)] focus:ring-0 transition-all"
           rows={3}
         />
-        <p className="text-right font-mono-display text-[10px] text-[#93b0b4]">
+        <p className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal text-right")}>
           {builder.coachNotes.length}/500
         </p>
       </div>

@@ -9,6 +9,10 @@ import {
 } from "@/components/ui/tooltip";
 import { Dumbbell, Moon, Flame } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  LABEL_CLASS,
+  MONO,
+} from "@/components/clients/training/program-builder/builder-tokens";
 
 type NutritionDayCardProps = {
   dayTarget: DailyNutritionTargets;
@@ -35,7 +39,7 @@ export const NutritionDayCard = memo(function NutritionDayCard({ dayTarget, inde
           <div>
             {/* Day + badge row */}
             <div className="flex items-center justify-between mb-2">
-              <span className="text-[11px] font-medium text-[#93b0b4] uppercase">
+              <span className={LABEL_CLASS}>
                 {dayTarget.dayLabel.slice(0, 3)}
               </span>
               {isTraining ? (
@@ -43,7 +47,7 @@ export const NutritionDayCard = memo(function NutritionDayCard({ dayTarget, inde
                   Train
                 </span>
               ) : (
-                <span className="inline-flex items-center px-1.5 py-0.5 rounded-[4px] text-[9px] font-medium bg-[#e6edec] text-[#93b0b4] uppercase">
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded-[4px] text-[9px] font-semibold bg-[#e6edec] text-[#93b0b4] uppercase">
                   Rest
                 </span>
               )}
@@ -51,6 +55,7 @@ export const NutritionDayCard = memo(function NutritionDayCard({ dayTarget, inde
 
             {/* Calorie number */}
             <p className={cn(
+              MONO,
               "text-[24px] font-bold leading-tight",
               isTraining ? "text-[#0c1a1e]" : "text-[#93b0b4]"
             )}>
@@ -73,7 +78,8 @@ export const NutritionDayCard = memo(function NutritionDayCard({ dayTarget, inde
 
             {/* Macro values */}
             <p className={cn(
-              "text-[10px] font-mono-display mt-1.5 flex gap-1.5",
+              MONO,
+              "text-[10px] mt-1.5 flex gap-1.5",
               !isTraining && "opacity-70"
             )}>
               <span className="text-protein">{dayTarget.proteinG}p</span>
@@ -83,7 +89,7 @@ export const NutritionDayCard = memo(function NutritionDayCard({ dayTarget, inde
 
             {/* Surplus / dash slot */}
             {isTraining && surplusCalories > 0 ? (
-              <p className="text-[10px] text-surplus font-medium mt-1.5 flex items-center gap-0.5">
+              <p className={cn(MONO, "text-[10px] text-surplus font-medium mt-1.5 flex items-center gap-0.5")}>
                 <span className="text-[8px] leading-none">&#9650;</span>
                 +{surplusCalories}
               </p>
@@ -134,16 +140,16 @@ function NutritionDayTooltip({ dayTarget }: NutritionDayTooltipProps) {
       {/* Calories breakdown */}
       <div className="px-4 py-3 border-b border-[rgba(13,148,136,0.08)]">
         <div className="text-center mb-2">
-          <p className="text-2xl font-semibold text-[#0c1a1e]">
+          <p className={cn(MONO, "text-2xl font-semibold text-[#0c1a1e]")}>
             {dayTarget.calories.toLocaleString()}
           </p>
           <p className="text-xs text-[#93b0b4]">total calories</p>
         </div>
         {dayTarget.trainingSessionCalories > 0 && (
           <div className="flex items-center justify-center gap-2 text-xs text-[#93b0b4]">
-            <span>Base: {dayTarget.baselineCalories.toLocaleString()}</span>
+            <span>Base: <span className={MONO}>{dayTarget.baselineCalories.toLocaleString()}</span></span>
             <span>+</span>
-            <span className="flex items-center gap-1 text-surplus font-medium">
+            <span className={cn(MONO, "flex items-center gap-1 text-surplus font-medium")}>
               <Flame className="h-3 w-3" />
               {dayTarget.trainingSessionCalories}
             </span>
@@ -155,15 +161,15 @@ function NutritionDayTooltip({ dayTarget }: NutritionDayTooltipProps) {
       <div className="px-4 py-3 border-b border-[rgba(13,148,136,0.08)]">
         <div className="grid grid-cols-3 gap-2 text-center">
           <div>
-            <p className="text-sm font-semibold text-protein">{dayTarget.proteinG}g</p>
+            <p className={cn(MONO, "text-sm font-semibold text-protein")}>{dayTarget.proteinG}g</p>
             <p className="text-[10px] text-[#93b0b4]">Protein ({dayTarget.proteinPercent}%)</p>
           </div>
           <div>
-            <p className="text-sm font-semibold text-carbs">{dayTarget.carbsG}g</p>
+            <p className={cn(MONO, "text-sm font-semibold text-carbs")}>{dayTarget.carbsG}g</p>
             <p className="text-[10px] text-[#93b0b4]">Carbs ({dayTarget.carbsPercent}%)</p>
           </div>
           <div>
-            <p className="text-sm font-semibold text-fat">{dayTarget.fatG}g</p>
+            <p className={cn(MONO, "text-sm font-semibold text-fat")}>{dayTarget.fatG}g</p>
             <p className="text-[10px] text-[#93b0b4]">Fat ({dayTarget.fatPercent}%)</p>
           </div>
         </div>

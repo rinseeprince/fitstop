@@ -10,6 +10,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { PROTEIN_TARGETS } from "@/utils/nutrition-helpers";
+import { SECTION_LABEL_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
 
 type NutritionSettingsFormProps = {
   client: Client;
@@ -84,7 +85,7 @@ export function NutritionSettingsForm({
     <div className="space-y-4">
       {/* Work Activity Level */}
       <div className="space-y-1.5">
-        <label className="text-[10.5px] uppercase tracking-[0.07em] font-semibold text-[#93b0b4]">
+        <label className={SECTION_LABEL_CLASS}>
           Work Activity Level
         </label>
         <Select
@@ -119,7 +120,7 @@ export function NutritionSettingsForm({
 
       {/* Protein Target */}
       <div className="space-y-1.5">
-        <label className="text-[10.5px] uppercase tracking-[0.07em] font-semibold text-[#93b0b4]">
+        <label className={SECTION_LABEL_CLASS}>
           Protein Target
         </label>
         <Select
@@ -161,7 +162,7 @@ export function NutritionSettingsForm({
 
       {/* Diet Type */}
       <div className="space-y-1.5">
-        <label className="text-[10.5px] uppercase tracking-[0.07em] font-semibold text-[#93b0b4]">
+        <label className={SECTION_LABEL_CLASS}>
           Diet Type
         </label>
         <Select

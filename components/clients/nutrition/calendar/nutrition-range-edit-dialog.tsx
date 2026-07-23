@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { LABEL_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
 import { calculateDailyMacros } from "@/utils/nutrition-helpers";
 import type { DietType } from "@/types/check-in";
 
@@ -195,7 +196,7 @@ export function NutritionRangeEditDialog({
         {/* Relative */}
         <div className="flex items-center gap-2">
           <div className="flex-1 h-px bg-[rgba(13,148,136,0.08)]" />
-          <span className="text-[10px] uppercase tracking-[0.08em] text-[#93b0b4]">or adjust by</span>
+          <span className={LABEL_CLASS}>or adjust by</span>
           <div className="flex-1 h-px bg-[rgba(13,148,136,0.08)]" />
         </div>
         <div className="grid grid-cols-2 gap-3">

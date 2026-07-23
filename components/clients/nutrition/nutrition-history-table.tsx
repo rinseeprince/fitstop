@@ -7,6 +7,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { HistoryTable, type ColumnDef } from "@/components/clients/history-table/history-table";
 import { useHistoryData } from "@/hooks/use-history-data";
 import { swrFetcher } from "@/lib/swr-fetcher";
+import { cn } from "@/lib/utils";
+import {
+  MONO,
+  SECTION_LABEL_CLASS,
+  STAT_LABEL_DARK_CLASS,
+  STAT_VALUE_DARK_CLASS,
+} from "@/components/clients/training/program-builder/builder-tokens";
 import type { NutritionHistoryRow } from "@/types/history";
 
 type NutritionSummary = {
@@ -29,9 +36,9 @@ function formatDay(dateStr: string) {
 }
 
 function renderMacro(value: number | null, target: number | null) {
-  if (value == null) return <span className="text-[#93b0b4]">-</span>;
-  if (target == null) return <span className="font-mono-display">{value}</span>;
-  return <span className="font-mono-display">{value} / {target}</span>;
+  if (value == null) return <span className={cn(MONO, "text-[#93b0b4]")}>-</span>;
+  if (target == null) return <span className={MONO}>{value}</span>;
+  return <span className={MONO}>{value} / {target}</span>;
 }
 
 function getSurplusDeficitColor(value: number | null): string {
@@ -43,10 +50,10 @@ function getSurplusDeficitColor(value: number | null): string {
 }
 
 function formatSurplusDeficit(value: number | null) {
-  if (value == null) return <span className="text-[#93b0b4]">-</span>;
+  if (value == null) return <span className={cn(MONO, "text-[#93b0b4]")}>-</span>;
   const sign = value > 0 ? "+" : "";
   return (
-    <span className={`font-mono-display ${getSurplusDeficitColor(value)}`}>
+    <span className={cn(MONO, getSurplusDeficitColor(value))}>
       {sign}{value}
     </span>
   );
@@ -103,7 +110,7 @@ export function NutritionHistoryTable({ clientId }: Props) {
     {
       key: "date",
       label: "Date",
-      render: (_v, row) => <span className={row.is_logged === false ? "text-[#b8cfd3]" : "text-[#93b0b4]"}>{formatDate(row.date)}</span>,
+      render: (_v, row) => <span className={cn(MONO, row.is_logged === false ? "text-[#b8cfd3]" : "text-[#93b0b4]")}>{formatDate(row.date)}</span>,
     },
     {
       key: "day",
@@ -115,7 +122,7 @@ export function NutritionHistoryTable({ clientId }: Props) {
       label: "Calories",
       render: (_v, row) => {
         if (row.is_logged === false) {
-          return <span className="font-mono-display text-[#b8cfd3]">{row.target_calories != null ? `— / ${row.target_calories}` : "—"}</span>;
+          return <span className={cn(MONO, "text-[#b8cfd3]")}>{row.target_calories != null ? `— / ${row.target_calories}` : "—"}</span>;
         }
         return renderMacro(row.calories_consumed, row.target_calories);
       },
@@ -124,9 +131,9 @@ export function NutritionHistoryTable({ clientId }: Props) {
       key: "protein_g",
       label: "Protein (g)",
       render: (_v, row) => {
-        if (row.is_logged === false) return <span className="font-mono-display text-[#b8cfd3]">—</span>;
+        if (row.is_logged === false) return <span className={cn(MONO, "text-[#b8cfd3]")}>—</span>;
         return (
-          <span className="font-mono-display text-protein">
+          <span className={cn(MONO, "text-protein")}>
             {row.protein_g != null ? `${row.protein_g}` : "-"}
             {row.target_protein_g != null && row.protein_g != null && (
               <span className="text-[#93b0b4]"> / {row.target_protein_g}</span>
@@ -139,9 +146,9 @@ export function NutritionHistoryTable({ clientId }: Props) {
       key: "carbs_g",
       label: "Carbs (g)",
       render: (_v, row) => {
-        if (row.is_logged === false) return <span className="font-mono-display text-[#b8cfd3]">—</span>;
+        if (row.is_logged === false) return <span className={cn(MONO, "text-[#b8cfd3]")}>—</span>;
         return (
-          <span className="font-mono-display text-carbs">
+          <span className={cn(MONO, "text-carbs")}>
             {row.carbs_g != null ? `${row.carbs_g}` : "-"}
             {row.target_carbs_g != null && row.carbs_g != null && (
               <span className="text-[#93b0b4]"> / {row.target_carbs_g}</span>
@@ -154,9 +161,9 @@ export function NutritionHistoryTable({ clientId }: Props) {
       key: "fat_g",
       label: "Fat (g)",
       render: (_v, row) => {
-        if (row.is_logged === false) return <span className="font-mono-display text-[#b8cfd3]">—</span>;
+        if (row.is_logged === false) return <span className={cn(MONO, "text-[#b8cfd3]")}>—</span>;
         return (
-          <span className="font-mono-display text-fat">
+          <span className={cn(MONO, "text-fat")}>
             {row.fat_g != null ? `${row.fat_g}` : "-"}
             {row.target_fat_g != null && row.fat_g != null && (
               <span className="text-[#93b0b4]"> / {row.target_fat_g}</span>
@@ -169,7 +176,7 @@ export function NutritionHistoryTable({ clientId }: Props) {
       key: "calorie_surplus_deficit",
       label: "Surplus/Deficit",
       render: (_v, row) => {
-        if (row.is_logged === false) return <span className="text-[#b8cfd3]">—</span>;
+        if (row.is_logged === false) return <span className={cn(MONO, "text-[#b8cfd3]")}>—</span>;
         return formatSurplusDeficit(row.calorie_surplus_deficit);
       },
     },
@@ -186,16 +193,16 @@ export function NutritionHistoryTable({ clientId }: Props) {
       <div className="bg-[#0f2027] rounded-[6px] p-5 grid grid-cols-[1fr_1fr_1fr_1fr]">
         {/* Weekly total */}
         <div className="flex flex-col pr-5 border-r border-[rgba(255,255,255,0.08)]">
-          <p className="text-[10px] uppercase tracking-[0.06em] text-[rgba(255,255,255,0.35)] font-medium">Weekly Total</p>
+          <p className={STAT_LABEL_DARK_CLASS}>Weekly Total</p>
           {summaryLoading ? (
             <Skeleton className="h-8 w-24 mt-1 bg-white/10" />
           ) : (
             <>
-              <p className="text-[32px] font-bold leading-tight mt-1 text-white">
+              <p className={cn(STAT_VALUE_DARK_CLASS, "text-[32px] leading-tight mt-1")}>
                 {summary ? Math.round(summary.total_calories).toLocaleString() : "-"}
               </p>
               <p className="text-[11px] text-[rgba(255,255,255,0.35)]">kcal</p>
-              <p className="text-[11px] text-[rgba(255,255,255,0.35)] font-mono-display mt-auto pt-2">
+              <p className={cn(MONO, "text-[11px] text-[rgba(255,255,255,0.35)] mt-auto pt-2")}>
                 {summary ? `${avgCalories.toLocaleString()}/day \u00b7 ${daysLogged}/${summary.days_in_week} logged` : "-"}
               </p>
             </>
@@ -206,17 +213,17 @@ export function NutritionHistoryTable({ clientId }: Props) {
         <div className="flex flex-col pl-5 pr-5 border-r border-[rgba(255,255,255,0.06)]">
           <div className="flex items-center gap-2 mb-1">
             <span className="w-[3px] h-[12px] rounded-[1px] bg-[#2d8fb5]" />
-            <p className="text-[10px] uppercase tracking-[0.06em] text-[rgba(255,255,255,0.4)] font-medium">Protein</p>
+            <p className={STAT_LABEL_DARK_CLASS}>Protein</p>
           </div>
           {summaryLoading ? (
             <Skeleton className="h-7 w-16 mt-1 bg-white/10" />
           ) : (
             <>
-              <p className="text-[22px] font-bold text-white mt-1">
+              <p className={cn(STAT_VALUE_DARK_CLASS, "text-[22px] mt-1")}>
                 {summary ? Math.round(summary.total_protein).toLocaleString() : "-"}
                 <span className="text-[13px] font-medium text-[rgba(255,255,255,0.25)] ml-0.5">g</span>
               </p>
-              <p className="text-[11px] text-[rgba(255,255,255,0.3)] font-mono-display mt-1">{avgProtein}g/day</p>
+              <p className={cn(MONO, "text-[11px] text-[rgba(255,255,255,0.3)] mt-1")}>{avgProtein}g/day</p>
             </>
           )}
         </div>
@@ -225,17 +232,17 @@ export function NutritionHistoryTable({ clientId }: Props) {
         <div className="flex flex-col pl-5 pr-5 border-r border-[rgba(255,255,255,0.06)]">
           <div className="flex items-center gap-2 mb-1">
             <span className="w-[3px] h-[12px] rounded-[1px] bg-[#c8923a]" />
-            <p className="text-[10px] uppercase tracking-[0.06em] text-[rgba(255,255,255,0.4)] font-medium">Carbs</p>
+            <p className={STAT_LABEL_DARK_CLASS}>Carbs</p>
           </div>
           {summaryLoading ? (
             <Skeleton className="h-7 w-16 mt-1 bg-white/10" />
           ) : (
             <>
-              <p className="text-[22px] font-bold text-white mt-1">
+              <p className={cn(STAT_VALUE_DARK_CLASS, "text-[22px] mt-1")}>
                 {summary ? Math.round(summary.total_carbs).toLocaleString() : "-"}
                 <span className="text-[13px] font-medium text-[rgba(255,255,255,0.25)] ml-0.5">g</span>
               </p>
-              <p className="text-[11px] text-[rgba(255,255,255,0.3)] font-mono-display mt-1">{avgCarbs}g/day</p>
+              <p className={cn(MONO, "text-[11px] text-[rgba(255,255,255,0.3)] mt-1")}>{avgCarbs}g/day</p>
             </>
           )}
         </div>
@@ -244,17 +251,17 @@ export function NutritionHistoryTable({ clientId }: Props) {
         <div className="flex flex-col pl-5">
           <div className="flex items-center gap-2 mb-1">
             <span className="w-[3px] h-[12px] rounded-[1px] bg-[#c06060]" />
-            <p className="text-[10px] uppercase tracking-[0.06em] text-[rgba(255,255,255,0.4)] font-medium">Fat</p>
+            <p className={STAT_LABEL_DARK_CLASS}>Fat</p>
           </div>
           {summaryLoading ? (
             <Skeleton className="h-7 w-16 mt-1 bg-white/10" />
           ) : (
             <>
-              <p className="text-[22px] font-bold text-white mt-1">
+              <p className={cn(STAT_VALUE_DARK_CLASS, "text-[22px] mt-1")}>
                 {summary ? Math.round(summary.total_fat).toLocaleString() : "-"}
                 <span className="text-[13px] font-medium text-[rgba(255,255,255,0.25)] ml-0.5">g</span>
               </p>
-              <p className="text-[11px] text-[rgba(255,255,255,0.3)] font-mono-display mt-1">{avgFat}g/day</p>
+              <p className={cn(MONO, "text-[11px] text-[rgba(255,255,255,0.3)] mt-1")}>{avgFat}g/day</p>
             </>
           )}
         </div>
@@ -262,7 +269,7 @@ export function NutritionHistoryTable({ clientId }: Props) {
 
       {/* Section header */}
       <div className="flex items-center gap-3 mt-2">
-        <span className="text-[10.5px] uppercase tracking-[0.07em] text-[#93b0b4] font-semibold whitespace-nowrap">Nutrition Logged</span>
+        <span className={cn(SECTION_LABEL_CLASS, "whitespace-nowrap")}>Nutrition Logged</span>
         <div className="flex-1 h-px bg-[rgba(13,148,136,0.08)]" />
         <div className="flex items-center gap-2.5">
           <span className="w-3 h-1 rounded-full bg-protein" /><span className="text-[10px] text-[#93b0b4]">P</span>

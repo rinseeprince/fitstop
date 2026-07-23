@@ -6,6 +6,13 @@ import { WeeklyNutritionView } from "../display/weekly-nutrition-view";
 import { NutritionWarnings } from "../nutrition-warnings";
 import { Button } from "@/components/ui/button";
 import { Apple, ChevronDown, Loader2, Sparkles } from "lucide-react";
+import { cn } from "@/lib/utils";
+import {
+  MONO,
+  SECTION_LABEL_CLASS,
+  STAT_LABEL_DARK_CLASS,
+  STAT_VALUE_DARK_CLASS,
+} from "@/components/clients/training/program-builder/builder-tokens";
 
 type NutritionBuilderRightPanelProps = {
   onOpenSettings?: () => void;
@@ -74,12 +81,12 @@ export const NutritionBuilderRightPanel = memo(function NutritionBuilderRightPan
       <div className="bg-[#0f2027] rounded-[6px] p-5 grid grid-cols-[1fr_1fr_1fr_1fr]">
         {/* Weekly total */}
         <div className="flex flex-col pr-5 border-r border-[rgba(255,255,255,0.08)]">
-          <p className="text-[10px] uppercase tracking-[0.06em] text-[rgba(255,255,255,0.35)] font-medium">Weekly Total</p>
-          <p className="text-[32px] font-bold leading-tight mt-1 text-white">
+          <p className={STAT_LABEL_DARK_CLASS}>Weekly Total</p>
+          <p className={cn(STAT_VALUE_DARK_CLASS, "text-[32px] leading-tight mt-1")}>
             {builder.weeklyTotal.toLocaleString()}
           </p>
           <p className="text-[11px] text-[rgba(255,255,255,0.35)]">kcal</p>
-          <p className="text-[11px] text-[rgba(255,255,255,0.35)] font-mono-display mt-auto pt-2">
+          <p className={cn(MONO, "text-[11px] text-[rgba(255,255,255,0.35)] mt-auto pt-2")}>
             {avgCalories.toLocaleString()}/day &middot; {trainingCount}T {restCount}R
           </p>
         </div>
@@ -88,36 +95,36 @@ export const NutritionBuilderRightPanel = memo(function NutritionBuilderRightPan
         <div className="flex flex-col pl-5 pr-5 border-r border-[rgba(255,255,255,0.06)]">
           <div className="flex items-center gap-2 mb-1">
             <span className="w-[3px] h-[12px] rounded-[1px] bg-[#2d8fb5]" />
-            <p className="text-[10px] uppercase tracking-[0.06em] text-[rgba(255,255,255,0.4)] font-medium">Protein</p>
+            <p className={STAT_LABEL_DARK_CLASS}>Protein</p>
           </div>
-          <p className="text-[22px] font-bold text-white mt-1">
+          <p className={cn(STAT_VALUE_DARK_CLASS, "text-[22px] mt-1")}>
             {totalProtein.toLocaleString()}<span className="text-[13px] font-medium text-[rgba(255,255,255,0.25)] ml-0.5">g</span>
           </p>
-          <p className="text-[11px] text-[rgba(255,255,255,0.3)] font-mono-display mt-1">{avgProtein}g/day</p>
+          <p className={cn(MONO, "text-[11px] text-[rgba(255,255,255,0.3)] mt-1")}>{avgProtein}g/day</p>
         </div>
 
         {/* Carbs */}
         <div className="flex flex-col pl-5 pr-5 border-r border-[rgba(255,255,255,0.06)]">
           <div className="flex items-center gap-2 mb-1">
             <span className="w-[3px] h-[12px] rounded-[1px] bg-[#c8923a]" />
-            <p className="text-[10px] uppercase tracking-[0.06em] text-[rgba(255,255,255,0.4)] font-medium">Carbs</p>
+            <p className={STAT_LABEL_DARK_CLASS}>Carbs</p>
           </div>
-          <p className="text-[22px] font-bold text-white mt-1">
+          <p className={cn(STAT_VALUE_DARK_CLASS, "text-[22px] mt-1")}>
             {totalCarbs.toLocaleString()}<span className="text-[13px] font-medium text-[rgba(255,255,255,0.25)] ml-0.5">g</span>
           </p>
-          <p className="text-[11px] text-[rgba(255,255,255,0.3)] font-mono-display mt-1">{avgCarbs}g/day</p>
+          <p className={cn(MONO, "text-[11px] text-[rgba(255,255,255,0.3)] mt-1")}>{avgCarbs}g/day</p>
         </div>
 
         {/* Fat */}
         <div className="flex flex-col pl-5">
           <div className="flex items-center gap-2 mb-1">
             <span className="w-[3px] h-[12px] rounded-[1px] bg-[#c06060]" />
-            <p className="text-[10px] uppercase tracking-[0.06em] text-[rgba(255,255,255,0.4)] font-medium">Fat</p>
+            <p className={STAT_LABEL_DARK_CLASS}>Fat</p>
           </div>
-          <p className="text-[22px] font-bold text-white mt-1">
+          <p className={cn(STAT_VALUE_DARK_CLASS, "text-[22px] mt-1")}>
             {totalFat.toLocaleString()}<span className="text-[13px] font-medium text-[rgba(255,255,255,0.25)] ml-0.5">g</span>
           </p>
-          <p className="text-[11px] text-[rgba(255,255,255,0.3)] font-mono-display mt-1">{avgFat}g/day</p>
+          <p className={cn(MONO, "text-[11px] text-[rgba(255,255,255,0.3)] mt-1")}>{avgFat}g/day</p>
         </div>
       </div>
 
@@ -126,7 +133,7 @@ export const NutritionBuilderRightPanel = memo(function NutritionBuilderRightPan
           primary day-by-day view; this stays as an at-a-glance weekly summary. */}
       <details className="group">
         <summary className="flex items-center gap-3 mt-2 cursor-pointer list-none select-none">
-          <span className="text-[11px] uppercase tracking-[0.06em] text-[#93b0b4] font-medium whitespace-nowrap">Typical week</span>
+          <span className={cn(SECTION_LABEL_CLASS, "whitespace-nowrap")}>Typical week</span>
           <div className="flex-1 h-px bg-[rgba(13,148,136,0.08)]" />
           <span className="flex items-center gap-2.5">
             <span className="w-3 h-1 rounded-full bg-protein" /><span className="text-[10px] text-[#93b0b4]">P</span>
@@ -162,19 +169,19 @@ type CustomMacrosDisplayProps = {
 function CustomMacrosDisplay({ calories, protein, carbs, fat }: CustomMacrosDisplayProps) {
   return (
     <div className="bg-white rounded-[6px] p-8 text-center">
-      <div className="text-4xl font-semibold text-[#0c1a1e]">{calories.toLocaleString()}</div>
+      <div className={cn(MONO, "text-4xl font-semibold text-[#0c1a1e]")}>{calories.toLocaleString()}</div>
       <div className="text-sm text-[#93b0b4] mt-2">calories per day (custom macros)</div>
       <div className="grid grid-cols-3 gap-4 mt-6 pt-6">
         <div className="text-center bg-protein/10 rounded-[6px] p-4">
-          <div className="text-2xl font-semibold text-protein">{protein}g</div>
+          <div className={cn(MONO, "text-2xl font-semibold text-protein")}>{protein}g</div>
           <div className="text-xs text-[#93b0b4] mt-1">Protein</div>
         </div>
         <div className="text-center bg-carbs/10 rounded-[6px] p-4">
-          <div className="text-2xl font-semibold text-carbs">{carbs}g</div>
+          <div className={cn(MONO, "text-2xl font-semibold text-carbs")}>{carbs}g</div>
           <div className="text-xs text-[#93b0b4] mt-1">Carbs</div>
         </div>
         <div className="text-center bg-fat/10 rounded-[6px] p-4">
-          <div className="text-2xl font-semibold text-fat">{fat}g</div>
+          <div className={cn(MONO, "text-2xl font-semibold text-fat")}>{fat}g</div>
           <div className="text-xs text-[#93b0b4] mt-1">Fat</div>
         </div>
       </div>

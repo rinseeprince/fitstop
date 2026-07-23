@@ -3,6 +3,8 @@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AlertCircle } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { MONO_META_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
 import type { MacroGrams } from "@/utils/custom-macro-conversion";
 
 type NutritionCustomMacrosSectionProps = {
@@ -82,7 +84,7 @@ export function NutritionCustomMacrosSection({
             onChange={(e) => onProteinPctChange(toInt(e.target.value))}
             className="h-9"
           />
-          <p className="text-[10px] text-[#93b0b4] font-mono-display">= {grams.protein}g</p>
+          <p className={cn(MONO_META_CLASS, "text-[10px]")}>= {grams.protein}g</p>
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="custom-carb-pct" className="text-xs font-medium text-foreground">
@@ -96,7 +98,7 @@ export function NutritionCustomMacrosSection({
             onChange={(e) => onCarbPctChange(toInt(e.target.value))}
             className="h-9"
           />
-          <p className="text-[10px] text-[#93b0b4] font-mono-display">= {grams.carbs}g</p>
+          <p className={cn(MONO_META_CLASS, "text-[10px]")}>= {grams.carbs}g</p>
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="custom-fat-pct" className="text-xs font-medium text-foreground">
@@ -110,7 +112,7 @@ export function NutritionCustomMacrosSection({
             onChange={(e) => onFatPctChange(toInt(e.target.value))}
             className="h-9"
           />
-          <p className="text-[10px] text-[#93b0b4] font-mono-display">= {grams.fat}g</p>
+          <p className={cn(MONO_META_CLASS, "text-[10px]")}>= {grams.fat}g</p>
         </div>
       </div>
 
@@ -120,8 +122,8 @@ export function NutritionCustomMacrosSection({
         <span
           className={
             proteinPct + carbPct + fatPct === 100
-              ? "font-mono-display text-[#0d9488]"
-              : "font-mono-display text-[#d97706]"
+              ? "text-[#0d9488]"
+              : "text-[#d97706]"
           }
         >
           {proteinPct + carbPct + fatPct}%

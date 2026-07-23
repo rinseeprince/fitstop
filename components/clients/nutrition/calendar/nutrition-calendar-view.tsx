@@ -13,6 +13,11 @@ import {
 } from "@/lib/date-helpers";
 import { Button } from "@/components/ui/button";
 import { Loader2, ChevronLeft, ChevronRight, Pencil } from "lucide-react";
+import { cn } from "@/lib/utils";
+import {
+  LABEL_CLASS,
+  MONO,
+} from "@/components/clients/training/program-builder/builder-tokens";
 import { format } from "date-fns";
 import type { Phase, PhaseStatus } from "@/types/roadmap";
 
@@ -171,7 +176,7 @@ export function NutritionCalendarView({
         >
           <ChevronLeft className="h-4 w-4 text-[#5a7d82]" />
         </button>
-        <span className="text-[13px] font-semibold text-[#0c1a1e] min-w-[120px] text-center">
+        <span className={cn(MONO, "text-[13px] font-semibold text-[#0c1a1e] min-w-[120px] text-center")}>
           {monthLabel}
         </span>
         <button
@@ -222,7 +227,7 @@ export function NutritionCalendarView({
           {DAY_LABELS.map((label) => (
             <div
               key={label}
-              className="text-center text-[10px] uppercase tracking-[0.06em] text-[#93b0b4] font-medium py-1"
+              className={cn(LABEL_CLASS, "text-center py-1")}
             >
               {label}
             </div>

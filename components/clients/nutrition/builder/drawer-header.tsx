@@ -2,6 +2,8 @@
 
 import { Sparkles, X } from "lucide-react";
 import { SheetClose } from "@/components/ui/sheet";
+import { cn } from "@/lib/utils";
+import { MONO } from "@/components/clients/training/program-builder/builder-tokens";
 import { UnitToggle } from "../../shared/unit-toggle";
 import type { UnitPreference } from "@/types/check-in";
 
@@ -61,7 +63,7 @@ export function DrawerHeader({
       {/* Current plan summary strip */}
       {hasPlan && calorieTarget != null && (
         <div className="mt-4 bg-[rgba(255,255,255,0.04)] border border-[rgba(255,255,255,0.06)] rounded-[6px] px-4 py-3 flex items-center gap-4">
-          <span className="font-mono-display text-[15px] font-bold text-white">
+          <span className={cn(MONO, "text-[15px] font-bold text-white")}>
             {calorieTarget}
             <span className="text-[11px] font-normal text-[rgba(255,255,255,0.4)] ml-1">
               kcal/day
@@ -93,7 +95,7 @@ function MacroDot({
         className="w-[6px] h-[6px] rounded-full flex-shrink-0"
         style={{ backgroundColor: color }}
       />
-      <span className="font-mono-display text-[12px] text-[rgba(255,255,255,0.7)]">
+      <span className={cn(MONO, "text-[12px] text-[rgba(255,255,255,0.7)]")}>
         {label} {value ?? 0}g
       </span>
     </span>

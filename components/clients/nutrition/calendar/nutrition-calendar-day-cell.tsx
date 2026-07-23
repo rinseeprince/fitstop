@@ -3,6 +3,7 @@
 import { memo } from "react";
 import { cn } from "@/lib/utils";
 import { Pencil, StickyNote } from "lucide-react";
+import { MONO } from "@/components/clients/training/program-builder/builder-tokens";
 import { mapNutritionEventToDisplayTarget } from "@/utils/nutrition-event-helpers";
 import type { NutritionEvent } from "@/types/check-in";
 import type { PhaseStatus } from "@/types/roadmap";
@@ -77,7 +78,7 @@ export const NutritionCalendarDayCell = memo(function NutritionCalendarDayCell({
       {/* Header row: TRAIN badge (left) + date number (right) */}
       <div className="flex items-center justify-between leading-none">
         {event?.isTrainingDay ? (
-          <span className="inline-flex items-center px-1 py-0.5 rounded-[3px] text-[8px] font-semibold bg-[#0d9488] text-white uppercase">
+          <span className="inline-flex items-center px-1.5 py-0.5 rounded-[4px] text-[9px] font-semibold bg-[#0d9488] text-white uppercase">
             Train
           </span>
         ) : (
@@ -85,6 +86,7 @@ export const NutritionCalendarDayCell = memo(function NutritionCalendarDayCell({
         )}
         <span
           className={cn(
+            MONO,
             "text-[10px] font-medium",
             isToday ? "text-teal-600 font-semibold" : "text-[#93b0b4]"
           )}
@@ -96,7 +98,7 @@ export const NutritionCalendarDayCell = memo(function NutritionCalendarDayCell({
       {target ? (
         <div className="flex flex-col gap-1 mt-auto">
           <div className="flex items-baseline gap-1">
-            <span className="text-[15px] font-bold leading-none text-[#0c1a1e]">
+            <span className={cn(MONO, "text-[15px] font-bold leading-none text-[#0c1a1e]")}>
               {target.calories.toLocaleString()}
             </span>
             <span className="text-[8px] text-[#93b0b4]">kcal</span>
@@ -117,7 +119,7 @@ export const NutritionCalendarDayCell = memo(function NutritionCalendarDayCell({
             <div className="bg-carbs" style={{ width: `${target.carbsPercent}%` }} />
             <div className="bg-fat" style={{ width: `${target.fatPercent}%` }} />
           </div>
-          <p className="text-[9px] font-mono-display flex gap-1 leading-none">
+          <p className={cn(MONO, "text-[9px] flex gap-1 leading-none")}>
             <span className="text-protein">{target.proteinG}p</span>
             <span className="text-carbs">{target.carbsG}c</span>
             <span className="text-fat">{target.fatG}f</span>
