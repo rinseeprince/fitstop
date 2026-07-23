@@ -401,6 +401,10 @@ Override the base Sheet:
 
 Overlay is `bg-black/50`. Slide-over footer uses `justify-end` (Cancel ghost + Save teal).
 
+### Dropdown menu (kebab / row actions)
+
+The base `DropdownMenuContent`/`Item` primitives (`components/ui/dropdown-menu.tsx`) are already Teal-Summit: content `bg-white rounded-[6px] border border-[rgba(13,148,136,0.08)] p-1 shadow-[0_10px_40px_rgba(13,148,136,0.10)]`; items `rounded-[4px] px-2.5 py-1.5 text-[13px]` with hover/focus `bg-[rgba(13,148,136,0.05)] text-[#0a5c55]` and muted `#93b0b4` icons (`h-3.5 w-3.5 strokeWidth={1.5}`); separator = the `0.06` hairline. Destructive rows use `variant="destructive"` (`#c06060` text + `rgba(192,96,96,0.08)` wash — never a filled red) and sit LAST, grouped behind a separator. Reference: the training calendar's week-actions menu (`calendar-week-rail.tsx`). Typical width `w-52`.
+
 ### Popover (320px pattern)
 
 `<PopoverContent align="start" sideOffset={6} className="w-[320px] rounded-[6px] border-[rgba(13,148,136,0.08)] p-0">` — header `px-3.5 pb-2 pt-3` (title `text-sm font-semibold` + `MONO_LABEL_CLASS` subtitle + close X), scroll body `max-h-[260px] overflow-y-auto px-1.5 pb-1.5`, footer `border-t border-[rgba(13,148,136,0.06)] p-1.5` with a teal-text action.
