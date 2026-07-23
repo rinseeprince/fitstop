@@ -2,6 +2,12 @@
 
 import { motion } from "framer-motion";
 import { Heart } from "lucide-react";
+import { cn } from "@/lib/utils";
+import {
+  MONO,
+  SECTION_LABEL_CLASS,
+  TEXT_PRIMARY,
+} from "@/components/clients/training/program-builder/builder-tokens";
 import { MiniBarSparkline } from "./mini-bar-sparkline";
 import type { DailyLog } from "@/types/daily-log";
 import type { WellnessMetric } from "@/utils/wellness-color-thresholds";
@@ -70,7 +76,7 @@ export const WellnessSection = ({
       transition={{ duration: 0.2, delay: 0.05 }}
       className="bg-white border border-[rgba(13,148,136,0.08)] rounded-[6px] p-5"
     >
-      <div className="text-xs font-semibold uppercase tracking-[0.06em] text-[#5a7d82] mb-4 flex items-center gap-2">
+      <div className={cn(SECTION_LABEL_CLASS, "mb-4 flex items-center gap-2")}>
         <Heart className="w-4 h-4" strokeWidth={1.5} />
         Wellness
       </div>
@@ -97,7 +103,7 @@ export const WellnessSection = ({
               <div className="text-xs font-medium text-[#93b0b4] mb-2">
                 {metric.label}
               </div>
-              <div className="text-2xl font-bold tracking-tight font-mono-display text-[#0c1a1e]">
+              <div className={cn("text-2xl font-bold tracking-tight", MONO, TEXT_PRIMARY)}>
                 {avg}
               </div>
               <div className="text-[11px] text-[#93b0b4]">

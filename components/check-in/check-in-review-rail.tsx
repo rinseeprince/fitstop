@@ -15,6 +15,8 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
+import { LABEL_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
 import { CheckInShareCard } from "./check-in-share-card";
 import type { CheckInReview, WatchItemType, CoachActionPriority } from "@/types/check-in";
 
@@ -159,7 +161,7 @@ export const CheckInReviewRail = ({
               const meta = PRIORITY_META[action.priority];
               return (
                 <div key={i} className={`bg-white rounded-[6px] border-l-4 ${meta.border} p-3`}>
-                  <span className={`text-xs font-semibold uppercase tracking-wide ${meta.label}`}>
+                  <span className={cn(LABEL_CLASS, meta.label)}>
                     {action.priority}
                   </span>
                   <p className="text-sm text-[#0c1a1e] mt-1">{action.text}</p>

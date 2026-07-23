@@ -2,6 +2,7 @@
 
 import { Calendar } from "lucide-react";
 import { format } from "date-fns";
+import { MONO } from "@/components/clients/training/program-builder/builder-tokens";
 
 type GoalDeadlineCardProps = {
   deadline: {
@@ -31,7 +32,7 @@ export const GoalDeadlineCard = ({ deadline }: GoalDeadlineCardProps) => {
           <div className="space-y-1">
             <p className="text-sm text-[#0c1a1e]">
               <span className="font-medium">Target Date:</span>{" "}
-              <span className="font-mono-display">
+              <span className={MONO}>
                 {format(new Date(deadline.date), "MMMM d, yyyy")}
               </span>
             </p>

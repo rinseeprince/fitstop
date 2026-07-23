@@ -6,6 +6,13 @@ import type { LucideIcon } from "lucide-react";
 import type { CheckInWithDetails, CheckInSessionCompletion } from "@/types/check-in";
 import type { SessionStatus, SessionSummary } from "@/lib/check-in/adherence";
 import { classifySession } from "@/lib/check-in/adherence";
+import { cn } from "@/lib/utils";
+import {
+  LABEL_CLASS,
+  MONO,
+  SECTION_LABEL_CLASS,
+  TEXT_PRIMARY,
+} from "@/components/clients/training/program-builder/builder-tokens";
 
 type TrainingSectionProps = {
   checkIn: CheckInWithDetails;
@@ -58,13 +65,13 @@ export const TrainingSection = ({ checkIn, adherence }: TrainingSectionProps) =>
       className="bg-white border border-[rgba(13,148,136,0.08)] rounded-[6px] p-5"
     >
       <div className="flex items-center justify-between mb-4">
-        <div className="text-xs font-semibold uppercase tracking-[0.06em] text-[#5a7d82] flex items-center gap-2">
+        <div className={cn(SECTION_LABEL_CLASS, "flex items-center gap-2")}>
           <Dumbbell className="w-4 h-4" strokeWidth={1.5} />
           Training
         </div>
         {adherence.prescribed > 0 && (
           <span className="text-xs font-medium text-[#5a7d82]">
-            <span className="font-mono-display text-[#0c1a1e]">
+            <span className={cn(MONO, TEXT_PRIMARY)}>
               {adherence.completed} of {adherence.prescribed}
             </span>{" "}
             completed
@@ -85,7 +92,7 @@ export const TrainingSection = ({ checkIn, adherence }: TrainingSectionProps) =>
                 className="flex items-center gap-3 px-3 py-2.5 bg-[rgba(13,148,136,0.03)] rounded-[6px]"
               >
                 {day && (
-                  <span className="text-[11px] font-semibold text-[#93b0b4] uppercase w-8 shrink-0">
+                  <span className={cn(LABEL_CLASS, "w-8 shrink-0")}>
                     {day}
                   </span>
                 )}
@@ -119,7 +126,7 @@ export const TrainingSection = ({ checkIn, adherence }: TrainingSectionProps) =>
               <span key={pr.id ?? i}>
                 {pr.exerciseName}
                 {(pr.weightValue || pr.reps) && (
-                  <span className="font-bold font-mono-display text-[#0d9488]">
+                  <span className={cn("font-bold", MONO, "text-[#0d9488]")}>
                     {" "}
                     {pr.weightValue && `${pr.weightValue}${pr.weightUnit || "kg"}`}
                     {pr.weightValue && pr.reps && " x "}

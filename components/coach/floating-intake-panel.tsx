@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { X, Minimize2, Maximize2, ClipboardList, ExternalLink, Check, CheckCircle2, XCircle } from "lucide-react"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
+import { LABEL_CLASS } from "@/components/clients/training/program-builder/builder-tokens"
 import { useToast } from "@/hooks/use-toast"
 import useSWR, { useSWRConfig } from "swr"
 import { swrFetcher } from "@/lib/swr-fetcher"
@@ -170,7 +171,7 @@ export function FloatingIntakePanel() {
       {/* Setup Progress - fixed strip, always visible */}
       {readiness && (
         <div className="px-4 py-2 border-b border-[rgba(13,148,136,0.08)] shrink-0">
-          <p className="text-[11px] font-medium text-[#93b0b4] uppercase tracking-wider mb-1.5">Setup Progress</p>
+          <p className={cn(LABEL_CLASS, "mb-1.5")}>Setup Progress</p>
           <div className="grid grid-cols-2 gap-x-3 gap-y-1">
             {PROGRESS_ITEMS.map((item) => {
               const checked = readiness[item.key]

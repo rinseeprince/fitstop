@@ -1,6 +1,13 @@
 "use client"
 
 import { Badge } from "@/components/ui/badge"
+import { cn } from "@/lib/utils"
+import {
+  LABEL_CLASS,
+  MONO,
+  MONO_META_CLASS,
+  TEXT_PRIMARY,
+} from "@/components/clients/training/program-builder/builder-tokens"
 import type {
   ClientIntake,
   PrimaryGoal,
@@ -57,12 +64,14 @@ function QuoteBlock({ text }: { text: string }) {
   )
 }
 
-function MetricItem({ label, value }: { label: string; value: string | number | undefined }) {
+// `mono` marks the number-bearing values (heights, weights, counts, dates);
+// word-only values (activity levels, locations, yes/no) stay sans.
+function MetricItem({ label, value, mono }: { label: string; value: string | number | undefined; mono?: boolean }) {
   if (value == null || value === "") return null
   return (
     <div>
-      <p className="text-[10px] uppercase tracking-[0.06em] text-[#93b0b4]">{label}</p>
-      <p className="text-[13px] font-medium text-[#0c1a1e]">{value}</p>
+      <p className={LABEL_CLASS}>{label}</p>
+      <p className={cn("text-[13px] font-medium", mono && MONO, TEXT_PRIMARY)}>{value}</p>
     </div>
   )
 }
@@ -94,11 +103,11 @@ export function IntakeContentSections({ intake, compact }: IntakeContentSections
         <section className={sectionClass}>
           <SectionHeader title="About" />
           <div className="grid grid-cols-2 gap-4">
-            <MetricItem label="Date of Birth" value={intake.dateOfBirth} />
+            <MetricItem mono label="Date of Birth" value={intake.dateOfBirth} />
             <MetricItem label="Gender" value={intake.gender ? intake.gender.charAt(0).toUpperCase() + intake.gender.slice(1) : undefined} />
-            <MetricItem label="Height" value={intake.height ? `${intake.height} ${intake.heightUnit ?? "cm"}` : undefined} />
-            <MetricItem label="Current Weight" value={intake.currentWeight ? `${intake.currentWeight} ${intake.weightUnit ?? "kg"}` : undefined} />
-            <MetricItem label="Body Fat %" value={intake.bodyFatPercentage ? `${intake.bodyFatPercentage}%` : undefined} />
+            <MetricItem mono label="Height" value={intake.height ? `${intake.height} ${intake.heightUnit ?? "cm"}` : undefined} />
+            <MetricItem mono label="Current Weight" value={intake.currentWeight ? `${intake.currentWeight} ${intake.weightUnit ?? "kg"}` : undefined} />
+            <MetricItem mono label="Body Fat %" value={intake.bodyFatPercentage ? `${intake.bodyFatPercentage}%` : undefined} />
             <MetricItem label="Activity Level" value={intake.workActivityLevel ? ACTIVITY_LABELS[intake.workActivityLevel] : undefined} />
           </div>
         </section>
@@ -107,8 +116,8 @@ export function IntakeContentSections({ intake, compact }: IntakeContentSections
           <SectionHeader title="Lifestyle & Training" />
           <div className="grid grid-cols-2 gap-4">
             <MetricItem label="Experience" value={intake.trainingExperienceLevel ? EXPERIENCE_LABELS[intake.trainingExperienceLevel] : undefined} />
-            <MetricItem label="Days per Week" value={intake.daysPerWeek} />
-            <MetricItem label="Session Duration" value={intake.sessionDurationMinutes ? `${intake.sessionDurationMinutes} min` : undefined} />
+            <MetricItem mono label="Days per Week" value={intake.daysPerWeek} />
+            <MetricItem mono label="Session Duration" value={intake.sessionDurationMinutes ? `${intake.sessionDurationMinutes} min` : undefined} />
             <MetricItem label="Preferred Time" value={intake.trainingTimePreference ? intake.trainingTimePreference.charAt(0).toUpperCase() + intake.trainingTimePreference.slice(1) : undefined} />
             <MetricItem label="Location" value={intake.trainingLocation ? LOCATION_LABELS[intake.trainingLocation] : undefined} />
             <MetricItem label="Equipment" value={intake.availableEquipment?.join(", ")} />
@@ -128,17 +137,17 @@ export function IntakeContentSections({ intake, compact }: IntakeContentSections
                 </Badge>
               )}
               {intake.targetWeight != null && (
-                <span className="text-[12px] text-[#93b0b4]">
+                <span className={cn(MONO_META_CLASS, "text-[12px]")}>
                   Target: {intake.targetWeight} {intake.weightUnit ?? "kg"}
                 </span>
               )}
               {intake.goalBodyFatPercentage != null && (
-                <span className="text-[12px] text-[#93b0b4]">
+                <span className={cn(MONO_META_CLASS, "text-[12px]")}>
                   Goal BF: {intake.goalBodyFatPercentage}%
                 </span>
               )}
               {intake.goalDeadline && (
-                <span className="text-[12px] text-[#93b0b4]">
+                <span className={cn(MONO_META_CLASS, "text-[12px]")}>
                   by {new Date(intake.goalDeadline).toLocaleDateString()}
                 </span>
               )}
@@ -146,7 +155,7 @@ export function IntakeContentSections({ intake, compact }: IntakeContentSections
             {intake.goalDescription && <QuoteBlock text={intake.goalDescription} />}
             {intake.motivation && (
               <div>
-                <p className="text-[10px] uppercase tracking-[0.06em] text-[#93b0b4] mb-1">Motivation</p>
+                <p className={cn(LABEL_CLASS, "mb-1")}>Motivation</p>
                 <QuoteBlock text={intake.motivation} />
               </div>
             )}
@@ -162,20 +171,20 @@ export function IntakeContentSections({ intake, compact }: IntakeContentSections
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-4">
                 <MetricItem label="Cooking" value={intake.cookingFrequency ? COOKING_LABELS[intake.cookingFrequency] : undefined} />
-                <MetricItem label="Meals per Day" value={intake.mealsPerDay} />
+                <MetricItem mono label="Meals per Day" value={intake.mealsPerDay} />
                 <MetricItem label="Tracked Macros Before" value={intake.hasTrackedMacrosBefore != null ? (intake.hasTrackedMacrosBefore ? "Yes" : "No") : undefined} />
                 <MetricItem label="Dietary Requirements" value={intake.dietaryRequirements?.join(", ")} />
                 <MetricItem label="Food Allergies" value={intake.foodAllergies} />
               </div>
               {intake.dietDescription && (
                 <div>
-                  <p className="text-[10px] uppercase tracking-[0.06em] text-[#93b0b4] mb-1">Current Diet</p>
+                  <p className={cn(LABEL_CLASS, "mb-1")}>Current Diet</p>
                   <QuoteBlock text={intake.dietDescription} />
                 </div>
               )}
               {intake.biggestNutritionChallenge && (
                 <div>
-                  <p className="text-[10px] uppercase tracking-[0.06em] text-[#93b0b4] mb-1">Biggest Challenge</p>
+                  <p className={cn(LABEL_CLASS, "mb-1")}>Biggest Challenge</p>
                   <QuoteBlock text={intake.biggestNutritionChallenge} />
                 </div>
               )}
@@ -189,26 +198,26 @@ export function IntakeContentSections({ intake, compact }: IntakeContentSections
             <div className="space-y-3">
               {intake.injuriesOrLimitations && (
                 <div>
-                  <p className="text-[10px] uppercase tracking-[0.06em] text-[#93b0b4] mb-1">Injuries or Limitations</p>
+                  <p className={cn(LABEL_CLASS, "mb-1")}>Injuries or Limitations</p>
                   <QuoteBlock text={intake.injuriesOrLimitations} />
                 </div>
               )}
               {intake.medicalNotes && (
                 <div>
-                  <p className="text-[10px] uppercase tracking-[0.06em] text-[#93b0b4] mb-1">Medical Notes</p>
+                  <p className={cn(LABEL_CLASS, "mb-1")}>Medical Notes</p>
                   <QuoteBlock text={intake.medicalNotes} />
                 </div>
               )}
               <MetricItem label="Previous Coaching" value={intake.previousCoachingExperience != null ? (intake.previousCoachingExperience ? "Yes" : "No") : undefined} />
               {intake.previousCoachingDetails && (
                 <div>
-                  <p className="text-[10px] uppercase tracking-[0.06em] text-[#93b0b4] mb-1">Previous Coaching Details</p>
+                  <p className={cn(LABEL_CLASS, "mb-1")}>Previous Coaching Details</p>
                   <QuoteBlock text={intake.previousCoachingDetails} />
                 </div>
               )}
               {intake.anythingElse && (
                 <div>
-                  <p className="text-[10px] uppercase tracking-[0.06em] text-[#93b0b4] mb-1">Additional Notes</p>
+                  <p className={cn(LABEL_CLASS, "mb-1")}>Additional Notes</p>
                   <QuoteBlock text={intake.anythingElse} />
                 </div>
               )}

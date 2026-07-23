@@ -2,6 +2,13 @@
 
 import { motion } from "framer-motion";
 import { Utensils } from "lucide-react";
+import { cn } from "@/lib/utils";
+import {
+  MONO,
+  MONO_META_CLASS,
+  SECTION_LABEL_CLASS,
+  TEXT_PRIMARY,
+} from "@/components/clients/training/program-builder/builder-tokens";
 import type { DailyLog } from "@/types/daily-log";
 import {
   WEEKLY_NUTRITION_HIT_PER_DAY,
@@ -96,7 +103,7 @@ export const NutritionSection = ({
       transition={{ duration: 0.2, delay: 0.08 }}
       className="bg-white border border-[rgba(13,148,136,0.08)] rounded-[6px] p-5"
     >
-      <div className="text-xs font-semibold uppercase tracking-[0.06em] text-[#5a7d82] mb-4 flex items-center gap-2">
+      <div className={cn(SECTION_LABEL_CLASS, "mb-4 flex items-center gap-2")}>
         <Utensils className="w-4 h-4" strokeWidth={1.5} />
         Nutrition
       </div>
@@ -105,7 +112,7 @@ export const NutritionSection = ({
         <div className="flex flex-col gap-2">
           <div className="flex justify-between items-baseline">
             <div>
-              <div className="text-[28px] font-bold tracking-tight font-mono-display text-[#0c1a1e]">
+              <div className={cn("text-[28px] font-bold tracking-tight", MONO, TEXT_PRIMARY)}>
                 {stats.totalCals.toLocaleString()}
               </div>
               <div className="text-xs text-[#93b0b4]">
@@ -113,11 +120,13 @@ export const NutritionSection = ({
               </div>
             </div>
             <span
-              className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-[4px] ${
+              className={cn(
+                "inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-[4px]",
+                MONO,
                 adherence === "HIT"
                   ? "bg-[rgba(13,148,136,0.08)] text-[#0d9488]"
                   : "bg-[rgba(245,158,11,0.07)] text-[#d97706]"
-              }`}
+              )}
             >
               {adherence} · {stats.daysLogged}/{daysDiff}
             </span>
@@ -151,7 +160,7 @@ export const NutritionSection = ({
                     style={{ width: `${pct}%` }}
                   />
                 </div>
-                <div className="text-xs text-[#93b0b4] w-20 text-right shrink-0 font-mono-display">
+                <div className={cn(MONO_META_CLASS, "text-xs w-20 text-right shrink-0")}>
                   {macro.actual}g / {macro.target}g
                 </div>
               </div>

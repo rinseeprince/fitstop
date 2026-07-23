@@ -3,6 +3,12 @@
 import { Progress } from "@/components/ui/progress";
 import { CheckCircle2, AlertCircle, TrendingDown, TrendingUp, Scale } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
+import { cn } from "@/lib/utils";
+import {
+  MONO,
+  MONO_META_CLASS,
+  TEXT_PRIMARY,
+} from "@/components/clients/training/program-builder/builder-tokens";
 import type { GoalProgress } from "@/types/check-in";
 
 type WeightGoalCardProps = {
@@ -55,7 +61,7 @@ export const WeightGoalCard = ({ weightGoal }: WeightGoalCardProps) => {
             </div>
           </div>
           <div className="text-right">
-            <div className="text-2xl font-bold font-mono-display text-[#0d9488]">
+            <div className={cn("text-2xl font-bold", MONO, "text-[#0d9488]")}>
               {Math.round(weightGoal.percentComplete)}%
             </div>
             <div className="text-xs text-[#93b0b4]">Complete</div>
@@ -65,7 +71,7 @@ export const WeightGoalCard = ({ weightGoal }: WeightGoalCardProps) => {
         {/* Progress Bar */}
         <div className="space-y-2">
           <Progress value={weightGoal.percentComplete} className="h-3" />
-          <div className="flex justify-between text-xs text-[#93b0b4] font-mono-display">
+          <div className={cn(MONO_META_CLASS, "flex justify-between text-xs")}>
             <span>
               Start: {weightGoal.startingWeight}
               {unit}
@@ -81,14 +87,14 @@ export const WeightGoalCard = ({ weightGoal }: WeightGoalCardProps) => {
         <div className="grid grid-cols-2 gap-4 pt-2 border-t border-[rgba(13,148,136,0.08)]">
           <div>
             <div className="text-xs text-[#93b0b4] mb-1">Current Weight</div>
-            <div className="text-lg font-semibold font-mono-display text-[#0c1a1e]">
+            <div className={cn("text-lg font-semibold", MONO, TEXT_PRIMARY)}>
               {weightGoal.current}
               {unit}
             </div>
           </div>
           <div>
             <div className="text-xs text-[#93b0b4] mb-1">Remaining</div>
-            <div className="text-lg font-semibold font-mono-display text-[#0c1a1e]">
+            <div className={cn("text-lg font-semibold", MONO, TEXT_PRIMARY)}>
               {Math.abs(weightGoal.remaining)}
               {unit}
             </div>
@@ -107,7 +113,7 @@ export const WeightGoalCard = ({ weightGoal }: WeightGoalCardProps) => {
                   ) : (
                     <TrendingUp className="h-4 w-4 text-[#d97706]" strokeWidth={1.5} />
                   )}
-                  <span className="font-medium font-mono-display text-[#0c1a1e]">
+                  <span className={cn("font-medium", MONO, TEXT_PRIMARY)}>
                     {Math.abs(weightGoal.avgWeeklyChange)}
                     {unit}/week
                   </span>
@@ -116,7 +122,7 @@ export const WeightGoalCard = ({ weightGoal }: WeightGoalCardProps) => {
               {weightGoal.weeksToGoal !== undefined && (
                 <div className="text-right">
                   <div className="text-xs text-[#93b0b4] mb-1">Estimated Time</div>
-                  <div className="font-medium font-mono-display text-[#0c1a1e]">
+                  <div className={cn("font-medium", MONO, TEXT_PRIMARY)}>
                     {Math.round(weightGoal.weeksToGoal)} weeks
                   </div>
                 </div>
@@ -133,7 +139,7 @@ export const WeightGoalCard = ({ weightGoal }: WeightGoalCardProps) => {
               <div>
                 <div className="flex justify-between text-xs mb-0.5">
                   <span className="text-[#93b0b4]">Required</span>
-                  <span className="font-medium font-mono-display text-[#0c1a1e]">
+                  <span className={cn("font-medium", requiredFinite && MONO, TEXT_PRIMARY)}>
                     {requiredFinite ? `${requiredRate}${unit}/week` : "Deadline passed"}
                   </span>
                 </div>
@@ -145,7 +151,7 @@ export const WeightGoalCard = ({ weightGoal }: WeightGoalCardProps) => {
               <div>
                 <div className="flex justify-between text-xs mb-0.5">
                   <span className="text-[#93b0b4]">Safe ceiling</span>
-                  <span className="font-medium font-mono-display text-[#0c1a1e]">
+                  <span className={cn("font-medium", MONO, TEXT_PRIMARY)}>
                     {safeCeiling}
                     {unit}/week
                   </span>
@@ -163,7 +169,7 @@ export const WeightGoalCard = ({ weightGoal }: WeightGoalCardProps) => {
         {weightGoal.projectedCompletionDate && (
           <div className="pt-2 border-t border-[rgba(13,148,136,0.08)]">
             <div className="text-xs text-[#93b0b4] mb-1">Projected Goal Date</div>
-            <div className="font-medium font-mono-display text-[#0c1a1e]">
+            <div className={cn("font-medium", MONO, TEXT_PRIMARY)}>
               {format(new Date(weightGoal.projectedCompletionDate), "MMMM d, yyyy")}
             </div>
             <div className="text-xs text-[#93b0b4] mt-0.5">

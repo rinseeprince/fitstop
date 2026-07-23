@@ -1,5 +1,11 @@
 "use client";
 
+import { cn } from "@/lib/utils";
+import {
+  MONO,
+  STAT_LABEL_DARK_CLASS,
+  STAT_VALUE_DARK_CLASS,
+} from "@/components/clients/training/program-builder/builder-tokens";
 import type { CheckIn, GetCheckInComparisonResponse, MetricChange } from "@/types/check-in";
 import type { DailyLog } from "@/types/daily-log";
 import type { SessionSummary } from "@/lib/check-in/adherence";
@@ -216,7 +222,7 @@ export const KPIRibbon = ({
         >
           <div className="flex items-center gap-1.5">
             <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotClass[card.accent]}`} />
-            <span className="text-[10px] uppercase tracking-[0.06em] text-[rgba(255,255,255,0.35)] font-medium">
+            <span className={STAT_LABEL_DARK_CLASS}>
               {card.label}
             </span>
           </div>
@@ -224,23 +230,23 @@ export const KPIRibbon = ({
             {card.valueMuted ? (
               <span className="text-[13px] text-[rgba(255,255,255,0.3)]">{card.value}</span>
             ) : (
-              <span className="text-[22px] font-bold font-mono-display text-white leading-tight">
+              <span className={cn(STAT_VALUE_DARK_CLASS, "text-[22px] leading-tight")}>
                 {card.value}
               </span>
             )}
             {card.unit && (
-              <span className="text-[10px] text-[rgba(255,255,255,0.3)]">{card.unit}</span>
+              <span className={cn("text-[10px] text-[rgba(255,255,255,0.3)]", card.label === "Calories" && MONO)}>{card.unit}</span>
             )}
           </div>
           {(card.delta || card.subText) && (
             <div className="flex items-center gap-1.5 mt-1">
               {card.delta && (
-                <span className={`text-[11px] font-mono-display font-medium ${deltaTextClass(card.delta.type)}`}>
+                <span className={cn("text-[11px] font-medium", card.label !== "Calories" && MONO, deltaTextClass(card.delta.type))}>
                   {card.delta.text}
                 </span>
               )}
               {card.subText && (
-                <span className="text-[10px] text-[rgba(255,255,255,0.3)]">{card.subText}</span>
+                <span className={cn("text-[10px] text-[rgba(255,255,255,0.3)]", card.label === "Calories" && calStats.daysLogged > 0 && MONO)}>{card.subText}</span>
               )}
             </div>
           )}

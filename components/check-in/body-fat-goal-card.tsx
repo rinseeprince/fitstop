@@ -2,6 +2,12 @@
 
 import { Progress } from "@/components/ui/progress";
 import { CheckCircle2, AlertCircle, TrendingDown, TrendingUp, Percent } from "lucide-react";
+import { cn } from "@/lib/utils";
+import {
+  MONO,
+  MONO_META_CLASS,
+  TEXT_PRIMARY,
+} from "@/components/clients/training/program-builder/builder-tokens";
 import type { GoalProgress } from "@/types/check-in";
 
 type BodyFatGoalCardProps = {
@@ -33,7 +39,7 @@ export const BodyFatGoalCard = ({ bodyFatGoal }: BodyFatGoalCardProps) => {
             </div>
           </div>
           <div className="text-right">
-            <div className="text-2xl font-bold font-mono-display text-[#0d9488]">
+            <div className={cn("text-2xl font-bold", MONO, "text-[#0d9488]")}>
               {Math.round(bodyFatGoal.percentComplete)}%
             </div>
             <div className="text-xs text-[#93b0b4]">Complete</div>
@@ -43,7 +49,7 @@ export const BodyFatGoalCard = ({ bodyFatGoal }: BodyFatGoalCardProps) => {
         {/* Progress Bar */}
         <div className="space-y-2">
           <Progress value={bodyFatGoal.percentComplete} className="h-3" />
-          <div className="flex justify-between text-xs text-[#93b0b4] font-mono-display">
+          <div className={cn(MONO_META_CLASS, "flex justify-between text-xs")}>
             <span>Start: {bodyFatGoal.startingBodyFat}%</span>
             <span>Goal: {bodyFatGoal.goal}%</span>
           </div>
@@ -53,11 +59,11 @@ export const BodyFatGoalCard = ({ bodyFatGoal }: BodyFatGoalCardProps) => {
         <div className="grid grid-cols-2 gap-4 pt-2 border-t border-[rgba(13,148,136,0.08)]">
           <div>
             <div className="text-xs text-[#93b0b4] mb-1">Current Body Fat</div>
-            <div className="text-lg font-semibold font-mono-display text-[#0c1a1e]">{bodyFatGoal.current}%</div>
+            <div className={cn("text-lg font-semibold", MONO, TEXT_PRIMARY)}>{bodyFatGoal.current}%</div>
           </div>
           <div>
             <div className="text-xs text-[#93b0b4] mb-1">Remaining</div>
-            <div className="text-lg font-semibold font-mono-display text-[#0c1a1e]">
+            <div className={cn("text-lg font-semibold", MONO, TEXT_PRIMARY)}>
               {Math.abs(bodyFatGoal.remaining)}%
             </div>
           </div>
@@ -73,7 +79,7 @@ export const BodyFatGoalCard = ({ bodyFatGoal }: BodyFatGoalCardProps) => {
               ) : (
                 <TrendingUp className="h-4 w-4 text-[#d97706]" strokeWidth={1.5} />
               )}
-              <span className="font-medium font-mono-display text-[#0c1a1e]">
+              <span className={cn("font-medium", MONO, TEXT_PRIMARY)}>
                 {Math.abs(bodyFatGoal.avgChange).toFixed(1)}% per check-in
               </span>
             </div>

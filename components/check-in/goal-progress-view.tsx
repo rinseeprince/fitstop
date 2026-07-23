@@ -126,10 +126,8 @@ export const GoalProgressView = ({
             {hasWeightGoal && (
               <p>
                 <span className="font-medium">Weight:</span>{" "}
-                <span className="font-mono-display">
-                  {Math.abs(goalProgress.weight!.remaining)}{goalProgress.weight!.unit}
-                </span>{" "}
-                to go
+                {Math.abs(goalProgress.weight!.remaining)}
+                {goalProgress.weight!.unit} to go
                 {goalProgress.weight!.weeksToGoal && (
                   <span className="text-[#93b0b4]">
                     {" "}• ~{Math.round(goalProgress.weight!.weeksToGoal)} weeks remaining
@@ -140,10 +138,7 @@ export const GoalProgressView = ({
             {hasBodyFatGoal && (
               <p>
                 <span className="font-medium">Body Fat:</span>{" "}
-                <span className="font-mono-display">
-                  {Math.abs(goalProgress.bodyFat!.remaining)}%
-                </span>{" "}
-                to go
+                {Math.abs(goalProgress.bodyFat!.remaining)}% to go
               </p>
             )}
             {progressNote && (

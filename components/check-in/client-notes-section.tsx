@@ -2,6 +2,11 @@
 
 import { motion } from "framer-motion";
 import { MessageSquare } from "lucide-react";
+import { cn } from "@/lib/utils";
+import {
+  LABEL_CLASS,
+  SECTION_LABEL_CLASS,
+} from "@/components/clients/training/program-builder/builder-tokens";
 import type { CheckIn } from "@/types/check-in";
 
 type ClientNotesSectionProps = {
@@ -19,7 +24,7 @@ export const ClientNotesSection = ({ checkIn }: ClientNotesSectionProps) => {
       transition={{ duration: 0.2, delay: 0.12 }}
       className="bg-white border border-[rgba(13,148,136,0.08)] rounded-[6px] p-5"
     >
-      <div className="text-xs font-semibold uppercase tracking-[0.06em] text-[#5a7d82] mb-4 flex items-center gap-2">
+      <div className={cn(SECTION_LABEL_CLASS, "mb-4 flex items-center gap-2")}>
         <MessageSquare className="w-4 h-4" strokeWidth={1.5} />
         Client Notes
       </div>
@@ -27,7 +32,7 @@ export const ClientNotesSection = ({ checkIn }: ClientNotesSectionProps) => {
       <div className="flex flex-col gap-3">
         {checkIn.notes && (
           <div>
-            <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-[#93b0b4] mb-1">
+            <div className={cn(LABEL_CLASS, "mb-1")}>
               Reflection
             </div>
             <div className="pl-3.5 border-l-2 border-[rgba(13,148,136,0.15)] text-sm text-[#0c1a1e] leading-relaxed">

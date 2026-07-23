@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
+import { LABEL_CLASS, MONO } from "@/components/clients/training/program-builder/builder-tokens"
 import { motion } from "framer-motion"
 import { useAuth } from "@/contexts/auth-context"
 import { navigation } from "@/lib/navigation"
@@ -91,7 +92,7 @@ export function SidebarNav() {
                   <motion.span
                     initial={{ scale: 0 }}
                     animate={{ scale: 1 }}
-                    className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-[#0d9488] text-white text-[10px] font-medium"
+                    className={cn(MONO, "absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-[#0d9488] text-white text-[10px] font-medium")}
                   >
                     {unreviewedCount > 9 ? "9+" : unreviewedCount}
                   </motion.span>
@@ -99,7 +100,7 @@ export function SidebarNav() {
               </div>
               <span className="relative mt-1 text-[10px] text-center leading-tight">{item.name}</span>
               {item.beta && (
-                <span className="relative mt-0.5 text-[8px] font-semibold uppercase tracking-[0.06em] px-1.5 py-[1px] rounded-[4px] bg-[rgba(13,148,136,0.15)] text-[#0d9488]">
+                <span className={cn(LABEL_CLASS, "relative mt-0.5 text-[8px] font-semibold px-1.5 py-[1px] rounded-[4px] bg-[rgba(13,148,136,0.15)] text-[#0d9488]")}>
                   Beta
                 </span>
               )}

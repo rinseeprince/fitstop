@@ -2,6 +2,11 @@
 
 import { motion } from "framer-motion";
 import { RotateCw } from "lucide-react";
+import { cn } from "@/lib/utils";
+import {
+  MONO,
+  SECTION_LABEL_CLASS,
+} from "@/components/clients/training/program-builder/builder-tokens";
 import type { HabitLogWithDetails } from "@/types/daily-habit";
 
 type HabitsSectionProps = {
@@ -64,7 +69,7 @@ export const HabitsSection = ({
       transition={{ duration: 0.2, delay: 0.14 }}
       className="bg-white border border-[rgba(13,148,136,0.08)] rounded-[6px] p-5"
     >
-      <div className="text-xs font-semibold uppercase tracking-[0.06em] text-[#5a7d82] mb-4 flex items-center gap-2">
+      <div className={cn(SECTION_LABEL_CLASS, "mb-4 flex items-center gap-2")}>
         <RotateCw className="w-4 h-4" strokeWidth={1.5} />
         Habits
       </div>
@@ -73,7 +78,7 @@ export const HabitsSection = ({
         {habits.map((habit) => (
           <div key={habit.name} className="flex items-center gap-2">
             <span className="text-sm font-medium text-[#0c1a1e]">{habit.name}</span>
-            <span className="text-xs font-semibold font-mono-display text-[#0d9488]">
+            <span className={cn("text-xs font-semibold", MONO, "text-[#0d9488]")}>
               {habit.completed}/{habit.total}
             </span>
             <span className="flex gap-0.5">

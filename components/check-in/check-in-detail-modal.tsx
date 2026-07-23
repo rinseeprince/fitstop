@@ -19,6 +19,8 @@ import { TrainingSection } from "./training-section";
 import { ClientNotesSection } from "./client-notes-section";
 import { HabitsSection } from "./habits-section";
 import { useCheckInDetailData, formatDateRange, formatSubmittedDate } from "@/hooks/use-check-in-detail-data";
+import { cn } from "@/lib/utils";
+import { MONO } from "@/components/clients/training/program-builder/builder-tokens";
 import { summariseSessions } from "@/lib/check-in/adherence";
 import { toCheckInReview } from "@/lib/check-in/to-review";
 
@@ -109,11 +111,11 @@ export const CheckInDetailModal = ({
               </div>
               {contextStartDate && contextEndDate && data && !dailyContextLoading && (
                 <p className="text-xs text-[#93b0b4] mt-0.5 flex items-center gap-1.5 flex-wrap">
-                  <span>{formatDateRange(contextStartDate, contextEndDate)}</span>
+                  <span className={MONO}>{formatDateRange(contextStartDate, contextEndDate)}</span>
                   <span>&middot;</span>
-                  <span>{formatSubmittedDate(data.checkIn.createdAt)}</span>
+                  <span className={MONO}>{formatSubmittedDate(data.checkIn.createdAt)}</span>
                   <span>&middot;</span>
-                  <span className="inline-flex items-center text-xs font-semibold font-mono-display text-[#0d9488] bg-[rgba(13,148,136,0.08)] px-1.5 py-0.5 rounded-[4px]">
+                  <span className={cn("inline-flex items-center text-xs font-semibold", MONO, "text-[#0d9488] bg-[rgba(13,148,136,0.08)] px-1.5 py-0.5 rounded-[4px]")}>
                     {dailyLogs.length}/{daysDiff} days logged
                   </span>
                 </p>

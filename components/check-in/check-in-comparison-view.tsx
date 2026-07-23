@@ -1,6 +1,8 @@
 "use client";
 
 import { TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { MONO, TEXT_PRIMARY } from "@/components/clients/training/program-builder/builder-tokens";
 import { TrendSparkline } from "./trend-sparkline";
 import type { CheckInComparison, ProgressChartData, MetricChange } from "@/types/check-in";
 import type { SessionSummary } from "@/lib/check-in/adherence";
@@ -27,7 +29,7 @@ function DeltaText({ change, unit, inverse }: { change?: MetricChange; unit?: st
   if (!change || change.previous === undefined || change.change === undefined) return null;
   const Icon = change.trend === "up" ? TrendingUp : change.trend === "down" ? TrendingDown : Minus;
   return (
-    <div className={`text-xs flex items-center gap-1 justify-end font-mono-display ${deltaColor(change, !!inverse)}`}>
+    <div className={cn("text-xs flex items-center gap-1 justify-end", MONO, deltaColor(change, !!inverse))}>
       <Icon className="h-3 w-3" strokeWidth={1.5} />
       <span>
         {change.change > 0 ? "+" : ""}
@@ -55,7 +57,7 @@ function MetricRow({
     <div className="flex items-center justify-between py-2 border-b border-[rgba(13,148,136,0.06)] last:border-0">
       <span className="text-sm font-medium text-[#5a7d82]">{label}</span>
       <div className="text-right">
-        <div className="font-semibold font-mono-display text-[#0c1a1e]">
+        <div className={cn("font-semibold", MONO, TEXT_PRIMARY)}>
           {change.current}
           {unit}
         </div>
@@ -87,7 +89,7 @@ function MetricTrendRow({
       <span className="text-sm font-medium text-[#5a7d82] flex-1">{label}</span>
       <TrendSparkline values={series} />
       <div className="text-right w-20">
-        <div className="font-semibold font-mono-display text-[#0c1a1e]">
+        <div className={cn("font-semibold", MONO, TEXT_PRIMARY)}>
           {current}
           {unit}
         </div>
