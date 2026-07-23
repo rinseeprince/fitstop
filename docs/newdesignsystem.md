@@ -28,7 +28,7 @@ Apply these by default on every surface — they are the difference between "rig
 
 - [ ] **Radius = `rounded-[6px]`** on all cards/buttons/inputs/dialogs/sheets/popovers/badges. Inner chips & segmented-active = `rounded-[4px]`. Circles (dots, ordinals) = `rounded-full`. No pill shapes, no large radii.
 - [ ] **Greys carry a teal undertone.** Ink `#0c1a1e`, secondary `#5a7d82`, muted `#93b0b4`. **Never** use `#64748b`, `#94a3b8`, `#0f172a`, `#1e293b`, or any Tailwind slate/gray default.
-- [ ] **Numerals & micro-labels use `font-mono-display`** (JetBrains Mono): calories, macros, reps/sets/loads, dates, counts, stat values, uppercase labels, card metas.
+- [ ] **Mono = numbers only.** `font-mono-display` (JetBrains Mono) is ONLY for numerals and number-bearing data strings; every word-only string — labels, eyebrows, instructions, the word "Rest" — is Instrument Sans. See the Typography decision table; `npm run check:labels` enforces it.
 - [ ] **UI text uses Instrument Sans** (the default body font — no class needed).
 - [ ] **Primary/brand = `#0d9488`, its hover = `#0b7f75`.** Never invent a hover shade.
 - [ ] **Every input gets `FOCUS_RING`** (`focus-visible:ring-2 ring-[#0d9488]/35 ring-offset-0`).
@@ -139,10 +139,30 @@ These replace the old Tailwind defaults (`#3b82f6`, `#f59e0b`, `#ef4444`) everyw
 
 | Role | Font | How to apply |
 |------|------|--------------|
-| UI text | **Instrument Sans** | Default body font (`app/layout.tsx` sets it on `<body>`) — no class needed |
-| Numerical data & micro-labels | **JetBrains Mono** | `font-mono-display` utility (`--font-mono-display`, fallback `ui-monospace, monospace`) |
+| UI text & every word-only string | **Instrument Sans** | Default body font (`app/layout.tsx` sets it on `<body>`) — no class needed |
+| Numerals & number-bearing data strings | **JetBrains Mono** | Always via a token from `builder-tokens.ts` (`MONO`, `MONO_*`, `STAT_VALUE_DARK_CLASS`, …) — never the raw `font-mono-display` utility |
 
-`font-mono-display` is mandatory for: calories, macros, reps/sets/loads/RPE, averages, dates, counts, stat values, and uppercase mono labels — **when they stand alone as data** (card metas, stat rows, table cells, chips, numerals, labeled key-value lines).
+### Mono = numbers only (decision table)
+
+The rule (owner decision, 2026-07-23): **JetBrains Mono is ONLY for numerals and number-bearing data strings. Instrument Sans is for every word-only string.**
+
+| MONO (JetBrains, via token) | SANS (Instrument, default) |
+|---|---|
+| Set/rep schemes — `4×10-12` | Labels & eyebrows — `TRAINING PLAN`, `PROGRAM`, `EXERCISE` |
+| Loads, durations — `60 min` | Section dividers — `SCHEDULE` |
+| Dates — `Wed, Jul 22` | Stat labels — `SESSIONS COMPLETED` |
+| Counts — `22 sessions`, `+1 more`, `0/1 sessions` | Table column headers |
+| Ordinals/chips — `W1`, `Day 1`, `3×` | Form labels |
+| Stat values | Instructions — `DRAG A SESSION ONTO A DAY` |
+| Metas that contain numbers — `6 weeks · 22 sessions` | The word `Rest` in day cells |
+
+**Tie-break:** if the string contains a numeral that IS the information → mono; otherwise sans. (A user-authored *name* containing digits stays sans — the digits are part of the name, not the datum. Interactive control options — select items, segmented values — are controls, not data strings, and stay sans.)
+
+**Dynamic slots** that render words sometimes and numbers other times take the dominant case at the class site; split the branches when the states are already distinguishable (e.g. a word-only fallback next to a numeric rate).
+
+**Enforcement:** `npm run check:labels` (`scripts/check-labels.ts`, in the §13 commit-ready checklist) fails the build when the raw `font-mono-display` literal or a hand-rolled `uppercase` + `tracking-*` label string appears outside the token modules and the explicit whitelist (`scripts/check-labels-whitelist.ts` — out-of-scope trees only, never a dodge for coach-surface code).
+
+Recipes elsewhere in this doc describe **rendered pixels**; where a recipe names `font-mono-display` or an uppercase label string, author it via the corresponding token (`MONO`, `MONO_META_CLASS`, `LABEL_CLASS`, …) + call-site overrides — never by pasting the raw utility.
 
 ### Prose vs data — where mono is allowed
 
@@ -242,15 +262,23 @@ The builder tokens are **app-wide** — reuse them anywhere, not just in the bui
 | `TEXT_SECONDARY` | `text-[#5a7d82]` |
 | `TEXT_MUTED` | `text-[#93b0b4]` |
 | `FOCUS_RING` | `focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0d9488]/35 focus-visible:ring-offset-0` |
-| `LABEL_CLASS` | `text-[10px] font-medium uppercase tracking-[0.06em] text-[#93b0b4]` |
-| `MONO_LABEL_CLASS` | `font-mono-display text-[10px] font-medium uppercase tracking-[0.08em] text-[#93b0b4]` |
-| `HEADER_EYEBROW_CLASS` | `font-mono-display text-[9.5px] font-medium uppercase tracking-[0.14em] text-[rgba(255,255,255,0.35)]` (on dark) |
-| `CHIP_NEUTRAL_CLASS` | `rounded-[4px] bg-[#f0f5f4] px-1.5 py-px text-[10px] font-medium text-[#5a7d82]` |
+| `LABEL_CLASS` | `text-[10px] font-medium uppercase tracking-[0.06em] text-[#93b0b4]` (word-only labels) |
+| `MONO_LABEL_CLASS` | `font-mono-display text-[10px] font-medium uppercase tracking-[0.08em] text-[#93b0b4]` (number-bearing labels/metas ONLY — `Day 3`, `Wed, Jul 22 · on 3 upcoming days`) |
+| `HEADER_EYEBROW_CLASS` | `text-[9.5px] font-medium uppercase tracking-[0.14em] text-[rgba(255,255,255,0.35)]` (on dark; SANS — eyebrows are word-only) |
+| `MONO` | `font-mono-display` (bare numeric fragments inheriting size/colour — the only sanctioned route to the raw utility) |
+| `MONO_META_CLASS` | `font-mono-display text-[#93b0b4]` (numeric metas/footers/counters; size at call site) |
+| `MONO_INPUT_CLASS` | `text-center font-mono-display` (numeric editor inputs; size/height at call site) |
+| `MONO_CELL_CLASS` | `font-mono-display text-[12.5px]` (numeric table cells; colour at call site) |
+| `STAT_LABEL_DARK_CLASS` | `text-[10px] font-medium uppercase tracking-[0.06em] text-[rgba(255,255,255,0.35)]` (on-dark word stat label — StatBand's label) |
+| `STAT_VALUE_DARK_CLASS` | `font-mono-display font-bold text-white` (on-dark stat value; size tier at call site: 22/24/32px) |
+| `SECTION_LABEL_CLASS` | `text-[10.5px] font-semibold uppercase tracking-[0.07em] text-[#93b0b4]` (divider-label text; prefer `<SectionLabel>` when a hairline is wanted) |
+| `COUNT_CHIP_CLASS` | `font-mono-display text-[10px] font-semibold rounded-[6px] bg-[rgba(13,148,136,0.05)] px-1.5 py-0.5 text-[#0d9488]` (teal count chips — `3`, `2/5`) |
+| `CHIP_NEUTRAL_CLASS` | `rounded-[4px] bg-[#f0f5f4] px-1.5 py-px text-[10px] font-medium text-[#5a7d82]` (word chips — focus tags, `Notes`) |
 | `THUMB_CLASS` | `grid shrink-0 place-items-center rounded-[6px] bg-[rgba(13,148,136,0.08)] text-[#0d9488]` (caller sets `h-/w-`) |
 | `TRAINING_CARD_BORDER` | `border border-[rgba(13,148,136,0.08)]` |
 | `REST_CARD_BORDER` | `border border-dashed border-[rgba(13,148,136,0.10)]` |
 
-To turn a mono label to normal case (e.g. a meta line), append `normal-case tracking-normal`.
+To turn a mono label to normal case (e.g. a meta line), append `normal-case tracking-normal`. Compose overrides through `cn()` AFTER the token argument (tailwind-merge lets call-site size/colour win).
 
 ---
 
@@ -406,7 +434,7 @@ Reference: `app/dashboard/programs/page.tsx`, `components/programs/programs-tabl
 
 ### Stat band
 
-`<StatBand cells={cells} />` renders `bg-[#0f2027] rounded-[6px] p-5 grid animate-card-in` (2–4 cols by cell count). Each cell: `flex flex-col pl-5 pr-5`, right divider `border-r border-[rgba(255,255,255,0.07)]` (except last). Label `text-[10px] uppercase tracking-[0.06em] text-[rgba(255,255,255,0.35)] font-medium`; value `text-[24px] font-bold font-mono-display text-white leading-tight` (muted fallback `text-[13px] text-[rgba(255,255,255,0.3)]`); unit `text-[10px] text-[rgba(255,255,255,0.3)]`; sub `text-[10px] font-mono-display mt-1` (tones: neutral `rgba(255,255,255,0.3)`, warn `#d97706`, up `#0d9488`).
+`<StatBand cells={cells} />` renders `bg-[#0f2027] rounded-[6px] p-5 grid animate-card-in` (2–4 cols by cell count). Each cell: `flex flex-col pl-5 pr-5`, right divider `border-r border-[rgba(255,255,255,0.07)]` (except last). Label = `STAT_LABEL_DARK_CLASS`; value = `STAT_VALUE_DARK_CLASS` + `text-[24px] leading-tight` (muted fallback `text-[13px] text-[rgba(255,255,255,0.3)]`); unit `text-[10px] text-[rgba(255,255,255,0.3)]`; sub = `MONO` + `text-[10px] mt-1` (tones: neutral `rgba(255,255,255,0.3)`, warn `#d97706`, up `#0d9488`).
 
 ### Toolbar
 
@@ -418,7 +446,7 @@ Reference: `app/dashboard/programs/page.tsx`, `components/programs/programs-tabl
 
 ### Section-label divider
 
-`<SectionLabel label="Program library" actions={<button …>+</button>} />` → label `text-[10.5px] font-semibold uppercase tracking-[0.07em] text-[#93b0b4]` + `h-px flex-1 bg-[rgba(13,148,136,0.08)]` rule + optional mono meta + actions. Action "+" button: `rounded p-1 text-[#93b0b4] transition-colors hover:text-[#0d9488]` with `Plus h-3.5 w-3.5 strokeWidth={1.5}`.
+`<SectionLabel label="Program library" actions={<button …>+</button>} />` → label = `SECTION_LABEL_CLASS` (`text-[10.5px] font-semibold uppercase tracking-[0.07em] text-[#93b0b4]`) + `h-px flex-1 bg-[rgba(13,148,136,0.08)]` rule + optional mono meta (`MONO_META_CLASS` + `text-[11px]`) + actions. Action "+" button: `rounded p-1 text-[#93b0b4] transition-colors hover:text-[#0d9488]` with `Plus h-3.5 w-3.5 strokeWidth={1.5}`.
 
 ### Table
 
@@ -609,7 +637,8 @@ White card, no border, 6px radius; header clickable (600 title + count badge on 
 
 - ❌ Use slate/gray defaults (`#64748b`, `#94a3b8`, `text-slate-*`, `bg-gray-*`). ✅ Use the teal-tinted greys.
 - ❌ Use pill shapes or the 10px base radius on cards/dialogs. ✅ `rounded-[6px]` (4px inner chips).
-- ❌ Set numerals in the sans font. ✅ `font-mono-display` for all numbers/metas/labels.
+- ❌ Set numerals in the sans font, or words in the numeral font. ✅ Mono = numbers only (see the Typography decision table); word-only labels are sans.
+- ❌ Write the raw `font-mono-display` utility or a hand-rolled `uppercase tracking-` string in a component. ✅ Import a token from `builder-tokens.ts` — `npm run check:labels` fails otherwise.
 - ❌ Invent a primary-button hover colour. ✅ `hover:bg-[#0b7f75]`.
 - ❌ Ship an input without a focus ring. ✅ Add `FOCUS_RING`.
 - ❌ Rebuild StatBand / SegmentedControl / LibraryTableShell / SectionLabel / RowActions from scratch. ✅ Import them.
