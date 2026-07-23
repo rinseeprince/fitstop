@@ -14,7 +14,12 @@ import {
   CartesianGrid,
   Legend,
 } from "recharts";
+import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  MONO,
+  TEXT_PRIMARY,
+} from "@/components/clients/training/program-builder/builder-tokens";
 import { ExerciseChartCard, LegendItem } from "./exercise-chart-card";
 import { computeInsight } from "./exercise-insight";
 import type { ExerciseProgressionPoint } from "@/types/training";
@@ -60,7 +65,9 @@ const DATA_KEYS: Record<TrendMetric, string> = {
 };
 
 const TICK_STYLE = { fontSize: 10, fill: "#888780", fontFamily: "var(--font-mono-display)" };
-const X_TICK_STYLE = { fontSize: 10, fill: "#93b0b4" };
+const X_TICK_STYLE = { fontSize: 10, fill: "#93b0b4", fontFamily: "var(--font-mono-display)" };
+
+const TOOLTIP_VALUE_CLASS = cn(MONO, "text-[13px] font-semibold", TEXT_PRIMARY);
 
 const TOOLTIP_STYLE = {
   contentStyle: {
@@ -88,36 +95,36 @@ function MetricTooltip({ active, payload, metric }: Record<string, unknown>) {
 
   return (
     <div style={TOOLTIP_STYLE.contentStyle} className="px-3 py-2">
-      <p className="text-[11px] text-[#93b0b4]">{formatDateShort(p.date)}</p>
+      <p className={cn(MONO, "text-[11px] text-[#93b0b4]")}>{formatDateShort(p.date)}</p>
       {m === "weight" && (
-        <p className="text-[13px] font-semibold text-[#0c1a1e] font-mono-display">
+        <p className={TOOLTIP_VALUE_CLASS}>
           {p.topSetWeight} x {p.topSetReps ?? "?"}
         </p>
       )}
       {m === "e1rm" && (
         <>
-          <p className="text-[13px] font-semibold text-[#0c1a1e] font-mono-display">
+          <p className={TOOLTIP_VALUE_CLASS}>
             e1RM: {p.estimatedOneRepMax?.toFixed(1)}
           </p>
           {p.topSetWeight != null && p.topSetReps != null && (
             <p className="text-[11px] text-[#93b0b4]">
-              from {p.topSetWeight} x {p.topSetReps}
+              from <span className={MONO}>{p.topSetWeight} x {p.topSetReps}</span>
             </p>
           )}
         </>
       )}
       {m === "volume" && (
-        <p className="text-[13px] font-semibold text-[#0c1a1e] font-mono-display">
+        <p className={TOOLTIP_VALUE_CLASS}>
           {p.totalVolume?.toLocaleString()}
         </p>
       )}
       {m === "rpe" && (
-        <p className="text-[13px] font-semibold text-[#0c1a1e] font-mono-display">
+        <p className={TOOLTIP_VALUE_CLASS}>
           RPE {p.topSetRpe}
         </p>
       )}
       {m === "compliance" && (
-        <p className="text-[13px] font-semibold text-[#0c1a1e]">
+        <p className={TOOLTIP_VALUE_CLASS}>
           {p.prescribedSets != null
             ? `${p.actualSets} / ${p.prescribedSets} sets`
             : `${p.actualSets} sets`}

@@ -9,6 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { SECTION_LABEL_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
 import type { RoadmapWithPhases, TimeScope } from "@/lib/metrics/resolve-time-scope";
 
 type TimeScopeSelectorProps = {
@@ -78,7 +79,7 @@ export function TimeScopeSelector({ scope, onChange, roadmaps }: TimeScopeSelect
 
           return (
             <SelectGroup key={roadmap.id}>
-              <SelectLabel className="text-[10.5px] uppercase tracking-[0.07em] font-semibold text-[#93b0b4]">
+              <SelectLabel className={SECTION_LABEL_CLASS}>
                 {roadmap.name}
               </SelectLabel>
               <SelectItem value={`program:${roadmap.id}`} className={ITEM_CLASS}>
@@ -94,7 +95,7 @@ export function TimeScopeSelector({ scope, onChange, roadmaps }: TimeScopeSelect
         })}
 
         <SelectGroup>
-          <SelectLabel className="text-[10.5px] uppercase tracking-[0.07em] font-semibold text-[#93b0b4]">
+          <SelectLabel className={SECTION_LABEL_CLASS}>
             Recent
           </SelectLabel>
           <SelectItem value="relative:7" className={ITEM_CLASS}>

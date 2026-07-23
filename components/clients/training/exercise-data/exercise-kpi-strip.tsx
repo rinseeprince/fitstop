@@ -1,7 +1,12 @@
 "use client";
 
 import { TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  LABEL_CLASS,
+  MONO,
+} from "@/components/clients/training/program-builder/builder-tokens";
 import type { KpiCard } from "@/components/training/exercise-data/exercise-insight";
 
 type ExerciseKpiStripProps = {
@@ -38,10 +43,10 @@ export function ExerciseKpiStrip({ kpis, isLoading }: ExerciseKpiStripProps) {
             key={kpi.label}
             className="bg-white border border-[rgba(13,148,136,0.1)] rounded-[8px] px-[14px] py-[16px]"
           >
-            <p className="text-[10px] uppercase tracking-[0.08em] text-[#93b0b4] font-medium">
+            <p className={LABEL_CLASS}>
               {kpi.label}
             </p>
-            <p className="mt-1 font-mono-display tabular-nums">
+            <p className={cn(MONO, "mt-1 tabular-nums")}>
               <span className="text-[22px] font-medium text-[#0c1a1e]">
                 {kpi.value}
               </span>

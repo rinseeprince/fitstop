@@ -1,7 +1,12 @@
 "use client";
 
 import { format } from "date-fns";
+import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  MONO,
+  MONO_LABEL_CLASS,
+} from "@/components/clients/training/program-builder/builder-tokens";
 import type { ExercisePR } from "@/types/training";
 
 type ExercisePrViewProps = {
@@ -51,14 +56,14 @@ export function ExercisePrView({
               New
             </span>
           )}
-          <p className="text-[10px] uppercase tracking-[0.08em] text-[#93b0b4] font-medium leading-tight">
+          <p className={cn(MONO_LABEL_CLASS, "leading-tight")}>
             {pr.reps === 1 ? "1 Rep Max" : `${pr.reps} Rep Max`}
           </p>
-          <p className="text-[20px] font-medium text-[#0c1a1e] mt-1 font-mono-display tabular-nums leading-tight">
+          <p className={cn(MONO, "text-[20px] font-medium text-[#0c1a1e] mt-1 tabular-nums leading-tight")}>
             {pr.weight}
             <span className="text-[12px] text-[#93b0b4] ml-1">{weightUnit}</span>
           </p>
-          <p className="text-[11px] text-[#93b0b4] mt-1 leading-tight">
+          <p className={cn(MONO, "text-[11px] text-[#93b0b4] mt-1 leading-tight")}>
             {format(new Date(pr.date), "MMM d, yyyy")}
           </p>
         </div>

@@ -10,6 +10,7 @@ import { ExerciseTrendChart } from "@/components/training/exercise-data/exercise
 import { ExercisePrView } from "@/components/training/exercise-data/exercise-pr-view";
 import { ExerciseKpiStrip } from "./exercise-kpi-strip";
 import { computeKpis } from "@/components/training/exercise-data/exercise-insight";
+import { LABEL_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
 import type {
   ExerciseListItem,
   ExerciseProgressionPoint,
@@ -161,7 +162,7 @@ export function ExerciseDataView({ clientId }: ExerciseDataViewProps) {
               </div>
               {selectedMetric !== "prs" && (
                 <div className="flex items-center gap-2 pb-[10px]">
-                  <span className="text-[10px] uppercase tracking-[0.08em] text-[#93b0b4] font-medium">
+                  <span className={LABEL_CLASS}>
                     Last
                   </span>
                   <div className="bg-[rgba(13,148,136,0.06)] rounded-[6px] p-[3px] inline-flex">

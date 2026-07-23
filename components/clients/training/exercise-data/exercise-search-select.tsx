@@ -17,7 +17,10 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { Skeleton } from "@/components/ui/skeleton";
-import { HEADER_EYEBROW_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
+import {
+  HEADER_EYEBROW_CLASS,
+  MONO,
+} from "@/components/clients/training/program-builder/builder-tokens";
 import type { ExerciseListItem } from "@/types/training";
 
 type ExerciseSearchSelectProps = {
@@ -74,7 +77,7 @@ export function ExerciseSearchSelect({
           </div>
           <div className="flex items-center gap-2 shrink-0 ml-3">
             {logCount != null && (
-              <span className="text-[11px] font-medium text-[rgba(255,255,255,0.4)] bg-[rgba(255,255,255,0.12)] px-2 py-0.5 rounded-full">
+              <span className={cn(MONO, "text-[11px] font-medium text-[rgba(255,255,255,0.4)] bg-[rgba(255,255,255,0.12)] px-2 py-0.5 rounded-full")}>
                 {logCount} {logCount === 1 ? "log" : "logs"}
               </span>
             )}
@@ -105,7 +108,7 @@ export function ExerciseSearchSelect({
                   >
                     <div className="flex w-full items-center justify-between">
                       <span className="truncate">{ex.name}</span>
-                      <span className="ml-2 shrink-0 text-[11px] text-[#93b0b4]">
+                      <span className={cn(MONO, "ml-2 shrink-0 text-[11px] text-[#93b0b4]")}>
                         {ex.logCount} {ex.logCount === 1 ? "log" : "logs"}
                       </span>
                     </div>
