@@ -510,8 +510,9 @@
   1. `npx tsc --noEmit` - no TypeScript errors
   2. `npx eslint .` - no lint errors (catches floating promises, console.log, type issues)
   3. `npx vitest run` - all tests pass
-  4. `grep -rn "as any" [changed files]` - no type escapes
-  5. `grep -rn "TODO\|FIXME\|HACK\|DEBUG" [changed files]` - no leftover markers
+  4. `npm run check:labels` - typography tokens hold (mono = numbers only; no raw `font-mono-display` or hand-rolled `uppercase tracking-` outside the token modules — see `docs/newdesignsystem.md` → Typography)
+  5. `grep -rn "as any" [changed files]` - no type escapes
+  6. `grep -rn "TODO\|FIXME\|HACK\|DEBUG" [changed files]` - no leftover markers
 
   ## 14. Performance
   - Database queries: Indexes on foreign keys, frequently queried fields. Index *with* the query — add the keyset index alongside the read it serves (see §8 "Client read scaling").

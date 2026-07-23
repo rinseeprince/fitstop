@@ -1,5 +1,16 @@
 # Technical Debt Tracker
 
+## Typography sweep (mono=numbers-only) — deferred tails
+
+Logged: 2026-07-23 (platform-wide sweep; rule + enforcement in `docs/newdesignsystem.md` → Typography and `npm run check:labels`).
+
+- **Out-of-scope trees carry 3 recorded rule violations** (whitelisted, fix when those trees migrate or are touched): `components/client-portal/metrics/performance/performance-view.tsx` ~L164 (mono number inside a running sentence), `components/client-portal/program/roadmap-summary-strip.tsx` ~L159 (mono on a word-only unit fallback), `components/lead-card.tsx` ~L25 (mono on an email string).
+- **Un-migrated surfaces still render sans numerics** — apply the mono pass *when each migrates to Teal-Summit*, then delete its `scripts/check-labels-whitelist.ts` entry if listed: `components/clients/nutrition/builder/weekly-budget-indicator.tsx`, `calorie-skewing-day-row.tsx`, the legacy block of `nutrition-training-calories-display.tsx`, `components/clients/history-table/history-chart-dialog.tsx` (sans axis/date ticks), and `components/ui/table.tsx` (whitelisted TableHead).
+- **`exercise-insight.ts` emits the word "Stable" into the mono KPI value slot** (`exercise-kpi-strip`). Kept by dominant-case reasoning (the slot is numeral-dominant); a content-level fix belongs in the insight builder, not the class site.
+- **Nutrition month label metrics diverge from the training toolbar** (13px/`#0c1a1e` vs 11px/`#93b0b4`): mono applied in the sweep, size/colour normalization deferred as an owner call.
+
+---
+
 ## Nutrition-calendar invalidation — uninstrumented caller-less routes
 
 Logged: 2026-07-02 (class-wide SWR invalidation pass; see CONVENTIONS.md §7 "Nutrition calendar cache invalidation").
