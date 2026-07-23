@@ -86,8 +86,9 @@ export async function GET(
     ]);
     const dietType = (plan.diet_type as DietType) || "balanced";
 
-    // "Typical week" card: weekday template (no nutritionEvents), now honoring
-    // the surplus-split toggle so it matches the coach calendar.
+    // Weekday-template targets (no nutritionEvents): feed the Plans-tab stat
+    // band + calorie skewing, honoring the surplus-split toggle so they match
+    // the coach calendar.
     const dailyTargets = buildDailyTargetsFromPlan(
       plan,
       dailyTargetRows,

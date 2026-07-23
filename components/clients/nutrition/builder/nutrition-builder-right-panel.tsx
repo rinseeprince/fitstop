@@ -2,14 +2,12 @@
 
 import { memo } from "react";
 import { useNutritionBuilderContext } from "@/contexts/nutrition-builder-context";
-import { WeeklyNutritionView } from "../display/weekly-nutrition-view";
 import { NutritionWarnings } from "../nutrition-warnings";
 import { Button } from "@/components/ui/button";
-import { Apple, ChevronDown, Loader2, Sparkles } from "lucide-react";
+import { Apple, Loader2, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   MONO,
-  SECTION_LABEL_CLASS,
   STAT_LABEL_DARK_CLASS,
   STAT_VALUE_DARK_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens";
@@ -127,65 +125,6 @@ export const NutritionBuilderRightPanel = memo(function NutritionBuilderRightPan
           <p className={cn(MONO, "text-[11px] text-[rgba(255,255,255,0.3)] mt-1")}>{avgFat}g/day</p>
         </div>
       </div>
-
-      {/* Typical week — demoted from the primary surface to an optional
-          disclosure (collapsed by default). The nutrition calendar is now the
-          primary day-by-day view; this stays as an at-a-glance weekly summary. */}
-      <details className="group">
-        <summary className="flex items-center gap-3 mt-2 cursor-pointer list-none select-none">
-          <span className={cn(SECTION_LABEL_CLASS, "whitespace-nowrap")}>Typical week</span>
-          <div className="flex-1 h-px bg-[rgba(13,148,136,0.08)]" />
-          <span className="flex items-center gap-2.5">
-            <span className="w-3 h-1 rounded-full bg-protein" /><span className="text-[10px] text-[#93b0b4]">P</span>
-            <span className="w-3 h-1 rounded-full bg-carbs" /><span className="text-[10px] text-[#93b0b4]">C</span>
-            <span className="w-3 h-1 rounded-full bg-fat" /><span className="text-[10px] text-[#93b0b4]">F</span>
-          </span>
-          <ChevronDown className="h-3.5 w-3.5 text-[#93b0b4] transition-transform group-open:rotate-180" />
-        </summary>
-        <div className="mt-3">
-          {builder.weeklyTargets ? (
-            <WeeklyNutritionView targets={builder.weeklyTargets} />
-          ) : builder.nutritionData?.customMacrosEnabled ? (
-            <CustomMacrosDisplay
-              calories={builder.nutritionData?.calorieTarget || 0}
-              protein={builder.nutritionData?.proteinTargetG || 0}
-              carbs={builder.nutritionData?.carbTargetG || 0}
-              fat={builder.nutritionData?.fatTargetG || 0}
-            />
-          ) : null}
-        </div>
-      </details>
     </div>
   );
 });
-
-type CustomMacrosDisplayProps = {
-  calories: number;
-  protein: number;
-  carbs: number;
-  fat: number;
-};
-
-function CustomMacrosDisplay({ calories, protein, carbs, fat }: CustomMacrosDisplayProps) {
-  return (
-    <div className="bg-white rounded-[6px] p-8 text-center">
-      <div className={cn(MONO, "text-4xl font-semibold text-[#0c1a1e]")}>{calories.toLocaleString()}</div>
-      <div className="text-sm text-[#93b0b4] mt-2">calories per day (custom macros)</div>
-      <div className="grid grid-cols-3 gap-4 mt-6 pt-6">
-        <div className="text-center bg-protein/10 rounded-[6px] p-4">
-          <div className={cn(MONO, "text-2xl font-semibold text-protein")}>{protein}g</div>
-          <div className="text-xs text-[#93b0b4] mt-1">Protein</div>
-        </div>
-        <div className="text-center bg-carbs/10 rounded-[6px] p-4">
-          <div className={cn(MONO, "text-2xl font-semibold text-carbs")}>{carbs}g</div>
-          <div className="text-xs text-[#93b0b4] mt-1">Carbs</div>
-        </div>
-        <div className="text-center bg-fat/10 rounded-[6px] p-4">
-          <div className={cn(MONO, "text-2xl font-semibold text-fat")}>{fat}g</div>
-          <div className="text-xs text-[#93b0b4] mt-1">Fat</div>
-        </div>
-      </div>
-      <p className="text-xs text-fat mt-4 font-medium">Custom macros active - same targets each day</p>
-    </div>
-  );
-}

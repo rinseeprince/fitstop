@@ -125,8 +125,8 @@ export function calculateDailyMacros(
  * Split a training-day calorie total into carbs + fat, holding protein.
  * The single source of truth for the surplus-split policy, shared by the
  * event display path (`mapNutritionEventToDisplayTarget`) and the plan-template
- * path (`buildDailyTargetsFromPlan`) so the client app + coach "typical week"
- * card match the coach calendar.
+ * path (`buildDailyTargetsFromPlan`) so the client program card + the coach
+ * Plans-tab totals match the coach calendar.
  *   - surplusAsCarbs=false ("keep my split"): carbs + fat scale to the higher
  *     total PRESERVING their stored ratio (the coach's split is honored, never
  *     re-derived from the diet type — keto stays keto).
