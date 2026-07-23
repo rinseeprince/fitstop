@@ -12,6 +12,11 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Loader2, Calendar, ChevronRight, Pencil, Trash2 } from "lucide-react";
+import { cn } from "@/lib/utils";
+import {
+  COUNT_CHIP_CLASS,
+  MONO_META_CLASS,
+} from "@/components/clients/training/program-builder/builder-tokens";
 import { useToast } from "@/hooks/use-toast";
 import { PhaseReviewDrawer } from "./phase-review-drawer";
 import { EditPhaseDialog } from "./edit-phase-dialog";
@@ -174,12 +179,12 @@ export const PhaseCard = ({
           {/* Middle: goals + dates */}
           <div className="hidden sm:flex items-center gap-3 shrink-0">
             {goalParts.length > 0 && (
-              <span className="font-mono-display text-[12px] text-[#93b0b4]">
+              <span className={cn(MONO_META_CLASS, "text-[12px]")}>
                 Goal: {goalParts.join(" / ")}
               </span>
             )}
             {(phase.startDate || phase.endDate) && (
-              <span className="flex items-center gap-1 font-mono-display text-[12px] text-[#93b0b4]">
+              <span className={cn("flex items-center gap-1", MONO_META_CLASS, "text-[12px]")}>
                 <Calendar className="h-3 w-3" />
                 {phase.startDate ?? ""}
                 {phase.startDate && phase.endDate ? " → " : ""}
@@ -196,7 +201,7 @@ export const PhaseCard = ({
           {/* Right: week badge + actions */}
           <div className="flex items-center gap-2 shrink-0">
             {currentWeek != null && totalWeeks != null && (
-              <span className="text-[11px] font-mono-display bg-[rgba(13,148,136,0.05)] text-[#0d9488] px-2 py-0.5 rounded-[6px] font-semibold">
+              <span className={COUNT_CHIP_CLASS}>
                 {Math.min(currentWeek, totalWeeks)}/{totalWeeks} weeks
               </span>
             )}
@@ -260,7 +265,7 @@ export const PhaseCard = ({
         {phase.status === "completed" && (
           <div className="flex items-center gap-3 mt-2">
             {phase.milestones.length > 0 && (
-              <span className="text-[12px] font-semibold bg-[rgba(13,148,136,0.05)] text-[#0d9488] px-1.5 py-0.5 rounded-[6px]">
+              <span className={cn(COUNT_CHIP_CLASS, "text-[12px]")}>
                 {phase.milestones.filter((m) => m.completed).length}/{phase.milestones.length} milestones
               </span>
             )}

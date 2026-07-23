@@ -16,6 +16,7 @@ import { Switch } from "@/components/ui/switch";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Loader2 } from "lucide-react";
+import { LABEL_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
 import { useToast } from "@/hooks/use-toast";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
 import { swrFetcher } from "@/lib/swr-fetcher";
@@ -146,7 +147,7 @@ export function PhaseReviewDrawer({
 
               {/* Coach reflection */}
               <div className="space-y-2">
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-[#93b0b4]">
+                <span className={LABEL_CLASS}>
                   Coach Reflection
                 </span>
                 <Textarea
@@ -161,7 +162,7 @@ export function PhaseReviewDrawer({
 
               {/* Next action */}
               <div className="space-y-2">
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-[#93b0b4]">
+                <span className={LABEL_CLASS}>
                   Next Step
                 </span>
                 <RadioGroup
@@ -206,7 +207,7 @@ export function PhaseReviewDrawer({
 
               {/* Plan handling */}
               <div className="space-y-3">
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-[#93b0b4]">
+                <span className={LABEL_CLASS}>
                   Plan Handling
                 </span>
                 <div className="space-y-2">

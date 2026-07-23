@@ -1,5 +1,10 @@
 "use client";
 
+import { cn } from "@/lib/utils";
+import {
+  LABEL_CLASS,
+  MONO,
+} from "@/components/clients/training/program-builder/builder-tokens";
 import type { PhaseWeeklyDataRow } from "@/types/roadmap";
 
 type PhaseWeeklyTableProps = {
@@ -27,12 +32,12 @@ export const PhaseWeeklyTable = ({ data, weightUnit }: PhaseWeeklyTableProps) =>
     <div>
       <table className="w-full text-left text-[12.5px]">
         <thead>
-          <tr className="text-[10px] uppercase text-[#93b0b4] tracking-[0.06em] font-semibold">
-            <th className="pb-2 pr-3 font-semibold">Wk</th>
-            <th className="pb-2 pr-3 font-semibold">Period</th>
-            <th className="pb-2 pr-3 font-semibold text-right">Weight</th>
-            <th className="pb-2 pr-3 font-semibold text-right">Nutrition</th>
-            <th className="pb-2 font-semibold text-right">Sessions</th>
+          <tr className={LABEL_CLASS}>
+            <th className="pb-2 pr-3 font-medium">Wk</th>
+            <th className="pb-2 pr-3 font-medium">Period</th>
+            <th className="pb-2 pr-3 font-medium text-right">Weight</th>
+            <th className="pb-2 pr-3 font-medium text-right">Nutrition</th>
+            <th className="pb-2 font-medium text-right">Sessions</th>
           </tr>
         </thead>
         <tbody>
@@ -46,13 +51,13 @@ export const PhaseWeeklyTable = ({ data, weightUnit }: PhaseWeeklyTableProps) =>
                 opacity: 0,
               }}
             >
-              <td className="py-1.5 pr-3 font-mono-display text-[#0c1a1e]">
+              <td className={cn("py-1.5 pr-3", MONO, "text-[#0c1a1e]")}>
                 {row.weekNumber}
               </td>
-              <td className="py-1.5 pr-3 font-mono-display text-[#0c1a1e]">
+              <td className={cn("py-1.5 pr-3", MONO, "text-[#0c1a1e]")}>
                 {formatPeriod(row.periodStart)} – {formatPeriod(row.periodEnd)}
               </td>
-              <td className="py-1.5 pr-3 font-mono-display text-right">
+              <td className={cn("py-1.5 pr-3 text-right", MONO)}>
                 {row.weight != null ? (
                   <span className="text-[#0c1a1e]">
                     {row.weight.toFixed(1)} {weightUnit}
@@ -61,7 +66,7 @@ export const PhaseWeeklyTable = ({ data, weightUnit }: PhaseWeeklyTableProps) =>
                   <span className="text-[#93b0b4]">—</span>
                 )}
               </td>
-              <td className="py-1.5 pr-3 font-mono-display text-right">
+              <td className={cn("py-1.5 pr-3 text-right", MONO)}>
                 {row.nutritionDaysOnTarget != null ? (
                   <span className="text-[#0c1a1e]">
                     {row.nutritionDaysOnTarget}/7
@@ -70,7 +75,7 @@ export const PhaseWeeklyTable = ({ data, weightUnit }: PhaseWeeklyTableProps) =>
                   <span className="text-[#93b0b4]">—</span>
                 )}
               </td>
-              <td className="py-1.5 font-mono-display text-right">
+              <td className={cn("py-1.5 text-right", MONO)}>
                 {row.trainingSessions > 0 ? (
                   <span className="text-[#0c1a1e]">{row.trainingSessions}</span>
                 ) : (

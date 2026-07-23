@@ -4,6 +4,12 @@ import { useState } from "react";
 import useSWR from "swr";
 import { ChevronRight } from "lucide-react";
 import { swrFetcher } from "@/lib/swr-fetcher";
+import { cn } from "@/lib/utils";
+import {
+  COUNT_CHIP_CLASS,
+  LABEL_CLASS,
+  MONO_META_CLASS,
+} from "@/components/clients/training/program-builder/builder-tokens";
 import { PhaseCard } from "./phase-card";
 import type { Roadmap, Phase } from "@/types/roadmap";
 
@@ -48,10 +54,10 @@ export const PastRoadmapsSection = ({
             open ? "rotate-90" : ""
           }`}
         />
-        <span className="text-[10px] uppercase tracking-[0.06em] font-semibold text-[#93b0b4]">
+        <span className={LABEL_CLASS}>
           Past roadmaps
         </span>
-        <span className="text-[10px] font-semibold bg-[rgba(13,148,136,0.05)] text-[#0d9488] px-1.5 py-0.5 rounded-[6px]">
+        <span className={COUNT_CHIP_CLASS}>
           {roadmaps.length}
         </span>
       </button>
@@ -86,7 +92,7 @@ export const PastRoadmapsSection = ({
                     {rm.status === "completed" ? "Completed" : "Archived"}
                   </span>
                   {dateRange && (
-                    <span className="ml-auto font-mono-display text-[12px] text-[#93b0b4]">
+                    <span className={cn("ml-auto", MONO_META_CLASS, "text-[12px]")}>
                       {dateRange}
                     </span>
                   )}

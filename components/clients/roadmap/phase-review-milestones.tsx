@@ -1,6 +1,10 @@
 "use client";
 
 import { Check } from "lucide-react";
+import {
+  COUNT_CHIP_CLASS,
+  LABEL_CLASS,
+} from "@/components/clients/training/program-builder/builder-tokens";
 import type { Milestone } from "@/types/roadmap";
 
 type PhaseReviewMilestonesProps = {
@@ -32,10 +36,10 @@ export function PhaseReviewMilestones({
   return (
     <div className="space-y-2.5">
       <div className="flex items-center gap-2">
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-[#93b0b4]">
+        <span className={LABEL_CLASS}>
           Milestones
         </span>
-        <span className="rounded-[6px] bg-[rgba(13,148,136,0.05)] px-1.5 py-0.5 text-[11px] font-medium text-[#0d9488]">
+        <span className={COUNT_CHIP_CLASS}>
           {completedCount}/{milestones.length}
         </span>
       </div>

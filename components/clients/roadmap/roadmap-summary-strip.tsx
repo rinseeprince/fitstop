@@ -1,5 +1,13 @@
 "use client";
 
+import { cn } from "@/lib/utils";
+import {
+  HEADER_EYEBROW_CLASS,
+  LABEL_CLASS,
+  MONO,
+  STAT_LABEL_DARK_CLASS,
+  STAT_VALUE_DARK_CLASS,
+} from "@/components/clients/training/program-builder/builder-tokens";
 import type { Phase, RoadmapStatus } from "@/types/roadmap";
 
 type RoadmapSummaryStripProps = {
@@ -35,14 +43,14 @@ function StatColumn({
           : "flex flex-col pl-5 pr-5 border-r border-[rgba(255,255,255,0.07)]"
       }
     >
-      <p className="text-[10px] uppercase tracking-[0.06em] text-[rgba(255,255,255,0.35)] font-medium">
+      <p className={STAT_LABEL_DARK_CLASS}>
         {label}
       </p>
-      <p className="text-[26px] font-bold leading-tight mt-1 text-white font-mono-display">
+      <p className={cn(STAT_VALUE_DARK_CLASS, "text-[26px] leading-tight mt-1")}>
         {value}
       </p>
       {sub && (
-        <div className={`text-[11px] font-mono-display mt-1 ${subColor ?? "text-[rgba(255,255,255,0.3)]"}`}>
+        <div className={`text-[11px] mt-1 ${subColor ?? "text-[rgba(255,255,255,0.3)]"}`}>
           {sub}
         </div>
       )}
@@ -80,7 +88,7 @@ export function RoadmapSummaryStrip({
       {/* Top: programme name + status */}
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-[10px] uppercase tracking-[0.06em] text-[rgba(255,255,255,0.35)] font-medium">
+          <p className={HEADER_EYEBROW_CLASS}>
             Active Programme
           </p>
           <h2 className="text-[22px] font-bold text-white mt-0.5">
@@ -88,7 +96,7 @@ export function RoadmapSummaryStrip({
           </h2>
         </div>
         {roadmapStatus === "active" && (
-          <span className="inline-flex items-center gap-1.5 bg-[#0d9488] text-white text-[10px] uppercase tracking-[0.06em] font-semibold px-2 py-0.5 rounded-[6px]">
+          <span className={cn(LABEL_CLASS, "inline-flex items-center gap-1.5 rounded-[6px] bg-[#0d9488] px-2 py-0.5 font-semibold text-white")}>
             <span className="w-1.5 h-1.5 rounded-full bg-white" />
             Active
           </span>
@@ -114,10 +122,10 @@ export function RoadmapSummaryStrip({
           </div>
           {(startedAt || targetEndDate) && (
             <div className="flex justify-between mt-1.5">
-              <span className="font-mono-display text-[11px] text-[rgba(255,255,255,0.3)]">
+              <span className={cn(MONO, "text-[11px] text-[rgba(255,255,255,0.3)]")}>
                 {startedAt ?? ""}
               </span>
-              <span className="font-mono-display text-[11px] text-[rgba(255,255,255,0.3)]">
+              <span className={cn(MONO, "text-[11px] text-[rgba(255,255,255,0.3)]")}>
                 {targetEndDate ?? ""}
               </span>
             </div>
@@ -137,7 +145,7 @@ export function RoadmapSummaryStrip({
           value={currentWeight != null ? currentWeight.toFixed(1) : "—"}
           sub={
             delta != null ? (
-              <span className={delta <= 0 ? "text-[#0d9488]" : "text-[#d97706]"}>
+              <span className={cn(MONO, delta <= 0 ? "text-[#0d9488]" : "text-[#d97706]")}>
                 {delta <= 0 ? "" : "+"}{delta.toFixed(1)}{weightUnit}
               </span>
             ) : undefined
@@ -148,7 +156,7 @@ export function RoadmapSummaryStrip({
           value={goalWeight != null ? goalWeight.toFixed(1) : "—"}
           sub={
             toGo != null ? (
-              <span className="inline-block text-[#d97706] bg-[rgba(245,158,11,0.07)] px-1.5 py-0.5 rounded-[4px]">
+              <span className={cn(MONO, "inline-block text-[#d97706] bg-[rgba(245,158,11,0.07)] px-1.5 py-0.5 rounded-[4px]")}>
                 {toGo.toFixed(1)} {weightUnit} to go
               </span>
             ) : undefined

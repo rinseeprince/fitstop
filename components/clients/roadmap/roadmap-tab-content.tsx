@@ -21,6 +21,11 @@ import { AddPhaseDialog } from "./add-phase-dialog";
 import { RoadmapSummaryStrip } from "./roadmap-summary-strip";
 import { PastRoadmapsSection } from "./past-roadmaps-section";
 import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
+import {
+  COUNT_CHIP_CLASS,
+  SECTION_LABEL_CLASS,
+} from "@/components/clients/training/program-builder/builder-tokens";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import { useToast } from "@/hooks/use-toast";
 import type { Client } from "@/types/check-in";
@@ -143,7 +148,7 @@ export const RoadmapTabContent = ({ client }: RoadmapTabContentProps) => {
       <AlertDialogTrigger asChild>
         <button
           type="button"
-          className="text-[10.5px] uppercase tracking-[0.07em] font-semibold text-[#93b0b4] hover:text-[#c06060] transition-colors whitespace-nowrap"
+          className={cn(SECTION_LABEL_CLASS, "hover:text-[#c06060] transition-colors whitespace-nowrap")}
         >
           End roadmap
         </button>
@@ -220,10 +225,10 @@ export const RoadmapTabContent = ({ client }: RoadmapTabContentProps) => {
           {/* Section divider header (matches the WELLNESS LOG / TRAINING LOG style):
               label · count · line · minimal text actions, End roadmap rightmost */}
           <div className="flex items-center gap-3 mt-4">
-            <span className="text-[10.5px] uppercase tracking-[0.07em] text-[#93b0b4] font-semibold whitespace-nowrap">
+            <span className={cn(SECTION_LABEL_CLASS, "whitespace-nowrap")}>
               Phases
             </span>
-            <span className="text-[10px] font-semibold bg-[rgba(13,148,136,0.05)] text-[#0d9488] px-1.5 py-0.5 rounded-[6px]">
+            <span className={COUNT_CHIP_CLASS}>
               {phases.length}
             </span>
             <div className="flex-1 h-px bg-[rgba(13,148,136,0.08)]" />
@@ -231,7 +236,7 @@ export const RoadmapTabContent = ({ client }: RoadmapTabContentProps) => {
               <button
                 type="button"
                 onClick={() => setAddPhaseOpen(true)}
-                className="text-[10.5px] uppercase tracking-[0.07em] font-semibold text-[#93b0b4] hover:text-[#0d9488] transition-colors"
+                className={cn(SECTION_LABEL_CLASS, "hover:text-[#0d9488] transition-colors")}
               >
                 Add phase
               </button>

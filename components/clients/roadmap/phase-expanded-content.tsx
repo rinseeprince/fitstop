@@ -5,6 +5,11 @@ import useSWR from "swr";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Flag, Circle, CheckCircle2 } from "lucide-react";
+import { cn } from "@/lib/utils";
+import {
+  COUNT_CHIP_CLASS,
+  LABEL_CLASS,
+} from "@/components/clients/training/program-builder/builder-tokens";
 import { useToast } from "@/hooks/use-toast";
 import { PhaseWeeklyTable } from "./phase-weekly-table";
 import type { Phase, Milestone, PhaseWeeklyDataRow } from "@/types/roadmap";
@@ -87,7 +92,7 @@ export const PhaseExpandedContent = ({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {phase.description && (
               <div>
-                <p className="text-[10px] uppercase text-[#93b0b4] tracking-[0.06em] font-semibold mb-1">
+                <p className={cn(LABEL_CLASS, "mb-1")}>
                   Description
                 </p>
                 <p className="text-[12.5px] text-[#0c1a1e] whitespace-pre-wrap">
@@ -97,7 +102,7 @@ export const PhaseExpandedContent = ({
             )}
             {phase.objectives && (
               <div>
-                <p className="text-[10px] uppercase text-[#93b0b4] tracking-[0.06em] font-semibold mb-1">
+                <p className={cn(LABEL_CLASS, "mb-1")}>
                   Objectives
                 </p>
                 <p className="text-[12.5px] text-[#0c1a1e] whitespace-pre-wrap">
@@ -113,11 +118,11 @@ export const PhaseExpandedContent = ({
       <div className="px-4 py-3 border-b border-[rgba(13,148,136,0.08)]">
         <div className="flex items-center gap-2 mb-2">
           <Flag className="h-3.5 w-3.5 text-[#93b0b4]" />
-          <span className="text-[10px] uppercase text-[#93b0b4] tracking-[0.06em] font-semibold">
+          <span className={LABEL_CLASS}>
             Milestones
           </span>
           {localMilestones.length > 0 && (
-            <span className="text-[10px] font-semibold bg-[rgba(13,148,136,0.05)] text-[#0d9488] px-1.5 py-0.5 rounded-[6px]">
+            <span className={COUNT_CHIP_CLASS}>
               {completedCount}/{localMilestones.length}
             </span>
           )}
@@ -158,7 +163,7 @@ export const PhaseExpandedContent = ({
 
       {/* Weekly Check-ins */}
       <div className="px-4 py-3">
-        <p className="text-[10px] uppercase text-[#93b0b4] tracking-[0.06em] font-semibold mb-2">
+        <p className={cn(LABEL_CLASS, "mb-2")}>
           Weekly Check-ins
         </p>
         {weeklyLoading ? (

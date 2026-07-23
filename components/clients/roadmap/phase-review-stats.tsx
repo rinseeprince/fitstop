@@ -7,6 +7,11 @@ import {
   Target,
   Calendar,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
+import {
+  LABEL_CLASS,
+  MONO,
+} from "@/components/clients/training/program-builder/builder-tokens";
 import { weightFromKg } from "@/utils/nutrition-helpers";
 import type { PhaseReviewData } from "@/types/roadmap";
 
@@ -37,7 +42,7 @@ export function PhaseReviewStats({ data, weightUnit }: PhaseReviewStatsProps) {
       {/* Duration badge */}
       <div className="inline-flex items-center gap-1.5 rounded-[6px] bg-[rgba(13,148,136,0.05)] px-2.5 py-1.5">
         <Calendar className="h-3.5 w-3.5 text-[#5a7d82]" />
-        <span className="text-[12px] font-medium text-[#5a7d82]">
+        <span className={cn(MONO, "text-[12px] font-medium text-[#5a7d82]")}>
           {data.durationDays} day{data.durationDays !== 1 ? "s" : ""} in this
           phase
         </span>
@@ -48,7 +53,7 @@ export function PhaseReviewStats({ data, weightUnit }: PhaseReviewStatsProps) {
         <div className="space-y-2">
           <div className="flex items-center gap-1.5">
             <Target className="h-3.5 w-3.5 text-[#93b0b4]" />
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-[#93b0b4]">
+            <p className={LABEL_CLASS}>
               Phase Goal Progress
             </p>
           </div>
@@ -175,13 +180,13 @@ function MetricCard({
 }) {
   return (
     <div className="rounded-[6px] border border-[rgba(13,148,136,0.08)] bg-white p-3 space-y-1">
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-[#93b0b4]">
+      <p className={LABEL_CLASS}>
         {label}
       </p>
       <div className="flex items-center justify-between text-[13px]">
-        <span className="text-[#5a7d82]">{startValue}</span>
+        <span className={cn(MONO, "text-[#5a7d82]")}>{startValue}</span>
         <span className="text-[#93b0b4]">→</span>
-        <span className="font-medium font-mono-display text-[#0c1a1e]">
+        <span className={cn(MONO, "font-medium text-[#0c1a1e]")}>
           {endValue}
         </span>
       </div>
@@ -195,13 +200,14 @@ function MetricCard({
             <Minus className="h-3 w-3 text-[#93b0b4]" />
           )}
           <span
-            className={`font-mono-display ${
+            className={cn(
+              MONO,
               delta < 0
                 ? "text-[#0d9488]"
                 : delta > 0
                   ? "text-[#c06060]"
                   : "text-[#93b0b4]"
-            }`}
+            )}
           >
             {delta > 0 ? "+" : ""}
             {delta.toFixed(1)} {unit}
@@ -229,13 +235,13 @@ function StatCard({
         showBorder ? "border-r border-[rgba(13,148,136,0.08)]" : ""
       }`}
     >
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-[#93b0b4]">
+      <p className={LABEL_CLASS}>
         {label}
       </p>
-      <p className="text-[22px] font-semibold font-mono-display text-[#0c1a1e]">
+      <p className={cn(MONO, "text-[22px] font-semibold text-[#0c1a1e]")}>
         {value}
       </p>
-      <p className="text-[12px] text-[#5a7d82]">{detail}</p>
+      <p className={cn(MONO, "text-[12px] text-[#5a7d82]")}>{detail}</p>
     </div>
   );
 }

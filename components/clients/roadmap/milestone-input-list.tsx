@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { X } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { LABEL_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
 import type { Milestone } from "@/types/roadmap";
 
 type MilestoneInputListProps = {
@@ -44,7 +46,7 @@ export const MilestoneInputList = ({
 
   return (
     <div className="space-y-2">
-      <label className="block text-[10px] font-semibold uppercase tracking-wider text-[#93b0b4]">
+      <label className={cn("block", LABEL_CLASS)}>
         Milestones (optional)
       </label>
 
