@@ -7,7 +7,10 @@ import { NutritionBuilderRightPanel } from "./nutrition-builder-right-panel";
 import { NutritionSettingsDrawer } from "./nutrition-settings-drawer";
 import { NutritionHistoryTable } from "../nutrition-history-table";
 import { NutritionCalendarView } from "../calendar/nutrition-calendar-view";
+import { DeleteNutritionPlanDialog } from "../calendar/delete-nutrition-plan-dialog";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
+import { useToast } from "@/hooks/use-toast";
+import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
 import { AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { weightFromKg } from "@/utils/nutrition-helpers";
@@ -185,17 +188,61 @@ function NoPlanAlert() {
  */
 function NutritionCalendarMount() {
   const builder = useNutritionBuilderContext();
+  const { toast } = useToast();
+  const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
   if (!builder.hasPlan) return null;
 
+  const clientId = builder.client.id;
+
+  // Mirrors the training panel's owner pattern: the trigger renders in the
+  // calendar toolbar's divider, the confirm dialog + delete flow live here.
+  const handleDeletePlan = async () => {
+    setIsDeleting(true);
+    try {
+      const res = await fetch(`/api/clients/${clientId}/nutrition`, {
+        method: "DELETE",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Failed to delete nutrition plan");
+      }
+      toast({ title: "Nutrition plan deleted" });
+      setDeleteOpen(false);
+      await invalidateNutritionCalendar(clientId);
+      builder.refetchNutrition();
+    } catch (error) {
+      toast({
+        title: "Delete failed",
+        description:
+          error instanceof Error ? error.message : "Failed to delete nutrition plan",
+        variant: "destructive",
+      });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   return (
-    <NutritionCalendarView
-      clientId={builder.client.id}
-      phases={builder.phases}
-      clientTimezone={builder.client.timezone}
-      includeActivityBurn={builder.includeActivityBurn}
-      surplusAsCarbs={builder.surplusAsCarbs}
-      onUpdate={() => builder.refetchNutrition()}
-    />
+    <>
+      <NutritionCalendarView
+        clientId={clientId}
+        phases={builder.phases}
+        clientTimezone={builder.client.timezone}
+        includeActivityBurn={builder.includeActivityBurn}
+        surplusAsCarbs={builder.surplusAsCarbs}
+        onUpdate={() => builder.refetchNutrition()}
+        onDeletePlan={() => setDeleteOpen(true)}
+      />
+      <DeleteNutritionPlanDialog
+        open={deleteOpen}
+        isDeleting={isDeleting}
+        onCancel={() => setDeleteOpen(false)}
+        onConfirm={() => void handleDeletePlan()}
+      />
+    </>
   );
 }
 

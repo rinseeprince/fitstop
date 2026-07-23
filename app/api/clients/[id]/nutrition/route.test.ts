@@ -18,6 +18,7 @@ vi.mock('@/services/training-service', () => ({
 // swallowed), so the success-path tests must mock the rewrite as succeeding.
 vi.mock('@/services/nutrition-event-service', () => ({
   regenerateFutureNutritionEvents: vi.fn().mockResolvedValue(undefined),
+  deleteFutureNutritionEventsForPlan: vi.fn().mockResolvedValue(undefined),
 }))
 
 vi.mock('@/services/supabase-admin', () => ({
@@ -67,6 +68,8 @@ vi.mock('@/utils/build-daily-targets', () => ({
 
 vi.mock('@/services/nutrition-plan-service', () => ({
   createNutritionPlan: vi.fn().mockResolvedValue({}),
+  archiveNutritionPlan: vi.fn().mockResolvedValue(undefined),
+  getActiveNutritionPlanId: vi.fn().mockResolvedValue('plan-1'),
 }))
 
 vi.mock('@/services/body-metrics-service', () => ({
@@ -87,13 +90,19 @@ vi.mock('@/services/today-service', () => ({
 
 import { getClientById } from '@/services/client-service'
 import { generateNutritionPlan, calculateTDEE } from '@/services/nutrition-service'
-import { createNutritionPlan } from '@/services/nutrition-plan-service'
+import {
+  createNutritionPlan,
+  archiveNutritionPlan,
+  getActiveNutritionPlanId,
+} from '@/services/nutrition-plan-service'
+import { deleteFutureNutritionEventsForPlan } from '@/services/nutrition-event-service'
 import { getLatestBodyMetrics } from '@/services/body-metrics-service'
 import { getCurrentGoals } from '@/services/client-goals-service'
 import { weightToKg } from '@/utils/nutrition-helpers'
 import { requirePhaseSelection } from '@/lib/require-phase-selection'
 import { getClientTodayString } from '@/services/today-service'
-import { POST } from './route'
+import { getAuthenticatedCoachId } from '@/lib/auth-helpers'
+import { POST, DELETE } from './route'
 
 const mockClient = {
   id: 'client-1',
@@ -551,5 +560,69 @@ describe('Nutrition Route POST - effectiveFrom judged against client-local today
 
     expect(response.status).toBe(400)
     expect(data.error).toBe('Effective date cannot be in the past')
+  })
+})
+
+describe('Nutrition Route DELETE', () => {
+  function makeDeleteRequest(): NextRequest {
+    return new NextRequest('http://localhost/api/clients/client-1/nutrition', {
+      method: 'DELETE',
+    })
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(getAuthenticatedCoachId).mockResolvedValue('coach-1')
+    vi.mocked(getClientById).mockResolvedValue(mockClient as never)
+    vi.mocked(getActiveNutritionPlanId).mockResolvedValue('plan-1')
+    vi.mocked(getClientTodayString).mockResolvedValue('2026-01-15')
+  })
+
+  it('archives the plan and clears its future events from the client-local today', async () => {
+    const response = await DELETE(makeDeleteRequest(), {
+      params: Promise.resolve({ id: 'client-1' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(data.success).toBe(true)
+    expect(deleteFutureNutritionEventsForPlan).toHaveBeenCalledWith('plan-1', '2026-01-15')
+    expect(archiveNutritionPlan).toHaveBeenCalledWith('plan-1')
+  })
+
+  it('returns 401 when unauthenticated', async () => {
+    vi.mocked(getAuthenticatedCoachId).mockResolvedValue(null)
+
+    const response = await DELETE(makeDeleteRequest(), {
+      params: Promise.resolve({ id: 'client-1' }),
+    })
+
+    expect(response.status).toBe(401)
+    expect(archiveNutritionPlan).not.toHaveBeenCalled()
+  })
+
+  it("returns 403 when the coach does not own the client", async () => {
+    vi.mocked(getAuthenticatedCoachId).mockResolvedValue('other-coach')
+
+    const response = await DELETE(makeDeleteRequest(), {
+      params: Promise.resolve({ id: 'client-1' }),
+    })
+
+    expect(response.status).toBe(403)
+    expect(deleteFutureNutritionEventsForPlan).not.toHaveBeenCalled()
+    expect(archiveNutritionPlan).not.toHaveBeenCalled()
+  })
+
+  it('returns 404 when there is no active plan', async () => {
+    vi.mocked(getActiveNutritionPlanId).mockResolvedValue(null)
+
+    const response = await DELETE(makeDeleteRequest(), {
+      params: Promise.resolve({ id: 'client-1' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(404)
+    expect(data.error).toBe('No active nutrition plan to delete')
+    expect(archiveNutritionPlan).not.toHaveBeenCalled()
   })
 })

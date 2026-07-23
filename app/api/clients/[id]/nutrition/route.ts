@@ -17,6 +17,7 @@ import type { ClientUpdate } from "@/lib/database-helpers";
 import type { DietType, GenerateNutritionPlanRequest } from "@/types/check-in";
 import {
   orchestrateNutritionPlanCreation,
+  orchestrateNutritionPlanDeletion,
   NutritionPlanError,
 } from "@/services/nutrition-plan-orchestrator";
 import { getActiveRoadmap } from "@/services/roadmap-service";
@@ -277,6 +278,57 @@ export async function PATCH(
     console.error("Error updating nutrition settings:", error instanceof Error ? error.message : "Unknown error");
     return NextResponse.json(
       { success: false, error: "Failed to update nutrition settings" },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * DELETE: Remove (archive) the client's nutrition plan and clear its upcoming
+ * daily targets. Past and logged days are kept for history.
+ */
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const rateLimitResult = await coachApiRateLimit(request);
+  if (rateLimitResult) return rateLimitResult;
+
+  const csrfError = await requireCSRFProtection(request);
+  if (csrfError) return csrfError;
+
+  try {
+    const coachId = await getAuthenticatedCoachId(request);
+    if (!coachId) {
+      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { id: clientId } = await params;
+
+    // Ownership is verified inside the orchestrator (404 / 403 via NutritionPlanError).
+    const { planId } = await orchestrateNutritionPlanDeletion(clientId, coachId);
+
+    void recordAuditEvent({
+      actorId: coachId,
+      actorRole: "trainer",
+      action: AUDIT_ACTIONS.NUTRITION_PLAN_DELETE,
+      targetTable: "nutrition_plans",
+      targetId: planId,
+      clientId,
+      request,
+    });
+
+    return NextResponse.json({ success: true }, { status: 200 });
+  } catch (error) {
+    if (error instanceof NutritionPlanError) {
+      return NextResponse.json(
+        { success: false, error: error.message },
+        { status: error.statusCode }
+      );
+    }
+    console.error("Error deleting nutrition plan:", error instanceof Error ? error.message : "Unknown error");
+    return NextResponse.json(
+      { success: false, error: "Failed to delete nutrition plan" },
       { status: 500 }
     );
   }

@@ -5,13 +5,20 @@ import {
   validateClientForNutrition,
 } from "@/lib/validations/nutrition";
 import { weightToKg, calculateDailyMacros } from "@/utils/nutrition-helpers";
-import { createNutritionPlan } from "@/services/nutrition-plan-service";
+import {
+  archiveNutritionPlan,
+  createNutritionPlan,
+  getActiveNutritionPlanId,
+} from "@/services/nutrition-plan-service";
 import { CUSTOM_MACRO_CALORIE_TOLERANCE } from "@/lib/constants";
 import { getLatestBodyMetrics } from "@/services/body-metrics-service";
 import { getCurrentGoals } from "@/services/client-goals-service";
 import { requirePhaseSelection } from "@/lib/require-phase-selection";
 import type { GenerateNutritionPlanRequest } from "@/types/check-in";
-import { regenerateFutureNutritionEvents } from "@/services/nutrition-event-service";
+import {
+  deleteFutureNutritionEventsForPlan,
+  regenerateFutureNutritionEvents,
+} from "@/services/nutrition-event-service";
 import { captureApiError } from "@/lib/error-handler";
 import { getClientTodayString } from "@/services/today-service";
 import { resolveEffectiveGoal } from "@/lib/goals/resolve-effective-goal";
@@ -62,6 +69,45 @@ export interface NutritionPlanResult {
   success: true;
   goalSource: "phase" | "client";
   plan: Record<string, unknown>;
+}
+
+/**
+ * Delete (archive) the client's durable nutrition plan and clear its upcoming
+ * scheduled events so no orphaned prescription lingers on the calendar. Past /
+ * logged / missed days are untouched; coach-edited (is_modified) FUTURE days
+ * go too, deliberately — a deleted plan leaves no forward prescription.
+ *
+ * Events are cleared BEFORE the status flip so a mid-flight failure is
+ * retryable: with the plan still active, a re-DELETE resolves it again and
+ * repeats the (idempotent) event delete. Throws NutritionPlanError for
+ * ownership / not-found failures.
+ */
+export async function orchestrateNutritionPlanDeletion(
+  clientId: string,
+  coachId: string
+): Promise<{ planId: string }> {
+  const client = await getClientById(clientId);
+
+  if (!client) {
+    throw new NutritionPlanError("Client not found", 404);
+  }
+  if (client.coachId !== coachId) {
+    throw new NutritionPlanError("Forbidden: You don't have access to this client", 403);
+  }
+
+  const planId = await getActiveNutritionPlanId(clientId);
+  if (!planId) {
+    throw new NutritionPlanError("No active nutrition plan to delete", 404);
+  }
+
+  // Client-local today anchors the "future" cutoff on the client's calendar —
+  // never let the event helper fall back to its UTC default.
+  const clientToday = await getClientTodayString(clientId);
+
+  await deleteFutureNutritionEventsForPlan(planId, clientToday);
+  await archiveNutritionPlan(planId);
+
+  return { planId };
 }
 
 /**

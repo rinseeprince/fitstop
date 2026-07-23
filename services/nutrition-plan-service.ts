@@ -168,6 +168,23 @@ export async function createNutritionPlan(params: CreateNutritionPlanParams): Pr
 }
 
 /**
+ * Archive the durable plan (status flip, row preserved as provenance for
+ * logged days and historical events — mirrors `archiveTrainingPlan`). The
+ * partial unique index only covers status='active', so a later Generate
+ * creates a fresh active plan cleanly.
+ */
+export async function archiveNutritionPlan(planId: string): Promise<void> {
+  const { error } = await supabaseAdmin
+    .from("nutrition_plans")
+    .update({ status: "archived", updated_at: new Date().toISOString() })
+    .eq("id", planId);
+
+  if (error) {
+    throw new Error(`Failed to archive nutrition plan: ${error.message}`);
+  }
+}
+
+/**
  * Returns the id of the client's currently active nutrition plan, or null.
  *
  * Single durable plan: there is exactly one active plan per client

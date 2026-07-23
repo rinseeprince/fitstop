@@ -35,10 +35,13 @@ vi.mock("@/services/nutrition-service", () => ({
 
 vi.mock("@/services/nutrition-plan-service", () => ({
   createNutritionPlan: vi.fn(),
+  archiveNutritionPlan: vi.fn(),
+  getActiveNutritionPlanId: vi.fn(),
 }));
 
 vi.mock("@/services/nutrition-event-service", () => ({
   regenerateFutureNutritionEvents: vi.fn(),
+  deleteFutureNutritionEventsForPlan: vi.fn(),
 }));
 
 vi.mock("@/lib/error-handler", () => ({
@@ -49,11 +52,19 @@ import { supabaseAdmin } from "./supabase-admin";
 import { getClientById } from "@/services/client-service";
 import { requirePhaseSelection } from "@/lib/require-phase-selection";
 import { generateNutritionPlan } from "@/services/nutrition-service";
-import { createNutritionPlan } from "@/services/nutrition-plan-service";
-import { regenerateFutureNutritionEvents } from "@/services/nutrition-event-service";
+import {
+  archiveNutritionPlan,
+  createNutritionPlan,
+  getActiveNutritionPlanId,
+} from "@/services/nutrition-plan-service";
+import {
+  deleteFutureNutritionEventsForPlan,
+  regenerateFutureNutritionEvents,
+} from "@/services/nutrition-event-service";
 import { captureApiError } from "@/lib/error-handler";
 import {
   orchestrateNutritionPlanCreation,
+  orchestrateNutritionPlanDeletion,
   NutritionPlanError,
 } from "./nutrition-plan-orchestrator";
 import type { GenerateNutritionPlanRequest } from "@/types/check-in";
@@ -121,6 +132,9 @@ beforeEach(() => {
   vi.mocked(generateNutritionPlan).mockReturnValue(calculatedPlan as never);
   vi.mocked(createNutritionPlan).mockResolvedValue("plan-1" as never);
   vi.mocked(regenerateFutureNutritionEvents).mockResolvedValue(undefined);
+  vi.mocked(getActiveNutritionPlanId).mockResolvedValue("plan-1");
+  vi.mocked(archiveNutritionPlan).mockResolvedValue(undefined);
+  vi.mocked(deleteFutureNutritionEventsForPlan).mockResolvedValue(undefined);
   mockNoExistingPlan();
 });
 
@@ -186,5 +200,59 @@ describe("orchestrateNutritionPlanCreation — event-rewrite error propagation",
       {}
     );
     expect(regenerateFutureNutritionEvents).toHaveBeenCalledWith(clientId, "plan-1", "2026-07-10");
+  });
+});
+
+describe("orchestrateNutritionPlanDeletion", () => {
+  it("clears future events (client-local floor) then archives, and returns the plan id", async () => {
+    const result = await orchestrateNutritionPlanDeletion(clientId, coachId);
+
+    expect(result).toEqual({ planId: "plan-1" });
+    expect(deleteFutureNutritionEventsForPlan).toHaveBeenCalledWith("plan-1", "2026-07-02");
+    expect(archiveNutritionPlan).toHaveBeenCalledWith("plan-1");
+    // Events go first so a mid-flight failure leaves the plan active and retryable.
+    expect(
+      vi.mocked(deleteFutureNutritionEventsForPlan).mock.invocationCallOrder[0]
+    ).toBeLessThan(vi.mocked(archiveNutritionPlan).mock.invocationCallOrder[0]);
+  });
+
+  it("rejects 404 when the client does not exist", async () => {
+    vi.mocked(getClientById).mockResolvedValue(null);
+
+    await expect(orchestrateNutritionPlanDeletion(clientId, coachId)).rejects.toMatchObject({
+      name: "NutritionPlanError",
+      statusCode: 404,
+    });
+    expect(archiveNutritionPlan).not.toHaveBeenCalled();
+  });
+
+  it("rejects 403 when the coach does not own the client", async () => {
+    await expect(orchestrateNutritionPlanDeletion(clientId, "other-coach")).rejects.toMatchObject({
+      name: "NutritionPlanError",
+      statusCode: 403,
+    });
+    expect(deleteFutureNutritionEventsForPlan).not.toHaveBeenCalled();
+    expect(archiveNutritionPlan).not.toHaveBeenCalled();
+  });
+
+  it("rejects 404 when there is no active plan, touching nothing", async () => {
+    vi.mocked(getActiveNutritionPlanId).mockResolvedValue(null);
+
+    await expect(orchestrateNutritionPlanDeletion(clientId, coachId)).rejects.toMatchObject({
+      name: "NutritionPlanError",
+      statusCode: 404,
+      message: "No active nutrition plan to delete",
+    });
+    expect(deleteFutureNutritionEventsForPlan).not.toHaveBeenCalled();
+    expect(archiveNutritionPlan).not.toHaveBeenCalled();
+  });
+
+  it("propagates an event-delete failure without archiving (plan stays retryable)", async () => {
+    vi.mocked(deleteFutureNutritionEventsForPlan).mockRejectedValue(new Error("delete exploded"));
+
+    await expect(orchestrateNutritionPlanDeletion(clientId, coachId)).rejects.toThrow(
+      "delete exploded"
+    );
+    expect(archiveNutritionPlan).not.toHaveBeenCalled();
   });
 });
