@@ -313,6 +313,7 @@ Reference: `components/programs/programs-shell.tsx`, `programs-topbar.tsx`, `app
 | Variant | Recipe |
 |---------|--------|
 | Primary (teal fill) | `inline-flex items-center gap-1.5 rounded-[6px] bg-[#0d9488] px-3 py-1.5 text-[13px] font-medium text-white transition-colors hover:bg-[#0b7f75]` — or `<Button className="bg-[#0d9488] text-white hover:bg-[#0b7f75]">` |
+| **Rail save (DEFAULT commit)** | `rounded p-1 text-[#0d9488] transition-colors hover:text-[#0b7f75] disabled:opacity-50` with `Save h-3.5 w-3.5 strokeWidth={1.5}` (swap to `Loader2 … animate-spin` while saving) + `aria-label`/`title` naming the action. **This icon IS the save button for a persistent editor surface**: whenever a surface's primary commit lives on its `SectionLabel` divider rail (library builder "Save program", amendment surface "Save changes to plan"), render THIS — never a filled text button on the rail. Filled teal primaries stay where they belong: dialog/sheet footers, forms, heroes, empty-state CTAs. Rail order rule: commit (Save) leftmost, destructive (Trash/Ban) always rightmost. |
 | Secondary / subtle | White, `border border-[rgba(13,148,136,0.08)]`, text `#5a7d82` (`<Button variant="outline">`) |
 | Ghost | Transparent, text `#5a7d82`, hover `bg-[rgba(0,0,0,0.02)]` / muted (`<Button variant="ghost">`) — used for Cancel |
 | Icon action (in a rail) | `rounded p-1 text-[#93b0b4] transition-colors hover:text-[#0d9488]`; destructive variant hovers `hover:text-[#c06060]`; icons `h-3.5 w-3.5` `strokeWidth={1.5}` |
@@ -466,7 +467,7 @@ List area `min-h-0 flex-1 space-y-2 overflow-y-auto px-[14px] pb-2`; search `h-8
 
 ### Schedule divider + action rail
 
-`<SectionLabel>` ("Schedule") with an action cluster `flex items-center gap-3`: Edit (`Pencil`), Delete (`Trash2`, hover `#c06060`), Discard (`Ban`, hover `#c06060`), Save (`Save`, `text-[#0d9488] hover:text-[#0b7f75]`, `Loader2` while saving). All `rounded p-1`, icons `h-3.5 w-3.5 strokeWidth={1.5}`.
+`<SectionLabel>` ("Schedule") with an action cluster `flex items-center gap-3`: Edit (`Pencil`), Delete (`Trash2`, hover `#c06060`), Discard (`Ban`, hover `#c06060`), Save (`Save`, `text-[#0d9488] hover:text-[#0b7f75]`, `Loader2` while saving). All `rounded p-1`, icons `h-3.5 w-3.5 strokeWidth={1.5}`. The Save icon here is the system's **default commit affordance** for every editor surface mounted under a divider rail (see Buttons → "Rail save") — the amendment surface's "Save changes to plan" uses the same icon in the same slot, not a filled button.
 
 ### The weeks × day grid
 

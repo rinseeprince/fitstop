@@ -283,16 +283,26 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
                       Apply to client
                     </button>
                   )}
-                  {isPlacedPlan && (
+                  {/* Rail save icon — the design system's DEFAULT commit
+                      affordance for an editor surface (owner call; codified in
+                      docs/newdesignsystem.md → Buttons). Same slot + look as
+                      the library save; commit leftmost, destructive rightmost.
+                      fullyLocked: an ended plan has nothing future to rewrite;
+                      assistantBusy mirrors the library save. */}
+                  {isPlacedPlan && mode === "edit" && (
                     <button
                       type="button"
-                      className="rounded-[6px] bg-[#0d9488] px-3 py-1.5 text-[12px] font-semibold text-white transition-colors hover:bg-[#0b7f75] disabled:opacity-50"
-                      // fullyLocked: an ended plan has nothing future to
-                      // rewrite; assistantBusy mirrors the apply button.
+                      aria-label="Save changes to plan"
+                      title="Save changes to plan"
                       disabled={!isDirty || amend.isAmending || assistantBusy || fullyLocked}
+                      className="rounded p-1 text-[#0d9488] transition-colors hover:text-[#0b7f75] disabled:opacity-50"
                       onClick={amend.request}
                     >
-                      Save changes to plan
+                      {amend.isAmending ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Save className="h-3.5 w-3.5" strokeWidth={1.5} />
+                      )}
                     </button>
                   )}
                   {mode === "view" && (
