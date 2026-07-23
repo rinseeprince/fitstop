@@ -628,6 +628,8 @@ White card, no border, 6px radius; header clickable (600 title + count badge on 
 | Content padding top | 20px (`py-5`) |
 | Content padding horizontal | 32px (`px-8`) |
 | Content padding bottom | 60px (`pb-[60px]`) |
+| Above a section divider | 16px — provided by the block above (`mb-4`) or the section rhythm |
+| Below a section divider | 12px — the divider row's OWN `mb-3` (SectionLabel's built-in). Never mount a divider inside a flex `gap-*` parent that adds around it: flex gaps and margins ADD (no collapse), which is how the 28px/0px outliers happened |
 | Builder main column | `px-6 pt-5` |
 | Overlay body padding | `px-5 py-4` (sheet) / `p-6` (dialog) |
 
