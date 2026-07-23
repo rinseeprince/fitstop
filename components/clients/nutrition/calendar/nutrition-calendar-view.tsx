@@ -5,19 +5,15 @@ import { useNutritionCalendarEvents } from "@/hooks/use-nutrition-calendar-event
 import { useNutritionCalendarEditing } from "@/hooks/use-nutrition-calendar-editing";
 import { NutritionCalendarWeekRow } from "./nutrition-calendar-week-row";
 import { NutritionCalendarEditBar } from "./nutrition-calendar-edit-bar";
+import { NutritionCalendarToolbar } from "./nutrition-calendar-toolbar";
 import { NutritionRangeEditDialog } from "./nutrition-range-edit-dialog";
 import {
   getTodayDateString,
   getTodayDateStringInTimezone,
   getDateString,
 } from "@/lib/date-helpers";
-import { Button } from "@/components/ui/button";
-import { Loader2, ChevronLeft, ChevronRight, Pencil } from "lucide-react";
 import { cn } from "@/lib/utils";
-import {
-  LABEL_CLASS,
-  MONO_LABEL_CLASS,
-} from "@/components/clients/training/program-builder/builder-tokens";
+import { LABEL_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
 import { format } from "date-fns";
 import type { Phase, PhaseStatus } from "@/types/roadmap";
 
@@ -63,8 +59,10 @@ type NutritionCalendarViewProps = {
   includeActivityBurn: boolean;
   /** How a training-day surplus distributes across macros. */
   surplusAsCarbs: boolean;
-  /** Refetch the surrounding builder (hero/typical-week) after an edit. */
+  /** Refetch the surrounding builder (stat band) after an edit. */
   onUpdate: () => void;
+  /** Renders the toolbar's Delete-plan trigger when provided. */
+  onDeletePlan?: () => void;
 };
 
 export function NutritionCalendarView({
@@ -74,6 +72,7 @@ export function NutritionCalendarView({
   includeActivityBurn,
   surplusAsCarbs,
   onUpdate,
+  onDeletePlan,
 }: NutritionCalendarViewProps) {
   const todayDate = getTodayDateString();
   // Past/future display + edit gating is judged on the CLIENT's calendar so it
@@ -167,105 +166,72 @@ export function NutritionCalendarView({
 
   return (
     <div className="flex flex-col gap-2">
-      {/* Month nav + edit toggle */}
-      <div className="flex items-center gap-2 px-1">
-        <button
-          onClick={goPrevMonth}
-          aria-label="Previous month"
-          className="p-1 rounded hover:bg-[rgba(13,148,136,0.05)] transition-colors"
-        >
-          <ChevronLeft className="h-4 w-4 text-[#5a7d82]" />
-        </button>
-        <span
-          className={cn(
-            MONO_LABEL_CLASS,
-            "min-w-[120px] whitespace-nowrap text-center text-[11px]"
-          )}
-        >
-          {monthLabel}
-        </span>
-        <button
-          onClick={goNextMonth}
-          aria-label="Next month"
-          className="p-1 rounded hover:bg-[rgba(13,148,136,0.05)] transition-colors"
-        >
-          <ChevronRight className="h-4 w-4 text-[#5a7d82]" />
-        </button>
-        <button
-          onClick={goToday}
-          className={cn(
-            LABEL_CLASS,
-            "rounded-[6px] px-2 py-1 text-[11px] transition-colors hover:bg-[rgba(13,148,136,0.05)] hover:text-[#0d9488]"
-          )}
-        >
-          Today
-        </button>
+      {/* The control line IS the divider: month nav left, hairline middle,
+          pencil/check + delete-plan icons right (training-calendar pattern). */}
+      <NutritionCalendarToolbar
+        monthLabel={monthLabel}
+        onPrevMonth={goPrevMonth}
+        onNextMonth={goNextMonth}
+        onToday={goToday}
+        isLoading={isLoading}
+        editMode={edit.editMode}
+        onEditModeChange={(next) => (next ? edit.setEditMode(true) : edit.exitEdit())}
+        onDeletePlan={onDeletePlan}
+      />
 
-        <div className="ml-auto flex items-center gap-2">
-          {isLoading && <Loader2 className="h-3.5 w-3.5 animate-spin text-[#93b0b4]" />}
-          <Button
-            variant={edit.editMode ? "default" : "outline"}
-            size="sm"
-            className="h-7 text-[11px]"
-            onClick={() => (edit.editMode ? edit.exitEdit() : edit.setEditMode(true))}
-          >
-            <Pencil className="h-3 w-3 mr-1" />
-            {edit.editMode ? "Done" : "Edit"}
-          </Button>
+      <div className="flex flex-col gap-2 rounded-[6px] border border-[rgba(13,148,136,0.06)] bg-white p-4">
+        {/* Selection bar */}
+        {edit.editMode && (
+          <NutritionCalendarEditBar
+            todayWeekAvailable={!!edit.todayWeek}
+            selectedCount={edit.selected.size}
+            isSaving={edit.isSaving}
+            onSelectThisWeek={edit.selectThisWeek}
+            onSelectThisMonth={edit.selectThisMonth}
+            onEdit={() => edit.setDialogOpen(true)}
+            onReset={edit.resetSelected}
+            onClear={edit.clearSelection}
+          />
+        )}
+
+        {/* Day headers */}
+        <div className="flex gap-1">
+          <div className="flex-1 grid grid-cols-7 gap-1">
+            {DAY_LABELS.map((label) => (
+              <div
+                key={label}
+                className={cn(LABEL_CLASS, "text-center py-1")}
+              >
+                {label}
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
 
-      {/* Selection bar */}
-      {edit.editMode && (
-        <NutritionCalendarEditBar
-          todayWeekAvailable={!!edit.todayWeek}
-          selectedCount={edit.selected.size}
-          isSaving={edit.isSaving}
-          onSelectThisWeek={edit.selectThisWeek}
-          onSelectThisMonth={edit.selectThisMonth}
-          onEdit={() => edit.setDialogOpen(true)}
-          onReset={edit.resetSelected}
-          onClear={edit.clearSelection}
-        />
-      )}
-
-      {/* Day headers */}
-      <div className="flex gap-1">
-        <div className="flex-1 grid grid-cols-7 gap-1">
-          {DAY_LABELS.map((label) => (
-            <div
-              key={label}
-              className={cn(LABEL_CLASS, "text-center py-1")}
-            >
-              {label}
-            </div>
-          ))}
+        {/* Week rows */}
+        <div className="flex flex-col gap-1 max-h-[600px] overflow-y-auto">
+          {weeks.map((days) => {
+            const containsToday = days.includes(todayDate);
+            return (
+              <div key={days[0]} ref={containsToday ? todayRowRef : undefined}>
+                <NutritionCalendarWeekRow
+                  days={days}
+                  eventsByDate={eventsByDate}
+                  todayDate={todayDate}
+                  clientToday={clientToday}
+                  viewMonth={viewMonth.month}
+                  viewYear={viewMonth.year}
+                  phaseByDate={phaseByDate}
+                  includeActivityBurn={includeActivityBurn}
+                  surplusAsCarbs={surplusAsCarbs}
+                  editMode={edit.editMode}
+                  selected={edit.selected}
+                  onToggle={edit.toggleDay}
+                />
+              </div>
+            );
+          })}
         </div>
-      </div>
-
-      {/* Week rows */}
-      <div className="flex flex-col gap-1 max-h-[600px] overflow-y-auto">
-        {weeks.map((days) => {
-          const containsToday = days.includes(todayDate);
-          return (
-            <div key={days[0]} ref={containsToday ? todayRowRef : undefined}>
-              <NutritionCalendarWeekRow
-                days={days}
-                eventsByDate={eventsByDate}
-                todayDate={todayDate}
-                clientToday={clientToday}
-                viewMonth={viewMonth.month}
-                viewYear={viewMonth.year}
-                phaseByDate={phaseByDate}
-                includeActivityBurn={includeActivityBurn}
-                surplusAsCarbs={surplusAsCarbs}
-                editMode={edit.editMode}
-                selected={edit.selected}
-                onToggle={edit.toggleDay}
-              />
-            </div>
-          );
-        })}
       </div>
 
       <NutritionRangeEditDialog

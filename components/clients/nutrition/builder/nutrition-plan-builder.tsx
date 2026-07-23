@@ -188,16 +188,14 @@ function NutritionCalendarMount() {
   if (!builder.hasPlan) return null;
 
   return (
-    <div className="bg-white rounded-[6px] p-4 border border-[rgba(13,148,136,0.06)]">
-      <NutritionCalendarView
-        clientId={builder.client.id}
-        phases={builder.phases}
-        clientTimezone={builder.client.timezone}
-        includeActivityBurn={builder.includeActivityBurn}
-        surplusAsCarbs={builder.surplusAsCarbs}
-        onUpdate={() => builder.refetchNutrition()}
-      />
-    </div>
+    <NutritionCalendarView
+      clientId={builder.client.id}
+      phases={builder.phases}
+      clientTimezone={builder.client.timezone}
+      includeActivityBurn={builder.includeActivityBurn}
+      surplusAsCarbs={builder.surplusAsCarbs}
+      onUpdate={() => builder.refetchNutrition()}
+    />
   );
 }
 
