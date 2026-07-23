@@ -251,6 +251,10 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
                     : "Back to programs"
               }
               identityEditable={!isClientDraft}
+              // A placed plan has no inheritable default — placement resolved
+              // it into every row (absolute surplus, decision 10). Session-
+              // level surplus editing + the assistant cover bulk changes.
+              showSurplus={!isPlacedPlan}
               onRename={setName}
               onFocusChange={setSplitType}
               onDescriptionChange={setDescription}

@@ -724,6 +724,11 @@ describe("ProgramBuilder placed-plan target", () => {
     expect(screen.getByLabelText("Back to calendar")).toBeInTheDocument();
     // Opens straight into edit mode: the identity input is live.
     expect(screen.getByLabelText("Program name")).toBeInTheDocument();
+    // No default-surplus pill: placement resolved the default into every row
+    // (absolute surplus), so the header knob would be dead — hidden instead.
+    expect(
+      screen.queryByLabelText("Default calorie surplus percent"),
+    ).not.toBeInTheDocument();
   });
 
   it("save is disabled until dirty, then PUTs the grid + token + identity patch through the confirm", async () => {

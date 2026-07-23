@@ -23,6 +23,11 @@ type ProgramTopBarProps = {
   // read-only in the client editor (the coach applies the template + adjusts
   // the training/surplus for the client, they don't rename the template).
   identityEditable?: boolean;
+  // The default-surplus pill is a TEMPLATE concept: sessions inherit it at
+  // placement time. A placed plan carries the RESOLVED value on every row
+  // (surplus is absolute there), so the amendment surface hides the pill —
+  // a dead knob would read as a bulk control and silently do nothing.
+  showSurplus?: boolean;
   onRename: (name: string) => void;
   onFocusChange: (focus: string | null) => void;
   onDescriptionChange: (description: string | null) => void;
@@ -49,6 +54,7 @@ export function ProgramTopBar({
   onBack,
   backLabel = "Back to programs",
   identityEditable = true,
+  showSurplus = true,
   onRename,
   onFocusChange,
   onDescriptionChange,
@@ -148,6 +154,7 @@ export function ProgramTopBar({
       </div>
 
       {/* Default-surplus pill (editable — the header's only control) */}
+      {showSurplus && (
       <div className="ml-auto flex shrink-0 items-center gap-1.5 rounded-[6px] border border-[rgba(255,255,255,0.14)] px-2.5 py-1">
         <span className={cn("font-mono-display text-[10px] uppercase tracking-[0.08em]", STAT_MUTE)}>
           Surplus
@@ -183,6 +190,7 @@ export function ProgramTopBar({
         />
         <span className={cn("text-[10px]", STAT_MUTE)}>%</span>
       </div>
+      )}
     </div>
   );
 }
