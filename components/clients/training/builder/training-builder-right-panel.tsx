@@ -112,8 +112,9 @@ export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel
   }
 
   // Calendar is always visible — the hero owns both plan/empty branches.
+  // space-y-4 = the divider spec's 16px above the calendar toolbar.
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <TrainingPlanHero
         clientId={clientId}
         onOpenGenerator={onOpenGenerator}

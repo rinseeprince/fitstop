@@ -8,9 +8,9 @@ import { HistoryTable, type ColumnDef } from "@/components/clients/history-table
 import { useHistoryData } from "@/hooks/use-history-data";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import { cn } from "@/lib/utils";
+import { SectionLabel } from "@/components/programs/shared/section-label";
 import {
   MONO,
-  SECTION_LABEL_CLASS,
   STAT_LABEL_DARK_CLASS,
   STAT_VALUE_DARK_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens";
@@ -188,9 +188,11 @@ export function NutritionHistoryTable({ clientId }: Props) {
   ], []);
 
   return (
-    <div className="flex flex-col gap-4">
+    // Block flow, not flex-gap: divider spec = 16px above (strip mb-4), 12px
+    // below (SectionLabel's own mb-3).
+    <div>
       {/* Summary strip — unified dark card */}
-      <div className="bg-[#0f2027] rounded-[6px] p-5 grid grid-cols-[1fr_1fr_1fr_1fr]">
+      <div className="mb-4 bg-[#0f2027] rounded-[6px] p-5 grid grid-cols-[1fr_1fr_1fr_1fr]">
         {/* Weekly total */}
         <div className="flex flex-col pr-5 border-r border-[rgba(255,255,255,0.08)]">
           <p className={STAT_LABEL_DARK_CLASS}>Weekly Total</p>
@@ -268,15 +270,16 @@ export function NutritionHistoryTable({ clientId }: Props) {
       </div>
 
       {/* Section header */}
-      <div className="flex items-center gap-3 mt-2">
-        <span className={cn(SECTION_LABEL_CLASS, "whitespace-nowrap")}>Nutrition Logged</span>
-        <div className="flex-1 h-px bg-[rgba(13,148,136,0.08)]" />
-        <div className="flex items-center gap-2.5">
-          <span className="w-3 h-1 rounded-full bg-protein" /><span className="text-[10px] text-[#93b0b4]">P</span>
-          <span className="w-3 h-1 rounded-full bg-carbs" /><span className="text-[10px] text-[#93b0b4]">C</span>
-          <span className="w-3 h-1 rounded-full bg-fat" /><span className="text-[10px] text-[#93b0b4]">F</span>
-        </div>
-      </div>
+      <SectionLabel
+        label="Nutrition Logged"
+        actions={
+          <div className="flex items-center gap-2.5">
+            <span className="w-3 h-1 rounded-full bg-protein" /><span className="text-[10px] text-[#93b0b4]">P</span>
+            <span className="w-3 h-1 rounded-full bg-carbs" /><span className="text-[10px] text-[#93b0b4]">C</span>
+            <span className="w-3 h-1 rounded-full bg-fat" /><span className="text-[10px] text-[#93b0b4]">F</span>
+          </div>
+        }
+      />
 
       {/* Daily log table */}
       <div className="bg-white rounded-[6px] p-5">

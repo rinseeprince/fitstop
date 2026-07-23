@@ -10,6 +10,7 @@ import { detectAlerts } from "@/lib/daily-wellness-alerts"
 import { AlertTriangle } from "lucide-react"
 import { useWellnessData } from "@/hooks/use-wellness-data"
 import { getDateString } from "@/lib/date-helpers"
+import { SECTION_LABEL_CLASS } from "@/components/clients/training/program-builder/builder-tokens"
 
 interface DailyWellnessStripProps {
   clientId: string
@@ -25,8 +26,8 @@ export function DailyWellnessStrip({ clientId }: DailyWellnessStripProps) {
   if (isLoading) {
     return (
       <div>
-        <div className="flex items-center gap-3 mb-4">
-          <span className="text-[10.5px] uppercase tracking-[0.07em] text-[#93b0b4] font-semibold whitespace-nowrap">
+        <div className="flex items-center gap-3 mb-3">
+          <span className={`${SECTION_LABEL_CLASS} whitespace-nowrap`}>
             Daily Wellness
           </span>
           <div className="flex-1 h-px bg-[rgba(13,148,136,0.08)]" />
@@ -46,8 +47,8 @@ export function DailyWellnessStrip({ clientId }: DailyWellnessStripProps) {
   if (logs.length === 0) {
     return (
       <div>
-        <div className="flex items-center gap-3 mb-4">
-          <span className="text-[10.5px] uppercase tracking-[0.07em] text-[#93b0b4] font-semibold whitespace-nowrap">
+        <div className="flex items-center gap-3 mb-3">
+          <span className={`${SECTION_LABEL_CLASS} whitespace-nowrap`}>
             Daily Wellness
           </span>
           <div className="flex-1 h-px bg-[rgba(13,148,136,0.08)]" />
@@ -124,8 +125,8 @@ export function DailyWellnessStrip({ clientId }: DailyWellnessStripProps) {
   return (
     <div className="relative">
       {/* Section title */}
-      <div className="flex items-center gap-3 mb-4">
-        <span className="text-[10.5px] uppercase tracking-[0.07em] text-[#93b0b4] font-semibold whitespace-nowrap">
+      <div className="flex items-center gap-3 mb-3">
+        <span className={`${SECTION_LABEL_CLASS} whitespace-nowrap`}>
           Daily Wellness
         </span>
         <div className="flex-1 h-px bg-[rgba(13,148,136,0.08)]" />

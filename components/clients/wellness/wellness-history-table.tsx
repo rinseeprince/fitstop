@@ -7,9 +7,9 @@ import { HistoryTable, type ColumnDef } from "@/components/clients/history-table
 import { useHistoryData } from "@/hooks/use-history-data";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import { cn } from "@/lib/utils";
+import { SectionLabel } from "@/components/programs/shared/section-label";
 import {
   MONO,
-  SECTION_LABEL_CLASS,
   STAT_LABEL_DARK_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens";
 import type { WellnessMetric } from "@/utils/wellness-color-thresholds";
@@ -118,9 +118,11 @@ export function WellnessHistoryTable({ clientId }: Props) {
   ], []);
 
   return (
-    <div className="flex flex-col gap-4">
+    // Block flow, not flex-gap: divider spec = 16px above (strip mb-4), 12px
+    // below (SectionLabel's own mb-3).
+    <div>
       {/* Period selector */}
-      <div className="flex justify-end">
+      <div className="mb-4 flex justify-end">
         <div className="bg-[rgba(13,148,136,0.05)] rounded-[6px] p-[2px] inline-flex">
           {PERIOD_OPTIONS.map((d) => (
             <button
@@ -140,7 +142,7 @@ export function WellnessHistoryTable({ clientId }: Props) {
       </div>
 
       {/* Dark summary strip */}
-      <div className="bg-[#0f2027] rounded-[6px] p-5">
+      <div className="mb-4 bg-[#0f2027] rounded-[6px] p-5">
         <div className="grid grid-cols-[1fr_1fr_1fr_1fr]">
           {METRICS.map(({ key, label, metric, max }, idx) => {
             const avg = summary ? summary[key] : null;
@@ -190,18 +192,17 @@ export function WellnessHistoryTable({ clientId }: Props) {
       </div>
 
       {/* Section header */}
-      <div className="flex items-center gap-3 mt-2">
-        <span className={cn(SECTION_LABEL_CLASS, "whitespace-nowrap")}>
-          Wellness Log
-        </span>
-        <div className="flex-1 h-px bg-[rgba(13,148,136,0.08)]" />
-        <div className="flex items-center gap-2.5">
-          <span className="w-2 h-[3px] rounded-full bg-[#0d9488]" />
-          <span className="text-[10.5px] text-[#93b0b4] font-medium">Good</span>
-          <span className="w-2 h-[3px] rounded-full bg-[#d97706]" />
-          <span className="text-[10.5px] text-[#93b0b4] font-medium">Warning</span>
-        </div>
-      </div>
+      <SectionLabel
+        label="Wellness Log"
+        actions={
+          <div className="flex items-center gap-2.5">
+            <span className="w-2 h-[3px] rounded-full bg-[#0d9488]" />
+            <span className="text-[10.5px] text-[#93b0b4] font-medium">Good</span>
+            <span className="w-2 h-[3px] rounded-full bg-[#d97706]" />
+            <span className="text-[10.5px] text-[#93b0b4] font-medium">Warning</span>
+          </div>
+        }
+      />
 
       {/* Table card */}
       <div className="bg-white rounded-[6px] p-5">

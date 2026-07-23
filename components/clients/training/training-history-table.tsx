@@ -200,8 +200,12 @@ export function TrainingHistoryTable({ clientId }: Props) {
   );
 
   return (
-    <div className="flex flex-col gap-4">
-      <TrainingSummaryHero clientId={clientId} />
+    // Block flow, not flex-gap: the divider spec is 16px above (hero mb-4) and
+    // 12px below (SectionLabel's own mb-3) — a flex gap would add to both.
+    <div>
+      <div className="mb-4">
+        <TrainingSummaryHero clientId={clientId} />
+      </div>
 
       {/* Section header: TRAINING LOG */}
       <SectionLabel label="Training Log" />

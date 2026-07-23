@@ -41,7 +41,8 @@ export function NutritionCalendarToolbar({
   onDeletePlan,
 }: NutritionCalendarToolbarProps) {
   return (
-    <div className="mb-3 flex items-center gap-3">
+    // mb-1 + the parent's gap-2 = the divider spec's 12px to the card below.
+    <div className="mb-1 flex items-center gap-3">
       <div className="flex items-center gap-2">
         <button
           onClick={onPrevMonth}
