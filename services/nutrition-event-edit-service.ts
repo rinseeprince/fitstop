@@ -22,12 +22,14 @@ import { regenerateFutureNutritionEvents } from "@/services/nutrition-event-serv
 // the day(s) the coach actually typed on, so a macro-only edit never wipes notes.
 export type RangeEdit =
   | { mode: "absolute"; calories: number; proteinG?: number; carbG?: number; fatG?: number; note?: string | null }
-  | { mode: "delta"; percent?: number; calorieDelta?: number; note?: string | null };
+  | { mode: "delta"; percent?: number; calorieDelta?: number; holdProtein?: boolean; note?: string | null };
 
 type EligibleRow = {
   id: string;
   baseline_calories: number;
   protein_g: number;
+  carb_g: number;
+  fat_g: number;
   training_burn_calories: number;
   calorie_surplus_percentage: number | null;
   diet_type: string;
@@ -63,7 +65,7 @@ export async function materializeNutritionEventDays(
 
   const { data: rows, error } = await supabaseAdmin
     .from("nutrition_events")
-    .select("id, baseline_calories, protein_g, training_burn_calories, calorie_surplus_percentage, diet_type")
+    .select("id, baseline_calories, protein_g, carb_g, fat_g, training_burn_calories, calorie_surplus_percentage, diet_type")
     .eq("client_id", clientId)
     .eq("status", "scheduled")
     .in("date", eligibleDates);
@@ -86,7 +88,9 @@ export async function materializeNutritionEventDays(
     } else {
       const base = currentDisplayedCalories(row);
       const scaled = edit.percent != null ? base * (1 + edit.percent / 100) : base;
-      calories = Math.round(scaled + (edit.calorieDelta ?? 0));
+      // Floor at zero: an oversized negative delta must never materialize
+      // negative calories/macros onto the client's calendar.
+      calories = Math.max(0, Math.round(scaled + (edit.calorieDelta ?? 0)));
     }
 
     // Macros: explicit macros win; otherwise hold protein and rebalance carbs/fat
@@ -98,6 +102,25 @@ export async function materializeNutritionEventDays(
       proteinG = edit.proteinG;
       carbG = edit.carbG;
       fatG = edit.fatG;
+    } else if (edit.mode === "delta" && edit.holdProtein === false) {
+      // Scale the day's stored macro SPLIT onto the new total (protein not
+      // held). Ratio-of-new-total, not old-total scaling: on a surplus day the
+      // stored macros sum to the baseline while the delta base is the stacked
+      // total, so old-ratio scaling would not sum to the new calories.
+      const p4 = Number(row.protein_g) * 4;
+      const c4 = Number(row.carb_g) * 4;
+      const f9 = Number(row.fat_g) * 9;
+      const macroCals = p4 + c4 + f9;
+      if (macroCals > 0) {
+        proteinG = Math.round((calories * (p4 / macroCals)) / 4);
+        carbG = Math.round((calories * (c4 / macroCals)) / 4);
+        fatG = Math.round((calories * (f9 / macroCals)) / 9);
+      } else {
+        const macros = calculateDailyMacros(calories, Number(row.protein_g), false, (row.diet_type as DietType) || "balanced");
+        proteinG = macros.proteinG;
+        carbG = macros.carbsG;
+        fatG = macros.fatG;
+      }
     } else {
       const fixedProtein = edit.mode === "absolute" && edit.proteinG != null ? edit.proteinG : Number(row.protein_g);
       const macros = calculateDailyMacros(calories, fixedProtein, false, (row.diet_type as DietType) || "balanced");

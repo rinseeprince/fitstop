@@ -21,7 +21,7 @@ describe("TrainingPlanHero", () => {
     const onOpenGenerator = vi.fn();
     const { container } = renderHero({ onOpenGenerator });
 
-    expect(screen.getByText("No training plan yet")).toBeInTheDocument();
+    expect(screen.getByText("No active training plan")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /Browse programs/ }),
     ).toBeInTheDocument();

@@ -24,6 +24,8 @@ type Row = {
   id: string;
   baseline_calories: number;
   protein_g: number;
+  carb_g: number;
+  fat_g: number;
   training_burn_calories: number;
   calorie_surplus_percentage: number | null;
   diet_type: string;
@@ -63,6 +65,8 @@ function row(overrides: Partial<Row> = {}): Row {
     id: "e1",
     baseline_calories: 2000,
     protein_g: 150,
+    carb_g: 200,
+    fat_g: 60,
     training_burn_calories: 0,
     calorie_surplus_percentage: null,
     diet_type: "balanced",
@@ -115,6 +119,88 @@ describe("nutrition-event-edit-service", () => {
       expect(updateSpy).toHaveBeenCalledWith(
         expect.objectContaining({ baseline_calories: 1100, calorie_surplus_percentage: null })
       );
+    });
+
+    it("delta: floors the resolved calories at zero for oversized negative deltas", async () => {
+      mockEvents([row()]);
+
+      await materializeNutritionEventDays(
+        clientId,
+        ["2026-02-01"],
+        { mode: "delta", calorieDelta: -5000 },
+        "2026-01-15"
+      );
+
+      expect(updateSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ baseline_calories: 0 })
+      );
+    });
+
+    it("delta holdProtein=false: scales the day's stored macro split onto the new total", async () => {
+      // Surplus day: base = round(2000 * 1.1) = 2200; -50% -> 1100 kcal.
+      // Stored split kcal: p 150*4=600, c 200*4=800, f 60*9=540 (sum 1940).
+      // Shares of 1100: p round(1100*600/1940/4)=85, c round(...800.../4)=113,
+      // f round(...540.../9)=34 -> sums to 1098 ~ 1100.
+      mockEvents([row({ calorie_surplus_percentage: 10 })]);
+
+      await materializeNutritionEventDays(
+        clientId,
+        ["2026-02-01"],
+        { mode: "delta", percent: -50, holdProtein: false },
+        "2026-01-15"
+      );
+
+      expect(updateSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          baseline_calories: 1100,
+          protein_g: 85,
+          carb_g: 113,
+          fat_g: 34,
+        })
+      );
+    });
+
+    it("delta holdProtein=false with zero stored macros: falls back to the diet rebalance", async () => {
+      mockEvents([row({ protein_g: 0, carb_g: 0, fat_g: 0 })]);
+
+      await materializeNutritionEventDays(
+        clientId,
+        ["2026-02-01"],
+        { mode: "delta", calorieDelta: -200, holdProtein: false },
+        "2026-01-15"
+      );
+
+      // calculateDailyMacros is mocked to { 150, 200, 60 }.
+      expect(updateSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ protein_g: 150, carb_g: 200, fat_g: 60 })
+      );
+    });
+
+    it("delta: holdProtein absent and holdProtein=true produce the identical legacy update (regression pin)", async () => {
+      mockEvents([row({ calorie_surplus_percentage: 10 })]);
+      await materializeNutritionEventDays(
+        clientId,
+        ["2026-02-01"],
+        { mode: "delta", percent: -50 },
+        "2026-01-15"
+      );
+      const absentPayload = updateSpy.mock.calls[0][0] as Record<string, unknown>;
+
+      vi.clearAllMocks();
+      mockEvents([row({ calorie_surplus_percentage: 10 })]);
+      await materializeNutritionEventDays(
+        clientId,
+        ["2026-02-01"],
+        { mode: "delta", percent: -50, holdProtein: true },
+        "2026-01-15"
+      );
+      const truePayload = updateSpy.mock.calls[0][0] as Record<string, unknown>;
+
+      // Both hit the hold-protein rebalance branch (mock: 150/200/60).
+      const { updated_at: _a, ...absentRest } = absentPayload;
+      const { updated_at: _b, ...trueRest } = truePayload;
+      expect(absentRest).toEqual(trueRest);
+      expect(absentRest).toMatchObject({ protein_g: 150, carb_g: 200, fat_g: 60 });
     });
 
     it("scattered: queries EXACTLY the selected days (gaps are never touched)", async () => {

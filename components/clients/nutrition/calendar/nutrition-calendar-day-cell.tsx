@@ -4,6 +4,7 @@ import { memo } from "react";
 import { cn } from "@/lib/utils";
 import { Pencil, StickyNote } from "lucide-react";
 import { MONO } from "@/components/clients/training/program-builder/builder-tokens";
+import { PHASE_TINT } from "@/components/clients/training/calendar/calendar-tokens";
 import { mapNutritionEventToDisplayTarget } from "@/utils/nutrition-event-helpers";
 import type { NutritionEvent } from "@/types/check-in";
 import type { PhaseStatus } from "@/types/roadmap";
@@ -25,20 +26,6 @@ type NutritionCalendarDayCellProps = {
   isSelected?: boolean;
   onToggle?: (date: string) => void;
 };
-
-/** Mirrors the training calendar's phase tint (calendar-day-cell.tsx). */
-function phaseTintClass(status: PhaseStatus | null | undefined): string {
-  switch (status) {
-    case "active":
-      return "bg-[rgba(13,148,136,0.06)]";
-    case "completed":
-      return "bg-[rgba(148,163,184,0.08)]";
-    case "planned":
-      return "bg-[rgba(59,130,246,0.06)]";
-    default:
-      return "";
-  }
-}
 
 export const NutritionCalendarDayCell = memo(function NutritionCalendarDayCell({
   date,
@@ -66,13 +53,14 @@ export const NutritionCalendarDayCell = memo(function NutritionCalendarDayCell({
       data-date={date}
       onClick={isEligible && onToggle ? () => onToggle(date) : undefined}
       className={cn(
-        "min-h-[92px] rounded-[4px] border border-[rgba(13,148,136,0.06)] p-1.5 flex flex-col gap-1 relative transition-all",
-        phaseTintClass(phaseStatus),
+        "min-h-[96px] rounded-[6px] border border-[rgba(13,148,136,0.06)] p-1.5 flex flex-col gap-1 relative transition-all",
+        phaseStatus ? PHASE_TINT[phaseStatus] : undefined,
         isOutsideMonth && "opacity-40",
         isPast && !isOutsideMonth && "opacity-60",
-        isToday && !isSelected && "ring-2 ring-teal-500",
-        isEligible && "cursor-pointer hover:border-[rgba(13,148,136,0.3)]",
-        isSelected && "ring-2 ring-teal-500/60 bg-[rgba(13,148,136,0.05)]"
+        isToday && !isSelected && "ring-1 ring-[#0d9488]",
+        isEligible &&
+          "cursor-pointer hover:border-[rgba(13,148,136,0.25)] hover:bg-[rgba(13,148,136,0.03)]",
+        isSelected && "ring-2 ring-[#0d9488]/35 bg-[rgba(13,148,136,0.05)]"
       )}
     >
       {/* Header row: TRAIN badge (left) + date number (right) */}
@@ -88,7 +76,7 @@ export const NutritionCalendarDayCell = memo(function NutritionCalendarDayCell({
           className={cn(
             MONO,
             "text-[10px] font-medium",
-            isToday ? "text-teal-600 font-semibold" : "text-[#93b0b4]"
+            isToday ? "text-[#0d9488] font-semibold" : "text-[#93b0b4]"
           )}
         >
           {dayOfMonth}

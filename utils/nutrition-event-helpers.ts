@@ -22,6 +22,20 @@ export function getTotalCalories(
 }
 
 /**
+ * Client mirror of `currentDisplayedCalories` in
+ * services/nutrition-event-edit-service.ts — the base the server's delta edit
+ * scales. The surplus stacks REGARDLESS of the coach's activity-burn display
+ * toggle, so an adjust-by preview must use this, not `getTotalCalories`.
+ * (The server fn can't be imported here: its module pulls in supabaseAdmin.)
+ */
+export function getDeltaBaseCalories(event: NutritionEvent): number {
+  if (event.calorieSurplusPercentage != null) {
+    return Math.round(event.baselineCalories * (1 + event.calorieSurplusPercentage / 100));
+  }
+  return event.baselineCalories + event.trainingBurnCalories;
+}
+
+/**
  * Map a NutritionEvent to the DailyNutritionTargets display type.
  *
  * The macros the coach SET are what display. They are shown verbatim when burn

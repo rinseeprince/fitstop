@@ -27,13 +27,27 @@ export function eligibleDatesIn(
   return dates.filter((d) => isDateEligible(d, eventsByDate, clientToday));
 }
 
-/** Eligible days of a single week row. */
-export function thisWeekDates(
-  weekDays: string[],
+/** Eligible IN-month days of the viewed month whose event matches `pred`
+ * (outside-month grid cells excluded). Backs the selection-bar quick groups. */
+export function monthDatesWhere(
+  weeks: string[][],
+  viewMonth: number,
+  viewYear: number,
   eventsByDate: Map<string, NutritionEvent>,
-  clientToday: string
+  clientToday: string,
+  pred: (event: NutritionEvent) => boolean
 ): string[] {
-  return eligibleDatesIn(weekDays, eventsByDate, clientToday);
+  const out: string[] = [];
+  for (const week of weeks) {
+    for (const date of week) {
+      const d = new Date(date + "T00:00:00");
+      if (d.getMonth() !== viewMonth || d.getFullYear() !== viewYear) continue;
+      if (!isDateEligible(date, eventsByDate, clientToday)) continue;
+      const event = eventsByDate.get(date);
+      if (event && pred(event)) out.push(date);
+    }
+  }
+  return out;
 }
 
 /** Eligible IN-month days of the viewed month (outside-month grid cells excluded). */
@@ -44,15 +58,7 @@ export function thisMonthDates(
   eventsByDate: Map<string, NutritionEvent>,
   clientToday: string
 ): string[] {
-  const out: string[] = [];
-  for (const week of weeks) {
-    for (const date of week) {
-      const d = new Date(date + "T00:00:00");
-      if (d.getMonth() !== viewMonth || d.getFullYear() !== viewYear) continue;
-      if (isDateEligible(date, eventsByDate, clientToday)) out.push(date);
-    }
-  }
-  return out;
+  return monthDatesWhere(weeks, viewMonth, viewYear, eventsByDate, clientToday, () => true);
 }
 
 /** The week (of `weeks`) that contains clientToday, or null if it isn't shown. */

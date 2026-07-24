@@ -11,7 +11,6 @@ import { DeleteNutritionPlanDialog } from "../calendar/delete-nutrition-plan-dia
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { useToast } from "@/hooks/use-toast";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
-import { AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { weightFromKg } from "@/utils/nutrition-helpers";
 import { format } from "date-fns";
@@ -50,7 +49,6 @@ export function NutritionPlanBuilder({ client, onUpdate }: NutritionPlanBuilderP
           </div>
         ) : (
           <div className="space-y-4">
-            <NoPlanAlert />
             <ErrorBoundary>
               <NutritionBuilderRightPanel
                 onOpenSettings={() => setDrawerOpen(true)}
@@ -165,26 +163,12 @@ function TopContentBar({
   );
 }
 
-function NoPlanAlert() {
-  const builder = useNutritionBuilderContext();
-
-  if (!builder.activePhase || builder.hasPlan || builder.isLoadingNutrition) return null;
-
-  return (
-    <div className="flex items-start gap-2 p-3 bg-amber-50 dark:bg-amber-950/30 rounded-[6px]">
-      <AlertCircle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
-      <p className="text-sm text-foreground">
-        No nutrition plan for this phase — generate one with the Regenerate Plan button.
-      </p>
-    </div>
-  );
-}
-
 /**
  * Mounts the nutrition calendar (the primary day-by-day surface) by pulling
  * clientId/timezone/phases/burn-toggle from the builder context — the same
- * context-consumer pattern as TopContentBar/NoPlanAlert. Only renders once a
- * plan exists (no plan => no events => an empty grid the right-panel CTA covers).
+ * context-consumer pattern as TopContentBar. Always rendered: with no plan
+ * there are no events, so it shows the empty month grid under the hero CTA
+ * (the training tab's no-plan pattern), with the Delete-plan trigger hidden.
  */
 function NutritionCalendarMount() {
   const builder = useNutritionBuilderContext();
@@ -192,8 +176,6 @@ function NutritionCalendarMount() {
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-
-  if (!builder.hasPlan) return null;
 
   const clientId = builder.client.id;
 
@@ -234,7 +216,7 @@ function NutritionCalendarMount() {
         includeActivityBurn={builder.includeActivityBurn}
         surplusAsCarbs={builder.surplusAsCarbs}
         onUpdate={() => builder.refetchNutrition()}
-        onDeletePlan={() => setDeleteOpen(true)}
+        onDeletePlan={builder.hasPlan ? () => setDeleteOpen(true) : undefined}
       />
       <DeleteNutritionPlanDialog
         open={deleteOpen}

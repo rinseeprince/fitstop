@@ -110,6 +110,9 @@ export const nutritionRangeEditSchema = z
     fatG: z.number().nonnegative().optional(),
     percent: z.number().optional(),
     calorieDelta: z.number().optional(),
+    // Delta only. Omitted/true = hold protein, rebalance carbs/fat (legacy
+    // path, byte-identical); false = scale all three macros onto the new total.
+    holdProtein: z.boolean().optional(),
     // Optional coach per-day note. Kept .optional() with NO default so the route
     // can distinguish "omitted" (preserve) from "" (clear) — see RangeEdit D-B.
     note: z.string().max(500).optional(),

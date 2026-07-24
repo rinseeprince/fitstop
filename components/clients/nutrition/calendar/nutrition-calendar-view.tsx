@@ -1,12 +1,14 @@
 "use client";
 
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useNutritionCalendarEvents } from "@/hooks/use-nutrition-calendar-events";
 import { useNutritionCalendarEditing } from "@/hooks/use-nutrition-calendar-editing";
 import { NutritionCalendarWeekRow } from "./nutrition-calendar-week-row";
-import { NutritionCalendarEditBar } from "./nutrition-calendar-edit-bar";
+import type { NutritionWeekAction } from "./nutrition-calendar-week-rail";
 import { NutritionCalendarToolbar } from "./nutrition-calendar-toolbar";
-import { NutritionRangeEditDialog } from "./nutrition-range-edit-dialog";
+import { NutritionSelectionBar } from "./nutrition-selection-bar";
+import { NutritionEditTargetsSheet } from "./nutrition-edit-targets-sheet";
+import { CAL_GRID_COLS } from "@/components/clients/training/calendar/calendar-tokens";
 import {
   getTodayDateString,
   getTodayDateStringInTimezone,
@@ -84,8 +86,6 @@ export function NutritionCalendarView({
       ? getTodayDateStringInTimezone(clientTimezone)
       : todayDate;
 
-  const todayRowRef = useRef<HTMLDivElement>(null);
-
   const [viewMonth, setViewMonth] = useState(() => {
     const today = new Date();
     return { year: today.getFullYear(), month: today.getMonth() };
@@ -141,15 +141,6 @@ export function NutritionCalendarView({
     return map;
   }, [phases, weeks]);
 
-  useEffect(() => {
-    const viewingCurrentMonth =
-      new Date().getFullYear() === viewMonth.year &&
-      new Date().getMonth() === viewMonth.month;
-    if (viewingCurrentMonth && todayRowRef.current) {
-      todayRowRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
-    }
-  }, [isLoading, viewMonth]);
-
   const monthLabel = format(new Date(viewMonth.year, viewMonth.month, 1), "MMMM yyyy");
   const goPrevMonth = () =>
     setViewMonth(({ year, month }) =>
@@ -163,6 +154,15 @@ export function NutritionCalendarView({
     const today = new Date();
     setViewMonth({ year: today.getFullYear(), month: today.getMonth() });
   };
+
+  const { selectDatesAndEdit, resetDates } = edit;
+  const handleWeekAction = useCallback(
+    (dates: string[], action: NutritionWeekAction) => {
+      if (action === "edit_week") selectDatesAndEdit(dates);
+      else void resetDates(dates);
+    },
+    [selectDatesAndEdit, resetDates]
+  );
 
   return (
     <div className="flex flex-col gap-2">
@@ -179,73 +179,68 @@ export function NutritionCalendarView({
         onDeletePlan={onDeletePlan}
       />
 
-      <div className="flex flex-col gap-2 rounded-[6px] border border-[rgba(13,148,136,0.08)] bg-white p-4">
-        {/* Selection bar */}
-        {edit.editMode && (
-          <NutritionCalendarEditBar
-            todayWeekAvailable={!!edit.todayWeek}
-            selectedCount={edit.selected.size}
-            isSaving={edit.isSaving}
-            onSelectThisWeek={edit.selectThisWeek}
-            onSelectThisMonth={edit.selectThisMonth}
-            onEdit={() => edit.setDialogOpen(true)}
-            onReset={edit.resetSelected}
-            onClear={edit.clearSelection}
-          />
-        )}
-
-        {/* Day headers */}
-        <div className="flex gap-1">
-          <div className="flex-1 grid grid-cols-7 gap-1">
-            {DAY_LABELS.map((label) => (
-              <div
-                key={label}
-                className={cn(LABEL_CLASS, "text-center py-1")}
-              >
-                {label}
-              </div>
-            ))}
-          </div>
+      {/* Month frame — training-calendar pattern (calendar-grid.tsx): sticky
+          Mon–Sun header + stacked week rows on the shared 42px-rail grid
+          template, directly on the page background (no card). The PAGE scrolls
+          (no inner max-height) — the header sticks against the page background
+          while the rows flow underneath it. */}
+      <div>
+        <div className={`${CAL_GRID_COLS} sticky top-0 z-20 bg-[#f4f7f6] pb-1`}>
+          <div />
+          {DAY_LABELS.map((label) => (
+            <div key={label} className={cn(LABEL_CLASS, "py-1 text-center")}>
+              {label}
+            </div>
+          ))}
         </div>
 
-        {/* Week rows */}
-        <div className="flex flex-col gap-1 max-h-[600px] overflow-y-auto">
-          {weeks.map((days) => {
-            const containsToday = days.includes(todayDate);
-            return (
-              <div key={days[0]} ref={containsToday ? todayRowRef : undefined}>
-                <NutritionCalendarWeekRow
-                  days={days}
-                  eventsByDate={eventsByDate}
-                  todayDate={todayDate}
-                  clientToday={clientToday}
-                  viewMonth={viewMonth.month}
-                  viewYear={viewMonth.year}
-                  phaseByDate={phaseByDate}
-                  includeActivityBurn={includeActivityBurn}
-                  surplusAsCarbs={surplusAsCarbs}
-                  editMode={edit.editMode}
-                  selected={edit.selected}
-                  onToggle={edit.toggleDay}
-                />
-              </div>
-            );
-          })}
+        <div className="space-y-2">
+          {weeks.map((days) => (
+            <div key={days[0]}>
+              <NutritionCalendarWeekRow
+                days={days}
+                eventsByDate={eventsByDate}
+                todayDate={todayDate}
+                clientToday={clientToday}
+                viewMonth={viewMonth.month}
+                viewYear={viewMonth.year}
+                phaseByDate={phaseByDate}
+                includeActivityBurn={includeActivityBurn}
+                surplusAsCarbs={surplusAsCarbs}
+                editMode={edit.editMode}
+                selected={edit.selected}
+                onToggle={edit.toggleDay}
+                onWeekAction={handleWeekAction}
+                isSaving={edit.isSaving}
+              />
+            </div>
+          ))}
         </div>
       </div>
 
-      <NutritionRangeEditDialog
-        open={edit.dialogOpen}
-        onOpenChange={edit.setDialogOpen}
-        dayCount={edit.selected.size}
-        dietType={edit.dietType}
-        defaultCalories={edit.defaultCalories}
-        defaultProtein={edit.defaultProtein}
-        defaultCarbs={edit.defaultCarbs}
-        defaultFat={edit.defaultFat}
-        defaultNote={edit.defaultNote}
+      <NutritionSelectionBar
+        visible={edit.editMode && edit.selected.size > 0}
+        count={edit.selected.size}
+        averageCalories={edit.averageCalories}
+        hasModified={edit.modifiedSelected.length > 0}
+        weekAvailable={edit.groups.week !== null && edit.groups.week.length > 0}
+        trainEmpty={edit.groups.train.length === 0}
+        restEmpty={edit.groups.rest.length === 0}
         isSaving={edit.isSaving}
-        onApply={edit.applyEdit}
+        onSelectWeek={() => edit.groups.week && edit.replaceSelection(edit.groups.week)}
+        onSelectTrain={() => edit.replaceSelection(edit.groups.train)}
+        onSelectRest={() => edit.replaceSelection(edit.groups.rest)}
+        onRevert={() => void edit.revertModified()}
+        onClear={edit.clearSelection}
+        onEditTargets={() => edit.setSheetOpen(true)}
+      />
+
+      <NutritionEditTargetsSheet
+        open={edit.sheetOpen}
+        onOpenChange={edit.setSheetOpen}
+        days={edit.resolvedSelected}
+        isSaving={edit.isSaving}
+        onApply={(payload) => void edit.applyEdit(payload)}
       />
     </div>
   );

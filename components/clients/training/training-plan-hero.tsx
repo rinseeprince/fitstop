@@ -35,7 +35,7 @@ export function TrainingPlanHero({
           </div>
           <div>
             <p className="text-[13px] font-semibold text-white">
-              No training plan yet
+              No active training plan
             </p>
             <p className="mt-0.5 text-[11.5px] text-[rgba(255,255,255,0.5)]">
               Apply a program from your library to this client&apos;s calendar.

@@ -4,10 +4,15 @@ import {
   isDateEligible,
   eligibleDatesIn,
   thisMonthDates,
+  monthDatesWhere,
   weekContaining,
 } from "../nutrition-calendar-selection";
 
-function ev(date: string, status: NutritionEvent["status"] = "scheduled"): NutritionEvent {
+function ev(
+  date: string,
+  status: NutritionEvent["status"] = "scheduled",
+  isTrainingDay = false
+): NutritionEvent {
   return {
     id: `ne-${date}`,
     clientId: "c1",
@@ -20,7 +25,7 @@ function ev(date: string, status: NutritionEvent["status"] = "scheduled"): Nutri
     carbG: 200,
     fatG: 60,
     dietType: "balanced",
-    isTrainingDay: false,
+    isTrainingDay,
     calorieSurplusPercentage: null,
     isModified: false,
     status,
@@ -84,6 +89,28 @@ describe("nutrition-calendar-selection", () => {
         "2026-06-29",
         "2026-06-30",
       ]);
+    });
+  });
+
+  describe("monthDatesWhere", () => {
+    const weeks = [["2026-05-31", "2026-06-01", "2026-06-02", "2026-06-03"]];
+    const map = mapOf([
+      ev("2026-05-31", "scheduled", true), // outside month -> excluded even as train day
+      ev("2026-06-01", "scheduled", true),
+      ev("2026-06-02", "scheduled", false),
+      ev("2026-06-03", "logged", true), // ineligible status -> excluded
+    ]);
+
+    it("filters eligible in-month days by the predicate (train days)", () => {
+      expect(
+        monthDatesWhere(weeks, 5, 2026, map, "2026-06-01", (e) => e.isTrainingDay)
+      ).toEqual(["2026-06-01"]);
+    });
+
+    it("filters eligible in-month days by the predicate (rest days)", () => {
+      expect(
+        monthDatesWhere(weeks, 5, 2026, map, "2026-06-01", (e) => !e.isTrainingDay)
+      ).toEqual(["2026-06-02"]);
     });
   });
 

@@ -3,7 +3,6 @@
 import { memo } from "react";
 import { useNutritionBuilderContext } from "@/contexts/nutrition-builder-context";
 import { NutritionWarnings } from "../nutrition-warnings";
-import { Button } from "@/components/ui/button";
 import { Apple, Loader2, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -30,25 +29,30 @@ export const NutritionBuilderRightPanel = memo(function NutritionBuilderRightPan
     );
   }
 
-  // Empty state - no nutrition plan
+  // Empty state — the training tab's no-plan hero language (training-plan-hero.tsx),
+  // rendered above the always-mounted empty calendar.
   if (!builder.hasPlan) {
     return (
-      <div className="flex flex-col items-center justify-center h-full py-16 px-8 text-center bg-white rounded-[6px]">
-        <div className="w-16 h-16 rounded-full bg-[#e6f5f3] flex items-center justify-center mb-4">
-          <Apple className="h-8 w-8 text-[#0d9488]" />
+      <div className="flex items-center justify-between gap-4 rounded-[6px] bg-[#0f2027] p-5">
+        <div className="flex items-center gap-3">
+          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[rgba(13,148,136,0.15)]">
+            <Apple className="h-5 w-5 text-[#0d9488]" strokeWidth={1.5} />
+          </div>
+          <div>
+            <p className="text-[13px] font-semibold text-white">No active nutrition plan</p>
+            <p className="mt-0.5 text-[11.5px] text-[rgba(255,255,255,0.5)]">
+              Generate a plan from this client&apos;s goals, activity level and training schedule.
+            </p>
+          </div>
         </div>
-        <h3 className="text-lg font-semibold text-[#0c1a1e] mb-2">No nutrition plan yet</h3>
-        <p className="text-sm text-[#93b0b4] max-w-sm mb-6">
-          Generate a customized nutrition plan based on your client&apos;s goals, activity level, and training schedule.
-        </p>
         {onOpenSettings && (
-          <Button
+          <button
             onClick={onOpenSettings}
-            className="bg-[#0f2027] hover:bg-[#0f2027]/90 rounded-[6px]"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-[6px] bg-[#0d9488] px-3 py-1.5 text-[12.5px] font-medium text-white transition-colors hover:bg-[#0b7f75]"
           >
-            <Sparkles className="h-4 w-4 mr-2" />
-            Generate Plan
-          </Button>
+            <Sparkles className="h-3.5 w-3.5" strokeWidth={1.5} />
+            Generate plan
+          </button>
         )}
       </div>
     );

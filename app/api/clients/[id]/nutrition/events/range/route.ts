@@ -75,7 +75,13 @@ export async function PATCH(
         note: data.note,
       };
     } else {
-      edit = { mode: "delta", percent: data.percent, calorieDelta: data.calorieDelta, note: data.note };
+      edit = {
+        mode: "delta",
+        percent: data.percent,
+        calorieDelta: data.calorieDelta,
+        holdProtein: data.holdProtein,
+        note: data.note,
+      };
     }
 
     const { updated } = await materializeNutritionEventDays(
