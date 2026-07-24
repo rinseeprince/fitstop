@@ -3,10 +3,7 @@
 import type { ReactNode } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
-import {
-  LABEL_CLASS,
-  MONO_LABEL_CLASS,
-} from "@/components/clients/training/program-builder/builder-tokens";
+import { MONO_LABEL_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
 
 type HabitsWeekNavProps = {
   weekOffset: number;
@@ -46,17 +43,16 @@ export function HabitsWeekNav({
         >
           <ChevronLeft className="h-3.5 w-3.5" strokeWidth={1.5} />
         </button>
-        {/* Split branches per the dynamic-slot rule: word label sans, date
-            range mono. min-w must exceed the WIDEST state ("PREVIOUS WEEK" +
-            range ≈ 221px, CDP-measured) so the next chevron and hairline
-            don't shift on week toggle (the calendar's min-w-[80px] idiom). */}
-        <span className="flex min-w-[224px] items-center justify-center gap-2">
-          <span className={cn(LABEL_CLASS, "whitespace-nowrap text-[11px]")}>
-            {isCurrentWeek ? "This Week" : "Previous Week"}
-          </span>
-          <span className={cn(MONO_LABEL_CLASS, "whitespace-nowrap text-[11px]")}>
-            {formatShortDate(weekStart)} – {formatShortDate(weekEnd)}
-          </span>
+        {/* min-w must exceed the range's widest state (~113px with both days
+            double-digit, CDP-derived) so the next chevron and hairline don't
+            shift as weeks page (the calendar's min-w-[80px] idiom). */}
+        <span
+          className={cn(
+            MONO_LABEL_CLASS,
+            "min-w-[116px] whitespace-nowrap text-center text-[11px]"
+          )}
+        >
+          {formatShortDate(weekStart)} – {formatShortDate(weekEnd)}
         </span>
         <button
           onClick={onNext}

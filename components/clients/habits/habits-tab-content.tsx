@@ -3,8 +3,6 @@
 import { useState, useMemo } from "react";
 import { Loader2, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
-import { SECTION_LABEL_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
 import { HabitsManageDrawer } from "./habits-manage-drawer";
 import { HabitsWeekNav } from "./habits-week-nav";
 import { HabitsSummaryStrip } from "./habits-summary-strip";
@@ -110,17 +108,15 @@ export const HabitsTabContent = ({ client }: HabitsTabContentProps) => {
         weekStart={weekStart}
         weekEnd={weekEnd}
         actions={
-          // Quiet divider text action (roadmap "Add phase" recipe) — an h-7
-          // pill would grow the row past 24.5px and sink the hairline.
+          // Quiet divider text action sized to the DividerPager meta (11px,
+          // muted) — sans, not mono, per the words-are-sans typography rule.
+          // A taller control would grow the row past 24.5px and sink the
+          // hairline.
           <button
             type="button"
             onClick={() => setDrawerOpen(true)}
             disabled={!!habitsError}
-            className={cn(
-              SECTION_LABEL_CLASS,
-              // Sentence case: only divider titles read all-caps
-              "normal-case tracking-normal inline-flex items-center gap-1.5 whitespace-nowrap transition-colors hover:text-[#0d9488] disabled:pointer-events-none disabled:opacity-50"
-            )}
+            className="inline-flex items-center gap-1.5 whitespace-nowrap text-[11px] font-medium text-[#93b0b4] transition-colors hover:text-[#0d9488] disabled:pointer-events-none disabled:opacity-50"
           >
             <Settings2 className="h-3 w-3" strokeWidth={1.5} />
             Manage habits
