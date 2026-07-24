@@ -4,23 +4,41 @@ import {
   createContext,
   useContext,
   useEffect,
-  useState,
   useRef,
+  useState,
   type ReactNode,
 } from "react"
+import useSWR, { useSWRConfig } from "swr"
 import { supabase } from "@/services/supabase-client"
-import type { User, Session } from "@supabase/supabase-js"
+import type { User } from "@supabase/supabase-js"
 import type { Coach } from "@/types/check-in"
-import type { Profile, ProfileRow, UserRole } from "@/types/auth"
-import type { CoachRow } from "@/lib/database-helpers"
-import { mapCoachRow } from "@/lib/mappers"
+import type { Profile, UserRole } from "@/types/auth"
+import { swrFetcher } from "@/lib/swr-fetcher"
+
+// Session lifecycle lives here (supabase.auth only — auth API calls never
+// touch PostgREST). Profile/coach come from GET /api/auth/me via SWR; the
+// browser never reads the profiles/coaches tables directly (CONVENTIONS §8).
+// The onAuthStateChange callback MUST stay synchronous: supabase-js holds an
+// origin-wide Navigator lock while it runs, and any awaited supabase query
+// inside it deadlocks against that lock. Middleware remains the server-side
+// backstop for session validity on every navigation.
+
+const ME_URL = "/api/auth/me"
+
+type MeResponse = {
+  success: boolean
+  data: { profile: Profile | null; coach: Coach | null }
+}
+
+const meKey = (userId: string) => [ME_URL, userId] as const
+const isMeKey = (key: unknown): boolean =>
+  Array.isArray(key) && key[0] === ME_URL
 
 interface AuthContextType {
   user: User | null
   coach: Coach | null
   profile: Profile | null
   role: UserRole | null
-  session: Session | null
   loading: boolean
   isTrainer: boolean
   isClient: boolean
@@ -36,313 +54,87 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
-  const [coach, setCoach] = useState<Coach | null>(null)
-  const [profile, setProfile] = useState<Profile | null>(null)
-  const [session, setSession] = useState<Session | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [sessionResolved, setSessionResolved] = useState(false)
+  // login() fetches /me itself and primes the SWR cache before setting user;
+  // suppressing the SIGNED_IN echo during that window keeps it to one fetch.
+  const loginInFlightRef = useRef(false)
+  const { mutate: globalMutate } = useSWRConfig()
 
-  // Track if initialization is in progress to prevent race conditions
-  const initializingRef = useRef(false)
-  const initialLoadCompleteRef = useRef(false)
+  const { data: me, error: meError } = useSWR<MeResponse>(
+    user ? meKey(user.id) : null,
+    (key: readonly [string, string]) => swrFetcher(key[0]) as Promise<MeResponse>,
+    {
+      revalidateOnFocus: false,
+      errorRetryCount: 3,
+      errorRetryInterval: 1000,
+      // A login-primed cache must not refetch on key mount; empty-cache
+      // mounts still fetch (that's revalidateOnMount's default).
+      revalidateIfStale: false,
+    }
+  )
 
+  const profile = me?.data.profile ?? null
+  const coach = me?.data.coach ?? null
   const role = profile?.role ?? null
   const isTrainer = role === "trainer"
   const isClient = role === "client"
+  // False as soon as the first /me attempt settles; background retries must
+  // not strobe consumer gates, so this deliberately isn't SWR's isLoading.
+  const loading =
+    !sessionResolved || (user !== null && me === undefined && meError === undefined)
 
-  /** Fetch user profile from database */
-  const fetchProfile = async (userId: string): Promise<Profile | null> => {
-    try {
-      // Add timeout to prevent hanging
-      const fetchPromise = supabase
-        .from("profiles")
-        .select("*")
-        .eq("user_id", userId)
-        .single()
-
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('fetchProfile timeout')), 5000)
-      )
-
-      const { data, error } = await Promise.race([fetchPromise, timeoutPromise]) as Awaited<typeof fetchPromise>
-
-      if (error) {
-        // PGRST116 = no rows returned
-        if (error.code === "PGRST116") {
-          return null
-        }
-        console.error("Error fetching profile:", error)
-        return null
-      }
-
-      const row = data as ProfileRow
-      const profile = {
-        id: row.id,
-        userId: row.user_id,
-        role: row.role,
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
-      }
-      return profile
-    } catch (error) {
-      console.error('[Auth] fetchProfile failed:', error)
-      return null
-    }
-  }
-
-  /** Create profile for user (fallback if trigger didn't create it) */
-  const createProfile = async (
-    userId: string,
-    userRole: UserRole
-  ): Promise<Profile> => {
-    const { data, error } = await supabase
-      .from("profiles")
-      .insert({ user_id: userId, role: userRole })
-      .select()
-      .single()
-
-    if (error) {
-      console.error("Error creating profile:", error)
-      throw error
-    }
-
-    const row = data as ProfileRow
-    return {
-      id: row.id,
-      userId: row.user_id,
-      role: row.role,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-    }
-  }
-
-  /** Fetch or create coach profile for trainers */
-  const fetchOrCreateCoachProfile = async (authUser: User) => {
-    const { data: coachData, error: fetchError } = await supabase
-      .from("coaches")
-      .select("*")
-      .eq("user_id", authUser.id)
-      .single()
-
-    if (coachData) {
-      setCoach(mapCoachRow(coachData as CoachRow))
-      return
-    }
-
-    // PGRST116 = no rows returned - need to create coach
-    if (fetchError?.code === "PGRST116") {
-      const coachName =
-        authUser.user_metadata?.name ||
-        authUser.user_metadata?.full_name ||
-        "Coach"
-
-      const { data: newCoachData, error: createError } = await supabase
-        .from("coaches")
-        .insert({
-          user_id: authUser.id,
-          name: coachName,
-          email: authUser.email ?? "",
-          avatar_url: authUser.user_metadata?.avatar_url || null,
-        })
-        .select()
-        .single()
-
-      if (createError) {
-        console.error("Error creating coach profile:", createError)
-        throw createError
-      }
-
-      if (newCoachData) {
-        setCoach(mapCoachRow(newCoachData as CoachRow))
-      }
-    } else if (fetchError) {
-      console.error("Error fetching coach profile:", fetchError)
-      throw fetchError
-    }
-  }
-
-  /** Initialize user data based on role */
-  const initializeUserData = async (authUser: User) => {
-    // Prevent concurrent initialization
-    if (initializingRef.current) {
-      return
-    }
-    initializingRef.current = true
-
-    try {
-      // Fetch profile - trigger should have created it
-      let userProfile: Profile | null = await fetchProfile(authUser.id)
-
-      if (!userProfile) {
-        // Fallback: try to create if not found
-        try {
-          const defaultRole: UserRole = "trainer"
-          userProfile = await createProfile(authUser.id, defaultRole)
-        } catch (createError) {
-          console.error("Could not fetch or create profile:", createError)
-          // Sign out to allow clean re-login instead of leaving app in broken state
-          await supabase.auth.signOut()
-          return
-        }
-      }
-
-      setProfile(userProfile)
-
-      // Only fetch/create coach profile for trainers
-      if (userProfile.role === "trainer") {
-        await fetchOrCreateCoachProfile(authUser)
-      } else {
-        setCoach(null)
-      }
-    } catch (error) {
-      console.error('[Auth] Error in initializeUserData:', error)
-    } finally {
-      initializingRef.current = false
-    }
-  }
-
-  // Initialize auth state on mount
   useEffect(() => {
-    const initSession = async () => {
-      try {
-        // Add timeout to getSession to prevent hanging
-        const getSessionPromise = supabase.auth.getSession()
-        const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('getSession timeout')), 5000)
-        )
-
-        const { data: { session } } = await Promise.race([getSessionPromise, timeoutPromise]) as Awaited<typeof getSessionPromise>
-        setSession(session)
-        setUser(session?.user ?? null)
-
-        if (session?.user) {
-          try {
-            await initializeUserData(session.user)
-          } catch (initError) {
-            console.error('[Auth] Error initializing user data:', initError)
-            // Continue anyway to set loading to false
-          }
-        }
-      } catch (error) {
-        console.error("Error initializing session:", error)
-      } finally {
-        setLoading(false)
-        initialLoadCompleteRef.current = true
-      }
-    }
-
-    initSession()
-
+    // Subscribe before getSession so no auth event slips between the two.
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
-      // Don't process auth changes while still initializing or before initial load is complete
-      if (initializingRef.current || !initialLoadCompleteRef.current) {
-        return
-      }
-
-      setSession(session)
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (loginInFlightRef.current && event === "SIGNED_IN") return
       setUser(session?.user ?? null)
-
-      if (session?.user) {
-        try {
-          await initializeUserData(session.user)
-        } catch (error) {
-          console.error("Error initializing user data on auth change:", error)
-        }
-      } else {
-        setCoach(null)
-        setProfile(null)
-      }
+      setSessionResolved(true)
     })
 
-    // Handle tab visibility changes to refresh session
-    const handleVisibilityChange = async () => {
-      if (!document.hidden) {
-        // Tab became visible, refresh session to detect changes from other tabs
-        try {
-          const { data: { session: freshSession } } = await supabase.auth.getSession()
-          // Only trigger update if session state actually changed
-          const freshSessionExists = !!freshSession
-          const currentSessionExists = !!session
+    void supabase.auth
+      .getSession()
+      .then(({ data }) => setUser(data.session?.user ?? null))
+      .catch((error) => console.error("[Auth] getSession failed:", error))
+      .finally(() => setSessionResolved(true))
 
-          if (freshSessionExists !== currentSessionExists ||
-              (freshSession?.access_token !== session?.access_token)) {
-            setSession(freshSession)
-            setUser(freshSession?.user ?? null)
-
-            if (freshSession?.user) {
-              await initializeUserData(freshSession.user)
-            } else {
-              setCoach(null)
-              setProfile(null)
-            }
-          }
-        } catch (error) {
-          console.error("Error refreshing session on tab focus:", error)
-        }
-      }
-    }
-
-    // Handle storage events for cross-tab session synchronization
-    const handleStorageChange = async (e: StorageEvent) => {
-      // Listen for Supabase auth events in localStorage (fallback sync mechanism)
-      if (e.key?.includes('supabase') && e.key.includes('auth')) {
-        try {
-          const { data: { session } } = await supabase.auth.getSession()
-          setSession(session)
-          setUser(session?.user ?? null)
-
-          if (session?.user) {
-            await initializeUserData(session.user)
-          } else {
-            setCoach(null)
-            setProfile(null)
-          }
-        } catch (error) {
-          console.error("Error handling storage change:", error)
-        }
-      }
-    }
-
-    const onVisibilityChange = () => void handleVisibilityChange()
-    const onStorageChange = (e: StorageEvent) => void handleStorageChange(e)
-
-    document.addEventListener('visibilitychange', onVisibilityChange)
-    window.addEventListener('storage', onStorageChange)
-
-    return () => {
-      subscription.unsubscribe()
-      document.removeEventListener('visibilitychange', onVisibilityChange)
-      window.removeEventListener('storage', onStorageChange)
-    }
+    return () => subscription.unsubscribe()
   }, [])
 
-  /** Login with email and password - returns user role for redirect */
+  /** Login with email and password — returns the role for redirect */
   const login = async (
     email: string,
     password: string
   ): Promise<UserRole | null> => {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    })
+    loginInFlightRef.current = true
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      })
 
-    if (error) throw error
+      if (error) throw error
+      if (!data.user) return null
 
-    if (data.user) {
+      let userRole: UserRole | null = null
       try {
-        await initializeUserData(data.user)
-        // Return the role for redirect logic
-        const userProfile = await fetchProfile(data.user.id)
-        return userProfile?.role ?? null
-      } catch (initError) {
-        console.error("Error initializing user data after login:", initError)
-        // Still return the role from profile state if it was set
-        return profile?.role ?? null
+        const meResponse = (await swrFetcher(ME_URL)) as MeResponse
+        await globalMutate(meKey(data.user.id), meResponse, { revalidate: false })
+        userRole = meResponse.data.profile?.role ?? null
+      } catch (meFailure) {
+        // Auth succeeded — never sign out or fail the login over a profile
+        // read. Null role sends the user to /dashboard; middleware corrects
+        // clients to /client, and the mounted SWR key retries.
+        console.error("[Auth] /api/auth/me failed after login:", meFailure)
       }
-    }
 
-    return null
+      setUser(data.user)
+      setSessionResolved(true)
+      return userRole
+    } finally {
+      loginInFlightRef.current = false
+    }
   }
 
   // Login with Google OAuth
@@ -365,46 +157,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       options: {
         data: {
           name,
-          role: "trainer", // Explicitly set role for new signups
+          // Display metadata only — the signup trigger (migration 107)
+          // derives the real role from server state and ignores this key.
+          role: "trainer",
         },
       },
     })
 
     if (error) {
-      // Provide clearer error messages
       if (error.status === 422 || error.message?.includes("already registered")) {
         throw new Error("This email is already registered. Please log in instead.")
       }
       throw error
     }
 
-    // Check if user already exists (Supabase returns user but no session for existing emails)
-    // For existing users, identities array will be empty
+    // Supabase returns a user with an empty identities array for emails that
+    // already have an account.
     if (data.user && data.user.identities && data.user.identities.length === 0) {
       throw new Error("This email is already registered. Please log in instead.")
     }
 
-    // Database trigger handles profile/coach creation automatically
-    // The onAuthStateChange listener will call initializeUserData when session is ready
+    // The database trigger creates the profile/coach rows; /api/auth/me
+    // fetches them once the session lands.
   }
 
   // Logout
   const logout = async () => {
     try {
-      // Use 'others' scope to sign out from all sessions except the current one
-      // This ensures a complete logout while avoiding potential race conditions
-      const { error } = await supabase.auth.signOut({ scope: 'global' })
+      const { error } = await supabase.auth.signOut({ scope: "global" })
       if (error) {
         console.error("Logout error:", error)
         throw error
       }
     } finally {
-      // Always clear local state regardless of API success
-      // This ensures UI consistency even if signOut partially fails
-      setCoach(null)
-      setProfile(null)
+      // Clear local state even if signOut partially fails, and purge the /me
+      // cache so the previous user's profile never lingers in memory.
       setUser(null)
-      setSession(null)
+      await globalMutate(isMeKey, undefined, { revalidate: false })
     }
   }
 
@@ -433,7 +222,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         coach,
         profile,
         role,
-        session,
         loading,
         isTrainer,
         isClient,

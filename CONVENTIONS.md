@@ -244,6 +244,8 @@
 
   The consequence: the route layer **is** the security perimeter. Gaps in route-level auth are not caught by a second line of defense. Treat the route's auth chain and the service function's scoping parameter as non-optional.
 
+  Auth bootstrap follows the same shape: the browser fetches its identity via `GET /api/auth/me` (`services/auth-profile-service.ts`); the browser anon-key client is `supabase.auth`-only and never reads `profiles`/`coaches`.
+
   #### Route-level auth chain (mandatory, in this order)
 
   Every authenticated API handler must execute these steps before any business logic. Order matters (§9 and §10 restate this; it is the same chain).
@@ -430,7 +432,7 @@
   ```
 
   #### When to Use Each Type:
-  - **authRateLimit**: `/api/auth/*`, `/api/invitations/*`, login, signup, password reset
+  - **authRateLimit**: `/api/auth/*` (except `/api/auth/me` — a per-app-load bootstrap GET for both roles, on `apiRateLimit` per the `/auth/callback` precedent), `/api/invitations/*`, login, signup, password reset
   - **coachApiRateLimit**: `/api/clients/*` (coach viewing/managing client data)
   - **clientApiRateLimit**: `/api/client/*` (client portal endpoints)
   - **checkInRateLimit**: Public check-in submission endpoints

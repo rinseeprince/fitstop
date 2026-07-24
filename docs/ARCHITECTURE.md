@@ -606,8 +606,9 @@ The eight wellness/tracking/activity triggers are pattern detectors over existin
 ### Dual role system
 
 - `profiles` table: `user_id`, `role` (`trainer` | `client`)
-- `coaches` table: auto-created on first login for trainers
+- `coaches` table: created by the `handle_new_user` signup trigger (migration 107) at `auth.users` INSERT for trainers; `GET /api/auth/me` re-creates it idempotently if missing
 - `clients` table: `user_id`, `coach_id` for ownership
+- Role is derived from **server state** (a `client_invitations` row matching the signup email case-insensitively ⇒ `client`, else `trainer`) — never from client-supplied user metadata (migration 107 anti-privilege-escalation)
 
 ### Middleware routing (`middleware.ts`)
 
@@ -620,6 +621,10 @@ The eight wellness/tracking/activity triggers are pattern detectors over existin
 
 - `getAuthenticatedCoachId()`: validates JWT via `supabase.auth.getUser()`, queries `coaches` table, returns coach ID or null
 - `getAuthenticatedClientId()`: same pattern against `clients` table
+
+### Session bootstrap (`GET /api/auth/me`)
+
+The browser `AuthProvider` (`contexts/auth-context.tsx`) is session-lifecycle-only: `supabase.auth` for login/signup/OAuth/logout/reset, with a **synchronous** `onAuthStateChange` callback (supabase-js holds an origin-wide Navigator lock while the callback runs; an awaited supabase query inside it deadlocks — the historical `fetchProfile timeout`). Profile and coach come from `GET /api/auth/me` via SWR, keyed on the user id. The route chain is `apiRateLimit → getUser() → getOrCreateProfileAndCoach()` (`services/auth-profile-service.ts`, `supabaseAdmin`), returning `{ profile, coach }` (`coach: null` for clients) with `Cache-Control: no-store`. The service mirrors the trigger's invitation-derived role and uses `ON CONFLICT (user_id) DO NOTHING` semantics, so it is race-safe against the trigger and against concurrent requests; on success `role === "trainer" ⟺ coach` is present. The browser anon-key client never reads `profiles`/`coaches`. Note: middleware fail-closes profile-less sessions (`/login?error=profile_unavailable`) before any route runs, so the route's profile-create branch is defense-in-depth; the coach-row self-heal is reachable and verified.
 
 ### Database clients (Shape B — see CONVENTIONS.md §8 for the authoritative rule)
 

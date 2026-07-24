@@ -156,11 +156,11 @@ Reviewed: 2026-03-12
 
 | # | File | Lines | Limit | Over By | Status |
 |---|------|-------|-------|---------|--------|
-| 1 | `contexts/auth-context.tsx` | 512 | 300 | 212 (71%) | Open |
+| 1 | `contexts/auth-context.tsx` | 512 | 300 | 212 (71%) | Resolved 2026-07-24 — now 247 lines |
 
 **Suggested splits:**
 
-1. **`contexts/auth-context.tsx`** - Extract profile fetching/creation (`fetchProfile`, `createProfile`, `fetchOrCreateCoachProfile`) into `services/auth-profile-service.ts`. Extract session sync logic (visibility change handler, storage change handler) into a `hooks/use-session-sync.ts` hook.
+1. **`contexts/auth-context.tsx`** - Resolved 2026-07-24, via a different shape than suggested: profile/coach fetching moved **server-side** (`services/auth-profile-service.ts` + `GET /api/auth/me`, consumed via SWR) rather than a browser-side extraction, which also removed the supabase-js Navigator-lock deadlock (`fetchProfile timeout`) at the root. The visibility/storage handlers were **deleted, not extracted** — the storage handler was dead code (sessions live in cookies; `document.cookie` writes never fire `storage` events) and GoTrueClient's own visibilitychange listener + BroadcastChannel cover cross-tab sync — so no `hooks/use-session-sync.ts` exists.
 
 ---
 
@@ -169,13 +169,13 @@ Reviewed: 2026-03-12
 | # | Issue | File(s) | Details | Status |
 |---|-------|---------|---------|--------|
 | 1 | Duplicate Supabase server client factories | `lib/auth-helpers.ts:5-28`, `lib/supabase-server.ts:8-29` | `createSupabaseServerClient()` and `createServerSupabaseClient()` are nearly identical functions with confusingly similar names. Consolidate into one. Violates §2 "No duplicate logic". | Open |
-| 2 | `CoachRow` type defined locally | `contexts/auth-context.tsx:37-45` | Should be imported from shared types. Comment says "profiles table not in generated types yet" - indicates database types are stale. Violates §5, §6. | Open |
-| 3 | Pervasive type assertions | `contexts/auth-context.tsx:92,114-116,125,149,174` | Multiple `as unknown as` and `as Record<string, unknown>` casts because `profiles` and `coaches` tables aren't in the generated `Database` type. Fix by regenerating Supabase types. Violates §5. | Open |
+| 2 | `CoachRow` type defined locally | `contexts/auth-context.tsx:37-45` | Resolved 2026-07-24, with a correction: the claim was doubly stale — auth-context had long since switched to importing `CoachRow` from `lib/database-helpers`, and `coaches` IS in the generated types. The auth bootstrap refactor removed the context's table reads entirely. | Resolved |
+| 3 | Pervasive type assertions | `contexts/auth-context.tsx:92,114-116,125,149,174` | Resolved 2026-07-24, with a correction: `profiles` and `coaches` ARE in the generated `Database` type (no regeneration needed — the "missing tables" claim was stale). The cast sites died with the deleted browser-side table reads. One narrow cast survives in `services/auth-profile-service.ts` (`role: string` → `UserRole`, backed by the DB CHECK constraint). | Resolved |
 | 4 | `ClientRow` type defined locally | `app/api/invitations/send/route.ts:9-15` | Same issue as #2 - inline type instead of shared from `/types`. | Open |
 | 5 | Deprecated `acceptInvitation` still called | `app/auth/callback/route.ts`, `services/invitation-service.ts:364` | The unauthenticated `/auth/callback` caller (an account-takeover vector — it linked a URL-supplied `clientId` to the session with no checks) was **removed** in the 2026-06-10 security pass. `acceptInvitation` now has only ONE caller: the legacy `clientId` branch of `POST /api/invitations/accept`, which verifies `invitedUser.email === invitation.email` first. Remaining work is purely cosmetic (delete the deprecated fn + legacy branch). | Partially resolved (takeover path removed) |
 | 6 | Legacy clientId-based acceptance still maintained | `app/api/invitations/accept/route.ts:42-81` | The deprecated code path adds ~40 lines of complexity. If `acceptInvitation` (#5) is migrated, this entire branch can be removed. | Open |
 | 7 | `invitation-service.ts` imports browser client | `services/invitation-service.ts:1` | `getInvitationForClient()` uses the browser Supabase client. If called server-side, this will fail or bypass proper auth. Should use admin or server client. Violates §1. | Open |
-| 8 | Login fetches profile twice | `contexts/auth-context.tsx:384-388` | `login()` calls `initializeUserData()` (which fetches profile) then immediately calls `fetchProfile()` again to return the role. Violates §2 "don't fetch the same endpoint twice". | Open |
+| 8 | Login fetches profile twice | `contexts/auth-context.tsx:384-388` | Resolved 2026-07-24 by the auth bootstrap refactor: `login()` now makes exactly one `GET /api/auth/me` call, primes the SWR cache from it, and returns the role from the same response. | Resolved |
 | 9 | `error: any` in auth pages | `app/forgot-password/page.tsx:31`, `app/reset-password/page.tsx:55` | Both use `catch (error: any)` while login and signup correctly use `catch (error: unknown)` with `instanceof Error` checks. Violates §5. | Open |
 | 10 | Forgot-password and reset-password skip Zod validation | `app/forgot-password/page.tsx`, `app/reset-password/page.tsx` | Both use raw `useState` with manual validation, while login/signup use `react-hook-form` + `zodResolver`. Violates §11, §3. | Open |
 | 11 | Manual cookie parsing in browser client | `services/supabase-client.ts:21-63` | `createBrowserClient` handles cookies automatically by default. The manual `document.cookie` parsing is unnecessary and a potential source of bugs. Violates §1. | Open |
@@ -188,8 +188,8 @@ Reviewed: 2026-03-12
 
 | # | Issue | File(s) | Details | Status |
 |---|-------|---------|---------|--------|
-| 1 | ~25 console.log debug statements | `contexts/auth-context.tsx` | Left over from debugging. Should be removed. Violates §12 commit-ready checklist. | Open |
-| 2 | Stale closure in visibility change handler | `contexts/auth-context.tsx:319-322` | `handleVisibilityChange` captures `session` from the initial render closure. On subsequent tab focuses, it compares against the stale initial session, not the current state. Should use a ref. | Open |
+| 1 | ~25 console.log debug statements | `contexts/auth-context.tsx` | Resolved 2026-07-24 (was already stale — the file carried `console.error` only). The rewrite keeps error/warn logging only. | Resolved |
+| 2 | Stale closure in visibility change handler | `contexts/auth-context.tsx:319-322` | Resolved 2026-07-24 by deletion: the hand-rolled visibility handler (and the dead `storage` handler) were removed in the auth bootstrap refactor — supabase-js's own visibilitychange handling + BroadcastChannel cover cross-tab sync. | Resolved |
 
 ---
 
@@ -320,6 +320,10 @@ Reviewed: 2026-03-12
 - **`CREATE INDEX CONCURRENTLY` is unreachable from a migration file** — see the runbook in `docs/ARCHITECTURE.md`. Zero of 116 index builds use it. Harmless so far because each index was created in the same migration as its (empty) table, but any index retro-fitted onto `set_logs` / `training_exercises` / `exercise_logs` once they pass ~1M rows is a full write outage of that table for the duration of the build.
 - **RPC surface not re-verified against the live catalog.** The audit's grant/overload conclusions (§3) are all reasoned from migration order; live `pg_proc.proacl` / `proconfig` were never read, and the two orphaned `upsert_daily_log_atomic` overloads (6-arg 057:7, 8-arg 059:18 — zero callers, both BYPASSRLS) are still presumed present. `npm run check:rls` does **not** cover functions.
 
+### Opened by the 2026-07-24 auth bootstrap refactor (deferred migration)
+
+- **Drop the two now-unconsumed INSERT policies on `profiles`/`coaches`.** The auth bootstrap refactor (browser → `GET /api/auth/me` → `services/auth-profile-service.ts` on `supabaseAdmin`) deleted the browser-side `createProfile`/`fetchOrCreateCoachProfile` fallbacks — the only consumers of `profiles` `"Authenticated users can create profile"` (021:25) and `coaches` `"Authenticated users can create their own coach profile"` (107:91). Dropping the profiles one closes a live role-minting surface: its `WITH CHECK (auth.uid() = user_id)` never constrained `role`, so any authenticated JWT can still mint a `trainer` profile via anon-key PostgREST today (verified against the live dump 2026-07-24). **Scope strictly to the two INSERT policies — the SELECT policies and the role-pinned UPDATE (107) MUST stay:** middleware reads `profiles.role` and `getAuthenticatedCoachId` reads `coaches` through *session-scoped* clients, so dropping SELECT bricks login for everyone. Per the drift incidents above, the migration must verify the live policy names against a fresh `npx supabase db dump --linked` first, and the drop must be re-verified against a fresh dump afterwards — not against `db push` exiting 0.
+
 ---
 
 ## Production Readiness
@@ -409,7 +413,7 @@ Reviewed: 2026-03-22
 | # | Issue | File(s) | Details | Status |
 |---|-------|---------|---------|--------|
 | 1 | `as never` casts on view/new table queries | `services/daily-logs-service.ts`, `services/attention-feed-service.ts`, `services/training-history-service.ts`, `services/weekly-nutrition-service.ts`, `app/api/client/session-completions/route.ts`, wellness/nutrition history routes and summary routes | 8 locations use `as never` casts bypassing type safety on `.from()`, `.update()`, or `.upsert()` calls for the `daily_logs_full` view and new child tables. These should be replaced with proper type definitions once the generated types stabilize. **RESOLVED 2026-05-21 (Session 3.1)** — the view + child tables are already in the generated types; removed every `as never` on `daily_logs_full`/`nutrition_logs`/`wellness_logs`/`training_logs` reads across these files plus `schedule-data-service.ts`. Unrelated `as never` casts (the stale `profiles`/`coaches`/`client_intake` types in #2, and the `create_*_atomic`/`transition_phase_atomic` RPCs) are out of scope and remain. | Resolved |
-| 2 | `types/database.ts` is stale — missing `profiles` and `coaches` | `types/database.ts` (3055 lines), `contexts/auth-context.tsx:92,114-116,125,149,174` | The generated `Database` type does not include the `profiles` or `coaches` tables, forcing `as unknown as` and `as Record<string, unknown>` casts across auth-context (6 sites) to do anything with those tables. Combined with #1 (`as never` casts for post-split child tables), the root cause is one stale generation. Fix: `npx supabase gen types typescript --linked > types/database.ts`, then grep for `as never` / `as unknown as` in services and auth-context and drop the casts that become unnecessary. Not a file-size problem — generator output is expected to be large — but the staleness leaks type-safety holes into ~13 files. Duplicates Auth P2 #3; consolidated here because root cause is shared with #1. | Open |
+| 2 | `types/database.ts` is stale — missing `profiles` and `coaches` | `types/database.ts` (3055 lines), `contexts/auth-context.tsx:92,114-116,125,149,174` | **Corrected 2026-07-24 (narrowly):** the profiles/coaches claim was stale — both tables ARE in the generated `Database` type (verified at HEAD), so no regeneration is needed for them, and the auth-context cast sites were deleted by the auth bootstrap refactor (Auth P2 #3 resolved). The rest of this entry (`as never` casts for post-split child tables per #1, other affected files) was **not** re-verified here and stays open as written. | Open (auth part resolved) |
 
 ### Check-in Training Completion Duplication
 
