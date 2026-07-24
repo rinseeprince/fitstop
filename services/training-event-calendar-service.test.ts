@@ -81,6 +81,12 @@ describe("training-event-calendar-service", () => {
     const planId = "plan-1";
     const sessionId = "session-1";
 
+    beforeEach(() => {
+      // Pin client-local today before the April fixtures so both the source
+      // and target weeks sit in the editable (today-forward) window.
+      mockGetClientTodayString.mockResolvedValue("2026-04-01");
+    });
+
     const sourceSession = {
       id: sessionId,
       plan_id: planId,
@@ -284,6 +290,139 @@ describe("training-event-calendar-service", () => {
 
       expect(result.eventsCreated).toBe(0);
     });
+
+    it("replaces the target week's scheduled events before inserting copies", async () => {
+      mockGetEventsForDateRange.mockResolvedValue([
+        createMockTrainingEvent({
+          clientId,
+          trainingPlanId: planId,
+          trainingSessionId: sessionId,
+          date: "2026-04-06",
+          status: "scheduled",
+        }),
+      ]);
+
+      const eventsCallIndex = { current: 0 };
+      const sessionCallIndex = { current: 0 };
+      const replaceSelect = createMockQuery({
+        data: [{ id: "old-1" }, { id: "old-2" }],
+        error: null,
+      });
+      const replaceDelete = createMockQuery({ data: null, error: null });
+
+      mockFrom.mockImplementation((table: string) => {
+        if (table === "training_plans") {
+          return createMockQuery({ data: { phase_id: null }, error: null }) as any;
+        }
+        if (table === "training_sessions") {
+          sessionCallIndex.current++;
+          return (sessionCallIndex.current === 1
+            ? createMockQuery({ data: sourceSession, error: null })
+            : createMockQuery({ data: { id: "cloned-session-1" }, error: null })) as any;
+        }
+        if (table === "training_exercises") {
+          return createMockQuery({ data: [], error: null }) as any;
+        }
+        if (table === "training_events") {
+          eventsCallIndex.current++;
+          if (eventsCallIndex.current === 1) return replaceSelect as any; // read target week
+          if (eventsCallIndex.current === 2) return replaceDelete as any; // delete replaced
+          return createMockQuery({ data: null, error: null }) as any; // insert copy
+        }
+        return createMockQuery({ data: null, error: null }) as any;
+      });
+
+      const result = await duplicateWeek(clientId, planId, "2026-04-06", "2026-04-13");
+
+      // The target read is scoped to this plan's scheduled events on the week.
+      expect(replaceSelect.eq).toHaveBeenCalledWith("client_id", clientId);
+      expect(replaceSelect.eq).toHaveBeenCalledWith("training_plan_id", planId);
+      expect(replaceSelect.eq).toHaveBeenCalledWith("status", "scheduled");
+      expect(replaceSelect.in).toHaveBeenCalledWith("date", [
+        "2026-04-13", "2026-04-14", "2026-04-15", "2026-04-16",
+        "2026-04-17", "2026-04-18", "2026-04-19",
+      ]);
+      expect(replaceDelete.delete).toHaveBeenCalled();
+      expect(replaceDelete.in).toHaveBeenCalledWith("id", ["old-1", "old-2"]);
+      expect(result.eventsReplaced).toBe(2);
+      expect(result.eventsCreated).toBe(1);
+      expect(result.allTargetsPast).toBe(false);
+    });
+
+    it("returns allTargetsPast without touching anything when the target week is past", async () => {
+      mockGetClientTodayString.mockResolvedValue("2026-05-01");
+
+      const result = await duplicateWeek(clientId, planId, "2026-04-06", "2026-04-13");
+
+      expect(result).toEqual({ eventsCreated: 0, eventsReplaced: 0, allTargetsPast: true });
+      expect(mockGetEventsForDateRange).not.toHaveBeenCalled();
+      expect(mockFrom).not.toHaveBeenCalled();
+    });
+
+    it("clamps to client-today: skips past-landing copies and clears editable dates only", async () => {
+      // Client-today falls mid-target-week: Mon-Tue targets are past.
+      mockGetClientTodayString.mockResolvedValue("2026-04-15");
+
+      mockGetEventsForDateRange.mockResolvedValue([
+        createMockTrainingEvent({
+          clientId,
+          trainingPlanId: planId,
+          trainingSessionId: sessionId,
+          date: "2026-04-06", // Monday -> lands 2026-04-13 (past) -> skipped
+          status: "scheduled",
+        }),
+        createMockTrainingEvent({
+          clientId,
+          trainingPlanId: planId,
+          trainingSessionId: sessionId,
+          date: "2026-04-09", // Thursday -> lands 2026-04-16 (editable) -> copied
+          status: "scheduled",
+        }),
+      ]);
+
+      const insertCalls: { table: string; data: unknown }[] = [];
+      const eventsCallIndex = { current: 0 };
+      const sessionCallIndex = { current: 0 };
+      const replaceSelect = createMockQuery({ data: [], error: null });
+
+      mockFrom.mockImplementation((table: string) => {
+        if (table === "training_plans") {
+          return createMockQuery({ data: { phase_id: null }, error: null }) as any;
+        }
+        if (table === "training_sessions") {
+          sessionCallIndex.current++;
+          return (sessionCallIndex.current === 1
+            ? createMockQuery({ data: sourceSession, error: null })
+            : createMockQuery({ data: { id: "cloned-session-1" }, error: null })) as any;
+        }
+        if (table === "training_exercises") {
+          return createMockQuery({ data: [], error: null }) as any;
+        }
+        if (table === "training_events") {
+          eventsCallIndex.current++;
+          if (eventsCallIndex.current === 1) return replaceSelect as any;
+          const q = createMockQuery({ data: null, error: null });
+          q.insert = vi.fn().mockImplementation((data: unknown) => {
+            insertCalls.push({ table: "training_events", data });
+            return q;
+          });
+          return q as any;
+        }
+        return createMockQuery({ data: null, error: null }) as any;
+      });
+
+      const result = await duplicateWeek(clientId, planId, "2026-04-06", "2026-04-13");
+
+      // Only the editable slice of the target week is read for replacement.
+      expect(replaceSelect.in).toHaveBeenCalledWith("date", [
+        "2026-04-15", "2026-04-16", "2026-04-17", "2026-04-18", "2026-04-19",
+      ]);
+      // Only the Thursday copy lands; the Monday copy is clamped out.
+      expect(result.eventsCreated).toBe(1);
+      const eventInserts = insertCalls.filter((c) => c.table === "training_events");
+      expect(eventInserts).toHaveLength(1);
+      expect(eventInserts[0].data).toMatchObject({ date: "2026-04-16" });
+    });
   });
 
   // =========================================================================
@@ -291,6 +430,10 @@ describe("training-event-calendar-service", () => {
   // =========================================================================
 
   describe("duplicateWeekToRemaining", () => {
+    beforeEach(() => {
+      mockGetClientTodayString.mockResolvedValue("2026-04-01");
+    });
+
     it("calculates correct number of target weeks", async () => {
       // Source: April 6 (Monday), Phase end: April 26 (Saturday)
       // Target weeks: April 13, April 20 = 2 target weeks

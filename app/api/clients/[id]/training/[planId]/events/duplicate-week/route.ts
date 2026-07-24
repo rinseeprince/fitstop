@@ -10,6 +10,7 @@ import {
 } from "@/services/training-event-calendar-service";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { cascadeNutritionAfterTrainingChange } from "@/services/nutrition-event-service";
+import { getClientTodayString } from "@/services/today-service";
 import { z } from "zod";
 
 const duplicateWeekSchema = z.object({
@@ -61,7 +62,7 @@ export async function POST(
 
     const { sourceStartDate, targetStartDate, fillRemaining, phaseEndDate } = validation.data;
 
-    let result: { eventsCreated: number; weeksCreated?: number };
+    let result: { eventsCreated: number; eventsReplaced: number; weeksCreated?: number };
 
     if (fillRemaining) {
       // Bound "remaining weeks" by the plan's OWN date range. The caller may
@@ -94,6 +95,12 @@ export async function POST(
       result = await duplicateWeekToRemaining(clientId, planId, sourceStartDate, fillEnd);
     } else if (targetStartDate) {
       const weekResult = await duplicateWeek(clientId, planId, sourceStartDate, targetStartDate);
+      if (weekResult.allTargetsPast) {
+        return NextResponse.json(
+          { error: "Cannot duplicate into a past week." },
+          { status: 409 }
+        );
+      }
       result = weekResult;
     } else {
       return NextResponse.json(
@@ -102,19 +109,29 @@ export async function POST(
       );
     }
 
-    // Cascade: regenerate nutrition events from earliest affected date
-    const earliestAffectedDate = fillRemaining
-      ? sourceStartDate
-      : targetStartDate!;
+    // Cascade: regenerate nutrition events from the earliest affected date.
+    // The service only writes on client-today or later, so never anchor
+    // earlier than that (a past anchor would churn immutable history).
+    if (result.eventsCreated > 0 || result.eventsReplaced > 0) {
+      const requestedAnchor = fillRemaining ? sourceStartDate : targetStartDate!;
+      const clientToday = await getClientTodayString(clientId);
+      const earliestAffectedDate =
+        requestedAnchor > clientToday ? requestedAnchor : clientToday;
 
-    await cascadeNutritionAfterTrainingChange(
-      clientId,
-      earliestAffectedDate,
-      "cascade-nutrition-events-from-duplicate-week"
-    );
+      await cascadeNutritionAfterTrainingChange(
+        clientId,
+        earliestAffectedDate,
+        "cascade-nutrition-events-from-duplicate-week"
+      );
+    }
 
     return NextResponse.json(
-      { success: true, eventsCreated: result.eventsCreated, weeksCreated: result.weeksCreated },
+      {
+        success: true,
+        eventsCreated: result.eventsCreated,
+        eventsReplaced: result.eventsReplaced,
+        weeksCreated: result.weeksCreated,
+      },
       { status: 200 }
     );
   } catch (error) {

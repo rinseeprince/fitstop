@@ -9,7 +9,12 @@ import { CalendarGrid } from "./calendar-grid";
 import { CalendarToolbar } from "./calendar-toolbar";
 import { CalendarEventCard } from "./calendar-event-card";
 import { MoveScopeDialog } from "./move-scope-dialog";
-import { ClearWeekDialog, DeleteEventDialog } from "./delete-event-dialog";
+import {
+  ClearWeekDialog,
+  DeleteEventDialog,
+  DuplicateWeekConfirmDialog,
+  type DuplicateWeekMode,
+} from "./delete-event-dialog";
 import { SaveWeekDialog } from "./save-week-dialog";
 import { PlacedSessionEditor } from "./placed-session-editor";
 import { LibraryPanel } from "./library-panel";
@@ -107,6 +112,10 @@ export function TrainingCalendarView({
   const [savePlanName, setSavePlanName] = useState("");
   const [isSavingWeek, setIsSavingWeek] = useState(false);
   const [pendingClearWeek, setPendingClearWeek] = useState<string | null>(null);
+  const [pendingDuplicateWeek, setPendingDuplicateWeek] = useState<{
+    weekStartDate: string;
+    mode: DuplicateWeekMode;
+  } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<TrainingEvent | null>(null);
   const [isDeletingEvent, setIsDeletingEvent] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
@@ -295,25 +304,35 @@ export function TrainingCalendarView({
     }
     setIsWeekActionLoading(true);
     try {
+      // Only today-forward scheduled events are deletable — the server's
+      // past guard refuses the rest, so don't even attempt them.
       const weekEvents: TrainingEvent[] = [];
       for (const date of weekDays) {
+        if (date < clientToday) continue;
         const dayEvents = eventsByDate.get(date) ?? [];
         weekEvents.push(...dayEvents.filter((e) => e.status === "scheduled"));
       }
-      let clearFailed = false;
+      let firstFailure: string | null = null;
       for (const event of weekEvents) {
         try {
           const res = await fetch(
             `/api/clients/${clientId}/training/${event.trainingPlanId}/events/${event.id}`,
             { method: "DELETE" }
           );
-          if (!res.ok) clearFailed = true;
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            firstFailure ??= data.error ?? "Failed to remove a session";
+          }
         } catch {
-          clearFailed = true;
+          firstFailure ??= "Network error";
         }
       }
-      if (clearFailed) {
-        toast({ title: "Error", description: "Some events could not be deleted", variant: "destructive" });
+      if (firstFailure !== null) {
+        toast({
+          title: "Some sessions could not be removed",
+          description: firstFailure,
+          variant: "destructive",
+        });
       } else {
         toast({ title: "Week cleared" });
       }
@@ -323,7 +342,7 @@ export function TrainingCalendarView({
       setIsWeekActionLoading(false);
       setPendingClearWeek(null);
     }
-  }, [clientId, eventsByDate, mutate, invalidateNutritionCalendar, toast]);
+  }, [clientId, clientToday, eventsByDate, mutate, invalidateNutritionCalendar, toast]);
 
   // Per-event delete executor — runs only after the DeleteEventDialog confirm.
   const executeDeleteEvent = useCallback(async (event: TrainingEvent) => {
@@ -349,8 +368,8 @@ export function TrainingCalendarView({
     }
   }, [clientId, mutate, invalidateNutritionCalendar, toast]);
 
-  // Week action handler
-  const handleWeekAction = useCallback(async (
+  // Week action handler — routes destructive actions through their confirms.
+  const handleWeekAction = useCallback((
     weekStartDate: string,
     action: WeekAction
   ) => {
@@ -377,13 +396,43 @@ export function TrainingCalendarView({
     }
 
     if (action === "clear") {
+      const hasClearable = weekDays.some(
+        (date) =>
+          date >= clientToday &&
+          (eventsByDate.get(date) ?? []).some((e) => e.status === "scheduled")
+      );
+      if (!hasClearable) {
+        toast({ title: "Nothing to clear", description: "This week has no upcoming sessions." });
+        return;
+      }
       setPendingClearWeek(weekStartDate);
       return;
     }
 
+    // Both duplicates REPLACE the target's upcoming schedule — confirm first.
+    setPendingDuplicateWeek({
+      weekStartDate,
+      mode: action === "duplicate_next" ? "next" : "remaining",
+    });
+  }, [clientToday, eventsByDate, plan, toast, weekRowPlanId]);
+
+  // Duplicate executor — runs only after the DuplicateWeekConfirmDialog confirm.
+  const executeDuplicate = useCallback(async (
+    weekStartDate: string,
+    mode: DuplicateWeekMode
+  ) => {
+    const weekDays: string[] = [];
+    const ws = new Date(weekStartDate + "T00:00:00");
+    for (let d = 0; d < 7; d++) {
+      weekDays.push(getDateString(ws));
+      ws.setDate(ws.getDate() + 1);
+    }
+    const rowPlanId = weekRowPlanId(weekDays);
+    if (!rowPlanId) return;
+
     setIsWeekActionLoading(true);
     try {
-      if (action === "duplicate_next") {
+      if (mode === "next") {
         const nextWeekStart = new Date(weekStartDate + "T00:00:00");
         nextWeekStart.setDate(nextWeekStart.getDate() + 7);
         const res = await fetch(
@@ -397,13 +446,20 @@ export function TrainingCalendarView({
             }),
           }
         );
+        const data = await res.json().catch(() => ({}));
         if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
           throw new Error(data.error || "Failed to duplicate week");
         }
-        toast({ title: "Week duplicated to next week" });
+        const replaced = data.eventsReplaced ?? 0;
+        toast({
+          title: "Week duplicated to next week",
+          description:
+            replaced > 0
+              ? `Replaced ${replaced} upcoming session${replaced === 1 ? "" : "s"}.`
+              : undefined,
+        });
       } else {
-        // duplicate_remaining — the server bounds "remaining" by the plan's own
+        // remaining — the server bounds "remaining" by the plan's own
         // date range (its last scheduled event), so no phaseEndDate is needed.
         const res = await fetch(
           `/api/clients/${clientId}/training/${rowPlanId}/events/duplicate-week`,
@@ -421,11 +477,16 @@ export function TrainingCalendarView({
           throw new Error(data.error || "Failed to duplicate weeks");
         }
         const weeks = data.weeksCreated ?? 0;
+        const replaced = data.eventsReplaced ?? 0;
         toast({
           title:
             weeks > 0
               ? `Week duplicated to ${weeks} remaining week${weeks === 1 ? "" : "s"}`
               : "No remaining weeks to fill",
+          description:
+            replaced > 0
+              ? `Replaced ${replaced} upcoming session${replaced === 1 ? "" : "s"}.`
+              : undefined,
         });
       }
       await mutate();
@@ -438,8 +499,9 @@ export function TrainingCalendarView({
       });
     } finally {
       setIsWeekActionLoading(false);
+      setPendingDuplicateWeek(null);
     }
-  }, [clientId, plan, mutate, invalidateNutritionCalendar, toast, weekRowPlanId]);
+  }, [clientId, mutate, invalidateNutritionCalendar, toast, weekRowPlanId]);
 
   const monthLabel = format(new Date(viewMonth.year, viewMonth.month, 1), "MMMM yyyy");
 
@@ -605,6 +667,15 @@ export function TrainingCalendarView({
         isClearing={isWeekActionLoading}
         onCancel={() => setPendingClearWeek(null)}
         onConfirm={(weekStartDate) => void executeClearWeek(weekStartDate)}
+      />
+
+      {/* Duplicate-week confirm — both duplicates replace the target's
+          upcoming schedule, so they warn before running. */}
+      <DuplicateWeekConfirmDialog
+        pending={pendingDuplicateWeek}
+        isDuplicating={isWeekActionLoading}
+        onCancel={() => setPendingDuplicateWeek(null)}
+        onConfirm={(weekStartDate, mode) => void executeDuplicate(weekStartDate, mode)}
       />
 
       {/* Placed-session tray */}

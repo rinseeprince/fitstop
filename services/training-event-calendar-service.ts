@@ -301,15 +301,36 @@ export async function updateEventSurplus(
 }
 
 /**
- * Duplicate an entire week of training events to a target week.
- * Clones sessions and exercises so each week is independent.
+ * Duplicate an entire week of training events to a target week, REPLACING the
+ * target's upcoming schedule ("make that week look like this one"). Clones
+ * sessions and exercises so each week is independent.
+ *
+ * Editability contract (mirrors deleteEvent's past guard): only target dates
+ * on or after the client's local today are written — existing scheduled
+ * events on those dates are removed first, and copies landing before today
+ * are skipped, so history is never touched and a duplicate can never create
+ * events that deleteEvent would refuse to remove.
  */
 export async function duplicateWeek(
   clientId: string,
   planId: string,
   sourceStartDate: string,
   targetStartDate: string
-): Promise<{ eventsCreated: number }> {
+): Promise<{ eventsCreated: number; eventsReplaced: number; allTargetsPast: boolean }> {
+  const clientToday = await getClientTodayString(clientId);
+
+  // Target week dates, clamped to the editable (today-forward) window.
+  const targetDates: string[] = [];
+  const targetCursor = new Date(targetStartDate + "T00:00:00");
+  for (let d = 0; d < 7; d++) {
+    targetDates.push(getDateString(targetCursor));
+    targetCursor.setDate(targetCursor.getDate() + 1);
+  }
+  const editableTargetDates = targetDates.filter((d) => d >= clientToday);
+  if (editableTargetDates.length === 0) {
+    return { eventsCreated: 0, eventsReplaced: 0, allTargetsPast: true };
+  }
+
   // Fetch source week events (7 days)
   const sourceEnd = new Date(sourceStartDate + "T00:00:00");
   sourceEnd.setDate(sourceEnd.getDate() + 6);
@@ -320,13 +341,40 @@ export async function duplicateWeek(
     (e) => e.status === "scheduled" && e.trainingSessionId
   );
 
-  if (scheduledEvents.length === 0) return { eventsCreated: 0 };
+  if (scheduledEvents.length === 0) {
+    return { eventsCreated: 0, eventsReplaced: 0, allTargetsPast: false };
+  }
 
   // Validate target week falls within phase bounds
   const targetEnd = new Date(targetStartDate + "T00:00:00");
   targetEnd.setDate(targetEnd.getDate() + 6);
   await validatePhaseBounds(planId, targetStartDate);
   await validatePhaseBounds(planId, getDateString(targetEnd));
+
+  // Replace, not stack: remove the target week's still-editable scheduled
+  // events for this plan before inserting copies. Source-empty days therefore
+  // end up empty on the target too. Completed/partial/skipped rows survive
+  // (immutable history), as does anything before clientToday.
+  const { data: replacedRows, error: replacedError } = await supabaseAdmin
+    .from("training_events")
+    .select("id")
+    .eq("client_id", clientId)
+    .eq("training_plan_id", planId)
+    .eq("status", "scheduled")
+    .in("date", editableTargetDates);
+  if (replacedError) {
+    throw new Error(`Failed to read target week: ${replacedError.message}`);
+  }
+  const replacedIds = (replacedRows ?? []).map((r) => r.id);
+  if (replacedIds.length > 0) {
+    const { error: replaceDeleteError } = await supabaseAdmin
+      .from("training_events")
+      .delete()
+      .in("id", replacedIds);
+    if (replaceDeleteError) {
+      throw new Error(`Failed to replace target week: ${replaceDeleteError.message}`);
+    }
+  }
 
   // Deduplicate sessions (multiple events could share a session)
   const sessionIds = [...new Set(scheduledEvents.map((e) => e.trainingSessionId!))];
@@ -367,6 +415,17 @@ export async function duplicateWeek(
   for (const event of scheduledEvents) {
     const sourceData = sessionDataMap.get(event.trainingSessionId!);
     if (!sourceData) continue;
+
+    // Compute the copy's landing date up front — copies clamped out of the
+    // editable window are skipped before any session is cloned.
+    const eventDate = new Date(event.date + "T00:00:00");
+    const dayOffset = Math.round(
+      (eventDate.getTime() - sourceStart.getTime()) / (1000 * 60 * 60 * 24)
+    );
+    const targetDate = new Date(targetStart);
+    targetDate.setDate(targetDate.getDate() + dayOffset);
+    const targetDateStr = getDateString(targetDate);
+    if (targetDateStr < clientToday) continue;
 
     // Clone session (once per unique session ID)
     let clonedSessionId = clonedSessionMap.get(event.trainingSessionId!);
@@ -431,15 +490,6 @@ export async function duplicateWeek(
       }
     }
 
-    // Calculate target date: offset from source week start
-    const eventDate = new Date(event.date + "T00:00:00");
-    const dayOffset = Math.round(
-      (eventDate.getTime() - sourceStart.getTime()) / (1000 * 60 * 60 * 24)
-    );
-    const targetDate = new Date(targetStart);
-    targetDate.setDate(targetDate.getDate() + dayOffset);
-    const targetDateStr = getDateString(targetDate);
-
     // Insert new event
     const { error: eventError } = await supabaseAdmin
       .from("training_events")
@@ -461,7 +511,7 @@ export async function duplicateWeek(
     eventsCreated++;
   }
 
-  return { eventsCreated };
+  return { eventsCreated, eventsReplaced: replacedIds.length, allTargetsPast: false };
 }
 
 /**
@@ -472,14 +522,17 @@ export async function duplicateWeekToRemaining(
   planId: string,
   sourceStartDate: string,
   phaseEndDate: string
-): Promise<{ weeksCreated: number; eventsCreated: number }> {
+): Promise<{ weeksCreated: number; eventsCreated: number; eventsReplaced: number }> {
   const sourceStart = new Date(sourceStartDate + "T00:00:00");
   const endDate = new Date(phaseEndDate + "T00:00:00");
 
   let weeksCreated = 0;
   let totalEventsCreated = 0;
+  let totalEventsReplaced = 0;
 
-  // Iterate week by week starting from sourceStartDate + 7
+  // Iterate week by week starting from sourceStartDate + 7. Fully-past target
+  // weeks are skipped by duplicateWeek (allTargetsPast), not an error here —
+  // "remaining" naturally starts wherever the editable window does.
   const currentWeekStart = new Date(sourceStart);
   currentWeekStart.setDate(currentWeekStart.getDate() + 7);
 
@@ -488,10 +541,11 @@ export async function duplicateWeekToRemaining(
     const result = await duplicateWeek(clientId, planId, sourceStartDate, targetStartDate);
     if (result.eventsCreated > 0) weeksCreated++;
     totalEventsCreated += result.eventsCreated;
+    totalEventsReplaced += result.eventsReplaced;
     currentWeekStart.setDate(currentWeekStart.getDate() + 7);
   }
 
-  return { weeksCreated, eventsCreated: totalEventsCreated };
+  return { weeksCreated, eventsCreated: totalEventsCreated, eventsReplaced: totalEventsReplaced };
 }
 
 /**
