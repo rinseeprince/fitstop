@@ -2,13 +2,13 @@
 
 import { useState, useMemo } from "react";
 import useSWR from "swr";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { HistoryTable, type ColumnDef } from "@/components/clients/history-table/history-table";
-import { useHistoryData } from "@/hooks/use-history-data";
+import { useHistoryData, HISTORY_PAGE_SIZE } from "@/hooks/use-history-data";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import { cn } from "@/lib/utils";
 import { SectionLabel } from "@/components/programs/shared/section-label";
+import { DividerPager } from "@/components/programs/shared/divider-pager";
 import {
   MONO,
   STAT_LABEL_DARK_CLASS,
@@ -273,11 +273,20 @@ export function NutritionHistoryTable({ clientId }: Props) {
       <SectionLabel
         label="Nutrition Logged"
         actions={
-          <div className="flex items-center gap-2.5">
-            <span className="w-3 h-1 rounded-full bg-protein" /><span className="text-[10px] text-[#93b0b4]">P</span>
-            <span className="w-3 h-1 rounded-full bg-carbs" /><span className="text-[10px] text-[#93b0b4]">C</span>
-            <span className="w-3 h-1 rounded-full bg-fat" /><span className="text-[10px] text-[#93b0b4]">F</span>
-          </div>
+          <>
+            <div className="flex items-center gap-2.5">
+              <span className="w-3 h-1 rounded-full bg-protein" /><span className="text-[10px] text-[#93b0b4]">P</span>
+              <span className="w-3 h-1 rounded-full bg-carbs" /><span className="text-[10px] text-[#93b0b4]">C</span>
+              <span className="w-3 h-1 rounded-full bg-fat" /><span className="text-[10px] text-[#93b0b4]">F</span>
+            </div>
+            <DividerPager
+              page={page}
+              total={total}
+              pageSize={HISTORY_PAGE_SIZE}
+              noun="days"
+              onPageChange={setPage}
+            />
+          </>
         }
       />
 
@@ -286,9 +295,6 @@ export function NutritionHistoryTable({ clientId }: Props) {
         <HistoryTable<NutritionHistoryRow>
           columns={columns}
           data={rows}
-          total={total}
-          page={page}
-          onPageChange={setPage}
           isLoading={isLoading}
           emptyMessage="No nutrition data logged yet"
         />

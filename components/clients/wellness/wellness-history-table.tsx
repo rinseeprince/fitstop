@@ -4,10 +4,11 @@ import { useState, useMemo } from "react";
 import useSWR from "swr";
 import { Skeleton } from "@/components/ui/skeleton";
 import { HistoryTable, type ColumnDef } from "@/components/clients/history-table/history-table";
-import { useHistoryData } from "@/hooks/use-history-data";
+import { useHistoryData, HISTORY_PAGE_SIZE } from "@/hooks/use-history-data";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import { cn } from "@/lib/utils";
 import { SectionLabel } from "@/components/programs/shared/section-label";
+import { DividerPager } from "@/components/programs/shared/divider-pager";
 import {
   MONO,
   STAT_LABEL_DARK_CLASS,
@@ -195,12 +196,21 @@ export function WellnessHistoryTable({ clientId }: Props) {
       <SectionLabel
         label="Wellness Log"
         actions={
-          <div className="flex items-center gap-2.5">
-            <span className="w-2 h-[3px] rounded-full bg-[#0d9488]" />
-            <span className="text-[10.5px] text-[#93b0b4] font-medium">Good</span>
-            <span className="w-2 h-[3px] rounded-full bg-[#d97706]" />
-            <span className="text-[10.5px] text-[#93b0b4] font-medium">Warning</span>
-          </div>
+          <>
+            <div className="flex items-center gap-2.5">
+              <span className="w-2 h-[3px] rounded-full bg-[#0d9488]" />
+              <span className="text-[10.5px] text-[#93b0b4] font-medium">Good</span>
+              <span className="w-2 h-[3px] rounded-full bg-[#d97706]" />
+              <span className="text-[10.5px] text-[#93b0b4] font-medium">Warning</span>
+            </div>
+            <DividerPager
+              page={page}
+              total={total}
+              pageSize={HISTORY_PAGE_SIZE}
+              noun="days"
+              onPageChange={setPage}
+            />
+          </>
         }
       />
 
@@ -209,9 +219,6 @@ export function WellnessHistoryTable({ clientId }: Props) {
         <HistoryTable<WellnessHistoryRow>
           columns={columns}
           data={rows}
-          total={total}
-          page={page}
-          onPageChange={setPage}
           isLoading={isLoading}
           emptyMessage="No wellness data logged yet"
         />

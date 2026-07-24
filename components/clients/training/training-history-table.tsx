@@ -4,10 +4,11 @@ import { useState, useMemo, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { HistoryTable, type ColumnDef } from "@/components/clients/history-table/history-table";
 import { HistoryChartDialog } from "@/components/clients/history-table/history-chart-dialog";
-import { useHistoryData } from "@/hooks/use-history-data";
+import { useHistoryData, HISTORY_PAGE_SIZE } from "@/hooks/use-history-data";
 import { SessionLogDetailDialog } from "@/components/clients/training/session-log-detail-dialog";
 import { TrainingSummaryHero } from "@/components/clients/training/training-summary-hero";
 import { SectionLabel } from "@/components/programs/shared/section-label";
+import { DividerPager } from "@/components/programs/shared/divider-pager";
 import { cn } from "@/lib/utils";
 import {
   CHIP_NEUTRAL_CLASS,
@@ -208,16 +209,24 @@ export function TrainingHistoryTable({ clientId }: Props) {
       </div>
 
       {/* Section header: TRAINING LOG */}
-      <SectionLabel label="Training Log" />
+      <SectionLabel
+        label="Training Log"
+        actions={
+          <DividerPager
+            page={page}
+            total={total}
+            pageSize={HISTORY_PAGE_SIZE}
+            noun="sessions"
+            onPageChange={setPage}
+          />
+        }
+      />
 
       {/* Table card */}
       <div className="bg-white rounded-[6px] p-5">
         <HistoryTable<TrainingHistoryRow>
           columns={columns}
           data={rows}
-          total={total}
-          page={page}
-          onPageChange={setPage}
           isLoading={isLoading}
           emptyMessage="No training sessions logged yet"
           onColumnClick={handleColumnClick}

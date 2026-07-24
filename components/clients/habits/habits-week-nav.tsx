@@ -1,8 +1,12 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { MONO_META_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
+import {
+  LABEL_CLASS,
+  MONO_LABEL_CLASS,
+} from "@/components/clients/training/program-builder/builder-tokens";
 
 type HabitsWeekNavProps = {
   weekOffset: number;
@@ -10,6 +14,7 @@ type HabitsWeekNavProps = {
   onNext: () => void;
   weekStart: string;
   weekEnd: string;
+  actions?: ReactNode;
 };
 
 function formatShortDate(dateStr: string) {
@@ -17,37 +22,60 @@ function formatShortDate(dateStr: string) {
   return date.toLocaleDateString("en-AU", { day: "numeric", month: "short" });
 }
 
+// The habits control line IS the divider (calendar-toolbar idiom): the week
+// nav sits on the left where a section label would, the hairline runs the
+// middle, and row actions right-align. Block-flow parent → the row owns the
+// divider spec's full mb-3.
 export function HabitsWeekNav({
   weekOffset,
   onPrev,
   onNext,
   weekStart,
   weekEnd,
+  actions,
 }: HabitsWeekNavProps) {
   const isCurrentWeek = weekOffset === 0;
-  const label = isCurrentWeek ? "This Week" : "Previous Week";
 
   return (
-    <div className="flex items-center gap-3">
-      <button
-        onClick={onPrev}
-        className="w-[28px] h-[28px] rounded-[6px] border border-[rgba(13,148,136,0.08)] flex items-center justify-center text-[#5a7d82] hover:bg-[rgba(0,0,0,0.02)] transition-colors"
-      >
-        <ChevronLeft className="w-4 h-4" strokeWidth={1.5} />
-      </button>
+    <div className="mb-3 flex min-h-[24.5px] items-center gap-3">
       <div className="flex items-center gap-2">
-        <span className="text-[13px] font-semibold text-[#0c1a1e]">{label}</span>
-        <span className={cn(MONO_META_CLASS, "text-[12px]")}>
-          {formatShortDate(weekStart)} – {formatShortDate(weekEnd)}
+        <button
+          onClick={onPrev}
+          aria-label="Previous week"
+          className="rounded p-1 text-[#93b0b4] transition-colors hover:text-[#0d9488]"
+        >
+          <ChevronLeft className="h-3.5 w-3.5" strokeWidth={1.5} />
+        </button>
+        {/* Split branches per the dynamic-slot rule: word label sans, date
+            range mono. min-w must exceed the WIDEST state ("PREVIOUS WEEK" +
+            range ≈ 221px, CDP-measured) so the next chevron and hairline
+            don't shift on week toggle (the calendar's min-w-[80px] idiom). */}
+        <span className="flex min-w-[224px] items-center justify-center gap-2">
+          <span className={cn(LABEL_CLASS, "whitespace-nowrap text-[11px]")}>
+            {isCurrentWeek ? "This Week" : "Previous Week"}
+          </span>
+          <span className={cn(MONO_LABEL_CLASS, "whitespace-nowrap text-[11px]")}>
+            {formatShortDate(weekStart)} – {formatShortDate(weekEnd)}
+          </span>
         </span>
+        <button
+          onClick={onNext}
+          disabled={isCurrentWeek}
+          aria-label="Next week"
+          className={cn(
+            "rounded p-1 transition-colors",
+            isCurrentWeek
+              ? "cursor-default text-[#d5e0dd]"
+              : "text-[#93b0b4] hover:text-[#0d9488]"
+          )}
+        >
+          <ChevronRight className="h-3.5 w-3.5" strokeWidth={1.5} />
+        </button>
       </div>
-      <button
-        onClick={onNext}
-        disabled={isCurrentWeek}
-        className="w-[28px] h-[28px] rounded-[6px] border border-[rgba(13,148,136,0.08)] flex items-center justify-center text-[#5a7d82] hover:bg-[rgba(0,0,0,0.02)] transition-colors disabled:opacity-30 disabled:pointer-events-none"
-      >
-        <ChevronRight className="w-4 h-4" strokeWidth={1.5} />
-      </button>
+
+      <div className="h-px flex-1 bg-[rgba(13,148,136,0.08)]" />
+
+      {actions}
     </div>
   );
 }

@@ -6,7 +6,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { HistoryTable, type ColumnDef } from "@/components/clients/history-table/history-table";
 import { HistoryChartDialog } from "@/components/clients/history-table/history-chart-dialog";
-import { useHistoryData } from "@/hooks/use-history-data";
+import { SectionLabel } from "@/components/programs/shared/section-label";
+import { DividerPager } from "@/components/programs/shared/divider-pager";
+import { useHistoryData, HISTORY_PAGE_SIZE } from "@/hooks/use-history-data";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import type { BodyMetricsHistoryRow } from "@/types/history";
 
@@ -188,8 +190,10 @@ export function BodyMetricsHistoryTable({ clientId, goalWeight, goalBodyFat, sta
   ];
 
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+    // Block flow, not space-y: divider spec = 16px above (grid mb-4), 12px
+    // below (SectionLabel's own mb-3).
+    <div>
+      <div className="mb-4 grid grid-cols-2 md:grid-cols-3 gap-4">
         {summaryCards.map(({ label, value, unit }) => (
           <Card key={label}>
             <CardContent className="p-4">
@@ -218,20 +222,28 @@ export function BodyMetricsHistoryTable({ clientId, goalWeight, goalBodyFat, sta
         ))}
       </div>
 
-      <Card>
-        <CardContent className="pt-6">
-          <HistoryTable<BodyMetricsHistoryRow>
-            columns={columns}
-            data={rows}
-            total={total}
+      <SectionLabel
+        label="Body Metrics Log"
+        actions={
+          <DividerPager
             page={page}
+            total={total}
+            pageSize={HISTORY_PAGE_SIZE}
+            noun="check-ins"
             onPageChange={setPage}
-            isLoading={isLoading}
-            emptyMessage="No body metrics logged yet"
-            onColumnClick={handleColumnClick}
           />
-        </CardContent>
-      </Card>
+        }
+      />
+
+      <div className="bg-white rounded-[6px] p-5">
+        <HistoryTable<BodyMetricsHistoryRow>
+          columns={columns}
+          data={rows}
+          isLoading={isLoading}
+          emptyMessage="No body metrics logged yet"
+          onColumnClick={handleColumnClick}
+        />
+      </div>
 
       <HistoryChartDialog
         open={chartColumn !== null}

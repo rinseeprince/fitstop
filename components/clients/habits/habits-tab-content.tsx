@@ -3,6 +3,8 @@
 import { useState, useMemo } from "react";
 import { Loader2, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import { SECTION_LABEL_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
 import { HabitsManageDrawer } from "./habits-manage-drawer";
 import { HabitsWeekNav } from "./habits-week-nav";
 import { HabitsSummaryStrip } from "./habits-summary-strip";
@@ -57,6 +59,7 @@ export const HabitsTabContent = ({ client }: HabitsTabContentProps) => {
     data: weekData,
     isLoading: weekLoading,
     error: weekError,
+    mutate: mutateWeek,
   } = useHabitsWeek(client.id, weekStart);
 
   const isInitialLoading = habitsLoading && weekLoading;
@@ -84,36 +87,44 @@ export const HabitsTabContent = ({ client }: HabitsTabContentProps) => {
   const summary = weekData?.summary ?? null;
 
   return (
-    <div className="space-y-4">
-      {/* Week nav + Manage button on same row */}
-      <div className="flex items-center justify-between">
-        <HabitsWeekNav
-          weekOffset={weekOffset}
-          onPrev={() => setWeekOffset((o) => o - 1)}
-          onNext={() => setWeekOffset((o) => Math.min(o + 1, 0))}
-          weekStart={weekStart}
-          weekEnd={weekEnd}
-        />
-        <Button
-          onClick={() => setDrawerOpen(true)}
-          variant="outline"
-          size="sm"
-          className="border-[rgba(13,148,136,0.08)] text-[#5a7d82] text-[12px] font-medium hover:bg-[rgba(0,0,0,0.02)]"
-          disabled={!!habitsError}
-        >
-          <Settings2 className="h-3.5 w-3.5 mr-1.5" strokeWidth={1.5} />
-          Manage Habits
-        </Button>
-      </div>
+    // Block flow, not space-y: the week-nav divider owns its own mb-3 (12px
+    // below); a space-y margin would collapse against it.
+    <div>
+      {/* Week-nav divider: nav left in the label slot, Manage Habits right */}
+      <HabitsWeekNav
+        weekOffset={weekOffset}
+        onPrev={() => setWeekOffset((o) => o - 1)}
+        onNext={() => setWeekOffset((o) => Math.min(o + 1, 0))}
+        weekStart={weekStart}
+        weekEnd={weekEnd}
+        actions={
+          // Quiet divider text action (roadmap "Add phase" recipe) — an h-7
+          // pill would grow the row past 24.5px and sink the hairline.
+          <button
+            type="button"
+            onClick={() => setDrawerOpen(true)}
+            disabled={!!habitsError}
+            className={cn(
+              SECTION_LABEL_CLASS,
+              "inline-flex items-center gap-1.5 whitespace-nowrap transition-colors hover:text-[#0d9488] disabled:pointer-events-none disabled:opacity-50"
+            )}
+          >
+            <Settings2 className="h-3 w-3" strokeWidth={1.5} />
+            Manage Habits
+          </button>
+        }
+      />
 
       {/* Dark summary strip */}
-      <HabitsSummaryStrip
-        todayCompleted={summary?.todayCompleted ?? null}
-        todayTotal={summary?.todayTotal ?? null}
-        weeklyRate={summary?.weeklyRate ?? null}
-        allHabitsStreak={summary?.allHabitsStreak ?? null}
-        activeCount={summary?.activeCount ?? null}
-      />
+      <div className="mb-4">
+        <HabitsSummaryStrip
+          todayCompleted={summary?.todayCompleted ?? null}
+          todayTotal={summary?.todayTotal ?? null}
+          weeklyRate={summary?.weeklyRate ?? null}
+          allHabitsStreak={summary?.allHabitsStreak ?? null}
+          activeCount={summary?.activeCount ?? null}
+        />
+      </div>
 
       {/* Week tracker table */}
       {weekError ? (
@@ -123,7 +134,7 @@ export const HabitsTabContent = ({ client }: HabitsTabContentProps) => {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setWeekOffset(weekOffset)}
+              onClick={() => void mutateWeek()}
               className="text-[12px] border-[rgba(13,148,136,0.08)] text-[#5a7d82]"
             >
               Retry
