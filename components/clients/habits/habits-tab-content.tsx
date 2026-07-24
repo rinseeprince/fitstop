@@ -90,6 +90,18 @@ export const HabitsTabContent = ({ client }: HabitsTabContentProps) => {
     // Block flow, not space-y: the week-nav divider owns its own mb-3 (12px
     // below); a space-y margin would collapse against it.
     <div>
+      {/* Dark summary strip — hero first, like every other tab (mb-4 = the
+          divider spec's 16px above) */}
+      <div className="mb-4">
+        <HabitsSummaryStrip
+          todayCompleted={summary?.todayCompleted ?? null}
+          todayTotal={summary?.todayTotal ?? null}
+          weeklyRate={summary?.weeklyRate ?? null}
+          allHabitsStreak={summary?.allHabitsStreak ?? null}
+          activeCount={summary?.activeCount ?? null}
+        />
+      </div>
+
       {/* Week-nav divider: nav left in the label slot, Manage Habits right */}
       <HabitsWeekNav
         weekOffset={weekOffset}
@@ -114,17 +126,6 @@ export const HabitsTabContent = ({ client }: HabitsTabContentProps) => {
           </button>
         }
       />
-
-      {/* Dark summary strip */}
-      <div className="mb-4">
-        <HabitsSummaryStrip
-          todayCompleted={summary?.todayCompleted ?? null}
-          todayTotal={summary?.todayTotal ?? null}
-          weeklyRate={summary?.weeklyRate ?? null}
-          allHabitsStreak={summary?.allHabitsStreak ?? null}
-          activeCount={summary?.activeCount ?? null}
-        />
-      </div>
 
       {/* Week tracker table */}
       {weekError ? (

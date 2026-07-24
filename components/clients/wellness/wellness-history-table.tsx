@@ -122,8 +122,9 @@ export function WellnessHistoryTable({ clientId }: Props) {
     // Block flow, not flex-gap: divider spec = 16px above (strip mb-4), 12px
     // below (SectionLabel's own mb-3).
     <div>
-      {/* Period selector */}
-      <div className="mb-4 flex justify-end">
+      {/* Period selector — top-left, mirroring the training/nutrition
+          segmented bars (their mb-5 rhythm) */}
+      <div className="mb-5 flex">
         <div className="bg-[rgba(13,148,136,0.05)] rounded-[6px] p-[2px] inline-flex">
           {PERIOD_OPTIONS.map((d) => (
             <button
@@ -196,21 +197,13 @@ export function WellnessHistoryTable({ clientId }: Props) {
       <SectionLabel
         label="Wellness Log"
         actions={
-          <>
-            <div className="flex items-center gap-2.5">
-              <span className="w-2 h-[3px] rounded-full bg-[#0d9488]" />
-              <span className="text-[10.5px] text-[#93b0b4] font-medium">Good</span>
-              <span className="w-2 h-[3px] rounded-full bg-[#d97706]" />
-              <span className="text-[10.5px] text-[#93b0b4] font-medium">Warning</span>
-            </div>
-            <DividerPager
-              page={page}
-              total={total}
-              pageSize={HISTORY_PAGE_SIZE}
-              noun="days"
-              onPageChange={setPage}
-            />
-          </>
+          <DividerPager
+            page={page}
+            total={total}
+            pageSize={HISTORY_PAGE_SIZE}
+            noun="days"
+            onPageChange={setPage}
+          />
         }
       />
 
