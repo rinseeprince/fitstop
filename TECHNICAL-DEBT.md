@@ -320,10 +320,6 @@ Reviewed: 2026-03-12
 - **`CREATE INDEX CONCURRENTLY` is unreachable from a migration file** — see the runbook in `docs/ARCHITECTURE.md`. Zero of 116 index builds use it. Harmless so far because each index was created in the same migration as its (empty) table, but any index retro-fitted onto `set_logs` / `training_exercises` / `exercise_logs` once they pass ~1M rows is a full write outage of that table for the duration of the build.
 - **RPC surface not re-verified against the live catalog.** The audit's grant/overload conclusions (§3) are all reasoned from migration order; live `pg_proc.proacl` / `proconfig` were never read, and the two orphaned `upsert_daily_log_atomic` overloads (6-arg 057:7, 8-arg 059:18 — zero callers, both BYPASSRLS) are still presumed present. `npm run check:rls` does **not** cover functions.
 
-### Opened by the 2026-07-24 auth bootstrap refactor (deferred migration)
-
-- **Drop the two now-unconsumed INSERT policies on `profiles`/`coaches`.** The auth bootstrap refactor (browser → `GET /api/auth/me` → `services/auth-profile-service.ts` on `supabaseAdmin`) deleted the browser-side `createProfile`/`fetchOrCreateCoachProfile` fallbacks — the only consumers of `profiles` `"Authenticated users can create profile"` (021:25) and `coaches` `"Authenticated users can create their own coach profile"` (107:91). Dropping the profiles one closes a live role-minting surface: its `WITH CHECK (auth.uid() = user_id)` never constrained `role`, so any authenticated JWT can still mint a `trainer` profile via anon-key PostgREST today (verified against the live dump 2026-07-24). **Scope strictly to the two INSERT policies — the SELECT policies and the role-pinned UPDATE (107) MUST stay:** middleware reads `profiles.role` and `getAuthenticatedCoachId` reads `coaches` through *session-scoped* clients, so dropping SELECT bricks login for everyone. Per the drift incidents above, the migration must verify the live policy names against a fresh `npx supabase db dump --linked` first, and the drop must be re-verified against a fresh dump afterwards — not against `db push` exiting 0.
-
 ---
 
 ## Production Readiness
