@@ -29,7 +29,12 @@ export function TrainingPlanBuilder({
   const searchParams = useSearchParams();
   const router = useRouter();
 
-  const rawSubtab = searchParams.get("subtab");
+  // Honor `subtab` only when the URL's `tab` is actually ours: on a tab switch
+  // the visible tab flips (local state on the client page) before
+  // router.replace lands, so a stale `subtab=plans` written by the NUTRITION
+  // tab would otherwise flash the training calendar here before Data renders.
+  const rawSubtab =
+    searchParams.get("tab") === "training" ? searchParams.get("subtab") : null;
   const subtab: "data" | "plans" | "exercise-data" =
     rawSubtab === "plans" ? "plans"
     : rawSubtab === "exercise-data" ? "exercise-data"

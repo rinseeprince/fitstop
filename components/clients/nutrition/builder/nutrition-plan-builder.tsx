@@ -26,7 +26,14 @@ export function NutritionPlanBuilder({ client, onUpdate }: NutritionPlanBuilderP
   const searchParams = useSearchParams();
   const router = useRouter();
 
-  const subtab = searchParams.get("subtab") === "plans" ? "plans" : "data";
+  // Honor `subtab` only when the URL's `tab` is actually ours: on a tab switch
+  // the visible tab flips (local state on the client page) before
+  // router.replace lands, so a stale `subtab=plans` written by the TRAINING
+  // tab would otherwise flash the Plans calendar here before Data renders.
+  const subtab =
+    searchParams.get("tab") === "nutrition" && searchParams.get("subtab") === "plans"
+      ? "plans"
+      : "data";
   const setSubtab = (tab: "data" | "plans") => {
     const params = new URLSearchParams(searchParams.toString());
     params.set("subtab", tab);
