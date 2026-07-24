@@ -414,7 +414,7 @@ The base `DropdownMenuContent`/`Item` primitives (`components/ui/dropdown-menu.t
 Reference: `components/clients/training/calendar/delete-event-dialog.tsx`. Use the styled `Dialog` primitive (never `ConfirmDialog`/AlertDialog — un-migrated OKLCH).
 
 - Header row: danger thumb `grid h-9 w-9 shrink-0 place-items-center rounded-[6px] bg-[rgba(192,96,96,0.08)]` + `Trash2 h-4 w-4 text-[#c06060]` (strokeWidth 1.5) beside the `DialogTitle`.
-- Body: ONE plain-sans sentence (`text-sm text-[#5a7d82]`) naming exactly what happens and what is preserved ("Completed and past sessions are kept."). No mono. The subject may be `font-semibold text-[#0c1a1e]`.
+- Body: ONE plain-sans sentence (`text-sm text-[#5a7d82]`) naming exactly what happens ("Removes the upcoming scheduled sessions from the week of Jul 14."). Scope the verb precisely ("upcoming") rather than appending obvious reassurances — "Completed and past sessions are kept" is retired as filler (owner call, 2026-07-24); spell out what survives only when it is genuinely surprising (e.g. the delete-ALL-plans confirm). No mono. The subject may be `font-semibold text-[#0c1a1e]`.
 - Footer: Cancel (`variant="ghost"`) + danger-outline CTA: `variant="outline"` + `border-[rgba(192,96,96,0.3)] text-[#c06060] hover:bg-[rgba(192,96,96,0.08)] hover:text-[#c06060]`, `Loader2` spinner while pending. **There is no filled destructive button in this system — never invent one.** CTA label repeats the verb ("Remove session", "Clear week"), never "OK"/"Confirm".
 
 ### Scope / choice dialog (pick-one actions)

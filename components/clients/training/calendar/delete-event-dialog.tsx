@@ -114,8 +114,7 @@ export function DuplicateWeekConfirmDialog({
           <p className="text-sm text-[#5a7d82]">
             Copies the week of {formatDay(pending.weekStartDate)} onto{" "}
             {isNext ? "next week" : "every remaining week of this plan"}, replacing
-            any upcoming sessions already scheduled there. Completed and past
-            sessions are kept.
+            any upcoming sessions already scheduled there.
           </p>
         )}
         <DialogFooter>
@@ -165,7 +164,7 @@ export function ClearWeekDialog({
         {weekStartDate && (
           <p className="text-sm text-[#5a7d82]">
             Removes the upcoming scheduled sessions from the week of{" "}
-            {formatDay(weekStartDate)}. Completed and past sessions are kept.
+            {formatDay(weekStartDate)}.
           </p>
         )}
         <DialogFooter>
