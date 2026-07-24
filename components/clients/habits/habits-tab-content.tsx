@@ -118,11 +118,12 @@ export const HabitsTabContent = ({ client }: HabitsTabContentProps) => {
             disabled={!!habitsError}
             className={cn(
               SECTION_LABEL_CLASS,
-              "inline-flex items-center gap-1.5 whitespace-nowrap transition-colors hover:text-[#0d9488] disabled:pointer-events-none disabled:opacity-50"
+              // Sentence case: only divider titles read all-caps
+              "normal-case tracking-normal inline-flex items-center gap-1.5 whitespace-nowrap transition-colors hover:text-[#0d9488] disabled:pointer-events-none disabled:opacity-50"
             )}
           >
             <Settings2 className="h-3 w-3" strokeWidth={1.5} />
-            Manage Habits
+            Manage habits
           </button>
         }
       />

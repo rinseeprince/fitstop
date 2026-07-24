@@ -273,20 +273,13 @@ export function NutritionHistoryTable({ clientId }: Props) {
       <SectionLabel
         label="Nutrition Logged"
         actions={
-          <>
-            <div className="flex items-center gap-2.5">
-              <span className="w-3 h-1 rounded-full bg-protein" /><span className="text-[10px] text-[#93b0b4]">P</span>
-              <span className="w-3 h-1 rounded-full bg-carbs" /><span className="text-[10px] text-[#93b0b4]">C</span>
-              <span className="w-3 h-1 rounded-full bg-fat" /><span className="text-[10px] text-[#93b0b4]">F</span>
-            </div>
-            <DividerPager
-              page={page}
-              total={total}
-              pageSize={HISTORY_PAGE_SIZE}
-              noun="days"
-              onPageChange={setPage}
-            />
-          </>
+          <DividerPager
+            page={page}
+            total={total}
+            pageSize={HISTORY_PAGE_SIZE}
+            noun="days"
+            onPageChange={setPage}
+          />
         }
       />
 

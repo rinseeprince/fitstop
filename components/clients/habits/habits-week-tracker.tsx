@@ -41,9 +41,6 @@ export function HabitsWeekTracker({
   if (isLoading) {
     return (
       <div className="bg-white rounded-[6px] p-5">
-        <p className={cn(LABEL_CLASS, "mb-4")}>
-          Habit Tracker
-        </p>
         <div className="space-y-3">
           {Array.from({ length: 4 }).map((_, i) => (
             <Skeleton key={i} className="h-10 w-full" />
@@ -56,9 +53,6 @@ export function HabitsWeekTracker({
   if (habits.length === 0) {
     return (
       <div className="bg-white rounded-[6px] p-5">
-        <p className={cn(LABEL_CLASS, "mb-4")}>
-          Habit Tracker
-        </p>
         <div className="h-24 flex items-center justify-center text-[13px] text-[#93b0b4]">
           No active habits to display
         </div>
@@ -68,9 +62,6 @@ export function HabitsWeekTracker({
 
   return (
     <div className="bg-white rounded-[6px] p-5">
-      <p className={cn(LABEL_CLASS, "mb-4")}>
-        Habit Tracker
-      </p>
       <Table>
         <TableHeader>
           <TableRow className="border-b border-[rgba(13,148,136,0.08)] hover:bg-transparent">
