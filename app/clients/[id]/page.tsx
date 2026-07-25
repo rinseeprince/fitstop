@@ -12,7 +12,6 @@ import { NutritionCalculatorCardEnhanced } from "@/components/clients/nutrition/
 import { TrainingPlanCard } from "@/components/clients/training/training-plan-card"
 import { MetricsTabContent } from "@/components/clients/metrics/metrics-tab-content"
 import { ClientOverviewTab } from "@/components/clients/client-overview-tab"
-import { MetricSaveDialog } from "@/components/clients/check-in/metric-save-dialog"
 import { HabitsTabContent } from "@/components/clients/habits/habits-tab-content"
 import { CheckInsTabContent } from "@/components/clients/check-ins/check-ins-tab-content"
 import { RoadmapTabContent } from "@/components/clients/roadmap/roadmap-tab-content"
@@ -46,17 +45,10 @@ export default function ClientProfilePage() {
     router.replace(`/clients/${clientId}?tab=${tab}`, { scroll: false })
   }, [clientId, router])
 
-  const {
-    isCalculatingBMR,
-    saveDialogOpen,
-    setSaveDialogOpen,
-    pendingMetricUpdate,
-    isSavingMetric,
-    handleCalculateBMR,
-    handleMetricSave: _handleMetricSave,
-    saveMetric,
-    handleResetToAuto: _handleResetToAuto,
-  } = useClientMetrics({ clientId, onSuccess: () => void mutateClient() })
+  const { isCalculatingBMR, handleCalculateBMR } = useClientMetrics({
+    clientId,
+    onSuccess: () => void mutateClient(),
+  })
 
   const handleSelectCheckIn = (checkIn: CheckIn) => {
     setSelectedCheckInId(checkIn.id)
@@ -135,8 +127,11 @@ export default function ClientProfilePage() {
             />
 
             {/* Metrics Tab */}
-            <TabsContent value="metrics" className="space-y-6 mt-0">
-              <MetricsTabContent client={client} />
+            <TabsContent value="metrics" className="mt-0">
+              <MetricsTabContent
+                client={client}
+                onClientUpdated={() => void mutateClient()}
+              />
             </TabsContent>
 
             {/* Training Plan Tab */}
@@ -190,18 +185,6 @@ export default function ClientProfilePage() {
               </Card>
             </TabsContent>
           </Tabs>
-
-          {/* Metric Save Dialog */}
-          {pendingMetricUpdate && (
-            <MetricSaveDialog
-              open={saveDialogOpen}
-              onOpenChange={setSaveDialogOpen}
-              metricName={pendingMetricUpdate.metricName}
-              onSaveAsCheckIn={() => saveMetric(pendingMetricUpdate.field, pendingMetricUpdate.value, "check-in")}
-              onUpdateOnly={() => saveMetric(pendingMetricUpdate.field, pendingMetricUpdate.value, "update-only")}
-              isLoading={isSavingMetric}
-            />
-          )}
         </>
       ) : null}
     </ClientDetailLayout>

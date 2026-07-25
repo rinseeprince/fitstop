@@ -1,159 +1,107 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import useSWR from "swr";
-import { Loader2 } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
-import { MetricsSidebar } from "./metrics-sidebar";
-import { MetricsGrid } from "./metrics-grid";
-import { BodyMetricsHistoryTable } from "./body-metrics-history-table";
-import { ExerciseProgressionSection } from "./exercise-progression-section";
-import { TimeScopeSelector } from "./time-scope-selector";
-import { useMetricsData, type MetricCategory } from "./hooks/use-metrics-data";
-import { useAllClientCheckIns } from "@/hooks/use-check-in-data";
-import { swrFetcher } from "@/lib/swr-fetcher";
-import { getTodayDateString } from "@/lib/date-helpers";
-import {
-  resolveTimeScope,
-  type RoadmapWithPhases,
-  type TimeScope,
-} from "@/lib/metrics/resolve-time-scope";
+import { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Skeleton } from "@/components/ui/skeleton";
+import { MetricsTopBar } from "./metrics-top-bar";
+import { MetricHero } from "./metric-hero";
+import { MetricProgressionSection } from "./metric-progression-section";
+import { MeasurementLogSection } from "./measurement-log-section";
+import { LogMeasurementDialog } from "./log-measurement-dialog";
+import { useMergedMetrics } from "./hooks/use-merged-metrics";
+import { DEFAULT_FOCUS, type MetricTab } from "./metrics-view-types";
 import type { Client } from "@/types/check-in";
 
 type MetricsTabContentProps = {
   client: Client;
+  onClientUpdated?: () => void;
 };
 
-type RoadmapResponse = { success: boolean; data: RoadmapWithPhases | null };
-type ArchivedRoadmapsResponse = { success: boolean; data: RoadmapWithPhases[] };
+export const MetricsTabContent = ({
+  client,
+  onClientUpdated,
+}: MetricsTabContentProps) => {
+  const searchParams = useSearchParams();
+  const router = useRouter();
 
-const SWR_OPTS = { revalidateOnFocus: false, errorRetryCount: 3, errorRetryInterval: 1000 };
+  // Honor `subtab` only when the URL's `tab` is actually ours (same guard as
+  // the training page): a stale subtab written by another tab must not flash
+  // the wrong pane during a tab switch.
+  const rawSubtab =
+    searchParams.get("tab") === "metrics" ? searchParams.get("subtab") : null;
+  const tab: MetricTab = rawSubtab === "wellness" ? "wellness" : "body";
+  const setTab = (t: MetricTab) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("subtab", t);
+    router.replace(`?${params.toString()}`, { scroll: false });
+  };
 
-export const MetricsTabContent = ({ client }: MetricsTabContentProps) => {
-  // Default to 30d to preserve the prior metrics behaviour.
-  const [scope, setScope] = useState<TimeScope>({ kind: "relative", days: 30 });
-  const [category, setCategory] = useState<MetricCategory>("body");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedMetricId, setSelectedMetricId] = useState<string | null>(null);
-
-  // Self-fetch the FULL check-in history so trends aren't capped at the
-  // default page size (the page-level fetch feeds other tabs, not this one).
-  const { checkIns, isLoading, isError } = useAllClientCheckIns(client.id);
-
-  // All roadmaps (active + completed/archived) populate the time-scope selector's
-  // Program/Phase tiers. Composed from the two existing read endpoints (7.3).
-  const { data: activeRes } = useSWR<RoadmapResponse>(
-    `/api/clients/${client.id}/roadmap`,
-    swrFetcher,
-    SWR_OPTS
+  // Focused metric resets on tab switch by derivation (no effects): a stored
+  // focus applies only while its own tab is active.
+  const [focused, setFocused] = useState<{ tab: MetricTab; id: string } | null>(
+    null
   );
-  const { data: archivedRes } = useSWR<ArchivedRoadmapsResponse>(
-    `/api/clients/${client.id}/roadmap/archived`,
-    swrFetcher,
-    SWR_OPTS
-  );
+  const focusedId = focused?.tab === tab ? focused.id : DEFAULT_FOCUS[tab];
 
-  const roadmaps = useMemo<RoadmapWithPhases[]>(() => {
-    const active = activeRes?.data ? [activeRes.data] : [];
-    const archived = archivedRes?.data ?? [];
-    return [...active, ...archived];
-  }, [activeRes, archivedRes]);
+  const [range, setRange] = useState<30 | 60 | 90 | "all">(30);
+  const [logOpen, setLogOpen] = useState(false);
 
-  const today = getTodayDateString();
-  const scopeWindow = useMemo(
-    () => resolveTimeScope(scope, roadmaps, today),
-    [scope, roadmaps, today]
-  );
+  const { metricsByTab, logRowsByTab, isLoading, isError, logMeasurement } =
+    useMergedMetrics(client, onClientUpdated);
 
-  const { bodyMetrics, wellnessMetrics } = useMetricsData(
-    checkIns,
-    scopeWindow,
-    client.weightUnit,
-    "in" // Default measurement unit
-  );
-
-  const displayedMetrics = category === "body" ? bodyMetrics : wellnessMetrics;
-
-  const filteredDisplayedMetrics = searchQuery
-    ? displayedMetrics.filter((m) =>
-        m.name.toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    : displayedMetrics;
-
-  if (isLoading) {
-    return (
-      <Card>
-        <CardContent className="pt-6">
-          <div className="flex flex-col items-center justify-center py-12 space-y-3">
-            <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">Loading metrics...</p>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (isError) {
-    return (
-      <Card>
-        <CardContent className="pt-6">
-          <div className="flex flex-col items-center justify-center py-12 space-y-3">
-            <p className="font-medium">Failed to load metrics</p>
-            <p className="text-sm text-muted-foreground">
-              An error occurred while loading check-in history.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (checkIns.length === 0) {
-    return (
-      <Card>
-        <CardContent className="pt-6">
-          <div className="flex flex-col items-center justify-center py-12 space-y-3">
-            <p className="font-medium">No check-in data available</p>
-            <p className="text-sm text-muted-foreground">
-              Send a check-in request to start tracking metrics
-            </p>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
+  const metrics = metricsByTab[tab];
+  const focusedMetric = metrics.find((m) => m.id === focusedId) ?? metrics[0] ?? null;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-end">
-        <TimeScopeSelector scope={scope} onChange={setScope} roadmaps={roadmaps} />
-      </div>
-      <div className="flex gap-6 items-start">
-        <MetricsSidebar
-          bodyMetrics={bodyMetrics}
-          wellnessMetrics={wellnessMetrics}
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
-          category={category}
-          onCategoryChange={setCategory}
-          selectedMetricId={selectedMetricId}
-          onSelectMetric={setSelectedMetricId}
-        />
-        <MetricsGrid
-          metrics={filteredDisplayedMetrics}
-          selectedMetricId={selectedMetricId}
-          onClearSelection={() => setSelectedMetricId(null)}
-        />
-      </div>
-      <BodyMetricsHistoryTable
-        clientId={client.id}
-        goalWeight={client.goalWeight ?? null}
-        goalBodyFat={client.goalBodyFatPercentage ?? null}
-        startingWeight={client.startingWeight ?? null}
-        weightUnit={client.weightUnit ?? "lbs"}
+    <div>
+      <MetricsTopBar
+        client={client}
+        tab={tab}
+        onTabChange={setTab}
+        onLogClick={() => setLogOpen(true)}
       />
-      {/* Same resolved window as the metric grid above — one scope, both families. */}
-      <ExerciseProgressionSection clientId={client.id} window={scopeWindow} />
+
+      {isError ? (
+        <p className="py-12 text-center text-[13px] text-[#93b0b4]">
+          Failed to load metrics.
+        </p>
+      ) : isLoading ? (
+        <div>
+          <Skeleton className="mb-4 h-[150px] w-full rounded-[6px] bg-[#0f2027]" />
+          <div className="mb-4 grid grid-cols-3 gap-[10px]">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton key={i} className="h-[88px] rounded-[6px]" />
+            ))}
+          </div>
+          <Skeleton className="h-[380px] w-full rounded-[6px]" />
+        </div>
+      ) : focusedMetric ? (
+        <>
+          <div className="mb-4">
+            <MetricHero
+              metric={focusedMetric}
+              metrics={metrics}
+              onSelectMetric={(id) => setFocused({ tab, id })}
+            />
+          </div>
+          <MetricProgressionSection
+            metric={focusedMetric}
+            range={range}
+            onRangeChange={setRange}
+            onLogFirst={() => setLogOpen(true)}
+          />
+          {/* key={tab} resets the log's page state when the tab switches */}
+          <MeasurementLogSection key={tab} rows={logRowsByTab[tab]} />
+        </>
+      ) : null}
+
+      <LogMeasurementDialog
+        open={logOpen}
+        onOpenChange={setLogOpen}
+        metrics={[...metricsByTab.body, ...metricsByTab.wellness]}
+        initialMetricId={focusedMetric?.id ?? DEFAULT_FOCUS[tab]}
+        onSubmit={logMeasurement}
+      />
     </div>
   );
 };

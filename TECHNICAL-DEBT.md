@@ -574,3 +574,13 @@ Logged: 2026-06-10; updated 2026-06-12 (Session 7.85). Sessions 7.81–7.84 (`do
 
 ### P3 - Guardrail (defer until users exist)
 - **No lint rule prevents a new server-side UTC `getTodayDateString()`.** After 7.81–7.84, a fresh `getTodayDateString()` / bare `CURRENT_DATE` in `services/**` or `app/api/**` silently reintroduces the bug. A custom ESLint `no-restricted-syntax` rule banning it server-side (allowing browser/`'use client'` code + `lib/date-helpers.ts`) would prevent regressions. Deferred per "defer tooling until users exist."
+
+---
+
+## Metrics page — coach-logged entries (post-redesign tail)
+
+Logged: 2026-07-25 (Metrics page redesign, migration 132).
+
+### P2 - Deferred
+- **No DELETE/edit path for `client_metric_entries`.** A mistaken entry can only be corrected by re-logging the same metric + date (upsert replaces); it cannot be removed. A DELETE handler is small, but the weight case is not: deleting the latest weight entry should re-derive `clients.current_weight` from the next-latest `body_metrics` event, which the current cache-update path (`recordBodyMetrics`'s `updateClientCache`) has no machinery for. Build the re-derivation with the DELETE, not before.
+- **`hooks/use-client-metrics.ts` still carries the dead save/dialog members** (`handleMetricSave`, `saveMetric`, `pendingMetricUpdate`, `saveDialogOpen`, `isSavingMetric` — and the broken `saveOption: "update-only"` value the schema rejects). The redesign removed their last consumer (`MetricSaveDialog` + the page wiring); only `isCalculatingBMR`/`handleCalculateBMR`/`handleResetToAuto` are live (Overview BMR). Trim the hook + `MetricSaveOption` type + the `saveOption` branch in `PUT /api/clients/[id]/metrics` in one sweep.

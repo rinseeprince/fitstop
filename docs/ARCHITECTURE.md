@@ -147,10 +147,20 @@ Versioned goals using the `effective_from` / `superseded_at` pattern:
 
 Immutable event log with source provenance:
 - Each measurement is a new row (no `updated_at` column - intentionally immutable)
-- `source` field tracks origin: `check_in` / `metrics_api` / `intake_sync` / `nutrition_plan`
+- `source` field tracks origin: `check_in` / `metrics_api` / `intake_sync` / `nutrition_plan` / `coach_entry`
 - `source_id` (nullable UUID) references the originating record
-- Indexed on `(client_id, recorded_at DESC)` for efficient latest-first queries
+- Indexed on `(client_id, recorded_at DESC)` for efficient latest-first queries (with a `created_at` tiebreak for same-timestamp coach entries)
 - Fields: `weight`, `weight_unit`, `body_fat_percentage`, `bmr`, `tdee`
+
+### client_metric_entries table (migration 132)
+
+Coach-logged measurement entries backing the redesigned client Metrics page:
+- One row per `(client_id, metric_key, entry_date)` — re-logging the same metric on a date **replaces** the earlier value (upsert), so rows are mutable and carry `updated_at` (deliberately unlike the immutable `body_metrics`)
+- `metric_key` stores the Metrics page's canonical metric ids verbatim (camelCase `bodyFat`; CHECK-constrained to the 12 known keys incl. wellness + soreness)
+- Values are stored in the client's display units (no per-row unit snapshot); `note` is an optional per-entry coach note surfaced in the Measurement Log (and labeled as shown to the client)
+- Weight/bodyFat entries **dual-write a `body_metrics` event** (`source: 'coach_entry'`, `recorded_at` = the entry date at 12:00Z, `source_id` = the entry id) so phase comparisons stay coherent; the `clients` denormalized cache updates **only when the entry is dated on/after the latest known event** — a backdated entry never regresses `current_weight` (`recordBodyMetrics`'s `updateClientCache` param)
+- Write path: `GET/POST /api/clients/[id]/metric-entries` (coach-only; future dates rejected against the coach's timezone; audited as `metric_entry.upsert` with no measurement value in metadata)
+- The Metrics page merges these entries with check-in-derived values client-side (`utils/metric-points.ts` + `utils/metric-derived-stats.ts`); `check_ins` rows are never written by this feature
 
 ### Denormalized cache on clients table
 
@@ -571,7 +581,7 @@ All coach-side data fetching uses SWR with:
 |-----|-----------|-------------|
 | Overview | `ClientOverviewTab` | Quick metrics, wellness strip, recent check-ins |
 | Roadmap | `RoadmapTabContent` | Phase timeline, create/transition dialogs |
-| Metrics | `MetricsTabContent` | Body metrics charts, check-in history |
+| Metrics | `MetricsTabContent` | Metric hero + progression chart + measurement log over merged check-in ⊕ coach-logged series (`client_metric_entries`); "Log measurement" modal |
 | Training Plan | `TrainingPlanCard` → `TrainingPlanBuilder` (Data / Plans / Exercise Data) | Calendar + hero, exercise analytics. "Apply program" opens the library drawer, which remounts the shared `/dashboard/programs` builder in `client-draft` mode; "Edit plan" (hero) / "Edit whole plan" (session tray) open the same builder in `placed-plan` mode over the live placed plan (see "Plan amendment"). (The plan-history list below the calendar was removed with the dead `training_plan_history` read chain — the table has had no writer since P7.) |
 | Nutrition | `NutritionCalculatorCardEnhanced` + `NutritionHistoryTable` | Plan builder, per-day nutrition calendar, weekly adherence history |
 | Wellness | `WellnessTabContent` | Wellness trends and analysis |
