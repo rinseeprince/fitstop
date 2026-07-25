@@ -74,11 +74,7 @@ function mapSession(
  * Client-facing read of the active training plan for a client.
  *
  * Resolution: the active `training_plans` row for the client (status='active',
- * not soft-deleted, not superseded). Phase linkage on the plan is NOT required —
- * `training_plans.phase_id` is nullable per ARCHITECTURE.md, and the placement
- * service caps the plan's calendar reach at the client's containing phase
- * end date regardless of the link. Pulling by `phase_id` would silently drop
- * any plan that was placed without explicit phase selection.
+ * not soft-deleted, not superseded).
  *
  * The plan describes itself: placement clones every authored slot — training and
  * rest alike — as real rows, so the returned entries are the whole program in

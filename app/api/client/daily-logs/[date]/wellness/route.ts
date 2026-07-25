@@ -58,8 +58,7 @@ export async function GET(
 
 /**
  * PATCH wellness (mood/energy/sleep/stress/soreness). Guards the date-edit rule via assertCanEdit
- * (403 when locked), resolves plan context for the spine phase_id (null for no-phase
- * clients — wellness is not plan-gated), then writes wellness_logs.
+ * (403 when locked), then writes wellness_logs (wellness is not plan-gated).
  */
 export async function PATCH(
   request: NextRequest,

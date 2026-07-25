@@ -183,13 +183,11 @@ describe("nutrition-event-service: cascade-preserve guards", () => {
       const upsertQuery = createMockQuery({ data: [], error: null });
 
       // One generic "fat" row satisfies every nutrition_plans read (baseline,
-      // phase_id, status, planned-sibling). phase_id:null -> 8-week fallback end
-      // date (no phases read); planned-sibling effective_from:null -> no cap.
+      // status, planned-sibling); planned-sibling effective_from:null -> no cap.
       const planRow = {
         baseline_calories: 2000,
         protein_target_g: 150,
         diet_type: "balanced",
-        phase_id: null,
         status: "active",
         effective_from: null,
       };

@@ -174,8 +174,7 @@ All client API endpoints require authentication except where noted.
 > **Events-as-SOT.** Prescription lives in `training_events` (one row per calendar date); completion lives in `session_logs`, keyed by `training_event_id`.
 
 - `GET /api/client/training-plan` - The active plan, self-describing (`ClientTrainingPlan | null`)
-- `GET /api/client/day-summary?date={YYYY-MM-DD}` - The one read the day view needs: phase, `training: TrainingEventSummary[]`, `trainedFor`, nutrition, wellness, habits. **A rest day returns `training: []`** — rest slots are real DB rows but emit no event
-- `GET /api/client/program` - Roadmap/phase + program summary card data
+- `GET /api/client/day-summary?date={YYYY-MM-DD}` - The one read the day view needs: `training: TrainingEventSummary[]`, `trainedFor`, nutrition, wellness, habits. **A rest day returns `training: []`** — rest slots are real DB rows but emit no event
 - `GET /api/client/training/events/{eventId}` - Event detail: `{ event, session, exercises, sessionLog, exerciseLogs }`
 - `POST /api/client/training/events/{eventId}/log` - Log a prescribed event. `201 {sessionLogId}` · `403` day locked · `404` not found / not this client
 - `POST /api/client/training/session-logs` - Event-less log: the client trained on a date with no prescribed event (rest-day training). One log per date — a second submission for the same date EDITS the existing log

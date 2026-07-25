@@ -185,9 +185,9 @@
 
   The `components/` tree has three audience-scoped folders that are easy to confuse because of the singular/plural difference. They are **parallel audiences**, not refactor-before-and-after, and files never move across them.
 
-  - **`components/clients/`** (plural) - **coach-facing**. A coach viewing, editing, or managing their clients' data: training plans, nutrition plans, roadmap, history tables, check-in review, wellness strip, attention feed, etc.
+  - **`components/clients/`** (plural) - **coach-facing**. A coach viewing, editing, or managing their clients' data: training plans, nutrition plans, history tables, check-in review, wellness strip, attention feed, etc.
   - **`components/client/`** (singular) - **client-facing, pre-activation**. Flows the client sees before their coach has fully activated them: intake/onboarding (`client/onboarding/`) and the guided walkthrough (`client/walkthrough/`).
-  - **`components/client-portal/`** - **client-facing, post-activation**. The logged-in client portal after activation: home day view, detail pages (training, nutrition, wellness, habits), navigation, settings, phase banner, etc.
+  - **`components/client-portal/`** - **client-facing, post-activation**. The logged-in client portal after activation: home day view, detail pages (training, nutrition, wellness, habits), navigation, settings, etc.
 
   Rule of thumb when placing a new component:
   1. Is the coach the primary viewer? → `components/clients/`.
@@ -218,7 +218,7 @@
   - Client-facing GET API routes should return `Cache-Control: no-store` headers.
 
   ### Nutrition calendar cache invalidation (landmine)
-  - The coach nutrition calendar renders from an SWR cache keyed per month window (`/api/clients/{clientId}/nutrition/events?startDate=...&endDate=...`). **Any client-side success path whose server route rewrites `nutrition_events`** — plan regenerate, the training cascades via `cascadeNutritionAfterTrainingChange` (place/move/duplicate/delete/surplus edits), phase transition — **must call `useInvalidateNutritionCalendar` from `hooks/use-nutrition-calendar-events.ts`**, or the calendar silently shows stale targets until a page refresh.
+  - The coach nutrition calendar renders from an SWR cache keyed per month window (`/api/clients/{clientId}/nutrition/events?startDate=...&endDate=...`). **Any client-side success path whose server route rewrites `nutrition_events`** — plan regenerate, the training cascades via `cascadeNutritionAfterTrainingChange` (place/move/duplicate/delete/surplus edits) — **must call `useInvalidateNutritionCalendar` from `hooks/use-nutrition-calendar-events.ts`**, or the calendar silently shows stale targets until a page refresh.
   - The key-builder and invalidator are co-located in that hook module deliberately so they can never drift. Never construct a `/nutrition/events` key anywhere else.
 
   ### Legacy (being retired)
@@ -266,7 +266,7 @@
   - **Services MUST filter on the provided scope.** `.eq('client_id', clientId)` (or the equivalent join constraint for nested entities). A service that accepts `clientId` but doesn't filter on it is a data leak waiting to happen.
   - **Services trust their callers.** The route layer is responsible for proving that the `clientId` passed in is one the authed principal is allowed to access. Services do not re-verify (that would be the auth check moving into the wrong layer and creating circular dependencies).
   - **Never pass a user-provided `clientId` straight to a service.** The route takes `clientId` from the URL path (or request body) and MUST run an ownership check against the authed principal before handing it to a service. See the IDOR chain in step 4 above.
-  - **Cross-user reads are legitimate.** Coach dashboard reads aggregate across all of a coach's clients; attention feed, library, roadmap browsing, etc. These pass `coachId` to services that fan out; the service filters on `coach_id` rather than `client_id`. Same rule: caller-verified scope, service filters on it.
+  - **Cross-user reads are legitimate.** Coach dashboard reads aggregate across all of a coach's clients; attention feed, library browsing, etc. These pass `coachId` to services that fan out; the service filters on `coach_id` rather than `client_id`. Same rule: caller-verified scope, service filters on it.
 
   #### When to use `createServerSupabaseClient()`
 
@@ -300,11 +300,11 @@
 
   - Security-relevant actions on client-owned data are recorded in an immutable, append-only `audit_logs` table for incident investigation (`services/audit-log-service.ts`, migration 108). Call `recordAuditEvent(...)` **fire-and-forget** (`void`-prefixed) AFTER a successful, already-authorized write — it records what the route already authorized; it never authorizes or blocks the request.
   - Pass a caller-verified `actorId` + `clientId`. Use `action` names from `AUDIT_ACTIONS` (`lib/constants.ts`); `metadata` is small, non-sensitive context only — never health PII. If you pass `request`, the helper hashes the IP (SHA-256 prefix), never the raw address.
-  - When to log: client invitation/activation, goal/plan/metric changes, phase transitions, intake metrics sync, role creation. Failures go to Sentry, not the user.
+  - When to log: client invitation/activation, goal/plan/metric changes, intake metrics sync, role creation. Failures go to Sentry, not the user.
 
   ### General
   - Migrations: Version controlled, never edit directly
-  - Relations: Foreign keys with ON DELETE CASCADE, SET NULL, or RESTRICT. Use RESTRICT on parent tables that must not be hard-deleted (e.g. roadmaps - forces archival instead). **Event→plan FKs are SET NULL** (`training_events.training_plan_id`, `nutrition_events.nutrition_plan_id`, both nullable since migration 113) so deleting a plan/template never destroys past/logged events — the events carry the date-specific truth (see "Events-as-SOT" below and `docs/ARCHITECTURE.md → Nutrition & Training Events`).
+  - Relations: Foreign keys with ON DELETE CASCADE, SET NULL, or RESTRICT. Use RESTRICT on parent tables that must not be hard-deleted (forces archival instead). **Event→plan FKs are SET NULL** (`training_events.training_plan_id`, `nutrition_events.nutrition_plan_id`, both nullable since migration 113) so deleting a plan/template never destroys past/logged events — the events carry the date-specific truth (see "Events-as-SOT" below and `docs/ARCHITECTURE.md → Nutrition & Training Events`).
   - Indexes: On foreign keys, search fields, sort columns
   - Timestamps: created_at, updated_at on all tables. Exception: immutable event tables (e.g. body_metrics) intentionally skip updated_at - add a comment explaining why.
 
@@ -324,9 +324,7 @@
   ### Soft deletes
   - User-created data uses soft delete, never hard delete
   - **is_active pattern**: Training sessions, exercises, and daily habits use `is_active = false`. Always filter by `.eq("is_active", true)` in read queries
-  - **Status-based lifecycle**: Entities with richer states (e.g. roadmaps: 'active'/'archived'/'draft', phases: 'planned'/'active'/'completed'/'skipped') use a status column instead of is_active. The lifecycle is **not uniform across entities** — match the one already in place:
-    - **Roadmaps** stay archive-only (`ON DELETE RESTRICT`); never hard-delete a roadmap (it holds historical phases/snapshots).
-    - **Phases** auto-activate by date (`promotePhaseIfReady`, no manual button) and **CAN be coach hard-deleted for any status** (`deletePhase` unlinks plans/habits `phase_id := NULL` first; logged history survives because it is event-keyed, not phase-keyed). So the "never hard-delete a status entity" rule applies to roadmaps, **not** phases.
+  - **Status-based lifecycle**: Entities with richer states use a status column instead of is_active. The lifecycle is **not uniform across entities** — match the one already in place:
     - **Training plans** moved to **date-range coexistence** (events-as-SOT): many provenance `training_plans` rows coexist, there is **no `planned`/promotion concept**, and "active" is resolved **by date** (the row whose `[effective_from, effective_until]` covers today), not `status='active'`. Placement is additive (no wipe/archive of prior plans).
     - **Nutrition plans** stay **one durable active plan per client** (`idx_nutrition_plans_active_unique`), edited **in place** (upsert) with **no versioning/archival**. Per-day coach edits are materialized onto `nutrition_events` (`is_modified`), never minted as new plan rows.
   - Unique constraints must account for inactive rows (check for inactive before inserting, reactivate if found)
@@ -337,7 +335,7 @@
   Date-specific training/nutrition targets live on **events** (`training_events`, `nutrition_events`), one row per date. Plans and their templates (`training_sessions`, `nutrition_plan_daily_targets`) are **blueprints that generate events + provenance for analytics/reapply** — not the live read path for a given day, and never embedded via a live join to a deletable plan. Historical reads resolve from immutable snapshots (`session_logs`, `nutrition_logs`), never from regenerable events. When you add a date-specific feature, write it onto the event, not the plan. Full model: `docs/ARCHITECTURE.md → Nutrition & Training Events`.
 
   **Deferred debt (events-SOT — documented, not done):**
-  - **Adherence is not unified.** Two divergent live adherence calcs coexist (coach phase-review = `session_logs` / `frequency_per_week`; client check-in = `training_events` count). A periodisation-safe denominator + unifying them is a separate decision — do not change adherence math under the guise of an events-SOT edit.
+  - **Adherence is not unified.** Two divergent live adherence calc conventions coexist (coach history = `session_logs` / `frequency_per_week`; client check-in = `training_events` count). A periodisation-safe denominator + unifying them is a separate decision — do not change adherence math under the guise of an events-SOT edit.
   - **Prescribed denormalization.** `training_events.calorie_surplus_percentage` is denormalized from the session so the nutrition cascade can read it per date; **every** training event-write path must keep populating it (one dropped write silently falls nutrition back to rest-day calories while the TRAIN badge still renders). See `TECHNICAL-DEBT.md`.
 
   ### Training prescription model (migrations 119-121)
@@ -535,7 +533,6 @@
   - **docs/CLIENT-PORTAL-REDESIGN.md** + **docs/CLIENT-PORTAL-EXECUTION-PLAN.md**: Active redesign replacing Daily Pulse with a day-centric, event-driven client portal. These are the source of truth for any client-portal work. Read both before modifying anything under `app/client/**` or `components/client-portal/**`. Where ARCHITECTURE.md and these docs disagree about a client-portal write path or data flow (for example the monolithic `upsert_daily_log_atomic()` write under ARCHITECTURE's "Daily Logs" section), these redesign docs win; ARCHITECTURE describes the legacy path until Session 5.1's doc sweep rewrites it.
   - **`docs/newdesignsystem.md`**: Visual patterns, colour tokens, spacing, typography. The authoritative source for visual tokens.
   - The completed training-builder and wellness-soreness execution plans were **deleted after shipping** — this file + **docs/ARCHITECTURE.md** are canonical for everything they built (training authoring/placement/prescription, the assistant, the soreness metric). Their STATUS blocks (recorded deviations, phase ledgers) live in git history of the deleted paths under `docs/`.
-  - **docs/EVENTS-SOT-OVERHAUL-EXECUTION-PLAN.md**: The events-as-SOT migration §8 codifies. Background for why plans are templates/provenance and placement is additive.
   - **TECHNICAL-DEBT.md**: Known gaps between conventions and current implementation.
 
   ## 17. Logging

@@ -29,7 +29,7 @@ beforeEach(() => {
 });
 
 describe("upsertNutritionLog", () => {
-  it("ensures the spine with phase_id, snapshots targets, writes nutrition_logs", async () => {
+  it("ensures the spine, snapshots targets, writes nutrition_logs", async () => {
     const spine = spineQuery();
     const child = childQuery();
     vi.mocked(supabaseAdmin.from).mockImplementation(((t: string) =>

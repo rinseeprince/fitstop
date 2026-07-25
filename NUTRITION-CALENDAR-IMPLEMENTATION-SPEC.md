@@ -1,6 +1,6 @@
 # Nutrition Calendar Overhaul — Implementation Spec
 
-> **Status: ✅ IMPLEMENTED** (Sessions 1-5 of the events-SOT overhaul, migrations 113-118; 2026-06-17 → 2026-06-21). This spec shipped as designed — one durable nutrition plan + per-day `nutrition_events` calendar editing (`is_modified`/`note`), event→plan FKs `SET NULL`, promotion removed. **Authoritative shipped model: `docs/ARCHITECTURE.md → Nutrition & Training Events`; session-by-session record: `docs/EVENTS-SOT-OVERHAUL-EXECUTION-PLAN.md`.** Retained as the design-decision record (the §2 D1-D6 rationale); the prescriptive "Delete X / remove Y / migrate Z" language below is **historical** (that work is done). **Exception still open:** the phase-transition re-window (§8) is PARKED → CPEP 7.10 — the live transition still archives nutrition.
+> **Status: ✅ IMPLEMENTED** (Sessions 1-5 of the events-SOT overhaul, migrations 113-118; 2026-06-17 → 2026-06-21). This spec shipped as designed — one durable nutrition plan + per-day `nutrition_events` calendar editing (`is_modified`/`note`), event→plan FKs `SET NULL`, promotion removed. **Authoritative shipped model: `docs/ARCHITECTURE.md → Nutrition & Training Events`** (the events-SOT execution plan was deleted after shipping; its record is in git history). Retained as the design-decision record (the §2 D1-D6 rationale); the prescriptive "Delete X / remove Y / migrate Z" language below is **historical** (that work is done). **§8 is moot:** roadmaps/phases were removed entirely on 2026-07-25 (tag `roadmap-v2-pre-removal`) — there is no phase transition, so the re-window it planned no longer applies. Phase/roadmap mentions below are historical design context.
 > **Owner decisions baked in as recommended defaults** (see §2).
 
 ---
@@ -123,7 +123,7 @@ Follow the standard route order (rate-limit → CSRF → auth → IDOR → zod �
 
 ---
 
-## 8. Phase-transition rework (landmine — D2)
+## 8. Phase-transition rework (landmine — D2) — MOOT: phases removed 2026-07-25
 
 Today `transition_phase_atomic` (mig 111) does `UPDATE nutrition_plans SET status='archived'` for the completing phase, and `phase-transition-service.ts` strips its future events. Under **one durable plan spanning phases**, that archives the client's *only* plan and **blanks the forward calendar**.
 

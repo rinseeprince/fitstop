@@ -3,8 +3,8 @@
  *
  * The redesign retires the monolithic `upsert_daily_log_atomic` RPC: nutrition and
  * wellness save independently and write the `daily_logs` spine + their own child table
- * directly (docs/CLIENT-PORTAL-REDESIGN.md:445,506). Each writer ensures the spine row
- * (stamping `phase_id`), then upserts its child. Two-step is safe: a spine row without a
+ * directly (docs/CLIENT-PORTAL-REDESIGN.md:445,506). Each writer ensures the spine row,
+ * then upserts its child. Two-step is safe: a spine row without a
  * child is benign, the unique constraints make retries idempotent, and the per-resource
  * "logged" check (daily-log-permissions-service) reads the child table, so a failed child
  * write leaves the day editable and the next attempt heals it.

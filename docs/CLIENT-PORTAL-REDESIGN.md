@@ -33,7 +33,6 @@ Pre-launch, no users. The next milestones are iOS and Android app builds, then l
 - **Edited-clone bleed.** A coach "Just this day" edit creates a cloned `training_sessions` row. The session-keyed client list shows duplicates forever, `WeeklyCompletionProgress` miscounts, and the completion-log fallback in `app/api/client/training/completions/route.ts` can link logs to the wrong event.
 - **Monolithic save friction.** Logging only wellness today still requires interacting with an everything-at-once page.
 - **No workout detail.** `exercise_logs` (migration 027, columns `actual_sets`, `actual_reps`, `actual_weight`, `weight_unit`, `notes`) has no write path or UI.
-- **No client-side roadmap/phase visibility.** Coaches manage phases fully; clients see nothing.
 - **Architecture drift.** `docs/ARCHITECTURE.md` states events are the source of truth. The coach calendar follows this; the client portal does not.
 - **Known date bug** (TECHNICAL-DEBT.md): `saveUnplannedActivities` uses `new Date()` instead of the selected date. Past and future logging is already broken.
 - **Duplicate type definitions** (TECHNICAL-DEBT.md): `TodaysActivity`, `UnplannedActivity`, `HabitLogWithDetails` repeated across 4 to 5 files.
@@ -45,7 +44,6 @@ Pre-launch, no users. The next milestones are iOS and Android app builds, then l
 ### Home (`/client?date=YYYY-MM-DD`, today by default)
 
 A compact summary of the selected day. The layout:
-- Phase banner on top (hidden when no active roadmap).
 - Four summary cards (training, nutrition, wellness, habits). Training becomes a list when multiple sessions are prescribed for that date.
 - Previous/next day navigation via arrow buttons and horizontal swipe on touch devices.
 - URL-param-driven date state so browser back/forward and deep links work naturally.
@@ -64,7 +62,7 @@ Saves are per-page and independent. There is no shared "Log Day" button. The bro
 
 ### Program view (`/client/program`)
 
-Read-only roadmap and phases. Active phase highlighted; completed phases collapsed; future phases shown with start dates. Accessible via the phase banner tap or the Program tab in the bottom nav. Clients cannot edit roadmap data.
+The client's current training plan + nutrition plan cards, reached via the Program tab in the bottom nav. Read-only.
 
 ### Navigation structure (bottom tab bar)
 
@@ -72,7 +70,7 @@ The client portal gets a persistent bottom tab bar (native-app feel) with five d
 
 1. **Home** (`/client`): the day view with summary cards.
 2. **Check-in** (`/client/check-in`): the weekly check-in hub — submission form when a check-in is in window, plus a list of past check-ins with drill-down detail. The tab badge hints when a check-in is in window.
-3. **Program** (`/client/program`): the read-only roadmap/phase view.
+3. **Program** (`/client/program`): the read-only plan view (training + nutrition cards).
 4. **Content** (`/client/resources`): the existing content library already built (assigned content + coach library, `app/client/resources/page.tsx`).
 5. **Settings**: accessed via a profile avatar in the top-right corner, not as a 5th tab, to keep the bar tight.
 
@@ -102,11 +100,6 @@ Out of scope for v1: avatar upload, password change (uses Supabase auth flow els
 
 New endpoint: `PATCH /api/client/settings` with zod validation for the supported fields.
 
-### Phase completion
-
-When a phase ends, the first time the client opens the app after the transition, a `PhaseCompletionCard` appears at the top of the home view (coach reflection, summary stats, next phase). Dismissal sets `completion_seen = true`. The existing component relocates from Daily Pulse to the new home; no rebuild.
-
----
 
 ## Fetch pattern: click-through
 
@@ -115,7 +108,6 @@ When a phase ends, the first time the client opens the app after the transition,
 `GET /api/client/day-summary?date=YYYY-MM-DD` returns:
 ```
 {
-  phase: PhaseSummary | null,
   training: TrainingCardSummary[],
   nutrition: NutritionCardSummary,
   wellness: WellnessCardSummary,
@@ -130,7 +122,7 @@ Each summary is minimal: name, logged-state boolean, progress counts. Target und
 - `GET /api/client/daily-logs/[date]/nutrition`: nutrition event target plus any existing log.
 - `GET /api/client/daily-logs/[date]/wellness`: wellness log.
 - `GET /api/client/daily-logs/[date]/habits`: habits plus the day's logs.
-- `GET /api/client/program`: active roadmap plus phases.
+- `GET /api/client/training-plan` + `GET /api/client/nutrition-plan`: the Program tab's plan cards.
 
 ### Coach drill-down
 
@@ -143,7 +135,7 @@ Each summary is minimal: name, logged-state boolean, progress counts. Target und
 - `PATCH /api/client/daily-logs/[date]/wellness`: wellness fields on `wellness_logs`.
 - Habits continue to use existing habit-log endpoints.
 
-All write endpoints populate `daily_logs.phase_id` and child `*_plan_id` links from the authoritative plan for that date. All write endpoints enforce the past-day lock (see below) server-side.
+All write endpoints populate the child `*_plan_id` links from the authoritative plan for that date. All write endpoints enforce the past-day lock (see below) server-side.
 
 ---
 
@@ -255,23 +247,13 @@ Both are imported by every surface that cares (UI detail pages for disabled/noti
 
 **Habits lock per-habit, not per-day.** Nutrition/wellness are saved as one day record, so "logged" is the existence of any child row that day. Habits are toggled individually (each toggle is its own write), so `assertCanEdit`/`getDayEditState` accept an optional `habitId` that narrows the "logged" check to a single habit. This keeps the documented "past day, never logged: editable" backfill working for habits (fill in a missed day habit-by-habit), while each habit still locks once recorded. The pure `canEditDay` rule is unchanged; only what counts as "logged" is narrowed.
 
-Same pattern for plan context: `resolvePlanContextForDate(clientId, date): { phaseId, nutritionPlanId, trainingPlanId }` is the single function every write endpoint calls to populate `daily_logs.phase_id` and `*_plan_id` links. Do not duplicate this query per endpoint.
+Same pattern for plan context: `resolvePlanContextForDate(clientId, date): { nutritionPlanId, trainingPlanId }` is the single function every write endpoint calls to populate the `*_plan_id` links. Do not duplicate this query per endpoint.
 
 ---
 
-## Roadmap and phase awareness
+## Roadmap and phase awareness — REMOVED
 
-### Banner on home
-
-Phase name, week-in-phase, one-line goal. Hidden when no active roadmap. Handles mid-transition state: when the current phase is completed and the next is activating, the banner shows the incoming phase's name and goal.
-
-### Program view
-
-`/client/program` shows the full roadmap with its phases (coach-authored content, read-only). Current phase highlighted; past phases collapsible; future phases visible with start dates.
-
-### Phase completion card
-
-Existing `PhaseCompletionCard` relocates from `components/daily-pulse/` to `components/client-portal/day/`. Shown at the top of the home until the client dismisses it (`completion_seen = true`).
+Roadmaps/phases were removed entirely on 2026-07-25 (rebuild post-launch; the shipped design lives in git history, tag `roadmap-v2-pre-removal`). The phase banner, `/client/program` roadmap view, and `PhaseCompletionCard` this section specified no longer exist; the Program tab now shows the plan cards only.
 
 ---
 
@@ -372,7 +354,6 @@ Phase 8 in `CLIENT-PORTAL-EXECUTION-PLAN.md`:
 
 - `services/training-event-service.ts`: `getEventForDate`, `getEventForSessionAndDate`, `linkSessionLogToEvent`, `mapCompletionQualityToEventStatus`.
 - `lib/date-helpers.ts`: `getTodayDateString`, `getTrainingWeekStart`, `getDateString`. Replace every `.split('T')[0]` with `getDateString`.
-- `components/daily-pulse/phase-completion-card.tsx`: relocate, do not rebuild.
 - `components/client/onboarding/client-waiting-state.tsx`: the "waiting for coach" empty state exists already.
 - `components/client/walkthrough/guided-walkthrough.tsx`: update copy and steps; do not rebuild the trigger logic.
 - `services/training-event-calendar-service.ts` and `components/clients/training/calendar/training-calendar-view.tsx`: reference patterns for event-driven reads.
@@ -394,22 +375,20 @@ Phase 8 in `CLIENT-PORTAL-EXECUTION-PLAN.md`:
 - `app/client/settings/page.tsx`: settings.
 - `app/api/client/settings/route.ts`: PATCH settings mutation.
 - `components/client-portal/nav/client-nav.tsx`: bottom tab bar + top avatar trigger in one file. Split only if it exceeds the 250-line component limit.
-- `components/client-portal/day/day-header.tsx`: date nav plus phase banner.
+- `components/client-portal/day/day-header.tsx`: date nav.
 - `components/client-portal/day/training-card-summary.tsx`, `nutrition-card-summary.tsx`, `wellness-card-summary.tsx`, `habits-card-summary.tsx`.
-- `components/client-portal/day/phase-banner.tsx`, `phase-completion-card.tsx` (relocated), `locked-day-notice.tsx` (single component with a `reason` prop; do not split into variants).
+- `components/client-portal/day/locked-day-notice.tsx` (single component with a `reason` prop; do not split into variants).
 - `components/client-portal/training/set-tracker.tsx`, `exercise-tracker-block.tsx`, `set-row.tsx`.
 - `components/clients/training/session-log-detail-dialog.tsx` (coach-side).
 
 Settings form: starts as a single `app/client/settings/page.tsx`. A `components/client-portal/settings/` subdirectory is only created if the page blows past the 250-line limit. No speculative form component splits.
-
-Client program data (`getClientProgram`): lives in a new `services/client-program-service.ts`. This reverses the earlier "put in existing roadmap service" call. The split is for **file isolation** — keeping a single-client read out of the file full of coach cross-client queries so the wrong query can't be grabbed by accident. Per CONVENTIONS §8 (Shape B), both the client read and the coach reads use `supabaseAdmin`; access is enforced by the route layer passing a verified scope (`clientId` for the client read, `coachId` for coach reads), **not** by session-scoped RLS. *(An earlier draft said client-side reads "must use session-scoped Supabase (RLS)"; that predates Shape B and is superseded by CONVENTIONS §8.)*
 
 No `useClientDay` hook. `useSWR` is called directly in the page. Only create a wrapper hook if it grows actual reusable logic (retries, transforms, dependent fetches).
 
 ### Retired (pre-launch, no users exist)
 
 - `app/client/dashboard/page.tsx` (Daily Pulse landing).
-- `components/daily-pulse/*` (except already-relocated `PhaseCompletionCard`).
+- `components/daily-pulse/*`.
 - `app/api/client/training/route.ts` (old flat list GET).
 - `app/api/client/training/completions/route.ts` (old session-keyed completion).
 - `services/client-portal-training.ts:markSessionComplete` and now-unused exports.
@@ -434,7 +413,6 @@ Before Phase 1:
 - **Client timezone**: every date computation uses client timezone; server never uses UTC for "today." Past-day locking respects client-local midnight.
 - **Past-day edit policy**: today always editable; past unlogged editable; past logged locked (server-enforced).
 - **Plan replaced mid-use**: coach drill-down reads `prescribed_session_snapshot` and `prescribed_exercise_snapshot` when live references are null.
-- **Mid-phase transition**: phase banner handles no-roadmap, active-phase, current-completed-plus-next-pending, and current-completed-plus-next-activating states.
 - **Brand-new client**: pre-activation uses existing `client-waiting-state.tsx`. Post-activation with no plans yet: empty states per card ("Your coach is preparing this").
 - **Weight unit**: `preferred_weight_unit` column on `clients`; UI seeds input in preferred unit but `exercise_logs.weight_unit` stores actual unit entered.
 - **Rate limits**: two-tier (Session 3.10). Tier 1 is a loose IP burst guard (~1000 req / 10s, abuse-only) that runs first; tier 2 is a tight per-client limit (30 req / 10s, keyed by client id, applied post-auth). Bulk-replace save pattern keeps realistic workouts well under the per-client tier. No per-set writes. See "Scale conventions → Two-tier rate limiting" below and CONVENTIONS §9.
@@ -445,7 +423,6 @@ Before Phase 1:
 ## Deliberate reversals of existing documented principles
 
 1. **"No auto-save" principle (old Daily Pulse rule).** Per-card independent saves replace the monolithic "Log Day" button. This reversal is intentional and reflected in `docs/ARCHITECTURE.md` (the principle is removed there).
-2. **"Props down, callbacks up" for the phase completion card.** The relocated `PhaseCompletionCard` fetches its own data and POSTs its own dismissal via SWR, which technically violates the CONVENTIONS rule that child components be controlled/presentational. We deliberately keep this because Session 2.5 is scoped to relocation, not refactor, and the card's self-contained fetch pattern works today. Do not imitate this for new components.
 
 ---
 
@@ -453,32 +430,9 @@ Before Phase 1:
 
 Several coach-side gaps surfaced during planning and are bundled because they touch the same domain and benefit from the same under-the-hood changes.
 
-### Roadmap end-and-replace flow
+### Roadmap flows — REMOVED
 
-Backend CRUD exists (`POST /api/clients/[id]/roadmap` creates, `PATCH` updates, `DELETE` archives if no started/completed phases exist). Coach-side UI exposes create and edit, but there is no clear "end this roadmap and start a new one" workflow visible to the coach. Add:
-
-- An "End roadmap" button on `components/clients/roadmap/roadmap-tab-content.tsx` that confirms intent, calls the existing archive path (likely via status change to `archived` rather than DELETE, since DELETE is blocked once phases have started), and then opens the existing `create-roadmap-dialog.tsx`.
-- Confirmation copy makes clear the current roadmap becomes read-only history and a new one can be set up.
-
-### Phase edit unlock for active phases
-
-Today phase goal fields (`phase_goal_weight`, `phase_goal_body_fat_percentage`) lock once `phase.status !== 'planned'` (`components/clients/roadmap/edit-phase-dialog.tsx:50` plus server guard in `updatePhase()`). Loosen to:
-
-- **Planned**: fully editable (current behavior).
-- **Active**: fully editable (new behavior). Show a small warning banner that goal changes may affect downstream nutrition plan targets for this phase.
-- **Completed / skipped**: remain read-only (history is history).
-
-Implementation: remove the `goalsDisabled` status check for active; update the `updatePhase()` guard to allow edits on `['planned', 'active']`.
-
-Known downstream implication: nutrition plans calculated with the old phase goal won't auto-recalculate. Flag in the confirmation; a recalc workflow is out of scope for this change.
-
-> **events-SOT clarification.** There is now **one durable nutrition plan per client** (no versioning), so a phase-goal edit neither archives nor re-mints a plan — it simply won't auto-recalculate the targets. Per-day overrides live on `nutrition_events` (`is_modified`), and event→plan FKs are `SET NULL`. Separately, **completing/auto-activating a phase currently archives the linked nutrition plan and does NOT yet re-window** its forward events — that re-window seam is parked → Session 7.10 (`rewindowNutritionToActivePhase`). Phases now auto-activate by date (`promotePhaseIfReady`).
-
-### Archived-roadmap browsing
-
-Today the coach can archive a roadmap but cannot view archived ones afterwards. Add a "Past roadmaps" surface to `roadmap-tab-content.tsx` (collapsible section or dropdown) that lists archived roadmaps for this client. Selecting one renders its phases read-only — same component as the active roadmap's phase list, but nothing is editable. Archived phase goals, reflections, and summaries visible for historical reference.
-
-Backend: read endpoint needs to accept `status=archived` filter on `GET /api/clients/[id]/roadmap` (or a separate list route). No write path.
+The roadmap end-and-replace flow and the active-phase goal-edit unlock this section specified shipped (Sessions 7.1/7.2) and were then deleted with the roadmaps/phases removal (2026-07-25). Their specs live in git history (tag `roadmap-v2-pre-removal`).
 
 ### Per-client Check-ins tab (coach side)
 
@@ -491,15 +445,7 @@ The new tab shows:
 
 API `/api/clients/[id]/check-ins` already supports status filtering. This is primarily a UI surface.
 
-### Metrics page phase filter
 
-`MetricsTabContent` today filters by date range only (7d, 30d, 90d, all time) and metric category (body vs wellness). Add phase scoping so coaches can see trends within a single phase (useful for comparing what happened during a cut vs a bulk, for example):
-
-- Add a filter chip row or dropdown: "All time" (current default), "Active phase," plus one entry per past phase on the roadmap.
-- Selecting a phase scopes all charts (body metrics, wellness, adherence) to that phase's date range.
-- Works for clients with and without roadmaps; when no roadmap exists, only "All time" is available (filter is hidden or disabled).
-
-Implementation touches `components/clients/metrics/metrics-tab-content.tsx` and its data hook (`use-metrics-data.ts`) to accept an optional phase scope and pass it through to chart date ranges.
 
 ---
 

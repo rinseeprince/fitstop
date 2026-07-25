@@ -150,7 +150,7 @@ describe("training-event-calendar-service", () => {
 
       mockFrom.mockImplementation((table: string) => {
         if (table === "training_plans") {
-          return createMockQuery({ data: { phase_id: null }, error: null }) as any;
+          return createMockQuery({ data: null, error: null }) as any;
         }
         if (table === "training_sessions") {
           sessionCallIndex.current++;
@@ -312,7 +312,7 @@ describe("training-event-calendar-service", () => {
 
       mockFrom.mockImplementation((table: string) => {
         if (table === "training_plans") {
-          return createMockQuery({ data: { phase_id: null }, error: null }) as any;
+          return createMockQuery({ data: null, error: null }) as any;
         }
         if (table === "training_sessions") {
           sessionCallIndex.current++;
@@ -387,7 +387,7 @@ describe("training-event-calendar-service", () => {
 
       mockFrom.mockImplementation((table: string) => {
         if (table === "training_plans") {
-          return createMockQuery({ data: { phase_id: null }, error: null }) as any;
+          return createMockQuery({ data: null, error: null }) as any;
         }
         if (table === "training_sessions") {
           sessionCallIndex.current++;
@@ -446,7 +446,7 @@ describe("training-event-calendar-service", () => {
       ]);
 
       // Mock all supabase calls to succeed
-      const noPhaseMock = createMockQuery({ data: { phase_id: null }, error: null });
+      const emptyMock = createMockQuery({ data: null, error: null });
       const sessionMock = createMockQuery({
         data: { id: "s1", plan_id: "plan-1", name: "Push", day_of_week: "monday", order_index: 0, focus: null, notes: null, estimated_duration_minutes: 60, estimated_calories: 400, calories_calculated_at: null, is_active: true },
         error: null,
@@ -456,7 +456,7 @@ describe("training-event-calendar-service", () => {
       const insertMock = createMockQuery({ data: null, error: null });
 
       mockFrom.mockImplementation((table: string) => {
-        if (table === "training_plans") return noPhaseMock as any;
+        if (table === "training_plans") return emptyMock as any;
         if (table === "training_sessions") {
           // Alternate between fetch and insert
           return sessionMock.single.mock.calls.length % 2 === 0
@@ -619,7 +619,7 @@ describe("training-event-calendar-service", () => {
 
       mockFrom.mockImplementation((table: string) => {
         if (table === "training_plans") {
-          return createMockQuery({ data: { phase_id: null }, error: null }) as any;
+          return createMockQuery({ data: null, error: null }) as any;
         }
         if (table === "training_events") {
           fromCallIndex++;
@@ -661,7 +661,7 @@ describe("training-event-calendar-service", () => {
       let fromCallIndex = 0;
       mockFrom.mockImplementation((table: string) => {
         if (table === "training_plans") {
-          return createMockQuery({ data: { phase_id: null }, error: null }) as any;
+          return createMockQuery({ data: null, error: null }) as any;
         }
         if (table === "training_events") {
           fromCallIndex++;
@@ -748,8 +748,7 @@ describe("training-event-calendar-service", () => {
           throw new Error("Template must NOT be touched by moveEventAndFuture");
         }
         if (table === "training_plans") {
-          // validatePhaseBounds queries this per update; return no phase.
-          return createMockQuery({ data: { phase_id: null }, error: null }) as any;
+          return createMockQuery({ data: null, error: null }) as any;
         }
         if (table === "training_events") {
           fromCallIndex++;
@@ -832,7 +831,7 @@ describe("training-event-calendar-service", () => {
           throw new Error("Template must NOT be touched");
         }
         if (table === "training_plans") {
-          return createMockQuery({ data: { phase_id: null }, error: null }) as any;
+          return createMockQuery({ data: null, error: null }) as any;
         }
         if (table === "training_events") {
           fromCallIndex++;
@@ -887,7 +886,7 @@ describe("training-event-calendar-service", () => {
 
       mockFrom.mockImplementation((table: string) => {
         if (table === "training_plans") {
-          return createMockQuery({ data: { phase_id: null }, error: null }) as any;
+          return createMockQuery({ data: null, error: null }) as any;
         }
         if (table === "training_events") {
           fromCallIndex++;
@@ -993,7 +992,7 @@ describe("training-event-calendar-service", () => {
           return createMockQuery({ data: { id: "event-2" }, error: null }) as any;
         }
         if (table === "training_plans") {
-          return createMockQuery({ data: { phase_id: null }, error: null }) as any;
+          return createMockQuery({ data: null, error: null }) as any;
         }
         return createMockQuery({ data: null, error: null }) as any;
       });
