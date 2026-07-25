@@ -1,25 +1,17 @@
 import { Ban, Check, Dumbbell, Minus, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { TrainingEventStatus } from "@/types/training";
-import type { PhaseStatus } from "@/types/roadmap";
 
 // Teal-Summit tokens for the Plans-subtab month calendar. Same role as
 // program-builder/builder-tokens.ts, scoped to the real-date calendar: the
-// column template, per-phase day tints, and the per-status event thumb map
-// that replaces the old raw-Tailwind status dots.
+// column template and the per-status event thumb map that replaces the old
+// raw-Tailwind status dots.
 
 // Shared by the weekday header row and every week row — 42px rail + 7 days,
 // mirroring the builder grid's shape (GRID_COLS) at calendar cell widths.
 export const CAL_GRID_COLS =
   "grid grid-cols-[42px_repeat(7,minmax(0,1fr))] gap-2";
 
-// Day-cell wash by the phase covering that date. Teal alpha ladder only —
-// never blue or slate tints. Skipped phases get no tint (same as no phase).
-export const PHASE_TINT: Partial<Record<PhaseStatus, string>> = {
-  active: "bg-[rgba(13,148,136,0.06)]",
-  planned: "bg-[rgba(13,148,136,0.03)]",
-  completed: "bg-[rgba(0,0,0,0.02)]",
-};
 
 export type StatusThumbSpec = {
   bg: string;

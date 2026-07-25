@@ -9,7 +9,6 @@ import {
 import { CAL_GRID_COLS } from "@/components/clients/training/calendar/calendar-tokens";
 import { eligibleDatesIn } from "@/utils/nutrition-calendar-selection";
 import type { NutritionEvent } from "@/types/check-in";
-import type { PhaseStatus } from "@/types/roadmap";
 
 type NutritionCalendarWeekRowProps = {
   days: string[];
@@ -21,8 +20,6 @@ type NutritionCalendarWeekRowProps = {
   /** Month shown in the grid; days outside it render dimmed. 0-indexed. */
   viewMonth: number;
   viewYear: number;
-  /** Per-day phase status for tinting. Keyed by YYYY-MM-DD. */
-  phaseByDate?: Map<string, PhaseStatus>;
   includeActivityBurn: boolean;
   surplusAsCarbs?: boolean;
   /** Edit mode (◆2) + selection. */
@@ -41,7 +38,6 @@ export const NutritionCalendarWeekRow = memo(function NutritionCalendarWeekRow({
   clientToday,
   viewMonth,
   viewYear,
-  phaseByDate,
   includeActivityBurn,
   surplusAsCarbs,
   editMode,
@@ -75,7 +71,6 @@ export const NutritionCalendarWeekRow = memo(function NutritionCalendarWeekRow({
             isToday={date === todayDate}
             isPast={date < clientToday}
             isOutsideMonth={isOutsideMonth}
-            phaseStatus={phaseByDate?.get(date) ?? null}
             includeActivityBurn={includeActivityBurn}
             surplusAsCarbs={surplusAsCarbs}
             editMode={editMode}

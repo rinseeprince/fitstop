@@ -15,9 +15,7 @@ import {
   MONO,
   MONO_LABEL_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens";
-import { PHASE_TINT } from "./calendar-tokens";
 import type { TrainingEvent } from "@/types/training";
-import type { PhaseStatus } from "@/types/roadmap";
 
 type CalendarDayCellProps = {
   date: string;
@@ -26,7 +24,6 @@ type CalendarDayCellProps = {
   isToday: boolean;
   isPast: boolean;
   isOutsideMonth?: boolean;
-  phaseStatus?: PhaseStatus | null;
   editMode: boolean;
   duplicateMode: boolean;
   // Client-local "today" forwarded to the event card's drag/delete gate.
@@ -46,7 +43,6 @@ export const CalendarDayCell = memo(function CalendarDayCell({
   isToday,
   isPast,
   isOutsideMonth,
-  phaseStatus,
   editMode,
   duplicateMode,
   clientToday,
@@ -71,7 +67,6 @@ export const CalendarDayCell = memo(function CalendarDayCell({
       ref={setNodeRef}
       className={cn(
         "relative flex min-h-[96px] flex-col gap-1 rounded-[6px] border border-[rgba(13,148,136,0.06)] p-1.5 transition-all",
-        phaseStatus ? PHASE_TINT[phaseStatus] : undefined,
         isOutsideMonth && "opacity-40",
         isPast && !isOutsideMonth && "opacity-60",
         isToday && "ring-1 ring-[#0d9488]",

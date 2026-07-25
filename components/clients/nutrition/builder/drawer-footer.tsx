@@ -19,7 +19,7 @@ export function DrawerFooter() {
       // Regeneration — show the "apply now or later" popup
       setShowApplyDialog(true);
     } else {
-      // First creation — no popup, effective_from uses phase start date
+      // First creation — no popup, effective_from resolves server-side
       void builder.generatePlan(isCustom);
     }
   };
@@ -37,7 +37,6 @@ export function DrawerFooter() {
             onClick={handleClick}
             disabled={
               builder.isGenerating ||
-              builder.phaseBlocked ||
               (builder.customDayDistribution && !builder.budgetValidation?.isValid) ||
               (isCustom && !!builder.customMacrosValidationError)
             }
@@ -87,7 +86,6 @@ export function DrawerFooter() {
         onOpenChange={setShowApplyDialog}
         description="The new nutrition plan will replace the current one. Choose when the updated targets should start."
         onApply={handleApply}
-        maxDate={builder.activePhase?.endDate}
         showPreserveCalories={!isCustom}
         preserveCalories={preserveCalories}
         onPreserveCaloriesChange={setPreserveCalories}

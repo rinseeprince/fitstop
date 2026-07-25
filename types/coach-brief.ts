@@ -19,10 +19,6 @@ export type SinceLastVisit = {
 /**
  * The coach overview "pre-session brief". `lastViewedAt` is null on first visit
  * (the UI shows a first-visit state instead of since-last-visit counts).
- *
- * Current context (active phase, week-in-phase, goal progress) is rendered by the
- * existing OverviewContextBar — intentionally not duplicated here to avoid a
- * second roadmap fetch.
  */
 export type OverviewBrief = {
   lastViewedAt: string | null;

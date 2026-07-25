@@ -6,7 +6,6 @@ import { CAL_GRID_COLS } from "./calendar-tokens";
 import { LABEL_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
 import type { WeekAction } from "./calendar-week-rail";
 import type { TrainingEvent } from "@/types/training";
-import type { PhaseStatus } from "@/types/roadmap";
 
 const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -19,7 +18,6 @@ type CalendarGridProps = {
   duplicateMode: boolean;
   viewMonth: number;
   viewYear: number;
-  phaseByDate: Map<string, PhaseStatus>;
   hasPlan: boolean;
   /** Resolves the single plan a week row belongs to (null = mixed/empty). */
   weekRowPlanId: (days: string[]) => string | null;
@@ -42,7 +40,6 @@ export const CalendarGrid = memo(function CalendarGrid({
   duplicateMode,
   viewMonth,
   viewYear,
-  phaseByDate,
   hasPlan,
   weekRowPlanId,
   onWeekAction,
@@ -86,7 +83,6 @@ export const CalendarGrid = memo(function CalendarGrid({
                 duplicateMode={duplicateMode}
                 viewMonth={viewMonth}
                 viewYear={viewYear}
-                phaseByDate={phaseByDate}
                 showWeekKebab={showKebab}
                 weekActionDisabledReason={disabledReason}
                 isLastWeek={i === weeks.length - 1}

@@ -26,12 +26,10 @@ import { Loader2, X } from "lucide-react";
 import { format } from "date-fns";
 import type { WeekAction } from "./calendar-week-rail";
 import type { TrainingPlan, TrainingEvent } from "@/types/training";
-import type { Phase, PhaseStatus } from "@/types/roadmap";
 
 type TrainingCalendarViewProps = {
   clientId: string;
   plan: TrainingPlan | null;
-  phases: Phase[];
   editMode: boolean;
   clientTimezone?: string;
   onUpdate: () => void;
@@ -78,7 +76,6 @@ function buildWeeks(gridStart: Date, gridEnd: Date): string[][] {
 export function TrainingCalendarView({
   clientId,
   plan,
-  phases,
   editMode,
   clientTimezone,
   onUpdate,
@@ -205,27 +202,6 @@ export function TrainingCalendarView({
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [pendingDuplicate]);
-
-  // Build per-day phase status map for tinting
-  const phaseByDate = useMemo(() => {
-    const map = new Map<string, PhaseStatus>();
-    if (phases.length === 0) return map;
-    const phasesSorted = [...phases].sort((a, b) => (a.startDate ?? "").localeCompare(b.startDate ?? ""));
-    // Iterate each day in grid; linear scan over phases (typically <= 5)
-    for (const week of weeks) {
-      for (const date of week) {
-        for (const phase of phasesSorted) {
-          const start = phase.startDate;
-          const end = phase.endDate;
-          if (start && end && date >= start && date <= end) {
-            map.set(date, phase.status);
-            break;
-          }
-        }
-      }
-    }
-    return map;
-  }, [phases, weeks]);
 
   // Cell click handler (for duplicate mode)
   const handleCellClick = useCallback(async (targetDate: string) => {
@@ -460,7 +436,7 @@ export function TrainingCalendarView({
         });
       } else {
         // remaining — the server bounds "remaining" by the plan's own
-        // date range (its last scheduled event), so no phaseEndDate is needed.
+        // date range (its last scheduled event).
         const res = await fetch(
           `/api/clients/${clientId}/training/${rowPlanId}/events/duplicate-week`,
           {
@@ -572,7 +548,6 @@ export function TrainingCalendarView({
           duplicateMode={!!pendingDuplicate}
           viewMonth={viewMonth.month}
           viewYear={viewMonth.year}
-          phaseByDate={phaseByDate}
           hasPlan={!!plan}
           weekRowPlanId={weekRowPlanId}
           onWeekAction={handleWeekAction}

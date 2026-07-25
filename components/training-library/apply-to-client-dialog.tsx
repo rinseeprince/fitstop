@@ -57,14 +57,6 @@ type ClientOption = {
   timezone?: string;
 };
 
-type PhaseOption = {
-  id: string;
-  name: string;
-  startDate: string | null;
-  endDate: string | null;
-  status: string;
-};
-
 function getNextMonday(): string {
   const d = new Date();
   const day = d.getDay();
@@ -86,7 +78,6 @@ export function ApplyToClientDialog({
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
   const [clientId, setClientId] = useState(preselectedClientId ?? "");
   const [startDate, setStartDate] = useState(getNextMonday());
-  const [phaseId, setPhaseId] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Fetch clients (only when no preselected client)
@@ -97,27 +88,11 @@ export function ApplyToClientDialog({
   );
   const clients = clientsData?.clients ?? [];
 
-  // Fetch roadmap phases for selected client
-  const { data: roadmapData } = useSWR<{ phases?: PhaseOption[] }>(
-    clientId ? `/api/clients/${clientId}/roadmap` : null,
-    swrFetcher,
-    { revalidateOnFocus: false }
-  );
-  const phases = (roadmapData?.phases ?? []).filter(
-    (p) => p.status === "planned" || p.status === "active"
-  );
-
-  // Reset phase when client changes
-  useEffect(() => {
-    setPhaseId("");
-  }, [clientId]);
-
   // Reset form when dialog opens
   useEffect(() => {
     if (open) {
       setClientId(preselectedClientId ?? "");
       setStartDate(getNextMonday());
-      setPhaseId("");
     }
   }, [open, preselectedClientId]);
 
@@ -163,13 +138,11 @@ export function ApplyToClientDialog({
             type: "inline" as const,
             plan: inlinePlan,
             startDate,
-            ...(phaseId && { phaseId }),
           }
         : {
             type: "plan" as const,
             savedPlanId: savedPlan.id,
             startDate,
-            ...(phaseId && { phaseId }),
           };
 
       const res = await fetch(url, {
@@ -275,26 +248,6 @@ export function ApplyToClientDialog({
               {trainingDays} training + {restDays} rest
             </Badge>
           </div>
-
-          {/* Phase selector (only if client has phases) */}
-          {phases.length > 0 && (
-            <div className="space-y-1.5">
-              <Label htmlFor="phase">Phase (optional)</Label>
-              <Select value={phaseId} onValueChange={setPhaseId}>
-                <SelectTrigger id="phase">
-                  <SelectValue placeholder="No phase selected" />
-                </SelectTrigger>
-                <SelectContent>
-                  {phases.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.name}
-                      {p.status === "active" && " (active)"}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
 
         </div>
 

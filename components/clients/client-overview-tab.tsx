@@ -2,7 +2,6 @@
 
 import { Loader2 } from "lucide-react"
 import { ClientActivationBanner } from "@/components/clients/client-activation-banner"
-import { OverviewContextBar } from "@/components/clients/overview/overview-context-bar"
 import { ClientScheduleCard } from "@/components/clients/overview/client-schedule-card"
 import { ClientStatusCard } from "@/components/clients/overview/client-status-card"
 import { DailyWellnessStrip } from "@/components/clients/daily-pulse/daily-wellness-strip"
@@ -69,9 +68,6 @@ export function ClientOverviewTab({
           </div>
         )
       )}
-
-      {/* Current context: active phase, goal, weeks (reused) */}
-      <OverviewContextBar clientId={client.id} client={client} />
 
       {/* Demoted: quick cards + 28-day wellness strip */}
       <div className="grid grid-cols-1 lg:grid-cols-[5fr_8fr] gap-4">

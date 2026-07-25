@@ -7,7 +7,7 @@ import type { GoalDrift } from "@/lib/goals/detect-goal-drift";
 
 // "Goal changed — regenerate" banner (Session 7.8). Distinct from the weight-delta
 // regeneration banner: this fires when the goal that drives the client now (active
-// phase or client_goals) differs from the goal this active plan was built against.
+// client_goals) differs from the goal this active plan was built against.
 // Regenerating the plan re-reads the effective goal.
 
 type NutritionGoalChangedBannerProps = {
@@ -37,7 +37,6 @@ export function NutritionGoalChangedBanner({
         <p className="text-[11px] text-[#93b0b4] leading-[1.4]">
           {describe(drift.planGoalWeightKg, drift.planDeadline, unitPreference)} →{" "}
           {describe(drift.currentGoalWeightKg, drift.currentDeadline, unitPreference)}
-          {drift.source === "phase" ? " (active phase)" : ""}
         </p>
       </div>
     </div>

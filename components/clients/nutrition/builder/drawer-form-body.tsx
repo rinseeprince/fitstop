@@ -13,7 +13,6 @@ import { NutritionSettingsForm } from "./nutrition-settings-form";
 import { NutritionCustomMacrosSection } from "./nutrition-custom-macros-section";
 import { NutritionTrainingCaloriesDisplay } from "./nutrition-training-calories-display";
 import { CalorieSkewingSection } from "./calorie-skewing-section";
-import { PhaseSelector } from "../../shared/phase-selector";
 import { ClientGoalEditor } from "../../client-goal-editor";
 import { NutritionGoalChangedBanner } from "../nutrition-goal-changed-banner";
 
@@ -35,21 +34,12 @@ export function DrawerFormBody() {
           <TabsTrigger value="custom">Custom</TabsTrigger>
         </TabsList>
 
-        {/* Auto: calculate macros from settings + phase/goal context */}
+        {/* Auto: calculate macros from settings + goal context */}
         <TabsContent value="auto" className="space-y-5">
           <div className="space-y-4">
             <NutritionSettingsForm
               client={builder.client}
               onSettingsChange={builder.handleSettingsChange}
-            />
-            <PhaseSelector
-              clientId={builder.client.id}
-              weightUnit={builder.client.weightUnit || "lbs"}
-              value={builder.phaseId}
-              onChange={builder.setPhaseId}
-              onBlockSubmit={builder.setPhaseBlocked}
-              phases={builder.phases}
-              activeOnly
             />
             <NutritionGoalChangedBanner
               drift={builder.nutritionData?.goalChanged}

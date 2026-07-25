@@ -6,17 +6,14 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { PhaseSelector } from "../shared/phase-selector";
 import type { DailyHabitInput } from "@/types/daily-habit";
 
 type AddHabitInlineFormProps = {
-  clientId: string;
   onSubmit: (data: DailyHabitInput) => Promise<void>;
   onCancel: () => void;
 };
 
 export function AddHabitInlineForm({
-  clientId,
   onSubmit,
   onCancel,
 }: AddHabitInlineFormProps) {
@@ -26,8 +23,6 @@ export function AddHabitInlineForm({
   const [targetValue, setTargetValue] = useState("");
   const [targetUnit, setTargetUnit] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [phaseId, setPhaseId] = useState<string | undefined>(undefined);
-  const [phaseBlocked, setPhaseBlocked] = useState(false);
 
   const handleSubmit = async () => {
     if (!name.trim()) return;
@@ -40,7 +35,6 @@ export function AddHabitInlineForm({
         isBoolean: !isNumeric,
         targetValue: isNumeric && targetValue ? parseFloat(targetValue) : undefined,
         targetUnit: isNumeric && targetUnit.trim() ? targetUnit.trim() : undefined,
-        phaseId: phaseId || undefined,
       };
 
       await onSubmit(data);
@@ -50,7 +44,6 @@ export function AddHabitInlineForm({
       setIsNumeric(false);
       setTargetValue("");
       setTargetUnit("");
-      setPhaseId(undefined);
     } finally {
       setIsSubmitting(false);
     }
@@ -112,13 +105,6 @@ export function AddHabitInlineForm({
         </div>
       )}
 
-      <PhaseSelector
-        clientId={clientId}
-        value={phaseId}
-        onChange={setPhaseId}
-        onBlockSubmit={setPhaseBlocked}
-      />
-
       <div className="flex items-center gap-2 pt-1">
         <Button
           variant="outline"
@@ -132,7 +118,7 @@ export function AddHabitInlineForm({
         <Button
           size="sm"
           onClick={handleSubmit}
-          disabled={!name.trim() || isSubmitting || phaseBlocked}
+          disabled={!name.trim() || isSubmitting}
           className="bg-[#0d9488] hover:bg-[#0f766e] text-white text-[12px]"
         >
           Add Habit

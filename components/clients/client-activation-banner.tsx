@@ -9,7 +9,7 @@ import type { ClientTab } from "@/lib/client-tabs"
 import type { OnboardingStatus } from "@/types/client-intake"
 
 import { swrFetcher } from "@/lib/swr-fetcher"
-import { REQUIRED_ITEMS, RECOMMENDED_ITEMS, type Readiness } from "@/lib/activation-readiness-items"
+import { REQUIRED_ITEMS, type Readiness } from "@/lib/activation-readiness-items"
 
 interface ClientActivationBannerProps {
   client: {
@@ -85,37 +85,7 @@ export function ClientActivationBanner({ client, onActivated, onTabChange }: Cli
             </button>
           )
         })}
-
-        {readiness.roadmapRecommended && (
-          <>
-            <p className="text-xs text-muted-foreground pt-2">Recommended</p>
-            {RECOMMENDED_ITEMS.map((item) => {
-              const checked = readiness[item.key]
-              return (
-                <div key={item.key} className="flex items-center gap-2 text-sm">
-                  {checked ? (
-                    <CheckCircle2 className="h-4 w-4 text-green-600 flex-shrink-0" />
-                  ) : (
-                    <XCircle className="h-4 w-4 text-amber-500 flex-shrink-0" />
-                  )}
-                  <span>{item.label}</span>
-                </div>
-              )
-            })}
-          </>
-        )}
       </div>
-
-      {!readiness.hasRoadmap && (
-        <Button
-          variant="outline"
-          size="sm"
-          className="mt-3"
-          onClick={() => onTabChange?.("roadmap")}
-        >
-          Build Roadmap
-        </Button>
-      )}
 
       {hasMissing && (
         <div className="flex items-start gap-2 rounded-lg bg-amber-50 dark:bg-amber-950/30 p-3 text-sm text-amber-700 dark:text-amber-400 mt-3">

@@ -5,7 +5,6 @@ import { CalendarDayCell } from "./calendar-day-cell";
 import { CalendarWeekRail, type WeekAction } from "./calendar-week-rail";
 import { CAL_GRID_COLS } from "./calendar-tokens";
 import type { TrainingEvent } from "@/types/training";
-import type { PhaseStatus } from "@/types/roadmap";
 
 type CalendarWeekRowProps = {
   days: string[];
@@ -19,12 +18,10 @@ type CalendarWeekRowProps = {
   /** Month shown in the grid; days outside it render dimmed. 0-indexed. */
   viewMonth: number;
   viewYear: number;
-  /** Per-day phase status for tinting. Keyed by YYYY-MM-DD. */
-  phaseByDate?: Map<string, PhaseStatus>;
   /** Whether week-level actions should render. False when no plan or row spans plans. */
   showWeekKebab: boolean;
   weekActionDisabledReason?: string;
-  /** For "duplicate to remaining" — end of current plan/phase. */
+  /** For "duplicate to remaining" — end of the current plan. */
   isLastWeek: boolean;
   onWeekAction: (weekStartDate: string, action: WeekAction) => void;
   onCellClick: (date: string) => void;
@@ -42,7 +39,6 @@ export const CalendarWeekRow = memo(function CalendarWeekRow({
   duplicateMode,
   viewMonth,
   viewYear,
-  phaseByDate,
   showWeekKebab,
   weekActionDisabledReason,
   isLastWeek,
@@ -83,7 +79,6 @@ export const CalendarWeekRow = memo(function CalendarWeekRow({
             isToday={date === todayDate}
             isPast={date < clientToday}
             isOutsideMonth={isOutsideMonth}
-            phaseStatus={phaseByDate?.get(date) ?? null}
             editMode={editMode}
             duplicateMode={duplicateMode}
             clientToday={clientToday}

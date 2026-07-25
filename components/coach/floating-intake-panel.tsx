@@ -13,12 +13,12 @@ import { LABEL_CLASS } from "@/components/clients/training/program-builder/build
 import { useToast } from "@/hooks/use-toast"
 import useSWR, { useSWRConfig } from "swr"
 import { swrFetcher } from "@/lib/swr-fetcher"
-import { REQUIRED_ITEMS, RECOMMENDED_ITEMS, type Readiness } from "@/lib/activation-readiness-items"
+import { REQUIRED_ITEMS, type Readiness } from "@/lib/activation-readiness-items"
 
 const NARROW_BREAKPOINT = 1024
 
-// Flat list in setup order: Roadmap, Active phase, Training, Nutrition, Habits
-const PROGRESS_ITEMS = [...RECOMMENDED_ITEMS, ...REQUIRED_ITEMS]
+// Flat list in setup order: Training, Nutrition, Habits
+const PROGRESS_ITEMS = [...REQUIRED_ITEMS]
 
 export function FloatingIntakePanel() {
   const { isTrainer } = useAuth()

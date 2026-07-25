@@ -12,8 +12,6 @@ import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { useToast } from "@/hooks/use-toast";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
 import { cn } from "@/lib/utils";
-import { weightFromKg } from "@/utils/nutrition-helpers";
-import { format } from "date-fns";
 import type { Client } from "@/types/check-in";
 
 type NutritionPlanBuilderProps = {
@@ -79,23 +77,6 @@ function TopContentBar({
   subtab: "data" | "plans";
   setSubtab: (tab: "data" | "plans") => void;
 }) {
-  const builder = useNutritionBuilderContext();
-  const { activePhase } = builder;
-
-  const showPhaseInfo = activePhase && builder.hasPlan;
-
-  const phaseGoalProgress = showPhaseInfo ? getPhaseGoalProgress(builder) : null;
-  const goalWeightDisplay = showPhaseInfo ? getGoalWeightDisplay(builder) : null;
-
-  const phaseDateRange = activePhase
-    ? [
-        activePhase.startDate ? format(new Date(activePhase.startDate), "MMM d") : null,
-        activePhase.endDate ? format(new Date(activePhase.endDate), "MMM d") : null,
-      ]
-        .filter(Boolean)
-        .join(" \u2013 ")
-    : null;
-
   return (
     <div className="flex items-center gap-4 mb-5">
       {/* Segmented control */}
@@ -115,53 +96,13 @@ function TopContentBar({
           </button>
         ))}
       </div>
-
-      {builder.hasPlan && (
-        <>
-          {/* Phase info — only when the client has a live phase. Regenerate
-              moved onto the calendar toolbar's divider rail (between the edit
-              and delete icons), so this bar carries context only. */}
-          {activePhase && (
-            <>
-              {/* Vertical divider */}
-              <div className="w-px h-6 bg-[rgba(13,148,136,0.08)]" />
-
-              {/* Phase info */}
-              <div className="flex items-center gap-3">
-                <span className="text-[13px] font-semibold text-[#0c1a1e]">{activePhase.name}</span>
-                {phaseDateRange && (
-                  <span className="text-[12px] text-[#93b0b4]">{phaseDateRange}</span>
-                )}
-                {goalWeightDisplay && (
-                  <span className="text-[12px] text-[#5a7d82]">{goalWeightDisplay}</span>
-                )}
-                {phaseGoalProgress && (
-                  <span className="text-[10.5px] font-semibold text-[#d97706] bg-[rgba(245,158,11,0.07)] px-1.5 py-0.5 rounded-[3px]">
-                    {phaseGoalProgress}
-                  </span>
-                )}
-              </div>
-            </>
-          )}
-
-          {/* Right side */}
-          {activePhase && (
-            <div className="ml-auto flex items-center gap-3">
-              <span className="flex items-center gap-1.5 text-xs font-medium text-[#0d9488]">
-                <span className="w-[5px] h-[5px] rounded-full bg-[#0d9488]" />
-                Active
-              </span>
-            </div>
-          )}
-        </>
-      )}
     </div>
   );
 }
 
 /**
  * Mounts the nutrition calendar (the primary day-by-day surface) by pulling
- * clientId/timezone/phases/burn-toggle from the builder context — the same
+ * clientId/timezone/burn-toggle from the builder context — the same
  * context-consumer pattern as TopContentBar. Always rendered: with no plan
  * there are no events, so it shows the empty month grid under the hero CTA
  * (the training tab's no-plan pattern), with the Delete-plan trigger hidden.
@@ -207,7 +148,6 @@ function NutritionCalendarMount({ onRegenerate }: { onRegenerate: () => void }) 
     <>
       <NutritionCalendarView
         clientId={clientId}
-        phases={builder.phases}
         clientTimezone={builder.client.timezone}
         includeActivityBurn={builder.includeActivityBurn}
         surplusAsCarbs={builder.surplusAsCarbs}
@@ -223,43 +163,4 @@ function NutritionCalendarMount({ onRegenerate }: { onRegenerate: () => void }) 
       />
     </>
   );
-}
-
-function getPhaseGoalProgress(builder: ReturnType<typeof useNutritionBuilderContext>): string | null {
-  const { activePhase, client, unitPreference } = builder;
-
-  if (activePhase?.phaseGoalWeight != null && client.currentWeight) {
-    const currentKg = builder.weightToKg(client.currentWeight);
-    const diffKg = Math.abs(currentKg - activePhase.phaseGoalWeight);
-    const unit = unitPreference === "imperial" ? "lbs" : "kg";
-    const value = unitPreference === "imperial"
-      ? weightFromKg(diffKg, "lbs").toFixed(1)
-      : diffKg.toFixed(1);
-    return `${value} ${unit} to go`;
-  }
-
-  if (builder.weightRemaining) {
-    const wr = builder.weightRemaining;
-    return `${wr.isLoss ? "-" : "+"}${wr.value} ${wr.unit} to go`;
-  }
-
-  return null;
-}
-
-function getGoalWeightDisplay(builder: ReturnType<typeof useNutritionBuilderContext>): string | null {
-  const { activePhase, client, unitPreference } = builder;
-
-  if (activePhase?.phaseGoalWeight != null && client.currentWeight) {
-    const currentKg = builder.weightToKg(client.currentWeight);
-    const unit = unitPreference === "imperial" ? "lbs" : "kg";
-    const currentVal = unitPreference === "imperial"
-      ? weightFromKg(currentKg, "lbs").toFixed(1)
-      : currentKg.toFixed(1);
-    const goalVal = unitPreference === "imperial"
-      ? weightFromKg(activePhase.phaseGoalWeight, "lbs").toFixed(1)
-      : activePhase.phaseGoalWeight.toFixed(1);
-    return `${currentVal} \u2192 ${goalVal} ${unit}`;
-  }
-
-  return null;
 }

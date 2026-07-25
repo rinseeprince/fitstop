@@ -127,7 +127,6 @@ export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel
       <TrainingCalendarView
         clientId={clientId}
         plan={builder.plan ?? null}
-        phases={builder.phases}
         editMode={editMode}
         clientTimezone={builder.clientTimezone}
         onUpdate={builder.fetchPlan}

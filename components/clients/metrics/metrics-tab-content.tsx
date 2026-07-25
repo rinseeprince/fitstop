@@ -55,7 +55,6 @@ export const MetricsTabContent = ({
   return (
     <div>
       <MetricsTopBar
-        client={client}
         tab={tab}
         onTabChange={setTab}
         onLogClick={() => setLogOpen(true)}

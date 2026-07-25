@@ -21,7 +21,6 @@ interface HabitWithStats extends DailyHabit {
 }
 
 type HabitsManageDrawerProps = {
-  clientId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   habits: HabitWithStats[];
@@ -33,7 +32,6 @@ type HabitsManageDrawerProps = {
 };
 
 export function HabitsManageDrawer({
-  clientId,
   open,
   onOpenChange,
   habits,
@@ -118,7 +116,6 @@ export function HabitsManageDrawer({
           {/* Add button / inline form */}
           {showAddForm ? (
             <AddHabitInlineForm
-              clientId={clientId}
               onSubmit={async (data) => {
                 await onCreateHabit(data);
                 setShowAddForm(false);

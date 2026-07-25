@@ -69,7 +69,7 @@ export function ClientGoalEditor({ clientId, unit }: ClientGoalEditorProps) {
       </div>
       <p className="text-[13px] font-medium text-[#0c1a1e]">{summary}</p>
       <p className="text-[11px] text-[#93b0b4] leading-[1.4]">
-        The long-term goal &amp; deadline drive nutrition pace when no phase is active.
+        The long-term goal &amp; deadline drive nutrition pace.
       </p>
       <GoalEditDialog
         clientId={clientId}
@@ -210,8 +210,7 @@ function GoalEditDialog({
             </div>
           </div>
           <p className="text-xs text-muted-foreground">
-            Clear the deadline to remove the target date. While a phase is active, the
-            phase&apos;s goal &amp; dates drive nutrition instead.
+            Clear the deadline to remove the target date.
           </p>
         </div>
         <DialogFooter>

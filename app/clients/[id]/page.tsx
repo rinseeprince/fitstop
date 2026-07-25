@@ -14,7 +14,6 @@ import { MetricsTabContent } from "@/components/clients/metrics/metrics-tab-cont
 import { ClientOverviewTab } from "@/components/clients/client-overview-tab"
 import { HabitsTabContent } from "@/components/clients/habits/habits-tab-content"
 import { CheckInsTabContent } from "@/components/clients/check-ins/check-ins-tab-content"
-import { RoadmapTabContent } from "@/components/clients/roadmap/roadmap-tab-content"
 import { WellnessTabContent } from "@/components/clients/wellness/wellness-tab-content"
 import { useCheckInData, useClient } from "@/hooks/use-check-in-data"
 import type { CheckIn } from "@/types/check-in"
@@ -22,7 +21,7 @@ import { useClientMetrics } from "@/hooks/use-client-metrics"
 import { type ClientTab } from "@/lib/client-tabs"
 import { AlertCircle } from "lucide-react"
 
-const VALID_TABS = new Set<ClientTab>(["overview", "roadmap", "metrics", "training", "nutrition", "wellness", "daily-habits", "check-ins", "notes"])
+const VALID_TABS = new Set<ClientTab>(["overview", "metrics", "training", "nutrition", "wellness", "daily-habits", "check-ins", "notes"])
 
 export default function ClientProfilePage() {
   const params = useParams()
@@ -108,11 +107,6 @@ export default function ClientProfilePage() {
                 onClientUpdated={() => mutateClient()}
                 onTabChange={handleTabChange}
               />
-            </TabsContent>
-
-            {/* Roadmap Tab */}
-            <TabsContent value="roadmap" className="space-y-6 mt-0">
-              <RoadmapTabContent client={client} />
             </TabsContent>
 
             {/* Check-In Detail Modal */}

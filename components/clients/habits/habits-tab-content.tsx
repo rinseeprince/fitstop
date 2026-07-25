@@ -150,7 +150,6 @@ export const HabitsTabContent = ({ client }: HabitsTabContentProps) => {
 
       {/* Manage drawer */}
       <HabitsManageDrawer
-        clientId={client.id}
         open={drawerOpen}
         onOpenChange={setDrawerOpen}
         habits={habits}

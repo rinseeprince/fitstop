@@ -4,10 +4,8 @@ import { memo } from "react";
 import { cn } from "@/lib/utils";
 import { Pencil, StickyNote } from "lucide-react";
 import { MONO } from "@/components/clients/training/program-builder/builder-tokens";
-import { PHASE_TINT } from "@/components/clients/training/calendar/calendar-tokens";
 import { mapNutritionEventToDisplayTarget } from "@/utils/nutrition-event-helpers";
 import type { NutritionEvent } from "@/types/check-in";
-import type { PhaseStatus } from "@/types/roadmap";
 
 type NutritionCalendarDayCellProps = {
   date: string;
@@ -16,7 +14,6 @@ type NutritionCalendarDayCellProps = {
   isToday: boolean;
   isPast: boolean;
   isOutsideMonth?: boolean;
-  phaseStatus?: PhaseStatus | null;
   /** Activity-burn toggle — the cell shows the same total the rest of the builder does. */
   includeActivityBurn: boolean;
   /** How a training-day surplus distributes across macros. */
@@ -34,7 +31,6 @@ export const NutritionCalendarDayCell = memo(function NutritionCalendarDayCell({
   isToday,
   isPast,
   isOutsideMonth,
-  phaseStatus,
   includeActivityBurn,
   surplusAsCarbs,
   editMode,
@@ -54,7 +50,6 @@ export const NutritionCalendarDayCell = memo(function NutritionCalendarDayCell({
       onClick={isEligible && onToggle ? () => onToggle(date) : undefined}
       className={cn(
         "min-h-[96px] rounded-[6px] border border-[rgba(13,148,136,0.06)] p-1.5 flex flex-col gap-1 relative transition-all",
-        phaseStatus ? PHASE_TINT[phaseStatus] : undefined,
         isOutsideMonth && "opacity-40",
         isPast && !isOutsideMonth && "opacity-60",
         isToday && !isSelected && "ring-1 ring-[#0d9488]",

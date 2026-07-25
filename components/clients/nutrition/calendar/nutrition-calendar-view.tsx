@@ -17,7 +17,6 @@ import {
 import { cn } from "@/lib/utils";
 import { LABEL_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
 import { format } from "date-fns";
-import type { Phase, PhaseStatus } from "@/types/roadmap";
 
 const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -55,7 +54,6 @@ function buildWeeks(gridStart: Date, gridEnd: Date): string[][] {
 
 type NutritionCalendarViewProps = {
   clientId: string;
-  phases: Phase[];
   clientTimezone?: string;
   /** Activity-burn toggle, so calendar totals match the rest of the builder. */
   includeActivityBurn: boolean;
@@ -71,7 +69,6 @@ type NutritionCalendarViewProps = {
 
 export function NutritionCalendarView({
   clientId,
-  phases,
   clientTimezone,
   includeActivityBurn,
   surplusAsCarbs,
@@ -122,27 +119,6 @@ export function NutritionCalendarView({
     surplusAsCarbs,
     onUpdate,
   });
-
-  const phaseByDate = useMemo(() => {
-    const map = new Map<string, PhaseStatus>();
-    if (phases.length === 0) return map;
-    const phasesSorted = [...phases].sort((a, b) =>
-      (a.startDate ?? "").localeCompare(b.startDate ?? "")
-    );
-    for (const week of weeks) {
-      for (const date of week) {
-        for (const phase of phasesSorted) {
-          const start = phase.startDate;
-          const end = phase.endDate;
-          if (start && end && date >= start && date <= end) {
-            map.set(date, phase.status);
-            break;
-          }
-        }
-      }
-    }
-    return map;
-  }, [phases, weeks]);
 
   const monthLabel = format(new Date(viewMonth.year, viewMonth.month, 1), "MMMM yyyy");
   const goPrevMonth = () =>
@@ -208,7 +184,6 @@ export function NutritionCalendarView({
                 clientToday={clientToday}
                 viewMonth={viewMonth.month}
                 viewYear={viewMonth.year}
-                phaseByDate={phaseByDate}
                 includeActivityBurn={includeActivityBurn}
                 surplusAsCarbs={surplusAsCarbs}
                 editMode={edit.editMode}

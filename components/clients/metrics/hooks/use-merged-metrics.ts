@@ -21,7 +21,6 @@ import { weightFromKg, weightToKg } from "@/utils/nutrition-helpers";
 import { METRIC_DEFINITIONS } from "./use-metrics-data";
 import type { LogRow, MetricSummary, MetricTab } from "../metrics-view-types";
 import type { Client } from "@/types/check-in";
-import type { Phase } from "@/types/roadmap";
 import type { CreateMetricEntryRequest } from "@/types/metric-entries";
 
 // Coach-side measurement unit is fixed to inches on this page (pre-existing
@@ -32,7 +31,6 @@ const MEASUREMENT_UNIT = "in";
 // plain string ids are looked up.
 const DOWN_SET: ReadonlySet<string> = DOWN_IS_GOOD;
 
-type PhasesResponse = { success: boolean; data: Phase[] };
 type GoalsResponse = {
   success: boolean;
   data: { goalWeight?: number; goalBodyFatPercentage?: number | null } | null;
@@ -61,11 +59,6 @@ export const useMergedMetrics = (
     isError: entriesError,
     mutate: mutateEntries,
   } = useMetricEntries(client.id);
-  const { data: phasesData } = useSWR<PhasesResponse>(
-    `/api/clients/${client.id}/roadmap/phases`,
-    swrFetcher,
-    { revalidateOnFocus: false, errorRetryCount: 1 }
-  );
   const { data: goalsData } = useSWR<GoalsResponse>(
     `/api/clients/${client.id}/goals`,
     swrFetcher,
@@ -77,20 +70,10 @@ export const useMergedMetrics = (
     const unit: "lbs" | "kg" = client.weightUnit === "kg" ? "kg" : "lbs";
     const pointsByMetric = buildMetricPoints(checkIns, entries, METRIC_DEFINITIONS);
 
-    const activePhase =
-      phasesData?.data?.find((p) => p.status === "active") ?? null;
     const currentGoals = goalsData?.data ?? null;
     const effectiveGoal = resolveEffectiveGoal({
       weightUnit: unit,
-      activePhase: activePhase
-        ? {
-            goalWeightKg: activePhase.phaseGoalWeight ?? null,
-            goalBodyFatPercentage:
-              activePhase.phaseGoalBodyFatPercentage ?? null,
-            startDate: activePhase.startDate ?? null,
-            endDate: activePhase.endDate ?? null,
-          }
-        : null,
+      activePhase: null,
       // Legacy fallback to the denormalized client fields mirrors
       // services/comparison-service's read switch.
       clientGoal: {
@@ -111,8 +94,7 @@ export const useMergedMetrics = (
       const downIsGood = DOWN_SET.has(def.id);
       const hero = deriveHeroStats(points, def.category, today);
 
-      // Goal resolution (weight/bodyFat only). "To go" mirrors
-      // getPhaseGoalProgress exactly so the card always equals the phase chip.
+      // Goal resolution (weight/bodyFat only).
       let goal: number | null = null;
       let goalToGo: string | null = null;
       if (def.id === "weight" && effectiveGoal.goalWeightKg != null) {
@@ -180,7 +162,7 @@ export const useMergedMetrics = (
       metricsByTab: byTab,
       logRowsByTab: { body: decorate("body"), wellness: decorate("wellness") },
     };
-  }, [checkIns, entries, phasesData, goalsData, client]);
+  }, [checkIns, entries, goalsData, client]);
 
   const logMeasurement = useCallback(
     async (input: CreateMetricEntryRequest) => {
@@ -195,7 +177,7 @@ export const useMergedMetrics = (
       }
       await mutateEntries();
       // Weight/bodyFat entries may have moved the denormalized client cache —
-      // refresh the client record so the phase "to go" chip goes live.
+      // refresh the client record so the goal "to go" stat goes live.
       if (input.metricKey === "weight" || input.metricKey === "bodyFat") {
         onClientUpdated?.();
       }

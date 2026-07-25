@@ -1,14 +1,11 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import useSWR from "swr";
-import { swrFetcher } from "@/lib/swr-fetcher";
 import { useToast } from "@/hooks/use-toast";
 import { useNutritionPlan } from "@/hooks/use-nutrition-plan";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
 import { useCalorieSkew } from "@/hooks/use-calorie-skew";
 import type { Client, ActivityLevel, DietType } from "@/types/check-in";
-import type { Phase, Roadmap } from "@/types/roadmap";
 import { validateClientForNutrition } from "@/lib/validations/nutrition";
 import {
   weightToKg,
@@ -32,28 +29,6 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
   const { toast } = useToast();
   const nutritionPlan = useNutritionPlan({ client, onUpdate });
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
-
-  // Roadmap + phases data (shared with PhaseSelector via phases prop)
-  const { data: phasesData } = useSWR<{ success: true; data: Phase[] }>(
-    client.id ? `/api/clients/${client.id}/roadmap/phases` : null,
-    swrFetcher,
-    { revalidateOnFocus: false }
-  );
-  const { data: roadmapData } = useSWR<{ success: true; data: (Roadmap & { phases: Phase[] }) | null }>(
-    client.id ? `/api/clients/${client.id}/roadmap` : null,
-    swrFetcher,
-    { revalidateOnFocus: false }
-  );
-
-  const phases = phasesData?.data ?? [];
-  const activePhase = phases.find((p) => p.status === "active") ?? null;
-  const roadmapGoal = roadmapData?.data
-    ? {
-        name: roadmapData.data.name,
-        longTermGoal: roadmapData.data.longTermGoal,
-        targetEndDate: roadmapData.data.targetEndDate,
-      }
-    : null;
 
   // Settings state — defaults from active plan will be loaded via nutritionData
   const [settings, setSettings] = useState<NutritionSettings>({
@@ -138,9 +113,6 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
     dietType: settings.dietType,
   });
 
-  // Phase selection
-  const [phaseId, setPhaseId] = useState<string | undefined>(undefined);
-  const [phaseBlocked, setPhaseBlocked] = useState(false);
   const [coachNotes, setCoachNotes] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [warnings, setWarnings] = useState<string[]>([]);
@@ -170,10 +142,9 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
           workActivityLevel: settings.workActivityLevel,
           proteinTargetGPerKg: settings.proteinTargetGPerKg,
           dietType: settings.dietType,
-          // goalDeadline is no longer sent: the deadline is owned by the goal
-          // scope (active phase or client_goals), resolved server-side. The
-          // builder's dead deadline input was replaced by a read-only Goal line.
-          phaseId: phaseId || undefined,
+          // goalDeadline is no longer sent: the deadline is owned by
+          // client_goals, resolved server-side. The builder's dead deadline
+          // input was replaced by a read-only Goal line.
           ...(coachNotes.trim() ? { coachNotes: coachNotes.trim() } : {}),
           ...(effectiveFrom ? { effectiveFrom } : {}),
           ...(preserveCalories ? { preserveCalories: true } : {}),
@@ -206,7 +177,6 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
           });
           setSettingsChanged(false);
           calorieSkew.resetSkew();
-          setPhaseId(undefined);
           setCoachNotes("");
           onUpdate?.();
           nutritionPlan.refetchNutrition();
@@ -235,7 +205,6 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
       customMacros.carbs,
       customMacros.fat,
       customMacros.calories,
-      phaseId,
       coachNotes,
       onUpdate,
       toast,
@@ -298,14 +267,7 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
     // Calorie skewing
     ...calorieSkew,
 
-    // Phase / roadmap
-    phases,
-    activePhase,
-    roadmapGoal,
-    phaseId,
-    setPhaseId,
-    phaseBlocked,
-    setPhaseBlocked,
+    // Coach notes on the generated plan
     coachNotes,
     setCoachNotes,
 

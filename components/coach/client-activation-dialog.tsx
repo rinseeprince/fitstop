@@ -46,10 +46,6 @@ type Readiness = {
   hasTrainingPlan: boolean
   hasNutritionPlan: boolean
   hasHabits: boolean
-  hasRoadmap: boolean
-  hasActivePhase: boolean
-  activePhaseName: string | null
-  activePhaseStartDate: string | null
 }
 
 const DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] as const
@@ -88,9 +84,6 @@ export function ClientActivationDialog({
       const data = await response.json()
       if (data.success) {
         setReadiness(data.data)
-        if (data.data.activePhaseStartDate) {
-          setStartDate(data.data.activePhaseStartDate)
-        }
       }
     } catch (error) {
       console.error("Error fetching activation readiness:", error)
@@ -149,14 +142,6 @@ export function ClientActivationDialog({
                 <ChecklistItem label="Nutrition plan" checked={readiness.hasNutritionPlan} />
                 <ChecklistItem label="Training plan" checked={readiness.hasTrainingPlan} />
                 <ChecklistItem label="Habits" checked={readiness.hasHabits} />
-                <p className="text-xs text-muted-foreground pt-2">Recommended</p>
-                <ChecklistItem label="Roadmap" checked={readiness.hasRoadmap} />
-                <ChecklistItem label="Active phase" checked={readiness.hasActivePhase} />
-                {readiness.activePhaseName && (
-                  <p className="text-xs text-muted-foreground pl-6">
-                    Active phase: {readiness.activePhaseName}
-                  </p>
-                )}
               </div>
             )}
 
