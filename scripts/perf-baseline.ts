@@ -181,7 +181,7 @@ async function simulateGetClientProgressDataViaAdmin(clientId: string, days: num
   const checkIns = await supabaseAdmin
     .from("check_ins")
     .select(
-      "created_at, weight, body_fat_percentage, waist, hips, chest, arms, thighs, mood, energy, sleep, stress"
+      "created_at, weight, body_fat_percentage, waist, hips, chest, arms, thighs, mood, energy, sleep, stress, soreness"
     )
     .eq("client_id", String(clientId))
     .gte("created_at", startIso)

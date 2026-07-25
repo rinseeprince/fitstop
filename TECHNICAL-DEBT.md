@@ -241,7 +241,7 @@ These files exceed the limits defined in CONVENTIONS.md Section 4 and should be 
 |---|-------|---------|---------|--------|
 | 1 | Duplicate constant | `lib/date-utils.ts` | `DAY_MAP` defined twice (lines 50-58 and 129-137). Extract to a single module-level constant. | Open |
 | 2 | Hardcoded magic numbers | `services/check-in-tracking-service.ts` | `-3` days upcoming threshold, `frequencyDays + 2` tolerance (lines 262, 311), `7` days grace window (line 440). Extract to named constants. | Open |
-| 3 | Hardcoded magic numbers | `components/check-in/daily-logs-summary.tsx` | Wellness thresholds (mood 3/4, stress 3/6, energy/sleep 5/7) and score divisors (2.5, 2, 3.5, 2.5). Extract to `lib/constants.ts`. | Open |
+| 3 | Hardcoded magic numbers | `components/check-in/daily-logs-summary.tsx` | Wellness thresholds for all 5 metrics (mood 3/4, stress+soreness 3/6, energy/sleep 5/7) and the per-metric score divisors. Extract to `lib/constants.ts`. | Open |
 | 4 | Hardcoded magic numbers | `components/check-in/step-subjective.tsx` | Minimum logs threshold `3` (line 29), default metric values of `5`. | Open |
 | 5 | Hardcoded magic numbers | `services/client-check-in-service.ts` | `6` days offset (line 66), `1.2` TDEE sedentary multiplier (line 146). | Open |
 | 6 | Hardcoded magic numbers | `components/clients/check-in/check-in-schedule-card.tsx` | `"24"` default hours, `168` max hours. | Open |

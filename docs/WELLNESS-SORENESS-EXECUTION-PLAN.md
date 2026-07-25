@@ -252,3 +252,44 @@ Tests: extend `__tests__/lib/attention-triggers.test.ts` (evaluator behavior: fi
 - **`client-portal-progress` select-string coverage**: the test fake now captures `.select()` arguments and asserts the check_ins query contains `soreness` + a data-flow case. Wire-format against a real DB is still unproven until the browser smoke (checklist item 3).
 - Client-portal UI conventions found: label "Muscle soreness" (wellness control), tile/pill label "Soreness", detail row "Muscle Soreness"; chart color `#a855f7` purple (nearest neighbor is `#8b5cf6` violet = weight/chest/DEFAULT_COLOR — an unregistered id silently renders violet); client-portal surfaces use plain classes, NOT the MONO tokens — copy siblings per file.
 - Observed stale doc content NOT fixed (out of scope): CLIENT-APP-REFERENCE :467 "Single save" contradicts the per-domain writes; :723 component tree lists the deleted `components/daily-pulse/` files.
+
+## STATUS — Session 2 (2026-07-25) — WORKSTREAM COMPLETE
+
+**Shipped: Phases 4–7 complete.** Commit ③ `32abb35` (coach UI + coach API + AI + tests), commit ④ `4f5effc` (high_soreness trigger + tests + its docs, severable), commit ⑤ (this commit: seed, remaining docs, this STATUS). All three passed the full §13 gate (tsc clean; eslint 0 errors / 218 pre-existing warnings; vitest 2249→2256→ final full run green; check:labels; no new `as any`/markers in app files).
+
+### Fact corrections found in Session-2 verification (win over plan prose)
+
+1. **Both history routes have FIVE metric-enumeration sites each, not three** (inline row casts + the lookup-map generic / `avgMetric` param union). All edited.
+2. **`WellnessMetric` is NOT a compile-enforcing chokepoint** — every consuming switch has a `default:`, so each color/config site needed a manual soreness case; tsc finds none of them. `getBarColor` is dead code (0 importers) but got its inverted case per plan.
+3. **Trigger semantics: the plan's "ignores null days" was WRONG** — `evaluateHighStress` RESETS the streak on a null/below-threshold day and gates on recency (streak ends at last/second-to-last log). The sparkline is **slice-then-filter**: the non-null values among the last 7 ENTRIES (7−k points; never backfilled). Clone + tests follow the real semantics; the soreness suite adds the two cases the stress suite never had (only-2-days; null-resets, fixture `[8,8,null,8,8]`) plus a slice-then-filter pin (`[null,8,8,8]` → metricData length 3).
+4. **`alertTabMap` is `Record<AlertType, string>`** — omitting the key is a compile error, not the plan's claimed runtime `?tab=undefined` risk.
+5. **Coach route tests had NO breaking asserts and NO query-string coverage** — both now assert `.select` AND `.or` contain `soreness` (the chain fakes ignore arguments; string asserts are the only guard for the "soreness-only days invisible" class). Summary fixture pins the non-null-rows divisor (one row with soreness 6, one without → avg 6).
+6. `ai-prompt-builder.ts:30`'s block gate was a hidden fifth touch (widened; a soreness-only check-in now renders the Subjective Metrics block — greenfield test added in its previously wellness-free test file).
+
+### Deviations (recorded, win over prose)
+
+1. **Decision E took one forced 1-line edit (owner-approved via explicit question this session):** `components/clients/daily-pulse/wellness-bar-chart.tsx` declares `Record<WellnessMetric, string>` (exhaustive), so it gained a commented compile-closure `soreness:` key. Nothing in the frozen tree renders the metric; zero pixel change.
+2. **Trigger-describing doc lines rode commit ④, not ⑤** (severability: if ④ reverts, its docs revert with it): ARCHITECTURE :593 trigger list + the "eight→nine" count word (rest of that sentence verbatim — it documents the never-logged-blindspot fix), CLIENT-APP-REFERENCE Automated Alerts soreness line.
+3. `getPriorityAlertText` clone inherits the sibling's hardcoded `8+` (doesn't read `HIGH_SORENESS_THRESHOLD`) — faithful clone, same debt as stress.
+4. `utils/ai-daily-context-patterns.ts` deferred as planned (verified: no compile pressure, no metric switch).
+5. Browser smoke ran BEFORE commit ⑤ (plan said after) so this STATUS records real results in one commit.
+6. Smoke fixtures left in place deliberately (feature is observable live): fixture-client wellness rows 2026-07-23/24/25 soreness 8/9/8, and one submitted check-in (`aa321ada-…`, notes "smoke: soreness derivation check"). The high_soreness dismissal created during the smoke was deleted (card visible again). The temporary wellness PATCH (soreness 6) was restored to 8.
+
+### Browser smoke — ALL 8 ITEMS PASS (headless-CDP harness, real sessions via generateLink→verifyOtp; screenshots in session scratchpad)
+
+1. **PASS** — five controls render incl. "Muscle soreness"; PATCH soreness round-trip 200 + `day-summary.wellness.hasLog=true` (request-level, values restored).
+2. **PASS** — five average tiles on the check-in form; real submit derived `check_ins.soreness = 8` from the 8/9/8 period (round(25/3)). Note: the period's ONLY wellness rows were soreness-only days, so siblings snapshot the fabricated 3/5/5/5 — exactly the pre-existing per-metric-fallback semantics Session 1's STATUS predicted; decision C held (soreness itself real, never defaulted).
+3. **PASS** — Soreness series card renders on client metrics.
+4. **PASS** — coach Wellness tab: 5-column dark strip with AVG SORENESS **8.3/10 in amber + warning tick**; Soreness table column; **the three soreness-only days render as rows** — the `.or()` fix observed live (they'd be invisible without it).
+5. **PASS** — check-in detail (the smoke-submitted check-in) shows Soreness in WellnessSection/comparison.
+6. **PASS** — coach Metrics tab → Wellness sub-tab shows the Soreness chart (sub-tab click required; Body Metrics is the default).
+7. **PASS** — attention feed: expanded fixture row shows "Muscle soreness critically high for 3+ consecutive days"; View href = `/clients/{id}?tab=wellness`; dismiss wrote `attention_dismissals(alert_type='high_soreness', dismissed_at='2026-07-25')` (coach-local date per mig-112) and removed the card; row deleted afterward (restored). The client-overview alert card also surfaced it (`evaluateSingleClientAlerts`, zero edits).
+8. **PASS** — Overview daily-pulse strip unchanged: exactly 4 recharts charts (mood/energy/sleep/stress), no soreness — the documented intentional divergence.
+
+Console: zero errors on all swept pages. The only output is the pre-existing recharts `width(-1)` ResponsiveContainer warning class on chart-heavy pages — a headless-measurement artifact firing for every chart, not introduced by this work.
+
+### Remaining threads (post-workstream)
+
+- `ai-daily-context-patterns.ts` has no soreness pattern-detector (deferred by plan — a product call, not debt).
+- `getPriorityAlertText`'s hardcoded `8+` (stress AND soreness) could read the constants — cosmetic.
+- CLIENT-APP-REFERENCE :467 / :723 staleness (pre-existing, unrelated) still unfixed.

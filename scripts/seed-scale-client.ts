@@ -617,6 +617,8 @@ async function insertDailyChildren(
       energy: rng.int(5, 9),
       sleep: rng.int(5, 9),
       stress: rng.int(2, 6),
+      // Max 6: deliberately below the high_soreness trigger threshold (8)
+      soreness: rng.int(2, 6),
     });
 
     const targetCal = 2400;
@@ -831,6 +833,7 @@ async function insertCheckIns(months: number, rng: Rng): Promise<CheckInRow[]> {
       energy: rng.int(5, 9),
       sleep: rng.int(5, 9),
       stress: rng.int(2, 6),
+      soreness: rng.int(2, 6),
       weight: 185 - i * 0.2,
       weight_unit: "lbs",
       body_fat_percentage: 22 - i * 0.05,

@@ -550,6 +550,7 @@ Keyset-by-default is scoped to paginated, time-ordered "load older" history (che
 - Fetches 28-day rolling window of daily_logs + habit_logs via `Promise.all`
 - Renders 2x2 bar chart grid (mood, energy, sleep, stress) + adherence dots
 - Runs `detectAlerts()` on loaded data for the attention feed
+- **Intentionally 4-metric**: this frozen legacy strip does not render soreness (the Wellness tab shows all 5) — the divergence is a deliberate decision of the soreness workstream, not an omission
 
 ---
 
