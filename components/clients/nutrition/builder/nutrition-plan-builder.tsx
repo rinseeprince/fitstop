@@ -44,11 +44,7 @@ export function NutritionPlanBuilder({ client, onUpdate }: NutritionPlanBuilderP
     <ErrorBoundary>
       <NutritionBuilderProvider client={client} onUpdate={onUpdate}>
         {/* Top content bar */}
-        <TopContentBar
-          subtab={subtab}
-          setSubtab={setSubtab}
-          onOpenSettings={() => setDrawerOpen(true)}
-        />
+        <TopContentBar subtab={subtab} setSubtab={setSubtab} />
 
         {subtab === "data" ? (
           <div className="space-y-4">
@@ -62,7 +58,7 @@ export function NutritionPlanBuilder({ client, onUpdate }: NutritionPlanBuilderP
               />
             </ErrorBoundary>
             <ErrorBoundary>
-              <NutritionCalendarMount />
+              <NutritionCalendarMount onRegenerate={() => setDrawerOpen(true)} />
             </ErrorBoundary>
           </div>
         )}
@@ -79,11 +75,9 @@ export function NutritionPlanBuilder({ client, onUpdate }: NutritionPlanBuilderP
 function TopContentBar({
   subtab,
   setSubtab,
-  onOpenSettings,
 }: {
   subtab: "data" | "plans";
   setSubtab: (tab: "data" | "plans") => void;
-  onOpenSettings: () => void;
 }) {
   const builder = useNutritionBuilderContext();
   const { activePhase } = builder;
@@ -124,8 +118,9 @@ function TopContentBar({
 
       {builder.hasPlan && (
         <>
-          {/* Phase info — only when the client has a live phase. The Regenerate
-              action below renders whenever a plan exists, roadmap/phase or not. */}
+          {/* Phase info — only when the client has a live phase. Regenerate
+              moved onto the calendar toolbar's divider rail (between the edit
+              and delete icons), so this bar carries context only. */}
           {activePhase && (
             <>
               {/* Vertical divider */}
@@ -150,20 +145,14 @@ function TopContentBar({
           )}
 
           {/* Right side */}
-          <div className="ml-auto flex items-center gap-3">
-            {activePhase && (
+          {activePhase && (
+            <div className="ml-auto flex items-center gap-3">
               <span className="flex items-center gap-1.5 text-xs font-medium text-[#0d9488]">
                 <span className="w-[5px] h-[5px] rounded-full bg-[#0d9488]" />
                 Active
               </span>
-            )}
-            <button
-              onClick={onOpenSettings}
-              className="inline-flex items-center px-3 py-1.5 text-[12.5px] font-medium text-[#5a7d82] bg-white border border-[rgba(13,148,136,0.08)] rounded-[6px] hover:bg-[#f0f5f4] transition-colors"
-            >
-              Regenerate
-            </button>
-          </div>
+            </div>
+          )}
         </>
       )}
     </div>
@@ -177,7 +166,7 @@ function TopContentBar({
  * there are no events, so it shows the empty month grid under the hero CTA
  * (the training tab's no-plan pattern), with the Delete-plan trigger hidden.
  */
-function NutritionCalendarMount() {
+function NutritionCalendarMount({ onRegenerate }: { onRegenerate: () => void }) {
   const builder = useNutritionBuilderContext();
   const { toast } = useToast();
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
@@ -223,6 +212,7 @@ function NutritionCalendarMount() {
         includeActivityBurn={builder.includeActivityBurn}
         surplusAsCarbs={builder.surplusAsCarbs}
         onUpdate={() => builder.refetchNutrition()}
+        onRegenerate={builder.hasPlan ? onRegenerate : undefined}
         onDeletePlan={builder.hasPlan ? () => setDeleteOpen(true) : undefined}
       />
       <DeleteNutritionPlanDialog

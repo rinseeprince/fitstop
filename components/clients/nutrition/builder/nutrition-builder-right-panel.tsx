@@ -3,9 +3,10 @@
 import { memo } from "react";
 import { useNutritionBuilderContext } from "@/contexts/nutrition-builder-context";
 import { NutritionWarnings } from "../nutrition-warnings";
-import { Apple, Loader2, Sparkles } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
+  HEADER_EYEBROW_CLASS,
   MONO,
   STAT_LABEL_DARK_CLASS,
   STAT_VALUE_DARK_CLASS,
@@ -29,31 +30,28 @@ export const NutritionBuilderRightPanel = memo(function NutritionBuilderRightPan
     );
   }
 
-  // Empty state — the training tab's no-plan hero language (training-plan-hero.tsx),
-  // rendered above the always-mounted empty calendar.
+  // Empty state — the training tab's no-plan hero anatomy verbatim
+  // (training-plan-hero.tsx empty branch): eyebrow + muted title, hairline,
+  // then the lens-row register's active-chip primary. Text-only, no icons.
   if (!builder.hasPlan) {
     return (
-      <div className="flex items-center justify-between gap-4 rounded-[6px] bg-[#0f2027] p-5">
-        <div className="flex items-center gap-3">
-          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[rgba(13,148,136,0.15)]">
-            <Apple className="h-5 w-5 text-[#0d9488]" strokeWidth={1.5} />
-          </div>
-          <div>
-            <p className="text-[13px] font-semibold text-white">No active nutrition plan</p>
-            <p className="mt-0.5 text-[11.5px] text-[rgba(255,255,255,0.5)]">
-              Generate a plan from this client&apos;s goals, activity level and training schedule.
-            </p>
-          </div>
+      <div className="rounded-[6px] bg-[#0f2027] px-5 py-[18px]">
+        <div className="min-w-0">
+          <p className={HEADER_EYEBROW_CLASS}>Nutrition plan</p>
+          <h2 className="mt-0.5 truncate text-[15px] font-medium text-[rgba(255,255,255,0.4)]">
+            No active nutrition plan
+          </h2>
         </div>
-        {onOpenSettings && (
-          <button
-            onClick={onOpenSettings}
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-[6px] bg-[#0d9488] px-3 py-1.5 text-[12.5px] font-medium text-white transition-colors hover:bg-[#0b7f75]"
-          >
-            <Sparkles className="h-3.5 w-3.5" strokeWidth={1.5} />
-            Generate plan
-          </button>
-        )}
+        <div className="mt-3 flex items-center gap-1 border-t border-[rgba(255,255,255,0.06)] pt-3">
+          {onOpenSettings && (
+            <button
+              onClick={onOpenSettings}
+              className="rounded-[4px] bg-[rgba(13,148,136,0.15)] px-2 py-1 text-[11px] font-medium text-[#0d9488] transition-colors"
+            >
+              Generate plan
+            </button>
+          )}
+        </div>
       </div>
     );
   }
