@@ -12,7 +12,6 @@ type DailyLogFullRow = {
   client_id: string;
   date: string;
   notes: string | null;
-  phase_id: string | null;
   created_at: string;
   updated_at: string;
   mood: number | null;

@@ -24,7 +24,7 @@ async function backfillEvents() {
   const { data: plans, error: plansError } = await supabaseAdmin
     .from("training_plans")
     .select(
-      "id, client_id, status, effective_from, effective_until, program_duration_weeks, phase_id, training_sessions(id, name, day_of_week, focus, estimated_calories, is_active)"
+      "id, client_id, status, effective_from, effective_until, program_duration_weeks, training_sessions(id, name, day_of_week, focus, estimated_calories, is_active)"
     );
 
   if (plansError) {
@@ -73,25 +73,6 @@ async function backfillEvents() {
       const start = new Date(startDate + "T00:00:00");
       start.setDate(start.getDate() + plan.program_duration_weeks * 7);
       endDate = getDateString(start);
-    } else if (plan.phase_id) {
-      const { data: phase } = await supabaseAdmin
-        .from("phases")
-        .select("end_date, start_date, duration_weeks")
-        .eq("id", plan.phase_id)
-        .maybeSingle();
-
-      if (phase?.end_date) {
-        endDate = phase.end_date;
-      } else if (phase?.start_date && phase?.duration_weeks) {
-        const start = new Date(phase.start_date + "T00:00:00");
-        start.setDate(start.getDate() + phase.duration_weeks * 7);
-        endDate = getDateString(start);
-      } else {
-        // Fallback: 8 weeks from plan start
-        const start = new Date(startDate + "T00:00:00");
-        start.setDate(start.getDate() + 8 * 7);
-        endDate = getDateString(start);
-      }
     } else {
       // No duration info: 8 weeks from plan start
       const start = new Date(startDate + "T00:00:00");

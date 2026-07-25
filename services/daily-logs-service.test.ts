@@ -210,7 +210,6 @@ describe('Daily Logs Service - Database Functions', () => {
         client_id: 'c-1',
         date: '2026-05-21',
         notes: null,
-        phase_id: 'phase-1',
         created_at: '2026-05-21T10:00:00Z',
         updated_at: '2026-05-21T11:00:00Z',
         mood: 4,

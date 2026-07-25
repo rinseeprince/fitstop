@@ -199,7 +199,6 @@ export const createTrainingPlanAtomic = async (params: {
   avgSleep?: number;
   avgStress?: number;
   recentAdherencePercentage?: number;
-  phaseId?: string;
   effectiveFrom?: string;
   savedPlanId?: string;
   /** End of the incoming plan's own window; bounds the RPC's additive delete. */
@@ -229,7 +228,6 @@ export const createTrainingPlanAtomic = async (params: {
       p_avg_sleep: params.avgSleep ?? null,
       p_avg_stress: params.avgStress ?? null,
       p_recent_adherence_percentage: params.recentAdherencePercentage ?? null,
-      p_phase_id: params.phaseId ?? null,
       p_effective_from: params.effectiveFrom ?? null,
       p_saved_plan_id: params.savedPlanId ?? null,
       p_today: pToday,

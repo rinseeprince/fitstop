@@ -28,9 +28,7 @@ export type CreateNutritionPlanParams = {
   customFatG: number | null;
   regenerationReason: string;
   trainingPlan: TrainingPlan | null;
-  phaseId?: string;
   coachNotes?: string;
-  goalSource?: "phase" | "client";
   effectiveFrom?: string;
   dayCalorieOverrides?: DayCalorieOverrides;
   // When true (explicit "Recalculate plan" / fresh Generate recompute) the RPC
@@ -128,9 +126,7 @@ export async function createNutritionPlan(params: CreateNutritionPlanParams): Pr
       p_custom_fat_g: params.customFatG,
       p_regeneration_reason: params.regenerationReason,
       p_daily_targets: dailyTargets,
-      p_phase_id: params.phaseId || null,
       p_coach_notes: params.coachNotes || null,
-      p_goal_source: params.goalSource || null,
       p_effective_from: params.effectiveFrom || null,
       p_today: pToday,
       p_recalc_snapshots: params.recalcSnapshots ?? false,

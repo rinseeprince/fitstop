@@ -21,7 +21,7 @@ async function backfillEvents() {
   const { data: plans, error: plansError } = await supabaseAdmin
     .from("nutrition_plans")
     .select(
-      "id, client_id, effective_from, baseline_calories, protein_target_g, diet_type, phase_id, nutrition_plan_daily_targets(day_of_week, calories, protein_g, carb_g, fat_g, is_training_day)"
+      "id, client_id, effective_from, baseline_calories, protein_target_g, diet_type, nutrition_plan_daily_targets(day_of_week, calories, protein_g, carb_g, fat_g, is_training_day)"
     )
     .eq("status", "active");
 
@@ -52,31 +52,9 @@ async function backfillEvents() {
 
     const startDate = plan.effective_from ?? today;
 
-    let endDate: string;
-
-    if (plan.phase_id) {
-      const { data: phase } = await supabaseAdmin
-        .from("phases")
-        .select("end_date, start_date, duration_weeks")
-        .eq("id", plan.phase_id)
-        .maybeSingle();
-
-      if (phase?.end_date) {
-        endDate = phase.end_date;
-      } else if (phase?.start_date && phase?.duration_weeks) {
-        const start = new Date(phase.start_date + "T00:00:00");
-        start.setDate(start.getDate() + phase.duration_weeks * 7);
-        endDate = getDateString(start);
-      } else {
-        const start = new Date(startDate + "T00:00:00");
-        start.setDate(start.getDate() + 8 * 7);
-        endDate = getDateString(start);
-      }
-    } else {
-      const start = new Date(startDate + "T00:00:00");
-      start.setDate(start.getDate() + 8 * 7);
-      endDate = getDateString(start);
-    }
+    const endStart = new Date(startDate + "T00:00:00");
+    endStart.setDate(endStart.getDate() + 8 * 7);
+    let endDate: string = getDateString(endStart);
 
     // Always extend the dense forward window to today + 8 weeks.
     const futureLimit = new Date(today + "T00:00:00");
