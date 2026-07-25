@@ -156,6 +156,7 @@ export function MetricTrendChart({ metric, points }: MetricTrendChartProps) {
                 axisLine={false}
                 width={50}
                 orientation="right"
+                domain={["auto", "auto"]}
               />
               <Tooltip
                 content={<EntryTooltip unit={metric.unit} />}
@@ -164,6 +165,9 @@ export function MetricTrendChart({ metric, points }: MetricTrendChartProps) {
               {metric.goal != null && (
                 <ReferenceLine
                   y={metric.goal}
+                  // A goal outside the data's range must stretch the axis, not
+                  // vanish (recharts discards out-of-domain reference lines).
+                  ifOverflow="extendDomain"
                   stroke={GOAL_COLOR}
                   strokeDasharray="6 4"
                   strokeWidth={1.5}
