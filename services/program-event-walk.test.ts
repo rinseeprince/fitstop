@@ -261,19 +261,7 @@ describe("program-event-walk", () => {
   // =========================================================================
 
   describe("calculatePlacementEndDate", () => {
-    function wirePhases(phase: {
-      end_date?: string | null;
-      start_date?: string | null;
-      duration_weeks?: number | null;
-    } | null) {
-      mockFrom.mockImplementation((table: string) => {
-        if (table === "phases") return createMockQuery({ data: phase, error: null }) as never;
-        return createMockQuery({ data: null, error: null }) as never;
-      });
-    }
-
     it("window = slotCount days, one pass", async () => {
-      wirePhases(null);
       expect(
         await calculatePlacementEndDate({
           clientId: "client-1", slotCount: 14, startDate: "2026-07-01",
@@ -282,7 +270,6 @@ describe("program-event-walk", () => {
     });
 
     it("clamps slotCount up to at least one day", async () => {
-      wirePhases(null);
       expect(
         await calculatePlacementEndDate({
           clientId: "client-1", slotCount: 0, startDate: "2026-07-01",
@@ -290,44 +277,7 @@ describe("program-event-walk", () => {
       ).toBe("2026-07-01");
     });
 
-    it("explicit phase end caps the window (never stretches it)", async () => {
-      wirePhases({ end_date: "2026-07-05", start_date: "2026-06-01", duration_weeks: null });
-      expect(
-        await calculatePlacementEndDate({
-          phaseId: "phase-1", clientId: "client-1", slotCount: 14, startDate: "2026-07-01",
-        }),
-      ).toBe("2026-07-05");
-
-      // A phase ending after the program does NOT stretch the window.
-      wirePhases({ end_date: "2026-09-01", start_date: "2026-06-01", duration_weeks: null });
-      expect(
-        await calculatePlacementEndDate({
-          phaseId: "phase-1", clientId: "client-1", slotCount: 14, startDate: "2026-07-01",
-        }),
-      ).toBe("2026-07-14");
-    });
-
-    it("derives the phase end from start_date + duration_weeks when end_date is absent", async () => {
-      // 2026-06-29 + 1 week - 1 day = 2026-07-05.
-      wirePhases({ end_date: null, start_date: "2026-06-29", duration_weeks: 1 });
-      expect(
-        await calculatePlacementEndDate({
-          phaseId: "phase-1", clientId: "client-1", slotCount: 14, startDate: "2026-07-01",
-        }),
-      ).toBe("2026-07-05");
-    });
-
-    it("without an explicit phaseId, the client's containing phase caps the window", async () => {
-      wirePhases({ end_date: "2026-07-10", start_date: "2026-06-01", duration_weeks: null });
-      expect(
-        await calculatePlacementEndDate({
-          clientId: "client-1", slotCount: 28, startDate: "2026-07-01",
-        }),
-      ).toBe("2026-07-10");
-    });
-
     it("caps at the next coexisting plan's start", async () => {
-      wirePhases(null);
       mockGetNextPlanStartCap.mockResolvedValue("2026-07-08");
       expect(
         await calculatePlacementEndDate({

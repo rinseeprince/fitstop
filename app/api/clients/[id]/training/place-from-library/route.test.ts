@@ -27,10 +27,6 @@ vi.mock("@/services/library-placement-service", () => ({
   placeInlineEditedPlanOnCalendar: vi.fn(),
 }));
 
-vi.mock("@/services/phase-service", () => ({
-  assertPhaseBelongsToClient: vi.fn().mockResolvedValue(undefined),
-}));
-
 vi.mock("@/services/today-service", () => ({
   getClientTodayString: vi.fn(),
 }));
@@ -48,13 +44,11 @@ import {
   placePlanOnCalendar,
   placeInlineEditedPlanOnCalendar,
 } from "@/services/library-placement-service";
-import { assertPhaseBelongsToClient } from "@/services/phase-service";
 import { getClientTodayString } from "@/services/today-service";
 import { POST } from "./route";
 
 const clientId = "client-1";
 const savedPlanId = "11111111-1111-4111-8111-111111111111";
-const phaseId = "22222222-2222-4222-8222-222222222222";
 
 const inlinePlanBody = {
   name: "Edited PPL",
@@ -150,7 +144,7 @@ describe("POST /api/clients/[id]/training/place-from-library start-date guard", 
   });
 });
 
-describe("POST /api/clients/[id]/training/place-from-library inline + phase guard", () => {
+describe("POST /api/clients/[id]/training/place-from-library inline", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(getClientById).mockResolvedValue({
@@ -158,7 +152,6 @@ describe("POST /api/clients/[id]/training/place-from-library inline + phase guar
       coachId: "coach-1",
     } as never);
     vi.mocked(getClientTodayString).mockResolvedValue("2026-01-15");
-    vi.mocked(assertPhaseBelongsToClient).mockResolvedValue(undefined);
     vi.mocked(placePlanOnCalendar).mockResolvedValue({
       planId: "plan-1",
       sessionsCreated: 3,
@@ -187,39 +180,7 @@ describe("POST /api/clients/[id]/training/place-from-library inline + phase guar
     expect(placePlanOnCalendar).not.toHaveBeenCalled();
   });
 
-  it("rejects an inline apply with a foreign phaseId (IDOR)", async () => {
-    vi.mocked(assertPhaseBelongsToClient).mockRejectedValue(
-      new Error("Phase not found for this client"),
-    );
-
-    const res = await callRoute({
-      type: "inline",
-      plan: inlinePlanBody,
-      startDate: "2026-01-20",
-      phaseId,
-    });
-
-    expect(res.status).toBe(404);
-    expect(placeInlineEditedPlanOnCalendar).not.toHaveBeenCalled();
-  });
-
-  it("rejects a saved-plan apply with a foreign phaseId (pre-existing IDOR, now closed)", async () => {
-    vi.mocked(assertPhaseBelongsToClient).mockRejectedValue(
-      new Error("Phase not found for this client"),
-    );
-
-    const res = await callRoute({
-      type: "plan",
-      savedPlanId,
-      startDate: "2026-01-20",
-      phaseId,
-    });
-
-    expect(res.status).toBe(404);
-    expect(placePlanOnCalendar).not.toHaveBeenCalled();
-  });
-
-  it("re-runs the past-date guard on the inline branch (before the phase check)", async () => {
+  it("re-runs the past-date guard on the inline branch", async () => {
     const res = await callRoute({
       type: "inline",
       plan: inlinePlanBody,
@@ -227,7 +188,6 @@ describe("POST /api/clients/[id]/training/place-from-library inline + phase guar
     });
 
     expect(res.status).toBe(400);
-    expect(assertPhaseBelongsToClient).not.toHaveBeenCalled();
     expect(placeInlineEditedPlanOnCalendar).not.toHaveBeenCalled();
   });
 });

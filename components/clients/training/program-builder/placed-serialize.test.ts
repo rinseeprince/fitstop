@@ -68,7 +68,6 @@ function makeRead(overrides: Partial<PlacedPlanForBuilder> = {}): PlacedPlanForB
       programDurationWeeks: 2,
       frequencyPerWeek: 3,
       effectiveFrom: "2026-07-15",
-      phaseId: null,
       savedPlanId: null,
       status: "active",
       updatedAt: "2026-07-20T00:00:00Z",

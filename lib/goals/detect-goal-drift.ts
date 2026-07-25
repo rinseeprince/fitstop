@@ -16,7 +16,6 @@ export type GoalDrift = {
   /** The current effective goal (resolver). */
   currentGoalWeightKg: number | null;
   currentDeadline: string | null;
-  source: EffectiveGoal["source"];
 };
 
 /** kg tolerance to ignore float / display round-trip noise when comparing weights. */
@@ -24,7 +23,7 @@ const WEIGHT_EPSILON_KG = 0.1;
 
 export function detectGoalDrift(
   planSnapshot: { goalWeightKg: number | null; deadline: string | null },
-  effective: Pick<EffectiveGoal, "goalWeightKg" | "deadline" | "source">
+  effective: Pick<EffectiveGoal, "goalWeightKg" | "deadline">
 ): GoalDrift {
   const planWeight = planSnapshot.goalWeightKg;
   const currentWeight = effective.goalWeightKg;
@@ -45,6 +44,5 @@ export function detectGoalDrift(
     planDeadline: planSnapshot.deadline,
     currentGoalWeightKg: currentWeight,
     currentDeadline: effective.deadline,
-    source: effective.source,
   };
 }

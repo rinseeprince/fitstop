@@ -53,7 +53,6 @@ type Scenario = {
   sessions: Record<string, unknown>[];
   exercises: Record<string, unknown>[];
   events: Record<string, unknown>[];
-  phase: Record<string, unknown> | null;
   freshCounter: number;
   planUpdates: Record<string, unknown>[];
   sessionInserts: Record<string, unknown>[];
@@ -109,9 +108,6 @@ function execute(
     }
   }
 
-  if (q._table === "phases") {
-    return { data: state.phase, error: null };
-  }
 
   if (q._table === "training_sessions") {
     if (q._op === "select") {
@@ -360,7 +356,6 @@ function makeScenario(): Scenario {
         program_duration_weeks: 2,
         effective_from: EFFECTIVE_FROM,
         effective_until: null,
-        phase_id: null,
         saved_plan_id: null,
         deleted_at: null,
         created_at: "2026-07-14T00:00:00Z",
@@ -462,7 +457,6 @@ function makeScenario(): Scenario {
         session_name: "Other Plan Day",
       }),
     ],
-    phase: null,
     freshCounter: 0,
     planUpdates: [],
     sessionInserts: [],
@@ -927,22 +921,6 @@ describe("plan-amendment-service", () => {
       const dates = state.eventUpserts[0].rows.map((r) => r.date);
       expect(dates.every((d) => (d as string) <= "2026-07-25")).toBe(true);
       expect(dates).toEqual(["2026-07-22", "2026-07-24"]); // New Legs (07-27) capped away
-    });
-
-    it("phase cap bounds the walk", async () => {
-      state.plans[0].phase_id = "phase-1";
-      state.phase = { end_date: "2026-07-24", start_date: "2026-07-01", duration_weeks: null };
-      const token = await tokenFor();
-      await amendPlacedPlanFuture({
-        clientId: CLIENT_ID,
-        coachId: COACH_ID,
-        planId: PLAN_ID,
-        sessions: makeAmendedGrid(),
-        expectedToken: token,
-      });
-
-      const dates = state.eventUpserts[0].rows.map((r) => r.date);
-      expect(dates.every((d) => (d as string) <= "2026-07-24")).toBe(true);
     });
   });
 

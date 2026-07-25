@@ -3,8 +3,6 @@ import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { getClientById } from "@/services/client-service";
 import { getActiveTrainingPlan } from "@/services/training-service";
 import { getClientHabits } from "@/services/daily-habits-service";
-import { getActiveRoadmap } from "@/services/roadmap-service";
-import { getActivePhase } from "@/services/phase-service";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 
@@ -39,7 +37,7 @@ export async function GET(
       return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
     }
 
-    const [trainingPlan, habits, nutritionPlan, roadmap, activePhase] = await Promise.all([
+    const [trainingPlan, habits, nutritionPlan] = await Promise.all([
       safeQuery(() => getActiveTrainingPlan(clientId)),
       safeQuery(() => getClientHabits(clientId)),
       safeQuery(async () => {
@@ -52,8 +50,6 @@ export async function GET(
           .maybeSingle();
         return data;
       }),
-      safeQuery(() => getActiveRoadmap(clientId)),
-      safeQuery(() => getActivePhase(clientId)),
     ]);
 
     return NextResponse.json({
@@ -62,11 +58,6 @@ export async function GET(
         hasTrainingPlan: trainingPlan !== null,
         hasNutritionPlan: nutritionPlan !== null,
         hasHabits: Array.isArray(habits) && habits.length > 0,
-        hasRoadmap: roadmap !== null,
-        hasActivePhase: activePhase !== null,
-        activePhaseName: activePhase?.name ?? null,
-        activePhaseStartDate: activePhase?.startDate ?? null,
-        roadmapRecommended: true,
       },
     });
   } catch (error) {

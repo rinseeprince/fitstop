@@ -8,7 +8,6 @@ import type { Client } from '@/types/check-in'
 import type { CheckInRow, CheckInTokenRow, ClientRow, TrainingPlanRow, TrainingSessionRow, TrainingExerciseRow, TrainingEventRow } from '@/lib/database-helpers'
 import type { ClientGoalRow } from '@/types/client-goals'
 import type { BodyMetricsEventRow } from '@/types/body-metrics'
-import type { Milestone, RoadmapRow, PhaseRow } from '@/types/roadmap'
 import type { TrainingEvent, TrainingEventStatus } from '@/types/training'
 
 // =============================================================================
@@ -481,98 +480,6 @@ export function createMockBodyMetricsRow(options: MockBodyMetricsRowOptions = {}
     source_id: options.sourceId ?? null,
     recorded_at: options.recordedAt ?? now,
     created_at: options.createdAt ?? now,
-  }
-}
-
-// =============================================================================
-// Roadmap Builders
-// =============================================================================
-
-export interface MockRoadmapRowOptions {
-  id?: string
-  clientId?: string
-  coachId?: string
-  name?: string
-  longTermGoal?: string | null
-  goalWeight?: number | null
-  goalBodyFatPercentage?: number | null
-  status?: string
-  startedAt?: string | null
-  targetEndDate?: string | null
-  createdAt?: string
-  updatedAt?: string
-}
-
-export function createMockRoadmapRow(options: MockRoadmapRowOptions = {}): RoadmapRow {
-  const now = generateISODate()
-
-  return {
-    id: options.id ?? generateUUID(),
-    client_id: options.clientId ?? generateUUID(),
-    coach_id: options.coachId ?? generateUUID(),
-    name: options.name ?? 'Test Roadmap',
-    long_term_goal: options.longTermGoal ?? null,
-    goal_weight: options.goalWeight ?? null,
-    goal_body_fat_percentage: options.goalBodyFatPercentage ?? null,
-    status: options.status ?? 'active',
-    started_at: options.startedAt ?? now,
-    target_end_date: options.targetEndDate ?? null,
-    created_at: options.createdAt ?? now,
-    updated_at: options.updatedAt ?? now,
-  }
-}
-
-// =============================================================================
-// Phase Builders
-// =============================================================================
-
-export interface MockPhaseRowOptions {
-  id?: string
-  roadmapId?: string
-  clientId?: string
-  name?: string
-  description?: string | null
-  objectives?: string | null
-  orderIndex?: number
-  status?: string
-  startDate?: string | null
-  endDate?: string | null
-  durationWeeks?: number | null
-  phaseGoalsSnapshot?: Record<string, unknown> | null
-  phaseGoalWeight?: number | null
-  phaseGoalBodyFatPercentage?: number | null
-  coachReflection?: string | null
-  phaseSummary?: Record<string, unknown> | null
-  milestones?: Milestone[]
-  completionSeen?: boolean
-  createdAt?: string
-  updatedAt?: string
-}
-
-export function createMockPhaseRow(options: MockPhaseRowOptions = {}): PhaseRow {
-  const now = generateISODate()
-
-  return {
-    id: options.id ?? generateUUID(),
-    roadmap_id: options.roadmapId ?? generateUUID(),
-    client_id: options.clientId ?? generateUUID(),
-    name: options.name ?? 'Phase 1',
-    description: options.description ?? null,
-    objectives: options.objectives ?? null,
-    order_index: options.orderIndex ?? 0,
-    status: options.status ?? 'planned',
-    start_date: options.startDate ?? null,
-    end_date: options.endDate ?? null,
-    duration_weeks: options.durationWeeks ?? null,
-    phase_goals_snapshot: options.phaseGoalsSnapshot ?? null,
-    phase_goal_weight: options.phaseGoalWeight ?? null,
-    phase_goal_body_fat_percentage: options.phaseGoalBodyFatPercentage ?? null,
-    coach_reflection: options.coachReflection ?? null,
-    phase_summary: options.phaseSummary ?? null,
-    milestones: options.milestones ?? [],
-    completion_seen: options.completionSeen ?? false,
-    created_at: options.createdAt ?? now,
-    updated_at: options.updatedAt ?? now,
   }
 }
 

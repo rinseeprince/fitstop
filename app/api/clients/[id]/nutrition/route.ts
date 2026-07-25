@@ -20,7 +20,6 @@ import {
   orchestrateNutritionPlanDeletion,
   NutritionPlanError,
 } from "@/services/nutrition-plan-orchestrator";
-import { getActiveRoadmap } from "@/services/roadmap-service";
 import { getCurrentGoals } from "@/services/client-goals-service";
 import { resolveEffectiveGoal } from "@/lib/goals/resolve-effective-goal";
 import { detectGoalDrift } from "@/lib/goals/detect-goal-drift";
@@ -104,21 +103,9 @@ export async function GET(
     // (effective-goal resolver) differ from the snapshot this active plan was
     // built against? Surfaced as "Goal changed — regenerate", distinct from the
     // weight-delta banner (which compares current weight vs the plan base weight).
-    const [driftRoadmap, driftGoals] = await Promise.all([
-      getActiveRoadmap(clientId),
-      getCurrentGoals(clientId),
-    ]);
-    const driftActivePhase = driftRoadmap?.phases.find((p) => p.status === "active");
+    const driftGoals = await getCurrentGoals(clientId);
     const effectiveGoal = resolveEffectiveGoal({
       weightUnit: client.weightUnit ?? "lbs",
-      activePhase: driftActivePhase
-        ? {
-            goalWeightKg: driftActivePhase.phaseGoalWeight ?? null,
-            goalBodyFatPercentage: driftActivePhase.phaseGoalBodyFatPercentage ?? null,
-            startDate: driftActivePhase.startDate ?? null,
-            endDate: driftActivePhase.endDate ?? null,
-          }
-        : null,
       clientGoal: {
         goalWeight: driftGoals?.goalWeight ?? client.goalWeight ?? null,
         goalBodyFatPercentage:
@@ -184,7 +171,7 @@ export async function POST(
       clientId,
       coachId,
       body,
-      { phaseId: validationResult.data.phaseId, coachNotes: validationResult.data.coachNotes }
+      { coachNotes: validationResult.data.coachNotes }
     );
 
     void recordAuditEvent({
@@ -193,7 +180,6 @@ export async function POST(
       action: AUDIT_ACTIONS.NUTRITION_PLAN_CREATE,
       targetTable: "nutrition_plans",
       clientId,
-      metadata: { goalSource: result.goalSource },
       request,
     });
 

@@ -266,7 +266,7 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
               label="Schedule"
               meta={`${draft.weeks.length} ${draft.weeks.length === 1 ? "week" : "weeks"} · ${trainingCount} ${trainingCount === 1 ? "session" : "sessions"}`}
               actions={
-                // Roadmap-divider pattern: ALL program actions live on the
+                // Divider-rail pattern: ALL program actions live on the
                 // rule, not in the hero band — icons for edit/delete, small
                 // uppercase text for the edit-mode commit actions. Client-draft
                 // swaps the library commit (Save/Delete to the template) for an

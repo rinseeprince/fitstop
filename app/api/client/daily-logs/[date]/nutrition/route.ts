@@ -85,7 +85,6 @@ export async function PATCH(
     const ctx = await resolvePlanContextForDate(auth.clientId, date);
     assertHasActivePlan(ctx, "nutrition");
     const dailyLog = await upsertNutritionLog(auth.clientId, date, result.data, {
-      phaseId: ctx.phaseId,
       nutritionPlanId: ctx.nutritionPlanId,
     });
     return NextResponse.json(

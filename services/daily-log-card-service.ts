@@ -35,23 +35,11 @@ export type WellnessLogInput = {
 };
 
 /**
- * Ensure the `daily_logs` spine row for (clientId, date) exists, stamping `phase_id`.
- * Conditional include: when `phaseId` is null the column is omitted so an existing phase
- * is preserved on conflict (PostgREST merge-duplicates only writes payload columns) and a
- * fresh row gets a null phase. Returns the spine id for the child upsert.
+ * Ensure the `daily_logs` spine row for (clientId, date) exists. Returns the
+ * spine id for the child upsert.
  */
-async function ensureSpine(
-  clientId: string,
-  date: string,
-  phaseId: string | null
-): Promise<string> {
-  const payload: {
-    client_id: string;
-    date: string;
-    updated_at: string;
-    phase_id?: string;
-  } = { client_id: clientId, date, updated_at: new Date().toISOString() };
-  if (phaseId) payload.phase_id = phaseId;
+async function ensureSpine(clientId: string, date: string): Promise<string> {
+  const payload = { client_id: clientId, date, updated_at: new Date().toISOString() };
 
   const { data, error } = await supabaseAdmin
     .from("daily_logs")
@@ -75,16 +63,16 @@ async function readBack(clientId: string, date: string): Promise<DailyLog> {
 }
 
 /**
- * Per-card nutrition write. Ensures the spine (with phase_id), snapshots the day's plan
+ * Per-card nutrition write. Ensures the spine, snapshots the day's plan
  * target server-side, computes adherence, and upserts `nutrition_logs`.
  */
 export async function upsertNutritionLog(
   clientId: string,
   date: string,
   data: NutritionLogInput,
-  ctx: { phaseId?: string | null; nutritionPlanId?: string | null }
+  ctx: { nutritionPlanId?: string | null }
 ): Promise<DailyLog> {
-  const spineId = await ensureSpine(clientId, date, ctx.phaseId ?? null);
+  const spineId = await ensureSpine(clientId, date);
 
   // Targets are authoritative server-side snapshots from the date's plan event (null when
   // no event); never client-supplied.
@@ -129,16 +117,15 @@ export async function upsertNutritionLog(
 }
 
 /**
- * Per-card wellness write. Ensures the spine (with phase_id) and upserts `wellness_logs`.
- * wellness_logs has no plan FK; its phase context is the spine `phase_id`.
+ * Per-card wellness write. Ensures the spine and upserts `wellness_logs`.
+ * wellness_logs has no plan FK.
  */
 export async function upsertWellnessLog(
   clientId: string,
   date: string,
-  data: WellnessLogInput,
-  ctx: { phaseId?: string | null }
+  data: WellnessLogInput
 ): Promise<DailyLog> {
-  const spineId = await ensureSpine(clientId, date, ctx.phaseId ?? null);
+  const spineId = await ensureSpine(clientId, date);
 
   const { error } = await supabaseAdmin.from("wellness_logs").upsert(
     {

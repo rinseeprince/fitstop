@@ -31,15 +31,10 @@ vi.mock("@/services/daily-context-service", () => {
     resolvePlanContextForDate: vi.fn(),
     NoActivePlanError,
     assertHasActivePlan: (
-      ctx: { phaseId: string | null; nutritionPlanId: string | null; trainingPlanId: string | null },
+      ctx: { nutritionPlanId: string | null; trainingPlanId: string | null },
       resource: Resource
     ) => {
-      const id =
-        resource === "nutrition"
-          ? ctx.nutritionPlanId
-          : resource === "training"
-            ? ctx.trainingPlanId
-            : ctx.phaseId;
+      const id = resource === "nutrition" ? ctx.nutritionPlanId : ctx.trainingPlanId;
       if (id == null) throw new NoActivePlanError(resource);
     },
   };
@@ -108,7 +103,6 @@ describe("GET /api/client/daily-logs/[date]/nutrition", () => {
 describe("PATCH /api/client/daily-logs/[date]/nutrition", () => {
   const happyContext = () => {
     vi.mocked(resolvePlanContextForDate).mockResolvedValue({
-      phaseId: "p1",
       nutritionPlanId: "np1",
       trainingPlanId: null,
     } as never);
@@ -125,7 +119,7 @@ describe("PATCH /api/client/daily-logs/[date]/nutrition", () => {
       "client-1",
       "2026-05-21",
       { caloriesConsumed: 2000 },
-      { phaseId: "p1", nutritionPlanId: "np1" }
+      { nutritionPlanId: "np1" }
     );
   });
 
@@ -170,7 +164,6 @@ describe("PATCH /api/client/daily-logs/[date]/nutrition", () => {
   it("422 when no active nutrition plan (orphan log guard)", async () => {
     vi.mocked(assertCanEdit).mockResolvedValue({ loggedStatus: "never-logged" } as never);
     vi.mocked(resolvePlanContextForDate).mockResolvedValue({
-      phaseId: "p1",
       nutritionPlanId: null,
       trainingPlanId: null,
     } as never);

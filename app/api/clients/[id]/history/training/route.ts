@@ -38,9 +38,8 @@ function mapScheduleDayToRow(day: ScheduleDay): TrainingHistoryRow {
 
 /**
  * Earliest date the client has any training activity — the earliest of their
- * first training_event and first session_log. Used to bound the history range
- * for clients with no active phase (roadmaps are opt-in, so no-phase is a
- * normal state). Returns null when the client has no events and no logs.
+ * first training_event and first session_log. Bounds the history range.
+ * Returns null when the client has no events and no logs.
  */
 async function getEarliestActivityDate(clientId: string): Promise<string | null> {
   const [eventRes, logRes] = await Promise.all([
@@ -91,24 +90,13 @@ export async function GET(
 
     const { limit, offset } = pagination;
 
-    // Determine the start of the history range. With an active phase, bound by
-    // the phase start (unchanged behaviour). Otherwise — roadmaps are opt-in, so
-    // no-phase is a normal state — derive the start from the client's earliest
-    // training_event / session_log. Either way the schedule is built from events
-    // + session_logs (real calendar dates / completed_at), never the legacy
-    // daily_logs + week_start_date derivation.
-    // Uses supabaseAdmin: coach querying client data (RLS exception 2)
-    const { data: phaseRow } = await supabaseAdmin
-      .from("phases")
-      .select("start_date")
-      .eq("client_id", clientId)
-      .eq("status", "active")
-      .maybeSingle();
+    // The history range starts at the client's earliest training_event /
+    // session_log. The schedule is built from events + session_logs (real
+    // calendar dates / completed_at), never the legacy daily_logs +
+    // week_start_date derivation.
+    const rangeStart = await getEarliestActivityDate(clientId);
 
-    const phaseStartDate = (phaseRow?.start_date as string | null) ?? null;
-    const rangeStart = phaseStartDate ?? (await getEarliestActivityDate(clientId));
-
-    // No phase and no activity at all → nothing to show.
+    // No activity at all → nothing to show.
     if (!rangeStart) {
       return NextResponse.json({ rows: [], total: 0 }, { status: 200 });
     }

@@ -84,64 +84,22 @@ export async function generateProgramEvents(params: {
 /**
  * Calculate the placement window end date. The authored program length is the
  * ONLY length knob: the whole-program slot count in days, placed exactly once.
- * There is deliberately no programDurationWeeks or 8-week fallback. The client's
- * containing phase end is a MAXIMUM cap only (a program never runs past it and
- * never stretches to fill it), as is the start of the next coexisting plan.
+ * There is deliberately no programDurationWeeks or 8-week fallback. The start
+ * of the next coexisting plan is a MAXIMUM cap only (a program never runs past
+ * it and never stretches to fill it).
  */
 export async function calculatePlacementEndDate(params: {
-  phaseId?: string;
   clientId: string;
   slotCount: number;
   startDate: string;
 }): Promise<string> {
-  const { phaseId, clientId, slotCount, startDate } = params;
+  const { clientId, slotCount, startDate } = params;
 
   // Program length = the whole-program slot count, one pass.
   const days = Math.max(1, slotCount);
   const durationEnd = new Date(startDate + "T00:00:00");
   durationEnd.setDate(durationEnd.getDate() + days - 1);
-  let computedEnd = getDateString(durationEnd);
-
-  // Resolve the client's containing phase end (explicit phase, else the phase that
-  // contains startDate) and apply it as a MAX cap only.
-  let phaseEndDate: string | null = null;
-  if (phaseId) {
-    const { data: phase } = await supabaseAdmin
-      .from("phases")
-      .select("end_date, start_date, duration_weeks")
-      .eq("id", phaseId)
-      .maybeSingle();
-
-    if (phase?.end_date) {
-      phaseEndDate = phase.end_date;
-    } else if (phase?.start_date && phase?.duration_weeks) {
-      const d = new Date(phase.start_date + "T00:00:00");
-      d.setDate(d.getDate() + phase.duration_weeks * 7 - 1);
-      phaseEndDate = getDateString(d);
-    }
-  } else {
-    // No explicit phase — look up the client's phase containing startDate and cap by it.
-    const { data: containingPhase } = await supabaseAdmin
-      .from("phases")
-      .select("end_date, start_date, duration_weeks")
-      .eq("client_id", clientId)
-      .in("status", ["active", "planned"])
-      .lte("start_date", startDate)
-      .gte("end_date", startDate)
-      .order("start_date", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (containingPhase?.end_date) {
-      phaseEndDate = containingPhase.end_date;
-    } else if (containingPhase?.start_date && containingPhase?.duration_weeks) {
-      const d = new Date(containingPhase.start_date + "T00:00:00");
-      d.setDate(d.getDate() + containingPhase.duration_weeks * 7 - 1);
-      phaseEndDate = getDateString(d);
-    }
-  }
-
-  if (phaseEndDate && phaseEndDate < computedEnd) computedEnd = phaseEndDate;
+  const computedEnd = getDateString(durationEnd);
 
   // Additive placement: never let this plan's window bleed past the start of a
   // later coexisting plan.

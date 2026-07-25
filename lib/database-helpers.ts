@@ -45,17 +45,9 @@ export type TrainingEventInsert = Database["public"]["Tables"]["training_events"
 export type NutritionEventRow = Database["public"]["Tables"]["nutrition_events"]["Row"];
 export type NutritionEventInsert = Database["public"]["Tables"]["nutrition_events"]["Insert"];
 
-// Roadmap & phase types
-export type RoadmapRow = Database["public"]["Tables"]["roadmaps"]["Row"];
-export type PhaseRow = Database["public"]["Tables"]["phases"]["Row"];
+// Goals & metrics types
 export type ClientGoalRow = Database["public"]["Tables"]["client_goals"]["Row"];
 export type BodyMetricsRow = Database["public"]["Tables"]["body_metrics"]["Row"];
-
-// Roadmap & phase insert/update types
-export type RoadmapInsert = Database["public"]["Tables"]["roadmaps"]["Insert"];
-export type RoadmapUpdate = Database["public"]["Tables"]["roadmaps"]["Update"];
-export type PhaseInsert = Database["public"]["Tables"]["phases"]["Insert"];
-export type PhaseUpdate = Database["public"]["Tables"]["phases"]["Update"];
 export type ClientGoalInsert = Database["public"]["Tables"]["client_goals"]["Insert"];
 export type ClientGoalUpdate = Database["public"]["Tables"]["client_goals"]["Update"];
 export type BodyMetricsInsert = Database["public"]["Tables"]["body_metrics"]["Insert"];

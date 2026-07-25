@@ -16,9 +16,6 @@ vi.mock("@/lib/auth-helpers", () => ({
   getAuthenticatedClientId: vi.fn(),
   getAuthenticatedClientWithCheckInDay: vi.fn(),
 }));
-vi.mock("@/services/daily-context-service", () => ({
-  resolvePlanContextForDate: vi.fn(),
-}));
 vi.mock("@/services/daily-logs-service", () => ({
   getTodayLog: vi.fn(),
 }));
@@ -31,7 +28,6 @@ vi.mock("@/services/daily-log-card-service", () => ({
 }));
 
 import { getAuthenticatedClientId } from "@/lib/auth-helpers";
-import { resolvePlanContextForDate } from "@/services/daily-context-service";
 import { getTodayLog } from "@/services/daily-logs-service";
 import { getDayEditState, assertCanEdit } from "@/services/daily-log-permissions-service";
 import { upsertWellnessLog } from "@/services/daily-log-card-service";
@@ -98,13 +94,8 @@ describe("GET /api/client/daily-logs/[date]/wellness", () => {
 });
 
 describe("PATCH /api/client/daily-logs/[date]/wellness", () => {
-  it("201 on a first log, passing only phaseId to the writer", async () => {
+  it("201 on a first log", async () => {
     vi.mocked(assertCanEdit).mockResolvedValue({ loggedStatus: "never-logged" } as never);
-    vi.mocked(resolvePlanContextForDate).mockResolvedValue({
-      phaseId: "p1",
-      nutritionPlanId: "np1",
-      trainingPlanId: "tp1",
-    } as never);
     vi.mocked(upsertWellnessLog).mockResolvedValue({ id: "log-1" } as never);
 
     const res = await PATCH(patchReq({ mood: 4, energy: 7, soreness: 6 }), params("2026-05-21"));
@@ -112,31 +103,20 @@ describe("PATCH /api/client/daily-logs/[date]/wellness", () => {
     expect(upsertWellnessLog).toHaveBeenCalledWith(
       "client-1",
       "2026-05-21",
-      { mood: 4, energy: 7, soreness: 6 },
-      { phaseId: "p1" }
+      { mood: 4, energy: 7, soreness: 6 }
     );
   });
 
   it("200 when already logged", async () => {
     vi.mocked(assertCanEdit).mockResolvedValue({ loggedStatus: "logged" } as never);
-    vi.mocked(resolvePlanContextForDate).mockResolvedValue({
-      phaseId: "p1",
-      nutritionPlanId: null,
-      trainingPlanId: null,
-    } as never);
     vi.mocked(upsertWellnessLog).mockResolvedValue({ id: "log-1" } as never);
 
     const res = await PATCH(patchReq({ mood: 3 }), params("2026-05-21"));
     expect(res.status).toBe(200);
   });
 
-  it("201 with a null phaseId when the client has no active phase (wellness is not plan-gated)", async () => {
+  it("201 when the client has no plans at all (wellness is not plan-gated)", async () => {
     vi.mocked(assertCanEdit).mockResolvedValue({ loggedStatus: "never-logged" } as never);
-    vi.mocked(resolvePlanContextForDate).mockResolvedValue({
-      phaseId: null,
-      nutritionPlanId: null,
-      trainingPlanId: null,
-    } as never);
     vi.mocked(upsertWellnessLog).mockResolvedValue({ id: "log-1" } as never);
 
     const res = await PATCH(patchReq({ mood: 3 }), params("2026-05-21"));
@@ -144,8 +124,7 @@ describe("PATCH /api/client/daily-logs/[date]/wellness", () => {
     expect(upsertWellnessLog).toHaveBeenCalledWith(
       "client-1",
       "2026-05-21",
-      { mood: 3 },
-      { phaseId: null }
+      { mood: 3 }
     );
   });
 
@@ -175,11 +154,6 @@ describe("PATCH /api/client/daily-logs/[date]/wellness", () => {
 
   it("500 when the writer throws a non-lock error", async () => {
     vi.mocked(assertCanEdit).mockResolvedValue({ loggedStatus: "never-logged" } as never);
-    vi.mocked(resolvePlanContextForDate).mockResolvedValue({
-      phaseId: "p1",
-      nutritionPlanId: null,
-      trainingPlanId: null,
-    } as never);
     vi.mocked(upsertWellnessLog).mockRejectedValue(new Error("boom"));
     const res = await PATCH(patchReq({ mood: 3 }), params("2026-05-21"));
     expect(res.status).toBe(500);

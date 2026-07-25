@@ -6,7 +6,6 @@ import { calculateMetricChange, calculateDaysBetween, calculateGoalProgress } fr
 import { computeGoalPace } from "@/lib/check-in/goal-pace";
 import { getBodyMetricsHistory } from "./body-metrics-service";
 import { getCurrentGoals } from "./client-goals-service";
-import { getActiveRoadmap } from "./roadmap-service";
 import { resolveEffectiveGoal } from "@/lib/goals/resolve-effective-goal";
 import { weightFromKg } from "@/utils/nutrition-helpers";
 import { getTodayDateStringInTimezone, getTodayInTimezone, differenceInDays } from "@/lib/date-helpers";
@@ -40,7 +39,7 @@ export const getCheckInComparison = async (
   // Fetch all check-ins for chart data (last 10), first check-in for starting values,
   // active nutrition plan for base weight and created date, goal_deadline from clients table,
   // earliest body_metrics for starting values, and current goals from client_goals
-  const [{ checkIns }, firstCheckIn, { data: activePlan }, earliestMetrics, currentGoals, roadmap] = await Promise.all([
+  const [{ checkIns }, firstCheckIn, { data: activePlan }, earliestMetrics, currentGoals] = await Promise.all([
     getClientCheckIns(currentCheckIn.clientId, { limit: 10 }),
     getFirstCheckIn(currentCheckIn.clientId),
     supabaseAdmin
@@ -53,25 +52,15 @@ export const getCheckInComparison = async (
       .maybeSingle(),
     getBodyMetricsHistory(currentCheckIn.clientId, { limit: 1, ascending: true }),
     getCurrentGoals(currentCheckIn.clientId),
-    getActiveRoadmap(currentCheckIn.clientId),
   ]);
 
-  // Single-scope effective goal (Session 7.8): phase-is-king, else the live client
-  // goal. Weight AND deadline come from ONE scope — fixing the cross-scope
-  // "Deadline unrealistic" false alarm (the old code paired the client-scope goal
-  // weight with the active nutrition plan's deadline). Displayed in the client's unit.
+  // Single-scope effective goal (Session 7.8): the live client goal. Weight AND
+  // deadline come from ONE scope — fixing the cross-scope "Deadline unrealistic"
+  // false alarm (the old code paired the client-scope goal weight with the active
+  // nutrition plan's deadline). Displayed in the client's unit.
   const weightUnit = client.weightUnit ?? "lbs";
-  const activePhase = roadmap?.phases.find((p) => p.status === "active");
   const effectiveGoal = resolveEffectiveGoal({
     weightUnit,
-    activePhase: activePhase
-      ? {
-          goalWeightKg: activePhase.phaseGoalWeight ?? null,
-          goalBodyFatPercentage: activePhase.phaseGoalBodyFatPercentage ?? null,
-          startDate: activePhase.startDate ?? null,
-          endDate: activePhase.endDate ?? null,
-        }
-      : null,
     clientGoal: {
       goalWeight: currentGoals?.goalWeight ?? client.goalWeight ?? null,
       goalBodyFatPercentage:

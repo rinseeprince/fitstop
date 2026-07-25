@@ -21,15 +21,10 @@ vi.mock("./training-event-service", () => ({
   getNextPlanStartCap: vi.fn(),
 }));
 
-vi.mock("./training-event-calendar-service", () => ({
-  validatePhaseBounds: vi.fn(),
-}));
-
 import { supabaseAdmin } from "./supabase-admin";
 import { getSavedPlanById } from "./coach-saved-plan-service";
 import { createTrainingPlanAtomic } from "./training-service";
 import { getNextPlanStartCap } from "./training-event-service";
-import { validatePhaseBounds } from "./training-event-calendar-service";
 import {
   placePlanOnCalendar,
   placeSessionOnCalendar,
@@ -42,7 +37,6 @@ const mockFrom = vi.mocked(supabaseAdmin.from);
 const mockGetSavedPlanById = vi.mocked(getSavedPlanById);
 const mockCreateAtomic = vi.mocked(createTrainingPlanAtomic);
 const mockGetNextPlanStartCap = vi.mocked(getNextPlanStartCap);
-const mockValidatePhaseBounds = vi.mocked(validatePhaseBounds);
 
 // Inline query mock helper
 function createMockQuery<T = unknown>(result: { data: T | null; error: { message: string } | null }) {
@@ -169,7 +163,6 @@ describe("library-placement-service", () => {
     vi.clearAllMocks();
     // Default: this is the last plan, so no next-plan cap shortens the window.
     mockGetNextPlanStartCap.mockResolvedValue(null);
-    mockValidatePhaseBounds.mockResolvedValue();
   });
 
   // =========================================================================
@@ -615,7 +608,6 @@ describe("library-placement-service", () => {
       expect(eventInsertQuery.insert).toHaveBeenCalledWith(
         expect.objectContaining({ is_modified: true, date: "2026-04-20", status: "scheduled", calorie_surplus_percentage: 15 }),
       );
-      expect(mockValidatePhaseBounds).toHaveBeenCalledWith("plan-1", "2026-04-20");
     });
 
     // A saved session's (week_index, order_index) describe the program it was
@@ -693,22 +685,6 @@ describe("library-placement-service", () => {
       expect(q.insert).toHaveBeenCalledWith(
         expect.objectContaining({ week_index: 0, order_index: 0 }),
       );
-    });
-
-    it("rejects when phase boundary is violated", async () => {
-      mockValidatePhaseBounds.mockRejectedValue(new Error("Target date is outside the current phase"));
-      const sessionFetchQuery = createMockQuery({
-        data: { id: "ss-1", coach_id: "coach-1", name: "Push", focus: null, order_index: 0, week_index: 0, is_rest: false, estimated_duration_minutes: 60, calorie_surplus_percentage: null, notes: null, session_type: "training", coach_saved_exercises: [] },
-        error: null,
-      });
-      mockFrom.mockImplementation((table: string) => {
-        if (table === "coach_saved_sessions") return sessionFetchQuery as never;
-        return createMockQuery({ data: null, error: null }) as never;
-      });
-
-      await expect(
-        placeSessionOnCalendar({ savedSessionId: "ss-1", coachId: "coach-1", clientId: "client-1", planId: "plan-1", targetDate: "2026-06-01" }),
-      ).rejects.toThrow("outside the current phase");
     });
   });
 

@@ -48,10 +48,8 @@ function mapNutritionDayToRow(day: NutritionDay): NutritionHistoryRow {
 
 /**
  * Earliest date the client has any nutrition activity — the earliest of their
- * first logged nutrition_log and first nutrition_event. Used to bound the
- * history range for clients with no active phase (roadmaps are opt-in, so
- * no-phase is a normal state). Returns null when the client has no logs and no
- * events.
+ * first logged nutrition_log and first nutrition_event. Bounds the history
+ * range. Returns null when the client has no logs and no events.
  */
 async function getEarliestNutritionActivityDate(clientId: string): Promise<string | null> {
   const [logRes, eventRes] = await Promise.all([
@@ -103,24 +101,12 @@ export async function GET(
 
     const { limit, offset } = pagination;
 
-    // Determine the start of the history range. With an active phase, bound by
-    // the phase start (unchanged). Otherwise — roadmaps are opt-in, so no-phase
-    // is a normal state — derive the start from the client's earliest
-    // nutrition_log / nutrition_event so no-phase clients get the same
-    // event-based day-by-day summary as phase clients (real `date` throughout),
-    // instead of the logged-days-only nutrition_logs read.
-    // Uses supabaseAdmin: coach querying client data (RLS exception 2)
-    const { data: phase } = await supabaseAdmin
-      .from("phases")
-      .select("start_date")
-      .eq("client_id", clientId)
-      .eq("status", "active")
-      .maybeSingle();
+    // The history range starts at the client's earliest nutrition_log /
+    // nutrition_event, giving an event-based day-by-day summary (real `date`
+    // throughout) instead of a logged-days-only nutrition_logs read.
+    const rangeStart = await getEarliestNutritionActivityDate(clientId);
 
-    const phaseStartDate = (phase?.start_date as string | null) ?? null;
-    const rangeStart = phaseStartDate ?? (await getEarliestNutritionActivityDate(clientId));
-
-    // No phase and no activity at all → nothing to show.
+    // No activity at all → nothing to show.
     if (!rangeStart) {
       return NextResponse.json({ rows: [], total: 0 }, { status: 200 });
     }

@@ -85,7 +85,6 @@ describe("POST /api/client/training/session-logs", () => {
     vi.mocked(requireCSRFProtection).mockResolvedValue(null);
     vi.mocked(getAuthenticatedClientId).mockResolvedValue(CLIENT_ID);
     vi.mocked(resolvePlanContextForDate).mockResolvedValue({
-      phaseId: null,
       nutritionPlanId: null,
       trainingPlanId: "tp-1",
     });

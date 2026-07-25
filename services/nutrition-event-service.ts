@@ -245,7 +245,7 @@ export async function regenerateFutureNutritionEvents(
   // written below by generateNutritionEvents remains the source of truth.
 
   // Calculate end date
-  const endDate = await calculateNutritionEndDate(planId, fromDate);
+  const endDate = calculateNutritionEndDate(fromDate);
   if (!endDate || endDate <= fromDate) return;
 
   await generateNutritionEvents(
@@ -265,44 +265,8 @@ export async function regenerateFutureNutritionEvents(
 
 // --- Calculate end date ---
 
-async function calculateNutritionEndDate(
-  planId: string,
-  today: string
-): Promise<string | null> {
-  // Fetch plan for phase_id
-  const { data: plan, error: planError } = await supabaseAdmin
-    .from("nutrition_plans")
-    .select("phase_id")
-    .eq("id", planId)
-    .single();
-
-  if (planError || !plan) return fallbackEndDate(today);
-
-  // If plan has a phase, use the phase end date
-  if (plan.phase_id) {
-    const { data: phase, error: phaseError } = await supabaseAdmin
-      .from("phases")
-      .select("end_date, start_date, duration_weeks")
-      .eq("id", plan.phase_id)
-      .maybeSingle();
-
-    if (phaseError || !phase) return fallbackEndDate(today);
-
-    if (phase.end_date) return phase.end_date;
-
-    if (phase.start_date && phase.duration_weeks) {
-      const start = new Date(phase.start_date + "T00:00:00");
-      start.setDate(start.getDate() + phase.duration_weeks * 7);
-      return getDateString(start);
-    }
-
-    return fallbackEndDate(today);
-  }
-
-  return fallbackEndDate(today);
-}
-
-function fallbackEndDate(today: string): string {
+// Dense forward window for nutrition events: 8 weeks from the anchor date.
+function calculateNutritionEndDate(today: string): string {
   const d = new Date(today + "T00:00:00");
   d.setDate(d.getDate() + 8 * 7); // 8 weeks
   return getDateString(d);

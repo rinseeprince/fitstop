@@ -8,10 +8,6 @@ vi.mock("@/services/client-service", () => ({
   getClientById: vi.fn(),
 }));
 
-vi.mock("@/lib/require-phase-selection", () => ({
-  requirePhaseSelection: vi.fn(),
-}));
-
 vi.mock("@/services/today-service", () => ({
   getClientTodayString: vi.fn().mockResolvedValue("2026-07-02"),
 }));
@@ -50,7 +46,6 @@ vi.mock("@/lib/error-handler", () => ({
 
 import { supabaseAdmin } from "./supabase-admin";
 import { getClientById } from "@/services/client-service";
-import { requirePhaseSelection } from "@/lib/require-phase-selection";
 import { generateNutritionPlan } from "@/services/nutrition-service";
 import {
   archiveNutritionPlan,
@@ -128,7 +123,6 @@ function mockNoExistingPlan(): void {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(getClientById).mockResolvedValue(client as never);
-  vi.mocked(requirePhaseSelection).mockResolvedValue({ ok: true, phaseId: undefined } as never);
   vi.mocked(generateNutritionPlan).mockReturnValue(calculatedPlan as never);
   vi.mocked(createNutritionPlan).mockResolvedValue("plan-1" as never);
   vi.mocked(regenerateFutureNutritionEvents).mockResolvedValue(undefined);

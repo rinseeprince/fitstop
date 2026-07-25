@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { detectGoalDrift } from "./detect-goal-drift";
 
-const effective = (goalWeightKg: number | null, deadline: string | null, source: "phase" | "client" = "client") =>
-  ({ goalWeightKg, deadline, source });
+const effective = (goalWeightKg: number | null, deadline: string | null) =>
+  ({ goalWeightKg, deadline });
 
 describe("detectGoalDrift", () => {
   it("no drift when weight + deadline match", () => {
@@ -33,11 +33,6 @@ describe("detectGoalDrift", () => {
   });
 
   it("no drift when both are maintenance (null weight, no deadline)", () => {
-    expect(detectGoalDrift({ goalWeightKg: null, deadline: null }, effective(null, null, "phase")).changed).toBe(false);
-  });
-
-  it("carries the effective source through", () => {
-    const d = detectGoalDrift({ goalWeightKg: 75, deadline: null }, effective(72, null, "phase"));
-    expect(d.source).toBe("phase");
+    expect(detectGoalDrift({ goalWeightKg: null, deadline: null }, effective(null, null)).changed).toBe(false);
   });
 });

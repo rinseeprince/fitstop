@@ -64,7 +64,6 @@ export const nutritionPlanSchema = z.object({
   customCarbG: z.number().positive().optional(),
   customFatG: z.number().positive().optional(),
   customCalories: z.number().positive().optional(),
-  phaseId: z.string().uuid().optional(),
   coachNotes: z.string().max(500).optional(),
   effectiveFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format").optional(),
   preserveCalories: z.boolean().optional(),

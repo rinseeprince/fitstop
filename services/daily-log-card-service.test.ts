@@ -42,12 +42,12 @@ describe("upsertNutritionLog", () => {
       "c1",
       "2026-05-21",
       { caloriesConsumed: 2000, proteinG: 150 },
-      { phaseId: "phase-1", nutritionPlanId: "np-1" }
+      { nutritionPlanId: "np-1" }
     );
 
     expect(result).toBe(mockDailyLog);
     expect(spine.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ client_id: "c1", date: "2026-05-21", phase_id: "phase-1" }),
+      expect.objectContaining({ client_id: "c1", date: "2026-05-21" }),
       { onConflict: "client_id,date" }
     );
     expect(child.upsert).toHaveBeenCalledWith(
@@ -72,7 +72,7 @@ describe("upsertNutritionLog", () => {
     );
   });
 
-  it("omits phase_id and nutrition_plan_id from payloads when none resolved", async () => {
+  it("omits nutrition_plan_id from the payload when none resolved", async () => {
     const spine = spineQuery();
     const child = childQuery();
     vi.mocked(supabaseAdmin.from).mockImplementation(((t: string) =>
@@ -80,11 +80,9 @@ describe("upsertNutritionLog", () => {
     vi.mocked(getPlanTargetForDate).mockResolvedValue(null);
 
     await upsertNutritionLog("c1", "2026-05-21", { caloriesConsumed: 1800 }, {
-      phaseId: null,
       nutritionPlanId: null,
     });
 
-    expect(spine.upsert.mock.calls[0][0]).not.toHaveProperty("phase_id");
     const childPayload = child.upsert.mock.calls[0][0] as Record<string, unknown>;
     expect(childPayload).not.toHaveProperty("nutrition_plan_id");
     expect(childPayload.target_calories).toBeNull();
@@ -99,7 +97,7 @@ describe("upsertNutritionLog", () => {
     vi.mocked(getPlanTargetForDate).mockResolvedValue(null);
 
     await expect(
-      upsertNutritionLog("c1", "2026-05-21", { caloriesConsumed: 2000 }, { phaseId: null })
+      upsertNutritionLog("c1", "2026-05-21", { caloriesConsumed: 2000 }, {})
     ).rejects.toThrow("Failed to upsert nutrition log: boom");
   });
 });
@@ -111,13 +109,11 @@ describe("upsertWellnessLog", () => {
     vi.mocked(supabaseAdmin.from).mockImplementation(((t: string) =>
       t === "daily_logs" ? spine : child) as never);
 
-    const result = await upsertWellnessLog("c1", "2026-05-21", { mood: 4, energy: 7, soreness: 2 }, {
-      phaseId: "phase-1",
-    });
+    const result = await upsertWellnessLog("c1", "2026-05-21", { mood: 4, energy: 7, soreness: 2 });
 
     expect(result).toBe(mockDailyLog);
     expect(spine.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ phase_id: "phase-1" }),
+      expect.objectContaining({ client_id: "c1", date: "2026-05-21" }),
       { onConflict: "client_id,date" }
     );
     expect(child.upsert).toHaveBeenCalledWith(

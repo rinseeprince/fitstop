@@ -7,7 +7,6 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { getEventForDate } from "./training-event-service";
 import { getNutritionEventForDate } from "./nutrition-event-service";
-import { getActivePhase } from "./phase-service";
 import { getActiveNutritionPlanId } from "./nutrition-plan-service";
 import { getActiveTrainingPlanId } from "./training-service";
 import { mapNutritionEventToDisplayTarget } from "@/utils/nutrition-event-helpers";
@@ -65,30 +64,23 @@ export const getPlanTargetForDate = async (
 // ---------------------------------------------------------------------------
 
 export type PlanContextForDate = {
-  phaseId: string | null;
   nutritionPlanId: string | null;
   trainingPlanId: string | null;
 };
 
 /**
- * Single resolver every per-card write calls to populate `daily_logs.phase_id` and the
- * child `*_plan_id` links. Each id prefers the date-accurate event, then falls back to
- * the client's active plan, so the link is populated even on a no-event day.
+ * Single resolver every per-card write calls to populate the child `*_plan_id`
+ * links. Each id prefers the date-accurate event, then falls back to the
+ * client's active plan, so the link is populated even on a no-event day.
  */
 export const resolvePlanContextForDate = async (
   clientId: string,
   date: string
 ): Promise<PlanContextForDate> => {
-  const [phase, nutritionEvent, trainingEvent] = await Promise.all([
-    getActivePhase(clientId),
+  const [nutritionEvent, trainingEvent] = await Promise.all([
     getNutritionEventForDate(clientId, date),
     getEventForDate(clientId, date),
   ]);
-
-  // Currently-active phase, not phase-as-of-date. A past-unlogged backfill can therefore
-  // stamp the current phase onto a day it didn't cover — the day-lock only protects
-  // already-logged days. Tolerable: no reader keys logs on phase_id (all are date-windowed).
-  const phaseId = phase?.id ?? null;
 
   // nutrition_plan_id is written by upsertNutritionLog, so fall back to the active plan
   // when the day has no nutrition event.
@@ -102,13 +94,12 @@ export const resolvePlanContextForDate = async (
   const trainingPlanId =
     trainingEvent?.trainingPlanId ?? (await getActiveTrainingPlanId(clientId));
 
-  return { phaseId, nutritionPlanId, trainingPlanId };
+  return { nutritionPlanId, trainingPlanId };
 };
 
 /**
  * Per-card resource whose plan-id presence we assert before writing a log. Wellness is
- * deliberately NOT gated (Session 3.1C): it has no plan, no adherence, and links via the
- * nullable spine `phase_id` — null is first-class under opt-in roadmaps.
+ * deliberately NOT gated (Session 3.1C): it has no plan and no adherence concept.
  */
 export type PlanGatedResource = "nutrition" | "training";
 
@@ -131,7 +122,7 @@ export class NoActivePlanError extends Error {
 /**
  * Reject the write when the plan id we'd stamp would be null: nutrition →
  * `nutrition_plan_id`, training → `training_plan_id` (Session 5.3). Wellness writes are
- * ungated — a no-phase client logging mood/sleep is valid, not an orphan.
+ * ungated — a plan-less client logging mood/sleep is valid, not an orphan.
  */
 export const assertHasActivePlan = (
   ctx: PlanContextForDate,

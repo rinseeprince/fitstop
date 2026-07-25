@@ -17,7 +17,6 @@ const duplicateWeekSchema = z.object({
   sourceStartDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format"),
   targetStartDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format").optional(),
   fillRemaining: z.boolean().optional(),
-  phaseEndDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format").optional(),
 });
 
 /**
@@ -60,27 +59,23 @@ export async function POST(
       );
     }
 
-    const { sourceStartDate, targetStartDate, fillRemaining, phaseEndDate } = validation.data;
+    const { sourceStartDate, targetStartDate, fillRemaining } = validation.data;
 
     let result: { eventsCreated: number; eventsReplaced: number; weeksCreated?: number };
 
     if (fillRemaining) {
-      // Bound "remaining weeks" by the plan's OWN date range. The caller may
-      // still pass an explicit phaseEndDate; otherwise derive it from the
+      // Bound "remaining weeks" by the plan's OWN date range, derived from the
       // plan's last scheduled event (additive placement: plans own disjoint
-      // windows, so there's no phase/duration to rely on for no-phase plans).
-      let fillEnd = phaseEndDate ?? null;
-      if (!fillEnd) {
-        const { data: lastEvent } = await supabaseAdmin
-          .from("training_events")
-          .select("date")
-          .eq("training_plan_id", planId)
-          .eq("status", "scheduled")
-          .order("date", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        fillEnd = lastEvent?.date ?? null;
-      }
+      // windows).
+      const { data: lastEvent } = await supabaseAdmin
+        .from("training_events")
+        .select("date")
+        .eq("training_plan_id", planId)
+        .eq("status", "scheduled")
+        .order("date", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const fillEnd = lastEvent?.date ?? null;
 
       if (!fillEnd) {
         return NextResponse.json(
@@ -135,12 +130,6 @@ export async function POST(
       { status: 200 }
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to duplicate week";
-
-    if (message.includes("outside the current phase")) {
-      return NextResponse.json({ error: message }, { status: 409 });
-    }
-
     console.error("Error duplicating week:", error);
     return NextResponse.json({ error: "Failed to duplicate week" }, { status: 500 });
   }

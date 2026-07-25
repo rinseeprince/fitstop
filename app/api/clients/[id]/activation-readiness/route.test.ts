@@ -22,14 +22,6 @@ vi.mock("@/services/daily-habits-service", () => ({
   getClientHabits: vi.fn(),
 }));
 
-vi.mock("@/services/roadmap-service", () => ({
-  getActiveRoadmap: vi.fn(),
-}));
-
-vi.mock("@/services/phase-service", () => ({
-  getActivePhase: vi.fn(),
-}));
-
 // Client-local today is resolved through today-service by downstream reads.
 vi.mock("@/services/today-service", () => ({
   getClientTodayString: vi.fn().mockResolvedValue("2026-01-15"),
@@ -60,8 +52,6 @@ import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { getClientById } from "@/services/client-service";
 import { getActiveTrainingPlan } from "@/services/training-service";
 import { getClientHabits } from "@/services/daily-habits-service";
-import { getActiveRoadmap } from "@/services/roadmap-service";
-import { getActivePhase } from "@/services/phase-service";
 
 const mockParams = { params: Promise.resolve({ id: "client-1" }) };
 
@@ -70,31 +60,6 @@ const mockClient = {
   coachId: "coach-1",
   name: "Test Client",
   email: "test@example.com",
-};
-
-const mockRoadmap = {
-  id: "roadmap-1",
-  clientId: "client-1",
-  coachId: "coach-1",
-  name: "12-Week Plan",
-  status: "active" as const,
-  phases: [],
-  createdAt: "2024-01-01T00:00:00Z",
-  updatedAt: "2024-01-01T00:00:00Z",
-};
-
-const mockPhase = {
-  id: "phase-1",
-  roadmapId: "roadmap-1",
-  clientId: "client-1",
-  name: "Hypertrophy Block",
-  status: "active" as const,
-  startDate: "2024-02-01",
-  endDate: "2024-03-01",
-  orderIndex: 0,
-  milestones: [],
-  createdAt: "2024-01-01T00:00:00Z",
-  updatedAt: "2024-01-01T00:00:00Z",
 };
 
 function createMockRequest() {
@@ -113,11 +78,9 @@ describe("/api/clients/[id]/activation-readiness", () => {
     vi.mocked(getActiveTrainingPlan).mockResolvedValue({ id: "tp-1" } as never);
     vi.mocked(getClientHabits).mockResolvedValue([{ id: "habit-1" }] as never);
     mockMaybeSingle.mockResolvedValue({ data: { id: "np-1" }, error: null });
-    vi.mocked(getActiveRoadmap).mockResolvedValue(mockRoadmap);
-    vi.mocked(getActivePhase).mockResolvedValue(mockPhase);
   });
 
-  it("returns all readiness flags including roadmap", async () => {
+  it("returns the three required readiness flags", async () => {
     const response = await GET(createMockRequest(), mockParams);
     const json = await response.json();
 
@@ -127,57 +90,17 @@ describe("/api/clients/[id]/activation-readiness", () => {
       hasTrainingPlan: true,
       hasNutritionPlan: true,
       hasHabits: true,
-      hasRoadmap: true,
-      hasActivePhase: true,
-      activePhaseName: "Hypertrophy Block",
-      activePhaseStartDate: "2024-02-01",
-      roadmapRecommended: true,
     });
   });
 
-  it("returns hasRoadmap=false when no roadmap", async () => {
-    vi.mocked(getActiveRoadmap).mockResolvedValue(null);
-    vi.mocked(getActivePhase).mockResolvedValue(null);
+  it("returns hasHabits=false with no habits", async () => {
+    vi.mocked(getClientHabits).mockResolvedValue([] as never);
 
     const response = await GET(createMockRequest(), mockParams);
     const json = await response.json();
 
-    expect(json.data.hasRoadmap).toBe(false);
-    expect(json.data.hasActivePhase).toBe(false);
-    expect(json.data.activePhaseName).toBeNull();
-    expect(json.data.activePhaseStartDate).toBeNull();
-  });
-
-  it("returns hasActivePhase=false when roadmap exists but no active phase", async () => {
-    vi.mocked(getActivePhase).mockResolvedValue(null);
-
-    const response = await GET(createMockRequest(), mockParams);
-    const json = await response.json();
-
-    expect(json.data.hasRoadmap).toBe(true);
-    expect(json.data.hasActivePhase).toBe(false);
-    expect(json.data.activePhaseName).toBeNull();
-  });
-
-  it("returns all true when fully set up", async () => {
-    const response = await GET(createMockRequest(), mockParams);
-    const json = await response.json();
-
+    expect(json.data.hasHabits).toBe(false);
     expect(json.data.hasTrainingPlan).toBe(true);
-    expect(json.data.hasNutritionPlan).toBe(true);
-    expect(json.data.hasHabits).toBe(true);
-    expect(json.data.hasRoadmap).toBe(true);
-    expect(json.data.hasActivePhase).toBe(true);
-  });
-
-  it("roadmapRecommended is always true", async () => {
-    vi.mocked(getActiveRoadmap).mockResolvedValue(null);
-    vi.mocked(getActivePhase).mockResolvedValue(null);
-
-    const response = await GET(createMockRequest(), mockParams);
-    const json = await response.json();
-
-    expect(json.data.roadmapRecommended).toBe(true);
   });
 
   it("returns 401 when unauthenticated", async () => {
@@ -214,19 +137,6 @@ describe("/api/clients/[id]/activation-readiness", () => {
     expect(json.error).toBe("Forbidden");
   });
 
-  it("roadmap query failure doesn't break response", async () => {
-    vi.mocked(getActiveRoadmap).mockRejectedValue(new Error("DB error"));
-
-    const response = await GET(createMockRequest(), mockParams);
-    const json = await response.json();
-
-    expect(response.status).toBe(200);
-    expect(json.data.hasRoadmap).toBe(false);
-    expect(json.data.hasTrainingPlan).toBe(true);
-    expect(json.data.hasNutritionPlan).toBe(true);
-    expect(json.data.hasHabits).toBe(true);
-  });
-
   it("training plan query failure still returns other flags", async () => {
     vi.mocked(getActiveTrainingPlan).mockRejectedValue(new Error("DB error"));
 
@@ -237,7 +147,5 @@ describe("/api/clients/[id]/activation-readiness", () => {
     expect(json.data.hasTrainingPlan).toBe(false);
     expect(json.data.hasNutritionPlan).toBe(true);
     expect(json.data.hasHabits).toBe(true);
-    expect(json.data.hasRoadmap).toBe(true);
-    expect(json.data.hasActivePhase).toBe(true);
   });
 });

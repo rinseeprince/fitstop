@@ -1,7 +1,6 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { getSavedPlanById } from "./coach-saved-plan-service";
 import { createTrainingPlanAtomic } from "./training-service";
-import { validatePhaseBounds } from "./training-event-calendar-service";
 import { deriveFrequencyPerWeek } from "./coach-library-helpers";
 import { generateProgramEvents, calculatePlacementEndDate } from "./program-event-walk";
 import type { TrainingEventInsert, TrainingEventRow, CoachSavedExerciseRow } from "@/lib/database-helpers";
@@ -31,9 +30,8 @@ export async function placePlanOnCalendar(params: {
   coachId: string;
   clientId: string;
   startDate: string;
-  phaseId?: string;
 }): Promise<{ planId: string; sessionsCreated: number; eventsCreated: number }> {
-  const { savedPlanId, coachId, clientId, startDate, phaseId } = params;
+  const { savedPlanId, coachId, clientId, startDate } = params;
 
   // 1. Fetch saved plan with sessions + exercises
   const savedPlan = await getSavedPlanById(savedPlanId, coachId);
@@ -46,7 +44,6 @@ export async function placePlanOnCalendar(params: {
     coachId,
     clientId,
     startDate,
-    phaseId,
   });
 }
 
@@ -67,9 +64,8 @@ export async function placeInlineEditedPlanOnCalendar(params: {
   coachId: string;
   clientId: string;
   startDate: string;
-  phaseId?: string;
 }): Promise<{ planId: string; sessionsCreated: number; eventsCreated: number }> {
-  const { plan, coachId, clientId, startDate, phaseId } = params;
+  const { plan, coachId, clientId, startDate } = params;
 
   const frequencyPerWeek = deriveFrequencyPerWeek(
     plan.sessions.map((s) => ({
@@ -100,7 +96,6 @@ export async function placeInlineEditedPlanOnCalendar(params: {
     coachId,
     clientId,
     startDate,
-    phaseId,
   });
 }
 
@@ -289,7 +284,6 @@ async function placePlaceablePlanOnCalendar(params: {
   coachId: string;
   clientId: string;
   startDate: string;
-  phaseId?: string;
 }): Promise<{ planId: string; sessionsCreated: number; eventsCreated: number }> {
   const {
     plan: savedPlan,
@@ -297,7 +291,6 @@ async function placePlaceablePlanOnCalendar(params: {
     coachId,
     clientId,
     startDate,
-    phaseId,
   } = params;
 
   // The whole authored program (every week, ordered by (week_index, order_index))
@@ -314,7 +307,6 @@ async function placePlaceablePlanOnCalendar(params: {
   //    window is idempotent and non-overlapping plans coexist untouched. Length =
   //    the whole-program slot count.
   const endDate = await calculatePlacementEndDate({
-    phaseId,
     clientId,
     slotCount: programSlots.length,
     startDate,
@@ -343,7 +335,6 @@ async function placePlaceablePlanOnCalendar(params: {
     // Still written as plan metadata / RPC arg even though the placement window is
     // now driven by the repeat count × whole-program length, not this value.
     programDurationWeeks: savedPlan.programDurationWeeks ?? undefined,
-    phaseId,
     effectiveFrom: startDate,
     windowEnd: endDate,
     // null -> inline placement (edited working copy), don't link back to any
@@ -485,10 +476,7 @@ export async function placeSessionOnCalendar(params: {
 
   if (fetchError || !savedSession) throw new Error("Saved session not found");
 
-  // 2. Phase boundary validation
-  await validatePhaseBounds(planId, targetDate);
-
-  // 3. Resolve the slot position from the TARGET plan, never the template.
+  // 2. Resolve the slot position from the TARGET plan, never the template.
   //    A saved session's (week_index, order_index) describe where it sat in the
   //    program it was authored in; carried into a different plan they are
   //    meaningless. week_index is the dangerous one: the client read treats a

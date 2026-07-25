@@ -64,14 +64,13 @@ beforeEach(() => {
 });
 
 describe("GET /api/clients/[id]/history/wellness", () => {
-  it("no-phase fallback bounds logged rows at coach-local today", async () => {
-    const phasesChain = makeChain("maybeSingle", { data: null });
+  it("bounds logged rows at coach-local today", async () => {
     const wellnessChain = makeChain("range", {
       data: [{ date: "2026-06-10", mood: 4, energy: 6, sleep: 6, stress: 4, soreness: 5 }],
       error: null,
       count: 1,
     });
-    dispatchTables({ phases: phasesChain, wellness_logs: wellnessChain });
+    dispatchTables({ wellness_logs: wellnessChain });
 
     const res = await GET(makeRequest("?limit=20&offset=0"), mockParams);
     const body = await res.json();
@@ -79,7 +78,7 @@ describe("GET /api/clients/[id]/history/wellness", () => {
     expect(res.status).toBe(200);
     expect(body.rows).toHaveLength(1);
     // A client a day ahead of the coach has rows that are still "tomorrow"
-    // for the coach — the fallback must exclude them like the phase path does.
+    // for the coach — the read must exclude them.
     expect(getCoachTodayString).toHaveBeenCalledWith("coach-1");
     expect(wellnessChain.lte).toHaveBeenCalledWith("date", COACH_TODAY);
     // The chain fake ignores its arguments, so the query strings are only
@@ -87,29 +86,5 @@ describe("GET /api/clients/[id]/history/wellness", () => {
     // missing from the .or() filter makes its metric-only days invisible.
     expect(String(wellnessChain.select.mock.calls[0][0])).toContain("soreness");
     expect(wellnessChain.or).toHaveBeenCalledWith(expect.stringContaining("soreness.not.is.null"));
-  });
-
-  it("phase path bounds the gap-filled range at coach-local today", async () => {
-    const phasesChain = makeChain("maybeSingle", {
-      data: { start_date: "2026-06-09" },
-    });
-    const wellnessChain = makeChain("lte", {
-      data: [{ date: "2026-06-10", mood: 4, energy: 6, sleep: 6, stress: 4, soreness: 5 }],
-      error: null,
-    });
-    dispatchTables({ phases: phasesChain, wellness_logs: wellnessChain });
-
-    const res = await GET(makeRequest("?limit=20&offset=0"), mockParams);
-    const body = await res.json();
-
-    expect(res.status).toBe(200);
-    expect(wellnessChain.lte).toHaveBeenCalledWith("date", COACH_TODAY);
-    expect(String(wellnessChain.select.mock.calls[0][0])).toContain("soreness");
-    // Gap-filled grid runs phase start -> coach today inclusive (3 days).
-    expect(body.total).toBe(3);
-    expect(body.rows[0].date).toBe(COACH_TODAY);
-    // Logged row carries soreness; gap-filled rows null it.
-    expect(body.rows[0].soreness).toBeNull();
-    expect(body.rows[1]).toMatchObject({ date: "2026-06-10", soreness: 5, is_logged: true });
   });
 });

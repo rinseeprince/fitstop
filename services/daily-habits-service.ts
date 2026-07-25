@@ -63,24 +63,8 @@ export const createHabit = async (
     throw new Error("Coach does not own this client");
   }
 
-  // Resolve effective_date from the phase's start_date (if assigned to a phase).
-  // Default is the CLIENT's local today — the habit lives on their calendar.
-  let effectiveDate = await getClientTodayString(clientId);
-  if (data.phaseId) {
-    const { data: phase } = await supabaseAdmin
-      .from("phases")
-      .select("start_date")
-      .eq("id", data.phaseId)
-      .single();
-
-    if (phase?.start_date) {
-      const phaseStart = phase.start_date.slice(0, 10);
-      // Use phase start_date if it's in the future, otherwise use today
-      if (phaseStart > effectiveDate) {
-        effectiveDate = phaseStart;
-      }
-    }
-  }
+  // effective_date is the CLIENT's local today — the habit lives on their calendar.
+  const effectiveDate = await getClientTodayString(clientId);
 
   // Check if an inactive habit with the same name exists for this client
   const { data: existingHabit, error: existingError } = await supabaseAdmin
@@ -115,7 +99,6 @@ export const createHabit = async (
         target_unit: data.targetUnit,
         is_boolean: data.isBoolean,
         sort_order: nextSortOrder,
-        phase_id: data.phaseId || null,
         effective_date: effectiveDate,
         updated_at: new Date().toISOString(),
       })
@@ -151,7 +134,6 @@ export const createHabit = async (
     target_unit: data.targetUnit,
     is_boolean: data.isBoolean,
     sort_order: nextSortOrder,
-    phase_id: data.phaseId || null,
     effective_date: effectiveDate,
     updated_at: new Date().toISOString(),
   };

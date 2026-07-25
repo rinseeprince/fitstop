@@ -9,7 +9,6 @@ import {
   placeSessionOnCalendar,
   placeInlineEditedPlanOnCalendar,
 } from "@/services/library-placement-service";
-import { assertPhaseBelongsToClient } from "@/services/phase-service";
 import { getClientTodayString } from "@/services/today-service";
 import { cascadeNutritionAfterTrainingChange } from "@/services/nutrition-event-service";
 import { recordAuditEvent } from "@/services/audit-log-service";
@@ -28,7 +27,6 @@ const placeFromLibrarySchema = z.discriminatedUnion("type", [
     type: z.literal("plan"),
     savedPlanId: z.string().uuid(),
     startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format"),
-    phaseId: z.string().uuid().optional(),
   }),
   // Apply an edited working copy without overwriting the library template. No
   // savedPlanId field: the inline path structurally cannot accept/trust a
@@ -37,7 +35,6 @@ const placeFromLibrarySchema = z.discriminatedUnion("type", [
     type: z.literal("inline"),
     plan: inlinePlanBodySchema,
     startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format"),
-    phaseId: z.string().uuid().optional(),
   }),
   z.object({
     type: z.literal("session"),
@@ -97,16 +94,11 @@ export async function POST(
         );
       }
 
-      // Reject a phaseId that isn't this client's (IDOR — the body value is
-      // otherwise trusted straight into placement). No-op when absent.
-      await assertPhaseBelongsToClient(data.phaseId, clientId);
-
       const result = await placePlanOnCalendar({
         savedPlanId: data.savedPlanId,
         coachId,
         clientId,
         startDate: data.startDate,
-        phaseId: data.phaseId,
       });
 
       // Nutrition cascade
@@ -147,14 +139,11 @@ export async function POST(
         );
       }
 
-      await assertPhaseBelongsToClient(data.phaseId, clientId);
-
       const result = await placeInlineEditedPlanOnCalendar({
         plan: data.plan,
         coachId,
         clientId,
         startDate: data.startDate,
-        phaseId: data.phaseId,
       });
 
       // Nutrition cascade
@@ -221,9 +210,6 @@ export async function POST(
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to place from library";
 
-    if (message.includes("outside the current phase")) {
-      return NextResponse.json({ error: message }, { status: 409 });
-    }
     if (message.includes("not found")) {
       return NextResponse.json({ error: message }, { status: 404 });
     }

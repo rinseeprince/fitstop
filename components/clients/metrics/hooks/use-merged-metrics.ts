@@ -73,7 +73,6 @@ export const useMergedMetrics = (
     const currentGoals = goalsData?.data ?? null;
     const effectiveGoal = resolveEffectiveGoal({
       weightUnit: unit,
-      activePhase: null,
       // Legacy fallback to the denormalized client fields mirrors
       // services/comparison-service's read switch.
       clientGoal: {

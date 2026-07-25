@@ -37,7 +37,6 @@ export const dailyHabitSchema = z.object({
   targetValue: optionalNumber(z.number().positive("Target value must be positive")),
   targetUnit: optionalString(30),
   isBoolean: z.boolean(),
-  phaseId: z.string().uuid().optional(),
 });
 
 /**

@@ -76,7 +76,6 @@ export type PlacedPlanForBuilder = {
     programDurationWeeks: number | null;
     frequencyPerWeek: number;
     effectiveFrom: string;
-    phaseId: string | null;
     savedPlanId: string | null;
     status: string;
     updatedAt: string;
@@ -285,7 +284,6 @@ export async function getPlacedPlanForBuilder(
 
   const effectiveFrom = planRow.effective_from;
   const windowEnd = await calculatePlacementEndDate({
-    phaseId: planRow.phase_id ?? undefined,
     clientId,
     slotCount: sessionRows.length,
     startDate: effectiveFrom,
@@ -301,7 +299,6 @@ export async function getPlacedPlanForBuilder(
       programDurationWeeks: planRow.program_duration_weeks ?? null,
       frequencyPerWeek: planRow.frequency_per_week,
       effectiveFrom,
-      phaseId: planRow.phase_id ?? null,
       savedPlanId: planRow.saved_plan_id ?? null,
       status: planRow.status,
       updatedAt: planRow.updated_at,
@@ -387,7 +384,6 @@ export async function amendPlacedPlanFuture(params: {
   //    gesture — decision 8).
   const currentRows = await fetchActiveSessionRows(planId);
   const currentWindowEnd = await calculatePlacementEndDate({
-    phaseId: plan.phase_id ?? undefined,
     clientId,
     slotCount: currentRows.length,
     startDate: effectiveFrom,
@@ -428,10 +424,9 @@ export async function amendPlacedPlanFuture(params: {
     );
   }
 
-  // 5. Recompute the window for the NEW grid (phase cap + next-plan cap
-  //    re-applied — a program can grow only into uncapped space).
+  // 5. Recompute the window for the NEW grid (next-plan cap re-applied — a
+  //    program can grow only into uncapped space).
   const windowEnd = await calculatePlacementEndDate({
-    phaseId: plan.phase_id ?? undefined,
     clientId,
     slotCount: sessions.length,
     startDate: effectiveFrom,

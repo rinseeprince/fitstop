@@ -5,7 +5,7 @@ import { NotificationsDropdown } from "@/components/navbar/notifications-dropdow
 import { getProgramsView, type ProgramsView } from "@/lib/programs-nav"
 
 // Per-view sticky topbar for the Programs section: title + notifications.
-// Create actions live on each page's library-divider "+" (roadmap divider
+// Create actions live on each page's library-divider "+" (divider-rail
 // pattern) — programs-table owns the POST-then-navigate flow; the sessions/
 // exercises pages open their create surfaces directly.
 const VIEW_TITLES: Record<ProgramsView, string> = {

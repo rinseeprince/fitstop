@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireClientAuth } from "@/lib/require-client-auth";
 import { isValidDateParam, wellnessCardSchema } from "@/lib/validations/daily-log-cards";
-import { resolvePlanContextForDate } from "@/services/daily-context-service";
 import { getTodayLog } from "@/services/daily-logs-service";
 import { getDayEditState, assertCanEdit } from "@/services/daily-log-permissions-service";
 import { upsertWellnessLog } from "@/services/daily-log-card-service";
@@ -92,10 +91,7 @@ export async function PATCH(
       date,
       resourceType: "wellness",
     });
-    const ctx = await resolvePlanContextForDate(auth.clientId, date);
-    const dailyLog = await upsertWellnessLog(auth.clientId, date, result.data, {
-      phaseId: ctx.phaseId,
-    });
+    const dailyLog = await upsertWellnessLog(auth.clientId, date, result.data);
     return NextResponse.json(
       { success: true, data: dailyLog },
       { status: loggedStatus === "logged" ? 200 : 201 }

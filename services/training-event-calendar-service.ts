@@ -33,9 +33,6 @@ export async function moveEvent(
     throw new Error("Cannot move event to a past date");
   }
 
-  // Phase boundary check
-  await validatePhaseBounds(planId, newDate);
-
   // Conflict check: same training_session_id on the target date
   if (event.training_session_id) {
     const { data: conflict } = await supabaseAdmin
@@ -141,7 +138,6 @@ export async function moveEventAndFuture(
     if (u.newDate < today) {
       throw new Error("Cannot move events to a past date");
     }
-    await validatePhaseBounds(planId, u.newDate);
   }
 
   // Guard against duplicate target dates within the batch (would violate the
@@ -215,9 +211,6 @@ export async function duplicateEvent(
   if (targetDate < today) {
     throw new Error("Cannot duplicate event to a past date");
   }
-
-  // Phase boundary check
-  await validatePhaseBounds(planId, targetDate);
 
   // Conflict check: same training_session_id on the target date
   if (source.training_session_id) {
@@ -344,12 +337,6 @@ export async function duplicateWeek(
   if (scheduledEvents.length === 0) {
     return { eventsCreated: 0, eventsReplaced: 0, allTargetsPast: false };
   }
-
-  // Validate target week falls within phase bounds
-  const targetEnd = new Date(targetStartDate + "T00:00:00");
-  targetEnd.setDate(targetEnd.getDate() + 6);
-  await validatePhaseBounds(planId, targetStartDate);
-  await validatePhaseBounds(planId, getDateString(targetEnd));
 
   // Replace, not stack: remove the target week's still-editable scheduled
   // events for this plan before inserting copies. Source-empty days therefore
@@ -515,16 +502,16 @@ export async function duplicateWeek(
 }
 
 /**
- * Duplicate a source week to all remaining weeks until the phase end date.
+ * Duplicate a source week to all remaining weeks until the plan's end date.
  */
 export async function duplicateWeekToRemaining(
   clientId: string,
   planId: string,
   sourceStartDate: string,
-  phaseEndDate: string
+  planEndDate: string
 ): Promise<{ weeksCreated: number; eventsCreated: number; eventsReplaced: number }> {
   const sourceStart = new Date(sourceStartDate + "T00:00:00");
-  const endDate = new Date(phaseEndDate + "T00:00:00");
+  const endDate = new Date(planEndDate + "T00:00:00");
 
   let weeksCreated = 0;
   let totalEventsCreated = 0;
@@ -581,35 +568,4 @@ export async function deleteEvent(
     .delete()
     .eq("id", eventId);
   if (deleteError) throw new Error(`Failed to delete event: ${deleteError.message}`);
-}
-
-// --- Helpers ---
-
-/**
- * Validate that a target date falls within the plan's phase boundaries.
- * Only enforced when the plan has a phase_id with defined date bounds.
- */
-export async function validatePhaseBounds(planId: string, targetDate: string): Promise<void> {
-  const { data: plan } = await supabaseAdmin
-    .from("training_plans")
-    .select("phase_id")
-    .eq("id", planId)
-    .single();
-
-  if (!plan?.phase_id) return;
-
-  const { data: phase } = await supabaseAdmin
-    .from("phases")
-    .select("start_date, end_date")
-    .eq("id", plan.phase_id)
-    .single();
-
-  if (!phase) return;
-
-  if (phase.start_date && targetDate < phase.start_date) {
-    throw new Error("Target date is outside the current phase");
-  }
-  if (phase.end_date && targetDate > phase.end_date) {
-    throw new Error("Target date is outside the current phase");
-  }
 }

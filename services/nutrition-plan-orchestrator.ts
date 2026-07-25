@@ -13,7 +13,6 @@ import {
 import { CUSTOM_MACRO_CALORIE_TOLERANCE } from "@/lib/constants";
 import { getLatestBodyMetrics } from "@/services/body-metrics-service";
 import { getCurrentGoals } from "@/services/client-goals-service";
-import { requirePhaseSelection } from "@/lib/require-phase-selection";
 import type { GenerateNutritionPlanRequest } from "@/types/check-in";
 import {
   deleteFutureNutritionEventsForPlan,
@@ -57,18 +56,8 @@ async function regenerateEventsOrThrow(
   }
 }
 
-interface PhaseCheckOk {
-  phaseId: string | undefined;
-  phaseGoalWeight?: number | null;
-  phaseGoalBodyFatPercentage?: number | null;
-  phaseEndDate?: string | null;
-  phaseStartDate?: string | null;
-  phaseStatus?: string;
-}
-
 export interface NutritionPlanResult {
   success: true;
-  goalSource: "phase" | "client";
   plan: Record<string, unknown>;
 }
 
@@ -125,7 +114,7 @@ export async function orchestrateNutritionPlanCreation(
   clientId: string,
   coachId: string,
   body: GenerateNutritionPlanRequest,
-  validatedData: { phaseId?: string; coachNotes?: string }
+  validatedData: { coachNotes?: string }
 ): Promise<NutritionPlanResult> {
   const client = await getClientById(clientId);
 
@@ -134,18 +123,6 @@ export async function orchestrateNutritionPlanCreation(
   }
   if (client.coachId !== coachId) {
     throw new NutritionPlanError("Forbidden: You don't have access to this client", 403);
-  }
-
-  // Enforce phase selection when client has an active roadmap
-  const phaseCheck = await requirePhaseSelection(clientId, validatedData.phaseId);
-  if (!phaseCheck.ok) {
-    throw new NutritionPlanError("Phase selection required", 400);
-  }
-  const phase: PhaseCheckOk = phaseCheck;
-
-  // Nutrition plans can only be created for the active phase
-  if (phase.phaseId && phase.phaseStatus !== "active") {
-    throw new NutritionPlanError("Nutrition plans can only be created for the active phase", 400);
   }
 
   // Client-local today (coach-tz fallback): both the past-date validation and
@@ -157,12 +134,6 @@ export async function orchestrateNutritionPlanCreation(
   if (body.effectiveFrom) {
     if (body.effectiveFrom < clientToday) {
       throw new NutritionPlanError("Effective date cannot be in the past", 400);
-    }
-    if (phase.phaseId && phase.phaseEndDate && body.effectiveFrom > phase.phaseEndDate) {
-      throw new NutritionPlanError(
-        `Start date cannot be after the phase end date (${phase.phaseEndDate})`,
-        400
-      );
     }
   }
 
@@ -182,24 +153,12 @@ export async function orchestrateNutritionPlanCreation(
   const bmr = latestMetrics?.bmr ?? client.bmr;
   const tdeeValue = latestMetrics?.tdee ?? client.tdee;
 
-  // Phase-is-king (Session 7.8): an active phase ALWAYS drives — its target +
-  // dates, and a NULL phase weight is maintenance with NO fallback to the client
-  // goal. With no phase, the long-term client goal drives. The resolver also
-  // performs the single display→kg normalization (client goal weight is display
-  // units; phase weight is already kg). The orchestrator already guarantees any
-  // present phase is active (the status guard above), so a present phaseId is the
-  // active phase. The deadline now comes from this single scope — never the
-  // request body (the old `body.goalDeadline` was the cross-scope source).
+  // The long-term client goal drives (Session 7.8's resolver). It performs the
+  // single display→kg normalization (client goal weight is display units). The
+  // deadline comes from this single scope — never the request body (the old
+  // `body.goalDeadline` was the cross-scope source).
   const effective = resolveEffectiveGoal({
     weightUnit,
-    activePhase: phase.phaseId
-      ? {
-          goalWeightKg: phase.phaseGoalWeight ?? null,
-          goalBodyFatPercentage: phase.phaseGoalBodyFatPercentage ?? null,
-          startDate: phase.phaseStartDate ?? null,
-          endDate: phase.phaseEndDate ?? null,
-        }
-      : null,
     clientGoal: {
       goalWeight: currentGoals?.goalWeight ?? client.goalWeight ?? null,
       goalBodyFatPercentage:
@@ -212,22 +171,21 @@ export async function orchestrateNutritionPlanCreation(
   const effectiveGoalWeightKg = effective.goalWeightKg;
   const effectiveGoalDeadline = effective.deadline;
   const effectiveStartDate = effective.startDate;
-  const goalSource = effective.source;
 
   // Handle custom macros
   if (body.customMacrosEnabled) {
     return handleCustomMacros(
-      clientId, coachId, body, phase, weightUnit, currentWeight,
+      clientId, coachId, body, weightUnit, currentWeight,
       bmr, tdeeValue, effectiveGoalWeightKg, effectiveGoalDeadline,
-      goalSource, validatedData, clientToday
+      validatedData, clientToday
     );
   }
 
   // Generate calculated nutrition plan
   return handleCalculatedPlan(
-    clientId, coachId, body, client, phase, weightUnit, currentWeight,
+    clientId, coachId, body, client, weightUnit, currentWeight,
     bmr, effectiveGoalWeightKg, effectiveGoalDeadline, effectiveStartDate,
-    goalSource, validatedData, clientToday
+    validatedData, clientToday
   );
 }
 
@@ -235,14 +193,12 @@ async function handleCustomMacros(
   clientId: string,
   coachId: string,
   body: GenerateNutritionPlanRequest,
-  phase: PhaseCheckOk,
   weightUnit: "lbs" | "kg",
   currentWeight: number | null | undefined,
   bmr: number | null | undefined,
   tdeeValue: number | null | undefined,
   effectiveGoalWeightKg: number | null,
   effectiveGoalDeadline: string | null,
-  goalSource: "phase" | "client",
   validatedData: { coachNotes?: string },
   clientToday: string
 ): Promise<NutritionPlanResult> {
@@ -288,9 +244,7 @@ async function handleCustomMacros(
     customFatG: body.customFatG,
     regenerationReason: body.dayCalorieOverrides ? "custom_macros_custom_day_distribution" : "custom_macros",
     trainingPlan: null, // vestigial param (createNutritionPlan ignores it)
-    phaseId: phase.phaseId,
     coachNotes: validatedData.coachNotes,
-    goalSource,
     effectiveFrom: body.effectiveFrom,
     dayCalorieOverrides: body.dayCalorieOverrides,
     // A fresh custom-macro plan establishes a new baseline at the current
@@ -309,7 +263,6 @@ async function handleCustomMacros(
 
   return {
     success: true,
-    goalSource,
     plan: {
       calorieTarget: body.customCalories,
       proteinTargetG: body.customProteinG,
@@ -327,7 +280,6 @@ async function handleCalculatedPlan(
   coachId: string,
   body: GenerateNutritionPlanRequest,
   client: NonNullable<Awaited<ReturnType<typeof getClientById>>>,
-  phase: PhaseCheckOk,
   weightUnit: "lbs" | "kg",
   currentWeight: number | null | undefined,
   bmr: number | null | undefined,
@@ -335,7 +287,6 @@ async function handleCalculatedPlan(
   effectiveGoalDeadline: string | null,
   // Always a concrete date — resolveEffectiveGoal falls back to `today`.
   effectiveStartDate: string,
-  goalSource: "phase" | "client",
   validatedData: { coachNotes?: string },
   clientToday: string
 ): Promise<NutritionPlanResult> {
@@ -418,9 +369,7 @@ async function handleCalculatedPlan(
     customFatG: null,
     regenerationReason,
     trainingPlan: null, // vestigial param (createNutritionPlan ignores it)
-    phaseId: phase.phaseId,
     coachNotes: validatedData.coachNotes,
-    goalSource,
     effectiveFrom: body.effectiveFrom,
     dayCalorieOverrides: body.dayCalorieOverrides,
     // A fresh recompute re-stamps the banner snapshot; a preserve-calories
@@ -440,7 +389,6 @@ async function handleCalculatedPlan(
 
   return {
     success: true,
-    goalSource,
     plan: {
       baselineCalories: plan.baselineCalories,
       tdee: plan.tdee,

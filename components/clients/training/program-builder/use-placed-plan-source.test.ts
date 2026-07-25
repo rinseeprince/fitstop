@@ -22,7 +22,6 @@ function makeRead(token: string, planName = "PPL Block"): PlacedPlanForBuilder {
       programDurationWeeks: 1,
       frequencyPerWeek: 1,
       effectiveFrom: "2026-07-15",
-      phaseId: null,
       savedPlanId: null,
       status: "active",
       updatedAt: "2026-07-20T00:00:00Z",
