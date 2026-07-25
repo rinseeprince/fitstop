@@ -10,6 +10,7 @@ export type AlertType =
   | "nutrition_missed"
   | "training_missed"
   | "high_stress"
+  | "high_soreness"
   | "habit_dropoff"
   | "activity_cal_mismatch"
   | "partial_training_pattern"

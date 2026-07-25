@@ -6,6 +6,7 @@ import {
   evaluateTrainingMisses,
   evaluatePartialTrainingPattern,
   evaluateHighStress,
+  evaluateHighSoreness,
   evaluateHabitDropoff,
   evaluateActivityCalMismatch
 } from '@/lib/attention-triggers'
@@ -242,6 +243,86 @@ describe('attention-triggers', () => {
 
       const result = evaluateHighStress(logs)
       expect(result).toBeNull()
+    })
+  })
+
+  describe('evaluateHighSoreness', () => {
+    it('should detect 3 consecutive days of high soreness (8+)', () => {
+      const logs: DailyLog[] = [
+        { id: '1', clientId: 'c1', date: '2024-01-01', soreness: 5, createdAt: '', updatedAt: '' },
+        { id: '2', clientId: 'c1', date: '2024-01-02', soreness: 8, createdAt: '', updatedAt: '' },
+        { id: '3', clientId: 'c1', date: '2024-01-03', soreness: 9, createdAt: '', updatedAt: '' },
+        { id: '4', clientId: 'c1', date: '2024-01-04', soreness: 8, createdAt: '', updatedAt: '' },
+      ]
+
+      const result = evaluateHighSoreness(logs)
+
+      expect(result).not.toBeNull()
+      expect(result?.type).toBe('high_soreness')
+      expect(result?.severity).toBe('high')
+      expect(result?.affectedDays).toHaveLength(3)
+    })
+
+    it('builds the sparkline slice-then-filter: non-null values among the last 7 entries', () => {
+      const logs: DailyLog[] = [
+        // No soreness on day 1: sliced into the last-7 window, then filtered out.
+        { id: '1', clientId: 'c1', date: '2024-01-01', createdAt: '', updatedAt: '' },
+        { id: '2', clientId: 'c1', date: '2024-01-02', soreness: 8, createdAt: '', updatedAt: '' },
+        { id: '3', clientId: 'c1', date: '2024-01-03', soreness: 8, createdAt: '', updatedAt: '' },
+        { id: '4', clientId: 'c1', date: '2024-01-04', soreness: 8, createdAt: '', updatedAt: '' },
+      ]
+
+      const result = evaluateHighSoreness(logs)
+
+      expect(result).not.toBeNull()
+      expect(result?.metricData).toHaveLength(3) // 4 entries sliced, 1 filtered
+    })
+
+    it('should not trigger for soreness below 8', () => {
+      const logs: DailyLog[] = [
+        { id: '1', clientId: 'c1', date: '2024-01-01', soreness: 7, createdAt: '', updatedAt: '' },
+        { id: '2', clientId: 'c1', date: '2024-01-02', soreness: 7, createdAt: '', updatedAt: '' },
+        { id: '3', clientId: 'c1', date: '2024-01-03', soreness: 7, createdAt: '', updatedAt: '' },
+      ]
+
+      expect(evaluateHighSoreness(logs)).toBeNull()
+    })
+
+    it('should not trigger for only 2 high days', () => {
+      const logs: DailyLog[] = [
+        { id: '1', clientId: 'c1', date: '2024-01-01', soreness: 5, createdAt: '', updatedAt: '' },
+        { id: '2', clientId: 'c1', date: '2024-01-02', soreness: 8, createdAt: '', updatedAt: '' },
+        { id: '3', clientId: 'c1', date: '2024-01-03', soreness: 8, createdAt: '', updatedAt: '' },
+      ]
+
+      expect(evaluateHighSoreness(logs)).toBeNull()
+    })
+
+    it('resets the streak on a no-soreness day (a gap breaks the run, not skipped)', () => {
+      // Under skip-semantics this would be a 4-day run ending at the last entry
+      // and fire; the real evaluator resets, leaving two 2-day runs -> null.
+      const logs: DailyLog[] = [
+        { id: '1', clientId: 'c1', date: '2024-01-01', soreness: 8, createdAt: '', updatedAt: '' },
+        { id: '2', clientId: 'c1', date: '2024-01-02', soreness: 8, createdAt: '', updatedAt: '' },
+        { id: '3', clientId: 'c1', date: '2024-01-03', createdAt: '', updatedAt: '' },
+        { id: '4', clientId: 'c1', date: '2024-01-04', soreness: 8, createdAt: '', updatedAt: '' },
+        { id: '5', clientId: 'c1', date: '2024-01-05', soreness: 8, createdAt: '', updatedAt: '' },
+      ]
+
+      expect(evaluateHighSoreness(logs)).toBeNull()
+    })
+
+    it('should NOT trigger when high soreness is followed by recovery', () => {
+      const logs: DailyLog[] = [
+        { id: '1', clientId: 'c1', date: '2024-01-01', soreness: 8, createdAt: '', updatedAt: '' },
+        { id: '2', clientId: 'c1', date: '2024-01-02', soreness: 9, createdAt: '', updatedAt: '' },
+        { id: '3', clientId: 'c1', date: '2024-01-03', soreness: 8, createdAt: '', updatedAt: '' },
+        { id: '4', clientId: 'c1', date: '2024-01-04', soreness: 4, createdAt: '', updatedAt: '' },
+        { id: '5', clientId: 'c1', date: '2024-01-05', soreness: 3, createdAt: '', updatedAt: '' },
+        { id: '6', clientId: 'c1', date: '2024-01-06', soreness: 2, createdAt: '', updatedAt: '' },
+      ]
+
+      expect(evaluateHighSoreness(logs)).toBeNull()
     })
   })
 

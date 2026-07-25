@@ -697,6 +697,7 @@ Coaches receive alerts when:
 - Mood ≤ 2 for 3+ consecutive days
 - Energy ≤ 3 for 3+ consecutive days  
 - Stress ≥ 8 for 3+ consecutive days
+- Soreness ≥ 8 for 3+ consecutive days
 - Sleep ≤ 4 for 3+ consecutive days
 - Multiple metrics in warning zones
 

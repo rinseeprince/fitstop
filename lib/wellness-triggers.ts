@@ -6,6 +6,8 @@ import {
   MOOD_ENERGY_ROLLING_DAYS,
   HIGH_STRESS_THRESHOLD,
   HIGH_STRESS_CONSECUTIVE_DAYS,
+  HIGH_SORENESS_THRESHOLD,
+  HIGH_SORENESS_CONSECUTIVE_DAYS,
 } from "@/lib/constants"
 
 /**
@@ -130,6 +132,56 @@ export function evaluateHighStress(logs: DailyLog[]): TriggerResult | null {
       metricData
     }
   }
-  
+
+  return null
+}
+
+/**
+ * Evaluates if muscle soreness has been high consecutively (clone of
+ * evaluateHighStress: a null/below-threshold day RESETS the streak, and the
+ * streak must end at the last or second-to-last log to count as ongoing)
+ */
+export function evaluateHighSoreness(logs: DailyLog[]): TriggerResult | null {
+  const sortedLogs = [...logs].sort((a, b) => a.date.localeCompare(b.date))
+  let consecutiveHighSoreness = 0
+  let currentStreakDays: string[] = []
+  let lastValidStreak: string[] | null = null
+
+  for (let i = 0; i < sortedLogs.length; i++) {
+    const soreness = sortedLogs[i].soreness
+
+    if (soreness !== undefined && soreness !== null && soreness >= HIGH_SORENESS_THRESHOLD) {
+      consecutiveHighSoreness++
+      currentStreakDays.push(sortedLogs[i].date)
+
+      if (consecutiveHighSoreness >= HIGH_SORENESS_CONSECUTIVE_DAYS) {
+        // Check if this is the last streak (extends to end or near end of data)
+        if (i === sortedLogs.length - 1 || i === sortedLogs.length - 2) {
+          lastValidStreak = [...currentStreakDays]
+        }
+      }
+    } else {
+      consecutiveHighSoreness = 0
+      currentStreakDays = []
+    }
+  }
+
+  // Only return alert if the last valid streak exists (pattern is ongoing/recent)
+  if (lastValidStreak && lastValidStreak.length >= HIGH_SORENESS_CONSECUTIVE_DAYS) {
+    // Sparkline: the non-null values among the last 7 ENTRIES (slice-then-filter)
+    const recentLogs = sortedLogs.slice(-7)
+    const metricData = recentLogs
+      .filter(log => log.soreness !== undefined && log.soreness !== null)
+      .map(log => ({ date: log.date, value: log.soreness! }))
+
+    return {
+      type: "high_soreness",
+      severity: "high",
+      message: `Muscle soreness critically high for ${HIGH_SORENESS_CONSECUTIVE_DAYS}+ consecutive days`,
+      affectedDays: lastValidStreak.slice(-HIGH_SORENESS_CONSECUTIVE_DAYS),
+      metricData
+    }
+  }
+
   return null
 }

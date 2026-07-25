@@ -14,6 +14,7 @@ import {
   evaluateTrainingMisses,
   evaluatePartialTrainingPattern,
   evaluateHighStress,
+  evaluateHighSoreness,
   evaluateHabitDropoff,
   evaluateActivityCalMismatch,
   evaluateNoEngagement,
@@ -29,6 +30,7 @@ export type DailyLogRow = {
   id: string; client_id: string; date: string; notes: string | null;
   created_at: string; updated_at: string;
   mood: number | null; energy: number | null; sleep: number | null; stress: number | null;
+  soreness: number | null;
   calories_consumed: number | null; protein_g: number | null; carbs_g: number | null; fat_g: number | null;
   target_calories: number | null; target_protein_g: number | null; target_carbs_g: number | null; target_fat_g: number | null;
   nutrition_adherence: string | null; calorie_surplus_deficit: number | null;
@@ -93,6 +95,7 @@ export function groupClientData(
           energy: logRow.energy ?? undefined,
           sleep: logRow.sleep ?? undefined,
           stress: logRow.stress ?? undefined,
+          soreness: logRow.soreness ?? undefined,
           notes: logRow.notes ?? undefined,
           trained: logRow.trained ?? undefined,
           trainingSessionId: logRow.training_session_id ?? undefined,
@@ -212,6 +215,7 @@ export function evaluateAndSortTriggers(
       evaluateTrainingMisses(data.trainingEvents, windowNow, data.checkInDay),
       evaluatePartialTrainingPattern(data.trainingEvents),
       evaluateHighStress(data.logs),
+      evaluateHighSoreness(data.logs),
       evaluateHabitDropoff(data.habitLogs, data.habits, windowNow),
       evaluateActivityCalMismatch(data.logs, data.trainingEvents, windowNow),
       evaluateNoEngagement({

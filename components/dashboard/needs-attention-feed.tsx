@@ -13,6 +13,7 @@ const alertTabMap: Record<AlertType, string> = {
   mood_drop: "wellness",
   energy_drop: "wellness",
   high_stress: "wellness",
+  high_soreness: "wellness",
   no_log_gap: "wellness",
   nutrition_missed: "nutrition",
   activity_cal_mismatch: "nutrition",
@@ -116,6 +117,8 @@ export function NeedsAttentionFeed() {
         return "Energy drop"
       case "high_stress":
         return `High stress (${days} days)`
+      case "high_soreness":
+        return `High soreness (${days} days)`
       case "nutrition_missed":
         return `Nutrition missed (${days} days)`
       case "training_missed": {
@@ -155,6 +158,8 @@ export function NeedsAttentionFeed() {
       }
       case "high_stress":
         return `Stress at 8+ for ${days} days`
+      case "high_soreness":
+        return `Soreness at 8+ for ${days} days`
       case "nutrition_missed":
         return `Nutrition targets missed for ${days} days`
       case "training_missed": {

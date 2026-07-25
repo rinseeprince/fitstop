@@ -46,6 +46,9 @@ export const NO_ENGAGEMENT_ACTIVATION_GRACE_DAYS = 3; // Days after start_date b
 export const HIGH_STRESS_THRESHOLD = 8; // Stress level
 export const HIGH_STRESS_CONSECUTIVE_DAYS = 3;
 
+export const HIGH_SORENESS_THRESHOLD = 8; // Soreness level
+export const HIGH_SORENESS_CONSECUTIVE_DAYS = 3;
+
 export const HABIT_DROPOFF_THRESHOLD_PERCENT = 50; // Completion rate %
 export const HABIT_DROPOFF_DAYS_IN_WEEK = 5; // Days out of 7
 

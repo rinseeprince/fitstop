@@ -316,6 +316,16 @@ describe("attention-feed-service", () => {
       expect(result[0].alerts).toHaveLength(1)
     })
 
+    it("keys high_soreness dismissals like any other alert type", () => {
+      const clients = [makeClient("c1", [makeAlert("high_soreness", ["2026-04-01", "2026-04-02"])])]
+      const dismissals: DismissalRow[] = [
+        { client_id: "c1", alert_type: "high_soreness", dismissed_at: "2026-04-02" },
+      ]
+
+      const result = filterDismissedAlerts(clients, dismissals)
+      expect(result).toHaveLength(0)
+    })
+
     it("should remove client when all their alerts are suppressed", () => {
       const clients = [
         makeClient("c1", [
