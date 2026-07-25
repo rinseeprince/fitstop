@@ -51,9 +51,6 @@ export function MetricProgressionSection({
         label="Progression"
         actions={
           <div className="flex items-center gap-1">
-            {/* Passive word stays normal-case (divider-meta register) so
-                only the interactive options read as uppercase actions */}
-            <span className="text-[11px] text-[#93b0b4]">Last</span>
             {RANGE_OPTIONS.map((opt) => (
               <button
                 key={opt.value}
