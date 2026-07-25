@@ -5,7 +5,7 @@ import type {
   BodyMetricsEvent,
   BodyMetricsEventRow,
   BodyMetricsSource,
-} from "@/types/roadmap";
+} from "@/types/body-metrics";
 
 export interface BodyMetricsQueryOpts {
   requireFields?: (

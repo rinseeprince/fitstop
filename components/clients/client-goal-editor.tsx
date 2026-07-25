@@ -17,7 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import { getTodayDateString } from "@/lib/date-helpers";
 import { SECTION_LABEL_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
-import type { ClientGoal } from "@/types/roadmap";
+import type { ClientGoal } from "@/types/client-goals";
 
 // Coach editor for the client's long-term goal (Session 7.8). Drives the existing
 // PUT /api/clients/[id]/goals (previously orphaned — no UI consumer). Weight is

@@ -6,7 +6,9 @@
 import { generateUUID, generateISODate } from './test-utils'
 import type { Client } from '@/types/check-in'
 import type { CheckInRow, CheckInTokenRow, ClientRow, TrainingPlanRow, TrainingSessionRow, TrainingExerciseRow, TrainingEventRow } from '@/lib/database-helpers'
-import type { BodyMetricsEventRow, ClientGoalRow, Milestone, RoadmapRow, PhaseRow } from '@/types/roadmap'
+import type { ClientGoalRow } from '@/types/client-goals'
+import type { BodyMetricsEventRow } from '@/types/body-metrics'
+import type { Milestone, RoadmapRow, PhaseRow } from '@/types/roadmap'
 import type { TrainingEvent, TrainingEventStatus } from '@/types/training'
 
 // =============================================================================

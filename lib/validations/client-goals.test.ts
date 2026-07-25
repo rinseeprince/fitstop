@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { updateGoalsSchema } from "./roadmap";
+import { updateGoalsSchema } from "./client-goals";
 
 // Session 7.8: the goal deadline must persist + be clearable. Session 7.86 made
 // the schema format-only — the "not in the past" bound moved to the route, where

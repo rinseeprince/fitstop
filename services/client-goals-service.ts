@@ -1,7 +1,7 @@
 // Uses supabaseAdmin: service-to-service calls require bypassing RLS,
 // and dual-writes to clients table are system-level operations.
 import { supabaseAdmin } from "./supabase-admin";
-import type { ClientGoal, ClientGoalRow } from "@/types/roadmap";
+import type { ClientGoal, ClientGoalRow } from "@/types/client-goals";
 
 function mapClientGoalRow(row: ClientGoalRow): ClientGoal {
   return {

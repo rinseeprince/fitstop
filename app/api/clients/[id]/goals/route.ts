@@ -9,7 +9,7 @@ import {
 } from "@/services/client-goals-service";
 import { recordAuditEvent } from "@/services/audit-log-service";
 import { AUDIT_ACTIONS } from "@/lib/constants";
-import { updateGoalsSchema } from "@/lib/validations/roadmap";
+import { updateGoalsSchema } from "@/lib/validations/client-goals";
 import { getCoachTodayString } from "@/services/today-service";
 
 export async function GET(
