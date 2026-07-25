@@ -31,7 +31,7 @@ You are an implementation planner for a **Supabase + Next.js App Router** fitnes
    | Check-in system | `docs/ARCHITECTURE.md` (Check-in System section) |
    | Architecture / data model | `docs/ARCHITECTURE.md` |
    | Training plans | `docs/TRAINING_PLAN_FEATURE.md` |
-   | Nutrition calculator | `docs/NUTRITION_PLAN_CALCULATOR.md` |
+   | Nutrition calculator | `docs/ARCHITECTURE.md` (Nutrition plan section) + `utils/nutrition-helpers.ts` |
    | Design system / UI | `DESIGNSYSTEM.md` |
 
 3. **Search for existing implementations** before proposing new files. This codebase has:

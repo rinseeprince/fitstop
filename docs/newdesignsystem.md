@@ -18,7 +18,7 @@ Single source of truth for the CoachHub visual design. Every new page and compon
 
 - **Author new Teal-Summit UI with the hex values in this doc**, not the semantic OKLCH tokens — write `bg-[#0d9488]`, `rounded-[6px]`, `text-[#0c1a1e]`, `border-[rgba(13,148,136,0.08)]`. The OKLCH layer still powers un-migrated primitives and generic `bg-background`/`border-border` fallbacks, but a Teal-Summit page must not depend on it for its look.
 - The base radius token is **10px**; Teal-Summit forces **6px everywhere** via explicit `rounded-[6px]`. Never inherit the 10px default on a card/dialog.
-- The design mockups (`docs/atletafit-*.html`) are **historical** — they use DM Sans / `#2E8577` / 10–18px radii that never shipped. Ignore their token values; trust the code.
+- The original `atletafit-*.html` design mockups were **deleted** (they used DM Sans / `#2E8577` / 10–18px radii that never shipped). The shipped code is the only visual reference.
 
 ---
 
@@ -651,5 +651,5 @@ White card, no border, 6px radius; header clickable (600 title + count badge on 
 - ❌ Ship an input without a focus ring. ✅ Add `FOCUS_RING`.
 - ❌ Rebuild StatBand / SegmentedControl / LibraryTableShell / SectionLabel / RowActions from scratch. ✅ Import them.
 - ❌ Style a Teal-Summit surface off the OKLCH tokens (`bg-background`, `bg-primary`, `rounded-lg`). ✅ Author with the hex values here.
-- ❌ Copy values from the `atletafit-*.html` mockups. ✅ Match the shipped Programs/Builder code.
+- ❌ Resurrect token values from the deleted `atletafit-*.html` mockups (git history). ✅ Match the shipped Programs/Builder code.
 - ❌ Set a date, name, or number in `font-mono-display` inside a running sentence (dialog/toast/empty-state prose). ✅ Mono is for standalone data only — see "Prose vs data".

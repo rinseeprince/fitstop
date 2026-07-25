@@ -822,7 +822,7 @@ Coaches receive alerts when:
 
 ## Related Documentation
 
-- [docs/TRAINING-BUILDER-EXECUTION-PLAN.md](./docs/TRAINING-BUILDER-EXECUTION-PLAN.md) - The program builder, `set_specs` / `weekIndex` / `isRest` model
+- `docs/ARCHITECTURE.md` (Coach Library + Training prescription sections) - The program builder, `set_specs` / `weekIndex` / `isRest` model (the builder execution plan was deleted after shipping)
 - [CONVENTIONS.md](./CONVENTIONS.md) - Code style and conventions
 - API documentation in individual route files
 
