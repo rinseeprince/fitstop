@@ -731,6 +731,57 @@ export type Database = {
           },
         ]
       }
+      client_metric_entries: {
+        Row: {
+          client_id: string
+          created_at: string
+          created_by: string | null
+          entry_date: string
+          id: string
+          metric_key: string
+          note: string | null
+          updated_at: string
+          value: number
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          created_by?: string | null
+          entry_date: string
+          id?: string
+          metric_key: string
+          note?: string | null
+          updated_at?: string
+          value: number
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          created_by?: string | null
+          entry_date?: string
+          id?: string
+          metric_key?: string
+          note?: string | null
+          updated_at?: string
+          value?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_metric_entries_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_metric_entries_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "coaches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       clients: {
         Row: {
           active: boolean | null
