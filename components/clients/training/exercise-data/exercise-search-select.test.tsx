@@ -31,6 +31,8 @@ const defaultProps = {
   selectedExerciseId: null,
   selectedExerciseName: null,
   onSelect: vi.fn(),
+  metric: "weight" as const,
+  onMetricChange: vi.fn(),
 };
 
 describe("ExerciseSearchSelect", () => {
@@ -123,5 +125,40 @@ describe("ExerciseSearchSelect", () => {
     await user.click(screen.getByText("Bench Press"));
 
     expect(onSelect).toHaveBeenCalledWith(exercises[0]);
+  });
+
+  it("renders the metric lens row inside the hero with the active lens pressed", () => {
+    render(
+      <ExerciseSearchSelect {...defaultProps} exercises={[makeExercise()]} />,
+    );
+
+    for (const label of ["Weight", "e1RM", "Volume", "RPE", "Compliance", "PRs"]) {
+      expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
+    }
+    expect(screen.getByRole("button", { name: "Weight" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "Volume" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+  });
+
+  it("calls onMetricChange when a lens is clicked", async () => {
+    const user = userEvent.setup();
+    const onMetricChange = vi.fn();
+
+    render(
+      <ExerciseSearchSelect
+        {...defaultProps}
+        exercises={[makeExercise()]}
+        onMetricChange={onMetricChange}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Volume" }));
+
+    expect(onMetricChange).toHaveBeenCalledWith("volume");
   });
 });

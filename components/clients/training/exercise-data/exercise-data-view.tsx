@@ -5,11 +5,10 @@ import { useSearchParams, useRouter } from "next/navigation";
 import useSWR from "swr";
 import { cn } from "@/lib/utils";
 import { swrFetcher } from "@/lib/swr-fetcher";
-import { ExerciseSearchSelect } from "./exercise-search-select";
 import {
-  ExerciseMetricSelect,
+  ExerciseSearchSelect,
   type ExerciseMetric,
-} from "./exercise-metric-select";
+} from "./exercise-search-select";
 import { ExerciseTrendChart } from "@/components/training/exercise-data/exercise-trend-chart";
 import { ExercisePrView } from "@/components/training/exercise-data/exercise-pr-view";
 import { ExerciseKpiStrip } from "./exercise-kpi-strip";
@@ -120,7 +119,7 @@ export function ExerciseDataView({ clientId }: ExerciseDataViewProps) {
     // Block flow, not space-y: divider spec = 16px above the rail (hero slab
     // mb-4, matching the Data page's hero), 12px below (SectionLabel's mb-3).
     <div>
-      {/* 1. Hero slab: the exercise selector */}
+      {/* 1. Hero slab: exercise picker + the metric lens row (Metrics-hero shape) */}
       <div className="mb-4">
         <ExerciseSearchSelect
           exercises={listData?.data}
@@ -128,6 +127,8 @@ export function ExerciseDataView({ clientId }: ExerciseDataViewProps) {
           selectedExerciseId={selectedExerciseId}
           selectedExerciseName={selectedExerciseName}
           onSelect={handleExerciseSelect}
+          metric={selectedMetric}
+          onMetricChange={setSelectedMetric}
         />
       </div>
 
@@ -140,42 +141,32 @@ export function ExerciseDataView({ clientId }: ExerciseDataViewProps) {
       {hasExercise && (
         <>
           {/* 2. Divider rail: section identity left, session window right —
-              the same slot the Data page's pager occupies */}
+              the same slot the Data page's pager occupies. The metric lens
+              lives in the hero, so the PRs lens leaves a bare rail. */}
           <SectionLabel
             label={selectedMetric === "prs" ? "Personal records" : "Progression"}
             actions={
-              <div className="flex items-center gap-3">
-                {selectedMetric !== "prs" && (
-                  <div className="flex items-center gap-1">
-                    {/* Passive word stays normal-case (divider-meta register) so
-                        only the interactive options read as uppercase actions */}
-                    <span className="text-[11px] text-[#93b0b4]">Last</span>
-                    {SESSION_COUNTS.map((sc) => (
-                      <button
-                        key={sc.value}
-                        type="button"
-                        aria-pressed={sessionCount === sc.value}
-                        onClick={() => setSessionCount(sc.value)}
-                        className={cn(
-                          LABEL_CLASS,
-                          "rounded-[6px] px-2 py-1 text-[11px] transition-colors",
-                          sessionCount === sc.value
-                            ? "bg-[rgba(13,148,136,0.08)] font-semibold text-[#0d9488]"
-                            : "hover:bg-[rgba(13,148,136,0.05)] hover:text-[#0d9488]",
-                        )}
-                      >
-                        {sc.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {/* Rightmost rail action: the metric dropdown (also the way
-                    back from the PRs lens, so it never hides) */}
-                <ExerciseMetricSelect
-                  value={selectedMetric}
-                  onChange={setSelectedMetric}
-                />
-              </div>
+              selectedMetric !== "prs" ? (
+                <div className="flex items-center gap-1">
+                  {SESSION_COUNTS.map((sc) => (
+                    <button
+                      key={sc.value}
+                      type="button"
+                      aria-pressed={sessionCount === sc.value}
+                      onClick={() => setSessionCount(sc.value)}
+                      className={cn(
+                        LABEL_CLASS,
+                        "rounded-[6px] px-2 py-1 text-[11px] transition-colors",
+                        sessionCount === sc.value
+                          ? "bg-[rgba(13,148,136,0.08)] font-semibold text-[#0d9488]"
+                          : "hover:bg-[rgba(13,148,136,0.05)] hover:text-[#0d9488]",
+                      )}
+                    >
+                      {sc.label}
+                    </button>
+                  ))}
+                </div>
+              ) : undefined
             }
           />
 
