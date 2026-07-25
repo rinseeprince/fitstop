@@ -106,8 +106,8 @@ export function ExerciseProgressionSection({
 
       {listLoading ? (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <Skeleton className="h-[320px] w-full rounded-[8px]" />
-          <Skeleton className="h-[320px] w-full rounded-[8px]" />
+          <Skeleton className="h-[320px] w-full rounded-[6px]" />
+          <Skeleton className="h-[320px] w-full rounded-[6px]" />
         </div>
       ) : listError ? (
         <p className="text-center text-[13px] text-[#93b0b4] py-12">

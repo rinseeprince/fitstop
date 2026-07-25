@@ -6,27 +6,21 @@ import useSWR from "swr";
 import { cn } from "@/lib/utils";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import { ExerciseSearchSelect } from "./exercise-search-select";
+import {
+  ExerciseMetricSelect,
+  type ExerciseMetric,
+} from "./exercise-metric-select";
 import { ExerciseTrendChart } from "@/components/training/exercise-data/exercise-trend-chart";
 import { ExercisePrView } from "@/components/training/exercise-data/exercise-pr-view";
 import { ExerciseKpiStrip } from "./exercise-kpi-strip";
 import { computeKpis } from "@/components/training/exercise-data/exercise-insight";
+import { SectionLabel } from "@/components/programs/shared/section-label";
 import { LABEL_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
 import type {
   ExerciseListItem,
   ExerciseProgressionPoint,
   ExercisePR,
 } from "@/types/training";
-
-type Metric = "weight" | "e1rm" | "volume" | "rpe" | "compliance" | "prs";
-
-const METRICS: { value: Metric; label: string }[] = [
-  { value: "weight", label: "Weight" },
-  { value: "e1rm", label: "e1RM" },
-  { value: "volume", label: "Volume" },
-  { value: "rpe", label: "RPE" },
-  { value: "compliance", label: "Compliance" },
-  { value: "prs", label: "PRs" },
-];
 
 const SESSION_COUNTS: { value: number | "all"; label: string }[] = [
   { value: 8, label: "8" },
@@ -57,7 +51,7 @@ export function ExerciseDataView({ clientId }: ExerciseDataViewProps) {
     string | null
   >(searchParams.get("exerciseName"));
 
-  const [selectedMetric, setSelectedMetric] = useState<Metric>("weight");
+  const [selectedMetric, setSelectedMetric] = useState<ExerciseMetric>("weight");
   const [sessionCount, setSessionCount] = useState<number | "all">(12);
 
   const exerciseParam = selectedExerciseId
@@ -123,15 +117,19 @@ export function ExerciseDataView({ clientId }: ExerciseDataViewProps) {
   const hasExercise = selectedExerciseId != null || selectedExerciseName != null;
 
   return (
-    <div className="space-y-4">
-      {/* 1. Exercise selector card */}
-      <ExerciseSearchSelect
-        exercises={listData?.data}
-        isLoading={listLoading}
-        selectedExerciseId={selectedExerciseId}
-        selectedExerciseName={selectedExerciseName}
-        onSelect={handleExerciseSelect}
-      />
+    // Block flow, not space-y: divider spec = 16px above the rail (hero slab
+    // mb-4, matching the Data page's hero), 12px below (SectionLabel's mb-3).
+    <div>
+      {/* 1. Hero slab: the exercise selector */}
+      <div className="mb-4">
+        <ExerciseSearchSelect
+          exercises={listData?.data}
+          isLoading={listLoading}
+          selectedExerciseId={selectedExerciseId}
+          selectedExerciseName={selectedExerciseName}
+          onSelect={handleExerciseSelect}
+        />
+      </div>
 
       {!hasExercise && (
         <p className="text-center text-[13px] text-[#93b0b4] py-12">
@@ -141,58 +139,55 @@ export function ExerciseDataView({ clientId }: ExerciseDataViewProps) {
 
       {hasExercise && (
         <>
-          {/* 2. Tab row: metrics left, session count right, shared border */}
-          <div className="border-b border-[rgba(13,148,136,0.12)]">
-            <div className="flex items-end justify-between">
-              <div className="flex">
-                {METRICS.map((m) => (
-                  <button
-                    key={m.value}
-                    onClick={() => setSelectedMetric(m.value)}
-                    className={cn(
-                      "px-[10px] py-[14px] text-[13px] transition-colors border-b-2 -mb-px",
-                      selectedMetric === m.value
-                        ? "text-[#0d9488] font-medium border-[#0d9488]"
-                        : "text-[#5F5E5A] border-transparent hover:text-[#0c1a1e]",
-                    )}
-                  >
-                    {m.label}
-                  </button>
-                ))}
-              </div>
-              {selectedMetric !== "prs" && (
-                <div className="flex items-center gap-2 pb-[10px]">
-                  <span className={LABEL_CLASS}>
-                    Last
-                  </span>
-                  <div className="bg-[rgba(13,148,136,0.06)] rounded-[6px] p-[3px] inline-flex">
+          {/* 2. Divider rail: section identity left, session window right —
+              the same slot the Data page's pager occupies */}
+          <SectionLabel
+            label={selectedMetric === "prs" ? "Personal records" : "Progression"}
+            actions={
+              <div className="flex items-center gap-3">
+                {selectedMetric !== "prs" && (
+                  <div className="flex items-center gap-1">
+                    {/* Passive word stays normal-case (divider-meta register) so
+                        only the interactive options read as uppercase actions */}
+                    <span className="text-[11px] text-[#93b0b4]">Last</span>
                     {SESSION_COUNTS.map((sc) => (
                       <button
                         key={sc.value}
+                        type="button"
+                        aria-pressed={sessionCount === sc.value}
                         onClick={() => setSessionCount(sc.value)}
                         className={cn(
-                          "px-2.5 py-1 text-[12px] font-medium rounded-[4px] transition-all",
+                          LABEL_CLASS,
+                          "rounded-[6px] px-2 py-1 text-[11px] transition-colors",
                           sessionCount === sc.value
-                            ? "bg-white text-[#0d9488] font-medium shadow-[0_1px_2px_rgba(0,0,0,0.05)]"
-                            : "text-[#5a7d82] hover:text-[#0c1a1e]",
+                            ? "bg-[rgba(13,148,136,0.08)] font-semibold text-[#0d9488]"
+                            : "hover:bg-[rgba(13,148,136,0.05)] hover:text-[#0d9488]",
                         )}
                       >
                         {sc.label}
                       </button>
                     ))}
                   </div>
-                  <span className="text-[12px] text-[#93b0b4]">sessions</span>
-                </div>
-              )}
-            </div>
-          </div>
+                )}
+                {/* Rightmost rail action: the metric dropdown (also the way
+                    back from the PRs lens, so it never hides) */}
+                <ExerciseMetricSelect
+                  value={selectedMetric}
+                  onChange={setSelectedMetric}
+                />
+              </div>
+            }
+          />
 
-          {/* 3. KPI strip (hidden for PRs) */}
-          {selectedMetric !== "prs" && (
-            <ExerciseKpiStrip kpis={kpis} isLoading={progressionLoading} />
+          {/* 3. KPI strip (hidden for PRs; skipped entirely when empty so the
+              rail-to-chart gap stays at the divider spec's 12px) */}
+          {selectedMetric !== "prs" && (progressionLoading || kpis.length > 0) && (
+            <div className="mb-4">
+              <ExerciseKpiStrip kpis={kpis} isLoading={progressionLoading} />
+            </div>
           )}
 
-          {/* 5. Chart or PR view */}
+          {/* 4. Chart or PR view */}
           {selectedMetric === "prs" ? (
             <ExercisePrView data={prData?.data} isLoading={prLoading} />
           ) : (

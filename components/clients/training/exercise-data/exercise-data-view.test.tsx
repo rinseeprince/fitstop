@@ -142,7 +142,8 @@ describe("ExerciseDataView", () => {
     expect(screen.getByRole("combobox")).toBeInTheDocument();
   });
 
-  it("renders underlined tab navigation after exercise is selected", () => {
+  it("renders the rail metric picker and divider label after exercise is selected", async () => {
+    const user = userEvent.setup();
     mockSearchParams.set("exerciseId", "ex-1");
     mockSearchParams.set("exerciseName", "Bench Press");
 
@@ -156,15 +157,21 @@ describe("ExerciseDataView", () => {
 
     render(<ExerciseDataView clientId="client-1" />);
 
+    // Closed state: the rail trigger shows the active metric (its accessible
+    // name), the rail its label
     expect(screen.getByText("Weight")).toBeInTheDocument();
-    expect(screen.getByText("e1RM")).toBeInTheDocument();
-    expect(screen.getByText("Volume")).toBeInTheDocument();
-    expect(screen.getByText("RPE")).toBeInTheDocument();
-    expect(screen.getByText("Compliance")).toBeInTheDocument();
-    expect(screen.getByText("PRs")).toBeInTheDocument();
+    expect(screen.getByText("Progression")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Weight" }));
+
+    expect(screen.getByRole("menuitem", { name: "e1RM" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Volume" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "RPE" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Compliance" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "PRs" })).toBeInTheDocument();
   });
 
-  it("renders filter row with LAST label and session count", () => {
+  it("renders the session-window control on the divider rail", () => {
     mockSearchParams.set("exerciseId", "ex-1");
     mockSearchParams.set("exerciseName", "Bench Press");
 
@@ -176,10 +183,10 @@ describe("ExerciseDataView", () => {
     render(<ExerciseDataView clientId="client-1" />);
 
     expect(screen.getByText("Last")).toBeInTheDocument();
-    expect(screen.getByText("sessions")).toBeInTheDocument();
+    expect(screen.getByText("All")).toBeInTheDocument();
   });
 
-  it("hides filter row and KPI strip for PRs tab", async () => {
+  it("hides the session window and KPI strip for the PRs lens", async () => {
     const user = userEvent.setup();
     mockSearchParams.set("exerciseId", "ex-1");
     mockSearchParams.set("exerciseName", "Bench Press");
@@ -193,11 +200,21 @@ describe("ExerciseDataView", () => {
     render(<ExerciseDataView clientId="client-1" />);
 
     expect(screen.getByText("Last")).toBeInTheDocument();
+    expect(screen.getByText("Progression")).toBeInTheDocument();
+    // KPI strip renders for a windowed metric with data (exercises the
+    // (progressionLoading || kpis.length > 0) wrapper guard)
+    expect(screen.getByText("Top Set")).toBeInTheDocument();
 
-    await user.click(screen.getByText("PRs"));
+    await user.click(screen.getByRole("button", { name: "Weight" }));
+    await user.click(screen.getByRole("menuitem", { name: "PRs" }));
 
     expect(screen.queryByText("Last")).not.toBeInTheDocument();
-    expect(screen.queryByText("sessions")).not.toBeInTheDocument();
+    expect(screen.queryByText("All")).not.toBeInTheDocument();
+    expect(screen.queryByText("Top Set")).not.toBeInTheDocument();
+    expect(screen.getByText("Personal records")).toBeInTheDocument();
+    expect(screen.queryByText("Progression")).not.toBeInTheDocument();
+    // The metric trigger stays on the rail — it's the way back from PRs
+    expect(screen.getByRole("button", { name: "PRs" })).toBeInTheDocument();
   });
 
   it("pre-selects exercise from exerciseId URL param", () => {

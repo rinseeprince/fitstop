@@ -48,10 +48,11 @@ export function ExerciseSearchSelect({
         ex.name.toLowerCase() === selectedExerciseName.toLowerCase()),
   );
   const displayName = selectedFromList?.name ?? selectedExerciseName ?? null;
-  const logCount = selectedFromList?.logCount ?? null;
 
   if (isLoading) {
-    return <Skeleton className="h-[62px] w-full rounded-[6px] bg-[#0f2027]" />;
+    // 75px = the slab's rendered height (py-[18px]×2 + eyebrow + value line at
+    // the inherited 1.5 line-height) — a shorter skeleton shifts the page on load
+    return <Skeleton className="h-[75px] w-full rounded-[6px] bg-[#0f2027]" />;
   }
 
   return (
@@ -62,7 +63,7 @@ export function ExerciseSearchSelect({
           aria-expanded={open}
           className="flex w-full items-center justify-between bg-[#0f2027] rounded-[6px] px-5 py-[18px] text-left hover:bg-[#132930] transition-colors"
         >
-          <div>
+          <div className="min-w-0">
             <p className={HEADER_EYEBROW_CLASS}>
               Exercise
             </p>
@@ -75,17 +76,13 @@ export function ExerciseSearchSelect({
               {displayName ?? "Select exercise..."}
             </p>
           </div>
-          <div className="flex items-center gap-2 shrink-0 ml-3">
-            {logCount != null && (
-              <span className={cn(MONO, "text-[11px] font-medium text-[rgba(255,255,255,0.4)] bg-[rgba(255,255,255,0.12)] px-2 py-0.5 rounded-full")}>
-                {logCount} {logCount === 1 ? "log" : "logs"}
-              </span>
-            )}
-            <ChevronDown className="h-4 w-4 text-[rgba(255,255,255,0.3)]" />
-          </div>
+          <ChevronDown className="h-4 w-4 shrink-0 ml-3 text-[rgba(255,255,255,0.3)]" />
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+      <PopoverContent
+        className="w-[var(--radix-popover-trigger-width)] rounded-[6px] border-[rgba(13,148,136,0.08)] p-0 shadow-[0_10px_40px_rgba(13,148,136,0.10)]"
+        align="start"
+      >
         <Command>
           <CommandInput placeholder="Search exercises..." />
           <CommandList>

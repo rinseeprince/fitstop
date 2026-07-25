@@ -25,7 +25,7 @@ export function ExerciseKpiStrip({ kpis, isLoading }: ExerciseKpiStripProps) {
     return (
       <div className="grid grid-cols-3 gap-[10px]">
         {Array.from({ length: 3 }).map((_, i) => (
-          <Skeleton key={i} className="h-[88px] rounded-[8px]" />
+          <Skeleton key={i} className="h-[88px] rounded-[6px]" />
         ))}
       </div>
     );
@@ -41,13 +41,13 @@ export function ExerciseKpiStrip({ kpis, isLoading }: ExerciseKpiStripProps) {
         return (
           <div
             key={kpi.label}
-            className="bg-white border border-[rgba(13,148,136,0.1)] rounded-[8px] px-[14px] py-[16px]"
+            className="bg-white border border-[rgba(13,148,136,0.08)] rounded-[6px] px-[14px] py-[16px]"
           >
             <p className={LABEL_CLASS}>
               {kpi.label}
             </p>
             <p className={cn(MONO, "mt-1 tabular-nums")}>
-              <span className="text-[22px] font-medium text-[#0c1a1e]">
+              <span className="text-[22px] font-semibold text-[#0c1a1e]">
                 {kpi.value}
               </span>
               {kpi.unit && (

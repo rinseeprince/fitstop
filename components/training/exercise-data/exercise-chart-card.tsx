@@ -18,7 +18,7 @@ export function ExerciseChartCard({
   children,
 }: ExerciseChartCardProps) {
   return (
-    <div className="bg-white border border-[rgba(13,148,136,0.1)] rounded-[8px] px-[18px] py-[20px]">
+    <div className="bg-white border border-[rgba(13,148,136,0.08)] rounded-[6px] px-[18px] py-[20px]">
       {/* Header */}
       <div className="flex items-start justify-between mb-4">
         <div>

@@ -68,18 +68,6 @@ describe("ExerciseSearchSelect", () => {
     expect(screen.getByText("Bench Press")).toBeInTheDocument();
   });
 
-  it("renders log count pill when exercise is selected", () => {
-    render(
-      <ExerciseSearchSelect
-        {...defaultProps}
-        exercises={[makeExercise({ exerciseId: "ex-1", logCount: 10 })]}
-        selectedExerciseId="ex-1"
-      />,
-    );
-
-    expect(screen.getByText("10 logs")).toBeInTheDocument();
-  });
-
   it("renders selectedExerciseName when list has not loaded", () => {
     render(
       <ExerciseSearchSelect

@@ -38,13 +38,17 @@ type ExerciseTrendChartProps = {
   showInsight?: boolean;
 };
 
+// Teal-shifted system hues (docs/newdesignsystem.md) — one metric renders at a
+// time, so the hue carries identity across visits, not simultaneous contrast.
 const METRIC_COLORS: Record<TrendMetric, string> = {
-  weight: "#8b5cf6",
-  e1rm: "#10b981",
-  volume: "#3b82f6",
-  rpe: "#f59e0b",
+  weight: "#0a5c55",
+  e1rm: "#2d8fb5",
+  volume: "#c8923a",
+  rpe: "#c06060",
   compliance: "#0d9488",
 };
+// PRs are goal-hits: the goal amber, not the series hue.
+const PR_STAR_COLOR = "#d97706";
 const GRID_LINE = "rgba(13, 148, 136, 0.06)";
 const PRESCRIBED_FILL = "rgba(13, 148, 136, 0.2)";
 
@@ -64,17 +68,18 @@ const DATA_KEYS: Record<TrendMetric, string> = {
   compliance: "actualSets",
 };
 
-const TICK_STYLE = { fontSize: 10, fill: "#888780", fontFamily: "var(--font-mono-display)" };
+const TICK_STYLE = { fontSize: 10, fill: "#93b0b4", fontFamily: "var(--font-mono-display)" };
 const X_TICK_STYLE = { fontSize: 10, fill: "#93b0b4", fontFamily: "var(--font-mono-display)" };
 
 const TOOLTIP_VALUE_CLASS = cn(MONO, "text-[13px] font-semibold", TEXT_PRIMARY);
 
+// The popover recipe — hardcoded hex, never the OKLCH layer.
 const TOOLTIP_STYLE = {
   contentStyle: {
-    backgroundColor: "hsl(var(--popover))",
-    border: "1px solid hsl(var(--border))",
-    borderRadius: "8px",
-    boxShadow: "0 4px 6px -1px rgba(0,0,0,0.1)",
+    backgroundColor: "#fff",
+    border: "1px solid rgba(13,148,136,0.08)",
+    borderRadius: "6px",
+    boxShadow: "0 10px 40px rgba(13,148,136,0.10)",
     fontSize: "12px",
   },
 };
@@ -161,7 +166,7 @@ function PrDot(props: Record<string, unknown>) {
           x={cx}
           y={cy - 16}
           textAnchor="middle"
-          fill={WEIGHT_COLOR}
+          fill={PR_STAR_COLOR}
           fontSize={12}
         >
           ★
@@ -212,7 +217,7 @@ export function ExerciseTrendChart({
   );
 
   if (isLoading) {
-    return <Skeleton className="h-[380px] w-full rounded-[8px]" />;
+    return <Skeleton className="h-[380px] w-full rounded-[6px]" />;
   }
 
   if (metric === "rpe" && data && data.length > 0 && filteredData.length === 0) {
@@ -251,7 +256,7 @@ export function ExerciseTrendChart({
     metric === "weight" ? (
       <>
         <LegendItem color={color} label="Top set" />
-        <LegendItem color={color} label="PR" icon="star" />
+        <LegendItem color={PR_STAR_COLOR} label="PR" icon="star" />
       </>
     ) : metric === "compliance" ? (
       <>

@@ -25,7 +25,7 @@ export function ExercisePrView({
     return (
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-[10px]">
         {Array.from({ length: 4 }).map((_, i) => (
-          <Skeleton key={i} className="h-[80px] rounded-[8px]" />
+          <Skeleton key={i} className="h-[80px] rounded-[6px]" />
         ))}
       </div>
     );
@@ -49,7 +49,7 @@ export function ExercisePrView({
       {sorted.map((pr) => (
         <div
           key={pr.reps}
-          className="bg-white border border-[rgba(13,148,136,0.1)] rounded-[8px] px-[14px] py-[14px] relative"
+          className="bg-white border border-[rgba(13,148,136,0.08)] rounded-[6px] px-[14px] py-[14px] relative"
         >
           {pr.isRecent && (
             <span className="absolute top-2.5 right-2.5 text-[10px] font-semibold text-[#0d9488] bg-[rgba(13,148,136,0.08)] px-1.5 py-0.5 rounded-[3px]">
@@ -59,7 +59,7 @@ export function ExercisePrView({
           <p className={cn(MONO_LABEL_CLASS, "leading-tight")}>
             {pr.reps === 1 ? "1 Rep Max" : `${pr.reps} Rep Max`}
           </p>
-          <p className={cn(MONO, "text-[20px] font-medium text-[#0c1a1e] mt-1 tabular-nums leading-tight")}>
+          <p className={cn(MONO, "text-[20px] font-semibold text-[#0c1a1e] mt-1 tabular-nums leading-tight")}>
             {pr.weight}
             <span className="text-[12px] text-[#93b0b4] ml-1">{weightUnit}</span>
           </p>
