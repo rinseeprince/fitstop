@@ -3,16 +3,12 @@
 import useSWR from "swr";
 
 import { NutritionPlanCard } from "@/components/client-portal/program/nutrition-plan-card";
-import { PhaseListItem } from "@/components/client-portal/program/phase-list-item";
-import { RoadmapSummaryStrip } from "@/components/client-portal/program/roadmap-summary-strip";
 import { TrainingPlanCard } from "@/components/client-portal/program/training-plan-card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { swrFetcher } from "@/lib/swr-fetcher";
-import type { ClientProgram } from "@/types/client-program";
 import type { ClientTrainingPlan } from "@/types/client-training-plan";
 import type { NutritionTargets } from "@/services/client-portal-service";
 
-type ProgramResponse = { success: boolean; data: ClientProgram | null };
 type TrainingPlanResponse = {
   success: boolean;
   data: ClientTrainingPlan | null;
@@ -61,20 +57,11 @@ function EmptyProgram() {
 }
 
 export default function ProgramPage() {
-  const { data, error, isLoading, mutate } = useSWR<ProgramResponse>(
-    "/api/client/program",
-    swrFetcher,
-    {
-      revalidateOnFocus: false,
-      errorRetryCount: 3,
-      errorRetryInterval: 1000,
-    },
-  );
-
   const {
     data: trainingPlanData,
     error: trainingPlanError,
     isLoading: trainingPlanLoading,
+    mutate: mutateTrainingPlan,
   } = useSWR<TrainingPlanResponse>(
     "/api/client/training-plan",
     swrFetcher,
@@ -89,6 +76,7 @@ export default function ProgramPage() {
     data: nutritionPlanData,
     error: nutritionPlanError,
     isLoading: nutritionPlanLoading,
+    mutate: mutateNutritionPlan,
   } = useSWR<NutritionPlanResponse>(
     "/api/client/nutrition-plan",
     swrFetcher,
@@ -99,60 +87,33 @@ export default function ProgramPage() {
     },
   );
 
-  if (error) return <ProgramLoadError onRetry={() => mutate()} />;
-  if (isLoading || !data) return <ProgramSkeleton />;
+  if (trainingPlanError && nutritionPlanError) {
+    return (
+      <ProgramLoadError
+        onRetry={() => {
+          void mutateTrainingPlan();
+          void mutateNutritionPlan();
+        }}
+      />
+    );
+  }
 
-  const program = data.data;
+  const loading =
+    (trainingPlanLoading && !trainingPlanData) ||
+    (nutritionPlanLoading && !nutritionPlanData);
+  if (loading) return <ProgramSkeleton />;
+
   const trainingPlan = trainingPlanData?.data ?? null;
   const nutritionPlan = nutritionPlanData?.data ?? null;
 
-  // Per the roadmaps-opt-in design (2026-05-22), no-phase is first-class —
-  // a client without a roadmap should still see their training + nutrition
-  // plan cards. Only fall back to EmptyProgram when nothing is set up at all
-  // and the secondary fetches have resolved.
-  const stillLoadingSecondary =
-    (trainingPlanLoading && !trainingPlanData) ||
-    (nutritionPlanLoading && !nutritionPlanData);
-  if (!program && !trainingPlan && !nutritionPlan && !stillLoadingSecondary) {
-    return <EmptyProgram />;
-  }
+  if (!trainingPlan && !nutritionPlan) return <EmptyProgram />;
 
   return (
-    <div>
-      {program && (
-        <RoadmapSummaryStrip
-          roadmapName={program.roadmap.name}
-          longTermGoal={program.roadmap.longTermGoal}
-          goalWeight={program.roadmap.goalWeight}
-          goalBodyFatPercentage={program.roadmap.goalBodyFatPercentage}
-          targetEndDate={program.roadmap.targetEndDate}
-          startedAt={program.roadmap.startedAt}
-          startingWeight={program.metrics.startingWeight}
-          currentWeight={program.metrics.currentWeight}
-          weightUnit={program.weightUnit}
-          phases={program.phases}
-        />
+    <div className="flex flex-col gap-2 pb-6">
+      {!trainingPlanError && trainingPlan && (
+        <TrainingPlanCard plan={trainingPlan} />
       )}
-      <div className="mt-4 flex flex-col gap-2 pb-6">
-        {program?.phases.map((phase) => (
-          <PhaseListItem
-            key={phase.id}
-            phase={phase}
-            isActive={phase.id === program.activePhaseId}
-            weightUnit={program.weightUnit}
-          />
-        ))}
-        {trainingPlanLoading && !trainingPlanData && (
-          <Skeleton className="h-12 w-full" />
-        )}
-        {!trainingPlanError && trainingPlan && (
-          <TrainingPlanCard plan={trainingPlan} />
-        )}
-        {nutritionPlanLoading && !nutritionPlanData && (
-          <Skeleton className="h-12 w-full" />
-        )}
-        {!nutritionPlanError && nutritionPlan && <NutritionPlanCard />}
-      </div>
+      {!nutritionPlanError && nutritionPlan && <NutritionPlanCard />}
     </div>
   );
 }

@@ -17,10 +17,6 @@ vi.mock("./daily-habits-service", () => ({
   getTodayHabitLogs: vi.fn(),
 }));
 
-vi.mock("./client-program-service", () => ({
-  getClientProgram: vi.fn(),
-}));
-
 // getTrainedForLinks queries supabaseAdmin directly; default it to no rows.
 vi.mock("./supabase-admin", () => {
   const makeQuery = () => {
@@ -40,7 +36,6 @@ import { getEventSummariesForDate } from "./training-event-service";
 import { getNutritionForDate } from "./daily-context-service";
 import { getTodayLog } from "./daily-logs-service";
 import { getClientHabits, getTodayHabitLogs } from "./daily-habits-service";
-import { getClientProgram } from "./client-program-service";
 
 const CLIENT_ID = "client-1";
 const DATE = "2026-05-08";
@@ -50,7 +45,6 @@ const mockNutrition = vi.mocked(getNutritionForDate);
 const mockTodayLog = vi.mocked(getTodayLog);
 const mockHabits = vi.mocked(getClientHabits);
 const mockHabitLogs = vi.mocked(getTodayHabitLogs);
-const mockProgram = vi.mocked(getClientProgram);
 
 function setDefaults() {
   mockTrainingSummaries.mockResolvedValue([]);
@@ -58,7 +52,6 @@ function setDefaults() {
   mockTodayLog.mockResolvedValue(null);
   mockHabits.mockResolvedValue([]);
   mockHabitLogs.mockResolvedValue([]);
-  mockProgram.mockResolvedValue(null);
 }
 
 describe("client-day-service", () => {
@@ -73,7 +66,6 @@ describe("client-day-service", () => {
     const result = await getDaySummary(CLIENT_ID, DATE);
 
     expect(result).toEqual({
-      phase: null,
       training: [],
       trainedFor: [],
       nutrition: null,
@@ -324,171 +316,5 @@ describe("client-day-service", () => {
     const result = await getDaySummary(CLIENT_ID, DATE);
 
     expect(result.habits).toEqual({ totalCount: 1, loggedCount: 1 });
-  });
-
-  // ---- Phase: no program ----
-
-  it("returns phase null when client has no program", async () => {
-    mockProgram.mockResolvedValue(null);
-
-    const result = await getDaySummary(CLIENT_ID, DATE);
-
-    expect(result.phase).toBeNull();
-  });
-
-  // ---- Phase: active with computed weekInPhase ----
-
-  it("returns active PhaseSummary with computed weekInPhase from startDate", async () => {
-    mockProgram.mockResolvedValue({
-      roadmap: {
-        id: "r1",
-        name: "Roadmap",
-        longTermGoal: null,
-        goalWeight: null,
-        goalBodyFatPercentage: null,
-        status: "active",
-        startedAt: null,
-        targetEndDate: null,
-      },
-      phases: [
-        {
-          id: "p1",
-          name: "Strength Block",
-          description: "Build base",
-          objectives: null,
-          orderIndex: 0,
-          status: "active",
-          startDate: "2026-04-01",
-          endDate: null,
-          durationWeeks: 8,
-          phaseGoalWeight: null,
-          phaseGoalBodyFatPercentage: null,
-          coachReflection: null,
-          milestones: [],
-        },
-      ],
-      activePhaseId: "p1",
-      weightUnit: "lbs",
-      metrics: { startingWeight: null, currentWeight: null },
-    });
-
-    const result = await getDaySummary(CLIENT_ID, "2026-04-15");
-
-    expect(result.phase).toEqual({
-      id: "p1",
-      name: "Strength Block",
-      weekInPhase: 3,
-      goal: "Build base",
-      state: "active",
-    });
-  });
-
-  // ---- Phase: active without startDate ----
-
-  it("returns active PhaseSummary with weekInPhase null when phase has no startDate", async () => {
-    mockProgram.mockResolvedValue({
-      roadmap: {
-        id: "r1",
-        name: "Roadmap",
-        longTermGoal: null,
-        goalWeight: null,
-        goalBodyFatPercentage: null,
-        status: "active",
-        startedAt: null,
-        targetEndDate: null,
-      },
-      phases: [
-        {
-          id: "p1",
-          name: "Hypertrophy",
-          description: null,
-          objectives: null,
-          orderIndex: 0,
-          status: "active",
-          startDate: null,
-          endDate: null,
-          durationWeeks: null,
-          phaseGoalWeight: null,
-          phaseGoalBodyFatPercentage: null,
-          coachReflection: null,
-          milestones: [],
-        },
-      ],
-      activePhaseId: "p1",
-      weightUnit: "lbs",
-      metrics: { startingWeight: null, currentWeight: null },
-    });
-
-    const result = await getDaySummary(CLIENT_ID, DATE);
-
-    expect(result.phase).toEqual({
-      id: "p1",
-      name: "Hypertrophy",
-      weekInPhase: null,
-      goal: null,
-      state: "active",
-    });
-  });
-
-  // ---- Phase: transitioning ----
-
-  it("returns transitioning PhaseSummary when no active phase but a planned phase exists", async () => {
-    mockProgram.mockResolvedValue({
-      roadmap: {
-        id: "r1",
-        name: "Roadmap",
-        longTermGoal: null,
-        goalWeight: null,
-        goalBodyFatPercentage: null,
-        status: "active",
-        startedAt: null,
-        targetEndDate: null,
-      },
-      phases: [
-        {
-          id: "p1",
-          name: "Recovery",
-          description: "Deload",
-          objectives: null,
-          orderIndex: 0,
-          status: "completed",
-          startDate: "2026-03-01",
-          endDate: "2026-04-30",
-          durationWeeks: 8,
-          phaseGoalWeight: null,
-          phaseGoalBodyFatPercentage: null,
-          coachReflection: null,
-          milestones: [],
-        },
-        {
-          id: "p2",
-          name: "Power Cycle",
-          description: "Heavy compounds",
-          objectives: null,
-          orderIndex: 1,
-          status: "planned",
-          startDate: null,
-          endDate: null,
-          durationWeeks: 6,
-          phaseGoalWeight: null,
-          phaseGoalBodyFatPercentage: null,
-          coachReflection: null,
-          milestones: [],
-        },
-      ],
-      activePhaseId: null,
-      weightUnit: "lbs",
-      metrics: { startingWeight: null, currentWeight: null },
-    });
-
-    const result = await getDaySummary(CLIENT_ID, DATE);
-
-    expect(result.phase).toEqual({
-      id: "p2",
-      name: "Power Cycle",
-      weekInPhase: null,
-      goal: "Heavy compounds",
-      state: "transitioning",
-    });
   });
 });

@@ -118,18 +118,11 @@ describe("ClientHomePage", () => {
     expect(skeletons).toHaveLength(4);
   });
 
-  it("renders summary cards and phase name when SWR returns day data with an active phase", () => {
+  it("renders summary cards when SWR returns day data", () => {
     setSWR({
       data: {
         success: true,
         data: {
-          phase: {
-            id: "p1",
-            name: "Strength Block",
-            weekInPhase: 3,
-            goal: "Build base",
-            state: "active",
-          },
           training: [],
           nutrition: null,
           wellness: { hasLog: false },
@@ -139,7 +132,6 @@ describe("ClientHomePage", () => {
     });
     render(<ClientHomePage />);
 
-    expect(screen.getByText("Strength Block")).toBeInTheDocument();
     expect(screen.getByText("Training")).toBeInTheDocument();
     expect(screen.getByText("Nutrition")).toBeInTheDocument();
     expect(screen.getByText("Wellness")).toBeInTheDocument();

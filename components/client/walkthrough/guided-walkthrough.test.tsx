@@ -83,13 +83,12 @@ describe("WALKTHROUGH_STEPS copy module", () => {
     cleanup();
   });
 
-  it("holds the six day-centric steps (2–7) in order, no welcome", () => {
+  it("holds the five day-centric steps (2–6) in order, no welcome", () => {
     expect(realSteps().map((s) => s.key)).toEqual([
       "nav",
       "home",
       "log",
       "swipe",
-      "program",
       "get-started",
     ]);
   });
@@ -127,15 +126,6 @@ describe("WALKTHROUGH_STEPS copy module", () => {
     expect(
       screen.getByText(/Swipe left or right, or use the arrows/i),
     ).toBeInTheDocument();
-  });
-
-  it("program step points to the phase banner and Program tab", () => {
-    const step = renderStep("program");
-    expect(step.title).toBe("See your roadmap");
-    expect(
-      screen.getByText(/banner at the top of home shows your current phase/i),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/Program tab/i)).toBeInTheDocument();
   });
 
   it("get-started step is an encouraging closing line", () => {

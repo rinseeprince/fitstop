@@ -2,10 +2,8 @@ import { getEventSummariesForDate } from "./training-event-service";
 import { getNutritionForDate } from "./daily-context-service";
 import { getTodayLog } from "./daily-logs-service";
 import { getClientHabits, getTodayHabitLogs } from "./daily-habits-service";
-import { getClientProgram } from "./client-program-service";
 import { supabaseAdmin } from "./supabase-admin";
-import type { DaySummary, PhaseSummary } from "@/types/client-day";
-import type { ClientProgram } from "@/types/client-program";
+import type { DaySummary } from "@/types/client-day";
 
 /**
  * Sessions logged ON `date` whose matched prescribed event falls on a DIFFERENT
@@ -59,7 +57,7 @@ export async function getDaySummary(
   clientId: string,
   date: string
 ): Promise<DaySummary> {
-  const [trainingEvents, trainedFor, nutrition, dailyLog, habits, habitLogs, program] =
+  const [trainingEvents, trainedFor, nutrition, dailyLog, habits, habitLogs] =
     await Promise.all([
       getEventSummariesForDate(clientId, date),
       getTrainedForLinks(clientId, date),
@@ -67,11 +65,9 @@ export async function getDaySummary(
       getTodayLog(clientId, date),
       getClientHabits(clientId),
       getTodayHabitLogs(clientId, date),
-      getClientProgram(clientId),
     ]);
 
   return {
-    phase: derivePhaseSummary(program, date),
     training: trainingEvents,
     trainedFor,
     // Log-authoritative: a nutrition_logs row (source "log") means logged, even if the
@@ -105,48 +101,4 @@ export async function getDaySummary(
       loggedCount: habitLogs.filter((l) => l.completed).length,
     },
   };
-}
-
-function derivePhaseSummary(
-  program: ClientProgram | null,
-  date: string
-): PhaseSummary | null {
-  if (!program) return null;
-
-  if (program.activePhaseId) {
-    const active = program.phases.find((p) => p.id === program.activePhaseId);
-    if (!active) return null;
-    return {
-      id: active.id,
-      name: active.name,
-      weekInPhase: computeWeekInPhase(active.startDate, date),
-      goal: active.description,
-      state: "active",
-    };
-  }
-
-  const incoming = program.phases
-    .filter((p) => p.status === "planned")
-    .sort((a, b) => a.orderIndex - b.orderIndex)[0];
-  if (!incoming) return null;
-
-  return {
-    id: incoming.id,
-    name: incoming.name,
-    weekInPhase: null,
-    goal: incoming.description,
-    state: "transitioning",
-  };
-}
-
-function computeWeekInPhase(
-  startDate: string | null,
-  date: string
-): number | null {
-  if (!startDate) return null;
-  const start = new Date(startDate + "T00:00:00").getTime();
-  const target = new Date(date + "T00:00:00").getTime();
-  if (target < start) return null;
-  const days = Math.floor((target - start) / 86_400_000);
-  return Math.floor(days / 7) + 1;
 }

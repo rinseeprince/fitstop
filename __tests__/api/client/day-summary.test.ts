@@ -28,7 +28,6 @@ describe("GET /api/client/day-summary", () => {
     vi.clearAllMocks();
     mockAuth.mockResolvedValue({ ok: true, clientId: "client-1" });
     mockGetDaySummary.mockResolvedValue({
-      phase: null,
       training: [],
       trainedFor: [],
       nutrition: null,
@@ -39,7 +38,6 @@ describe("GET /api/client/day-summary", () => {
 
   it("returns 200 with correct shape", async () => {
     mockGetDaySummary.mockResolvedValue({
-      phase: null,
       training: [
         {
           eventId: "e1",

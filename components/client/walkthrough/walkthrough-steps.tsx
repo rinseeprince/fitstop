@@ -5,7 +5,6 @@ import {
   LayoutGrid,
   Hand,
   ArrowLeftRight,
-  Map,
   Rocket,
   type LucideIcon,
 } from "lucide-react";
@@ -82,17 +81,6 @@ export const WALKTHROUGH_STEPS: readonly WalkthroughStepConfig[] = [
       <p className="text-muted-foreground">
         Swipe left or right, or use the arrows, to revisit earlier days or get
         ahead.
-      </p>
-    ),
-  },
-  {
-    key: "program",
-    icon: Map,
-    title: "See your roadmap",
-    body: (
-      <p className="text-muted-foreground">
-        The banner at the top of home shows your current phase (if you have
-        one). Tap it, or the Program tab, to see your whole plan.
       </p>
     ),
   },
