@@ -1,6 +1,5 @@
 "use client";
 
-import { Pencil, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTrainingBuilderContext } from "@/contexts/training-builder-context";
 import { HEADER_EYEBROW_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
@@ -42,9 +41,11 @@ export function TrainingPlanHero({
         </h2>
       </div>
 
-      {/* Action row — the hero's "underneath" slot (the Exercise hero's lens
-          row position); filled primaries are the sanctioned hero register */}
-      <div className="mt-3 flex items-center gap-2 border-t border-[rgba(255,255,255,0.06)] pt-3">
+      {/* Action row — the hero's "underneath" slot, in the Exercise Data
+          hero's lens-row register (owner call, retiring the filled-primary
+          register here): primary action = the active-lens teal chip,
+          secondary = the muted lens text. Text-only, no icons. */}
+      <div className="mt-3 flex items-center gap-1 border-t border-[rgba(255,255,255,0.06)] pt-3">
         {plan ? (
           <>
             {onEditPlan && (
@@ -52,18 +53,16 @@ export function TrainingPlanHero({
                 onClick={editPlanDisabledReason ? undefined : onEditPlan}
                 disabled={!!editPlanDisabledReason}
                 title={editPlanDisabledReason ?? undefined}
-                className="inline-flex items-center gap-1.5 rounded-[6px] bg-[#0d9488] px-3 py-1.5 text-[12.5px] font-medium text-white transition-colors hover:bg-[#0b7f75] disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-[4px] bg-[rgba(13,148,136,0.15)] px-2 py-1 text-[11px] font-medium text-[#0d9488] transition-colors disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <Pencil className="h-3.5 w-3.5" strokeWidth={1.5} />
                 Edit plan
               </button>
             )}
             {onOpenGenerator && (
               <button
                 onClick={onOpenGenerator}
-                className="inline-flex items-center gap-1.5 rounded-[6px] bg-[rgba(255,255,255,0.06)] px-3 py-1.5 text-[12.5px] font-medium text-[rgba(255,255,255,0.85)] transition-colors hover:bg-[rgba(255,255,255,0.1)]"
+                className="rounded-[4px] px-2 py-1 text-[11px] font-medium text-[rgba(255,255,255,0.45)] transition-colors hover:text-white"
               >
-                <Sparkles className="h-3.5 w-3.5" strokeWidth={1.5} />
                 Apply program
               </button>
             )}
@@ -72,9 +71,8 @@ export function TrainingPlanHero({
           onOpenGenerator && (
             <button
               onClick={onOpenGenerator}
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-[6px] bg-[#0d9488] px-3 py-1.5 text-[12.5px] font-medium text-white transition-colors hover:bg-[#0b7f75]"
+              className="rounded-[4px] bg-[rgba(13,148,136,0.15)] px-2 py-1 text-[11px] font-medium text-[#0d9488] transition-colors"
             >
-              <Sparkles className="h-3.5 w-3.5" strokeWidth={1.5} />
               Browse programs
             </button>
           )

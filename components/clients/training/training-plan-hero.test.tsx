@@ -16,7 +16,7 @@ describe("TrainingPlanHero", () => {
     cleanup();
   });
 
-  it("renders the empty branch with the library CTA on the sanctioned hover pair", () => {
+  it("renders the empty branch with the library CTA in the lens-row register", () => {
     ctx.value = { plan: null };
     const onOpenGenerator = vi.fn();
     const { container } = renderHero({ onOpenGenerator });
@@ -25,9 +25,10 @@ describe("TrainingPlanHero", () => {
     expect(
       screen.getByRole("button", { name: /Browse programs/ }),
     ).toBeInTheDocument();
-    // The old empty hero invented hover:bg-[#0f766e]; the fix pins #0b7f75.
-    expect(container.innerHTML).not.toContain("0f766e");
-    expect(container.innerHTML).toContain("0b7f75");
+    // Owner call: hero actions adopt the Exercise Data hero's lens-row design —
+    // the primary is the active-lens teal chip, not a filled button.
+    expect(container.innerHTML).toContain("rgba(13,148,136,0.15)");
+    expect(container.innerHTML).not.toContain("0b7f75");
   });
 
   it("renders the plan branch as name + actions with no stat row (owner call)", () => {
