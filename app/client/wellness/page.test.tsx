@@ -70,6 +70,7 @@ type WellnessFields = {
   energy: number | null;
   sleep: number | null;
   stress: number | null;
+  soreness: number | null;
 };
 
 function setSWR({
@@ -104,6 +105,7 @@ function wellnessData(
       energy: null,
       sleep: null,
       stress: null,
+      soreness: null,
       ...values,
       editable,
       loggedStatus,
@@ -140,7 +142,14 @@ describe("Wellness log page", () => {
 
   it("prefills the inputs from the existing log", async () => {
     setSWR({
-      data: wellnessData({ mood: 4, energy: 7, sleep: 6, stress: 3, loggedStatus: "logged" }),
+      data: wellnessData({
+        mood: 4,
+        energy: 7,
+        sleep: 6,
+        stress: 3,
+        soreness: 8,
+        loggedStatus: "logged",
+      }),
     });
     render(<WellnessLogPage />);
 
@@ -153,10 +162,11 @@ describe("Wellness log page", () => {
     expect(screen.getByText("7/10")).toBeInTheDocument();
     expect(screen.getByText("6/10")).toBeInTheDocument();
     expect(screen.getByText("3/10")).toBeInTheDocument();
+    expect(screen.getByText("8/10")).toBeInTheDocument();
   });
 
   it("submits only the touched fields as the PATCH payload, then returns home", async () => {
-    setSWR({ data: wellnessData({ mood: null, energy: 6, loggedStatus: "logged" }) });
+    setSWR({ data: wellnessData({ mood: null, energy: 6, soreness: 4, loggedStatus: "logged" }) });
     const fetchSpy = mockFetchOnce({ status: 201, body: { success: true, data: {} } });
 
     render(<WellnessLogPage />);
@@ -169,8 +179,8 @@ describe("Wellness log page", () => {
     const [url, init] = fetchSpy.mock.calls[0];
     expect(url).toBe(`/api/client/daily-logs/${TODAY}/wellness`);
     expect(init?.method).toBe("PATCH");
-    // energy was seeded (pre-touched); sleep/stress untouched → dropped from the partial update.
-    expect(JSON.parse(init?.body as string)).toEqual({ mood: 3, energy: 6 });
+    // energy/soreness were seeded (pre-touched); sleep/stress untouched → dropped from the partial update.
+    expect(JSON.parse(init?.body as string)).toEqual({ mood: 3, energy: 6, soreness: 4 });
 
     await waitFor(() =>
       expect(toastMock).toHaveBeenCalledWith({ title: "Wellness saved" }),
@@ -205,7 +215,7 @@ describe("Wellness log page", () => {
     expect(screen.getByText(/locked and can.t be edited/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /good/i })).toBeDisabled();
     const sliders = container.querySelectorAll('[data-slot="slider"]');
-    expect(sliders.length).toBe(3);
+    expect(sliders.length).toBe(4);
     sliders.forEach((slider) => expect(slider).toHaveAttribute("data-disabled"));
     expect(screen.queryByRole("button", { name: /^save$/i })).toBeNull();
   });

@@ -69,6 +69,7 @@ describe("GET /api/client/daily-logs/[date]/wellness", () => {
       energy: 7,
       sleep: null,
       stress: null,
+      soreness: null,
       editable: true,
       loggedStatus: "logged",
     });
@@ -106,12 +107,12 @@ describe("PATCH /api/client/daily-logs/[date]/wellness", () => {
     } as never);
     vi.mocked(upsertWellnessLog).mockResolvedValue({ id: "log-1" } as never);
 
-    const res = await PATCH(patchReq({ mood: 4, energy: 7 }), params("2026-05-21"));
+    const res = await PATCH(patchReq({ mood: 4, energy: 7, soreness: 6 }), params("2026-05-21"));
     expect(res.status).toBe(201);
     expect(upsertWellnessLog).toHaveBeenCalledWith(
       "client-1",
       "2026-05-21",
-      { mood: 4, energy: 7 },
+      { mood: 4, energy: 7, soreness: 6 },
       { phaseId: "p1" }
     );
   });
@@ -157,6 +158,12 @@ describe("PATCH /api/client/daily-logs/[date]/wellness", () => {
 
   it("400 on an out-of-range value", async () => {
     const res = await PATCH(patchReq({ mood: 6 }), params("2026-05-21"));
+    expect(res.status).toBe(400);
+    expect(assertCanEdit).not.toHaveBeenCalled();
+  });
+
+  it("400 on an out-of-range soreness", async () => {
+    const res = await PATCH(patchReq({ soreness: 11 }), params("2026-05-21"));
     expect(res.status).toBe(400);
     expect(assertCanEdit).not.toHaveBeenCalled();
   });

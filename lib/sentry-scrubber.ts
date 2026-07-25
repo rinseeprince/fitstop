@@ -17,6 +17,7 @@ const SENSITIVE_KEYS = new Set([
   "energy",
   "sleep",
   "stress",
+  "soreness",
   "notes",
   "highlights",
   "measurements",
@@ -50,6 +51,8 @@ const SENSITIVE_KEYS = new Set([
   "stress_level",
   "energyLevel",
   "energy_level",
+  "muscleSoreness",
+  "muscle_soreness",
 ]);
 
  

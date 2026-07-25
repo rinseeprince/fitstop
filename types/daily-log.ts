@@ -15,8 +15,9 @@ export type DailyLog = {
   energy?: number; // 1-10
   sleep?: number; // 1-10
   stress?: number; // 1-10
+  soreness?: number; // 1-10 (higher = more sore)
   notes?: string;
-  
+
   // Training tracking
   trained?: boolean;
   trainingSessionId?: string;
@@ -36,7 +37,7 @@ export type DailyLog = {
       durationMinutes: number;
     }>;
   } | null;
-  
+
   // Nutrition tracking
   caloriesConsumed?: number;
   proteinG?: number;
@@ -63,8 +64,9 @@ export type DailyLogInput = {
   energy?: number; // 1-10
   sleep?: number; // 1-10
   stress?: number; // 1-10
+  soreness?: number; // 1-10 (higher = more sore)
   notes?: string;
-  
+
   // Training tracking
   trained?: boolean;
   trainingSessionId?: string;
@@ -84,7 +86,7 @@ export type DailyLogInput = {
       durationMinutes: number;
     }>;
   } | null;
-  
+
   // Nutrition tracking (optional - client may log wellness without calories)
   caloriesConsumed?: number;
   proteinG?: number;

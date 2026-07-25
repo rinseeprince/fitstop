@@ -14,6 +14,7 @@ export function mapCheckInRow(row: CheckInRow): CheckIn {
     energy: row.energy ?? undefined,
     sleep: row.sleep ?? undefined,
     stress: row.stress ?? undefined,
+    soreness: row.soreness ?? undefined,
     notes: row.notes ?? undefined,
     weight: row.weight ?? undefined,
     weightUnit: row.weight_unit as "lbs" | "kg" | undefined,
@@ -157,7 +158,7 @@ export function toClientFacingIntake(intake: ClientIntake): Partial<ClientIntake
 // coach-only column is excluded by default rather than shipped.
 const CLIENT_FACING_CHECKIN_KEYS = [
   "id", "clientId", "clientName", "clientAvatarUrl", "status",
-  "mood", "energy", "sleep", "stress", "notes",
+  "mood", "energy", "sleep", "stress", "soreness", "notes",
   "weight", "weightUnit", "bodyFatPercentage", "waist", "hips", "chest", "arms",
   "thighs", "measurementUnit",
   "photoFront", "photoSide", "photoBack",

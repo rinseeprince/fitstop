@@ -47,6 +47,7 @@ const METRIC_COLORS: Record<string, { stroke: string; fill: string; gradient: st
   energy: { stroke: "#ef4444", fill: "#ef4444", gradient: "red" },
   sleep: { stroke: "#6366f1", fill: "#6366f1", gradient: "indigo" },
   stress: { stroke: "#f97316", fill: "#f97316", gradient: "orange" },
+  soreness: { stroke: "#a855f7", fill: "#a855f7", gradient: "purple" },
 };
 
 const DEFAULT_COLOR = { stroke: "#8b5cf6", fill: "#8b5cf6", gradient: "violet" };
@@ -60,14 +61,15 @@ const getMetricColor = (metricId: string) => {
 };
 
 const getTrendDisplay = (trend: TrendDirection, metricId: string) => {
-  const isStress = metricId === "stress";
+  // Inverted metrics: falling stress/soreness is an improvement
+  const isInverted = metricId === "stress" || metricId === "soreness";
   const isBodyMetric = ["weight", "bodyFat", "waist", "hips", "chest", "arms", "thighs"].includes(metricId);
 
   if (trend === "stable") {
     return { color: "text-muted-foreground", isPositive: null };
   }
 
-  if (isStress) {
+  if (isInverted) {
     return { color: trend === "down" ? "text-success" : "text-destructive", isPositive: trend === "down" };
   }
 

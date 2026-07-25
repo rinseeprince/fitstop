@@ -11,14 +11,15 @@ type DailyLogsSummaryProps = {
   periodEnd?: string;
 };
 
-const getMetricColor = (metric: "mood" | "energy" | "sleep" | "stress", value: number) => {
+const getMetricColor = (metric: "mood" | "energy" | "sleep" | "stress" | "soreness", value: number) => {
   if (metric === "mood") {
     if (value >= 4) return "bg-success";
     if (value >= 3) return "bg-warning";
     return "bg-destructive";
   }
 
-  if (metric === "stress") {
+  // Stress and soreness are inverted (lower is better)
+  if (metric === "stress" || metric === "soreness") {
     if (value <= 3) return "bg-success";
     if (value <= 6) return "bg-warning";
     return "bg-destructive";
@@ -41,11 +42,12 @@ export const DailyLogsSummary = ({ dailyLogs, periodStart, periodEnd }: DailyLog
       log.mood !== undefined ||
       log.energy !== undefined ||
       log.sleep !== undefined ||
-      log.stress !== undefined
+      log.stress !== undefined ||
+      log.soreness !== undefined
     );
 
     if (validLogs.length === 0) {
-      return { mood: 0, energy: 0, sleep: 0, stress: 0 };
+      return { mood: 0, energy: 0, sleep: 0, stress: 0, soreness: 0 };
     }
 
     const sums = validLogs.reduce((acc, log) => ({
@@ -53,13 +55,15 @@ export const DailyLogsSummary = ({ dailyLogs, periodStart, periodEnd }: DailyLog
       energy: acc.energy + (log.energy ?? 0),
       sleep: acc.sleep + (log.sleep ?? 0),
       stress: acc.stress + (log.stress ?? 0),
+      soreness: acc.soreness + (log.soreness ?? 0),
       moodCount: acc.moodCount + (log.mood !== undefined ? 1 : 0),
       energyCount: acc.energyCount + (log.energy !== undefined ? 1 : 0),
       sleepCount: acc.sleepCount + (log.sleep !== undefined ? 1 : 0),
       stressCount: acc.stressCount + (log.stress !== undefined ? 1 : 0),
+      sorenessCount: acc.sorenessCount + (log.soreness !== undefined ? 1 : 0),
     }), {
-      mood: 0, energy: 0, sleep: 0, stress: 0,
-      moodCount: 0, energyCount: 0, sleepCount: 0, stressCount: 0
+      mood: 0, energy: 0, sleep: 0, stress: 0, soreness: 0,
+      moodCount: 0, energyCount: 0, sleepCount: 0, stressCount: 0, sorenessCount: 0
     });
 
     return {
@@ -67,6 +71,7 @@ export const DailyLogsSummary = ({ dailyLogs, periodStart, periodEnd }: DailyLog
       energy: sums.energyCount > 0 ? Number((sums.energy / sums.energyCount).toFixed(1)) : 0,
       sleep: sums.sleepCount > 0 ? Number((sums.sleep / sums.sleepCount).toFixed(1)) : 0,
       stress: sums.stressCount > 0 ? Number((sums.stress / sums.stressCount).toFixed(1)) : 0,
+      soreness: sums.sorenessCount > 0 ? Number((sums.soreness / sums.sorenessCount).toFixed(1)) : 0,
     };
   }, [dailyLogs]);
 
@@ -78,7 +83,8 @@ export const DailyLogsSummary = ({ dailyLogs, periodStart, periodEnd }: DailyLog
         log.mood !== undefined && log.mood !== null ||
         log.energy !== undefined && log.energy !== null ||
         log.sleep !== undefined && log.sleep !== null ||
-        log.stress !== undefined && log.stress !== null
+        log.stress !== undefined && log.stress !== null ||
+        log.soreness !== undefined && log.soreness !== null
       ) {
         set.add(log.date);
       }
@@ -183,6 +189,13 @@ export const DailyLogsSummary = ({ dailyLogs, periodStart, periodEnd }: DailyLog
             <span className="text-sm">Stress</span>
             <span className={`text-sm font-semibold px-2 py-1 rounded ${getMetricColor("stress", averages.stress)}`}>
               {averages.stress.toFixed(1)}/10
+            </span>
+          </div>
+
+          <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+            <span className="text-sm">Soreness</span>
+            <span className={`text-sm font-semibold px-2 py-1 rounded ${getMetricColor("soreness", averages.soreness ?? 0)}`}>
+              {(averages.soreness ?? 0).toFixed(1)}/10
             </span>
           </div>
         </div>

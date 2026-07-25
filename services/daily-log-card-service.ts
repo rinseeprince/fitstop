@@ -31,6 +31,7 @@ export type WellnessLogInput = {
   energy?: number;
   sleep?: number;
   stress?: number;
+  soreness?: number;
 };
 
 /**
@@ -148,6 +149,7 @@ export async function upsertWellnessLog(
       energy: data.energy ?? null,
       sleep: data.sleep ?? null,
       stress: data.stress ?? null,
+      soreness: data.soreness ?? null,
       updated_at: new Date().toISOString(),
     },
     { onConflict: "daily_log_id" }

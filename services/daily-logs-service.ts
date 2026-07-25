@@ -5,7 +5,8 @@ import { getDateString, getDateDaysFrom, dateStringToDayNumber } from "@/lib/dat
 import { getClientTodayString } from "./today-service";
 import { NUTRITION_ADHERENCE_HIT_THRESHOLD, NUTRITION_ADHERENCE_PARTIAL_THRESHOLD } from "@/lib/constants";
 
-// Shape returned by the daily_logs_full view (not yet in generated types)
+// Shape returned by the daily_logs_full view (mirrors Views.daily_logs_full.Row
+// in types/database.ts; kept hand-typed for the narrowing casts below)
 type DailyLogFullRow = {
   id: string;
   client_id: string;
@@ -18,6 +19,7 @@ type DailyLogFullRow = {
   energy: number | null;
   sleep: number | null;
   stress: number | null;
+  soreness: number | null;
   calories_consumed: number | null;
   protein_g: number | null;
   carbs_g: number | null;
@@ -118,6 +120,7 @@ export const mapRowToDailyLog = (row: DailyLogFullRow): DailyLog => ({
   energy: row.energy ?? undefined,
   sleep: row.sleep ?? undefined,
   stress: row.stress ?? undefined,
+  soreness: row.soreness ?? undefined,
   notes: row.notes ?? undefined,
   trained: row.trained ?? undefined,
   trainingSessionId: row.training_session_id ?? undefined,

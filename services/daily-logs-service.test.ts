@@ -217,6 +217,7 @@ describe('Daily Logs Service - Database Functions', () => {
         energy: null,
         sleep: 7,
         stress: null,
+        soreness: 6,
         calories_consumed: 2000,
         protein_g: 150,
         carbs_g: null,
@@ -240,6 +241,7 @@ describe('Daily Logs Service - Database Functions', () => {
       expect(log.mood).toBe(4);
       expect(log.energy).toBeUndefined();
       expect(log.sleep).toBe(7);
+      expect(log.soreness).toBe(6);
       expect(log.caloriesConsumed).toBe(2000);
       expect(log.carbsG).toBeUndefined();
       expect(log.targetCalories).toBe(2100);

@@ -72,6 +72,7 @@ export const submitCheckIn = async (
   let energy: number | undefined;
   let sleep: number | undefined;
   let stress: number | undefined;
+  let soreness: number | undefined;
 
   if (periodStart && periodEnd) {
     const [trainingStats, nutritionSummary, wellnessLogs] = await Promise.all([
@@ -96,6 +97,8 @@ export const submitCheckIn = async (
       energy = averages.energy;
       sleep = averages.sleep;
       stress = averages.stress;
+      // Stays undefined (-> NULL snapshot) when the period logged no soreness.
+      soreness = averages.soreness;
     }
   }
 
@@ -109,6 +112,7 @@ export const submitCheckIn = async (
       energy,
       sleep,
       stress,
+      soreness,
       notes: formData.notes,
       // Body metrics
       weight: formData.weight,

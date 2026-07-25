@@ -279,6 +279,21 @@ describe("client-day-service", () => {
     expect(result.wellness).toEqual({ hasLog: true });
   });
 
+  it("returns hasLog true when only soreness is logged", async () => {
+    mockTodayLog.mockResolvedValue({
+      id: "dl1",
+      clientId: CLIENT_ID,
+      date: DATE,
+      soreness: 7,
+      createdAt: "2026-05-08T00:00:00Z",
+      updatedAt: "2026-05-08T00:00:00Z",
+    } as any);
+
+    const result = await getDaySummary(CLIENT_ID, DATE);
+
+    expect(result.wellness).toEqual({ hasLog: true });
+  });
+
   // ---- Habits: filters for completed only ----
 
   it("counts only completed habit logs", async () => {

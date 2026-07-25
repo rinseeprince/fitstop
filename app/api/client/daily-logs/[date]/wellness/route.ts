@@ -8,7 +8,7 @@ import { upsertWellnessLog } from "@/services/daily-log-card-service";
 import { DayLockedError } from "@/lib/daily-log-permissions";
 
 /**
- * GET wellness for a date: mood/energy/sleep/stress (nulls if absent), plus `editable` and
+ * GET wellness for a date: mood/energy/sleep/stress/soreness (nulls if absent), plus `editable` and
  * `loggedStatus`. The detail page feeds `loggedStatus` (server-authoritative child-row existence)
  * to the pure `canEditDay` for its lock — it can't infer "logged" from null fields, because the
  * `daily_logs_full` view can't tell an absent child from an all-null one (see getDayEditState).
@@ -41,6 +41,7 @@ export async function GET(
           energy: log?.energy ?? null,
           sleep: log?.sleep ?? null,
           stress: log?.stress ?? null,
+          soreness: log?.soreness ?? null,
           editable: editState.editable,
           loggedStatus: editState.loggedStatus,
         },
@@ -57,7 +58,7 @@ export async function GET(
 }
 
 /**
- * PATCH wellness (mood/energy/sleep/stress). Guards the date-edit rule via assertCanEdit
+ * PATCH wellness (mood/energy/sleep/stress/soreness). Guards the date-edit rule via assertCanEdit
  * (403 when locked), resolves plan context for the spine phase_id (null for no-phase
  * clients — wellness is not plan-gated), then writes wellness_logs.
  */

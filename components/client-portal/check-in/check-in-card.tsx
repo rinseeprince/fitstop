@@ -29,6 +29,7 @@ export function CheckInCard({ checkIn }: { checkIn: CheckIn }) {
   if (checkIn.energy) wellnessMetrics.push(`Energy: ${checkIn.energy}/10`);
   if (checkIn.sleep) wellnessMetrics.push(`Sleep: ${checkIn.sleep}/10`);
   if (checkIn.stress) wellnessMetrics.push(`Stress: ${checkIn.stress}/10`);
+  if (checkIn.soreness) wellnessMetrics.push(`Soreness: ${checkIn.soreness}/10`);
 
   return (
     <Card

@@ -32,6 +32,7 @@ export const wellnessCardSchema = z
     energy: optionalInt(z.number().int().min(1, "Energy must be between 1-10").max(10, "Energy must be between 1-10")),
     sleep: optionalInt(z.number().int().min(1, "Sleep must be between 1-10").max(10, "Sleep must be between 1-10")),
     stress: optionalInt(z.number().int().min(1, "Stress must be between 1-10").max(10, "Stress must be between 1-10")),
+    soreness: optionalInt(z.number().int().min(1, "Soreness must be between 1-10").max(10, "Soreness must be between 1-10")),
   })
   .strict();
 

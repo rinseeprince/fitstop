@@ -30,6 +30,7 @@ export type ProgressDataPoint = {
   energy?: number;
   sleep?: number;
   stress?: number;
+  soreness?: number;
 };
 
 export type ProgressData = {
@@ -123,7 +124,8 @@ export async function getClientProgressData(
       mood,
       energy,
       sleep,
-      stress
+      stress,
+      soreness
     `)
     .eq("client_id", clientId)
     .gte("created_at", startDate.toISOString())
@@ -178,6 +180,7 @@ export async function getClientProgressData(
   const energyHistory: ProgressDataPoint[] = [];
   const sleepHistory: ProgressDataPoint[] = [];
   const stressHistory: ProgressDataPoint[] = [];
+  const sorenessHistory: ProgressDataPoint[] = [];
 
   if (checkIns) {
     for (const checkIn of checkIns) {
@@ -216,6 +219,9 @@ export async function getClientProgressData(
       if (checkIn.stress) {
         stressHistory.push({ date, stress: checkIn.stress });
       }
+      if (checkIn.soreness) {
+        sorenessHistory.push({ date, soreness: checkIn.soreness });
+      }
     }
   }
 
@@ -240,6 +246,7 @@ export async function getClientProgressData(
     buildMetricSeries(energyHistory, "energy", "energy", "Energy", "/10"),
     buildMetricSeries(sleepHistory, "sleep", "sleep", "Sleep", "/10"),
     buildMetricSeries(stressHistory, "stress", "stress", "Stress", "/10"),
+    buildMetricSeries(sorenessHistory, "soreness", "soreness", "Soreness", "/10"),
   ];
 
   return {

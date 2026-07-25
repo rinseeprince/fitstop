@@ -55,6 +55,7 @@ export async function GET(
         energy: checkIn.energy,
         sleep: checkIn.sleep,
         stress: checkIn.stress,
+        soreness: checkIn.soreness,
         notes: checkIn.notes,
         weight: checkIn.weight,
         weightUnit: checkIn.weight_unit,

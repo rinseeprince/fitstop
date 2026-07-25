@@ -10,6 +10,7 @@ export function aggregateDailyLogs(logs: DailyLog[]) {
       avgEnergy: 0,
       avgSleep: 0,
       avgStress: 0,
+      avgSoreness: 0,
       sessionsCompleted: 0,
       totalPlannedSessions: 0,
       nutritionHitDays: 0,
@@ -29,6 +30,7 @@ export function aggregateDailyLogs(logs: DailyLog[]) {
   let energySum = 0, energyCount = 0;
   let sleepSum = 0, sleepCount = 0;
   let stressSum = 0, stressCount = 0;
+  let sorenessSum = 0, sorenessCount = 0;
 
   // Count training metrics
   let sessionsCompleted = 0;
@@ -60,6 +62,10 @@ export function aggregateDailyLogs(logs: DailyLog[]) {
     if (log.stress !== undefined && log.stress !== null) {
       stressSum += log.stress;
       stressCount++;
+    }
+    if (log.soreness !== undefined && log.soreness !== null) {
+      sorenessSum += log.soreness;
+      sorenessCount++;
     }
 
     // Count training sessions
@@ -111,6 +117,7 @@ export function aggregateDailyLogs(logs: DailyLog[]) {
     avgEnergy: energyCount > 0 ? Math.round((energySum / energyCount) * 10) / 10 : 0,
     avgSleep: sleepCount > 0 ? Math.round((sleepSum / sleepCount) * 10) / 10 : 0,
     avgStress: stressCount > 0 ? Math.round((stressSum / stressCount) * 10) / 10 : 0,
+    avgSoreness: sorenessCount > 0 ? Math.round((sorenessSum / sorenessCount) * 10) / 10 : 0,
     sessionsCompleted,
     totalPlannedSessions,
     nutritionHitDays,
@@ -130,17 +137,23 @@ export type MetricAverages = {
   energy: number;
   sleep: number;
   stress: number;
+  // Optional by design: soreness has NO fabricated fallback — a period with no
+  // soreness logged yields undefined, never a default (check-in snapshot stays NULL).
+  soreness?: number;
 };
 
 /**
  * Calculate metric averages from daily logs for check-in pre-fill
  */
 export function calculateMetricAverages(dailyLogs: DailyLog[]): MetricAverages {
+  // Soreness joins the filter so a soreness-only period counts as wellness data
+  // (otherwise it would hit the fabricated-defaults branch and drop the real value).
   const validLogs = dailyLogs.filter(log =>
     log.mood !== undefined ||
     log.energy !== undefined ||
     log.sleep !== undefined ||
-    log.stress !== undefined
+    log.stress !== undefined ||
+    log.soreness !== undefined
   );
 
   if (validLogs.length === 0) {
@@ -152,13 +165,15 @@ export function calculateMetricAverages(dailyLogs: DailyLog[]): MetricAverages {
     energy: acc.energy + (log.energy ?? 0),
     sleep: acc.sleep + (log.sleep ?? 0),
     stress: acc.stress + (log.stress ?? 0),
+    soreness: acc.soreness + (log.soreness ?? 0),
     moodCount: acc.moodCount + (log.mood !== undefined ? 1 : 0),
     energyCount: acc.energyCount + (log.energy !== undefined ? 1 : 0),
     sleepCount: acc.sleepCount + (log.sleep !== undefined ? 1 : 0),
     stressCount: acc.stressCount + (log.stress !== undefined ? 1 : 0),
+    sorenessCount: acc.sorenessCount + (log.soreness !== undefined ? 1 : 0),
   }), {
-    mood: 0, energy: 0, sleep: 0, stress: 0,
-    moodCount: 0, energyCount: 0, sleepCount: 0, stressCount: 0
+    mood: 0, energy: 0, sleep: 0, stress: 0, soreness: 0,
+    moodCount: 0, energyCount: 0, sleepCount: 0, stressCount: 0, sorenessCount: 0
   });
 
   return {
@@ -166,6 +181,8 @@ export function calculateMetricAverages(dailyLogs: DailyLog[]): MetricAverages {
     energy: sums.energyCount > 0 ? Math.round(sums.energy / sums.energyCount) : 5,
     sleep: sums.sleepCount > 0 ? Math.round(sums.sleep / sums.sleepCount) : 5,
     stress: sums.stressCount > 0 ? Math.round(sums.stress / sums.stressCount) : 5,
+    // Deliberate deviation from siblings: never-logged soreness stays undefined.
+    soreness: sums.sorenessCount > 0 ? Math.round(sums.soreness / sums.sorenessCount) : undefined,
   };
 }
 

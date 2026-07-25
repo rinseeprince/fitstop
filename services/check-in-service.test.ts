@@ -339,8 +339,8 @@ describe('Check-in Service', () => {
       getCheckInTrainingPeriodStatsMock.mockResolvedValue({ sessionsCompleted: 4, sessionsPlanned: 5 })
       getNutritionSummaryForPeriodMock.mockResolvedValue({ daysOnTarget: 5, adherencePercentage: 71.4 })
       getDailyLogsMock.mockResolvedValue([
-        { date: '2026-05-08', mood: 4, energy: 8, sleep: 7, stress: 3 },
-        { date: '2026-05-09', mood: 2, energy: 6, sleep: 5, stress: 5 },
+        { date: '2026-05-08', mood: 4, energy: 8, sleep: 7, stress: 3, soreness: 6 },
+        { date: '2026-05-09', mood: 2, energy: 6, sleep: 5, stress: 5, soreness: 2 },
       ])
 
       const q = mockInsert({ data: { id: 'ci' }, error: null })
@@ -368,6 +368,7 @@ describe('Check-in Service', () => {
       expect(inserted.energy).toBe(7) // round((8+6)/2)
       expect(inserted.sleep).toBe(6) // round((7+5)/2)
       expect(inserted.stress).toBe(4) // round((3+5)/2)
+      expect(inserted.soreness).toBe(4) // round((6+2)/2)
       // The qualitative reflection is preserved.
       expect(inserted.notes).toBe('reflection')
       // Period persisted.
@@ -376,6 +377,25 @@ describe('Check-in Service', () => {
       // Reuses getNutritionSummaryForPeriod (Pin 1) and getDailyLogs (Pin 2).
       expect(getNutritionSummaryForPeriodMock).toHaveBeenCalledWith('client-123', '2026-05-08', '2026-05-14')
       expect(getDailyLogsMock).toHaveBeenCalledWith('client-123', '2026-05-08', '2026-05-14')
+    })
+
+    it('inserts NO soreness snapshot when the period logged none (decision C: no fabricated default)', async () => {
+      getCheckInTrainingPeriodStatsMock.mockResolvedValue({ sessionsCompleted: 4, sessionsPlanned: 5 })
+      getNutritionSummaryForPeriodMock.mockResolvedValue({ daysOnTarget: 5, adherencePercentage: 71.4 })
+      getDailyLogsMock.mockResolvedValue([
+        { date: '2026-05-08', mood: 4, energy: 8, sleep: 7, stress: 3 },
+      ])
+
+      const q = mockInsert({ data: { id: 'ci' }, error: null })
+
+      const { submitCheckIn } = await import('./check-in-service')
+      await submitCheckIn('client-123', { notes: 'reflection' } as any)
+
+      const inserted = q.insert.mock.calls[0][0]
+      // Siblings keep their existing derivation/fallback semantics...
+      expect(inserted.mood).toBe(4)
+      // ...but soreness is never fabricated: undefined -> NULL snapshot, not 5.
+      expect(inserted.soreness).toBeUndefined()
     })
 
     it('caps adherence_percentage at 100', async () => {

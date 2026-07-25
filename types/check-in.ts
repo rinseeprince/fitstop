@@ -33,6 +33,7 @@ export type SubjectiveMetrics = {
   energy?: number; // 1-10
   sleep?: number; // 1-10
   stress?: number; // 1-10
+  soreness?: number; // 1-10 (higher = more sore)
   notes?: string;
 };
 
@@ -271,6 +272,7 @@ export type CheckIn = {
   energy?: number;
   sleep?: number;
   stress?: number;
+  soreness?: number;
   notes?: string;
 
   // Body metrics

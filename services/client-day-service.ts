@@ -93,7 +93,8 @@ export async function getDaySummary(
         (dailyLog.mood != null ||
           dailyLog.energy != null ||
           dailyLog.sleep != null ||
-          dailyLog.stress != null),
+          dailyLog.stress != null ||
+          dailyLog.soreness != null),
     },
     // Only count habits that had become effective by `date` — mirrors the
     // /client/habits detail page's `effectiveDate <= date` filter so the home card's

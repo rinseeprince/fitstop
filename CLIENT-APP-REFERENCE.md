@@ -45,7 +45,7 @@ The client app is a fitness coaching platform where clients can:
 **Primary Feature** — home route `/client` (there is no `/client/dashboard`)
 
 The Daily Pulse is the centerpiece of the client experience, allowing daily logging of:
-- **Wellness Metrics**: Mood (1-5 emoji scale), Energy (1-10), Sleep (1-10), Stress (1-10), Notes
+- **Wellness Metrics**: Mood (1-5 emoji scale), Energy (1-10), Sleep (1-10), Stress (1-10), Soreness (1-10, higher = more sore), Notes
 - **Training Completion**: Mark planned sessions complete, log alternative sessions, add unplanned activities
 - **Nutrition Tracking**: Log calories and macros (protein, carbs, fat) with dynamic targets
 - **Habit Tracking**: Toggle daily habits on/off with auto-save
@@ -164,8 +164,8 @@ All client API endpoints require authentication except where noted.
 > Reads are one call; writes are per-domain. There is no combined daily-log write.
 
 - `GET /api/client/day-summary?date={YYYY-MM-DD}` - The day read (`DaySummary`, `types/client-day.ts`)
-- `POST /api/client/daily-logs/{date}/wellness` - Mood / energy / sleep / stress / notes
-- `POST /api/client/daily-logs/{date}/nutrition` - Calories + macros for that date
+- `GET` + `PATCH /api/client/daily-logs/{date}/wellness` - Mood / energy / sleep / stress / soreness
+- `GET` + `PATCH /api/client/daily-logs/{date}/nutrition` - Calories + macros for that date
 - Training is **not** part of a daily log — see the Training section
 - Habits are **not** part of a daily log — see the Habits section
 
@@ -256,6 +256,7 @@ type DailyLog = {
   energy?: number // 1-10
   sleep?: number // 1-10
   stress?: number // 1-10
+  soreness?: number // 1-10 (higher = more sore)
   notes?: string
   
   // Training
@@ -394,6 +395,7 @@ type CheckIn = {
   energy?: number
   sleep?: number
   stress?: number
+  soreness?: number
   
   // Body Metrics
   weight?: number
@@ -569,6 +571,7 @@ habits.filter(h => new Date(h.createdAt) <= selectedDate)
 - Energy: Green gradient (low=red, med=yellow, high=green)
 - Sleep: Blue gradient
 - Stress: Red gradient (inverted - low is good)
+- Soreness: Purple gradient (inverted - low is good)
 
 **Adherence Indicators**:
 - Green (#10b981): On track / Complete

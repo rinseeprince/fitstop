@@ -111,7 +111,7 @@ describe("upsertWellnessLog", () => {
     vi.mocked(supabaseAdmin.from).mockImplementation(((t: string) =>
       t === "daily_logs" ? spine : child) as never);
 
-    const result = await upsertWellnessLog("c1", "2026-05-21", { mood: 4, energy: 7 }, {
+    const result = await upsertWellnessLog("c1", "2026-05-21", { mood: 4, energy: 7, soreness: 2 }, {
       phaseId: "phase-1",
     });
 
@@ -127,6 +127,7 @@ describe("upsertWellnessLog", () => {
         energy: 7,
         sleep: null,
         stress: null,
+        soreness: 2,
       }),
       { onConflict: "daily_log_id" }
     );

@@ -241,6 +241,12 @@ export default function CheckInDetailPage() {
                 <span className="font-medium">{checkIn.stress}/10</span>
               </div>
             )}
+            {checkIn.soreness && (
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground">Muscle Soreness</span>
+                <span className="font-medium">{checkIn.soreness}/10</span>
+              </div>
+            )}
           </CardContent>
         </Card>
 

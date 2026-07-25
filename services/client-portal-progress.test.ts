@@ -14,8 +14,15 @@ function fakeSupabase(opts: {
   client?: Record<string, unknown> | null;
   clientError?: { message: string } | null;
 }) {
+  // Captured select strings: the chain ignores its arguments, so fixture columns flow
+  // back regardless of what the query asked for. Asserting on these is the only way a
+  // test can catch a column missing from the real .select() list.
+  const checkInSelects: string[] = [];
   const checkInChain = {
-    select: () => checkInChain,
+    select: (columns: string) => {
+      checkInSelects.push(columns);
+      return checkInChain;
+    },
     eq: () => checkInChain,
     gte: () => checkInChain,
     order: () => Promise.resolve({ data: opts.checkIns ?? [], error: null }),
@@ -28,6 +35,7 @@ function fakeSupabase(opts: {
   };
   return {
     from: (table: string) => (table === "check_ins" ? checkInChain : clientChain),
+    checkInSelects,
   };
 }
 
@@ -160,6 +168,7 @@ describe("getClientProgressData render-ready series", () => {
       "energy",
       "sleep",
       "stress",
+      "soreness",
     ]);
     for (const s of [...result.bodyMetrics, ...result.wellnessMetrics]) {
       expect(s.currentValue).toBeNull();
@@ -169,7 +178,7 @@ describe("getClientProgressData render-ready series", () => {
     }
   });
 
-  it("assigns the wellness units the hook used (mood /5, energy/sleep/stress /10)", async () => {
+  it("assigns the wellness units the hook used (mood /5, the rest /10)", async () => {
     vi.mocked(createPortalClient).mockResolvedValue(
       fakeSupabase({ checkIns: [], client: null }) as never,
     );
@@ -180,5 +189,30 @@ describe("getClientProgressData render-ready series", () => {
     expect(findSeries(result.wellnessMetrics, "energy").unit).toBe("/10");
     expect(findSeries(result.wellnessMetrics, "sleep").unit).toBe("/10");
     expect(findSeries(result.wellnessMetrics, "stress").unit).toBe("/10");
+    expect(findSeries(result.wellnessMetrics, "soreness").unit).toBe("/10");
+  });
+
+  it("selects soreness from check_ins and builds its series from the rows", async () => {
+    const fake = fakeSupabase({
+      checkIns: [
+        { created_at: "2026-05-01T08:00:00+00:00", soreness: 7 },
+        { created_at: "2026-05-08T08:00:00+00:00", soreness: 4 },
+      ],
+      client: null,
+    });
+    vi.mocked(createPortalClient).mockResolvedValue(fake as never);
+
+    const result = await getClientProgressData("c1");
+
+    // The fake ignores select strings, so the wire query is only guarded here.
+    expect(fake.checkInSelects.some((columns) => columns.includes("soreness"))).toBe(true);
+
+    const soreness = findSeries(result.wellnessMetrics, "soreness");
+    expect(soreness.currentValue).toBe(4);
+    expect(soreness.trend).toBe("down");
+    expect(soreness.chartData).toEqual([
+      { date: "2026-05-01", value: 7 },
+      { date: "2026-05-08", value: 4 },
+    ]);
   });
 });

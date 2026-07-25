@@ -22,6 +22,7 @@ type WellnessForDate = {
   energy: number | null;
   sleep: number | null;
   stress: number | null;
+  soreness: number | null;
   editable: boolean;
   loggedStatus: "logged" | "never-logged";
 };
@@ -33,10 +34,17 @@ type WellnessInputs = {
   energy: number | null;
   sleep: number | null;
   stress: number | null;
+  soreness: number | null;
 };
 
 // null = untouched (omitted from the PATCH); a number = the client set it.
-const EMPTY_INPUTS: WellnessInputs = { mood: null, energy: null, sleep: null, stress: null };
+const EMPTY_INPUTS: WellnessInputs = {
+  mood: null,
+  energy: null,
+  sleep: null,
+  stress: null,
+  soreness: null,
+};
 
 // Bounds mirror lib/validations/daily-log-cards.ts (wellnessCardSchema). The server remains
 // the source of truth; clamping here just keeps inputs from tripping a 400.
@@ -45,11 +53,14 @@ const BOUNDS = {
   energy: { min: 1, max: 10 },
   sleep: { min: 1, max: 10 },
   stress: { min: 1, max: 10 },
+  soreness: { min: 1, max: 10 },
 } as const;
 
 /** Clamp a set value to [min, max] as an integer; undefined when unset so JSON.stringify drops it. */
-function toBoundedInt(v: number | null, min: number, max: number): number | undefined {
-  if (v === null) return undefined;
+function toBoundedInt(v: number | null | undefined, min: number, max: number): number | undefined {
+  // == null catches undefined too: an untyped response missing a key would otherwise
+  // flow through Math.round as NaN and serialize to a value-clobbering JSON null.
+  if (v == null) return undefined;
   return Math.min(Math.max(Math.round(v), min), max);
 }
 
@@ -104,10 +115,11 @@ function WellnessLogInner() {
       energy: wellness.energy,
       sleep: wellness.sleep,
       stress: wellness.stress,
+      soreness: wellness.soreness,
     });
   }, [wellness, date]);
 
-  const hasAnyValue = (["mood", "energy", "sleep", "stress"] as const).some(
+  const hasAnyValue = (["mood", "energy", "sleep", "stress", "soreness"] as const).some(
     (k) => inputs[k] !== null,
   );
 
@@ -122,6 +134,7 @@ function WellnessLogInner() {
         energy: toBoundedInt(inputs.energy, BOUNDS.energy.min, BOUNDS.energy.max),
         sleep: toBoundedInt(inputs.sleep, BOUNDS.sleep.min, BOUNDS.sleep.max),
         stress: toBoundedInt(inputs.stress, BOUNDS.stress.min, BOUNDS.stress.max),
+        soreness: toBoundedInt(inputs.soreness, BOUNDS.soreness.min, BOUNDS.soreness.max),
       };
 
       const res = await fetch(`/api/client/daily-logs/${date}/wellness`, {
@@ -223,6 +236,13 @@ function WellnessLogInner() {
             disabled={isLocked || saving}
             onChange={setField("stress")}
           />
+          <WellnessScale
+            id="soreness"
+            label="Muscle soreness"
+            value={inputs.soreness ?? 5}
+            disabled={isLocked || saving}
+            onChange={setField("soreness")}
+          />
         </CardContent>
       </Card>
 
@@ -253,7 +273,7 @@ function WellnessLogSkeleton() {
       <Skeleton className="h-7 w-48" />
       <Card className="mt-4">
         <CardContent className="space-y-6 py-6">
-          {[0, 1, 2, 3].map((i) => (
+          {[0, 1, 2, 3, 4].map((i) => (
             <Skeleton key={i} className="h-16 w-full" />
           ))}
         </CardContent>
