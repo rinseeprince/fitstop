@@ -137,7 +137,7 @@ export const CheckInComparisonView = ({ comparison, chartData, adherence }: Chec
 
       {/* Body */}
       <div className={cardClass}>
-        <h4 className={headingClass}>Body</h4>
+        <h4 className={headingClass}>Physique</h4>
         <div className="space-y-1">
           <MetricTrendRow
             label="Weight"
