@@ -45,6 +45,12 @@ export const recordBodyMetrics = async (params: {
   tdee?: number;
   source: BodyMetricsSource;
   sourceId?: string;
+  /** recorded_at for the event; defaults to now. Lets a backdated coach entry
+   *  land at its true position in the event timeline. */
+  recordedAt?: string;
+  /** when false, skip the clients denormalized-cache update — the caller has
+   *  determined the entry is backdated and must not regress current values. */
+  updateClientCache?: boolean;
 }): Promise<BodyMetricsEvent> => {
   const now = new Date().toISOString();
 
@@ -59,7 +65,7 @@ export const recordBodyMetrics = async (params: {
       tdee: params.tdee ?? null,
       source: params.source,
       source_id: params.sourceId ?? null,
-      recorded_at: now,
+      recorded_at: params.recordedAt ?? now,
     })
     .select()
     .single();
@@ -77,7 +83,7 @@ export const recordBodyMetrics = async (params: {
   if (params.bmr !== undefined) cacheUpdate.bmr = params.bmr;
   if (params.tdee !== undefined) cacheUpdate.tdee = params.tdee;
 
-  if (Object.keys(cacheUpdate).length > 0) {
+  if (params.updateClientCache !== false && Object.keys(cacheUpdate).length > 0) {
     cacheUpdate.updated_at = now;
     const { error: cacheError } = await supabaseAdmin
       .from("clients")
@@ -114,7 +120,11 @@ export const getBodyMetricsHistory = async (
     query = query.lte("recorded_at", opts.to);
   }
 
-  query = query.order("recorded_at", { ascending: opts?.ascending ?? false });
+  // created_at tiebreak: same-date coach entries share a recorded_at (T12:00Z),
+  // so "latest" must not be nondeterministic between a stale and corrected value.
+  query = query
+    .order("recorded_at", { ascending: opts?.ascending ?? false })
+    .order("created_at", { ascending: opts?.ascending ?? false });
 
   if (opts?.limit) {
     query = query.limit(opts.limit);

@@ -62,6 +62,7 @@ export const AUDIT_ACTIONS = {
   CLIENT_ACTIVATE: "client.activate",
   GOAL_CREATE: "goal.create",
   BODY_METRICS_CREATE: "body_metrics.create",
+  METRIC_ENTRY_UPSERT: "metric_entry.upsert",
   INTAKE_SYNC_METRICS: "intake.sync_metrics",
   NUTRITION_PLAN_CREATE: "nutrition_plan.create",
   NUTRITION_PLAN_DELETE: "nutrition_plan.delete",

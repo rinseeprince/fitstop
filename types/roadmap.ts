@@ -13,7 +13,7 @@ export type Milestone = {
 };
 
 // Body metrics source
-export type BodyMetricsSource = "check_in" | "metrics_api" | "intake_sync" | "nutrition_plan";
+export type BodyMetricsSource = "check_in" | "metrics_api" | "intake_sync" | "nutrition_plan" | "coach_entry";
 
 // Roadmap record (matches database schema)
 export type Roadmap = {

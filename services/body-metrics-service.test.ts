@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   recordBodyMetrics,
   getLatestBodyMetrics,
@@ -115,6 +115,138 @@ describe('Body Metrics Service', () => {
         })
       ).rejects.toThrow('Failed to record body metrics: Insert failed');
     });
+
+    describe('optional params (recordedAt / updateClientCache)', () => {
+      const FROZEN_NOW = '2026-07-25T10:00:00.000Z';
+
+      beforeEach(() => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date(FROZEN_NOW));
+      });
+
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+
+      function setupTables(insertRow: unknown) {
+        const insertQuery = createMockQuery({ data: insertRow, error: null });
+        const cacheQuery = createMockQuery({ data: null, error: null });
+
+        vi.mocked(supabaseAdmin.from).mockImplementation((table: string) => {
+          if (table === 'body_metrics') return insertQuery as never;
+          if (table === 'clients') return cacheQuery as never;
+          return createMockQuery({ data: null, error: null }) as never;
+        });
+
+        return { insertQuery, cacheQuery };
+      }
+
+      it('defaults recorded_at to now and runs the cache update when neither param is passed', async () => {
+        const mockRow = createMockBodyMetricsRow({
+          clientId: 'client-1',
+          weight: 80,
+          bodyFatPercentage: 18,
+          source: 'coach_entry',
+          recordedAt: FROZEN_NOW,
+          createdAt: FROZEN_NOW,
+        });
+        const { insertQuery, cacheQuery } = setupTables(mockRow);
+
+        const result = await recordBodyMetrics({
+          clientId: 'client-1',
+          weight: 80,
+          bodyFatPercentage: 18,
+          source: 'coach_entry',
+        });
+
+        expect(insertQuery.insert).toHaveBeenCalledWith({
+          client_id: 'client-1',
+          weight: 80,
+          weight_unit: null,
+          body_fat_percentage: 18,
+          bmr: null,
+          tdee: null,
+          source: 'coach_entry',
+          source_id: null,
+          recorded_at: FROZEN_NOW,
+        });
+        expect(cacheQuery.update).toHaveBeenCalledWith({
+          current_weight: 80,
+          current_body_fat_percentage: 18,
+          updated_at: FROZEN_NOW,
+        });
+        expect(cacheQuery.eq).toHaveBeenCalledWith('id', 'client-1');
+        expect(result.recordedAt).toBe(FROZEN_NOW);
+      });
+
+      it('passes recordedAt through to the insert while the cache updated_at stays now', async () => {
+        const backdated = '2026-07-01T12:00:00.000Z';
+        const mockRow = createMockBodyMetricsRow({
+          clientId: 'client-1',
+          weight: 79,
+          recordedAt: backdated,
+        });
+        const { insertQuery, cacheQuery } = setupTables(mockRow);
+
+        await recordBodyMetrics({
+          clientId: 'client-1',
+          weight: 79,
+          source: 'coach_entry',
+          recordedAt: backdated,
+        });
+
+        expect(insertQuery.insert).toHaveBeenCalledWith(
+          expect.objectContaining({ recorded_at: backdated })
+        );
+        expect(cacheQuery.update).toHaveBeenCalledWith(
+          expect.objectContaining({ updated_at: FROZEN_NOW })
+        );
+        expect(cacheQuery.update).not.toHaveBeenCalledWith(
+          expect.objectContaining({ updated_at: backdated })
+        );
+      });
+
+      it('skips the clients cache update when updateClientCache is false but still inserts the event', async () => {
+        const mockRow = createMockBodyMetricsRow({
+          clientId: 'client-1',
+          weight: 79,
+        });
+        const { insertQuery, cacheQuery } = setupTables(mockRow);
+
+        await recordBodyMetrics({
+          clientId: 'client-1',
+          weight: 79,
+          source: 'coach_entry',
+          updateClientCache: false,
+        });
+
+        expect(insertQuery.insert).toHaveBeenCalledTimes(1);
+        expect(cacheQuery.update).not.toHaveBeenCalled();
+        expect(supabaseAdmin.from).not.toHaveBeenCalledWith('clients');
+      });
+
+      it('only writes provided fields to the cache (weight-only omits current_body_fat_percentage)', async () => {
+        const mockRow = createMockBodyMetricsRow({
+          clientId: 'client-1',
+          weight: 81,
+          bodyFatPercentage: null,
+        });
+        const { cacheQuery } = setupTables(mockRow);
+
+        await recordBodyMetrics({
+          clientId: 'client-1',
+          weight: 81,
+          source: 'check_in',
+        });
+
+        // toHaveBeenCalledWith is an exact object match: extra cache keys
+        // (current_body_fat_percentage, bmr, tdee) would fail this assertion.
+        expect(cacheQuery.update).toHaveBeenCalledWith({
+          current_weight: 81,
+          updated_at: FROZEN_NOW,
+        });
+      });
+    });
   });
 
   describe('getLatestBodyMetrics', () => {
@@ -193,6 +325,30 @@ describe('Body Metrics Service', () => {
       expect(mockQuery.order).toHaveBeenCalledWith('recorded_at', {
         ascending: false,
       });
+    });
+
+    it('orders by recorded_at desc then created_at desc (tiebreak) by default', async () => {
+      const mockQuery = createMockQuery({ data: [], error: null });
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as never);
+
+      await getBodyMetricsHistory('client-1');
+
+      expect(mockQuery.order.mock.calls).toEqual([
+        ['recorded_at', { ascending: false }],
+        ['created_at', { ascending: false }],
+      ]);
+    });
+
+    it('flips both order calls when ascending: true is passed', async () => {
+      const mockQuery = createMockQuery({ data: [], error: null });
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as never);
+
+      await getBodyMetricsHistory('client-1', { ascending: true });
+
+      expect(mockQuery.order.mock.calls).toEqual([
+        ['recorded_at', { ascending: true }],
+        ['created_at', { ascending: true }],
+      ]);
     });
 
     it('applies limit option', async () => {

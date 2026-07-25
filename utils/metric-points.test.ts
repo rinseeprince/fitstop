@@ -1,0 +1,173 @@
+import { describe, it, expect } from "vitest";
+import {
+  addDaysToDate,
+  buildMetricPoints,
+  daysBetween,
+  type MetricSeriesDefinition,
+} from "./metric-points";
+import type { CheckIn } from "@/types/check-in";
+import type { MetricEntry } from "@/types/metric-entries";
+
+const definitions: MetricSeriesDefinition[] = [
+  { id: "weight", key: "weight", category: "body" },
+  { id: "energy", key: "energy", category: "wellness" },
+];
+
+function checkIn(
+  id: string,
+  createdAt: string,
+  fields: Partial<CheckIn> = {}
+): CheckIn {
+  return {
+    id,
+    clientId: "client-1",
+    status: "reviewed",
+    createdAt,
+    updatedAt: createdAt,
+    ...fields,
+  };
+}
+
+function entry(
+  id: string,
+  metricKey: MetricEntry["metricKey"],
+  entryDate: string,
+  value: number,
+  note?: string
+): MetricEntry {
+  return {
+    id,
+    clientId: "client-1",
+    metricKey,
+    value,
+    entryDate,
+    note,
+    createdBy: "coach-1",
+    createdAt: `${entryDate}T12:00:00Z`,
+    updatedAt: `${entryDate}T12:00:00Z`,
+  };
+}
+
+describe("buildMetricPoints", () => {
+  it("maps check-in values per definition key and skips absent values", () => {
+    const points = buildMetricPoints(
+      [checkIn("ci-1", "2026-07-01T08:30:00Z", { weight: 80 })], // no energy
+      [],
+      definitions
+    );
+
+    expect(points.get("weight")).toHaveLength(1);
+    expect(points.get("weight")![0]).toMatchObject({
+      metricId: "weight",
+      value: 80,
+      source: "check_in",
+      note: null,
+      sourceRecordId: "ci-1",
+    });
+    expect(points.get("energy")).toEqual([]);
+  });
+
+  it("dates a check-in point by createdAt's date part", () => {
+    const points = buildMetricPoints(
+      [checkIn("ci-1", "2026-07-01T23:59:59Z", { weight: 80 })],
+      [],
+      definitions
+    );
+
+    expect(points.get("weight")![0].date).toBe("2026-07-01");
+  });
+
+  it("appends coach entries with their note", () => {
+    const points = buildMetricPoints(
+      [],
+      [entry("e-1", "weight", "2026-07-02", 79.5, "gym scale")],
+      definitions
+    );
+
+    expect(points.get("weight")).toHaveLength(1);
+    expect(points.get("weight")![0]).toMatchObject({
+      metricId: "weight",
+      value: 79.5,
+      date: "2026-07-02",
+      source: "coach_entry",
+      note: "gym scale",
+      sourceRecordId: "e-1",
+    });
+  });
+
+  it("sorts a same-date check-in BEFORE the coach entry (coach entry wins latest)", () => {
+    const points = buildMetricPoints(
+      [checkIn("ci-1", "2026-07-02T09:00:00Z", { weight: 80 })],
+      [entry("e-1", "weight", "2026-07-02", 79)],
+      definitions
+    );
+
+    const series = points.get("weight")!;
+    expect(series.map((p) => p.source)).toEqual(["check_in", "coach_entry"]);
+    expect(series[1].value).toBe(79); // the coach's explicit entry is latest
+  });
+
+  it("orders multiple same-date check-ins by createdAt, then id", () => {
+    const points = buildMetricPoints(
+      [
+        checkIn("ci-late", "2026-07-02T18:00:00Z", { weight: 81 }),
+        checkIn("ci-early", "2026-07-02T06:00:00Z", { weight: 80 }),
+        // same createdAt as ci-late — the record id breaks the tie (a < l)
+        checkIn("ci-a", "2026-07-02T18:00:00Z", { weight: 82 }),
+      ],
+      [],
+      definitions
+    );
+
+    expect(points.get("weight")!.map((p) => p.sourceRecordId)).toEqual([
+      "ci-early",
+      "ci-a",
+      "ci-late",
+    ]);
+  });
+
+  it("skips coach entries whose metricKey has no definition", () => {
+    const points = buildMetricPoints(
+      [],
+      [entry("e-1", "bodyFat", "2026-07-02", 18)], // no bodyFat definition here
+      definitions
+    );
+
+    expect(points.has("bodyFat")).toBe(false);
+    expect(points.get("weight")).toEqual([]);
+  });
+
+  it("returns each series in ascending date order regardless of input order", () => {
+    const points = buildMetricPoints(
+      [
+        checkIn("ci-2", "2026-07-10T08:00:00Z", { weight: 79 }),
+        checkIn("ci-1", "2026-07-01T08:00:00Z", { weight: 80 }),
+      ],
+      [entry("e-1", "weight", "2026-07-05", 79.5)],
+      definitions
+    );
+
+    expect(points.get("weight")!.map((p) => p.date)).toEqual([
+      "2026-07-01",
+      "2026-07-05",
+      "2026-07-10",
+    ]);
+  });
+});
+
+describe("daysBetween", () => {
+  it("is positive when `to` is later, negative when earlier", () => {
+    expect(daysBetween("2026-07-01", "2026-07-08")).toBe(7);
+    expect(daysBetween("2026-07-08", "2026-07-01")).toBe(-7);
+    expect(daysBetween("2026-07-01", "2026-07-01")).toBe(0);
+  });
+});
+
+describe("addDaysToDate", () => {
+  it("rolls over month and year boundaries", () => {
+    expect(addDaysToDate("2026-07-31", 1)).toBe("2026-08-01");
+    expect(addDaysToDate("2026-12-31", 1)).toBe("2027-01-01");
+    expect(addDaysToDate("2026-03-01", -1)).toBe("2026-02-28");
+    expect(addDaysToDate("2026-07-15", 0)).toBe("2026-07-15");
+  });
+});
