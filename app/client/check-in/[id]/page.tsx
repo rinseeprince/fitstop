@@ -130,12 +130,12 @@ export default function CheckInDetailPage() {
       </div>
 
       <div className="grid gap-6 md:grid-cols-2">
-        {/* Body Metrics */}
+        {/* Physique */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Weight className="h-5 w-5" />
-              Body Metrics
+              Physique
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">

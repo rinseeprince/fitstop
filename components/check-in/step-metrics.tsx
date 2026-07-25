@@ -40,7 +40,7 @@ export const StepMetrics = ({
   return (
     <div className="space-y-8">
       <div>
-        <h3 className="text-lg font-semibold mb-1">Body Metrics</h3>
+        <h3 className="text-lg font-semibold mb-1">Physique</h3>
         <p className="text-sm text-muted-foreground">
           Track your progress (all fields optional)
         </p>

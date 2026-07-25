@@ -162,7 +162,7 @@ export function LogMeasurementDialog({
               <SelectContent className="bg-white rounded-[6px] shadow-lg border border-[rgba(13,148,136,0.08)] p-1">
                 <SelectGroup>
                   <SelectLabel className={SECTION_LABEL_CLASS}>
-                    Body Metrics
+                    Physique
                   </SelectLabel>
                   {bodyMetrics.map((m) => (
                     <SelectItem key={m.id} value={m.id} className={ITEM_CLASS}>

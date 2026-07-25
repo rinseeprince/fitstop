@@ -62,7 +62,7 @@ export function MetricsTopBar({
     <div className="mb-5 flex flex-wrap items-center gap-4">
       <SegmentedControl
         options={[
-          { value: "body", label: "Body Metrics" },
+          { value: "body", label: "Physique" },
           { value: "wellness", label: "Wellness" },
         ]}
         value={tab}
