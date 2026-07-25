@@ -10,6 +10,9 @@ const DEFAULT_LINE_COLORS: Record<WellnessMetric, string> = {
   energy: "#0d9488",
   sleep: "#c8923a",
   stress: "#c8923a",
+  // Compile-closure only: this frozen legacy strip never renders soreness,
+  // but the exhaustive Record must cover the widened WellnessMetric union.
+  soreness: "#c8923a",
 }
 
 interface WellnessBarChartProps {

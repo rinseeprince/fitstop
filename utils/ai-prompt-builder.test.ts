@@ -292,3 +292,25 @@ describe("buildCheckInAnalysisPrompt — exercise enrichment (Session 6.3)", () 
     expect(training).not.toContain("Prescribed");
   });
 });
+
+describe("buildCheckInAnalysisPrompt — subjective metrics", () => {
+  it("renders the soreness line with its direction note, gated on any subjective metric", () => {
+    // Soreness-ONLY fixture: also proves the block gate includes soreness —
+    // without it the whole Subjective Metrics block would be suppressed.
+    const prompt = buildCheckInAnalysisPrompt(
+      checkIn({ soreness: 6 }),
+      [],
+      "Jane",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      null,
+      null,
+      [],
+    );
+
+    expect(prompt).toContain("Subjective Metrics:");
+    expect(prompt).toContain("- Soreness: 6/10 (higher = more sore)");
+  });
+});

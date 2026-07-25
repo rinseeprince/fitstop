@@ -91,6 +91,7 @@ export const prepareChartData = (checkIns: CheckIn[]): ProgressChartData => {
     energy: [],
     sleep: [],
     stress: [],
+    soreness: [],
   };
 
   sortedCheckIns.forEach((checkIn) => {
@@ -149,6 +150,14 @@ export const prepareChartData = (checkIns: CheckIn[]): ProgressChartData => {
         date,
         value: checkIn.stress,
         label: `${checkIn.stress}/10`,
+      });
+    }
+
+    if (checkIn.soreness) {
+      chartData.soreness.push({
+        date,
+        value: checkIn.soreness,
+        label: `${checkIn.soreness}/10`,
       });
     }
   });

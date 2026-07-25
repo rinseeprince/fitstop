@@ -583,6 +583,7 @@ export type ProgressChartData = {
   energy: ChartDataPoint[];
   sleep: ChartDataPoint[];
   stress: ChartDataPoint[];
+  soreness: ChartDataPoint[];
 };
 
 // Check-in reminder record
@@ -746,6 +747,7 @@ export type CheckInComparison = {
     energy?: MetricChange;
     sleep?: MetricChange;
     stress?: MetricChange;
+    soreness?: MetricChange;
   };
   timeBetweenCheckIns?: number; // days
 };

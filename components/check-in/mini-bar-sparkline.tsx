@@ -26,6 +26,7 @@ function getBarColorClass(metric: WellnessMetric, value: number | null): string 
       return value >= 7 ? "bg-[#0d9488]" : "bg-[#d97706]";
 
     case "stress":
+    case "soreness":
       // Inverted: lower is better
       return value <= 3 ? "bg-[#0d9488]" : "bg-[#d97706]";
 

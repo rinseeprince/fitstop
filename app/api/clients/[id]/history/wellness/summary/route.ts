@@ -64,11 +64,11 @@ export async function GET(
     // which must not count toward the averages or days_logged.
     const { data, error } = await supabaseAdmin
       .from("wellness_logs")
-      .select("mood, energy, sleep, stress")
+      .select("mood, energy, sleep, stress, soreness")
       .eq("client_id", clientId)
-      .or("mood.not.is.null,energy.not.is.null,sleep.not.is.null,stress.not.is.null")
+      .or("mood.not.is.null,energy.not.is.null,sleep.not.is.null,stress.not.is.null,soreness.not.is.null")
       .gte("date", sinceDateStr)
-      .lte("date", today) as unknown as { data: Array<{ mood: number | null; energy: number | null; sleep: number | null; stress: number | null }> | null; error: { message: string } | null };
+      .lte("date", today) as unknown as { data: Array<{ mood: number | null; energy: number | null; sleep: number | null; stress: number | null; soreness: number | null }> | null; error: { message: string } | null };
 
     if (error) {
       console.error("Error fetching wellness summary:", error);
@@ -81,7 +81,7 @@ export async function GET(
     const rows = data || [];
 
     // Average per-metric over only the rows where that metric is non-null
-    function avgMetric(field: "mood" | "energy" | "sleep" | "stress"): number | null {
+    function avgMetric(field: "mood" | "energy" | "sleep" | "stress" | "soreness"): number | null {
       const values = rows.filter((r) => r[field] != null).map((r) => r[field] as number);
       if (values.length === 0) return null;
       const avg = values.reduce((sum, v) => sum + v, 0) / values.length;
@@ -93,6 +93,7 @@ export async function GET(
       avg_energy: avgMetric("energy"),
       avg_sleep: avgMetric("sleep"),
       avg_stress: avgMetric("stress"),
+      avg_soreness: avgMetric("soreness"),
       days_logged: rows.length,
       days_in_window: daysInWindow,
     };

@@ -23,6 +23,7 @@ const emptyChartData = (): ProgressChartData => ({
   energy: [],
   sleep: [],
   stress: [],
+  soreness: [],
 });
 
 // 4 of 6 completed -> 67%, matching the hero card.

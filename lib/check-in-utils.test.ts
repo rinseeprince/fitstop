@@ -181,6 +181,7 @@ describe('Check-in Utilities', () => {
       expect(result.energy).toEqual([])
       expect(result.sleep).toEqual([])
       expect(result.stress).toEqual([])
+      expect(result.soreness).toEqual([])
     })
 
     it('prepares sleep and stress chart data', () => {
@@ -195,6 +196,19 @@ describe('Check-in Utilities', () => {
       expect(result.sleep[0].label).toBe('7/10')
       expect(result.stress).toHaveLength(2)
       expect(result.stress[1].value).toBe(2)
+    })
+
+    it('prepares soreness chart data with /10 labels', () => {
+      const checkIns = [
+        createMockCheckIn({ soreness: 7, createdAt: '2024-01-01T00:00:00Z' }),
+        createMockCheckIn({ soreness: 4, createdAt: '2024-01-08T00:00:00Z' }),
+      ]
+
+      const result = prepareChartData(checkIns)
+
+      expect(result.soreness).toHaveLength(2)
+      expect(result.soreness[0].label).toBe('7/10')
+      expect(result.soreness[1].value).toBe(4)
     })
 
     it('prepares weight chart data', () => {

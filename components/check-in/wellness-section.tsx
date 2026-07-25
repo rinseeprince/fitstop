@@ -30,6 +30,7 @@ const METRICS: MetricConfig[] = [
   { key: "energy", label: "Energy", maxValue: 10, scale: "/ 10" },
   { key: "sleep", label: "Sleep", maxValue: 10, scale: "/ 10" },
   { key: "stress", label: "Stress", maxValue: 10, scale: "/ 10" },
+  { key: "soreness", label: "Soreness", maxValue: 10, scale: "/ 10" },
 ];
 
 const SHORT_DAY = ["S", "M", "T", "W", "T", "F", "S"];
@@ -65,7 +66,7 @@ export const WellnessSection = ({
 
   // Check if there's any wellness data at all
   const hasWellnessData = dailyLogs.some(
-    (l) => l.mood != null || l.energy != null || l.sleep != null || l.stress != null
+    (l) => l.mood != null || l.energy != null || l.sleep != null || l.stress != null || l.soreness != null
   );
   if (!hasWellnessData) return null;
 
@@ -80,7 +81,7 @@ export const WellnessSection = ({
         <Heart className="w-4 h-4" strokeWidth={1.5} />
         Wellness
       </div>
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-5 gap-4">
         {METRICS.map((metric) => {
           const values = dateRange.map((day) => {
             const log = dayMap.get(day.date);

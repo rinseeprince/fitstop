@@ -51,6 +51,7 @@ const METRIC_DEFINITIONS: MetricDefinition[] = [
   { id: "energy", name: "Energy", key: "energy", category: "wellness", getUnit: () => "/10", domain: [1, 10] },
   { id: "sleep", name: "Sleep", key: "sleep", category: "wellness", getUnit: () => "/10", domain: [1, 10] },
   { id: "stress", name: "Stress", key: "stress", category: "wellness", getUnit: () => "/10", domain: [1, 10] },
+  { id: "soreness", name: "Soreness", key: "soreness", category: "wellness", getUnit: () => "/10", domain: [1, 10] },
 ];
 
 // Filter check-ins to the resolved window. The end bound is inclusive-by-date

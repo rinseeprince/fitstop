@@ -119,7 +119,8 @@ export const CheckInComparisonView = ({ comparison, chartData, adherence }: Chec
     changes.mood?.current !== undefined ||
     changes.energy?.current !== undefined ||
     changes.sleep?.current !== undefined ||
-    changes.stress?.current !== undefined;
+    changes.stress?.current !== undefined ||
+    changes.soreness?.current !== undefined;
 
   return (
     <div className="space-y-6">
@@ -185,6 +186,7 @@ export const CheckInComparisonView = ({ comparison, chartData, adherence }: Chec
             <MetricTrendRow label="Energy" current={changes.energy?.current} unit="/10" change={changes.energy} series={values(chartData.energy)} />
             <MetricTrendRow label="Sleep" current={changes.sleep?.current} unit="/10" change={changes.sleep} series={values(chartData.sleep)} />
             <MetricTrendRow label="Stress" current={changes.stress?.current} unit="/10" change={changes.stress} series={values(chartData.stress)} inverse />
+            <MetricTrendRow label="Soreness" current={changes.soreness?.current} unit="/10" change={changes.soreness} series={values(chartData.soreness)} inverse />
           </div>
         </div>
       )}

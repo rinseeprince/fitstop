@@ -27,12 +27,13 @@ export function buildCheckInAnalysisPrompt(
   prompt += "**CURRENT CHECK-IN:**\n";
   prompt += `Date: ${new Date(current.createdAt).toLocaleDateString()}\n`;
 
-  if (current.mood || current.energy || current.sleep || current.stress) {
+  if (current.mood || current.energy || current.sleep || current.stress || current.soreness) {
     prompt += "\nSubjective Metrics:\n";
     if (current.mood) prompt += `- Mood: ${current.mood}/5\n`;
     if (current.energy) prompt += `- Energy: ${current.energy}/10\n`;
     if (current.sleep) prompt += `- Sleep: ${current.sleep}/10\n`;
     if (current.stress) prompt += `- Stress: ${current.stress}/10\n`;
+    if (current.soreness) prompt += `- Soreness: ${current.soreness}/10 (higher = more sore)\n`;
   }
 
   if (current.weight || current.bodyFatPercentage) {

@@ -67,7 +67,9 @@ describe("GET /api/clients/[id]/history/wellness/summary", () => {
   it("14-day window is bounded at coach-local today on both ends", async () => {
     const wellnessChain = makeChain("lte", {
       data: [
-        { mood: 4, energy: 6, sleep: 6, stress: 4 },
+        // One row WITH soreness, one WITHOUT: avg_soreness must divide by
+        // non-null rows only (6, not (6+0)/2 = 3).
+        { mood: 4, energy: 6, sleep: 6, stress: 4, soreness: 6 },
         { mood: 4, energy: 8, sleep: 7, stress: 2 },
       ],
       error: null,
@@ -85,6 +87,11 @@ describe("GET /api/clients/[id]/history/wellness/summary", () => {
     expect(body.days_logged).toBe(2);
     expect(body.days_in_window).toBe(14);
     expect(body.avg_mood).toBe(4);
+    expect(body.avg_soreness).toBe(6);
+    // The chain fake ignores its arguments — the query strings are only
+    // guarded here (missing select column / missing .or() term).
+    expect(String(wellnessChain.select.mock.calls[0][0])).toContain("soreness");
+    expect(wellnessChain.or).toHaveBeenCalledWith(expect.stringContaining("soreness.not.is.null"));
   });
 
   it("7-day training-week window is also capped at coach-local today", async () => {

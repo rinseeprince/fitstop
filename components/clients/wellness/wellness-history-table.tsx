@@ -21,12 +21,13 @@ type WellnessSummary = {
   avg_energy: number | null;
   avg_sleep: number | null;
   avg_stress: number | null;
+  avg_soreness: number | null;
   days_logged: number;
   days_in_window: number;
 };
 
 const METRICS: {
-  key: keyof Pick<WellnessSummary, "avg_mood" | "avg_energy" | "avg_sleep" | "avg_stress">;
+  key: keyof Pick<WellnessSummary, "avg_mood" | "avg_energy" | "avg_sleep" | "avg_stress" | "avg_soreness">;
   label: string;
   metric: WellnessMetric;
   max: number;
@@ -35,6 +36,7 @@ const METRICS: {
   { key: "avg_energy", label: "Avg Energy", metric: "energy", max: 10 },
   { key: "avg_sleep", label: "Avg Sleep", metric: "sleep", max: 10 },
   { key: "avg_stress", label: "Avg Stress", metric: "stress", max: 10 },
+  { key: "avg_soreness", label: "Avg Soreness", metric: "soreness", max: 10 },
 ];
 
 const PERIOD_OPTIONS = [7, 14, 28] as const;
@@ -56,6 +58,7 @@ function getWellnessColor(metric: WellnessMetric, value: number | null): string 
       if (value === 6) return "#fff";
       return "#d97706";
     case "stress":
+    case "soreness":
       if (value <= 4) return "#0d9488";
       if (value <= 6) return "#fff";
       return "#d97706";
@@ -75,6 +78,7 @@ function hasWarning(metric: WellnessMetric, value: number | null): boolean {
   if (value == null) return false;
   if (metric === "sleep") return value <= 5;
   if (metric === "stress") return value >= 7;
+  if (metric === "soreness") return value >= 7;
   return false;
 }
 
@@ -116,6 +120,7 @@ export function WellnessHistoryTable({ clientId }: Props) {
     { key: "energy", label: "Energy", render: (_v, row) => row.is_logged === false ? <span className="text-[#b8cfd3]">—</span> : renderMetricCell("energy", row.energy, 10) },
     { key: "sleep", label: "Sleep", render: (_v, row) => row.is_logged === false ? <span className="text-[#b8cfd3]">—</span> : renderMetricCell("sleep", row.sleep, 10) },
     { key: "stress", label: "Stress", render: (_v, row) => row.is_logged === false ? <span className="text-[#b8cfd3]">—</span> : renderMetricCell("stress", row.stress, 10) },
+    { key: "soreness", label: "Soreness", render: (_v, row) => row.is_logged === false ? <span className="text-[#b8cfd3]">—</span> : renderMetricCell("soreness", row.soreness, 10) },
   ], []);
 
   return (
@@ -145,7 +150,7 @@ export function WellnessHistoryTable({ clientId }: Props) {
 
       {/* Dark summary strip */}
       <div className="mb-4 bg-[#0f2027] rounded-[6px] p-5">
-        <div className="grid grid-cols-[1fr_1fr_1fr_1fr]">
+        <div className="grid grid-cols-[1fr_1fr_1fr_1fr_1fr]">
           {METRICS.map(({ key, label, metric, max }, idx) => {
             const avg = summary ? summary[key] : null;
             const color = avg != null ? getWellnessColor(metric, Math.round(avg)) : "#fff";

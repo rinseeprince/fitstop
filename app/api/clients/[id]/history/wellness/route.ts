@@ -11,7 +11,8 @@ const WELLNESS_COLUMNS = `
   mood,
   energy,
   sleep,
-  stress
+  stress,
+  soreness
 `.replace(/\s+/g, " ").trim();
 
 function generateDateRange(start: string, end: string): string[] {
@@ -80,7 +81,7 @@ export async function GET(
         .eq("client_id", clientId)
         .gte("date", phaseStartDate)
         .lte("date", today) as unknown as {
-          data: Array<{ date: string; mood: number | null; energy: number | null; sleep: number | null; stress: number | null }> | null;
+          data: Array<{ date: string; mood: number | null; energy: number | null; sleep: number | null; stress: number | null; soreness: number | null }> | null;
           error: { message: string } | null;
         };
 
@@ -93,7 +94,7 @@ export async function GET(
       }
 
       // Build lookup of logged days
-      const logsByDate = new Map<string, { mood: number | null; energy: number | null; sleep: number | null; stress: number | null }>();
+      const logsByDate = new Map<string, { mood: number | null; energy: number | null; sleep: number | null; stress: number | null; soreness: number | null }>();
       for (const log of wellnessLogs || []) {
         logsByDate.set(log.date, log);
       }
@@ -102,9 +103,9 @@ export async function GET(
       const allRows: WellnessHistoryRow[] = dates.map((date) => {
         const log = logsByDate.get(date);
         if (log) {
-          return { date, mood: log.mood, energy: log.energy, sleep: log.sleep, stress: log.stress, is_logged: true };
+          return { date, mood: log.mood, energy: log.energy, sleep: log.sleep, stress: log.stress, soreness: log.soreness, is_logged: true };
         }
-        return { date, mood: null, energy: null, sleep: null, stress: null, is_logged: false };
+        return { date, mood: null, energy: null, sleep: null, stress: null, soreness: null, is_logged: false };
       });
 
       // Reverse for newest-first, then paginate
@@ -121,7 +122,7 @@ export async function GET(
       .select(WELLNESS_COLUMNS, { count: "exact" })
       .eq("client_id", clientId)
       .lte("date", today)
-      .or("mood.not.is.null,energy.not.is.null,sleep.not.is.null,stress.not.is.null")
+      .or("mood.not.is.null,energy.not.is.null,sleep.not.is.null,stress.not.is.null,soreness.not.is.null")
       .order("date", { ascending: false })
       .range(offset, offset + limit - 1) as unknown as { data: unknown[] | null; error: { message: string } | null; count: number | null };
 

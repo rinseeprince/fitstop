@@ -19,6 +19,7 @@ export type WellnessHistoryRow = {
   energy: number | null;  // 1-10
   sleep: number | null;   // 1-10
   stress: number | null;  // 1-10
+  soreness: number | null; // 1-10 (higher = more sore)
   is_logged?: boolean;
 };
 

@@ -35,6 +35,7 @@ export function buildDailyContextForAI(
     if (log.energy !== undefined) wellness.push(`Energy ${log.energy}`);
     if (log.sleep !== undefined) wellness.push(`Sleep ${log.sleep}`);
     if (log.stress !== undefined) wellness.push(`Stress ${log.stress}`);
+    if (log.soreness !== undefined) wellness.push(`Soreness ${log.soreness}`);
     if (wellness.length > 0) context += wellness.join(', ') + '. ';
 
     // Nutrition

@@ -185,6 +185,10 @@ export const getCheckInComparison = async (
         currentCheckIn.stress,
         previousCheckIn?.stress
       ),
+      soreness: calculateMetricChange(
+        currentCheckIn.soreness,
+        previousCheckIn?.soreness
+      ),
     },
     timeBetweenCheckIns,
   };
