@@ -111,6 +111,7 @@ export interface MockCheckInOptions {
   energy?: number
   sleep?: number
   stress?: number
+  soreness?: number
   weight?: number
   weightUnit?: 'lbs' | 'kg'
   createdAt?: string
@@ -129,6 +130,8 @@ export function createMockCheckInRow(options: MockCheckInOptions = {}): CheckInR
     energy: options.energy ?? 7,
     sleep: options.sleep ?? 7,
     stress: options.stress ?? 5,
+    // Neutral default: below the Session-2 high_soreness trigger threshold (>= 8)
+    soreness: options.soreness ?? 3,
     notes: null,
     weight: options.weight ?? 180,
     weight_unit: options.weightUnit ?? 'lbs',

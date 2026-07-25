@@ -361,6 +361,7 @@ export type Database = {
           prs: string | null
           response_sent_at: string | null
           sleep: number | null
+          soreness: number | null
           status: string
           stress: number | null
           thighs: number | null
@@ -405,6 +406,7 @@ export type Database = {
           prs?: string | null
           response_sent_at?: string | null
           sleep?: number | null
+          soreness?: number | null
           status?: string
           stress?: number | null
           thighs?: number | null
@@ -449,6 +451,7 @@ export type Database = {
           prs?: string | null
           response_sent_at?: string | null
           sleep?: number | null
+          soreness?: number | null
           status?: string
           stress?: number | null
           thighs?: number | null
@@ -2737,6 +2740,7 @@ export type Database = {
           id: string
           mood: number | null
           sleep: number | null
+          soreness: number | null
           stress: number | null
           updated_at: string
         }
@@ -2749,6 +2753,7 @@ export type Database = {
           id?: string
           mood?: number | null
           sleep?: number | null
+          soreness?: number | null
           stress?: number | null
           updated_at?: string
         }
@@ -2761,6 +2766,7 @@ export type Database = {
           id?: string
           mood?: number | null
           sleep?: number | null
+          soreness?: number | null
           stress?: number | null
           updated_at?: string
         }
@@ -2807,6 +2813,7 @@ export type Database = {
           phase_id: string | null
           protein_g: number | null
           sleep: number | null
+          soreness: number | null
           stress: number | null
           target_calories: number | null
           target_carbs_g: number | null
