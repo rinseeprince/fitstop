@@ -1,7 +1,8 @@
 "use client";
 
-import { Dumbbell } from "lucide-react";
+import { CalendarClock, Dumbbell } from "lucide-react";
 import { SPLIT_TYPE_LABELS } from "@/lib/training-constants";
+import { MONO } from "@/components/clients/training/program-builder/builder-tokens";
 import {
   CardHeader,
   EmptyInvite,
@@ -16,10 +17,65 @@ import type { OverviewPlanSummary } from "@/types/coach-overview";
 
 type PlanTrainingCardProps = {
   training: OverviewPlanSummary["training"];
+  upcomingTraining: OverviewPlanSummary["upcomingTraining"];
   onOpenTraining: () => void;
 };
 
-export function PlanTrainingCard({ training, onOpenTraining }: PlanTrainingCardProps) {
+/** Split / frequency / duration chips — shared by the running and queued states. */
+function planChips(plan: {
+  splitType: string | null;
+  frequencyPerWeek: number | null;
+  programDurationWeeks: number | null;
+}): string[] {
+  const chips: string[] = [];
+  if (plan.splitType) chips.push(SPLIT_TYPE_LABELS[plan.splitType] ?? plan.splitType);
+  if (plan.frequencyPerWeek !== null) chips.push(`${plan.frequencyPerWeek}x/week`);
+  if (plan.programDurationWeeks !== null) {
+    chips.push(pluralize(plan.programDurationWeeks, "week"));
+  }
+  return chips;
+}
+
+function ChipRow({ chips }: { chips: string[] }) {
+  if (chips.length === 0) return null;
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-1.5">
+      {chips.map((chip) => (
+        <NeutralChip key={chip}>{chip}</NeutralChip>
+      ))}
+    </div>
+  );
+}
+
+export function PlanTrainingCard({
+  training,
+  upcomingTraining,
+  onOpenTraining,
+}: PlanTrainingCardProps) {
+  // A program placed to start later is assigned, not absent. Saying "no plan"
+  // here would invite the coach to place a second one alongside it.
+  if (!training && upcomingTraining) {
+    return (
+      <OverviewCard animationDelay="0.12s">
+        <CardHeader
+          compact
+          icon={<CalendarClock className="h-4 w-4" strokeWidth={1.5} />}
+          title={upcomingTraining.planName}
+          subtitle={<ChipRow chips={planChips(upcomingTraining)} />}
+          right={<OpenTabLink label="Open Training" onClick={onOpenTraining} />}
+        />
+        <div className="mt-auto border-t border-[rgba(13,148,136,0.06)] px-5 py-4">
+          <p className="text-[13px] font-semibold text-[#0c1a1e]">
+            Starts <span className={MONO}>{formatDateOnlyWeekday(upcomingTraining.startsOn)}</span>
+          </p>
+          <p className="mt-1 text-[11px] text-[#93b0b4]">
+            Sessions, adherence and progression begin on day one.
+          </p>
+        </div>
+      </OverviewCard>
+    );
+  }
+
   if (!training) {
     return (
       <OverviewCard animationDelay="0.12s">
@@ -34,15 +90,7 @@ export function PlanTrainingCard({ training, onOpenTraining }: PlanTrainingCardP
     );
   }
 
-  const chips: string[] = [];
-  if (training.splitType) {
-    chips.push(SPLIT_TYPE_LABELS[training.splitType] ?? training.splitType);
-  }
-  if (training.frequencyPerWeek !== null) chips.push(`${training.frequencyPerWeek}x/week`);
-  if (training.programDurationWeeks !== null) {
-    chips.push(pluralize(training.programDurationWeeks, "week"));
-  }
-
+  const chips = planChips(training);
   const { completed, planned, missed } = training.thisWeek;
 
   const cells: StatCellData[] = [
@@ -78,15 +126,7 @@ export function PlanTrainingCard({ training, onOpenTraining }: PlanTrainingCardP
         compact
         icon={<Dumbbell className="h-4 w-4" strokeWidth={1.5} />}
         title={training.planName}
-        subtitle={
-          chips.length > 0 ? (
-            <div className="mt-1 flex flex-wrap items-center gap-1.5">
-              {chips.map((chip) => (
-                <NeutralChip key={chip}>{chip}</NeutralChip>
-              ))}
-            </div>
-          ) : undefined
-        }
+        subtitle={<ChipRow chips={chips} />}
         right={<OpenTabLink label="Open Training" onClick={onOpenTraining} />}
       />
 

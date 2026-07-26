@@ -5,6 +5,7 @@ import { Calculator, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { goalState } from "@/lib/goals/goal-state";
 import { containsDigit } from "@/components/clients/metrics/metrics-format";
+import { formatDateOnlyShort } from "./overview-format";
 import {
   MONO,
   STAT_LABEL_DARK_CLASS,
@@ -16,6 +17,7 @@ import type { OverviewPlanSummary } from "@/types/coach-overview";
 type ClientStatusCardProps = {
   client: Client;
   training: OverviewPlanSummary["training"];
+  upcomingTraining: OverviewPlanSummary["upcomingTraining"];
   isCalculatingBMR: boolean;
   onCalculateBMR: () => void;
   onOpenMetrics: () => void;
@@ -146,6 +148,7 @@ function deltaTone(delta: string | null): string | undefined {
 export function ClientStatusCard({
   client,
   training,
+  upcomingTraining,
   isCalculatingBMR,
   onCalculateBMR,
   onOpenMetrics,
@@ -168,7 +171,8 @@ export function ClientStatusCard({
   );
 
   // The active training block — this card's only programme context. There is no
-  // roadmap or phase concept on the platform.
+  // roadmap or phase concept on the platform. A program placed to start later
+  // reads as queued, never as "No plan".
   const blockChips: ReactNode = training ? (
     <>
       <DarkChip>{training.planName}</DarkChip>
@@ -176,6 +180,11 @@ export function ClientStatusCard({
         <DarkChip mono>{`Week ${training.currentWeek} of ${training.programDurationWeeks}`}</DarkChip>
       )}
       <DarkChip>{training.currentWeek === null ? "Ended" : "Active"}</DarkChip>
+    </>
+  ) : upcomingTraining ? (
+    <>
+      <DarkChip>{upcomingTraining.planName}</DarkChip>
+      <DarkChip mono>{`Starts ${formatDateOnlyShort(upcomingTraining.startsOn)}`}</DarkChip>
     </>
   ) : (
     <DarkChip>No plan</DarkChip>

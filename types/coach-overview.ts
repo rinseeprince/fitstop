@@ -19,6 +19,24 @@ export type OverviewPlanSummary = {
     /** locked decision 6; null renders as "—" */
     progressionPct: number | null;
   };
+  /**
+   * A program placed with a future start date. `training` resolves strictly by
+   * date, so a program starting tomorrow makes it null — without this field the
+   * Overview would tell a coach who just assigned a program that none exists,
+   * and invite them to place a second one alongside it.
+   *
+   * Independent of `training`: a client can be mid-program with another queued
+   * behind it. The UI only falls back to this when `training` is null.
+   */
+  upcomingTraining: null | {
+    planId: string;
+    planName: string;
+    /** effective_from — the program's first day, strictly after client-local today. */
+    startsOn: string;
+    splitType: string | null;
+    frequencyPerWeek: number | null;
+    programDurationWeeks: number | null;
+  };
   nutrition: null | {
     dietType: string | null;
     customMacros: boolean;

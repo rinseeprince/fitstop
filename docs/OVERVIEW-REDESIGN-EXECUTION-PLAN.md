@@ -326,6 +326,16 @@ Rail alignment was measured on rendered pixels, not class arithmetic: all three 
 - **`SectionLabel` renders `meta` before `actions`.** A brief that asks for "legend then meta" has to put both inside `actions`; there is no way to reorder the built-in slot.
 - The Overview's five wellness cards and the frozen strip now disagree by design (5 metrics vs 4). The strip is unmounted, so this is no longer a visible divergence.
 
+### Follow-up — the queued-program state (shipped same day)
+
+Raised by the owner immediately after Session 2 landed: a program placed with a **future start date** left `training: null`, so the Current-plan card said "No training plan on the calendar" and the status card said "No plan" — about a client whose program had just been assigned. Reachable through a supported action (`place-from-library` rejects only *past* start dates), and not merely cosmetic: the card's "Open Training" call to action invited the coach to place a second program alongside the first, which additive placement accepts.
+
+Fixed with an additive `upcomingTraining` field on `OverviewPlanSummary` (plan id/name, `startsOn`, split, frequency, duration) rather than a discriminator on `training` — `training` must keep meaning "the plan governing today", because write paths stamp `training_plan_id` from the same resolver, and `thisWeek`/`nextSession`/`progressionPct` are meaningless before day one. The card gains a third state (name + chips + "Starts Mon, 27 Jul", no week/session/progression figures); the status chip reads `plan name · Starts 27 Jul`.
+
+Deliberately **not** changed: a program whose window has ended still shows the "place a program" invitation, which is correct — an ended plan can't be amended, so a new placement is the intended gesture.
+
+The fixture client was already sitting in this exact state (an active plan with `effective_from = 2026-07-27`), which is why the Session 2 smoke showed "No plan" against a client that had one — the symptom was on screen and went unrecognised. 12 new tests; browser-verified.
+
 ### Fixture state after the smoke (fixture scale client only)
 
 The goal weight and body-fat goal were restored to their exact originals (170 kg / 15%, verified by re-read). Deliberately **left in place**, as benign realistic fixture data that now exercises the new surfaces: one pinned coach note, `phone = 0412 345 678`, `start_date = 2026-03-01`. The view anchor ends where it started — at "now" — because "Mark seen" is what writes it.

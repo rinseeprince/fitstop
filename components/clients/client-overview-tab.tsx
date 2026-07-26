@@ -128,6 +128,7 @@ export function ClientOverviewTab({
         <ClientStatusCard
           client={client}
           training={summary?.training ?? null}
+          upcomingTraining={summary?.upcomingTraining ?? null}
           isCalculatingBMR={isCalculatingBMR}
           onCalculateBMR={onCalculateBMR}
           onOpenMetrics={() => goToTab("metrics")}

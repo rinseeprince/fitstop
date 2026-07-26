@@ -34,7 +34,11 @@ export function CurrentPlanSection({
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <PlanTrainingCard training={training} onOpenTraining={() => onTabChange("training")} />
+          <PlanTrainingCard
+            training={training}
+            upcomingTraining={summary?.upcomingTraining ?? null}
+            onOpenTraining={() => onTabChange("training")}
+          />
           <PlanNutritionCard
             nutrition={summary?.nutrition ?? null}
             onOpenNutrition={() => onTabChange("nutrition")}

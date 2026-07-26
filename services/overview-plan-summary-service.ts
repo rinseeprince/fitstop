@@ -192,6 +192,46 @@ async function buildTrainingSummary(
   };
 }
 
+/**
+ * The soonest program whose window has not opened yet.
+ *
+ * Mirrors getTrainingPlanForDate's predicate with the window flipped — same
+ * deleted/archived exclusions, `effective_from` strictly after today, earliest
+ * first. Placement deliberately allows a future start date (only the past is
+ * rejected), so this is a supported state, not an edge case.
+ */
+async function buildUpcomingTraining(
+  clientId: string,
+  clientToday: string
+): Promise<OverviewPlanSummary["upcomingTraining"]> {
+  const { data, error } = await supabaseAdmin
+    .from("training_plans")
+    .select("id, name, effective_from, split_type, frequency_per_week, program_duration_weeks")
+    .eq("client_id", clientId)
+    .is("deleted_at", null)
+    .neq("status", "archived")
+    .gt("effective_from", clientToday)
+    .order("effective_from", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    // Degrade to "no upcoming program" rather than blanking the whole summary.
+    console.error("Failed to read upcoming training plan:", error);
+    return null;
+  }
+  if (!data?.effective_from) return null;
+
+  return {
+    planId: data.id,
+    planName: data.name,
+    startsOn: data.effective_from,
+    splitType: data.split_type ?? null,
+    frequencyPerWeek: data.frequency_per_week ?? null,
+    programDurationWeeks: data.program_duration_weeks ?? null,
+  };
+}
+
 async function buildNutritionSummary(
   clientId: string,
   clientToday: string,
@@ -275,10 +315,11 @@ export const getOverviewPlanSummary = async (
   // numbers) so they can never disagree.
   const week = await getTrainingWeekSummary(clientId, coachId);
 
-  const [training, nutrition] = await Promise.all([
+  const [training, upcomingTraining, nutrition] = await Promise.all([
     buildTrainingSummary(clientId, clientToday, week),
+    buildUpcomingTraining(clientId, clientToday),
     buildNutritionSummary(clientId, clientToday, week.weekStart, week.weekEnd),
   ]);
 
-  return { training, nutrition };
+  return { training, upcomingTraining, nutrition };
 };

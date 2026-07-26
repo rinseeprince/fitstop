@@ -516,13 +516,14 @@ Four SWR reads back it, all coach-scoped under `/api/clients/[id]/`:
 |---|---|---|
 | `GET …/overview-brief` | Waiting on you, the activity feed, the check-in timing strip | **Read-only** — it does not touch the `last_viewed_at` anchor |
 | `POST …/overview-brief/seen` | "Mark seen" | The ONLY writer of `coach_client_views.last_viewed_at`; returns `{ lastViewedAt }` nested under `data` |
-| `GET …/overview-plan-summary` | Current-plan cards + the status card's training-block chips | `training` and `nutrition` are independently nullable |
+| `GET …/overview-plan-summary` | Current-plan cards + the status card's training-block chips | `training`, `upcomingTraining` and `nutrition` are independently nullable |
 | `GET …/adherence?days=` | The three-rail adherence card | `days` clamped to [7, 28]; rails are index-aligned with `dates` |
 | `GET`/`POST …/notes`, `PATCH …/notes/[noteId]` | Coach-notes card + Notes tab | See `client_notes` above |
 
 Load-bearing details:
 - **The anchor moves only on "Mark seen".** The GET was made read-only so a page load cannot silently clear the coach's unread feed. A first visit (null anchor) returns an empty feed and renders a first-visit state rather than a caught-up one.
 - **No roadmap or phase concept exists.** The status card's chips describe the active *training block* — plan name · `Week X of Y` (via `utils/plan-week.ts`) · Active/Ended. "Ended" means today is past the authored duration.
+- **Training has three states, not two.** `getTrainingPlanForDate` resolves strictly by date (`.lte("effective_from", today)`), and placement deliberately permits a future start date (`place-from-library` rejects only the past), so a program starting tomorrow leaves `training` null. `upcomingTraining` carries that queued program so the Overview reports "Starts Mon, 27 Jul" rather than "No plan" — the old copy told a coach who had just assigned a program that none existed, and its "Open Training" call to action invited them to place a *second* one alongside it, which the additive placement model accepts. A program whose window has **ended** deliberately keeps the "no plan, place one" invitation: an ended plan cannot be amended, so assigning a new one is the correct gesture. Do not widen `getTrainingPlanForDate` to fix this — write paths stamp `training_plan_id` from it and need "the plan governing today" to keep meaning exactly that.
 - **Goal chips come from `lib/goals/goal-state.ts`** (reached / beyond / gap). The under-vs-over wording needs the direction of travel, which only the call site's `start` value knows.
 - **Alert rows route through `lib/attention-alert-destinations.ts`**, the same map the dashboard feed uses, so the two surfaces cannot disagree about where an alert leads.
 - **Five wellness cards**, Soreness included. Stress and soreness are inverted (lower is better) through `getWellnessTone()` in `utils/wellness-color-thresholds.ts` — the single source for that inversion, shared with `components/check-in/mini-bar-sparkline.tsx`. **Sleep has no trigger in `lib/wellness-triggers.ts`, so its card can never flag; do not invent one.**

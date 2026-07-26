@@ -32,7 +32,17 @@ const TRAINING: NonNullable<OverviewPlanSummary["training"]> = {
   progressionPct: null,
 };
 
+const UPCOMING: NonNullable<OverviewPlanSummary["upcomingTraining"]> = {
+  planId: "plan-2",
+  planName: "Strength Block B",
+  startsOn: "2026-07-27",
+  splitType: "upper_lower",
+  frequencyPerWeek: 4,
+  programDurationWeeks: 6,
+};
+
 const PROPS = {
+  upcomingTraining: null,
   isCalculatingBMR: false,
   onCalculateBMR: vi.fn(),
   onOpenMetrics: vi.fn(),
@@ -142,6 +152,38 @@ describe("ClientStatusCard — training block chips", () => {
 
     expect(screen.getByText("No plan")).toBeInTheDocument();
   });
+
+  it("reads as queued, not No plan, when a program is placed to start later", () => {
+    render(
+      <ClientStatusCard
+        client={BASE}
+        training={null}
+        {...PROPS}
+        upcomingTraining={UPCOMING}
+      />
+    );
+
+    expect(screen.getByText("Strength Block B")).toBeInTheDocument();
+    // en-AU does not abbreviate July, so match the prefix rather than pinning
+    // a locale-dependent month spelling.
+    expect(screen.getByText(/^Starts 27 Jul/)).toBeInTheDocument();
+    expect(screen.queryByText("No plan")).not.toBeInTheDocument();
+  });
+
+  it("a running program wins over a queued one", () => {
+    render(
+      <ClientStatusCard
+        client={BASE}
+        training={TRAINING}
+        {...PROPS}
+        upcomingTraining={UPCOMING}
+      />
+    );
+
+    expect(screen.getByText("Hypertrophy Block A")).toBeInTheDocument();
+    expect(screen.getByText("Active")).toBeInTheDocument();
+    expect(screen.queryByText("Strength Block B")).not.toBeInTheDocument();
+  });
 });
 
 describe("ClientStatusCard — actions", () => {
@@ -152,6 +194,7 @@ describe("ClientStatusCard — actions", () => {
       <ClientStatusCard
         client={BASE}
         training={null}
+        upcomingTraining={null}
         isCalculatingBMR={false}
         onCalculateBMR={vi.fn()}
         onOpenMetrics={onOpenMetrics}
