@@ -336,6 +336,26 @@ Deliberately **not** changed: a program whose window has ended still shows the "
 
 The fixture client was already sitting in this exact state (an active plan with `effective_from = 2026-07-27`), which is why the Session 2 smoke showed "No plan" against a client that had one — the symptom was on screen and went unrecognised. 12 new tests; browser-verified.
 
+### Follow-up 2 — usability round (shipped same day)
+
+Three owner reports after using the shipped page.
+
+**1. The top two cards loaded last / felt unpolished.** Two of the three causes were correctness, not polish: `CoachNotesCard` rendered "No notes about this client yet" and `ClientScheduleCard` rendered "This client is never asked to check in" *while their data was still in flight*, then contradicted themselves. Both now take an explicit loading flag and render a skeleton instead (`overview/loading-states.test.tsx` pins this). The third cause — the page serialises every Overview read behind the client-record fetch (~440ms of dead time, measured) — is deferred to the performance pass at the owner's direction.
+
+**2. No way to clear a "Waiting on you" alert.** Needed no backend: `POST /api/dashboard/attention-feed/dismiss` already existed, ownership-checked and coach-timezone-correct, and `evaluateSingleClientAlerts` already filtered dismissals. Added a hover-revealed × per row. The row and the × are siblings, not nested — a button cannot contain a button. "Since your last visit" keeps whole-list "Mark seen" (owner decision: the feed is a digest, so clearing it wholesale matches the idea).
+
+**3. No way to unpin or delete a note.** Unpin existed but only on the Notes tab; the Overview card was read-only. Both surfaces now share the `RowActions` cluster (pin/unpin + delete). Delete is new: `DELETE /api/clients/[id]/notes/[noteId]` + `deleteClientNote`, behind the destructive-confirm dialog. **Hard delete, deviating from CONVENTIONS §8** (owner decision) — see the ARCHITECTURE note; the `client_id` scope filter is what keeps it safe.
+
+### Measured cost of one Overview page load (for the deferred performance pass)
+
+~**45 Postgres round trips**, nothing cached server-side. Dev medians: plan-summary 876ms, brief 587ms, adherence 442ms, daily-logs 411ms, notes 386ms. Two findings worth acting on:
+
+- **`computeProgressionPct` is genuinely uncapped** — one analytics RPC per distinct exercise logged since the plan started, no limit and no concurrency cap, and each RPC is *itself* uncapped inside the date window (passing a window disables the 12-session floor). This is the one real scale bug.
+- The brief's PR detection has the same shape but is guarded: past 20 new sessions it skips entirely.
+- Incidental: `clients` is read 3× and `coaches` 2× within a single plan-summary request; `getTrainingWeekSummary`'s four queries run strictly sequentially.
+
+**Client count is not the scaling axis** — these are strictly single-client reads with no cross-client fan-out (the coach dashboard uses a separate, chunked path). History depth per client is.
+
 ### Fixture state after the smoke (fixture scale client only)
 
 The goal weight and body-fat goal were restored to their exact originals (170 kg / 15%, verified by re-read). Deliberately **left in place**, as benign realistic fixture data that now exercises the new surfaces: one pinned coach note, `phone = 0412 345 678`, `start_date = 2026-03-01`. The view anchor ends where it started — at "now" — because "Mark seen" is what writes it.

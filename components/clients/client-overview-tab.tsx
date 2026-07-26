@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { ClientActivationBanner } from "@/components/clients/client-activation-banner";
+import { DeleteNoteDialog } from "@/components/clients/notes/delete-note-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AdherenceCard } from "@/components/clients/overview/adherence-card";
 import { ClientScheduleCard } from "@/components/clients/overview/client-schedule-card";
@@ -20,8 +21,11 @@ import { useClientNotes } from "@/hooks/use-client-notes";
 import { useOverviewBrief } from "@/hooks/use-overview-brief";
 import { useOverviewPlanSummary } from "@/hooks/use-overview-plan-summary";
 import { useWellnessData } from "@/hooks/use-wellness-data";
+import { useToast } from "@/hooks/use-toast";
 import type { ClientTab } from "@/lib/client-tabs";
+import type { AlertType } from "@/types/attention-feed";
 import type { Client } from "@/types/check-in";
+import type { ClientNote } from "@/types/coach-overview";
 
 interface ClientOverviewTabProps {
   client: Client;
@@ -52,13 +56,21 @@ export function ClientOverviewTab({
   } = useOverviewBrief(client.id);
   const { summary, isLoading: summaryLoading } = useOverviewPlanSummary(client.id);
   const { adherence, isLoading: adherenceLoading } = useClientAdherence(client.id);
-  const { notes, addNote } = useClientNotes(client.id);
+  const {
+    notes,
+    isLoading: notesLoading,
+    addNote,
+    setPinned,
+    deleteNote,
+  } = useClientNotes(client.id);
+  const [notePendingDelete, setNotePendingDelete] = useState<ClientNote | null>(null);
   const { logs: wellnessLogs, isLoading: wellnessLoading } = useWellnessData(client.id, {
     daysBack: WELLNESS_WINDOW_DAYS - 1,
     withHabitLogs: false,
   });
 
   const wellnessDates = useMemo(() => trailingDates(WELLNESS_WINDOW_DAYS), []);
+  const { toast } = useToast();
 
   const goToTab = useCallback((tab: ClientTab) => onTabChange?.(tab), [onTabChange]);
 
@@ -72,6 +84,40 @@ export function ClientOverviewTab({
   const handleMarkSeen = useCallback(() => {
     void markSeen();
   }, [markSeen]);
+
+  // Reuses the dashboard's dismissal store, so clearing an alert here clears it
+  // there too. The brief's evaluator already filters dismissed alerts, hence the
+  // plain revalidate rather than any local bookkeeping.
+  const handleDismissAlert = useCallback(
+    (alertType: AlertType) => {
+      void (async () => {
+        try {
+          const res = await fetch("/api/dashboard/attention-feed/dismiss", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ clientId: client.id, alertType }),
+          });
+          const payload = (await res.json()) as { success?: boolean; error?: string };
+          if (!res.ok || !payload.success) {
+            throw new Error(payload.error || "Failed to dismiss alert");
+          }
+          await mutateBrief();
+        } catch (error) {
+          toast({
+            title: "Could not dismiss",
+            description: error instanceof Error ? error.message : "Something went wrong",
+            variant: "destructive",
+          });
+        }
+      })();
+    },
+    [client.id, mutateBrief, toast]
+  );
+
+  const handleTogglePin = useCallback(
+    (note: ClientNote) => setPinned(note.id, !note.isPinned),
+    [setPinned]
+  );
 
   return (
     // space-y-4 = the platform section rhythm (16px), which is also the gap the
@@ -100,6 +146,7 @@ export function ClientOverviewTab({
               unreviewedCheckIn={brief.waitingOnYou.unreviewedCheckIn}
               attentionAlerts={brief.waitingOnYou.attentionAlerts}
               onTabChange={goToTab}
+              onDismissAlert={handleDismissAlert}
             />
             <SinceLastVisitSection
               lastViewedAt={brief.lastViewedAt}
@@ -114,7 +161,10 @@ export function ClientOverviewTab({
       {/* 2 — Coach notes */}
       <CoachNotesCard
         notes={notes}
+        isLoading={notesLoading}
         onAddNote={addNote}
+        onTogglePin={handleTogglePin}
+        onDeleteNote={setNotePendingDelete}
         onOpenNotes={() => goToTab("notes")}
       />
 
@@ -123,6 +173,7 @@ export function ClientOverviewTab({
         <ClientScheduleCard
           client={client}
           checkInTiming={brief?.checkInTiming ?? null}
+          isTimingLoading={briefLoading}
           onClientUpdated={handleClientUpdated}
         />
         <ClientStatusCard
@@ -157,6 +208,14 @@ export function ClientOverviewTab({
         attentionAlerts={brief?.waitingOnYou.attentionAlerts ?? []}
         isLoading={wellnessLoading}
         onOpenWellness={() => goToTab("wellness")}
+      />
+
+      <DeleteNoteDialog
+        note={notePendingDelete}
+        onOpenChange={(open) => {
+          if (!open) setNotePendingDelete(null);
+        }}
+        onConfirm={deleteNote}
       />
     </div>
   );

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Calendar, Mail, Pencil } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   LABEL_CLASS,
   MONO,
@@ -18,6 +19,12 @@ import type { CheckInTiming } from "@/types/coach-brief";
 type ClientScheduleCardProps = {
   client: Client;
   checkInTiming: CheckInTiming | null;
+  /**
+   * True until the brief resolves. Without it a null `checkInTiming` is
+   * ambiguous, and the strip would claim "never asked to check in" about a
+   * client who simply hasn't loaded yet.
+   */
+  isTimingLoading: boolean;
   /** Revalidates the client record AND the brief — check-in day drives timing. */
   onClientUpdated: () => void;
 };
@@ -115,12 +122,18 @@ function DueChip({ timing }: { timing: CheckInTiming }) {
 function CheckInStrip({
   client,
   timing,
+  isLoading,
   onOpenSettings,
 }: {
   client: Client;
   timing: CheckInTiming | null;
+  isLoading: boolean;
   onOpenSettings: () => void;
 }) {
+  if (isLoading && timing === null) {
+    return <Skeleton className="h-[62px] w-full rounded-[6px]" />;
+  }
+
   if (timing === null) {
     return (
       <div className="flex items-center gap-3 rounded-[6px] border border-[rgba(13,148,136,0.08)] p-3">
@@ -195,6 +208,7 @@ function CheckInStrip({
 export function ClientScheduleCard({
   client,
   checkInTiming,
+  isTimingLoading,
   onClientUpdated,
 }: ClientScheduleCardProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -240,7 +254,12 @@ export function ClientScheduleCard({
         <div className="mx-5 border-t border-[rgba(13,148,136,0.06)]" />
 
         <div className="px-5 pt-4">
-          <CheckInStrip client={client} timing={checkInTiming} onOpenSettings={openSettings} />
+          <CheckInStrip
+            client={client}
+            timing={checkInTiming}
+            isLoading={isTimingLoading}
+            onOpenSettings={openSettings}
+          />
         </div>
 
         <div className="grid grid-cols-2 gap-x-3 gap-y-3 px-5 pb-5 pt-4">

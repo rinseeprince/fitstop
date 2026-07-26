@@ -115,3 +115,31 @@ export const setClientNotePinned = async (
   }
   return data ? mapNoteRow(data) : null;
 };
+
+/**
+ * Permanently removes a note. Returns false when it doesn't belong to this
+ * client, so the route can 404 without leaking whether the id exists.
+ *
+ * Hard delete, deviating from CONVENTIONS §8's soft-delete rule (owner
+ * decision, 2026-07-26): a coach note is the coach's own scratch text, not
+ * client history, and `client_notes` carries no soft-delete column. The scope
+ * filter below is what keeps it safe — never widen it.
+ */
+export const deleteClientNote = async (
+  clientId: string,
+  noteId: string
+): Promise<boolean> => {
+  const { data, error } = await supabaseAdmin
+    .from("client_notes")
+    .delete()
+    .eq("id", noteId)
+    .eq("client_id", clientId)
+    .select("id")
+    .maybeSingle();
+
+  if (error) {
+    console.error("Failed to delete client note:", error);
+    throw new Error(`Failed to delete note: ${error.message}`);
+  }
+  return data !== null;
+};

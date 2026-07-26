@@ -19,6 +19,7 @@ describe("WaitingOnYouSection", () => {
         unreviewedCheckIn={null}
         attentionAlerts={[]}
         onTabChange={vi.fn()}
+        onDismissAlert={vi.fn()}
       />
     );
 
@@ -34,6 +35,7 @@ describe("WaitingOnYouSection", () => {
         unreviewedCheckIn={{ id: "ci-1", submittedAt: new Date().toISOString() }}
         attentionAlerts={[alert("no_log_gap", "high", "No logs in 5 days")]}
         onTabChange={vi.fn()}
+        onDismissAlert={vi.fn()}
       />
     );
 
@@ -52,6 +54,7 @@ describe("WaitingOnYouSection", () => {
         unreviewedCheckIn={{ id: "ci-1", submittedAt: threeDaysAgo.toISOString() }}
         attentionAlerts={[]}
         onTabChange={onTabChange}
+        onDismissAlert={vi.fn()}
       />
     );
 
@@ -69,6 +72,7 @@ describe("WaitingOnYouSection", () => {
         unreviewedCheckIn={{ id: "ci-1", submittedAt: new Date().toISOString() }}
         attentionAlerts={[]}
         onTabChange={vi.fn()}
+        onDismissAlert={vi.fn()}
       />
     );
 
@@ -85,12 +89,51 @@ describe("WaitingOnYouSection", () => {
           alert("training_missed", "high", "Two sessions missed"),
         ]}
         onTabChange={vi.fn()}
+        onDismissAlert={vi.fn()}
       />
     );
 
-    const rows = screen.getAllByRole("button");
+    // Each row is a nav button plus an icon-only dismiss button; only the
+    // former carries text, so filtering on it gives the rows in DOM order.
+    const rows = screen.getAllByRole("button").filter((b) => b.textContent?.trim());
     expect(within(rows[0]).getByText("Two sessions missed")).toBeInTheDocument();
     expect(within(rows[1]).getByText("Habits slipping")).toBeInTheDocument();
+  });
+
+  it("offers a dismiss action per alert, reporting the alert type", async () => {
+    const user = userEvent.setup();
+    const onDismissAlert = vi.fn();
+
+    render(
+      <WaitingOnYouSection
+        clientName="Alex"
+        unreviewedCheckIn={null}
+        attentionAlerts={[alert("high_stress", "medium", "Stress elevated")]}
+        onTabChange={vi.fn()}
+        onDismissAlert={onDismissAlert}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: "Dismiss: Stress elevated" }));
+    expect(onDismissAlert).toHaveBeenCalledWith("high_stress");
+  });
+
+  it("dismissing does not also navigate", async () => {
+    const user = userEvent.setup();
+    const onTabChange = vi.fn();
+
+    render(
+      <WaitingOnYouSection
+        clientName="Alex"
+        unreviewedCheckIn={null}
+        attentionAlerts={[alert("high_stress", "medium", "Stress elevated")]}
+        onTabChange={onTabChange}
+        onDismissAlert={vi.fn()}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: "Dismiss: Stress elevated" }));
+    expect(onTabChange).not.toHaveBeenCalled();
   });
 
   it("navigates each alert to the tab that owns its data, labelled", async () => {
@@ -106,6 +149,7 @@ describe("WaitingOnYouSection", () => {
           alert("habit_dropoff", "medium", "Habits slipping"),
         ]}
         onTabChange={onTabChange}
+        onDismissAlert={vi.fn()}
       />
     );
 

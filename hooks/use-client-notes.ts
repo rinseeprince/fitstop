@@ -55,6 +55,18 @@ export function useClientNotes(clientId: string) {
     [clientId, mutate]
   );
 
+  const deleteNote = useCallback(
+    async (noteId: string) => {
+      const res = await fetch(`/api/clients/${clientId}/notes/${noteId}`, { method: "DELETE" });
+      const payload = (await res.json()) as { success?: boolean; error?: string };
+      if (!res.ok || !payload.success) {
+        throw new Error(payload.error || "Failed to delete note");
+      }
+      await mutate();
+    },
+    [clientId, mutate]
+  );
+
   return {
     notes: data?.data ?? [],
     isLoading,
@@ -62,5 +74,6 @@ export function useClientNotes(clientId: string) {
     mutate,
     addNote,
     setPinned,
+    deleteNote,
   };
 }

@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2, Pin, PinOff, StickyNote } from "lucide-react";
+import { Loader2, Pin, PinOff, StickyNote, Trash2 } from "lucide-react";
+import { RowActions } from "@/components/programs/shared/row-actions";
+import { DeleteNoteDialog } from "./delete-note-dialog";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -24,10 +26,12 @@ type NotesTabContentProps = {
 function NoteRow({
   note,
   onTogglePin,
+  onDelete,
   isBusy,
 }: {
   note: ClientNote;
   onTogglePin: () => void;
+  onDelete: () => void;
   isBusy: boolean;
 }) {
   return (
@@ -51,31 +55,34 @@ function NoteRow({
           {formatShortDate(note.createdAt)}
         </p>
       </div>
-      <button
-        type="button"
-        onClick={onTogglePin}
-        disabled={isBusy}
-        aria-label={note.isPinned ? "Unpin note" : "Pin note"}
-        title={note.isPinned ? "Unpin note" : "Pin this note to the Overview"}
-        className="shrink-0 rounded p-1 text-[#93b0b4] transition-colors hover:text-[#0d9488] disabled:opacity-50"
-      >
-        {isBusy ? (
+      {isBusy ? (
+        <span className="grid h-7 w-7 shrink-0 place-items-center text-[#93b0b4]">
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
-        ) : note.isPinned ? (
-          <PinOff className="h-3.5 w-3.5" strokeWidth={1.5} />
-        ) : (
-          <Pin className="h-3.5 w-3.5" strokeWidth={1.5} />
-        )}
-      </button>
+        </span>
+      ) : (
+        <div className="shrink-0">
+          <RowActions
+            actions={[
+              {
+                label: note.isPinned ? "Unpin note" : "Pin note to the Overview",
+                icon: note.isPinned ? PinOff : Pin,
+                onClick: onTogglePin,
+              },
+              { label: "Delete note", icon: Trash2, onClick: onDelete, danger: true },
+            ]}
+          />
+        </div>
+      )}
     </div>
   );
 }
 
 export function NotesTabContent({ client }: NotesTabContentProps) {
-  const { notes, isLoading, isError, addNote, setPinned } = useClientNotes(client.id);
+  const { notes, isLoading, isError, addNote, setPinned, deleteNote } = useClientNotes(client.id);
   const [draft, setDraft] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [pendingPinId, setPendingPinId] = useState<string | null>(null);
+  const [notePendingDelete, setNotePendingDelete] = useState<ClientNote | null>(null);
   const { toast } = useToast();
 
   const handleSave = async () => {
@@ -167,10 +174,19 @@ export function NotesTabContent({ client }: NotesTabContentProps) {
               note={note}
               isBusy={pendingPinId === note.id}
               onTogglePin={() => void handleTogglePin(note)}
+              onDelete={() => setNotePendingDelete(note)}
             />
           ))}
         </div>
       )}
+
+      <DeleteNoteDialog
+        note={notePendingDelete}
+        onOpenChange={(open) => {
+          if (!open) setNotePendingDelete(null);
+        }}
+        onConfirm={deleteNote}
+      />
     </div>
   );
 }

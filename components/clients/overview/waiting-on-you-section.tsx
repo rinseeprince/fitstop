@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, ChevronRight, ClipboardCheck } from "lucide-react";
+import { CheckCircle2, ChevronRight, ClipboardCheck, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { alertDestination } from "@/lib/attention-alert-destinations";
@@ -13,7 +13,7 @@ import {
 import { CardHeader, OverviewCard } from "./overview-primitives";
 import { relativeDayPhrase } from "./overview-format";
 import type { ClientTab } from "@/lib/client-tabs";
-import type { AlertSeverity, AttentionAlert } from "@/types/attention-feed";
+import type { AlertSeverity, AlertType, AttentionAlert } from "@/types/attention-feed";
 import type { UnreviewedCheckIn } from "@/types/coach-brief";
 
 type WaitingOnYouSectionProps = {
@@ -21,6 +21,12 @@ type WaitingOnYouSectionProps = {
   unreviewedCheckIn: UnreviewedCheckIn;
   attentionAlerts: AttentionAlert[];
   onTabChange: (tab: ClientTab) => void;
+  /**
+   * Dismisses one alert type for this client. Dismissal is shared with the coach
+   * dashboard's feed — the same `attention_dismissals` row drives both — and it
+   * lapses when a newer day trips the same trigger again.
+   */
+  onDismissAlert: (alertType: AlertType) => void;
 };
 
 // High takes the destructive-soft accent, medium the warning tone. There is no
@@ -38,6 +44,7 @@ export function WaitingOnYouSection({
   unreviewedCheckIn,
   attentionAlerts,
   onTabChange,
+  onDismissAlert,
 }: WaitingOnYouSectionProps) {
   const pendingCount = attentionAlerts.length + (unreviewedCheckIn ? 1 : 0);
   const sortedAlerts = [...attentionAlerts].sort(
@@ -98,23 +105,38 @@ export function WaitingOnYouSection({
           {sortedAlerts.map((alert, i) => {
             const destination = alertDestination(alert.type);
             return (
-              <button
+              // The row navigates and the × dismisses, so they are siblings —
+              // a button cannot legally contain another button.
+              <div
                 key={`${alert.type}-${i}`}
-                type="button"
-                onClick={() => onTabChange(destination.tab)}
-                className="flex w-full items-center gap-3 rounded-[6px] px-2 py-2 text-left transition-colors hover:bg-[rgba(13,148,136,0.03)]"
+                className="group/alert flex items-center rounded-[6px] transition-colors hover:bg-[rgba(13,148,136,0.03)]"
               >
-                <span
-                  className={cn(
-                    "h-2 w-2 shrink-0 rounded-full",
-                    SEVERITY_DOT[alert.severity] ?? SEVERITY_DOT.low
-                  )}
-                  aria-hidden
-                />
-                <span className="min-w-0 flex-1 text-[13px] text-[#0c1a1e]">{alert.message}</span>
-                <span className={cn(LABEL_CLASS, "shrink-0")}>{destination.label}</span>
-                <ChevronRight className="h-3.5 w-3.5 shrink-0 text-[#93b0b4]" strokeWidth={1.5} />
-              </button>
+                <button
+                  type="button"
+                  onClick={() => onTabChange(destination.tab)}
+                  className="flex min-w-0 flex-1 items-center gap-3 px-2 py-2 text-left"
+                >
+                  <span
+                    className={cn(
+                      "h-2 w-2 shrink-0 rounded-full",
+                      SEVERITY_DOT[alert.severity] ?? SEVERITY_DOT.low
+                    )}
+                    aria-hidden
+                  />
+                  <span className="min-w-0 flex-1 text-[13px] text-[#0c1a1e]">{alert.message}</span>
+                  <span className={cn(LABEL_CLASS, "shrink-0")}>{destination.label}</span>
+                  <ChevronRight className="h-3.5 w-3.5 shrink-0 text-[#93b0b4]" strokeWidth={1.5} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onDismissAlert(alert.type)}
+                  title="Dismiss this alert"
+                  aria-label={`Dismiss: ${alert.message}`}
+                  className="mr-1 grid h-7 w-7 shrink-0 place-items-center rounded-[6px] text-[#93b0b4] opacity-0 transition-opacity duration-150 hover:bg-[#f0f5f4] hover:text-[#5a7d82] focus-visible:opacity-100 group-hover/alert:opacity-100"
+                >
+                  <X className="h-[15px] w-[15px]" strokeWidth={1.5} />
+                </button>
+              </div>
             );
           })}
         </div>

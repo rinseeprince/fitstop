@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2, Pin, StickyNote } from "lucide-react";
+import { Loader2, Pin, PinOff, StickyNote, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
+import { RowActions } from "@/components/programs/shared/row-actions";
 import { formatShortDate } from "@/components/clients/metrics/metrics-format";
 import {
   FOCUS_RING,
@@ -16,13 +18,27 @@ import type { ClientNote } from "@/types/coach-overview";
 
 type CoachNotesCardProps = {
   notes: ClientNote[];
+  /** True until the first fetch resolves — the card must not claim "no notes" before then. */
+  isLoading: boolean;
   onAddNote: (body: string) => Promise<void>;
+  onTogglePin: (note: ClientNote) => Promise<void>;
+  onDeleteNote: (note: ClientNote) => void;
   onOpenNotes: () => void;
 };
 
-function NoteRow({ note }: { note: ClientNote }) {
+function NoteRow({
+  note,
+  onTogglePin,
+  onDelete,
+  isBusy,
+}: {
+  note: ClientNote;
+  onTogglePin: () => void;
+  onDelete: () => void;
+  isBusy: boolean;
+}) {
   return (
-    <div className="flex items-start gap-3 py-2">
+    <div className="group/row flex items-start gap-3 py-2">
       <span
         className={cn(
           "grid h-8 w-8 shrink-0 place-items-center rounded-[6px]",
@@ -42,13 +58,39 @@ function NoteRow({ note }: { note: ClientNote }) {
           {formatShortDate(note.createdAt)}
         </p>
       </div>
+      {isBusy ? (
+        <span className="grid h-7 w-7 shrink-0 place-items-center text-[#93b0b4]">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        </span>
+      ) : (
+        <div className="shrink-0">
+          <RowActions
+            actions={[
+              {
+                label: note.isPinned ? "Unpin note" : "Pin note to the Overview",
+                icon: note.isPinned ? PinOff : Pin,
+                onClick: onTogglePin,
+              },
+              { label: "Delete note", icon: Trash2, onClick: onDelete, danger: true },
+            ]}
+          />
+        </div>
+      )}
     </div>
   );
 }
 
-export function CoachNotesCard({ notes, onAddNote, onOpenNotes }: CoachNotesCardProps) {
+export function CoachNotesCard({
+  notes,
+  isLoading,
+  onAddNote,
+  onTogglePin,
+  onDeleteNote,
+  onOpenNotes,
+}: CoachNotesCardProps) {
   const [draft, setDraft] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [pendingPinId, setPendingPinId] = useState<string | null>(null);
   const { toast } = useToast();
 
   const pinned = notes.find((note) => note.isPinned) ?? null;
@@ -75,6 +117,22 @@ export function CoachNotesCard({ notes, onAddNote, onOpenNotes }: CoachNotesCard
     }
   };
 
+  const handleTogglePin = async (note: ClientNote) => {
+    setPendingPinId(note.id);
+    try {
+      await onTogglePin(note);
+      toast({ title: note.isPinned ? "Note unpinned" : "Note pinned" });
+    } catch (error) {
+      toast({
+        title: "Update failed",
+        description: error instanceof Error ? error.message : "Something went wrong",
+        variant: "destructive",
+      });
+    } finally {
+      setPendingPinId(null);
+    }
+  };
+
   return (
     <OverviewCard animationDelay="0.06s">
       <CardHeader
@@ -83,10 +141,23 @@ export function CoachNotesCard({ notes, onAddNote, onOpenNotes }: CoachNotesCard
       />
 
       <div className="px-5 pb-5">
-        {visible.length > 0 ? (
+        {isLoading && notes.length === 0 ? (
+          // Never assert "no notes" before the first fetch resolves — the truth
+          // arriving a moment later would contradict it.
+          <div className="space-y-2 py-2">
+            <Skeleton className="h-10 w-full rounded-[6px]" />
+            <Skeleton className="h-10 w-2/3 rounded-[6px]" />
+          </div>
+        ) : visible.length > 0 ? (
           <div className="divide-y divide-[rgba(13,148,136,0.06)]">
             {visible.map((note) => (
-              <NoteRow key={note.id} note={note} />
+              <NoteRow
+                key={note.id}
+                note={note}
+                isBusy={pendingPinId === note.id}
+                onTogglePin={() => void handleTogglePin(note)}
+                onDelete={() => onDeleteNote(note)}
+              />
             ))}
           </div>
         ) : (

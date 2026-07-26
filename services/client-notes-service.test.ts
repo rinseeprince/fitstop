@@ -5,7 +5,11 @@ vi.mock("./supabase-admin", () => ({
   supabaseAdmin: { from: (...a: unknown[]) => fromMock(...a) },
 }));
 
-import { listClientNotes, setClientNotePinned } from "./client-notes-service";
+import {
+  deleteClientNote,
+  listClientNotes,
+  setClientNotePinned,
+} from "./client-notes-service";
 
 const NOTE_ROW = {
   id: "note-1",
@@ -17,7 +21,7 @@ const NOTE_ROW = {
 // Chainable builder: awaitable (→ {data,error}) and .single/.maybeSingle.
 function makeChain(response: { data?: unknown; error?: unknown }) {
   const chain: Record<string, unknown> = {};
-  for (const m of ["update", "insert", "select", "eq", "neq", "order"]) {
+  for (const m of ["update", "insert", "delete", "select", "eq", "neq", "order"]) {
     chain[m] = vi.fn(() => chain);
   }
   chain.single = vi.fn(() =>
@@ -120,5 +124,33 @@ describe("listClientNotes", () => {
     expect(notes).toEqual([
       { id: "note-1", body: NOTE_ROW.body, isPinned: true, createdAt: "2026-07-01T10:00:00Z" },
     ]);
+  });
+});
+
+describe("deleteClientNote", () => {
+  it("deletes only within the client's scope and reports success", async () => {
+    const chain = makeChain({ data: { id: "note-1" } });
+    fromMock.mockReturnValueOnce(chain);
+
+    const deleted = await deleteClientNote("client-1", "note-1");
+
+    expect(deleted).toBe(true);
+    expect(fromMock).toHaveBeenCalledWith("client_notes");
+    // The client_id filter is the whole safety story for a hard delete —
+    // without it a guessed note id would delete another coach's note.
+    expect(chain.eq).toHaveBeenCalledWith("id", "note-1");
+    expect(chain.eq).toHaveBeenCalledWith("client_id", "client-1");
+  });
+
+  it("reports false when the note does not belong to the client (route 404s)", async () => {
+    fromMock.mockReturnValueOnce(makeChain({ data: null }));
+
+    await expect(deleteClientNote("client-1", "someone-elses-note")).resolves.toBe(false);
+  });
+
+  it("throws on a database error rather than reporting a silent success", async () => {
+    fromMock.mockReturnValueOnce(makeChain({ error: { message: "boom" } }));
+
+    await expect(deleteClientNote("client-1", "note-1")).rejects.toThrow(/boom/);
   });
 });
