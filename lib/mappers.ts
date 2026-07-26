@@ -68,6 +68,7 @@ export function mapClientRow(row: ClientRow): Client {
     heightUnit: (row.height_unit ?? undefined) as "in" | "cm" | undefined,
     gender: (row.gender ?? undefined) as "male" | "female" | "other" | undefined,
     dateOfBirth: row.date_of_birth ?? undefined,
+    phone: row.phone ?? undefined,
     goalWeight: row.goal_weight ?? undefined,
     goalBodyFatPercentage: row.goal_body_fat_percentage ?? undefined,
     weightUnit: (row.weight_unit ?? "lbs") as "lbs" | "kg",

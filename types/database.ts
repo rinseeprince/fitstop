@@ -782,6 +782,51 @@ export type Database = {
           },
         ]
       }
+      client_notes: {
+        Row: {
+          body: string
+          client_id: string
+          coach_id: string | null
+          created_at: string
+          id: string
+          is_pinned: boolean
+          updated_at: string
+        }
+        Insert: {
+          body: string
+          client_id: string
+          coach_id?: string | null
+          created_at?: string
+          id?: string
+          is_pinned?: boolean
+          updated_at?: string
+        }
+        Update: {
+          body?: string
+          client_id?: string
+          coach_id?: string | null
+          created_at?: string
+          id?: string
+          is_pinned?: boolean
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_notes_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_notes_coach_id_fkey"
+            columns: ["coach_id"]
+            isOneToOne: false
+            referencedRelation: "coaches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       clients: {
         Row: {
           active: boolean | null
@@ -812,6 +857,7 @@ export type Database = {
           name: string
           notes: string | null
           onboarding_status: string | null
+          phone: string | null
           reminder_preferences: Json | null
           start_date: string | null
           starting_body_fat_percentage: number | null
@@ -859,6 +905,7 @@ export type Database = {
           name: string
           notes?: string | null
           onboarding_status?: string | null
+          phone?: string | null
           reminder_preferences?: Json | null
           start_date?: string | null
           starting_body_fat_percentage?: number | null
@@ -906,6 +953,7 @@ export type Database = {
           name?: string
           notes?: string | null
           onboarding_status?: string | null
+          phone?: string | null
           reminder_preferences?: Json | null
           start_date?: string | null
           starting_body_fat_percentage?: number | null

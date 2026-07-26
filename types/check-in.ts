@@ -416,6 +416,7 @@ export type Client = {
   heightUnit?: "in" | "cm";
   gender?: "male" | "female" | "other";
   dateOfBirth?: string; // ISO date string (YYYY-MM-DD)
+  phone?: string;
 
   // Goal fields (manually set by coach)
   goalWeight?: number;

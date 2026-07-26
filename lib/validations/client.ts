@@ -55,6 +55,9 @@ export const updateClientSchema = z.object({
   heightUnit: z.enum(["in", "cm"]).optional(),
   gender: z.enum(["male", "female", "other"]).optional(),
   dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format").optional(),
+  // Free text — phone formats vary too much for a shape constraint
+  phone: z.string().trim().max(30, "Phone must be less than 30 characters").optional(),
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format").optional(),
 
   // Goal fields
   goalWeight: z.number().positive("Goal weight must be positive").optional(),
@@ -85,6 +88,19 @@ export const sendReminderSchema = z.object({
   reminderType: z.enum(["overdue", "checkin", "general"]).default("overdue"),
 });
 
+// Coach notes about a client (client_notes rows, Overview redesign)
+export const createClientNoteSchema = z.object({
+  body: z
+    .string()
+    .trim()
+    .min(1, "Note cannot be empty")
+    .max(5000, "Note must be less than 5000 characters"),
+});
+
+export const updateClientNoteSchema = z.object({
+  isPinned: z.boolean(),
+});
+
 // Schema for PATCH /api/client/settings (client-controlled preferences)
 // Kept separate from updateClientSchema (coach-facing) so client and coach
 // surfaces can evolve independently without one loosening the other.
@@ -100,3 +116,5 @@ export type CreateClientInput = z.infer<typeof createClientSchema>;
 export type UpdateClientInput = z.infer<typeof updateClientSchema>;
 export type UpdateCheckInConfigInput = z.infer<typeof updateCheckInConfigSchema>;
 export type UpdateSettingsInput = z.infer<typeof updateSettingsSchema>;
+export type CreateClientNoteInput = z.infer<typeof createClientNoteSchema>;
+export type UpdateClientNoteInput = z.infer<typeof updateClientNoteSchema>;

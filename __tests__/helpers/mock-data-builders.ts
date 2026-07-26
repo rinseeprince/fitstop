@@ -63,6 +63,7 @@ export function createMockClientDatabaseRow(options: MockClientOptions = {}): Cl
     height_unit: 'in',
     gender: null,
     date_of_birth: null,
+    phone: null,
     goal_weight: client.goalWeight ?? null,
     goal_body_fat_percentage: null,
     weight_unit: client.weightUnit ?? null,

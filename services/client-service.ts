@@ -218,6 +218,8 @@ export const updateClient = async (
   if (clientData.height !== undefined) updateData.height = clientData.height ?? null;
   if (clientData.heightUnit !== undefined) updateData.height_unit = clientData.heightUnit;
   if (clientData.gender !== undefined) updateData.gender = clientData.gender ?? null;
+  if (clientData.phone !== undefined) updateData.phone = clientData.phone || null;
+  if (clientData.startDate !== undefined) updateData.start_date = clientData.startDate ?? null;
   if (clientData.goalWeight !== undefined) updateData.goal_weight = clientData.goalWeight ?? null;
   if (clientData.goalBodyFatPercentage !== undefined) updateData.goal_body_fat_percentage = clientData.goalBodyFatPercentage ?? null;
   if (clientData.weightUnit !== undefined) updateData.weight_unit = clientData.weightUnit;
