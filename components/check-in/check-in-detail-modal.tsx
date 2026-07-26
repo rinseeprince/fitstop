@@ -32,6 +32,10 @@ type CheckInDetailModalProps = {
   onNavigate?: (direction: "prev" | "next") => void;
   canNavigatePrev?: boolean;
   canNavigateNext?: boolean;
+  // Fired after the coach response is sent — the review is done, so parents
+  // close the modal and revalidate their check-ins list (status → reviewed).
+  // Unwired mounts fall back to refetching the open detail in place.
+  onResponseSent?: () => void;
 };
 
 export const CheckInDetailModal = ({
@@ -42,6 +46,7 @@ export const CheckInDetailModal = ({
   onNavigate,
   canNavigatePrev = false,
   canNavigateNext = false,
+  onResponseSent,
 }: CheckInDetailModalProps) => {
   const {
     data,
@@ -212,6 +217,7 @@ export const CheckInDetailModal = ({
                         clientName={data.client?.name || "Client"}
                         review={toCheckInReview(data.checkIn)}
                         onRefresh={handleResponseSent}
+                        onSent={onResponseSent}
                       />
                     </div>
                   </div>

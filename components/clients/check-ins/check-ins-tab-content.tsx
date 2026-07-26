@@ -25,6 +25,7 @@ export const CheckInsTabContent = ({ client }: CheckInsTabContentProps) => {
     isError,
     size,
     setSize,
+    mutate,
   } = useClientCheckInsInfinite(client.id);
   const [selectedCheckInId, setSelectedCheckInId] = useState<string | null>(
     null
@@ -125,6 +126,10 @@ export const CheckInsTabContent = ({ client }: CheckInsTabContentProps) => {
         clientId={client.id}
         clientName={client.name}
         onClose={() => setSelectedCheckInId(null)}
+        onResponseSent={() => {
+          setSelectedCheckInId(null);
+          void mutate();
+        }}
         onNavigate={handleNavigate}
         canNavigatePrev={selectedIndex > 0}
         canNavigateNext={

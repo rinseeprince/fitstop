@@ -33,7 +33,7 @@ export default function ClientProfilePage() {
   const initialTab: ClientTab = tabParam && VALID_TABS.has(tabParam as ClientTab) ? (tabParam as ClientTab) : "overview"
 
   const { client, isLoading: clientLoading, isError: clientError, mutate: mutateClient } = useClient(clientId)
-  const { checkIns } = useCheckInData(clientId, {
+  const { checkIns, mutate: mutateCheckIns } = useCheckInData(clientId, {
     includeDailyLogCounts: true
   })
   const [selectedCheckInId, setSelectedCheckInId] = useState<string | null>(null)
@@ -115,6 +115,10 @@ export default function ClientProfilePage() {
               clientId={clientId}
               clientName={client.name}
               onClose={() => setSelectedCheckInId(null)}
+              onResponseSent={() => {
+                setSelectedCheckInId(null)
+                void mutateCheckIns()
+              }}
               onNavigate={handleNavigate}
               canNavigatePrev={selectedIndex > 0}
               canNavigateNext={selectedIndex < checkIns.length - 1 && selectedIndex !== -1}

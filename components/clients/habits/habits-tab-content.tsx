@@ -60,6 +60,17 @@ export const HabitsTabContent = ({ client }: HabitsTabContentProps) => {
     mutate: mutateWeek,
   } = useHabitsWeek(client.id, weekStart);
 
+  // The summary strip + week tracker render from the separate /habits/weekly
+  // read, which the useClientHabits mutators don't revalidate — without this,
+  // a created/edited habit only appears after a full page refresh.
+  const refreshWeekAfter =
+    <A extends unknown[], R>(fn: (...args: A) => Promise<R>) =>
+    async (...args: A): Promise<R> => {
+      const result = await fn(...args);
+      void mutateWeek();
+      return result;
+    };
+
   const isInitialLoading = habitsLoading && weekLoading;
 
   if (isInitialLoading) {
@@ -153,11 +164,11 @@ export const HabitsTabContent = ({ client }: HabitsTabContentProps) => {
         open={drawerOpen}
         onOpenChange={setDrawerOpen}
         habits={habits}
-        onCreateHabit={createHabit}
-        onUpdateHabit={updateHabit}
-        onDeleteHabit={deleteHabit}
-        onReactivateHabit={reactivateHabit}
-        onReorderHabits={reorderHabits}
+        onCreateHabit={refreshWeekAfter(createHabit)}
+        onUpdateHabit={refreshWeekAfter(updateHabit)}
+        onDeleteHabit={refreshWeekAfter(deleteHabit)}
+        onReactivateHabit={refreshWeekAfter(reactivateHabit)}
+        onReorderHabits={refreshWeekAfter(reorderHabits)}
       />
     </div>
   );

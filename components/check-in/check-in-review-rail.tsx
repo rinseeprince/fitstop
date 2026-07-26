@@ -24,8 +24,12 @@ type CheckInReviewRailProps = {
   checkInId: string;
   clientName: string;
   review: CheckInReview;
-  // Refetch the check-in (after a regenerate or a send) so every block updates.
+  // Refetch the check-in (after a regenerate) so every block updates in place.
   onRefresh?: () => void;
+  // The response was sent to the client — distinct from onRefresh because the
+  // review is now DONE (parents close the modal + revalidate their list),
+  // whereas a regenerate keeps the review open. Falls back to onRefresh.
+  onSent?: () => void;
 };
 
 // Teal Summit two-colour: teal positive, amber attention, secondary-grey neutral.
@@ -47,6 +51,7 @@ export const CheckInReviewRail = ({
   clientName,
   review,
   onRefresh,
+  onSent,
 }: CheckInReviewRailProps) => {
   const [isEditingSummary, setIsEditingSummary] = useState(false);
   // null means "show the summary from the latest review"; a string is a local edit.
@@ -177,7 +182,7 @@ export const CheckInReviewRail = ({
         checkInId={checkInId}
         clientName={clientName}
         clientMessage={review.clientMessage}
-        onSent={onRefresh}
+        onSent={onSent ?? onRefresh}
       />
     </div>
   );

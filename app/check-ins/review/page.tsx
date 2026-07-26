@@ -148,6 +148,7 @@ export default function ReviewCheckInsPage() {
           clientId={selectedCheckInId ? unreviewedCheckIns.find((ci) => ci.id === selectedCheckInId)?.clientId || "" : ""}
           clientName={selectedCheckInId ? unreviewedCheckIns.find((ci) => ci.id === selectedCheckInId)?.clientName || "" : ""}
           onClose={handleReviewComplete}
+          onResponseSent={handleReviewComplete}
           onNavigate={handleNavigate}
           canNavigatePrev={selectedIndex > 0}
           canNavigateNext={selectedIndex < unreviewedCheckIns.length - 1 && selectedIndex !== -1}
