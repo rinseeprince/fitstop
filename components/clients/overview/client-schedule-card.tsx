@@ -1,20 +1,33 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import { Button } from "@/components/ui/button"
-import { CheckInScheduleSection } from "@/components/clients/check-in/check-in-schedule-card"
-import { Edit2, Mail, Phone } from "lucide-react"
-import { cn } from "@/lib/utils"
+import { useState } from "react";
+import { Calendar, Mail, Pencil } from "lucide-react";
+import { cn } from "@/lib/utils";
 import {
   LABEL_CLASS,
   MONO,
-} from "@/components/clients/training/program-builder/builder-tokens"
-import type { Client } from "@/types/check-in"
+  MONO_META_CLASS,
+  THUMB_CLASS,
+} from "@/components/clients/training/program-builder/builder-tokens";
+import { OverviewCard } from "./overview-primitives";
+import { ClientSettingsDialog } from "./client-settings-dialog";
+import { formatDateOnlyWeekday, pluralize, relativeDayPhrase } from "./overview-format";
+import type { Client } from "@/types/check-in";
+import type { CheckInTiming } from "@/types/coach-brief";
 
-interface ClientScheduleCardProps {
-  client: Client
-  onClientUpdated?: () => void
-}
+type ClientScheduleCardProps = {
+  client: Client;
+  checkInTiming: CheckInTiming | null;
+  /** Revalidates the client record AND the brief — check-in day drives timing. */
+  onClientUpdated: () => void;
+};
+
+const FREQUENCY_LABELS: Record<string, string> = {
+  weekly: "Weekly",
+  biweekly: "Bi-weekly",
+  monthly: "Monthly",
+  none: "No schedule",
+};
 
 function getInitials(name: string): string {
   return name
@@ -22,168 +35,244 @@ function getInitials(name: string): string {
     .map((part) => part[0])
     .join("")
     .toUpperCase()
-    .slice(0, 2)
+    .slice(0, 2);
 }
 
-function getFrequencyLabel(client: Client): string {
-  switch (client.checkInFrequency) {
-    case "weekly":
-      return "Weekly"
-    case "biweekly":
-      return "Bi-weekly"
-    case "monthly":
-      return "Monthly"
-    case "custom":
-      return `Every ${client.checkInFrequencyDays} days`
-    case "none":
-      return "No schedule"
-    default:
-      return "Weekly"
+function frequencyLabel(client: Client): string {
+  if (client.checkInFrequency === "custom") return `Every ${client.checkInFrequencyDays} days`;
+  return FREQUENCY_LABELS[client.checkInFrequency ?? "weekly"] ?? "Weekly";
+}
+
+function sentenceCase(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function dayLabel(day: string | null | undefined): string {
+  return day ? sentenceCase(day) : "Any day";
+}
+
+/** One cell of the profile grid; an unset field names the gap and offers the fix. */
+function Field({
+  label,
+  value,
+  isNumeric,
+  onAdd,
+}: {
+  label: string;
+  value: string | null;
+  isNumeric?: boolean;
+  onAdd?: () => void;
+}) {
+  return (
+    <div className="min-w-0">
+      <p className={LABEL_CLASS}>{label}</p>
+      {value === null ? (
+        <p className="mt-0.5 flex items-baseline gap-2 text-[13px]">
+          <span className="text-[#93b0b4]">Not set</span>
+          {onAdd && (
+            <button
+              type="button"
+              onClick={onAdd}
+              className="text-[11px] font-medium text-[#0d9488] transition-colors hover:text-[#0b7f75]"
+            >
+              Add
+            </button>
+          )}
+        </p>
+      ) : (
+        <p
+          className={cn(
+            "mt-0.5 truncate text-[13px] font-semibold text-[#0c1a1e]",
+            isNumeric && MONO
+          )}
+        >
+          {value}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Distance-to-due chip; word-only "Due today" stays sans, the rest are counts. */
+function DueChip({ timing }: { timing: CheckInTiming }) {
+  if (timing.daysUntilDue === null) return null;
+
+  const base = "shrink-0 rounded-[6px] px-2 py-0.5 text-[10px] font-medium";
+  const tone = timing.isOverdue
+    ? "bg-[rgba(245,158,11,0.07)] text-[#d97706]"
+    : "bg-[rgba(13,148,136,0.08)] text-[#0a5c55]";
+
+  if (timing.daysUntilDue === 0) return <span className={cn(base, tone)}>Due today</span>;
+
+  const text =
+    timing.daysUntilDue < 0
+      ? `in ${pluralize(-timing.daysUntilDue, "day")}`
+      : `${pluralize(timing.daysUntilDue, "day")} overdue`;
+
+  return <span className={cn(base, tone, MONO)}>{text}</span>;
+}
+
+function CheckInStrip({
+  client,
+  timing,
+  onOpenSettings,
+}: {
+  client: Client;
+  timing: CheckInTiming | null;
+  onOpenSettings: () => void;
+}) {
+  if (timing === null) {
+    return (
+      <div className="flex items-center gap-3 rounded-[6px] border border-[rgba(13,148,136,0.08)] p-3">
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[6px] bg-[#f0f5f4] text-[#5a7d82]">
+          <Calendar className="h-4 w-4" strokeWidth={1.5} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-[13px] font-semibold text-[#0c1a1e]">No check-in schedule</p>
+          <p className="mt-0.5 text-[11px] text-[#93b0b4]">
+            This client is never asked to check in.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onOpenSettings}
+          className="shrink-0 text-[11px] font-medium text-[#0d9488] transition-colors hover:text-[#0b7f75]"
+        >
+          Set a schedule
+        </button>
+      </div>
+    );
   }
+
+  const submitted = timing.lastSubmittedAt ? relativeDayPhrase(timing.lastSubmittedAt) : null;
+  const cadence = `${frequencyLabel(client).toLowerCase()}, ${dayLabel(timing.expectedCheckInDay).toLowerCase()}`;
+  const subline = submitted
+    ? `Last submitted ${submitted.text} · ${cadence}`
+    : `Not submitted yet · ${cadence}`;
+
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-3 rounded-[6px] border p-3",
+        timing.isOverdue
+          ? "border-[rgba(245,158,11,0.25)] bg-[rgba(245,158,11,0.04)]"
+          : "border-[rgba(13,148,136,0.08)]"
+      )}
+    >
+      <span
+        className={cn(
+          "grid h-8 w-8 shrink-0 place-items-center rounded-[6px]",
+          timing.isOverdue ? "bg-[rgba(245,158,11,0.07)] text-[#d97706]" : THUMB_CLASS
+        )}
+      >
+        <Calendar className="h-4 w-4" strokeWidth={1.5} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[13px] font-semibold text-[#0c1a1e]">
+          {timing.nextDueDate ? (
+            <>
+              Next check-in due{" "}
+              <span className={MONO}>{formatDateOnlyWeekday(timing.nextDueDate)}</span>
+            </>
+          ) : (
+            "Next check-in not scheduled"
+          )}
+        </p>
+        <p
+          className={cn(
+            "mt-0.5 truncate text-[11px]",
+            submitted?.isNumeric ? MONO_META_CLASS : "text-[#93b0b4]"
+          )}
+        >
+          {subline}
+        </p>
+      </div>
+      <DueChip timing={timing} />
+    </div>
+  );
 }
 
-function getDayLabel(day: string | null | undefined): string {
-  if (!day) return "Any day"
-  return day.charAt(0).toUpperCase() + day.slice(1)
-}
-
-export function ClientScheduleCard({ client, onClientUpdated }: ClientScheduleCardProps) {
-  const [isEditingSchedule, setIsEditingSchedule] = useState(false)
+export function ClientScheduleCard({
+  client,
+  checkInTiming,
+  onClientUpdated,
+}: ClientScheduleCardProps) {
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const openSettings = () => setSettingsOpen(true);
 
   return (
     <>
-      <div
-        className="bg-white rounded-[6px] flex flex-col animate-card-in"
-        style={{ animationDelay: "0.04s" }}
-      >
-        {/* Header with avatar */}
-        <div className="p-5 pb-0">
-          <div className="flex items-start justify-between">
-            <div className="flex items-center gap-3">
-              <div
-                className="w-16 h-16 rounded-[6px] flex items-center justify-center text-white text-lg font-bold shadow-md"
-                style={{ background: "linear-gradient(135deg, #0d9488, #0f766e)" }}
-              >
-                {getInitials(client.name)}
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="text-[15px] font-semibold text-[#0c1a1e]">
-                    Client & Schedule
-                  </h3>
-                  {client.active && (
-                    <span className="w-[5px] h-[5px] rounded-full bg-[#0d9488] inline-block" />
-                  )}
-                </div>
-                <p className="text-[12px] text-[#93b0b4] mt-0.5">{client.name}</p>
-              </div>
-            </div>
-            {!isEditingSchedule && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setIsEditingSchedule(true)}
-                className="text-[#93b0b4] hover:text-[#5a7d82]"
-              >
-                <Edit2 className="h-4 w-4" strokeWidth={1.5} />
-              </Button>
-            )}
+      <OverviewCard animationDelay="0.08s">
+        <div className="flex items-start gap-3 px-5 pb-4 pt-5">
+          <div
+            className="grid h-12 w-12 shrink-0 place-items-center rounded-[6px] text-[15px] font-bold text-white"
+            style={{ background: "linear-gradient(135deg, #0d9488, #0f766e)" }}
+            aria-hidden
+          >
+            {getInitials(client.name)}
           </div>
-        </div>
-
-        {/* Body */}
-        <div className="p-5 flex-1">
-          {isEditingSchedule ? (
-            <CheckInScheduleSection
-              client={client}
-              onUpdate={() => {
-                setIsEditingSchedule(false)
-                window.location.reload()
-              }}
-              onCancel={() => setIsEditingSchedule(false)}
-            />
-          ) : (
-            <div className="space-y-2.5 mt-1">
-              {/* Frequency | Check-in Day */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <p className={LABEL_CLASS}>
-                    Frequency
-                  </p>
-                  <p
-                    className={cn(
-                      "text-[13px] font-semibold text-[#0c1a1e] mt-0.5",
-                      client.checkInFrequency === "custom" && MONO
-                    )}
-                  >
-                    {getFrequencyLabel(client)}
-                  </p>
-                </div>
-                <div>
-                  <p className={LABEL_CLASS}>
-                    Check-in Day
-                  </p>
-                  <p className="text-[13px] font-semibold text-[#0c1a1e] mt-0.5">
-                    {getDayLabel(client.expectedCheckInDay)}
-                  </p>
-                </div>
-              </div>
-
-              {/* Email */}
-              <div>
-                <p className={LABEL_CLASS}>
-                  Email
-                </p>
-                <div className="flex items-center gap-1.5 mt-0.5">
-                  <Mail className="h-3.5 w-3.5 text-[#93b0b4] shrink-0" strokeWidth={1.5} />
-                  <p className="text-[13px] text-[#0c1a1e] truncate">{client.email}</p>
-                </div>
-              </div>
-
-              {/* Phone */}
-              <div>
-                <p className={LABEL_CLASS}>
-                  Phone
-                </p>
-                <div className="flex items-center gap-1.5 mt-0.5">
-                  <Phone className="h-3.5 w-3.5 text-[#93b0b4] shrink-0" strokeWidth={1.5} />
-                  <p className="text-[13px] text-[#93b0b4]">Not set</p>
-                </div>
-              </div>
-
-              {/* Height | Gender */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <p className={LABEL_CLASS}>
-                    Height
-                  </p>
-                  <p className="text-[13px] font-semibold text-[#0c1a1e] mt-0.5">
-                    {client.height ? (
-                      <span className={MONO}>
-                        {client.height}
-                        <span className="text-[11px] text-[#93b0b4] font-normal ml-0.5">
-                          {client.heightUnit || "in"}
-                        </span>
-                      </span>
-                    ) : (
-                      <span className="text-[#93b0b4]">Not set</span>
-                    )}
-                  </p>
-                </div>
-                <div>
-                  <p className={LABEL_CLASS}>
-                    Gender
-                  </p>
-                  <p className="text-[13px] font-semibold text-[#0c1a1e] mt-0.5 capitalize">
-                    {client.gender || <span className="text-[#93b0b4]">Not set</span>}
-                  </p>
-                </div>
-              </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <h3 className="truncate text-[15px] font-semibold text-[#0c1a1e]">{client.name}</h3>
+              {client.active && (
+                <span className="flex shrink-0 items-center gap-1">
+                  <span className="h-[5px] w-[5px] rounded-full bg-[#0d9488]" aria-hidden />
+                  <span className="text-[11px] font-medium text-[#0d9488]">Active</span>
+                </span>
+              )}
             </div>
-          )}
+            <div className="mt-0.5 flex items-center gap-1.5">
+              <Mail className="h-3.5 w-3.5 shrink-0 text-[#93b0b4]" strokeWidth={1.5} />
+              <p className="truncate text-[12px] text-[#5a7d82]">{client.email}</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={openSettings}
+            aria-label="Edit client settings"
+            title="Edit client settings"
+            className="shrink-0 rounded p-1 text-[#93b0b4] transition-colors hover:text-[#0d9488]"
+          >
+            <Pencil className="h-3.5 w-3.5" strokeWidth={1.5} />
+          </button>
         </div>
 
-      </div>
+        <div className="mx-5 border-t border-[rgba(13,148,136,0.06)]" />
+
+        <div className="px-5 pt-4">
+          <CheckInStrip client={client} timing={checkInTiming} onOpenSettings={openSettings} />
+        </div>
+
+        <div className="grid grid-cols-2 gap-x-3 gap-y-3 px-5 pb-5 pt-4">
+          <Field label="Frequency" value={frequencyLabel(client)} />
+          <Field label="Check-in day" value={dayLabel(client.expectedCheckInDay)} />
+          <Field
+            label="Gender"
+            value={client.gender ? sentenceCase(client.gender) : null}
+            onAdd={openSettings}
+          />
+          <Field
+            label="Started"
+            value={client.startDate ? formatDateOnlyWeekday(client.startDate) : null}
+            isNumeric
+            onAdd={openSettings}
+          />
+          <Field
+            label="Height"
+            value={client.height != null ? `${client.height} ${client.heightUnit ?? "in"}` : null}
+            isNumeric
+            onAdd={openSettings}
+          />
+          <Field label="Phone" value={client.phone || null} isNumeric onAdd={openSettings} />
+        </div>
+      </OverviewCard>
+
+      <ClientSettingsDialog
+        client={client}
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        onSaved={onClientUpdated}
+      />
     </>
-  )
+  );
 }

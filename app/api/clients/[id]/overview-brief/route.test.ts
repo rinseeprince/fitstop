@@ -23,13 +23,8 @@ const params = { params: Promise.resolve({ id: "client-1" }) };
 const BRIEF = {
   lastViewedAt: "2026-06-01T00:00:00Z",
   waitingOnYou: { unreviewedCheckIn: null, attentionAlerts: [] },
-  sinceLastVisit: {
-    newCheckIns: 0,
-    newLogs: 0,
-    newBodyMetrics: 0,
-    newWorkoutsLogged: 0,
-    eventStatusChanges: 0,
-  },
+  activity: [],
+  checkInTiming: null,
 };
 
 beforeEach(() => {
@@ -38,7 +33,7 @@ beforeEach(() => {
 });
 
 describe("GET /api/clients/[id]/overview-brief", () => {
-  it("200 returns the brief and invokes getOverviewBrief (which records the view)", async () => {
+  it("200 returns the brief from getOverviewBrief (a read-only build)", async () => {
     requireCoachOwnsClientMock.mockResolvedValue({ authorized: true, coachId: "coach-1" });
     getOverviewBriefMock.mockResolvedValue(BRIEF);
 

@@ -1,6 +1,10 @@
 "use client";
 
-import type { WellnessMetric } from "@/utils/wellness-color-thresholds";
+import {
+  getWellnessTone,
+  type WellnessMetric,
+  type WellnessTone,
+} from "@/utils/wellness-color-thresholds";
 
 type BarData = {
   value: number | null;
@@ -13,27 +17,14 @@ type MiniBarSparklineProps = {
   maxValue: number;
 };
 
-// Teal Summit two-colour status: teal good, amber attention (no red); no-data muted.
-function getBarColorClass(metric: WellnessMetric, value: number | null): string {
-  if (value === null) return "bg-[rgba(13,148,136,0.12)]";
-
-  switch (metric) {
-    case "mood":
-      return value >= 4 ? "bg-[#0d9488]" : "bg-[#d97706]";
-
-    case "energy":
-    case "sleep":
-      return value >= 7 ? "bg-[#0d9488]" : "bg-[#d97706]";
-
-    case "stress":
-    case "soreness":
-      // Inverted: lower is better
-      return value <= 3 ? "bg-[#0d9488]" : "bg-[#d97706]";
-
-    default:
-      return "bg-[rgba(13,148,136,0.12)]";
-  }
-}
+// Teal Summit two-colour status: teal good, amber attention (no red); no-data
+// muted. Which values earn which tone — including the stress/soreness
+// inversion — lives in utils/wellness-color-thresholds.ts.
+const TONE_BG_CLASS: Record<WellnessTone, string> = {
+  good: "bg-[#0d9488]",
+  attention: "bg-[#d97706]",
+  none: "bg-[rgba(13,148,136,0.12)]",
+};
 
 export const MiniBarSparkline = ({ data, metric, maxValue }: MiniBarSparklineProps) => {
   return (
@@ -41,7 +32,7 @@ export const MiniBarSparkline = ({ data, metric, maxValue }: MiniBarSparklinePro
       <div className="flex gap-[3px] justify-center items-end h-8 mt-2.5">
         {data.map((bar, i) => {
           const heightPct = bar.value !== null ? (bar.value / maxValue) * 100 : 0;
-          const colorClass = getBarColorClass(metric, bar.value);
+          const colorClass = TONE_BG_CLASS[getWellnessTone(metric, bar.value)];
           return (
             <div
               key={i}

@@ -53,6 +53,7 @@ coaches
         │
         ├── check_ins                 -- weekly structured submissions
         ├── client_goals              -- versioned goal records
+        ├── client_notes              -- coach notes about the client (one pinned max)
         └── body_metrics              -- immutable measurement events
 ```
 
@@ -90,6 +91,19 @@ Coach-logged measurement entries backing the redesigned client Metrics page:
 - Weight/bodyFat entries **dual-write a `body_metrics` event** (`source: 'coach_entry'`, `recorded_at` = the entry date at 12:00Z, `source_id` = the entry id) so goal comparisons stay coherent; the `clients` denormalized cache updates **only when the entry is dated on/after the latest known event** — a backdated entry never regresses `current_weight` (`recordBodyMetrics`'s `updateClientCache` param)
 - Write path: `GET/POST /api/clients/[id]/metric-entries` (coach-only; future dates rejected against the coach's timezone; audited as `metric_entry.upsert` with no measurement value in metadata)
 - The Metrics page merges these entries with check-in-derived values client-side (`utils/metric-points.ts` + `utils/metric-derived-stats.ts`); `check_ins` rows are never written by this feature
+
+### client_notes table (migration 134)
+
+Coach-authored notes about a client, backing the Overview's Coach-notes card and the Notes tab:
+- `client_id` FK (CASCADE), `coach_id` FK (SET NULL), `body` TEXT NOT NULL, `is_pinned` BOOLEAN NOT NULL DEFAULT false, `created_at`/`updated_at`
+- Index `(client_id, created_at DESC)`; **partial unique index on `(client_id) WHERE is_pinned`** — at most one pinned note per client. Pinning therefore unpins whatever held the pin, in two non-transactional writes: the existence/ownership check MUST stay ahead of the unpin sweep, or a 404 on a stale/foreign `noteId` clears the client's pin first. Readers must revalidate the whole list after a pin, since the other row's change is invisible in the PATCH response.
+- RLS enabled with **no policies**, `GRANT ALL … TO service_role` only (CONVENTIONS §8)
+- Seeded from the legacy `clients.notes` column (one unpinned row per non-empty value). **`clients.notes` is seeded-from, not migrated-away** — the column still exists and is still written by the intake/onboarding paths; nothing in the notes surface reads or writes it any more.
+- Routes: `GET`+`POST /api/clients/[id]/notes`, `PATCH /api/clients/[id]/notes/[noteId]` (`{ isPinned }`). GET returns pinned-first then newest-first. There is deliberately no DELETE.
+
+### clients.phone (migration 135)
+
+Nullable free-text phone (no shape constraint — formats vary too much). Exposed through `updateClientSchema`, `updateClient`, and `lib/mappers.ts`, and written from the Overview's Client-settings dialog via the existing `PATCH /api/clients/[id]`.
 
 ### Denormalized cache on clients table
 
@@ -449,13 +463,13 @@ One rule in `lib/daily-log-permissions.ts` (pure, client-safe): today always edi
 
 Keyset-by-default is scoped to paginated, time-ordered "load older" history (check-ins). Small bounded sets return in full with no cursor (habits, a 1-week completions window, the exercise list). History rows are ID-first (`exercise_id` + `performed_name` fallback), never the catalog dictionary; the dictionary syncs separately via `GET /api/client/exercises/catalog?since=` (a read-only delta returning rows with `updated_at` after `since`; the client upserts them into its cached catalog — deletes are invisible to the delta, so a periodic full resync, by omitting `since`, catches them; internally paged past the ~1000-row PostgREST cap). Weight is rendered client-side in the user's unit preference via `formatWeight(weightKg, unitPreference)` (no `formatWeight` calls in `app/api/client/**`); viewer-relative per-record units (stored `weight_unit` + conversion at the API boundary) are Phase 8, not yet built.
 
-### Coach-side wellness strip
+### Coach-side wellness strip (unmounted)
 
-`daily-wellness-strip.tsx` on the client overview tab:
-- Fetches 28-day rolling window of daily_logs + habit_logs via `Promise.all`
-- Renders 2x2 bar chart grid (mood, energy, sleep, stress) + adherence dots
-- Runs `detectAlerts()` on loaded data for the attention feed
-- **Intentionally 4-metric**: this frozen legacy strip does not render soreness (the Wellness tab shows all 5) — the divergence is a deliberate decision of the soreness workstream, not an omission
+`components/clients/daily-pulse/daily-wellness-strip.tsx` — frozen legacy, and **no longer mounted anywhere** since the Overview redesign replaced it with the five-card Daily-wellness section. The files stay (nothing is scheduled to delete them); `hooks/use-wellness-data.ts` is still its data source and remains shared with the Overview.
+- Fetched a 28-day rolling window of daily_logs + habit_logs via `Promise.all`
+- Rendered a 2x2 bar chart grid (mood, energy, sleep, stress) + adherence dots
+- Ran `detectAlerts()` client-side — a second, independent alert computation from the server-side attention feed
+- **Intentionally 4-metric**: it never rendered soreness. The Overview's replacement renders all five (see below)
 
 ---
 
@@ -474,13 +488,13 @@ All coach-side data fetching uses SWR with:
 
 | Tab | Component | Description |
 |-----|-----------|-------------|
-| Overview | `ClientOverviewTab` | Quick metrics, wellness strip, recent check-ins |
+| Overview | `ClientOverviewTab` | Six sections, top to bottom: Waiting on you + Since your last visit · Coach notes · Client & Schedule + Client Status · Current plan · Adherence · Daily wellness. See "Coach client Overview" below |
 | Metrics | `MetricsTabContent` | Metric hero + progression chart + measurement log over merged check-in ⊕ coach-logged series (`client_metric_entries`); "Log measurement" modal |
 | Training Plan | `TrainingPlanCard` → `TrainingPlanBuilder` (Data / Plans / Exercise Data) | Calendar + hero, exercise analytics. "Apply program" opens the library drawer, which remounts the shared `/dashboard/programs` builder in `client-draft` mode; "Edit plan" (hero) / "Edit whole plan" (session tray) open the same builder in `placed-plan` mode over the live placed plan (see "Plan amendment"). (The plan-history list below the calendar was removed with the dead `training_plan_history` read chain — the table has had no writer since P7.) |
 | Nutrition | `NutritionCalculatorCardEnhanced` + `NutritionHistoryTable` | Plan builder, per-day nutrition calendar, weekly adherence history |
 | Wellness | `WellnessTabContent` | Wellness trends and analysis |
 | Daily Habits | `HabitsTabContent` + `HabitsHistoryTable` | Habit management, analytics |
-| Notes | Coach notes (inline) | Free-text notes |
+| Notes | `NotesTabContent` | `client_notes` list — pinned first, newest-first, add + pin/unpin. Same endpoints as the Overview card |
 
 Tab changes call `router.replace(/clients/${clientId}?tab=${tab}, { scroll: false })` to sync URL without scroll.
 
@@ -491,6 +505,28 @@ Tab changes call `router.replace(/clients/${clientId}?tab=${tab}, { scroll: fals
 - **Nutrition**: `NutritionBuilderProvider` wraps `useNutritionBuilder`. Manages calorie targets, macro breakdown, custom macros toggle. Calculates adjusted targets from client metrics (BMR, activity level). This is the one remaining `generatePlan()` caller.
 
 Each context is a thin wrapper: it provides the hook's return value, and consumers access it via the context hook.
+
+### Coach client Overview
+
+`components/clients/client-overview-tab.tsx` + `components/clients/overview/**`. Six sections reading top to bottom as *what needs my attention → what happened → what I said last time → who this client is → what they are on → how consistent they are → how they feel*. Every summarising card links to the tab that owns its data; every unset state names what is missing and offers the action that fixes it.
+
+Four SWR reads back it, all coach-scoped under `/api/clients/[id]/`:
+
+| Endpoint | Serves | Notes |
+|---|---|---|
+| `GET …/overview-brief` | Waiting on you, the activity feed, the check-in timing strip | **Read-only** — it does not touch the `last_viewed_at` anchor |
+| `POST …/overview-brief/seen` | "Mark seen" | The ONLY writer of `coach_client_views.last_viewed_at`; returns `{ lastViewedAt }` nested under `data` |
+| `GET …/overview-plan-summary` | Current-plan cards + the status card's training-block chips | `training` and `nutrition` are independently nullable |
+| `GET …/adherence?days=` | The three-rail adherence card | `days` clamped to [7, 28]; rails are index-aligned with `dates` |
+| `GET`/`POST …/notes`, `PATCH …/notes/[noteId]` | Coach-notes card + Notes tab | See `client_notes` above |
+
+Load-bearing details:
+- **The anchor moves only on "Mark seen".** The GET was made read-only so a page load cannot silently clear the coach's unread feed. A first visit (null anchor) returns an empty feed and renders a first-visit state rather than a caught-up one.
+- **No roadmap or phase concept exists.** The status card's chips describe the active *training block* — plan name · `Week X of Y` (via `utils/plan-week.ts`) · Active/Ended. "Ended" means today is past the authored duration.
+- **Goal chips come from `lib/goals/goal-state.ts`** (reached / beyond / gap). The under-vs-over wording needs the direction of travel, which only the call site's `start` value knows.
+- **Alert rows route through `lib/attention-alert-destinations.ts`**, the same map the dashboard feed uses, so the two surfaces cannot disagree about where an alert leads.
+- **Five wellness cards**, Soreness included. Stress and soreness are inverted (lower is better) through `getWellnessTone()` in `utils/wellness-color-thresholds.ts` — the single source for that inversion, shared with `components/check-in/mini-bar-sparkline.tsx`. **Sleep has no trigger in `lib/wellness-triggers.ts`, so its card can never flag; do not invent one.**
+- Wellness values come from `GET …/daily-logs` narrowed to 7 days through `useWellnessData(clientId, { daysBack, withHabitLogs })`.
 
 ### Attention feed
 

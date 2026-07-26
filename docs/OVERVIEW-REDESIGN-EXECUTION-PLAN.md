@@ -278,3 +278,54 @@ First visit (null anchor) → empty `activity`; multi-event adherence days colla
 ### Not done here (by design)
 
 No UI work beyond the mechanical dashboard-map import. `docs/ARCHITECTURE.md` is **not** yet updated for `client_notes` / `clients.phone` / the four new endpoints — the plan assigns that to Session 2's close-out.
+
+---
+
+## STATUS — SESSION 2 (UI rebuild): SHIPPED 2026-07-26
+
+**The redesign is complete.** All six sections are live on `main`, every Session 1 contract has a consumer, and the deprecated `sinceLastVisit` counts field is gone end-to-end. `docs/ARCHITECTURE.md` is reconciled — this execution plan is now superseded by it plus `CONVENTIONS.md`.
+
+### What shipped
+
+| Piece | Files |
+|---|---|
+| Tab root, six-section order, `DailyWellnessStrip` unmounted | `components/clients/client-overview-tab.tsx` |
+| Shared recipes + pure formatters | `overview/overview-primitives.tsx`, `overview/overview-format.ts` |
+| ① Waiting on you · Since your last visit | `overview/waiting-on-you-section.tsx`, `overview/since-last-visit-section.tsx` |
+| ② Coach notes | `overview/coach-notes-card.tsx` |
+| ③ Client & Schedule · Client Status · settings dialog | `overview/client-schedule-card.tsx`, `overview/client-status-card.tsx`, `overview/client-settings-dialog.tsx` |
+| ④ Current plan | `overview/current-plan-section.tsx`, `overview/plan-training-card.tsx`, `overview/plan-nutrition-card.tsx` |
+| ⑤ Adherence | `overview/adherence-card.tsx` |
+| ⑥ Daily wellness | `overview/wellness-cards.tsx`, `overview/wellness-sparkline.tsx` |
+| Notes tab (replaces the inline read-only block) | `components/clients/notes/notes-tab-content.tsx` |
+| SWR hooks | `use-overview-plan-summary.ts`, `use-client-adherence.ts`, `use-client-notes.ts`; `use-overview-brief.ts` gained `mutate` + `markSeen()` |
+
+### Gates
+
+`npx tsc --noEmit` clean · `npx eslint .` **0 errors** (212 pre-existing warnings, none in new files) · `npx vitest run` **224 files / 2251 tests pass** · `npm run check:labels` OK (625 files). The `set-tracker.test.tsx` flake did not appear.
+
+### Browser smoke — PASSED
+
+`next dev` + CDP against the fixture scale client. Verified: section order 1→6; alert rows navigate to their mapped tab (soreness → `?tab=wellness`, habit dropoff → `?tab=daily-habits`); note add (toast + row) and pin (tile/meta/icon flip + toast) persisting to the Notes tab; the settings dialog saving phone + start date into the field grid without a reload; **all three goal-chip states** (`5.0 kg to go` warning → `5.0 kg under goal` positive → `Goal reached`); "Mark seen" clearing a populated feed and advancing the anchor; five wellness cards with Soreness flagged `High · 3 days` and Sleep unflagged. **Console clean — zero errors across the whole run.**
+
+Rail alignment was measured on rendered pixels, not class arithmetic: all three rails report identical `grid-template-columns` and identical per-column `left` values, and the training rail's faint dashes share the dots' centre-Y exactly (223px, 0px delta).
+
+### Deviations from the plan
+
+1. **`overview-format.ts` is new (not in the plan's file list).** The plan put the formatting helpers in `overview-primitives.tsx`; splitting the pure functions out mirrors `metrics-format.ts` and keeps both files inside the size guideline.
+2. **The plan's "chip row / stat strip" cards became three files** (`current-plan-section` + one card each) rather than one `current-plan-section.tsx`, for the same reason.
+3. **`utils/wellness-color-thresholds.ts` was reworked, not merely consumed.** It exported only `getBarColor`, which had **zero call sites** and returned off-system colours (`#10b981`/`#f59e0b`/`#ef4444`), while `mini-bar-sparkline.tsx` carried a private duplicate of the inversion rule. Added `getWellnessTone()` + `WELLNESS_TONE_COLOR`, pointed the sparkline at them (rendered output unchanged), deleted the dead `getBarColor`. Owner-approved.
+4. **`useWellnessData` gained `{ daysBack, withHabitLogs }`** (defaults unchanged) so the Overview's 7-day read reuses the strip's fetch instead of duplicating it, without editing anything under `daily-pulse/`.
+5. **The page-level `CheckInDetailModal` chain was removed** from `app/clients/[id]/page.tsx`. Dropping the unused `checkIns`/`onSelectCheckIn` props orphaned `handleSelectCheckIn`, `selectedCheckInId`, `handleNavigate`, `selectedIndex` and `useCheckInData`; `no-unused-vars` forced the cleanup. The modal was **already unreachable** — `onSelectCheckIn` was unused inside the tab, and `CheckInsTabContent` mounts its own.
+6. **The settings dialog uses React Hook Form + `zodResolver`** per CONVENTIONS §3, against a local coercing schema (the API's `updateClientSchema` takes a `number` for height; an `<input>` yields a string). Recent Teal-Summit dialogs use `useState` + hand-rolled validation instead — the convention was followed over the local precedent.
+7. **`brief-sections.test.tsx` was split** into `waiting-on-you-section.test.tsx` + `since-last-visit-section.test.tsx`. 44 new/updated component tests across 5 files, plus `utils/wellness-color-thresholds.test.ts`.
+
+### Landmines found during the smoke (NOT introduced here, NOT fixed here)
+
+- **A partial goal PATCH silently clears the other goal field.** `PATCH /api/clients/[id]` with only `goalWeight` dual-writes `client_goals` through `updateGoals({ goalWeight, goalBodyFatPercentage: undefined })`, which supersedes the active goal with a row whose body-fat target is NULL — and the `clients` cache follows. Reproduced three times during the goal-chip smoke and repaired by re-PATCHing both fields. **Any caller that edits one goal must send both**, or the coach loses the other silently. Worth a separate fix; it is a pre-existing write-path defect, not a UI one.
+- **`SectionLabel` renders `meta` before `actions`.** A brief that asks for "legend then meta" has to put both inside `actions`; there is no way to reorder the built-in slot.
+- The Overview's five wellness cards and the frozen strip now disagree by design (5 metrics vs 4). The strip is unmounted, so this is no longer a visible divergence.
+
+### Fixture state after the smoke (fixture scale client only)
+
+The goal weight and body-fat goal were restored to their exact originals (170 kg / 15%, verified by re-read). Deliberately **left in place**, as benign realistic fixture data that now exercises the new surfaces: one pinned coach note, `phone = 0412 345 678`, `start_date = 2026-03-01`. The view anchor ends where it started — at "now" — because "Mark seen" is what writes it.

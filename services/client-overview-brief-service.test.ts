@@ -46,13 +46,6 @@ function makeChain(count: number, single: unknown) {
   return chain;
 }
 
-const COUNTS: Record<string, number> = {
-  check_ins: 2,
-  daily_logs: 5,
-  body_metrics: 1,
-  session_logs: 3,
-  training_events: 4,
-};
 const LATEST_CHECK_IN = {
   id: "ci-1",
   created_at: "2026-06-03T10:00:00Z",
@@ -76,12 +69,12 @@ beforeEach(() => {
   getDaysUntilOrPastDueMock.mockReturnValue(-2);
   isClientOverdueMock.mockReturnValue(false);
   fromMock.mockImplementation((table: string) =>
-    makeChain(COUNTS[table] ?? 0, table === "check_ins" ? LATEST_CHECK_IN : null)
+    makeChain(0, table === "check_ins" ? LATEST_CHECK_IN : null)
   );
 });
 
 describe("getOverviewBrief", () => {
-  it("repeat visit: returns deltas and the activity feed built against the prior timestamp", async () => {
+  it("repeat visit: returns the activity feed built against the prior timestamp", async () => {
     getLastViewedAtMock.mockResolvedValue("2026-06-01T00:00:00Z");
     const feed = [{ type: "check_in", at: "2026-06-02T09:00:00Z" }];
     getActivitySinceMock.mockResolvedValue(feed);
@@ -91,19 +84,20 @@ describe("getOverviewBrief", () => {
     expect(brief.lastViewedAt).toBe("2026-06-01T00:00:00Z");
     expect(brief.activity).toEqual(feed);
     expect(getActivitySinceMock).toHaveBeenCalledWith("client-1", "2026-06-01T00:00:00Z", "kg");
-    expect(brief.sinceLastVisit).toEqual({
-      newCheckIns: 2,
-      newLogs: 5,
-      newBodyMetrics: 1,
-      newWorkoutsLogged: 3,
-      eventStatusChanges: 4,
-    });
     expect(brief.waitingOnYou.unreviewedCheckIn).toEqual({
       id: "ci-1",
       submittedAt: "2026-06-03T10:00:00Z",
-      createdAt: "2026-06-03T10:00:00Z",
-      status: "pending",
     });
+  });
+
+  it("does not read the retired since-last-visit delta tables", async () => {
+    getLastViewedAtMock.mockResolvedValue("2026-06-01T00:00:00Z");
+
+    await getOverviewBrief("coach-1", "client-1");
+
+    for (const table of ["daily_logs", "body_metrics", "session_logs", "training_events"]) {
+      expect(fromMock).not.toHaveBeenCalledWith(table);
+    }
   });
 
   it("is read-only: never advances last_viewed_at (the seen route owns that)", async () => {
@@ -115,7 +109,7 @@ describe("getOverviewBrief", () => {
     expect(upsertLastViewedMock).not.toHaveBeenCalled();
   });
 
-  it("first visit (null last_viewed_at): zero deltas, empty feed, no anchored queries", async () => {
+  it("first visit (null last_viewed_at): empty feed, no anchored query", async () => {
     getLastViewedAtMock.mockResolvedValue(null);
 
     const brief = await getOverviewBrief("coach-1", "client-1");
@@ -123,17 +117,6 @@ describe("getOverviewBrief", () => {
     expect(brief.lastViewedAt).toBeNull();
     expect(brief.activity).toEqual([]);
     expect(getActivitySinceMock).not.toHaveBeenCalled();
-    expect(brief.sinceLastVisit).toEqual({
-      newCheckIns: 0,
-      newLogs: 0,
-      newBodyMetrics: 0,
-      newWorkoutsLogged: 0,
-      eventStatusChanges: 0,
-    });
-    // No count queries fired on first visit (check_ins is still read for
-    // unreviewed + timing, but the delta tables are untouched).
-    expect(fromMock).not.toHaveBeenCalledWith("daily_logs");
-    expect(fromMock).not.toHaveBeenCalledWith("session_logs");
   });
 
   it("surfaces attention alerts from the single-client evaluator", async () => {

@@ -2,17 +2,11 @@ import type { AttentionAlert } from "@/types/attention-feed";
 
 /**
  * The most-recent check-in awaiting coach review, or null if none.
- * `submittedAt` is the contract field (Overview redesign); `createdAt` and
- * `status` are kept so the pre-redesign UI renders between sessions — Session 2
- * removes them.
+ * `submittedAt` is `check_ins.created_at`.
  */
 export type UnreviewedCheckIn = {
   id: string;
   submittedAt: string;
-  /** @deprecated same value as submittedAt; Session 2 removes */
-  createdAt: string;
-  /** @deprecated Session 2 removes */
-  status: string;
 } | null;
 
 /**
@@ -48,19 +42,6 @@ export type CheckInTiming = {
 };
 
 /**
- * Counts of activity since the coach's last visit (Session 7.6).
- * @deprecated superseded by the item-level `activity` feed; kept so the
- * pre-redesign UI works between sessions — Session 2 deletes it end-to-end.
- */
-export type SinceLastVisit = {
-  newCheckIns: number;
-  newLogs: number;
-  newBodyMetrics: number;
-  newWorkoutsLogged: number;
-  eventStatusChanges: number;
-};
-
-/**
  * The coach overview "pre-session brief". `lastViewedAt` is null on first visit
  * (the UI shows a first-visit state instead of the activity feed). The GET that
  * serves this is read-only — the anchor moves only via POST …/overview-brief/seen.
@@ -72,6 +53,5 @@ export type OverviewBrief = {
     attentionAlerts: AttentionAlert[];
   };
   activity: ActivityItem[];
-  sinceLastVisit: SinceLastVisit;
   checkInTiming: CheckInTiming | null;
 };
