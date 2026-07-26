@@ -6,7 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { HABIT_DROPOFF_THRESHOLD_PERCENT } from "@/lib/constants";
 import { MONO, MONO_META_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
 import { OpenTabLink, OverviewCard } from "./overview-primitives";
-import { formatDateOnlyShort, formatDayInitial, pluralize } from "./overview-format";
+import { formatDayInitial, pluralize } from "./overview-format";
 import type { ClientTab } from "@/lib/client-tabs";
 import type { AdherenceSummary, DotState } from "@/types/coach-overview";
 
@@ -228,9 +228,6 @@ export function AdherenceCard({
             onOpen={() => onTabChange("daily-habits")}
           />
         </div>
-        <p className={cn(MONO_META_CLASS, "border-t border-[rgba(13,148,136,0.06)] px-5 py-2.5 text-[10px]")}>
-          {formatDateOnlyShort(dates[0])} – {formatDateOnlyShort(dates[dates.length - 1])}
-        </p>
       </OverviewCard>
     </div>
   );

@@ -120,12 +120,10 @@ function DueChip({ timing }: { timing: CheckInTiming }) {
 }
 
 function CheckInStrip({
-  client,
   timing,
   isLoading,
   onOpenSettings,
 }: {
-  client: Client;
   timing: CheckInTiming | null;
   isLoading: boolean;
   onOpenSettings: () => void;
@@ -157,11 +155,10 @@ function CheckInStrip({
     );
   }
 
+  // Cadence is deliberately absent — the Frequency and Check-in day fields
+  // directly below already carry it.
   const submitted = timing.lastSubmittedAt ? relativeDayPhrase(timing.lastSubmittedAt) : null;
-  const cadence = `${frequencyLabel(client).toLowerCase()}, ${dayLabel(timing.expectedCheckInDay).toLowerCase()}`;
-  const subline = submitted
-    ? `Last submitted ${submitted.text} · ${cadence}`
-    : `Not submitted yet · ${cadence}`;
+  const subline = submitted ? `Last submitted ${submitted.text}` : "Not submitted yet";
 
   return (
     <div
@@ -255,7 +252,6 @@ export function ClientScheduleCard({
 
         <div className="px-5 pt-4">
           <CheckInStrip
-            client={client}
             timing={checkInTiming}
             isLoading={isTimingLoading}
             onOpenSettings={openSettings}

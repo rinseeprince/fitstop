@@ -69,9 +69,6 @@ export function PlanTrainingCard({
             {/* No space before InlineMono — it owns its own gap. */}
             Starts<InlineMono>{formatDateOnlyWeekday(upcomingTraining.startsOn)}</InlineMono>
           </p>
-          <p className="mt-1 text-[11px] text-[#93b0b4]">
-            Sessions, adherence and progression begin on day one.
-          </p>
         </div>
       </OverviewCard>
     );

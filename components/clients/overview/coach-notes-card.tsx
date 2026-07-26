@@ -163,9 +163,6 @@ export function CoachNotesCard({
         ) : (
           <div className="py-3">
             <p className="text-sm text-[#5a7d82]">No notes about this client yet</p>
-            <p className="mt-1 text-xs text-[#93b0b4]">
-              Add one below so the context travels with them.
-            </p>
           </div>
         )}
 
