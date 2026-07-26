@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { getCheckInById } from "@/services/check-in-service";
 import { getClientById } from "@/services/client-service";
@@ -10,9 +10,10 @@ export type CoachAuthResult = Authorized | Unauthorized;
 
 /**
  * Requires coach authentication. Returns coachId or a 401 response.
+ * Pass the route's request so auth failures log route + hashed IP.
  */
-export async function requireCoachAuth(): Promise<CoachAuthResult> {
-  const coachId = await getAuthenticatedCoachId();
+export async function requireCoachAuth(request?: NextRequest): Promise<CoachAuthResult> {
+  const coachId = await getAuthenticatedCoachId(request);
   if (!coachId) {
     return {
       authorized: false,
@@ -27,9 +28,10 @@ export async function requireCoachAuth(): Promise<CoachAuthResult> {
  * Returns 401 if not authenticated, 404 if client not found or not owned.
  */
 export async function requireCoachOwnsClient(
-  clientId: string
+  clientId: string,
+  request?: NextRequest
 ): Promise<CoachAuthResult> {
-  const auth = await requireCoachAuth();
+  const auth = await requireCoachAuth(request);
   if (!auth.authorized) return auth;
 
   const client = await getClientById(clientId);

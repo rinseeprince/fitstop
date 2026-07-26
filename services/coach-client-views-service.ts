@@ -28,16 +28,20 @@ export const getLastViewedAt = async (
   return data?.last_viewed_at ?? null;
 };
 
-/** Records "the coach just viewed this client" (last-write-wins upsert). */
+/**
+ * Records "the coach just viewed this client" (last-write-wins upsert).
+ * Returns the timestamp written so the seen route can echo it back.
+ */
 export const upsertLastViewed = async (
   coachId: string,
   clientId: string
-): Promise<void> => {
+): Promise<string> => {
+  const lastViewedAt = new Date().toISOString();
   const { error } = await supabaseAdmin.from("coach_client_views").upsert(
     {
       coach_id: coachId,
       client_id: clientId,
-      last_viewed_at: new Date().toISOString(),
+      last_viewed_at: lastViewedAt,
     },
     { onConflict: "coach_id,client_id" }
   );
@@ -46,4 +50,6 @@ export const upsertLastViewed = async (
     console.error("Failed to upsert coach_client_views:", error);
     throw new Error(`Failed to record view: ${error.message}`);
   }
+
+  return lastViewedAt;
 };

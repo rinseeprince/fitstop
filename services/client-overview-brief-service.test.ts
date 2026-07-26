@@ -3,6 +3,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const getLastViewedAtMock = vi.fn();
 const upsertLastViewedMock = vi.fn();
 const evaluateSingleClientAlertsMock = vi.fn();
+const getActivitySinceMock = vi.fn();
+const getClientByIdMock = vi.fn();
+const calculateNextExpectedCheckInMock = vi.fn();
+const getDaysUntilOrPastDueMock = vi.fn();
+const isClientOverdueMock = vi.fn();
 
 vi.mock("./coach-client-views-service", () => ({
   getLastViewedAt: (...a: unknown[]) => getLastViewedAtMock(...a),
@@ -10,6 +15,17 @@ vi.mock("./coach-client-views-service", () => ({
 }));
 vi.mock("./attention-feed-service", () => ({
   evaluateSingleClientAlerts: (...a: unknown[]) => evaluateSingleClientAlertsMock(...a),
+}));
+vi.mock("./client-activity-feed-service", () => ({
+  getActivitySince: (...a: unknown[]) => getActivitySinceMock(...a),
+}));
+vi.mock("./client-service", () => ({
+  getClientById: (...a: unknown[]) => getClientByIdMock(...a),
+}));
+vi.mock("./check-in-tracking-service", () => ({
+  calculateNextExpectedCheckIn: (...a: unknown[]) => calculateNextExpectedCheckInMock(...a),
+  getDaysUntilOrPastDue: (...a: unknown[]) => getDaysUntilOrPastDueMock(...a),
+  isClientOverdue: (...a: unknown[]) => isClientOverdueMock(...a),
 }));
 
 const fromMock = vi.fn();
@@ -37,23 +53,44 @@ const COUNTS: Record<string, number> = {
   session_logs: 3,
   training_events: 4,
 };
-const UNREVIEWED = { id: "ci-1", created_at: "2026-06-03T10:00:00Z", status: "pending" };
+const LATEST_CHECK_IN = {
+  id: "ci-1",
+  created_at: "2026-06-03T10:00:00Z",
+  status: "pending",
+  period_end: "2026-06-05",
+};
+const CLIENT = {
+  id: "client-1",
+  weightUnit: "kg",
+  checkInFrequency: "weekly",
+  expectedCheckInDay: "friday",
+  timezone: "UTC",
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
   evaluateSingleClientAlertsMock.mockResolvedValue([]);
+  getActivitySinceMock.mockResolvedValue([]);
+  getClientByIdMock.mockResolvedValue(CLIENT);
+  calculateNextExpectedCheckInMock.mockReturnValue(new Date("2026-06-05T00:00:00"));
+  getDaysUntilOrPastDueMock.mockReturnValue(-2);
+  isClientOverdueMock.mockReturnValue(false);
   fromMock.mockImplementation((table: string) =>
-    makeChain(COUNTS[table] ?? 0, table === "check_ins" ? UNREVIEWED : null)
+    makeChain(COUNTS[table] ?? 0, table === "check_ins" ? LATEST_CHECK_IN : null)
   );
 });
 
 describe("getOverviewBrief", () => {
-  it("repeat visit: returns deltas computed against the prior timestamp", async () => {
+  it("repeat visit: returns deltas and the activity feed built against the prior timestamp", async () => {
     getLastViewedAtMock.mockResolvedValue("2026-06-01T00:00:00Z");
+    const feed = [{ type: "check_in", at: "2026-06-02T09:00:00Z" }];
+    getActivitySinceMock.mockResolvedValue(feed);
 
     const brief = await getOverviewBrief("coach-1", "client-1");
 
     expect(brief.lastViewedAt).toBe("2026-06-01T00:00:00Z");
+    expect(brief.activity).toEqual(feed);
+    expect(getActivitySinceMock).toHaveBeenCalledWith("client-1", "2026-06-01T00:00:00Z", "kg");
     expect(brief.sinceLastVisit).toEqual({
       newCheckIns: 2,
       newLogs: 5,
@@ -63,29 +100,29 @@ describe("getOverviewBrief", () => {
     });
     expect(brief.waitingOnYou.unreviewedCheckIn).toEqual({
       id: "ci-1",
+      submittedAt: "2026-06-03T10:00:00Z",
       createdAt: "2026-06-03T10:00:00Z",
       status: "pending",
     });
   });
 
-  it("reads last_viewed_at BEFORE upserting it (else deltas are always empty)", async () => {
+  it("is read-only: never advances last_viewed_at (the seen route owns that)", async () => {
     getLastViewedAtMock.mockResolvedValue("2026-06-01T00:00:00Z");
 
     await getOverviewBrief("coach-1", "client-1");
 
     expect(getLastViewedAtMock).toHaveBeenCalledTimes(1);
-    expect(upsertLastViewedMock).toHaveBeenCalledTimes(1);
-    expect(getLastViewedAtMock.mock.invocationCallOrder[0]).toBeLessThan(
-      upsertLastViewedMock.mock.invocationCallOrder[0]
-    );
+    expect(upsertLastViewedMock).not.toHaveBeenCalled();
   });
 
-  it("first visit (null last_viewed_at): zero deltas, still records the view", async () => {
+  it("first visit (null last_viewed_at): zero deltas, empty feed, no anchored queries", async () => {
     getLastViewedAtMock.mockResolvedValue(null);
 
     const brief = await getOverviewBrief("coach-1", "client-1");
 
     expect(brief.lastViewedAt).toBeNull();
+    expect(brief.activity).toEqual([]);
+    expect(getActivitySinceMock).not.toHaveBeenCalled();
     expect(brief.sinceLastVisit).toEqual({
       newCheckIns: 0,
       newLogs: 0,
@@ -93,10 +130,10 @@ describe("getOverviewBrief", () => {
       newWorkoutsLogged: 0,
       eventStatusChanges: 0,
     });
-    // No count queries fired on first visit (only the unreviewed check-in read).
+    // No count queries fired on first visit (check_ins is still read for
+    // unreviewed + timing, but the delta tables are untouched).
     expect(fromMock).not.toHaveBeenCalledWith("daily_logs");
     expect(fromMock).not.toHaveBeenCalledWith("session_logs");
-    expect(upsertLastViewedMock).toHaveBeenCalledWith("coach-1", "client-1");
   });
 
   it("surfaces attention alerts from the single-client evaluator", async () => {
@@ -109,5 +146,35 @@ describe("getOverviewBrief", () => {
 
     expect(brief.waitingOnYou.attentionAlerts).toHaveLength(1);
     expect(brief.waitingOnYou.attentionAlerts[0].message).toBe("No logs in 5 days");
+  });
+
+  it("builds checkInTiming through the tracking service with the last check-in attached", async () => {
+    getLastViewedAtMock.mockResolvedValue("2026-06-01T00:00:00Z");
+
+    const brief = await getOverviewBrief("coach-1", "client-1");
+
+    expect(brief.checkInTiming).toEqual({
+      frequency: "weekly",
+      expectedCheckInDay: "friday",
+      lastSubmittedAt: "2026-06-03T10:00:00Z",
+      nextDueDate: "2026-06-05",
+      daysUntilDue: -2,
+      isOverdue: false,
+    });
+    // The tracking service must see the latest check-in's period_end so its
+    // "already checked in this period" branch can fire.
+    expect(calculateNextExpectedCheckInMock).toHaveBeenCalledWith(
+      expect.objectContaining({ lastCheckInPeriodEnd: "2026-06-05" })
+    );
+  });
+
+  it("returns null checkInTiming when the client has no schedule", async () => {
+    getLastViewedAtMock.mockResolvedValue("2026-06-01T00:00:00Z");
+    getClientByIdMock.mockResolvedValue({ ...CLIENT, checkInFrequency: "none" });
+
+    const brief = await getOverviewBrief("coach-1", "client-1");
+
+    expect(brief.checkInTiming).toBeNull();
+    expect(calculateNextExpectedCheckInMock).not.toHaveBeenCalled();
   });
 });

@@ -35,7 +35,12 @@ describe("WaitingOnYouSection", () => {
     render(
       <WaitingOnYouSection
         clientName="Alex"
-        unreviewedCheckIn={{ id: "ci-1", createdAt: "2026-06-03T10:00:00Z", status: "pending" }}
+        unreviewedCheckIn={{
+          id: "ci-1",
+          submittedAt: "2026-06-03T10:00:00Z",
+          createdAt: "2026-06-03T10:00:00Z",
+          status: "pending",
+        }}
         attentionAlerts={[
           {
             type: "no_log_gap",
