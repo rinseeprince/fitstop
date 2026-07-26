@@ -2,10 +2,10 @@
 
 import { CalendarClock, Dumbbell } from "lucide-react";
 import { SPLIT_TYPE_LABELS } from "@/lib/training-constants";
-import { MONO } from "@/components/clients/training/program-builder/builder-tokens";
 import {
   CardHeader,
   EmptyInvite,
+  InlineMono,
   NeutralChip,
   OpenTabLink,
   OverviewCard,
@@ -66,7 +66,8 @@ export function PlanTrainingCard({
         />
         <div className="mt-auto border-t border-[rgba(13,148,136,0.06)] px-5 py-4">
           <p className="text-[13px] font-semibold text-[#0c1a1e]">
-            Starts <span className={MONO}>{formatDateOnlyWeekday(upcomingTraining.startsOn)}</span>
+            {/* No space before InlineMono — it owns its own gap. */}
+            Starts<InlineMono>{formatDateOnlyWeekday(upcomingTraining.startsOn)}</InlineMono>
           </p>
           <p className="mt-1 text-[11px] text-[#93b0b4]">
             Sessions, adherence and progression begin on day one.

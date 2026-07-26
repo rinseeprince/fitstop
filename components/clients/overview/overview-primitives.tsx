@@ -88,6 +88,21 @@ export function OpenTabLink({ label, onClick }: { label: string; onClick: () => 
   );
 }
 
+/**
+ * A mono datum sitting inside a sans line ("Starts <date>", "Next check-in due
+ * <date>").
+ *
+ * Owns its own leading gap of one monospace character, and the call site must
+ * NOT also put a space before it. A literal space there is rendered in the sans
+ * run (~3.5px at 13px) while the datum's own internal spaces are JetBrains
+ * Mono's (~7.8px) — so the label reads as glued to the value while the value
+ * looks airy. `ch` resolves against this span's own font, so the gap always
+ * matches the datum's rhythm whatever the size.
+ */
+export function InlineMono({ children }: { children: ReactNode }) {
+  return <span className={cn(MONO, "ml-[1ch]")}>{children}</span>;
+}
+
 /** Neutral chip; digit-bearing text renders mono, word-only text sans. */
 export function NeutralChip({ children }: { children: string }) {
   return (

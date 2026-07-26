@@ -10,7 +10,7 @@ import {
   MONO_META_CLASS,
   THUMB_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens";
-import { OverviewCard } from "./overview-primitives";
+import { InlineMono, OverviewCard } from "./overview-primitives";
 import { ClientSettingsDialog } from "./client-settings-dialog";
 import { formatDateOnlyWeekday, pluralize, relativeDayPhrase } from "./overview-format";
 import type { Client } from "@/types/check-in";
@@ -184,8 +184,8 @@ function CheckInStrip({
         <p className="truncate text-[13px] font-semibold text-[#0c1a1e]">
           {timing.nextDueDate ? (
             <>
-              Next check-in due{" "}
-              <span className={MONO}>{formatDateOnlyWeekday(timing.nextDueDate)}</span>
+              {/* No space before InlineMono — it owns its own gap. */}
+              Next check-in due<InlineMono>{formatDateOnlyWeekday(timing.nextDueDate)}</InlineMono>
             </>
           ) : (
             "Next check-in not scheduled"
