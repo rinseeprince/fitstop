@@ -5,23 +5,10 @@ import Link from "next/link"
 import { motion } from "framer-motion"
 import { CheckCircle, ChevronDown, ChevronUp, X } from "lucide-react"
 import useSWR from "swr"
-import type { AttentionFeedResponse, AttentionAlert, AlertType } from "@/types/attention-feed"
+import type { AttentionFeedResponse, AttentionAlert } from "@/types/attention-feed"
 import { cn } from "@/lib/utils"
 import { MONO } from "@/components/clients/training/program-builder/builder-tokens"
-
-const alertTabMap: Record<AlertType, string> = {
-  mood_drop: "wellness",
-  energy_drop: "wellness",
-  high_stress: "wellness",
-  high_soreness: "wellness",
-  no_log_gap: "wellness",
-  nutrition_missed: "nutrition",
-  activity_cal_mismatch: "nutrition",
-  training_missed: "training",
-  partial_training_pattern: "training",
-  habit_dropoff: "daily-habits",
-  no_engagement: "training",
-}
+import { alertDestination } from "@/lib/attention-alert-destinations"
 
 function AlertRow({ clientId, alert, onDismiss }: {
   clientId: string
@@ -40,7 +27,7 @@ function AlertRow({ clientId, alert, onDismiss }: {
       </div>
       <div className="flex items-center gap-2 flex-shrink-0">
         <Link
-          href={`/clients/${clientId}?tab=${alertTabMap[alert.type]}`}
+          href={`/clients/${clientId}?tab=${alertDestination(alert.type).tab}`}
           className="text-xs text-[#0d9488] hover:text-[#0f766e]"
         >
           View
