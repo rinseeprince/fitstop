@@ -65,9 +65,6 @@ export function WaitingOnYouSection({
         <div className="flex flex-1 flex-col items-center justify-center px-5 py-8 text-center">
           <CheckCircle2 className="h-8 w-8 text-[#0d9488] opacity-50" strokeWidth={1.5} />
           <p className="mt-2 text-sm text-[#5a7d82]">You&apos;re caught up on {clientName}</p>
-          <p className="mt-1 text-xs text-[#93b0b4]">
-            No unreviewed check-in and nothing flagged this week.
-          </p>
         </div>
       ) : (
         <div className="px-3 pb-4">

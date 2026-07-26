@@ -10,7 +10,7 @@ import {
   THUMB_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens";
 import { CardHeader, OverviewCard } from "./overview-primitives";
-import { formatDateOnlyShort, formatMetricValue, formatRelativeShort, pluralize } from "./overview-format";
+import { formatMetricValue, formatRelativeShort, pluralize } from "./overview-format";
 import type { ActivityItem } from "@/types/coach-brief";
 
 type SinceLastVisitSectionProps = {
@@ -132,12 +132,7 @@ export function SinceLastVisitSection({
               </p>
             </>
           ) : (
-            <>
-              <p className="mt-2 text-sm text-[#5a7d82]">You&apos;re all caught up</p>
-              <p className={cn(MONO_META_CLASS, "mt-1 text-xs")}>
-                Nothing new since {formatDateOnlyShort(lastViewedAt.slice(0, 10))}
-              </p>
-            </>
+            <p className="mt-2 text-sm text-[#5a7d82]">You&apos;re all caught up</p>
           )}
         </div>
       ) : (

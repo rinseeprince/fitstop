@@ -17,13 +17,14 @@ describe("SinceLastVisitSection", () => {
     expect(screen.queryByRole("button", { name: /mark seen/i })).not.toBeInTheDocument();
   });
 
-  it("nothing new: shows the caught-up state with the anchor date", () => {
+  it("nothing new: shows the caught-up state", () => {
     render(
       <SinceLastVisitSection lastViewedAt="2026-06-01T00:00:00Z" activity={[]} {...NOOP} />
     );
 
     expect(screen.getByText(/all caught up/i)).toBeInTheDocument();
-    expect(screen.getByText(/Nothing new since 1 Jun/)).toBeInTheDocument();
+    // Distinct from the first-visit state, which is the other empty branch.
+    expect(screen.queryByText(/first time viewing/i)).not.toBeInTheDocument();
   });
 
   it("renders one row per activity type", () => {
