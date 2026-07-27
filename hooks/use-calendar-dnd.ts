@@ -13,13 +13,22 @@ import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { useToast } from "@/hooks/use-toast";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
 import { useInvalidateTrainingData } from "@/hooks/use-calendar-events";
-import { getTodayDateString } from "@/lib/date-helpers";
 import type { TrainingEvent } from "@/types/training";
 import type { KeyedMutator } from "swr";
 
 type UseCalendarDndProps = {
   events: TrainingEvent[];
   clientId: string;
+  /**
+   * The CLIENT's local day, not the coach's device day. Every gate below judges
+   * "is this the past?" on the client's calendar, matching the cards, the cells
+   * and the 7.82 server guards. A coach in Auckland editing a client in Los
+   * Angeles is a day ahead of them; on the device day the cell accepted the drop
+   * while this hook refused it, and the drag preview silently vanished.
+   * The visual today ring stays on the coach's device day — that one is about
+   * where the COACH is, not whose calendar the date is on.
+   */
+  clientToday: string;
   mutate: KeyedMutator<{ success: boolean; events: TrainingEvent[] }>;
   onLibraryPlanDrop?: (planId: string, startDate: string) => void;
   onLibrarySessionDrop?: (sessionId: string, targetDate: string) => void;
@@ -28,6 +37,7 @@ type UseCalendarDndProps = {
 export function useCalendarDnd({
   events,
   clientId,
+  clientToday,
   mutate,
   onLibraryPlanDrop,
   onLibrarySessionDrop,
@@ -53,11 +63,11 @@ export function useCalendarDnd({
       if (dataType === "library-plan" || dataType === "library-session") return;
 
       const found = events.find((e) => e.id === event.active.id);
-      if (found && found.status === "scheduled" && found.date >= getTodayDateString()) {
+      if (found && found.status === "scheduled" && found.date >= clientToday) {
         setActiveEvent(found);
       }
     },
-    [events]
+    [events, clientToday]
   );
 
   /**
@@ -125,12 +135,11 @@ export function useCalendarDnd({
       if (!over) return;
 
       const targetDate = over.id as string;
-      const today = getTodayDateString();
 
       // Handle library drops
       const dataType = active.data.current?.type as string | undefined;
       if (dataType === "library-plan") {
-        if (targetDate < today) {
+        if (targetDate < clientToday) {
           toast({ title: "Cannot place in the past", variant: "destructive" });
           return;
         }
@@ -138,7 +147,7 @@ export function useCalendarDnd({
         return;
       }
       if (dataType === "library-session") {
-        if (targetDate < today) {
+        if (targetDate < clientToday) {
           toast({ title: "Cannot place in the past", variant: "destructive" });
           return;
         }
@@ -154,7 +163,7 @@ export function useCalendarDnd({
       if (targetDate === draggedEvent.date) return;
 
       // Only allow moving to future dates
-      if (targetDate < today) {
+      if (targetDate < clientToday) {
         toast({
           title: "Cannot move to past",
           description: "Events can only be moved to today or future dates.",
@@ -165,7 +174,7 @@ export function useCalendarDnd({
 
       void performMove(draggedEvent, targetDate);
     },
-    [events, toast, onLibraryPlanDrop, onLibrarySessionDrop, performMove]
+    [events, clientToday, toast, onLibraryPlanDrop, onLibrarySessionDrop, performMove]
   );
 
   return {

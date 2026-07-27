@@ -137,6 +137,7 @@ export function TrainingCalendarView({
   const dnd = useCalendarDnd({
     events,
     clientId,
+    clientToday,
     mutate,
     onLibraryPlanDrop: (libraryPlanId, targetStartDate) => {
       setApplyFromDrop({ planId: libraryPlanId, startDate: targetStartDate });
