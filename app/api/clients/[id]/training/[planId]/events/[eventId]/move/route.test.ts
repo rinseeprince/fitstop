@@ -81,7 +81,7 @@ describe("POST /api/clients/[id]/training/[planId]/events/[eventId]/move nutriti
       targetDate: "2026-04-30",
     });
 
-    const res = await callRoute({ targetDate: "2026-04-30", scope: "single" });
+    const res = await callRoute({ targetDate: "2026-04-30" });
 
     expect(res.status).toBe(200);
     expect(cascadeNutritionAfterTrainingChange).toHaveBeenCalledTimes(1);
@@ -98,7 +98,7 @@ describe("POST /api/clients/[id]/training/[planId]/events/[eventId]/move nutriti
       targetDate: "2026-04-27",
     });
 
-    const res = await callRoute({ targetDate: "2026-04-27", scope: "single" });
+    const res = await callRoute({ targetDate: "2026-04-27" });
 
     expect(res.status).toBe(200);
     expect(cascadeNutritionAfterTrainingChange).toHaveBeenCalledWith(
@@ -108,10 +108,12 @@ describe("POST /api/clients/[id]/training/[planId]/events/[eventId]/move nutriti
     );
   });
 
-  it("still accepts the retired all_future scope, and moves only the one event", async () => {
-    // An in-flight tab on the previous bundle keeps sending scope:"all_future".
-    // Rejecting it would revert the coach's optimistic move with a validation
-    // error; instead the field is ignored until it is tightened a deploy later.
+  it("ignores a retired `scope` field rather than rejecting the request", async () => {
+    // The scope was deleted from schema and client alike. A browser tab still
+    // running the old bundle keeps sending it, and a 400 there would revert the
+    // coach's optimistic move with an error they cannot act on. zod strips
+    // unrecognised keys, so the drag still lands as the single move it always
+    // was — this test is what stops someone "tidying up" by adding .strict().
     vi.mocked(moveEvent).mockResolvedValue({
       sourceDate: "2026-04-27",
       targetDate: "2026-04-29",

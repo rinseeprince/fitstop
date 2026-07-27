@@ -90,7 +90,7 @@ export function useCalendarDnd({
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ targetDate, scope: "single" }),
+            body: JSON.stringify({ targetDate }),
           }
         );
 

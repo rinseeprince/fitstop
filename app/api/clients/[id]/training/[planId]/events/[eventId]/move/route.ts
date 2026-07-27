@@ -11,11 +11,9 @@ import { z } from "zod";
 
 const moveEventSchema = z.object({
   targetDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format"),
-  // "all_future" is accepted-and-ignored for ONE deploy. The scope was removed
-  // from the UI, but a browser tab still on the old bundle would send it, and a
-  // 400 there reverts the coach's optimistic move with no explanation. Tighten
-  // to z.literal("single") — or drop the field entirely — in a later deploy.
-  scope: z.enum(["single", "all_future"]),
+  // No `scope`: there is one kind of move. A stale tab still sending the
+  // retired `scope: "all_future"` is harmless — zod strips unrecognised keys
+  // rather than rejecting, so its drag still lands as a single move.
 });
 
 /**
