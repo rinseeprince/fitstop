@@ -164,8 +164,8 @@ export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel
                 carves out for spelling it out. */}
             <DialogDescription className="pt-2">
               This removes every upcoming session from this client&apos;s calendar
-              <strong className="font-semibold text-[#0c1a1e]"> and retires every program they are on</strong> —
-              a retired program can&apos;t be edited, so scheduling again means placing a new one.
+              <strong className="font-semibold text-[#0c1a1e]"> and retires every program they are on</strong>
+              {" — "}a retired program can&apos;t be edited, so scheduling again means placing a new one.
               Sessions they already logged are kept.
             </DialogDescription>
           </DialogHeader>
