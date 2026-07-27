@@ -212,6 +212,44 @@ describe("training-event-calendar-service", () => {
       expect(result).toEqual({ sourceDate: "2026-04-27", targetDate: "2026-04-30" });
     });
 
+    it("refuses a move onto a day that already holds a session", async () => {
+      // The guard this replaces matched on training_session_id, so it could
+      // never fire once every placed day owned its own cloned session row —
+      // which is how two sessions ended up stacked on dates no UI could clear.
+      const existingEvent = {
+        id: "event-1",
+        client_id: clientId,
+        training_plan_id: planId,
+        date: "2026-04-27",
+        training_session_id: "session-a",
+        status: "scheduled",
+        session_name: "Push",
+        session_focus: null,
+        estimated_calories: 300,
+        is_modified: false,
+      };
+
+      let fromCallIndex = 0;
+      mockFrom.mockImplementation((table: string) => {
+        if (table === "training_events") {
+          fromCallIndex++;
+          if (fromCallIndex === 1) {
+            return createMockQuery({ data: existingEvent, error: null }) as any;
+          }
+          // The occupancy probe: a DIFFERENT session already sits on 04-30.
+          return createMockQuery({ data: [{ id: "event-2" }], error: null }) as any;
+        }
+        return createMockQuery({ data: null, error: null }) as any;
+      });
+
+      await expect(
+        moveEvent("event-1", "2026-04-30", clientId, planId),
+      ).rejects.toThrow(/already has a session/);
+
+      // Nothing was written: the update would have been the 3rd query.
+      expect(fromCallIndex).toBe(2);
+    });
+
     it("judges 'past' against client-local today, not server UTC (west-of-UTC boundary)", async () => {
       // LA client at ~17:30 PDT on 2026-06-09; the server's UTC day is already
       // 2026-06-10. Under the old UTC guard, moving an event to the client's

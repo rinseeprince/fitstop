@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getClientById } from "@/services/client-service";
+import { DateOccupiedError } from "@/services/training-event-occupancy";
 import { getTrainingPlanById } from "@/services/training-service";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
@@ -208,6 +209,10 @@ export async function POST(
       { status: 200 }
     );
   } catch (error) {
+    if (error instanceof DateOccupiedError) {
+      return NextResponse.json({ error: error.message }, { status: 409 });
+    }
+
     const message = error instanceof Error ? error.message : "Failed to place from library";
 
     if (message.includes("not found")) {

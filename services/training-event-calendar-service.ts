@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { getClientTodayString } from "@/services/today-service";
+import { assertDateFree, rethrowIfDateOccupied } from "./training-event-occupancy";
 
 /**
  * Move a single training event to a new date. The only move there is — the
@@ -37,20 +38,9 @@ export async function moveEvent(
     throw new Error("Cannot move event to a past date");
   }
 
-  // Conflict check: same training_session_id on the target date
-  if (event.training_session_id) {
-    const { data: conflict } = await supabaseAdmin
-      .from("training_events")
-      .select("id")
-      .eq("client_id", clientId)
-      .eq("training_session_id", event.training_session_id)
-      .eq("date", newDate)
-      .maybeSingle();
-
-    if (conflict) {
-      throw new Error("Session is already scheduled on this date");
-    }
-  }
+  // One session per day. The old check here matched on training_session_id and
+  // could therefore never fire — see training-event-occupancy.ts.
+  await assertDateFree(clientId, newDate, eventId);
 
   const { error: updateError } = await supabaseAdmin
     .from("training_events")
@@ -92,20 +82,8 @@ export async function duplicateEvent(
     throw new Error("Cannot duplicate event to a past date");
   }
 
-  // Conflict check: same training_session_id on the target date
-  if (source.training_session_id) {
-    const { data: conflict } = await supabaseAdmin
-      .from("training_events")
-      .select("id")
-      .eq("client_id", clientId)
-      .eq("training_session_id", source.training_session_id)
-      .eq("date", targetDate)
-      .maybeSingle();
-
-    if (conflict) {
-      throw new Error("Session is already scheduled on this date");
-    }
-  }
+  // One session per day — the old training_session_id check could never fire.
+  await assertDateFree(clientId, targetDate);
 
   const { data: newEvent, error: insertError } = await supabaseAdmin
     .from("training_events")
@@ -128,7 +106,10 @@ export async function duplicateEvent(
     .select("id")
     .single();
 
-  if (insertError || !newEvent) throw insertError ?? new Error("Failed to duplicate event");
+  if (insertError || !newEvent) {
+    rethrowIfDateOccupied(insertError, targetDate);
+    throw insertError ?? new Error("Failed to duplicate event");
+  }
   return newEvent.id;
 }
 

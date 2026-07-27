@@ -1,6 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 
+vi.mock("@/services/training-event-occupancy", () => ({
+  // The route imports this only for the error class; the real module pulls in
+  // supabase-admin at load, which has no env in tests.
+  DateOccupiedError: class DateOccupiedError extends Error {},
+}));
+
 vi.mock("@/services/client-service", () => ({
   getClientById: vi.fn(),
 }));

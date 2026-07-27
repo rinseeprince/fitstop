@@ -5,6 +5,7 @@ import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { moveEvent } from "@/services/training-event-calendar-service";
+import { DateOccupiedError } from "@/services/training-event-occupancy";
 import { cascadeNutritionAfterTrainingChange } from "@/services/nutrition-event-service";
 import { z } from "zod";
 
@@ -75,6 +76,10 @@ export async function POST(
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {
+    if (error instanceof DateOccupiedError) {
+      return NextResponse.json({ error: error.message }, { status: 409 });
+    }
+
     const message = error instanceof Error ? error.message : "Failed to move event";
 
     if (message.includes("already scheduled") || message.includes("outside the current phase")) {

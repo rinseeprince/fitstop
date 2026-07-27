@@ -3,6 +3,7 @@ import { getSavedPlanById } from "./coach-saved-plan-service";
 import { createTrainingPlanAtomic } from "./training-service";
 import { deriveFrequencyPerWeek } from "./coach-library-helpers";
 import { generateProgramEvents, calculatePlacementEndDate } from "./program-event-walk";
+import { assertDateFree, rethrowIfDateOccupied } from "./training-event-occupancy";
 import type { TrainingEventInsert, TrainingEventRow, CoachSavedExerciseRow } from "@/lib/database-helpers";
 import type { Json } from "@/types/database";
 import type { SavedSession, SavedExercise } from "@/types/training";
@@ -476,6 +477,11 @@ export async function placeSessionOnCalendar(params: {
 
   if (fetchError || !savedSession) throw new Error("Saved session not found");
 
+  // One session per day. Checked BEFORE any cloning: this path used to have no
+  // date guard of any kind, and rejecting after the session/exercise clones
+  // would leave orphan rows behind for a drop that never landed.
+  await assertDateFree(clientId, targetDate);
+
   // 2. Resolve the slot position from the TARGET plan, never the template.
   //    A saved session's (week_index, order_index) describe where it sat in the
   //    program it was authored in; carried into a different plan they are
@@ -575,6 +581,7 @@ export async function placeSessionOnCalendar(params: {
     .single();
 
   if (eventError || !event) {
+    rethrowIfDateOccupied(eventError, targetDate);
     throw new Error(`Failed to create event: ${eventError?.message}`);
   }
 
