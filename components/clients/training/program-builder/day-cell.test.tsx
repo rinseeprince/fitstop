@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import { DndContext } from "@dnd-kit/core";
+import { MOVED_PAST_LOCKED, PAST_LOCKED } from "./program-builder-lock-model";
 import { DayCell } from "./day-cell";
 import type { DaySlotDraft, SessionDraft } from "./program-builder-types";
 
@@ -158,11 +159,24 @@ describe("DayCell — locked (placed-plan history)", () => {
       locked: true,
       slot: makeSlot({ isRest: false, session: makeSession() }),
     });
-    expect(screen.getByTitle("This day already happened")).toBeInTheDocument();
+    expect(screen.getByTitle(PAST_LOCKED)).toBeInTheDocument();
     expect(
       screen.queryByLabelText("Clear session (back to rest)"),
     ).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Drag session")).not.toBeInTheDocument();
+  });
+
+  // A cell locked because its session was MOVED sits in a column whose own day
+  // is still ahead, so the generic "that day has already happened" would read as
+  // a bug rather than an explanation.
+  it("explains a move-locked card differently from an elapsed one", () => {
+    renderCell({
+      locked: true,
+      lockedBecauseMoved: true,
+      slot: makeSlot({ isRest: false, session: makeSession() }),
+    });
+    expect(screen.getByTitle(MOVED_PAST_LOCKED)).toBeInTheDocument();
+    expect(screen.queryByTitle(PAST_LOCKED)).not.toBeInTheDocument();
   });
 
   it("a locked session card STAYS clickable (opens the editor read-only)", () => {
@@ -178,7 +192,7 @@ describe("DayCell — locked (placed-plan history)", () => {
     renderCell({
       slot: makeSlot({ isRest: false, session: makeSession() }),
     });
-    expect(screen.queryByTitle("This day already happened")).not.toBeInTheDocument();
+    expect(screen.queryByTitle(PAST_LOCKED)).not.toBeInTheDocument();
     expect(
       screen.getByLabelText("Clear session (back to rest)"),
     ).toBeInTheDocument();

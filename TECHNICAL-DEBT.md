@@ -62,9 +62,11 @@ Logged: 2026-07-22.
 
 ---
 
-## The amendment writer breaks "one active row per slot position"
+## The amendment writer breaks "one active row per slot position" — FIXED
 
-Logged: 2026-07-27. Found while scoping (and then not building) calendar/plan slot sync.
+Logged: 2026-07-27. Found while scoping (and then not building) calendar/plan slot sync. **Fixed the same day**; kept as the record of what the shape was, because the surviving producer below writes the same shape from a different door.
+
+**The fix.** The editor's lock model already treated an early-logged future slot as immutable while the writer treated it as replaceable — that disagreement WAS the bug, so the two now share one predicate. The writer computes `frozenPositions` from the same three clauses `computeLockedSlotUids` uses, keeps those rows, skips minting a replacement, passes them to the walk as `skipPositions`, and 422s a shrink that would drop one. Separately, `toSlotRows` makes the slot list explicit — one active row per coordinate — so an extra row from any other writer can no longer shift a position. Existing rows were NOT repaired (all 14 affected plans are archived and inert).
 
 **The invariant.** A placed plan's active `training_sessions` rows ARE its ordered day-slots: position in `canonicalSortRows` order *is* the date-walk slot position (`plan-amendment-service.ts:106-124`), and `date(position) = effective_from + position`. Nothing enforces it — there is no unique index on `(plan_id, week_index, order_index)` and there cannot be one, because `cloneSessionForEvent` mints colliding coordinates deliberately (see below). The invariant is "one active row per slot position", NOT merely "no duplicate coordinates": a row that survives past the grid's end breaks the walk just as thoroughly without colliding with anything.
 
@@ -86,7 +88,19 @@ Logged: 2026-07-27. Found while scoping (and then not building) calendar/plan sl
 
 Independent of calendar behaviour — no move, duplicate or drop is involved.
 
-**Second live producer: `cloneSessionForEvent`.** The placed-session tray's "just this day" scope (`training-session-service.ts:200-244`) inserts a clone carrying the source row's `order_index`/`week_index` verbatim, repoints the event at the clone, and leaves the original active. That is the same broken invariant, from a shipped feature, by design — which is why no unique index can be added. `canonicalSortRows`' own comment names it, but the deterministic sort only makes the corruption reproducible, not harmless. **How a per-day override coexists with the slot grid is a design question, not a patch** — it needs its own decision about whether such rows should be slot-bearing at all.
+---
+
+## `cloneSessionForEvent` writes a row that is not a slot
+
+Logged: 2026-07-27, split out of the entry above once the amendment writer was fixed.
+
+**What happens.** The placed-session tray's "just this day" scope (`training-session-service.ts:200-244`) inserts a clone carrying the source row's `order_index` / `week_index` verbatim, repoints that one event at the clone, and leaves the original active. Two active rows now share a coordinate — by design, from a shipped feature. **This is why no unique index on `(plan_id, week_index, order_index) WHERE is_active` can be added**, and why `toSlotRows` exists instead.
+
+**Reachability is narrower than it looks.** `requestSave` only offers the scope dialog when the row backs **more than one** future scheduled event (`placed-session-editor.tsx:116`); otherwise it saves in place and never clones. Under whole-program placement each slot backs exactly one date, so the dialog never appears. It takes a **per-event duplicate** first — `duplicateEvent` points the copy at the *same* `training_session_id` (`training-event-calendar-service.ts:110`) — or a legacy weekday-recurring plan. Measured on the live DB 2026-07-27: **zero non-archived plans carry duplicate coordinates.**
+
+**Why it is still debt.** `toSlotRows` contains the damage (the extra row stops shifting positions, inflating the window, or breaking the editor's grid) but does not resolve the modelling question: a per-date override is not a day-slot, and nothing in the schema says so. The tie-break keeps the ORIGINAL row as the slot — correct, because after a duplicate-then-override the original still backs the slot's own date while the clone backs the duplicate's off-slot date — so the override stays a per-date thing and never becomes the slot's content. But the clone remains active, invisible to the editor, and referenced only by its event.
+
+**The real question:** should `training_sessions` carry per-date override rows at all, or should a per-day edit be materialized onto the event (the way `nutrition_events.is_modified` already does for nutrition)? That is a design decision, not a patch. Related: `placeSessionOnCalendar` appends a dropped session at `(lastWeek, lastOrder + 1)` — out-of-band rather than colliding, but the same "row that is not a slot" shape.
 
 ---
 

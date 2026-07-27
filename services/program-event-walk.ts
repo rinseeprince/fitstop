@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { getNextPlanStartCap } from "./training-event-service";
+import { rethrowIfAnyDateOccupied } from "./training-event-occupancy";
 import { getDateString } from "@/lib/date-helpers";
 import type { TrainingEventInsert } from "@/lib/database-helpers";
 
@@ -27,6 +28,13 @@ export type ProgramSlot = {
  * programSlots[startPosition]. A plan amendment re-walks only the future window
  * (startDate = the today floor) while keeping every elapsed slot's date
  * arithmetic intact — slotPosition = daysBetween(effective_from, date).
+ *
+ * `skipPositions` are slots whose day is already accounted for by an event the
+ * caller is deliberately preserving — the amendment's frozen positions, where a
+ * session the client logged early keeps its original row. Relying on the upsert
+ * arbiter instead would be wrong for a preserved event that has been MOVED: its
+ * date no longer matches its slot's, nothing conflicts, and the session would be
+ * written a second time on the slot's own day.
  */
 export async function generateProgramEvents(params: {
   clientId: string;
@@ -35,8 +43,10 @@ export async function generateProgramEvents(params: {
   startDate: string;
   endDate: string;
   startPosition?: number;
+  skipPositions?: ReadonlySet<number>;
 }): Promise<number> {
-  const { clientId, planId, programSlots, startDate, endDate, startPosition } = params;
+  const { clientId, planId, programSlots, startDate, endDate, startPosition, skipPositions } =
+    params;
 
   const slotCount = programSlots.length;
   if (slotCount === 0) return 0;
@@ -48,7 +58,7 @@ export async function generateProgramEvents(params: {
 
   for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
     const slot = programSlots[slotPosition];
-    if (!slot.isRest) {
+    if (!slot.isRest && !skipPositions?.has(slotPosition)) {
       rows.push({
         client_id: clientId,
         training_plan_id: planId,
@@ -76,7 +86,15 @@ export async function generateProgramEvents(params: {
       ignoreDuplicates: true,
     });
 
-  if (error) throw new Error(`Failed to generate events: ${error.message}`);
+  if (error) {
+    // The arbiter above does NOT cover migration 136's one-scheduled-per-day
+    // index, so a collision there arrives as a raw 23505. Both callers clear
+    // their window of scheduled events first, which is why neither pre-checks
+    // with assertDateFree — but a concurrent write between that clear and this
+    // upsert can still land one, and a coach must never read Postgres.
+    rethrowIfAnyDateOccupied(error);
+    throw new Error(`Failed to generate events: ${error.message}`);
+  }
 
   return rows.length;
 }

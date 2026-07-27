@@ -7,12 +7,21 @@ import type { ProgramDraft, WeekDraft } from "./program-builder-types";
 // mutators, and applyDraftOp's ctx (server executor and client replay build
 // the same Set from the same array, so the two sides cannot drift).
 //
-// Lock rule per slot position:
-//   slotDate(position) < clientToday  OR  a linked event exists that is no
-//   longer 'scheduled' (e.g. the client logged a future day early).
+// Lock rule per slot position — a slot is locked when its day is already
+// history, by any of three routes:
+//   1. slotDate(position) < clientToday          — the day itself has passed
+//   2. a linked event is no longer 'scheduled'   — the client logged it early
+//   3. a linked event is DATED before today      — the coach moved it forward
+//                                                  and the calendar overtook it
 // slotDate(position) = effective_from + position days — the same arithmetic the
 // placement date-walk uses, so a locked slot is exactly one whose calendar day
-// the amendment writer will not touch.
+// the amendment writer will not touch. `amendPlacedPlanFuture` derives its
+// frozen positions from the same three clauses against live DB state; the two
+// MUST agree, because a slot the editor locks and the writer replaces is how the
+// plan ended up with two active rows claiming one day.
+//
+// Route 3 is the only one that can lock a slot sitting in a FUTURE column, so it
+// gets its own explanation — see MOVED_PAST_LOCKED.
 //
 // Because dates are contiguous, weeks before the boundary are fully locked and
 // weeks after it fully open; only boundary weeks are partial (an early-logged
@@ -25,6 +34,14 @@ import type { ProgramDraft, WeekDraft } from "./program-builder-types";
 export const PAST_LOCKED =
   "That day is locked — it has already happened on the client's calendar";
 
+/**
+ * Route 3's explanation. A slot locked this way sits in a column whose own date
+ * is still ahead, so "that day has already happened" would read as a bug — what
+ * happened is the session, on the earlier date it was moved to.
+ */
+export const MOVED_PAST_LOCKED =
+  "That session is locked — it was moved to a day that has already passed";
+
 // Structural subset of the amendment GET the lock computation needs. Position i
 // in the flattened draft maps to sessions[i] (canonical order); tail rest
 // padding added by the flat regroup has no backing entry and locks by date
@@ -32,8 +49,25 @@ export const PAST_LOCKED =
 export type PlacedPlanLockSource = {
   plan: { effectiveFrom: string };
   clientToday: string;
-  sessions: Array<{ events: Array<{ status: string }> }>;
+  sessions: Array<{ events: Array<{ status: string; date: string }> }>;
 };
+
+function slotLockRoutes(
+  source: PlacedPlanLockSource,
+  position: number,
+  slotDate: string,
+): { locked: boolean; movedPast: boolean } {
+  const backing = source.sessions[position];
+  const events = backing?.events ?? [];
+  const dayPassed = slotDate < source.clientToday;
+  const notScheduled = events.some((e) => e.status !== "scheduled");
+  const movedPast = events.some((e) => e.date < source.clientToday);
+  return {
+    locked: dayPassed || notScheduled || movedPast,
+    // Only worth a distinct message when the slot's own column is still ahead.
+    movedPast: movedPast && !dayPassed,
+  };
+}
 
 export function computeLockedSlotUids(
   source: PlacedPlanLockSource,
@@ -45,14 +79,34 @@ export function computeLockedSlotUids(
   for (const week of weeks) {
     for (const slot of week.days) {
       const slotDate = getDateDaysFrom(start, position);
-      const backing = source.sessions[position];
-      const eventLocked =
-        backing != null && backing.events.some((e) => e.status !== "scheduled");
-      if (slotDate < source.clientToday || eventLocked) locked.push(slot.uid);
+      if (slotLockRoutes(source, position, slotDate).locked) locked.push(slot.uid);
       position += 1;
     }
   }
   return locked;
+}
+
+/**
+ * The subset of locked slots whose own day is still in the future — locked only
+ * because their session was moved to a date that has since passed. Presentation
+ * only; the lock set itself is `computeLockedSlotUids` and stays the one
+ * serialized contract the assistant and the writer share.
+ */
+export function computeMovedPastSlotUids(
+  source: PlacedPlanLockSource,
+  weeks: WeekDraft[],
+): string[] {
+  const start = new Date(source.plan.effectiveFrom + "T00:00:00");
+  const movedPast: string[] = [];
+  let position = 0;
+  for (const week of weeks) {
+    for (const slot of week.days) {
+      const slotDate = getDateDaysFrom(start, position);
+      if (slotLockRoutes(source, position, slotDate).movedPast) movedPast.push(slot.uid);
+      position += 1;
+    }
+  }
+  return movedPast;
 }
 
 export function isSlotLocked(

@@ -13,6 +13,8 @@ import type { ProgramBuilderState } from "./use-program-builder-state";
 
 export type PlacedPlanSeedInfo = {
   lockedSlotUids: ReadonlySet<string>;
+  /** Presentation-only subset — see PlacedPlanDraftSeed. */
+  movedPastSlotUids: ReadonlySet<string>;
   fullyLocked: boolean;
   sessionIdByUid: ReadonlyMap<string, string>;
   amendmentToken: string | null;
@@ -20,6 +22,7 @@ export type PlacedPlanSeedInfo = {
 
 const EMPTY_SEED: PlacedPlanSeedInfo = {
   lockedSlotUids: new Set(),
+  movedPastSlotUids: new Set(),
   fullyLocked: false,
   sessionIdByUid: new Map(),
   amendmentToken: null,
@@ -47,6 +50,7 @@ export function usePlacedPlanSource(params: {
       seed(seeded.draft);
       setSeedInfo({
         lockedSlotUids: new Set(seeded.lockedSlotUids),
+        movedPastSlotUids: new Set(seeded.movedPastSlotUids),
         fullyLocked: seeded.fullyLocked,
         sessionIdByUid: seeded.sessionIdByUid,
         amendmentToken: seeded.amendmentToken,

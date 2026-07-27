@@ -5,6 +5,7 @@ import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { cn } from "@/lib/utils";
 import type { DaySlotDraft } from "./program-builder-types";
 import type { SessionDragData, SlotDropData } from "./use-program-dnd";
+import { MOVED_PAST_LOCKED, PAST_LOCKED } from "./program-builder-lock-model";
 import { setsRepsShort } from "./exercise-summary";
 import {
   LABEL_CLASS,
@@ -30,6 +31,10 @@ type DayCellProps = {
   // inert (no drop/drag/clear/add) at reduced opacity with a lock marker; a
   // locked session card stays CLICKABLE — it opens the editor in view mode.
   locked?: boolean;
+  // Locked only because its session was moved to a day that has now passed —
+  // the one route that can lock a cell sitting in a FUTURE column, so it needs
+  // its own explanation or the padlock reads as a bug.
+  lockedBecauseMoved?: boolean;
   collapsed: boolean;
   // Program-level default surplus — the value a session inherits when it has no
   // per-day override. Drives the effective-surplus badge.
@@ -59,6 +64,7 @@ export function DayCell({
   slot,
   mode,
   locked = false,
+  lockedBecauseMoved = false,
   collapsed,
   defaultSurplusPercentage,
   onOpenSession,
@@ -184,7 +190,10 @@ export function DayCell({
                 {session.name}
               </span>
               {locked && (
-                <span title="This day already happened" className={cn("shrink-0", TEXT_MUTED)}>
+                <span
+                  title={lockedBecauseMoved ? MOVED_PAST_LOCKED : PAST_LOCKED}
+                  className={cn("shrink-0", TEXT_MUTED)}
+                >
                   <Lock className="h-3 w-3" strokeWidth={1.5} />
                 </span>
               )}

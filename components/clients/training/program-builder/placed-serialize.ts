@@ -12,7 +12,10 @@ import {
   draftToSessionInputs,
   exerciseDraftToInput,
 } from "./program-builder-serialize";
-import { computeLockedSlotUids } from "./program-builder-lock-model";
+import {
+  computeLockedSlotUids,
+  computeMovedPastSlotUids,
+} from "./program-builder-lock-model";
 import {
   DAYS_PER_WEEK,
   makeRestSlot,
@@ -123,6 +126,10 @@ export type PlacedPlanDraftSeed = {
   // Serializable — the assistant sends this array over the wire and the ops
   // ctx rebuilds the same Set on both sides.
   lockedSlotUids: string[];
+  // Presentation only: the locked slots whose own column is still in the future,
+  // locked because their session was moved to a day that has now passed. Kept
+  // OUT of lockedSlotUids so the serialized lock contract stays one array.
+  movedPastSlotUids: string[];
   // Draft session uid → training_sessions row id (per SLOT — every slot gets a
   // fresh uid even if diverged data ever shared a row).
   sessionIdByUid: Map<string, string>;
@@ -202,6 +209,7 @@ export function placedPlanToDraft(read: PlacedPlanForBuilder): PlacedPlanDraftSe
   return {
     draft,
     lockedSlotUids,
+    movedPastSlotUids: computeMovedPastSlotUids(read, weeks),
     sessionIdByUid,
     amendmentToken: read.amendmentToken,
     fullyLocked:

@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   PAST_LOCKED,
   computeLockedSlotUids,
+  computeMovedPastSlotUids,
   isSlotLocked,
   isSessionLocked,
   weekLockState,
@@ -82,11 +83,31 @@ describe("computeLockedSlotUids", () => {
   it("locks a future slot whose linked event already left the scheduled state", () => {
     const weeks = makeWeeks(2);
     const source = makeSource();
-    source.sessions[9] = { events: [{ status: "completed" }] };
+    source.sessions[9] = { events: [{ status: "completed", date: "2026-07-24" }] };
     const locked = computeLockedSlotUids(source, weeks);
     expect(locked).toContain("s9");
     // A future slot with only scheduled events stays open.
     expect(locked).not.toContain("s8");
+  });
+
+  // Route 3: the coach moved a future session forward and the calendar overtook
+  // it. Its slot's own column is still ahead, but its day has happened.
+  it("locks a future slot whose event was moved to a day that has now passed", () => {
+    const weeks = makeWeeks(2);
+    const source = makeSource();
+    source.sessions[10] = { events: [{ status: "scheduled", date: "2026-07-20" }] };
+    const locked = computeLockedSlotUids(source, weeks);
+    expect(locked).toContain("s10");
+    // ...and it is the ONE route that gets its own explanation, because the
+    // padlock is sitting in a future column.
+    expect(computeMovedPastSlotUids(source, weeks)).toEqual(["s10"]);
+  });
+
+  it("does not flag an already-elapsed slot as moved-past (its own day passed)", () => {
+    const weeks = makeWeeks(2);
+    const source = makeSource();
+    source.sessions[3] = { events: [{ status: "scheduled", date: "2026-07-18" }] };
+    expect(computeMovedPastSlotUids(source, weeks)).toEqual([]);
   });
 
   it("locks nothing for a not-yet-started plan", () => {

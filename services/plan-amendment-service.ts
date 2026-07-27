@@ -105,14 +105,13 @@ export type AmendPlacedPlanResult = {
 
 // --- Canonical ordering -------------------------------------------------------
 
-// Diverged plans are real and this sort is NOT dead defensiveness. Two live
-// writers still produce colliding or out-of-band coords: cloneSessionForEvent
-// (the tray's "just this day" scope) copies (week_index, order_index) verbatim
-// from its source, and placeSessionOnCalendar appends a dropped session at
-// (lastWeek, lastOrder + 1). Historic duplicate-week rows carry the same shape.
-// Every read of the placed rows uses this deterministic sort; position in it IS
-// the slot position of the date-walk (slotPosition = daysBetween(effective_from,
-// date)).
+// Deterministic order over the raw active rows. NOT the slot list — see
+// toSlotRows below, which is what maps position to date. This sort's job is to
+// make the tie-break between colliding rows reproducible rather than an accident
+// of query order, because diverged plans are real: cloneSessionForEvent (the
+// tray's "just this day" scope) copies (week_index, order_index) verbatim from
+// its source, placeSessionOnCalendar appends a dropped session at (lastWeek,
+// lastOrder + 1), and historic duplicate-week rows carry the same shape.
 function canonicalSortRows(rows: TrainingSessionRow[]): TrainingSessionRow[] {
   return [...rows].sort(
     (a, b) =>
@@ -123,9 +122,48 @@ function canonicalSortRows(rows: TrainingSessionRow[]): TrainingSessionRow[] {
   );
 }
 
+/**
+ * THE SLOT LIST: one active row per distinct `(week_index, order_index)`, in
+ * canonical order. This is the plan's day-slot blueprint — `slotRows[i]` is the
+ * slot whose calendar day is `effective_from + i` — and everything derives from
+ * it: the window, the elapsed/future partition, the date-walk's programSlots,
+ * and the grid the coach edits.
+ *
+ * It exists because "active row" and "slot" are NOT the same thing, and every
+ * caller used to assume they were. `cloneSessionForEvent` (the tray's "just this
+ * day" scope) inserts a second active row at an existing coordinate by design,
+ * and historic writers left others behind. One extra row shifted every later
+ * index by one, which silently mis-partitioned elapsed vs future, stretched the
+ * window by a day, and broke the editor's every-week-is-7-rows test.
+ *
+ * Tie-break is the canonical order's own — earliest `created_at`, then `id` —
+ * which is correct for every reachable shape. After a per-event duplicate plus a
+ * "just this day" override, the ORIGINAL row still backs the slot's own date
+ * while the clone backs the duplicate's off-slot date; earliest-created keeps
+ * the original, so a per-date override never becomes the slot's content. On the
+ * duplicate this file used to mint, it keeps the row the client's early log is
+ * attached to.
+ *
+ * Rows that lose the tie are left completely alone — not deactivated. They are
+ * inert once they are out of the slot list, and repairing them is a separate
+ * decision (TECHNICAL-DEBT.md).
+ */
+function toSlotRows(canonical: TrainingSessionRow[]): TrainingSessionRow[] {
+  const seen = new Set<string>();
+  const slots: TrainingSessionRow[] = [];
+  for (const row of canonical) {
+    const coord = `${row.week_index}|${row.order_index}`;
+    if (seen.has(coord)) continue;
+    seen.add(coord);
+    slots.push(row);
+  }
+  return slots;
+}
+
 // --- Paged reads --------------------------------------------------------------
 
-async function fetchActiveSessionRows(planId: string): Promise<TrainingSessionRow[]> {
+/** The plan's day-slots — see `toSlotRows`. Never returns two rows for one day. */
+async function fetchSlotRows(planId: string): Promise<TrainingSessionRow[]> {
   const rows = await fetchAllPages<TrainingSessionRow>(
     (from, to) =>
       supabaseAdmin
@@ -140,7 +178,7 @@ async function fetchActiveSessionRows(planId: string): Promise<TrainingSessionRo
         .range(from, to),
     { errorLabel: "placed plan sessions" },
   );
-  return canonicalSortRows(rows);
+  return toSlotRows(canonicalSortRows(rows));
 }
 
 async function fetchExercisesBySession(
@@ -274,7 +312,7 @@ export async function getPlacedPlanForBuilder(
   }
 
   const clientToday = await getClientTodayString(clientId);
-  const sessionRows = await fetchActiveSessionRows(planId);
+  const sessionRows = await fetchSlotRows(planId);
   const exercisesBySession = await fetchExercisesBySession(sessionRows.map((r) => r.id));
 
   const planEvents = await fetchAllPages<TrainingEventRow>(
@@ -397,7 +435,7 @@ export async function amendPlacedPlanFuture(params: {
   //    exactly as the GET computed it. A fully-elapsed current window also stops
   //    here: extending an ended plan is blocked ("apply a new program" is the
   //    gesture — decision 8).
-  const currentRows = await fetchActiveSessionRows(planId);
+  const currentRows = await fetchSlotRows(planId);
   const currentWindowEnd = await calculatePlacementEndDate({
     clientId,
     slotCount: currentRows.length,
@@ -452,28 +490,53 @@ export async function amendPlacedPlanFuture(params: {
     );
   }
 
-  // 6. Partition current rows: elapsed positions stay, as does any row still
-  //    referenced by a surviving event (past, or non-scheduled — e.g. a future
-  //    session the client already logged early).
-  const survivingSessionIds = new Set<string>();
-  const survivingEvents = await fetchAllPages<{ training_session_id: string | null }>(
+  // 6. Partition the slot list into FROZEN positions and rewritable ones.
+  //
+  //    A position is frozen when its day is already history — the same rule the
+  //    editor locks on (`computeLockedSlotUids`), evaluated here against live DB
+  //    state because the server is the boundary authority. The two must agree:
+  //    when they disagreed, the editor locked a slot the writer went on to
+  //    replace, and because the old row was ALSO kept (the event-reference belt)
+  //    the plan ended up with two active rows claiming one day. Freezing the
+  //    position — keep the row, skip the insert — is what closes that.
+  const survivingEvents = await fetchAllPages<{
+    training_session_id: string | null;
+    date: string;
+    status: string;
+  }>(
     (from, to) =>
       supabaseAdmin
         .from("training_events")
-        .select("training_session_id")
+        .select("training_session_id, date, status")
         .eq("training_plan_id", planId)
         .or(`date.lt.${floor},status.neq.scheduled`)
         .order("id", { ascending: true })
         .range(from, to),
     { errorLabel: "surviving events" },
   );
+  const survivingSessionIds = new Set<string>();
   for (const e of survivingEvents) {
     if (e.training_session_id) survivingSessionIds.add(e.training_session_id);
   }
-  const keepIds = new Set<string>(survivingSessionIds);
+
+  const frozenPositions = new Set<number>();
   currentRows.forEach((row, position) => {
-    if (position < offset) keepIds.add(row.id);
+    if (position < offset || survivingSessionIds.has(row.id)) frozenPositions.add(position);
   });
+
+  // Shrinking past a frozen position would delete a day the client has already
+  // trained. The editor blocks it (canDeleteWeek refuses a week holding a locked
+  // day); this is the server's mirror, not a new restriction.
+  const lostFrozen = [...frozenPositions].filter((p) => p >= sessions.length);
+  if (lostFrozen.length > 0) {
+    throw new AmendmentEmptyFutureError(
+      "The amendment removes a day the client has already trained",
+    );
+  }
+
+  const keepIds = new Set<string>(
+    [...frozenPositions].map((position) => currentRows[position].id),
+  );
   const deactivateIds = currentRows.filter((r) => !keepIds.has(r.id)).map((r) => r.id);
 
   // 7. H3 snapshot of everything step 10 deletes, BEFORE any mutation.
@@ -497,7 +560,14 @@ export async function amendPlacedPlanFuture(params: {
     )
   ).map((r) => r.id);
 
-  const futureInputs = sessions.slice(offset);
+  // Frozen positions keep their existing row, so no fresh row is minted for
+  // them. Incoming content there is ignored exactly as it is for past positions;
+  // the coach cannot have edited a frozen slot without the drift token catching
+  // it first (the token hashes clientToday, so a midnight flip 409s, and a
+  // mid-edit log drops that event out of fetchDeleteCandidates, which 409s too).
+  const futureInputs = sessions
+    .slice(offset)
+    .filter((input) => !frozenPositions.has(input.orderIndex));
   const referencedExerciseIds = futureInputs.flatMap((s) =>
     s.exercises.map((e) => e.exerciseId).filter((id): id is string => Boolean(id)),
   );
@@ -612,13 +682,15 @@ export async function amendPlacedPlanFuture(params: {
       throw new Error(`Failed to clear window events: ${windowDeleteError.message}`);
     }
 
-    // 11. Resume the shared date-walk at the elapsed offset. Past positions are
-    //     the kept current rows (never visited — the window can't wrap); future
-    //     positions are the fresh rows. Every emitted event carries the surplus
-    //     (nutrition-cascade contract), name/focus snapshots, status scheduled.
+    // 11. Resume the shared date-walk at the elapsed offset. FROZEN positions
+    //     keep their existing row — elapsed ones are never visited (the window
+    //     can't wrap), and future frozen ones are visited but skipped, because
+    //     the event that froze them already owns their day. Everything else is
+    //     the fresh row. Every emitted event carries the surplus (the
+    //     nutrition-cascade contract), name/focus snapshots, status scheduled.
     const programSlots: ProgramSlot[] = [];
     for (let i = 0; i < sessions.length; i++) {
-      if (i < offset) {
+      if (frozenPositions.has(i)) {
         const row = currentRows[i];
         programSlots.push({
           id: row.id,
@@ -650,6 +722,11 @@ export async function amendPlacedPlanFuture(params: {
       startDate: floor,
       endDate: windowEnd,
       startPosition: offset,
+      // A frozen position's day is already represented by the event that froze
+      // it. Left to the upsert arbiter this would only be a no-op while that
+      // event still sits on its slot's own date; once it has been moved the
+      // dates differ, nothing conflicts, and the session is written twice.
+      skipPositions: frozenPositions,
     });
 
     // 12. Plan meta. The updated_at bump invalidates every other holder's token.

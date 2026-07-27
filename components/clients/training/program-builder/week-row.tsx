@@ -24,6 +24,7 @@ type WeekRowProps = {
   week: WeekDraft;
   mode: "view" | "edit";
   lockedSlotUids?: ReadonlySet<string>;
+  movedPastSlotUids?: ReadonlySet<string>;
   collapsed: boolean;
   canDelete: boolean;
   defaultSurplusPercentage: number | null;
@@ -40,6 +41,7 @@ export function WeekRow({
   week,
   mode,
   lockedSlotUids,
+  movedPastSlotUids,
   collapsed,
   canDelete,
   defaultSurplusPercentage,
@@ -101,6 +103,7 @@ export function WeekRow({
           slot={slot}
           mode={mode}
           locked={lockedSlotUids?.has(slot.uid) ?? false}
+          lockedBecauseMoved={movedPastSlotUids?.has(slot.uid) ?? false}
           collapsed={collapsed}
           defaultSurplusPercentage={defaultSurplusPercentage}
           onOpenSession={onOpenSession}

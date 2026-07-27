@@ -91,6 +91,7 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
     editSetSpec,
     insertWeekAfter,
     lockedSlotUids,
+    movedPastSlotUids,
     fullyLocked,
     futureModifiedEvents,
     placedLoadError,
@@ -430,6 +431,7 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
                 draft={draft}
                 mode={mode}
                 lockedSlotUids={isPlacedPlan ? lockedSlotUids : undefined}
+                movedPastSlotUids={isPlacedPlan ? movedPastSlotUids : undefined}
                 collapsedWeeks={collapsedWeeks}
                 onToggleCollapse={(weekUid) =>
                   setCollapsedWeeks((prev) => {

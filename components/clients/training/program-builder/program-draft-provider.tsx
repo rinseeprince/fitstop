@@ -75,6 +75,7 @@ export type ProgramDraftContextValue = ProgramBuilderState & {
   // grid renders them inert, dnd excludes them, the locked mutators and the
   // assistant's ops ctx refuse them.
   lockedSlotUids: ReadonlySet<string>;
+  movedPastSlotUids: ReadonlySet<string>;
   fullyLocked: boolean;
   sessionIdByUid: ReadonlyMap<string, string>;
   futureModifiedEvents: Array<{ id: string; date: string; sessionName: string }>;
@@ -251,6 +252,7 @@ export function ProgramDraftProvider({
     assistantBusy,
     setAssistantBusy,
     lockedSlotUids: placed.lockedSlotUids,
+    movedPastSlotUids: placed.movedPastSlotUids,
     fullyLocked: placed.fullyLocked,
     sessionIdByUid: placed.sessionIdByUid,
     futureModifiedEvents: placed.futureModifiedEvents,

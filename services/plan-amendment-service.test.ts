@@ -586,15 +586,27 @@ describe("plan-amendment-service", () => {
       expect(read!.futureModifiedEvents.map((e) => e.id)).toEqual(["ev-9", "ev-out"]);
     });
 
-    it("orders duplicate-coordinate rows deterministically (created_at tiebreak)", async () => {
+    // A second active row at an existing coordinate is a shape the app still
+    // produces on purpose (cloneSessionForEvent, the tray's "just this day"
+    // scope). It is NOT a second slot: one extra row used to shift every later
+    // index by one, which mis-partitioned elapsed vs future, stretched the
+    // window by a day, and broke the editor's every-week-is-7-rows test.
+    it("returns ONE row per coordinate, keeping the earliest-created", async () => {
+      const before = (await getPlacedPlanForBuilder(CLIENT_ID, PLAN_ID))!.sessions.length;
       state.sessions.push({
         ...state.sessions[7],
         id: "cur-7-clone",
         created_at: "2026-07-16T00:00:00Z", // later than cur-7's created_at
       });
+
       const read = await getPlacedPlanForBuilder(CLIENT_ID, PLAN_ID);
       const ids = read!.sessions.map((s) => s.id);
-      expect(ids.indexOf("cur-7")).toBeLessThan(ids.indexOf("cur-7-clone"));
+
+      expect(ids).toContain("cur-7");
+      expect(ids).not.toContain("cur-7-clone");
+      expect(read!.sessions).toHaveLength(before);
+      // ...and the window does not grow by the extra row.
+      expect(read!.windowEnd).toBe("2026-07-28");
     });
 
     it("reports isFullyPast when the window ended before the client's today", async () => {
@@ -756,8 +768,13 @@ describe("plan-amendment-service", () => {
     expect(result.floor).toBe("2026-07-22");
     expect(result.offset).toBe(7);
 
-    // Only the 7 future slots were inserted; hostile past content ignored.
-    expect(state.sessionInserts).toHaveLength(7);
+    // SIX inserts, not seven: position 11 is FROZEN (the client logged ev-11
+    // early) so it keeps cur-11 instead of being re-minted beside it. The old
+    // expectation of 7 asserted the bug — a fresh row landing on top of a kept
+    // one, two active rows claiming one day.
+    expect(state.sessionInserts).toHaveLength(6);
+    expect(state.sessionInserts.map((r) => r.order_index).sort((a, b) => (a as number) - (b as number)))
+      .toEqual([7, 8, 9, 10, 12, 13]);
     expect(state.sessions.find((s) => s.id === "cur-0")!.name).toBe("Session 0");
 
     // Partition: positions ≥ 7 deactivated EXCEPT cur-11 (referenced by the
@@ -836,7 +853,7 @@ describe("plan-amendment-service", () => {
     expect(update.effective_until).toBeUndefined();
   });
 
-  it("offset 0 for a not-yet-started plan: the whole program is rewritable", async () => {
+  it("offset 0 for a not-yet-started plan: nothing elapsed, only logged days frozen", async () => {
     mockToday.mockResolvedValue("2026-07-10"); // before effective_from
     const token = await tokenFor();
     const result = await amendPlacedPlanFuture({
@@ -849,9 +866,55 @@ describe("plan-amendment-service", () => {
 
     expect(result.floor).toBe(EFFECTIVE_FROM); // floored at effective_from
     expect(result.offset).toBe(0);
-    expect(state.sessionInserts).toHaveLength(14);
-    // Walk starts at slot 0 on effective_from.
-    expect(state.eventUpserts[0].rows[0].date).toBe(EFFECTIVE_FROM);
+    // Nothing is elapsed, but four positions are still frozen: the scenario's
+    // ev-0/ev-2/ev-4/ev-11 left the scheduled state, so those days happened
+    // whatever the calendar says. 14 slots - 4 frozen = 10 fresh rows.
+    expect(state.sessionInserts).toHaveLength(10);
+    // The walk still starts at slot 0, but position 0 is frozen (ev-0 is a
+    // completed log), so the first EMITTED day is the first open training slot —
+    // position 7, i.e. effective_from + 7.
+    expect(state.eventUpserts[0].rows[0].date).toBe("2026-07-22");
+  });
+
+  // The invariant the whole partition rests on: the plan's active rows ARE its
+  // day-slots, one per (week_index, order_index). Before the freeze, amending a
+  // plan the client had trained ahead on left two active rows claiming one day
+  // — and because position in canonical order IS the date-walk slot position,
+  // every later slot then answered to the wrong date.
+  it("leaves exactly one active row per coordinate after amending an early-logged plan", async () => {
+    const token = await tokenFor();
+    await amendPlacedPlanFuture({
+      clientId: CLIENT_ID,
+      coachId: COACH_ID,
+      planId: PLAN_ID,
+      sessions: makeAmendedGrid(),
+      expectedToken: token,
+    });
+
+    const active = state.sessions.filter((r) => r.is_active !== false);
+    const coords = active.map((r) => `${r.week_index}|${r.order_index}`);
+    expect(new Set(coords).size).toBe(coords.length);
+    expect(active).toHaveLength(14); // one per authored slot, no more
+
+    // The early-logged row keeps its slot; no clone was minted beside it.
+    const atEleven = active.filter((r) => r.order_index === 11);
+    expect(atEleven).toHaveLength(1);
+    expect(atEleven[0].id).toBe("cur-11");
+  });
+
+  it("does not re-emit an event for a frozen day", async () => {
+    const token = await tokenFor();
+    await amendPlacedPlanFuture({
+      clientId: CLIENT_ID,
+      coachId: COACH_ID,
+      planId: PLAN_ID,
+      sessions: makeAmendedGrid(),
+      expectedToken: token,
+    });
+
+    // Position 11's day is 2026-07-26, where the completed ev-11 already sits.
+    const emitted = state.eventUpserts.flatMap((u) => u.rows.map((r) => r.date));
+    expect(emitted).not.toContain("2026-07-26");
   });
 
   it("an all-rest future is legal: events deleted, none created", async () => {
@@ -890,6 +953,11 @@ describe("plan-amendment-service", () => {
 
     it("shrink: predicate (a) clears plan events beyond the new window", async () => {
       mockToday.mockResolvedValue("2026-07-18"); // offset 3
+      // The scenario's ev-11 is an early LOG at position 11, which a shrink to 7
+      // slots would delete — now a 422 (covered below). This case is about the
+      // delete predicate, so make that event ordinary; ev-4 still exercises an
+      // in-range frozen position.
+      state.events.find((e) => e.id === "ev-11")!.status = "scheduled";
       const token = await tokenFor();
       await amendPlacedPlanFuture({
         clientId: CLIENT_ID,
@@ -903,8 +971,30 @@ describe("plan-amendment-service", () => {
       // window but are plan-scoped scheduled → deleted by the unbounded (a).
       const deletedIds = state.eventDeletes.flatMap((d) => d.deleted.map((e) => e.id));
       expect(deletedIds).toEqual(expect.arrayContaining(["ev-7", "ev-9", "ev-out"]));
-      // Walk covers 07-18..07-21 = positions 3..6; only position 4 trains.
-      expect(state.eventUpserts[0].rows.map((r) => r.date)).toEqual(["2026-07-19"]);
+      // Walk covers 07-18..07-21 = positions 3..6; only position 4 trains, and
+      // it is frozen (ev-4 is a completed log), so nothing is emitted. Before
+      // the freeze this wrote a SECOND event onto 07-19 carrying a fresh session
+      // id — the arbiter is (client, session, date), so it did not dedupe, and
+      // migration 136's index is scheduled-only, so it did not fire either.
+      expect(state.eventUpserts).toHaveLength(0);
+    });
+
+    // The editor blocks this (canDeleteWeek refuses a week holding a locked day);
+    // the server must mirror it rather than silently dropping the row and
+    // leaving it active out-of-band.
+    it("422s when a shrink would remove a day the client has already trained", async () => {
+      mockToday.mockResolvedValue("2026-07-18"); // offset 3; ev-11 is a completed log
+      const token = await tokenFor();
+      await expect(
+        amendPlacedPlanFuture({
+          clientId: CLIENT_ID,
+          coachId: COACH_ID,
+          planId: PLAN_ID,
+          sessions: makeGrid(1), // 7 slots — position 11 disappears
+          expectedToken: token,
+        }),
+      ).rejects.toThrow("already trained");
+      expect(state.sessionInserts).toHaveLength(0);
     });
 
     it("next-plan cap bounds the walk", async () => {

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
+import { PAST_LOCKED } from "./program-builder-lock-model";
 import { ProgramBuilder } from "./program-builder";
 import { ProgramDraftProvider } from "./program-draft-provider";
 import type { SavedPlan, SavedSession } from "@/types/training";
@@ -851,7 +852,7 @@ describe("ProgramBuilder placed-plan target", () => {
     renderPlaced();
     await screen.findByRole("button", { name: "Save changes to plan" });
     // Week-1 training cards carry the lock marker; week-2 cards don't.
-    expect(screen.getAllByTitle("This day already happened")).toHaveLength(3);
+    expect(screen.getAllByTitle(PAST_LOCKED)).toHaveLength(3);
     // Clear-X only on the 3 unlocked week-2 session cards.
     expect(screen.getAllByLabelText("Clear session (back to rest)")).toHaveLength(3);
   });

@@ -19,6 +19,7 @@ type ProgramGridProps = {
   // Placed-plan target: slots whose calendar day is history render inert
   // (see program-builder-lock-model). Undefined = no locking.
   lockedSlotUids?: ReadonlySet<string>;
+  movedPastSlotUids?: ReadonlySet<string>;
   collapsedWeeks: Set<string>;
   onToggleCollapse: (weekUid: string) => void;
   onDuplicateWeek: (weekUid: string) => void;
@@ -34,6 +35,7 @@ export function ProgramGrid({
   draft,
   mode,
   lockedSlotUids,
+  movedPastSlotUids,
   collapsedWeeks,
   onToggleCollapse,
   onDuplicateWeek,
@@ -75,6 +77,7 @@ export function ProgramGrid({
                 week={week}
                 mode={mode}
                 lockedSlotUids={lockedSlotUids}
+                movedPastSlotUids={movedPastSlotUids}
                 collapsed={collapsedWeeks.has(week.uid)}
                 canDelete={canDelete}
                 defaultSurplusPercentage={draft.defaultSurplusPercentage}
