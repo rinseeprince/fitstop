@@ -1,7 +1,10 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
 # dependencies
-/node_modules
+# Unanchored deliberately: a leading slash matches the repo root only, so a
+# nested node_modules (a tool run from the wrong cwd writes one) stays visible
+# to `git add -A`. No tracked path lives under a node_modules segment.
+node_modules/
 
 # next.js
 /.next/
