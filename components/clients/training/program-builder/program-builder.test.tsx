@@ -18,6 +18,11 @@ vi.mock("@/hooks/use-toast", () => ({
   useToast: () => ({ toast: toastSpy }),
 }));
 
+// The library header band's bell is SWR-backed and unrelated to the builder.
+vi.mock("@/components/navbar/notifications-dropdown", () => ({
+  NotificationsDropdown: () => null,
+}));
+
 const mutateMock = vi.fn(() => Promise.resolve(undefined));
 let planFixture: SavedPlan | null = null;
 vi.mock("@/hooks/use-saved-plan", () => ({
@@ -226,6 +231,48 @@ describe("ProgramBuilder save flow", () => {
     expect(screen.getByLabelText("Program focus")).toBeInTheDocument();
     expect(screen.getByLabelText("Program description")).toBeInTheDocument();
     expect(screen.queryByText(/active client/)).toBeNull();
+  });
+
+  it("titles the main column, leaving the panel a bare back row and the hero no exit", () => {
+    render(
+      <ProgramDraftProvider savedPlanId="plan-1" target="library">
+        <ProgramBuilder />
+      </ProgramDraftProvider>,
+    );
+    // The page title sits in the content area's header band, mirroring the
+    // client detail pages; the panel only names where its arrow returns to.
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Program Builder" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /All programs/ })).toBeInTheDocument();
+    // The hero's back arrow is gone — one exit, and it carries the guard.
+    expect(screen.queryByLabelText("Back to programs")).toBeNull();
+  });
+
+  it("leaves via the panel arrow when clean, and confirms first when dirty", () => {
+    const { unmount } = render(
+      <ProgramDraftProvider savedPlanId="plan-1" target="library">
+        <ProgramBuilder />
+      </ProgramDraftProvider>,
+    );
+    fireEvent.click(screen.getByRole("link", { name: /All programs/ }));
+    expect(pushMock).toHaveBeenCalledWith("/dashboard/programs");
+    unmount();
+
+    pushMock.mockClear();
+    render(
+      <ProgramDraftProvider savedPlanId="plan-1" target="library">
+        <ProgramBuilder />
+      </ProgramDraftProvider>,
+    );
+    const nameInput = screen.getByLabelText("Program name");
+    fireEvent.change(nameInput, { target: { value: "Renamed block" } });
+    fireEvent.blur(nameInput);
+
+    fireEvent.click(screen.getByRole("link", { name: /All programs/ }));
+    // Previously the panel link navigated away from a dirty draft silently.
+    expect(screen.getByText("Discard unsaved changes?")).toBeInTheDocument();
+    expect(pushMock).not.toHaveBeenCalled();
   });
 
   it("Save program posts the whole tree (surplus 0 preserved), PATCHes duration, promotes, then returns to the programs list", async () => {

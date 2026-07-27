@@ -12,6 +12,8 @@ const VIEW_TITLES: Record<ProgramsView, string> = {
   programs: "Programs",
   sessions: "Sessions",
   exercises: "Exercise Library",
+  // Unreachable — the builder renders its own "Program Builder" header (see
+  // below). Kept so the map stays exhaustive over ProgramsView.
   builder: "Program Builder",
 }
 
@@ -19,9 +21,12 @@ export function ProgramsTopbar() {
   const pathname = usePathname() ?? ""
   const view = getProgramsView(pathname)
 
-  // The builder is full-bleed with its own dark program header (reference
-  // layout) — no top strip there. The list / sessions / exercises pages keep
-  // the topbar. ("Program Builder" now titles the builder's library panel.)
+  // The builder is full-bleed: its library panel runs the full viewport
+  // height, so a shell-level strip above it would push the panel off screen.
+  // It renders its own title band INSIDE the main column instead
+  // (program-builder.tsx), right of the panel — the same relationship the
+  // client detail pages have between their sidebar and title band. The list /
+  // sessions / exercises pages keep this topbar.
   if (view === "builder") return null
 
   const title = VIEW_TITLES[view]

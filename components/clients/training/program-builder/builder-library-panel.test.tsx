@@ -76,10 +76,12 @@ vi.mock("@/hooks/use-exercise-catalog", () => ({
   }),
 }));
 
+const onBack = vi.fn();
+
 function renderPanel(mode: "view" | "edit" = "edit") {
   return render(
     <DndContext>
-      <BuilderLibraryPanel mode={mode} />
+      <BuilderLibraryPanel mode={mode} backLabel="Back to programs" onBack={onBack} />
     </DndContext>,
   );
 }
@@ -90,6 +92,7 @@ describe("BuilderLibraryPanel", () => {
   beforeEach(() => {
     cleanup();
     exercises = BASE_EXERCISES;
+    onBack.mockClear();
   });
 
   it("shows the Sessions tab by default with the breadcrumb + session cards", () => {
@@ -136,33 +139,52 @@ describe("BuilderLibraryPanel", () => {
     expect(screen.getByRole("button", { name: /New session/ })).toBeInTheDocument();
   });
 
-  it("hides the 'All programs' link when embedded (client-draft), keeping drag sources", () => {
+  it("routes a plain click on the back link through the guarded exit, not the href", () => {
+    renderPanel();
+    fireEvent.click(screen.getByRole("link", { name: /All programs/ }));
+    expect(onBack).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves a modified click to the browser — a new tab can't drop the draft", () => {
+    renderPanel();
+    const link = screen.getByRole("link", { name: /All programs/ });
+    // jsdom can't navigate; swallow the default before React sees the click so
+    // the assertion is about our handler, not about jsdom's missing navigation.
+    link.addEventListener("click", (e) => e.preventDefault());
+    fireEvent.click(link, { metaKey: true });
+    expect(onBack).not.toHaveBeenCalled();
+  });
+
+  it("names the CLIENT (not a destination) in the client-scoped remounts, keeping drag sources", () => {
     render(
       <DndContext>
-        <BuilderLibraryPanel mode="edit" showBackLink={false} />
+        <BuilderLibraryPanel
+          mode="edit"
+          clientName="Jane Doe"
+          backLabel="Back to calendar"
+          onBack={onBack}
+        />
       </DndContext>,
     );
+    expect(screen.getByText("Editing for")).toBeInTheDocument();
+    expect(screen.getByText("Jane Doe")).toBeInTheDocument();
+    // No "All programs" link — it would navigate away from the client page.
     expect(screen.queryByRole("link", { name: /All programs/ })).toBeNull();
+    expect(screen.queryByText("Program Builder")).toBeNull();
+    // The arrow is the only interactive part of the header, and it exits.
+    fireEvent.click(screen.getByLabelText("Back to calendar"));
+    expect(onBack).toHaveBeenCalledTimes(1);
     // Drag sources + session CRUD stay reachable in the embedded panel.
     expect(screen.getByLabelText("Drag Push Day A")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /New session/ })).toBeInTheDocument();
   });
 
-  it("titles with the client's name in the client-draft remount (not 'Program Builder')", () => {
-    render(
-      <DndContext>
-        <BuilderLibraryPanel mode="edit" showBackLink={false} clientName="Jane Doe" />
-      </DndContext>,
-    );
-    expect(screen.getByText("Editing for")).toBeInTheDocument();
-    expect(screen.getByText("Jane Doe")).toBeInTheDocument();
-    expect(screen.queryByText("Program Builder")).toBeNull();
-  });
-
-  it("shows the generic 'Program Builder' title without a client name (library mode)", () => {
+  it("shows the 'All programs' back row without a client name (library mode)", () => {
     renderPanel();
-    expect(screen.getByText("Program Builder")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /All programs/ })).toBeInTheDocument();
     expect(screen.queryByText("Editing for")).toBeNull();
+    // The title moved to the main column's header band.
+    expect(screen.queryByText("Program Builder")).toBeNull();
   });
 
   it("Exercises tab caps a huge catalog at the 10 most recent; search surfaces the rest", () => {

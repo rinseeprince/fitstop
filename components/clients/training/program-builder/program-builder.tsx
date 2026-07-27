@@ -8,6 +8,7 @@ import { DndContext, DragOverlay } from "@dnd-kit/core";
 import { useToast } from "@/hooks/use-toast";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ApplyToClientDialog } from "@/components/training-library/apply-to-client-dialog";
+import { NotificationsDropdown } from "@/components/navbar/notifications-dropdown";
 import { SectionLabel } from "@/components/programs/shared/section-label";
 import { cn } from "@/lib/utils";
 import type { Exercise, SavedSession } from "@/types/training";
@@ -156,6 +157,21 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
 
   const exit = () => (onExit ? onExit() : router.push("/dashboard/programs"));
 
+  // The library panel's back arrow is the builder's ONLY exit on every target
+  // (the hero no longer carries one), so the leave-confirm lives here. In
+  // library mode this also closes a real gap: the panel's "All programs" link
+  // used to navigate away from a dirty draft without warning.
+  const requestExit = () => {
+    if (isDirty && mode === "edit") setConfirmLeaveOpen(true);
+    else exit();
+  };
+
+  const backLabel = isClientDraft
+    ? "Back to library"
+    : isPlacedPlan
+      ? "Back to calendar"
+      : "Back to programs";
+
   const deletePlan = async (successTitle: string) => {
     try {
       const res = await fetch(`/api/training/saved-plans/${savedPlanId}`, {
@@ -234,191 +250,204 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
         <div className="flex min-h-0 flex-1">
           <BuilderLibraryPanel
             mode={mode}
-            showBackLink={isLibrary}
             clientName={clientName ?? undefined}
+            backLabel={backLabel}
+            onBack={requestExit}
           />
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col px-6 pt-5">
-            <ProgramTopBar
-              draft={draft}
-              mode={mode}
-              onBack={() => {
-                if (isDirty && mode === "edit") setConfirmLeaveOpen(true);
-                else exit();
-              }}
-              backLabel={
-                isClientDraft
-                  ? "Back to library"
-                  : isPlacedPlan
-                    ? "Back to calendar"
-                    : "Back to programs"
-              }
-              identityEditable={!isClientDraft}
-              // A placed plan has no inheritable default — placement resolved
-              // it into every row (absolute surplus, decision 10). Session-
-              // level surplus editing + the assistant cover bulk changes.
-              showSurplus={!isPlacedPlan}
-              onRename={setName}
-              onFocusChange={setSplitType}
-              onDescriptionChange={setDescription}
-              onDefaultSurplusChange={setDefaultSurplus}
-            />
-            <SectionLabel
-              label="Schedule"
-              meta={`${draft.weeks.length} ${draft.weeks.length === 1 ? "week" : "weeks"} · ${trainingCount} ${trainingCount === 1 ? "session" : "sessions"}`}
-              actions={
-                // Divider-rail pattern: ALL program actions live on the
-                // rule, not in the hero band — icons for edit/delete, small
-                // uppercase text for the edit-mode commit actions. Client-draft
-                // swaps the library commit (Save/Delete to the template) for an
-                // Apply-to-client button; the template is never mutated here.
-                <div className="flex items-center gap-3">
-                  {isClientDraft && (
-                    <button
-                      type="button"
-                      className="rounded-[6px] bg-[#0d9488] px-3 py-1.5 text-[12px] font-semibold text-white transition-colors hover:bg-[#0b7f75] disabled:opacity-50"
-                      // assistantBusy: an in-flight AI turn's ops replay against
-                      // the current tree — applying mid-turn would materialize a
-                      // calendar the turn then diverges from.
-                      disabled={!apply.canApply || assistantBusy}
-                      onClick={apply.requestApply}
-                    >
-                      Apply to client
-                    </button>
-                  )}
-                  {/* Rail save icon — the design system's DEFAULT commit
-                      affordance for an editor surface (owner call; codified in
-                      docs/newdesignsystem.md → Buttons). Same slot + look as
-                      the library save; commit leftmost, destructive rightmost.
-                      fullyLocked: an ended plan has nothing future to rewrite;
-                      assistantBusy mirrors the library save. */}
-                  {isPlacedPlan && mode === "edit" && (
-                    <button
-                      type="button"
-                      aria-label="Save changes to plan"
-                      title="Save changes to plan"
-                      disabled={!isDirty || amend.isAmending || assistantBusy || fullyLocked}
-                      className="rounded p-1 text-[#0d9488] transition-colors hover:text-[#0b7f75] disabled:opacity-50"
-                      onClick={amend.request}
-                    >
-                      {amend.isAmending ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <Save className="h-3.5 w-3.5" strokeWidth={1.5} />
-                      )}
-                    </button>
-                  )}
-                  {mode === "view" && (
-                    <button
-                      type="button"
-                      aria-label="Edit program"
-                      title="Edit program"
-                      className="rounded p-1 text-[#93b0b4] transition-colors hover:text-[#0d9488]"
-                      onClick={() => setMode("edit")}
-                    >
-                      <Pencil className="h-3.5 w-3.5" strokeWidth={1.5} />
-                    </button>
-                  )}
-                  {/* Icon order is stable across modes: commit action (Save)
-                      leftmost, Discard middle, Delete ALWAYS rightmost — the
-                      trash must never change sides when entering edit mode. */}
-                  {mode === "edit" && (
-                    <>
-                      {isLibrary && (
-                        <button
-                          type="button"
-                          aria-label="Save program"
-                          title="Save program"
-                          disabled={isSaving || assistantBusy}
-                          className="rounded p-1 text-[#0d9488] transition-colors hover:text-[#0b7f75] disabled:opacity-50"
-                          onClick={async () => {
-                            // A clean save returns to the programs list; a
-                            // 409/error keeps the coach in the builder to retry.
-                            if ((await saveProgram()) === "saved") exit();
-                          }}
-                        >
-                          {isSaving ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            <Save className="h-3.5 w-3.5" strokeWidth={1.5} />
-                          )}
-                        </button>
-                      )}
-                      {/* Draft-discard (delete) is library-only; client-draft
-                          and placed-plan surfaces only ever show the
-                          revert-my-edits Discard-changes control. */}
-                      {isLibrary && draft.status === "draft" ? (
-                        <button
-                          type="button"
-                          aria-label="Discard draft"
-                          title="Discard draft"
-                          disabled={isSaving}
-                          className="rounded p-1 text-[#93b0b4] transition-colors hover:text-[#c06060] disabled:opacity-50"
-                          onClick={() => setConfirmDiscardOpen(true)}
-                        >
-                          <Ban className="h-3.5 w-3.5" strokeWidth={1.5} />
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          aria-label={isDirty ? "Discard changes" : "Cancel editing"}
-                          title={isDirty ? "Discard changes" : "Cancel editing"}
-                          disabled={isSaving}
-                          className="rounded p-1 text-[#93b0b4] transition-colors hover:text-[#c06060] disabled:opacity-50"
-                          onClick={() => {
-                            // With unsaved edits, confirm the revert; with none,
-                            // just leave edit mode (nothing to discard) so the
-                            // coach is never stuck in edit mode.
-                            if (isDirty) setConfirmDiscardChangesOpen(true);
-                            else setMode("view");
-                          }}
-                        >
-                          <Ban className="h-3.5 w-3.5" strokeWidth={1.5} />
-                        </button>
-                      )}
-                    </>
-                  )}
-                  {isLibrary && (
-                    <button
-                      type="button"
-                      aria-label="Delete program"
-                      title="Delete program"
-                      disabled={isSaving}
-                      className="rounded p-1 text-[#93b0b4] transition-colors hover:text-[#c06060] disabled:opacity-50"
-                      onClick={() => setConfirmDeleteOpen(true)}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
-                    </button>
-                  )}
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            {/* Page header. The section topbar returns null for the builder
+                route (programs-topbar.tsx), so the builder renders its own
+                INSIDE the main column — right of the library panel, exactly
+                like the client detail pages' title band sits right of the
+                client sidebar (client-detail-layout.tsx). px-6 tracks this
+                column's own padding the way that one tracks its px-8 main.
+                The client-scoped overlays have no page to title: the panel
+                already names the client and the hero names the program. */}
+            {isLibrary && (
+              // NOT sticky, unlike the client-detail band it copies: nothing
+              // scrolls under it (the grid owns its own scroller), and inside
+              // the shell's `py-5` main a `sticky top-0` clamps the band 20px
+              // down — re-introducing the exact offset the root's `-mt-5`
+              // exists to cancel, so it would sit below the panel's back row.
+              <header className="shrink-0 bg-white px-6 py-2">
+                <div className="flex items-center justify-between">
+                  <h1 className="text-[15px] font-bold text-[#0c1a1e]">Program Builder</h1>
+                  <NotificationsDropdown compact />
                 </div>
-              }
-            />
-            {isPlacedPlan && fullyLocked && (
-              <div className="mb-2 rounded-[6px] border border-[rgba(13,148,136,0.2)] bg-[rgba(13,148,136,0.05)] px-3 py-2 text-[12.5px] text-[#0a5c55]">
-                This plan has ended — nothing left to edit. Apply a new program
-                to continue.
-              </div>
+              </header>
             )}
-            <ProgramGrid
-              draft={draft}
-              mode={mode}
-              lockedSlotUids={isPlacedPlan ? lockedSlotUids : undefined}
-              collapsedWeeks={collapsedWeeks}
-              onToggleCollapse={(weekUid) =>
-                setCollapsedWeeks((prev) => {
-                  const next = new Set(prev);
-                  if (next.has(weekUid)) next.delete(weekUid);
-                  else next.add(weekUid);
-                  return next;
-                })
-              }
-              onDuplicateWeek={duplicateWeek}
-              onDuplicateWeekWithProgression={setProgressionWeekUid}
-              onDeleteWeek={deleteWeek}
-              onAddWeek={addWeek}
-              onOpenSession={setEditingSessionUid}
-              onRequestAddSession={requestAddSession}
-              onClearSlot={clearSlot}
-            />
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col px-6 pt-5">
+              <ProgramTopBar
+                draft={draft}
+                mode={mode}
+                identityEditable={!isClientDraft}
+                // A placed plan has no inheritable default — placement resolved
+                // it into every row (absolute surplus, decision 10). Session-
+                // level surplus editing + the assistant cover bulk changes.
+                showSurplus={!isPlacedPlan}
+                onRename={setName}
+                onFocusChange={setSplitType}
+                onDescriptionChange={setDescription}
+                onDefaultSurplusChange={setDefaultSurplus}
+              />
+              <SectionLabel
+                label="Schedule"
+                meta={`${draft.weeks.length} ${draft.weeks.length === 1 ? "week" : "weeks"} · ${trainingCount} ${trainingCount === 1 ? "session" : "sessions"}`}
+                actions={
+                  // Divider-rail pattern: ALL program actions live on the
+                  // rule, not in the hero band — icons for edit/delete, small
+                  // uppercase text for the edit-mode commit actions. Client-draft
+                  // swaps the library commit (Save/Delete to the template) for an
+                  // Apply-to-client button; the template is never mutated here.
+                  <div className="flex items-center gap-3">
+                    {isClientDraft && (
+                      <button
+                        type="button"
+                        className="rounded-[6px] bg-[#0d9488] px-3 py-1.5 text-[12px] font-semibold text-white transition-colors hover:bg-[#0b7f75] disabled:opacity-50"
+                        // assistantBusy: an in-flight AI turn's ops replay against
+                        // the current tree — applying mid-turn would materialize a
+                        // calendar the turn then diverges from.
+                        disabled={!apply.canApply || assistantBusy}
+                        onClick={apply.requestApply}
+                      >
+                        Apply to client
+                      </button>
+                    )}
+                    {/* Rail save icon — the design system's DEFAULT commit
+                        affordance for an editor surface (owner call; codified in
+                        docs/newdesignsystem.md → Buttons). Same slot + look as
+                        the library save; commit leftmost, destructive rightmost.
+                        fullyLocked: an ended plan has nothing future to rewrite;
+                        assistantBusy mirrors the library save. */}
+                    {isPlacedPlan && mode === "edit" && (
+                      <button
+                        type="button"
+                        aria-label="Save changes to plan"
+                        title="Save changes to plan"
+                        disabled={!isDirty || amend.isAmending || assistantBusy || fullyLocked}
+                        className="rounded p-1 text-[#0d9488] transition-colors hover:text-[#0b7f75] disabled:opacity-50"
+                        onClick={amend.request}
+                      >
+                        {amend.isAmending ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Save className="h-3.5 w-3.5" strokeWidth={1.5} />
+                        )}
+                      </button>
+                    )}
+                    {mode === "view" && (
+                      <button
+                        type="button"
+                        aria-label="Edit program"
+                        title="Edit program"
+                        className="rounded p-1 text-[#93b0b4] transition-colors hover:text-[#0d9488]"
+                        onClick={() => setMode("edit")}
+                      >
+                        <Pencil className="h-3.5 w-3.5" strokeWidth={1.5} />
+                      </button>
+                    )}
+                    {/* Icon order is stable across modes: commit action (Save)
+                        leftmost, Discard middle, Delete ALWAYS rightmost — the
+                        trash must never change sides when entering edit mode. */}
+                    {mode === "edit" && (
+                      <>
+                        {isLibrary && (
+                          <button
+                            type="button"
+                            aria-label="Save program"
+                            title="Save program"
+                            disabled={isSaving || assistantBusy}
+                            className="rounded p-1 text-[#0d9488] transition-colors hover:text-[#0b7f75] disabled:opacity-50"
+                            onClick={async () => {
+                              // A clean save returns to the programs list; a
+                              // 409/error keeps the coach in the builder to retry.
+                              if ((await saveProgram()) === "saved") exit();
+                            }}
+                          >
+                            {isSaving ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Save className="h-3.5 w-3.5" strokeWidth={1.5} />
+                            )}
+                          </button>
+                        )}
+                        {/* Draft-discard (delete) is library-only; client-draft
+                            and placed-plan surfaces only ever show the
+                            revert-my-edits Discard-changes control. */}
+                        {isLibrary && draft.status === "draft" ? (
+                          <button
+                            type="button"
+                            aria-label="Discard draft"
+                            title="Discard draft"
+                            disabled={isSaving}
+                            className="rounded p-1 text-[#93b0b4] transition-colors hover:text-[#c06060] disabled:opacity-50"
+                            onClick={() => setConfirmDiscardOpen(true)}
+                          >
+                            <Ban className="h-3.5 w-3.5" strokeWidth={1.5} />
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            aria-label={isDirty ? "Discard changes" : "Cancel editing"}
+                            title={isDirty ? "Discard changes" : "Cancel editing"}
+                            disabled={isSaving}
+                            className="rounded p-1 text-[#93b0b4] transition-colors hover:text-[#c06060] disabled:opacity-50"
+                            onClick={() => {
+                              // With unsaved edits, confirm the revert; with none,
+                              // just leave edit mode (nothing to discard) so the
+                              // coach is never stuck in edit mode.
+                              if (isDirty) setConfirmDiscardChangesOpen(true);
+                              else setMode("view");
+                            }}
+                          >
+                            <Ban className="h-3.5 w-3.5" strokeWidth={1.5} />
+                          </button>
+                        )}
+                      </>
+                    )}
+                    {isLibrary && (
+                      <button
+                        type="button"
+                        aria-label="Delete program"
+                        title="Delete program"
+                        disabled={isSaving}
+                        className="rounded p-1 text-[#93b0b4] transition-colors hover:text-[#c06060] disabled:opacity-50"
+                        onClick={() => setConfirmDeleteOpen(true)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+                      </button>
+                    )}
+                  </div>
+                }
+              />
+              {isPlacedPlan && fullyLocked && (
+                <div className="mb-2 rounded-[6px] border border-[rgba(13,148,136,0.2)] bg-[rgba(13,148,136,0.05)] px-3 py-2 text-[12.5px] text-[#0a5c55]">
+                  This plan has ended — nothing left to edit. Apply a new program
+                  to continue.
+                </div>
+              )}
+              <ProgramGrid
+                draft={draft}
+                mode={mode}
+                lockedSlotUids={isPlacedPlan ? lockedSlotUids : undefined}
+                collapsedWeeks={collapsedWeeks}
+                onToggleCollapse={(weekUid) =>
+                  setCollapsedWeeks((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(weekUid)) next.delete(weekUid);
+                    else next.add(weekUid);
+                    return next;
+                  })
+                }
+                onDuplicateWeek={duplicateWeek}
+                onDuplicateWeekWithProgression={setProgressionWeekUid}
+                onDeleteWeek={deleteWeek}
+                onAddWeek={addWeek}
+                onOpenSession={setEditingSessionUid}
+                onRequestAddSession={requestAddSession}
+                onClearSlot={clearSlot}
+              />
+            </div>
           </div>
         </div>
 

@@ -1,6 +1,5 @@
 "use client";
 
-import { ArrowLeft } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
@@ -13,17 +12,18 @@ import {
   STAT_LABEL_DARK_CLASS,
 } from "./builder-tokens";
 
-// Builder hero — the slim dark program header. Back arrow · eyebrow + the
-// program NAME and FOCUS (both inline-editable in edit mode) · the default-
-// surplus pill on the right. The weeks/sessions/per-week/assignments stat row
-// was removed — it duplicated the Schedule divider on the right. Flat #0f2027
-// (design system — NOT the mockup's gradient/glow).
+// Builder hero — the slim dark program header. Eyebrow + the program NAME and
+// FOCUS (both inline-editable in edit mode) · the default-surplus pill on the
+// right. The weeks/sessions/per-week/assignments stat row was removed — it
+// duplicated the Schedule divider on the right. Flat #0f2027 (design system —
+// NOT the mockup's gradient/glow).
+//
+// The hero carries NO back arrow: the library panel's header arrow is the
+// builder's single exit on every target (it is also the only one wired to the
+// unsaved-changes guard), so a second one here read as a duplicate affordance.
 type ProgramTopBarProps = {
   draft: ProgramDraft;
   mode: "view" | "edit";
-  onBack: () => void;
-  // Client-draft returns to the library list, not /dashboard/programs.
-  backLabel?: string;
   // Name + focus are TEMPLATE identity — editable in the program builder, but
   // read-only in the client editor (the coach applies the template + adjusts
   // the training/surplus for the client, they don't rename the template).
@@ -56,8 +56,6 @@ const INLINE_DESC_CLASS =
 export function ProgramTopBar({
   draft,
   mode,
-  onBack,
-  backLabel = "Back to programs",
   identityEditable = true,
   showSurplus = true,
   onRename,
@@ -67,15 +65,6 @@ export function ProgramTopBar({
 }: ProgramTopBarProps) {
   return (
     <div className="mb-4 flex items-center gap-4 overflow-hidden rounded-[6px] bg-[#0f2027] px-5 py-3">
-      <button
-        type="button"
-        aria-label={backLabel}
-        className="shrink-0 rounded p-1 text-[rgba(255,255,255,0.45)] transition-colors hover:text-white"
-        onClick={onBack}
-      >
-        <ArrowLeft className="h-4 w-4" strokeWidth={1.5} />
-      </button>
-
       {/* Eyebrow + name + focus — fills the width up to the surplus pill so a
           long focus doesn't truncate at half the header. */}
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">

@@ -184,9 +184,9 @@ Author with explicit arbitrary sizes (`text-[13px]`) to match shipped pixels —
 | `10.5px` | Section-label divider (`0.07em`), week "W#" chip |
 | `11px` | Mono stat rows, set-row & drop-set inputs, ordinal circle, pager text, table-footer count |
 | `12px` (`text-xs`) | Body-small, card/session titles in dense contexts, panel search inputs |
-| `12.5px` | Table mono cells, filter chips, "All programs" back link |
+| `12.5px` | Table mono cells, filter chips |
 | `13px` | Session/exercise names, segmented control, primary-button text, default table body |
-| `13.5px` | Table program name, client name |
+| `13.5px` | Table program name, client name, **sidebar back-row label** ("All programs", the client's name) |
 | `15px` | Section topbar title, sheet title |
 | `17px` | Program builder title (dark header) |
 | `18px` (`text-lg`) | Dialog title |
@@ -477,18 +477,29 @@ Rows (`group/row cursor-pointer`, first cell `pl-5`):
 
 ## Chapter: Program Builder page
 
-Reference: `components/clients/training/program-builder/**`. The builder is **full-bleed** (its own dark header replaces the section topbar — `ProgramsTopbar` returns null for the builder view).
+Reference: `components/clients/training/program-builder/**`. The builder is **full-bleed** — `ProgramsTopbar` returns null for the builder view, because the library panel runs the full viewport height and a shell-level strip above it would push the panel off screen. The builder renders its **own** title band *inside* the main column instead, right of the panel: the same relationship the client detail pages have between their sidebar and their title band.
 
 ### Frame & layout
 
 - Root cancels the shell padding and goes full height: `-mx-8 -mt-5 -mb-[60px] flex h-screen flex-col`.
 - Inner row `flex min-h-0 flex-1`: left **library panel** + main column.
-- Main column: `flex min-h-0 min-w-0 flex-1 flex-col px-6 pt-5`.
+- Main column: `flex min-h-0 min-w-0 flex-1 flex-col` → the page-header band, then the content box `flex min-h-0 min-w-0 flex-1 flex-col px-6 pt-5`.
 - Loading: centered `Loader2 h-6 w-6 animate-spin text-[#93b0b4]` in `py-24`.
+
+### Page-header band (library target only)
+
+The client-detail title band, with `px-6` tracking the main column's own padding the way the client version tracks its `px-8` main: `shrink-0 bg-white px-6 py-2` wrapping `flex items-center justify-between` → `<h1 className="text-[15px] font-bold text-[#0c1a1e]">Program Builder</h1>` + `<NotificationsDropdown compact />`. **Deliberately NOT `sticky top-0`** (the one deviation from the client-detail band): nothing scrolls under it — the grid owns its own scroller — and Chrome insets a sticky element's constraint rect by the scroll container's padding, so inside the shell's `py-5` main a `sticky top-0` clamps the band 20px down, re-introducing the exact offset the root's `-mt-5` exists to cancel. CDP-measured: `top: 20` sticky vs `top: 0` static, against the panel's `top: 0`. The client-scoped overlays (`client-draft`, `placed-plan`) render **no band** — they are overlays, not pages, and the panel already names the client while the hero names the program.
 
 ### Library panel (left)
 
-`sticky top-0 flex h-screen w-[296px] shrink-0 flex-col border-r border-[rgba(13,148,136,0.08)] bg-white`. Header `px-[18px] pt-[18px]`: back link `text-[12.5px] font-medium text-[#5a7d82] hover:text-[#0a5c55]` (+ `ChevronLeft h-3.5 w-3.5`); title `text-base font-semibold tracking-[-0.01em] text-[#0c1a1e]`; `<SegmentedControl fullWidth>` Sessions/Exercises.
+`sticky top-0 flex h-screen w-[296px] shrink-0 flex-col border-r border-[rgba(13,148,136,0.08)] bg-white`. Header `px-[18px] pt-[18px]`, then `mb-3.5 flex items-center gap-2.5` — the **same back-row grammar as the client-profile sidebar** (`components/clients/client-sidebar.tsx`), which is the reference for every sidebar header: `ArrowLeft h-4 w-4 text-[#93b0b4]` → `group-hover:text-[#5a7d82]`, label `text-[13.5px] font-semibold text-[#0c1a1e]`. Two shapes:
+
+- **Library** — arrow + `All programs` are one `<Link href="/dashboard/programs">` (it names a destination). A plain click is intercepted and routed through the builder's guarded exit; modified clicks (new tab/window) are left to the browser so the href stays meaningful.
+- **Client-scoped** (`client-draft` / `placed-plan`) — only the arrow is interactive (an icon-only `<button>` carrying the `aria-label`); beside it an `Editing for` eyebrow (`LABEL_CLASS`) over the client's name. A client is context, not a destination — exactly like the client-profile sidebar, where the arrow links out and the name is plain text.
+
+Then `<SegmentedControl fullWidth>` Sessions/Exercises.
+
+**The panel's arrow is the builder's single exit on every target** (the hero carries none), so it is also the only control wired to the unsaved-changes confirm — never add a second back affordance.
 
 Library cards (session & exercise): `group/row flex items-center gap-2 rounded-[6px] bg-white p-2 pl-1.5` + `TRAINING_CARD_BORDER`; hover `-translate-y-px shadow-[0_6px_20px_rgba(13,148,136,0.08)]`; dragging `opacity-40`. Grip `GripVertical h-3.5 w-3.5` (`cursor-grab`); thumb `THUMB_CLASS h-[30px] w-[30px]` + `Dumbbell h-[15px] w-[15px]`; name `truncate text-xs font-semibold text-[#0c1a1e]`; meta `mt-0.5 MONO_LABEL_CLASS normal-case tracking-normal`; focus chip `CHIP_NEUTRAL_CLASS`; `<RowActions>`.
 
@@ -496,7 +507,7 @@ List area `min-h-0 flex-1 space-y-2 overflow-y-auto px-[14px] pb-2`; search `h-8
 
 ### Dark hero header (`program-top-bar`)
 
-`mb-4 flex items-center gap-4 overflow-hidden rounded-[6px] bg-[#0f2027] px-5 py-3`. Back `text-[rgba(255,255,255,0.45)] hover:text-white` (`ArrowLeft h-4 w-4`). Eyebrow `HEADER_EYEBROW_CLASS` ("Program") + optional draft badge. Name (view) `text-[17px] font-semibold leading-tight tracking-[-0.01em] text-white` (edit: transparent borderless `Input` + `FOCUS_RING`). Stat row (`md:flex`, hidden below) `font-mono-display text-[11px] text-[rgba(255,255,255,0.4)]`, bold segments `text-[rgba(255,255,255,0.92)] font-medium`, dot separators `h-[3px] w-[3px] rounded-full bg-[rgba(255,255,255,0.2)]`. Surplus pill `ml-auto rounded-[6px] border border-[rgba(255,255,255,0.14)] px-2.5 py-1` (label `font-mono-display text-[10px] uppercase tracking-[0.08em]`, borderless mono input, `%` suffix).
+`mb-4 flex items-center gap-4 overflow-hidden rounded-[6px] bg-[#0f2027] px-5 py-3`. **No back control** — the library panel's header arrow is the builder's single exit (see Library panel above). Eyebrow `HEADER_EYEBROW_CLASS` ("Program") + optional draft badge. Name (view) `text-[17px] font-semibold leading-tight tracking-[-0.01em] text-white` (edit: transparent borderless `Input` + `FOCUS_RING`). Stat row (`md:flex`, hidden below) `font-mono-display text-[11px] text-[rgba(255,255,255,0.4)]`, bold segments `text-[rgba(255,255,255,0.92)] font-medium`, dot separators `h-[3px] w-[3px] rounded-full bg-[rgba(255,255,255,0.2)]`. Surplus pill `ml-auto rounded-[6px] border border-[rgba(255,255,255,0.14)] px-2.5 py-1` (label `font-mono-display text-[10px] uppercase tracking-[0.08em]`, borderless mono input, `%` suffix).
 
 ### Schedule divider + action rail
 
@@ -550,7 +561,7 @@ Follow the **Overlays** recipes: session editor & create-session are 780px right
 #### Centre: Client sidebar — 200px, white
 
 - Right border `1px solid rgba(13,148,136,0.08)`.
-- Top (padding `18px 16px 14px`): back arrow (`#93b0b4`) + avatar (26px, 6px radius, teal gradient) + name (13.5px, 600).
+- Top (padding `18px 16px 14px`): back arrow (`ArrowLeft h-4 w-4`, `#93b0b4` → hover `#5a7d82`) + avatar (26px, 6px radius, teal gradient) + name (13.5px, 600), one `gap-2.5` row. **This row is the reference for every sidebar header** — the Program Builder's library panel follows it (see that chapter). The arrow is the only interactive element; the name is context, not a link.
 - Vertical tabs (13.5px): active = 3px teal left bar + `rgba(13,148,136,0.05)` bg + 600 + `#0c1a1e`; inactive = 400 + `#6b8a8e`, hover `rgba(0,0,0,0.02)`.
 - Bottom: Settings pinned, separated by `border-top rgba(13,148,136,0.08)`.
 
