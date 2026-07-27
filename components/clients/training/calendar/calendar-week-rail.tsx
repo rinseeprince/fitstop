@@ -1,13 +1,7 @@
 "use client";
 
 import { memo } from "react";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { MoreVertical, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   MONO,
@@ -31,7 +25,7 @@ type CalendarWeekRailProps = {
   /** Events in this week row (any status). */
   sessionCount: number;
   editMode: boolean;
-  /** Whether week-level actions render. False when no plan or the row spans plans. */
+  /** Whether the week action renders. False when no plan or the row spans plans. */
   showKebab: boolean;
   disabledReason?: string;
   onAction: (action: WeekAction) => void;
@@ -46,8 +40,10 @@ function formatWeekOf(dateStr: string) {
 // mode no longer shifts every column. The chip is the week's session count —
 // a month-grid row has no meaningful week NUMBER (it is neither a program
 // week nor a month week), so the rail shows the one datum that is true.
-// Empty weeks show no chip. The kebab is edit-mode-only and hover-revealed
-// (stays visible while its menu is open).
+// Empty weeks show no chip. Clear-week is edit-mode-only and hover-revealed.
+// It is a bare destructive icon rather than a kebab: it is the only week-level
+// action left, and a one-item menu costs two clicks to reach one thing. The
+// ClearWeekDialog confirm is what makes a single click safe.
 export const CalendarWeekRail = memo(function CalendarWeekRail({
   weekStartDate,
   sessionCount,
@@ -71,27 +67,14 @@ export const CalendarWeekRail = memo(function CalendarWeekRail({
 
       {editMode &&
         (showKebab ? (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                aria-label={`Actions for week of ${formatWeekOf(weekStartDate)}`}
-                className="rounded p-0.5 text-[#93b0b4] opacity-0 transition-opacity hover:bg-[rgba(13,148,136,0.08)] group-hover/wk:opacity-100 data-[state=open]:opacity-100"
-              >
-                <MoreVertical className="h-3 w-3" strokeWidth={1.5} />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-52">
-              {/* Sole item, so no separator: the doc's "destructive rows sit
-                  LAST behind a separator" rule needs something to sit after. */}
-              <DropdownMenuItem
-                variant="destructive"
-                onClick={() => onAction("clear")}
-              >
-                <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
-                Clear week
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <button
+            aria-label={`Clear week of ${formatWeekOf(weekStartDate)}`}
+            title="Clear week"
+            onClick={() => onAction("clear")}
+            className="rounded p-0.5 text-[#93b0b4] opacity-0 transition-colors transition-opacity hover:bg-[rgba(192,96,96,0.08)] hover:text-[#c06060] group-hover/wk:opacity-100"
+          >
+            <Trash2 className="h-3 w-3" strokeWidth={1.5} />
+          </button>
         ) : disabledReason ? (
           <span
             className={cn(MONO, "cursor-help text-[10px] text-[#93b0b4]")}
