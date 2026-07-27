@@ -17,7 +17,6 @@ Logged: 2026-07-02 (class-wide SWR invalidation pass; see CONVENTIONS.md §7 "Nu
 Four routes rewrite `nutrition_events` server-side but currently have **no web client caller**, so no success handler calls `useInvalidateNutritionCalendar`. If any of these gains a caller (web or RN), that caller MUST adopt the invalidator:
 
 - `DELETE /api/clients/[id]/training/[planId]` (archive plan; cascades via `cascadeNutritionAfterTrainingChange`)
-- `POST /api/clients/[id]/training/[planId]/regenerate-events`
 - `PATCH /api/clients/[id]/training/[planId]/events/[eventId]` (per-event surplus; web UI routes surplus edits through the sessions endpoint instead)
 - `PATCH /api/clients/[id]/nutrition/events/[date]/reset` (single-date reset; web UI uses the bulk `/events/reset`)
 
@@ -60,7 +59,6 @@ Logged: 2026-07-02.
 Logged: 2026-07-22.
 
 - **Entry-point gating fetches the full amendment payload for one boolean.** `TrainingBuilderRightPanel` runs the amendment GET (via `usePlacedPlan`) on every Plans-subtab view just to read `isFullyPast` for the hero button's disabled state. The SWR key is shared with the amendment overlay, so opening the editor never double-fetches — but the payload is the whole plan (all exercises). Fine at current plan sizes; if it ever shows up in traces, add a lean `?summary=1` variant rather than a second endpoint.
-- **Move-scope dialog wording predates the amendment surface.** The calendar's move-scope option "This and all future X sessions" is effectively single-event under the 1:1 placement invariant (one session row per day since migration 121; only duplicated events share a session), and bulk mid-plan change is now the amendment surface's job. Re-evaluate that option's wording/presence with the owner — deferred from Job 1, still open after Job 2 (copy decision, not a mechanism).
 
 ---
 
@@ -90,14 +88,6 @@ Logged: 2026-07-21 (Phase 7 sweep). **Not debt so much as an undeclared requirem
 - `app/api/training/assistant/route.ts` exports `maxDuration = 300`, deliberately above the SDK client's 240s timeout so a long turn fails as a handled SDK timeout rather than an opaque platform kill. **There is no `vercel.json` and no `.vercel/` in the repo**, so nothing declares this to a host.
 - Any platform capping functions below 300s (Vercel Hobby is 60s) will kill long turns mid-flight; to the coach it presents as "the assistant is broken", not as a timeout. Raising either number means raising both.
 - **This has never been exercised against a real platform ceiling** — the longest recorded turn (~5 minutes, from the 6a record) ran locally. Add a `vercel.json` when a deploy target is chosen, so the requirement is version-controlled rather than tribal.
-
----
-
-## `savePlanFromCalendar` flattens multi-week programs
-
-Logged: 2026-07-21 (Phase 7 sweep). Behavior bug, observed not fixed (S7 was docs + deletions only).
-
-- `services/coach-library-calendar-service.ts` hardcodes `is_rest: false` on every copied session and writes no `week_index`. Saving a placed multi-week program back to the library therefore **flattens it into one week and turns rest rows into ordinary sessions named "Rest"** — which then place as training days on the next apply.
 
 ---
 
@@ -557,9 +547,9 @@ Re-measured 2026-07-21.
 | 5 | `components/clients/training/program-builder/program-builder.tsx` | 559 | 250 | 309 (124%) | Open — but cohesive (pure orchestrator, one DndContext; its state already lives in `ProgramDraftProvider`) |
 | 6 | `__tests__/helpers/mock-data-builders.ts` | 633 | 250 | 383 (153%) | Open — **worsening** (was 418 in 2026-03) |
 
-**Suggested split (2):** `coach-saved-plan-service.ts` holds the whole-tree write surface (`overwriteSavedPlan`, `promoteDraftToSaved`, `duplicateSavedPlan`, `createSavedPlanFromCalendar`) alongside the list/paged/summary reads. Lift the write path into `coach-saved-plan-write-service.ts`, leaving reads + status transitions behind.
+**Suggested split (2):** `coach-saved-plan-service.ts` holds the whole-tree write surface (`overwriteSavedPlan`, `promoteDraftToSaved`, `duplicateSavedPlan`, `saveSessionFromCalendar`) alongside the list/paged/summary reads. Lift the write path into `coach-saved-plan-write-service.ts`, leaving reads + status transitions behind.
 
-**Long but cohesive — deliberately left alone** (splitting would prop-drill one flow across files, which §4 itself warns against): `training-calendar-view.tsx` 758, `training-event-calendar-service.ts` 583, `session-detail-drawer.tsx` 575, `content-upload-dialog.tsx` 532, `app/dashboard/content/page.tsx` 497.
+**Long but cohesive — deliberately left alone** (splitting would prop-drill one flow across files, which §4 itself warns against): `training-calendar-view.tsx` 514, `training-event-calendar-service.ts` 190, `session-detail-drawer.tsx` 575, `content-upload-dialog.tsx` 532, `app/dashboard/content/page.tsx` 497.
 
 ---
 

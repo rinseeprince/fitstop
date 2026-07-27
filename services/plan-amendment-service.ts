@@ -105,10 +105,14 @@ export type AmendPlacedPlanResult = {
 
 // --- Canonical ordering -------------------------------------------------------
 
-// Diverged plans are real: duplicate-week / cloned-day copies keep the SOURCE
-// (week_index, order_index) verbatim, so coords can collide. Every read of the
-// placed rows uses this deterministic sort; position in it IS the slot position
-// of the date-walk (slotPosition = daysBetween(effective_from, date)).
+// Diverged plans are real and this sort is NOT dead defensiveness. Two live
+// writers still produce colliding or out-of-band coords: cloneSessionForEvent
+// (the tray's "just this day" scope) copies (week_index, order_index) verbatim
+// from its source, and placeSessionOnCalendar appends a dropped session at
+// (lastWeek, lastOrder + 1). Historic duplicate-week rows carry the same shape.
+// Every read of the placed rows uses this deterministic sort; position in it IS
+// the slot position of the date-walk (slotPosition = daysBetween(effective_from,
+// date)).
 function canonicalSortRows(rows: TrainingSessionRow[]): TrainingSessionRow[] {
   return [...rows].sort(
     (a, b) =>

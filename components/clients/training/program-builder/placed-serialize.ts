@@ -133,8 +133,9 @@ export type PlacedPlanDraftSeed = {
 /**
  * Build the editable draft tree from the amendment GET. Same dual path as
  * savedPlanToDraft: week-shaped when every weekIndex group is exactly 7 rows,
- * else a flat repack with tail rest padding (diverged plans — duplicate-week /
- * cloned-day colliding coords — take the flat path, and saving the amendment
+ * else a flat repack with tail rest padding (diverged plans — cloned-day and
+ * dropped-session coords, plus historic duplicate-week rows, can collide or sit
+ * outside the grid — take the flat path, and saving the amendment
  * normalizes the future back to the positional model). The read's canonical
  * order IS the slot-position order, so flattened draft position i maps to
  * read.sessions[i] — the invariant computeLockedSlotUids relies on.

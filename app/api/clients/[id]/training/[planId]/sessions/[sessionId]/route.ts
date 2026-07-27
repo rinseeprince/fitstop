@@ -168,8 +168,9 @@ export async function PUT(
 }
 
 // PATCH - Update session
-// Events are NOT regenerated here — the coach triggers regeneration
-// via the "Done" button which calls /regenerate-events with an effective date.
+// Events are NOT regenerated here. The route that used to do it
+// (/regenerate-events) was deleted in builder P7; re-laying a placed plan's
+// future is the amendment PUT's job now.
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; planId: string; sessionId: string }> }
