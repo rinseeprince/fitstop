@@ -17,7 +17,10 @@ type SessionEntry = {
   exercises: never[];
 };
 
-function planResponse(sessions: SessionEntry[]) {
+function planResponse(
+  sessions: SessionEntry[],
+  state: "active" | "upcoming" | "ended" = "active",
+) {
   return {
     data: {
       success: true,
@@ -25,6 +28,9 @@ function planResponse(sessions: SessionEntry[]) {
         planId: "p1",
         planName: "Plan",
         sessions,
+        state,
+        startsOn: "2026-07-01",
+        endsOn: "2026-08-11",
       },
     },
     isLoading: false,
@@ -76,5 +82,24 @@ describe("SessionPicker", () => {
     mockUseSWR.mockReturnValue({ data: undefined, isLoading: true, error: undefined });
     render(<SessionPicker onSelect={vi.fn()} onCancel={vi.fn()} />);
     expect(screen.getByTestId("session-picker")).toBeInTheDocument();
+  });
+
+  // The write path resolves the plan by date on its own, so a session from a
+  // program that isn't running today 404s the moment it is picked. Offering one
+  // at all is the bug.
+  it("offers nothing from a program that has not started yet", () => {
+    mockUseSWR.mockReturnValue(planResponse([session({ name: "Push" })], "upcoming"));
+    render(<SessionPicker onSelect={vi.fn()} onCancel={vi.fn()} />);
+
+    expect(screen.queryByText("Push")).toBeNull();
+    expect(screen.getByText(/hasn't started yet/i)).toBeInTheDocument();
+  });
+
+  it("offers nothing from a program that has ended", () => {
+    mockUseSWR.mockReturnValue(planResponse([session({ name: "Push" })], "ended"));
+    render(<SessionPicker onSelect={vi.fn()} onCancel={vi.fn()} />);
+
+    expect(screen.queryByText("Push")).toBeNull();
+    expect(screen.getByText(/program has ended/i)).toBeInTheDocument();
   });
 });

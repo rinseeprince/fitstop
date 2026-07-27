@@ -4,6 +4,7 @@ import type { TrainingPlanUpdate } from "@/lib/database-helpers";
 import { mapExerciseRow, mapSessionRow, mapPlanRow } from "./training-mappers";
 import { getClientTodayString } from "@/services/today-service";
 import { fetchAllByChunkedIds } from "@/lib/paged-fetch";
+import { coversDate } from "./training-plan-window";
 
 // Re-export moved functions so existing imports continue to work
 export { updateSession, deleteSession, getSessionWithExercises, updateSurplusForFutureEvents } from "./training-session-service";
@@ -69,14 +70,15 @@ export const getTrainingPlanForDate = async (
   clientId: string,
   date: string
 ): Promise<TrainingPlan | null> => {
-  const { data: planRow, error: planError } = await supabaseAdmin
-    .from("training_plans")
-    .select("*")
-    .eq("client_id", clientId)
-    .is("deleted_at", null)
-    .neq("status", "archived")
-    .lte("effective_from", date)
-    .or(`effective_until.gte.${date},effective_until.is.null`)
+  const { data: planRow, error: planError } = await coversDate(
+    supabaseAdmin
+      .from("training_plans")
+      .select("*")
+      .eq("client_id", clientId)
+      .is("deleted_at", null)
+      .neq("status", "archived"),
+    date
+  )
     .order("effective_from", { ascending: false })
     .order("created_at", { ascending: false })
     .limit(1)
@@ -98,14 +100,15 @@ export const getTrainingPlanIdForDate = async (
   clientId: string,
   date: string
 ): Promise<string | null> => {
-  const { data, error } = await supabaseAdmin
-    .from("training_plans")
-    .select("id")
-    .eq("client_id", clientId)
-    .is("deleted_at", null)
-    .neq("status", "archived")
-    .lte("effective_from", date)
-    .or(`effective_until.gte.${date},effective_until.is.null`)
+  const { data, error } = await coversDate(
+    supabaseAdmin
+      .from("training_plans")
+      .select("id")
+      .eq("client_id", clientId)
+      .is("deleted_at", null)
+      .neq("status", "archived"),
+    date
+  )
     .order("effective_from", { ascending: false })
     .order("created_at", { ascending: false })
     .limit(1)
@@ -152,6 +155,12 @@ export const getNextFutureTrainingPlan = async (
     .neq("status", "archived")
     .gt("effective_from", date)
     .order("effective_from", { ascending: true })
+    // Tiebreak on created_at, matching getTrainingPlanForDate: two programs
+    // queued for the SAME start date otherwise resolve arbitrarily, and this is
+    // the sole owner of the predicate for both the Overview card and the
+    // Training tab. Newest wins, so a correction placed over a queued program
+    // is the one announced.
+    .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 

@@ -32,8 +32,26 @@ export type ClientTrainingSessionEntry = {
   exercises: ClientTrainingExercise[];
 };
 
+/**
+ * Where the client is in the returned program, resolved server-side against the
+ * CLIENT's today:
+ * - `active`   — today falls inside the program's window.
+ * - `upcoming` — the coach has placed it but it has not started yet.
+ * - `ended`    — the whole program has been walked; today is past its last day.
+ *
+ * Only `active` means "log against this today". The alternative-session picker
+ * gates on it, because the write path resolves the plan by date independently
+ * and would 404 a session from any other state.
+ */
+export type ClientTrainingPlanState = "active" | "upcoming" | "ended";
+
 export type ClientTrainingPlan = {
   planId: string;
   planName: string;
   sessions: ClientTrainingSessionEntry[];
+  state: ClientTrainingPlanState;
+  /** First day of the program, `YYYY-MM-DD`. */
+  startsOn: string;
+  /** Last day of the program, `YYYY-MM-DD` — the date-walk's final slot. */
+  endsOn: string;
 };

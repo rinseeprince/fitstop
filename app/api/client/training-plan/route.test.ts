@@ -23,6 +23,9 @@ import { getClientTrainingPlan } from "@/services/client-training-plan-service";
 const mockPlan: ClientTrainingPlan = {
   planId: "plan-1",
   planName: "PPL+Rest",
+  state: "active",
+  startsOn: "2026-07-01",
+  endsOn: "2026-08-11",
   sessions: [
     {
       id: "s-0",

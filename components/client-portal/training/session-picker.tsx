@@ -15,10 +15,16 @@ type Props = {
 };
 
 /**
- * Mobile-first session picker (Session 5.4). Lists the client's active-plan
- * training sessions (rest entries excluded) for the rest-day-trained and
- * planned-day-swap flows. Reimplemented — does NOT reuse the deleted Daily
- * Pulse picker.
+ * Mobile-first session picker (Session 5.4). Lists the training sessions of the
+ * program running TODAY (rest entries excluded) for the rest-day-trained and
+ * planned-day-swap flows. Reimplemented — does NOT reuse the deleted Daily Pulse
+ * picker.
+ *
+ * The `state === "active"` gate is load-bearing, not cosmetic. This picker reads
+ * `/api/client/training-plan`, but `GET /api/client/training/sessions/[id]`
+ * validates whatever the client picks against `getActiveTrainingPlanId` — a
+ * separate, date-driven resolution. Offering a session from a queued or finished
+ * program therefore produces a session that 404s the moment it is chosen.
  */
 export function SessionPicker({
   onSelect,
@@ -31,7 +37,9 @@ export function SessionPicker({
     { revalidateOnFocus: false },
   );
 
-  const sessions = (data?.data?.sessions ?? []).filter((s) => !s.isRest);
+  const plan = data?.data ?? null;
+  const isRunning = plan?.state === "active";
+  const sessions = isRunning ? plan.sessions.filter((s) => !s.isRest) : [];
 
   return (
     <div className="space-y-4" data-testid="session-picker">
@@ -48,13 +56,22 @@ export function SessionPicker({
             <Skeleton key={i} className="h-16 w-full rounded-[6px]" />
           ))}
         </div>
-      ) : error || !data?.data ? (
+      ) : error || !plan ? (
         <p className="text-[13px] text-[#5a7d82]">
           Couldn&apos;t load your plan. Please try again.
         </p>
+      ) : plan.state === "upcoming" ? (
+        <p className="text-[13px] text-[#5a7d82]">
+          Your program hasn&apos;t started yet, so there are no sessions to pick
+          from today.
+        </p>
+      ) : plan.state === "ended" ? (
+        <p className="text-[13px] text-[#5a7d82]">
+          Your program has ended. Your coach will set up the next one.
+        </p>
       ) : sessions.length === 0 ? (
         <p className="text-[13px] text-[#5a7d82]">
-          No sessions in your active plan.
+          No sessions in your current plan.
         </p>
       ) : (
         <ul className="space-y-2">

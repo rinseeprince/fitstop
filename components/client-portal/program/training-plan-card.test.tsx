@@ -25,6 +25,9 @@ function makePlan(overrides: Partial<ClientTrainingPlan> = {}): ClientTrainingPl
   return {
     planId: "plan-1",
     planName: "PPL+Rest",
+    state: "active",
+    startsOn: "2026-07-01",
+    endsOn: "2026-08-11",
     sessions: [
       {
         id: "s-0",
@@ -86,5 +89,28 @@ describe("TrainingPlanCard", () => {
 
     expect(screen.getByText("PPL+Rest")).toBeInTheDocument();
     expect(screen.getByText("3 sessions")).toBeInTheDocument();
+  });
+
+  it("says nothing about dates while the program is running", () => {
+    render(<TrainingPlanCard plan={makePlan()} />);
+
+    expect(screen.queryByText(/^Starts /)).toBeNull();
+    expect(screen.queryByText(/^Ended /)).toBeNull();
+  });
+
+  it("names the start date for a program the coach has queued", () => {
+    render(
+      <TrainingPlanCard plan={makePlan({ state: "upcoming", startsOn: "2026-08-17" })} />,
+    );
+
+    expect(screen.getByText("Starts Mon, Aug 17")).toBeInTheDocument();
+  });
+
+  it("names the end date for a program that has finished", () => {
+    render(
+      <TrainingPlanCard plan={makePlan({ state: "ended", endsOn: "2026-08-02" })} />,
+    );
+
+    expect(screen.getByText("Ended Sun, Aug 2")).toBeInTheDocument();
   });
 });

@@ -41,6 +41,9 @@ function makePlan(overrides: Partial<ClientTrainingPlan> = {}): ClientTrainingPl
   return {
     planId: "plan-1",
     planName: "PPL+Rest",
+    state: "active",
+    startsOn: "2026-07-01",
+    endsOn: "2026-08-11",
     sessions: [
       {
         id: "s-0",
@@ -109,5 +112,31 @@ describe("ProgramTrainingPage", () => {
     expect(screen.getByText("Push")).toBeInTheDocument();
     expect(screen.getByText("Pull")).toBeInTheDocument();
     expect(screen.getByText("Rest")).toBeInTheDocument();
+    // A running program says nothing about its dates.
+    expect(screen.queryByText(/^Starts /)).toBeNull();
+  });
+
+  it("dates a queued program so it can't be mistaken for the current one", () => {
+    setSWR({
+      data: {
+        success: true,
+        data: makePlan({ state: "upcoming", startsOn: "2026-08-17" }),
+      },
+    });
+    render(<ProgramTrainingPage />);
+
+    expect(screen.getByText("Starts Mon, Aug 17")).toBeInTheDocument();
+  });
+
+  it("dates a finished program instead of showing it as current", () => {
+    setSWR({
+      data: {
+        success: true,
+        data: makePlan({ state: "ended", endsOn: "2026-08-02" }),
+      },
+    });
+    render(<ProgramTrainingPage />);
+
+    expect(screen.getByText("Ended Sun, Aug 2")).toBeInTheDocument();
   });
 });

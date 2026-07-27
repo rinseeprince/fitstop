@@ -43,7 +43,14 @@ function setSWR(states: Record<string, SWRState> = {}) {
 }
 
 function makeTrainingPlan(): ClientTrainingPlan {
-  return { planId: "tp1", planName: "Push Pull Legs", sessions: [] };
+  return {
+    planId: "tp1",
+    planName: "Push Pull Legs",
+    sessions: [],
+    state: "active",
+    startsOn: "2026-07-01",
+    endsOn: "2026-08-11",
+  };
 }
 
 describe("ProgramPage", () => {

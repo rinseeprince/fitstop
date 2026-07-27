@@ -4,6 +4,7 @@ import useSWR from "swr";
 import { useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 
+import { PlanStateNote } from "@/components/client-portal/program/plan-state-note";
 import { TrainingSessionRow } from "@/components/client-portal/program/training-session-row";
 import { Skeleton } from "@/components/ui/skeleton";
 import { swrFetcher } from "@/lib/swr-fetcher";
@@ -127,6 +128,7 @@ export default function ProgramTrainingPage() {
       <h1 className="text-base font-semibold text-foreground">
         {plan.planName}
       </h1>
+      <PlanStateNote plan={plan} className="mt-1 block font-mono-display text-xs text-muted-foreground" />
       <div className="mt-4 flex flex-col gap-2 pb-6">
         {sortedSessions.map((session) => (
           <TrainingSessionRow key={session.id} session={session} />
