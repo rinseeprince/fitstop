@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useMemo, useEffect, useCallback } from "react";
-import { DndContext, DragOverlay, closestCenter } from "@dnd-kit/core";
+import { DndContext, DragOverlay } from "@dnd-kit/core";
+import { calendarCollisionDetection } from "./calendar-collision";
 import { useCalendarEvents, useInvalidateTrainingData } from "@/hooks/use-calendar-events";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
 import { useCalendarDnd } from "@/hooks/use-calendar-dnd";
@@ -374,8 +375,9 @@ export function TrainingCalendarView({
   return (
     <DndContext
       sensors={dnd.sensors}
-      collisionDetection={closestCenter}
+      collisionDetection={calendarCollisionDetection}
       onDragStart={dnd.handleDragStart}
+      onDragCancel={dnd.handleDragCancel}
       onDragEnd={dnd.handleDragEnd}
     >
       <div className="flex flex-col gap-2">

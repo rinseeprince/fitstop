@@ -143,4 +143,13 @@ describe("useCalendarDnd", () => {
     });
   });
 
+  describe("drag cancel", () => {
+    it("clears the preview so the next drag can't show the previous card", () => {
+      const { result } = setup([event({ date: CLIENT_TODAY })]);
+      act(() => result.current.handleDragStart(dragStart("ev-1")));
+      expect(result.current.activeEvent).not.toBeNull();
+      act(() => result.current.handleDragCancel());
+      expect(result.current.activeEvent).toBeNull();
+    });
+  });
 });

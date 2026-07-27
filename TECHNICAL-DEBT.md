@@ -90,6 +90,31 @@ Independent of calendar behaviour — no move, duplicate or drop is involved.
 
 ---
 
+## `place-from-library` has no server-side past-date guard on the session branch
+
+Logged: 2026-07-27, found while fixing the calendar's drag gates.
+
+`POST /api/clients/[id]/training/place-from-library` guards its `plan` branch and its `inline` branch against a past `targetDate` using `getClientTodayString`, but the `type: "session"` branch does not: it calls `placeSessionOnCalendar` directly, and that function only runs `assertDateFree` — an occupancy check, not a date check. The past-date rule for a library-session drop is therefore **client-side only** (`use-calendar-dnd.ts`, now correctly anchored on the client's day).
+
+**Why it matters.** A crafted request writes a scheduled session into the past, and `deleteEvent` refuses to remove past events — the same stranded-row shape that had to be cleaned up with a script this morning, reachable without the UI. Nothing in the app sends such a request, so this is a hardening gap rather than a live defect; the fix is the two-line guard its sibling branches already have.
+
+---
+
+## The 'UTC' timezone sentinel resolves differently on each side
+
+Logged: 2026-07-27, found while fixing the calendar's drag gates.
+
+A stored `clients.timezone` of `'UTC'` means "never device-synced", and both sides fall back — to **different** zones:
+
+- Client-side, `training-calendar-view.tsx` falls back to the **coach's device day** (`getTodayDateString()`).
+- Server-side, `getClientTodayString` falls back to the coach's **stored** `coaches.timezone`, then to UTC.
+
+For a coach whose device zone differs from their stored column (travel, or a coach row that has never synced) those two disagree, so a date the UI accepts can be one the server rejects — the same class of bug Job 3 just fixed one layer up. Compounding it, the sentinel is indistinguishable from a client genuinely in UTC (London in winter, Reykjavik, Accra), who therefore gets the fallback permanently rather than their real zone.
+
+Scope only. Fixing it means either a real "never synced" marker distinct from the zone value, or one shared resolver both sides call.
+
+---
+
 ## `cloneSessionForEvent` writes a row that is not a slot
 
 Logged: 2026-07-27, split out of the entry above once the amendment writer was fixed.

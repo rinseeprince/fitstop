@@ -51,10 +51,13 @@ export const CalendarDayCell = memo(function CalendarDayCell({
   onDuplicate,
   onDelete,
 }: CalendarDayCellProps) {
-  const { isOver, setNodeRef } = useDroppable({
-    id: date,
-    disabled: isPast,
-  });
+  // Deliberately NOT `disabled: isPast`. A disabled droppable is removed from
+  // collision detection entirely, so a drop aimed at a past day could not resolve
+  // to it and fell through to whichever cell was nearest — moving the session to
+  // a day nobody chose. Registered, the drop lands here and use-calendar-dnd
+  // refuses it with a reason. The drag-over highlight below still checks isPast,
+  // so a past cell never invites the drop.
+  const { isOver, setNodeRef } = useDroppable({ id: date });
 
   const [overflowOpen, setOverflowOpen] = useState(false);
 

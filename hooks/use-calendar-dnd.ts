@@ -127,6 +127,14 @@ export function useCalendarDnd({
     [clientId, mutate, invalidateTrainingData, invalidateNutritionCalendar, toast]
   );
 
+  /**
+   * dnd-kit dispatches onDragCancel — NOT onDragEnd — when a drag is aborted
+   * (Escape, pointer capture lost). Without this the preview stays armed, and
+   * the next drag that does not set one (a library item, which returns early
+   * above) renders the PREVIOUS card in the overlay.
+   */
+  const handleDragCancel = useCallback(() => setActiveEvent(null), []);
+
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
       const { active, over } = event;
@@ -182,5 +190,6 @@ export function useCalendarDnd({
     activeEvent,
     handleDragStart,
     handleDragEnd,
+    handleDragCancel,
   };
 }
