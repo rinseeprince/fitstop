@@ -217,6 +217,36 @@
   - Include `onError` callback for debugging failed fetches.
   - Client-facing GET API routes should return `Cache-Control: no-store` headers.
 
+  ### Refreshing after a write
+
+  SWR's `mutate` is bound to the component that read the data. A write on one
+  screen cannot reach another screen's cache. Nothing fails — the other screen is
+  simply stale until someone refreshes, which is why this bug keeps being written.
+
+  - **Every SWR read lives behind a hook that exports both the key builder and an
+    invalidator matching it.** Never build a key inline at a call site.
+  - **Invalidators match an API *area*, not one endpoint** — `/api/clients/{id}/training`,
+    never `/api/clients/{id}/training/events?`. A narrow prefix silently excludes
+    every reader added later. The key builder stays narrow; only the matcher widens.
+  - **Every mutating call site invokes the invalidator for every area its endpoint
+    writes**, on success, before closing or navigating. A training write that
+    cascades into nutrition calls both.
+  - **Anti-pattern:** relying on the `mutate` returned by your own `useSWR`. That
+    reaches only your component. The moment a second screen reads the same data it
+    goes stale, and nothing errors — it just needs a refresh.
+  - Components that seed state once from SWR and ignore revalidation must gate on
+    freshly-settled data, not whatever is in the cache.
+
+  The two reference implementations are `useInvalidateTrainingData`
+  (`hooks/use-calendar-events.ts`) and `useInvalidateNutritionCalendar`
+  (`hooks/use-nutrition-calendar-events.ts`).
+
+  **Known gap:** this is a rule for new and touched code, not a claim about the
+  codebase. Roughly 50 coach-side SWR reads exist against those two exported
+  invalidators, plus a handful of inline `globalMutate("literal key")` calls that
+  predate the rule. Widen an area's invalidator when you touch it; do not assume a
+  read you depend on is already covered.
+
   ### Nutrition calendar cache invalidation (landmine)
   - The coach nutrition calendar renders from an SWR cache keyed per month window (`/api/clients/{clientId}/nutrition/events?startDate=...&endDate=...`). **Any client-side success path whose server route rewrites `nutrition_events`** — plan regenerate, the training cascades via `cascadeNutritionAfterTrainingChange` (place/move/duplicate/delete/surplus edits) — **must call `useInvalidateNutritionCalendar` from `hooks/use-nutrition-calendar-events.ts`**, or the calendar silently shows stale targets until a page refresh.
   - The key-builder and invalidator are co-located in that hook module deliberately so they can never drift. Never construct a `/nutrition/events` key anywhere else.

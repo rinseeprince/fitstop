@@ -5,7 +5,7 @@ import { useTrainingBuilderContext } from "@/contexts/training-builder-context";
 import { ProgramDraftProvider } from "@/components/clients/training/program-builder/program-draft-provider";
 import { ProgramBuilder } from "@/components/clients/training/program-builder/program-builder";
 import { ClientDraftLeaveGuard } from "./client-draft-leave-guard";
-import { useInvalidateTrainingCalendar } from "@/hooks/use-calendar-events";
+import { useInvalidateTrainingData } from "@/hooks/use-calendar-events";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
 import { cn } from "@/lib/utils";
 
@@ -31,7 +31,7 @@ export function PlanAmendmentOverlay({
   clientName,
 }: PlanAmendmentOverlayProps) {
   const builder = useTrainingBuilderContext();
-  const invalidateTrainingCalendar = useInvalidateTrainingCalendar();
+  const invalidateTrainingData = useInvalidateTrainingData();
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
 
   return (
@@ -75,7 +75,7 @@ export function PlanAmendmentOverlay({
                 // The future window was re-laid: refresh the client's plan
                 // read AND both calendar caches, then close.
                 void builder.fetchPlan();
-                void invalidateTrainingCalendar(clientId);
+                void invalidateTrainingData(clientId);
                 void invalidateNutritionCalendar(clientId);
                 onOpenChange(false);
               }}

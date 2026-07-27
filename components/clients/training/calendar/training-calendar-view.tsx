@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { DndContext, DragOverlay, closestCenter } from "@dnd-kit/core";
-import { useCalendarEvents } from "@/hooks/use-calendar-events";
+import { useCalendarEvents, useInvalidateTrainingData } from "@/hooks/use-calendar-events";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
 import { useCalendarDnd } from "@/hooks/use-calendar-dnd";
 import { CalendarGrid } from "./calendar-grid";
@@ -120,6 +120,11 @@ export function TrainingCalendarView({
   // Fetch events across all plans for this range
   const { events, eventsByDate, isLoading, mutate } = useCalendarEvents(clientId, startDate, endDate);
 
+  // Every write below refreshes the whole training AREA, not just this
+  // calendar's month window: the plan editor reads the same rows through the
+  // amendment GET, and a bound `mutate` cannot reach it.
+  const invalidateTrainingData = useInvalidateTrainingData();
+
   // Training mutations cascade-rewrite nutrition_events server-side
   // (calorie targets track the training layout), so every success path below
   // must also invalidate the nutrition calendar's cache.
@@ -165,7 +170,7 @@ export function TrainingCalendarView({
             throw new Error(data.error || "Failed to place session");
           }
           toast({ title: "Session placed" });
-          await mutate();
+          await invalidateTrainingData(clientId);
           void invalidateNutritionCalendar(clientId);
         } catch (error) {
           toast({
@@ -205,7 +210,7 @@ export function TrainingCalendarView({
         throw new Error(data.error || "Failed to duplicate");
       }
       toast({ title: "Session duplicated" });
-      await mutate();
+      await invalidateTrainingData(clientId);
       void invalidateNutritionCalendar(clientId);
     } catch (error) {
       toast({
@@ -216,7 +221,7 @@ export function TrainingCalendarView({
     } finally {
       setPendingDuplicate(null);
     }
-  }, [pendingDuplicate, clientId, mutate, invalidateNutritionCalendar, toast]);
+  }, [pendingDuplicate, clientId, invalidateTrainingData, invalidateNutritionCalendar, toast]);
 
   // Resolve the single plan a week row belongs to, or null if mixed/empty.
   const weekRowPlanId = useCallback(
@@ -276,13 +281,13 @@ export function TrainingCalendarView({
       } else {
         toast({ title: "Week cleared" });
       }
-      await mutate();
+      await invalidateTrainingData(clientId);
       void invalidateNutritionCalendar(clientId);
     } finally {
       setIsWeekActionLoading(false);
       setPendingClearWeek(null);
     }
-  }, [clientId, clientToday, eventsByDate, mutate, invalidateNutritionCalendar, toast]);
+  }, [clientId, clientToday, eventsByDate, invalidateTrainingData, invalidateNutritionCalendar, toast]);
 
   // Per-event delete executor — runs only after the DeleteEventDialog confirm.
   const executeDeleteEvent = useCallback(async (event: TrainingEvent) => {
@@ -297,7 +302,7 @@ export function TrainingCalendarView({
         toast({ title: "Error", description: data.error || "Failed to delete event", variant: "destructive" });
         return;
       }
-      await mutate();
+      await invalidateTrainingData(clientId);
       void invalidateNutritionCalendar(clientId);
       toast({ title: "Session removed" });
       setDeleteTarget(null);
@@ -306,7 +311,7 @@ export function TrainingCalendarView({
     } finally {
       setIsDeletingEvent(false);
     }
-  }, [clientId, mutate, invalidateNutritionCalendar, toast]);
+  }, [clientId, invalidateTrainingData, invalidateNutritionCalendar, toast]);
 
   // Week action handler. `WeekAction` is down to its one surviving member, so
   // the action itself is not read — the parameter stays to keep the row → view

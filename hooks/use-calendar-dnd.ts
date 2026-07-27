@@ -12,6 +12,7 @@ import {
 import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { useToast } from "@/hooks/use-toast";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
+import { useInvalidateTrainingData } from "@/hooks/use-calendar-events";
 import { getTodayDateString } from "@/lib/date-helpers";
 import type { TrainingEvent } from "@/types/training";
 import type { KeyedMutator } from "swr";
@@ -33,6 +34,7 @@ export function useCalendarDnd({
 }: UseCalendarDndProps) {
   const { toast } = useToast();
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
+  const invalidateTrainingData = useInvalidateTrainingData();
   const [activeEvent, setActiveEvent] = useState<TrainingEvent | null>(null);
 
   const sensors = useSensors(
@@ -98,7 +100,7 @@ export function useCalendarDnd({
         }
 
         toast({ title: "Session moved" });
-        await mutate();
+        await invalidateTrainingData(clientId);
         void invalidateNutritionCalendar(clientId);
       } catch (error) {
         // Revert by REFETCHING rather than restoring a captured snapshot: with
@@ -112,7 +114,7 @@ export function useCalendarDnd({
         });
       }
     },
-    [clientId, mutate, invalidateNutritionCalendar, toast]
+    [clientId, mutate, invalidateTrainingData, invalidateNutritionCalendar, toast]
   );
 
   const handleDragEnd = useCallback(

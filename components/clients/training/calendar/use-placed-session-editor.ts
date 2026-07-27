@@ -5,6 +5,7 @@ import useSWR from "swr";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import { useToast } from "@/hooks/use-toast";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
+import { useInvalidateTrainingData } from "@/hooks/use-calendar-events";
 import { replaceSessionSchema } from "@/lib/validations/training";
 import type { TrainingSession } from "@/types/training";
 import { useProgramBuilderState } from "@/components/clients/training/program-builder/use-program-builder-state";
@@ -61,6 +62,7 @@ export function usePlacedSessionEditor(
 ) {
   const { toast } = useToast();
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
+  const invalidateTrainingData = useInvalidateTrainingData();
   const builder = useProgramBuilderState();
   const editSetSpec = useSetSpecMutations(builder.updateExercise);
 
@@ -178,6 +180,12 @@ export function usePlacedSessionEditor(
           : { title: "Session saved" },
       );
       await opts.mutateCalendar();
+      // The whole training area, not just the calendar. A "this day only" save
+      // CLONES the session and repoints the event at the clone, so a plan
+      // editor still holding the pre-save read is not merely showing stale
+      // text — its slot maps to a session id the event no longer references,
+      // and an amendment saved from that seed reasons about the wrong row.
+      void invalidateTrainingData(state.clientId);
       void invalidateNutritionCalendar(state.clientId);
       void mutateSession();
       opts.onUpdate();
