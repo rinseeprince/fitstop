@@ -5,21 +5,25 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Copy, CopyPlus, MoreVertical, Save, Trash2 } from "lucide-react";
+import { MoreVertical, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   MONO,
   MONO_LABEL_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens";
 
-export type WeekAction =
-  | "duplicate_next"
-  | "duplicate_remaining"
-  | "save_to_library"
-  | "clear";
+/**
+ * Clearing the week is the only week-level action left. "Duplicate to next
+ * week", "Duplicate to all remaining" and "Save as plan" were removed: the two
+ * duplicates silently replaced the target week's upcoming schedule and could
+ * strand events on past dates, and "Save as plan" never saved the clicked week
+ * at all — it took the whole program's sessions and only used the week for the
+ * default name. The union is kept (rather than inlined) so the row → view
+ * handler contract stays explicit if a second action returns.
+ */
+export type WeekAction = "clear";
 
 type CalendarWeekRailProps = {
   /** Monday of this row (YYYY-MM-DD) — names the row for screen readers. */
@@ -30,7 +34,6 @@ type CalendarWeekRailProps = {
   /** Whether week-level actions render. False when no plan or the row spans plans. */
   showKebab: boolean;
   disabledReason?: string;
-  isLastWeek: boolean;
   onAction: (action: WeekAction) => void;
 };
 
@@ -51,7 +54,6 @@ export const CalendarWeekRail = memo(function CalendarWeekRail({
   editMode,
   showKebab,
   disabledReason,
-  isLastWeek,
   onAction,
 }: CalendarWeekRailProps) {
   return (
@@ -79,21 +81,8 @@ export const CalendarWeekRail = memo(function CalendarWeekRail({
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-52">
-              {!isLastWeek && (
-                <DropdownMenuItem onClick={() => onAction("duplicate_next")}>
-                  <Copy className="h-3.5 w-3.5" strokeWidth={1.5} />
-                  Duplicate to next week
-                </DropdownMenuItem>
-              )}
-              <DropdownMenuItem onClick={() => onAction("duplicate_remaining")}>
-                <CopyPlus className="h-3.5 w-3.5" strokeWidth={1.5} />
-                Duplicate to all remaining
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onAction("save_to_library")}>
-                <Save className="h-3.5 w-3.5" strokeWidth={1.5} />
-                Save as plan
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
+              {/* Sole item, so no separator: the doc's "destructive rows sit
+                  LAST behind a separator" rule needs something to sit after. */}
               <DropdownMenuItem
                 variant="destructive"
                 onClick={() => onAction("clear")}

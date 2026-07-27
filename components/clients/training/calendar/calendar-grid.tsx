@@ -61,7 +61,7 @@ export const CalendarGrid = memo(function CalendarGrid({
       </div>
 
       <div className="space-y-2">
-        {weeks.map((days, i) => {
+        {weeks.map((days) => {
           const rowPlanId = weekRowPlanId(days);
           const rowHasEvents = days.some(
             (d) => (eventsByDate.get(d) ?? []).length > 0,
@@ -85,7 +85,6 @@ export const CalendarGrid = memo(function CalendarGrid({
                 viewYear={viewYear}
                 showWeekKebab={showKebab}
                 weekActionDisabledReason={disabledReason}
-                isLastWeek={i === weeks.length - 1}
                 onWeekAction={onWeekAction}
                 onCellClick={onCellClick}
                 onEventClick={onEventClick}

@@ -8,14 +8,7 @@ import { useCalendarDnd } from "@/hooks/use-calendar-dnd";
 import { CalendarGrid } from "./calendar-grid";
 import { CalendarToolbar } from "./calendar-toolbar";
 import { CalendarEventCard } from "./calendar-event-card";
-import { MoveScopeDialog } from "./move-scope-dialog";
-import {
-  ClearWeekDialog,
-  DeleteEventDialog,
-  DuplicateWeekConfirmDialog,
-  type DuplicateWeekMode,
-} from "./delete-event-dialog";
-import { SaveWeekDialog } from "./save-week-dialog";
+import { ClearWeekDialog, DeleteEventDialog } from "./delete-event-dialog";
 import { PlacedSessionEditor } from "./placed-session-editor";
 import { LibraryPanel } from "./library-panel";
 import { ApplyToClientDialog } from "@/components/training-library/apply-to-client-dialog";
@@ -105,14 +98,7 @@ export function TrainingCalendarView({
   const [selectedSession, setSelectedSession] = useState<{ sessionId: string; eventId: string; planId: string; date: string } | null>(null);
   const [pendingDuplicate, setPendingDuplicate] = useState<TrainingEvent | null>(null);
   const [isWeekActionLoading, setIsWeekActionLoading] = useState(false);
-  const [saveDialogWeek, setSaveDialogWeek] = useState<string | null>(null);
-  const [savePlanName, setSavePlanName] = useState("");
-  const [isSavingWeek, setIsSavingWeek] = useState(false);
   const [pendingClearWeek, setPendingClearWeek] = useState<string | null>(null);
-  const [pendingDuplicateWeek, setPendingDuplicateWeek] = useState<{
-    weekStartDate: string;
-    mode: DuplicateWeekMode;
-  } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<TrainingEvent | null>(null);
   const [isDeletingEvent, setIsDeletingEvent] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
@@ -145,7 +131,6 @@ export function TrainingCalendarView({
   // DnD with library drop handlers
   const dnd = useCalendarDnd({
     events,
-    eventsByDate,
     clientId,
     mutate,
     onLibraryPlanDrop: (libraryPlanId, targetStartDate) => {
@@ -232,27 +217,6 @@ export function TrainingCalendarView({
       setPendingDuplicate(null);
     }
   }, [pendingDuplicate, clientId, mutate, invalidateNutritionCalendar, toast]);
-
-  const handleSavePlanFromCalendar = useCallback(async (weekStartDate: string, name: string, sourcePlanId: string) => {
-    try {
-      const res = await fetch("/api/training/saved-plans/from-calendar", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clientId, planId: sourcePlanId, weekStartDate, name }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || "Failed to save plan");
-      }
-      toast({ title: "Saved to library", description: `"${name}" saved to your training library` });
-    } catch (error) {
-      toast({
-        title: "Save failed",
-        description: error instanceof Error ? error.message : "Failed to save plan",
-        variant: "destructive",
-      });
-    }
-  }, [clientId, toast]);
 
   // Resolve the single plan a week row belongs to, or null if mixed/empty.
   const weekRowPlanId = useCallback(
@@ -344,10 +308,12 @@ export function TrainingCalendarView({
     }
   }, [clientId, mutate, invalidateNutritionCalendar, toast]);
 
-  // Week action handler — routes destructive actions through their confirms.
+  // Week action handler. `WeekAction` is down to its one surviving member, so
+  // the action itself is not read — the parameter stays to keep the row → view
+  // contract explicit rather than collapsing the callback to a bare date.
   const handleWeekAction = useCallback((
     weekStartDate: string,
-    action: WeekAction
+    _action: WeekAction
   ) => {
     const weekDays: string[] = [];
     const ws = new Date(weekStartDate + "T00:00:00");
@@ -365,119 +331,17 @@ export function TrainingCalendarView({
       return;
     }
 
-    if (action === "save_to_library") {
-      setSaveDialogWeek(weekStartDate);
-      setSavePlanName(`${plan?.name ?? "Plan"} - ${format(new Date(weekStartDate + "T00:00:00"), "MMM d")}`);
+    const hasClearable = weekDays.some(
+      (date) =>
+        date >= clientToday &&
+        (eventsByDate.get(date) ?? []).some((e) => e.status === "scheduled")
+    );
+    if (!hasClearable) {
+      toast({ title: "Nothing to clear", description: "This week has no upcoming sessions." });
       return;
     }
-
-    if (action === "clear") {
-      const hasClearable = weekDays.some(
-        (date) =>
-          date >= clientToday &&
-          (eventsByDate.get(date) ?? []).some((e) => e.status === "scheduled")
-      );
-      if (!hasClearable) {
-        toast({ title: "Nothing to clear", description: "This week has no upcoming sessions." });
-        return;
-      }
-      setPendingClearWeek(weekStartDate);
-      return;
-    }
-
-    // Both duplicates REPLACE the target's upcoming schedule — confirm first.
-    setPendingDuplicateWeek({
-      weekStartDate,
-      mode: action === "duplicate_next" ? "next" : "remaining",
-    });
-  }, [clientToday, eventsByDate, plan, toast, weekRowPlanId]);
-
-  // Duplicate executor — runs only after the DuplicateWeekConfirmDialog confirm.
-  const executeDuplicate = useCallback(async (
-    weekStartDate: string,
-    mode: DuplicateWeekMode
-  ) => {
-    const weekDays: string[] = [];
-    const ws = new Date(weekStartDate + "T00:00:00");
-    for (let d = 0; d < 7; d++) {
-      weekDays.push(getDateString(ws));
-      ws.setDate(ws.getDate() + 1);
-    }
-    const rowPlanId = weekRowPlanId(weekDays);
-    if (!rowPlanId) return;
-
-    setIsWeekActionLoading(true);
-    try {
-      if (mode === "next") {
-        const nextWeekStart = new Date(weekStartDate + "T00:00:00");
-        nextWeekStart.setDate(nextWeekStart.getDate() + 7);
-        const res = await fetch(
-          `/api/clients/${clientId}/training/${rowPlanId}/events/duplicate-week`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              sourceStartDate: weekStartDate,
-              targetStartDate: getDateString(nextWeekStart),
-            }),
-          }
-        );
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          throw new Error(data.error || "Failed to duplicate week");
-        }
-        const replaced = data.eventsReplaced ?? 0;
-        toast({
-          title: "Week duplicated to next week",
-          description:
-            replaced > 0
-              ? `Replaced ${replaced} upcoming session${replaced === 1 ? "" : "s"}.`
-              : undefined,
-        });
-      } else {
-        // remaining — the server bounds "remaining" by the plan's own
-        // date range (its last scheduled event).
-        const res = await fetch(
-          `/api/clients/${clientId}/training/${rowPlanId}/events/duplicate-week`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              sourceStartDate: weekStartDate,
-              fillRemaining: true,
-            }),
-          }
-        );
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          throw new Error(data.error || "Failed to duplicate weeks");
-        }
-        const weeks = data.weeksCreated ?? 0;
-        const replaced = data.eventsReplaced ?? 0;
-        toast({
-          title:
-            weeks > 0
-              ? `Week duplicated to ${weeks} remaining week${weeks === 1 ? "" : "s"}`
-              : "No remaining weeks to fill",
-          description:
-            replaced > 0
-              ? `Replaced ${replaced} upcoming session${replaced === 1 ? "" : "s"}.`
-              : undefined,
-        });
-      }
-      await mutate();
-      void invalidateNutritionCalendar(clientId);
-    } catch (error) {
-      toast({
-        title: "Action failed",
-        description: error instanceof Error ? error.message : "Failed to complete action",
-        variant: "destructive",
-      });
-    } finally {
-      setIsWeekActionLoading(false);
-      setPendingDuplicateWeek(null);
-    }
-  }, [clientId, mutate, invalidateNutritionCalendar, toast, weekRowPlanId]);
+    setPendingClearWeek(weekStartDate);
+  }, [clientToday, eventsByDate, toast, weekRowPlanId]);
 
   const monthLabel = format(new Date(viewMonth.year, viewMonth.month, 1), "MMMM yyyy");
 
@@ -587,47 +451,6 @@ export function TrainingCalendarView({
         ) : null}
       </DragOverlay>
 
-      {/* Move scope dialog */}
-      {dnd.pendingMove && (
-        <MoveScopeDialog
-          open={!!dnd.pendingMove}
-          onOpenChange={() => dnd.handleMoveCancel()}
-          event={dnd.pendingMove.event}
-          sourceDate={dnd.pendingMove.sourceDate}
-          targetDate={dnd.pendingMove.targetDate}
-          onConfirm={dnd.handleMoveConfirm}
-          isLoading={dnd.isMoving}
-        />
-      )}
-
-      {/* Save week to library dialog */}
-      <SaveWeekDialog
-        open={!!saveDialogWeek}
-        defaultName={savePlanName}
-        isSaving={isSavingWeek}
-        onCancel={() => setSaveDialogWeek(null)}
-        onSave={(name) => {
-          if (!saveDialogWeek) return;
-          const wd: string[] = [];
-          const ws = new Date(saveDialogWeek + "T00:00:00");
-          for (let d = 0; d < 7; d++) {
-            wd.push(getDateString(ws));
-            ws.setDate(ws.getDate() + 1);
-          }
-          const rowPlanId = weekRowPlanId(wd);
-          if (!rowPlanId) {
-            toast({ title: "Mixed plans", variant: "destructive" });
-            setSaveDialogWeek(null);
-            return;
-          }
-          setIsSavingWeek(true);
-          void handleSavePlanFromCalendar(saveDialogWeek, name, rowPlanId).finally(() => {
-            setIsSavingWeek(false);
-            setSaveDialogWeek(null);
-          });
-        }}
-      />
-
       {/* Per-event delete confirm */}
       <DeleteEventDialog
         event={deleteTarget}
@@ -642,15 +465,6 @@ export function TrainingCalendarView({
         isClearing={isWeekActionLoading}
         onCancel={() => setPendingClearWeek(null)}
         onConfirm={(weekStartDate) => void executeClearWeek(weekStartDate)}
-      />
-
-      {/* Duplicate-week confirm — both duplicates replace the target's
-          upcoming schedule, so they warn before running. */}
-      <DuplicateWeekConfirmDialog
-        pending={pendingDuplicateWeek}
-        isDuplicating={isWeekActionLoading}
-        onCancel={() => setPendingDuplicateWeek(null)}
-        onConfirm={(weekStartDate, mode) => void executeDuplicate(weekStartDate, mode)}
       />
 
       {/* Placed-session tray */}

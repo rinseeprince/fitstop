@@ -47,8 +47,13 @@ export const updateSession = async (
 
 /**
  * Propagate a session's new calorie_surplus_percentage to all of its future
- * scheduled training_events. Mirrors the "all future" pattern used by
- * moveEventAndFuture in training-event-calendar-service.ts.
+ * scheduled training_events.
+ *
+ * This is the ONE surviving "apply to every future occurrence" write. It is
+ * safe where the calendar's deleted move-all-future was not, because it fans
+ * out from the session row to the events that already reference it rather than
+ * guessing which events are siblings — and it changes a value on those events
+ * rather than their dates.
  *
  * Also sets is_modified=true so the regeneration pathway doesn't overwrite
  * the coach's deliberate edit.

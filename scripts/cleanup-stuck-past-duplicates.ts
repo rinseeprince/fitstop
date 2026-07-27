@@ -1,14 +1,17 @@
 /**
- * One-time cleanup: remove duplicate-week artifacts stranded on past dates.
+ * HISTORICAL — the feature that produced these rows no longer exists, and the
+ * known strays were cleared on 2026-07-27. Kept because its filter is the
+ * general shape of "scheduled events stranded on past dates that no UI can
+ * remove", which deleteEvent's past guard makes unreachable from the app.
  *
  *   npx tsx scripts/cleanup-stuck-past-duplicates.ts \
  *     --client <clientId> --from 2026-07-13 --to 2026-07-19 [--created-since 2026-07-23] [--execute]
  *
- * Before 2026-07-24, "Duplicate to next week" had no past-date guard and no
- * replace step: it could insert scheduled events onto dates that had already
- * passed, which deleteEvent's past guard then refused to remove — leaving
- * junk events no UI can clean up. The service fix prevents new ones; this
- * script removes the stranded rows.
+ * Origin: before 2026-07-24, the calendar's "Duplicate to next week" had no
+ * past-date guard and no replace step, so it could insert scheduled events onto
+ * dates that had already passed — which deleteEvent then refused to remove. A
+ * guard was added first; the week-duplicate actions were removed entirely on
+ * 2026-07-27, so nothing can create these again.
  *
  * What it targets, deliberately narrow:
  *   - scheduled training_events for ONE client in an explicit date range,

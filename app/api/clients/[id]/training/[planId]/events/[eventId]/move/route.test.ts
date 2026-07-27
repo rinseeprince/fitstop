@@ -23,7 +23,6 @@ vi.mock("@/lib/csrf-protection", () => ({
 
 vi.mock("@/services/training-event-calendar-service", () => ({
   moveEvent: vi.fn(),
-  moveEventAndFuture: vi.fn(),
 }));
 
 vi.mock("@/services/nutrition-event-service", () => ({
@@ -32,10 +31,7 @@ vi.mock("@/services/nutrition-event-service", () => ({
 
 import { getClientById } from "@/services/client-service";
 import { getTrainingPlanById } from "@/services/training-service";
-import {
-  moveEvent,
-  moveEventAndFuture,
-} from "@/services/training-event-calendar-service";
+import { moveEvent } from "@/services/training-event-calendar-service";
 import { cascadeNutritionAfterTrainingChange } from "@/services/nutrition-event-service";
 import { POST } from "./route";
 
@@ -106,17 +102,19 @@ describe("POST /api/clients/[id]/training/[planId]/events/[eventId]/move nutriti
     );
   });
 
-  it("scope=all_future uses earliestSourceDate when it precedes targetDate", async () => {
-    vi.mocked(moveEventAndFuture).mockResolvedValue({
-      earliestSourceDate: "2026-04-27",
+  it("still accepts the retired all_future scope, and moves only the one event", async () => {
+    // An in-flight tab on the previous bundle keeps sending scope:"all_future".
+    // Rejecting it would revert the coach's optimistic move with a validation
+    // error; instead the field is ignored until it is tightened a deploy later.
+    vi.mocked(moveEvent).mockResolvedValue({
+      sourceDate: "2026-04-27",
       targetDate: "2026-04-29",
     });
 
     const res = await callRoute({ targetDate: "2026-04-29", scope: "all_future" });
 
     expect(res.status).toBe(200);
-    expect(moveEventAndFuture).toHaveBeenCalledWith(eventId, "2026-04-29", clientId, planId);
-    expect(moveEvent).not.toHaveBeenCalled();
+    expect(moveEvent).toHaveBeenCalledWith(eventId, "2026-04-29", clientId, planId);
     expect(cascadeNutritionAfterTrainingChange).toHaveBeenCalledWith(
       clientId,
       "2026-04-27",

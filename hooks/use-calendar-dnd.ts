@@ -16,15 +16,8 @@ import { getTodayDateString } from "@/lib/date-helpers";
 import type { TrainingEvent } from "@/types/training";
 import type { KeyedMutator } from "swr";
 
-export type PendingMove = {
-  event: TrainingEvent;
-  sourceDate: string;
-  targetDate: string;
-};
-
 type UseCalendarDndProps = {
   events: TrainingEvent[];
-  eventsByDate: Map<string, TrainingEvent[]>;
   clientId: string;
   mutate: KeyedMutator<{ success: boolean; events: TrainingEvent[] }>;
   onLibraryPlanDrop?: (planId: string, startDate: string) => void;
@@ -33,7 +26,6 @@ type UseCalendarDndProps = {
 
 export function useCalendarDnd({
   events,
-  eventsByDate,
   clientId,
   mutate,
   onLibraryPlanDrop,
@@ -42,8 +34,6 @@ export function useCalendarDnd({
   const { toast } = useToast();
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
   const [activeEvent, setActiveEvent] = useState<TrainingEvent | null>(null);
-  const [pendingMove, setPendingMove] = useState<PendingMove | null>(null);
-  const [isMoving, setIsMoving] = useState(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -66,6 +56,63 @@ export function useCalendarDnd({
       }
     },
     [events]
+  );
+
+  /**
+   * Moves one event and one event only. A drop used to arm a scope dialog which
+   * then performed the move; the dialog's second option ("this and all future X
+   * sessions") was structurally inert — it matched siblings by
+   * `training_session_id`, and placement gives every day its own cloned session
+   * row, so the sibling set was always just the dragged event. Every drag paid
+   * for a modal that could not do anything the drop had not already decided.
+   */
+  const performMove = useCallback(
+    async (event: TrainingEvent, targetDate: string) => {
+      // Optimistic: the card lands under the cursor and stays there.
+      await mutate(
+        (current) => {
+          if (!current) return current;
+          return {
+            ...current,
+            events: current.events.map((e) =>
+              e.id === event.id ? { ...e, date: targetDate } : e
+            ),
+          };
+        },
+        { revalidate: false }
+      );
+
+      try {
+        const res = await fetch(
+          `/api/clients/${clientId}/training/${event.trainingPlanId}/events/${event.id}/move`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ targetDate, scope: "single" }),
+          }
+        );
+
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || "Failed to move event");
+        }
+
+        toast({ title: "Session moved" });
+        await mutate();
+        void invalidateNutritionCalendar(clientId);
+      } catch (error) {
+        // Revert by REFETCHING rather than restoring a captured snapshot: with
+        // the dialog gone, drags are no longer serialized behind a confirm, and
+        // a stale snapshot would undo a second move that had already succeeded.
+        await mutate();
+        toast({
+          title: "Move failed",
+          description: error instanceof Error ? error.message : "Failed to move event",
+          variant: "destructive",
+        });
+      }
+    },
+    [clientId, mutate, invalidateNutritionCalendar, toast]
   );
 
   const handleDragEnd = useCallback(
@@ -101,10 +148,8 @@ export function useCalendarDnd({
       const draggedEvent = events.find((e) => e.id === active.id);
       if (!draggedEvent) return;
 
-      const sourceDate = draggedEvent.date;
-
       // No-op if dropped on same date
-      if (targetDate === sourceDate) return;
+      if (targetDate === draggedEvent.date) return;
 
       // Only allow moving to future dates
       if (targetDate < today) {
@@ -116,83 +161,15 @@ export function useCalendarDnd({
         return;
       }
 
-      // Set pending move to show the scope dialog
-      setPendingMove({ event: draggedEvent, sourceDate, targetDate });
+      void performMove(draggedEvent, targetDate);
     },
-    [events, toast, onLibraryPlanDrop, onLibrarySessionDrop]
+    [events, toast, onLibraryPlanDrop, onLibrarySessionDrop, performMove]
   );
-
-  const handleMoveConfirm = useCallback(
-    async (scope: "single" | "all_future") => {
-      if (!pendingMove) return;
-
-      const { event, targetDate } = pendingMove;
-      setIsMoving(true);
-
-      // Optimistic update
-      const previousEvents = events;
-      await mutate(
-        (current) => {
-          if (!current) return current;
-          return {
-            ...current,
-            events: current.events.map((e) =>
-              e.id === event.id ? { ...e, date: targetDate } : e
-            ),
-          };
-        },
-        { revalidate: false }
-      );
-
-      try {
-        const res = await fetch(
-          `/api/clients/${clientId}/training/${event.trainingPlanId}/events/${event.id}/move`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ targetDate, scope }),
-          }
-        );
-
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          throw new Error(data.error || "Failed to move event");
-        }
-
-        toast({ title: "Event moved" });
-        await mutate();
-        void invalidateNutritionCalendar(clientId);
-      } catch (error) {
-        // Revert optimistic update
-        await mutate(
-          { success: true, events: previousEvents },
-          { revalidate: true }
-        );
-        toast({
-          title: "Move failed",
-          description: error instanceof Error ? error.message : "Failed to move event",
-          variant: "destructive",
-        });
-      } finally {
-        setIsMoving(false);
-        setPendingMove(null);
-      }
-    },
-    [pendingMove, events, clientId, mutate, invalidateNutritionCalendar, toast]
-  );
-
-  const handleMoveCancel = useCallback(() => {
-    setPendingMove(null);
-  }, []);
 
   return {
     sensors,
     activeEvent,
-    pendingMove,
-    isMoving,
     handleDragStart,
     handleDragEnd,
-    handleMoveConfirm,
-    handleMoveCancel,
   };
 }

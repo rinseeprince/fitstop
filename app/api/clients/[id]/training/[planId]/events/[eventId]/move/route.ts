@@ -4,19 +4,25 @@ import { getTrainingPlanById } from "@/services/training-service";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
-import { moveEvent, moveEventAndFuture } from "@/services/training-event-calendar-service";
+import { moveEvent } from "@/services/training-event-calendar-service";
 import { cascadeNutritionAfterTrainingChange } from "@/services/nutrition-event-service";
 import { z } from "zod";
 
 const moveEventSchema = z.object({
   targetDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format"),
+  // "all_future" is accepted-and-ignored for ONE deploy. The scope was removed
+  // from the UI, but a browser tab still on the old bundle would send it, and a
+  // 400 there reverts the coach's optimistic move with no explanation. Tighten
+  // to z.literal("single") — or drop the field entirely — in a later deploy.
   scope: z.enum(["single", "all_future"]),
 });
 
 /**
- * POST - Move a training event to a new date.
- * scope: "single" moves just this event.
- * scope: "all_future" updates the template session and regenerates future events.
+ * POST - Move a training event to a new date. Always a single-event move: the
+ * "this and all future X sessions" scope was removed because it resolved
+ * siblings by `training_session_id`, and whole-program placement gives every
+ * placed day its own cloned session row — so it could never find a sibling and
+ * behaved identically to a single move while asking the coach a question.
  */
 export async function POST(
   request: NextRequest,
@@ -52,19 +58,11 @@ export async function POST(
       return NextResponse.json({ error: "Invalid input", details: validation.error.issues }, { status: 400 });
     }
 
-    const { targetDate, scope } = validation.data;
+    const { targetDate } = validation.data;
 
-    let earliestAffectedDate: string;
-    if (scope === "single") {
-      const result = await moveEvent(eventId, targetDate, clientId, planId);
-      earliestAffectedDate = result.sourceDate < targetDate ? result.sourceDate : targetDate;
-    } else {
-      // Shifts all future events sharing this session's training_session_id by the
-      // same day offset. For events with no session link, degrades to a single move.
-      const result = await moveEventAndFuture(eventId, targetDate, clientId, planId);
-      earliestAffectedDate =
-        result.earliestSourceDate < targetDate ? result.earliestSourceDate : targetDate;
-    }
+    const result = await moveEvent(eventId, targetDate, clientId, planId);
+    const earliestAffectedDate =
+      result.sourceDate < targetDate ? result.sourceDate : targetDate;
 
     // Cascade: regenerate nutrition events for affected dates.
     // Use min(source, target) so a forward-in-time move also clears the stale

@@ -21,8 +21,6 @@ type CalendarWeekRowProps = {
   /** Whether week-level actions should render. False when no plan or row spans plans. */
   showWeekKebab: boolean;
   weekActionDisabledReason?: string;
-  /** For "duplicate to remaining" — end of the current plan. */
-  isLastWeek: boolean;
   onWeekAction: (weekStartDate: string, action: WeekAction) => void;
   onCellClick: (date: string) => void;
   onEventClick: (event: TrainingEvent) => void;
@@ -41,7 +39,6 @@ export const CalendarWeekRow = memo(function CalendarWeekRow({
   viewYear,
   showWeekKebab,
   weekActionDisabledReason,
-  isLastWeek,
   onWeekAction,
   onCellClick,
   onEventClick,
@@ -62,7 +59,6 @@ export const CalendarWeekRow = memo(function CalendarWeekRow({
         editMode={editMode}
         showKebab={showWeekKebab}
         disabledReason={weekActionDisabledReason}
-        isLastWeek={isLastWeek}
         onAction={(action) => onWeekAction(weekStartDate, action)}
       />
 
