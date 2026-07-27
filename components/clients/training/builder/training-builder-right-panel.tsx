@@ -156,8 +156,17 @@ export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel
               </div>
               <DialogTitle>Delete all future sessions?</DialogTitle>
             </div>
+            {/* The body has to name the program-level effect, not just the
+                session-level one: this archives every plan, so "Edit plan"
+                disappears and placing a new program becomes the only way to
+                schedule again. Naming what survives is normally filler, but
+                this is the delete-ALL-plans confirm — the case the design doc
+                carves out for spelling it out. */}
             <DialogDescription className="pt-2">
-              This removes every upcoming session from this client&apos;s calendar, across all placed plans. Completed and past sessions are kept for history. This cannot be undone.
+              This removes every upcoming session from this client&apos;s calendar
+              <strong className="font-semibold text-[#0c1a1e]"> and retires every program they are on</strong> —
+              a retired program can&apos;t be edited, so scheduling again means placing a new one.
+              Sessions they already logged are kept.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
