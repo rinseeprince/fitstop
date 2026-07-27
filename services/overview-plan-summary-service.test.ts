@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("./supabase-admin", () => ({ supabaseAdmin: { from: vi.fn(), rpc: vi.fn() } }));
-vi.mock("./training-service", () => ({ getTrainingPlanForDate: vi.fn() }));
+vi.mock("./training-service", () => ({
+  getTrainingPlanForDate: vi.fn(),
+  getNextFutureTrainingPlan: vi.fn().mockResolvedValue(null),
+}));
 vi.mock("./training-week-summary-service", () => ({ getTrainingWeekSummary: vi.fn() }));
 vi.mock("./today-service", () => ({ getClientTodayString: vi.fn() }));
 vi.mock("./daily-context-service", () => ({ getNutritionForDate: vi.fn() }));
@@ -99,20 +102,22 @@ describe("progressionFromSeries", () => {
 // ---------------------------------------------------------------------------
 
 import { supabaseAdmin } from "./supabase-admin";
-import { getTrainingPlanForDate } from "./training-service";
+import { getNextFutureTrainingPlan, getTrainingPlanForDate } from "./training-service";
 import { getTrainingWeekSummary } from "./training-week-summary-service";
 import { getClientTodayString } from "./today-service";
 import { getOverviewPlanSummary } from "./overview-plan-summary-service";
 
 const CLIENT_TODAY = "2026-07-26";
 
-const UPCOMING_ROW = {
+// What the shared getNextFutureTrainingPlan resolves (already camelCase; the
+// deleted/archived exclusions it applies are proven in training-service.test.ts).
+const UPCOMING_PLAN = {
   id: "plan-2",
   name: "Strength Block B",
-  effective_from: "2026-07-27",
-  split_type: "push_pull_legs",
-  frequency_per_week: 5,
-  program_duration_weeks: 6,
+  effectiveFrom: "2026-07-27",
+  splitType: "push_pull_legs",
+  frequencyPerWeek: 5,
+  programDurationWeeks: 6,
 };
 
 /** Records every filter applied, and resolves maybeSingle() per table. */
@@ -154,7 +159,8 @@ describe("getOverviewPlanSummary — upcomingTraining", () => {
   });
 
   it("surfaces a program placed to start after today, while training stays null", async () => {
-    mockTables({ training_plans: UPCOMING_ROW });
+    mockTables({});
+    vi.mocked(getNextFutureTrainingPlan).mockResolvedValue(UPCOMING_PLAN);
 
     const summary = await getOverviewPlanSummary("coach-1", "client-1");
 
@@ -169,22 +175,22 @@ describe("getOverviewPlanSummary — upcomingTraining", () => {
     });
   });
 
-  it("looks strictly ahead of today and excludes deleted/archived plans", async () => {
-    const calls = mockTables({ training_plans: UPCOMING_ROW });
+  it("reads through the shared future-plan lookup, anchored on the client's today", async () => {
+    // The predicate itself (strictly-after-today, deleted/archived exclusions,
+    // earliest first) is owned and tested by getNextFutureTrainingPlan. What
+    // matters here is that this card cannot answer the question its own way —
+    // a local copy is exactly how the Training tab and this card disagreed.
+    mockTables({});
+    vi.mocked(getNextFutureTrainingPlan).mockResolvedValue(UPCOMING_PLAN);
 
     await getOverviewPlanSummary("coach-1", "client-1");
 
-    const applied = calls.training_plans;
-    // Strictly after today: a plan starting TODAY is the active one, not upcoming.
-    expect(applied).toContainEqual(["gt", ["effective_from", CLIENT_TODAY]]);
-    expect(applied).toContainEqual(["is", ["deleted_at", null]]);
-    expect(applied).toContainEqual(["neq", ["status", "archived"]]);
-    // Earliest first, so a queue of placements reports the one starting soonest.
-    expect(applied).toContainEqual(["order", ["effective_from", { ascending: true }]]);
+    expect(getNextFutureTrainingPlan).toHaveBeenCalledWith("client-1", CLIENT_TODAY);
   });
 
   it("is null when nothing is queued", async () => {
     mockTables({});
+    vi.mocked(getNextFutureTrainingPlan).mockResolvedValue(null);
 
     const summary = await getOverviewPlanSummary("coach-1", "client-1");
 

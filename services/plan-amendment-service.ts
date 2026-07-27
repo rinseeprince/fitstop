@@ -42,6 +42,12 @@ export class AmendmentConflictError extends Error {} // → 409
 export class AmendmentValidationError extends Error {} // → 422
 export class AmendmentEmptyFutureError extends AmendmentValidationError {} // → 422
 
+// One string for both belts: the GET refuses to open the editor and the PUT
+// refuses to save. They must not drift — a coach who gets past the first and
+// hits the second should read the same reason, not a second vocabulary.
+const RETIRED_PLAN_MESSAGE =
+  "This program has been retired and can no longer be edited — apply a new program instead";
+
 export type PlacedSlotEventLink = {
   id: string;
   date: string;
@@ -257,6 +263,11 @@ export async function getPlacedPlanForBuilder(
 
   if (error) throw new Error(`Failed to read plan: ${error.message}`);
   if (!planRow) return null;
+  // Refuse to OPEN, not just to save. Without this a coach can rebuild an entire
+  // program in the editor and only learn it is dead when the PUT 422s.
+  if (planRow.status === "archived") {
+    throw new AmendmentValidationError(RETIRED_PLAN_MESSAGE);
+  }
 
   const clientToday = await getClientTodayString(clientId);
   const sessionRows = await fetchActiveSessionRows(planId);
@@ -366,7 +377,7 @@ export async function amendPlacedPlanFuture(params: {
   if (planError) throw new Error(`Failed to read plan: ${planError.message}`);
   if (!plan) throw new Error("Plan not found");
   if (plan.status === "archived") {
-    throw new AmendmentValidationError("Archived plans cannot be amended");
+    throw new AmendmentValidationError(RETIRED_PLAN_MESSAGE);
   }
 
   // 2. Server-authoritative boundary math.

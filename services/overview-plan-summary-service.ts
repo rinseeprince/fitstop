@@ -1,5 +1,5 @@
 import { supabaseAdmin } from "./supabase-admin";
-import { getTrainingPlanForDate } from "./training-service";
+import { getNextFutureTrainingPlan, getTrainingPlanForDate } from "./training-service";
 import {
   getTrainingWeekSummary,
   type TrainingWeekSummaryWithWindow,
@@ -195,40 +195,24 @@ async function buildTrainingSummary(
 /**
  * The soonest program whose window has not opened yet.
  *
- * Mirrors getTrainingPlanForDate's predicate with the window flipped — same
- * deleted/archived exclusions, `effective_from` strictly after today, earliest
- * first. Placement deliberately allows a future start date (only the past is
- * rejected), so this is a supported state, not an edge case.
+ * Reads through the shared `getNextFutureTrainingPlan` predicate rather than a
+ * local copy — this card and the Training tab must never disagree about whether
+ * a client has a program queued.
  */
 async function buildUpcomingTraining(
   clientId: string,
   clientToday: string
 ): Promise<OverviewPlanSummary["upcomingTraining"]> {
-  const { data, error } = await supabaseAdmin
-    .from("training_plans")
-    .select("id, name, effective_from, split_type, frequency_per_week, program_duration_weeks")
-    .eq("client_id", clientId)
-    .is("deleted_at", null)
-    .neq("status", "archived")
-    .gt("effective_from", clientToday)
-    .order("effective_from", { ascending: true })
-    .limit(1)
-    .maybeSingle();
-
-  if (error) {
-    // Degrade to "no upcoming program" rather than blanking the whole summary.
-    console.error("Failed to read upcoming training plan:", error);
-    return null;
-  }
-  if (!data?.effective_from) return null;
+  const next = await getNextFutureTrainingPlan(clientId, clientToday);
+  if (!next) return null;
 
   return {
-    planId: data.id,
-    planName: data.name,
-    startsOn: data.effective_from,
-    splitType: data.split_type ?? null,
-    frequencyPerWeek: data.frequency_per_week ?? null,
-    programDurationWeeks: data.program_duration_weeks ?? null,
+    planId: next.id,
+    planName: next.name,
+    startsOn: next.effectiveFrom,
+    splitType: next.splitType,
+    frequencyPerWeek: next.frequencyPerWeek,
+    programDurationWeeks: next.programDurationWeeks,
   };
 }
 

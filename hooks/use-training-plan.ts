@@ -19,6 +19,10 @@ type UseTrainingPlanProps = {
 export function useTrainingPlan({ clientId }: UseTrainingPlanProps) {
   const { toast } = useToast();
   const [plan, setPlan] = useState<TrainingPlan | null>(null);
+  // Set only when `plan` is a program that has not started yet. Without it the
+  // hero cannot tell a running program from a queued one and reports both as
+  // active — which is how a retired future plan passed for the current one.
+  const [scheduledFor, setScheduledFor] = useState<string | null>(null);
   const [clientTimezone, setClientTimezone] = useState<string | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -40,6 +44,7 @@ export function useTrainingPlan({ clientId }: UseTrainingPlanProps) {
       }
       if (data.success) {
         setPlan(data.plan || null);
+        setScheduledFor(data.scheduledFor ?? null);
         setClientTimezone(data.clientTimezone);
       }
     } catch (error) {
@@ -63,6 +68,7 @@ export function useTrainingPlan({ clientId }: UseTrainingPlanProps) {
   return {
     clientId,
     plan,
+    scheduledFor,
     clientTimezone,
     isLoading,
     loadError,

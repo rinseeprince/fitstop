@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getClientById } from "@/services/client-service";
 import {
   getActiveTrainingPlan,
+  getNextFutureTrainingPlan,
   getTrainingPlanById,
   archiveTrainingPlan,
 } from "@/services/training-service";
@@ -50,16 +51,9 @@ export async function GET(
     const activePlan = await getActiveTrainingPlan(clientId);
 
     // The next future plan (additive placement has no 'planned' status; a future
-    // plan is simply one whose effective_from is after today).
-    const { data: nextPlanRow } = await supabaseAdmin
-      .from("training_plans")
-      .select("id, effective_from")
-      .eq("client_id", clientId)
-      .is("deleted_at", null)
-      .gt("effective_from", clientToday)
-      .order("effective_from", { ascending: true })
-      .limit(1)
-      .maybeSingle();
+    // plan is simply one whose effective_from is after today). Shared predicate —
+    // a fourth hand-rolled copy is what let retired plans resurface here.
+    const nextPlanRow = await getNextFutureTrainingPlan(clientId, clientToday);
 
     const nextFullPlan = nextPlanRow
       ? await getTrainingPlanById(nextPlanRow.id)
@@ -73,7 +67,7 @@ export async function GET(
       activePlan && nextPlanRow && nextFullPlan
         ? {
             id: nextFullPlan.id,
-            effectiveFrom: nextPlanRow.effective_from,
+            effectiveFrom: nextPlanRow.effectiveFrom,
             name: nextFullPlan.name,
             splitType: nextFullPlan.splitType,
             frequencyPerWeek: nextFullPlan.frequencyPerWeek,
@@ -88,7 +82,7 @@ export async function GET(
         upcomingPlan,
         scheduledFor:
           !activePlan && nextPlanRow && nextFullPlan
-            ? nextPlanRow.effective_from
+            ? nextPlanRow.effectiveFrom
             : null,
         clientTimezone: client.timezone,
       },

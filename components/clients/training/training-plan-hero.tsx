@@ -3,6 +3,8 @@
 import { cn } from "@/lib/utils";
 import { useTrainingBuilderContext } from "@/contexts/training-builder-context";
 import { HEADER_EYEBROW_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
+import { InlineMono } from "@/components/clients/overview/overview-primitives";
+import { formatDateOnlyWeekday } from "@/components/clients/overview/overview-format";
 
 type TrainingPlanHeroProps = {
   clientId: string;
@@ -25,7 +27,7 @@ export function TrainingPlanHero({
   onEditPlan,
   editPlanDisabledReason,
 }: TrainingPlanHeroProps) {
-  const { plan } = useTrainingBuilderContext();
+  const { plan, scheduledFor } = useTrainingBuilderContext();
 
   return (
     <div className="rounded-[6px] bg-[#0f2027] px-5 py-[18px]">
@@ -39,6 +41,14 @@ export function TrainingPlanHero({
         >
           {plan ? plan.name : "No active training plan"}
         </h2>
+        {/* A program that starts later is queued, not running. Same wording and
+            formatter as the Overview's queued card so the two surfaces read as
+            one fact. No space before InlineMono — it owns its own gap. */}
+        {scheduledFor && (
+          <p className="mt-1 text-[11px] font-medium text-[rgba(255,255,255,0.45)]">
+            Starts<InlineMono>{formatDateOnlyWeekday(scheduledFor)}</InlineMono>
+          </p>
+        )}
       </div>
 
       {/* Action row — the hero's "underneath" slot, in the Exercise Data

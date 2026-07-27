@@ -11,6 +11,7 @@ vi.mock('@/services/check-in-service', () => ({
 
 vi.mock('@/services/training-service', () => ({
   getActiveTrainingPlan: vi.fn().mockResolvedValue(null),
+  getNextFutureTrainingPlan: vi.fn().mockResolvedValue(null),
   getTrainingPlanById: vi.fn().mockResolvedValue(null),
 }))
 
@@ -61,8 +62,11 @@ vi.mock('@/services/supabase-admin', () => ({
 }))
 
 import { getClientById } from '@/services/client-service'
-import { getActiveTrainingPlan, getTrainingPlanById } from '@/services/training-service'
-import { supabaseAdmin } from '@/services/supabase-admin'
+import {
+  getActiveTrainingPlan,
+  getNextFutureTrainingPlan,
+  getTrainingPlanById,
+} from '@/services/training-service'
 import { GET } from './route'
 
 const mockClient = {
@@ -102,27 +106,21 @@ const plannedFullPlan = {
 }
 
 // Fixed date after the mocked client-today (2026-01-15): the route resolves the
-// "next future plan" by effective_from > today. The chain mock ignores the
-// filter args and just echoes the row, so the value only needs to be stable.
+// "next future plan" by effective_from > today. The lookup is now the shared
+// getNextFutureTrainingPlan (which owns the deleted/archived exclusions), so the
+// route test stubs the service rather than a hand-rolled query chain — the
+// archived predicate is covered where it lives, in the service.
 const plannedRow = {
   id: 'plan-planned',
-  effective_from: '2026-01-19',
+  effectiveFrom: '2026-01-19',
   name: 'Scheduled Plan',
-  split_type: 'full_body',
-  frequency_per_week: 3,
+  splitType: 'full_body',
+  frequencyPerWeek: 3,
+  programDurationWeeks: 4,
 }
 
 function mockPlannedPlanRow(row: typeof plannedRow | null): void {
-  // Matches the date-driven next-plan query: select().eq().is().gt().order().limit().maybeSingle().
-  const chain: Record<string, unknown> = {}
-  chain.select = vi.fn().mockReturnValue(chain)
-  chain.eq = vi.fn().mockReturnValue(chain)
-  chain.is = vi.fn().mockReturnValue(chain)
-  chain.gt = vi.fn().mockReturnValue(chain)
-  chain.order = vi.fn().mockReturnValue(chain)
-  chain.limit = vi.fn().mockReturnValue(chain)
-  chain.maybeSingle = vi.fn().mockResolvedValue({ data: row })
-  vi.mocked(supabaseAdmin.from).mockReturnValue(chain as never)
+  vi.mocked(getNextFutureTrainingPlan).mockResolvedValue(row)
 }
 
 function makeGetRequest(): NextRequest {

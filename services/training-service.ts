@@ -117,6 +117,62 @@ export const getTrainingPlanIdForDate = async (
   return data?.id ?? null;
 };
 
+/** The columns every consumer of the future-plan predicate needs. */
+export type NextFutureTrainingPlan = {
+  id: string;
+  name: string;
+  effectiveFrom: string;
+  splitType: string;
+  frequencyPerWeek: number;
+  programDurationWeeks: number | null;
+};
+
+/**
+ * The soonest plan whose window has not opened yet — the window-flipped twin of
+ * getTrainingPlanForDate, and the ONE owner of that predicate.
+ *
+ * It exists because the predicate was hand-rolled three times and the copy that
+ * forgot `.neq("status", "archived")` re-surfaced retired plans as the client's
+ * current program: "Delete future sessions" archives every plan without clearing
+ * its future `effective_from`, so the next read dug one back out and titled the
+ * Training tab with a program that had no sessions behind it.
+ *
+ * Placement deliberately permits a future start date (only the past is
+ * rejected), so a queued program is a supported state, not an edge case.
+ */
+export const getNextFutureTrainingPlan = async (
+  clientId: string,
+  date: string
+): Promise<NextFutureTrainingPlan | null> => {
+  const { data, error } = await supabaseAdmin
+    .from("training_plans")
+    .select("id, name, effective_from, split_type, frequency_per_week, program_duration_weeks")
+    .eq("client_id", clientId)
+    .is("deleted_at", null)
+    .neq("status", "archived")
+    .gt("effective_from", date)
+    .order("effective_from", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    // Degrade to "nothing queued" rather than failing the whole read — both
+    // callers render a summary that is still useful without it.
+    console.error("Failed to read next future training plan:", error);
+    return null;
+  }
+  if (!data) return null;
+
+  return {
+    id: data.id,
+    name: data.name,
+    effectiveFrom: data.effective_from,
+    splitType: data.split_type,
+    frequencyPerWeek: data.frequency_per_week,
+    programDurationWeeks: data.program_duration_weeks,
+  };
+};
+
 // The "active" training plan is the provenance plan whose range covers the
 // client's local today (date-driven; no status='active' singleton, no promotion).
 export const getActiveTrainingPlan = async (clientId: string): Promise<TrainingPlan | null> => {

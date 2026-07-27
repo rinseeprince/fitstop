@@ -13,7 +13,12 @@ vi.mock("./today-service", () => ({
 
 import { supabaseAdmin } from "./supabase-admin";
 import { getClientTodayString } from "./today-service";
-import { createTrainingPlanAtomic, getActiveTrainingPlanId, getTrainingPlanIdForDate } from "./training-service";
+import {
+  createTrainingPlanAtomic,
+  getActiveTrainingPlanId,
+  getNextFutureTrainingPlan,
+  getTrainingPlanIdForDate,
+} from "./training-service";
 
 describe("createTrainingPlanAtomic", () => {
   beforeEach(() => {
@@ -96,6 +101,7 @@ describe("date-driven plan resolution", () => {
       neq: vi.fn().mockReturnThis(),
       is: vi.fn().mockReturnThis(),
       lte: vi.fn().mockReturnThis(),
+      gt: vi.fn().mockReturnThis(),
       or: vi.fn().mockReturnThis(),
       order: vi.fn().mockReturnThis(),
       limit: vi.fn().mockReturnThis(),
@@ -136,5 +142,59 @@ describe("date-driven plan resolution", () => {
     expect(id).toBe("plan-today");
     expect(getClientTodayString).toHaveBeenCalledWith("client-1");
     expect(q.lte).toHaveBeenCalledWith("effective_from", "2026-06-10");
+  });
+
+  // The regression this function exists to prevent: "Delete future sessions"
+  // archives every plan but leaves its future effective_from intact, so a lookup
+  // without the archived exclusion re-surfaced a retired program as the client's
+  // current one — while the Overview, which had the exclusion, said "No plan".
+  it("getNextFutureTrainingPlan excludes retired plans and looks strictly forward", async () => {
+    const q = createIdQuery({
+      data: {
+        id: "plan-queued",
+        name: "Hypertrophy Block",
+        effective_from: "2026-06-20",
+        split_type: "upper_lower",
+        frequency_per_week: 4,
+        program_duration_weeks: 8,
+      },
+      error: null,
+    });
+    vi.mocked(supabaseAdmin.from).mockReturnValue(q as never);
+
+    const next = await getNextFutureTrainingPlan("client-1", "2026-06-10");
+
+    expect(next).toEqual({
+      id: "plan-queued",
+      name: "Hypertrophy Block",
+      effectiveFrom: "2026-06-20",
+      splitType: "upper_lower",
+      frequencyPerWeek: 4,
+      programDurationWeeks: 8,
+    });
+    expect(q.neq).toHaveBeenCalledWith("status", "archived");
+    expect(q.is).toHaveBeenCalledWith("deleted_at", null);
+    expect(q.gt).toHaveBeenCalledWith("effective_from", "2026-06-10");
+  });
+
+  it("getNextFutureTrainingPlan returns null when nothing is queued", async () => {
+    vi.mocked(supabaseAdmin.from).mockReturnValue(
+      createIdQuery({ data: null, error: null }) as never,
+    );
+
+    expect(await getNextFutureTrainingPlan("client-1", "2026-06-10")).toBeNull();
+  });
+
+  it("getNextFutureTrainingPlan degrades to null on a read error rather than throwing", async () => {
+    // Both callers render a summary that is still useful without it; a throw
+    // here would blank the whole Training tab.
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(supabaseAdmin.from).mockReturnValue(
+      createIdQuery({ data: null, error: { message: "boom" } }) as never,
+    );
+
+    expect(await getNextFutureTrainingPlan("client-1", "2026-06-10")).toBeNull();
+    expect(consoleError).toHaveBeenCalled();
+    consoleError.mockRestore();
   });
 });

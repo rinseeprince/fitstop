@@ -53,6 +53,11 @@ export async function GET(
 
     return NextResponse.json({ success: true, ...data }, { status: 200 });
   } catch (error) {
+    // Mirrors the PUT's mapping: a retired plan is a refusal to open, not a
+    // server fault, and the coach needs to read why.
+    if (error instanceof AmendmentValidationError) {
+      return NextResponse.json({ error: error.message }, { status: 422 });
+    }
     console.error("Error reading plan for amendment:", error);
     return NextResponse.json({ error: "Failed to load plan" }, { status: 500 });
   }
