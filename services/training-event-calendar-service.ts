@@ -12,6 +12,31 @@ import { assertDateFree, rethrowIfDateOccupied } from "./training-event-occupanc
  * Sets is_modified, which drives the calendar card's edited badge. It is NOT a
  * write predicate: the amendment rewrite deletes and re-lays future scheduled
  * events without consulting it.
+ *
+ * A move writes ONLY the event, and never the plan's day-slots. That is the
+ * model, not an oversight. Under events-as-SOT (CONVENTIONS §8) the event
+ * carries the date-specific truth and `training_sessions` is a blueprint, so a
+ * plan whose slot order no longer matches the calendar is a blueprint that has
+ * been superseded for those dates — not two sources of truth disagreeing.
+ *
+ * The two only meet when a coach saves an amendment, which re-lays the future
+ * from the slots. That moment is already guarded: the confirm dialog itemises
+ * every is_modified future event by date and name and lets the coach cancel
+ * (amend-plan-dialogs.tsx:67-91). Nothing else can surface a contradiction,
+ * because the plan editor is positional — "Week 3 · Day 5", never a weekday —
+ * and the ONLY date formatting anywhere in program-builder/ is inside that
+ * dialog. The calendar owns dated, tactical edits; the editor owns structural
+ * ones; one re-lay warning is the whole coupling between them.
+ *
+ * Writing moves back into the slot coordinates was designed in full and
+ * rejected (owner decision, 2026-07-27): it inverts the model by making the
+ * blueprint chase the events, and it buys nothing a coach can see. Do not
+ * rebuild it. If it is ever revisited, two findings from that pass are worth
+ * keeping: distinct (week_index, order_index) pairs — not a canonical grid —
+ * are the necessary condition for a coordinate swap to be position-preserving,
+ * and a single CASE-expression UPDATE inside an RPC is the only atomic way to
+ * perform one, since a two-statement swap that half-fails leaves duplicate
+ * coordinates that nothing detects.
  */
 export async function moveEvent(
   eventId: string,
