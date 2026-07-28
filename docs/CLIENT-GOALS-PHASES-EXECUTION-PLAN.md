@@ -675,3 +675,64 @@ from the weekly denominator (`services/weekly-nutrition-service.ts:65-81`). Stal
 `is_modified`/status protection bullet, and the event-lifecycle "Cascaded" line.
 
 **Gates:** all six green. 231/231 files, 2338/2338 tests (baseline 2320 → +3 from 1.1 → +15 here).
+
+---
+
+### Task 1.3 — Overview reads `client_goals`, not the mirror ✅ SHIPPED 2026-07-28
+
+**What shipped.** New `hooks/use-client-goals.ts` (key builder + `useClientGoals` +
+`useInvalidateClientGoals`, co-located per CONVENTIONS §7). `client-overview-tab.tsx` reads it,
+resolves through `resolveEffectiveGoal` with `today: getTodayDateStringInTimezone(client.timezone)`
+(the goal's dates are on the *client's* calendar — same anchor as `comparison-service.ts:70`),
+converts kg→display with `weightFromKg`, and passes the targets down.
+`ClientStatusCard` takes them as props and no longer reads `client.goalWeight` /
+`client.goalBodyFatPercentage` — it stays presentational, with no fetch of its own.
+
+**`client-goal-editor.tsx` moved onto the hook too.** It was building the same `/goals` key
+inline and calling its own `mutate` on save — which reaches only itself, so the Overview's chips
+would have gone stale after every goal edit. §7's never-build-a-key-inline rule applies to
+"new and touched code", and this file is touched. It now calls `useInvalidateClientGoals`.
+
+**Loading state threaded** (`isGoalLoading`). Without it the card cannot tell "no goal set" from
+"not loaded yet" and renders a confident em-dash it then contradicts — the trap
+`ARCHITECTURE.md` already records for `CoachNotesCard` and the check-in timing strip.
+
+**Tests:** the six goal-chip cases moved from `client.goalWeight` to the new props (a test that
+kept setting the mirror would have silently asserted nothing), plus two new cases — the card
+**ignores the mirror** (client carries `goalWeight: 99`, nothing renders) and claims nothing
+while loading.
+
+**Discovered while tracing — `clients.goal_deadline` is not reachable at all.** `mapClientRow`
+(`lib/mappers.ts:72-73`) maps only `goalWeight` and `goalBodyFatPercentage`; the `goalDeadline`
+mapping at `:213` is `mapClientIntakeRow`, a different table. So `client.goalDeadline` is
+**always `undefined`**, and every `?? client.goalDeadline ?? null` fallback in the four
+`resolveEffectiveGoal` call sites is dead code. Session 2 must not "fix" this by adding it to
+the mapper — the mirror is the thing being retired.
+
+**Scope boundary — the CLIENT PORTAL keeps the mirror, deliberately** (exec plan §1.3, §6, §7).
+`services/client-portal-progress.ts:139-140,268-269` and `services/client-portal-service.ts:44`
+→ `components/client-portal/metrics/goals-section.tsx`. `/api/client/**` has no goal endpoint at
+all and client-facing blocks are post-launch. `mapClientRow` was **not** touched — the portal
+shares it via `toClientSelfView` (`lib/mappers.ts:135`).
+
+**NEW DIVERGENCE, recorded so Session 2 does not rediscover it.** The coach Overview now reads
+`client_goals` while **`hooks/use-nutrition-plan.ts:143-148` and
+`hooks/use-nutrition-builder.ts:224-231` still compute goal estimates from `client.goalWeight`**,
+with no `client_goals` fallback at all. Two coach surfaces, two sources. Out of 1.3's scope
+(the Overview's goal surface), but it is now a real inconsistency rather than a uniform one.
+`components/clients/metrics/hooks/use-merged-metrics.ts:61-65` also still builds a `/goals` key
+inline — that file was not touched, so §7's known gap stands; the new hook gives it a home.
+
+**Raised in blast radius by this task, still deferred (from 1.1's STATUS):** `updateGoals` is
+non-transactional, so a failed insert leaves zero active goals — which now reads as
+*maintenance* on the Overview as well as to the calculator. Unchanged reasoning: the honest fix
+is an RPC, and Session 1 has no migrations.
+
+**Docs updated:** `docs/ARCHITECTURE.md` "Effective goal resolution" (Overview added to the
+caller list, the coach-vs-portal split, the unreachable `goal_deadline`) and the Overview's
+goal-chips bullet.
+
+**Gates:** all six green. 231/231 files, 2340/2340 tests.
+
+**Owed:** the browser smoke (Overview chips render from `client_goals`; a save in the goal
+editor refreshes the Overview without a reload).

@@ -50,11 +50,15 @@ const PROPS = {
 
 beforeEach(() => cleanup());
 
+// Goal targets arrive as PROPS (resolved from `client_goals` by the parent), not
+// off the `clients.*` mirror on the client object. A test that still set
+// `client.goalWeight` would silently assert nothing.
 describe("ClientStatusCard — goal chips", () => {
   it("gap: reports the distance still to travel, in the warning tone", () => {
     render(
       <ClientStatusCard
-        client={{ ...BASE, startingWeight: 90, currentWeight: 86, goalWeight: 82 }}
+        client={{ ...BASE, startingWeight: 90, currentWeight: 86 }}
+        goalWeight={82}
         training={null}
         {...PROPS}
       />
@@ -66,7 +70,8 @@ describe("ClientStatusCard — goal chips", () => {
   it("reached: says so once the client lands on the goal", () => {
     render(
       <ClientStatusCard
-        client={{ ...BASE, startingWeight: 90, currentWeight: 82, goalWeight: 82 }}
+        client={{ ...BASE, startingWeight: 90, currentWeight: 82 }}
+        goalWeight={82}
         training={null}
         {...PROPS}
       />
@@ -78,7 +83,8 @@ describe("ClientStatusCard — goal chips", () => {
   it("beyond a loss goal: reads 'under goal'", () => {
     render(
       <ClientStatusCard
-        client={{ ...BASE, startingWeight: 90, currentWeight: 80, goalWeight: 82 }}
+        client={{ ...BASE, startingWeight: 90, currentWeight: 80 }}
+        goalWeight={82}
         training={null}
         {...PROPS}
       />
@@ -90,7 +96,8 @@ describe("ClientStatusCard — goal chips", () => {
   it("beyond a gain goal: reads 'over goal'", () => {
     render(
       <ClientStatusCard
-        client={{ ...BASE, startingWeight: 70, currentWeight: 78, goalWeight: 76 }}
+        client={{ ...BASE, startingWeight: 70, currentWeight: 78 }}
+        goalWeight={76}
         training={null}
         {...PROPS}
       />
@@ -111,6 +118,50 @@ describe("ClientStatusCard — goal chips", () => {
     expect(screen.queryByText(/to go|goal reached|under goal|over goal/i)).not.toBeInTheDocument();
   });
 
+  it("ignores the clients.* goal mirror entirely", () => {
+    render(
+      <ClientStatusCard
+        client={{
+          ...BASE,
+          startingWeight: 90,
+          currentWeight: 86,
+          // The stale denormalized mirror. It is kept in sync by a non-blocking,
+          // error-swallowed dual-write, so it can hold a value client_goals does
+          // not. Reading it is the bug this card was moved off.
+          goalWeight: 99,
+          goalBodyFatPercentage: 42,
+        }}
+        training={null}
+        {...PROPS}
+      />
+    );
+
+    expect(screen.queryByText("99.0")).not.toBeInTheDocument();
+    expect(screen.queryByText("42.0")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/to go|goal reached|under goal|over goal/i)
+    ).not.toBeInTheDocument();
+  });
+
+  it("claims nothing while the goal is still loading", () => {
+    render(
+      <ClientStatusCard
+        client={{ ...BASE, startingWeight: 90, currentWeight: 86 }}
+        goalWeight={82}
+        isGoalLoading
+        training={null}
+        {...PROPS}
+      />
+    );
+
+    // Neither the value nor the chip: a goal read in flight must not render as a
+    // settled answer, in either direction.
+    expect(
+      screen.queryByText(/to go|goal reached|under goal|over goal/i)
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("82.0")).not.toBeInTheDocument();
+  });
+
   it("body fat uses percent rather than the weight unit", () => {
     render(
       <ClientStatusCard
@@ -118,8 +169,8 @@ describe("ClientStatusCard — goal chips", () => {
           ...BASE,
           startingBodyFatPercentage: 24,
           currentBodyFatPercentage: 20,
-          goalBodyFatPercentage: 18,
         }}
+        goalBodyFatPercentage={18}
         training={null}
         {...PROPS}
       />

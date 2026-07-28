@@ -17,11 +17,15 @@ import {
 } from "@/components/clients/overview/wellness-cards";
 import { trailingDates } from "@/components/clients/overview/overview-format";
 import { ADHERENCE_WINDOW_DAYS, useClientAdherence } from "@/hooks/use-client-adherence";
+import { useClientGoals } from "@/hooks/use-client-goals";
 import { useClientNotes } from "@/hooks/use-client-notes";
 import { useOverviewBrief } from "@/hooks/use-overview-brief";
 import { useOverviewPlanSummary } from "@/hooks/use-overview-plan-summary";
 import { useWellnessData } from "@/hooks/use-wellness-data";
 import { useToast } from "@/hooks/use-toast";
+import { getTodayDateStringInTimezone } from "@/lib/date-helpers";
+import { resolveEffectiveGoal } from "@/lib/goals/resolve-effective-goal";
+import { weightFromKg } from "@/utils/nutrition-helpers";
 import type { ClientTab } from "@/lib/client-tabs";
 import type { AlertType } from "@/types/attention-feed";
 import type { Client } from "@/types/check-in";
@@ -68,6 +72,40 @@ export function ClientOverviewTab({
     daysBack: WELLNESS_WINDOW_DAYS - 1,
     withHabitLogs: false,
   });
+
+  // The goal comes from `client_goals` via the shared resolver, NOT from the
+  // `clients.*` mirror on the client prop. The mirror is kept in sync by a
+  // non-blocking, error-swallowed dual-write, so the two silently diverge — and
+  // it has nowhere to put anything richer than three scalars.
+  const { goal, isLoading: goalLoading } = useClientGoals(client.id);
+
+  const goalTargets = useMemo(() => {
+    const weightUnit = client.weightUnit ?? "lbs";
+    const effective = resolveEffectiveGoal({
+      weightUnit,
+      clientGoal: goal
+        ? {
+            goalWeight: goal.goalWeight ?? null,
+            goalBodyFatPercentage: goal.goalBodyFatPercentage ?? null,
+            deadline: goal.goalDeadline ?? null,
+            startDate: goal.goalStartDate ?? null,
+          }
+        : null,
+      // The goal's dates live on the CLIENT's calendar, not the coach's device
+      // (same anchor as services/comparison-service.ts). Only `startDate` reads
+      // it here, but the rule is whose calendar the date is on.
+      today: getTodayDateStringInTimezone(client.timezone),
+    });
+
+    // The resolver normalizes to kg; the card renders display units.
+    return {
+      goalWeight:
+        effective.goalWeightKg != null
+          ? weightFromKg(effective.goalWeightKg, weightUnit)
+          : undefined,
+      goalBodyFatPercentage: effective.goalBodyFatPercentage ?? undefined,
+    };
+  }, [goal, client.weightUnit, client.timezone]);
 
   const wellnessDates = useMemo(() => trailingDates(WELLNESS_WINDOW_DAYS), []);
   const { toast } = useToast();
@@ -178,6 +216,9 @@ export function ClientOverviewTab({
         />
         <ClientStatusCard
           client={client}
+          goalWeight={goalTargets.goalWeight}
+          goalBodyFatPercentage={goalTargets.goalBodyFatPercentage}
+          isGoalLoading={goalLoading}
           training={summary?.training ?? null}
           upcomingTraining={summary?.upcomingTraining ?? null}
           isCalculatingBMR={isCalculatingBMR}

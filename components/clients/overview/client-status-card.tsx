@@ -16,6 +16,20 @@ import type { OverviewPlanSummary } from "@/types/coach-overview";
 
 type ClientStatusCardProps = {
   client: Client;
+  /**
+   * Goal targets in the client's DISPLAY units, resolved from `client_goals` by
+   * the parent — deliberately NOT read off `client.goalWeight`, which is the
+   * denormalized `clients.*` mirror kept in sync by an error-swallowed
+   * dual-write.
+   */
+  goalWeight?: number;
+  goalBodyFatPercentage?: number;
+  /**
+   * True while the goal read is still in flight. Without it the card cannot tell
+   * "no goal set" from "not loaded yet" and renders a confident em-dash it then
+   * contradicts (same trap as CoachNotesCard / the check-in timing strip).
+   */
+  isGoalLoading?: boolean;
   training: OverviewPlanSummary["training"];
   upcomingTraining: OverviewPlanSummary["upcomingTraining"];
   isCalculatingBMR: boolean;
@@ -147,6 +161,9 @@ function deltaTone(delta: string | null): string | undefined {
 
 export function ClientStatusCard({
   client,
+  goalWeight,
+  goalBodyFatPercentage,
+  isGoalLoading = false,
   training,
   upcomingTraining,
   isCalculatingBMR,
@@ -157,18 +174,19 @@ export function ClientStatusCard({
   const weightDelta = formatDelta(client.currentWeight, client.startingWeight);
   const bfDelta = formatDelta(client.currentBodyFatPercentage, client.startingBodyFatPercentage);
 
-  const weightChip = goalChip(
-    client.startingWeight,
-    client.currentWeight,
-    client.goalWeight,
-    weightUnit
-  );
-  const bfChip = goalChip(
-    client.startingBodyFatPercentage,
-    client.currentBodyFatPercentage,
-    client.goalBodyFatPercentage,
-    "%"
-  );
+  // While the goal is loading, claim nothing: no value and no chip. A chip built
+  // from an absent goal reads as a real answer.
+  const weightChip = isGoalLoading
+    ? null
+    : goalChip(client.startingWeight, client.currentWeight, goalWeight, weightUnit);
+  const bfChip = isGoalLoading
+    ? null
+    : goalChip(
+        client.startingBodyFatPercentage,
+        client.currentBodyFatPercentage,
+        goalBodyFatPercentage,
+        "%"
+      );
 
   // The active training block — this card's only programme context. There is no
   // roadmap or phase concept on the platform. A program placed to start later
@@ -219,7 +237,7 @@ export function ClientStatusCard({
           />
           <MetricCell
             label="Goal weight"
-            value={client.goalWeight?.toFixed(1)}
+            value={isGoalLoading ? undefined : goalWeight?.toFixed(1)}
             unit={weightUnit}
             size="lg"
             chip={weightChip}
@@ -245,7 +263,7 @@ export function ClientStatusCard({
           />
           <MetricCell
             label="Goal body fat"
-            value={client.goalBodyFatPercentage?.toFixed(1)}
+            value={isGoalLoading ? undefined : goalBodyFatPercentage?.toFixed(1)}
             unit="%"
             chip={bfChip}
             showLeftBorder
