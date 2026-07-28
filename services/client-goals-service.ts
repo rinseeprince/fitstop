@@ -71,12 +71,19 @@ export const updateGoals = async (
     }
   }
 
-  // Presence-based per-field merge: a key PRESENT in the payload wins (even when
-  // it is explicit null → clears the column); a key ABSENT carries the existing
-  // value forward. Plain `??` could never clear a field — passing null fell
-  // through to the existing value. `goalWeight` is never cleared (required field).
+  // Per-field merge on DEFINED presence: a key carrying a real value wins, and an
+  // explicit null still wins (it clears the column — `null !== undefined`). A key
+  // that is absent OR explicitly `undefined` carries the existing value forward.
+  //
+  // The `!== undefined` half is load-bearing. `hasOwnProperty` alone is true for a
+  // key present with value `undefined`, which is exactly what the four object-literal
+  // callers build — `metrics/route.ts:218`, `client-service.ts:100` and `:269`,
+  // `intake-review-service.ts:215` all spread possibly-undefined fields into a fixed
+  // key set. Under presence-only they NULLed the sibling goal, and because the
+  // dual-write below mirrors `merged` unconditionally, BOTH stores lost the value in
+  // the same request. Plain `??` is not the fix either — it could never clear a field.
   const has = (key: keyof typeof goals) =>
-    Object.prototype.hasOwnProperty.call(goals, key);
+    Object.prototype.hasOwnProperty.call(goals, key) && goals[key] !== undefined;
   const merged = {
     goal_weight: has("goalWeight")
       ? goals.goalWeight ?? null

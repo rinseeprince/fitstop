@@ -545,3 +545,61 @@ me your plan for 3.1.
 ## 8. STATUS blocks
 
 *Sessions append here at commit time. Do not delete this section — it is how each session inherits the previous one's decisions.*
+
+---
+
+### Task 1.1 — Goal-merge presence fix ✅ SHIPPED 2026-07-28
+
+**What shipped.** `services/client-goals-service.ts` `updateGoals`: `has()` is now
+`hasOwnProperty(goals, key) && goals[key] !== undefined`. Three new tests in
+`services/client-goals-service.test.ts`, each verified to FAIL against the unfixed service
+and pass with it (the 10 pre-existing tests pass in both directions).
+
+**Two corrections to this document's own Task 1.1 text — Session 2 should trust these, not §1.1:**
+
+1. **`:124` is wrong about the divergence, and the truth is worse.** It says *"the mirror keeps
+   the old weight, `client_goals` goes NULL."* Both stores lost it, in the same request:
+   `metrics/route.ts:184-188` writes the guarded mirror update, then `updateGoals` at `:218`
+   overwrites `clients.goal_weight` unconditionally from `merged`
+   (`client-goals-service.ts:115-123`). There was no surviving copy to reconcile from. Same
+   sequence via `client-service.ts:229-234` → `:269`. A test now pins the mirror payload.
+2. **`:123` says "four callers"; only THREE can clobber.** `services/client-service.ts:100-103`
+   sits inside `createClient` immediately after the INSERT at `:67-71`, so `getCurrentGoals`
+   (`:56`) returns null and both merge branches yield `null` — vacuous, not a live site. The
+   three live sites are `metrics/route.ts:218-221`, `client-service.ts:269-272` (`updateClient`),
+   and `intake-review-service.ts:215-219`. `app/api/clients/[id]/goals/route.ts:94` is safe:
+   verified empirically that zod 3.25.76 strips absent optional keys from `.safeParse` output,
+   and an explicit `undefined` cannot arrive over JSON.
+
+**Reachability.** Not theoretical — `hooks/use-client-metrics.ts:65-75` builds a single-field
+body per PUT, so editing goal body fat alone reproduced it every time.
+
+**DEVIATION — the `notes` carry-forward at `:128` was NOT implemented** (owner decision,
+2026-07-28). The premise (*"`notes` is silently NULLed on every goal edit"*) does not hold:
+`client_goals` is a superseding table, so the prior row keeps its `notes` and the new row simply
+never had any — nothing is nulled and there is no data loss to fix. Carrying it forward would
+have been actively wrong: `notes` is per-row provenance, sibling to `set_by`, which *is*
+re-stamped per row (`:103`); no caller can set or clear it (absent from both the `goals` param
+type and `updateGoalsSchema`), so it would be an unclearable ratchet propagating migration
+060's backfill string onto every future version; and it is observable at the API boundary via
+`GET /api/clients/[id]/goals?history=true`. **Do not reinstate this in Session 2.**
+
+**Doc updated in the same commit (class (b) stale):**
+`docs/OVERVIEW-REDESIGN-EXECUTION-PLAN.md:325` — its *"Any caller that edits one goal must send
+both… Worth a separate fix"* landmine note. Both clauses are now false.
+
+**Deliberately NOT changed, carried to Session 2 — `updateGoals` is non-transactional.**
+It supersedes at `:59-72` then inserts at `:98-107` with no transaction; a failed insert leaves
+the client with **zero active goals**, and all four callers swallow the error. Task 1.3 moves the
+coach Overview onto that store and a null goal weight reads as *maintenance* to the calculator,
+so the blast radius grows this session. Deferred because the honest fix is an RPC — a migration,
+and Session 1 has none by design — and an app-side compensating restore would add a *second*
+non-atomic write that can itself fail.
+
+**Known imprecision left alone:** `lib/validations/client-goals.ts:6-19` still calls this a
+"presence-based merge". Its substantive claims stay true (explicit null clears; an omitted
+weight carries forward — the fix makes the latter *more* true), so the file was not touched.
+
+**Gates:** `tsc` · `eslint` · `vitest` · `check:labels` · no `as any` · no leftover markers.
+Session baseline for comparison: 229/230 files, 2319/2320 tests, the one failure being the
+known-flaky `components/client-portal/training/set-tracker.test.tsx`.

@@ -205,6 +205,127 @@ describe('Client Goals Service', () => {
       expect(insertCallArgs.goal_weight).toBe(170);
     });
 
+    // The four object-literal callers (metrics PUT, createClient, updateClient,
+    // intake sync) always send BOTH goal keys, so a single-field edit arrives as
+    // `{ goalWeight: undefined, ... }`. The 'carries forward unchanged fields' case
+    // above passes the key ABSENT, which is why this survived: hasOwnProperty is
+    // false for absent but TRUE for present-and-undefined.
+    it('carries the sibling forward when a caller sends it as explicit undefined', async () => {
+      const existingRow = createMockClientGoalsRow({
+        clientId: 'client-1',
+        goalWeight: 170,
+      });
+      const newRow = createMockClientGoalsRow({ clientId: 'client-1', goalWeight: 170 });
+
+      const getCurrentQuery = createMockQuery({ data: existingRow, error: null });
+      const supersedeQuery = createMockQuery({ data: null, error: null });
+      const insertQuery = createMockQuery({ data: newRow, error: null });
+      const clientUpdateQuery = createMockQuery({ data: null, error: null });
+
+      let callCount = 0;
+      vi.mocked(supabaseAdmin.from).mockImplementation((table: string) => {
+        if (table === 'client_goals') {
+          callCount++;
+          if (callCount === 1) return getCurrentQuery as never;
+          if (callCount === 2) return supersedeQuery as never;
+          if (callCount === 3) return insertQuery as never;
+        }
+        if (table === 'clients') return clientUpdateQuery as never;
+        return createMockQuery({ data: null, error: null }) as never;
+      });
+
+      // The real caller shape: editing body fat alone via PATCH /api/clients/[id].
+      await updateGoals(
+        'client-1',
+        { goalWeight: undefined, goalBodyFatPercentage: 22 },
+        'coach-1'
+      );
+
+      const insertCallArgs = insertQuery.insert.mock.calls[0][0];
+      expect(insertCallArgs.goal_weight).toBe(170);
+      expect(insertCallArgs.goal_body_fat_percentage).toBe(22);
+    });
+
+    // The dual-write mirrors `merged` unconditionally, so under the old presence
+    // test the clients cache lost the weight in the same request as client_goals —
+    // there was no surviving copy to reconcile from.
+    it('does not null the clients mirror when a caller sends explicit undefined', async () => {
+      const existingRow = createMockClientGoalsRow({
+        clientId: 'client-1',
+        goalWeight: 170,
+      });
+      const newRow = createMockClientGoalsRow({ clientId: 'client-1', goalWeight: 170 });
+
+      const getCurrentQuery = createMockQuery({ data: existingRow, error: null });
+      const supersedeQuery = createMockQuery({ data: null, error: null });
+      const insertQuery = createMockQuery({ data: newRow, error: null });
+      const clientUpdateQuery = createMockQuery({ data: null, error: null });
+
+      let callCount = 0;
+      vi.mocked(supabaseAdmin.from).mockImplementation((table: string) => {
+        if (table === 'client_goals') {
+          callCount++;
+          if (callCount === 1) return getCurrentQuery as never;
+          if (callCount === 2) return supersedeQuery as never;
+          if (callCount === 3) return insertQuery as never;
+        }
+        if (table === 'clients') return clientUpdateQuery as never;
+        return createMockQuery({ data: null, error: null }) as never;
+      });
+
+      await updateGoals(
+        'client-1',
+        { goalWeight: undefined, goalBodyFatPercentage: 22 },
+        'coach-1'
+      );
+
+      const mirrorArgs = clientUpdateQuery.update.mock.calls[0][0];
+      expect(mirrorArgs.goal_weight).toBe(170);
+      expect(mirrorArgs.goal_body_fat_percentage).toBe(22);
+    });
+
+    // Guards the regression the fix could plausibly introduce: null must keep
+    // clearing even when a sibling key in the same payload is undefined.
+    it('still clears on explicit null alongside a present-undefined sibling', async () => {
+      const existingRow = createMockClientGoalsRow({
+        clientId: 'client-1',
+        goalWeight: 170,
+        goalDeadline: '2026-06-01',
+      });
+      const newRow = createMockClientGoalsRow({
+        clientId: 'client-1',
+        goalWeight: 170,
+        goalDeadline: null,
+      });
+
+      const getCurrentQuery = createMockQuery({ data: existingRow, error: null });
+      const supersedeQuery = createMockQuery({ data: null, error: null });
+      const insertQuery = createMockQuery({ data: newRow, error: null });
+      const clientUpdateQuery = createMockQuery({ data: null, error: null });
+
+      let callCount = 0;
+      vi.mocked(supabaseAdmin.from).mockImplementation((table: string) => {
+        if (table === 'client_goals') {
+          callCount++;
+          if (callCount === 1) return getCurrentQuery as never;
+          if (callCount === 2) return supersedeQuery as never;
+          if (callCount === 3) return insertQuery as never;
+        }
+        if (table === 'clients') return clientUpdateQuery as never;
+        return createMockQuery({ data: null, error: null }) as never;
+      });
+
+      await updateGoals(
+        'client-1',
+        { goalWeight: undefined, goalDeadline: null },
+        'coach-1'
+      );
+
+      const insertCallArgs = insertQuery.insert.mock.calls[0][0];
+      expect(insertCallArgs.goal_deadline).toBeNull();
+      expect(insertCallArgs.goal_weight).toBe(170);
+    });
+
     it('persists goalStartDate', async () => {
       const existingRow = createMockClientGoalsRow({ clientId: 'client-1', goalWeight: 170 });
       const newRow = createMockClientGoalsRow({ clientId: 'client-1', goalWeight: 170, goalStartDate: '2026-02-01' });
