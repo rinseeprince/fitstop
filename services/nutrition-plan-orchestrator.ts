@@ -46,7 +46,8 @@ async function regenerateEventsOrThrow(
   fromDate: string
 ): Promise<void> {
   try {
-    await regenerateFutureNutritionEvents(clientId, planId, fromDate);
+    // Plan creation/regeneration is open-ended forward from its effective date.
+    await regenerateFutureNutritionEvents(clientId, planId, { kind: "from", from: fromDate });
   } catch (err) {
     captureApiError(err, { action: "generate-nutrition-events", planId });
     throw new NutritionPlanError(

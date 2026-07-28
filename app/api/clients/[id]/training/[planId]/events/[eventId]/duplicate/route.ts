@@ -53,10 +53,10 @@ export async function POST(
     const { targetDate } = validation.data;
     const newEventId = await duplicateEvent(eventId, targetDate, clientId, planId);
 
-    // Cascade: regenerate nutrition events for the target date
+    // Cascade: a duplicate adds a training day on exactly one date.
     await cascadeNutritionAfterTrainingChange(
       clientId,
-      targetDate,
+      { kind: "dates", dates: [targetDate] },
       "cascade-nutrition-events-from-duplicate"
     );
 

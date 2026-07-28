@@ -2,7 +2,12 @@ import { supabaseAdmin } from "./supabase-admin";
 import type { NutritionEvent, NutritionEventStatus, DietType } from "@/types/check-in";
 import type { NutritionEventRow, NutritionEventInsert } from "@/lib/database-helpers";
 import type { TrainingPlan } from "@/types/training";
-import { getTodayDateString, getDateString, DAY_NUM } from "@/lib/date-helpers";
+import {
+  getTodayDateString,
+  getDateString,
+  expandDateRange,
+  DAY_NUM,
+} from "@/lib/date-helpers";
 import { getClientTodayString } from "@/services/today-service";
 import { getEventsForDateRange } from "@/services/training-event-service";
 import { calculateDailyMacros } from "@/utils/nutrition-helpers";
@@ -64,11 +69,21 @@ export async function generateNutritionEvents(
   plan: PlanInput,
   dailyTargetRows: StoredDailyTarget[] | null,
   trainingPlan: TrainingPlan | null,
-  startDate: string,
-  endDate: string
+  dates: string[]
 ): Promise<void> {
-  // Fetch training events for burn calculation
-  const trainingEvents = await getEventsForDateRange(clientId, startDate, endDate);
+  // An explicit date LIST, not a [start, end] range: a narrow cascade (a move, a
+  // duplicate, one surplus edit) rewrites exactly the days it changed and leaves
+  // the gaps alone. Contiguous callers expand their range with expandDateRange.
+  const orderedDates = Array.from(new Set(dates)).sort();
+  if (orderedDates.length === 0) return;
+
+  const rangeStart = orderedDates[0];
+  const rangeEnd = orderedDates[orderedDates.length - 1];
+
+  // Fetch training events for burn calculation. Bracketed by the list's extremes
+  // rather than queried per date — the per-date map below only reads the dates we
+  // are actually writing, so a scattered list over-reads but never over-writes.
+  const trainingEvents = await getEventsForDateRange(clientId, rangeStart, rangeEnd);
 
   // Build date → training events map
   const trainingEventsByDate = new Map<string, typeof trainingEvents>();
@@ -86,12 +101,9 @@ export async function generateNutritionEvents(
 
   // Iterate dates and build insert rows
   const rows: NutritionEventInsert[] = [];
-  const start = new Date(startDate + "T00:00:00");
-  const end = new Date(endDate + "T00:00:00");
 
-  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-    const dateStr = getDateString(d);
-    const dayNum = d.getDay();
+  for (const dateStr of orderedDates) {
+    const dayNum = new Date(dateStr + "T00:00:00").getDay();
 
     // Find the day name (lowercase) from DAY_NUM reverse lookup
     let dayName: DayOfWeek = "monday";
@@ -165,13 +177,14 @@ export async function generateNutritionEvents(
   // key is client-scoped, so an override owned by a different plan in this window
   // must still be protected. A failed read must NOT silently overwrite an edit,
   // so throw (consistent with the delete/plan/targets/upsert errors here).
+  // Keyed on the exact date list, not [min,max] — a scattered narrow cascade must
+  // not read (or reason about) days it is not writing.
   const { data: protectedDays, error: protectedErr } = await supabaseAdmin
     .from("nutrition_events")
     .select("date")
     .eq("client_id", clientId)
     .eq("is_modified", true)
-    .gte("date", startDate)
-    .lte("date", endDate);
+    .in("date", orderedDates);
 
   if (protectedErr) throw protectedErr;
 
@@ -194,29 +207,65 @@ export async function generateNutritionEvents(
 // --- Regenerate future events ---
 
 /**
- * Delete scheduled events from a given date onward and regenerate from current plan.
+ * Which dates a regeneration covers.
+ *
+ * - `dates` — exactly these days. Pure upsert, NO delete: the conflict key is
+ *   (client_id, date) and the generator already skips `is_modified` days, so the
+ *   delete bought nothing here and only opened a window in which those dates had
+ *   no row at all (`getPlanTargetForDate` returns null for a missing row, and that
+ *   null is snapshotted permanently into `nutrition_logs`).
+ * - `from` — a floor, optionally with an explicit `to`. The DELETE and the
+ *   regenerate derive from ONE computed range. Previously the delete was unbounded
+ *   above (`.gte` with no `.lte`) while the regenerate stopped at the horizon, so
+ *   every cascade silently erased any day past it and never rewrote it.
+ */
+export type NutritionRegenScope =
+  | { kind: "dates"; dates: string[] }
+  | { kind: "from"; from: string; to?: string };
+
+/** The one place a scope becomes a concrete date list. */
+function resolveScopeDates(scope: NutritionRegenScope): string[] {
+  if (scope.kind === "dates") return scope.dates;
+  const horizon = calculateNutritionEndDate(scope.from);
+  const end = scope.to && scope.to > horizon ? scope.to : horizon;
+  return expandDateRange(scope.from, end);
+}
+
+/**
+ * Regenerate a plan's scheduled nutrition events over an explicit scope.
  * Past events and non-scheduled events (logged, missed) are preserved.
  */
 export async function regenerateFutureNutritionEvents(
   clientId: string,
   planId: string,
-  effectiveFrom?: string
+  scope?: NutritionRegenScope
 ): Promise<void> {
-  const fromDate = effectiveFrom ?? (await getClientTodayString(clientId));
+  const resolvedScope: NutritionRegenScope =
+    scope ?? { kind: "from", from: await getClientTodayString(clientId) };
 
-  // Delete scheduled events from effectiveFrom onward.
+  // Resolve the dates BEFORE any write. The old code deleted first and only then
+  // hit its `endDate <= fromDate` guard — a "deleted the calendar, returned
+  // success" path that was unreachable only because the horizon was a constant.
+  const dates = resolveScopeDates(resolvedScope);
+  if (dates.length === 0) return;
+
+  // A `dates` scope skips the delete entirely (see NutritionRegenScope). A `from`
+  // scope deletes over exactly the range it is about to regenerate.
   // Always preserve coach-edited days (is_modified): nutrition preserves edits
   // across the cascade unconditionally (no force param, unlike training); an
   // explicit reset clears the flag before regenerating that date.
-  const { error: deleteError } = await supabaseAdmin
-    .from("nutrition_events")
-    .delete()
-    .eq("nutrition_plan_id", planId)
-    .gte("date", fromDate)
-    .eq("status", "scheduled")
-    .eq("is_modified", false);
+  if (resolvedScope.kind === "from") {
+    const { error: deleteError } = await supabaseAdmin
+      .from("nutrition_events")
+      .delete()
+      .eq("nutrition_plan_id", planId)
+      .gte("date", dates[0])
+      .lte("date", dates[dates.length - 1])
+      .eq("status", "scheduled")
+      .eq("is_modified", false);
 
-  if (deleteError) throw deleteError;
+    if (deleteError) throw deleteError;
+  }
 
   // Fetch plan metadata
   const { data: planRow, error: planError } = await supabaseAdmin
@@ -244,10 +293,6 @@ export async function regenerateFutureNutritionEvents(
   // column is no longer read. The per-date `nutrition_events.is_training_day`
   // written below by generateNutritionEvents remains the source of truth.
 
-  // Calculate end date
-  const endDate = calculateNutritionEndDate(fromDate);
-  if (!endDate || endDate <= fromDate) return;
-
   await generateNutritionEvents(
     clientId,
     planId,
@@ -258,8 +303,7 @@ export async function regenerateFutureNutritionEvents(
     },
     dailyTargetRows,
     null, // trainingPlan param is vestigial; training days derive from training_events
-    fromDate,
-    endDate
+    dates
   );
 }
 
@@ -283,13 +327,15 @@ function calculateNutritionEndDate(today: string): string {
  * Errors are logged to Sentry so a failing regen doesn't block the caller's
  * primary operation.
  *
- * @param fromDate YYYY-MM-DD — regenerate the single active plan's events from
- *   this date onward. Each caller threads its own anchor (move = min(source,
- *   target); delete = client-local today; duplicate = targetDate).
+ * @param scope which dates this change actually touched. Routes that know their
+ *   exact dates pass `{kind:"dates"}` (move = [source, target]; duplicate =
+ *   [targetDate]; a surplus edit = [eventDate]) and get a pure upsert over just
+ *   those days. Routes whose change is open-ended forward pass `{kind:"from"}`,
+ *   with an explicit `to` when they know where their window ends.
  */
 export async function cascadeNutritionAfterTrainingChange(
   clientId: string,
-  fromDate: string,
+  scope: NutritionRegenScope,
   actionTag: string,
 ): Promise<void> {
   // Single durable plan: regenerate the one active plan's future events.
@@ -303,7 +349,7 @@ export async function cascadeNutritionAfterTrainingChange(
 
   if (!activePlan) return;
 
-  await regenerateFutureNutritionEvents(clientId, activePlan.id, fromDate).catch((err) =>
+  await regenerateFutureNutritionEvents(clientId, activePlan.id, scope).catch((err) =>
     captureApiError(err, { action: actionTag, planId: activePlan.id }),
   );
 }

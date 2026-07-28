@@ -75,7 +75,7 @@ describe("POST /api/clients/[id]/training/[planId]/events/[eventId]/move nutriti
     } as never);
   });
 
-  it("forward-in-time single move cascades from sourceDate (min of source/target)", async () => {
+  it("forward-in-time single move cascades BOTH affected dates", async () => {
     vi.mocked(moveEvent).mockResolvedValue({
       sourceDate: "2026-04-27",
       targetDate: "2026-04-30",
@@ -85,14 +85,17 @@ describe("POST /api/clients/[id]/training/[planId]/events/[eventId]/move nutriti
 
     expect(res.status).toBe(200);
     expect(cascadeNutritionAfterTrainingChange).toHaveBeenCalledTimes(1);
+    // Both days, not min(source,target) as a floor: the source day loses its
+    // training load and the target gains it. Everything between is unchanged and
+    // must not be rewritten.
     expect(cascadeNutritionAfterTrainingChange).toHaveBeenCalledWith(
       clientId,
-      "2026-04-27",
+      { kind: "dates", dates: ["2026-04-27", "2026-04-30"] },
       "cascade-nutrition-events-from-move"
     );
   });
 
-  it("backward-in-time single move cascades from targetDate", async () => {
+  it("backward-in-time single move cascades BOTH affected dates", async () => {
     vi.mocked(moveEvent).mockResolvedValue({
       sourceDate: "2026-04-30",
       targetDate: "2026-04-27",
@@ -103,7 +106,7 @@ describe("POST /api/clients/[id]/training/[planId]/events/[eventId]/move nutriti
     expect(res.status).toBe(200);
     expect(cascadeNutritionAfterTrainingChange).toHaveBeenCalledWith(
       clientId,
-      "2026-04-27",
+      { kind: "dates", dates: ["2026-04-30", "2026-04-27"] },
       "cascade-nutrition-events-from-move"
     );
   });
@@ -125,7 +128,7 @@ describe("POST /api/clients/[id]/training/[planId]/events/[eventId]/move nutriti
     expect(moveEvent).toHaveBeenCalledWith(eventId, "2026-04-29", clientId, planId);
     expect(cascadeNutritionAfterTrainingChange).toHaveBeenCalledWith(
       clientId,
-      "2026-04-27",
+      { kind: "dates", dates: ["2026-04-27", "2026-04-29"] },
       "cascade-nutrition-events-from-move"
     );
   });

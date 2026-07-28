@@ -58,14 +58,16 @@ export const updateSession = async (
  * Also sets is_modified=true so the regeneration pathway doesn't overwrite
  * the coach's deliberate edit.
  *
- * Returns the count of event rows updated (useful for the caller to know if
- * a nutrition cascade is worth triggering).
+ * Returns the DATES of the event rows updated. The caller needs the dates, not a
+ * count: these events are scattered across the calendar (one per placed day), so
+ * the nutrition cascade can rewrite exactly them instead of anchoring at today
+ * and rewriting every day to the horizon. `.length` is still the count.
  */
 export async function updateSurplusForFutureEvents(
   sessionId: string,
   surplus: number | null,
   fromDate: string,
-): Promise<number> {
+): Promise<string[]> {
   const { data, error } = await supabaseAdmin
     .from("training_events")
     .update({
@@ -76,11 +78,11 @@ export async function updateSurplusForFutureEvents(
     .eq("training_session_id", sessionId)
     .gte("date", fromDate)
     .eq("status", "scheduled")
-    .select("id");
+    .select("date");
 
   if (error) throw new Error(`Failed to update future event surpluses: ${error.message}`);
 
-  return data?.length ?? 0;
+  return (data ?? []).map((e) => e.date);
 }
 
 // Soft-delete session (and its exercises)

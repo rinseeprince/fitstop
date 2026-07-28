@@ -210,7 +210,7 @@ describe("PUT /api/clients/[id]/training/[planId]/amendment", () => {
     await PUT(makePut(validBody), routeParams);
     expect(cascadeNutritionAfterTrainingChange).toHaveBeenCalledWith(
       clientId,
-      "2026-07-22",
+      { kind: "from", from: "2026-07-22" },
       "cascade-nutrition-from-plan-amendment",
     );
   });

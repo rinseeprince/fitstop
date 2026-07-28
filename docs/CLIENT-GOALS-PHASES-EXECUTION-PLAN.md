@@ -603,3 +603,75 @@ weight carries forward — the fix makes the latter *more* true), so the file wa
 **Gates:** `tsc` · `eslint` · `vitest` · `check:labels` · no `as any` · no leftover markers.
 Session baseline for comparison: 229/230 files, 2319/2320 tests, the one failure being the
 known-flaky `components/client-portal/training/set-tracker.test.tsx`.
+
+---
+
+### Task 1.2 — Cascade takes a date SET, not a floor ✅ SHIPPED 2026-07-28
+
+**What shipped.** `regenerateFutureNutritionEvents` and `cascadeNutritionAfterTrainingChange`
+take a `NutritionRegenScope` (`{kind:"dates"}` | `{kind:"from", from, to?}`) instead of a start
+date. `generateNutritionEvents` takes a date LIST instead of `(startDate, endDate)`. New pure
+helper `expandDateRange` in `lib/date-helpers.ts` (UTC-anchored via `addDaysToDateString`; no
+such helper existed and three sites hand-rolled the loop).
+
+All three defects closed: the DELETE is bounded by the **same** range the regenerate uses; the
+empty-scope bail happens **before** any write (was: delete, then bail); and the narrow paths
+issue no DELETE at all, so their dates never lose their row.
+
+**The doc's route table was wrong in three ways — Session 2 should use this list:**
+- There are **12 cascade invocations, not 8**. `place-from-library` cascades three times through
+  a local wrapper, and `[planId]/sessions/[sessionId]` cascades from both PUT and PATCH.
+- `place-from-library`'s **session-drop branch is narrow** (one `targetDate`), though the table
+  files all of `place-from-library` under "the placement window (wide)".
+- `[planId]/sessions/[sessionId]` DELETE **does not cascade at all**. Recorded as fact; not
+  changed here.
+
+**Three services now report their affected dates** (they previously returned a count, or void):
+`deleteEvent` → `{date}`; `updateSurplusForFutureEvents` → `string[]`; `replaceSessionFull` →
+`surplusAffectedDates`. Plus `cancelFutureEventsForPlan` → `{lastDate}` via `.delete().select("date")`,
+same round trip.
+
+**ADDITION beyond the doc's Task 1.2 text, approved by the owner 2026-07-28:** the `to?` half of
+`{kind:"from"}`, threaded by the two plan-deletion routes. This is the second half of the doc's
+own sentence at `:142` (*"or an explicit `[from, to]` range"*). Without it those days keep a
+stale training-day surplus forever, because nothing revisits them.
+**`training_plans.effective_until` is NOT the source for that end** — it stays NULL on placed
+plans (migration `114:96`; `services/training-service.ts:67`), so reading it would silently
+collapse the range to the default horizon on exactly the long plans that need it. The honest
+source is the events `cancelFutureEventsForPlan` just deleted.
+
+**ACCEPTED COST:** this widens the regenerate on a long deleted plan (~140 days for a 20-week
+program). It is the one place this session makes a write *bigger* rather than smaller — one
+bounded upsert on a rare, explicitly destructive coach action.
+
+**DEFERRED — the amendment stays on plain `{kind:"from"}`.** `plan-amendment-service.ts:345`
+**already computes `windowEnd`**, so Session 2 can pick this up cheaply; it is not returned
+today and threading it through the amendment writer is materially heavier than the two deletion
+routes. Its rewrite also re-lays events across the window, so survivors past the horizon are not
+stale the way a deleted plan's are.
+
+**A smoke assertion that would have proved nothing, corrected:** `nutrition_events.updated_at` is
+`DEFAULT NOW()` (`supabase/migrations/077:21`) with **no trigger on the table**, and the upsert
+payload omits the column. A default fires on INSERT, not on the UPDATE half of an upsert — so
+under the new no-DELETE narrow path, an over-wide cascade rewrites its neighbours with
+`updated_at` frozen and any "did updated_at move?" check passes anyway. The real assertion is
+the upserted date list (`upsert.mock.calls[0][0].map(r => r.date)`), plus "no `.delete()` issued"
+and "`from("nutrition_events")` called exactly twice". For a live check, sentinel a column the
+generator actually writes (set `baseline_calories = 1` on two neighbours) — `note`/`is_modified`
+survive any write and prove nothing.
+
+**Not changed, deliberately:** the horizon stays `from + 56d` (invariant 10's
+`max(today+8w, last block end)` is Session 2's); the vestigial `trainingPlan` param on
+`generateNutritionEvents`; and `calorie_surplus_percentage` population on every training
+event-write path.
+
+**Behaviour change to expect:** rows past the horizon are no longer deleted. Previously they were
+deleted and never regenerated, so the day read as "no target" — and that null is snapshotted
+permanently into `nutrition_logs` (`services/daily-log-card-service.ts:79-99`) and drops the day
+from the weekly denominator (`services/weekly-nutrition-service.ts:65-81`). Stale beats absent.
+
+**Docs updated (class (b) stale):** `docs/ARCHITECTURE.md` "Training → Nutrition cascade"
+(per-route anchor threading → scopes, the 12 call sites, the `effective_until` trap), the
+`is_modified`/status protection bullet, and the event-lifecycle "Cascaded" line.
+
+**Gates:** all six green. 231/231 files, 2338/2338 tests (baseline 2320 → +3 from 1.1 → +15 here).

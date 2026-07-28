@@ -108,9 +108,14 @@ export async function PUT(
 
     // The rewritten window's surpluses changed under the nutrition calendar —
     // re-derive from the floor (the first date the amendment touched).
+    // Open-ended forward from the rewrite floor. The amendment writer also knows
+    // its windowEnd (plan-amendment-service.ts:345) but does not return it, so an
+    // explicit `to` is left for a later session — its rewrite re-lays events across
+    // the window, so survivors past the horizon are not stale the way a deleted
+    // plan's are.
     await cascadeNutritionAfterTrainingChange(
       clientId,
-      result.floor,
+      { kind: "from", from: result.floor },
       "cascade-nutrition-from-plan-amendment",
     );
 

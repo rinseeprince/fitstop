@@ -24,6 +24,7 @@ import {
   getDateString,
   getDateDaysAgo,
   getDateDaysFrom,
+  expandDateRange,
 } from "@/lib/date-helpers";
 import {
   PERF_COACH_ID,
@@ -425,8 +426,7 @@ async function insertNutritionEvents(
     { baselineCalories: 2400, proteinTargetG: 170, dietType: "balanced" },
     dailyTargets,
     null, // trainingPlan — generateNutritionEvents fetches training events by date range
-    getDateDaysAgo(months * 30),
-    getDateDaysFrom(new Date(), 8 * 7)
+    expandDateRange(getDateDaysAgo(months * 30), getDateDaysFrom(new Date(), 8 * 7))
   );
 }
 

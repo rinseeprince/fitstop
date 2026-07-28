@@ -241,7 +241,7 @@ describe("replaceSessionFull", () => {
       .mockReturnValueOnce(read.chain)
       .mockReturnValueOnce(update.chain)
       .mockReturnValueOnce(exercisesRead.chain);
-    mockSurplusUpdate.mockResolvedValue(3);
+    mockSurplusUpdate.mockResolvedValue(["2026-05-04", "2026-05-11", "2026-05-18"]);
 
     const result = await replaceSessionFull(
       baseParams(makeInput({ calorieSurplusPercentage: 20 })),
@@ -265,7 +265,7 @@ describe("replaceSessionFull", () => {
       .mockReturnValueOnce(read.chain)
       .mockReturnValueOnce(update.chain)
       .mockReturnValueOnce(exercisesRead.chain);
-    mockSurplusUpdate.mockResolvedValue(1);
+    mockSurplusUpdate.mockResolvedValue(["2026-05-04"]);
 
     const result = await replaceSessionFull(
       baseParams(makeInput({ calorieSurplusPercentage: null })),

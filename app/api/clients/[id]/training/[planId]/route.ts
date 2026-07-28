@@ -130,12 +130,16 @@ export async function DELETE(
     const today = await getClientTodayString(clientId);
 
     await archiveTrainingPlan(planId);
-    await cancelFutureEventsForPlan(planId, today);
+    const { lastDate } = await cancelFutureEventsForPlan(planId, today);
 
-    // Cascade: nutrition burn estimates depend on training events.
+    // Cascade: nutrition burn estimates depend on training events. Extend the
+    // range to the last day the cancelled plan actually reached — otherwise every
+    // day past the default horizon keeps its stale training-day surplus forever,
+    // since nothing else will ever revisit it. `lastDate` comes from the events
+    // just deleted; `training_plans.effective_until` is NULL on placed plans.
     await cascadeNutritionAfterTrainingChange(
       clientId,
-      today,
+      { kind: "from", from: today, to: lastDate ?? undefined },
       "cascade-nutrition-events-from-clear-plan"
     );
 

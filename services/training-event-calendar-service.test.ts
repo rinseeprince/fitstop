@@ -353,7 +353,11 @@ describe("training-event-calendar-service", () => {
         return createMockQuery({ data: null, error: null }) as any;
       });
 
-      await expect(deleteEvent("event-1", clientId, planId)).resolves.toBeUndefined();
+      // Returns the deleted event's date so the caller can cascade nutrition over
+      // exactly that day instead of anchoring at today.
+      await expect(deleteEvent("event-1", clientId, planId)).resolves.toEqual({
+        date: "2026-06-09",
+      });
       expect(mockGetClientTodayString).toHaveBeenCalledWith(clientId);
     });
 

@@ -9,7 +9,7 @@ config({ path: ".env.local" });
 
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { generateNutritionEvents } from "@/services/nutrition-event-service";
-import { getTodayDateString, getDateString } from "@/lib/date-helpers";
+import { getTodayDateString, getDateString, expandDateRange } from "@/lib/date-helpers";
 
 async function backfillEvents() {
   const today = getTodayDateString();
@@ -75,8 +75,7 @@ async function backfillEvents() {
         },
         dailyTargetRows,
         null, // trainingPlan — generateNutritionEvents fetches training events by date range
-        startDate,
-        endDate
+        expandDateRange(startDate, endDate)
       );
       plansProcessed++;
       if (plansProcessed % 10 === 0) {

@@ -182,12 +182,15 @@ export async function updateEventSurplus(
 /**
  * Delete a single scheduled training event.
  * Only future scheduled events can be deleted.
+ *
+ * Returns the deleted event's date so the caller can cascade nutrition over
+ * exactly that day instead of anchoring at today and rewriting the horizon.
  */
 export async function deleteEvent(
   eventId: string,
   clientId: string,
   planId: string
-): Promise<void> {
+): Promise<{ date: string }> {
   const { data: event, error } = await supabaseAdmin
     .from("training_events")
     .select("*")
@@ -212,4 +215,6 @@ export async function deleteEvent(
     .delete()
     .eq("id", eventId);
   if (deleteError) throw new Error(`Failed to delete event: ${deleteError.message}`);
+
+  return { date: event.date };
 }

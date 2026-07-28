@@ -136,7 +136,7 @@ describe("orchestrateNutritionPlanCreation — event-rewrite error propagation",
   it("calculated branch: resolves success when the event rewrite succeeds", async () => {
     const result = await orchestrateNutritionPlanCreation(clientId, coachId, calculatedBody, {});
     expect(result.success).toBe(true);
-    expect(regenerateFutureNutritionEvents).toHaveBeenCalledWith(clientId, "plan-1", "2026-07-02");
+    expect(regenerateFutureNutritionEvents).toHaveBeenCalledWith(clientId, "plan-1", { kind: "from", from: "2026-07-02" });
   });
 
   it("calculated branch: rejects with NutritionPlanError when the event rewrite fails", async () => {
@@ -169,7 +169,7 @@ describe("orchestrateNutritionPlanCreation — event-rewrite error propagation",
   it("custom-macros branch: resolves success when the event rewrite succeeds", async () => {
     const result = await orchestrateNutritionPlanCreation(clientId, coachId, customBody, {});
     expect(result.success).toBe(true);
-    expect(regenerateFutureNutritionEvents).toHaveBeenCalledWith(clientId, "plan-1", "2026-07-02");
+    expect(regenerateFutureNutritionEvents).toHaveBeenCalledWith(clientId, "plan-1", { kind: "from", from: "2026-07-02" });
   });
 
   it("custom-macros branch: rejects with NutritionPlanError when the event rewrite fails", async () => {
@@ -193,7 +193,7 @@ describe("orchestrateNutritionPlanCreation — event-rewrite error propagation",
       { ...calculatedBody, effectiveFrom: "2026-07-10" },
       {}
     );
-    expect(regenerateFutureNutritionEvents).toHaveBeenCalledWith(clientId, "plan-1", "2026-07-10");
+    expect(regenerateFutureNutritionEvents).toHaveBeenCalledWith(clientId, "plan-1", { kind: "from", from: "2026-07-10" });
   });
 });
 

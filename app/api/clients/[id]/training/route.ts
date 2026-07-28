@@ -132,15 +132,23 @@ export async function DELETE(
       .is("deleted_at", null)
       .neq("status", "archived");
 
+    // Track how far the furthest cancelled plan reached so the single cascade
+    // below covers every day that just lost its training events. Without it,
+    // anything past the default horizon keeps a stale training-day surplus that
+    // nothing will ever revisit.
+    let lastCancelledDate: string | null = null;
     for (const p of plans ?? []) {
       await archiveTrainingPlan(p.id);
-      await cancelFutureEventsForPlan(p.id, today);
+      const { lastDate } = await cancelFutureEventsForPlan(p.id, today);
+      if (lastDate && (!lastCancelledDate || lastDate > lastCancelledDate)) {
+        lastCancelledDate = lastDate;
+      }
     }
 
     // Cascade once: nutrition burn estimates depend on training events.
     await cascadeNutritionAfterTrainingChange(
       clientId,
-      today,
+      { kind: "from", from: today, to: lastCancelledDate ?? undefined },
       "cascade-nutrition-events-from-clear-all-training"
     );
 

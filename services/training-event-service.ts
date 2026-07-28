@@ -122,18 +122,27 @@ export async function generateTrainingEvents(
 export async function cancelFutureEventsForPlan(
   planId: string,
   effectiveFrom?: string
-): Promise<void> {
+): Promise<{ lastDate: string | null }> {
   // UTC fallback only: no clientId in scope to resolve a client-local today,
   // and the live caller passes an explicit (client-local) date.
   const fromDate = effectiveFrom ?? getTodayDateString();
 
-  const { error } = await supabaseAdmin
+  // `.select()` on the delete returns the removed rows in the same round trip, so
+  // the caller learns how far the cancelled plan actually reached. That is the ONLY
+  // honest source for the window end: `training_plans.effective_until` stays NULL on
+  // placed plans (migration 114), so reading it would silently collapse the nutrition
+  // cascade back to the default horizon on exactly the long plans that need it.
+  const { data, error } = await supabaseAdmin
     .from("training_events")
     .delete()
     .eq("training_plan_id", planId)
-    .gte("date", fromDate);
+    .gte("date", fromDate)
+    .select("date");
 
   if (error) throw error;
+
+  const dates = (data ?? []).map((e) => e.date);
+  return { lastDate: dates.length ? dates.reduce((a, b) => (a > b ? a : b)) : null };
 }
 
 // --- Regenerate future events ---
