@@ -7,6 +7,12 @@ import type { TrainingPlan } from "@/types/training";
 import {
   getActivityMultiplier,
 } from "@/utils/nutrition-helpers";
+import { CALORIES_PER_KG } from "@/lib/constants";
+import {
+  applyCalorieFloor,
+  capWeeklyRate,
+  dailyCalorieMagnitudeFromRate,
+} from "@/lib/goals/goal-rate";
 
 export type NutritionPlan = {
   baselineCalories: number; // Rest day calories (TDEE - deficit)
@@ -115,8 +121,8 @@ export function calculateBaselineCalories(
   const weightChangeKg = goalWeightKg - currentWeightKg;
   const isWeightLoss = weightChangeKg < 0;
 
-  // Calculate total calorie deficit/surplus needed (1kg = 7700 calories)
-  const totalCalorieChange = Math.abs(weightChangeKg) * 7700;
+  // Calculate total calorie deficit/surplus needed
+  const totalCalorieChange = Math.abs(weightChangeKg) * CALORIES_PER_KG;
 
   // Calculate required daily deficit/surplus
   let requiredDailyChange = totalCalorieChange / daysToGoal;
@@ -125,42 +131,36 @@ export function calculateBaselineCalories(
   const weeksToGoal = daysToGoal / 7;
   let weeklyRate = weightChangeKg / weeksToGoal;
 
-  // Gender-specific safety caps
-  const maxWeeklyDeficitKg = gender === "female" ? 0.75 : 1.0;
-  const maxWeeklySurplusKg = gender === "female" ? 0.35 : 0.5;
-
-  // Cap the rate if too aggressive
-  if (isWeightLoss && weeklyRate < -maxWeeklyDeficitKg) {
-    weeklyRate = -maxWeeklyDeficitKg;
-    requiredDailyChange = (maxWeeklyDeficitKg * 7700) / 7;
-    warnings.push(
-      `Weekly deficit capped at ${maxWeeklyDeficitKg}kg/week for safety. Goal timeline may need adjustment.`
-    );
-  } else if (!isWeightLoss && weeklyRate > maxWeeklySurplusKg) {
-    weeklyRate = maxWeeklySurplusKg;
-    requiredDailyChange = (maxWeeklySurplusKg * 7700) / 7;
-    warnings.push(
-      `Weekly surplus capped at ${maxWeeklySurplusKg}kg/week for optimal muscle gain. Goal timeline may need adjustment.`
-    );
+  // Cap the rate if too aggressive. The envelope and the warning copy live in
+  // lib/goals/goal-rate.ts so the rate-FIRST entry point (which a block hands a
+  // rate directly) cannot drift from this one on what counts as safe.
+  const cap = capWeeklyRate(weeklyRate, gender);
+  if (cap.capped) {
+    weeklyRate = cap.rateKgPerWeek;
+    requiredDailyChange = dailyCalorieMagnitudeFromRate(cap.rateKgPerWeek);
+    if (cap.warning) warnings.push(cap.warning);
   }
 
   // Calculate baseline calories
   // For weight loss: baseline = TDEE - deficit
   // For weight gain: baseline = TDEE + surplus
   const requiredDailyDeficit = isWeightLoss ? requiredDailyChange : -requiredDailyChange;
-  let baselineCalories = Math.round(tdee - requiredDailyDeficit);
 
-  // Ensure minimum calories
-  const minimumCalories = gender === "female" ? 1200 : 1500;
-  if (baselineCalories < minimumCalories) {
-    warnings.push(
-      `Calorie target raised to minimum safe level (${minimumCalories} cal/day). Consider adjusting goal timeline.`
-    );
-    baselineCalories = minimumCalories;
-  }
+  // Ensure minimum calories.
+  // NOTE: `requiredDailyDeficit` and `weeklyRate` are deliberately NOT re-derived
+  // when the floor bites, so a floored result reports the deficit it was ASKED
+  // for rather than the smaller one it will run. Pinned by
+  // nutrition-service.caps-floor.test.ts; the rate-first entry point reports an
+  // `appliedRateKgPerWeek` instead. Changing it here would move coach-visible
+  // numbers, which is not this workstream's job.
+  const floorResult = applyCalorieFloor(
+    Math.round(tdee - requiredDailyDeficit),
+    gender
+  );
+  if (floorResult.warning) warnings.push(floorResult.warning);
 
   return {
-    baselineCalories,
+    baselineCalories: floorResult.calories,
     requiredDailyDeficit,
     weeklyRate,
     warnings,

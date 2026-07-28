@@ -8,6 +8,12 @@ export const RATE_LIMIT_RETRY_DELAY_MS = 1500;
 export const DEBOUNCE_DELAY_MS = 300;
 
 // Custom macros validation
+// Energy density of body mass: the constant that converts a weekly rate of weight
+// change into a daily calorie delta, and back. Lives here because it appeared in
+// four places inside services/nutrition-service.ts plus a re-declaration inside a
+// useCallback in hooks/use-nutrition-builder.ts.
+export const CALORIES_PER_KG = 7700;
+
 export const CUSTOM_MACRO_CALORIE_TOLERANCE = 50; // Max allowed difference between stated calories and macro totals
 export const WEEKLY_BUDGET_ROUNDING_TOLERANCE = 10; // Max cal difference for calorie skewing budget validation
 
