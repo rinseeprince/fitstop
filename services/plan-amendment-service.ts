@@ -97,6 +97,8 @@ export type PlacedPlanForBuilder = {
 export type AmendPlacedPlanResult = {
   planId: string;
   floor: string;
+  /** The amended program's last day — the nutrition cascade's upper bound. */
+  windowEnd: string;
   offset: number;
   sessionsCreated: number;
   eventsCreated: number;
@@ -750,6 +752,14 @@ export async function amendPlacedPlanFuture(params: {
     return {
       planId,
       floor,
+      // The amended program's last day. Returned so the caller's nutrition
+      // cascade can bound itself at the real end of the plan instead of falling
+      // back to the default 8-week horizon — past which a day would keep a stale
+      // training-day surplus forever, because nothing ever revisits it.
+      // NOT `training_plans.effective_until`: that stays NULL on placed plans
+      // (migration 114:96), so reading it would silently collapse the range to
+      // the horizon on exactly the long plans that need it.
+      windowEnd,
       offset,
       sessionsCreated: futureInputs.filter((s) => !s.isRest).length,
       eventsCreated,

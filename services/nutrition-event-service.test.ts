@@ -18,6 +18,9 @@ vi.mock("@/services/training-service", () => ({
 vi.mock("@/services/today-service", () => ({
   getClientTodayString: vi.fn(),
 }));
+vi.mock("@/services/client-phases-service", () => ({
+  getClientPhases: vi.fn().mockResolvedValue([]),
+}));
 
 // Inline query-builder mock (mirrors services/training-event-service.test.ts):
 // every chain method returns `this`; single/maybeSingle resolve to `result`; a
@@ -59,8 +62,10 @@ import { supabaseAdmin } from "./supabase-admin";
 import { getEventsForDateRange } from "@/services/training-event-service";
 import { getActiveTrainingPlan } from "@/services/training-service";
 import { getClientTodayString } from "@/services/today-service";
+import { getClientPhases } from "@/services/client-phases-service";
 import {
   generateNutritionEvents,
+  createNutritionTargetResolver,
   regenerateFutureNutritionEvents,
 } from "./nutrition-event-service";
 
@@ -68,11 +73,19 @@ const mockFrom = vi.mocked(supabaseAdmin.from);
 
 const PLAN = { baselineCalories: 2000, proteinTargetG: 150, dietType: "balanced" };
 
+/** The pre-blocks resolver: plan scalars only, no grid, no blocks. */
+const PLAN_RESOLVER = createNutritionTargetResolver({
+  plan: PLAN,
+  planDailyTargets: null,
+});
+
 describe("nutrition-event-service: cascade-preserve guards", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     // No training events → surplus null, burn 0; keeps generated rows deterministic.
     vi.mocked(getEventsForDateRange).mockResolvedValue([]);
+    // clearAllMocks wipes the module-level default, so restore "no blocks".
+    vi.mocked(getClientPhases).mockResolvedValue([]);
     vi.mocked(getActiveTrainingPlan).mockResolvedValue(null);
     vi.mocked(getClientTodayString).mockResolvedValue("2026-04-10");
   });
@@ -102,8 +115,7 @@ describe("nutrition-event-service: cascade-preserve guards", () => {
       await generateNutritionEvents(
         "client-1",
         "plan-1",
-        PLAN,
-        null,
+        PLAN_RESOLVER,
         null,
         ["2026-04-10", "2026-04-11", "2026-04-12"],
       );
@@ -144,8 +156,7 @@ describe("nutrition-event-service: cascade-preserve guards", () => {
       await generateNutritionEvents(
         "client-1",
         "plan-1",
-        PLAN,
-        null,
+        PLAN_RESOLVER,
         null,
         ["2026-04-10", "2026-04-11", "2026-04-12"],
       );
@@ -168,7 +179,7 @@ describe("nutrition-event-service: cascade-preserve guards", () => {
       });
 
       await expect(
-        generateNutritionEvents("client-1", "plan-1", PLAN, null, null, [
+        generateNutritionEvents("client-1", "plan-1", PLAN_RESOLVER, null, [
           "2026-04-10",
           "2026-04-11",
           "2026-04-12",
@@ -343,5 +354,281 @@ describe("nutrition-event-service: cascade-preserve guards", () => {
       expect(anyQuery.delete).not.toHaveBeenCalled();
       expect(anyQuery.upsert).not.toHaveBeenCalled();
     });
+  });
+});
+
+// ===========================================================================
+// Task 2.5 — per-date resolution. The generator used to close over ONE set of
+// numbers for the whole walk; it now asks per date.
+// ===========================================================================
+
+const WEEKDAYS = [
+  "sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday",
+] as const;
+
+/** A flat 7-row weekday grid, every day the same, so a block is one number. */
+function grid(calories: number) {
+  return WEEKDAYS.map((day) => ({
+    day_of_week: day,
+    calories,
+    protein_g: 150,
+    carb_g: 200,
+    fat_g: 60,
+  }));
+}
+
+function planGrid(calories: number) {
+  return WEEKDAYS.map((day) => ({
+    day_of_week: day,
+    calories,
+    protein_g: 150,
+    carb_g: 200,
+    fat_g: 60,
+    is_training_day: false,
+  }));
+}
+
+describe("createNutritionTargetResolver", () => {
+  // Three consecutive blocks, each with its own calorie level.
+  const PHASES = [
+    { startsOn: "2026-08-01", endsOn: "2026-08-28", dailyTargets: grid(2200) },
+    { startsOn: "2026-08-29", endsOn: "2026-09-25", dailyTargets: grid(2600) },
+    { startsOn: "2026-09-26", endsOn: "2026-10-23", dailyTargets: grid(1900) },
+  ];
+
+  it("a client with NO blocks resolves exactly as before blocks existed", () => {
+    const withoutBlocks = createNutritionTargetResolver({
+      plan: PLAN,
+      planDailyTargets: planGrid(2000),
+    });
+    const emptyBlocks = createNutritionTargetResolver({
+      plan: PLAN,
+      planDailyTargets: planGrid(2000),
+      phases: [],
+    });
+
+    for (const date of ["2026-08-05", "2026-09-05", "2026-10-05"]) {
+      const a = withoutBlocks(date, "wednesday", false);
+      expect(a.baselineCalories).toBe(2000);
+      expect(emptyBlocks(date, "wednesday", false)).toEqual(a);
+    }
+  });
+
+  it("each date resolves to the numbers of the block that covers it", () => {
+    const resolve = createNutritionTargetResolver({
+      plan: PLAN,
+      planDailyTargets: planGrid(2000),
+      phases: PHASES,
+    });
+
+    expect(resolve("2026-08-01", "saturday", false).baselineCalories).toBe(2200);
+    expect(resolve("2026-08-28", "friday", false).baselineCalories).toBe(2200);
+    expect(resolve("2026-08-29", "saturday", false).baselineCalories).toBe(2600);
+    expect(resolve("2026-09-25", "friday", false).baselineCalories).toBe(2600);
+    expect(resolve("2026-09-26", "saturday", false).baselineCalories).toBe(1900);
+  });
+
+  it("a date in NO block falls back to the plan's weekday grid", () => {
+    const resolve = createNutritionTargetResolver({
+      plan: PLAN,
+      planDailyTargets: planGrid(2000),
+      phases: PHASES,
+    });
+
+    expect(resolve("2026-07-31", "friday", false).baselineCalories).toBe(2000);
+    expect(resolve("2026-10-24", "saturday", false).baselineCalories).toBe(2000);
+  });
+
+  it("a block whose grid has not been generated yet falls back to the plan", () => {
+    // `daily_targets` is NULL until task 2.6 runs the calculator per block. A
+    // covering block with no grid must not produce zeros or undefined.
+    const resolve = createNutritionTargetResolver({
+      plan: PLAN,
+      planDailyTargets: planGrid(2000),
+      phases: [{ startsOn: "2026-08-01", endsOn: "2026-08-28", dailyTargets: null }],
+    });
+
+    expect(resolve("2026-08-05", "wednesday", false).baselineCalories).toBe(2000);
+  });
+
+  it("custom macros ignore blocks entirely", () => {
+    // The coach typed these numbers and the calculator never ran, so no block
+    // drove them. Resolving to a block's grid here would overwrite what the
+    // coach typed on exactly the dates a block happens to cover.
+    const resolve = createNutritionTargetResolver({
+      plan: PLAN,
+      planDailyTargets: planGrid(1800),
+      phases: PHASES,
+      customMacrosEnabled: true,
+    });
+
+    expect(resolve("2026-08-05", "wednesday", false).baselineCalories).toBe(1800);
+    expect(resolve("2026-09-05", "saturday", false).baselineCalories).toBe(1800);
+  });
+
+  it("falls back to the plan SCALAR when there is no grid at all", () => {
+    const resolve = createNutritionTargetResolver({
+      plan: PLAN,
+      planDailyTargets: null,
+    });
+    expect(resolve("2026-08-05", "wednesday", false).baselineCalories).toBe(2000);
+  });
+});
+
+describe("generateNutritionEvents across blocks (the cascade invariant)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(getEventsForDateRange).mockResolvedValue([]);
+    vi.mocked(getClientPhases).mockResolvedValue([]);
+    vi.mocked(getClientTodayString).mockResolvedValue("2026-08-01");
+  });
+
+  it("a cascade spanning three blocks writes THREE different sets of numbers", async () => {
+    // THE test this workstream cares about most. A coach re-placing or amending
+    // a program mid-plan cascades across every later block. Before the per-date
+    // resolver this flattened every one of those days to a single set of
+    // numbers, silently and with no error.
+    let nutCount = 0;
+    const protectedQuery = createMockQuery<{ date: string }[]>({ data: [], error: null });
+    const upsertQuery = createMockQuery({ data: [], error: null });
+
+    mockFrom.mockImplementation((table: string) => {
+      if (table === "nutrition_events") {
+        nutCount += 1;
+        return (nutCount === 1 ? protectedQuery : upsertQuery) as any;
+      }
+      return createMockQuery({ data: null, error: null }) as any;
+    });
+
+    const resolve = createNutritionTargetResolver({
+      plan: PLAN,
+      planDailyTargets: planGrid(2000),
+      phases: [
+        { startsOn: "2026-08-01", endsOn: "2026-08-28", dailyTargets: grid(2200) },
+        { startsOn: "2026-08-29", endsOn: "2026-09-25", dailyTargets: grid(2600) },
+        { startsOn: "2026-09-26", endsOn: "2026-10-23", dailyTargets: grid(1900) },
+      ],
+    });
+
+    // One date in each block, plus one outside every block.
+    await generateNutritionEvents(
+      "client-1",
+      "plan-1",
+      resolve,
+      null,
+      ["2026-08-10", "2026-09-10", "2026-10-01", "2026-11-01"],
+    );
+
+    const rows = upsertQuery.upsert.mock.calls[0][0] as Array<{
+      date: string;
+      baseline_calories: number;
+    }>;
+    expect(rows.map((r) => [r.date, r.baseline_calories])).toEqual([
+      ["2026-08-10", 2200],
+      ["2026-09-10", 2600],
+      ["2026-10-01", 1900],
+      ["2026-11-01", 2000], // past the last block → the plan grid
+    ]);
+  });
+});
+
+describe("horizon extends to the last block end", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(getEventsForDateRange).mockResolvedValue([]);
+    vi.mocked(getClientTodayString).mockResolvedValue("2026-08-01");
+  });
+
+  function wireRegenMocks() {
+    let nutCount = 0;
+    const deleteQuery = createMockQuery({ data: [], error: null });
+    const protectedQuery = createMockQuery<{ date: string }[]>({ data: [], error: null });
+    const upsertQuery = createMockQuery({ data: [], error: null });
+
+    mockFrom.mockImplementation((table: string) => {
+      if (table === "nutrition_events") {
+        nutCount += 1;
+        if (nutCount === 1) return deleteQuery as any;
+        if (nutCount === 2) return protectedQuery as any;
+        return upsertQuery as any;
+      }
+      if (table === "nutrition_plans") {
+        return createMockQuery({
+          data: {
+            baseline_calories: 2000,
+            protein_target_g: 150,
+            diet_type: "balanced",
+            custom_macros_enabled: false,
+          },
+          error: null,
+        }) as any;
+      }
+      return createMockQuery({ data: [], error: null }) as any;
+    });
+
+    return { deleteQuery, upsertQuery };
+  }
+
+  it("stops at today + 8 weeks when the client has no blocks", async () => {
+    vi.mocked(getClientPhases).mockResolvedValue([]);
+    const { deleteQuery, upsertQuery } = wireRegenMocks();
+
+    await regenerateFutureNutritionEvents("client-1", "plan-1", {
+      kind: "from",
+      from: "2026-08-01",
+    });
+
+    // 2026-08-01 + 56d = 2026-09-26.
+    expect(deleteQuery.lte).toHaveBeenCalledWith("date", "2026-09-26");
+    const rows = upsertQuery.upsert.mock.calls[0][0] as Array<{ date: string }>;
+    expect(rows[rows.length - 1].date).toBe("2026-09-26");
+  });
+
+  it("extends past the 8-week horizon to the last block's end", async () => {
+    vi.mocked(getClientPhases).mockResolvedValue([
+      {
+        id: "p1",
+        name: "Cut 1",
+        startsOn: "2026-08-01",
+        endsOn: "2026-11-20",
+        ratePerWeekKg: -0.6,
+        dailyTargets: null,
+      },
+    ] as never);
+    const { deleteQuery, upsertQuery } = wireRegenMocks();
+
+    await regenerateFutureNutritionEvents("client-1", "plan-1", {
+      kind: "from",
+      from: "2026-08-01",
+    });
+
+    // The block runs to 11-20, well past the 09-26 default horizon. The DELETE
+    // and the regenerate must BOTH reach it — they derive from one array, which
+    // is what stops task 1.2's unbounded-delete mismatch from coming back.
+    expect(deleteQuery.gte).toHaveBeenCalledWith("date", "2026-08-01");
+    expect(deleteQuery.lte).toHaveBeenCalledWith("date", "2026-11-20");
+    const rows = upsertQuery.upsert.mock.calls[0][0] as Array<{ date: string }>;
+    expect(rows[rows.length - 1].date).toBe("2026-11-20");
+  });
+
+  it("a block ending BEFORE the horizon does not shorten it", async () => {
+    vi.mocked(getClientPhases).mockResolvedValue([
+      {
+        id: "p1",
+        name: "Short block",
+        startsOn: "2026-08-01",
+        endsOn: "2026-08-14",
+        ratePerWeekKg: -0.6,
+        dailyTargets: null,
+      },
+    ] as never);
+    const { deleteQuery } = wireRegenMocks();
+
+    await regenerateFutureNutritionEvents("client-1", "plan-1", {
+      kind: "from",
+      from: "2026-08-01",
+    });
+
+    expect(deleteQuery.lte).toHaveBeenCalledWith("date", "2026-09-26");
   });
 });

@@ -12,7 +12,9 @@ import {
   applyCalorieFloor,
   capWeeklyRate,
   dailyCalorieMagnitudeFromRate,
+  daysToDeadline,
 } from "@/lib/goals/goal-rate";
+import { getTodayDateString } from "@/lib/date-helpers";
 
 export type NutritionPlan = {
   baselineCalories: number; // Rest day calories (TDEE - deficit)
@@ -58,6 +60,20 @@ export function calculateTDEE(
 }
 
 /**
+ * Narrow a date-ish string to its calendar date.
+ *
+ * `calculateBaselineCalories` accepts either a bare `YYYY-MM-DD` — what every
+ * production caller passes, since `goal_deadline` and `goal_start_date` are DATE
+ * columns — or a full ISO timestamp, which its tests pass and which the old
+ * `new Date(...)` parsing silently tolerated. Day-number arithmetic needs the
+ * calendar date, and slicing an ISO string yields its UTC date, which is exactly
+ * how the previous `new Date(iso)` comparison already read it.
+ */
+function toCalendarDate(value: string): string {
+  return value.slice(0, 10);
+}
+
+/**
  * Calculate baseline calories (rest day calories)
  * This is TDEE minus the required daily deficit to achieve goal by deadline
  */
@@ -87,25 +103,28 @@ export function calculateBaselineCalories(
     };
   }
 
-  // Calculate time to goal
-  // When a phase starts in the future, count from phase start, not today.
-  // When a phase already started (or no phase), count from today — the
-  // CLIENT-local today when the caller provides it (the deadline lives on the
-  // client's calendar); server-local midnight only as fallback.
-  let now: Date;
-  if (today) {
-    now = new Date(today + "T00:00:00");
-  } else {
-    now = new Date();
-    now.setHours(0, 0, 0, 0);
-  }
-  const startDate = calcStartDate
-    ? new Date(Math.max(new Date(calcStartDate).getTime(), now.getTime()))
-    : now;
-  const deadline = new Date(goalDeadline);
-  const daysToGoal = Math.round(
-    (deadline.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
-  ) + 1;
+  // Calculate time to goal. A start date in the future counts from the start;
+  // one already elapsed counts from today — the CLIENT-local today when the
+  // caller provides it (the deadline lives on the client's calendar), with
+  // server-local as the only fallback. The count includes both endpoints.
+  //
+  // DAY-NUMBER arithmetic, deliberately not Date math. This block used to parse
+  // `today` as LOCAL midnight while `goalDeadline` — a bare DATE from PostgREST
+  // — parsed as UTC midnight, and the `Math.round` absorbed the offset only
+  // below ±12h. Measured in task 1.4: correct at UTC / Los Angeles / São Paulo /
+  // Kolkata, wrong at Auckland and Kiritimati (92 vs 91), and wrong by two at
+  // exactly +12 where the fraction is 0.5 and rounds up. Latent while both
+  // callers were server-side under UTC Node — but Session 3 renders this
+  // arithmetic in the coach's browser, which would make it live for every coach
+  // at ≥+12, silently and always in the "too slow" direction.
+  //
+  // `daysToDeadline` is the shared implementation task 1.4 pinned across six
+  // zones, so the two cannot drift apart again.
+  const daysToGoal = daysToDeadline({
+    deadline: toCalendarDate(goalDeadline),
+    today: toCalendarDate(today ?? getTodayDateString()),
+    startDate: calcStartDate ? toCalendarDate(calcStartDate) : undefined,
+  });
 
   if (daysToGoal <= 0) {
     warnings.push("Goal deadline has passed. Using maintenance calories.");

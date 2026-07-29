@@ -91,6 +91,7 @@ const routeParams = { params: Promise.resolve({ id: clientId, planId }) };
 const amendResult = {
   planId,
   floor: "2026-07-22",
+  windowEnd: "2026-11-15",
   offset: 7,
   sessionsCreated: 3,
   eventsCreated: 3,
@@ -206,11 +207,16 @@ describe("PUT /api/clients/[id]/training/[planId]/amendment", () => {
     );
   });
 
-  it("cascades nutrition anchored at the amendment floor", async () => {
+  it("cascades nutrition from the amendment floor to the program's real end", async () => {
+    // The `to` bound is what stops a training day past the default 8-week
+    // horizon from keeping its surplus forever after the coach makes it a rest
+    // day. windowEnd (2026-11-15) is ~16 weeks out, well past that horizon, so
+    // a regression to the bare {kind:"from"} fails here rather than silently
+    // shrinking the range.
     await PUT(makePut(validBody), routeParams);
     expect(cascadeNutritionAfterTrainingChange).toHaveBeenCalledWith(
       clientId,
-      { kind: "from", from: "2026-07-22" },
+      { kind: "from", from: "2026-07-22", to: "2026-11-15" },
       "cascade-nutrition-from-plan-amendment",
     );
   });

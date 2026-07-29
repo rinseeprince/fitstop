@@ -8,7 +8,10 @@ import { config } from "dotenv";
 config({ path: ".env.local" });
 
 import { supabaseAdmin } from "@/services/supabase-admin";
-import { generateNutritionEvents } from "@/services/nutrition-event-service";
+import {
+  generateNutritionEvents,
+  createNutritionTargetResolver,
+} from "@/services/nutrition-event-service";
 import { getTodayDateString, getDateString, expandDateRange } from "@/lib/date-helpers";
 
 async function backfillEvents() {
@@ -68,12 +71,17 @@ async function backfillEvents() {
       await generateNutritionEvents(
         plan.client_id,
         plan.id,
-        {
-          baselineCalories: plan.baseline_calories,
-          proteinTargetG: Number(plan.protein_target_g),
-          dietType: plan.diet_type,
-        },
-        dailyTargetRows,
+        // Backfill is plan-only: it repairs historical rows, and blocks did not
+        // exist when they were written. Passing no phases resolves exactly as
+        // this script did before blocks.
+        createNutritionTargetResolver({
+          plan: {
+            baselineCalories: plan.baseline_calories,
+            proteinTargetG: Number(plan.protein_target_g),
+            dietType: plan.diet_type,
+          },
+          planDailyTargets: dailyTargetRows,
+        }),
         null, // trainingPlan — generateNutritionEvents fetches training events by date range
         expandDateRange(startDate, endDate)
       );

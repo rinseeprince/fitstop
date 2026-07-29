@@ -104,7 +104,7 @@ Rule of thumb: a rule about **safety** (RLS, GRANT, auth chain ordering, rate li
 | Session | Theme | Migrations | Ships user-visible change? | Status |
 |---|---|---|---|---|
 | **1** | Pre-existing bug fixes + the rate derivation | **none** | Overview goal source only | ✅ **COMPLETE** — shipped 2026-07-28 (`53abf0a`, `3abbfa5`, `b3ca479`, `62cef4a`), browser smoke passed 2026-07-29 |
-| **2** | Blocks: schema, service, generation **+ Session 1's inherited fixes (2.8)** | 137, 138, **139** | No (API only) | 🟡 **In progress** — 2.1, 2.2, 2.3, 2.4 and 2.8(a) shipped; 2.5, 2.6, 2.7 and 2.8(b–h) remain |
+| **2** | Blocks: schema, service, generation **+ Session 1's inherited fixes (2.8)** | 137, 138, **139** | No (API only) | 🟡 **In progress** — 2.1–2.5 and 2.8(a,b,c,g) shipped, 2.8(f) decided; 2.6, 2.7 and 2.8(d,e,h) remain |
 | **3** | Coach UI + "Waiting on you" + client-portal goal (3.9) | none | Yes — the whole feature | ⬜ Not started |
 
 Strictly sequential: 2 depends on 1's calculator, 3 depends on 2's API.
@@ -1487,3 +1487,119 @@ known-flaky `set-tracker.test.tsx` failed once in a full run and passed 33/33 in
 **Owed:** no browser smoke was run for 2.4. The two display-only hook changes
 (`getWeightRemaining`, `getProjectedDate`) must not move any number the client eats to; that is
 argued from the code and covered by unit tests, **not observed in a browser.**
+
+---
+
+### Task 2.5 — Per-date generation + horizon ✅ SHIPPED 2026-07-29
+
+**What shipped.** `generateNutritionEvents` takes a **`NutritionTargetResolver`** —
+`(date, dayName, isTrainingDay) => targets` — instead of closing over one `PlanInput` + one grid.
+The horizon becomes `max(anchor + 56d, last block end)`. Plus riders **(b)**, **(c)**, **(g)** and a
+recorded decision on **(f)**. No migration.
+
+**Why this is the whole backend feature.** The generator wrote the same numbers onto every date it
+touched. It now asks per date, so a cascade spanning three blocks writes three different sets of
+numbers instead of flattening them to one — silently and with no error, which is what made this the
+highest-value test in the workstream.
+
+**Resolution order, and the one that is easy to get wrong.**
+1. **Custom macros → the plan grid, blocks ignored entirely.** Inherited from 2.2's STATUS, and it
+   is load-bearing: the coach typed those numbers and the calculator never ran, so no block drove
+   them. Without the short-circuit, a custom plan's in-block dates would resolve to a block's grid
+   and overwrite what the coach typed on exactly the dates a block happens to cover. This is why
+   the plan select at `nutrition-event-service.ts` widened to include `custom_macros_enabled`.
+2. The block covering the date, **when its `daily_targets` grid exists**. It is NULL until 2.6, so
+   today every date still falls through to (3) — the block path is live but unreachable until 2.6
+   writes a grid. Tests seed one so the path is covered now rather than on trust.
+3. `nutrition_plan_daily_targets` — byte-identical to pre-blocks behaviour. Pinned by a test that
+   diffs "no `phases` argument" against "`phases: []`".
+
+**`is_training_day` is passed INTO the resolver, never read from a grid.** It is a per-DATE fact
+derived from live training events; a weekday-keyed grid cannot carry it. This is the same reason
+migration 137 omits it from `client_phases.daily_targets` (2.1 deviation #3), now enforced by the
+resolver's signature rather than by memory.
+
+**The horizon and the DELETE cannot drift apart.** `resolveScopeDates` takes the phases and returns
+ONE array; the DELETE bounds itself with `dates[0]`/`dates[len-1]` and the regenerate walks the same
+array. So widening the horizon for blocks **structurally cannot** reintroduce task 1.2's
+unbounded-DELETE-vs-bounded-regenerate mismatch — it is not a rule anyone has to remember.
+`calculateNutritionEndDate` also moved off `new Date(d).setDate()` onto `addDaysToDateString`, for
+1.4's reason. Worst case is bounded by `MAX_CHAIN_WEEKS` (104), zod-enforced in 2.3.
+
+**Rider (b) — the amendment now bounds its cascade.** `amendPlacedPlanFuture` computes `windowEnd`
+and threw it away; it is now on `AmendPlacedPlanResult` and the route passes
+`{kind:"from", from: floor, to: windowEnd}`. Before this, a training day in week 15 of a 20-week
+program kept its surplus **forever** after the coach turned it into a rest day, because the cascade
+stopped at the default 8-week horizon and nothing ever revisited it.
+**KNOWN GAP, owner decision 2026-07-29:** if the coach *shortens* a program, days the old window
+covered past the new `windowEnd` are not revisited and keep a stale surplus. Closing it needs the
+pre-amendment window end plumbed out of the writer and widens every amendment's upsert. Deferred
+deliberately — recorded in `ARCHITECTURE.md` too, so it is not rediscovered as a bug.
+
+**Rider (c) — the latent timezone bug is dead.** `nutrition-service.ts` now calls `daysToDeadline`
+from `lib/goals/goal-rate.ts` (the implementation 1.4 pinned across six zones) instead of
+transcribing local-vs-UTC `Date` math. **A boundary case the port surfaced:** the function has
+always accepted *either* a bare `YYYY-MM-DD` (what every production caller passes —
+`goal_deadline` and `goal_start_date` are DATE columns) *or* a full ISO timestamp (what its tests
+pass, and what `new Date(...)` silently tolerated). Day-number arithmetic needs the calendar date,
+so a local `toCalendarDate` slices it. **The pinned helper's contract was NOT loosened** — the
+normalization sits at the legacy signature's boundary, where the leniency actually lives.
+**Evidence the port moved no numbers:** 1.4's 24-case golden matrix
+(`nutrition-service.caps-floor.test.ts`, captured by running the OLD code) passes unchanged.
+
+**Rider (g) — ANSWERED, no backfill needed.** `generateNutritionEvents` recomputes **both**
+`is_training_day` and `training_burn_calories` from live training events for **every** date it
+writes. So any regeneration reaching those dates clears the drift the Session 1 smoke found on
+fixture Samuel James; a narrow `{kind:"dates"}` cascade will not, because those dates are not in its
+set — which is exactly why the smoke saw them survive. A plan-level regenerate fixes them.
+**Read from the code, NOT verified against the live rows.**
+
+**Rider (f) — DECIDED: still owed, and it is Session 3's** (owner, 2026-07-29). The widened horizon
+does **not** close it: a date past `max(today + 56d, last block end)` still has no row, still reads
+`null` through `getPlanTargetForDate`, and that null is still snapshotted permanently into
+`nutrition_logs` and drops the day from the weekly denominator. It is a READ-path concern and 3.8 is
+already the client-portal task, so both land in one pass. **Task 2.5 is generation; this is
+rendering.** For it to bite, a client must be looking 9+ weeks ahead *and* logging food that day.
+
+**Callers updated, not worked around.** `scripts/backfill-nutrition-events.ts` and
+`scripts/seed-scale-client.ts` build a plan-only resolver (no phases) — the backfill repairs
+historical rows that predate blocks, and the scale fixture has none.
+
+**Mock contract (CONVENTIONS §2):** `nutrition-event-service.test.ts` gained a
+`client-phases-service` mock, re-armed inside `beforeEach` because `vi.clearAllMocks()` wipes a
+module-level `mockResolvedValue`. That bites silently — the mock returns `undefined` and the horizon
+math throws — so it is worth knowing before the next service picks up a phases read.
+
+**Tests added (10):** the three-block cascade writing three different numbers *plus* a fourth date
+past the last block falling back to the plan grid; no-blocks ≡ empty-blocks; a covering block with a
+NULL grid falling back rather than producing zeros; custom macros ignoring blocks; horizon extends to
+a block end past 8 weeks **with the DELETE's `.gte`/`.lte` asserted on the same bounds**; a block
+ending *before* the horizon not shortening it; and the amendment route asserting
+`to: windowEnd` against a date ~16 weeks out, so a regression to the bare `{kind:"from"}` fails
+rather than silently shrinking the range.
+
+**Security / load / performance review (§2):**
+- **No new API routes, no new writes, no auth change.** The only route touched is the amendment PUT,
+  and only the `to` field of an existing cascade argument.
+- **One new read per regeneration** (`getClientPhases`), loaded **once** before the date loop and
+  passed to both the horizon and the resolver — never a query inside the per-date loop (§2 #7).
+  Tenant-scoped `.eq("client_id", …)`, index-covered by `idx_client_phases_client_starts`.
+- **Write volume can grow, and this is the one thing to watch.** The horizon now reaches the last
+  block end, so a 104-week chain (the zod ceiling) makes a `{kind:"from"}` regeneration upsert ~728
+  rows instead of ~56. Bounded and batched into one statement, but it is a real increase on the
+  widest case. **Not load-tested.** Narrow `{kind:"dates"}` cascades — the common ones (move,
+  duplicate, surplus edit) — are unchanged.
+- **Consistency:** the cascade's existing swallow (`captureApiError`, §2 #12) is untouched and still
+  means a failed regeneration leaves stale-but-present rows rather than absent ones.
+
+**Docs updated in this commit (class (b) stale — my own code made them false):**
+`ARCHITECTURE.md` "Training → Nutrition cascade" — the range is now
+`[from, max(from + 56d, last block end, to)]`, the amendment *does* pass a `to`, the shrink gap is
+recorded, and a new bullet describes per-date generation and the resolution order.
+
+**Gates:** `tsc` clean · `eslint` **0 errors** (210 pre-existing warnings) · `vitest`
+**236/236 files, 2474/2474 tests** (2464 → 2474) · `check:labels` OK · `check:rls` 41/41 · no new
+`as any` · no leftover markers.
+
+**Owed:** no browser smoke. The block-resolution path cannot be exercised end-to-end until 2.6
+writes a `daily_targets` grid, so the meaningful smoke belongs after 2.6.

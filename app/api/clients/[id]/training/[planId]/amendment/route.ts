@@ -108,14 +108,19 @@ export async function PUT(
 
     // The rewritten window's surpluses changed under the nutrition calendar —
     // re-derive from the floor (the first date the amendment touched).
-    // Open-ended forward from the rewrite floor. The amendment writer also knows
-    // its windowEnd (plan-amendment-service.ts:345) but does not return it, so an
-    // explicit `to` is left for a later session — its rewrite re-lays events across
-    // the window, so survivors past the horizon are not stale the way a deleted
-    // plan's are.
+    // Bounded at the amended program's real last day, which the writer now
+    // returns. Without it this fell back to the default 8-week horizon, so a
+    // training day in week 15 of a 20-week program kept its surplus forever
+    // after the coach turned it into a rest day.
+    //
+    // KNOWN GAP (owner decision 2026-07-29): if the coach SHORTENS a program,
+    // the days the old window covered past the new `windowEnd` are not
+    // revisited and keep a stale training-day surplus. Closing it needs the
+    // pre-amendment window end plumbed out of the writer and widens every
+    // amendment's upsert; deferred deliberately rather than missed.
     await cascadeNutritionAfterTrainingChange(
       clientId,
-      { kind: "from", from: result.floor },
+      { kind: "from", from: result.floor, to: result.windowEnd },
       "cascade-nutrition-from-plan-amendment",
     );
 
