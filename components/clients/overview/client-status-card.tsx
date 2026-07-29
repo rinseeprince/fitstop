@@ -35,6 +35,9 @@ type ClientStatusCardProps = {
   isCalculatingBMR: boolean;
   onCalculateBMR: () => void;
   onOpenMetrics: () => void;
+  /** Opens the Goal & plan panel — where the goal above and the client's blocks
+   * are both authored. */
+  onOpenGoalPlan: () => void;
 };
 
 // Translucent on-dark chip — same recipe as the training-summary and metric
@@ -169,6 +172,7 @@ export function ClientStatusCard({
   isCalculatingBMR,
   onCalculateBMR,
   onOpenMetrics,
+  onOpenGoalPlan,
 }: ClientStatusCardProps) {
   const weightUnit = client.weightUnit || "lbs";
   const weightDelta = formatDelta(client.currentWeight, client.startingWeight);
@@ -188,9 +192,12 @@ export function ClientStatusCard({
         "%"
       );
 
-  // The active training block — this card's only programme context. There is no
-  // roadmap or phase concept on the platform. A program placed to start later
-  // reads as queued, never as "No plan".
+  // The active training PROGRAM — not a goal block. Read the word "block"
+  // elsewhere in this workstream as the nutrition/goal concept (`client_phases`,
+  // authored in the Goal & plan panel this card's footer opens); these chips are
+  // about a program. There is still no ROADMAP concept — that was removed
+  // outright in migration 133 and blocks did not bring it back. A program placed
+  // to start later reads as queued, never as "No plan".
   const blockChips: ReactNode = training ? (
     <>
       <DarkChip>{training.planName}</DarkChip>
@@ -302,7 +309,14 @@ export function ClientStatusCard({
         </div>
       </div>
 
-      <div className="mt-auto flex justify-end border-t border-[rgba(255,255,255,0.06)] px-5 py-3">
+      <div className="mt-auto flex items-center justify-between border-t border-[rgba(255,255,255,0.06)] px-5 py-3">
+        <button
+          type="button"
+          onClick={onOpenGoalPlan}
+          className="text-[11px] font-medium text-[#0d9488] transition-colors hover:text-white"
+        >
+          Edit goal &amp; plan
+        </button>
         <button
           type="button"
           onClick={onOpenMetrics}

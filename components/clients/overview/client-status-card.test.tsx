@@ -46,6 +46,7 @@ const PROPS = {
   isCalculatingBMR: false,
   onCalculateBMR: vi.fn(),
   onOpenMetrics: vi.fn(),
+  onOpenGoalPlan: vi.fn(),
 };
 
 beforeEach(() => cleanup());
@@ -249,11 +250,41 @@ describe("ClientStatusCard — actions", () => {
         isCalculatingBMR={false}
         onCalculateBMR={vi.fn()}
         onOpenMetrics={onOpenMetrics}
+        onOpenGoalPlan={vi.fn()}
       />
     );
 
     await user.click(screen.getByRole("button", { name: "Open Metrics" }));
     expect(onOpenMetrics).toHaveBeenCalledTimes(1);
+  });
+
+  // The card is the only entry point to the Goal & plan panel, and the goal
+  // chips it renders are authored there — so this footer action is what makes
+  // them editable at all.
+  it("opens the Goal & plan panel", async () => {
+    const user = userEvent.setup();
+    const onOpenGoalPlan = vi.fn();
+    render(
+      <ClientStatusCard
+        client={BASE}
+        training={null}
+        upcomingTraining={null}
+        isCalculatingBMR={false}
+        onCalculateBMR={vi.fn()}
+        onOpenMetrics={vi.fn()}
+        onOpenGoalPlan={onOpenGoalPlan}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: "Edit goal & plan" }));
+    expect(onOpenGoalPlan).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps both footer actions, so neither replaced the other", () => {
+    render(<ClientStatusCard client={BASE} training={null} {...PROPS} />);
+
+    expect(screen.getByRole("button", { name: "Edit goal & plan" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open Metrics" })).toBeInTheDocument();
   });
 
   it("names unrecorded metrics rather than showing a zero", () => {

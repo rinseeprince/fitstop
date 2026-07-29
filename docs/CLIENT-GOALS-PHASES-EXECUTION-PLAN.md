@@ -105,7 +105,7 @@ Rule of thumb: a rule about **safety** (RLS, GRANT, auth chain ordering, rate li
 |---|---|---|---|---|
 | **1** | Pre-existing bug fixes + the rate derivation | **none** | Overview goal source only | ✅ **COMPLETE** — shipped 2026-07-28 (`53abf0a`, `3abbfa5`, `b3ca479`, `62cef4a`), browser smoke passed 2026-07-29 |
 | **2** | Blocks: schema, service, generation **+ Session 1's inherited fixes (2.8)** | 137, 138, **139** | No (API only) | ✅ **COMPLETE** — closed 2026-07-29 (`86b7a98`…`e315329`); 2.1–2.7 and 2.8(a–e,g,h) shipped, **(f) carried to Session 3D** |
-| **3** | Coach UI + "Waiting on you" + client-portal goal (3.9) | none | Yes — the whole feature | ⬜ Not started |
+| **3** | Coach UI + "Waiting on you" + client-portal goal (3.9) | none | Yes — the whole feature | 🔵 **IN PROGRESS** — **3A**: commits 0–2 shipped 2026-07-29/30 (`d05f5cf`, `4f9ce8c`, `e0f46de`, and the panel); **Task 3.2 + the drawer relink still owed**. **3B / 3C / 3D not started** |
 
 Strictly sequential: 2 depends on 1's calculator, 3 depends on 2's API.
 
@@ -1181,7 +1181,7 @@ about today, not about Session 3. Each becomes reachable when its surface is wir
 
 ---
 
-### Session 3A — rider + Task 3.1 part 1 ✅ SHIPPED 2026-07-29 · **3.1 part 2 and 3.2 NOT STARTED**
+### Session 3A — rider + Task 3.1 part 1 ✅ SHIPPED 2026-07-29 · *(3.1 part 2 shipped since — see below)*
 
 **Read this before continuing 3A.** Two commits landed (`d05f5cf`, `4f9ce8c`); the panel itself
 has not been written. The session stopped at the context ceiling deliberately rather than starting
@@ -1408,3 +1408,60 @@ route, table, column, migration, write path, or auth/ownership/validation change
 ~90 lines, none of it in a request path. It changes the *payload* of an existing authorized write and
 strictly **reduces** downstream write volume — no spuriously nulled grids, so no spurious plan
 regeneration. Nothing else applies.
+
+---
+
+### 3A commit 2 — Task 3.1 part 2: the Goal & plan panel ✅ SHIPPED 2026-07-30
+
+**Task 3.1 is complete.** The Overview's status card opens a 780px right Sheet with a Destination
+section (start date, target weight, deadline ⇄ rate, goal body fat) and an optional Route section
+(the block list). New: `use-goal-plan-form.ts`, `goal-plan-sheet.tsx`, `block-row.tsx` (+ a sheet
+test); edited: `goal-plan-model.ts`, `client-status-card.tsx`, `client-overview-tab.tsx` and both
+their tests. **The `/api/clients/[id]/phases` route now has its first UI caller.**
+
+#### Decisions taken
+
+- **The goal write is NOT gated on a target weight** (the review's option B). It was, and that made
+  a weight-less client's start date unwritable: blocks saved, `goal_start_date` never did, and the
+  self-heal could not fire because it lived inside the same gate — so `resolveEffectiveGoal()
+  .startDate` fell back to today permanently. A null goal weight means **maintenance** by design and
+  a block carries no target weight (invariant 4), so maintenance-plus-blocks is a configuration the
+  panel must be able to save. `updateGoalsSchema.goalWeight` is `.optional()` and the schema needs
+  only one field, so the API already allowed it.
+- **An empty weight field is not a change, and is closed at BOTH layers.** `goalWeight` is
+  `.optional()` but deliberately **not** `.nullable()`, so a stored weight cannot be cleared through
+  this route at all. `buildWrites` therefore **omits** the key rather than nulling it, and guards the
+  diff with `goalWeight != null &&` — without that guard an empty field reads as changed against a
+  stored 76 and mints a goal version on **every block edit**, which is invariant 7 broken by the very
+  gate meant to protect it. The form independently refuses to empty a stored weight
+  (`makeGoalPlanFormSchema(unit, requireGoalWeight)`), so the coach gets a message instead of a
+  silent no-op.
+- **Save is enabled on OUTSTANDING WRITES, never on `isDirty`.** A pristine form whose stored
+  `goal_start_date` disagrees with `phases[0].startsOn` still has a goal write to make — that *is*
+  the self-heal — and `isDirty` would disable exactly that save. `isDirty` is still tracked
+  separately, for the delete-while-dirty rule.
+- **Delete renders only for UNSAVED rows** (`values.blocks[index]?.id ? undefined : remove(index)`).
+  A persisted row's delete needs the confirm dialog, which is Task 3.2 — until then it is not
+  offered, so no destructive action ships without its confirm.
+- **The rate bound is validated in kg, not display units.** `MAX_ABS_RATE_KG_PER_WEEK` is 5 **kg**/wk
+  = 11.02 lb/wk; a flat ±5 display bound would reject a legitimate 8 lb/wk. The message carries the
+  display-unit maximum.
+- **Fractional weeks are refused at the form, not rounded.** `parseBlockRows`' `Math.round` is right
+  for the live preview it was written for, but it runs *before* zod, so `.int()` never fires and
+  "2.5" would silently save as 3.
+
+#### Traps that leave no trace in code
+
+- **The reset is keyed on OPEN, and reads the records through a ref.** Keying it on `goal`/`phases`
+  is the obvious thing and it is wrong: `data?.phases` is a fresh array identity on every SWR
+  revalidation, so any other consumer of the `/goals` key writing would wipe a coach's in-progress
+  edits mid-typing. The ref keeps the seed current without making the reset reactive.
+- **Both invalidators fire even when the goal write failed**, because a failed goal write still means
+  the blocks moved.
+
+#### Owed
+
+Task **3.2** (delete-a-block confirm + `deleteClientPhase`'s first-block anchor test), the **drawer
+relink** with its nested-Sheet check, and the **browser smoke** — which has never run: no dev server
+has been started against this work, and `client_phases` is still empty, so the panel remains this
+database's first-ever writer of it.

@@ -9,6 +9,7 @@ import { ClientScheduleCard } from "@/components/clients/overview/client-schedul
 import { ClientStatusCard } from "@/components/clients/overview/client-status-card";
 import { CoachNotesCard } from "@/components/clients/overview/coach-notes-card";
 import { CurrentPlanSection } from "@/components/clients/overview/current-plan-section";
+import { GoalPlanSheet } from "@/components/clients/goal-plan/goal-plan-sheet";
 import { SinceLastVisitSection } from "@/components/clients/overview/since-last-visit-section";
 import { WaitingOnYouSection } from "@/components/clients/overview/waiting-on-you-section";
 import {
@@ -77,7 +78,8 @@ export function ClientOverviewTab({
   // `clients.*` mirror on the client prop. The mirror is kept in sync by a
   // non-blocking, error-swallowed dual-write, so the two silently diverge — and
   // it has nowhere to put anything richer than three scalars.
-  const { goal, isLoading: goalLoading } = useClientGoals(client.id);
+  const { goal, phases, isLoading: goalLoading, mutate: mutateGoals } = useClientGoals(client.id);
+  const [goalPlanOpen, setGoalPlanOpen] = useState(false);
 
   const goalTargets = useMemo(() => {
     const weightUnit = client.weightUnit ?? "lbs";
@@ -224,6 +226,7 @@ export function ClientOverviewTab({
           isCalculatingBMR={isCalculatingBMR}
           onCalculateBMR={onCalculateBMR}
           onOpenMetrics={() => goToTab("metrics")}
+          onOpenGoalPlan={() => setGoalPlanOpen(true)}
         />
       </div>
 
@@ -249,6 +252,19 @@ export function ClientOverviewTab({
         attentionAlerts={brief?.waitingOnYou.attentionAlerts ?? []}
         isLoading={wellnessLoading}
         onOpenWellness={() => goToTab("wellness")}
+      />
+
+      <GoalPlanSheet
+        open={goalPlanOpen}
+        onOpenChange={setGoalPlanOpen}
+        client={client}
+        goal={goal}
+        phases={phases}
+        // The SAVED flag, not the nutrition builder's live generation-mode tab:
+        // while custom macros are on, the calculator never runs and blocks drive
+        // nothing, and the panel has to say so.
+        customMacrosEnabled={summary?.nutrition?.customMacros ?? false}
+        onSaved={() => void mutateGoals()}
       />
 
       <DeleteNoteDialog

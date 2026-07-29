@@ -332,7 +332,15 @@ export function deadlineForRate(input: {
 // ---------------------------------------------------------------------------
 
 export type GoalWriteBody = {
-  goalWeight: number;
+  /**
+   * OPTIONAL, and omitted rather than nulled when the form field is empty.
+   * `updateGoalsSchema.goalWeight` is `.optional()` but deliberately NOT
+   * `.nullable()` — a target weight cannot be cleared through this route — and
+   * `updateGoals`' presence-merge carries the stored value forward on an omitted
+   * key. The panel therefore refuses to empty a stored weight at the form layer
+   * rather than sending a write that would silently ignore it.
+   */
+  goalWeight?: number;
   goalBodyFatPercentage: number | null;
   goalDeadline: string | null;
   goalStartDate: string | null;
@@ -430,6 +438,15 @@ export function toPhasesBody(
  * That is what makes a partial failure self-heal: if the goals PUT failed after
  * the phases PUT succeeded, the next open seeds `startDate` from the blocks, the
  * diff still sees the goal as outstanding, and the next save retries it.
+ *
+ * **The goal write is NOT gated on a target weight.** It used to be, and that
+ * made a weight-less client's start date unwritable: their blocks saved, their
+ * `goal_start_date` never did, and the self-heal above could not fire because it
+ * lived inside the same gate — so `resolveEffectiveGoal().startDate` fell back to
+ * today permanently. A null goal weight means MAINTENANCE by design and a block
+ * carries no target weight (invariant 4), so maintenance-plus-blocks is a
+ * configuration the panel has to be able to save. `updateGoalsSchema` allows it:
+ * `goalWeight` is `.optional()` and the schema needs only one field present.
  */
 export function buildWrites(input: {
   goal: ClientGoal | null;
@@ -442,25 +459,29 @@ export function buildWrites(input: {
   const writes: GoalPlanWrites = {};
 
   const goalWeight = parseNumber(values.goalWeight);
-  if (goalWeight != null) {
-    const bodyFat = parseNumber(values.goalBodyFat) ?? null;
-    const deadline = values.deadline || null;
-    const startDate = values.startDate || null;
+  const bodyFat = parseNumber(values.goalBodyFat) ?? null;
+  const deadline = values.deadline || null;
+  const startDate = values.startDate || null;
 
-    const changed =
-      goalWeight !== (goal?.goalWeight ?? null) ||
-      bodyFat !== (goal?.goalBodyFatPercentage ?? null) ||
-      deadline !== (goal?.goalDeadline ?? null) ||
-      startDate !== (goal?.goalStartDate ?? null);
+  // An EMPTY weight field is not a change. The weight cannot be cleared (see
+  // `GoalWriteBody`), so an emptied field is omitted and `updateGoals` carries
+  // the stored value forward — nothing changes. Counting it as changed anyway
+  // would mint a goal version on every block edit for any client whose weight
+  // field renders empty, which is invariant 7 broken by the gate meant to
+  // protect it. The form refuses to empty a stored weight for the same reason.
+  const changed =
+    (goalWeight != null && goalWeight !== (goal?.goalWeight ?? null)) ||
+    bodyFat !== (goal?.goalBodyFatPercentage ?? null) ||
+    deadline !== (goal?.goalDeadline ?? null) ||
+    startDate !== (goal?.goalStartDate ?? null);
 
-    if (changed) {
-      writes.goal = {
-        goalWeight,
-        goalBodyFatPercentage: bodyFat,
-        goalDeadline: deadline,
-        goalStartDate: startDate,
-      };
-    }
+  if (changed) {
+    writes.goal = {
+      ...(goalWeight != null ? { goalWeight } : {}),
+      goalBodyFatPercentage: bodyFat,
+      goalDeadline: deadline,
+      goalStartDate: startDate,
+    };
   }
 
   // A refused chain is never written back — the panel showed stored dates it

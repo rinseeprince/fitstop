@@ -533,7 +533,11 @@ describe("buildWrites — two independent writes (invariant 7)", () => {
     expect(writes.phases).toBeUndefined();
   });
 
-  it("omits the goal write entirely when no goal weight is set — it cannot be cleared", () => {
+  // An empty weight field is OMITTED from the body, never nulled:
+  // updateGoalsSchema has goalWeight .optional() but not .nullable(), and
+  // updateGoals' presence-merge carries the stored value forward on an omitted
+  // key. The rest of the goal still writes.
+  it("omits an empty goal weight from the body rather than nulling it", () => {
     const writes = buildWrites({
       goal: null,
       phases: [],
@@ -541,6 +545,50 @@ describe("buildWrites — two independent writes (invariant 7)", () => {
       unit: "kg",
       conforming: true,
     });
+    expect(writes.goal).toBeDefined();
+    expect(writes.goal).not.toHaveProperty("goalWeight");
+    expect(writes.goal?.goalDeadline).toBe("2026-11-15");
+  });
+
+  // The gate used to be `if (goalWeight != null)`, which made a weight-less
+  // client's start date unwritable: blocks saved, goal_start_date never did, and
+  // the self-heal could not fire because it lived inside the same gate — so
+  // resolveEffectiveGoal().startDate fell back to today permanently. A null goal
+  // weight IS maintenance and a block carries no target weight (invariant 4).
+  it("writes a start-date-only goal for a client with blocks and no target weight", () => {
+    const stored = [
+      phase({ id: "a", name: "Cut 1", startsOn: "2026-08-10", endsOn: "2026-10-04" }),
+    ];
+    const writes = buildWrites({
+      goal: null,
+      phases: stored,
+      values: seedGoalPlan({
+        goal: null,
+        phases: stored,
+        unit: "kg",
+        clientToday: TODAY,
+      }).values,
+      unit: "kg",
+      conforming: true,
+    });
+    // Seeded from the blocks, so the goal column reconciles to where they start.
+    expect(writes.goal?.goalStartDate).toBe("2026-08-10");
+    expect(writes.goal).not.toHaveProperty("goalWeight");
+    // The blocks themselves are unchanged, so only the goal is outstanding.
+    expect(writes.phases).toBeUndefined();
+  });
+
+  // updateGoals supersedes-and-inserts on EVERY call, so a spurious "changed"
+  // mints a goal version — invariant 7 broken by the gate meant to protect it.
+  it("does not read an emptied weight as a change against a stored one", () => {
+    const writes = buildWrites({
+      goal: storedGoal,
+      phases: storedPhases,
+      values: { ...seededValues(), goalWeight: "" },
+      unit: "kg",
+      conforming: true,
+    });
     expect(writes.goal).toBeUndefined();
+    expect(writes.phases).toBeUndefined();
   });
 });
