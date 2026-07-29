@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
   const rateLimitResult = await apiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
   try {
-    const coachId = await getAuthenticatedCoachId();
+    const coachId = await getAuthenticatedCoachId(request);
 
     if (!coachId) {
       return NextResponse.json(
@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
   if (csrfError) return csrfError;
 
   try {
-    const coachId = await getAuthenticatedCoachId();
+    const coachId = await getAuthenticatedCoachId(request);
 
     if (!coachId) {
       return NextResponse.json(

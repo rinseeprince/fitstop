@@ -25,7 +25,7 @@ export async function GET(
   if (rateLimitResult) return rateLimitResult;
 
   try {
-    const coachId = await getAuthenticatedCoachId();
+    const coachId = await getAuthenticatedCoachId(request);
     if (!coachId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -185,7 +185,7 @@ export async function PATCH(
   if (csrfError) return csrfError;
 
   try {
-    const coachId = await getAuthenticatedCoachId();
+    const coachId = await getAuthenticatedCoachId(request);
     if (!coachId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -261,7 +261,7 @@ export async function DELETE(
   if (csrfError) return csrfError;
 
   try {
-    const coachId = await getAuthenticatedCoachId();
+    const coachId = await getAuthenticatedCoachId(request);
     if (!coachId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

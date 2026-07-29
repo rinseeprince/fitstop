@@ -15,8 +15,8 @@ import { reviewCheckInSchema } from "@/lib/validations/check-in";
  * Verifies coach owns the client associated with a check-in
  * @returns Object with checkIn if authorized, or error response
  */
-async function verifyCoachOwnership(checkInId: string) {
-  const coachId = await getAuthenticatedCoachId();
+async function verifyCoachOwnership(checkInId: string, request: NextRequest) {
+  const coachId = await getAuthenticatedCoachId(request);
   if (!coachId) {
     return {
       authorized: false,
@@ -67,7 +67,7 @@ export async function POST(
     const { id: checkInId } = await params;
 
     // Verify authorization
-    const authResult = await verifyCoachOwnership(checkInId);
+    const authResult = await verifyCoachOwnership(checkInId, request);
     if (!authResult.authorized) {
       return authResult.response;
     }
@@ -119,7 +119,7 @@ export async function PATCH(
     const { id: checkInId } = await params;
 
     // Verify authorization
-    const authResult = await verifyCoachOwnership(checkInId);
+    const authResult = await verifyCoachOwnership(checkInId, request);
     if (!authResult.authorized) {
       return authResult.response;
     }

@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
   if (rateLimitResult) return rateLimitResult;
 
   try {
-    const coachId = await getAuthenticatedCoachId();
+    const coachId = await getAuthenticatedCoachId(request);
 
     if (!coachId) {
       return NextResponse.json(

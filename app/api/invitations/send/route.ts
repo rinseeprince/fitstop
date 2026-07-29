@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
 
   try {
     // Verify trainer is authenticated
-    const coachId = await getAuthenticatedCoachId()
+    const coachId = await getAuthenticatedCoachId(request)
     if (!coachId) {
       return NextResponse.json(
         { success: false, error: "Unauthorized" },

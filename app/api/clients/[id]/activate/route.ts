@@ -23,7 +23,7 @@ export async function POST(
   if (csrfError) return csrfError;
 
   try {
-    const coachId = await getAuthenticatedCoachId();
+    const coachId = await getAuthenticatedCoachId(request);
     if (!coachId) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }

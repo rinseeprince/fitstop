@@ -30,7 +30,7 @@ export async function PUT(
 
   try {
     const { id: clientId } = await params;
-    const coachId = await getAuthenticatedCoachId();
+    const coachId = await getAuthenticatedCoachId(request);
 
     if (!coachId) {
       return NextResponse.json(

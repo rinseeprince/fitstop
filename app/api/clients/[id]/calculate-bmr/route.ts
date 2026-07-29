@@ -19,7 +19,7 @@ export async function POST(
 
   try {
     // Check authentication
-    const coachId = await getAuthenticatedCoachId();
+    const coachId = await getAuthenticatedCoachId(request);
 
     if (!coachId) {
       return NextResponse.json(

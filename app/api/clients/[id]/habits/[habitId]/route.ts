@@ -33,7 +33,7 @@ export async function PUT(
 
   try {
     const { habitId } = await params;
-    const coachId = await getAuthenticatedCoachId();
+    const coachId = await getAuthenticatedCoachId(request);
 
     if (!coachId) {
       return NextResponse.json(
@@ -108,7 +108,7 @@ export async function DELETE(
 
   try {
     const { habitId } = await params;
-    const coachId = await getAuthenticatedCoachId();
+    const coachId = await getAuthenticatedCoachId(request);
 
     if (!coachId) {
       return NextResponse.json(
