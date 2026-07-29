@@ -5,6 +5,7 @@ import type { DayOfWeek } from "@/utils/nutrition-helpers";
 import type { TrainingPlan } from "@/types/training";
 import { recordBodyMetrics } from "@/services/body-metrics-service";
 import { getClientTodayString } from "@/services/today-service";
+import { captureApiError } from "@/lib/error-handler";
 export type CreateNutritionPlanParams = {
   clientId: string;
   coachId: string;
@@ -177,6 +178,46 @@ export async function archiveNutritionPlan(planId: string): Promise<void> {
 
   if (error) {
     throw new Error(`Failed to archive nutrition plan: ${error.message}`);
+  }
+}
+
+/**
+ * Stamp the blocks fingerprint onto the plan — the LAST write of a generation.
+ *
+ * Ordering is the entire correctness argument (migration 138). This runs after
+ * the plan upsert AND after event regeneration, so the stored value can only mean
+ * "every write in this generation succeeded". Stamped inside the RPC it would
+ * assert freshness while a failed event regeneration left the client eating the
+ * old targets, and the coach Overview would say the plan was current. Every
+ * failure direction instead lands on "stale", which self-heals on the next
+ * regenerate.
+ *
+ * Pass `null` when no block set drove the numbers — a client with no blocks, or a
+ * custom-macros save (custom macros ARE the targets; the calculator never runs).
+ *
+ * CONVENTIONS section 2 #12 disclosure — this is a `.catch()` that logs and lets
+ * the request return success after earlier writes committed, which that rule asks
+ * to be flagged rather than hidden. It is deliberate and it is the safer failure:
+ * throwing here would 500 a coach whose plan, targets and events all landed
+ * correctly, inviting them to retry a successful operation. Swallowing leaves the
+ * previous fingerprint in place, which reads as "Nutrition is out of date" — a
+ * false alarm the coach can see and clear, rather than a false all-clear they
+ * cannot. It is only safe BECAUSE this write is last.
+ */
+export async function stampPhasesFingerprint(
+  planId: string,
+  fingerprint: string | null
+): Promise<void> {
+  const { error } = await supabaseAdmin
+    .from("nutrition_plans")
+    .update({ phases_fingerprint: fingerprint, updated_at: new Date().toISOString() })
+    .eq("id", planId);
+
+  if (error) {
+    captureApiError(new Error(`Failed to stamp blocks fingerprint: ${error.message}`), {
+      action: "stamp-phases-fingerprint",
+      planId,
+    });
   }
 }
 

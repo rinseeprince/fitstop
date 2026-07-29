@@ -1952,6 +1952,7 @@ export type Database = {
           goal_weight_kg: number | null
           id: string
           name: string | null
+          phases_fingerprint: string | null
           protein_target_g: number
           protein_target_g_per_kg: number
           regeneration_reason: string | null
@@ -1983,6 +1984,7 @@ export type Database = {
           goal_weight_kg?: number | null
           id?: string
           name?: string | null
+          phases_fingerprint?: string | null
           protein_target_g: number
           protein_target_g_per_kg?: number
           regeneration_reason?: string | null
@@ -2014,6 +2016,7 @@ export type Database = {
           goal_weight_kg?: number | null
           id?: string
           name?: string | null
+          phases_fingerprint?: string | null
           protein_target_g?: number
           protein_target_g_per_kg?: number
           regeneration_reason?: string | null

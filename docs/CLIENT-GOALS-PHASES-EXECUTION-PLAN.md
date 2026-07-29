@@ -1117,3 +1117,111 @@ touched files) · `vitest` **233/233 files, 2410/2410 tests** (identical to the 
 baseline) · `check:labels` OK · `check:rls` **41 public tables, 41 with RLS** · no `as any`, no
 leftover markers. Types diff was a single additive hunk: the `client_phases` Row/Insert/Update block
 plus `client_phases_client_id_fkey`, nothing else.
+
+---
+
+### Task 2.2 — Migration 138: `nutrition_plans.phases_fingerprint` ✅ SHIPPED 2026-07-29
+
+**What shipped.** `supabase/migrations/138_nutrition_plan_phases_fingerprint.sql` (an `ALTER TABLE
+… ADD COLUMN` and a `COMMENT ON COLUMN`, nothing else) + regenerated types +
+`services/phase-fingerprint.ts` + `stampPhasesFingerprint` in `services/nutrition-plan-service.ts`.
+The generated-types diff was **three lines** — Row/Insert/Update — with **no `Functions` diff at
+all**, which is the direct evidence that the RPC signature was not touched.
+
+**DECISION — `goal_source` is NOT reintroduced** (owner, 2026-07-29). §2.2 of this document said to
+bring it back because "this workstream reintroduces the second scope". It does not. `069:12` fixes
+the column's meaning as *"Which goal drove the calorie calculation: 'phase' or 'client'"*, and in
+the removed feature a phase carried **its own goal** (`068_add_phase_goal_columns.sql` added goal
+columns to `phases`). Invariant 4 (`:55`) gives a block a **rate** and explicitly no target weight,
+so the plan's goal snapshot (`goal_weight_kg` + `goal_deadline` — the exact two fields
+`app/api/clients/[id]/nutrition/route.ts:119` compares) still resolves from `client_goals` in every
+case. The column would be a constant `'client'` again: the reason `133:20-23` dropped it. It would
+also resurrect the word "phase" in a vocabulary migration 133 spent a whole file removing, while the
+product word is "block". `phases_fingerprint` carries the only signal that was actually wanted.
+
+**DECISION — the stamp is the LAST write of a generation, not an RPC argument** (owner, 2026-07-29).
+This reverses an earlier position in this session and the reversal is the important part.
+
+The first design put `phases_fingerprint` in the RPC's `DO UPDATE` bucket. Two defects, found in
+review:
+1. **Unconditional bucket + `DEFAULT NULL` wipes it.** A caller that omits the arg sends NULL,
+   `EXCLUDED.phases_fingerprint` is NULL, and the assignment fires — erasing a stored hash. Under
+   "NULL = no blocks" that reads **fresh**, so a client with three blocks and flattened numbers
+   shows no warning. The *silent-miss* direction, strictly worse than the false alarm the NULL
+   semantics were chosen to avoid.
+2. **Even stamped correctly inside the RPC, it can lie.** `regenerateEventsOrThrow` runs **after**
+   `createNutritionPlan` (`nutrition-plan-orchestrator.ts:263` custom, `:389` calculated). If event
+   regeneration fails, the fingerprint asserts the current block set while the events — the only
+   thing the client actually eats — are the old ones, and the Overview affirmatively reports the
+   plan as current. **Reordering inside the RPC cannot fix this**: event generation needs the plan
+   id the RPC returns.
+
+Moving the stamp after `regenerateEventsOrThrow` makes the stored value mean *"every write in this
+generation succeeded"*, which is only expressible if it is last. Failure matrix — every direction
+lands on stale, and stale self-heals:
+
+| Fails at | grids | plan | events | fingerprint | 3.6 reads |
+|---|---|---|---|---|---|
+| grids | old | old | old | old | fresh ✓ |
+| RPC | new | old | old | old | **stale** ✓ |
+| events | new | new | old | old | **stale** ✓ |
+| stamp | new | new | new | old | **stale** — false alarm, clears on regenerate ✓ |
+| none | new | new | new | new | fresh ✓ |
+
+**What that deleted from this commit:** the DROP/CREATE at a new arity, the byte-for-byte type list,
+the REVOKE/GRANT replay (`115:152`'s landmine is never touched), a `pg_proc` overload assertion, a
+strict 27-key argument test, and the whole CASE-bucket question — an upsert whose insert list and
+`DO UPDATE` bucket omit the column **cannot** write it, so preserve-on-omit is free. It also moved
+the custom-macros rule from PL/pgSQL into TypeScript, where it is unit-testable.
+
+**The counter-argument that was retired, recorded so it is not re-raised.** The separate UPDATE was
+first rejected as "a second non-atomic write" against the RPC's "one transaction". Both halves are
+false: plan creation was **already** multi-write (`:263`, `:389`), so the RPC was never the last
+write of the operation the coach performed; and ordering beats atomicity whenever the failure
+direction is safe, which is the same argument that put the grid write before the RPC.
+
+**NULL semantics (owner-confirmed).** NULL means *no block set drove this generation* and covers
+three cases identically: pre-138 rows, block-less clients, and custom-macros saves.
+`computePhasesFingerprint([])` returns `null`, **not** a sentinel hash — a sentinel would make every
+existing plan compare unequal and fire a spurious "Nutrition is out of date" row on the day Session
+3 ships. Pinned by a named test.
+
+**Custom macros ignore blocks — decided here, not inherited (owner, 2026-07-29).** `handleCustomMacros`
+passes `customMacrosEnabled: true` with `recalcSnapshots: true` (`orchestrator:241,:253`) and
+`nutrition-plan-service.ts:49-59` builds all 7 rows flat from `customCalories` with the calculator
+never running. Stamping a real fingerprint there would assert that blocks drove numbers they did
+not. Three enforcement points:
+- **2.2 (here):** a custom-macros save stamps `NULL`.
+- **2.5:** the resolver widens the plan select (`nutrition-event-service.ts:271-275`, currently
+  `"baseline_calories, protein_target_g, diet_type"`) to include `custom_macros_enabled` and
+  short-circuits blocks when true — otherwise a custom plan's in-block dates would resolve to a
+  block's stale stored grid, contradicting `drawer-footer.tsx:28` (*"custom macros ARE the targets"*).
+- **2.7:** `nutritionStale = !plan.custom_macros_enabled && current !== stored`, in one server-side
+  place, so a coach who deliberately chose custom macros does not get a permanent nag.
+
+**SESSION 3 CONSTRAINT — all three of those are backend.** A coach who sets three blocks and then
+turns on custom macros gets flat numbers, a clean Overview and no explanation: the same failure,
+displaced to the screen. **3.1's Route section and 3.3's per-block preview must both say blocks are
+not driving nutrition while custom macros is on.**
+
+**Deliberate CONVENTIONS §2 #12 disclosure.** `stampPhasesFingerprint` **swallows its error into
+`captureApiError` and lets the request return 200**. §2 #12 asks for exactly this to be flagged
+rather than hidden. It is the safer failure and it is only safe *because* this write is last:
+throwing would 500 a coach whose plan, targets and events all committed, inviting a retry of a
+successful operation, while swallowing leaves the previous fingerprint in place — a visible false
+"out of date" that clears on the next regenerate. Pinned by a test asserting it resolves and reports.
+
+**A third writer of `nutrition_plans` now exists** (previously the RPC + `archiveNutritionPlan`):
+`stampPhasesFingerprint`, scoped `.eq("id", planId)`, writing `phases_fingerprint` + `updated_at`.
+
+**Doc corrected in this commit (class (b) stale):** `docs/ARCHITECTURE.md:213` still listed
+`goal_source` as a live column on `nutrition_plans`; `133:278` dropped it and `types/database.ts`
+has no such field.
+
+**Not wired yet, deliberately.** `stampPhasesFingerprint` has no caller until **Task 2.6**, which is
+where the orchestrator gains its per-block calculation and the stamp goes in after
+`regenerateEventsOrThrow`. Wiring it earlier would stamp a fingerprint for grids nothing had
+computed.
+
+**Gates:** `tsc` clean · `vitest` green (8 in `nutrition-plan-service.test.ts`, 9 in
+`phase-fingerprint.test.ts`) · full suite run at the session gate.
