@@ -1,7 +1,7 @@
 # Client Goals + Phases — Execution Plan
 
-**Status:** Not started · **Owner decision date:** 2026-07-28
-**Three sessions, strictly sequential.** Each is designed for a fresh Claude Code session with a full context window.
+**Status:** Sessions 1 and 2 complete · Session 3 not started · **Owner decision date:** 2026-07-28
+**Three sessions, strictly sequential.** Each is designed for a fresh Claude Code session with a full context window. (Session 3 is split across **four** prompts — see the note above §"SESSION 3 PROMPTS" for why.)
 
 > **Canonical sources.** `CONVENTIONS.md` (stable coding rules) and `docs/ARCHITECTURE.md` (schema + data flow) win over this document on anything they cover. This document owns the *design decisions* for this workstream and the *sequence*. When this workstream lands, `ARCHITECTURE.md` must be updated and this file deleted (the precedent set by the training-builder and wellness-soreness plans).
 
@@ -104,7 +104,7 @@ Rule of thumb: a rule about **safety** (RLS, GRANT, auth chain ordering, rate li
 | Session | Theme | Migrations | Ships user-visible change? | Status |
 |---|---|---|---|---|
 | **1** | Pre-existing bug fixes + the rate derivation | **none** | Overview goal source only | ✅ **COMPLETE** — shipped 2026-07-28 (`53abf0a`, `3abbfa5`, `b3ca479`, `62cef4a`), browser smoke passed 2026-07-29 |
-| **2** | Blocks: schema, service, generation **+ Session 1's inherited fixes (2.8)** | 137, 138, **139** | No (API only) | 🟡 **In progress** — 2.1–2.6 and 2.8(a–e,g) shipped, 2.8(f) decided; only 2.7 and 2.8(h) remain |
+| **2** | Blocks: schema, service, generation **+ Session 1's inherited fixes (2.8)** | 137, 138, **139** | No (API only) | ✅ **COMPLETE** — closed 2026-07-29 (`86b7a98`…`e315329`); 2.1–2.7 and 2.8(a–e,g,h) shipped, **(f) carried to Session 3D** |
 | **3** | Coach UI + "Waiting on you" + client-portal goal (3.9) | none | Yes — the whole feature | ⬜ Not started |
 
 Strictly sequential: 2 depends on 1's calculator, 3 depends on 2's API.
@@ -246,9 +246,23 @@ Start by reading the three documents, then show me your plan for 1.1.
 
 ---
 
-# SESSION 2 — Blocks backend
+# SESSION 2 — Blocks backend ✅ COMPLETE
 
-**Migrations 137 and 138. Backend and API only — nothing user-visible ships in this session.**
+> **Closed 2026-07-29.** Tasks 2.1–2.7 shipped across `86b7a98`, `d2b8adb`, `ace8c45`, `dc9898c`,
+> `82d1ab6`, `73a5812`, `7e3083d`, `202bf94`, `fe2ee23`, plus `03981e9`, `3de0be9`, `5d5fd99` and
+> `7483184` from the two post-crash audit passes. Task 2.8 shipped **(a)–(e), (g), (h)**;
+> **(f) — the `nutrition_events` level-3 template fallback — is the only carry-forward**, reassigned
+> by owner decision to **Session 3D** alongside 3.8's client-portal work, because it is a READ-path
+> concern the widened horizon does not close.
+> Gates at close: `tsc` clean, `eslint` **0 errors**, **239/239 files · 2527/2527 tests**,
+> `check:labels` OK (630 files), `check:rls` **41/41**.
+> **Read the STATUS blocks in §8 before Session 3** — they correct this section's own text in
+> several places, and the two "Post-crash audit" blocks at the end carry the process lessons
+> (a decision lost in a dead session leaves no trace in code; diff a file after a subagent
+> mutation-tests it; `git diff` is silent on untracked files).
+> **No browser smoke** — the phases route has no UI caller until Task 3.1, which smokes it for free.
+
+**Migrations 137, 138 and 139. Backend and API only — nothing user-visible shipped in this session.**
 
 ### Task 2.1 — Migration 137: `client_phases`
 
@@ -358,7 +372,7 @@ STATUS block. **Several can ride along with a sibling task rather than being don
 | c | Kill the latent timezone transcription | 1.4 | 2.5 |
 | d | Floored rate is stale in the response | 1.4 | 2.6 |
 | e | Unset `gender` takes the male cap | 1.4, §7 | 2.6 |
-| f | `nutrition_events` template fallback (level 3) | §7 | 2.5 |
+| f | `nutrition_events` template fallback (level 3) | §7 | 2.5 → **decided there: NOT closed by the widened horizon. Carried to Session 3D.** |
 | g | `training_burn_calories` drift on existing rows | S1 smoke | 2.5 |
 | h | `getAuthenticatedCoachId()` missing `request` | S1 smoke | 2.7 |
 
@@ -939,7 +953,7 @@ Start by reading the documents plus the prior STATUS blocks, then show me your p
 
 - ~~**Client portal still reads the `clients.*` goal mirror**~~ — **SCHEDULED as Task 3.9** (owner, 2026-07-29). No longer "revisit with client-facing blocks": the goal read is separable from blocks, and the `/api/client/**` endpoint it needs is one RN will consume too, so it is not harness-only work.
 - ~~**`gender` unset defaults to the male safety cap.**~~ → **Task 2.8(e).** Decide and record there.
-- ~~**The `nutrition_events` template fallback (level 3) is still unbuilt.**~~ → **Task 2.8(f).**
+- **The `nutrition_events` template fallback (level 3) is still unbuilt.** → raised as **Task 2.8(f)**; 2.5 established that the widened horizon does **not** close it, so it is **carried forward to Session 3D** (owner, 2026-07-29). This is the workstream's one open item.
 
 **Nothing in this section is unassigned as of 2026-07-29.** Session 1's deferrals all have an owner in
 **Task 2.8**; the client-portal goal mirror is **Task 3.9**. If a new open item is added here, give it
