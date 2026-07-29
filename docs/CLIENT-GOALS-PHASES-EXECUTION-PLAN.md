@@ -1040,3 +1040,80 @@ lags one call behind the moves.
 
 **No migrations. No code changed. DB restored** to the pre-smoke baseline (session moved back,
 sentinels reset to 2567) and re-verified row-by-row across `2026-07-29 … 2026-08-21`.
+
+---
+
+### Task 2.1 — Migration 137: `client_phases` ✅ SHIPPED 2026-07-29
+
+**What shipped.** `supabase/migrations/137_create_client_phases.sql` + regenerated
+`types/database.ts`. Applied via `npx supabase db push` (owner-run) and verified against a fresh
+`supabase db dump --linked`, not against the push exiting 0.
+
+Columns: `id`, `client_id` (FK CASCADE), `name`, `starts_on`/`ends_on` (DATE), `rate_per_week_kg`
+(NUMERIC NOT NULL), `daily_targets` (JSONB NULL), `created_at`/`updated_at`. One index
+`idx_client_phases_client_starts (client_id, starts_on)`. RLS enabled with **no policies**,
+`GRANT ALL … TO service_role`.
+
+**DEVIATIONS from this document's Task 2.1 sketch, all evidence-driven:**
+
+1. **No `IF NOT EXISTS` on the CREATE.** `CONVENTIONS.md:363`'s snippet uses it, but its actual
+   prescriptions are ENABLE RLS / no policies / GRANT service_role — `IF NOT EXISTS` is incidental
+   to the illustration. The two most recent new-table migrations (`132:18`, `134:11`) both use the
+   bare form. Matched them. Class **(b)**: the doc snippet is illustrative, not prescriptive.
+2. **Header comment block, no `COMMENT ON TABLE`.** Migration 122 was the wrong precedent — it
+   creates nothing and annotates five *pre-existing* tables. 132 and 134 document with a leading
+   `--` block and emit zero `COMMENT ON TABLE`.
+3. **`is_training_day` is NOT in `daily_targets`.** A weekday-keyed field cannot represent a
+   per-DATE fact. The only reader in the repo (`utils/build-daily-targets.ts:129-131`) is dead on
+   both production paths (both callers pass `trainingEvents`), the only writer hardcodes `false`
+   on all 7 rows (`nutrition-plan-service.ts:58,:82`), and the event's real flag is derived from
+   live training events (`nutrition-event-service.ts:116-117`). **Grid shape is five keys:**
+   `[{day_of_week, calories, protein_g, carb_g, fat_g}] × 7`. This is deliberately the *read
+   subset* `generateNutritionEvents` consumes, NOT the RPC's `p_daily_targets` write shape (which
+   still requires `is_training_day` for a NOT NULL column).
+4. **Only ONE value CHECK, plus a cardinality CHECK.** Dropped the proposed `name` and rate CHECKs:
+   migration `131:5-10` states the house rule — coach input is validated in zod "at the route
+   layer", and a CHECK is added only for server-derived values or table parity. Reinforced by a
+   measurement: **`23514` has ZERO hits repo-wide** (vs `23505`, handled in four production files),
+   so a CHECK violation reaches a coach as raw Postgres text through a generic
+   `throw new Error(...: ${error.message})`. `ends_on >= starts_on` and the grid cardinality are
+   server-derived and can only fire on a service bug — 132's posture.
+5. **The cardinality CHECK guards `jsonb_typeof` first.** A bare `jsonb_array_length` on a
+   non-array raises `22023 cannot get array length of a non-array` rather than failing the
+   constraint, so a malformed grid would surface as a different SQLSTATE from every other bad-grid
+   case. It buys **cardinality only** — not seven distinct weekdays, not the right keys, not the
+   right value types. The service and its tests own the rest.
+6. **No `UNIQUE (client_id, starts_on)`, and the reason is NOT `CONVENTIONS §10`.** The original
+   reasoning (a raw `23505` reaching a coach) does not discriminate, since CHECKs raise `23514` by
+   the same mechanism and nothing translates it. The real reason: a non-deferrable unique index is
+   checked **per row**, not at statement end, so Task 2.3's delete-and-shift-back — which rewrites
+   several `starts_on` values whose FINAL state is unique — fails the moment one shifted row
+   transiently collides with a not-yet-shifted one, in an order Postgres does not define.
+   Deferrability is a property of a CONSTRAINT; a plain or partial unique INDEX can never be
+   deferred. There is no safe variant. Invariant 6 already says overlaps are structurally
+   impossible, so nothing is lost.
+
+**Landmine for Task 2.3 — `updated_at` has no trigger.** 132/134 both carry
+`-- updated_at is managed in app code (no trigger — matches migrations >= 100)`, and their services
+stamp it explicitly (`client-notes-service.ts:91-96,:104-110`; `metric-entries-service.ts:39-52`).
+The phase service **must** stamp `updated_at` on every UPDATE or it stays frozen at insert time —
+the exact defect migration 096 had to fix for `exercises`. The last migration to add an
+`update_updated_at_column()` trigger was **096**; do not add one now.
+
+**Live-catalog finding — new tables are NOT privilege-free.** The dump shows
+`GRANT ALL ON TABLE public.client_phases TO anon` and `TO authenticated` alongside the
+`service_role` grant this migration wrote. Those two come from Supabase's stock **default
+privileges**, applied automatically on `CREATE TABLE`; `client_metric_entries` and `client_notes`
+carry the identical three, so 137 is consistent with precedent. **This makes `CONVENTIONS.md:361`
+factually wrong** — *"a freshly created table has no Data API privileges and PostgREST cannot see it
+until one is granted"* and *"Forgetting it fails loudly and immediately"* do not hold on this
+project. Not exploitable (RLS is enabled with zero policies; `npm run check:rls` reports 41/41), but
+the *"no privilege at all beats a filtered one"* belt the convention describes does not exist for any
+new table here — RLS is the sole perimeter. Raised to the owner; the doc correction and an optional
+`REVOKE … FROM anon, authenticated` are **not** taken in this commit.
+
+**Gates:** `tsc` clean · `eslint` 0 errors (210 pre-existing `no-explicit-any` warnings, none in
+touched files) · `vitest` **233/233 files, 2410/2410 tests** (identical to the Session 1 close
+baseline) · `check:labels` OK · `check:rls` **41 public tables, 41 with RLS** · no `as any`, no
+leftover markers. Types diff was a single additive hunk: the `client_phases` Row/Insert/Update block
+plus `client_phases_client_id_fkey`, nothing else.

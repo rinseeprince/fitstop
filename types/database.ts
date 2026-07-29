@@ -827,6 +827,50 @@ export type Database = {
           },
         ]
       }
+      client_phases: {
+        Row: {
+          client_id: string
+          created_at: string
+          daily_targets: Json | null
+          ends_on: string
+          id: string
+          name: string
+          rate_per_week_kg: number
+          starts_on: string
+          updated_at: string
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          daily_targets?: Json | null
+          ends_on: string
+          id?: string
+          name: string
+          rate_per_week_kg: number
+          starts_on: string
+          updated_at?: string
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          daily_targets?: Json | null
+          ends_on?: string
+          id?: string
+          name?: string
+          rate_per_week_kg?: number
+          starts_on?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_phases_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       clients: {
         Row: {
           active: boolean | null
