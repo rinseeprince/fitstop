@@ -38,6 +38,17 @@ import type { ClientGoal } from "@/types/client-goals";
  * OPPOSITE sign to the bug task 2.4 caught, where a kg rate met a display
  * ceiling and read looser than reality — same root cause, do not conflate them.
  *
+ * ## The crossing is LOSSY, so an untouched rate is never re-converted
+ *
+ * kg → 2dp display → kg does not round-trip: −0.6 kg shows as −1.32 lb/wk and
+ * comes back as −0.5986…, and `roundTo` alone loses a stored −0.625 kg as −0.62
+ * even for a kg client. `toPhasesBody` therefore resends the STORED kg verbatim
+ * for any row whose rate field still holds its seeded value, because the
+ * consumers of that number compare it with `===` (`carryDailyTargets`) and hash
+ * it (`computePhasesFingerprint`) — so a drifted rate turns a pure rename into a
+ * numeric edit that nulls every generated grid and marks the plan stale. See
+ * {@link rateToKg}.
+ *
  * ## NaN never gets constructed
  *
  * `client.currentWeight` is `number | undefined`, and `weightToKg(undefined)` is
@@ -105,6 +116,16 @@ export function parseBlockRows(rows: BlockRowInput[]): BlockRow[] {
 }
 
 /**
+ * The 2dp display rate a stored block seeds into the form.
+ *
+ * One function so {@link seedBlockRows} and {@link toPhasesBody}'s
+ * untouched-rate lookup cannot drift on what "unchanged" means.
+ */
+function seededDisplayRate(phase: ClientPhase, unit: WeightUnit): number {
+  return roundTo(weightFromKg(phase.ratePerWeekKg, unit), RATE_DP);
+}
+
+/**
  * Stored blocks → form rows, converting each rate out of kg exactly once.
  *
  * Only meaningful for a conforming chain — see {@link seedGoalPlan}.
@@ -117,7 +138,7 @@ export function seedBlockRows(
     id: phase.id,
     name: phase.name,
     weeks: String(weeksBetween(phase.startsOn, phase.endsOn)),
-    ratePerWeek: String(roundTo(weightFromKg(phase.ratePerWeekKg, unit), RATE_DP)),
+    ratePerWeek: String(seededDisplayRate(phase, unit)),
   }));
 }
 
@@ -327,19 +348,71 @@ export type GoalPlanWrites = {
   phases?: PhasesWriteBody;
 };
 
-/** Form rows → the phases PUT's payload, converting each rate INTO kg once. */
+/**
+ * A row's rate in kg — the STORED value verbatim when the coach has not touched
+ * the field, rather than a re-conversion of the 2dp number on screen.
+ *
+ * **kg → 2dp display → kg is LOSSY**, so re-converting an untouched rate sends a
+ * numeric edit the coach never made. `buildWrites` emits the WHOLE chain on any
+ * change, so one rename would send a drifted rate for every row, and downstream:
+ *
+ *   - `carryDailyTargets` (`client-phases-service.ts:117`) compares rates with
+ *     `===`, so every block's `daily_targets` grid is nulled;
+ *   - `computePhasesFingerprint` hashes the rate, so the plan reads "Nutrition is
+ *     out of date" — contradicting `phase-fingerprint.ts`'s own docstring
+ *     ("`name` is deliberately NOT an input") and `ARCHITECTURE.md`'s "a grid
+ *     survives a rename and nothing else";
+ *   - with the grids nulled, task 2.5's per-date resolver has nothing to resolve
+ *     to and every in-block date falls back to the plan grid.
+ *
+ * The loss has two independent causes, so this is not an lbs-only concern:
+ * `weightToKg`'s 2.205 divisor, AND `roundTo`'s 2dp truncation, which runs in the
+ * kg branch too (a stored −0.625 shows as −0.62). Raising `RATE_DP` narrows the
+ * gap and never closes it.
+ *
+ * The comparison is on the parsed NUMBER, not the raw string: `parseNumber`
+ * trims, so `" -1.32 "` and `"-1.320"` are the same rate but different strings,
+ * and treating those as edits would reintroduce the bug on a no-op keystroke. Any
+ * genuine change at 2dp display precision yields a different number, so nothing
+ * is missed.
+ */
+function rateToKg(
+  input: BlockRowInput,
+  parsedRate: number,
+  storedById: Map<string, ClientPhase>,
+  unit: WeightUnit
+): number {
+  const existing = input.id ? storedById.get(input.id) : undefined;
+  if (existing && parsedRate === seededDisplayRate(existing, unit)) {
+    return existing.ratePerWeekKg;
+  }
+  return weightToKg(parsedRate, unit);
+}
+
+/**
+ * Form rows → the phases PUT's payload, converting each rate INTO kg once.
+ *
+ * `stored` is REQUIRED rather than defaulted: it is what lets an untouched rate
+ * resend its exact stored kg (see {@link rateToKg}), and a default would let a
+ * future call site silently take the lossy path. Pass `[]` when there is
+ * genuinely nothing stored to match against.
+ */
 export function toPhasesBody(
   startDate: string,
   rows: BlockRowInput[],
-  unit: WeightUnit
+  unit: WeightUnit,
+  stored: ClientPhase[]
 ): PhasesWriteBody {
+  const storedById = new Map(stored.map((phase) => [phase.id, phase]));
+
+  // parseBlockRows is a 1:1 map over `rows`, so index i is the same row in both.
   return {
     startDate,
-    phases: parseBlockRows(rows).map((row) => ({
+    phases: parseBlockRows(rows).map((row, i) => ({
       ...(row.id ? { id: row.id } : {}),
       name: row.name.trim(),
       weeks: row.weeks,
-      ratePerWeekKg: weightToKg(row.ratePerWeek, unit),
+      ratePerWeekKg: rateToKg(rows[i], row.ratePerWeek, storedById, unit),
     })),
   };
 }
@@ -397,11 +470,12 @@ export function buildWrites(input: {
   // Nothing to say when the client has no blocks and the coach added none.
   if (phases.length === 0 && values.blocks.length === 0) return writes;
 
-  const next = toPhasesBody(values.startDate, values.blocks, unit);
+  const next = toPhasesBody(values.startDate, values.blocks, unit, phases);
   const current = toPhasesBody(
     phases.length > 0 ? phases[0].startsOn : values.startDate,
     seedBlockRows(phases, unit),
-    unit
+    unit,
+    phases
   );
 
   if (JSON.stringify(next) !== JSON.stringify(current)) writes.phases = next;

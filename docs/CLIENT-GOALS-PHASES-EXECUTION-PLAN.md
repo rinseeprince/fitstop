@@ -2392,3 +2392,128 @@ PANEL. Between a blocks-succeeded/goal-failed save and the next panel save,
 `resolveEffectiveGoal().startDate` hands the stale `goal_start_date` to
 `nutrition-plan-orchestrator.ts:188`, `comparison-service.ts:76`, `nutrition/route.ts:118` and
 `use-nutrition-plan.ts:162`, and that window may be unbounded.
+
+---
+
+### 3A commit 1 — an untouched block rate resends its stored kg ✅ SHIPPED 2026-07-29
+
+**A latent defect in 3.1 part 1's model, fixed before the panel could call it.** Found in review of
+the shipped `goal-plan-model.ts`; it had no live consumer, which is the only reason it had not bitten.
+
+**The defect.** `seedBlockRows` does kg → `weightFromKg` → `roundTo(_, 2)` → string; `toPhasesBody`
+does string → `weightToKg` → kg. **That round trip is lossy**, and `buildWrites` emits the WHOLE
+chain whenever anything changes, so renaming one block sent a drifted rate for every row:
+
+```
+-0.6 kg → "-1.32" lb/wk → -0.5986394557823129 kg
+```
+
+Downstream, all three verified at `file:line`:
+
+- `carryDailyTargets` (`client-phases-service.ts:117`) compares `existing.ratePerWeekKg === next.ratePerWeekKg` → false → `daily_targets` set to **NULL on every block**;
+- `computePhasesFingerprint` (`phase-fingerprint.ts:48`) hashes the rate → the hash moves → `nutritionStale` goes true → **3.6's "Nutrition is out of date" row would fire on a pure rename**;
+- with the grids nulled, task 2.5's per-date resolver has nothing to resolve to at step 2, so every in-block date falls back to the plan grid — the flattening 2.5 exists to prevent.
+
+It contradicted two things this workstream wrote down deliberately: Task 2.3's STATUS (*"A grid
+survives a rename and nothing else"*) and `phase-fingerprint.ts`'s own docstring (*"`name` is
+deliberately NOT an input… it must not mark the plan stale"*).
+
+**NOT an lbs-only defect — the loss has two independent causes.** `weightToKg`'s 2.205 divisor, AND
+`roundTo`'s 2dp truncation, **which runs in the kg branch too**: a stored `-0.625` seeds as `"-0.62"`
+and re-emits `-0.62`. Measured across all 1001 2dp values in ±5.00: every non-zero lbs rate drifts
+(only `0` survives).
+
+**Precisely how a kg client acquires a >2dp rate — two real paths, neither hypothetical.** A pure-kg
+client's own saves stay at 2dp (`weightToKg(x,"kg")` is identity), so the trigger is a **unit
+switch** onto a rate that was authored in lbs:
+- **client-side** — `PATCH /api/client/settings` takes `unitPreference` (`updateSettingsSchema`,
+  `lib/validations/client.ts:107-112`), and `updateClientSettings` **derives** `weight_unit` from it
+  at `services/client-service.ts:377` (`metric → "kg"`). *(`weight_unit` is not itself a field on
+  that schema — the earlier framing of this path said it was.)*
+- **coach-side** — `PATCH /api/clients/[id]` takes `weightUnit` directly
+  (`updateClientSchema:65` → `client-service.ts:231`).
+
+The panel reads its unit from `client.weightUnit` (`mapClientRow`, `lib/mappers.ts:74`, default
+`"lbs"`). So: an lbs client saves `"-1.32"`, storing `-0.5986…`; either path flips them to kg; the
+panel seeds `"-0.6"`; the next rename writes `-0.6`. Plus hand-written rows.
+
+**Why the suite missed it.** `buildWrites`' rename test (`goal-plan-model.test.ts:377`) ran
+`unit:"kg"` only, where the conversion is identity — and with `seededValues()`'s clean `-0.5`, the
+2dp truncation was a no-op too, so **both** halves of the loss were invisible. The `toPhasesBody`
+test at `:318` pinned the drift with `toBeCloseTo(-0.499, 3)`, accepting it rather than tracing it
+downstream.
+
+**The fix.** New private `seededDisplayRate(phase, unit)` — one home for the 2dp expression, so the
+seed and the lookup cannot drift on what "unchanged" means. New private `rateToKg`: for a row whose
+id matches a stored block **and** whose rate field still holds its seeded value, emit
+`existing.ratePerWeekKg` **verbatim**; otherwise convert as before. `toPhasesBody` gains `stored:
+ClientPhase[]`; `buildWrites` passes `phases` to both its calls.
+
+Two deliberate choices, owner-approved:
+1. **`stored` is REQUIRED, not defaulted.** A default would let a future call site silently take the
+   lossy path. `toPhasesBody` had exactly one non-test caller, so it cost nothing.
+2. **The comparison is on the parsed NUMBER, not the raw string.** `parseNumber` trims, so `" -1.32 "`
+   and `"-1.320"` are the same rate but different strings; treating those as edits would reintroduce
+   the bug on a no-op keystroke. Any genuine change at 2dp display precision yields a different
+   number, so nothing is missed. An empty field parses to `0` and can only match a stored `0` block,
+   where both branches return `0`.
+
+**Stable, not drift-accumulating — measured.** Across all 1001 2dp values in ±5.00 lb/wk, save →
+reopen always reseeds the identical display string, so the lookup matches forever and the stored kg
+is preserved byte-for-byte through any number of non-rate edits.
+
+**The fix does not over-preserve.** `carryDailyTargets` compares dates as well as rate, so changing
+block 1's length still shifts block 2's dates and correctly clears block 2's grid. Only a genuine
+no-op on all three fields preserves it — exactly the invariant `ARCHITECTURE.md` states.
+
+**`deleteClientPhase` is unaffected and needs no change.** `client-phases-service.ts:277` re-chains
+from `ratePerWeekKg: p.ratePerWeekKg` — the stored kg, read straight back from the row and never
+round-tripped through a display unit. The delete path cannot drift, so the fix deliberately does not
+reach it.
+
+**Tests (4), each mutation-proven.** Reported failing output against unmodified source before the fix:
+`-0.4988662131519275` vs `-0.5`, `-0.5986394557823129` vs `-0.6`, and `-0.62` vs `-0.625`.
+
+| Test | Guards |
+|---|---|
+| `buildWrites` rename-only, `unit:"lbs"`, stored `-0.6` → `toBe(-0.6)` | the conversion half |
+| `buildWrites` rename-only, `unit:"kg"`, stored `-0.625` → `toBe(-0.625)` | the `roundTo` half — **the half that would otherwise stay unpinned**, since a unit-specific patch would pass every lbs test |
+| `toPhasesBody` with a matched stored row → `toBe(-0.5)` | the seed↔lookup drift |
+| `toPhasesBody` with a **changed** rate still re-converts (`≈ -0.998`, `not.toBe(-0.5)`) | a mutant that always returns the stored value |
+
+Assertions are `toBe`, never `toBeCloseTo`: the consumers compare with `===` and hash the number, so
+approximate is the wrong kind of assertion here. Mutation A (always re-convert) kills 3; mutation B
+(drop the rate comparison) kills the fourth. **File restored from a pre-mutation `cp` baseline and
+`diff`ed byte-for-byte afterwards** — a claimed revert is not a revert (Task 2.7's STATUS).
+
+**Doc updated — not a §3 collision.** `ARCHITECTURE.md`'s `client_phases` bullet states the correct
+invariant and was never false; the browser path simply did not honour it. What was recorded nowhere
+is the **rule for a browser client**, so the `daily_targets` bullet gains it: an untouched rate must
+be resent as the stored kg, byte-for-byte, with the failure chain and the reason raising display
+precision cannot fix it.
+
+**RECORDED, NOT FIXED — two silent coercions in `parseBlockRows`, both for commit 2's form.** Its
+fallbacks are correct for the LIVE PREVIEW they were written for (a half-typed field must not make
+the preview jump), but the same function feeds `toPhasesBody`, so each one silently changes what is
+**written**:
+- **`:112` `Math.round(weeks)`** — `"2.5"` previews *and saves* as 3 weeks. It does **not** 400:
+  `Math.round` produces an int before `phaseInputSchema.weeks.int()` ever sees it, so there is no
+  error to surface. Worse in kind than a rejection.
+- **`:113` `rate ?? 0`** — clearing the rate field silently prescribes **maintenance**. Invariant 5
+  makes a `0` block explicit maintenance, so this writes a real coaching decision the coach never
+  made.
+
+Both are the form's to fix, by constraining the inputs (integer weeks; a **required** rate rather
+than a coerced empty field) so neither value can reach the payload — not by loosening
+`parseBlockRows`, whose preview fallbacks stay right.
+
+**Gates:** `tsc` clean · `eslint` **0 errors** (210 pre-existing warnings, unchanged, none in touched
+files) · `vitest` **241 files, 2580 tests** (241/2576 at the 3A part-1 close — +4, exactly the four
+added; the known-flaky `set-tracker.test.tsx` passed) · `check:labels` OK, 632 files · no `as any`,
+no leftover markers, no `console.log`.
+
+**§2 security/load/performance review — arguable trigger, so run rather than claimed N/A.** No new
+route, table, column, migration, write path, or auth/ownership/validation change; 2 code files,
+~90 lines, none of it in a request path. It changes the *payload* of an existing authorized write and
+strictly **reduces** downstream write volume — no spuriously nulled grids, so no spurious plan
+regeneration. Nothing else applies.

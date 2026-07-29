@@ -304,13 +304,17 @@ describe("the deadline <-> rate widget round-trips in kg", () => {
 
 describe("toPhasesBody — lengths only, rate back into kg", () => {
   it("converts the display rate to kg and drops absent ids", () => {
+    // No stored row to match, so re-converting IS the only option here and the
+    // 2dp loss is unavoidable — which is why this one assertion stays
+    // approximate. The matched case below is exact.
     const body = toPhasesBody(
       "2026-08-03",
       [
         { id: "a", name: " Cut 1 ", weeks: "8", ratePerWeek: "-1.1" },
         { name: "Cut 2", weeks: "6", ratePerWeek: "-0.5" },
       ],
-      "lbs"
+      "lbs",
+      []
     );
     expect(body.startDate).toBe("2026-08-03");
     expect(body.phases[0].id).toBe("a");
@@ -324,6 +328,30 @@ describe("toPhasesBody — lengths only, rate back into kg", () => {
       "ratePerWeekKg",
       "weeks",
     ]);
+  });
+
+  it("emits a matched stored block's kg VERBATIM rather than re-converting", () => {
+    const body = toPhasesBody(
+      "2026-08-03",
+      [{ id: "a", name: "Cut 1", weeks: "8", ratePerWeek: "-1.1" }],
+      "lbs",
+      [phase({ id: "a", ratePerWeekKg: -0.5 })]
+    );
+    // Exact, not close: carryDailyTargets compares with === and
+    // computePhasesFingerprint hashes this number.
+    expect(body.phases[0].ratePerWeekKg).toBe(-0.5);
+  });
+
+  it("re-converts when the coach actually changed the rate", () => {
+    const body = toPhasesBody(
+      "2026-08-03",
+      [{ id: "a", name: "Cut 1", weeks: "8", ratePerWeek: "-2.2" }],
+      "lbs",
+      [phase({ id: "a", ratePerWeekKg: -0.5 })]
+    );
+    // A real edit must NOT be swallowed by the stored-value lookup.
+    expect(body.phases[0].ratePerWeekKg).not.toBe(-0.5);
+    expect(body.phases[0].ratePerWeekKg).toBeCloseTo(-0.998, 3);
   });
 });
 
@@ -388,6 +416,64 @@ describe("buildWrites — two independent writes (invariant 7)", () => {
     });
     expect(writes.goal).toBeUndefined();
     expect(writes.phases?.phases[0].name).toBe("Cutting phase 1");
+  });
+
+  // A rename must be numerically inert. kg -> 2dp display -> kg is LOSSY, so
+  // re-converting an untouched rate is an edit the coach never made:
+  // carryDailyTargets (client-phases-service.ts:117) compares with === and would
+  // null EVERY block's daily_targets, and computePhasesFingerprint hashes the
+  // rate, so the plan would read "Nutrition is out of date" on a pure rename —
+  // contradicting phase-fingerprint.ts's own docstring and ARCHITECTURE.md:132.
+  // Two units because the loss has two independent causes: the lbs conversion,
+  // and roundTo's 2dp truncation, which runs in the kg branch too.
+  it("emits the stored kg verbatim on a rename — lbs, where the conversion loses it", () => {
+    const stored = [phase({ id: "a", name: "Cut 1", ratePerWeekKg: -0.6 })];
+    const seeded = seedGoalPlan({
+      goal: storedGoal,
+      phases: stored,
+      unit: "lbs",
+      clientToday: TODAY,
+    }).values;
+    // -0.6 kg is -1.323 lb/wk, shown at 2dp; -1.32 / 2.205 is -0.5986…, not -0.6.
+    expect(seeded.blocks[0].ratePerWeek).toBe("-1.32");
+
+    const writes = buildWrites({
+      goal: storedGoal,
+      phases: stored,
+      values: { ...seeded, blocks: [{ ...seeded.blocks[0], name: "Cutting phase 1" }] },
+      unit: "lbs",
+      conforming: true,
+    });
+
+    expect(writes.phases?.phases[0].name).toBe("Cutting phase 1");
+    expect(writes.phases?.phases[0].ratePerWeekKg).toBe(-0.6);
+    expect(writes.goal).toBeUndefined();
+  });
+
+  it("emits the stored kg verbatim on a rename — kg, where roundTo alone loses it", () => {
+    // Reachable without hand-written SQL: an lbs client saves "-1.32", storing
+    // -0.5986…, then switches to kg (`weight_unit`, PATCH /api/client/settings).
+    const stored = [phase({ id: "a", name: "Cut 1", ratePerWeekKg: -0.625 })];
+    const seeded = seedGoalPlan({
+      goal: storedGoal,
+      phases: stored,
+      unit: "kg",
+      clientToday: TODAY,
+    }).values;
+    // roundTo(-0.625, 2) is -0.62 — Math.round(-62.5) rounds toward zero.
+    expect(seeded.blocks[0].ratePerWeek).toBe("-0.62");
+
+    const writes = buildWrites({
+      goal: storedGoal,
+      phases: stored,
+      values: { ...seeded, blocks: [{ ...seeded.blocks[0], name: "Cutting phase 1" }] },
+      unit: "kg",
+      conforming: true,
+    });
+
+    expect(writes.phases?.phases[0].name).toBe("Cutting phase 1");
+    expect(writes.phases?.phases[0].ratePerWeekKg).toBe(-0.625);
+    expect(writes.goal).toBeUndefined();
   });
 
   it("writes BOTH when the shared start date moved", () => {
