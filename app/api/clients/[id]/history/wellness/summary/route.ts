@@ -15,7 +15,7 @@ export async function GET(
   try {
     const { id: clientId } = await params;
 
-    const auth = await requireCoachOwnsClient(clientId);
+    const auth = await requireCoachOwnsClient(clientId, request);
     if (!auth.authorized) return auth.response;
 
     const { searchParams } = new URL(request.url);

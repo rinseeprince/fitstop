@@ -15,7 +15,7 @@ export async function GET(
   try {
     const { id: clientId } = await params;
 
-    const auth = await requireCoachOwnsClient(clientId);
+    const auth = await requireCoachOwnsClient(clientId, request);
     if (!auth.authorized) return auth.response;
 
     // Fetch client's check-in day and start date for correct week boundaries

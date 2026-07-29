@@ -16,7 +16,7 @@ export async function GET(
     const { id: clientId } = await params;
 
     // Verify coach owns this client
-    const auth = await requireCoachOwnsClient(clientId);
+    const auth = await requireCoachOwnsClient(clientId, request);
     if (!auth.authorized) return auth.response;
     const { searchParams } = new URL(request.url);
 
