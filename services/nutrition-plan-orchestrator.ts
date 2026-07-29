@@ -13,6 +13,7 @@ import {
 import { CUSTOM_MACRO_CALORIE_TOLERANCE } from "@/lib/constants";
 import { getLatestBodyMetrics } from "@/services/body-metrics-service";
 import { getCurrentGoals } from "@/services/client-goals-service";
+import { getClientPhases } from "@/services/client-phases-service";
 import type { GenerateNutritionPlanRequest } from "@/types/check-in";
 import {
   deleteFutureNutritionEventsForPlan,
@@ -144,9 +145,10 @@ export async function orchestrateNutritionPlanCreation(
   }
 
   // Prefer new services, fall back to client.* for pre-migration clients
-  const [latestMetrics, currentGoals] = await Promise.all([
+  const [latestMetrics, currentGoals, phases] = await Promise.all([
     getLatestBodyMetrics(clientId),
     getCurrentGoals(clientId),
+    getClientPhases(clientId),
   ]);
 
   const currentWeight = latestMetrics?.weight ?? client.currentWeight;
@@ -158,6 +160,9 @@ export async function orchestrateNutritionPlanCreation(
   // single display→kg normalization (client goal weight is display units). The
   // deadline comes from this single scope — never the request body (the old
   // `body.goalDeadline` was the cross-scope source).
+  // Anchored on the day this plan STARTS, not on today: a plan generated on
+  // Friday to begin Monday must resolve against the block that covers Monday.
+  const planStartDate = body.effectiveFrom ?? clientToday;
   const effective = resolveEffectiveGoal({
     weightUnit,
     clientGoal: {
@@ -168,6 +173,8 @@ export async function orchestrateNutritionPlanCreation(
       startDate: currentGoals?.goalStartDate ?? null,
     },
     today: clientToday,
+    phases,
+    date: planStartDate,
   });
   const effectiveGoalWeightKg = effective.goalWeightKg;
   const effectiveGoalDeadline = effective.deadline;

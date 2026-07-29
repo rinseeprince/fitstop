@@ -4,8 +4,17 @@ import { useCallback } from "react";
 import useSWR, { useSWRConfig } from "swr";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import type { ClientGoal } from "@/types/client-goals";
+import type { ClientPhase } from "@/services/client-phases-service";
 
-type GoalsResponse = { success: boolean; data: ClientGoal | null };
+type GoalsResponse = {
+  success: boolean;
+  data: ClientGoal | null;
+  phases?: ClientPhase[];
+};
+
+// A stable identity for "no blocks". A fresh [] every render would be a new
+// reference each time, retriggering every downstream useMemo that depends on it.
+const EMPTY_PHASES: ClientPhase[] = [];
 
 // Key construction and invalidation are co-located so they can never drift
 // (CONVENTIONS §7): never build a /goals key anywhere else.
@@ -45,6 +54,11 @@ export function useInvalidateClientGoals() {
  *
  * Returns the raw record in the client's DISPLAY units. Callers that need kg go
  * through `resolveEffectiveGoal`, which owns that normalization.
+ *
+ * Also returns the client's blocks, which the same endpoint carries: a block
+ * supplies the RATE that applies on a given date, and `resolveEffectiveGoal`
+ * takes both together. Empty for a client with no blocks, which resolves
+ * exactly as it did before blocks existed.
  */
 export function useClientGoals(clientId: string | null) {
   const { data, error, isLoading, mutate } = useSWR<GoalsResponse>(
@@ -57,5 +71,11 @@ export function useClientGoals(clientId: string | null) {
     }
   );
 
-  return { goal: data?.data ?? null, isLoading, error, mutate };
+  return {
+    goal: data?.data ?? null,
+    phases: data?.phases ?? EMPTY_PHASES,
+    isLoading,
+    error,
+    mutate,
+  };
 }

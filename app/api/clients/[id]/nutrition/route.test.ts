@@ -80,6 +80,10 @@ vi.mock('@/services/client-goals-service', () => ({
   getCurrentGoals: vi.fn(),
 }))
 
+vi.mock('@/services/client-phases-service', () => ({
+  getClientPhases: vi.fn().mockResolvedValue([]),
+}))
+
 vi.mock('@/services/today-service', () => ({
   getClientTodayString: vi.fn().mockResolvedValue('2026-01-15'),
 }))

@@ -7,6 +7,7 @@ import {
   updateGoals,
   getGoalsHistory,
 } from "@/services/client-goals-service";
+import { getClientPhases } from "@/services/client-phases-service";
 import { recordAuditEvent } from "@/services/audit-log-service";
 import { AUDIT_ACTIONS } from "@/lib/constants";
 import { updateGoalsSchema } from "@/lib/validations/client-goals";
@@ -28,18 +29,26 @@ export async function GET(
     const { searchParams } = new URL(request.url);
     const includeHistory = searchParams.get("history") === "true";
 
-    const current = await getCurrentGoals(clientId);
+    // Blocks ride alongside the goal rather than on their own endpoint: every
+    // browser consumer of the goal (Overview chips, Metrics, the nutrition
+    // builder) resolves through `resolveEffectiveGoal`, which needs both to
+    // answer "what rate applies on this date". Sibling key, not folded into
+    // `data`, so existing `data`-shaped consumers are untouched.
+    const [current, phases] = await Promise.all([
+      getCurrentGoals(clientId),
+      getClientPhases(clientId),
+    ]);
 
     if (includeHistory) {
       const history = await getGoalsHistory(clientId);
       return NextResponse.json(
-        { success: true, data: { current, history } },
+        { success: true, data: { current, history }, phases },
         { status: 200 }
       );
     }
 
     return NextResponse.json(
-      { success: true, data: current },
+      { success: true, data: current, phases },
       { status: 200 }
     );
   } catch (error) {

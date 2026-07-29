@@ -104,7 +104,7 @@ Rule of thumb: a rule about **safety** (RLS, GRANT, auth chain ordering, rate li
 | Session | Theme | Migrations | Ships user-visible change? | Status |
 |---|---|---|---|---|
 | **1** | Pre-existing bug fixes + the rate derivation | **none** | Overview goal source only | ✅ **COMPLETE** — shipped 2026-07-28 (`53abf0a`, `3abbfa5`, `b3ca479`, `62cef4a`), browser smoke passed 2026-07-29 |
-| **2** | Blocks: schema, service, generation **+ Session 1's inherited fixes (2.8)** | 137, 138, **139** | No (API only) | ⬜ Not started |
+| **2** | Blocks: schema, service, generation **+ Session 1's inherited fixes (2.8)** | 137, 138, **139** | No (API only) | 🟡 **In progress** — 2.1, 2.2, 2.3, 2.4 and 2.8(a) shipped; 2.5, 2.6, 2.7 and 2.8(b–h) remain |
 | **3** | Coach UI + "Waiting on you" + client-portal goal (3.9) | none | Yes — the whole feature | ⬜ Not started |
 
 Strictly sequential: 2 depends on 1's calculator, 3 depends on 2's API.
@@ -1368,3 +1368,122 @@ end-of-session smoke rather than run mid-session against real fixture data.
 
 **Gates:** `tsc` clean · `vitest` 15/15 in `client-goals-service.test.ts` · full suite at the
 session gate.
+
+---
+
+### Task 2.4 — `resolveEffectiveGoal` becomes date-aware ✅ SHIPPED 2026-07-29
+
+**What shipped.** The resolver takes optional `phases` + `date` and returns `phaseRateKgPerWeek`
++ `phaseName`; all **six** call sites listed in §2.4 pass them. Plus `computeGoalPace` gained a
+prescribed-rate input. No migration.
+
+**Recovered from an interrupted session.** `lib/goals/resolve-effective-goal.ts` was already
+modified-but-uncommitted when this session started — a prior session wrote the resolver body at
+14:51 and died (ECONNRESET) before touching its test or any call site, leaving the tree red
+(2 failures: `toEqual` assertions missing the two new fields). The body was reviewed against
+invariant 4 and **kept**; everything else here is new. If a future session finds a lone modified
+file with a green `tsc` and a red test, this is what that looks like.
+
+**The resolver's shape, and why it is safe for existing clients.** A block contributes **only** a
+rate. `goalWeightKg` / `goalBodyFatPercentage` / `deadline` / `startDate` still resolve from
+`client_goals` in every case (invariant 4), so omitting `phases` returns an object identical to
+the pre-blocks one — pinned by a test that diffs the two. `date` defaults to `today`; it exists
+solely to pick the covering block.
+
+**OWNER DECISION (2026-07-29) — all six call sites, not the three I proposed.** I recommended
+deferring three of them and was overruled; recorded here so Session 3 does not re-open it:
+
+| Site | What it does now | My objection, overruled |
+|---|---|---|
+| `nutrition-plan-orchestrator.ts` | resolves anchored on `body.effectiveFrom ?? clientToday` | — |
+| `nutrition/route.ts` | passes `phases` + `date: today` | behaviourally a no-op: `detectGoalDrift` compares destination fields only, which blocks never move |
+| `comparison-service.ts` | anchors on `periodEnd`, feeds the pace check | — |
+| `use-merged-metrics.ts` | receives blocks via the widened payload | **the blocks it receives have no reader** — it uses `goalWeightKg`/`goalBodyFatPercentage` only. Live but inert until Session 3 |
+| `use-nutrition-plan.ts` | `getWeightRemaining` resolves instead of reading the mirror | — |
+| `use-nutrition-builder.ts` | `getProjectedDate` same; local `CALORIES_PER_KG` deleted | — |
+
+**NOT DONE, and deliberately: the orchestrator does not yet loop per block.** §2.4's "called once
+per block" is verbatim **2.6**'s sentence ("runs the calculator once per block and writes each
+block's grid"). Writing the loop here would mean either writing 2.6's grid-write half or leaving a
+computed-and-unused array that fails `no-unused-vars`. What landed is the call site becoming
+date-aware — which is 2.4's actual title. **2.6 owns the loop and inherits the `phases` fetch
+already in the orchestrator's `Promise.all`.**
+
+**A UNIT BUG, caught by a test rather than by reading.** The first cut passed
+`effectiveGoal.phaseRateKgPerWeek` straight into `computeGoalPace`. That path runs in **display
+units** — `remainingKg` and `currentWeightKg` are misnamed and actually carry the client's display
+unit (there is an existing test at `comparison-service.test.ts:207` guarding exactly this), while
+a block stores **kg**. An lbs client's 0.5 kg/wk block would have been graded against an lbs
+ceiling: a 2.2x understatement, always in the "looks safer than it is" direction. The call site now
+converts via `weightFromKg`, and the input is named **`prescribedRatePerWeek`** (no `Kg`) with a
+doc comment saying it must match the other two. The regression test asserts the **number** (1.1),
+not the status — the status stays `on_track` either way, so a status-only assertion would not have
+caught it.
+
+**Pace semantics (owner decision).** When a block covers the check-in's period, its rate
+**replaces** the deadline-derived `remainingKg / weeksRemaining` as the requirement; the 1%-safe
+ceiling still grades it. A passed deadline still wins (`weeksRemaining <= 0` → unrealistic): a
+block says how fast a leg runs, it does not un-blow a deadline. This is the product decision task
+1.4's STATUS parked as "two competing safe-rate definitions" — the classifier is unchanged, only
+its numerator.
+
+**`0` is checked with `!= null`, never truthiness** — in the resolver, in the pace input, and in
+both test suites. Invariant 5 makes a `0` block explicit maintenance; a truthiness check silently
+reports "no block covers this date" for every maintenance block and falls back to deadline math.
+Named tests on both sides.
+
+**The check-in anchor is `period_end`, not today.** A check-in reviewed late is graded against the
+block that was running while the client lived it. `periodEnd` is optional on the legacy token flow,
+so client-local today is the fallback.
+
+**One `/goals` read serves all three browser sites.** The GET now returns `phases` as a **sibling
+key** (`{success, data, phases}`), not folded into `data`, so existing `data`-shaped consumers are
+untouched. `useClientGoals` exposes it, with a module-level `EMPTY_PHASES` constant so "no blocks"
+keeps a stable reference and does not retrigger every downstream `useMemo`.
+`useNutritionBuilder` composes `useNutritionPlan` and reads its exposed `effectiveGoalWeightKg`
+rather than fetching again.
+
+**§7 gap discharged.** `use-merged-metrics.ts` built its `/goals` key inline (task 1.3's STATUS
+recorded this and noted the new hook "gives it a home"). It is touched now, so it moved onto
+`useClientGoals`. Side effect: its SWR `errorRetryCount` goes 1 → 3, matching the §7 standard.
+
+**Mock contract broken and repaired (CONVENTIONS §2).** Importing `client-phases-service` into
+four already-mocked modules failed 17 tests across 4 files. Each got a
+`getClientPhases: vi.fn().mockResolvedValue([])` mock in its own file's style. **Default `[]` is
+deliberate** — every pre-existing assertion then describes a client with no blocks, i.e. today's
+behaviour, so the suite proves the no-blocks path is unchanged rather than being rewritten around
+the new one.
+
+**Security / load / performance review (§2) — run, four sites verified at `file:line`:**
+- **Authorization precedes every new read.** `goals/route.ts:26` `requireCoachOwnsClient`;
+  `nutrition/route.ts:41-54` authed coach + `client.coachId !== coachId` → 403;
+  `check-in/[id]/comparison/route.ts:19` `requireCoachOwnsCheckIn`;
+  `nutrition-plan-orchestrator.ts:125` 403 throw. No read moved ahead of its check.
+- **Tenant-scoped:** `getClientPhases` filters `.eq("client_id", clientId)`
+  (`client-phases-service.ts:94`). It uses `supabaseAdmin` (RLS bypassed by design, Shape B) — the
+  route layer is the perimeter and it holds at all four.
+- **No new writes**, so §2 #3/#4/#12/#13 do not apply: nothing new can leave data half-updated.
+- **Round trips: +1 per request at four sites, all inside an existing `Promise.all` fan-out**
+  (the goals GET gained one). Latency is `max`, not `sum` (§2 #11). No query inside a loop.
+- **Index-covered:** `.eq(client_id).order(starts_on)` is served by
+  `idx_client_phases_client_starts` from migration 137.
+- **Worst-case rows: 12** (`MAX_PHASES`, zod-enforced in 2.3), each with a ≤7-row grid. The
+  payload is bounded by construction.
+- `npm run check:rls` — **41 public tables, 41 with RLS.**
+- **Not measured, only read.** No load was run. Concurrency and pool behaviour on the widened
+  goals GET are untested.
+
+**FINDING, not fixed here — a second instance of 2.8(h).**
+`app/api/clients/[id]/nutrition/route.ts:41` calls `getAuthenticatedCoachId()` **without
+`request`**, same as the `:163` and `:216` handlers in that file (`:293` passes it correctly).
+2.8(h) names only `training/[planId]/events/[eventId]/route.ts:31`. Not a security hole — the
+chain is otherwise correct — but **2.7 should fix this file too, not just the one 2.8(h) names.**
+
+**Gates:** `tsc` clean · `eslint` **0 errors** (210 pre-existing warnings, unchanged from the 2.1
+baseline, none in touched files) · `vitest` **236/236 files, 2464/2464 tests** (2448 → 2464; the
+known-flaky `set-tracker.test.tsx` failed once in a full run and passed 33/33 in isolation) ·
+`check:labels` OK · `check:rls` 41/41 · no `as any` · no leftover markers.
+
+**Owed:** no browser smoke was run for 2.4. The two display-only hook changes
+(`getWeightRemaining`, `getProjectedDate`) must not move any number the client eats to; that is
+argued from the code and covered by unit tests, **not observed in a browser.**

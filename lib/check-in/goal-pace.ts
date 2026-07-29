@@ -16,6 +16,21 @@ type GoalPaceInput = {
   remainingKg: number;
   weeksRemaining: number;
   currentWeightKg?: number;
+  /**
+   * The rate prescribed by the block covering this period, when one covers it.
+   * Signed on the way in; only the magnitude is compared.
+   *
+   * **In the same unit as `remainingKg` / `currentWeightKg` above** — which,
+   * despite those names, is the client's DISPLAY unit, not kg (this whole path
+   * runs in display units so the ceiling and the requirement share a scale).
+   * Blocks store kg, so a caller converts before passing it in.
+   *
+   * When present it REPLACES the deadline-derived average as the requirement:
+   * the coach has said how fast this leg runs, so that is what the safe ceiling
+   * grades. `0` is a real value (a maintenance block requires no change and
+   * therefore always grades on_track) — check for null, never truthiness.
+   */
+  prescribedRatePerWeek?: number | null;
 };
 
 /**
@@ -31,6 +46,7 @@ export function computeGoalPace({
   remainingKg,
   weeksRemaining,
   currentWeightKg,
+  prescribedRatePerWeek,
 }: GoalPaceInput): GoalPace | null {
   if (!currentWeightKg || currentWeightKg <= 0) return null;
 
@@ -47,7 +63,12 @@ export function computeGoalPace({
     return { requiredRate: Infinity, safeCeiling, ratio: Infinity, status: "unrealistic" };
   }
 
-  const requiredRate = Number((absRemaining / weeksRemaining).toFixed(2));
+  // A covering block prescribes the rate for this leg, so it IS the requirement.
+  // Without one, fall back to the average needed to hit the deadline.
+  const requiredRate =
+    prescribedRatePerWeek != null
+      ? Number(Math.abs(prescribedRatePerWeek).toFixed(2))
+      : Number((absRemaining / weeksRemaining).toFixed(2));
   const ratio = requiredRate / safeCeiling;
   const status: GoalPaceStatus =
     ratio <= 1 ? "on_track" : ratio <= 1.5 ? "behind_pace" : "unrealistic";

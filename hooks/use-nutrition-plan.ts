@@ -1,7 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { useClientGoals } from "@/hooks/use-client-goals";
+import { resolveEffectiveGoal } from "@/lib/goals/resolve-effective-goal";
+import { getTodayDateStringInTimezone } from "@/lib/date-helpers";
 import type { Client, UnitPreference, DietType } from "@/types/check-in";
 import type { TrainingPlan } from "@/types/training";
 import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
@@ -138,12 +141,46 @@ export function useNutritionPlan({ client, onUpdate }: UseNutritionPlanProps) {
     [client.id, client.unitPreference, onUpdate, toast]
   );
 
+  // The real goal store. `client.goalWeight` is the denormalized mirror, which
+  // can silently diverge from `client_goals` (task 1.3 measured 90kg vs 77kg on
+  // one fixture) — so resolve, and keep the mirror only as the pre-migration
+  // fallback every other resolver call site already uses. Anchored on the
+  // CLIENT's calendar, not the coach's device: the goal's dates are the
+  // client's (same anchor as the Overview and the check-in comparison).
+  const { goal: currentGoals, phases } = useClientGoals(client.id);
+  const effectiveGoal = useMemo(
+    () =>
+      resolveEffectiveGoal({
+        weightUnit: client.weightUnit ?? "lbs",
+        clientGoal: {
+          goalWeight: currentGoals?.goalWeight ?? client.goalWeight ?? null,
+          goalBodyFatPercentage:
+            currentGoals?.goalBodyFatPercentage ??
+            client.goalBodyFatPercentage ??
+            null,
+          deadline: currentGoals?.goalDeadline ?? null,
+          startDate: currentGoals?.goalStartDate ?? null,
+        },
+        today: getTodayDateStringInTimezone(client.timezone),
+        phases,
+      }),
+    [
+      currentGoals,
+      phases,
+      client.weightUnit,
+      client.goalWeight,
+      client.goalBodyFatPercentage,
+      client.timezone,
+    ]
+  );
+
   // Weight remaining calculation
   const getWeightRemaining = useCallback(() => {
-    if (!client.goalWeight || !client.currentWeight) return null;
+    // The resolver already returns kg — do NOT re-convert through weightToKg.
+    const goalWeightKg = effectiveGoal.goalWeightKg;
+    if (goalWeightKg == null || !client.currentWeight) return null;
 
     const currentWeightKg = weightToKg(client.currentWeight, client.weightUnit || "lbs");
-    const goalWeightKg = weightToKg(client.goalWeight, client.weightUnit || "lbs");
     const remainingKg = Math.abs(currentWeightKg - goalWeightKg);
     const isLoss = currentWeightKg > goalWeightKg;
 
@@ -151,12 +188,16 @@ export function useNutritionPlan({ client, onUpdate }: UseNutritionPlanProps) {
     const unit = unitPreference === "imperial" ? "lbs" : "kg";
 
     return { value: value.toFixed(1), unit, isLoss };
-  }, [client, unitPreference]);
+  }, [effectiveGoal, client.currentWeight, client.weightUnit, unitPreference]);
 
   return {
     // Client data
     client,
     hasPlan,
+
+    // Resolved goal, in kg. Exposed so `useNutritionBuilder` (which composes
+    // this hook) reuses the one `/goals` read instead of fetching it again.
+    effectiveGoalWeightKg: effectiveGoal.goalWeightKg,
 
     // Unit preference
     unitPreference,
