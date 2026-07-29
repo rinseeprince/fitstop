@@ -149,6 +149,8 @@ When a check-in submits body metrics (`services/client-check-in-service.ts`):
 2. Recalculates BMR/TDEE from updated client data
 3. Calls `recordBodyMetrics()` to write an immutable event to `body_metrics` (non-blocking)
 
+**Goals are NOT dual-written this way, and the distinction is deliberate.** `body_metrics` is an append-only history beside a cache, so a dropped event costs a history row and the cache still reads correctly. A goal is a *single current value held in two places*, so a dropped write does not lose history — it makes the two copies disagree, and nothing on either screen says so. `updateGoals` therefore **owns both stores in one transaction** (migration 139 writes `client_goals` *and* the three `clients.*` mirror columns), and **its callers must not write the goal columns themselves and must not swallow its failure**. All four — `createClient`, `updateClient`, the Metrics PUT, and the intake backfill — used to do exactly that, and it cost a live client six weeks of showing 78 kg to their coach and 92 kg in their own portal. A goal edit now lands in both stores or in neither. Do not reintroduce a `try { await updateGoals(…) } catch { console.error }` anywhere; regression tests pin all four paths.
+
 ### Read switch fallback
 
 Services that read goals/metrics prefer the new tables but fall back to legacy `client.*` fields for pre-migration clients (`services/comparison-service.ts`):

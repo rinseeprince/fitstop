@@ -1973,3 +1973,56 @@ itself is sound**; all six findings were in database state, transcripts, the wor
 
 **Gates after every repair:** `tsc` clean · `eslint` 0 errors · `vitest` **238 files, 2517 tests** ·
 `check:labels` OK · `check:rls` 41/41.
+
+---
+
+### Post-crash audit, PASS 2 — five fresh lenses ✅ COMPLETE 2026-07-29
+
+**Result: the shipped code is clean. 9 candidates raised, 0 survived verification.** The lenses were
+chosen to be orthogonal to pass 1: **schema-drift** (live catalog vs migrations 137/138/139 vs
+`types/database.ts`), **rpc-semantics** (migration 139's transactionality, races, mirror writes),
+**security** (RLS/GRANTs from the live catalog, DEFINER EXECUTE, IDOR, and whether `03981e9`'s
+40-file sweep moved any authorization outcome), **test-integrity** (mutation-testing the
+load-bearing invariants), and **runtime-shape** (JSONB grid, NUMERIC coercion, DST/year edges).
+schema-drift and security returned **nothing at all**, and that was checked rather than assumed —
+both agents dumped the live schema, regenerated types and diffed, at 46 and 55 tool calls.
+
+**One refuted finding was refuted too fast, and chasing it found the real defect.** A lens reported
+"the coach Overview and the client portal disagree for client Sam Kay"; the verifier refuted it as
+out of scope, correctly noting that *the portal reading the mirror* is a recorded decision (Task
+3.9). True — and it stopped there, checking neither the **direction** nor the **cause**.
+
+Both mattered. `client_goals` held one row (92 / 9, `set_by=intake`, 21 May) while the mirror held
+78 / 15 with `clients.updated_at` a month LATER — so **the mirror was the newer value**, and
+`client_goals` was the stale one. The cause: `updateClient` wrote the mirror, then called
+`updateGoals` inside a `try/catch` that logged and continued; the goal write failed, the request
+returned 200. **Task 1.3 then made it visible in the worst direction** — it moved the coach Overview
+onto `client_goals`, so a coach who set 78 kg had their own screen tell them 92.
+
+Fixed in `5d5fd99` (the deferred half of 2.8(a)): `updateGoals` now owns both stores on all four
+paths, callers no longer write the mirror themselves, and failures propagate. Data resynced through
+the RPC, which incidentally proved the migration-139 path end to end.
+
+**The lesson worth keeping:** *a refutation on scope grounds is not a finding that the data is
+fine.* "This surface is allowed to read the mirror" and "the mirror currently holds the wrong
+number" are different claims, and only the first was tested. When a lens reports a divergence,
+check the direction and the cause before accepting that it is by design.
+
+**Also worth keeping: the tests proved nothing here.** All 2517 passed unchanged after the swallow
+was removed — the old behaviour had never been pinned, which is exactly why it shipped and survived
+six weeks. Ten regression tests now cover all four paths, each mutation-proven, plus a new test file
+for the Metrics route, which had none.
+
+**Unprotected-but-unreachable, for Session 3 to close as it wires each surface.** test-integrity's
+findings were all correctly refuted as unreachable *today* — no product caller hits them — which is
+an argument about today, not about Session 3:
+
+| Invariant with no executing test | Becomes reachable at |
+|---|---|
+| `writePhaseDailyTargets` (the grid writer) | 3.3 per-block preview |
+| `isNutritionStaleForPhases` (`nutritionStale` has zero consumers) | 3.6 "Waiting on you" row |
+| zod bounds: `MAX_PHASES`, `MAX_CHAIN_WEEKS`, `MAX_PHASE_WEEKS`, duplicate-id | 3.1 goal & plan panel |
+| `deleteClientPhase`'s first-block re-chain anchor | 3.2 delete-a-block |
+
+**Gates:** `tsc` clean · `eslint` 0 errors · `vitest` **239 files, 2527 tests** · `check:labels` OK ·
+`check:rls` 41/41.
