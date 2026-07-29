@@ -1225,3 +1225,64 @@ computed.
 
 **Gates:** `tsc` clean · `vitest` green (8 in `nutrition-plan-service.test.ts`, 9 in
 `phase-fingerprint.test.ts`) · full suite run at the session gate.
+
+---
+
+### Task 2.3 — Phase service + `getPhaseForDate` ✅ SHIPPED 2026-07-29
+
+**What shipped.** `lib/goals/phase-chain.ts` (pure), `lib/validations/client-phases.ts` (zod),
+`services/client-phases-service.ts` (DB), plus tests for all three. No migration.
+
+**The pure half is in `lib/goals/`, not the service — deliberately.** `chainPhases`,
+`getPhaseForDate`, `isPhaseElapsed` and `lastPhaseEnd` are synchronous and browser-safe (they import
+only `addDaysToDateString`), so Session 3's goal panel renders its live
+"15 weeks · 4 Aug – 16 Nov" readout from the **same functions the server writes with**. The coach's
+preview and the stored chain cannot disagree about where a block lands. This is the opposite call to
+`services/phase-fingerprint.ts`, which is server-only because `createHash` has no browser form — the
+two modules split on whether the browser can run them, not on tidiness.
+
+**`getPhaseForDate` is list-based, not a query.** The per-date resolver (2.5) calls it once per
+generated date; a DB round trip there would be a query inside a per-item loop, which CONVENTIONS §2
+forbids. Callers load the blocks once and pass the array. The predicate mirrors `coversDate`
+(`services/training-plan-window.ts`) but has no `IS NULL` half — a block always has an end.
+
+**Two invariants the tests pin, because both rot silently:**
+
+1. **A grid survives a rename and nothing else.** `carryDailyTargets` keeps `daily_targets` only
+   when `startsOn`, `endsOn` **and** `ratePerWeekKg` are all unchanged; any numeric edit clears it.
+   That is what makes "non-null grid" a trustworthy promise to the per-date resolver that the grid
+   matches its window. Three tests (rename keeps, rate change clears, date shift clears).
+2. **Elapsed protection checks the COMPUTED dates, not the submitted ones.** Because the client
+   sends lengths rather than date pairs, shortening an earlier block silently drags a finished one
+   backwards. Validating what `chainPhases` produces is what catches it; validating the payload
+   would not.
+
+**Elapsed rows are excluded from the write entirely**, not rewritten with identical values — so
+their `updated_at` never moves and no write can touch them at all. Removing or re-dating one is a
+422 naming the block.
+
+**Write shape: two batched round trips**, one `DELETE … .in("id", removedIds)` and one
+`upsert(rows, { onConflict: "id" })`. Every row carries an explicit id (`randomUUID()` for new
+blocks) because a mixed insert/update upsert needs **identical keys across the array** — PostgREST
+builds one INSERT with a single column list, so rows with and without `id` cannot be batched
+together. Nothing loops a query per block.
+
+**`updated_at` is stamped explicitly on every write** (`132`/`134` posture; migration 137 has no
+trigger). Without it the column would freeze at insert time — the defect migration 096 had to fix
+for `exercises`.
+
+**Deletion re-chains rather than wiping** (invariant 9): blocks before the deleted one keep their
+dates, blocks after it close the gap, and the service returns the resulting moves so Session 3.2's
+confirm dialog can name the consequence before the coach commits.
+
+**Caught in review of my own code:** `weeksBetween` hand-rolled `Date.UTC` arithmetic. Replaced with
+the existing `dateStringToDayNumber` — the UTC-anchored helper task 1.4 pinned across six timezones.
+A local-parse variant would have lost a day west of UTC.
+
+**Bounds live in zod, not in CHECK constraints** (migration 131's rule): `MAX_PHASE_WEEKS = 52`,
+`MAX_CHAIN_WEEKS = 104`, `MAX_PHASES = 12`, `MAX_ABS_RATE_KG_PER_WEEK = 5`. The rate bound is a
+sanity bound and **not** the gender safety cap — invariant 12 requires storing the rate the coach
+entered and surfacing the cap in the preview, so clamping here would make that impossible.
+`MAX_CHAIN_WEEKS` is what bounds the 2.5 horizon's worst case (see 2.5's STATUS).
+
+**Gates:** `tsc` clean · 33 new tests green across the three files.
