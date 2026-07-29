@@ -2910,6 +2910,18 @@ export type Database = {
         Args: { client_uuid: string }
         Returns: undefined
       }
+      update_client_goals_atomic: {
+        Args: {
+          p_client_id: string
+          p_goal_body_fat_percentage: number
+          p_goal_deadline: string
+          p_goal_start_date: string
+          p_goal_weight: number
+          p_primary_goal: string
+          p_set_by: string
+        }
+        Returns: string
+      }
       upsert_daily_log_atomic:
         | {
             Args: {

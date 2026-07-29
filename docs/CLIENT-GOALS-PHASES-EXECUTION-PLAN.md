@@ -858,7 +858,11 @@ kept setting the mirror would have silently asserted nothing), plus two new case
 **ignores the mirror** (client carries `goalWeight: 99`, nothing renders) and claims nothing
 while loading.
 
-**Discovered while tracing — `clients.goal_deadline` is not reachable at all.** `mapClientRow`
+**Discovered while tracing — `clients.goal_deadline` is not reachable at all.** *(CORRECTED
+2026-07-29 in Task 2.8a: the mapped PROPERTY is unreachable, but the COLUMN is not — it is selected
+raw at `services/intake-review-service.ts:114` and used as a backfill guard at `:156-163`. Migration
+139 therefore keeps writing all three mirror columns. The paragraph below is right about the
+property and wrong about the column.)* `mapClientRow`
 (`lib/mappers.ts:72-73`) maps only `goalWeight` and `goalBodyFatPercentage`; the `goalDeadline`
 mapping at `:213` is `mapClientIntakeRow`, a different table. So `client.goalDeadline` is
 **always `undefined`**, and every `?? client.goalDeadline ?? null` fallback in the four
@@ -1286,3 +1290,81 @@ entered and surfacing the cap in the preview, so clamping here would make that i
 `MAX_CHAIN_WEEKS` is what bounds the 2.5 horizon's worst case (see 2.5's STATUS).
 
 **Gates:** `tsc` clean · 33 new tests green across the three files.
+
+---
+
+### Task 2.8(a) — `updateGoals` becomes transactional ✅ SHIPPED 2026-07-29
+
+**What shipped.** `supabase/migrations/139_update_client_goals_atomic.sql` + regenerated types +
+`services/client-goals-service.ts` rewritten onto the RPC + the `updateGoals` test block rewritten.
+
+**Verified against the live catalog, not the push exit code:** exactly ONE overload,
+`REVOKE ALL … FROM PUBLIC`, `GRANT ALL … TO service_role`, and **no anon/authenticated grant**. The
+generated `Args` shows all seven parameters **required** (no `?`), confirming no `DEFAULT NULL`
+reached the signature. The `NOTICE … does not exist, skipping` during the push is the expected
+first-apply no-op from the `DROP FUNCTION IF EXISTS` preamble that makes the file re-runnable.
+
+**The hole this closes.** Supersede (`:60-64`) then insert (`:105-114`) were unsynchronised, so a
+failed insert left **zero non-superseded rows** — which `getCurrentGoals` returns as null and both
+the calculator and (since 1.3) the coach Overview read as *maintenance*.
+
+**Corrected justification (owner, 2026-07-29): the reason is DATA INTEGRITY, not silence.** Session
+1's STATUS said "all four callers swallow the error", and a summary in this session said "nobody
+sees an error" — **both overstate it.** The goals PUT catches and returns 500
+(`goals/route.ts:109-115`), and `client-goal-editor.tsx:131-146` toasts "Failed to update goals". It
+is the four dual-write callers that swallow (`metrics/route.ts:215-225`, `client-service.ts:97-107`
+and `:266-276`, `intake-review-service.ts:212-223`) — and each has already written the `clients`
+mirror by then, so those paths diverge the two stores with no signal at all.
+
+**The mirror UPDATE moved inside the transaction** (owner-approved behaviour change). It is not a
+new write — it is the one at `:122-134`, whose error was previously only `console.error`'d while the
+request returned 200. That swallow is how `client_goals` and the mirror came to hold 90 kg / 9 % and
+77 kg / 33 % for fixture Samuel James. It now fails loudly rather than diverging silently.
+
+**All three mirror columns are still written, including `goal_deadline`.** See the doc correction
+below — the column has a live reader.
+
+**No `DEFAULT NULL` parameters, and that is a deliberate exception to
+`feedback_rpc_optional_params_default_null`.** That convention assumes omitted means "not supplied".
+Here NULL is a **meaningful value** — it clears a goal field — so omitted and null must stay
+distinguishable. The presence-merge therefore stays in TypeScript (where task 1.1's tests live) and
+the RPC receives an already-merged complete row.
+
+**Pattern B (throw), pinned by a test.** Two RPC-error conventions coexist:
+`nutrition-plan-service.ts:135-138` logs and returns null; `training-service.ts:302-304` throws. Only
+the throwing one preserves this path's behaviour — swallowing would turn the PUT's 500 into a 200
+with a broken goal. A test now asserts the throw, and a second asserts the no-id case. Neither
+existed before.
+
+**A narrow cast, deliberately narrower than the two plan RPCs.** `supabase gen types` renders RPC
+parameters as non-null (Postgres exposes no per-parameter nullability), so the generated `Args`
+rejects the nulls a goal-clearing edit must send. The call casts **only** the argument object,
+through a local type that mirrors the SQL: the function NAME is still checked against the generated
+`Functions` map and the key set is still checked against the local type. Contrast
+`nutrition-plan-service.ts:106,:133`, whose `as never` erases the name AND the whole argument object
+— which is why nothing there would catch a signature change (finding Q6).
+
+**NOT FIXED, and not claimed to be: the read-modify-write race.** `getCurrentGoals` still runs
+outside the transaction, so two concurrent writers merge against the same snapshot and the later one
+wins. What changed is the failure mode: the loser now trips `idx_client_goals_active_unique` INSIDE
+the transaction and rolls back cleanly, instead of leaving the client with zero goals.
+
+**Test coverage moved, not dropped.** Every merge assertion previously read the INSERT body; the
+merged row now travels as the RPC's argument object, so the assertions read that instead, behind one
+`rpcArgs()` helper. Task 1.1's mirror-payload test is preserved in substance: the mirror is written
+inside the transaction from `p_goal_weight` / `p_goal_body_fat_percentage` / `p_goal_deadline`, so
+asserting those args asserts the mirror payload. 13 tests → 15.
+
+**Docs corrected in this commit (class (b) stale — BOTH were written by this workstream):**
+`docs/ARCHITECTURE.md:88` and Task 1.3's STATUS block above both state flatly that
+`clients.goal_deadline` is unreachable. The **mapped property** is (`mapClientRow` never sets it, so
+the three `?? client.goalDeadline` fallbacks really are dead code) — but the **column** is read raw
+by `intake-review-service.ts:114` and drives a backfill guard at `:156-163`. Dropping its write
+would cause spurious re-backfills from intake.
+
+**OWED — live verification of the RPC.** The unit tests mock `supabaseAdmin`, so they prove the
+call shape, not that the function's three statements roll back together. Deferred to the
+end-of-session smoke rather than run mid-session against real fixture data.
+
+**Gates:** `tsc` clean · `vitest` 15/15 in `client-goals-service.test.ts` · full suite at the
+session gate.

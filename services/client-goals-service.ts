@@ -2,6 +2,7 @@
 // and dual-writes to clients table are system-level operations.
 import { supabaseAdmin } from "./supabase-admin";
 import type { ClientGoal, ClientGoalRow } from "@/types/client-goals";
+import type { Database } from "@/types/database";
 
 function mapClientGoalRow(row: ClientGoalRow): ClientGoal {
   return {
@@ -50,26 +51,8 @@ export const updateGoals = async (
   },
   setBy: string
 ): Promise<ClientGoal> => {
-  const now = new Date().toISOString();
-
   // Get existing goals to carry forward unchanged fields
   const existing = await getCurrentGoals(clientId);
-
-  // Supersede existing row if present
-  if (existing) {
-    const { error: supersedeError } = await supabaseAdmin
-      .from("client_goals")
-      .update({ superseded_at: now, updated_at: now })
-      .eq("client_id", clientId)
-      .is("superseded_at", null);
-
-    if (supersedeError) {
-      console.error("Failed to supersede goals:", supersedeError);
-      throw new Error(
-        `Failed to supersede goals: ${supersedeError.message}`
-      );
-    }
-  }
 
   // Per-field merge on DEFINED presence: a key carrying a real value wins, and an
   // explicit null still wins (it clears the column — `null !== undefined`). A key
@@ -102,35 +85,84 @@ export const updateGoals = async (
       : existing?.primaryGoal ?? null,
   };
 
-  const { data, error } = await supabaseAdmin
-    .from("client_goals")
-    .insert({
-      client_id: clientId,
-      ...merged,
-      set_by: setBy,
-      effective_from: now,
-    })
-    .select()
-    .single();
+  // ONE transaction: supersede the active row, insert the new one, and update the
+  // `clients` mirror (migration 139). Previously these were three unsynchronised
+  // statements, so a failed insert after a successful supersede left the client
+  // with ZERO non-superseded rows — which `getCurrentGoals` returns as null and
+  // the calculator (and, since task 1.3, the coach Overview) reads as
+  // *maintenance*. A silent, plausible wrong answer rather than a visible failure.
+  //
+  // The mirror write moved INSIDE the transaction rather than staying a
+  // fire-and-forget dual-write whose error was only console.error'd. That
+  // swallowed failure is how `client_goals` and the mirror came to hold different
+  // goals for the same client. It now fails loudly instead of diverging silently.
+  //
+  // The merge stays HERE, in TypeScript, and the RPC receives an already-merged
+  // complete row. That is why none of its parameters carry a SQL `DEFAULT NULL`
+  // (the usual convention for optional RPC args): here NULL is a *meaningful
+  // value* — it clears a goal field — so "omitted" and "null" must stay
+  // distinguishable, and only the caller knows which it meant.
+  //
+  // NOT FIXED, deliberately: the read-modify-write race. `getCurrentGoals` above
+  // still runs outside the transaction, so two concurrent writers can merge
+  // against the same snapshot and the later one wins. What changed is the failure
+  // mode — the loser now trips `idx_client_goals_active_unique` INSIDE the
+  // transaction and rolls back cleanly, instead of leaving zero active goals.
+  // Every goal field is nullable — clearing one is a legitimate edit — but
+  // `supabase gen types` renders RPC parameters as non-null (Postgres has no
+  // per-parameter nullability to generate from), so the generated `Args` type
+  // rejects the nulls this function is required to send. The cast is scoped to
+  // exactly that: the function NAME is still checked against the generated
+  // `Functions` map, and the key set is still checked against this local type, so
+  // a renamed or added parameter is caught. This is deliberately narrower than
+  // the `as never` on the two plan RPCs, which erase the name and the whole
+  // argument object and would let a signature change ship silently broken.
+  type UpdateGoalsArgs = {
+    p_client_id: string;
+    p_set_by: string;
+    p_goal_weight: number | null;
+    p_goal_body_fat_percentage: number | null;
+    p_goal_deadline: string | null;
+    p_goal_start_date: string | null;
+    p_primary_goal: string | null;
+  };
+  const rpcArgs: UpdateGoalsArgs = {
+    p_client_id: clientId,
+    p_set_by: setBy,
+    p_goal_weight: merged.goal_weight,
+    p_goal_body_fat_percentage: merged.goal_body_fat_percentage,
+    p_goal_deadline: merged.goal_deadline,
+    p_goal_start_date: merged.goal_start_date,
+    p_primary_goal: merged.primary_goal,
+  };
 
-  if (error) {
-    console.error("Failed to insert new goals:", error);
-    throw new Error(`Failed to insert new goals: ${error.message}`);
+  const { data: newGoalId, error } = await supabaseAdmin.rpc(
+    "update_client_goals_atomic",
+    rpcArgs as unknown as Database["public"]["Functions"]["update_client_goals_atomic"]["Args"]
+  );
+
+  // Throw, never log-and-return-null. Two RPC-error conventions exist in this
+  // codebase — `nutrition-plan-service.ts:135-138` logs and returns null,
+  // `training-service.ts:302-304` throws — and only the throwing one preserves
+  // this path's behaviour: `app/api/clients/[id]/goals/route.ts:109-115` catches
+  // and returns 500, so swallowing here would turn a real failure into a 200 with
+  // a broken goal.
+  if (error || !newGoalId) {
+    console.error("Failed to update goals:", error);
+    throw new Error(
+      `Failed to update goals: ${error?.message ?? "No goal id returned"}`
+    );
   }
 
-  // Dual-write to clients table for backward compatibility
-  const { error: clientError } = await supabaseAdmin
-    .from("clients")
-    .update({
-      goal_weight: merged.goal_weight,
-      goal_body_fat_percentage: merged.goal_body_fat_percentage,
-      goal_deadline: merged.goal_deadline,
-      updated_at: now,
-    })
-    .eq("id", clientId);
+  const { data, error: readError } = await supabaseAdmin
+    .from("client_goals")
+    .select("*")
+    .eq("id", newGoalId)
+    .single();
 
-  if (clientError) {
-    console.error("Failed to dual-write goals to clients:", clientError);
+  if (readError) {
+    console.error("Failed to read back new goals:", readError);
+    throw new Error(`Failed to read back new goals: ${readError.message}`);
   }
 
   return mapClientGoalRow(data);
