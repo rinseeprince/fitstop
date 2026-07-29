@@ -101,17 +101,24 @@ Rule of thumb: a rule about **safety** (RLS, GRANT, auth chain ordering, rate li
 
 ## 5. Session map
 
-| Session | Theme | Migrations | Ships user-visible change? |
-|---|---|---|---|
-| **1** | Pre-existing bug fixes + the rate derivation | **none** | Overview goal source only |
-| **2** | Blocks: schema, service, generation | 137, 138 | No (API only) |
-| **3** | Coach UI + "Waiting on you" | none | Yes — the whole feature |
+| Session | Theme | Migrations | Ships user-visible change? | Status |
+|---|---|---|---|---|
+| **1** | Pre-existing bug fixes + the rate derivation | **none** | Overview goal source only | ✅ **COMPLETE** — shipped 2026-07-28 (`53abf0a`, `3abbfa5`, `b3ca479`, `62cef4a`), browser smoke passed 2026-07-29 |
+| **2** | Blocks: schema, service, generation **+ Session 1's inherited fixes (2.8)** | 137, 138, **139** | No (API only) | ⬜ Not started |
+| **3** | Coach UI + "Waiting on you" + client-portal goal (3.9) | none | Yes — the whole feature | ⬜ Not started |
 
 Strictly sequential: 2 depends on 1's calculator, 3 depends on 2's API.
 
 ---
 
-# SESSION 1 — Foundations
+# SESSION 1 — Foundations ✅ COMPLETE
+
+> **Closed 2026-07-29.** All four tasks shipped 2026-07-28 (`53abf0a`, `3abbfa5`, `b3ca479`,
+> `62cef4a`); the browser smoke passed 2026-07-29 and discharged both the §"Session 1 verification"
+> smoke and the one Task 1.3 left *Owed*. Gates at close: `tsc` clean, `eslint` 0 errors,
+> **233/233 files · 2410/2410 tests**, `check:labels` OK.
+> **Read the STATUS blocks in §8 before Session 2 — they correct this section's own text in several
+> places.** Everything Session 1 deferred is now owned by **Task 2.8**; nothing is left unassigned.
 
 **Zero migrations. Every task is an independently valuable fix to code that exists today.** Nothing here mentions phases; the point is that Session 2 lands on solid ground rather than amplifying three existing bugs.
 
@@ -296,6 +303,29 @@ Four production call sites, all must be updated:
 
 That last one is the easy one to miss.
 
+**PLUS two mirror-reading readouts, folded in by owner decision 2026-07-29.** These are not
+`resolveEffectiveGoal` call sites at all — they read `client.goalWeight` (the `clients` mirror)
+**directly, with no `client_goals` fallback**, so they can render a stale goal beside correct
+targets:
+
+| Call site | Change |
+|---|---|
+| `hooks/use-nutrition-plan.ts:143-148` (`getWeightRemaining`) | resolve the goal instead of reading `client.goalWeight` |
+| `hooks/use-nutrition-builder.ts:224-231` (`getProjectedDate`) | same; also drop its local `CALORIES_PER_KG = 7700` in favour of the constant 1.4 moved to `lib/constants.ts` |
+
+**Why here and not their own task.** 2.4 is already opening every goal-resolution site and threading
+a date through it; these two are the same edit in the same files' neighbourhood, and splitting them
+out means reading the same code twice. Recorded in Task 1.3's STATUS as a NEW DIVERGENCE with no
+owner — this gives it one.
+
+**Scope guard — this does NOT include the client portal.** `services/client-portal-progress.ts` and
+`services/client-portal-service.ts` keep the mirror through Session 2; that one needs a new
+`/api/client/**` read path and is now **Task 3.9**. Do not start it here.
+
+**Both are display-only.** The calorie calculation itself already resolves correctly
+(`nutrition-plan-orchestrator.ts:161` → `currentGoals?.goalWeight ?? client.goalWeight`). Do not
+let a fix here change any target the client eats to; if a number moves, something else broke.
+
 ### Task 2.5 — Per-date generation + horizon
 
 - `generateNutritionEvents` (`services/nutrition-event-service.ts:61`) takes a **resolver** `(date) => { targets, dietType }` instead of closing over one `PlanInput` + one grid. The loop is already per-date (`:92`).
@@ -314,6 +344,84 @@ That last one is the easy one to miss.
 - `GET`/`PUT`/`DELETE /api/clients/[id]/phases` — full `CONVENTIONS.md` §9/§10 chain: `coachApiRateLimit` → `requireCSRFProtection` → `getAuthenticatedCoachId` → **ownership check** → zod → service. Audit-log the writes (`recordAuditEvent`, fire-and-forget, after the authorized write).
 - **Blocks save independently of the goal** (invariant 7) — this route must never call `updateGoals`.
 - Update `docs/ARCHITECTURE.md`: the new table, the generation model, and the now-false *"No roadmap or phase concept exists"* line under "Coach client Overview".
+
+### Task 2.8 — Inherited fixes from Session 1
+
+Everything Session 1 deferred, gathered here so none of it is orphaned. Each item names its origin
+STATUS block. **Several can ride along with a sibling task rather than being done standalone** — the
+"ride with" column says which. Do them in the order listed; (a) needs the migration.
+
+| # | Fix | Origin | Ride with |
+|---|---|---|---|
+| a | `updateGoals` → RPC (transactional) | 1.1, 1.3 | **migration 139**, do with 2.1/2.2 |
+| b | Amendment threads its `to` bound | 1.2 | 2.5 |
+| c | Kill the latent timezone transcription | 1.4 | 2.5 |
+| d | Floored rate is stale in the response | 1.4 | 2.6 |
+| e | Unset `gender` takes the male cap | 1.4, §7 | 2.6 |
+| f | `nutrition_events` template fallback (level 3) | §7 | 2.5 |
+| g | `training_burn_calories` drift on existing rows | S1 smoke | 2.5 |
+| h | `getAuthenticatedCoachId()` missing `request` | S1 smoke | 2.7 |
+
+**(a) `updateGoals` is non-transactional — migration 139.** It supersedes
+(`client-goals-service.ts:59-72`) then inserts (`:98-107`) with no transaction, and **all four
+callers swallow the error**. A failed insert leaves the client with **zero active goals**, which the
+calculator and (since 1.3) the coach Overview both read as *maintenance* — i.e. a silent, plausible
+wrong answer rather than a visible failure. 1.1 deferred this only because Session 1 had no
+migrations by design; that constraint is gone. **The honest fix is an RPC** doing supersede+insert in
+one transaction — not an app-side compensating restore, which would add a second non-atomic write
+that can itself fail. Follow `feedback_rpc_optional_params_default_null`: optional args get SQL
+`DEFAULT NULL` and the service omits them.
+
+**(b) The amendment still cascades on a bare `{kind:"from"}`.** 1.2 threaded the `to` bound through
+the two plan-deletion routes but left the amendment, so days past the horizon keep a stale
+training-day surplus forever. `plan-amendment-service.ts:345` **already computes `windowEnd`** — it
+is simply not returned. Cheap now, and 2.5 is already inside this code. **Do not read
+`training_plans.effective_until` for the end bound** — it stays NULL on placed plans (mig `114:96`,
+`training-service.ts:67`), so it silently collapses the range to the default horizon on exactly the
+long plans that need it.
+
+**(c) The latent timezone bug — fix it before Session 3 exists.** `services/nutrition-service.ts:96-102`
+parses `today` as **local** midnight while the deadline (a bare `DATE` from PostgREST) parses as
+**UTC** midnight; `Math.round` absorbs the offset only below ±12h. Measured in 1.4: correct at UTC /
+LA / São Paulo / Kolkata, **wrong at Auckland and Kiritimati** (92 vs 91), and wrong by two at
+exactly +12 (94 vs 93) where the fraction is 0.5 and rounds up. Latent today because both callers are
+server-side under UTC Node. **1.4 already built the correct arithmetic** — `dateStringToDayNumber` /
+`addDaysToDateString` in `lib/goals/goal-rate.ts`, pinned across six zones plus two named cases
+asserting the wrong 92 and 94. Port `nutrition-service.ts` onto those helpers so the two cannot
+diverge again, regardless of which module Session 3's widget ends up calling. Fixing it here means
+Session 3 lands on safe ground instead of shipping a browser-side error that is silent and always in
+the "too slow" direction.
+
+**(d) A floored plan advertises a deficit it will not run.** `calculateBaselineCalories` returns a
+**pre-floor** `weeklyRate` / `requiredDailyDeficit` beside a **post-floor** `baselineCalories` — at
+TDEE 1700 the target 1500 is 200/day against a reported −0.3846 kg/wk ≈ 423/day. 1.4 pinned this
+rather than fixing it, because it feeds the coach's live plan response and 1.4 was not asked to move
+those numbers. 2.6 **is** asked to: it re-runs the calculator per block and returns per-row cap
+warnings (invariant 12). Re-derive the reported rate from the target actually returned — the
+rate-first path already does exactly this via `appliedRateKgPerWeek`.
+
+**(e) Unset `gender` silently takes the male cap and floor** (`gender === "female"` is false for
+null). Pre-existing, but rate-first entry makes it visible. §7 and 2.6 both leave this as
+surface-or-accept; **decide it in this task and record which**, so it stops being re-raised.
+
+**(f) The level-3 template fallback is still unbuilt.** Session 1 closed the no-row window that made
+it matter most, but a date past the horizon still reads as "no target" — and that null is
+snapshotted permanently into `nutrition_logs` (`daily-log-card-service.ts:79-99`) and drops the day
+from the weekly denominator (`weekly-nutrition-service.ts:65-81`). 2.5 already reworks the horizon to
+`max(today + 56d, last block end)`; decide there whether the widened horizon closes this or whether
+the fallback is still owed.
+
+**(g) `training_burn_calories` does not track `is_training_day` on existing rows.** Found during the
+Session 1 smoke on fixture Samuel James: `2026-08-09 Sun` is a rest day carrying `burn = 770`, and
+`2026-08-01 Sat` is a training day carrying `burn = 0`. The narrow cascade correctly leaves these
+alone (they sit outside every date set), so this is residue from the pre-1.2 floor cascade. **Confirm
+whether 2.5's regeneration clears it**; if it does not, this needs a one-off backfill, because the
+column feeds the day's target. Do not assume a regeneration reaches it — check.
+
+**(h) `getAuthenticatedCoachId()` is called without `request`** in
+`app/api/clients/[id]/training/[planId]/events/[eventId]/route.ts:31`, losing request context in
+structured logs. Not a security hole — the route's auth, ownership, rate-limit, CSRF and zod chain
+are all correct. One-line fix while 2.7 is in route work.
 
 ### Session 2 verification
 
@@ -338,6 +446,13 @@ Read these in full before planning anything:
 Session 2 is the blocks backend: migrations 137 and 138, the phase service, date-aware
 goal resolution, per-date nutrition generation, and the API routes. NOTHING
 user-visible ships in this session.
+
+It ALSO carries Task 2.8 — the eight fixes Session 1 deferred, including migration 139
+(making updateGoals transactional) and the latent timezone bug, which must be fixed
+before Session 3 renders anything goal-shaped in a browser. Most of 2.8 rides along
+with a sibling task rather than standing alone; the table in 2.8 says which. Do not
+treat 2.8 as optional cleanup — 2.8(a) closes a path that currently leaves a client
+with zero goals, silently reading as "maintenance".
 
 The single most important thing in it: the training→nutrition cascade must stay
 correct. All 8 training write routes funnel through generateNutritionEvents, so they
@@ -461,6 +576,40 @@ Add the goal as a **required** item. Add blocks as an **optional**, visibly skip
 
 A pre-start day currently renders blank — `getPlanTargetForDate` returns `null` and there is no template fallback. Replace it with a countdown state. This is about the **start date**, not blocks; client-facing blocks remain post-launch.
 
+### Task 3.9 — Client portal reads the real goal, not the `clients` mirror
+
+Task 1.3 moved the **coach** Overview onto `client_goals` and deliberately left the client-facing
+side on the mirror. The two stores genuinely diverge — measured on fixture **Samuel James**
+(`ed5cb82c-30ea-488d-96d8-eb34e8ae09fa`), 2026-07-29: `client_goals` = **90 kg / 9 %**
+(`superseded_at: null`), `clients` mirror = **77 kg / 33 %**. The coach and the client can be
+looking at different goal weights for the same client, today.
+
+**The read sites:** `services/client-portal-progress.ts:139-140,268-269` and
+`services/client-portal-service.ts:44` → `components/client-portal/metrics/goals-section.tsx`.
+`mapClientRow` is **shared with the coach path** via `toClientSelfView` (`lib/mappers.ts:135`) —
+do not "fix" this by changing the mapper, and do not add `goalDeadline` to it (1.3 established
+that `clients.goal_deadline` is unreachable and the mirror is the thing being retired).
+
+**This needs a new read path, which is why it was not in Session 1.** `/api/client/**` has no goal
+endpoint at all — endpoint → auth chain (`getAuthenticatedClientId`, pass `request`) → hook →
+component. Scoped to the **goal**; client-facing *blocks* stay v1.5 per §6.
+
+**Do not defer this again on "it's only the harness" — that reason is wrong** (owner correction,
+2026-07-29). The tempting argument is that the client web portal is a test harness and RN is the
+real client, so the work is throwaway. That is true of the **component** only. RN consumes the
+**same `/api/client/**` endpoints**, so the goal endpoint is a route RN needs regardless and should
+be built once, against `client_goals`, rather than twice. Invest in the data/API layer; the
+portal's React component is the disposable half.
+
+**Severity is capped only by nobody real being on the portal yet.** The moment a real client is
+pointed at it — a pilot, a client-facing demo, or RN slipping — this is live misinformation to a
+client about their own goal. If that happens before Session 3 lands, pull this task forward ahead
+of everything else in the session.
+
+**Placed in Session 3 rather than 2.7** because 3.8 is already the client-portal task, so both land
+in one pass over that surface. If Session 2 has capacity, the endpoint half can be pulled into 2.7
+without waiting — it has no dependency on blocks.
+
 ### Session 3 verification
 
 - Full `CONVENTIONS.md` §13 checklist, `npm run check:labels` especially.
@@ -483,8 +632,11 @@ Read these in full before planning anything:
      SESSION 1 and SESSION 2 STATUS blocks (they record decisions you must inherit),
      and all of SESSION 3. You are executing SESSION 3 only.
 
-Session 3 is the coach UI — this is where the feature becomes visible. The backend
-landed in Session 2; do not rebuild it.
+Session 3 is mostly the coach UI — this is where the feature becomes visible. The
+backend landed in Session 2; do not rebuild it. TWO EXCEPTIONS, both client-facing and
+both at the end: 3.8 (portal start-date countdown) and 3.9, which is NOT a UI task —
+it adds a new /api/client/** goal endpoint with the full CONVENTIONS §9/§10 auth chain.
+Budget for it as backend work, not a render tweak.
 
 Import the shared tokens and components before writing any new class strings:
 builder-tokens.ts, SectionLabel, StatBand, SegmentedControl, LibraryTableShell,
@@ -528,7 +680,7 @@ me your plan for 3.1.
 
 | Item | Why |
 |---|---|
-| Client-facing blocks ("Block 2 of 3") | No `/api/client/**` goal endpoint exists at all — a new read path. v1.5. |
+| Client-facing **blocks** ("Block 2 of 3") | v1.5. **Note the reason narrowed 2026-07-29:** it used to be "no `/api/client/**` goal endpoint exists at all", but Task 3.9 now builds that endpoint for the goal. What stays out of scope is exposing *blocks* to the client — the endpoint 3.9 adds is goal-shaped and must not grow a blocks payload. |
 | Block report card (prescribed vs actual rate) | Wants the check-in rebuild to settle first so "actual" and "adherence" mean one thing. Post-launch. |
 | Block type enum | Removed by owner decision — rate sign gives direction, and the coach's own block name carries the intent better than any enum. Would over-determine the block. |
 | Blocks prescribing training (deload/taper) | Would make blocks genuinely cross-domain; the program builder already handles deloads per-week via progression. Post-launch — and it is the one change that would justify reintroducing a type column. |
@@ -538,9 +690,13 @@ me your plan for 3.1.
 
 ## 7. Open items
 
-- **Client portal still reads the `clients.*` goal mirror** after Session 1 (deliberate — Task 1.3 scope boundary). Revisit with client-facing blocks.
-- **`gender` unset defaults to the male safety cap.** Pre-existing; rate-first entry makes it visible. Session 2 decides: surface it or accept it.
-- **The `nutrition_events` template fallback (level 3) is still unbuilt.** Session 1 closes the no-row window that made it matter most, but a date past the horizon still reads as "no target".
+- ~~**Client portal still reads the `clients.*` goal mirror**~~ — **SCHEDULED as Task 3.9** (owner, 2026-07-29). No longer "revisit with client-facing blocks": the goal read is separable from blocks, and the `/api/client/**` endpoint it needs is one RN will consume too, so it is not harness-only work.
+- ~~**`gender` unset defaults to the male safety cap.**~~ → **Task 2.8(e).** Decide and record there.
+- ~~**The `nutrition_events` template fallback (level 3) is still unbuilt.**~~ → **Task 2.8(f).**
+
+**Nothing in this section is unassigned as of 2026-07-29.** Session 1's deferrals all have an owner in
+**Task 2.8**; the client-portal goal mirror is **Task 3.9**. If a new open item is added here, give it
+a task number in the same edit — an entry with no owner is how the last workstream lost things.
 
 ## 8. STATUS blocks
 
@@ -816,3 +972,71 @@ than an implicit ternary. Exec plan §7 leaves surface-or-accept to Session 2.
 **Docs:** `docs/ARCHITECTURE.md` gains a "Goal rate arithmetic" section under Client Goals.
 
 **Gates:** all six green. 233/233 files, 2410/2410 tests.
+
+---
+
+### Session 1 verification — browser smoke ✅ PASSED 2026-07-29
+
+Discharges the §"Session 1 verification" browser smoke **and** the smoke left **Owed** by Task 1.3.
+Run against `next dev` + the live dev DB, coach role, fixture **Samuel James**
+(`ed5cb82c-30ea-488d-96d8-eb34e8ae09fa`) — the only client with both future scheduled training
+events and nutrition events. *(Chloe Martin also qualifies; Samuel James was picked arbitrarily.)*
+
+**1.2 — cascade stays narrow. PASSED.** `Push Day` dragged `2026-08-06` → `2026-08-07` in the
+real coach calendar ("Session moved" toast, real write), then dragged back.
+
+| date | role | `is_training_day` | `training_burn_calories` | `baseline_calories` |
+|---|---|---|---|---|
+| 08-05 | sentinel (before) | false | 0 | **1 → 1** |
+| 08-06 | moved **from** | true → **false** | 385 → **0** | 2567 |
+| 08-07 | moved **to** | false → **true** | 0 → **385** | 2567 |
+| 08-10 | sentinel (after) | true | 385 | **1 → 1** |
+| 08-20 | sentinel (after) | true | 385 | **1 → 1** |
+
+Both endpoints re-derived; **neither sentinel moved**, across both the move and the move-back
+(four cascaded dates). `08-10`/`08-20` are the discriminating pair — they sit *after* the moved
+dates, so the pre-1.2 floor cascade (`from 08-06` through the 56-day horizon) would have
+regenerated both back to 2567.
+
+**The `updated_at` trap is confirmed LIVE, not just by reading the migration.** `08-06` and
+`08-07` were definitely rewritten — their values flipped — and `updated_at` still reads
+`2026-07-27T20:42:07.820959+00:00`, byte-identical to every untouched row in the window. **An
+`updated_at` assertion would have passed whether the cascade wrote 2 days or 56.** Use the
+sentinel: set `baseline_calories = 1` on days the generator would overwrite. Do not substitute
+`note`/`is_modified` — they survive any write (1.2's STATUS already says so; this is the live
+confirmation).
+
+**1.3 — Overview reads the real goal. PASSED.** Samuel James carries a genuine divergence:
+`client_goals` = 90 kg / 9 % (`superseded_at: null`), `clients` mirror = **77 kg / 33 %**. The
+Overview renders **90.0kg / 9.0%** with "Goal reached". The mirror's values appear nowhere.
+`GET /api/clients/[id]/goals` returns the same row. This is the strongest available form of the
+test — the two stores disagree, so a mirror read could not have coincidentally looked right.
+
+**Left alone, pre-existing, NOT caused by Session 1** — `training_burn_calories` does not track
+`is_training_day`: `2026-08-09 Sun` is a rest day carrying `burn = 770`, and `2026-08-01 Sat` is
+a training day carrying `burn = 0`. The narrow cascade correctly did not touch either (both are
+outside every date set exercised), so this is residue from the pre-1.2 floor cascade that only a
+regeneration reaching those dates will clear. Session 2 should expect to see it and not read it
+as a new defect.
+
+**Unconfirmed, recorded rather than claimed.** On the session's first cold page load the status
+card showed `Not recorded` for both goal chips while the rest of the card was also unpopulated
+("No plan" where the real plan later rendered). Twelve samples at 250 ms over a warm cache never
+reproduced it, so it is plausibly a cold-start flash rather than the `isGoalLoading` gap 1.3
+closed — but it was **not** reproduced and is **not** proven absent. Worth one deliberate
+cold-load check in Session 3 when the two-way widget lands on that surface.
+
+**Harness facts for whoever smokes the calendar next.** The drag is gated on **edit mode**
+(`calendar-event-card.tsx` → `useDraggable({ disabled: !editMode || !isFutureScheduled })`);
+until the divider's pencil is clicked, zero draggables mount and every synthetic drag silently
+no-ops with no overlay and no aria-live. Verify with
+`document.querySelectorAll('[aria-describedby^="DndDescribedBy"]').length` (22 here, = the
+future-scheduled count). And never `await` inside the drag `Runtime.evaluate` — a move loop with
+`await setTimeout` hangs the full 45 s CDP timeout and the drop never lands; dispatch each
+`pointermove` burst synchronously and let the tool-call round-trip be the delay that lets React
+render the overlay and measure droppables. Droppable ids are date strings, so aria-live reads
+`…moved over droppable area 2026-08-07.` — that is the reliable pre-drop target check, and it
+lags one call behind the moves.
+
+**No migrations. No code changed. DB restored** to the pre-smoke baseline (session moved back,
+sentinels reset to 2567) and re-verified row-by-row across `2026-07-29 … 2026-08-21`.
