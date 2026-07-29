@@ -619,7 +619,28 @@ without waiting — it has no dependency on blocks.
 
 ---
 
-### 📋 SESSION 3 PROMPT — paste this into a fresh session
+### 📋 SESSION 3 PROMPTS — four fresh sessions, in order
+
+**Why four and not one.** Session 2 shipped as a single prompt covering 7 tasks. It consumed
+**four** sessions, and **three of them died on `ECONNRESET`** at 384k / 541k / 480k tokens of
+context — the two that stayed under 300k never did. The observed safe rate is **2–3 numbered tasks
+per session**. Session 3 has nine, and UI work is heavier per task than backend: the design system,
+the shared tokens and the surface being edited all have to be resident at once.
+
+Each block below is **self-contained** — paste one into a fresh session and nothing else. They are
+grouped by *shared reading cost*, not by task count: tasks that pay for the same context travel
+together. **Run them in order.** 3A is first because every other surface links into the panel it
+builds; 3D is last because the doc says so and because it is the only one outside the coach app.
+
+**Context hygiene applies to all four.** If a session passes ~250k tokens, finish the task in hand,
+commit, and start the next one fresh rather than pushing on. `/context` shows the number. If you
+start seeing `API Error: Unable to connect to API (ECONNRESET)`, the context is too big — do not
+retry, and do not type `go`; that re-fires the same oversized request. See the "Post-crash audit"
+STATUS blocks at the end of this document.
+
+---
+
+#### 3A — the goal & plan panel (Tasks 3.1 + 3.2)
 
 ```
 Read these in full before planning anything:
@@ -627,51 +648,277 @@ Read these in full before planning anything:
   2. docs/ARCHITECTURE.md
   3. docs/newdesignsystem.md  (design source of truth — but where it and shipped
      Programs/Builder code disagree, the SHIPPED CODE wins)
-  4. docs/CLIENT-GOALS-PHASES-EXECUTION-PLAN.md — read §1 (design), §2 (invariants),
-     §3 (what to do when a doc rule blocks you), §4 (known doc collisions), the
-     SESSION 1 and SESSION 2 STATUS blocks (they record decisions you must inherit),
-     and all of SESSION 3. You are executing SESSION 3 only.
+  4. docs/CLIENT-GOALS-PHASES-EXECUTION-PLAN.md — §1 (design), §2 (invariants), §3 (what
+     to do when a doc rule blocks you), §4 (known doc collisions), the SESSION 1 and
+     SESSION 2 STATUS blocks (they record decisions you must inherit), and all of
+     SESSION 3 for context.
 
-Session 3 is mostly the coach UI — this is where the feature becomes visible. The
-backend landed in Session 2; do not rebuild it. TWO EXCEPTIONS, both client-facing and
-both at the end: 3.8 (portal start-date countdown) and 3.9, which is NOT a UI task —
-it adds a new /api/client/** goal endpoint with the full CONVENTIONS §9/§10 auth chain.
-Budget for it as backend work, not a render tweak.
+You are executing TASKS 3.1 and 3.2 ONLY. Do not start 3.3 or anything after it.
+
+3.1 is the "Goal & plan" panel — one right Sheet, Destination + Route sections, with the
+live "15 weeks · 4 Aug – 16 Nov · projects 76.4 kg" readout. 3.2 is its delete-a-block
+confirm dialog. They ship together because 3.2's dialog needs 3.1's data shape and would
+otherwise re-read everything 3.1 read.
+
+The backend is DONE and you must not rebuild it. It is already live:
+  - GET/PUT/DELETE /api/clients/[id]/phases (the PUT takes {startDate, phases:[{name,
+    weeks, ratePerWeekKg}]} — LENGTHS ONLY, and the schema is .strict(), so sending date
+    pairs is a 400)
+  - the DELETE returns the blocks whose dates SHIFTED — that list is what 3.2's confirm
+    sentence must name, rather than re-deriving the consequence in the browser
+  - lib/goals/phase-chain.ts is browser-safe ON PURPOSE: chainPhases / getPhaseForDate /
+    isPhaseElapsed / lastPhaseEnd are the SAME functions the server writes with. Render
+    the live readout from them. Do not hand-roll date arithmetic — a local-parse variant
+    loses a day west of UTC.
+
+Decisions you inherit (do not re-litigate):
+  - Blocks save INDEPENDENTLY of the goal (invariant 7). Two writes: goal → the goals PUT,
+    and ONLY when a goal field actually changed; blocks → the phases PUT. Never route a
+    block edit through updateGoals — it supersedes-and-inserts, so renaming a block would
+    mint a goal version.
+  - The "on track / not on track" readout is INFORMATION, never a blocker. A deliberately
+    conservative plan is a legitimate coaching call.
+  - Form pattern is react-hook-form + zodResolver, modelled on
+    nutrition-edit-targets-sheet.tsx. Do NOT copy client-goal-editor.tsx's four-useState
+    pattern — it predates the rule and is the outlier.
+  - Elapsed blocks are not offered for deletion at all, and the server refuses them with a
+    422 naming the block. Surface that message; do not swallow it.
+
+ALSO CLOSE THESE TEST GAPS while you are here — they are unprotected today only because
+nothing calls them yet, and your UI is what makes them reachable:
+  - the zod bounds in lib/validations/client-phases.ts (MAX_PHASES, MAX_CHAIN_WEEKS,
+    MAX_PHASE_WEEKS, and the duplicate-id refinement) — all four can currently be deleted
+    with the full suite green
+  - deleteClientPhase's re-chain anchor for the FIRST block of a chain
+Prove each new test actually bites: break the source, confirm the test fails, restore.
 
 Import the shared tokens and components before writing any new class strings:
-builder-tokens.ts, SectionLabel, StatBand, SegmentedControl, LibraryTableShell,
-RowActions. Author with the hardcoded hex from newdesignsystem.md, not the OKLCH
-semantic tokens. Radius is rounded-[6px] everywhere, 4px for inner chips.
+builder-tokens.ts, SectionLabel, StatBand, SegmentedControl, RowActions. Author with the
+hardcoded hex from newdesignsystem.md, not the OKLCH semantic tokens. Radius rounded-[6px],
+4px for inner chips. Block NAMES are sans even when they contain digits ("Cut 2") — the
+digits belong to the name; dates, week counts and rates are mono via MONO_LABEL_CLASS, and
+`npm run check:labels` fails the build on a raw font-mono-display.
 
-Two things that are easy to get wrong and are called out in the plan:
-  - Block NAMES are sans even when they contain digits ("Cut 2") — the digits belong
-    to the name. Dates, week counts and rates are mono via MONO_LABEL_CLASS.
-    `npm run check:labels` fails the build on a raw font-mono-display.
-  - Render ALL blocks including elapsed ones, muted. Do not filter to
-    current-and-future. That muted rendering IS the entire "view past blocks" story
-    for v1, and without it a coach cannot tell why a past month's calories changed.
+3.2's dialog: styled Dialog, NEVER AlertDialog. Danger thumb, ONE plain-sans sentence
+naming the actual consequence, ghost Cancel + danger-OUTLINE CTA repeating the verb. There
+is no filled destructive button in this system.
 
-Rules for this session:
-- Follow CONVENTIONS.md §2: show me a plan and get approval before writing any code.
-  This applies even to small UI changes.
+Rules:
+- CONVENTIONS.md §2: show me a plan and get approval before writing any code. This applies
+  to small UI changes too.
 - One commit per numbered task.
-- If a rule in CONVENTIONS.md, docs/ARCHITECTURE.md or docs/newdesignsystem.md blocks
-  you, follow the procedure in §3 of the execution plan: quote the rule with file:line,
-  state the collision, classify it (genuinely protective / stale /
-  protective-but-wrong-here), and either comply, update the doc in the same commit, or
-  STOP AND ASK ME. Never silently ignore a rule, and never silently comply with one
-  that makes the feature wrong. These docs are strict but they describe the platform as
-  it was — this workstream changes it, so some rules will legitimately need updating.
+- If a rule in CONVENTIONS.md, ARCHITECTURE.md or newdesignsystem.md blocks you, follow §3
+  of the execution plan: quote it with file:line, classify it (protective / stale /
+  protective-but-wrong-here), then comply, update the doc in the same commit, or STOP AND
+  ASK ME. Never silently ignore a rule, and never silently comply with one that makes the
+  feature wrong.
 - Commit-ready means all of CONVENTIONS.md §13.
-- Verify RENDERED PIXELS, not class math. Equal margins are not equal optics on a
-  divider row (the hairline is centred in a variable-height row).
+- Verify RENDERED PIXELS, not class math.
 - Append a STATUS block to docs/CLIENT-GOALS-PHASES-EXECUTION-PLAN.md as each task lands.
 
-When all tasks are done, run the full browser smoke in the plan's "Session 3
-verification" section and report what you saw — not what you expect.
+Start by reading the four documents plus the Session 1 and 2 STATUS blocks, then show me
+your plan for 3.1.
+```
 
-Start by reading the four documents plus the Session 1 and 2 STATUS blocks, then show
-me your plan for 3.1.
+---
+
+#### 3B — showing the block set (Tasks 3.3 + 3.4)
+
+```
+Read these in full before planning anything:
+  1. CONVENTIONS.md  (mandatory)
+  2. docs/ARCHITECTURE.md
+  3. docs/newdesignsystem.md  (shipped code wins where they disagree)
+  4. docs/CLIENT-GOALS-PHASES-EXECUTION-PLAN.md — §1, §2 (invariants), §3, §4, the
+     SESSION 1 and SESSION 2 STATUS blocks, and all of SESSION 3. Task 3A (3.1 + 3.2)
+     has already shipped — read its STATUS block; it is where blocks are AUTHORED and
+     you must not duplicate that surface.
+
+You are executing TASKS 3.3 and 3.4 ONLY. Do not start 3.5 or anything after it.
+
+Both tasks render a block set the coach authored elsewhere: 3.3 is the per-block preview
+in the nutrition builder, 3.4 is the chip strip above the calendar plus the per-day tint on
+BOTH the training and nutrition calendars. They ship together because they share the same
+display vocabulary and the same typography trap.
+
+Load-bearing constraints:
+  - In 3.3, DATES AND RATES ARE READ-ONLY. They are edited where they were created (3A's
+    panel). The rows are amendable in every other respect, and EVERY CAPPED RATE RENDERS
+    INLINE, PER ROW (invariant 12) — a capped rate that is silently applied is the defect
+    that rule exists to prevent.
+  - In 3.4, there is NO timeline/Gantt/date-band primitive in this codebase and a spanning
+    bar does not work: the month grid has gap-2 between cells and a 42px rail, and a
+    mid-week boundary has no clean expression in a 7-column grid. Use the PER-DAY CELL
+    WASH — the removed implementation used teal alpha 0.06/0.03/0.02, the bottom rungs of
+    the ladder in newdesignsystem.md.
+  - RENDER ALL BLOCKS INCLUDING ELAPSED ONES, MUTED. Do not filter to current-and-future.
+    That muted rendering IS the entire "view past blocks" story for v1 — without it a coach
+    looking at a past month cannot tell why the calories changed.
+  - The strip is not decoration. The calendar renders ONE month and a 15-week block set is
+    four, so the strip is the only place the coach sees the whole plan at once.
+  - Structurally the strip is the label-less SectionLabel variant (bare hairline +
+    right-aligned cluster); the training calendar toolbar is the reference.
+    min-h-[24.5px] on the divider row.
+  - Block NAMES are sans even with digits ("Cut 2"); dates, week counts and rates are mono
+    via MONO_LABEL_CLASS. `npm run check:labels` fails the build on a raw
+    font-mono-display.
+
+ALSO CLOSE THIS TEST GAP: writePhaseDailyTargets (services/client-phases-service.ts) is the
+grid writer your preview renders, and it currently has no executing test — the whole
+function can be made a no-op with the full suite green. Prove the new test bites: break the
+source, confirm it fails, restore.
+
+Import the shared tokens and components before writing any new class strings:
+builder-tokens.ts, SectionLabel, StatBand, SegmentedControl, LibraryTableShell, RowActions.
+Hardcoded hex, not OKLCH. Radius rounded-[6px], 4px for inner chips.
+
+Rules:
+- CONVENTIONS.md §2: plan first, get approval, then code. Applies to small UI changes too.
+- One commit per numbered task.
+- Doc collision → §3 procedure: quote with file:line, classify, then comply / update the
+  doc in the same commit / STOP AND ASK ME.
+- Commit-ready means all of CONVENTIONS.md §13, check:labels especially.
+- Verify RENDERED PIXELS, not class math. Equal margins are not equal optics on a divider
+  row — the hairline is centred in a variable-height row.
+- Append a STATUS block as each task lands.
+
+Start by reading the documents plus the Session 1/2 and 3A STATUS blocks, then show me your
+plan for 3.3.
+```
+
+---
+
+#### 3C — flows and prompts (Tasks 3.5 + 3.6 + 3.7)
+
+```
+Read these in full before planning anything:
+  1. CONVENTIONS.md  (mandatory)
+  2. docs/ARCHITECTURE.md
+  3. docs/newdesignsystem.md
+  4. docs/CLIENT-GOALS-PHASES-EXECUTION-PLAN.md — §1, §2 (invariants), §3, §4, the
+     SESSION 1 and SESSION 2 STATUS blocks, and all of SESSION 3. Tasks 3A and 3B have
+     shipped — read their STATUS blocks.
+
+You are executing TASKS 3.5, 3.6 and 3.7 ONLY. Do not start 3.8 or 3.9.
+
+These three are grouped because none of them builds a new UI primitive — they surface state
+that already exists. They are individually small; do not let that tempt you into skipping
+the plan step.
+
+3.5 — start date flows downstream. THREE call sites, and the third is a trap:
+  - training apply-to-client-dialog.tsx: Start Date currently defaults to getNextMonday().
+    Use the client's plan start date WHEN SET AND STILL IN THE FUTURE, else next Monday.
+    Add the hint line. The coach can still override — this is a default, not a lock.
+  - nutrition drawer-footer.tsx: generates immediately with effective_from resolving
+    server-side to TODAY. That is a real bug on a Friday-setup/Monday-start — it writes
+    Saturday and Sunday targets the client is not meant to follow. Use the plan start date.
+  - apply-date-dialog.tsx: KEEP THIS MODAL. "From which day should this change apply?" is a
+    genuinely different question from "when does this plan begin" — a coach changing macros
+    in week 6 needs now vs next Monday, and neither is the plan start. REWORD BOTH SURFACES
+    so they stop sounding alike, and re-tokenise this dialog off AlertDialog while you are
+    in it.
+
+3.6 — three "Waiting on you" rows on the client Overview. THESE ARE NOT ALERTS
+(invariant 14): they render like the unreviewed-check-in row (thumb + title + meta + outline
+button), are NOT dismissible, and do NOT go through evaluateAndSortTriggers. They clear by
+being done. Reference: waiting-on-you-section.tsx, the check-in row at :71-100.
+  - "Nutrition is out of date" reads the server-computed `nutritionStale` boolean already
+    returned by GET /api/clients/[id]/phases. DO NOT re-derive the comparison in the
+    browser — the rule has one home (isNutritionStaleForPhases) precisely because its
+    custom-macros exemption is the half that gets forgotten.
+  - DO NOT add these to the dashboard attention feed (owner decision, 2026-07-28). The feed
+    stays purely client-behaviour; these live on the client Overview only.
+  - Deliberately NOT built: "your blocks don't reach the goal" as a standing alert. The
+    goal panel says it at authoring time, when the coach can act.
+
+3.7 — activation readiness. Add the goal as a REQUIRED item and blocks as an OPTIONAL,
+visibly skippable one that never gates activation. This is an API change as well as UI —
+give it the full CONVENTIONS §9/§10 treatment, not a render tweak.
+
+ALSO CLOSE THIS TEST GAP: isNutritionStaleForPhases (services/nutrition-plan-service.ts) has
+no test at all — both a hardcoded `false` and dropping the custom-macros exemption survive
+the full suite today. 3.6 is its first consumer. Prove the new test bites.
+
+Rules:
+- CONVENTIONS.md §2: plan first, get approval, then code.
+- One commit per numbered task.
+- Doc collision → §3 procedure.
+- Commit-ready means all of CONVENTIONS.md §13. 3.7 touches an API route, so the §2
+  security/load/performance review is TRIGGERED — run it and report it unprompted.
+- Verify RENDERED PIXELS, not class math.
+- Append a STATUS block as each task lands.
+
+Start by reading the documents plus the prior STATUS blocks, then show me your plan for 3.5.
+```
+
+---
+
+#### 3D — client portal (Tasks 3.8 + 3.9 + rider (f))
+
+```
+Read these in full before planning anything:
+  1. CONVENTIONS.md  (mandatory)
+  2. docs/ARCHITECTURE.md
+  3. docs/CLIENT-PORTAL-REDESIGN.md AND docs/CLIENT-PORTAL-EXECUTION-PLAN.md — per
+     CONVENTIONS §16 these are the SOURCE OF TRUTH for anything under app/client/** or
+     components/client-portal/**, and they WIN over ARCHITECTURE.md where they disagree
+     about a client-portal read or write path.
+  4. docs/CLIENT-GOALS-PHASES-EXECUTION-PLAN.md — §1, §2 (invariants), §3, §4, the
+     SESSION 1 and SESSION 2 STATUS blocks, and all of SESSION 3. Tasks 3A, 3B and 3C have
+     shipped — read their STATUS blocks.
+
+You are executing TASKS 3.8, 3.9 and rider (f) ONLY. This is the last block of the
+workstream.
+
+THIS IS MOSTLY BACKEND, despite living in the client app. Budget it that way.
+
+3.9 is NOT a UI task. /api/client/** has NO goal endpoint at all today — the portal reads
+the `clients` goal mirror directly (client-portal-progress.ts:268 →
+components/client-portal/metrics/goals-section.tsx). You are adding a new client-scoped read
+path with the full CONVENTIONS §9/§10 chain, then moving the portal onto it. This is the
+LAST mirror reader in the codebase; the two hooks that used to be listed alongside it came
+off in Task 2.4.
+
+Why it matters, with evidence: on 2026-07-29 a live client's mirror held 78 kg / 15 % while
+client_goals held 92 kg / 9 %, so the coach's Overview and the client's own portal reported
+different goals with nothing on either screen indicating disagreement. The write path that
+caused it is fixed (commit 5d5fd99), but the portal will keep reading a second copy of the
+truth until this task lands.
+
+3.8 — a pre-start day currently renders blank: getPlanTargetForDate returns null and there
+is no template fallback. Replace it with a countdown state. This is about the START DATE,
+not blocks — client-facing blocks remain post-launch and are OUT OF SCOPE.
+
+Rider (f) — the level-3 template fallback, deferred here by owner decision in Task 2.5's
+STATUS. A date past the horizon (max(today + 56d, last block end)) still reads as "no
+target", and that null is snapshotted PERMANENTLY into nutrition_logs
+(daily-log-card-service.ts:79-99) and drops the day from the weekly denominator
+(weekly-nutrition-service.ts:65-81). It is a READ-path concern, which is why it lands with
+3.8 rather than with generation. For it to bite, a client must be looking 9+ weeks ahead AND
+logging food that day.
+
+Scale note: per CONVENTIONS §14 the client web app is a throwaway test harness — the real
+client is React Native. Invest in the data/API layer, not web render. Lazy-mount,
+memoization and virtualization are explicitly OUT OF SCOPE here.
+
+Rules:
+- CONVENTIONS.md §2: plan first, get approval, then code.
+- One commit per numbered task.
+- Doc collision → §3 procedure. Note the CONVENTIONS §16 precedence above: the
+  client-portal docs beat ARCHITECTURE.md on portal read/write paths.
+- New API route → the CONVENTIONS §2 security/load/performance review is TRIGGERED. Run it
+  and report it unprompted.
+- Commit-ready means all of CONVENTIONS.md §13.
+- Append a STATUS block as each task lands.
+
+When all three are done, run the FULL browser smoke from this plan's "Session 3
+verification" section and report what you SAW, not what you expect. Then, per this
+document's own header, the workstream is complete: update docs/ARCHITECTURE.md with
+anything still owed and DELETE this execution plan — the precedent set by the
+training-builder and wellness-soreness plans. Its STATUS blocks survive in git history.
+
+Start by reading the documents plus the prior STATUS blocks, then show me your plan for 3.9
+(do it first — it is the largest and the only one with a new API surface).
 ```
 
 ---
