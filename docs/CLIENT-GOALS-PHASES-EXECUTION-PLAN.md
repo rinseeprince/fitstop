@@ -1786,3 +1786,116 @@ rule, and the three NULL-stamp cases). The full ARCHITECTURE pass — the new ta
 deferred smoke from 2.4 and 2.5 can finally run — but it needs a client with real blocks, and
 nothing writes `client_phases` through the UI until Session 3.1. Until then it takes a seeded block
 row.
+
+---
+
+### Task 2.7 — Routes + docs ✅ SHIPPED 2026-07-29
+
+**What shipped.** `app/api/clients/[id]/phases/route.ts` (+ its test), `isNutritionStaleForPhases`
+in `services/nutrition-plan-service.ts`, two audit actions in `lib/constants.ts`, rider **(h)**, and
+the `docs/ARCHITECTURE.md` reconciliation. No migration.
+
+**Handover note — this task was finished by a second session.** The first one died on
+`ECONNRESET` at ~480k tokens of context, as two earlier sessions in this workstream had (541k and
+384k; the two sessions that stayed under 300k never hit it). Each error arrived 5m48–5m54s after the
+last successful turn — a fixed retry budget expiring, not one bad packet — and typing `go` only
+re-fired the same oversized request. **Nothing was wrong with the code at that point**: the session
+was stuck on a single failing test and had misread it (see below). If a session in this workstream
+starts resetting, check its context size before debugging anything else, and split the remaining
+tasks into fresh sessions rather than retrying.
+
+**The route.** `GET`/`PUT`/`DELETE /api/clients/[id]/phases`, chain
+`coachApiRateLimit` → `requireCSRFProtection` (writes only) → `requireCoachOwnsClient(clientId, request)`
+→ zod → service, with `recordAuditEvent` fired **after** the authorized write and never on a failed
+one. `PhaseWriteError` carries its own status so the elapsed-block refusal surfaces as a 422 naming
+the block rather than a generic 500. **The route never calls `updateGoals`** (invariant 7), asserted
+structurally.
+
+**`GET` returns `nutritionStale`, computed server-side.** The staleness rule gets exactly one home
+(`isNutritionStaleForPhases`) rather than being re-derived in the browser, where the custom-macros
+exemption is the half that would inevitably be forgotten. Three ways to be not-stale — no active
+plan, custom macros, matching fingerprints — and a read failure returns `false`, because a transient
+DB error must not manufacture an "out of date" alarm the coach cannot explain.
+
+**The failing test was a self-matching assertion, not a defect.** `expect(src).not.toContain("updateGoals")`
+reads `route.ts` as source text — and `route.ts`'s own docstring contains the word while explaining
+the rule. The route was correct the whole time. Comments are now stripped before the assertion,
+deliberately rather than deleting the prose: the tempting "fix" is to remove the explanation, which
+keeps the test green and loses the reason. **A structural assertion over a file's own source must
+exclude the comments that document it.**
+
+**DEVIATION — rider (h) is two lines, not one, and 57 more are still open.** The plan names
+`training/[planId]/events/[eventId]/route.ts:31`; that file has the identical defect in **both** its
+PATCH and DELETE handlers, and fixing one and not the other would be arbitrary. Repo-wide the count
+is **58 `getAuthenticatedCoachId()` calls without `request` against 34 with it** — so this is a
+convention that never landed, not an oversight in one file. Passing `request` changes log context
+only. Not expanded here (out of 2.7's scope); recorded so it stops reading as a one-off.
+
+**Docs reconciled (class (b) — stale, my own workstream made them false):**
+- **New `### client_phases table (migration 137)` section.** The table was undocumented in
+  ARCHITECTURE: 2.1 shipped the migration and 2.5/2.6 documented the *generation model*, but nothing
+  described the table, its invariants, or its routes. Carries the reasoning that rots fastest: why
+  there is no `UNIQUE (client_id, starts_on)`, why the pure half sits in `lib/goals/`, why bounds
+  live in zod, why `updated_at` is stamped in app code, and why `daily_targets` omits
+  `is_training_day`.
+- **New `phases_fingerprint` paragraph** under "Nutrition plan (durable)", including 2.2's
+  decision that `goal_source` stays dropped, and the stamp-last ordering with its failure matrix.
+- **"No roadmap or phase concept exists" corrected.** Migration 137 made the *phase* half false; the
+  *roadmap* half is still true and now says so. The bullet also disambiguates the collision the
+  word "block" now creates — the Overview's training chips describe a **program**.
+
+**Security / load / performance review (§2 — triggered by a new API route):**
+1. **Rate limit + CSRF** — `coachApiRateLimit` first on all three handlers, before params are even
+   awaited; `requireCSRFProtection` on `PUT`/`DELETE` and correctly absent on `GET` (`:51`, `:83-87`, `:137-141`).
+2. **Auth + ownership** — `requireCoachOwnsClient(clientId, request)` on all three, with `request`
+   passed; a foreign `clientId` returns the helper's response and no service is reached (pinned).
+3. **zod before every write** — `.strict()`, so a client attempting to send date pairs is a 400 and
+   an overlap cannot be expressed at the boundary at all.
+4. **Tenant scoping** — every service call takes `clientId` explicitly and filters on it; a forged
+   `phaseId` matches zero rows.
+5. **`check:rls`** — 41/41 tables, run against the live catalog.
+6. **`supabaseAdmin` bypasses RLS** — authorized by the ownership check above it, which is the only
+   perimeter that exists on this route.
+7-8. **Round trips are constant.** `GET` = 2 reads (blocks + plan) and hashes in memory. `PUT`/`DELETE`
+   inherit 2.3's two batched statements; nothing loops a query per block.
+9. **Index-covered** — `idx_client_phases_client_starts`; the upsert's `onConflict: "id"` targets the PK.
+10. **Worst case** — `MAX_PHASES = 12`, so a `PUT` writes at most 12 rows and a `DELETE` re-chains at
+   most 11. Bounded by zod, not by hope.
+11. **Sequential awaits** — `GET`'s two reads are sequential and the second consumes the first's
+   output, so they cannot be parallelised.
+12. **One swallow, deliberate:** `recordAuditEvent` is fire-and-forget (`void`), so a failed audit
+   write returns 200 with the block change committed and unlogged. Consistent with every other
+   audited route; the alternative is failing a legitimate coach edit because a log write failed.
+13. **`PUT` is not transactional** — 2.3's DELETE-then-upsert. If the upsert fails after the delete,
+   removed blocks are gone and the rest are unchanged. Pre-existing from 2.3, unchanged here.
+
+**Review findings, and one that mattered.** An adversarial review raised 24 findings across five
+lenses; 21 were refuted and **3 confirmed, all fixed in this commit**:
+1. *(docs)* "no write can touch [elapsed blocks] and their `updated_at` never moves" was true of the
+   coach-edit path but **false of plan generation**, which recomputes and upserts every block's grid
+   including elapsed ones. Transcribed from 2.3's STATUS, which was written before 2.6 shipped and
+   falsified by it. Now qualified, with the consequence stated: `client_phases.updated_at` is **not**
+   a "was this finished block ever touched" signal, and **Session 3's muted past-block view must not
+   assume it is showing the numbers the client actually ate.**
+2. *(tests)* `DELETE` never asserted its arguments, so the client-today plumbing was unpinned.
+3. *(tests)* The `PUT` twin **passed for the wrong reason** — the mocked client-today and
+   `validPut.startDate` were the same string, so confusing them satisfied the assertion. The two are
+   now deliberately different and a comment says why.
+
+**A review agent left a mutation behind, and the new test caught it.** While proving finding 3, a
+verifier edited `route.ts:115` to pass `validation.data.startDate` instead of `clientToday`,
+reported that it had reverted the edit, and had not. It survived the gates that had already run.
+Both fixes were then mutation-tested — each mutation now fails the suite, and the file was diffed
+byte-for-byte against a backup afterwards. **Do not trust a subagent's claim to have reverted a
+mutation; diff the file.**
+
+**Gates:** `tsc` clean · `eslint` **0 errors** (210 pre-existing warnings, none in touched files) ·
+`vitest` **238 files, 2515 tests** (2474 at the 2.5 close) · `check:labels` OK, 629 files ·
+`check:rls` **41 public tables, 41 with RLS** · no `as any`, no leftover markers, no `console.log`
+in any of the five touched files.
+
+**Owed:** no browser smoke — the route has no UI caller until Session 3.1, so exercising it needs a
+hand-rolled request rather than a click. Session 3 is its first real consumer and smokes it for free.
+
+**Session 2 is closed.** 2.1–2.7 shipped; 2.8 (a)–(e), (g) and (h) shipped; **(f) is the only
+carry-forward** — decided in 2.5's STATUS to be Session 3's, alongside 3.8's client-portal work.

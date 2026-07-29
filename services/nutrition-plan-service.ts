@@ -245,3 +245,43 @@ export async function getActiveNutritionPlanId(clientId: string): Promise<string
   }
   return data?.id ?? null;
 }
+
+/**
+ * Is the client's nutrition plan out of date with respect to their blocks?
+ *
+ * The ONE server-side home for this rule (task 2.2's STATUS): Session 3.6's
+ * "Nutrition is out of date" row reads a boolean rather than re-deriving the
+ * comparison in the browser, where the custom-macros half would inevitably be
+ * forgotten.
+ *
+ * Three ways to be NOT stale, and they are different things:
+ *  - **No active plan** — there is nothing to regenerate, so nothing to nag about.
+ *  - **Custom macros** — the coach typed the numbers and the calculator never
+ *    ran, so blocks are not driving nutrition by design. Without this clause a
+ *    coach who deliberately chose custom macros would get a permanent nag they
+ *    could never clear.
+ *  - **The fingerprints match** — the stored hash was written by the generation
+ *    that produced the events the client is actually eating.
+ *
+ * A read failure returns `false`. A transient DB error must not manufacture a
+ * "your plan is out of date" alarm on the Overview; the next read corrects it.
+ */
+export async function isNutritionStaleForPhases(
+  clientId: string,
+  currentFingerprint: string | null
+): Promise<boolean> {
+  const { data, error } = await supabaseAdmin
+    .from("nutrition_plans")
+    .select("phases_fingerprint, custom_macros_enabled")
+    .eq("client_id", clientId)
+    .eq("status", "active")
+    .maybeSingle();
+
+  if (error) {
+    console.error("Failed to read plan staleness:", error.message);
+    return false;
+  }
+  if (!data || data.custom_macros_enabled) return false;
+
+  return currentFingerprint !== data.phases_fingerprint;
+}

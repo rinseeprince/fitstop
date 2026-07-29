@@ -75,6 +75,8 @@ export const AUDIT_ACTIONS = {
   TRAINING_PLAN_PLACE: "training_plan.place",
   TRAINING_PLAN_CREATE: "training_plan.create",
   TRAINING_PLAN_AMEND: "training_plan.amend",
+  PHASE_UPDATE: "phase.update",
+  PHASE_DELETE: "phase.delete",
   INVITATION_SEND: "invitation.send",
 } as const;
 
