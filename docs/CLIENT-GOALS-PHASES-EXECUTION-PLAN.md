@@ -1552,7 +1552,18 @@ normalization sits at the legacy signature's boundary, where the leniency actual
 writes. So any regeneration reaching those dates clears the drift the Session 1 smoke found on
 fixture Samuel James; a narrow `{kind:"dates"}` cascade will not, because those dates are not in its
 set — which is exactly why the smoke saw them survive. A plan-level regenerate fixes them.
-**Read from the code, NOT verified against the live rows.**
+~~**Read from the code, NOT verified against the live rows.**~~
+
+> **CORRECTED 2026-07-29, same day, during the smoke.** Two changes to the paragraph above.
+>
+> 1. **Now measured, not just read.** Live query over `2026-07-28 … 2026-08-12` on Samuel James:
+>    `2026-08-01` (training day, `burn = 0`) and `2026-08-09` (rest day, `burn = 770`) are both
+>    `is_modified: false`, so the answer above **holds for them** — a regeneration reaching those
+>    dates does clear them, and no backfill is needed.
+> 2. **"Any regeneration reaching those dates clears the drift" is too broad as a general claim.**
+>    It is false for `is_modified` days, which the cascade drops from the upsert entirely — no
+>    regeneration ever reaches them. That is a separate defect, found in the same smoke and fixed
+>    immediately after; see the STATUS block below.
 
 **Rider (f) — DECIDED: still owed, and it is Session 3's** (owner, 2026-07-29). The widened horizon
 does **not** close it: a date past `max(today + 56d, last block end)` still has no row, still reads
@@ -1603,3 +1614,63 @@ recorded, and a new bullet describes per-date generation and the resolution orde
 
 **Owed:** no browser smoke. The block-resolution path cannot be exercised end-to-end until 2.6
 writes a `daily_targets` grid, so the meaningful smoke belongs after 2.6.
+
+---
+
+### Bugfix — a coach-edited day kept a stale TRAIN badge ✅ SHIPPED 2026-07-29
+
+**Not a numbered task.** A pre-existing defect found by the owner during the Session 2 smoke,
+root-caused and fixed in its own commit. Recorded here because it corrects a claim in 2.5's STATUS
+and because the semantic it establishes is one Session 3 must not undo.
+
+**What the owner saw.** `2026-07-31` carried a training session and had been manually edited to
+4,000 kcal. Moving the session to `2026-07-30` updated the 30th correctly and correctly preserved
+the 4,000 on the 31st — **but the 31st kept its TRAIN badge** while the training calendar showed it
+as REST.
+
+**Measured, not inferred.** A live query over `2026-07-28 … 2026-08-12` comparing
+`nutrition_events.is_training_day` against actual `training_events` found **exactly one mismatch in
+the window — `2026-07-31`, the one `is_modified: true` row.** Every other day agreed with reality,
+which independently confirms task 2.5's generator rewrite did not break the cascade.
+
+**Root cause — three things compounding:**
+1. `materializeNutritionEventDays` (`nutrition-event-edit-service.ts`) writes `baseline_calories`,
+   macros, `calorie_surplus_percentage: null`, `training_burn_calories: 0`, `is_modified: true` —
+   and **never touches `is_training_day`**. The day keeps whatever flag it had at edit time.
+2. `generateNutritionEvents` filters `is_modified` rows out of the upsert **entirely**, so no later
+   cascade rewrites the flag.
+3. The badge renders straight off that stored column
+   (`nutrition-calendar-day-cell.tsx` → `event?.isTrainingDay`).
+
+⇒ Once a coach edited a day, its badge was **frozen forever** at its edit-time value. The only
+escape was "reset day", which clears `is_modified` first and then regenerates.
+
+**THE SEMANTIC, and it is the durable part: `is_modified` protects the numbers the coach TYPED, not
+the training calendar.** `is_training_day` is a fact about whether the client trains that day. A
+coach editing Tuesday's calories never said "and Tuesday is a training day forever". Any future
+code that widens or narrows `is_modified` protection must keep this split.
+
+**The fix.** Protected rows are still excluded from the upsert, and additionally get
+`is_training_day` refreshed by `refreshTrainingDayFlagOnEditedDays` — **that one column and
+`updated_at`, nothing else**. Their calories, macros, surplus and burn stay exactly as the coach left
+them; the edit deliberately sets surplus NULL and burn 0 so training stops stacking on an edited day,
+and undoing that would change the number the client eats to. Works in both directions: the badge
+clears when training moves off an edited day and appears when it moves onto one.
+
+**Shape:** two batched UPDATEs (one per flag value), not one per row — round trips stay constant at
+**≤2** however many days the cascade covers, and they only fire when the window actually contains an
+edited day. Both are client-scoped and re-assert `is_modified = true`, so a stale date set cannot
+reach an unprotected row. `updated_at` is stamped explicitly (no trigger on the table, and this is a
+real UPDATE rather than the upsert half that leaves it frozen).
+
+**Tests (4):** flag cleared when training moves off; set when it moves onto; **the payload asserted
+to contain exactly `is_training_day` + `updated_at`** (so a future edit cannot quietly start
+clobbering the coach's calories through this path); no UPDATE issued at all when no day is edited;
+and mixed days split into one UPDATE per flag rather than one per row.
+
+**Gates:** `tsc` clean · `eslint` 0 errors · `vitest` **236/236 files, 2478/2478** · `check:labels`
+OK.
+
+**Note for the smoke:** the fix corrects a day the next time a cascade covers it. The `2026-07-31`
+row stays stale until a training write touches that date again — redoing the move is the end-to-end
+proof.

@@ -290,6 +290,24 @@ export async function generateNutritionEvents(
     ? rows.filter((r) => !protectedDates.has(r.date))
     : rows;
 
+  // A coach's edit protects THE NUMBERS THEY TYPED — not the training calendar.
+  // `is_training_day` is a fact about whether the client trains that day; a coach
+  // who edited Tuesday's calories never said "and Tuesday is a training day
+  // forever". Freezing it stranded a TRAIN badge on a day the session had been
+  // moved OFF (and withheld one from a day it moved onto), permanently: the
+  // cascade skips these rows entirely, so nothing else would ever correct it and
+  // the only way back was resetting the day.
+  //
+  // Their calories, macros, surplus and burn stay exactly as the coach left them
+  // — `materializeNutritionEventDays` deliberately sets surplus NULL and burn 0
+  // so training stops stacking on an edited day, and that must not be undone.
+  if (protectedDates.size) {
+    await refreshTrainingDayFlagOnEditedDays(
+      clientId,
+      rows.filter((r) => protectedDates.has(r.date))
+    );
+  }
+
   if (rowsToUpsert.length === 0) return;
 
   // Upsert with overwrite on conflict (no ignoreDuplicates — new plan values always win)
@@ -299,6 +317,43 @@ export async function generateNutritionEvents(
     .upsert(rowsToUpsert, { onConflict: "client_id,date" });
 
   if (error) throw error;
+}
+
+/**
+ * Refresh `is_training_day` on coach-edited days, touching no other column.
+ *
+ * Two batched statements — one for the days that ARE training days, one for the
+ * days that are not — rather than an update per row, so round trips stay
+ * constant (2 at most) however many days the cascade covers. Both are
+ * client-scoped and re-assert `is_modified = true`, so a stale date set can
+ * never reach an unprotected row.
+ *
+ * `updated_at` is stamped explicitly: `nutrition_events` has no trigger, and this
+ * is a real UPDATE rather than the upsert half that leaves the column frozen.
+ */
+async function refreshTrainingDayFlagOnEditedDays(
+  clientId: string,
+  // `is_training_day` is optional on the insert type, though the generator above
+  // always sets it. Coerced rather than asserted so an absent value means "rest",
+  // never a write of `undefined`.
+  protectedRows: Array<{ date: string; is_training_day?: boolean | null }>
+): Promise<void> {
+  const byFlag: Array<[boolean, string[]]> = [
+    [true, protectedRows.filter((r) => r.is_training_day === true).map((r) => r.date)],
+    [false, protectedRows.filter((r) => r.is_training_day !== true).map((r) => r.date)],
+  ];
+
+  for (const [flag, dates] of byFlag) {
+    if (dates.length === 0) continue;
+    const { error } = await supabaseAdmin
+      .from("nutrition_events")
+      .update({ is_training_day: flag, updated_at: new Date().toISOString() })
+      .eq("client_id", clientId)
+      .eq("is_modified", true)
+      .in("date", dates);
+
+    if (error) throw error;
+  }
 }
 
 // --- Regenerate future events ---

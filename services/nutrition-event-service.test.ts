@@ -632,3 +632,129 @@ describe("horizon extends to the last block end", () => {
     expect(deleteQuery.lte).toHaveBeenCalledWith("date", "2026-09-26");
   });
 });
+
+describe("coach-edited days keep their numbers but not a stale TRAIN badge", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(getEventsForDateRange).mockResolvedValue([]);
+    vi.mocked(getClientPhases).mockResolvedValue([]);
+    vi.mocked(getClientTodayString).mockResolvedValue("2026-07-30");
+  });
+
+  /** protected-select → flag UPDATE(s) → upsert, in that order. */
+  function wire(protectedDates: string[]) {
+    const queries: ReturnType<typeof createMockQuery>[] = [];
+    let nutCount = 0;
+
+    mockFrom.mockImplementation((table: string) => {
+      if (table === "nutrition_events") {
+        nutCount += 1;
+        const q =
+          nutCount === 1
+            ? createMockQuery<{ date: string }[]>({
+                data: protectedDates.map((date) => ({ date })),
+                error: null,
+              })
+            : createMockQuery({ data: [], error: null });
+        queries.push(q);
+        return q as any;
+      }
+      return createMockQuery({ data: null, error: null }) as any;
+    });
+
+    return queries;
+  }
+
+  it("clears the flag when training moved OFF an edited day", async () => {
+    // The bug: the coach edits 07-31 to 4000 kcal while it is a training day,
+    // then moves the session to 07-30. The cascade skips 07-31 entirely, so its
+    // TRAIN badge stays on forever even though the session has gone.
+    const queries = wire(["2026-07-31"]);
+
+    // No training events anywhere → both days resolve to is_training_day false.
+    await generateNutritionEvents(
+      "client-1",
+      "plan-1",
+      PLAN_RESOLVER,
+      null,
+      ["2026-07-30", "2026-07-31"],
+    );
+
+    const flagUpdate = queries[1];
+    expect(flagUpdate.update).toHaveBeenCalledWith(
+      expect.objectContaining({ is_training_day: false }),
+    );
+    // Scoped, and re-asserts is_modified so a stale set cannot reach a normal row.
+    expect(flagUpdate.eq).toHaveBeenCalledWith("client_id", "client-1");
+    expect(flagUpdate.eq).toHaveBeenCalledWith("is_modified", true);
+    expect(flagUpdate.in).toHaveBeenCalledWith("date", ["2026-07-31"]);
+
+    // The coach's numbers are NOT in the payload — only the flag and updated_at.
+    const payload = flagUpdate.update.mock.calls[0][0] as Record<string, unknown>;
+    expect(Object.keys(payload).sort()).toEqual(["is_training_day", "updated_at"]);
+
+    // And the edited day is still excluded from the upsert.
+    const upserted = queries[2].upsert.mock.calls[0][0] as Array<{ date: string }>;
+    expect(upserted.map((r) => r.date)).toEqual(["2026-07-30"]);
+  });
+
+  it("sets the flag when training moves ONTO an edited day", async () => {
+    vi.mocked(getEventsForDateRange).mockResolvedValue([
+      { date: "2026-07-31", calorieSurplusPercentage: 15, estimatedCalories: 0 },
+    ] as never);
+    const queries = wire(["2026-07-31"]);
+
+    await generateNutritionEvents(
+      "client-1",
+      "plan-1",
+      PLAN_RESOLVER,
+      null,
+      ["2026-07-31"],
+    );
+
+    expect(queries[1].update).toHaveBeenCalledWith(
+      expect.objectContaining({ is_training_day: true }),
+    );
+  });
+
+  it("issues no flag write at all when no day is edited", async () => {
+    const queries = wire([]);
+
+    await generateNutritionEvents(
+      "client-1",
+      "plan-1",
+      PLAN_RESOLVER,
+      null,
+      ["2026-07-30", "2026-07-31"],
+    );
+
+    // Only the protected-select and the upsert — never a bare UPDATE.
+    for (const q of queries) expect(q.update).not.toHaveBeenCalled();
+    expect(queries[1].upsert).toHaveBeenCalledTimes(1);
+  });
+
+  it("splits mixed days into one UPDATE per flag, not one per row", async () => {
+    vi.mocked(getEventsForDateRange).mockResolvedValue([
+      { date: "2026-07-31", calorieSurplusPercentage: 15, estimatedCalories: 0 },
+    ] as never);
+    const queries = wire(["2026-07-30", "2026-07-31"]);
+
+    await generateNutritionEvents(
+      "client-1",
+      "plan-1",
+      PLAN_RESOLVER,
+      null,
+      ["2026-07-30", "2026-07-31"],
+    );
+
+    // Two edited days, opposite flags → exactly two UPDATEs (constant, not N).
+    expect(queries[1].update).toHaveBeenCalledWith(
+      expect.objectContaining({ is_training_day: true }),
+    );
+    expect(queries[1].in).toHaveBeenCalledWith("date", ["2026-07-31"]);
+    expect(queries[2].update).toHaveBeenCalledWith(
+      expect.objectContaining({ is_training_day: false }),
+    );
+    expect(queries[2].in).toHaveBeenCalledWith("date", ["2026-07-30"]);
+  });
+});
