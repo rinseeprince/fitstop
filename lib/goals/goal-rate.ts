@@ -129,6 +129,30 @@ export type FlooredCalories = {
   warning: string | null;
 };
 
+/**
+ * The safety envelope is ASSUMED when the client has no gender on file.
+ *
+ * `getRateSafety` keys on `gender === "female"`, so null/undefined fall to the
+ * higher ceiling and the lower floor — the less cautious of the two envelopes.
+ * `"other"` is excluded on purpose: the coach chose it, so nothing was assumed.
+ */
+export function isSafetyEnvelopeAssumed(gender: GoalGender): boolean {
+  return gender == null;
+}
+
+/**
+ * Coach-visible copy for the assumed envelope, emitted ONLY when a cap or floor
+ * actually applied (owner decision 2026-07-29). An unset gender that never trips
+ * a limit changed nothing, and warning about it would be noise on every plan.
+ */
+export function assumedSafetyEnvelopeWarning(
+  gender: GoalGender,
+  limitApplied: boolean
+): string | null {
+  if (!limitApplied || !isSafetyEnvelopeAssumed(gender)) return null;
+  return "Safety limits were assumed: this client has no gender set, so the higher weekly ceiling and lower calorie floor were used. Set it on their profile to apply the right limits.";
+}
+
 /** Raise a calorie target to the gender minimum. */
 export function applyCalorieFloor(calories: number, gender: GoalGender): FlooredCalories {
   const { minDailyCalories } = getRateSafety(gender);
@@ -272,8 +296,13 @@ export function calculateBaselineCaloriesFromRate(input: {
     capKgPerWeek: capped.capKgPerWeek,
     floored: floored.floored,
     floor: floored.floor,
-    warnings: [capped.warning, floored.warning].filter(
-      (w): w is string => w !== null
-    ),
+    warnings: [
+      capped.warning,
+      floored.warning,
+      assumedSafetyEnvelopeWarning(
+        input.gender,
+        capped.capped || floored.floored
+      ),
+    ].filter((w): w is string => w !== null),
   };
 }

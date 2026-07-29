@@ -115,8 +115,8 @@ const GOLDEN: Array<{
     args: [2500, 100, 85, "2026-04-05", "male", undefined, "2026-01-05"],
     expected: {
       baselineCalories: 1500,
-      requiredDailyDeficit: 1100,
-      weeklyRate: -1,
+      requiredDailyDeficit: 1000,
+      weeklyRate: -0.9090909090909091,
       warnings: [
         "Weekly deficit capped at 1kg/week for safety. Goal timeline may need adjustment.",
         "Calorie target raised to minimum safe level (1500 cal/day). Consider adjusting goal timeline.",
@@ -128,8 +128,8 @@ const GOLDEN: Array<{
     args: [2500, 100, 87, "2026-04-05", "male", undefined, "2026-01-05"],
     expected: {
       baselineCalories: 1500,
-      requiredDailyDeficit: 1100,
-      weeklyRate: -1,
+      requiredDailyDeficit: 1000,
+      weeklyRate: -0.9090909090909091,
       warnings: [
         "Calorie target raised to minimum safe level (1500 cal/day). Consider adjusting goal timeline.",
       ],
@@ -214,8 +214,8 @@ const GOLDEN: Array<{
     args: [1700, 90, 85, "2026-04-05", "male", undefined, "2026-01-05"],
     expected: {
       baselineCalories: 1500,
-      requiredDailyDeficit: 423.0769230769231,
-      weeklyRate: -0.38461538461538464,
+      requiredDailyDeficit: 200,
+      weeklyRate: -0.18181818181818182,
       warnings: [
         "Calorie target raised to minimum safe level (1500 cal/day). Consider adjusting goal timeline.",
       ],
@@ -226,8 +226,8 @@ const GOLDEN: Array<{
     args: [1400, 90, 85, "2026-04-05", "female", undefined, "2026-01-05"],
     expected: {
       baselineCalories: 1200,
-      requiredDailyDeficit: 423.0769230769231,
-      weeklyRate: -0.38461538461538464,
+      requiredDailyDeficit: 200,
+      weeklyRate: -0.18181818181818182,
       warnings: [
         "Calorie target raised to minimum safe level (1200 cal/day). Consider adjusting goal timeline.",
       ],
@@ -238,8 +238,8 @@ const GOLDEN: Array<{
     args: [1700, 100, 85, "2026-04-05", "male", undefined, "2026-01-05"],
     expected: {
       baselineCalories: 1500,
-      requiredDailyDeficit: 1100,
-      weeklyRate: -1,
+      requiredDailyDeficit: 200,
+      weeklyRate: -0.18181818181818182,
       warnings: [
         "Weekly deficit capped at 1kg/week for safety. Goal timeline may need adjustment.",
         "Calorie target raised to minimum safe level (1500 cal/day). Consider adjusting goal timeline.",
@@ -251,8 +251,8 @@ const GOLDEN: Array<{
     args: [1400, 100, 85, "2026-04-05", "female", undefined, "2026-01-05"],
     expected: {
       baselineCalories: 1200,
-      requiredDailyDeficit: 825,
-      weeklyRate: -0.75,
+      requiredDailyDeficit: 200,
+      weeklyRate: -0.18181818181818182,
       warnings: [
         "Weekly deficit capped at 0.75kg/week for safety. Goal timeline may need adjustment.",
         "Calorie target raised to minimum safe level (1200 cal/day). Consider adjusting goal timeline.",
@@ -264,8 +264,8 @@ const GOLDEN: Array<{
     args: [2500, 100, 85, "2026-04-05", "other", undefined, "2026-01-05"],
     expected: {
       baselineCalories: 1500,
-      requiredDailyDeficit: 1100,
-      weeklyRate: -1,
+      requiredDailyDeficit: 1000,
+      weeklyRate: -0.9090909090909091,
       warnings: [
         "Weekly deficit capped at 1kg/week for safety. Goal timeline may need adjustment.",
         "Calorie target raised to minimum safe level (1500 cal/day). Consider adjusting goal timeline.",
@@ -277,8 +277,8 @@ const GOLDEN: Array<{
     args: [1700, 100, 85, "2026-04-05", "other", undefined, "2026-01-05"],
     expected: {
       baselineCalories: 1500,
-      requiredDailyDeficit: 1100,
-      weeklyRate: -1,
+      requiredDailyDeficit: 200,
+      weeklyRate: -0.18181818181818182,
       warnings: [
         "Weekly deficit capped at 1kg/week for safety. Goal timeline may need adjustment.",
         "Calorie target raised to minimum safe level (1500 cal/day). Consider adjusting goal timeline.",
@@ -315,35 +315,70 @@ describe("calculateBaselineCalories — caps + floor golden matrix", () => {
   // Two properties the matrix above encodes but which are easy to lose in a
   // table of numbers, so they get named assertions of their own.
 
-  it("treats an unset gender as MALE for both the cap and the floor", () => {
+  it("treats an unset gender as MALE for the cap and the floor, but SAYS SO", () => {
     // `gender === "female" ? x : y` — "other", and a null/undefined gender cast
-    // through the orchestrator's `as`, all take the male branch. Pre-existing and
-    // deliberate to preserve here; whether to surface it is Session 2's call.
+    // through the orchestrator's `as`, all take the male branch. The NUMBERS are
+    // still preserved exactly (owner decision 2026-07-29: do not silently re-rate
+    // existing gender-less clients) — but an unset gender now carries an extra
+    // warning, because a limit it never chose was applied to it.
     const other = calculateBaselineCalories(2500, 100, 85, "2026-04-05", "other", undefined, "2026-01-05");
     const male = calculateBaselineCalories(2500, 100, 85, "2026-04-05", "male", undefined, "2026-01-05");
-    expect(other).toEqual(male);
+    expect(other).toEqual(male); // an explicit "other" is a CHOICE — nothing assumed
 
     const unset = calculateBaselineCalories(
       2500, 100, 85, "2026-04-05",
       undefined as unknown as Gender,
       undefined, "2026-01-05",
     );
-    expect(unset).toEqual(male);
+    expect(unset.baselineCalories).toBe(male.baselineCalories);
+    expect(unset.requiredDailyDeficit).toBe(male.requiredDailyDeficit);
+    expect(unset.weeklyRate).toBe(male.weeklyRate);
+    expect(unset.warnings).toEqual([
+      ...male.warnings,
+      expect.stringContaining("no gender set"),
+    ]);
   });
 
-  it("returns a PRE-floor rate alongside a POST-floor calorie target", () => {
-    // Known asymmetry, pinned rather than fixed: the cap branch rewrites
-    // requiredDailyChange before the baseline is computed, but the floor clamps
-    // the baseline WITHOUT recomputing the rate. So after a floor hit the
-    // returned weeklyRate describes a deficit the plan will not actually run,
-    // and rate -> calories -> rate does not round-trip through the floor.
+  it("stays silent about an assumed envelope when no limit actually applied", () => {
+    // 2500 TDEE, a gentle target: nothing caps, nothing floors, so there is
+    // nothing to disclose and the warning would be noise on every plan.
+    const unset = calculateBaselineCalories(
+      2500, 90, 85, "2026-04-05",
+      undefined as unknown as Gender,
+      undefined, "2026-01-05",
+    );
+    expect(unset.warnings).toEqual([]);
+  });
+
+  it("reports the POST-floor rate — the deficit the plan will actually run", () => {
+    // FIXED in task 2.8(d) (owner decision 2026-07-29). This used to return the
+    // deficit it was ASKED for (423 cal/day, -0.3846 kg/wk) beside a floored
+    // target that only runs 200 cal/day — advertising a rate the client would
+    // never hit. Both are now re-derived from the target actually returned.
     const r = calculateBaselineCalories(1700, 90, 85, "2026-04-05", "male", undefined, "2026-01-05");
 
     expect(r.baselineCalories).toBe(1500); // floored up from 1277
-    expect(r.requiredDailyDeficit).toBeCloseTo(423.08, 2); // the pre-floor figure
-    // The deficit the client will actually run is tdee - baseline = 200/day,
-    // less than half of what the returned rate claims.
-    expect(1700 - r.baselineCalories).toBe(200);
-    expect(r.weeklyRate).toBeCloseTo(-0.3846, 4);
+    expect(r.requiredDailyDeficit).toBe(200); // 1700 - 1500, not 423.08
+    expect(r.weeklyRate).toBeCloseTo(-0.1818, 4); // not -0.3846
+  });
+
+  it("EVERY row reports a deficit that matches the target it returned", () => {
+    // The universal property task 2.8(d) is really about, and a stronger guard
+    // than any single literal: whatever the caps and floor do, what the response
+    // CLAIMS the client will run must equal what the returned target actually
+    // runs. Unfloored rows carry the pre-round deficit, so allow half a calorie.
+    for (const { name, args, expected } of GOLDEN) {
+      const tdee = args[0];
+      const r = calculateBaselineCalories(...args);
+      expect.soft(r.requiredDailyDeficit, `${name}: deficit vs target`).toBeCloseTo(
+        tdee - r.baselineCalories,
+        0
+      );
+      expect.soft(r.weeklyRate, `${name}: rate vs target`).toBeCloseTo(
+        ((r.baselineCalories - tdee) * 7) / 7700,
+        2
+      );
+      expect(r.baselineCalories).toBe(expected.baselineCalories);
+    }
   });
 });

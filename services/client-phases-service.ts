@@ -309,3 +309,56 @@ function weeksBetween(startsOn: string, endsOn: string): number {
   const days = dateStringToDayNumber(endsOn) - dateStringToDayNumber(startsOn);
   return Math.round((days + 1) / 7);
 }
+
+/**
+ * Store each block's generated weekday grid on `client_phases.daily_targets`.
+ *
+ * One batched upsert, never a statement per block — the round trip count is
+ * constant however long the chain is (`MAX_PHASES` = 12).
+ *
+ * Every row carries its full current column set rather than a partial patch:
+ * PostgREST builds ONE insert with a single column list, so a partial upsert
+ * would null the columns it omits. The caller passes rows it has just read.
+ *
+ * A non-null grid is a PROMISE that it matches the block's window and rate —
+ * `carryDailyTargets` clears it on any date or rate edit — so this must only ever
+ * be called with grids computed against the blocks' current values.
+ */
+export async function writePhaseDailyTargets(
+  clientId: string,
+  grids: Array<{ phaseId: string; dailyTargets: PhaseDailyTarget[] }>
+): Promise<void> {
+  if (grids.length === 0) return;
+
+  const existing = await getClientPhases(clientId);
+  const byId = new Map(existing.map((p) => [p.id, p]));
+  const now = new Date().toISOString();
+
+  const rows = grids
+    .map(({ phaseId, dailyTargets }) => {
+      const phase = byId.get(phaseId);
+      if (!phase) return null;
+      return {
+        id: phase.id,
+        client_id: clientId,
+        name: phase.name,
+        starts_on: phase.startsOn,
+        ends_on: phase.endsOn,
+        rate_per_week_kg: phase.ratePerWeekKg,
+        daily_targets: dailyTargets,
+        updated_at: now,
+      };
+    })
+    .filter((r): r is NonNullable<typeof r> => r !== null);
+
+  if (rows.length === 0) return;
+
+  const { error } = await supabaseAdmin
+    .from("client_phases")
+    .upsert(rows, { onConflict: "id" });
+
+  if (error) {
+    console.error("Failed to write phase daily targets:", error);
+    throw new Error(`Failed to store block targets: ${error.message}`);
+  }
+}

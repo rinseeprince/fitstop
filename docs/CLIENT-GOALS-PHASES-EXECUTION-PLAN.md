@@ -104,7 +104,7 @@ Rule of thumb: a rule about **safety** (RLS, GRANT, auth chain ordering, rate li
 | Session | Theme | Migrations | Ships user-visible change? | Status |
 |---|---|---|---|---|
 | **1** | Pre-existing bug fixes + the rate derivation | **none** | Overview goal source only | ✅ **COMPLETE** — shipped 2026-07-28 (`53abf0a`, `3abbfa5`, `b3ca479`, `62cef4a`), browser smoke passed 2026-07-29 |
-| **2** | Blocks: schema, service, generation **+ Session 1's inherited fixes (2.8)** | 137, 138, **139** | No (API only) | 🟡 **In progress** — 2.1–2.5 and 2.8(a,b,c,g) shipped, 2.8(f) decided; 2.6, 2.7 and 2.8(d,e,h) remain |
+| **2** | Blocks: schema, service, generation **+ Session 1's inherited fixes (2.8)** | 137, 138, **139** | No (API only) | 🟡 **In progress** — 2.1–2.6 and 2.8(a–e,g) shipped, 2.8(f) decided; only 2.7 and 2.8(h) remain |
 | **3** | Coach UI + "Waiting on you" + client-portal goal (3.9) | none | Yes — the whole feature | ⬜ Not started |
 
 Strictly sequential: 2 depends on 1's calculator, 3 depends on 2's API.
@@ -1674,3 +1674,115 @@ OK.
 **Note for the smoke:** the fix corrects a day the next time a cascade covers it. The `2026-07-31`
 row stays stale until a training write touches that date again — redoing the move is the end-to-end
 proof.
+
+---
+
+### Task 2.6 — Plan POST calculates per block ✅ SHIPPED 2026-07-29
+
+**What shipped.** New pure `lib/goals/phase-targets.ts` (`computePhaseTargets`), new
+`writePhaseDailyTargets` in `services/client-phases-service.ts`, the orchestrator wired to both,
+`stampPhasesFingerprint` finally given its callers, plus riders **(d)** and **(e)**. No migration.
+
+**This is the task that makes 2.5's block path reachable.** Until now `client_phases.daily_targets`
+was NULL for every block, so the per-date resolver always fell through to the plan grid. It now has
+grids to resolve to.
+
+**The pure half is in `lib/goals/`, not the service** — the same call 2.3 made for `phase-chain`.
+Session 3.3's per-block preview renders from `computePhaseTargets` directly, so the numbers a coach
+sees while authoring and the numbers the server writes come from one function and cannot disagree.
+
+**Rate-first, not deadline-driven.** A block stores a rate and explicitly no target weight
+(invariant 4), so each block goes through `calculateBaselineCaloriesFromRate` — task 1.4's entry
+point, which shares `capWeeklyRate`/`applyCalorieFloor` with the deadline path so the two cannot
+drift on what counts as safe. The plan-level calculation is unchanged and still drives the plan's
+own snapshot columns.
+
+**WRITE ORDER — grids → plan → events → fingerprint, and the order is the design.** 2.2's STATUS
+established the last-write rule; 2.6 is where it becomes real. Grids go first so a failure there
+leaves the previous generation intact with a fingerprint that still matches it. The stamp goes last
+so the stored hash means *"every write in this generation succeeded"*. **A test asserts the
+invocation ORDER, not just that each ran** — the ordering is the whole guarantee, and a refactor
+that reshuffles these four calls would otherwise pass silently. A second test asserts that a failed
+event rewrite leaves the fingerprint **unstamped**.
+
+**Three paths stamp NULL, for two different reasons:**
+- **No blocks** — `computePhasesFingerprint([])` returns null, never a sentinel, so no existing
+  plan starts comparing unequal on the day Session 3 ships.
+- **Custom macros** — decided in 2.2. The coach typed the numbers and the calculator never ran.
+  Stamped **unconditionally**, not only when blocks exist: a client whose plan *was* block-driven
+  and who then switches to custom macros must have the old hash cleared, or the plan goes on
+  claiming those blocks are current.
+- **`preserveCalories`** — decided here. It reuses an existing baseline rather than calculating, so
+  no block drove those numbers either.
+
+**`phases` is ABSENT from the response, not `[]`, when no block drove the generation** — Session 3
+must be able to tell "this client has no blocks" from "blocks ran and produced nothing".
+
+**Rider (d) — the floored rate is fixed EVERYWHERE** (owner decision 2026-07-29, overruling the
+narrower per-block-only option). `calculateBaselineCalories` re-derives `requiredDailyDeficit` and
+`weeklyRate` from the target it actually returns whenever the floor bites. At TDEE 1700 it used to
+report −0.3846 kg/wk (≈423 cal/day) beside a floored target running only 200 cal/day.
+
+**The golden matrix was re-derived, not re-pasted.** 1.4's file is evidence *produced by the old
+code*, so blindly pasting the new code's output would have destroyed exactly what makes it evidence.
+Each of the **8 floored rows** was recomputed from the DEFINITION — `deficit = tdee − baseline`,
+`rate = (baseline − tdee) × 7 ÷ 7700` — and only then checked against the implementation. **Only
+floored rows moved; every unfloored row is byte-identical**, which is the safety property: the only
+numbers that changed are the ones that were lying. A new test now asserts the universal invariant
+over the whole matrix (`requiredDailyDeficit ≈ tdee − baselineCalories` for **every** row), which is
+a stronger guard than any individual literal and would have caught this class from the start.
+
+**Rider (e) — DECIDED: keep the male default, but disclose it** (owner, 2026-07-29). An unset gender
+still takes the higher ceiling and lower floor, so **no existing gender-less client is silently
+re-rated**. New `assumedSafetyEnvelopeWarning` fires only when a cap or floor **actually applied** —
+an unset gender that never trips a limit changed nothing, and warning then would be noise on every
+plan. **An explicit `"other"` is excluded**: the coach chose it, so nothing was assumed. Both
+branches are pinned by tests.
+
+**A test caught a wrong assumption of mine, not a wrong implementation.** I expected a −2 kg/wk
+request at TDEE 2500 to report an applied rate of −1 (the cap). It reports −0.909, because the
+capped −1 kg/wk wants 1400 which then trips the 1500 floor — the cap/floor interaction 1.4's matrix
+already flagged. Split into two tests: cap-only at TDEE 3000, and cap-AND-floor at 2500.
+
+**Deliberate simplifications, recorded so they are not mistaken for oversights:**
+- **Every block uses the same TDEE.** A client's weight genuinely moves across a 15-week chain,
+  which would move TDEE with it — but nothing in this workstream models per-block weight, and
+  projecting one here would invent numbers no later measurement reconciles against.
+- **Protein is held constant across blocks**, for the same reason (it is body-weight derived).
+- **A block's own grid is flat across the 7 weekdays.** Per-weekday variation is a coach override
+  applied on top via the plan grid's `dayCalorieOverrides`; blocks do not carry their own skew.
+
+**Mock contract (CONVENTIONS §2), twice.** Two already-mocked modules gained exports
+(`stampPhasesFingerprint`, `writePhaseDailyTargets`) and three test files needed them added —
+`nutrition-plan-orchestrator.test.ts` and the nutrition route test failed with a bare 500 until they
+were. Also removed a duplicate `client-phases-service` mock the 2.4 commit had left in the
+orchestrator test (harmless — vitest hoists and the later wins — but actively misleading to read).
+
+**Security / load / performance review (§2):**
+- **No new routes, no auth change, no new user input.** Everything runs inside the already-authorized
+  `POST /api/clients/[id]/nutrition` (ownership checked at `nutrition-plan-orchestrator.ts:125`).
+- **One new write per plan generation**, batched: a single `upsert` over at most **12** rows
+  (`MAX_PHASES`), each with a 7-entry JSONB grid. Constant round trips — no per-block statement.
+- **One extra read** inside `writePhaseDailyTargets` (`getClientPhases`) so the upsert can carry each
+  row's full column set. PostgREST builds one INSERT with a single column list, so a partial upsert
+  would null the columns it omits — the read is what makes the batched write safe rather than
+  destructive.
+- **Consistency (§2 #13):** grids, plan, events and fingerprint are four separate writes and are
+  **not** in one transaction. Stated plainly: a failure between any two leaves the earlier ones
+  applied. Every such state is *stale*, which the fingerprint surfaces and the next regenerate
+  clears — the failure matrix in 2.2's STATUS enumerates all five cases. That is the deliberate
+  trade, not an oversight.
+- **Not measured.** No load run.
+
+**Doc updated:** `ARCHITECTURE.md` gains a per-block plan-creation bullet (write order, the last-write
+rule, and the three NULL-stamp cases). The full ARCHITECTURE pass — the new table and the now-false
+*"No roadmap or phase concept exists"* line — remains **2.7's**.
+
+**Gates:** `tsc` clean · `eslint` **0 errors** (210 pre-existing warnings) · `vitest`
+**237/237 files, 2495/2495 tests** (2478 → 2495) · `check:labels` OK · `check:rls` 41/41 · no
+`as any` · no leftover markers.
+
+**Owed:** no browser smoke. **The block path is now end-to-end reachable for the first time**, so the
+deferred smoke from 2.4 and 2.5 can finally run — but it needs a client with real blocks, and
+nothing writes `client_phases` through the UI until Session 3.1. Until then it takes a seeded block
+row.

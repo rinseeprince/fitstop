@@ -24,10 +24,6 @@ vi.mock("@/services/client-goals-service", () => ({
   getCurrentGoals: vi.fn().mockResolvedValue(null),
 }));
 
-vi.mock("@/services/client-phases-service", () => ({
-  getClientPhases: vi.fn().mockResolvedValue([]),
-}));
-
 vi.mock("@/services/nutrition-service", () => ({
   generateNutritionPlan: vi.fn(),
   calculateTDEE: vi.fn().mockReturnValue(2200),
@@ -37,6 +33,15 @@ vi.mock("@/services/nutrition-plan-service", () => ({
   createNutritionPlan: vi.fn(),
   archiveNutritionPlan: vi.fn(),
   getActiveNutritionPlanId: vi.fn(),
+  stampPhasesFingerprint: vi.fn(),
+}));
+
+// Blocks: default to a client with none, so every pre-existing assertion in this
+// file describes today's no-blocks behaviour rather than being rewritten around
+// the new one.
+vi.mock("@/services/client-phases-service", () => ({
+  getClientPhases: vi.fn().mockResolvedValue([]),
+  writePhaseDailyTargets: vi.fn(),
 }));
 
 vi.mock("@/services/nutrition-event-service", () => ({
@@ -55,7 +60,12 @@ import {
   archiveNutritionPlan,
   createNutritionPlan,
   getActiveNutritionPlanId,
+  stampPhasesFingerprint,
 } from "@/services/nutrition-plan-service";
+import {
+  getClientPhases,
+  writePhaseDailyTargets,
+} from "@/services/client-phases-service";
 import {
   deleteFutureNutritionEventsForPlan,
   regenerateFutureNutritionEvents,
@@ -254,5 +264,96 @@ describe("orchestrateNutritionPlanDeletion", () => {
       "delete exploded"
     );
     expect(archiveNutritionPlan).not.toHaveBeenCalled();
+  });
+});
+
+describe("per-block generation (task 2.6)", () => {
+  const phases = [
+    { id: "p1", name: "Cut 1", startsOn: "2026-08-01", endsOn: "2026-08-28", ratePerWeekKg: -0.5, dailyTargets: null },
+    { id: "p2", name: "Diet break", startsOn: "2026-08-29", endsOn: "2026-09-11", ratePerWeekKg: 0, dailyTargets: null },
+  ];
+
+  beforeEach(() => {
+    vi.mocked(getClientPhases).mockResolvedValue(phases as never);
+    vi.mocked(writePhaseDailyTargets).mockResolvedValue(undefined);
+    vi.mocked(stampPhasesFingerprint).mockResolvedValue(undefined);
+  });
+
+  it("writes one grid per block and returns a row per block", async () => {
+    const result = await orchestrateNutritionPlanCreation(clientId, coachId, calculatedBody, {});
+
+    const written = vi.mocked(writePhaseDailyTargets).mock.calls[0][1];
+    expect(written.map((w) => w.phaseId)).toEqual(["p1", "p2"]);
+    expect(written[0].dailyTargets).toHaveLength(7);
+
+    // Each block carries its OWN target: -0.5 kg/wk vs maintenance off TDEE 2400.
+    expect(result.phases?.map((p) => p.baselineCalories)).toEqual([1850, 2400]);
+  });
+
+  it("stamps the fingerprint AFTER the events — it means 'everything succeeded'", async () => {
+    await orchestrateNutritionPlanCreation(clientId, coachId, calculatedBody, {});
+
+    const gridOrder = vi.mocked(writePhaseDailyTargets).mock.invocationCallOrder[0];
+    const planOrder = vi.mocked(createNutritionPlan).mock.invocationCallOrder[0];
+    const eventOrder = vi.mocked(regenerateFutureNutritionEvents).mock.invocationCallOrder[0];
+    const stampOrder = vi.mocked(stampPhasesFingerprint).mock.invocationCallOrder[0];
+
+    // grids -> plan -> events -> stamp. Any other order lets the stored hash
+    // assert a block set the client's events do not actually follow.
+    expect(gridOrder).toBeLessThan(planOrder);
+    expect(planOrder).toBeLessThan(eventOrder);
+    expect(eventOrder).toBeLessThan(stampOrder);
+  });
+
+  it("does NOT stamp when the event rewrite fails — the plan reads as stale", async () => {
+    vi.mocked(regenerateFutureNutritionEvents).mockRejectedValue(new Error("boom"));
+
+    await expect(
+      orchestrateNutritionPlanCreation(clientId, coachId, calculatedBody, {})
+    ).rejects.toBeInstanceOf(NutritionPlanError);
+
+    // Stale is the safe direction: a visible "out of date" row that clears on
+    // the next regenerate, rather than a plan affirmatively claiming to be current.
+    expect(stampPhasesFingerprint).not.toHaveBeenCalled();
+  });
+
+  it("stamps NULL for a client with no blocks", async () => {
+    vi.mocked(getClientPhases).mockResolvedValue([]);
+
+    const result = await orchestrateNutritionPlanCreation(clientId, coachId, calculatedBody, {});
+
+    expect(writePhaseDailyTargets).not.toHaveBeenCalled();
+    expect(stampPhasesFingerprint).toHaveBeenCalledWith("plan-1", null);
+    // Absent, not [] — the UI must tell "no blocks" from "blocks produced nothing".
+    expect(result.phases).toBeUndefined();
+  });
+
+  it("custom macros stamp NULL even when the client HAS blocks", async () => {
+    // The coach typed these numbers and the calculator never ran, so no block
+    // drove them. Clearing the hash also stops a plan that used to be
+    // block-driven from claiming those blocks are still current.
+    await orchestrateNutritionPlanCreation(clientId, coachId, customBody, {});
+
+    expect(writePhaseDailyTargets).not.toHaveBeenCalled();
+    expect(stampPhasesFingerprint).toHaveBeenCalledWith("plan-1", null);
+  });
+
+  it("preserveCalories stamps NULL — it reuses a baseline rather than calculating", async () => {
+    const chain: Record<string, unknown> = {};
+    chain.select = vi.fn().mockReturnValue(chain);
+    chain.eq = vi.fn().mockReturnValue(chain);
+    chain.maybeSingle = vi.fn().mockResolvedValue({ data: { baseline_calories: 2100 }, error: null });
+    vi.mocked(supabaseAdmin.from).mockReturnValue(chain as never);
+
+    const result = await orchestrateNutritionPlanCreation(
+      clientId,
+      coachId,
+      { ...calculatedBody, preserveCalories: true } as GenerateNutritionPlanRequest,
+      {}
+    );
+
+    expect(writePhaseDailyTargets).not.toHaveBeenCalled();
+    expect(stampPhasesFingerprint).toHaveBeenCalledWith("plan-1", null);
+    expect(result.phases).toBeUndefined();
   });
 });

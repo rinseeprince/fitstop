@@ -70,6 +70,7 @@ vi.mock('@/services/nutrition-plan-service', () => ({
   createNutritionPlan: vi.fn().mockResolvedValue({}),
   archiveNutritionPlan: vi.fn().mockResolvedValue(undefined),
   getActiveNutritionPlanId: vi.fn().mockResolvedValue('plan-1'),
+  stampPhasesFingerprint: vi.fn().mockResolvedValue(undefined),
 }))
 
 vi.mock('@/services/body-metrics-service', () => ({
@@ -82,6 +83,7 @@ vi.mock('@/services/client-goals-service', () => ({
 
 vi.mock('@/services/client-phases-service', () => ({
   getClientPhases: vi.fn().mockResolvedValue([]),
+  writePhaseDailyTargets: vi.fn().mockResolvedValue(undefined),
 }))
 
 vi.mock('@/services/today-service', () => ({

@@ -10,9 +10,11 @@ import {
 import { CALORIES_PER_KG } from "@/lib/constants";
 import {
   applyCalorieFloor,
+  assumedSafetyEnvelopeWarning,
   capWeeklyRate,
   dailyCalorieMagnitudeFromRate,
   daysToDeadline,
+  rateFromDailyCalorieDelta,
 } from "@/lib/goals/goal-rate";
 import { getTodayDateString } from "@/lib/date-helpers";
 
@@ -166,22 +168,36 @@ export function calculateBaselineCalories(
   const requiredDailyDeficit = isWeightLoss ? requiredDailyChange : -requiredDailyChange;
 
   // Ensure minimum calories.
-  // NOTE: `requiredDailyDeficit` and `weeklyRate` are deliberately NOT re-derived
-  // when the floor bites, so a floored result reports the deficit it was ASKED
-  // for rather than the smaller one it will run. Pinned by
-  // nutrition-service.caps-floor.test.ts; the rate-first entry point reports an
-  // `appliedRateKgPerWeek` instead. Changing it here would move coach-visible
-  // numbers, which is not this workstream's job.
   const floorResult = applyCalorieFloor(
     Math.round(tdee - requiredDailyDeficit),
     gender
   );
   if (floorResult.warning) warnings.push(floorResult.warning);
 
+  // Report the deficit and rate the plan WILL RUN, not the one it was asked for
+  // (task 2.8(d), owner decision 2026-07-29). When the floor bites, the target
+  // moves but the requirement does not, so the two disagree: at TDEE 1700 a
+  // floored target of 1500 runs 200 cal/day while the untouched `weeklyRate`
+  // still advertised -0.3846 kg/wk (~423 cal/day) — a deficit the client will
+  // never eat. Re-derived from the target actually returned, which is what
+  // `calculateBaselineCaloriesFromRate` already does via `appliedRateKgPerWeek`.
+  const appliedDailyDeficit = floorResult.floored
+    ? tdee - floorResult.calories
+    : requiredDailyDeficit;
+  const appliedWeeklyRate = floorResult.floored
+    ? rateFromDailyCalorieDelta(floorResult.calories - tdee)
+    : weeklyRate;
+
+  const assumedWarning = assumedSafetyEnvelopeWarning(
+    gender,
+    cap.capped || floorResult.floored
+  );
+  if (assumedWarning) warnings.push(assumedWarning);
+
   return {
     baselineCalories: floorResult.calories,
-    requiredDailyDeficit,
-    weeklyRate,
+    requiredDailyDeficit: appliedDailyDeficit,
+    weeklyRate: appliedWeeklyRate,
     warnings,
   };
 }
