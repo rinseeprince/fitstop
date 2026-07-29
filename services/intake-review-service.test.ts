@@ -133,6 +133,29 @@ describe('Intake Review Service', () => {
       )
     })
 
+    it('FAILS the sync when the goal backfill fails, rather than reporting success', async () => {
+      vi.mocked(getIntake).mockResolvedValue({
+        currentWeight: null,
+        bodyFatPercentage: null,
+        weightUnit: null,
+        heightUnit: null,
+        height: null,
+        gender: null,
+        dateOfBirth: null,
+        targetWeight: 70,
+        goalDeadline: '2025-06-01',
+        goalBodyFatPercentage: 12,
+        workActivityLevel: null,
+      } as any)
+
+      mockSupabaseChain({ data: nullClient, error: null })
+      vi.mocked(updateGoals).mockRejectedValueOnce(new Error('rpc down'))
+
+      // Swallowing here left the mirror carrying a backfilled goal that
+      // `client_goals` had never heard of — and reported success.
+      await expect(syncMetricsToClient('client-123')).rejects.toThrow('rpc down')
+    })
+
     it('does not fail if dual-write throws', async () => {
       vi.mocked(getIntake).mockResolvedValue({
         currentWeight: 80,

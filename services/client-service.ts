@@ -49,8 +49,8 @@ export const createClient = async (
     height: clientData.height ?? null,
     height_unit: clientData.heightUnit ?? (isIntakeMode ? null : "in"),
     gender: clientData.gender ?? null,
-    goal_weight: clientData.goalWeight ?? null,
-    goal_body_fat_percentage: clientData.goalBodyFatPercentage ?? null,
+    // goal_weight / goal_body_fat_percentage are NOT set here — `updateGoals`
+    // below is the single writer of both stores (see its comment).
     weight_unit: clientData.weightUnit ?? (isIntakeMode ? null : "lbs"),
     current_weight: clientData.currentWeight ?? null,
     current_body_fat_percentage: clientData.currentBodyFatPercentage ?? null,
@@ -94,16 +94,22 @@ export const createClient = async (
     }
   }
 
-  // Dual-write goals for new client (non-blocking)
+  // Goals are written ONCE, by `updateGoals`, which writes `client_goals` and
+  // the `clients.*` mirror in one transaction (migration 139). The goal columns
+  // are deliberately absent from `baseInsert` above: writing them here as well
+  // would reopen the window this call closes, where the mirror holds the new
+  // goal and `client_goals` holds nothing.
+  //
+  // **This throws, and that is the fix.** It used to swallow, and a swallowed
+  // failure is how a live client came to show 78 kg to the coach and 92 kg in
+  // their own portal for six weeks with no error anywhere. On failure the client
+  // row exists with no goal in EITHER store — consistent and re-editable —
+  // rather than with two stores disagreeing.
   if (clientData.goalWeight !== undefined || clientData.goalBodyFatPercentage !== undefined) {
-    try {
-      await updateGoals(client.id, {
-        goalWeight: clientData.goalWeight,
-        goalBodyFatPercentage: clientData.goalBodyFatPercentage,
-      }, coachId);
-    } catch (dualWriteError) {
-      console.error("Dual-write to client_goals failed:", dualWriteError instanceof Error ? dualWriteError.message : "Unknown error");
-    }
+    await updateGoals(client.id, {
+      goalWeight: clientData.goalWeight,
+      goalBodyFatPercentage: clientData.goalBodyFatPercentage,
+    }, coachId);
   }
 
   // Create intake record for questionnaire flow
@@ -220,8 +226,8 @@ export const updateClient = async (
   if (clientData.gender !== undefined) updateData.gender = clientData.gender ?? null;
   if (clientData.phone !== undefined) updateData.phone = clientData.phone || null;
   if (clientData.startDate !== undefined) updateData.start_date = clientData.startDate ?? null;
-  if (clientData.goalWeight !== undefined) updateData.goal_weight = clientData.goalWeight ?? null;
-  if (clientData.goalBodyFatPercentage !== undefined) updateData.goal_body_fat_percentage = clientData.goalBodyFatPercentage ?? null;
+  // goal_weight / goal_body_fat_percentage are deliberately NOT in updateData —
+  // `updateGoals` below owns both stores in one transaction. See its comment.
   if (clientData.weightUnit !== undefined) updateData.weight_unit = clientData.weightUnit;
   if (clientData.currentWeight !== undefined) updateData.current_weight = clientData.currentWeight ?? null;
   if (clientData.currentBodyFatPercentage !== undefined) updateData.current_body_fat_percentage = clientData.currentBodyFatPercentage ?? null;
@@ -263,15 +269,30 @@ export const updateClient = async (
     }
   }
 
-  // Dual-write goals (non-blocking)
+  // Goals are written ONCE, by `updateGoals`, which writes `client_goals` and
+  // the `clients.*` mirror in one transaction (migration 139). Writing the mirror
+  // here too — as this function used to, before swallowing the failure — is what
+  // let the two stores disagree: the mirror took the new goal, `client_goals`
+  // kept the old one, and the request returned 200.
+  //
+  // **This throws.** A goal edit now either lands in both stores or in neither.
+  // The client's other fields are already committed above and are unaffected,
+  // which is the correct split: they are independent edits that happen to travel
+  // in one PATCH.
   if (clientData.goalWeight !== undefined || clientData.goalBodyFatPercentage !== undefined) {
-    try {
-      await updateGoals(clientId, {
-        goalWeight: clientData.goalWeight,
-        goalBodyFatPercentage: clientData.goalBodyFatPercentage,
-      }, coachId ?? "coach");
-    } catch (dualWriteError) {
-      console.error("Dual-write to client_goals failed:", dualWriteError instanceof Error ? dualWriteError.message : "Unknown error");
+    await updateGoals(clientId, {
+      goalWeight: clientData.goalWeight,
+      goalBodyFatPercentage: clientData.goalBodyFatPercentage,
+    }, coachId ?? "coach");
+
+    // `client` was mapped from the row read BEFORE the RPC moved the mirror, so
+    // without this the response would echo the previous goal back to the caller
+    // and the UI would render a successful save as a no-op.
+    if (clientData.goalWeight !== undefined) {
+      client.goalWeight = clientData.goalWeight ?? undefined;
+    }
+    if (clientData.goalBodyFatPercentage !== undefined) {
+      client.goalBodyFatPercentage = clientData.goalBodyFatPercentage ?? undefined;
     }
   }
 

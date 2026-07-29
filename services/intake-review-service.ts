@@ -153,14 +153,24 @@ export async function syncMetricsToClient(
   ) {
     updates.starting_body_fat_percentage = intake.bodyFatPercentage;
   }
+  // Goal backfills are held in locals rather than pushed into `updates`, because
+  // `updateGoals` below writes `client_goals` AND the `clients.*` mirror in one
+  // transaction (migration 139). Writing the mirror here as well would reopen the
+  // window where the two stores disagree if that call fails. The backfill
+  // CONDITIONS still read the raw mirror columns — that is what makes this a
+  // backfill and not an overwrite — only the write moved.
+  let goalWeightBackfill: number | undefined;
+  let goalDeadlineBackfill: string | undefined;
+  let goalBodyFatBackfill: number | undefined;
+
   if (client.goal_weight == null && intake.targetWeight != null) {
-    updates.goal_weight = intake.targetWeight;
+    goalWeightBackfill = intake.targetWeight;
   }
   if (client.goal_deadline == null && intake.goalDeadline != null) {
-    updates.goal_deadline = intake.goalDeadline;
+    goalDeadlineBackfill = intake.goalDeadline;
   }
   if (client.goal_body_fat_percentage == null && intake.goalBodyFatPercentage != null) {
-    updates.goal_body_fat_percentage = intake.goalBodyFatPercentage;
+    goalBodyFatBackfill = intake.goalBodyFatPercentage;
   }
   if (client.work_activity_level == null && intake.workActivityLevel != null) {
     updates.work_activity_level = intake.workActivityLevel;
@@ -209,17 +219,18 @@ export async function syncMetricsToClient(
     }
   }
 
-  // Dual-write goals (non-blocking)
-  if (updates.goal_weight !== undefined || updates.goal_body_fat_percentage !== undefined || updates.goal_deadline !== undefined) {
-    try {
-      await updateGoals(clientId, {
-        goalWeight: updates.goal_weight as number | undefined,
-        goalBodyFatPercentage: updates.goal_body_fat_percentage as number | undefined,
-        goalDeadline: updates.goal_deadline as string | undefined,
-      }, "intake");
-    } catch (dualWriteError) {
-      console.error("Dual-write to client_goals failed:", dualWriteError instanceof Error ? dualWriteError.message : "Unknown error");
-    }
+  // Throws rather than swallowing — a goal backfill lands in both stores or in
+  // neither. The casts are gone with the locals: these are already typed.
+  if (
+    goalWeightBackfill !== undefined ||
+    goalBodyFatBackfill !== undefined ||
+    goalDeadlineBackfill !== undefined
+  ) {
+    await updateGoals(clientId, {
+      goalWeight: goalWeightBackfill,
+      goalBodyFatPercentage: goalBodyFatBackfill,
+      goalDeadline: goalDeadlineBackfill,
+    }, "intake");
   }
 
   // Calculate BMR from freshly-synced client data (non-blocking)
