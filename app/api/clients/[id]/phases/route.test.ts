@@ -280,6 +280,32 @@ describe("DELETE", () => {
       CLIENT_TODAY
     );
   });
+
+  it("audits the deletion, naming the block that was removed", async () => {
+    // This assertion exists because the call it pins was silently DELETED from
+    // the handler once already and shipped that way: PUT was audited, DELETE
+    // was not, and `AUDIT_ACTIONS.PHASE_DELETE` sat in lib/constants.ts with
+    // zero call sites. Deleting a block re-chains every later block backwards,
+    // so it is the most consequential write on this route and the one whose
+    // absence from the log would be hardest to reconstruct.
+    await DELETE(req("DELETE", { phaseId: phase.id }), routeParams);
+
+    expect(recordAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorId: "coach-1",
+        action: "phase.delete",
+        targetTable: "client_phases",
+        targetId: phase.id,
+        clientId,
+      })
+    );
+  });
+
+  it("does NOT audit when the delete failed", async () => {
+    vi.mocked(deleteClientPhase).mockRejectedValue(new Error("boom"));
+    await DELETE(req("DELETE", { phaseId: phase.id }), routeParams);
+    expect(recordAuditEvent).not.toHaveBeenCalled();
+  });
 });
 
 describe("invariant 7 — blocks save independently of the goal", () => {

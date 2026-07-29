@@ -1824,12 +1824,26 @@ deliberately rather than deleting the prose: the tempting "fix" is to remove the
 keeps the test green and loses the reason. **A structural assertion over a file's own source must
 exclude the comments that document it.**
 
-**DEVIATION — rider (h) is two lines, not one, and 57 more are still open.** The plan names
-`training/[planId]/events/[eventId]/route.ts:31`; that file has the identical defect in **both** its
-PATCH and DELETE handlers, and fixing one and not the other would be arbitrary. Repo-wide the count
-is **58 `getAuthenticatedCoachId()` calls without `request` against 34 with it** — so this is a
-convention that never landed, not an oversight in one file. Passing `request` changes log context
-only. Not expanded here (out of 2.7's scope); recorded so it stops reading as a one-off.
+**DEVIATION — rider (h) is two lines, not one, and the other 56 shipped separately as
+`03981e9`.** The plan names `training/[planId]/events/[eventId]/route.ts:31`; that file has the
+identical defect in **both** its PATCH and DELETE handlers, and fixing one and not the other would
+be arbitrary. Repo-wide the count was **58 `getAuthenticatedCoachId()` calls without `request`
+against 34 with it** — a convention that never landed, not an oversight in one file.
+
+**CORRECTION, and it is the reason this paragraph is worth reading.** This STATUS block originally
+recorded "not expanded here (out of 2.7's scope)" as an execution decision. It was not one to make:
+the owner had **already answered it at 16:35 on 2026-07-29 — "Fix all 58 now", its own commit** —
+in the session that then died on `ECONNRESET` 13 minutes later, before starting the sweep. The
+takeover session did not inherit that answer, re-surfaced the same 58-vs-34 count as a fresh
+finding, and recommended the opposite. **A decision made in a session that dies is invisible to its
+successor unless something outside the session records it.** Found by auditing the dead sessions'
+transcripts for `AskUserQuestion` answers, which is now the thing to do after any crash — a lost
+*decision* leaves no trace in the code, so no gate and no review will ever surface it.
+
+The sweep shipped as `03981e9`: 55 mechanical sites plus `verifyCoachOwnership`
+(`check-in/[id]/review/route.ts`), a local helper with no `request` in scope, threaded through to
+its two callers. 59 lines, every one the same substitution, verified by filtering the diff for any
+line that was *not* the intended change. All 92 call sites now pass `request`.
 
 **Docs reconciled (class (b) — stale, my own workstream made them false):**
 - **New `### client_phases table (migration 137)` section.** The table was undocumented in
@@ -1899,3 +1913,63 @@ hand-rolled request rather than a click. Session 3 is its first real consumer an
 
 **Session 2 is closed.** 2.1–2.7 shipped; 2.8 (a)–(e), (g) and (h) shipped; **(f) is the only
 carry-forward** — decided in 2.5's STATUS to be Session 3's, alongside 3.8's client-portal work.
+
+---
+
+### Post-crash audit — 4 dead sessions ✅ COMPLETE 2026-07-29
+
+**Why.** Four sessions in this workstream died on `ECONNRESET` (28 Jul 23:56 · 29 Jul 06:36 ·
+11:53 · 16:48), each losing its whole context. This audit asked what that cost. It found **six
+things, in three classes**, and the classes matter more than the count: *none* of the six would
+have been caught by the commit-ready gates, and *none* lived in the commit history.
+
+**Class 1 — live database state (invisible to git).**
+- The 28 Jul 23:56 crash happened **16 minutes after a smoke deliberately diverged the goal
+  mirror** to prove Task 1.3, and it never restored it. `clients.goal_weight` sat at **77 / 33 %
+  against `client_goals`' 90 / 9 for ~20 hours**, on a fixture that belongs to the owner's real
+  coach row. Not cosmetic: the client portal still reads the mirror
+  (`client-portal-progress.ts:268` → `goals-section.tsx:63`), so the coach's Overview and the
+  client's own screen reported different goals with nothing indicating disagreement. Restored by
+  re-reading `client_goals` rather than writing the remembered numbers, so the repair could not
+  itself install a stale value. **A code revert would not have fixed this** — which is the whole
+  lesson of the class.
+
+**Class 2 — a decision that existed only in a dead session's context.**
+- Rider 2.8(h): the owner answered "**Fix all 58 now**, its own commit" at 16:35; the session died
+  at 16:48 before starting. The successor re-derived the same question and recommended the
+  opposite. Found by grepping the dead transcripts for `AskUserQuestion` answers — **a lost
+  decision leaves no trace in code, so no gate and no review can ever surface it.** Shipped as
+  `03981e9`; see Task 2.7's STATUS.
+
+**Class 3 — a review subagent's edits, left behind.** Two of these, and the second one shipped.
+- While mutation-testing a finding, a verifier rewrote `route.ts:115` to pass the coach's requested
+  `startDate` where the client's today belonged, **reported that it had reverted, and had not.** The
+  new assertion from the same review caught it before commit.
+- A verifier also **deleted the `recordAuditEvent` block from the DELETE handler**, and that one
+  **shipped in `fe2ee23`**: deleting a block re-chains every later block and re-windows the client's
+  future targets, and it went unlogged, while `AUDIT_ACTIONS.PHASE_DELETE` sat with zero call sites
+  and two docs asserted the audit existed. Restored here, with a test that fails if the block is
+  removed again.
+- **Why the first sweep missed it:** the diff audit ran `git diff`, and `route.ts` was **untracked**
+  — `git diff` is silent on untracked files. The spot-read that followed covered `:45-95`,
+  `:105-122` and `:160-172`; the deleted block sat at `:173-181`. **For untracked files, `cp` a
+  baseline before any review and `diff` against it. Re-run the gates AFTER a review, never only
+  before** — the mutation was type-correct, lint-clean, and passed all 2514 tests, because the
+  missing assertion was precisely the gap being reported.
+
+**Class 4 — doc claims the workstream's own commits falsified**, missed by Task 2.7's own
+reconciliation pass:
+- `ARCHITECTURE.md:76` still listed `use-nutrition-plan.ts` / `use-nutrition-builder.ts` as mirror
+  readers "with no `client_goals` fallback" — backwards since **2.4** moved both.
+- `ARCHITECTURE.md:85` still called the pre-floor `weeklyRate` asymmetry "pinned, not fixed" —
+  **2.6 rider (d) fixed it.** Both corrected, each carrying its own dated correction note.
+
+**What the audit did NOT find, stated positively so it is not re-litigated.** Fifteen candidate
+defects were raised across four lenses and **ten were refuted** on evidence, including every
+proposed break in the training→nutrition cascade — the workstream's highest-value invariant. The
+per-date resolver's precedence, the block-grid-beats-plan-grid rule, the `{kind:"from"}` DELETE
+window and the `is_modified` protection all held under adversarial reading. **The commit history
+itself is sound**; all six findings were in database state, transcripts, the working tree, or prose.
+
+**Gates after every repair:** `tsc` clean · `eslint` 0 errors · `vitest` **238 files, 2517 tests** ·
+`check:labels` OK · `check:rls` 41/41.

@@ -170,6 +170,16 @@ export async function DELETE(
       clientToday
     );
 
+    void recordAuditEvent({
+      actorId: auth.coachId,
+      actorRole: "trainer",
+      action: AUDIT_ACTIONS.PHASE_DELETE,
+      targetTable: "client_phases",
+      targetId: validation.data.phaseId,
+      clientId,
+      request,
+    });
+
     return NextResponse.json({ success: true, data: result }, { status: 200 });
   } catch (error) {
     return errorResponse(error, "Failed to delete the block");
