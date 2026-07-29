@@ -1,4 +1,4 @@
-import { addDaysToDateString } from "@/lib/date-helpers";
+import { addDaysToDateString, dateStringToDayNumber } from "@/lib/date-helpers";
 
 /**
  * Pure block-chain arithmetic: durations in, dates out (execution-plan invariant 6).
@@ -44,12 +44,17 @@ const DAYS_PER_WEEK = 7;
  * chain is contiguous by construction. A block of N weeks starting on D ends on
  * D + (N*7 - 1): the end date is INCLUSIVE, matching how `expandDateRange` and
  * `calculatePlacementEndDate` treat a window elsewhere in this codebase.
+ *
+ * Generic over the row because `weeks` is the only field it reads: the server
+ * chains rows carrying `ratePerWeekKg`, while the coach's live preview chains
+ * rows whose rate is in the client's DISPLAY unit. Everything else rides through
+ * untouched, so neither caller has to fabricate a field to satisfy a type.
  */
-export function chainPhases(
+export function chainPhases<T extends { weeks: number }>(
   startDate: string,
-  phases: PhaseLengthInput[]
-): ChainedPhase[] {
-  const chained: ChainedPhase[] = [];
+  phases: T[]
+): Array<T & { startsOn: string; endsOn: string }> {
+  const chained: Array<T & { startsOn: string; endsOn: string }> = [];
   let cursor = startDate;
 
   for (const phase of phases) {
@@ -93,6 +98,61 @@ export function getPhaseForDate<T extends DatedPhase>(
  */
 export function isPhaseElapsed(phase: DatedPhase, clientToday: string): boolean {
   return phase.endsOn < clientToday;
+}
+
+/**
+ * Inclusive-window length in whole weeks — the inverse of {@link chainPhases},
+ * which only ever produces multiples of 7.
+ *
+ * Lives here rather than in `services/client-phases-service.ts` because the
+ * coach's panel has to run it too: it seeds each stored row's `weeks` in order
+ * to resubmit the chain, and the server then validates elapsed blocks against
+ * the dates `chainPhases` COMPUTES from those weeks. A second copy in the
+ * browser would be a second copy of this arithmetic, which is exactly what task
+ * 2.3 had to undo once already (it hand-rolled `Date.UTC` here and a local-parse
+ * variant loses a day west of UTC). One function, both callers.
+ *
+ * Rounding is lossy for a window that is not a whole number of weeks — see
+ * {@link isConformingChain}, which is how callers refuse such data rather than
+ * silently re-dating it.
+ */
+export function weeksBetween(startsOn: string, endsOn: string): number {
+  const days = dateStringToDayNumber(endsOn) - dateStringToDayNumber(startsOn);
+  return Math.round((days + 1) / DAYS_PER_WEEK);
+}
+
+/**
+ * Could `chainPhases` have produced this list?
+ *
+ * True when every block spans a whole number of weeks AND each one starts the
+ * day after its predecessor ends. Through the app this is always true — the PUT
+ * sends lengths and the service chains them, and `writePhaseDailyTargets`
+ * re-reads each row's existing dates rather than recomputing them — so a false
+ * answer means the rows were written by hand.
+ *
+ * It matters because `weeksBetween` ROUNDS. A hand-written 10-day block derives
+ * as 1 week and would be re-chained 3 days shorter; an 11-day one derives as 2
+ * and would grow; a gap between two blocks would be closed, silently changing
+ * what the client eats on the uncovered dates (a date in no block falls back to
+ * the plan's own grid). Every one of those also nulls the affected blocks'
+ * generated grids via `carryDailyTargets`. Callers therefore REFUSE a
+ * non-conforming chain instead of normalizing it — normalizing writes the drift,
+ * and if the drifted block has already elapsed the server's 422 makes the edit
+ * unrecoverable from a UI that has no way to express the original dates.
+ */
+export function isConformingChain(phases: DatedPhase[]): boolean {
+  for (let i = 0; i < phases.length; i += 1) {
+    const phase = phases[i];
+    const span =
+      dateStringToDayNumber(phase.endsOn) - dateStringToDayNumber(phase.startsOn) + 1;
+    if (span <= 0 || span % DAYS_PER_WEEK !== 0) return false;
+
+    const previous = phases[i - 1];
+    if (previous && phase.startsOn !== addDaysToDateString(previous.endsOn, 1)) {
+      return false;
+    }
+  }
+  return true;
 }
 
 /** The last day any block reaches, or null when there are no blocks. */

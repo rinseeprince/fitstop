@@ -1,9 +1,9 @@
 import { randomUUID } from "crypto";
 import { supabaseAdmin } from "./supabase-admin";
-import { dateStringToDayNumber } from "@/lib/date-helpers";
 import {
   chainPhases,
   isPhaseElapsed,
+  weeksBetween,
   type ChainedPhase,
 } from "@/lib/goals/phase-chain";
 import type { ReplacePhasesInput } from "@/lib/validations/client-phases";
@@ -284,7 +284,7 @@ export async function deleteClientPhase(
       return before && before.startsOn !== c.startsOn;
     })
     .map((c) => ({
-      id: c.id as string,
+      id: c.id,
       name: c.name,
       startsOn: c.startsOn,
       endsOn: c.endsOn,
@@ -297,17 +297,6 @@ export async function deleteClientPhase(
   );
 
   return { deletedName: target.name, shifted, phases };
-}
-
-/**
- * Inclusive-window length in whole weeks — the inverse of `chainPhases`, which
- * only ever produces multiples of 7. Uses the shared UTC-anchored day-number
- * helper rather than local `Date` math, for the reason task 1.4 pinned across six
- * timezones: a parse-UTC/format-local mix loses a day west of UTC.
- */
-function weeksBetween(startsOn: string, endsOn: string): number {
-  const days = dateStringToDayNumber(endsOn) - dateStringToDayNumber(startsOn);
-  return Math.round((days + 1) / 7);
 }
 
 /**
