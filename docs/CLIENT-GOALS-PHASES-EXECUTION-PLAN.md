@@ -2287,3 +2287,108 @@ an argument about today, not about Session 3:
 
 **Gates:** `tsc` clean · `eslint` 0 errors · `vitest` **239 files, 2527 tests** · `check:labels` OK ·
 `check:rls` 41/41.
+
+---
+
+### Session 3A — rider + Task 3.1 part 1 ✅ SHIPPED 2026-07-29 · **3.1 part 2 and 3.2 NOT STARTED**
+
+**Read this before continuing 3A.** Two commits landed (`d05f5cf`, `4f9ce8c`); the panel itself
+has not been written. The session stopped at the context ceiling deliberately rather than starting
+the UI — three sessions in this workstream died above 300k and lost their decisions.
+
+**SCOPE NOTE — this session ran wider than the 3A prompt scoped, by explicit owner decision
+(2026-07-29).** The prompt scopes 3.1 and 3.2. Two extra commits were authorised: the
+`requireCoachOwnsClient` sweep (below) and, still to come, replacing the nutrition drawer's goal
+editor with a link to the new panel. Neither is 3.1 or 3.2. Recorded so a successor reads them as
+sanctioned rather than as scope drift, and does not re-litigate them the way 2.8(h) nearly was.
+
+#### `d05f5cf` — every `requireCoachOwnsClient` call passes `request`
+
+`03981e9` swept **`getAuthenticatedCoachId`** — the leaf — and left the wrapper alone.
+`requireCoachOwnsClient(clientId, request?)` (`lib/require-coach-auth.ts:31-34`) forwards to
+`requireCoachAuth(request)`, so a call omitting it drops the context one level up. **15 of 27 call
+sites omitted it**, including both handlers of `/api/clients/[id]/goals`, which 3.1 turns into a
+primary write path. Not a security hole. Mechanical; every site already had `request` in scope, and
+the diff was filtered for any changed line that was not the substitution.
+
+#### `4f9ce8c` — 3.1 part 1: the shared foundation (no UI)
+
+Split from the panel because it is fully proven on its own. Precedent: 2.2 shipped
+`stampPhasesFingerprint` with "not wired yet, deliberately".
+
+- **`weeksBetween` MOVED** from `client-phases-service` into `lib/goals/phase-chain.ts`, exported.
+  The panel derives each stored row's `weeks` from its dates to resubmit the chain, and the server
+  validates elapsed blocks against the dates `chainPhases` **computes** from those weeks. A browser
+  copy would be a second copy of this arithmetic (task 2.3 already undid one), and it fails
+  **asymmetrically**: a one-day drift is a loud 422 when an elapsed block is present and a **silent**
+  re-dating of the whole chain when one is not — the common case.
+- **`chainPhases` is now generic** over its row (`weeks` is the only field it reads), so the server
+  chains kg-carrying rows and the browser chains display-unit ones with no fabricated field. This
+  made a cast at `client-phases-service.ts:287` provably redundant.
+- **New `isConformingChain`.** `weeksBetween` rounds, so a hand-written 10-day block derives as 1
+  week and re-chains 3 days shorter (11 days grows to 2), and a gap gets closed — silently changing
+  what the client eats on the uncovered dates, and nulling the affected grids via
+  `carryDailyTargets`. If the drifted block has **elapsed**, the 422 makes the panel permanently
+  unsaveable: the bad value *is* the read-only row's derived weeks, so no UI action can produce an
+  acceptable payload. **Callers refuse a non-conforming chain; they never normalize it.**
+  `client_phases` held **0 rows** when queried live on 2026-07-29 and the app cannot author this
+  shape, so the guard exists purely for hand-written SQL.
+- **`components/clients/goal-plan/goal-plan-model.ts`** — every decision the panel makes, pure, and
+  the owner of the ONE unit boundary. **Display domain:** the form, `client_goals.goal_weight`,
+  `clients.current_weight`, `goalState`, the projection. **kg domain:** `lib/goals/goal-rate.ts` and
+  `client_phases.rate_per_week_kg`.
+- **`hooks/use-client-phases.ts`** — CONVENTIONS §7. The phases write touches two areas; the goals
+  GET carries `phases` as a sibling key, so both invalidators must fire. No reader until 3.6.
+- **TEST GAP CLOSED (`lib/validations/client-phases.test.ts`).** `MAX_PHASES`, `MAX_CHAIN_WEEKS`,
+  `MAX_PHASE_WEEKS` and the duplicate-id refinement had no executing test — only 3 of the phases
+  route's 14 tests touch validation at all. Each bound mutation-proven individually.
+
+**TWO UNIT FACTS THAT MUST NOT ROT.**
+
+1. **Never convert on the way to `client_goals.goal_weight`.** `resolveEffectiveGoal:97-99` applies
+   `weightToKg` when it READS that column, so a 170 lb target stored as 77.11 comes back out as a
+   **35 kg** goal and reaches the calculator and the mirror the client portal still reads. This was
+   a live defect in the first draft of this session's plan.
+2. **The unit-boundary failure direction, stated correctly.** A display-unit rate meeting
+   `capWeeklyRate`'s **absolute kg** thresholds (`goal-rate.ts:33-35`, `:52-59`) is
+   **OVER-restrictive** — an lbs number is ~2.2x the kg it stands for, so 1.5 lb/wk (0.68 kg/wk,
+   safe) trips the 1.0 kg/wk cap and is clamped *slower* than asked. That is the **opposite sign**
+   to Task 2.4's bug, where a kg rate met a display ceiling and read *looser* than reality. Same
+   root cause, opposite direction — do not describe this one as "looks safer than it is". Recorded
+   explicitly because pass 2's own lesson was to check the direction and the cause, and a backwards
+   direction claim in a STATUS block is what survives six weeks.
+
+**A mutation that did NOT bite, reported rather than papered over.** The `weeksBetween` round-trip
+test passed against a mutant that dropped the `+ 1`, because `Math.round((7n-1)/7) === n` — the two
+implementations are indistinguishable on conforming input, which is all the round trip exercises.
+Only a non-conforming window separates them, and `deleteClientPhase:276` calls `weeksBetween` on
+stored rows unconditionally. A 4-day case was added; the mutation now fails 2 tests. **A green
+mutation run is a result about the test, not about the code.**
+
+**Gates:** `tsc` clean · `eslint` **0 errors** · `vitest` **241 files, 2576 tests** (239/2527 at the
+Session 2 close) · `check:labels` OK, 632 files · no `as any`, no leftover markers.
+
+#### Still owed for 3A — decisions already made, do not re-litigate
+
+Design is settled in full; only the writing remains. The four owner decisions: rate and projection
+render in the client's **display unit**; a persisted block is deleted through the **DELETE
+endpoint**; the drawer's goal editor becomes a **link** to the panel; 3.2's confirm sentence is
+computed with **`chainPhases`** and the toast uses the server's `shifted`.
+
+| Owed | Notes |
+|---|---|
+| `use-goal-plan-form.ts`, `goal-plan-sheet.tsx`, `block-row.tsx` | RHF + `zodResolver` + `useFieldArray`. Sheet shell after `nutrition-edit-targets-sheet.tsx`; form mechanics after `client-settings-dialog.tsx:108-118` (the sheet is **not** an RHF form, despite the 3A prompt naming it as the form model) |
+| Overview wiring | `client-status-card.tsx` gains `onOpenGoalPlan` + a footer action; its `:190-192` comment ("no roadmap or phase concept") is now false — class (b) |
+| `docs/ARCHITECTURE.md:580` | *"nothing on this page renders them yet"* goes false with the panel — class (b) |
+| Elapsed rows | Fully read-only (name, weeks AND rate): `replaceClientPhases:184-189` excludes elapsed rows from the write, so a rename returns 200 and is silently dropped. Start date locks once any block has elapsed. **No drag-reorder** — that is what keeps elapsed blocks a contiguous prefix |
+| Delete while dirty | Disabled with a hint. The sentence is computed from the STORED chain while the rows show the PREVIEW chain, so with unsaved edits the two disagree; re-seeding from the response destroys the edits and ignoring it leaves the sentence wrong. Both silent |
+| `customMacrosEnabled` | **Required** prop, so a second mount cannot default it away. Overview: `summary.nutrition.customMacros` (the saved flag). The drawer mount must use `useNutritionPlan`'s saved `customMacrosEnabled`, **not** the live `generationMode` tab, or the two surfaces disagree |
+| Nested Sheet risk | The drawer is a 420px right Sheet; the panel is 780px. Verify z-order, scrim, Esc precedence in the browser. **If it misbehaves, stop and ask** — do not silently switch to close-drawer-then-open |
+| 3.2 test gap | `deleteClientPhase`'s first-block re-chain anchor (`:272`) |
+| Browser smoke | `client_phases` is empty, so the panel is this database's **first ever writer** of it and 2.5/2.6's block-resolution path runs against real data for the first time. Pre-check the table is still empty. This also discharges **Task 2.7's owed smoke** |
+
+**Recorded, not fixed — the self-heal is the PANEL's only.** `buildWrites` self-heals is true of the
+PANEL. Between a blocks-succeeded/goal-failed save and the next panel save,
+`resolveEffectiveGoal().startDate` hands the stale `goal_start_date` to
+`nutrition-plan-orchestrator.ts:188`, `comparison-service.ts:76`, `nutrition/route.ts:118` and
+`use-nutrition-plan.ts:162`, and that window may be unbounded.
