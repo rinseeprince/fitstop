@@ -18,16 +18,12 @@ import "./env-bootstrap";
 
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { generateTrainingEvents } from "@/services/training-event-service";
-import {
-  generateNutritionEvents,
-  createNutritionTargetResolver,
-} from "@/services/nutrition-event-service";
+import { generateNutritionEvents } from "@/services/nutrition-event-service";
 import {
   getTodayDateString,
   getDateString,
   getDateDaysAgo,
   getDateDaysFrom,
-  expandDateRange,
 } from "@/lib/date-helpers";
 import {
   PERF_COACH_ID,
@@ -426,13 +422,11 @@ async function insertNutritionEvents(
   await generateNutritionEvents(
     PERF_CLIENT_ID,
     PERF_NUTRITION_PLAN_ID,
-    // The scale fixture has no blocks; seeding stays on the plan grid.
-    createNutritionTargetResolver({
-      plan: { baselineCalories: 2400, proteinTargetG: 170, dietType: "balanced" },
-      planDailyTargets: dailyTargets,
-    }),
+    { baselineCalories: 2400, proteinTargetG: 170, dietType: "balanced" },
+    dailyTargets,
     null, // trainingPlan — generateNutritionEvents fetches training events by date range
-    expandDateRange(getDateDaysAgo(months * 30), getDateDaysFrom(new Date(), 8 * 7))
+    getDateDaysAgo(months * 30),
+    getDateDaysFrom(new Date(), 8 * 7)
   );
 }
 

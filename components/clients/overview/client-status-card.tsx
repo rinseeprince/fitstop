@@ -16,28 +16,11 @@ import type { OverviewPlanSummary } from "@/types/coach-overview";
 
 type ClientStatusCardProps = {
   client: Client;
-  /**
-   * Goal targets in the client's DISPLAY units, resolved from `client_goals` by
-   * the parent — deliberately NOT read off `client.goalWeight`, which is the
-   * denormalized `clients.*` mirror kept in sync by an error-swallowed
-   * dual-write.
-   */
-  goalWeight?: number;
-  goalBodyFatPercentage?: number;
-  /**
-   * True while the goal read is still in flight. Without it the card cannot tell
-   * "no goal set" from "not loaded yet" and renders a confident em-dash it then
-   * contradicts (same trap as CoachNotesCard / the check-in timing strip).
-   */
-  isGoalLoading?: boolean;
   training: OverviewPlanSummary["training"];
   upcomingTraining: OverviewPlanSummary["upcomingTraining"];
   isCalculatingBMR: boolean;
   onCalculateBMR: () => void;
   onOpenMetrics: () => void;
-  /** Opens the Goal & plan panel — where the goal above and the client's blocks
-   * are both authored. */
-  onOpenGoalPlan: () => void;
 };
 
 // Translucent on-dark chip — same recipe as the training-summary and metric
@@ -164,40 +147,32 @@ function deltaTone(delta: string | null): string | undefined {
 
 export function ClientStatusCard({
   client,
-  goalWeight,
-  goalBodyFatPercentage,
-  isGoalLoading = false,
   training,
   upcomingTraining,
   isCalculatingBMR,
   onCalculateBMR,
   onOpenMetrics,
-  onOpenGoalPlan,
 }: ClientStatusCardProps) {
   const weightUnit = client.weightUnit || "lbs";
   const weightDelta = formatDelta(client.currentWeight, client.startingWeight);
   const bfDelta = formatDelta(client.currentBodyFatPercentage, client.startingBodyFatPercentage);
 
-  // While the goal is loading, claim nothing: no value and no chip. A chip built
-  // from an absent goal reads as a real answer.
-  const weightChip = isGoalLoading
-    ? null
-    : goalChip(client.startingWeight, client.currentWeight, goalWeight, weightUnit);
-  const bfChip = isGoalLoading
-    ? null
-    : goalChip(
-        client.startingBodyFatPercentage,
-        client.currentBodyFatPercentage,
-        goalBodyFatPercentage,
-        "%"
-      );
+  const weightChip = goalChip(
+    client.startingWeight,
+    client.currentWeight,
+    client.goalWeight,
+    weightUnit
+  );
+  const bfChip = goalChip(
+    client.startingBodyFatPercentage,
+    client.currentBodyFatPercentage,
+    client.goalBodyFatPercentage,
+    "%"
+  );
 
-  // The active training PROGRAM — not a goal block. Read the word "block"
-  // elsewhere in this workstream as the nutrition/goal concept (`client_phases`,
-  // authored in the Goal & plan panel this card's footer opens); these chips are
-  // about a program. There is still no ROADMAP concept — that was removed
-  // outright in migration 133 and blocks did not bring it back. A program placed
-  // to start later reads as queued, never as "No plan".
+  // The active training block — this card's only programme context. There is no
+  // roadmap or phase concept on the platform. A program placed to start later
+  // reads as queued, never as "No plan".
   const blockChips: ReactNode = training ? (
     <>
       <DarkChip>{training.planName}</DarkChip>
@@ -244,7 +219,7 @@ export function ClientStatusCard({
           />
           <MetricCell
             label="Goal weight"
-            value={isGoalLoading ? undefined : goalWeight?.toFixed(1)}
+            value={client.goalWeight?.toFixed(1)}
             unit={weightUnit}
             size="lg"
             chip={weightChip}
@@ -270,7 +245,7 @@ export function ClientStatusCard({
           />
           <MetricCell
             label="Goal body fat"
-            value={isGoalLoading ? undefined : goalBodyFatPercentage?.toFixed(1)}
+            value={client.goalBodyFatPercentage?.toFixed(1)}
             unit="%"
             chip={bfChip}
             showLeftBorder
@@ -309,14 +284,7 @@ export function ClientStatusCard({
         </div>
       </div>
 
-      <div className="mt-auto flex items-center justify-between border-t border-[rgba(255,255,255,0.06)] px-5 py-3">
-        <button
-          type="button"
-          onClick={onOpenGoalPlan}
-          className="text-[11px] font-medium text-[#0d9488] transition-colors hover:text-white"
-        >
-          Edit goal &amp; plan
-        </button>
+      <div className="mt-auto flex justify-end border-t border-[rgba(255,255,255,0.06)] px-5 py-3">
         <button
           type="button"
           onClick={onOpenMetrics}

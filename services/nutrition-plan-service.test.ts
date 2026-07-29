@@ -21,15 +21,10 @@ vi.mock('./today-service', () => ({
   getClientTodayString: vi.fn().mockResolvedValue('2024-01-17'),
 }))
 
-vi.mock('@/lib/error-handler', () => ({
-  captureApiError: vi.fn(),
-}))
-
 import { supabaseAdmin } from './supabase-admin'
 import { recordBodyMetrics } from './body-metrics-service'
 import { getClientTodayString } from './today-service'
-import { captureApiError } from '@/lib/error-handler'
-import { createNutritionPlan, stampPhasesFingerprint } from './nutrition-plan-service'
+import { createNutritionPlan } from './nutrition-plan-service'
 
 describe('Nutrition Plan Service', () => {
   beforeEach(() => {
@@ -139,65 +134,6 @@ describe('Nutrition Plan Service', () => {
         'create_nutrition_plan_atomic',
         expect.objectContaining({ p_recalc_snapshots: true })
       )
-    })
-
-    it('never sends phases_fingerprint to the RPC', () => {
-      // Migration 138 keeps the fingerprint OUT of create_nutrition_plan_atomic
-      // on purpose: it must be the last write of a generation, after event
-      // regeneration. If it ever reappears in this arg object, the RPC has been
-      // widened and the stamp-last ordering has been broken.
-      const args = vi.mocked(supabaseAdmin.rpc).mock.calls[0]?.[1] as
-        | Record<string, unknown>
-        | undefined
-      expect(args && 'p_phases_fingerprint' in args).toBeFalsy()
-    })
-  })
-
-  describe('stampPhasesFingerprint', () => {
-    function updateQuery(error: { message: string } | null) {
-      const q = {
-        update: vi.fn().mockReturnThis(),
-        eq: vi.fn(),
-      }
-      q.eq.mockResolvedValue({ data: null, error })
-      return q
-    }
-
-    it('writes the fingerprint scoped to the plan id', async () => {
-      const q = updateQuery(null)
-      vi.mocked(supabaseAdmin.from).mockReturnValue(q as never)
-
-      await stampPhasesFingerprint('plan-1', 'abc123')
-
-      expect(supabaseAdmin.from).toHaveBeenCalledWith('nutrition_plans')
-      expect(q.update).toHaveBeenCalledWith(
-        expect.objectContaining({ phases_fingerprint: 'abc123' })
-      )
-      expect(q.eq).toHaveBeenCalledWith('id', 'plan-1')
-    })
-
-    it('writes null when no block set drove the generation', async () => {
-      const q = updateQuery(null)
-      vi.mocked(supabaseAdmin.from).mockReturnValue(q as never)
-
-      await stampPhasesFingerprint('plan-1', null)
-
-      expect(q.update).toHaveBeenCalledWith(
-        expect.objectContaining({ phases_fingerprint: null })
-      )
-    })
-
-    it('reports a failure to Sentry and does NOT throw', async () => {
-      // The deliberate CONVENTIONS section 2 #12 case: this is the last write of
-      // the generation, so failing it leaves the OLD fingerprint in place, which
-      // reads as "out of date" — a visible false alarm that clears on the next
-      // regenerate. Throwing would 500 a coach whose plan, targets and events all
-      // committed correctly.
-      const q = updateQuery({ message: 'boom' })
-      vi.mocked(supabaseAdmin.from).mockReturnValue(q as never)
-
-      await expect(stampPhasesFingerprint('plan-1', 'abc123')).resolves.toBeUndefined()
-      expect(captureApiError).toHaveBeenCalled()
     })
   })
 })

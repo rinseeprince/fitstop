@@ -6,7 +6,6 @@ import { calculateMetricChange, calculateDaysBetween, calculateGoalProgress } fr
 import { computeGoalPace } from "@/lib/check-in/goal-pace";
 import { getBodyMetricsHistory } from "./body-metrics-service";
 import { getCurrentGoals } from "./client-goals-service";
-import { getClientPhases } from "./client-phases-service";
 import { resolveEffectiveGoal } from "@/lib/goals/resolve-effective-goal";
 import { weightFromKg } from "@/utils/nutrition-helpers";
 import { getTodayDateStringInTimezone, getTodayInTimezone, differenceInDays } from "@/lib/date-helpers";
@@ -40,7 +39,7 @@ export const getCheckInComparison = async (
   // Fetch all check-ins for chart data (last 10), first check-in for starting values,
   // active nutrition plan for base weight and created date, goal_deadline from clients table,
   // earliest body_metrics for starting values, and current goals from client_goals
-  const [{ checkIns }, firstCheckIn, { data: activePlan }, earliestMetrics, currentGoals, phases] = await Promise.all([
+  const [{ checkIns }, firstCheckIn, { data: activePlan }, earliestMetrics, currentGoals] = await Promise.all([
     getClientCheckIns(currentCheckIn.clientId, { limit: 10 }),
     getFirstCheckIn(currentCheckIn.clientId),
     supabaseAdmin
@@ -53,9 +52,6 @@ export const getCheckInComparison = async (
       .maybeSingle(),
     getBodyMetricsHistory(currentCheckIn.clientId, { limit: 1, ascending: true }),
     getCurrentGoals(currentCheckIn.clientId),
-    // Joins the existing fan-out rather than awaiting after it: latency stays
-    // one round trip, not the sum of two (CONVENTIONS §2 perf #11).
-    getClientPhases(currentCheckIn.clientId),
   ]);
 
   // Single-scope effective goal (Session 7.8): the live client goal. Weight AND
@@ -63,9 +59,6 @@ export const getCheckInComparison = async (
   // false alarm (the old code paired the client-scope goal weight with the active
   // nutrition plan's deadline). Displayed in the client's unit.
   const weightUnit = client.weightUnit ?? "lbs";
-  // Client-local today: the pace window is on the client's calendar. The
-  // client record is already in scope, so resolve their zone directly.
-  const clientToday = getTodayDateStringInTimezone(client.timezone);
   const effectiveGoal = resolveEffectiveGoal({
     weightUnit,
     clientGoal: {
@@ -75,13 +68,9 @@ export const getCheckInComparison = async (
       deadline: currentGoals?.goalDeadline ?? client.goalDeadline ?? null,
       startDate: currentGoals?.goalStartDate ?? null,
     },
-    today: clientToday,
-    phases,
-    // Anchored on the period this check-in REPORTS ON, not on today (owner
-    // decision): a check-in reviewed late must be graded against the block that
-    // was running while the client lived it. `periodEnd` is optional on the
-    // legacy token flow, so today is the fallback.
-    date: currentCheckIn.periodEnd ?? clientToday,
+    // Client-local today: the pace window is on the client's calendar. The
+    // client record is already in scope, so resolve their zone directly.
+    today: getTodayDateStringInTimezone(client.timezone),
   });
 
   // Effective goal in DISPLAY units so the displayed goal and the pace share scope.
@@ -252,25 +241,13 @@ export const getCheckInComparison = async (
       weeksToGoal: progress.weeksToGoal,
     };
 
-    // Pace check: is the rate required to hit the goal safe? With a block
-    // covering this check-in's period, the required rate is the one the coach
-    // prescribed for that block rather than the deadline-derived average.
-    //
-    // Converted to DISPLAY units first: this whole path runs in the client's
-    // unit (`progress.remaining` and `currentCheckIn.weight` are both display),
-    // while a block stores kg. Passing the kg rate straight through would grade
-    // an lbs client's 0.5 kg/wk block against an lbs ceiling — a 2.2x error.
-    const prescribedRatePerWeek =
-      effectiveGoal.phaseRateKgPerWeek != null
-        ? weightFromKg(effectiveGoal.phaseRateKgPerWeek, weightUnit)
-        : null;
+    // Pace check: is the rate required to hit the goal by the deadline safe?
     const pace =
       weeksRemaining !== null
         ? computeGoalPace({
             remainingKg: progress.remaining,
             weeksRemaining,
             currentWeightKg: currentCheckIn.weight,
-            prescribedRatePerWeek,
           })
         : null;
     if (pace) {

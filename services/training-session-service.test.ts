@@ -29,7 +29,7 @@ describe("updateSurplusForFutureEvents", () => {
   it("updates only scheduled events for the given session from fromDate onward", async () => {
     // Chain mock: from().update().eq().gte().eq().select() returns data
     const selectFn = vi.fn().mockResolvedValue({
-      data: [{ date: "2026-04-22" }, { date: "2026-04-29" }],
+      data: [{ id: "ev-1" }, { id: "ev-2" }],
       error: null,
     });
     const innerEq = vi.fn().mockReturnValue({ select: selectFn });
@@ -39,12 +39,9 @@ describe("updateSurplusForFutureEvents", () => {
 
     mockFrom.mockReturnValue({ update } as unknown as ReturnType<typeof mockFrom>);
 
-    // Returns the affected DATES, not a count: these events are scattered across
-    // the calendar, and the nutrition cascade needs to rewrite exactly them.
-    const dates = await updateSurplusForFutureEvents("session-1", 20, "2026-04-22");
+    const count = await updateSurplusForFutureEvents("session-1", 20, "2026-04-22");
 
-    expect(dates).toEqual(["2026-04-22", "2026-04-29"]);
-    expect(selectFn).toHaveBeenCalledWith("date");
+    expect(count).toBe(2);
     expect(mockFrom).toHaveBeenCalledWith("training_events");
     expect(update).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -66,9 +63,9 @@ describe("updateSurplusForFutureEvents", () => {
 
     mockFrom.mockReturnValue({ update } as unknown as ReturnType<typeof mockFrom>);
 
-    const dates = await updateSurplusForFutureEvents("session-1", null, "2026-04-22");
+    const count = await updateSurplusForFutureEvents("session-1", null, "2026-04-22");
 
-    expect(dates).toEqual([]);
+    expect(count).toBe(0);
     expect(update).toHaveBeenCalledWith(
       expect.objectContaining({ calorie_surplus_percentage: null }),
     );

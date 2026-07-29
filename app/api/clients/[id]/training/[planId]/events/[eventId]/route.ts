@@ -6,6 +6,7 @@ import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { deleteEvent, updateEventSurplus } from "@/services/training-event-calendar-service";
 import { cascadeNutritionAfterTrainingChange } from "@/services/nutrition-event-service";
+import { getClientTodayString } from "@/services/today-service";
 import { z } from "zod";
 
 const patchEventSchema = z.object({
@@ -29,7 +30,7 @@ export async function PATCH(
   if (csrfError) return csrfError;
 
   try {
-    const coachId = await getAuthenticatedCoachId(request);
+    const coachId = await getAuthenticatedCoachId();
     if (!coachId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -65,7 +66,7 @@ export async function PATCH(
 
     await cascadeNutritionAfterTrainingChange(
       clientId,
-      { kind: "dates", dates: [date] },
+      date,
       "cascade-nutrition-from-event-surplus-edit",
     );
 
@@ -92,7 +93,7 @@ export async function DELETE(
   if (csrfError) return csrfError;
 
   try {
-    const coachId = await getAuthenticatedCoachId(request);
+    const coachId = await getAuthenticatedCoachId();
     if (!coachId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -109,14 +110,13 @@ export async function DELETE(
       return NextResponse.json({ error: "Plan not found" }, { status: 404 });
     }
 
-    // Cascade: a delete changes exactly the day the event sat on — which the
-    // service now reports, so this no longer has to anchor at today and rewrite
-    // the whole horizon to cover one deleted day.
-    const { date: deletedDate } = await deleteEvent(eventId, clientId, planId);
+    await deleteEvent(eventId, clientId, planId);
 
+    // Cascade: a delete affects today-forward, so anchor at client-local today.
+    const today = await getClientTodayString(clientId);
     await cascadeNutritionAfterTrainingChange(
       clientId,
-      { kind: "dates", dates: [deletedDate] },
+      today,
       "cascade-nutrition-events-from-delete"
     );
 

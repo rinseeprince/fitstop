@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
   if (rateLimitResult) return rateLimitResult;
 
   try {
-    const coachId = await getAuthenticatedCoachId(request);
+    const coachId = await getAuthenticatedCoachId();
 
     if (!coachId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

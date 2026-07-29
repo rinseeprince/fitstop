@@ -247,45 +247,6 @@ describe('Client Service', () => {
       )
     })
 
-    it('never writes the goal mirror itself — updateGoals owns both stores', async () => {
-      const mockQuery = createMockQuery({ data: createMockClientRow(), error: null })
-      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
-
-      await createClient('coach-456', {
-        name: 'Test Client',
-        email: 'test@example.com',
-        goalWeight: 170,
-        goalBodyFatPercentage: 12,
-        weightUnit: 'lbs',
-        heightUnit: 'in',
-      } as any)
-
-      // updateGoals writes client_goals AND clients.* in ONE transaction
-      // (migration 139). A second mirror write here is what opened the window
-      // where the two stores could disagree.
-      const inserted = vi.mocked(mockQuery.insert).mock.calls[0][0] as Record<string, unknown>
-      expect(inserted).not.toHaveProperty('goal_weight')
-      expect(inserted).not.toHaveProperty('goal_body_fat_percentage')
-    })
-
-    it('FAILS the create when the goal write fails, rather than reporting success', async () => {
-      const mockQuery = createMockQuery({ data: createMockClientRow(), error: null })
-      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
-      vi.mocked(updateGoals).mockRejectedValueOnce(new Error('rpc down'))
-
-      // This used to be swallowed. A swallowed failure here is how a live client
-      // ended up showing one goal to the coach and another in their own portal.
-      await expect(
-        createClient('coach-456', {
-          name: 'Test Client',
-          email: 'test@example.com',
-          goalWeight: 170,
-          weightUnit: 'lbs',
-          heightUnit: 'in',
-        } as any)
-      ).rejects.toThrow('rpc down')
-    })
-
     it('does not fail if dual-write throws', async () => {
       const mockClientRow = createMockClientRow()
       const mockQuery = createMockQuery({ data: mockClientRow, error: null })
@@ -546,50 +507,6 @@ describe('Client Service', () => {
         expect.objectContaining({ goalWeight: 165 }),
         'coach-456'
       )
-    })
-
-    it('never writes the goal mirror itself — updateGoals owns both stores', async () => {
-      const mockQuery = createMockQuery({ data: createMockClientRow(), error: null })
-      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
-
-      await updateClient(
-        'client-123',
-        { goalWeight: 165, goalBodyFatPercentage: 11, name: 'Renamed' },
-        'coach-456'
-      )
-
-      // The caller writing the mirror AND updateGoals writing it is precisely
-      // what let the stores diverge when the goal write failed in between.
-      const updated = vi.mocked(mockQuery.update).mock.calls[0][0] as Record<string, unknown>
-      expect(updated).not.toHaveProperty('goal_weight')
-      expect(updated).not.toHaveProperty('goal_body_fat_percentage')
-      // Non-goal fields still travel on the same PATCH.
-      expect(updated).toHaveProperty('name', 'Renamed')
-    })
-
-    it('FAILS the update when the goal write fails, rather than returning 200', async () => {
-      const mockQuery = createMockQuery({ data: createMockClientRow(), error: null })
-      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
-      vi.mocked(updateGoals).mockRejectedValueOnce(new Error('rpc down'))
-
-      await expect(
-        updateClient('client-123', { goalWeight: 165 }, 'coach-456')
-      ).rejects.toThrow('rpc down')
-    })
-
-    it('returns the NEW goal, not the pre-write row value', async () => {
-      // The clients row is read before the RPC moves the mirror, so without the
-      // overlay the response echoes the old goal and the UI renders a successful
-      // save as a no-op.
-      const mockQuery = createMockQuery({
-        data: createMockClientRow({ goal_weight: 165 }),
-        error: null,
-      })
-      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
-
-      const result = await updateClient('client-123', { goalWeight: 152 }, 'coach-456')
-
-      expect(result.goalWeight).toBe(152)
     })
   })
 

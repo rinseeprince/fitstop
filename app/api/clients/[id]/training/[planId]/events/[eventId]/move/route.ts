@@ -34,7 +34,7 @@ export async function POST(
   if (csrfError) return csrfError;
 
   try {
-    const coachId = await getAuthenticatedCoachId(request);
+    const coachId = await getAuthenticatedCoachId();
     if (!coachId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -60,13 +60,15 @@ export async function POST(
     const { targetDate } = validation.data;
 
     const result = await moveEvent(eventId, targetDate, clientId, planId);
+    const earliestAffectedDate =
+      result.sourceDate < targetDate ? result.sourceDate : targetDate;
 
-    // Cascade: a move changes exactly two days — the one it left (now a rest day)
-    // and the one it landed on. Passing both, rather than min(source, target) as a
-    // floor, stops a three-day move from rewriting eight weeks of nutrition.
+    // Cascade: regenerate nutrition events for affected dates.
+    // Use min(source, target) so a forward-in-time move also clears the stale
+    // nutrition_event row on the source date.
     await cascadeNutritionAfterTrainingChange(
       clientId,
-      { kind: "dates", dates: [result.sourceDate, targetDate] },
+      earliestAffectedDate,
       "cascade-nutrition-events-from-move"
     );
 

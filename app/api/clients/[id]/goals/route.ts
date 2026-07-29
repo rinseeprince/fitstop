@@ -7,7 +7,6 @@ import {
   updateGoals,
   getGoalsHistory,
 } from "@/services/client-goals-service";
-import { getClientPhases } from "@/services/client-phases-service";
 import { recordAuditEvent } from "@/services/audit-log-service";
 import { AUDIT_ACTIONS } from "@/lib/constants";
 import { updateGoalsSchema } from "@/lib/validations/client-goals";
@@ -23,32 +22,24 @@ export async function GET(
   try {
     const { id: clientId } = await params;
 
-    const auth = await requireCoachOwnsClient(clientId, request);
+    const auth = await requireCoachOwnsClient(clientId);
     if (!auth.authorized) return auth.response;
 
     const { searchParams } = new URL(request.url);
     const includeHistory = searchParams.get("history") === "true";
 
-    // Blocks ride alongside the goal rather than on their own endpoint: every
-    // browser consumer of the goal (Overview chips, Metrics, the nutrition
-    // builder) resolves through `resolveEffectiveGoal`, which needs both to
-    // answer "what rate applies on this date". Sibling key, not folded into
-    // `data`, so existing `data`-shaped consumers are untouched.
-    const [current, phases] = await Promise.all([
-      getCurrentGoals(clientId),
-      getClientPhases(clientId),
-    ]);
+    const current = await getCurrentGoals(clientId);
 
     if (includeHistory) {
       const history = await getGoalsHistory(clientId);
       return NextResponse.json(
-        { success: true, data: { current, history }, phases },
+        { success: true, data: { current, history } },
         { status: 200 }
       );
     }
 
     return NextResponse.json(
-      { success: true, data: current, phases },
+      { success: true, data: current },
       { status: 200 }
     );
   } catch (error) {
@@ -73,7 +64,7 @@ export async function PUT(
   try {
     const { id: clientId } = await params;
 
-    const auth = await requireCoachOwnsClient(clientId, request);
+    const auth = await requireCoachOwnsClient(clientId);
     if (!auth.authorized) return auth.response;
 
     const body = await request.json();

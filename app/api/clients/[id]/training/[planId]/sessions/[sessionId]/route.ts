@@ -25,7 +25,7 @@ export async function GET(
   if (rateLimitResult) return rateLimitResult;
 
   try {
-    const coachId = await getAuthenticatedCoachId(request);
+    const coachId = await getAuthenticatedCoachId();
     if (!coachId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -136,13 +136,10 @@ export async function PUT(
       input: { ...validation.data, exercises },
     });
 
-    // The affected days are this session's future scheduled events — a scattered
-    // set, not a range — so the service reports them and the cascade rewrites
-    // exactly those. `surplusAffectedDates` is empty unless the surplus changed.
-    if (result.surplusAffectedDates.length > 0) {
+    if (result.surplusChanged) {
       await cascadeNutritionAfterTrainingChange(
         clientId,
-        { kind: "dates", dates: result.surplusAffectedDates },
+        today,
         "cascade-nutrition-from-session-full-edit",
       );
     }
@@ -185,7 +182,7 @@ export async function PATCH(
   if (csrfError) return csrfError;
 
   try {
-    const coachId = await getAuthenticatedCoachId(request);
+    const coachId = await getAuthenticatedCoachId();
     if (!coachId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -228,18 +225,16 @@ export async function PATCH(
       // Client-local today: "future" events live on the CLIENT's calendar, so
       // the surplus update + nutrition cascade anchor to the client's day.
       const today = await getClientTodayString(clientId);
-      const affectedDates = await updateSurplusForFutureEvents(
+      await updateSurplusForFutureEvents(
         sessionId,
         validation.data.calorieSurplusPercentage ?? null,
         today,
       );
-      if (affectedDates.length > 0) {
-        await cascadeNutritionAfterTrainingChange(
-          clientId,
-          { kind: "dates", dates: affectedDates },
-          "cascade-nutrition-from-session-surplus-edit",
-        );
-      }
+      await cascadeNutritionAfterTrainingChange(
+        clientId,
+        today,
+        "cascade-nutrition-from-session-surplus-edit",
+      );
     }
 
     return NextResponse.json({ success: true, session }, { status: 200 });
@@ -261,7 +256,7 @@ export async function DELETE(
   if (csrfError) return csrfError;
 
   try {
-    const coachId = await getAuthenticatedCoachId(request);
+    const coachId = await getAuthenticatedCoachId();
     if (!coachId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

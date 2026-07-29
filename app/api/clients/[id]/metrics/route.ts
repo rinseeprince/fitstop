@@ -22,7 +22,7 @@ export async function PUT(
 
   try {
     // Check authentication
-    const coachId = await getAuthenticatedCoachId(request);
+    const coachId = await getAuthenticatedCoachId();
 
     if (!coachId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -131,10 +131,13 @@ export async function PUT(
       updates.current_body_fat_percentage = body.currentBodyFatPercentage;
     }
 
-    // goal_weight / goal_body_fat_percentage are deliberately NOT set here.
-    // `updateGoals` below writes `client_goals` AND the mirror in one
-    // transaction (migration 139); writing the mirror here as well is what let
-    // the two stores disagree when that call failed.
+    if (body.goalWeight !== undefined) {
+      updates.goal_weight = body.goalWeight;
+    }
+
+    if (body.goalBodyFatPercentage !== undefined) {
+      updates.goal_body_fat_percentage = body.goalBodyFatPercentage;
+    }
 
     if (body.bmr !== undefined) {
       updates.bmr = body.bmr;
@@ -209,15 +212,16 @@ export async function PUT(
       }
     }
 
-    // Throws rather than swallowing: a goal edit lands in both stores or in
-    // neither. The catch that used to be here returned 200 while the mirror and
-    // `client_goals` held different goals, which is invisible until a coach and
-    // their client compare screens.
+    // Dual-write goals (non-blocking)
     if (body.goalWeight !== undefined || body.goalBodyFatPercentage !== undefined) {
-      await updateGoals(clientId, {
-        goalWeight: body.goalWeight,
-        goalBodyFatPercentage: body.goalBodyFatPercentage,
-      }, coachId);
+      try {
+        await updateGoals(clientId, {
+          goalWeight: body.goalWeight,
+          goalBodyFatPercentage: body.goalBodyFatPercentage,
+        }, coachId);
+      } catch (dualWriteError) {
+        console.error("Dual-write to client_goals failed:", dualWriteError instanceof Error ? dualWriteError.message : "Unknown error");
+      }
     }
 
     // Get updated client data

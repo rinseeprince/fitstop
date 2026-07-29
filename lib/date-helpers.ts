@@ -297,25 +297,6 @@ export function addDaysToDateString(dateString: string, days: number): string {
 }
 
 /**
- * Every calendar date from `startDate` to `endDate` INCLUSIVE, as YYYY-MM-DD.
- * Returns `[]` when the range is inverted (end before start) — callers treat an
- * empty list as "nothing to do" rather than a silent full-range fallback.
- *
- * UTC-anchored via `addDaysToDateString`, so the list never shifts with the
- * server's local timezone the way a `new Date(s + "T00:00:00")` step loop does.
- * Written for the nutrition cascade, which needs one explicit date list driving
- * both its DELETE and its regenerate.
- */
-export function expandDateRange(startDate: string, endDate: string): string[] {
-  if (endDate < startDate) return [];
-  const dates: string[] = [];
-  for (let d = startDate; d <= endDate; d = addDaysToDateString(d, 1)) {
-    dates.push(d);
-  }
-  return dates;
-}
-
-/**
  * Calculate difference in days between two dates
  * Returns positive number if date2 is after date1
  */

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import useSWR from "swr";
 import {
   Dialog,
   DialogContent,
@@ -13,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2, Pencil } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { useClientGoals, useInvalidateClientGoals } from "@/hooks/use-client-goals";
+import { swrFetcher } from "@/lib/swr-fetcher";
 import { getTodayDateString } from "@/lib/date-helpers";
 import { SECTION_LABEL_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
 import type { ClientGoal } from "@/types/client-goals";
@@ -24,6 +25,14 @@ import type { ClientGoal } from "@/types/client-goals";
 // conversion here. Shows a read-only "Goal: X by Y" summary + an Edit dialog;
 // SWR keeps the summary live after a save.
 
+type GoalsResponse = { success: boolean; data: ClientGoal | null };
+
+const SWR_OPTS = {
+  revalidateOnFocus: false,
+  errorRetryCount: 3,
+  errorRetryInterval: 1000,
+};
+
 type ClientGoalEditorProps = {
   clientId: string;
   unit: "lbs" | "kg";
@@ -31,11 +40,12 @@ type ClientGoalEditorProps = {
 
 export function ClientGoalEditor({ clientId, unit }: ClientGoalEditorProps) {
   const [open, setOpen] = useState(false);
-  const { goal } = useClientGoals(clientId);
-  // A save here has to reach the coach Overview's goal chips, which read the
-  // same area from a different component. This hook's own `mutate` reaches only
-  // this one (CONVENTIONS §7).
-  const invalidateGoals = useInvalidateClientGoals();
+  const { data, mutate } = useSWR<GoalsResponse>(
+    `/api/clients/${clientId}/goals`,
+    swrFetcher,
+    SWR_OPTS
+  );
+  const goal = data?.data ?? null;
 
   const summary =
     goal?.goalWeight != null
@@ -67,7 +77,7 @@ export function ClientGoalEditor({ clientId, unit }: ClientGoalEditorProps) {
         goal={goal}
         open={open}
         onOpenChange={setOpen}
-        onSaved={() => void invalidateGoals(clientId)}
+        onSaved={() => mutate()}
       />
     </div>
   );

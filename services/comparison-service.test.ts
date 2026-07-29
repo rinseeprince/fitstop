@@ -56,10 +56,6 @@ vi.mock('./client-goals-service', () => ({
   getCurrentGoals: vi.fn(),
 }))
 
-vi.mock('./client-phases-service', () => ({
-  getClientPhases: vi.fn().mockResolvedValue([]),
-}))
-
 // Client-local today is resolved through today-service by downstream reads.
 vi.mock('./today-service', () => ({
   getClientTodayString: vi.fn().mockResolvedValue('2026-01-15'),
@@ -79,7 +75,6 @@ import { getCheckInById, getClientCheckIns } from './check-in-service'
 import { getClientById } from './client-service'
 import { getBodyMetricsHistory } from './body-metrics-service'
 import { getCurrentGoals } from './client-goals-service'
-import { getClientPhases } from './client-phases-service'
 import { calculateGoalProgress } from '@/utils/comparison-utils'
 import { getCheckInComparison } from './comparison-service'
 
@@ -297,86 +292,6 @@ describe('Comparison Service - read-switch behavior', () => {
 
       expect(result.goalProgress.deadline?.daysRemaining).toBe(0)
       expect(result.goalProgress.deadline?.isPastDeadline).toBe(false)
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it("resolves against the period this check-in REPORTS ON, not today", async () => {
-    // The anchor that matters: a check-in reviewed late must be graded against
-    // the block that was running while the client lived it.
-    vi.mocked(getCheckInById).mockResolvedValue({
-      ...mockCheckIn,
-      periodEnd: '2026-03-20',
-    } as never)
-    vi.mocked(getBodyMetricsHistory).mockResolvedValue([])
-    vi.mocked(getCurrentGoals).mockResolvedValue(null)
-
-    await getCheckInComparison('ci-1')
-
-    const call = resolveEffectiveGoalSpy.mock.calls[0][0]
-    expect(call.date).toBe('2026-03-20')
-    // The discriminating half: the anchor is the PERIOD, not today. `today` is
-    // the real client-local day here (comparison-service reads the clock
-    // directly via getTodayDateStringInTimezone, not the mocked today-service).
-    expect(call.date).not.toBe(call.today)
-  })
-
-  it('falls back to the client-local today when the check-in has no periodEnd', async () => {
-    // periodEnd is optional on the legacy token flow.
-    vi.mocked(getCheckInById).mockResolvedValue({ ...mockCheckIn } as never)
-    vi.mocked(getBodyMetricsHistory).mockResolvedValue([])
-    vi.mocked(getCurrentGoals).mockResolvedValue(null)
-
-    await getCheckInComparison('ci-1')
-
-    const call = resolveEffectiveGoalSpy.mock.calls[0][0]
-    expect(call.date).toBe(call.today)
-  })
-
-  it("the covering block's rate becomes the pace requirement, in DISPLAY units", async () => {
-    // The client is imperial. Deadline math alone would demand 8 lbs over ~10
-    // days = 5.6 lbs/wk against a 1.78 ceiling -> unrealistic. The block
-    // prescribes 0.5 kg/wk, which must arrive as 1.1 LBS/wk, not a bare 0.5.
-    vi.useFakeTimers()
-    try {
-      vi.setSystemTime(new Date('2026-01-15T12:00:00Z'))
-      vi.mocked(getCheckInById).mockResolvedValue({
-        ...mockCheckIn,
-        periodEnd: '2026-01-14',
-      } as never)
-      vi.mocked(getClientPhases).mockResolvedValue([
-        {
-          id: 'phase-1',
-          name: 'Cut 1',
-          startsOn: '2026-01-01',
-          endsOn: '2026-02-28',
-          ratePerWeekKg: -0.5,
-          dailyTargets: null,
-        },
-      ] as never)
-      vi.mocked(getBodyMetricsHistory).mockResolvedValue([])
-      vi.mocked(getCurrentGoals).mockResolvedValue({
-        id: 'goal-1',
-        clientId: 'client-1',
-        goalWeight: 170,
-        goalDeadline: '2026-01-25',
-        setBy: 'coach',
-        effectiveFrom: '2024-01-01T00:00:00Z',
-        createdAt: '2024-01-01T00:00:00Z',
-        updatedAt: '2024-01-01T00:00:00Z',
-      } as never)
-
-      const result = await getCheckInComparison('ci-1')
-
-      expect(resolveEffectiveGoalSpy).toHaveBeenCalledWith(
-        expect.objectContaining({ date: '2026-01-14' }),
-      )
-      // 0.5 kg/wk -> 1.10 lbs/wk. A regression that forwards the kg value
-      // straight through reads 0.5 here and still grades on_track, so the
-      // NUMBER is the assertion that catches it, not the status.
-      expect(result.goalProgress.weight?.requiredRate).toBe(1.1)
-      expect(result.goalProgress.weight?.paceStatus).toBe('on_track')
     } finally {
       vi.useRealTimers()
     }

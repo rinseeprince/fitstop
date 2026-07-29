@@ -73,51 +73,6 @@
   - UI labels should make sense to coaches and clients, not developers.
   - No "Boolean", no "JSONB", no "isActive" in the interface. Use plain language.
 
-  ### Security, load & performance review — REQUIRED after any large change
-  **Priority: high. This is not optional and it is not "if there's time".** Run it and report the
-  findings unprompted — the product owner should never have to ask "is this safe and will it hold
-  under load?" after an implementation lands.
-
-  **Triggers — run it if ANY apply.** Do not debate whether a change is "large"; if it trips a
-  trigger, run the review:
-  - a new migration, table, or column
-  - a new API route, or any change to an existing route's auth, ownership, or validation
-  - a new write path, or a change to how much/how often an existing one writes
-  - a completed numbered session or phase of an execution plan
-  - roughly ≥5 files or ≥200 lines touching data flow
-
-  **Security — check each, cite `file:line`:**
-  1. Write routes carry `coachApiRateLimit` **and** `requireCSRFProtection` (§9/§10).
-  2. Authenticated (`getAuthenticatedCoachId` / `getAuthenticatedClientId`, **passing `request`**)
-     AND a tenant-ownership check — a foreign resource must 403/404, not proceed.
-  3. zod validation before any write.
-  4. The write itself is scoped to the tenant (`.eq("client_id", …)`) as defence in depth, so a
-     forged id matches zero rows.
-  5. `npm run check:rls` — every table has RLS, and new policies are tenant-scoped. Never assert
-     RLS state from the docs; the live catalog is the source of truth.
-  6. Anything writing via `supabaseAdmin` bypasses RLS — confirm the route authorizes it.
-
-  **Performance — check each:**
-  7. Round trips per request are **constant, not per-row**. No query inside a per-item loop.
-  8. Writes are batched into one statement, not issued per row.
-  9. Every new `WHERE` / `ORDER BY` is index-covered, and every upsert `onConflict` target is
-     backed by a real `UNIQUE` constraint — not a plain index.
-  10. State the **worst-case row count** for the write, not the typical one.
-  11. Sequential `await`s make latency the *sum* of round trips. Parallelise independent reads.
-
-  **Consistency — the failure mode that hides:**
-  12. Flag any `.catch()` that logs and lets the request return success **after** an earlier write
-      committed. That is a silent divergence: the user sees 200, the data is half-updated, and it
-      surfaces to Sentry rather than to them. Say so explicitly, and propose surfacing it or making
-      the operation retryable/idempotent.
-  13. Where two writes are not in one transaction, state what is left inconsistent if the second
-      fails.
-
-  **Reporting — separate what you verified from what you inferred.** Reading code is not measuring.
-  If you have not run load against it, say so plainly and name what is untested (read paths under
-  concurrency, pool behaviour, aggregations) rather than implying coverage you do not have. Offer
-  to measure using the scale seed and `PERF_COACH_ID` fixture (`docs/perf-baseline.md`).
-
   ## 3. Coding Standards
 
   ### Match existing patterns exactly
@@ -589,9 +544,6 @@
   4. `npm run check:labels` - typography tokens hold (mono = numbers only; no raw `font-mono-display` or hand-rolled `uppercase tracking-` outside the token modules — see `docs/newdesignsystem.md` → Typography)
   5. `grep -rn "as any" [changed files]` - no type escapes
   6. `grep -rn "TODO\|FIXME\|HACK\|DEBUG" [changed files]` - no leftover markers
-  7. **§2 "Security, load & performance review"** - if any of its triggers fired (new migration, new
-     route, changed auth, new write path, completed plan session, ~≥5 files touching data flow), the
-     review has been run and reported. Not applicable is a valid answer; skipping silently is not.
 
   ## 14. Performance
   - Database queries: Indexes on foreign keys, frequently queried fields. Index *with* the query — add the keyset index alongside the read it serves (see §8 "Client read scaling").

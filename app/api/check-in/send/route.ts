@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
     const { clientId } = parsed.data;
 
     // Verify coach owns this client
-    const auth = await requireCoachOwnsClient(clientId, request);
+    const auth = await requireCoachOwnsClient(clientId);
     if (!auth.authorized) return auth.response;
 
     // Create check-in token

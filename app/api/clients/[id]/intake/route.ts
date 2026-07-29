@@ -15,7 +15,7 @@ export async function GET(
   if (rateLimitResult) return rateLimitResult;
 
   try {
-    const coachId = await getAuthenticatedCoachId(request);
+    const coachId = await getAuthenticatedCoachId();
     if (!coachId) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
@@ -55,7 +55,7 @@ export async function PATCH(
   if (csrfResult) return csrfResult;
 
   try {
-    const coachId = await getAuthenticatedCoachId(request);
+    const coachId = await getAuthenticatedCoachId();
     if (!coachId) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
@@ -101,7 +101,7 @@ export async function POST(
   if (csrfResult) return csrfResult;
 
   try {
-    const coachId = await getAuthenticatedCoachId(request);
+    const coachId = await getAuthenticatedCoachId();
     if (!coachId) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }

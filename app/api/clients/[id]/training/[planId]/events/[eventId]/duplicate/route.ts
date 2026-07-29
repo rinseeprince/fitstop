@@ -27,7 +27,7 @@ export async function POST(
   if (csrfError) return csrfError;
 
   try {
-    const coachId = await getAuthenticatedCoachId(request);
+    const coachId = await getAuthenticatedCoachId();
     if (!coachId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -53,10 +53,10 @@ export async function POST(
     const { targetDate } = validation.data;
     const newEventId = await duplicateEvent(eventId, targetDate, clientId, planId);
 
-    // Cascade: a duplicate adds a training day on exactly one date.
+    // Cascade: regenerate nutrition events for the target date
     await cascadeNutritionAfterTrainingChange(
       clientId,
-      { kind: "dates", dates: [targetDate] },
+      targetDate,
       "cascade-nutrition-events-from-duplicate"
     );
 

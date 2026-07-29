@@ -7,7 +7,6 @@ import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-e
 import { useCalorieSkew } from "@/hooks/use-calorie-skew";
 import type { Client, ActivityLevel, DietType } from "@/types/check-in";
 import { validateClientForNutrition } from "@/lib/validations/nutrition";
-import { CALORIES_PER_KG } from "@/lib/constants";
 import {
   weightToKg,
   getActivityMultiplier,
@@ -216,18 +215,19 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
   );
 
   // Calculate projected goal date
+  // 7700 calories = approximately 1kg of body weight
+  const CALORIES_PER_KG = 7700;
+
   const getProjectedDate = useCallback(() => {
     const nd = nutritionPlan.nutritionData;
     const baseline = nd?.baselineCalories ?? nd?.calorieTarget;
-    // Resolved from `client_goals` by the composed `useNutritionPlan`, not from
-    // the `clients.goal_weight` mirror this used to read (task 1.3's divergence).
-    const goalWeightKg = nutritionPlan.effectiveGoalWeightKg;
-    if (goalWeightKg == null || !client.currentWeight || !baseline) return null;
+    if (!client.goalWeight || !client.currentWeight || !baseline) return null;
 
     const tdee = client.tdee || (client.bmr ? Math.round(client.bmr * getActivityMultiplier(settings.workActivityLevel)) : null);
     if (!tdee) return null;
 
     const currentWeightKg = weightToKg(client.currentWeight, client.weightUnit || "lbs");
+    const goalWeightKg = weightToKg(client.goalWeight, client.weightUnit || "lbs");
     const weightToLoseKg = currentWeightKg - goalWeightKg;
 
     if (Math.abs(weightToLoseKg) < 0.1) return null;
@@ -238,12 +238,7 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
 
     const weeksNeeded = weightToLoseKg / weeklyWeightChangeKg;
     return addDays(new Date(), Math.round(weeksNeeded * 7));
-  }, [
-    client,
-    nutritionPlan.nutritionData,
-    nutritionPlan.effectiveGoalWeightKg,
-    settings.workActivityLevel,
-  ]);
+  }, [client, nutritionPlan.nutritionData, settings.workActivityLevel]);
 
   return {
     // Spread base nutrition plan state

@@ -21,7 +21,7 @@ export async function GET(
   try {
     const { id: clientId } = await params;
 
-    const auth = await requireCoachOwnsClient(clientId, request);
+    const auth = await requireCoachOwnsClient(clientId);
     if (!auth.authorized) return auth.response;
 
     const entries = await listMetricEntries(clientId);
@@ -52,7 +52,7 @@ export async function POST(
   try {
     const { id: clientId } = await params;
 
-    const auth = await requireCoachOwnsClient(clientId, request);
+    const auth = await requireCoachOwnsClient(clientId);
     if (!auth.authorized) return auth.response;
 
     const body = await request.json();

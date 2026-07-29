@@ -7,16 +7,6 @@ import type { TrainingPlan } from "@/types/training";
 import {
   getActivityMultiplier,
 } from "@/utils/nutrition-helpers";
-import { CALORIES_PER_KG } from "@/lib/constants";
-import {
-  applyCalorieFloor,
-  assumedSafetyEnvelopeWarning,
-  capWeeklyRate,
-  dailyCalorieMagnitudeFromRate,
-  daysToDeadline,
-  rateFromDailyCalorieDelta,
-} from "@/lib/goals/goal-rate";
-import { getTodayDateString } from "@/lib/date-helpers";
 
 export type NutritionPlan = {
   baselineCalories: number; // Rest day calories (TDEE - deficit)
@@ -62,20 +52,6 @@ export function calculateTDEE(
 }
 
 /**
- * Narrow a date-ish string to its calendar date.
- *
- * `calculateBaselineCalories` accepts either a bare `YYYY-MM-DD` — what every
- * production caller passes, since `goal_deadline` and `goal_start_date` are DATE
- * columns — or a full ISO timestamp, which its tests pass and which the old
- * `new Date(...)` parsing silently tolerated. Day-number arithmetic needs the
- * calendar date, and slicing an ISO string yields its UTC date, which is exactly
- * how the previous `new Date(iso)` comparison already read it.
- */
-function toCalendarDate(value: string): string {
-  return value.slice(0, 10);
-}
-
-/**
  * Calculate baseline calories (rest day calories)
  * This is TDEE minus the required daily deficit to achieve goal by deadline
  */
@@ -105,28 +81,25 @@ export function calculateBaselineCalories(
     };
   }
 
-  // Calculate time to goal. A start date in the future counts from the start;
-  // one already elapsed counts from today — the CLIENT-local today when the
-  // caller provides it (the deadline lives on the client's calendar), with
-  // server-local as the only fallback. The count includes both endpoints.
-  //
-  // DAY-NUMBER arithmetic, deliberately not Date math. This block used to parse
-  // `today` as LOCAL midnight while `goalDeadline` — a bare DATE from PostgREST
-  // — parsed as UTC midnight, and the `Math.round` absorbed the offset only
-  // below ±12h. Measured in task 1.4: correct at UTC / Los Angeles / São Paulo /
-  // Kolkata, wrong at Auckland and Kiritimati (92 vs 91), and wrong by two at
-  // exactly +12 where the fraction is 0.5 and rounds up. Latent while both
-  // callers were server-side under UTC Node — but Session 3 renders this
-  // arithmetic in the coach's browser, which would make it live for every coach
-  // at ≥+12, silently and always in the "too slow" direction.
-  //
-  // `daysToDeadline` is the shared implementation task 1.4 pinned across six
-  // zones, so the two cannot drift apart again.
-  const daysToGoal = daysToDeadline({
-    deadline: toCalendarDate(goalDeadline),
-    today: toCalendarDate(today ?? getTodayDateString()),
-    startDate: calcStartDate ? toCalendarDate(calcStartDate) : undefined,
-  });
+  // Calculate time to goal
+  // When a phase starts in the future, count from phase start, not today.
+  // When a phase already started (or no phase), count from today — the
+  // CLIENT-local today when the caller provides it (the deadline lives on the
+  // client's calendar); server-local midnight only as fallback.
+  let now: Date;
+  if (today) {
+    now = new Date(today + "T00:00:00");
+  } else {
+    now = new Date();
+    now.setHours(0, 0, 0, 0);
+  }
+  const startDate = calcStartDate
+    ? new Date(Math.max(new Date(calcStartDate).getTime(), now.getTime()))
+    : now;
+  const deadline = new Date(goalDeadline);
+  const daysToGoal = Math.round(
+    (deadline.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
+  ) + 1;
 
   if (daysToGoal <= 0) {
     warnings.push("Goal deadline has passed. Using maintenance calories.");
@@ -142,8 +115,8 @@ export function calculateBaselineCalories(
   const weightChangeKg = goalWeightKg - currentWeightKg;
   const isWeightLoss = weightChangeKg < 0;
 
-  // Calculate total calorie deficit/surplus needed
-  const totalCalorieChange = Math.abs(weightChangeKg) * CALORIES_PER_KG;
+  // Calculate total calorie deficit/surplus needed (1kg = 7700 calories)
+  const totalCalorieChange = Math.abs(weightChangeKg) * 7700;
 
   // Calculate required daily deficit/surplus
   let requiredDailyChange = totalCalorieChange / daysToGoal;
@@ -152,52 +125,44 @@ export function calculateBaselineCalories(
   const weeksToGoal = daysToGoal / 7;
   let weeklyRate = weightChangeKg / weeksToGoal;
 
-  // Cap the rate if too aggressive. The envelope and the warning copy live in
-  // lib/goals/goal-rate.ts so the rate-FIRST entry point (which a block hands a
-  // rate directly) cannot drift from this one on what counts as safe.
-  const cap = capWeeklyRate(weeklyRate, gender);
-  if (cap.capped) {
-    weeklyRate = cap.rateKgPerWeek;
-    requiredDailyChange = dailyCalorieMagnitudeFromRate(cap.rateKgPerWeek);
-    if (cap.warning) warnings.push(cap.warning);
+  // Gender-specific safety caps
+  const maxWeeklyDeficitKg = gender === "female" ? 0.75 : 1.0;
+  const maxWeeklySurplusKg = gender === "female" ? 0.35 : 0.5;
+
+  // Cap the rate if too aggressive
+  if (isWeightLoss && weeklyRate < -maxWeeklyDeficitKg) {
+    weeklyRate = -maxWeeklyDeficitKg;
+    requiredDailyChange = (maxWeeklyDeficitKg * 7700) / 7;
+    warnings.push(
+      `Weekly deficit capped at ${maxWeeklyDeficitKg}kg/week for safety. Goal timeline may need adjustment.`
+    );
+  } else if (!isWeightLoss && weeklyRate > maxWeeklySurplusKg) {
+    weeklyRate = maxWeeklySurplusKg;
+    requiredDailyChange = (maxWeeklySurplusKg * 7700) / 7;
+    warnings.push(
+      `Weekly surplus capped at ${maxWeeklySurplusKg}kg/week for optimal muscle gain. Goal timeline may need adjustment.`
+    );
   }
 
   // Calculate baseline calories
   // For weight loss: baseline = TDEE - deficit
   // For weight gain: baseline = TDEE + surplus
   const requiredDailyDeficit = isWeightLoss ? requiredDailyChange : -requiredDailyChange;
+  let baselineCalories = Math.round(tdee - requiredDailyDeficit);
 
-  // Ensure minimum calories.
-  const floorResult = applyCalorieFloor(
-    Math.round(tdee - requiredDailyDeficit),
-    gender
-  );
-  if (floorResult.warning) warnings.push(floorResult.warning);
-
-  // Report the deficit and rate the plan WILL RUN, not the one it was asked for
-  // (task 2.8(d), owner decision 2026-07-29). When the floor bites, the target
-  // moves but the requirement does not, so the two disagree: at TDEE 1700 a
-  // floored target of 1500 runs 200 cal/day while the untouched `weeklyRate`
-  // still advertised -0.3846 kg/wk (~423 cal/day) — a deficit the client will
-  // never eat. Re-derived from the target actually returned, which is what
-  // `calculateBaselineCaloriesFromRate` already does via `appliedRateKgPerWeek`.
-  const appliedDailyDeficit = floorResult.floored
-    ? tdee - floorResult.calories
-    : requiredDailyDeficit;
-  const appliedWeeklyRate = floorResult.floored
-    ? rateFromDailyCalorieDelta(floorResult.calories - tdee)
-    : weeklyRate;
-
-  const assumedWarning = assumedSafetyEnvelopeWarning(
-    gender,
-    cap.capped || floorResult.floored
-  );
-  if (assumedWarning) warnings.push(assumedWarning);
+  // Ensure minimum calories
+  const minimumCalories = gender === "female" ? 1200 : 1500;
+  if (baselineCalories < minimumCalories) {
+    warnings.push(
+      `Calorie target raised to minimum safe level (${minimumCalories} cal/day). Consider adjusting goal timeline.`
+    );
+    baselineCalories = minimumCalories;
+  }
 
   return {
-    baselineCalories: floorResult.calories,
-    requiredDailyDeficit: appliedDailyDeficit,
-    weeklyRate: appliedWeeklyRate,
+    baselineCalories,
+    requiredDailyDeficit,
+    weeklyRate,
     warnings,
   };
 }

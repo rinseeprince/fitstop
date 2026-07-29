@@ -28,7 +28,7 @@ export async function GET(
 
   try {
     const { id } = await params;
-    const coachId = await getAuthenticatedCoachId(request);
+    const coachId = await getAuthenticatedCoachId();
 
     if (!coachId) {
       return NextResponse.json(
@@ -78,7 +78,7 @@ export async function PATCH(
 
   try {
     const { id } = await params;
-    const coachId = await getAuthenticatedCoachId(request);
+    const coachId = await getAuthenticatedCoachId();
 
     if (!coachId) {
       return NextResponse.json(
@@ -142,7 +142,7 @@ export async function DELETE(
 
   try {
     const { id } = await params;
-    const coachId = await getAuthenticatedCoachId(request);
+    const coachId = await getAuthenticatedCoachId();
 
     if (!coachId) {
       return NextResponse.json(

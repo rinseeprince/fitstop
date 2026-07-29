@@ -21,7 +21,6 @@ import {
   NutritionPlanError,
 } from "@/services/nutrition-plan-orchestrator";
 import { getCurrentGoals } from "@/services/client-goals-service";
-import { getClientPhases } from "@/services/client-phases-service";
 import { resolveEffectiveGoal } from "@/lib/goals/resolve-effective-goal";
 import { detectGoalDrift } from "@/lib/goals/detect-goal-drift";
 import { recordAuditEvent } from "@/services/audit-log-service";
@@ -38,7 +37,7 @@ export async function GET(
   if (rateLimitResult) return rateLimitResult;
 
   try {
-    const coachId = await getAuthenticatedCoachId(request);
+    const coachId = await getAuthenticatedCoachId();
     if (!coachId) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
@@ -104,10 +103,7 @@ export async function GET(
     // (effective-goal resolver) differ from the snapshot this active plan was
     // built against? Surfaced as "Goal changed — regenerate", distinct from the
     // weight-delta banner (which compares current weight vs the plan base weight).
-    const [driftGoals, phases] = await Promise.all([
-      getCurrentGoals(clientId),
-      getClientPhases(clientId),
-    ]);
+    const driftGoals = await getCurrentGoals(clientId);
     const effectiveGoal = resolveEffectiveGoal({
       weightUnit: client.weightUnit ?? "lbs",
       clientGoal: {
@@ -118,8 +114,6 @@ export async function GET(
         startDate: driftGoals?.goalStartDate ?? null,
       },
       today,
-      phases,
-      date: today,
     });
     const goalChanged = detectGoalDrift(
       { goalWeightKg: plan.goal_weight_kg ?? null, deadline: plan.goal_deadline ?? null },
@@ -160,7 +154,7 @@ export async function POST(
   if (csrfError) return csrfError;
 
   try {
-    const coachId = await getAuthenticatedCoachId(request);
+    const coachId = await getAuthenticatedCoachId();
     if (!coachId) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
@@ -213,7 +207,7 @@ export async function PATCH(
   if (csrfError) return csrfError;
 
   try {
-    const coachId = await getAuthenticatedCoachId(request);
+    const coachId = await getAuthenticatedCoachId();
 
     if (!coachId) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });

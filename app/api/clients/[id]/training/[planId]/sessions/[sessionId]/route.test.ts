@@ -93,8 +93,6 @@ const replaceResult = {
   surplusChanged: false,
   identityChanged: true,
   futureEventsUpdated: 2,
-  // Empty unless the surplus changed — a rename alone moves no calories.
-  surplusAffectedDates: [],
 } as unknown as Awaited<ReturnType<typeof replaceSessionFull>>;
 
 function makeParams() {
@@ -201,14 +199,10 @@ describe("PUT /api/clients/[id]/training/[planId]/sessions/[sessionId]", () => {
     expect(cascadeNutritionAfterTrainingChange).not.toHaveBeenCalled();
   });
 
-  it("cascades exactly the event dates whose surplus changed", async () => {
+  it("fires the nutrition cascade anchored at today when the surplus changed", async () => {
     vi.mocked(replaceSessionFull).mockResolvedValue({
       ...(replaceResult as object),
       surplusChanged: true,
-      // A placed session owns one event per placed day — a scattered set, which
-      // is why the service reports the dates instead of the route anchoring at
-      // today and rewriting everything forward of it.
-      surplusAffectedDates: ["2026-05-04", "2026-05-11", "2026-05-18"],
     } as unknown as Awaited<ReturnType<typeof replaceSessionFull>>);
 
     const response = await PUT(makePutRequest(validBody), makeParams());
@@ -216,7 +210,7 @@ describe("PUT /api/clients/[id]/training/[planId]/sessions/[sessionId]", () => {
     expect(response.status).toBe(200);
     expect(cascadeNutritionAfterTrainingChange).toHaveBeenCalledWith(
       CLIENT_ID,
-      { kind: "dates", dates: ["2026-05-04", "2026-05-11", "2026-05-18"] },
+      TODAY,
       "cascade-nutrition-from-session-full-edit",
     );
   });

@@ -20,12 +20,6 @@ vi.mock("@/services/client-goals-service", () => ({
   getGoalsHistory: vi.fn(),
 }));
 
-// The GET now returns the client's blocks alongside the goal. Default to none,
-// which is the shape every pre-blocks client has.
-vi.mock("@/services/client-phases-service", () => ({
-  getClientPhases: vi.fn().mockResolvedValue([]),
-}));
-
 // The route now records an audit event (fire-and-forget). Mock it so the test
 // doesn't load the real supabase-admin client (which throws without env vars).
 vi.mock("@/services/audit-log-service", () => ({

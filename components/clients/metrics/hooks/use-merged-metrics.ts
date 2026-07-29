@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useMemo } from "react";
+import useSWR from "swr";
 import { useAllClientCheckIns } from "@/hooks/use-check-in-data";
 import { useMetricEntries } from "@/hooks/use-metric-entries";
-import { useClientGoals } from "@/hooks/use-client-goals";
+import { swrFetcher } from "@/lib/swr-fetcher";
 import { getTodayDateString } from "@/lib/date-helpers";
 import { DOWN_IS_GOOD } from "@/lib/metrics/metric-entry-definitions";
 import { resolveEffectiveGoal } from "@/lib/goals/resolve-effective-goal";
@@ -30,6 +31,11 @@ const MEASUREMENT_UNIT = "in";
 // plain string ids are looked up.
 const DOWN_SET: ReadonlySet<string> = DOWN_IS_GOOD;
 
+type GoalsResponse = {
+  success: boolean;
+  data: { goalWeight?: number; goalBodyFatPercentage?: number | null } | null;
+};
+
 export type UseMergedMetricsResult = {
   metricsByTab: Record<MetricTab, MetricSummary[]>;
   logRowsByTab: Record<MetricTab, LogRow[]>;
@@ -53,16 +59,18 @@ export const useMergedMetrics = (
     isError: entriesError,
     mutate: mutateEntries,
   } = useMetricEntries(client.id);
-  // Was an inline `/goals` key (the §7 gap task 1.3 recorded against this file);
-  // this file is now touched, so it moves onto the shared hook — which also
-  // carries the client's blocks.
-  const { goal: currentGoals, phases } = useClientGoals(client.id);
+  const { data: goalsData } = useSWR<GoalsResponse>(
+    `/api/clients/${client.id}/goals`,
+    swrFetcher,
+    { revalidateOnFocus: false, errorRetryCount: 1 }
+  );
 
   const { metricsByTab, logRowsByTab } = useMemo(() => {
     const today = getTodayDateString();
     const unit: "lbs" | "kg" = client.weightUnit === "kg" ? "kg" : "lbs";
     const pointsByMetric = buildMetricPoints(checkIns, entries, METRIC_DEFINITIONS);
 
+    const currentGoals = goalsData?.data ?? null;
     const effectiveGoal = resolveEffectiveGoal({
       weightUnit: unit,
       // Legacy fallback to the denormalized client fields mirrors
@@ -77,7 +85,6 @@ export const useMergedMetrics = (
         startDate: null,
       },
       today,
-      phases,
     });
 
     const byTab: Record<MetricTab, MetricSummary[]> = { body: [], wellness: [] };
@@ -154,7 +161,7 @@ export const useMergedMetrics = (
       metricsByTab: byTab,
       logRowsByTab: { body: decorate("body"), wellness: decorate("wellness") },
     };
-  }, [checkIns, entries, currentGoals, phases, client]);
+  }, [checkIns, entries, goalsData, client]);
 
   const logMeasurement = useCallback(
     async (input: CreateMetricEntryRequest) => {

@@ -827,50 +827,6 @@ export type Database = {
           },
         ]
       }
-      client_phases: {
-        Row: {
-          client_id: string
-          created_at: string
-          daily_targets: Json | null
-          ends_on: string
-          id: string
-          name: string
-          rate_per_week_kg: number
-          starts_on: string
-          updated_at: string
-        }
-        Insert: {
-          client_id: string
-          created_at?: string
-          daily_targets?: Json | null
-          ends_on: string
-          id?: string
-          name: string
-          rate_per_week_kg: number
-          starts_on: string
-          updated_at?: string
-        }
-        Update: {
-          client_id?: string
-          created_at?: string
-          daily_targets?: Json | null
-          ends_on?: string
-          id?: string
-          name?: string
-          rate_per_week_kg?: number
-          starts_on?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "client_phases_client_id_fkey"
-            columns: ["client_id"]
-            isOneToOne: false
-            referencedRelation: "clients"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       clients: {
         Row: {
           active: boolean | null
@@ -1952,7 +1908,6 @@ export type Database = {
           goal_weight_kg: number | null
           id: string
           name: string | null
-          phases_fingerprint: string | null
           protein_target_g: number
           protein_target_g_per_kg: number
           regeneration_reason: string | null
@@ -1984,7 +1939,6 @@ export type Database = {
           goal_weight_kg?: number | null
           id?: string
           name?: string | null
-          phases_fingerprint?: string | null
           protein_target_g: number
           protein_target_g_per_kg?: number
           regeneration_reason?: string | null
@@ -2016,7 +1970,6 @@ export type Database = {
           goal_weight_kg?: number | null
           id?: string
           name?: string | null
-          phases_fingerprint?: string | null
           protein_target_g?: number
           protein_target_g_per_kg?: number
           regeneration_reason?: string | null
@@ -2909,18 +2862,6 @@ export type Database = {
       update_client_adherence_stats: {
         Args: { client_uuid: string }
         Returns: undefined
-      }
-      update_client_goals_atomic: {
-        Args: {
-          p_client_id: string
-          p_goal_body_fat_percentage: number
-          p_goal_deadline: string
-          p_goal_start_date: string
-          p_goal_weight: number
-          p_primary_goal: string
-          p_set_by: string
-        }
-        Returns: string
       }
       upsert_daily_log_atomic:
         | {

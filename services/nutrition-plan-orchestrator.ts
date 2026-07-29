@@ -9,19 +9,10 @@ import {
   archiveNutritionPlan,
   createNutritionPlan,
   getActiveNutritionPlanId,
-  stampPhasesFingerprint,
 } from "@/services/nutrition-plan-service";
-import { computePhasesFingerprint } from "@/services/phase-fingerprint";
 import { CUSTOM_MACRO_CALORIE_TOLERANCE } from "@/lib/constants";
 import { getLatestBodyMetrics } from "@/services/body-metrics-service";
 import { getCurrentGoals } from "@/services/client-goals-service";
-import {
-  getClientPhases,
-  writePhaseDailyTargets,
-} from "@/services/client-phases-service";
-import type { ClientPhase } from "@/services/client-phases-service";
-import { computePhaseTargets } from "@/lib/goals/phase-targets";
-import type { PhaseTargetRow } from "@/lib/goals/phase-targets";
 import type { GenerateNutritionPlanRequest } from "@/types/check-in";
 import {
   deleteFutureNutritionEventsForPlan,
@@ -55,8 +46,7 @@ async function regenerateEventsOrThrow(
   fromDate: string
 ): Promise<void> {
   try {
-    // Plan creation/regeneration is open-ended forward from its effective date.
-    await regenerateFutureNutritionEvents(clientId, planId, { kind: "from", from: fromDate });
+    await regenerateFutureNutritionEvents(clientId, planId, fromDate);
   } catch (err) {
     captureApiError(err, { action: "generate-nutrition-events", planId });
     throw new NutritionPlanError(
@@ -69,13 +59,6 @@ async function regenerateEventsOrThrow(
 export interface NutritionPlanResult {
   success: true;
   plan: Record<string, unknown>;
-  /**
-   * One row per block, each carrying its own calorie target and its cap/floor
-   * state, for Session 3.3's per-block preview. **Absent** (not `[]`) when no
-   * block drove this generation, so the UI can tell "this client has no blocks"
-   * from "blocks ran and produced nothing".
-   */
-  phases?: PhaseTargetRow[];
 }
 
 /**
@@ -160,10 +143,9 @@ export async function orchestrateNutritionPlanCreation(
   }
 
   // Prefer new services, fall back to client.* for pre-migration clients
-  const [latestMetrics, currentGoals, phases] = await Promise.all([
+  const [latestMetrics, currentGoals] = await Promise.all([
     getLatestBodyMetrics(clientId),
     getCurrentGoals(clientId),
-    getClientPhases(clientId),
   ]);
 
   const currentWeight = latestMetrics?.weight ?? client.currentWeight;
@@ -175,9 +157,6 @@ export async function orchestrateNutritionPlanCreation(
   // single display→kg normalization (client goal weight is display units). The
   // deadline comes from this single scope — never the request body (the old
   // `body.goalDeadline` was the cross-scope source).
-  // Anchored on the day this plan STARTS, not on today: a plan generated on
-  // Friday to begin Monday must resolve against the block that covers Monday.
-  const planStartDate = body.effectiveFrom ?? clientToday;
   const effective = resolveEffectiveGoal({
     weightUnit,
     clientGoal: {
@@ -188,8 +167,6 @@ export async function orchestrateNutritionPlanCreation(
       startDate: currentGoals?.goalStartDate ?? null,
     },
     today: clientToday,
-    phases,
-    date: planStartDate,
   });
   const effectiveGoalWeightKg = effective.goalWeightKg;
   const effectiveGoalDeadline = effective.deadline;
@@ -208,7 +185,7 @@ export async function orchestrateNutritionPlanCreation(
   return handleCalculatedPlan(
     clientId, coachId, body, client, weightUnit, currentWeight,
     bmr, effectiveGoalWeightKg, effectiveGoalDeadline, effectiveStartDate,
-    validatedData, clientToday, phases
+    validatedData, clientToday
   );
 }
 
@@ -284,17 +261,6 @@ async function handleCustomMacros(
   // separate old-plan cleanup — there is no old plan to delete.
   await regenerateEventsOrThrow(clientId, newPlanId, body.effectiveFrom ?? clientToday);
 
-  // Custom macros ARE the targets: the coach typed them and the calculator never
-  // ran, so no block drove this generation and the fingerprint must be NULL
-  // (decided in task 2.2). Stamping a real hash here would assert that blocks
-  // produced numbers they had no part in, and the per-date resolver
-  // short-circuits blocks on this plan for the same reason.
-  //
-  // Stamped unconditionally rather than only when blocks exist: a client who HAD
-  // blocks driving their plan and then switches to custom macros must have the
-  // old hash cleared, or the plan keeps claiming those blocks are current.
-  await stampPhasesFingerprint(newPlanId, null);
-
   return {
     success: true,
     plan: {
@@ -322,8 +288,7 @@ async function handleCalculatedPlan(
   // Always a concrete date — resolveEffectiveGoal falls back to `today`.
   effectiveStartDate: string,
   validatedData: { coachNotes?: string },
-  clientToday: string,
-  phases: ClientPhase[]
+  clientToday: string
 ): Promise<NutritionPlanResult> {
   const currentWeightKg = weightToKg(currentWeight!, weightUnit);
 
@@ -381,32 +346,6 @@ async function handleCalculatedPlan(
       : "initial";
   }
 
-  // One calorie target per BLOCK, from each block's own rate. Written BEFORE the
-  // plan RPC deliberately: if this throws, the plan and its events are still the
-  // previous generation's and the stored fingerprint still matches them, so the
-  // coach sees "current" and nothing is half-applied. Every other ordering leaves
-  // a window where the fingerprint asserts a block set the events do not follow.
-  //
-  // `preserveCalories` is excluded: it reuses an existing baseline rather than
-  // calculating, so no block drove those numbers and stamping one would lie.
-  const phaseTargets =
-    phases.length > 0 && !body.preserveCalories
-      ? computePhaseTargets({
-          phases,
-          tdee: plan.tdee,
-          gender: client.gender as "male" | "female" | "other",
-          proteinTargetG: plan.proteinTargetG,
-          dietType: body.dietType,
-        })
-      : [];
-
-  if (phaseTargets.length > 0) {
-    await writePhaseDailyTargets(
-      clientId,
-      phaseTargets.map((p) => ({ phaseId: p.phaseId, dailyTargets: p.dailyTargets }))
-    );
-  }
-
   const newPlanId = await createNutritionPlan({
     clientId,
     coachId,
@@ -448,22 +387,6 @@ async function handleCalculatedPlan(
   // separate old-plan cleanup — there is no old plan to delete.
   await regenerateEventsOrThrow(clientId, newPlanId, body.effectiveFrom ?? clientToday);
 
-  // THE LAST WRITE OF THE GENERATION, and that is the whole point (task 2.2's
-  // STATUS). The stored hash means "every write above succeeded": grids, plan,
-  // and events. Stamped any earlier — inside the RPC, say — it would assert the
-  // current block set while the events the client actually eats are still the
-  // old ones, and the Overview would affirmatively report the plan as current.
-  // Every failure direction above leaves the fingerprint STALE, which is a
-  // visible "out of date" row that clears on the next regenerate.
-  //
-  // NULL when no block drove this generation (no blocks, or preserveCalories) —
-  // `computePhasesFingerprint([])` returns null, never a sentinel hash, so no
-  // existing plan starts comparing unequal.
-  await stampPhasesFingerprint(
-    newPlanId,
-    computePhasesFingerprint(phaseTargets.length > 0 ? phases : [])
-  );
-
   return {
     success: true,
     plan: {
@@ -478,10 +401,5 @@ async function handleCalculatedPlan(
       requiredDailyDeficit: plan.requiredDailyDeficit,
       warnings: plan.warnings,
     },
-    // One row per block for Session 3.3's preview, each carrying its own cap and
-    // floor state (invariant 12: a capped rate is visible per row, never silent).
-    // Absent for a client with no blocks — not an empty array, so the UI can tell
-    // "no blocks" from "blocks that produced nothing".
-    ...(phaseTargets.length > 0 ? { phases: phaseTargets } : {}),
   };
 }

@@ -22,7 +22,7 @@ export async function GET(
   if (rateLimitResult) return rateLimitResult;
 
   try {
-    const coachId = await getAuthenticatedCoachId(request);
+    const coachId = await getAuthenticatedCoachId();
     if (!coachId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -59,7 +59,7 @@ export async function PATCH(
   if (csrfError) return csrfError;
 
   try {
-    const coachId = await getAuthenticatedCoachId(request);
+    const coachId = await getAuthenticatedCoachId();
     if (!coachId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -108,7 +108,7 @@ export async function DELETE(
   if (csrfError) return csrfError;
 
   try {
-    const coachId = await getAuthenticatedCoachId(request);
+    const coachId = await getAuthenticatedCoachId();
     if (!coachId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -130,16 +130,12 @@ export async function DELETE(
     const today = await getClientTodayString(clientId);
 
     await archiveTrainingPlan(planId);
-    const { lastDate } = await cancelFutureEventsForPlan(planId, today);
+    await cancelFutureEventsForPlan(planId, today);
 
-    // Cascade: nutrition burn estimates depend on training events. Extend the
-    // range to the last day the cancelled plan actually reached — otherwise every
-    // day past the default horizon keeps its stale training-day surplus forever,
-    // since nothing else will ever revisit it. `lastDate` comes from the events
-    // just deleted; `training_plans.effective_until` is NULL on placed plans.
+    // Cascade: nutrition burn estimates depend on training events.
     await cascadeNutritionAfterTrainingChange(
       clientId,
-      { kind: "from", from: today, to: lastDate ?? undefined },
+      today,
       "cascade-nutrition-events-from-clear-plan"
     );
 

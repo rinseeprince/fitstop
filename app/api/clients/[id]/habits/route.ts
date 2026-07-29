@@ -23,7 +23,7 @@ export async function GET(
 
   try {
     const { id: clientId } = await params;
-    const coachId = await getAuthenticatedCoachId(request);
+    const coachId = await getAuthenticatedCoachId();
 
     if (!coachId) {
       return NextResponse.json(
@@ -73,7 +73,7 @@ export async function POST(
 
   try {
     const { id: clientId } = await params;
-    const coachId = await getAuthenticatedCoachId(request);
+    const coachId = await getAuthenticatedCoachId();
 
     if (!coachId) {
       return NextResponse.json(
