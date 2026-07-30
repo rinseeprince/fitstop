@@ -438,6 +438,14 @@ Reads/writes the existing day-keyed tables — no portal-specific schema:
 - **Daily-logs spine + children (write):** `daily_logs` → `wellness_logs`, `nutrition_logs`, `training_logs`, `daily_habit_logs`.
 - **Training completion:** `training_logs` → `session_logs` → `exercise_logs` → `set_logs` (per-set actuals). `prescribed_session_snapshot` / `prescribed_exercise_snapshot` JSONB preserve history when plans change.
 
+### Database access (which client, and why)
+
+Portal services follow the Shape B default (CONVENTIONS §8): **`supabaseAdmin` with a caller-verified scope.** The `/api/client/**` routes resolve `clientId` through `requireClientAuth(request)` (`lib/require-client-auth.ts`, which keys on `clients.user_id = auth.uid()`) and pass only that authenticated id down; services filter on it with `.eq("client_id", clientId)`.
+
+The one exception is `getClientForCurrentUser` (`services/client-portal-service.ts`), which genuinely needs the session: it resolves the caller's own row from `auth.getUser()` and has no `clientId` to scope by. It uses `createPortalClient` — a bare re-export of `createServerSupabaseClient` — and that alias is also used by `services/client-portal-progress.ts` (a consolidation candidate, see `TECHNICAL-DEBT.md`).
+
+`getClientNutritionTargets` previously read `clients` / `nutrition_plans` / `nutrition_plan_daily_targets` through the session-scoped client too. Those three reads moved to `supabaseAdmin` (2026-07-30): the route layer had already proven the `clientId`, so the RLS gate was duplicating a check rather than adding one — and leaving it in place meant a future "standardise onto `supabaseAdmin`" refactor would have silently removed the *only* control on a function that fans out to three service-role readers. See `TECHNICAL-DEBT.md → Opened by the 2026-07-30 anon-path read trace`.
+
 ### API surface
 
 **Reads:** `GET /api/client/day-summary?date=` (home payload `{ training[], nutrition, wellness, habits }`, `no-store`) · `GET /api/client/training/events/[eventId]` · `GET /api/client/daily-logs/[date]/{wellness,nutrition}` · `GET /api/client/habits` + `GET /api/client/habits/logs` (habits are **not** under `/daily-logs/[date]`) · `GET /api/client/training-plan` (date-resolved; carries `state`/`startsOn`/`endsOn` — see "Client-side plan tier") + `GET /api/client/nutrition-plan` (Program tab) · `GET /api/client/training/exercise-history` (bounded full return) · `GET /api/client/check-ins` (**keyset-default**, opaque base64url `{createdAt,id}` cursor via `lib/cursor.ts`; legacy `?offset=` opt-in).
@@ -587,7 +595,14 @@ The browser `AuthProvider` (`contexts/auth-context.tsx`) is session-lifecycle-on
 > The authoritative rule is **CONVENTIONS §8 ("Auth & data-access architecture (Shape B)")** — read it first; this is a summary, and §8 wins on any disagreement.
 
 - `supabaseAdmin` (`services/supabase-admin.ts`): bypasses RLS. **This is the service-layer default**, used with an explicit caller-verified scope (`clientId` / `coachId`). Most DB traffic goes through it — authenticated client/coach reads, cross-client coach aggregation, token-based contexts, and system writes alike.
-- `createServerSupabaseClient()` (`lib/supabase-server.ts`): session-scoped, respects RLS. Used to **validate the session** (the auth helpers call `getUser()` through it), and otherwise only in the rare case where an RLS policy doing real work needs `auth.uid()` in-database and the admin-plus-scope pattern genuinely doesn't fit (see §8 "When to use createServerSupabaseClient()").
+- `createServerSupabaseClient()` (`lib/supabase-server.ts`): session-scoped, respects RLS. Used to **validate the session** (the auth helpers call `getUser()` through it), and otherwise only in the rare case where an RLS policy doing real work needs `auth.uid()` in-database and the admin-plus-scope pattern genuinely doesn't fit (see §8 "When to use createServerSupabaseClient()"). Re-exported as `createPortalClient` from `services/client-portal-service.ts`.
+
+**There are two data paths, not one.** Shape B is the rule and carries the overwhelming majority of traffic, but a second, smaller anon-key + RLS path exists alongside it — the content library, client activation, check-in context, and the auth helpers' own lookups. On those routes **RLS is the enforcing control, not the route layer**, so a policy change there is a functional change, not defence-in-depth. (`scripts/assert-rls.ts:104` asserts the opposite — "this app's entire data path is service_role" — and is wrong; see `TECHNICAL-DEBT.md → Opened by the 2026-07-30 anon-path read trace`.)
+
+> ⚠️ **Four of those anon reads are universal gates. Dropping any of their policies is total product lockout, not a degraded feature.**
+> - `middleware.ts:105` → `profiles` — every non-exempt route in the product; a miss hard-redirects to `/login?error=profile_unavailable`
+> - `lib/auth-helpers.ts:82` → `coaches` — the step-2 auth check of **every** coach route; every coach API 401s
+> - `lib/auth-helpers.ts:135` and `:195` → `clients` — every client-portal route, via `lib/require-client-auth.ts`
 
 ### IDOR prevention
 
