@@ -158,6 +158,20 @@ Logged: 2026-07-21 (Phase 7 sweep). **Not debt so much as an undeclared requirem
 
 ---
 
+## Pre-deploy gate — service-role key must not reach the client bundle
+
+Logged: 2026-07-30. **Not debt so much as an unenforced invariant**, now enforced by a script but not yet by CI.
+
+- **The gate.** `npm run check:service-key` (`scripts/check-service-key-leak.ts`). Two clauses, each with its own positive control, because a grep that finds nothing and a grep that is silently broken look identical:
+  1. **Import graph** (no build needed, runs today). Walks the reverse import graph upward from `services/supabase-admin.ts` following **value imports only**, and fails if any `"use client"` module is reachable. Control: the closure must still reach an `app/api/**` route — if module resolution breaks, the closure collapses to 1 and "no client modules" would be a meaningless pass.
+  2. **Bundle scan** (needs a build). Greps browser-served static output for the key's value, its bare JWT signature segment (catches a re-encoded or chunk-split value), and the literal `SUPABASE_SERVICE_ROLE_KEY`. Control: the **anon key must be found** — if it is not, the scan is not reading real chunks and the result is `INCONCLUSIVE` (exit 2), never a pass.
+- **Why it exists.** Containment rests entirely on two conventions that nothing enforced: that Next.js only inlines `NEXT_PUBLIC_*`, and that every client-side edge into a service module stays `import type`. **The second is one keystroke from breaking.** 17 client files type-import a service that value-imports `supabaseAdmin` (`app/client/program/page.tsx:10`, `app/clients/page.tsx:15`, `hooks/use-placed-plan.ts:5`, `components/.../placed-serialize.ts:10`, …). Deleting the word `type` in any one of them drags the service-role client into the client graph, and **neither `tsc` nor eslint objects**. Mutation-tested 2026-07-30: removing `type` from `hooks/use-placed-plan.ts:5` alone pulled **17 client modules** into the closure — the gate caught it, exit 1.
+- **2026-07-30 baseline (development build only).** Value-import closure = 320 files (177 API routes, 76 services, 55 tests, 10 scripts, `app/auth/callback/route.ts`, `lib/require-coach-auth.ts`); **0 client modules, 0 hooks, 0 components**. Bundle scan of `.next/dev/static` = 187 files, 0 hits on value / signature / var name, anon-key control found. Two benign near-miss strings confirmed by hand: a source comment mentioning `supabaseAdmin` in a `.js.map`, and `service_role` inside `@supabase/auth-js`'s own JSDoc warning.
+- **OWED BEFORE FIRST DEPLOY.** The baseline above is a **dev** build — no production build has ever been inspected, because there is no deployment yet. Run `npm run build && npx tsx scripts/check-service-key-leak.ts --require-bundle` before the first deploy. `--require-bundle` deliberately **rejects a dev bundle** (`.next/dev/static`) and demands `.next/static`, and fails rather than skipping when no build is present — so it cannot pass vacuously.
+- **OWED AFTER: CI wiring.** There is **no CI in this repo** — no `.github/`, no GitLab/CircleCI config, no `vercel.json`. The script is written CI-ready (reads the key from `process.env` first, falls back to `.env.local`; never prints the secret, only lengths and paths). When CI is introduced, run clause 1 on every PR (it needs no build and no secrets) and the full gate with `--require-bundle` on the deploy job.
+
+---
+
 ## `SET_TYPE_OPTIONS` is not in `utils/set-spec-edits.ts`
 
 Logged: 2026-07-21 (Phase 7 sweep). A trap for whoever collapses the re-exports.
@@ -187,6 +201,7 @@ Items deliberately deferred or remaining after the 2026-06-10 security remediati
 - **Upload content sniffing depth.** Magic-byte checks were added for images + PDF (`lib/upload-validation.ts`); office docs (docx/xls) and plain text are gated by the MIME allowlist only (no reliable magic number). Add a dedicated content-type library if richer formats are accepted later.
 - **Backups / restore + uptime alerting.** Supabase-managed; confirm PITR/backup retention and add external uptime + alerting beyond Sentry error capture. (Infra, not code.)
 - **Still open in Auth P0:** account-level lockout (#8) and email verification (#7, blocked on production domain).
+- **Service-role key containment is verified only against a dev build.** Run `npm run build && npx tsx scripts/check-service-key-leak.ts --require-bundle` before the first deploy — see "Pre-deploy gate — service-role key must not reach the client bundle" above.
 
 ---
 

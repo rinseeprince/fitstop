@@ -6,6 +6,7 @@
     "build": "next build",
     "check:rls": "npx tsx scripts/assert-rls.ts",
     "check:labels": "npx tsx scripts/check-labels.ts",
+    "check:service-key": "npx tsx scripts/check-service-key-leak.ts",
     "dev": "next dev",
     "lint": "eslint .",
     "start": "next start",
