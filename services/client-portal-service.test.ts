@@ -4,6 +4,10 @@ vi.mock("@/lib/supabase-server", () => ({
   createServerSupabaseClient: vi.fn(),
 }));
 
+vi.mock("./supabase-admin", () => ({
+  supabaseAdmin: { from: vi.fn() },
+}));
+
 vi.mock("./today-service", () => ({
   getClientTodayString: vi.fn(),
 }));
@@ -24,7 +28,7 @@ vi.mock("@/utils/build-daily-targets", () => ({
   buildDailyTargetsFromPlan: vi.fn().mockReturnValue([]),
 }));
 
-import { createServerSupabaseClient } from "@/lib/supabase-server";
+import { supabaseAdmin } from "./supabase-admin";
 import { getClientTodayString } from "./today-service";
 import { getEventsForDateRange } from "./training-event-service";
 import { getNutritionEventsForDateRange } from "./nutrition-event-service";
@@ -82,14 +86,12 @@ describe("getClientNutritionTargets", () => {
     const targetsQuery = createMockQuery({ data: [], error: null });
 
     let call = 0;
-    vi.mocked(createServerSupabaseClient).mockResolvedValue({
-      from: vi.fn().mockImplementation(() => {
-        call++;
-        if (call === 1) return clientQuery;
-        if (call === 2) return planQuery;
-        return targetsQuery;
-      }),
-    } as never);
+    vi.mocked(supabaseAdmin.from).mockImplementation((() => {
+      call++;
+      if (call === 1) return clientQuery;
+      if (call === 2) return planQuery;
+      return targetsQuery;
+    }) as never);
 
     const result = await getClientNutritionTargets("client-1");
 
@@ -140,14 +142,12 @@ describe("getClientNutritionTargets", () => {
     const targetsQuery = createMockQuery({ data: [], error: null });
 
     let call = 0;
-    vi.mocked(createServerSupabaseClient).mockResolvedValue({
-      from: vi.fn().mockImplementation(() => {
-        call++;
-        if (call === 1) return clientQuery;
-        if (call === 2) return planQuery;
-        return targetsQuery;
-      }),
-    } as never);
+    vi.mocked(supabaseAdmin.from).mockImplementation((() => {
+      call++;
+      if (call === 1) return clientQuery;
+      if (call === 2) return planQuery;
+      return targetsQuery;
+    }) as never);
 
     await getClientNutritionTargets("client-1");
 

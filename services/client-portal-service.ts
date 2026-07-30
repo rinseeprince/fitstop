@@ -1,4 +1,5 @@
 import { createServerSupabaseClient } from "@/lib/supabase-server";
+import { supabaseAdmin } from "./supabase-admin";
 import type { Client, DietType, UnitPreference } from "@/types/check-in";
 import type { Database } from "@/types/database";
 import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
@@ -10,9 +11,11 @@ import { getNutritionEventsForDateRange } from "./nutrition-event-service";
 import { getTrainingWeekStart, getTrainingWeekEnd } from "@/lib/date-helpers";
 import { getClientTodayString } from "./today-service";
 
-// Session-scoped Supabase client for client-portal reads that rely on RLS.
-// Re-exported under the old name so existing callers don't churn; the body
-// lives in lib/supabase-server.ts (canonical factory).
+// Session-scoped Supabase client, for the one read that genuinely needs the
+// session: getClientForCurrentUser resolves the caller's own row from
+// `auth.getUser()` with no clientId to scope by. Re-exported under the old name
+// so existing callers don't churn; the body lives in lib/supabase-server.ts
+// (canonical factory).
 export const createPortalClient = createServerSupabaseClient;
 
 // Nutrition targets type
@@ -77,12 +80,10 @@ export async function getClientForCurrentUser(): Promise<Client | null> {
 export async function getClientNutritionTargets(
   clientId: string
 ): Promise<NutritionTargets | null> {
-  const supabase = await createPortalClient();
-
   // Read include_activity_burn, unit_preference + surplus_as_carbs from clients
   // (display prefs stay on clients). surplus_as_carbs decides how a training-day
   // surplus splits — the program card must match the coach calendar.
-  const { data: clientData, error: clientError } = await supabase
+  const { data: clientData, error: clientError } = await supabaseAdmin
     .from("clients")
     .select("include_activity_burn, unit_preference, surplus_as_carbs")
     .eq("id", clientId)
@@ -98,7 +99,7 @@ export async function getClientNutritionTargets(
   const today = await getClientTodayString(clientId);
 
   // Read active nutrition plan from new tables
-  const { data: plan, error: planError } = await supabase
+  const { data: plan, error: planError } = await supabaseAdmin
     .from("nutrition_plans")
     .select("*")
     .eq("client_id", clientId)
@@ -110,7 +111,7 @@ export async function getClientNutritionTargets(
   if (planError || !plan) return null;
 
   // Fetch daily targets for this plan
-  const { data: dailyTargetRows, error: dtError } = await supabase
+  const { data: dailyTargetRows, error: dtError } = await supabaseAdmin
     .from("nutrition_plan_daily_targets")
     .select("*")
     .eq("nutrition_plan_id", plan.id);
@@ -148,12 +149,13 @@ export async function getClientNutritionTargets(
     carbTargetG: plan.carb_target_g,
     fatTargetG: plan.fat_target_g,
     customMacrosEnabled: plan.custom_macros_enabled,
-    customCalories: plan.custom_calories,
-    customProteinG: plan.custom_protein_g,
-    customCarbG: plan.custom_carb_g,
-    customFatG: plan.custom_fat_g,
-    dietType: plan.diet_type,
-    unitPreference: clientData.unit_preference,
+    // NutritionTargets models "absent" as undefined; the columns are nullable.
+    customCalories: plan.custom_calories ?? undefined,
+    customProteinG: plan.custom_protein_g ?? undefined,
+    customCarbG: plan.custom_carb_g ?? undefined,
+    customFatG: plan.custom_fat_g ?? undefined,
+    dietType,
+    unitPreference: (clientData.unit_preference as UnitPreference | null) ?? undefined,
     baselineCalories: plan.baseline_calories,
     includeActivityBurn,
     customDayDistribution: false, // No longer needed — daily targets rows ARE the distribution
