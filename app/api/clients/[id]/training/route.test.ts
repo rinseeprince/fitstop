@@ -10,7 +10,7 @@ vi.mock('@/services/check-in-service', () => ({
 }))
 
 vi.mock('@/services/training-service', () => ({
-  getActiveTrainingPlan: vi.fn().mockResolvedValue(null),
+  getTrainingPlanForDate: vi.fn().mockResolvedValue(null),
   getNextFutureTrainingPlan: vi.fn().mockResolvedValue(null),
   getTrainingPlanById: vi.fn().mockResolvedValue(null),
 }))
@@ -63,7 +63,7 @@ vi.mock('@/services/supabase-admin', () => ({
 
 import { getClientById } from '@/services/client-service'
 import {
-  getActiveTrainingPlan,
+  getTrainingPlanForDate,
   getNextFutureTrainingPlan,
   getTrainingPlanById,
 } from '@/services/training-service'
@@ -137,7 +137,7 @@ describe('Training Route GET - scheduled plan semantics', () => {
   })
 
   it('planned-only: returns the planned plan as plan with scheduledFor set', async () => {
-    vi.mocked(getActiveTrainingPlan).mockResolvedValue(null)
+    vi.mocked(getTrainingPlanForDate).mockResolvedValue(null)
     vi.mocked(getTrainingPlanById).mockResolvedValue(plannedFullPlan as never)
     mockPlannedPlanRow(plannedRow)
 
@@ -155,7 +155,7 @@ describe('Training Route GET - scheduled plan semantics', () => {
   })
 
   it('active + planned: returns the active plan with upcomingPlan set and no scheduledFor', async () => {
-    vi.mocked(getActiveTrainingPlan).mockResolvedValue(activePlan as never)
+    vi.mocked(getTrainingPlanForDate).mockResolvedValue(activePlan as never)
     vi.mocked(getTrainingPlanById).mockResolvedValue(plannedFullPlan as never)
     mockPlannedPlanRow(plannedRow)
 
@@ -175,7 +175,7 @@ describe('Training Route GET - scheduled plan semantics', () => {
   })
 
   it('no plans at all: plan, upcomingPlan and scheduledFor are all null', async () => {
-    vi.mocked(getActiveTrainingPlan).mockResolvedValue(null)
+    vi.mocked(getTrainingPlanForDate).mockResolvedValue(null)
     vi.mocked(getTrainingPlanById).mockResolvedValue(null)
     mockPlannedPlanRow(null)
 
@@ -192,7 +192,7 @@ describe('Training Route GET - scheduled plan semantics', () => {
   })
 
   it('planned row exists but full fetch fails: no phantom scheduledFor', async () => {
-    vi.mocked(getActiveTrainingPlan).mockResolvedValue(null)
+    vi.mocked(getTrainingPlanForDate).mockResolvedValue(null)
     vi.mocked(getTrainingPlanById).mockResolvedValue(null)
     mockPlannedPlanRow(plannedRow)
 

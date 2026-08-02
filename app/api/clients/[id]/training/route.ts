@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getClientById } from "@/services/client-service";
 import {
-  getActiveTrainingPlan,
+  getTrainingPlanForDate,
   getNextFutureTrainingPlan,
   getTrainingPlanById,
   archiveTrainingPlan,
@@ -48,12 +48,19 @@ export async function GET(
 
     // "Active" is date-driven: the provenance plan whose range covers today.
     const clientToday = await getClientTodayString(clientId);
-    const activePlan = await getActiveTrainingPlan(clientId);
 
-    // The next future plan (additive placement has no 'planned' status; a future
-    // plan is simply one whose effective_from is after today). Shared predicate —
-    // a fourth hand-rolled copy is what let retired plans resurface here.
-    const nextPlanRow = await getNextFutureTrainingPlan(clientId, clientToday);
+    // getTrainingPlanForDate, not getActiveTrainingPlan: the latter is just
+    // getClientTodayString + getTrainingPlanForDate, so calling it here would
+    // re-run the clients+coaches timezone query we already paid for one line up.
+    // Both lookups take only (clientId, clientToday) and share no data, so the
+    // active plan and the next future plan resolve in one round trip, not two.
+    // The next future plan uses the shared predicate (additive placement has no
+    // 'planned' status) — a fourth hand-rolled copy is what let retired plans
+    // resurface here.
+    const [activePlan, nextPlanRow] = await Promise.all([
+      getTrainingPlanForDate(clientId, clientToday),
+      getNextFutureTrainingPlan(clientId, clientToday),
+    ]);
 
     const nextFullPlan = nextPlanRow
       ? await getTrainingPlanById(nextPlanRow.id)
