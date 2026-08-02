@@ -1,8 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getClientById } from "@/services/client-service";
+import {
+  getTrainingPlanIdForDate,
+  getNextFutureTrainingPlan,
+} from "@/services/training-service";
 import { getEventsForDateRange } from "@/services/training-event-service";
 import { getTrainingWeekStart, getTrainingWeekEnd } from "@/lib/date-helpers";
-import { getCoachTodayString } from "@/services/today-service";
+import {
+  getCoachTodayString,
+  getClientTodayString,
+} from "@/services/today-service";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
@@ -53,33 +60,54 @@ export async function GET(
 
     const includeActivityBurn = client.includeActivityBurn ?? true;
 
-    // Fetch active plan (single durable plan per client)
-    const { data: plan } = await supabaseAdmin
-      .from("nutrition_plans")
-      .select("*")
-      .eq("client_id", clientId)
-      .eq("status", "active")
-      .order("effective_from", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    // Two different calendars, deliberately. The week window below is
+    // COACH-local ("current week" in the coach's view); `hasTrainingPlan` must be
+    // CLIENT-local because it mirrors GET /training, whose plan resolution is
+    // client-local — the two ladders differ (client tz -> coach tz -> UTC vs
+    // coach tz -> UTC) and would disagree across a date boundary.
+    const [today, clientToday] = await Promise.all([
+      getCoachTodayString(coachId),
+      getClientTodayString(clientId),
+    ]);
+
+    // hasTrainingPlan replaces a whole 210 kB GET /training round trip that the
+    // nutrition tab fired purely to ask "does a plan exist?". It reproduces that
+    // route's `plan: activePlan ?? nextFullPlan` predicate using the id-only
+    // lookups, so no sessions or exercises are hydrated on either side. It rides
+    // alongside the active-plan read because neither depends on the other, and it
+    // must be resolved BEFORE the no-plan early return — the tab's training
+    // section is independent of whether a nutrition plan exists.
+    const [planResult, activePlanId, nextPlan] = await Promise.all([
+      supabaseAdmin
+        .from("nutrition_plans")
+        .select("*")
+        .eq("client_id", clientId)
+        .eq("status", "active")
+        .order("effective_from", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      getTrainingPlanIdForDate(clientId, clientToday),
+      getNextFutureTrainingPlan(clientId, clientToday),
+    ]);
+    const plan = planResult.data;
+    const hasTrainingPlan = Boolean(activePlanId ?? nextPlan);
 
     if (!plan) {
-      return NextResponse.json({ success: true, hasPlan: false });
+      return NextResponse.json({ success: true, hasPlan: false, hasTrainingPlan });
     }
 
-    // Fetch daily targets
-    const { data: dailyTargetRows } = await supabaseAdmin
-      .from("nutrition_plan_daily_targets")
-      .select("*")
-      .eq("nutrition_plan_id", plan.id);
-
-    // Fetch the current week's training events for live calorie enrichment.
-    // Coach-local "current week": this is the coach's view.
-    const today = await getCoachTodayString(coachId);
     const weekStart = getTrainingWeekStart(today);
     const weekEnd = getTrainingWeekEnd(today);
 
-    const trainingEvents = await getEventsForDateRange(clientId, weekStart, weekEnd);
+    // Daily targets need plan.id; the events read does not. One stage, not two.
+    const [dailyTargetsResult, trainingEvents] = await Promise.all([
+      supabaseAdmin
+        .from("nutrition_plan_daily_targets")
+        .select("*")
+        .eq("nutrition_plan_id", plan.id),
+      getEventsForDateRange(clientId, weekStart, weekEnd),
+    ]);
+    const dailyTargetRows = dailyTargetsResult.data;
     const dietType = (plan.diet_type as DietType) || "balanced";
 
     // Weekday-template targets (no nutritionEvents): feed the Plans-tab stat
@@ -141,6 +169,7 @@ export async function GET(
       effectiveFrom: plan.effective_from,
       dailyTargets,
       goalChanged,
+      hasTrainingPlan,
     });
   } catch (error) {
     console.error("Error fetching nutrition plan:", error instanceof Error ? error.message : "Unknown error");

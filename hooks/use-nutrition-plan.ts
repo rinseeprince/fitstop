@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
 import type { Client, UnitPreference, DietType } from "@/types/check-in";
-import type { TrainingPlan } from "@/types/training";
 import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
 import type { GoalDrift } from "@/lib/goals/detect-goal-drift";
 import {
@@ -11,7 +10,6 @@ import {
   formatWeight as formatWeightUtil,
   weightToKg,
   kgToLbs,
-  getTrainingDays,
 } from "@/utils/nutrition-helpers";
 
 type UseNutritionPlanProps = {
@@ -32,6 +30,11 @@ type NutritionTargetsData = {
   effectiveFrom?: string;
   dailyTargets?: DailyNutritionTargets[];
   goalChanged?: GoalDrift;
+  /** Does a training plan cover today, or start after it? Mirrors GET /training's
+   *  `plan: activePlan ?? nextFullPlan`, so the tab no longer fetches that
+   *  210 kB payload just to test it for truthiness. Present on both the
+   *  has-plan and no-plan responses. */
+  hasTrainingPlan?: boolean;
 };
 
 export function useNutritionPlan({ client, onUpdate }: UseNutritionPlanProps) {
@@ -43,32 +46,10 @@ export function useNutritionPlan({ client, onUpdate }: UseNutritionPlanProps) {
   );
   const [isSavingUnit, setIsSavingUnit] = useState(false);
 
-  // Training plan integration
-  const [trainingPlan, setTrainingPlan] = useState<TrainingPlan | null>(null);
-  const [isLoadingTrainingPlan, setIsLoadingTrainingPlan] = useState(true);
-
   // Nutrition targets from API (reads from nutrition_plans tables)
   const [nutritionData, setNutritionData] = useState<NutritionTargetsData | null>(null);
   const [isLoadingNutrition, setIsLoadingNutrition] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
-
-  // Fetch training plan on mount
-  useEffect(() => {
-    const fetchTrainingPlan = async () => {
-      try {
-        const res = await fetch(`/api/clients/${client.id}/training`);
-        const data = await res.json();
-        if (data.success && data.plan) {
-          setTrainingPlan(data.plan);
-        }
-      } catch (error) {
-        console.error("Failed to fetch training plan:", error);
-      } finally {
-        setIsLoadingTrainingPlan(false);
-      }
-    };
-    fetchTrainingPlan();
-  }, [client.id]);
 
   // Fetch nutrition targets from API (reads from nutrition_plans tables)
   useEffect(() => {
@@ -102,12 +83,20 @@ export function useNutritionPlan({ client, onUpdate }: UseNutritionPlanProps) {
   const weeklyTrainingCalories = 0;
   const trainingCaloriesByDay = null;
 
+  // The tab used to GET /api/clients/[id]/training — a ~210 kB plan+sessions+
+  // exercises payload — and read exactly one thing from it: whether `plan` was
+  // truthy. The server now answers that directly. Everything else training-shaped
+  // that this surface renders already comes from the nutrition payloads (the
+  // TRAIN badge and per-day surplus read nutrition events' isTrainingDay).
+  const hasTrainingPlan = nutritionData?.hasTrainingPlan ?? false;
+
   const weeklyTotal = weeklyTargets
     ? weeklyTargets.reduce((sum, day) => sum + day.calories, 0)
     : (baselineCalories || 0) * 7;
 
-  const trainingDaysSet = getTrainingDays(trainingPlan);
-  const trainingDaysCount = trainingDaysSet.size;
+  const trainingDaysCount = weeklyTargets
+    ? weeklyTargets.filter((day) => day.isTrainingDay).length
+    : 0;
   const restDaysCount = 7 - trainingDaysCount;
 
   // Unit preference handler
@@ -163,9 +152,11 @@ export function useNutritionPlan({ client, onUpdate }: UseNutritionPlanProps) {
     isSavingUnit,
     handleUnitChange,
 
-    // Training plan
-    trainingPlan,
-    isLoadingTrainingPlan,
+    // Training plan. The existence flag now rides on the nutrition response, so
+    // its loading state is the nutrition one — there is no second request to
+    // wait on. Name kept for the two consumers that already read it.
+    hasTrainingPlan,
+    isLoadingTrainingPlan: isLoadingNutrition,
     dailyTrainingCalories,
     weeklyTrainingCalories,
     trainingCaloriesByDay,

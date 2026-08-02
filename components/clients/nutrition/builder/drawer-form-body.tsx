@@ -89,7 +89,7 @@ function SharedControls() {
     <div className="space-y-5">
       <div className="space-y-4">
         <NutritionTrainingCaloriesDisplay
-          trainingPlan={builder.trainingPlan}
+          hasTrainingPlan={builder.hasTrainingPlan}
           isLoading={builder.isLoadingTrainingPlan}
           dailyCalories={builder.dailyTrainingCalories}
           weeklyCalories={builder.weeklyTrainingCalories}

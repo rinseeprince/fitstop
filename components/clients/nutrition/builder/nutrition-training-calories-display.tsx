@@ -4,11 +4,13 @@ import { Flame } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import type { TrainingPlan } from "@/types/training";
+
 import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
 
 type NutritionTrainingCaloriesDisplayProps = {
-  trainingPlan: TrainingPlan | null;
+  /** Only ever tested for truthiness here, so the tab asks the nutrition
+   *  endpoint for a boolean instead of fetching the whole training plan. */
+  hasTrainingPlan: boolean;
   isLoading: boolean;
   dailyCalories: number;
   weeklyCalories: number;
@@ -24,7 +26,7 @@ type NutritionTrainingCaloriesDisplayProps = {
 };
 
 export function NutritionTrainingCaloriesDisplay({
-  trainingPlan,
+  hasTrainingPlan,
   isLoading,
   dailyCalories,
   weeklyCalories,
@@ -48,7 +50,7 @@ export function NutritionTrainingCaloriesDisplay({
 
   // No plan → no section. Training calories attach to actual training_events
   // server-side, so there's nothing actionable to show here without a plan.
-  if (!trainingPlan) {
+  if (!hasTrainingPlan) {
     return null;
   }
 

@@ -12,6 +12,10 @@ vi.mock('@/services/nutrition-service', () => ({
 
 vi.mock('@/services/training-service', () => ({
   getActiveTrainingPlan: vi.fn().mockResolvedValue(null),
+  // GET reads these two for `hasTrainingPlan`; POST/DELETE never call them, but
+  // the factory must still declare the module's full imported surface.
+  getTrainingPlanIdForDate: vi.fn().mockResolvedValue(null),
+  getNextFutureTrainingPlan: vi.fn().mockResolvedValue(null),
 }))
 
 // The orchestrator now PROPAGATES event-rewrite failures (previously
