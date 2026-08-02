@@ -41,3 +41,4 @@ next-env.d.ts
 # Claude Code tool-internal artifacts (plans, per-project memory)
 .claude/plans/
 .claude/projects/
+scratchpad/
