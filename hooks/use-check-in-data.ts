@@ -188,7 +188,17 @@ export const useOverdueClients = () => {
     fetcher,
     {
       refreshInterval: 60000, // Refresh every minute
+      // Deliberately true, against the §7 default. These badges' dominant writer
+      // is the CLIENT submitting in another session, which no coach-side
+      // invalidator can ever reach — and SWR suspends polling while the tab is
+      // hidden, so focus revalidation is the only prompt refresh after an alt-tab.
       revalidateOnFocus: true,
+      // NotificationsDropdown lives in app-layout.tsx, a plain component rendered
+      // inside each page rather than a Next layout, so it remounts on every
+      // navigation and re-fires once the default 2s dedupe lapses. 5s is the
+      // repo's existing ceiling; it collapses the burst within one navigation
+      // without blanking mount revalidation for a whole refresh cycle.
+      dedupingInterval: 5000,
     }
   );
 
@@ -208,7 +218,8 @@ export const useClientsDueSoon = () => {
     fetcher,
     {
       refreshInterval: 60000, // Refresh every minute
-      revalidateOnFocus: true,
+      revalidateOnFocus: true, // see useOverdueClients
+      dedupingInterval: 5000, // see useOverdueClients
     }
   );
 
@@ -247,7 +258,8 @@ export const useUnreviewedCheckIns = () => {
     fetcher,
     {
       refreshInterval: 30000, // Refresh every 30 seconds
-      revalidateOnFocus: true,
+      revalidateOnFocus: true, // see useOverdueClients
+      dedupingInterval: 5000, // see useOverdueClients
     }
   );
 
