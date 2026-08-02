@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getClientById } from "@/services/client-service";
-import { getActiveTrainingPlan } from "@/services/training-service";
 import { getEventsForDateRange } from "@/services/training-event-service";
 import { getTrainingWeekStart, getTrainingWeekEnd } from "@/lib/date-helpers";
 import { getCoachTodayString } from "@/services/today-service";
@@ -74,25 +73,31 @@ export async function GET(
       .select("*")
       .eq("nutrition_plan_id", plan.id);
 
-    // Fetch training plan + current week's training events for live calorie
-    // enrichment. Coach-local "current week": this is the coach's view.
+    // Fetch the current week's training events for live calorie enrichment.
+    // Coach-local "current week": this is the coach's view.
     const today = await getCoachTodayString(coachId);
     const weekStart = getTrainingWeekStart(today);
     const weekEnd = getTrainingWeekEnd(today);
 
-    const [trainingPlan, trainingEvents] = await Promise.all([
-      getActiveTrainingPlan(clientId),
-      getEventsForDateRange(clientId, weekStart, weekEnd),
-    ]);
+    const trainingEvents = await getEventsForDateRange(clientId, weekStart, weekEnd);
     const dietType = (plan.diet_type as DietType) || "balanced";
 
     // Weekday-template targets (no nutritionEvents): feed the Plans-tab stat
     // band + calorie skewing, honoring the surplus-split toggle so they match
     // the coach calendar.
+    // trainingPlan is null on purpose, NOT an oversight. Every read of that
+    // argument inside buildDailyTargetsFromPlan sits in the `else` of a
+    // `trainingEvents ? … : …` guard, and getEventsForDateRange always returns an
+    // array (`(data ?? []).map(…)`, throwing rather than returning null) — and an
+    // empty array is truthy. So the plan branch is unreachable from this route,
+    // and hydrating a whole multi-week program here only to discard it cost four
+    // queries and three critical-path hops per request. The plan branch stays
+    // live for the client-portal caller, so do NOT delete it from the util; if
+    // this route ever stops passing trainingEvents, restore the plan fetch too.
     const dailyTargets = buildDailyTargetsFromPlan(
       plan,
       dailyTargetRows,
-      trainingPlan,
+      null,
       includeActivityBurn,
       dietType,
       client.surplusAsCarbs ?? false,
