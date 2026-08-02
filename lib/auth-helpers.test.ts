@@ -7,16 +7,19 @@ vi.mock("@/lib/supabase-server", () => ({
 vi.mock("@/lib/auth-cache", () => ({
   getCachedClientId: vi.fn(),
   getCachedClientWithCheckInDay: vi.fn(),
+  getCachedCoachId: vi.fn(),
 }));
 
 import {
   getAuthenticatedClientId,
   getAuthenticatedClientWithCheckInDay,
+  getAuthenticatedCoachId,
 } from "./auth-helpers";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 import {
   getCachedClientId,
   getCachedClientWithCheckInDay,
+  getCachedCoachId,
 } from "@/lib/auth-cache";
 
 type MaybeSingleResult = { data: unknown; error: unknown };
@@ -159,5 +162,81 @@ describe("getAuthenticatedClientWithCheckInDay", () => {
     expect(eq).toHaveBeenCalledWith("user_id", "user-9");
     expect(eq).toHaveBeenCalledWith("active", true);
     expect(maybeSingle).toHaveBeenCalled();
+  });
+});
+
+describe("getAuthenticatedCoachId", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns null and never touches the cache when there is no user", async () => {
+    const { supabase, getUser } = makeSupabase({ user: null });
+    vi.mocked(createServerSupabaseClient).mockResolvedValue(supabase as never);
+
+    const result = await getAuthenticatedCoachId();
+
+    expect(result).toBeNull();
+    expect(getUser).toHaveBeenCalledTimes(1);
+    expect(getCachedCoachId).not.toHaveBeenCalled();
+  });
+
+  it("returns null and never touches the cache when the session is invalid", async () => {
+    const { supabase } = makeSupabase({
+      user: null,
+      userError: new Error("bad jwt"),
+    });
+    vi.mocked(createServerSupabaseClient).mockResolvedValue(supabase as never);
+
+    const result = await getAuthenticatedCoachId();
+
+    expect(result).toBeNull();
+    expect(getCachedCoachId).not.toHaveBeenCalled();
+  });
+
+  it("returns the cached coach id on the happy path", async () => {
+    const { supabase } = makeSupabase({ user: { id: "user-9" } });
+    vi.mocked(createServerSupabaseClient).mockResolvedValue(supabase as never);
+    vi.mocked(getCachedCoachId).mockResolvedValue("coach-9");
+
+    const result = await getAuthenticatedCoachId();
+
+    expect(result).toBe("coach-9");
+    expect(getCachedCoachId).toHaveBeenCalledWith("user-9", expect.any(Function));
+  });
+
+  it("the cache loader selects the coach id scoped to user_id", async () => {
+    const { supabase, from, select, eq, maybeSingle } = makeSupabase({
+      user: { id: "user-9" },
+      result: { data: { id: "coach-9" }, error: null },
+    });
+    vi.mocked(createServerSupabaseClient).mockResolvedValue(supabase as never);
+    let captured: (() => Promise<string | null>) | undefined;
+    vi.mocked(getCachedCoachId).mockImplementation(async (_userId, loader) => {
+      captured = loader;
+      return loader();
+    });
+
+    await getAuthenticatedCoachId();
+
+    expect(captured).toBeDefined();
+    expect(await captured!()).toBe("coach-9");
+    expect(from).toHaveBeenCalledWith("coaches");
+    expect(select).toHaveBeenCalledWith("id");
+    expect(eq).toHaveBeenCalledWith("user_id", "user-9");
+    expect(maybeSingle).toHaveBeenCalled();
+  });
+
+  it("resolves null when the coach row is missing, so nothing is cached", async () => {
+    const { supabase } = makeSupabase({
+      user: { id: "user-new" },
+      result: { data: null, error: null },
+    });
+    vi.mocked(createServerSupabaseClient).mockResolvedValue(supabase as never);
+    vi.mocked(getCachedCoachId).mockImplementation(async (_userId, loader) => loader());
+
+    // A freshly-signed-up coach has no row until /api/auth/me bootstraps one.
+    // getCachedAuthValue never caches null, so the next call re-reads the DB.
+    expect(await getAuthenticatedCoachId()).toBeNull();
   });
 });

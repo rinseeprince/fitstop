@@ -52,6 +52,23 @@ export async function getCachedClientId(
   return getCachedAuthValue("authmap:client:" + userId, loader);
 }
 
+/**
+ * Read-through cache for the user -> coach-id mapping.
+ *
+ * As immutable as the client mapping above, and for the same reason: the only
+ * writer that can create the row upserts on `user_id` with `ignoreDuplicates`
+ * (services/auth-profile-service.ts), and the coach settings update is keyed by
+ * `id` and touches only `timezone`. Nothing re-points an existing user at a
+ * different coach row. Null is never cached, so a coach whose row is bootstrapped
+ * mid-session resolves on the very next call rather than waiting out the TTL.
+ */
+export async function getCachedCoachId(
+  userId: string,
+  loader: () => Promise<string | null>,
+): Promise<string | null> {
+  return getCachedAuthValue("authmap:coach:" + userId, loader);
+}
+
 export type CachedClientWithCheckInDay = {
   clientId: string;
   checkInDay: string | null;

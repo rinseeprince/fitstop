@@ -4,7 +4,11 @@ vi.mock("@/lib/rate-limit", () => ({
   getRedisClient: vi.fn(),
 }));
 
-import { getCachedClientId, getCachedClientWithCheckInDay } from "./auth-cache";
+import {
+  getCachedClientId,
+  getCachedClientWithCheckInDay,
+  getCachedCoachId,
+} from "./auth-cache";
 import { getRedisClient } from "@/lib/rate-limit";
 
 type RedisStub = {
@@ -177,6 +181,75 @@ describe("auth-cache", () => {
       const result = await getCachedClientWithCheckInDay("user-1", loader);
 
       expect(result).toEqual(fresh);
+    });
+  });
+
+  // The get/set throw-path fallbacks (e)/(f) live in getCachedAuthValue, which
+  // the two blocks above already cover twice; these assert the coach key and the
+  // never-cache-null rule that keeps a freshly-bootstrapped coach resolvable.
+  describe("getCachedCoachId", () => {
+    it("(a) bypasses cache when Redis is unavailable (control)", async () => {
+      vi.mocked(getRedisClient).mockReturnValue(null);
+      const loader = vi.fn().mockResolvedValue("coach-1");
+
+      const result = await getCachedCoachId("user-1", loader);
+
+      expect(result).toBe("coach-1");
+      expect(loader).toHaveBeenCalledTimes(1);
+    });
+
+    it("(b) returns the cached value without calling the loader", async () => {
+      const redis = makeRedis();
+      redis.get.mockResolvedValue("coach-cached");
+      vi.mocked(getRedisClient).mockReturnValue(redis as never);
+      const loader = vi.fn().mockResolvedValue("coach-fresh");
+
+      const result = await getCachedCoachId("user-1", loader);
+
+      expect(result).toBe("coach-cached");
+      expect(loader).not.toHaveBeenCalled();
+      expect(redis.get).toHaveBeenCalledWith("authmap:coach:user-1");
+    });
+
+    it("(c) on miss, runs loader and caches with the right key + value + ttl", async () => {
+      const redis = makeRedis();
+      redis.get.mockResolvedValue(null);
+      vi.mocked(getRedisClient).mockReturnValue(redis as never);
+      const loader = vi.fn().mockResolvedValue("coach-fresh");
+
+      const result = await getCachedCoachId("user-7", loader);
+
+      expect(result).toBe("coach-fresh");
+      expect(loader).toHaveBeenCalledTimes(1);
+      expect(redis.set).toHaveBeenCalledWith(
+        "authmap:coach:user-7",
+        "coach-fresh",
+        { ex: 60 },
+      );
+    });
+
+    it("(d) never caches a null loader result", async () => {
+      const redis = makeRedis();
+      redis.get.mockResolvedValue(null);
+      vi.mocked(getRedisClient).mockReturnValue(redis as never);
+      const loader = vi.fn().mockResolvedValue(null);
+
+      const result = await getCachedCoachId("user-1", loader);
+
+      expect(result).toBeNull();
+      expect(redis.set).not.toHaveBeenCalled();
+    });
+
+    it("(e) does not collide with the client key for the same user", async () => {
+      const redis = makeRedis();
+      redis.get.mockResolvedValue(null);
+      vi.mocked(getRedisClient).mockReturnValue(redis as never);
+
+      await getCachedCoachId("user-1", vi.fn().mockResolvedValue("coach-1"));
+      await getCachedClientId("user-1", vi.fn().mockResolvedValue("client-1"));
+
+      expect(redis.get).toHaveBeenNthCalledWith(1, "authmap:coach:user-1");
+      expect(redis.get).toHaveBeenNthCalledWith(2, "authmap:client:user-1");
     });
   });
 });

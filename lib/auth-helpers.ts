@@ -4,6 +4,7 @@ import { createServerSupabaseClient } from "@/lib/supabase-server";
 import {
   getCachedClientId,
   getCachedClientWithCheckInDay,
+  getCachedCoachId,
 } from "@/lib/auth-cache";
 
 type AuthFailureReason =
@@ -77,25 +78,27 @@ export async function getAuthenticatedCoachId(
       return null;
     }
 
-    // Use maybeSingle() to avoid throwing PGRST116 when no coach found
-    const { data: coach, error } = await supabase
-      .from("coaches")
-      .select("id")
-      .eq("user_id", user.id)
-      .maybeSingle();
+    return await getCachedCoachId(user.id, async () => {
+      // Use maybeSingle() to avoid throwing PGRST116 when no coach found
+      const { data: coach, error } = await supabase
+        .from("coaches")
+        .select("id")
+        .eq("user_id", user.id)
+        .maybeSingle();
 
-    if (error) {
-      console.error("Error fetching coach:", error.message);
-      logAuthFailure({ role: "coach", reason: "db_error", request });
-      return null;
-    }
+      if (error) {
+        console.error("Error fetching coach:", error.message);
+        logAuthFailure({ role: "coach", reason: "db_error", request });
+        return null;
+      }
 
-    if (!coach?.id) {
-      logAuthFailure({ role: "coach", reason: "coach_profile_not_found", request });
-      return null;
-    }
+      if (!coach?.id) {
+        logAuthFailure({ role: "coach", reason: "coach_profile_not_found", request });
+        return null;
+      }
 
-    return coach.id;
+      return coach.id;
+    });
   } catch (error) {
     console.error("Unexpected error in getAuthenticatedCoachId:", error);
     return null;
