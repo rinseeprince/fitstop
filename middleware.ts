@@ -1,6 +1,26 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { createServerClient } from "@supabase/ssr"
 
+/**
+ * Redirect while preserving any cookies @supabase/ssr wrote onto `carrier`.
+ *
+ * The server client has autoRefreshToken disabled, so it rotates the session
+ * lazily inside getUser() when the access token is within its expiry margin —
+ * handing the new token to our setAll, which writes it onto the NextResponse.next()
+ * we created up front. A bare NextResponse.redirect() is a DIFFERENT response
+ * object, so returning one drops that cookie on the floor. Refresh tokens are
+ * single-use and rotate, so the browser is then holding a token that has already
+ * been spent: the user is silently logged out on a later request, at random, only
+ * when a refresh happens to coincide with a redirect.
+ */
+function redirectPreservingCookies(url: URL, carrier: NextResponse): NextResponse {
+  const redirect = NextResponse.redirect(url)
+  for (const cookie of carrier.cookies.getAll()) {
+    redirect.cookies.set(cookie)
+  }
+  return redirect
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
@@ -61,7 +81,7 @@ export async function middleware(request: NextRequest) {
         .single()
 
       const redirectTo = profile?.role === "client" ? "/client" : "/dashboard"
-      return NextResponse.redirect(new URL(redirectTo, request.url))
+      return redirectPreservingCookies(new URL(redirectTo, request.url), response)
     }
 
     // Not logged in, allow access to public page
@@ -97,7 +117,7 @@ export async function middleware(request: NextRequest) {
   if (!user) {
     const redirectUrl = new URL("/login", request.url)
     redirectUrl.searchParams.set("redirectTo", pathname)
-    return NextResponse.redirect(redirectUrl)
+    return redirectPreservingCookies(redirectUrl, response)
   }
 
   // Get user's role from profile
@@ -113,7 +133,7 @@ export async function middleware(request: NextRequest) {
     console.error("Profile lookup failed for authenticated user:", user.id)
     const errorUrl = new URL("/login", request.url)
     errorUrl.searchParams.set("error", "profile_unavailable")
-    return NextResponse.redirect(errorUrl)
+    return redirectPreservingCookies(errorUrl, response)
   }
 
   const role = profile.role
@@ -142,12 +162,12 @@ export async function middleware(request: NextRequest) {
   // Role-based access control
   if (isClient && isTrainerRoute) {
     // Client trying to access trainer routes -> redirect to client home
-    return NextResponse.redirect(new URL("/client", request.url))
+    return redirectPreservingCookies(new URL("/client", request.url), response)
   }
 
   if (isTrainer && isClientRoute) {
     // Trainer trying to access client routes -> redirect to trainer dashboard
-    return NextResponse.redirect(new URL("/dashboard", request.url))
+    return redirectPreservingCookies(new URL("/dashboard", request.url), response)
   }
 
   return response
