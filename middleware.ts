@@ -113,11 +113,19 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser()
 
-  // If no user and trying to access protected route, redirect to login
+  // If no user and trying to access protected route, redirect to login.
+  //
+  // Deliberately no ?redirectTo= here. Nothing has ever read it (the login page
+  // routes purely on the role returned by login(), /auth/callback builds every
+  // redirect from a string literal), so it was a write-only parameter that
+  // advertised a deep-link restore the app does not implement. Left in place it
+  // is a trap: the next person to make it work is one raw
+  // router.push(searchParams.get("redirectTo")) away from an open redirect,
+  // since ?redirectTo=https://evil.com would then send a freshly authenticated
+  // user to an attacker page. If deep-link restore is wanted later, reintroduce
+  // this write together with a same-site validator on the read side.
   if (!user) {
-    const redirectUrl = new URL("/login", request.url)
-    redirectUrl.searchParams.set("redirectTo", pathname)
-    return redirectPreservingCookies(redirectUrl, response)
+    return redirectPreservingCookies(new URL("/login", request.url), response)
   }
 
   // Get user's role from profile

@@ -392,7 +392,7 @@ export default function InvitePage() {
             <p className="text-center text-sm text-muted-foreground mt-3">
               Already have an account?{" "}
               <a
-                href={`/login?redirectTo=/client`}
+                href="/login"
                 className="text-primary hover:underline font-medium"
               >
                 Sign in
