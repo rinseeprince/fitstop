@@ -176,12 +176,26 @@ export async function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     /*
-     * Match all request paths except:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * - public files (public folder)
+     * Match all request paths except the ones static assets are actually
+     * served from:
+     * - _next/static (build output)
+     * - _next/image (image optimizer)
+     * - favicon.ico
+     * - root-level files in /public with an image extension
+     *
+     * The asset exclusion is bound to WHERE assets live (the root of /public,
+     * which has no nested folders), not to how a URL happens to end. Excluding
+     * on a trailing extension alone -- `.*\.(?:png|...)$` -- skipped middleware
+     * for any path ending that way at any depth, and route segments are
+     * wildcards: /clients/abc.png is app/clients/[id] with id="abc.png", so it
+     * rendered with no auth check and no role redirect. `[^/]+` cannot cross a
+     * slash, so only a genuine root-level asset matches.
+     *
+     * favicon.ico is a single file, so its dot is escaped and it is anchored;
+     * unescaped and unanchored it also excluded /faviconXico and
+     * /favicon.ico-anything. _next/static and _next/image stay prefix matches
+     * because they are directories.
      */
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!_next/static|_next/image|favicon\\.ico$|[^/]+\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 }
