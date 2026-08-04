@@ -760,3 +760,22 @@ Status codes: 200 (success), 201 (created), 400 (validation), 401 (auth), 403 (f
 ---
 
 ## Check-in System
+
+---
+
+## External Consumers
+
+Tables in this database written or read by a codebase **outside this repo**. Nothing in this codebase selects from them, so they look dead to any "unused tables" audit that only greps this repo. They are not dead. Confirm with the owning repo before dropping one.
+
+### `waitlist_signups` (migration `20260804093925`)
+
+Private-beta waitlist for the public marketing site.
+
+- **Written by:** the `atletafit-marketing` repo — separate repo, separate Vercel project, serves atletafit.com — from `app/api/waitlist/route.ts`, over PostgREST. It authenticates with its **own dedicated secret key**, not this repo's `SUPABASE_SERVICE_ROLE_KEY`, so it can be revoked on its own if it leaks.
+- **Read by this repo:** nothing. No route, service, or generated type here touches it.
+- **Why it lives in this project:** the alternative was a second Supabase project, and a free-tier one pauses after a week of inactivity — silently breaking the live form. This repo therefore owns the schema, by migration rather than by hand, so `supabase db reset` reproduces the table instead of dropping it.
+- **Contract — do not change without changing the marketing repo first**, because that repo is not rebuilt when this one deploys, so a break here is silent in production:
+  - Column names (`name`, `email`, `updates`, `consented_at`) are read directly by that route.
+  - The unique index is on `LOWER(email)`, not `email`. The route detects a repeat signup by catching Postgres error `23505` and rendering "You're already on the list." An upsert, or dropping the index, removes that signal.
+  - `updates` and `consented_at` are UK GDPR Art. 7(1) consent evidence, not preferences: the burden is on us to show what someone agreed to and when, so `updates = false` has to be a stored "no". Keep both `NOT NULL`; keep the default.
+- **RLS is enabled with zero policies, deliberately.** Note that the default privileges on `public` still grant `anon` INSERT (`pg_default_acl` → `arwdDxtm`), so RLS is the *only* thing holding this table out of reach of the publishable key that ships in the browser bundle. Adding an `anon` policy would open a direct write path bypassing the marketing form's honeypot and Turnstile. Secret keys bypass RLS, which is how the route still writes. This table satisfies `npm run check:rls` clause 1 as-is.
