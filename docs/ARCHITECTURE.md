@@ -772,7 +772,7 @@ Tables in this database written or read by a codebase **outside this repo**. Not
 Private-beta waitlist for the public marketing site.
 
 - **Written by:** the `atletafit-marketing` repo — separate repo, separate Vercel project, serves atletafit.com — from `app/api/waitlist/route.ts`, over PostgREST. It authenticates with its **own dedicated secret key**, not this repo's `SUPABASE_SERVICE_ROLE_KEY`, so it can be revoked on its own if it leaks.
-- **Read by this repo:** nothing. No route, service, or generated type here touches it.
+- **Read by this repo:** nothing. No route and no service here touches it. It *does* appear in `types/database.ts`, because that file is a mechanical `supabase gen types --linked` mirror of the whole schema — omitting it would only mean the next schema change dropped a stray waitlist hunk into an unrelated diff. A type with no callers is not a sign anything here reads the table.
 - **Why it lives in this project:** the alternative was a second Supabase project, and a free-tier one pauses after a week of inactivity — silently breaking the live form. This repo therefore owns the schema, by migration rather than by hand, so `supabase db reset` reproduces the table instead of dropping it.
 - **Contract — do not change without changing the marketing repo first**, because that repo is not rebuilt when this one deploys, so a break here is silent in production:
   - Column names (`name`, `email`, `updates`, `consented_at`) are read directly by that route.

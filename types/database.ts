@@ -2632,6 +2632,33 @@ export type Database = {
           },
         ]
       }
+      waitlist_signups: {
+        Row: {
+          consented_at: string
+          created_at: string
+          email: string
+          id: string
+          name: string
+          updates: boolean
+        }
+        Insert: {
+          consented_at: string
+          created_at?: string
+          email: string
+          id?: string
+          name: string
+          updates?: boolean
+        }
+        Update: {
+          consented_at?: string
+          created_at?: string
+          email?: string
+          id?: string
+          name?: string
+          updates?: boolean
+        }
+        Relationships: []
+      }
       wellness_logs: {
         Row: {
           client_id: string
