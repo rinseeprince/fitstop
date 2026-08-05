@@ -20,9 +20,6 @@ type ApplyDateDialogProps = {
   description?: string;
   onApply: (effectiveFrom: string | null) => void;
   maxDate?: string;
-  showPreserveCalories?: boolean;
-  preserveCalories?: boolean;
-  onPreserveCaloriesChange?: (value: boolean) => void;
 };
 
 export function ApplyDateDialog({
@@ -32,9 +29,6 @@ export function ApplyDateDialog({
   description = "Choose when the updated schedule should start. Today's existing data will be preserved if you choose a future date.",
   onApply,
   maxDate,
-  showPreserveCalories,
-  preserveCalories,
-  onPreserveCaloriesChange,
 }: ApplyDateDialogProps) {
   const today = getTodayDateString();
   const [selectedDate, setSelectedDate] = useState(() => {
@@ -65,18 +59,6 @@ export function ApplyDateDialog({
         </AlertDialogHeader>
 
         <div className="flex flex-col gap-3 py-2">
-          {showPreserveCalories && (
-            <label className="flex items-center gap-2 text-[13px] text-[#0c1a1e]">
-              <input
-                type="checkbox"
-                checked={preserveCalories}
-                onChange={(e) => onPreserveCaloriesChange?.(e.target.checked)}
-                className="rounded border-[rgba(13,148,136,0.3)] text-[#0d9488] focus:ring-[#0d9488]"
-              />
-              <span>Keep current calorie targets</span>
-            </label>
-          )}
-
           <button
             onClick={handleApplyNow}
             className="w-full flex items-center justify-center gap-2 bg-[#0d9488] text-white text-[13px] font-semibold rounded-[6px] px-4 py-2.5 transition-all hover:bg-[#0a7c72]"

@@ -116,7 +116,7 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
 
   // Generate nutrition plan
   const generatePlan = useCallback(
-    async (useCustom = false, effectiveFrom?: string | null, preserveCalories?: boolean) => {
+    async (useCustom = false, effectiveFrom?: string | null) => {
       const validation = validateClientForNutrition(client);
       if (!validation.valid) {
         toast({
@@ -138,7 +138,6 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
           // input was replaced by a read-only Goal line.
           ...(coachNotes.trim() ? { coachNotes: coachNotes.trim() } : {}),
           ...(effectiveFrom ? { effectiveFrom } : {}),
-          ...(preserveCalories ? { preserveCalories: true } : {}),
         };
 
         if (useCustom) {

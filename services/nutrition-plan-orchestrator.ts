@@ -2,17 +2,15 @@ import { getClientById } from "@/services/client-service";
 import { generateNutritionPlan, calculateTDEE } from "@/services/nutrition-service";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import {
-  validateClientForNutrition,
-} from "@/lib/validations/nutrition";
-import { weightToKg, calculateDailyMacros } from "@/utils/nutrition-helpers";
+  resolveNutritionCalcInputs,
+  type NutritionCalcInputs,
+} from "@/services/nutrition-calc-inputs";
 import {
   archiveNutritionPlan,
   createNutritionPlan,
   getActiveNutritionPlanId,
 } from "@/services/nutrition-plan-service";
 import { CUSTOM_MACRO_CALORIE_TOLERANCE } from "@/lib/constants";
-import { getLatestBodyMetrics } from "@/services/body-metrics-service";
-import { getCurrentGoals } from "@/services/client-goals-service";
 import type { GenerateNutritionPlanRequest } from "@/types/check-in";
 import {
   deleteFutureNutritionEventsForPlan,
@@ -21,7 +19,9 @@ import {
 import { captureApiError } from "@/lib/error-handler";
 import { getClientTodayString } from "@/services/today-service";
 import { addDaysToDateString } from "@/lib/date-helpers";
-import { resolveEffectiveGoal } from "@/lib/goals/resolve-effective-goal";
+
+/** The resolver's success arm — both plan handlers require complete inputs. */
+type ReadyCalcInputs = Extract<NutritionCalcInputs, { status: "ready" }>;
 
 export class NutritionPlanError extends Error {
   constructor(
@@ -137,71 +137,38 @@ export async function orchestrateNutritionPlanCreation(
     }
   }
 
-  const clientValidation = validateClientForNutrition(client);
-  if (!clientValidation.valid) {
+  // One resolver, shared with the coach GET, so the numbers the builder
+  // previewed are the numbers this save computes from. `clientToday` is handed
+  // in rather than re-resolved: the past-date check above already needed it.
+  const calcInputs = await resolveNutritionCalcInputs(clientId, client, {
+    today: clientToday,
+  });
+
+  // The resolver COMPUTES validity; the write path is where it becomes an
+  // error. (A read path renders the same messages instead — a coach whose
+  // client has no BMR yet must still be able to open the nutrition tab.)
+  if (calcInputs.status === "incomplete") {
     throw new NutritionPlanError("Client missing required data for nutrition calculation", 400);
   }
 
-  // Prefer new services, fall back to client.* for pre-migration clients
-  const [latestMetrics, currentGoals] = await Promise.all([
-    getLatestBodyMetrics(clientId),
-    getCurrentGoals(clientId),
-  ]);
-
-  const currentWeight = latestMetrics?.weight ?? client.currentWeight;
-  const weightUnit = (latestMetrics?.weightUnit ?? client.weightUnit ?? "lbs") as "lbs" | "kg";
-  const bmr = latestMetrics?.bmr ?? client.bmr;
-  const tdeeValue = latestMetrics?.tdee ?? client.tdee;
-
-  // The long-term client goal drives (Session 7.8's resolver). It performs the
-  // single display→kg normalization (client goal weight is display units). The
-  // deadline comes from this single scope — never the request body (the old
-  // `body.goalDeadline` was the cross-scope source).
-  const effective = resolveEffectiveGoal({
-    weightUnit,
-    clientGoal: {
-      goalWeight: currentGoals?.goalWeight ?? client.goalWeight ?? null,
-      goalBodyFatPercentage:
-        currentGoals?.goalBodyFatPercentage ?? client.goalBodyFatPercentage ?? null,
-      deadline: currentGoals?.goalDeadline ?? client.goalDeadline ?? null,
-      startDate: currentGoals?.goalStartDate ?? null,
-    },
-    today: clientToday,
-  });
-  const effectiveGoalWeightKg = effective.goalWeightKg;
-  const effectiveGoalDeadline = effective.deadline;
-  const effectiveStartDate = effective.startDate;
-
   // Handle custom macros
   if (body.customMacrosEnabled) {
-    return handleCustomMacros(
-      clientId, coachId, body, weightUnit, currentWeight,
-      bmr, tdeeValue, effectiveGoalWeightKg, effectiveGoalDeadline,
-      validatedData, clientToday
-    );
+    return handleCustomMacros(clientId, coachId, body, calcInputs, validatedData);
   }
 
   // Generate calculated nutrition plan
-  return handleCalculatedPlan(
-    clientId, coachId, body, client, weightUnit, currentWeight,
-    bmr, effectiveGoalWeightKg, effectiveGoalDeadline, effectiveStartDate,
-    validatedData, clientToday
-  );
+  return handleCalculatedPlan(clientId, coachId, body, client, calcInputs, validatedData);
 }
 
 async function handleCustomMacros(
   clientId: string,
   coachId: string,
   body: GenerateNutritionPlanRequest,
-  weightUnit: "lbs" | "kg",
-  currentWeight: number | null | undefined,
-  bmr: number | null | undefined,
-  tdeeValue: number | null | undefined,
-  effectiveGoalWeightKg: number | null,
-  effectiveGoalDeadline: string | null,
-  validatedData: { coachNotes?: string },
-  clientToday: string
+  calcInputs: ReadyCalcInputs,
+  validatedData: { coachNotes?: string }
 ): Promise<NutritionPlanResult> {
+  const { currentWeightKg, bmr, tdee: tdeeValue, today: clientToday } = calcInputs;
+
   if (!body.customProteinG || !body.customCarbG || !body.customFatG || !body.customCalories) {
     throw new NutritionPlanError("Custom macros enabled but values not provided", 400);
   }
@@ -228,14 +195,14 @@ async function handleCustomMacros(
     trainingVolumeHours: body.trainingVolumeHours || "2-3",
     proteinTargetGPerKg: body.proteinTargetGPerKg,
     dietType: body.dietType,
-    goalWeightKg: effectiveGoalWeightKg,
-    goalDeadline: effectiveGoalDeadline,
+    goalWeightKg: calcInputs.goalWeightKg ?? null,
+    goalDeadline: calcInputs.goalDeadline ?? null,
     baselineCalories: body.customCalories,
     proteinTargetG: body.customProteinG,
     carbTargetG: body.customCarbG,
     fatTargetG: body.customFatG,
-    baseWeightKg: weightToKg(currentWeight!, weightUnit),
-    bmr: bmr ?? null,
+    baseWeightKg: currentWeightKg,
+    bmr,
     tdee: tdee ?? null,
     customMacrosEnabled: true,
     customCalories: body.customCalories,
@@ -278,70 +245,36 @@ async function handleCalculatedPlan(
   clientId: string,
   coachId: string,
   body: GenerateNutritionPlanRequest,
-  client: NonNullable<Awaited<ReturnType<typeof getClientById>>>,
-  weightUnit: "lbs" | "kg",
-  currentWeight: number | null | undefined,
-  bmr: number | null | undefined,
-  effectiveGoalWeightKg: number | null,
-  effectiveGoalDeadline: string | null,
-  // Always a concrete date — resolveEffectiveGoal falls back to `today`.
-  effectiveStartDate: string,
-  validatedData: { coachNotes?: string },
-  clientToday: string
+  _client: NonNullable<Awaited<ReturnType<typeof getClientById>>>,
+  calcInputs: ReadyCalcInputs,
+  validatedData: { coachNotes?: string }
 ): Promise<NutritionPlanResult> {
-  const currentWeightKg = weightToKg(currentWeight!, weightUnit);
+  const { currentWeightKg, bmr, today: clientToday } = calcInputs;
 
-  // Read the existing active plan's baseline: preserveCalories reuses it, and
-  // its presence distinguishes an "initial" plan from a "regenerated" one.
+  // Only to distinguish an "initial" plan from a "regenerated" one.
   const { data: existingPlan } = await supabaseAdmin
     .from("nutrition_plans")
-    .select("baseline_calories")
+    .select("id")
     .eq("client_id", clientId)
     .eq("status", "active")
     .maybeSingle();
 
-  let plan: import("@/services/nutrition-service").NutritionPlan;
-  let regenerationReason: string;
-
-  if (body.preserveCalories) {
-    if (!existingPlan) {
-      throw new NutritionPlanError("No active nutrition plan to preserve calories from", 400);
-    }
-    // Skip TDEE calculation — reuse existing baseline calories with new training day distribution
-    const baselineCalories = existingPlan.baseline_calories;
-    const proteinG = Math.round(currentWeightKg * body.proteinTargetGPerKg);
-    const macros = calculateDailyMacros(baselineCalories, proteinG, false, body.dietType);
-    plan = {
-      baselineCalories,
-      tdee: bmr ? calculateTDEE(bmr, body.workActivityLevel) : 0,
-      calorieTarget: baselineCalories,
-      proteinTargetG: macros.proteinG,
-      carbTargetG: macros.carbsG,
-      fatTargetG: macros.fatG,
-      adjustedTdee: bmr ? calculateTDEE(bmr, body.workActivityLevel) : 0,
-      weeklyWeightChangeKg: 0,
-      requiredDailyDeficit: 0,
-      warnings: [],
-    };
-    regenerationReason = "regenerated_preserved_calories";
-  } else {
-    plan = generateNutritionPlan({
-      currentWeightKg,
-      goalWeightKg: effectiveGoalWeightKg ?? undefined,
-      bmr: bmr!,
-      gender: client.gender as "male" | "female" | "other",
-      workActivityLevel: body.workActivityLevel,
-      trainingVolumeHours: body.trainingVolumeHours,
-      trainingPlan: null, // vestigial param (generateNutritionPlan ignores it)
-      proteinTargetGPerKg: body.proteinTargetGPerKg,
-      dietType: body.dietType,
-      goalDeadline: effectiveGoalDeadline ?? undefined,
-      startDate: effectiveStartDate ?? undefined,
-      today: clientToday,
-      weightUnit: weightUnit,
-    });
-    regenerationReason = existingPlan ? "regenerated" : "initial";
-  }
+  // THE contract of this rework: the browser previewed the plan by calling this
+  // exact pure function over these exact inputs, so what the coach saw is what
+  // lands. There is deliberately no second code path here — the old
+  // preserve-calories branch skipped the calculator entirely and reused the
+  // stored baseline, which meant the numbers on screen were not the numbers
+  // saved. "Edit manually" covers that intent honestly: the coach types the
+  // number they want and it is stored as the target.
+  const plan = generateNutritionPlan({
+    ...calcInputs,
+    workActivityLevel: body.workActivityLevel,
+    trainingVolumeHours: body.trainingVolumeHours,
+    trainingPlan: null, // vestigial param (generateNutritionPlan ignores it)
+    proteinTargetGPerKg: body.proteinTargetGPerKg,
+    dietType: body.dietType,
+  });
+  const regenerationReason = existingPlan ? "regenerated" : "initial";
 
   const newPlanId = await createNutritionPlan({
     clientId,
@@ -350,14 +283,14 @@ async function handleCalculatedPlan(
     trainingVolumeHours: body.trainingVolumeHours || "2-3",
     proteinTargetGPerKg: body.proteinTargetGPerKg,
     dietType: body.dietType,
-    goalWeightKg: effectiveGoalWeightKg,
-    goalDeadline: effectiveGoalDeadline,
+    goalWeightKg: calcInputs.goalWeightKg ?? null,
+    goalDeadline: calcInputs.goalDeadline ?? null,
     baselineCalories: plan.baselineCalories,
     proteinTargetG: plan.proteinTargetG,
     carbTargetG: plan.carbTargetG,
     fatTargetG: plan.fatTargetG,
     baseWeightKg: currentWeightKg,
-    bmr: bmr ?? null,
+    bmr,
     tdee: plan.tdee,
     customMacrosEnabled: false,
     customCalories: null,
@@ -368,10 +301,16 @@ async function handleCalculatedPlan(
     trainingPlan: null, // vestigial param (createNutritionPlan ignores it)
     coachNotes: validatedData.coachNotes,
     effectiveFrom: body.effectiveFrom,
-    // A fresh recompute re-stamps the banner snapshot; a preserve-calories
-    // regen keeps the existing calories (not a recompute), so it must NOT
-    // re-stamp base_weight_kg or the banner would wrongly silence (spec section 9).
-    recalcSnapshots: !body.preserveCalories,
+    // Every surviving path through this function is a genuine recompute, so the
+    // banner snapshot always re-stamps. This was `!body.preserveCalories`, and
+    // it read `false` on exactly one path — the preserve-calories regen, which
+    // reused the stored baseline instead of recalculating and therefore had to
+    // leave base_weight_kg alone or the weight-drift banner would wrongly
+    // silence. That path is gone. Set this to `true` rather than deleting the
+    // key: createNutritionPlan reads `params.recalcSnapshots ?? false`, so an
+    // omitted key means the snapshot silently STOPS re-stamping — the exact
+    // inverse, arriving by omission, with the drift banner just never firing.
+    recalcSnapshots: true,
   });
 
   if (!newPlanId) {

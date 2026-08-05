@@ -8,7 +8,6 @@ import { ApplyDateDialog } from "@/components/ui/apply-date-dialog";
 export function DrawerFooter() {
   const builder = useNutritionBuilderContext();
   const [showApplyDialog, setShowApplyDialog] = useState(false);
-  const [preserveCalories, setPreserveCalories] = useState(false);
 
   const hasPlan = builder.hasPlan;
   // The Custom tab posts the %-split-derived custom macros; Auto recalculates.
@@ -25,8 +24,7 @@ export function DrawerFooter() {
   };
 
   const handleApply = (effectiveFrom: string | null) => {
-    // preserve-calories is an Auto-only option; custom macros ARE the targets.
-    void builder.generatePlan(isCustom, effectiveFrom, isCustom ? false : preserveCalories);
+    void builder.generatePlan(isCustom, effectiveFrom);
   };
 
   return (
@@ -81,9 +79,6 @@ export function DrawerFooter() {
         onOpenChange={setShowApplyDialog}
         description="The new nutrition plan will replace the current one. Choose when the updated targets should start."
         onApply={handleApply}
-        showPreserveCalories={!isCustom}
-        preserveCalories={preserveCalories}
-        onPreserveCaloriesChange={setPreserveCalories}
       />
     </>
   );

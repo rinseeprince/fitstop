@@ -49,7 +49,6 @@ export const nutritionPlanSchema = z.object({
   customCalories: z.number().positive().optional(),
   coachNotes: z.string().max(500).optional(),
   effectiveFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format").optional(),
-  preserveCalories: z.boolean().optional(),
 }).refine(
   (data) => {
     // If custom macros are enabled, validate that custom calories match macro totals

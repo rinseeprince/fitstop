@@ -677,7 +677,6 @@ export type GenerateNutritionPlanRequest = {
   customCalories?: number;
   coachNotes?: string;
   effectiveFrom?: string;
-  preserveCalories?: boolean;
 };
 
 export type GenerateNutritionPlanResponse = {

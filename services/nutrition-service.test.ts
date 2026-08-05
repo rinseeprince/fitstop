@@ -72,4 +72,66 @@ describe('calculateBaselineCalories', () => {
     expect(resultWithPastStart.requiredDailyDeficit).toBe(resultWithoutStart.requiredDailyDeficit)
     expect(resultWithPastStart.baselineCalories).toBe(resultWithoutStart.baselineCalories)
   })
+
+  // ===========================================================================
+  // Clock independence.
+  //
+  // This module is pure, so the coach's BROWSER now runs it to preview a plan
+  // before the server saves it. That only holds up if the arithmetic does not
+  // depend on which machine's clock it runs on: the preview would otherwise
+  // show one baseline and the save would store another, which is the single
+  // failure this whole feature must not have.
+  // ===========================================================================
+  describe('is clock-independent', () => {
+    const originalTZ = process.env.TZ
+
+    afterEach(() => {
+      process.env.TZ = originalTZ
+    })
+
+    const run = (tz: string, goalDeadline: string, startDate?: string) => {
+      process.env.TZ = tz
+      return calculateBaselineCalories(
+        tdee, currentWeightKg, goalWeightKg, goalDeadline, gender, startDate, '2026-08-05'
+      )
+    }
+
+    // +13 and +14 are the cases that actually broke: past those offsets the
+    // Math.max below picks the local value and Math.round no longer absorbs
+    // the difference. The common zones never diverged, which is exactly why
+    // this was invisible while the calculator only ever ran on the server.
+    const ZONES = [
+      'UTC',
+      'Europe/London',
+      'America/New_York',
+      'America/Los_Angeles',
+      'Asia/Kolkata',
+      'Australia/Lord_Howe',
+      'Pacific/Kiritimati',
+      'Pacific/Apia',
+    ]
+
+    it('produces an identical baseline in every timezone, with a past goal start', () => {
+      const results = ZONES.map((tz) => run(tz, '2026-12-31', '2026-06-01'))
+      const baselines = results.map((r) => r.baselineCalories)
+      expect(new Set(baselines).size).toBe(1)
+      expect(baselines[0]).toBeGreaterThan(0)
+    })
+
+    it('produces an identical baseline in every timezone, with a future goal start', () => {
+      const baselines = ZONES.map((tz) => run(tz, '2026-12-31', '2026-09-01').baselineCalories)
+      expect(new Set(baselines).size).toBe(1)
+    })
+
+    // Callers pass both shapes: production sends the DATE column's
+    // "YYYY-MM-DD", but toISOString() timestamps reach here too. Appending
+    // "T00:00:00" to a full ISO string yields an Invalid Date, and the
+    // resulting NaN slips past the minimum-calorie floor silently.
+    it('treats a full ISO timestamp and a date-only string as the same day', () => {
+      const dateOnly = run('UTC', '2026-12-31', '2026-06-01')
+      const isoForm = run('UTC', '2026-12-31T09:12:34.567Z', '2026-06-01T23:45:00.000Z')
+      expect(isoForm.baselineCalories).toBe(dateOnly.baselineCalories)
+      expect(Number.isNaN(isoForm.baselineCalories)).toBe(false)
+    })
+  })
 })

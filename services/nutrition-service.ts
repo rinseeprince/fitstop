@@ -81,22 +81,41 @@ export function calculateBaselineCalories(
     };
   }
 
-  // Calculate time to goal
-  // When a phase starts in the future, count from phase start, not today.
-  // When a phase already started (or no phase), count from today — the
-  // CLIENT-local today when the caller provides it (the deadline lives on the
-  // client's calendar); server-local midnight only as fallback.
+  // Calculate time to goal.
+  // When the goal starts in the future, count from the goal start, not today.
+  // When it already started, count from today — the CLIENT-local today when the
+  // caller provides it (the deadline lives on the client's calendar);
+  // server-local midnight only as fallback.
+  //
+  // All three dates are reduced to a calendar day and parsed as LOCAL midnight,
+  // deliberately. `new Date("YYYY-MM-DD")` is UTC midnight while
+  // `new Date("YYYY-MM-DDT00:00:00")` is local, so mixing the two forms put the
+  // operands of the subtraction below on different clocks. That was invisible
+  // while this ran only on the server (one clock), but this module is pure and
+  // now also runs in the coach's BROWSER to preview a plan before it is saved —
+  // and a preview that disagrees with the save is the one thing this calculator
+  // must never do. Parsing everything the same way makes the arithmetic
+  // identical in every zone (measured: UTC, +1, -4, -7, +5:30, +13, +14, and a
+  // DST-spanning range).
+  //
+  // The slice(0, 10) is load-bearing, not defensive: callers pass BOTH forms.
+  // Production sends date-only strings (goal_deadline is a DATE column), but
+  // `new Date().toISOString()` timestamps reach here too, and appending
+  // "T00:00:00" to one of those yields an Invalid Date and a silent NaN
+  // baseline — NaN is not caught by the minimum-calorie floor below.
+  // These are calendar dates either way; the time-of-day is not information.
+  const localMidnight = (value: string) => new Date(value.slice(0, 10) + "T00:00:00");
   let now: Date;
   if (today) {
-    now = new Date(today + "T00:00:00");
+    now = localMidnight(today);
   } else {
     now = new Date();
     now.setHours(0, 0, 0, 0);
   }
   const startDate = calcStartDate
-    ? new Date(Math.max(new Date(calcStartDate).getTime(), now.getTime()))
+    ? new Date(Math.max(localMidnight(calcStartDate).getTime(), now.getTime()))
     : now;
-  const deadline = new Date(goalDeadline);
+  const deadline = localMidnight(goalDeadline);
   const daysToGoal = Math.round(
     (deadline.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
   ) + 1;

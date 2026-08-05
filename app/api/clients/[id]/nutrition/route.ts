@@ -27,6 +27,8 @@ import {
   NutritionPlanError,
 } from "@/services/nutrition-plan-orchestrator";
 import { getCurrentGoals } from "@/services/client-goals-service";
+import { resolveNutritionCalcInputs } from "@/services/nutrition-calc-inputs";
+import { captureApiError } from "@/lib/error-handler";
 import { resolveEffectiveGoal } from "@/lib/goals/resolve-effective-goal";
 import { detectGoalDrift } from "@/lib/goals/detect-goal-drift";
 import { recordAuditEvent } from "@/services/audit-log-service";
@@ -77,7 +79,10 @@ export async function GET(
     // alongside the active-plan read because neither depends on the other, and it
     // must be resolved BEFORE the no-plan early return — the tab's training
     // section is independent of whether a nutrition plan exists.
-    const [planResult, activePlanId, nextPlan] = await Promise.all([
+    // `getCurrentGoals` is hoisted into this batch from below: the drift check
+    // needs it AND the calc-input resolver needs it, so fetching it once here
+    // costs one query instead of two and removes a sequential hop.
+    const [planResult, activePlanId, nextPlan, currentGoals] = await Promise.all([
       supabaseAdmin
         .from("nutrition_plans")
         .select("*")
@@ -88,12 +93,40 @@ export async function GET(
         .maybeSingle(),
       getTrainingPlanIdForDate(clientId, clientToday),
       getNextFutureTrainingPlan(clientId, clientToday),
+      getCurrentGoals(clientId),
     ]);
     const plan = planResult.data;
     const hasTrainingPlan = Boolean(activePlanId ?? nextPlan);
 
+    // The exact inputs the plan POST will calculate from, sent to the browser so
+    // the builder can preview a plan live as the coach moves a picker — same
+    // resolver, same pure calculator, so preview and save cannot disagree.
+    //
+    // Resolved BEFORE the no-plan early return and returned on BOTH branches:
+    // a coach creating their FIRST plan is exactly who needs the preview, and
+    // computing it above a three-key literal that ignores it would make it dead
+    // precisely then.
+    //
+    // A failure here degrades the preview to null rather than failing the read.
+    // This route's catch has no NutritionPlanError branch, so an uncaught throw
+    // becomes a blanket 500 — and the client treats a non-OK response as "no
+    // plan", so a body-metrics hiccup would blank a working nutrition tab.
+    // The POST does its own strict resolution, so Generate still behaves.
+    const calcInputs = await resolveNutritionCalcInputs(clientId, client, {
+      today: clientToday,
+      currentGoals,
+    }).catch((err) => {
+      captureApiError(err, { action: "nutrition-calc-inputs", clientId });
+      return null;
+    });
+
     if (!plan) {
-      return NextResponse.json({ success: true, hasPlan: false, hasTrainingPlan });
+      return NextResponse.json({
+        success: true,
+        hasPlan: false,
+        hasTrainingPlan,
+        calcInputs,
+      });
     }
 
     const weekStart = getTrainingWeekStart(today);
@@ -136,17 +169,21 @@ export async function GET(
     // (effective-goal resolver) differ from the snapshot this active plan was
     // built against? Surfaced as "Goal changed — regenerate", distinct from the
     // weight-delta banner (which compares current weight vs the plan base weight).
-    const driftGoals = await getCurrentGoals(clientId);
+    // Anchored on the CLIENT's today, matching the write path. Previously this
+    // used the coach's, so one request carried two "todays". It is a provable
+    // no-op rather than a behaviour change: resolveEffectiveGoal reads `today`
+    // at exactly one place — the startDate fallback — and detectGoalDrift
+    // consumes only goalWeightKg and deadline, neither of which touches it.
     const effectiveGoal = resolveEffectiveGoal({
       weightUnit: client.weightUnit ?? "lbs",
       clientGoal: {
-        goalWeight: driftGoals?.goalWeight ?? client.goalWeight ?? null,
+        goalWeight: currentGoals?.goalWeight ?? client.goalWeight ?? null,
         goalBodyFatPercentage:
-          driftGoals?.goalBodyFatPercentage ?? client.goalBodyFatPercentage ?? null,
-        deadline: driftGoals?.goalDeadline ?? client.goalDeadline ?? null,
-        startDate: driftGoals?.goalStartDate ?? null,
+          currentGoals?.goalBodyFatPercentage ?? client.goalBodyFatPercentage ?? null,
+        deadline: currentGoals?.goalDeadline ?? client.goalDeadline ?? null,
+        startDate: currentGoals?.goalStartDate ?? null,
       },
-      today,
+      today: clientToday,
     });
     const goalChanged = detectGoalDrift(
       { goalWeightKg: plan.goal_weight_kg ?? null, deadline: plan.goal_deadline ?? null },
@@ -165,11 +202,18 @@ export async function GET(
       customCarbG: plan.custom_carb_g,
       customFatG: plan.custom_fat_g,
       dietType: plan.diet_type,
+      // The two remaining calculator settings, so the builder's pickers seed
+      // from the ACTIVE PLAN instead of their hardcoded defaults. Without these
+      // a coach opening a keto plan sees "Balanced" and a regenerate silently
+      // rewrites the plan they never meant to change.
+      workActivityLevel: plan.work_activity_level,
+      proteinTargetGPerKg: Number(plan.protein_target_g_per_kg),
       includeActivityBurn,
       effectiveFrom: plan.effective_from,
       dailyTargets,
       goalChanged,
       hasTrainingPlan,
+      calcInputs,
     });
   } catch (error) {
     console.error("Error fetching nutrition plan:", error instanceof Error ? error.message : "Unknown error");
