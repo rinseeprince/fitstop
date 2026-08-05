@@ -1,19 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // Mock the supabase-admin module
-vi.mock('../../services/supabase-admin', () => ({
+vi.mock('./supabase-admin', () => ({
   supabaseAdmin: {
     from: vi.fn(),
   },
 }))
 
 // Habit defaults resolve the client-local today through today-service.
-vi.mock('../../services/today-service', () => ({
+vi.mock('./today-service', () => ({
   getClientTodayString: vi.fn().mockResolvedValue('2026-04-08'),
 }))
 
-import { supabaseAdmin } from '../../services/supabase-admin'
-import { getClientTodayString } from '../../services/today-service'
+import { supabaseAdmin } from './supabase-admin'
+import { getClientTodayString } from './today-service'
 import {
   calculateCompletionRate,
   calculateCurrentStreak,
@@ -22,7 +22,7 @@ import {
   createHabit,
   getTodayHabitLogs,
   getHabitStats,
-} from '../../services/daily-habits-service'
+} from './daily-habits-service'
 import type { DailyHabitLog } from '@/types/daily-habit'
 
 // Helper to create a chainable mock query
@@ -195,7 +195,7 @@ describe('Daily Habits Service - Database Functions', () => {
       }]
 
       const mockQuery = createMockQuery({ data: mockData, error: null })
-      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery)
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as never)
 
       const result = await getClientHabits('client-789')
 

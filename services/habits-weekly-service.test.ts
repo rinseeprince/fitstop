@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-vi.mock('../../services/supabase-admin', () => ({
+vi.mock('./supabase-admin', () => ({
   supabaseAdmin: {
     from: vi.fn(),
   },
 }))
 
-vi.mock('../../lib/date-helpers', async () => {
-  const actual = await vi.importActual<typeof import('../../lib/date-helpers')>('../../lib/date-helpers')
+vi.mock('../lib/date-helpers', async () => {
+  const actual = await vi.importActual<typeof import('../lib/date-helpers')>('../lib/date-helpers')
   return {
     ...actual,
     getTodayDateString: vi.fn(() => '2024-03-27'),
@@ -19,8 +19,8 @@ vi.mock('../../lib/date-helpers', async () => {
   }
 })
 
-import { supabaseAdmin } from '../../services/supabase-admin'
-import { getWeeklyHabitsData } from '../../services/habits-weekly-service'
+import { supabaseAdmin } from './supabase-admin'
+import { getWeeklyHabitsData } from './habits-weekly-service'
 
 type MockResult = { data: unknown; error: unknown }
 
