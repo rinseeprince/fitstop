@@ -218,5 +218,58 @@ describe("nutrition-event-service: cascade-preserve guards", () => {
       // The guard under test: edited rows survive the cascade delete.
       expect(deleteQuery.eq).toHaveBeenCalledWith("is_modified", false);
     });
+
+    // =======================================================================
+    // Shipment 0 — the delete window must equal the regeneration window.
+    //
+    // The delete was an unbounded ray (`date >= fromDate`) while the
+    // regeneration covers a fixed 8 weeks, so a cascade anchored EARLIER than
+    // the anchor that wrote the rows deleted a tail it never rebuilt. A plan
+    // generated with an effective date a week out wrote events to day+63; a
+    // routine training edit anchored at today then deleted all of them and
+    // regenerated only to day+56, leaving 7 dates with no nutrition event and
+    // no template fallback behind them.
+    // =======================================================================
+    it("bounds the delete at the regeneration end date, so no date is deleted without being rebuilt", async () => {
+      let nutCount = 0;
+      const deleteQuery = createMockQuery({ data: null, error: null });
+      const protectedQuery = createMockQuery<{ date: string }[]>({ data: [], error: null });
+      const upsertQuery = createMockQuery({ data: [], error: null });
+
+      const planRow = {
+        baseline_calories: 2000,
+        protein_target_g: 150,
+        diet_type: "balanced",
+        status: "active",
+        effective_from: null,
+      };
+
+      mockFrom.mockImplementation((table: string) => {
+        if (table === "nutrition_events") {
+          nutCount += 1;
+          if (nutCount === 1) return deleteQuery as any;
+          if (nutCount === 2) return protectedQuery as any;
+          return upsertQuery as any;
+        }
+        if (table === "nutrition_plans") return createMockQuery({ data: planRow, error: null }) as any;
+        if (table === "nutrition_plan_daily_targets") return createMockQuery({ data: [], error: null }) as any;
+        return createMockQuery({ data: null, error: null }) as any;
+      });
+
+      await regenerateFutureNutritionEvents("client-1", "plan-1", "2026-04-10");
+
+      // 8 weeks (56 days) inclusive of both ends.
+      const EXPECTED_END = "2026-06-05";
+
+      // The delete is closed at BOTH ends...
+      expect(deleteQuery.gte).toHaveBeenCalledWith("date", "2026-04-10");
+      expect(deleteQuery.lte).toHaveBeenCalledWith("date", EXPECTED_END);
+
+      // ...and its upper bound is exactly the last date regenerated behind it.
+      const rows = upsertQuery.upsert.mock.calls[0][0] as Array<{ date: string }>;
+      expect(rows[0].date).toBe("2026-04-10");
+      expect(rows[rows.length - 1].date).toBe(EXPECTED_END);
+      expect(rows).toHaveLength(57);
+    });
   });
 });

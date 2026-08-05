@@ -204,7 +204,25 @@ export async function regenerateFutureNutritionEvents(
 ): Promise<void> {
   const fromDate = effectiveFrom ?? (await getClientTodayString(clientId));
 
-  // Delete scheduled events from effectiveFrom onward.
+  // The window is computed BEFORE the delete because the delete is bounded by
+  // it. Both the computation and its guard must stay ahead of the delete: an
+  // early return that happens after a delete would clear the window without
+  // regenerating it, turning a no-op into a wipe.
+  const endDate = calculateNutritionEndDate(fromDate);
+  if (!endDate || endDate <= fromDate) return;
+
+  // Delete the scheduled events this call is about to rewrite — and ONLY those.
+  // The upper bound is load-bearing: the delete used to be an unbounded ray
+  // (`date >= fromDate`) while the regeneration below covers a fixed 8-week
+  // window, so any cascade anchored EARLIER than the anchor that wrote the rows
+  // deleted a tail it never rebuilt. Concretely: a plan generated with an
+  // effective date a week out wrote events to day+63, then a routine training
+  // edit anchored at today deleted all of them and regenerated only to day+56,
+  // leaving 7 dates with no nutrition event at all — and getPlanTargetForDate
+  // has no template fallback, so those days read as "no target" to the client.
+  // Days past endDate keep their existing (possibly stale) rows; a later
+  // cascade sweeps them as today advances. Stale-but-present beats absent.
+  //
   // Always preserve coach-edited days (is_modified): nutrition preserves edits
   // across the cascade unconditionally (no force param, unlike training); an
   // explicit reset clears the flag before regenerating that date.
@@ -213,6 +231,7 @@ export async function regenerateFutureNutritionEvents(
     .delete()
     .eq("nutrition_plan_id", planId)
     .gte("date", fromDate)
+    .lte("date", endDate)
     .eq("status", "scheduled")
     .eq("is_modified", false);
 
@@ -243,10 +262,6 @@ export async function regenerateFutureNutritionEvents(
   // from the actual event rows via buildDailyTargetsFromPlan, so the stored
   // column is no longer read. The per-date `nutrition_events.is_training_day`
   // written below by generateNutritionEvents remains the source of truth.
-
-  // Calculate end date
-  const endDate = calculateNutritionEndDate(fromDate);
-  if (!endDate || endDate <= fromDate) return;
 
   await generateNutritionEvents(
     clientId,
