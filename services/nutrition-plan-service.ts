@@ -1,7 +1,6 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { calculateDailyMacros, DAYS_OF_WEEK } from "@/utils/nutrition-helpers";
-import type { DietType, DayCalorieOverrides } from "@/types/check-in";
-import type { DayOfWeek } from "@/utils/nutrition-helpers";
+import type { DietType } from "@/types/check-in";
 import type { TrainingPlan } from "@/types/training";
 import { recordBodyMetrics } from "@/services/body-metrics-service";
 import { getClientTodayString } from "@/services/today-service";
@@ -30,7 +29,6 @@ export type CreateNutritionPlanParams = {
   trainingPlan: TrainingPlan | null;
   coachNotes?: string;
   effectiveFrom?: string;
-  dayCalorieOverrides?: DayCalorieOverrides;
   // When true (explicit "Recalculate plan" / fresh Generate recompute) the RPC
   // re-stamps the banner snapshot (base_weight_kg/goal_weight_kg/goal_deadline);
   // when false/omitted (in-place edit, e.g. preserve-calories regen) it is
@@ -81,19 +79,6 @@ export async function createNutritionPlan(params: CreateNutritionPlanParams): Pr
         fat_g: baselineMacros.fatG,
         is_training_day: false,
       });
-    }
-  }
-
-  // Apply custom day distribution overrides if provided
-  if (params.dayCalorieOverrides) {
-    for (const target of dailyTargets) {
-      const override = params.dayCalorieOverrides[target.day_of_week as DayOfWeek];
-      if (override) {
-        target.calories = override.calories;
-        target.protein_g = override.protein_g;
-        target.carb_g = override.carbs_g;
-        target.fat_g = override.fat_g;
-      }
     }
   }
 

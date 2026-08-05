@@ -4,7 +4,6 @@ import { useState, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useNutritionPlan } from "@/hooks/use-nutrition-plan";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
-import { useCalorieSkew } from "@/hooks/use-calorie-skew";
 import type { Client, ActivityLevel, DietType } from "@/types/check-in";
 import { validateClientForNutrition } from "@/lib/validations/nutrition";
 import {
@@ -105,14 +104,6 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
     [client.id, onUpdate, toast]
   );
 
-  // Calorie skewing (extracted hook)
-  const planBaseline = nutritionPlan.nutritionData?.baselineCalories ?? nutritionPlan.nutritionData?.calorieTarget ?? 0;
-  const calorieSkew = useCalorieSkew({
-    weeklyTargets: nutritionPlan.weeklyTargets,
-    baselineCalories: planBaseline,
-    dietType: settings.dietType,
-  });
-
   const [coachNotes, setCoachNotes] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [warnings, setWarnings] = useState<string[]>([]);
@@ -148,9 +139,6 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
           ...(coachNotes.trim() ? { coachNotes: coachNotes.trim() } : {}),
           ...(effectiveFrom ? { effectiveFrom } : {}),
           ...(preserveCalories ? { preserveCalories: true } : {}),
-          ...(calorieSkew.customDayDistribution && calorieSkew.dayCalorieOverrides
-            ? { dayCalorieOverrides: calorieSkew.dayCalorieOverrides }
-            : {}),
         };
 
         if (useCustom) {
@@ -176,7 +164,6 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
             description: `${data.plan.calorieTarget} cal/day with ${data.plan.proteinTargetG}g protein`,
           });
           setSettingsChanged(false);
-          calorieSkew.resetSkew();
           setCoachNotes("");
           onUpdate?.();
           nutritionPlan.refetchNutrition();
@@ -208,7 +195,6 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
       coachNotes,
       onUpdate,
       toast,
-      calorieSkew,
       nutritionPlan,
       invalidateNutritionCalendar,
     ]
@@ -263,9 +249,6 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
     surplusAsCarbs,
     isSavingSurplusToggle,
     handleToggleSurplusAsCarbs,
-
-    // Calorie skewing
-    ...calorieSkew,
 
     // Coach notes on the generated plan
     coachNotes,

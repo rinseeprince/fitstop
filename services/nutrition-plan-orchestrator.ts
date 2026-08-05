@@ -242,11 +242,10 @@ async function handleCustomMacros(
     customProteinG: body.customProteinG,
     customCarbG: body.customCarbG,
     customFatG: body.customFatG,
-    regenerationReason: body.dayCalorieOverrides ? "custom_macros_custom_day_distribution" : "custom_macros",
+    regenerationReason: "custom_macros",
     trainingPlan: null, // vestigial param (createNutritionPlan ignores it)
     coachNotes: validatedData.coachNotes,
     effectiveFrom: body.effectiveFrom,
-    dayCalorieOverrides: body.dayCalorieOverrides,
     // A fresh custom-macro plan establishes a new baseline at the current
     // weight -> re-stamp the banner snapshot.
     recalcSnapshots: true,
@@ -341,9 +340,7 @@ async function handleCalculatedPlan(
       today: clientToday,
       weightUnit: weightUnit,
     });
-    regenerationReason = existingPlan
-      ? (body.dayCalorieOverrides ? "regenerated_custom_day_distribution" : "regenerated")
-      : "initial";
+    regenerationReason = existingPlan ? "regenerated" : "initial";
   }
 
   const newPlanId = await createNutritionPlan({
@@ -371,7 +368,6 @@ async function handleCalculatedPlan(
     trainingPlan: null, // vestigial param (createNutritionPlan ignores it)
     coachNotes: validatedData.coachNotes,
     effectiveFrom: body.effectiveFrom,
-    dayCalorieOverrides: body.dayCalorieOverrides,
     // A fresh recompute re-stamps the banner snapshot; a preserve-calories
     // regen keeps the existing calories (not a recompute), so it must NOT
     // re-stamp base_weight_kg or the banner would wrongly silence (spec section 9).

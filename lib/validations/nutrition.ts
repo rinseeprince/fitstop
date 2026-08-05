@@ -21,23 +21,6 @@ export const dietTypeSchema = z.enum([
 
 export const unitPreferenceSchema = z.enum(["metric", "imperial"]);
 
-const dayCalorieOverrideSchema = z.object({
-  calories: z.number().positive(),
-  protein_g: z.number().nonnegative(),
-  carbs_g: z.number().nonnegative(),
-  fat_g: z.number().nonnegative(),
-});
-
-export const dayCalorieOverridesSchema = z.object({
-  monday: dayCalorieOverrideSchema,
-  tuesday: dayCalorieOverrideSchema,
-  wednesday: dayCalorieOverrideSchema,
-  thursday: dayCalorieOverrideSchema,
-  friday: dayCalorieOverrideSchema,
-  saturday: dayCalorieOverrideSchema,
-  sunday: dayCalorieOverrideSchema,
-});
-
 export const nutritionSettingsPatchSchema = z.object({
   unitPreference: unitPreferenceSchema.optional(),
   includeActivityBurn: z.boolean().optional(),
@@ -67,7 +50,6 @@ export const nutritionPlanSchema = z.object({
   coachNotes: z.string().max(500).optional(),
   effectiveFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format").optional(),
   preserveCalories: z.boolean().optional(),
-  dayCalorieOverrides: dayCalorieOverridesSchema.optional(),
 }).refine(
   (data) => {
     // If custom macros are enabled, validate that custom calories match macro totals

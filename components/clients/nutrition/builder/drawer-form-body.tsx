@@ -12,7 +12,6 @@ import { useNutritionBuilderContext } from "@/contexts/nutrition-builder-context
 import { NutritionSettingsForm } from "./nutrition-settings-form";
 import { NutritionCustomMacrosSection } from "./nutrition-custom-macros-section";
 import { NutritionTrainingCaloriesDisplay } from "./nutrition-training-calories-display";
-import { CalorieSkewingSection } from "./calorie-skewing-section";
 import { ClientGoalEditor } from "../../client-goal-editor";
 import { NutritionGoalChangedBanner } from "../nutrition-goal-changed-banner";
 
@@ -78,9 +77,9 @@ export function DrawerFormBody() {
 }
 
 /**
- * Shared between Auto and Custom: the activity-burn toggle, calorie-skewing, and
- * notes. Burn STACKS in Custom too (display-time on the event surplus — these are
- * the same controls, no special handling).
+ * Shared between Auto and Custom: the activity-burn toggle and notes. Burn
+ * STACKS in Custom too (display-time on the event surplus — these are the same
+ * controls, no special handling).
  */
 function SharedControls() {
   const builder = useNutritionBuilderContext();
@@ -100,18 +99,6 @@ function SharedControls() {
           surplusAsCarbs={builder.surplusAsCarbs}
           onToggleSurplusAsCarbs={builder.handleToggleSurplusAsCarbs}
           isSavingSurplus={builder.isSavingSurplusToggle}
-        />
-        <CalorieSkewingSection
-          enabled={builder.customDayDistribution}
-          onToggle={builder.handleToggleCustomDistribution}
-          dayOverrides={builder.dayCalorieOverrides}
-          onDayChange={builder.handleDayOverrideChange}
-          weeklyTargets={builder.weeklyTargets}
-          budgetValidation={builder.budgetValidation}
-          macroMode={builder.skewMacroMode}
-          onMacroModeChange={builder.setSkewMacroMode}
-          onReset={builder.handleResetToDefault}
-          hasPlan={builder.hasPlan}
         />
       </div>
 

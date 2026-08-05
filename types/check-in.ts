@@ -473,16 +473,6 @@ export type Client = {
   timezone: string;
 };
 
-// Calorie skewing types
-export type DayCalorieOverride = {
-  calories: number;
-  protein_g: number;
-  carbs_g: number;
-  fat_g: number;
-};
-
-export type DayCalorieOverrides = Record<DayOfWeek, DayCalorieOverride>;
-
 // Client info for check-in page
 export type CheckInClientInfo = {
   id: string;
@@ -688,7 +678,6 @@ export type GenerateNutritionPlanRequest = {
   coachNotes?: string;
   effectiveFrom?: string;
   preserveCalories?: boolean;
-  dayCalorieOverrides?: DayCalorieOverrides;
 };
 
 export type GenerateNutritionPlanResponse = {

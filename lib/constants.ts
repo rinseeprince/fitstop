@@ -9,7 +9,6 @@ export const DEBOUNCE_DELAY_MS = 300;
 
 // Custom macros validation
 export const CUSTOM_MACRO_CALORIE_TOLERANCE = 50; // Max allowed difference between stated calories and macro totals
-export const WEEKLY_BUDGET_ROUNDING_TOLERANCE = 10; // Max cal difference for calorie skewing budget validation
 
 // Nutrition adherence thresholds
 export const NUTRITION_ADHERENCE_HIT_THRESHOLD = 50; // Within 50 calories = "hit"

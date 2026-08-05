@@ -49,7 +49,7 @@ type PlanBaseline = {
  * Build DailyNutritionTargets[] from stored plan data + live training events,
  * and (for the client program view) the week's dense nutrition events.
  *
- * Shared between the coach nutrition API route (stat-band + calorie-skewing
+ * Shared between the coach nutrition API route (stat-band + weekly-total
  * targets — pass no `nutritionEvents` → weekday template) and the client portal
  * service (pass the current week's events → date-accurate, shows per-day edits
  * + notes).

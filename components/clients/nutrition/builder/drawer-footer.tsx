@@ -37,14 +37,11 @@ export function DrawerFooter() {
             onClick={handleClick}
             disabled={
               builder.isGenerating ||
-              (builder.customDayDistribution && !builder.budgetValidation?.isValid) ||
               (isCustom && !!builder.customMacrosValidationError)
             }
             title={
               isCustom && builder.customMacrosValidationError
                 ? builder.customMacrosValidationError
-                : builder.customDayDistribution && !builder.budgetValidation?.isValid
-                ? "Save your custom day distribution first, or adjust calories to match the weekly budget"
                 : undefined
             }
             className="w-full flex items-center justify-center gap-2 bg-[#0d9488] text-white text-[13.5px] font-semibold rounded-[6px] px-4 py-2.5 transition-all hover:-translate-y-px hover:shadow-[0_4px_16px_rgba(13,148,136,0.25)] hover:bg-gradient-to-br hover:from-[#0d9488] hover:to-[#0a7c72] disabled:opacity-50 disabled:pointer-events-none"
@@ -56,13 +53,11 @@ export function DrawerFooter() {
                 ? builder.hasPlan
                   ? "Regenerate with Custom Macros"
                   : "Generate with Custom Macros"
-                : builder.customDayDistribution
-                  ? "Apply Distribution & Regenerate"
-                  : builder.settingsChanged
-                    ? "Save & Regenerate Plan"
-                    : builder.hasPlan
-                      ? "Regenerate Plan"
-                      : "Generate Plan"}
+                : builder.settingsChanged
+                  ? "Save & Regenerate Plan"
+                  : builder.hasPlan
+                    ? "Regenerate Plan"
+                    : "Generate Plan"}
           </button>
 
           {!builder.client.bmr && (

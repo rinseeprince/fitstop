@@ -158,7 +158,12 @@ export async function getClientNutritionTargets(
     unitPreference: (clientData.unit_preference as UnitPreference | null) ?? undefined,
     baselineCalories: plan.baseline_calories,
     includeActivityBurn,
-    customDayDistribution: false, // No longer needed — daily targets rows ARE the distribution
+    // RETIRED FIELD, kept on the wire only. The coach-side "Custom day
+    // distribution" feature it named was deleted; nothing in this repo reads
+    // this. It still ships because GET /api/client/nutrition-plan is the React
+    // Native contract and we cannot verify from here that the app ignores it.
+    // Drop it the next time that contract is revised deliberately.
+    customDayDistribution: false,
     dailyTargets,
   };
 }

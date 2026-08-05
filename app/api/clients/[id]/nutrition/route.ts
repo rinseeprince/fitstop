@@ -111,7 +111,7 @@ export async function GET(
     const dietType = (plan.diet_type as DietType) || "balanced";
 
     // Weekday-template targets (no nutritionEvents): feed the Plans-tab stat
-    // band + calorie skewing, honoring the surplus-split toggle so they match
+    // band, honoring the surplus-split toggle so they match
     // the coach calendar.
     // trainingPlan is null on purpose, NOT an oversight. Every read of that
     // argument inside buildDailyTargetsFromPlan sits in the `else` of a
