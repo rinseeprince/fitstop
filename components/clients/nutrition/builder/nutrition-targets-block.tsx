@@ -9,21 +9,23 @@ import {
   MONO,
   SECTION_LABEL_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens";
-import type { MacroTargets } from "@/hooks/use-manual-targets";
+import type { MacroTargets, ManualDraft } from "@/hooks/use-manual-targets";
 import type { NutritionPlan } from "@/services/nutrition-service";
 
 type NutritionTargetsBlockProps = {
-  /** null when the calculator could not run — see `missing`. */
-  targets: MacroTargets | null;
+  /** What the fields show. Values may be null while the coach is mid-edit. */
+  draft: ManualDraft | null;
   /** The live auto result, kept available in manual mode for the hint line. */
   autoPlan: NutritionPlan | null;
   autoTargets: MacroTargets | null;
   manualEnabled: boolean;
   onEnableManual: (from: MacroTargets) => void;
   onRevertToAuto: () => void;
-  onCaloriesChange: (value: number) => void;
-  onMacroChange: (key: "proteinG" | "carbG" | "fatG", value: number) => void;
-  manualValidationError: string | null;
+  onFieldChange: (key: keyof ManualDraft, value: number | null) => void;
+  /** 4/4/9 over the entered macros, or null while incomplete. */
+  macroTotal: number | null;
+  caloriesMismatch: boolean;
+  onMatchMacros: () => void;
   /** `validateClientForNutrition` messages when the client lacks the data the
    *  calculator needs. Non-empty means nothing can be previewed at all. */
   missing: string[];
@@ -32,9 +34,11 @@ type NutritionTargetsBlockProps = {
 const FIELD_CLASS =
   "w-full rounded-[6px] border border-[rgba(13,148,136,0.08)] bg-white px-2 py-1.5 text-center text-[15px] font-semibold text-[#0c1a1e] transition-all read-only:bg-[#f7faf9] read-only:text-[#5a7d82] hover:border-[rgba(13,148,136,0.25)] read-only:hover:border-[rgba(13,148,136,0.08)]";
 
-function toInt(value: string): number {
+/** "" is EMPTY, not 0 — conflating them is what made these fields unwritable. */
+function parseField(value: string): number | null {
+  if (value.trim() === "") return null;
   const n = parseInt(value, 10);
-  return Number.isFinite(n) ? n : 0;
+  return Number.isFinite(n) ? n : null;
 }
 
 /**
@@ -50,15 +54,16 @@ function toInt(value: string): number {
  * as they move. "Edit manually" hands the numbers over without hiding anything.
  */
 export function NutritionTargetsBlock({
-  targets,
+  draft,
   autoPlan,
   autoTargets,
   manualEnabled,
   onEnableManual,
   onRevertToAuto,
-  onCaloriesChange,
-  onMacroChange,
-  manualValidationError,
+  onFieldChange,
+  macroTotal,
+  caloriesMismatch,
+  onMatchMacros,
   missing,
 }: NutritionTargetsBlockProps) {
   // Nothing can be calculated for this client yet. Say which data is missing
@@ -112,33 +117,14 @@ export function NutritionTargetsBlock({
       </div>
 
       <div className="grid grid-cols-4 gap-2">
-        <Field
-          label="kcal"
-          value={targets?.calories ?? 0}
-          readOnly={readOnly}
-          onChange={onCaloriesChange}
-        />
-        <Field
-          label="Protein"
-          suffix="g"
-          value={targets?.proteinG ?? 0}
-          readOnly={readOnly}
-          onChange={(v) => onMacroChange("proteinG", v)}
-        />
-        <Field
-          label="Carbs"
-          suffix="g"
-          value={targets?.carbG ?? 0}
-          readOnly={readOnly}
-          onChange={(v) => onMacroChange("carbG", v)}
-        />
-        <Field
-          label="Fat"
-          suffix="g"
-          value={targets?.fatG ?? 0}
-          readOnly={readOnly}
-          onChange={(v) => onMacroChange("fatG", v)}
-        />
+        <Field label="kcal" value={draft?.calories ?? null} readOnly={readOnly}
+          onChange={(v) => onFieldChange("calories", v)} />
+        <Field label="Protein" suffix="g" value={draft?.proteinG ?? null} readOnly={readOnly}
+          onChange={(v) => onFieldChange("proteinG", v)} />
+        <Field label="Carbs" suffix="g" value={draft?.carbG ?? null} readOnly={readOnly}
+          onChange={(v) => onFieldChange("carbG", v)} />
+        <Field label="Fat" suffix="g" value={draft?.fatG ?? null} readOnly={readOnly}
+          onChange={(v) => onFieldChange("fatG", v)} />
       </div>
 
       {/* What the calculation is doing, so the number is explicable rather than
@@ -191,16 +177,33 @@ export function NutritionTargetsBlock({
         </p>
       )}
 
-      {manualEnabled && manualValidationError && (
-        <div className="flex items-start gap-2.5 rounded-[6px] bg-[rgba(245,158,11,0.07)] p-3">
-          <AlertCircle
-            className="mt-0.5 h-3 w-3 flex-shrink-0 text-[#d97706]"
-            strokeWidth={1.5}
-          />
-          <p className="text-[11.5px] font-medium leading-[1.4] text-[#d97706]">
-            {manualValidationError}
-          </p>
-        </div>
+      {/* Passive coherence readout. NOT a block — the coach types freely and the
+          gate is at Generate. When the macros disagree with the entered calorie
+          target by more than the server tolerates, say so and offer the fix,
+          rather than silently rewriting fields as they type. */}
+      {manualEnabled && macroTotal !== null && (
+        <p className="text-[11px] leading-[1.4] text-[#93b0b4]">
+          Macros total{" "}
+          <span className={cn(MONO, caloriesMismatch ? "text-[#d97706]" : "text-[#5a7d82]")}>
+            {macroTotal.toLocaleString()}
+          </span>{" "}
+          kcal
+          {caloriesMismatch && (
+            <>
+              {" · "}
+              <button
+                type="button"
+                onClick={onMatchMacros}
+                className={cn(
+                  FOCUS_RING,
+                  "rounded-[4px] font-medium text-[#0d9488] transition-colors hover:text-[#0b7f75]"
+                )}
+              >
+                Match macros to calories
+              </button>
+            </>
+          )}
+        </p>
       )}
     </div>
   );
@@ -215,9 +218,9 @@ function Field({
 }: {
   label: string;
   suffix?: string;
-  value: number;
+  value: number | null;
   readOnly: boolean;
-  onChange: (value: number) => void;
+  onChange: (value: number | null) => void;
 }) {
   return (
     <div className="space-y-1">
@@ -226,8 +229,8 @@ function Field({
         inputMode="numeric"
         readOnly={readOnly}
         tabIndex={readOnly ? -1 : undefined}
-        value={value || ""}
-        onChange={(e) => onChange(toInt(e.target.value))}
+        value={value ?? ""}
+        onChange={(e) => onChange(parseField(e.target.value))}
         className={cn(MONO, FIELD_CLASS, FOCUS_RING)}
       />
       <p className={cn(LABEL_CLASS, "text-center")}>

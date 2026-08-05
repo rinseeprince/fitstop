@@ -20,6 +20,10 @@ type ApplyDateDialogProps = {
   description?: string;
   onApply: (effectiveFrom: string | null) => void;
   maxDate?: string;
+  /** Verb for the two actions. Defaults suit an EDIT to something that already
+   *  exists; creating a plan reads as "start", not "apply". */
+  nowLabel?: string;
+  fromLabel?: string;
 };
 
 export function ApplyDateDialog({
@@ -29,6 +33,8 @@ export function ApplyDateDialog({
   description = "Choose when the updated schedule should start. Today's existing data will be preserved if you choose a future date.",
   onApply,
   maxDate,
+  nowLabel = "Apply Now",
+  fromLabel = "Apply From Date",
 }: ApplyDateDialogProps) {
   const today = getTodayDateString();
   const [selectedDate, setSelectedDate] = useState(() => {
@@ -63,7 +69,7 @@ export function ApplyDateDialog({
             onClick={handleApplyNow}
             className="w-full flex items-center justify-center gap-2 bg-[#0d9488] text-white text-[13px] font-semibold rounded-[6px] px-4 py-2.5 transition-all hover:bg-[#0a7c72]"
           >
-            Apply Now
+            {nowLabel}
           </button>
 
           <div className="flex items-center gap-2">
@@ -86,7 +92,7 @@ export function ApplyDateDialog({
               disabled={!selectedDate || selectedDate <= today}
               className="bg-white border border-[rgba(13,148,136,0.15)] text-[#0c1a1e] text-[13px] font-medium rounded-[6px] px-4 py-2 transition-all hover:bg-[#f0f5f4] disabled:opacity-40 disabled:pointer-events-none"
             >
-              Apply From Date
+              {fromLabel}
             </button>
           </div>
         </div>

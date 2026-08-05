@@ -11,7 +11,7 @@ import {
   getActivityMultiplier,
 } from "@/utils/nutrition-helpers";
 import { addDays } from "date-fns";
-import { useManualTargets, macroCalories, type MacroTargets } from "@/hooks/use-manual-targets";
+import { useManualTargets, macroCalories, type MacroTargets, type ManualDraft } from "@/hooks/use-manual-targets";
 // A PURE module (types + one arithmetic helper, no DB imports), so the browser
 // runs the identical calculator the server does. That is what makes the preview
 // authoritative rather than an approximation.
@@ -102,9 +102,10 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
 
   const manual = useManualTargets(nutritionPlan.nutritionData);
 
-  /** What the drawer displays and what Generate posts. */
-  const displayTargets: MacroTargets | null = manual.manualEnabled
-    ? manual.manualTargets
+  /** What the four fields display. In manual mode this is the coach's draft,
+   *  whose values may be null mid-edit; in auto it is the live calculation. */
+  const displayDraft: ManualDraft | null = manual.manualEnabled
+    ? manual.manualDraft
     : autoTargets;
 
   // Activity burn toggle
@@ -207,13 +208,17 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
         };
 
         if (useManual) {
+          // Null here means incomplete or incoherent input. The footer gates on
+          // the same condition before calling, so this is a belt: never post a
+          // half-entered override.
           const t = manual.manualTargets;
+          if (!t) throw new Error(manual.manualBlockingError ?? "Enter all four targets");
           body.customMacrosEnabled = true;
           body.customProteinG = t.proteinG;
           body.customCarbG = t.carbG;
           body.customFatG = t.fatG;
-          // Always the re-totaled 4/4/9 figure, never a separately-typed
-          // number, so the server's ±50 kcal tolerance cannot trip on rounding.
+          // The re-totaled 4/4/9 figure, never a separately-typed number, so
+          // the server's ±50 kcal tolerance cannot trip on rounding.
           body.customCalories = macroCalories(t);
         }
 
@@ -257,6 +262,7 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
       client,
       settings,
       manual.manualTargets,
+      manual.manualBlockingError,
       coachNotes,
       onUpdate,
       toast,
@@ -307,7 +313,7 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
     // overwriting the typed numbers.
     autoPlan,
     autoTargets,
-    displayTargets,
+    displayDraft,
     /** null while the resolver could not run — the UI renders `missing`. */
     calcInputs,
     ...manual,

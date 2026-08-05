@@ -2,13 +2,31 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { applySurplusSplit } from "@/utils/nutrition-helpers";
+import { CUSTOM_MACRO_CALORIE_TOLERANCE } from "@/lib/constants";
 
+/** A complete set of targets — what the calculator emits and what gets saved. */
 export type MacroTargets = {
   calories: number;
   proteinG: number;
   carbG: number;
   fatG: number;
 };
+
+/**
+ * What the coach is typing. `null` means the field is EMPTY, which is a real,
+ * distinct state from 0 — conflating the two is what made the fields
+ * unwritable: clearing carbs read as "carbs = 0", which re-derived the calorie
+ * field, and thereafter every keystroke in the calorie field produced an
+ * intermediate value below the protein floor and snapped straight back.
+ */
+export type ManualDraft = {
+  calories: number | null;
+  proteinG: number | null;
+  carbG: number | null;
+  fatG: number | null;
+};
+
+type ManualField = keyof ManualDraft;
 
 /** The plan fields that tell us a stored manual override exists. */
 type ManualSeed =
@@ -22,36 +40,43 @@ type ManualSeed =
   | null
   | undefined;
 
-/** Macro calories, 4/4/9. The ONE definition — the submitted calorie total is
- *  always this, never a separately-typed number, so the server's ±50 kcal
- *  tolerance between stated calories and macro totals can never trip. */
-export function macroCalories(t: Omit<MacroTargets, "calories">): number {
+/** Macro calories, 4/4/9. */
+export function macroCalories(t: { proteinG: number; carbG: number; fatG: number }): number {
   return Math.round(t.proteinG * 4 + t.carbG * 4 + t.fatG * 9);
 }
 
+/** Narrow a draft to a complete set, or null if anything is missing/zero. */
+export function completeTargets(d: ManualDraft): MacroTargets | null {
+  if (!d.calories || !d.proteinG || !d.carbG || !d.fatG) return null;
+  return {
+    calories: d.calories,
+    proteinG: d.proteinG,
+    carbG: d.carbG,
+    fatG: d.fatG,
+  };
+}
+
 /**
- * Manual override of the calorie/macro targets, in GRAMS.
+ * Manual override of the calorie/macro targets, in grams.
  *
- * Grams rather than the old percent split because the point of the merged tab
- * is that the fields are POPULATED by the auto calculation and then edited —
- * and the calculator emits grams. A percent model would have made "override
- * what you see" mean retyping it in a different unit.
+ * **Typing never mutates another field.** The previous version re-derived the
+ * calorie total on every macro keystroke and re-split the macros on every
+ * calorie keystroke, which meant partially-entered state was continuously fed
+ * back through the arithmetic — so a coach clearing one field found the others
+ * rewritten, and could not then type a calorie target at all.
  *
- * The four fields are kept arithmetically coherent at all times:
- *   - editing a macro re-totals the calories (4/4/9)
- *   - editing the calories re-splits carbs + fat and HOLDS protein
- * Protein is the macro a coach deliberately pins (it is prescribed per kg of
- * bodyweight), so a calorie edit must never silently move it. The carb:fat
- * ratio is preserved through applySurplusSplit — the same helper the surplus
- * path uses, so "keep my split" means the same thing everywhere.
+ * Coherence is still required (the server rejects macros that disagree with the
+ * stated calories by more than the tolerance), but it is now something the
+ * coach is TOLD about and can fix with one click, not something enforced by
+ * fighting their keyboard. The gate is at Generate, per owner direction.
  */
 export function useManualTargets(seed: ManualSeed) {
   const [enabled, setEnabled] = useState(false);
-  const [targets, setTargets] = useState<MacroTargets>({
-    calories: 0,
-    proteinG: 0,
-    carbG: 0,
-    fatG: 0,
+  const [draft, setDraft] = useState<ManualDraft>({
+    calories: null,
+    proteinG: null,
+    carbG: null,
+    fatG: null,
   });
 
   // Opening the drawer on a plan that already carries a manual override starts
@@ -64,69 +89,87 @@ export function useManualTargets(seed: ManualSeed) {
   const seededRef = useRef<string | null>(null);
   useEffect(() => {
     if (!seedKey || !seed || seededRef.current === seedKey) return;
-    setTargets({
-      calories: seed.customCalories ?? 0,
-      proteinG: seed.customProteinG ?? 0,
-      carbG: seed.customCarbG ?? 0,
-      fatG: seed.customFatG ?? 0,
+    setDraft({
+      calories: seed.customCalories ?? null,
+      proteinG: seed.customProteinG ?? null,
+      carbG: seed.customCarbG ?? null,
+      fatG: seed.customFatG ?? null,
     });
     setEnabled(true);
     seededRef.current = seedKey;
   }, [seedKey, seed]);
 
-  /** Turn manual mode on, seeding from whatever the auto calculation currently
-   *  shows. Seeding from the LIVE auto result is the point: the previous hook
-   *  only hydrated from a stored custom plan, so switching to manual on an auto
-   *  plan presented a row of zeros instead of the numbers on screen. */
+  /** Turn manual mode on, seeding from whatever auto currently shows. */
   const enable = useCallback((from: MacroTargets) => {
-    setTargets(from);
+    setDraft({ ...from });
     setEnabled(true);
   }, []);
 
-  /** Discard the overrides and fall back to the live auto calculation. */
   const revertToAuto = useCallback(() => {
     setEnabled(false);
     seededRef.current = null;
   }, []);
 
-  const setMacro = useCallback((key: "proteinG" | "carbG" | "fatG", value: number) => {
-    setTargets((prev) => {
-      const next = { ...prev, [key]: Math.max(0, Math.round(value)) };
-      return { ...next, calories: macroCalories(next) };
-    });
+  /** Sets ONLY the field being edited. No cross-field derivation. */
+  const setField = useCallback((key: ManualField, value: number | null) => {
+    setDraft((prev) => ({
+      ...prev,
+      [key]: value == null ? null : Math.max(0, Math.round(value)),
+    }));
   }, []);
 
-  const setCalories = useCallback((value: number) => {
-    setTargets((prev) => {
-      const calories = Math.max(0, Math.round(value));
+  /**
+   * Explicitly rebalance carbs + fat so the macros match the entered calories,
+   * holding protein. Offered as an action rather than applied automatically —
+   * it is destructive to two fields, so the coach asks for it.
+   */
+  const matchMacrosToCalories = useCallback(() => {
+    setDraft((prev) => {
+      if (!prev.calories || !prev.proteinG) return prev;
+      // A degenerate 0:0 carb:fat ratio would make the split meaningless, so
+      // fall back to an even carb:fat calorie split in that case.
       const { carbsG, fatG } = applySurplusSplit(
-        calories,
+        prev.calories,
         prev.proteinG,
-        prev.carbG,
-        prev.fatG,
-        false // keep the existing carb:fat ratio; never re-derive from diet type
+        prev.carbG || 1,
+        prev.fatG || 1,
+        false
       );
-      const next = { ...prev, carbG: Math.max(0, carbsG), fatG: Math.max(0, fatG) };
-      // Re-total rather than trusting the typed number: the gram values are
-      // rounded, so 4/4/9 over them is the figure that will actually be stored.
-      return { ...next, calories: macroCalories(next) };
+      return { ...prev, carbG: Math.max(0, carbsG), fatG: Math.max(0, fatG) };
     });
   }, []);
 
-  const validationError =
-    targets.calories <= 0
-      ? "Enter a calorie target greater than 0"
-      : targets.proteinG <= 0 || targets.carbG <= 0 || targets.fatG <= 0
-        ? "Protein, carbs and fat must each be greater than 0"
+  const complete = completeTargets(draft);
+  const macroTotal = complete ? macroCalories(complete) : null;
+  const caloriesMismatch =
+    complete !== null && macroTotal !== null
+      ? Math.abs(complete.calories - macroTotal) > CUSTOM_MACRO_CALORIE_TOLERANCE
+      : false;
+
+  /**
+   * Why this set of targets cannot be saved — evaluated continuously but
+   * SURFACED only when the coach presses Generate (see the drawer footer).
+   * Typing is never blocked.
+   */
+  const manualBlockingError = !enabled
+    ? null
+    : complete === null
+      ? "Enter calories, protein, carbs and fat — all four are required"
+      : caloriesMismatch
+        ? `Macros total ${macroTotal!.toLocaleString()} kcal, which does not match the ${complete.calories.toLocaleString()} kcal target`
         : null;
 
   return {
     manualEnabled: enabled,
-    manualTargets: targets,
-    manualValidationError: validationError,
+    manualDraft: draft,
+    /** Complete + coherent targets, or null. What Generate posts. */
+    manualTargets: caloriesMismatch ? null : complete,
+    manualMacroTotal: macroTotal,
+    manualCaloriesMismatch: caloriesMismatch,
+    manualBlockingError,
     enableManualTargets: enable,
     revertToAuto,
-    setManualMacro: setMacro,
-    setManualCalories: setCalories,
+    setManualField: setField,
+    matchMacrosToCalories,
   };
 }
