@@ -151,6 +151,36 @@ different fields rather than rewriting call sites.
 
 ---
 
+## Reading order for every phase
+
+Each phase prompt points here. Read these in order before planning.
+
+**1. `CONVENTIONS.md` — in full, mandatory.** It declares itself mandatory
+reading, but **there is no `CLAUDE.md` in this repo**, so nothing loads it for
+you automatically. It is the authority on repo patterns: §1 no band-aid fixes,
+§2 plan-before-code and scope discipline, §7 SWR for all new data fetching
+(directly governs the Phase 1 hook and provider), plus the service-layer and
+migration rules. 644 lines.
+
+**2. `docs/UNITS-CANONICALIZATION-PLAN.md` — this file.** The decision section
+and your phase.
+
+**3. `docs/ARCHITECTURE.md` — for system shape ONLY. Its unit claims are wrong
+at HEAD.** Read it to understand the service layer, the events-as-SOT model and
+the client API surface. Do **not** treat any of the following as current state —
+this plan supersedes all four:
+
+| Line | Claims | Actually |
+|---|---|---|
+| 74 | `resolveEffectiveGoal()` is "the **one** place display-unit goal weights are normalized to kg" | Two other live sites do it independently: `hooks/use-nutrition-plan.ts:139` and `hooks/use-nutrition-builder.ts:287`. Rewiring only the resolver leaves both behind. |
+| 422 | "Clients render weights in the user's own unit preference via `formatWeight(weightKg, unitPreference)`" | `formatWeight` has three call sites, all coach-facing nutrition banners. **Zero** in `components/client-portal/**`. |
+| 453 | `PATCH /api/client/settings` accepts `weight_unit`, `unit_preference`, `reminder_preferences`, `timezone` | The schema (`lib/validations/client.ts:107-112`) accepts only `unitPreference` and `timezone`. `weight_unit` is derived server-side; `reminder_preferences` is a different endpoint. |
+| 422, 484 | Viewer-relative units are "planned Phase 8 work" | Phase 8 is superseded by this plan. Those references are dangling. |
+
+Phase 4 corrects these lines. Until then, treat them as known-false.
+
+---
+
 ## Phase overview
 
 | Phase | Delivers | Touches | Risk |
@@ -198,7 +228,14 @@ Phase 3 deletes their call sites).
 ### Pasteable prompt
 
 ```
-Read docs/UNITS-CANONICALIZATION-PLAN.md, then implement Phase 1 only.
+Read first, in this order: CONVENTIONS.md in full (it is mandatory and there is
+no CLAUDE.md in this repo, so nothing loads it for you — §7 "SWR for all new data
+fetching" governs the hook and provider below), then
+docs/UNITS-CANONICALIZATION-PLAN.md including its "Reading order for every phase"
+section, which tells you how to treat docs/ARCHITECTURE.md. Several of that
+file's unit claims are wrong at HEAD and must not be trusted as current state.
+
+Then implement Phase 1 only.
 
 Goal: build the unit-conversion foundation. Change no existing behaviour and no
 existing render path.
@@ -320,8 +357,17 @@ tags, in the same migration.
 ### Pasteable prompt
 
 ```
-Read docs/UNITS-CANONICALIZATION-PLAN.md, then implement Phase 2 only. Phase 1 is
-already merged, so utils/unit-conversions.ts and coaches.unit_preference exist.
+Read first, in this order: CONVENTIONS.md in full (it is mandatory and there is
+no CLAUDE.md in this repo, so nothing loads it for you — note its service-layer
+and migration rules), then docs/UNITS-CANONICALIZATION-PLAN.md including its
+"Reading order for every phase" section, which tells you how to treat
+docs/ARCHITECTURE.md. Several of that file's unit claims are wrong at HEAD. One
+matters directly to this phase: line 74 says resolveEffectiveGoal is "the one
+place" goal weights are normalized to kg. It is not — hooks/use-nutrition-plan.ts:139
+and hooks/use-nutrition-builder.ts:287 do it too, and both must be removed here.
+
+Then implement Phase 2 only. Phase 1 is already merged, so
+utils/unit-conversions.ts and coaches.unit_preference exist.
 
 Goal: convert every stored weight to kilograms and every stored length to
 centimetres, then drop the per-row and per-client unit-tag columns. Update every
@@ -431,10 +477,19 @@ this list.
 ### Pasteable prompt
 
 ```
-Read docs/UNITS-CANONICALIZATION-PLAN.md, then implement Phase 3 only. Phases 1
-and 2 are merged: all stored weights are kilograms, all stored lengths are
-centimetres, the unit-tag columns are gone, and utils/unit-conversions.ts plus
-the UnitsProvider/useUnits() context exist.
+Read first, in this order: CONVENTIONS.md in full (it is mandatory and there is
+no CLAUDE.md in this repo, so nothing loads it for you — note §2 scope discipline
+and "one fix per change", which matter for a sweep this wide), then
+docs/UNITS-CANONICALIZATION-PLAN.md including its "Reading order for every phase"
+section, which tells you how to treat docs/ARCHITECTURE.md. Several of that
+file's unit claims are wrong at HEAD. One matters directly to this phase: lines
+422 and 484 claim the client portal already renders weights via formatWeight. It
+does not — formatWeight has three call sites, all coach-facing nutrition banners,
+and zero in components/client-portal/**. Do not let that claim shrink your sweep.
+
+Then implement Phase 3 only. Phases 1 and 2 are merged: all stored weights are
+kilograms, all stored lengths are centimetres, the unit-tag columns are gone, and
+utils/unit-conversions.ts plus the UnitsProvider/useUnits() context exist.
 
 Goal: make every unit-bearing value render through formatWeight/formatLength
 using the viewer's preference. No component may invent or hardcode a unit label.
@@ -532,17 +587,35 @@ accepts input in the viewer's unit while storing kg/cm.
 - **Dead code.** `lib/validations/nutrition.ts:68-70` (`updateUnitPreferenceSchema`)
   has zero references — delete it.
 
-**Finally**: add a `## Units` section to `CONVENTIONS.md` stating the rule —
-storage is kg/cm, preference is per-viewer, all rendering goes through
-`utils/unit-conversions.ts`, no unit literal in JSX. That is the guard that stops
-this regressing.
+**Finally, the docs.** Two jobs, both in scope:
+
+- Add a `## Units` section to `CONVENTIONS.md` stating the rule — storage is
+  kg/cm, preference is per-viewer, all rendering goes through
+  `utils/unit-conversions.ts`, no unit literal in JSX, and which helper applies
+  to which kind of value. That is the guard that stops this regressing.
+- **Correct `docs/ARCHITECTURE.md` lines 74, 422, 453 and 484.** They are wrong
+  today (see "Reading order for every phase") and will be wrong in a *new* way
+  once this ships: `formatWeight`'s signature changes, the `weight_unit` columns
+  no longer exist, and the "Phase 8, not yet built" references dangle. This is
+  not deferrable doc reconciliation — it is part of finishing the job.
+
+Still deferred: reconciling `docs/CLIENT-PORTAL-REDESIGN.md:260-338` and the
+Phase 8 sessions in `docs/CLIENT-PORTAL-EXECUTION-PLAN.md`, which this plan
+supersedes wholesale.
 
 ### Pasteable prompt
 
 ```
-Read docs/UNITS-CANONICALIZATION-PLAN.md, then implement Phase 4 only — the final
-phase. Phases 1-3 are merged: storage is canonical kg/cm, utils/unit-conversions.ts
-and the UnitsProvider exist, and every render path already converts through them.
+Read first, in this order: CONVENTIONS.md in full (it is mandatory and there is
+no CLAUDE.md in this repo, so nothing loads it for you), then
+docs/UNITS-CANONICALIZATION-PLAN.md including its "Reading order for every phase"
+section. That section lists four wrong unit claims in docs/ARCHITECTURE.md
+(lines 74, 422, 453, 484) — this phase is where you correct them, so read it
+carefully and treat the table there as your punch list.
+
+Then implement Phase 4 only — the final phase. Phases 1-3 are merged: storage is
+canonical kg/cm, utils/unit-conversions.ts and the UnitsProvider exist, and every
+render path already converts through them.
 
 Goal: let a coach and a client each set their own unit preference, and make every
 form accept input in the viewer's unit while storing kg/cm.
@@ -580,6 +653,12 @@ Deliver:
    literal belongs in JSX, and which helper applies to which kind of value
    (formatLoad for barbell loads and why it snaps, formatWeight for body weight,
    formatHeight for height, formatLength for girths).
+8. Correct docs/ARCHITECTURE.md lines 74, 422, 453 and 484. They are wrong today
+   and will be wrong differently after this ships — formatWeight's signature
+   changes, the weight_unit columns are gone, and the "Phase 8, not yet built"
+   references dangle. The table in the plan's "Reading order for every phase"
+   section is your punch list. Leave docs/CLIENT-PORTAL-REDESIGN.md alone; that
+   reconciliation stays deferred.
 
 Follow docs/newdesignsystem.md for the settings UI and import its shared
 components and tokens rather than hand-rolling them.
