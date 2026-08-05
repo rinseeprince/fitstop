@@ -181,87 +181,6 @@ Phase 4 corrects these lines. Until then, treat them as known-false.
 
 ---
 
-## How this gets verified
-
-Every phase prompt says "show me a plan and wait for my approval." Treat that as
-a checkpoint for *scope and intent* — is it about to do roughly the right thing,
-in the right phase — not as a correctness audit. Nobody is expected to eyeball a
-migration and spot a wrong conversion.
-
-Correctness is carried by three things that need no judgement call:
-
-1. **Objective gates.** `tsc --noEmit`, `eslint`, `vitest`, `check:labels`,
-   `check:rls`. They pass or they fail.
-2. **Range-check queries** (below). A unit conversion that runs the wrong way is
-   never subtly wrong — it is off by 2.2x, which puts the value outside the range
-   a human body or a barbell can occupy. These queries return **0 rows when
-   correct**. Any output at all means stop.
-3. **Recoverability.** Phase 2 is the only step that destroys information, and it
-   is deliberately split so that it can be redone — see below.
-
-Backstop: every account is a test account, and `scripts/seed/teardown.ts` +
-`scripts/seed/generate.ts` can rebuild the dataset from scratch. Nothing here is
-one-way.
-
-### The Phase 2 split
-
-The dangerous move is dropping the unit-tag columns, because once they are gone a
-mis-converted value cannot be re-derived. So Phase 2 ships **two migrations with
-a verification gate between them**, in one session:
-
-- **Migration A** converts every value to kg/cm and **keeps every tag column**.
-  If the conversion was wrong, the tags are still there and it can be redone.
-- **Then stop.** Run the range checks. They must return zero rows.
-- **Migration B** drops the tag columns — only after A is proven.
-
-Do not let a session collapse these into one migration, however tidy that looks.
-
-### Range checks — run after Migration A
-
-Each should return **0 rows**. Run with `npx supabase db query --linked`.
-
-```sql
--- Weights outside what an adult human can be (kg).
--- Too low = a kg value was converted again as if it were lbs.
--- Too high = an lbs value was never converted.
-SELECT id, current_weight, starting_weight, goal_weight FROM clients
-WHERE current_weight  NOT BETWEEN 30 AND 250
-   OR starting_weight NOT BETWEEN 30 AND 250
-   OR goal_weight     NOT BETWEEN 30 AND 250;
-
-SELECT id, weight FROM check_ins    WHERE weight NOT BETWEEN 30 AND 250;
-SELECT id, weight FROM body_metrics WHERE weight NOT BETWEEN 30 AND 250;
-SELECT id, goal_weight FROM client_goals WHERE goal_weight NOT BETWEEN 30 AND 250;
-SELECT id, value FROM client_metric_entries
-WHERE metric_key = 'weight' AND value NOT BETWEEN 30 AND 250;
-
--- Heights outside human range (cm). 70 here means inches were left unconverted.
-SELECT id, height FROM clients WHERE height NOT BETWEEN 100 AND 250;
-
--- Girths outside plausible range (cm).
-SELECT id FROM check_ins
-WHERE waist NOT BETWEEN 10 AND 200 OR hips  NOT BETWEEN 10 AND 200
-   OR chest NOT BETWEEN 10 AND 200 OR arms  NOT BETWEEN 10 AND 200
-   OR thighs NOT BETWEEN 10 AND 200;
-
--- Cross-check against a column that was ALREADY kg before this work.
--- Any client whose new current_weight disagrees badly with the kg snapshot
--- their nutrition plan was built from is a conversion failure.
-SELECT c.id, c.current_weight, np.base_weight_kg
-FROM clients c JOIN nutrition_plans np ON np.client_id = c.id
-WHERE abs(c.current_weight - np.base_weight_kg) > 25;
-```
-
-The last one is the strongest check: `nutrition_plans.base_weight_kg` was
-canonical kg *before* any of this work, so it is an independent witness.
-
-A barbell-load equivalent is deliberately omitted — plausible loads (60 kg,
-132 lb) overlap too much for a range check to be meaningful. Loads are verified
-in the Phase 4 browser smoke instead, by reading a known prescription back in
-both units.
-
----
-
 ## Phase overview
 
 | Phase | Delivers | Touches | Risk |
@@ -463,24 +382,11 @@ not need to be reversible. Convert correctly where a unit tag exists and
 best-effort where it does not.
 
 Deliver:
-1. TWO migrations, not one, with a verification gate between them. This is
-   deliberate and not negotiable — see "The Phase 2 split" in the plan.
-   - Migration A (next number after 140): convert every value to kg/cm using the
-     tag columns, and KEEP every tag column. Use 0.45359237 and 2.54. Also flip
-     clients.unit_preference to DEFAULT 'metric' here (the existing 'imperial'
-     default is backwards — 206 of 208 Dev clients are kg); change only the
-     default, not existing row values.
-   - STOP after A is applied. Give me the range-check queries from the plan to
-     run. They must all return zero rows. Do not write Migration B until I have
-     confirmed that.
-   - Migration B: drop the tag columns (clients.weight_unit, clients.height_unit,
-     check_ins.weight_unit, check_ins.measurement_unit, body_metrics.weight_unit,
-     exercise_logs.weight_unit, check_in_exercise_highlights.weight_unit,
-     client_intake.weight_unit, client_intake.height_unit).
-
-   Do NOT collapse these into one migration even though it would be tidier. Once
-   the tags are dropped a mis-converted value cannot be re-derived, and I cannot
-   audit the conversion by reading it.
+1. One migration (next sequential number after 140) that converts values FIRST
+   using the tag columns, then drops the tag columns. Use 0.45359237 and 2.54.
+   In the same migration, flip clients.unit_preference to DEFAULT 'metric' — the
+   existing 'imperial' default is backwards for this platform (206 of 208 Dev
+   clients are kg). Leave existing row values alone; only the default changes.
 2. Every write path updated to store kg/cm: services/client-service.ts,
    services/client-check-in-service.ts, services/check-in-service.ts,
    services/body-metrics-service.ts, services/metric-entries-service.ts,
@@ -499,14 +405,9 @@ the UI to show kg numbers under stale labels after this phase; that is correct
 and expected.
 
 Process: show me a plan and wait for my approval before editing any file. I run
-`npx supabase db push` myself — when each migration is ready, stop and tell me to
+`npx supabase db push` myself — when the migration is ready, stop and tell me to
 run it, then regenerate types/database.ts and commit the migration and types
 together. Commit directly to main; do not create a branch.
-
-I am not able to audit SQL conversion logic by reading it, so do not rely on my
-approval as a correctness check — rely on the two-migration split and the range
-checks. If you are unsure whether a table's values are already canonical, say so
-explicitly rather than guessing; the intake trap in the plan is exactly that case.
 
 Gates before committing: rm -rf .next && npx tsc --noEmit, npm run lint,
 npx vitest run, npm run check:rls. The set-tracker test is known to be flaky in
