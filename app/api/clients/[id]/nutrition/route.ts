@@ -1,15 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getClientById } from "@/services/client-service";
 import {
-  getTrainingPlanIdForDate,
+  getTrainingPlanSummaryForDate,
   getNextFutureTrainingPlan,
 } from "@/services/training-service";
-import { getEventsForDateRange } from "@/services/training-event-service";
-import { getTrainingWeekStart, getTrainingWeekEnd } from "@/lib/date-helpers";
-import {
-  getCoachTodayString,
-  getClientTodayString,
-} from "@/services/today-service";
+import { getClientTodayString } from "@/services/today-service";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
@@ -18,9 +13,8 @@ import {
   nutritionPlanSchema,
   nutritionSettingsPatchSchema,
 } from "@/lib/validations/nutrition";
-import { buildDailyTargetsFromPlan } from "@/utils/build-daily-targets";
 import type { ClientUpdate } from "@/lib/database-helpers";
-import type { DietType, GenerateNutritionPlanRequest } from "@/types/check-in";
+import type { GenerateNutritionPlanRequest } from "@/types/check-in";
 import {
   orchestrateNutritionPlanCreation,
   orchestrateNutritionPlanDeletion,
@@ -35,7 +29,9 @@ import { recordAuditEvent } from "@/services/audit-log-service";
 import { AUDIT_ACTIONS } from "@/lib/constants";
 
 /**
- * GET: Return the active nutrition plan + daily targets for the coach view.
+ * GET: Return the active nutrition plan's baseline targets + calculator
+ * settings for the coach view. Per-day targets are NOT here — they live on
+ * nutrition_events and the calendar reads them directly.
  */
 export async function GET(
   request: NextRequest,
@@ -62,19 +58,14 @@ export async function GET(
 
     const includeActivityBurn = client.includeActivityBurn ?? true;
 
-    // Two different calendars, deliberately. The week window below is
-    // COACH-local ("current week" in the coach's view); `hasTrainingPlan` must be
-    // CLIENT-local because it mirrors GET /training, whose plan resolution is
+    // CLIENT-local, because it mirrors GET /training, whose plan resolution is
     // client-local — the two ladders differ (client tz -> coach tz -> UTC vs
     // coach tz -> UTC) and would disagree across a date boundary.
-    const [today, clientToday] = await Promise.all([
-      getCoachTodayString(coachId),
-      getClientTodayString(clientId),
-    ]);
+    const clientToday = await getClientTodayString(clientId);
 
     // hasTrainingPlan replaces a whole 210 kB GET /training round trip that the
     // nutrition tab fired purely to ask "does a plan exist?". It reproduces that
-    // route's `plan: activePlan ?? nextFullPlan` predicate using the id-only
+    // route's `plan: activePlan ?? nextFullPlan` predicate using the summary
     // lookups, so no sessions or exercises are hydrated on either side. It rides
     // alongside the active-plan read because neither depends on the other, and it
     // must be resolved BEFORE the no-plan early return — the tab's training
@@ -82,7 +73,7 @@ export async function GET(
     // `getCurrentGoals` is hoisted into this batch from below: the drift check
     // needs it AND the calc-input resolver needs it, so fetching it once here
     // costs one query instead of two and removes a sequential hop.
-    const [planResult, activePlanId, nextPlan, currentGoals] = await Promise.all([
+    const [planResult, activePlan, nextPlan, currentGoals] = await Promise.all([
       supabaseAdmin
         .from("nutrition_plans")
         .select("*")
@@ -91,12 +82,18 @@ export async function GET(
         .order("effective_from", { ascending: false })
         .limit(1)
         .maybeSingle(),
-      getTrainingPlanIdForDate(clientId, clientToday),
+      getTrainingPlanSummaryForDate(clientId, clientToday),
       getNextFutureTrainingPlan(clientId, clientToday),
       getCurrentGoals(clientId),
     ]);
     const plan = planResult.data;
-    const hasTrainingPlan = Boolean(activePlanId ?? nextPlan);
+    const hasTrainingPlan = Boolean(activePlan ?? nextPlan);
+
+    // `nutrition_plans.name` is never written, so the Plans-tab hero titles
+    // itself with the program the client is on — the same "which block is this"
+    // question a phase name will answer once phases ship. Same predicate as
+    // hasTrainingPlan: the running program, else the queued one.
+    const trainingPlanName = activePlan?.name ?? nextPlan?.name ?? null;
 
     // The exact inputs the plan POST will calculate from, sent to the browser so
     // the builder can preview a plan live as the coach moves a picker — same
@@ -125,45 +122,18 @@ export async function GET(
         success: true,
         hasPlan: false,
         hasTrainingPlan,
+        trainingPlanName,
         calcInputs,
       });
     }
 
-    const weekStart = getTrainingWeekStart(today);
-    const weekEnd = getTrainingWeekEnd(today);
-
-    // Daily targets need plan.id; the events read does not. One stage, not two.
-    const [dailyTargetsResult, trainingEvents] = await Promise.all([
-      supabaseAdmin
-        .from("nutrition_plan_daily_targets")
-        .select("*")
-        .eq("nutrition_plan_id", plan.id),
-      getEventsForDateRange(clientId, weekStart, weekEnd),
-    ]);
-    const dailyTargetRows = dailyTargetsResult.data;
-    const dietType = (plan.diet_type as DietType) || "balanced";
-
-    // Weekday-template targets (no nutritionEvents): feed the Plans-tab stat
-    // band, honoring the surplus-split toggle so they match
-    // the coach calendar.
-    // trainingPlan is null on purpose, NOT an oversight. Every read of that
-    // argument inside buildDailyTargetsFromPlan sits in the `else` of a
-    // `trainingEvents ? … : …` guard, and getEventsForDateRange always returns an
-    // array (`(data ?? []).map(…)`, throwing rather than returning null) — and an
-    // empty array is truthy. So the plan branch is unreachable from this route,
-    // and hydrating a whole multi-week program here only to discard it cost four
-    // queries and three critical-path hops per request. The plan branch stays
-    // live for the client-portal caller, so do NOT delete it from the util; if
-    // this route ever stops passing trainingEvents, restore the plan fetch too.
-    const dailyTargets = buildDailyTargetsFromPlan(
-      plan,
-      dailyTargetRows,
-      null,
-      includeActivityBurn,
-      dietType,
-      client.surplusAsCarbs ?? false,
-      trainingEvents
-    );
+    // No weekday-template targets are built here any more. This route used to
+    // read nutrition_plan_daily_targets + a week of training_events and collapse
+    // them into a 7-row `dailyTargets` projection, purely to feed the Plans-tab
+    // stat band. That band is gone — the Plans hero now names the program and
+    // the calendar owns per-day targets — so the two queries had no reader.
+    // Per-day truth lives on nutrition_events (events-as-SOT); the client
+    // portal builds its own date-accurate targets in client-portal-service.
 
     // Goal-drift flag (Session 7.8): does the goal that drives the client NOW
     // (effective-goal resolver) differ from the snapshot this active plan was
@@ -210,9 +180,13 @@ export async function GET(
       proteinTargetGPerKg: Number(plan.protein_target_g_per_kg),
       includeActivityBurn,
       effectiveFrom: plan.effective_from,
-      dailyTargets,
+      // Queued-not-running, resolved SERVER-side against the client's today the
+      // way GET /training resolves its own `scheduledFor`. The browser must not
+      // make this call: its local date can differ from the client's by a day.
+      scheduledFor: plan.effective_from > clientToday ? plan.effective_from : null,
       goalChanged,
       hasTrainingPlan,
+      trainingPlanName,
       calcInputs,
     });
   } catch (error) {

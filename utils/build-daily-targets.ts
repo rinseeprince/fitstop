@@ -49,10 +49,19 @@ type PlanBaseline = {
  * Build DailyNutritionTargets[] from stored plan data + live training events,
  * and (for the client program view) the week's dense nutrition events.
  *
- * Shared between the coach nutrition API route (stat-band + weekly-total
- * targets — pass no `nutritionEvents` → weekday template) and the client portal
- * service (pass the current week's events → date-accurate, shows per-day edits
- * + notes).
+ * ONE production caller: `services/client-portal-service.ts`, which passes the
+ * current week's events → date-accurate, showing per-day edits + notes. The
+ * coach nutrition route used to be the second caller (passing no
+ * `nutritionEvents`, so it got a weekday template) to feed the Plans-tab stat
+ * band; that band is gone and the route no longer builds targets at all.
+ *
+ * A consequence worth stating plainly, because two comments used to claim the
+ * opposite: the `trainingPlan` parameter is dead weight. Every read of it sits
+ * in the `else` of a `trainingEvents ? … : …` guard, and the sole caller passes
+ * `trainingEvents` from `getEventsForDateRange`, which always returns an array
+ * — and `[]` is truthy. Only `build-daily-targets.test.ts` still exercises that
+ * branch. Removing the parameter is a separate change; do not "fix" it by
+ * asserting the branch is live.
  *
  * The surplus-split policy is unified with the coach calendar:
  *   - event-present days reuse `mapNutritionEventToDisplayTarget` (parity by

@@ -120,6 +120,39 @@ export const getTrainingPlanIdForDate = async (
   return data?.id ?? null;
 };
 
+/**
+ * The same lookup as getTrainingPlanIdForDate, one column wider.
+ *
+ * A sibling rather than a widened signature: getTrainingPlanIdForDate is typed
+ * `string | null` and getActiveTrainingPlanId below depends on that.
+ * Deliberately NOT getTrainingPlanForDate — that one is `select("*")`
+ * plus fetchSessionsWithExercises, the ~210 kB payload the coach nutrition tab
+ * was rewritten to stop fetching.
+ */
+export const getTrainingPlanSummaryForDate = async (
+  clientId: string,
+  date: string
+): Promise<{ id: string; name: string } | null> => {
+  const { data, error } = await coversDate(
+    supabaseAdmin
+      .from("training_plans")
+      .select("id, name")
+      .eq("client_id", clientId)
+      .is("deleted_at", null)
+      .neq("status", "archived"),
+    date
+  )
+    .order("effective_from", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to fetch training plan summary for date: ${error.message}`);
+  }
+  return data ? { id: data.id, name: data.name } : null;
+};
+
 /** The columns every consumer of the future-plan predicate needs. */
 export type NextFutureTrainingPlan = {
   id: string;

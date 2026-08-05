@@ -56,7 +56,7 @@ export function NutritionPlanBuilder({ client, onUpdate }: NutritionPlanBuilderP
               />
             </ErrorBoundary>
             <ErrorBoundary>
-              <NutritionCalendarMount onRegenerate={() => setDrawerOpen(true)} />
+              <NutritionCalendarMount />
             </ErrorBoundary>
           </div>
         )}
@@ -107,7 +107,7 @@ function TopContentBar({
  * there are no events, so it shows the empty month grid under the hero CTA
  * (the training tab's no-plan pattern), with the Delete-plan trigger hidden.
  */
-function NutritionCalendarMount({ onRegenerate }: { onRegenerate: () => void }) {
+function NutritionCalendarMount() {
   const builder = useNutritionBuilderContext();
   const { toast } = useToast();
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
@@ -152,7 +152,6 @@ function NutritionCalendarMount({ onRegenerate }: { onRegenerate: () => void }) 
         includeActivityBurn={builder.includeActivityBurn}
         surplusAsCarbs={builder.surplusAsCarbs}
         onUpdate={() => builder.refetchNutrition()}
-        onRegenerate={builder.hasPlan ? onRegenerate : undefined}
         onDeletePlan={builder.hasPlan ? () => setDeleteOpen(true) : undefined}
       />
       <DeleteNutritionPlanDialog

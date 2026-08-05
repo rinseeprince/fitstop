@@ -6,7 +6,6 @@ import {
   ChevronRight,
   Loader2,
   Pencil,
-  RefreshCw,
   Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -23,8 +22,6 @@ type NutritionCalendarToolbarProps = {
   isLoading: boolean;
   editMode: boolean;
   onEditModeChange: (editMode: boolean) => void;
-  /** When provided, renders the Regenerate-plan trigger (between edit and delete). */
-  onRegenerate?: () => void;
   /** When provided, renders the Delete-plan trigger (always rightmost). */
   onDeletePlan?: () => void;
 };
@@ -32,8 +29,10 @@ type NutritionCalendarToolbarProps = {
 // The calendar's control line IS the divider — same voice as the training
 // calendar's toolbar: month nav sits on the left (where a section label would),
 // the hairline runs the middle, and the icon actions right-align. Edit mode is
-// a pencil/check icon toggle; Regenerate sits between it and Delete-plan,
-// which stays rightmost in both modes (destructive-rightmost rail rule).
+// a pencil/check icon toggle; Delete-plan stays rightmost in both modes
+// (destructive-rightmost rail rule). Regenerate is NOT here — it is the Plans
+// hero's primary action, and a rail icon duplicating it made the same gesture
+// available twice with different weight.
 export function NutritionCalendarToolbar({
   monthLabel,
   onPrevMonth,
@@ -42,7 +41,6 @@ export function NutritionCalendarToolbar({
   isLoading,
   editMode,
   onEditModeChange,
-  onRegenerate,
   onDeletePlan,
 }: NutritionCalendarToolbarProps) {
   return (
@@ -106,16 +104,6 @@ export function NutritionCalendarToolbar({
             className="rounded p-1 text-[#93b0b4] transition-colors hover:text-[#0d9488]"
           >
             <Pencil className="h-3.5 w-3.5" strokeWidth={1.5} />
-          </button>
-        )}
-        {onRegenerate && (
-          <button
-            onClick={onRegenerate}
-            aria-label="Regenerate plan"
-            title="Regenerate plan"
-            className="rounded p-1 text-[#93b0b4] transition-colors hover:text-[#0d9488]"
-          >
-            <RefreshCw className="h-3.5 w-3.5" strokeWidth={1.5} />
           </button>
         )}
         {onDeletePlan && (

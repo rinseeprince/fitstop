@@ -12,9 +12,10 @@ vi.mock('@/services/nutrition-service', () => ({
 
 vi.mock('@/services/training-service', () => ({
   getActiveTrainingPlan: vi.fn().mockResolvedValue(null),
-  // GET reads these two for `hasTrainingPlan`; POST/DELETE never call them, but
-  // the factory must still declare the module's full imported surface.
-  getTrainingPlanIdForDate: vi.fn().mockResolvedValue(null),
+  // GET reads these two for `hasTrainingPlan` + the hero's title; POST/DELETE
+  // never call them, but the factory must still declare the module's full
+  // imported surface.
+  getTrainingPlanSummaryForDate: vi.fn().mockResolvedValue(null),
   getNextFutureTrainingPlan: vi.fn().mockResolvedValue(null),
 }))
 
@@ -64,10 +65,6 @@ vi.mock('@/lib/validations/nutrition', () => ({
 
 vi.mock('@/utils/nutrition-helpers', () => ({
   weightToKg: vi.fn((w: number) => w * 0.453592),
-}))
-
-vi.mock('@/utils/build-daily-targets', () => ({
-  buildDailyTargetsFromPlan: vi.fn(),
 }))
 
 vi.mock('@/services/nutrition-plan-service', () => ({

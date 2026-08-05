@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
 import type { Client, UnitPreference, DietType, ActivityLevel } from "@/types/check-in";
-import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
 import type { GoalDrift } from "@/lib/goals/detect-goal-drift";
 import type { NutritionCalcInputs } from "@/services/nutrition-calc-inputs";
 import {
@@ -39,13 +38,21 @@ type NutritionTargetsData = {
   calcInputs?: NutritionCalcInputs | null;
   includeActivityBurn: boolean;
   effectiveFrom?: string;
-  dailyTargets?: DailyNutritionTargets[];
+  /** Set only when the plan's window opens AFTER the client's today — i.e. the
+   *  plan is queued, not running. Resolved server-side (the browser's local date
+   *  can differ from the client's), mirroring GET /training's field of the same
+   *  name. */
+  scheduledFor?: string | null;
   goalChanged?: GoalDrift;
   /** Does a training plan cover today, or start after it? Mirrors GET /training's
    *  `plan: activePlan ?? nextFullPlan`, so the tab no longer fetches that
    *  210 kB payload just to test it for truthiness. Present on both the
    *  has-plan and no-plan responses. */
   hasTrainingPlan?: boolean;
+  /** The name of that same program. Nutrition plans have no name of their own
+   *  (`nutrition_plans.name` is never written), so the Plans hero titles itself
+   *  with the program the client is on. Null when they are on none. */
+  trainingPlanName?: string | null;
 };
 
 export function useNutritionPlan({ client, onUpdate }: UseNutritionPlanProps) {
@@ -81,8 +88,6 @@ export function useNutritionPlan({ client, onUpdate }: UseNutritionPlanProps) {
   }, [client.id, refreshKey]);
 
   // Computed values
-  const baselineCalories = nutritionData?.baselineCalories ?? nutritionData?.calorieTarget;
-  const weeklyTargets = nutritionData?.dailyTargets ?? null;
   const hasPlan = !!nutritionData?.calorieTarget;
 
   // Regeneration banner: uses base_weight_kg from the active plan
@@ -96,15 +101,7 @@ export function useNutritionPlan({ client, onUpdate }: UseNutritionPlanProps) {
   // that this surface renders already comes from the nutrition payloads (the
   // TRAIN badge and per-day surplus read nutrition events' isTrainingDay).
   const hasTrainingPlan = nutritionData?.hasTrainingPlan ?? false;
-
-  const weeklyTotal = weeklyTargets
-    ? weeklyTargets.reduce((sum, day) => sum + day.calories, 0)
-    : (baselineCalories || 0) * 7;
-
-  const trainingDaysCount = weeklyTargets
-    ? weeklyTargets.filter((day) => day.isTrainingDay).length
-    : 0;
-  const restDaysCount = 7 - trainingDaysCount;
+  const trainingPlanName = nutritionData?.trainingPlanName ?? null;
 
   // Unit preference handler
   const handleUnitChange = useCallback(
@@ -163,14 +160,11 @@ export function useNutritionPlan({ client, onUpdate }: UseNutritionPlanProps) {
     // its loading state is the nutrition one — there is no second request to
     // wait on. Name kept for the two consumers that already read it.
     hasTrainingPlan,
+    trainingPlanName,
     isLoadingTrainingPlan: isLoadingNutrition,
 
     // Computed values
     showRegenerationBanner,
-    weeklyTargets,
-    weeklyTotal,
-    trainingDaysCount,
-    restDaysCount,
     weightRemaining: getWeightRemaining(),
 
     // Nutrition data from plan

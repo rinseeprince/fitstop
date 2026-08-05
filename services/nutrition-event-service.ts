@@ -285,9 +285,10 @@ export async function regenerateFutureNutritionEvents(
   // Under the current architecture training sessions live on dates (via
   // training_events), not days of week — getTrainingDays() used to read
   // session.dayOfWeek which is always null now, producing stale Mon/Tue/Thu/Fri
-  // defaults and wrong badges. All display paths now derive isTrainingDay
-  // from the actual event rows via buildDailyTargetsFromPlan, so the stored
-  // column is no longer read. The per-date `nutrition_events.is_training_day`
+  // defaults and wrong badges. Display paths now derive isTrainingDay from the
+  // actual event rows (the coach calendar reads them directly; the client
+  // program card goes through buildDailyTargetsFromPlan), so the stored column
+  // is no longer read. The per-date `nutrition_events.is_training_day`
   // written below by generateNutritionEvents remains the source of truth.
 
   await generateNutritionEvents(

@@ -59,10 +59,8 @@ type NutritionCalendarViewProps = {
   includeActivityBurn: boolean;
   /** How a training-day surplus distributes across macros. */
   surplusAsCarbs: boolean;
-  /** Refetch the surrounding builder (stat band) after an edit. */
+  /** Refetch the surrounding builder after an edit. */
   onUpdate: () => void;
-  /** Renders the toolbar's Regenerate-plan trigger when provided. */
-  onRegenerate?: () => void;
   /** Renders the toolbar's Delete-plan trigger when provided. */
   onDeletePlan?: () => void;
 };
@@ -73,7 +71,6 @@ export function NutritionCalendarView({
   includeActivityBurn,
   surplusAsCarbs,
   onUpdate,
-  onRegenerate,
   onDeletePlan,
 }: NutritionCalendarViewProps) {
   const todayDate = getTodayDateString();
@@ -155,7 +152,6 @@ export function NutritionCalendarView({
         isLoading={isLoading}
         editMode={edit.editMode}
         onEditModeChange={(next) => (next ? edit.setEditMode(true) : edit.exitEdit())}
-        onRegenerate={onRegenerate}
         onDeletePlan={onDeletePlan}
       />
 
