@@ -1,9 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import { Textarea } from "@/components/ui/textarea";
-import { Info } from "lucide-react";
+import { ChevronDown, Info } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
+  FOCUS_RING,
   MONO_LABEL_CLASS,
   SECTION_LABEL_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens";
@@ -87,23 +89,10 @@ export function DrawerFormBody() {
 
         <Divider />
 
-        {/* Notes */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <label className={SECTION_LABEL_CLASS}>Notes</label>
-            <span className="text-[10px] text-[#93b0b4]">Optional</span>
-          </div>
-          <Textarea
-            placeholder="Why are you adjusting this plan?"
-            value={builder.coachNotes}
-            onChange={(e) => builder.setCoachNotes(e.target.value.slice(0, 500))}
-            className="resize-none bg-white border border-[rgba(13,148,136,0.08)] rounded-[6px] text-[13px] font-medium text-[#0c1a1e] placeholder:text-[#93b0b4] placeholder:font-normal focus:border-[rgba(13,148,136,0.25)] focus:shadow-[0_0_0_3px_rgba(13,148,136,0.06)] focus:ring-0 transition-all"
-            rows={3}
-          />
-          <p className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal text-right")}>
-            {builder.coachNotes.length}/500
-          </p>
-        </div>
+        <CollapsibleNotes
+          value={builder.coachNotes}
+          onChange={(v) => builder.setCoachNotes(v.slice(0, 500))}
+        />
 
         {/* Regeneration note — in-place replacement, no versioning/Plan History. */}
         {builder.hasPlan && (
@@ -116,6 +105,72 @@ export function DrawerFormBody() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Notes, collapsed by default.
+ *
+ * It opens empty every time — it describes THIS change, not the plan — so it
+ * does not deserve permanent vertical space in a 420px drawer above the pickers
+ * and targets a coach actually came here for.
+ *
+ * Hand-rolled rather than components/ui/collapsible: all three usages of that
+ * primitive are client-facing, and the established coach pattern is an
+ * `expanded &&` body behind a chevron button (program-builder/exercise-card).
+ */
+function CollapsibleNotes({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div className="space-y-2">
+      <button
+        type="button"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((v) => !v)}
+        className={cn(
+          FOCUS_RING,
+          "flex w-full items-center gap-1.5 rounded-[4px] py-0.5 text-left transition-colors"
+        )}
+      >
+        <ChevronDown
+          className={cn(
+            "h-3.5 w-3.5 text-[#93b0b4] transition-transform duration-200",
+            !expanded && "-rotate-90"
+          )}
+          strokeWidth={1.5}
+        />
+        <span className={SECTION_LABEL_CLASS}>Notes</span>
+        {/* Collapsed with content typed: say so, or the coach cannot tell the
+            note is still attached to the regenerate they are about to run. */}
+        {!expanded && value.trim() !== "" && (
+          <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-[#0d9488]" />
+        )}
+        <span className="ml-auto text-[10px] text-[#93b0b4]">Optional</span>
+      </button>
+
+      {expanded && (
+        <div className="space-y-2 border-t border-[rgba(13,148,136,0.08)] pt-2.5">
+          <Textarea
+            autoFocus
+            placeholder="Why are you adjusting this plan?"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            className="resize-none bg-white border border-[rgba(13,148,136,0.08)] rounded-[6px] text-[13px] font-medium text-[#0c1a1e] placeholder:text-[#93b0b4] placeholder:font-normal focus:border-[rgba(13,148,136,0.25)] focus:shadow-[0_0_0_3px_rgba(13,148,136,0.06)] focus:ring-0 transition-all"
+            rows={3}
+          />
+          <p className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal text-right")}>
+            {value.length}/500
+          </p>
+        </div>
+      )}
     </div>
   );
 }
