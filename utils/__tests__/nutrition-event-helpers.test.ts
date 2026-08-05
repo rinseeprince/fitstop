@@ -22,6 +22,7 @@ function ev(overrides: Partial<NutritionEvent>): NutritionEvent {
     status: "scheduled",
     createdAt: "",
     updatedAt: "",
+    coachNote: null,
     ...overrides,
   };
 }

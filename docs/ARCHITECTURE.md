@@ -767,7 +767,7 @@ Status codes: 200 (success), 201 (created), 400 (validation), 401 (auth), 403 (f
 
 Tables in this database written or read by a codebase **outside this repo**. Nothing in this codebase selects from them, so they look dead to any "unused tables" audit that only greps this repo. They are not dead. Confirm with the owning repo before dropping one.
 
-### `waitlist_signups` (migration `20260804093925`)
+### `waitlist_signups` (migration 138)
 
 Private-beta waitlist for the public marketing site.
 

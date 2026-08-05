@@ -27,13 +27,7 @@ export type CreateNutritionPlanParams = {
   customFatG: number | null;
   regenerationReason: string;
   trainingPlan: TrainingPlan | null;
-  coachNotes?: string;
   effectiveFrom?: string;
-  // When true (explicit "Recalculate plan" / fresh Generate recompute) the RPC
-  // re-stamps the banner snapshot (base_weight_kg/goal_weight_kg/goal_deadline);
-  // when false/omitted (in-place edit, e.g. preserve-calories regen) it is
-  // preserved so the weight/goal drift banners stay accurate (spec section 9).
-  recalcSnapshots?: boolean;
 };
 
 /**
@@ -111,10 +105,14 @@ export async function createNutritionPlan(params: CreateNutritionPlanParams): Pr
       p_custom_fat_g: params.customFatG,
       p_regeneration_reason: params.regenerationReason,
       p_daily_targets: dailyTargets,
-      p_coach_notes: params.coachNotes || null,
       p_effective_from: params.effectiveFrom || null,
       p_today: pToday,
-      p_recalc_snapshots: params.recalcSnapshots ?? false,
+      // NOTE: this object is cast `as never`, so TypeScript checks NOTHING
+      // about it. A key that no longer exists on the function makes PostgREST
+      // unable to resolve the overload (PGRST202), rpcError is set below, this
+      // returns null, and EVERY plan save fails with "Failed to create
+      // nutrition plan" — while tsc, eslint and vitest all stay green. Keep
+      // these keys in exact sync with the RPC signature (migration 139).
     } as never) as unknown as { data: string | null; error: { message: string } | null };
 
   if (rpcError || !newPlanId) {

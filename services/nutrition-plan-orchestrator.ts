@@ -62,6 +62,41 @@ export interface NutritionPlanResult {
 }
 
 /**
+ * Land the coach's note on the day the change takes effect.
+ *
+ * ONE date, not the whole regenerated window: the note describes the CHANGE,
+ * and 57 identical markers would be noise. Successive regenerates leave one
+ * marker each, which is the history a coach scrolling the calendar wants.
+ *
+ * Called from BOTH plan handlers. They each own their own
+ * createNutritionPlan -> regenerate -> return sequence and return directly out
+ * of the dispatch, so there is no seam after them to hook — inlining it twice
+ * is how one branch silently ends up without it.
+ *
+ * Never fails the request: the plan and its events have already committed by
+ * this point, so a failed annotation must not present as a failed save. It
+ * goes to Sentry instead.
+ */
+async function stampCoachNote(
+  clientId: string,
+  date: string,
+  note: string | undefined
+): Promise<void> {
+  const trimmed = note?.trim();
+  if (!trimmed) return;
+
+  const { error } = await supabaseAdmin
+    .from("nutrition_events")
+    .update({ coach_note: trimmed })
+    .eq("client_id", clientId)
+    .eq("date", date);
+
+  if (error) {
+    captureApiError(error, { action: "stamp-coach-note", clientId, date });
+  }
+}
+
+/**
  * Delete (archive) the client's durable nutrition plan and clear its upcoming
  * scheduled events so no orphaned prescription lingers on the calendar. Today
  * and past days are untouched; coach-edited (is_modified) FUTURE days go too,
@@ -211,11 +246,7 @@ async function handleCustomMacros(
     customFatG: body.customFatG,
     regenerationReason: "custom_macros",
     trainingPlan: null, // vestigial param (createNutritionPlan ignores it)
-    coachNotes: validatedData.coachNotes,
     effectiveFrom: body.effectiveFrom,
-    // A fresh custom-macro plan establishes a new baseline at the current
-    // weight -> re-stamp the banner snapshot.
-    recalcSnapshots: true,
   });
 
   if (!newPlanId) {
@@ -225,7 +256,9 @@ async function handleCustomMacros(
   // In-place durable plan: the RPC upserts the single active plan (stable id),
   // so we regenerate its future events from one client-local anchor. No
   // separate old-plan cleanup — there is no old plan to delete.
-  await regenerateEventsOrThrow(clientId, newPlanId, body.effectiveFrom ?? clientToday);
+  const effectiveDate = body.effectiveFrom ?? clientToday;
+  await regenerateEventsOrThrow(clientId, newPlanId, effectiveDate);
+  await stampCoachNote(clientId, effectiveDate, validatedData.coachNotes);
 
   return {
     success: true,
@@ -299,18 +332,7 @@ async function handleCalculatedPlan(
     customFatG: null,
     regenerationReason,
     trainingPlan: null, // vestigial param (createNutritionPlan ignores it)
-    coachNotes: validatedData.coachNotes,
     effectiveFrom: body.effectiveFrom,
-    // Every surviving path through this function is a genuine recompute, so the
-    // banner snapshot always re-stamps. This was `!body.preserveCalories`, and
-    // it read `false` on exactly one path — the preserve-calories regen, which
-    // reused the stored baseline instead of recalculating and therefore had to
-    // leave base_weight_kg alone or the weight-drift banner would wrongly
-    // silence. That path is gone. Set this to `true` rather than deleting the
-    // key: createNutritionPlan reads `params.recalcSnapshots ?? false`, so an
-    // omitted key means the snapshot silently STOPS re-stamping — the exact
-    // inverse, arriving by omission, with the drift banner just never firing.
-    recalcSnapshots: true,
   });
 
   if (!newPlanId) {
@@ -320,7 +342,9 @@ async function handleCalculatedPlan(
   // In-place durable plan: the RPC upserts the single active plan (stable id),
   // so we regenerate its future events from one client-local anchor. No
   // separate old-plan cleanup — there is no old plan to delete.
-  await regenerateEventsOrThrow(clientId, newPlanId, body.effectiveFrom ?? clientToday);
+  const effectiveDate = body.effectiveFrom ?? clientToday;
+  await regenerateEventsOrThrow(clientId, newPlanId, effectiveDate);
+  await stampCoachNote(clientId, effectiveDate, validatedData.coachNotes);
 
   return {
     success: true,

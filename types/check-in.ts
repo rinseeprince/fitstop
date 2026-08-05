@@ -391,9 +391,16 @@ export type NutritionEvent = {
   // Coach materialized a per-day override onto this event (mig 113, Session 1).
   // The cascade/regenerate leaves is_modified=true days untouched; reset clears it.
   isModified: boolean;
-  // Optional coach per-day note (mig 118). Rides is_modified=true so it survives
-  // regen; cleared on reset. Mirrors training_events.session_focus.
+  // Optional per-day note (mig 118) SHOWN TO THE CLIENT. Rides is_modified=true
+  // so it survives regen; cleared on reset. Authored in the calendar's
+  // Edit-targets sheet.
   note: string | null;
+  // COACH-PRIVATE note (mig 139), written by the plan builder onto the date a
+  // change takes effect. Never returned by /api/client/** — every client route
+  // that reaches an event builds a new object literal rather than spreading
+  // one, which is the only thing keeping it off the wire. Survives the cascade
+  // in its own right (it does NOT need is_modified, unlike `note`).
+  coachNote: string | null;
   status: NutritionEventStatus;
   createdAt: string;
   updatedAt: string;

@@ -83,9 +83,13 @@ describe("nutrition-event-service: cascade-preserve guards", () => {
   describe("generateNutritionEvents preserves is_modified days", () => {
     it("omits coach-edited dates from the upsert and regenerates the rest", async () => {
       let nutCount = 0;
-      // The protected-days read returns one edited day in the middle of the window.
-      const protectedQuery = createMockQuery<{ date: string }[]>({
-        data: [{ date: "2026-04-11" }],
+      // The existing-days read returns one edited day in the middle of the
+      // window. It is now UNFILTERED (one read serves both the is_modified
+      // guard and the coach-note carry-forward), so rows carry their flags.
+      const protectedQuery = createMockQuery<
+        { date: string; is_modified: boolean; coach_note: string | null }[]
+      >({
+        data: [{ date: "2026-04-11", is_modified: true, coach_note: null }],
         error: null,
       });
       const upsertQuery = createMockQuery({ data: [], error: null });
@@ -109,10 +113,12 @@ describe("nutrition-event-service: cascade-preserve guards", () => {
         "2026-04-12",
       );
 
-      // Protected-days read is keyed on client_id + date range (NOT plan id),
-      // because the upsert conflict key is client-scoped.
+      // Read is keyed on client_id + date range (NOT plan id), because the
+      // upsert conflict key is client-scoped. is_modified is now partitioned
+      // in memory rather than filtered in SQL, so one round trip serves both
+      // the edit guard and the coach-note carry-forward.
       expect(protectedQuery.eq).toHaveBeenCalledWith("client_id", "client-1");
-      expect(protectedQuery.eq).toHaveBeenCalledWith("is_modified", true);
+      expect(protectedQuery.select).toHaveBeenCalledWith("date, is_modified, coach_note");
       expect(protectedQuery.gte).toHaveBeenCalledWith("date", "2026-04-10");
       expect(protectedQuery.lte).toHaveBeenCalledWith("date", "2026-04-12");
 
@@ -270,6 +276,115 @@ describe("nutrition-event-service: cascade-preserve guards", () => {
       expect(rows[0].date).toBe("2026-04-10");
       expect(rows[rows.length - 1].date).toBe(EXPECTED_END);
       expect(rows).toHaveLength(57);
+    });
+
+    // A coach note explains WHY the prescription changed on a date. It has to
+    // outlive the next prescription change, or a routine training edit erases
+    // the coach's own record of what they did.
+    it("spares annotated days from the cascade delete", async () => {
+      let nutCount = 0;
+      const deleteQuery = createMockQuery({ data: null, error: null });
+      const protectedQuery = createMockQuery<{ date: string }[]>({ data: [], error: null });
+      const upsertQuery = createMockQuery({ data: [], error: null });
+
+      mockFrom.mockImplementation((table: string) => {
+        if (table === "nutrition_events") {
+          nutCount += 1;
+          if (nutCount === 1) return deleteQuery as any;
+          if (nutCount === 2) return protectedQuery as any;
+          return upsertQuery as any;
+        }
+        if (table === "nutrition_plans")
+          return createMockQuery({
+            data: { baseline_calories: 2000, protein_target_g: 150, diet_type: "balanced" },
+            error: null,
+          }) as any;
+        if (table === "nutrition_plan_daily_targets")
+          return createMockQuery({ data: [], error: null }) as any;
+        return createMockQuery({ data: null, error: null }) as any;
+      });
+
+      await regenerateFutureNutritionEvents("client-1", "plan-1", "2026-04-10");
+
+      expect(deleteQuery.is).toHaveBeenCalledWith("coach_note", null);
+    });
+  });
+
+  // =========================================================================
+  // Notes carry forward across a regeneration.
+  //
+  // Annotated days survive the delete, so they arrive at the upsert as a
+  // conflict and their targets ARE rewritten. coach_note is set explicitly on
+  // every row rather than omitted-and-assumed-preserved.
+  // =========================================================================
+  describe("generateNutritionEvents preserves coach notes", () => {
+    it("carries an existing note onto the regenerated row and leaves other days null", async () => {
+      let nutCount = 0;
+      const existingQuery = createMockQuery<
+        { date: string; is_modified: boolean; coach_note: string | null }[]
+      >({
+        data: [
+          { date: "2026-04-11", is_modified: false, coach_note: "Dropped cals, knee flare-up" },
+        ],
+        error: null,
+      });
+      const upsertQuery = createMockQuery({ data: [], error: null });
+
+      mockFrom.mockImplementation((table: string) => {
+        if (table === "nutrition_events") {
+          nutCount += 1;
+          return (nutCount === 1 ? existingQuery : upsertQuery) as any;
+        }
+        return createMockQuery({ data: null, error: null }) as any;
+      });
+
+      await generateNutritionEvents(
+        "client-1",
+        "plan-1",
+        PLAN,
+        null,
+        null,
+        "2026-04-10",
+        "2026-04-12",
+      );
+
+      const rows = upsertQuery.upsert.mock.calls[0][0] as Array<{
+        date: string;
+        coach_note: string | null;
+      }>;
+      expect(rows.map((r) => r.date)).toEqual(["2026-04-10", "2026-04-11", "2026-04-12"]);
+      expect(rows.find((r) => r.date === "2026-04-11")?.coach_note).toBe(
+        "Dropped cals, knee flare-up",
+      );
+      // Explicitly null, not absent — the column is always in the payload so
+      // the DO UPDATE SET list cannot depend on which keys happen to be present.
+      expect(rows.find((r) => r.date === "2026-04-10")?.coach_note).toBeNull();
+    });
+
+    it("still skips is_modified days now that the read is unfiltered", async () => {
+      let nutCount = 0;
+      const existingQuery = createMockQuery<
+        { date: string; is_modified: boolean; coach_note: string | null }[]
+      >({
+        data: [{ date: "2026-04-11", is_modified: true, coach_note: null }],
+        error: null,
+      });
+      const upsertQuery = createMockQuery({ data: [], error: null });
+
+      mockFrom.mockImplementation((table: string) => {
+        if (table === "nutrition_events") {
+          nutCount += 1;
+          return (nutCount === 1 ? existingQuery : upsertQuery) as any;
+        }
+        return createMockQuery({ data: null, error: null }) as any;
+      });
+
+      await generateNutritionEvents(
+        "client-1", "plan-1", PLAN, null, null, "2026-04-10", "2026-04-12",
+      );
+
+      const rows = upsertQuery.upsert.mock.calls[0][0] as Array<{ date: string }>;
+      expect(rows.map((r) => r.date)).toEqual(["2026-04-10", "2026-04-12"]);
     });
   });
 });

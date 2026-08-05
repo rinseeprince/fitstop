@@ -103,6 +103,11 @@ export function buildDailyTargetsFromPlan(
       return {
         ...mapNutritionEventToDisplayTarget(event, includeActivityBurn, surplusAsCarbs),
         trainingSessions: trainingSessionsFor(day),
+        // `note` only. `event.coachNote` is COACH-PRIVATE and must never be
+        // copied here — this util feeds the client portal's program card. The
+        // spread above is of the mapper's own literal, not of the event, so
+        // coachNote cannot arrive by accident; do not "tidy" that into
+        // `...event`.
         note: event.note ?? null,
       };
     }

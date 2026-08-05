@@ -114,13 +114,16 @@ describe('Nutrition Plan Service', () => {
         expect.objectContaining({
           p_effective_from: '2026-06-10',
           p_today: '2026-06-10',
-          // Defaults to false (preserve banner snapshot) when not passed.
-          p_recalc_snapshots: false,
         })
       )
     })
 
-    it('forwards recalcSnapshots to the RPC as p_recalc_snapshots', async () => {
+    // The RPC argument object is cast `as never`, so TypeScript checks nothing
+    // about it: a key that no longer exists on the function makes PostgREST
+    // unable to resolve the overload (PGRST202) and every plan save fails,
+    // with tsc/eslint/vitest all green. This asserts the payload keys match
+    // migration 139's 24-arg signature exactly.
+    it('sends no arguments the RPC does not declare', async () => {
       vi.mocked(supabaseAdmin.rpc).mockResolvedValue({ data: 'plan-123', error: null } as any)
       const updateQuery = {
         update: vi.fn().mockReturnThis(),
@@ -128,12 +131,24 @@ describe('Nutrition Plan Service', () => {
       }
       vi.mocked(supabaseAdmin.from).mockReturnValue(updateQuery as any)
 
-      await createNutritionPlan({ ...baseParams, recalcSnapshots: true })
+      await createNutritionPlan(baseParams)
 
-      expect(supabaseAdmin.rpc).toHaveBeenCalledWith(
-        'create_nutrition_plan_atomic',
-        expect.objectContaining({ p_recalc_snapshots: true })
-      )
+      const sentKeys = Object.keys(
+        vi.mocked(supabaseAdmin.rpc).mock.calls[0][1] as Record<string, unknown>
+      ).sort()
+
+      expect(sentKeys).toEqual([
+        'p_base_weight_kg', 'p_baseline_calories', 'p_bmr', 'p_carb_target_g',
+        'p_client_id', 'p_coach_id', 'p_custom_calories', 'p_custom_carb_g',
+        'p_custom_fat_g', 'p_custom_macros_enabled', 'p_custom_protein_g',
+        'p_daily_targets', 'p_diet_type', 'p_effective_from', 'p_fat_target_g',
+        'p_goal_deadline', 'p_goal_weight_kg', 'p_protein_target_g',
+        'p_protein_target_g_per_kg', 'p_regeneration_reason', 'p_tdee',
+        'p_today', 'p_training_volume_hours', 'p_work_activity_level',
+      ])
+      expect(sentKeys).toHaveLength(24)
+      expect(sentKeys).not.toContain('p_coach_notes')
+      expect(sentKeys).not.toContain('p_recalc_snapshots')
     })
   })
 })

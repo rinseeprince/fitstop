@@ -1683,6 +1683,7 @@ export type Database = {
           calorie_surplus_percentage: number | null
           carb_g: number
           client_id: string
+          coach_note: string | null
           created_at: string
           date: string
           day_of_week: string
@@ -1703,6 +1704,7 @@ export type Database = {
           calorie_surplus_percentage?: number | null
           carb_g: number
           client_id: string
+          coach_note?: string | null
           created_at?: string
           date: string
           day_of_week: string
@@ -1723,6 +1725,7 @@ export type Database = {
           calorie_surplus_percentage?: number | null
           carb_g?: number
           client_id?: string
+          coach_note?: string | null
           created_at?: string
           date?: string
           day_of_week?: string
@@ -1893,7 +1896,6 @@ export type Database = {
           carb_target_g: number
           client_id: string
           coach_id: string
-          coach_notes: string | null
           created_at: string
           custom_calories: number | null
           custom_carb_g: number | null
@@ -1924,7 +1926,6 @@ export type Database = {
           carb_target_g: number
           client_id: string
           coach_id: string
-          coach_notes?: string | null
           created_at?: string
           custom_calories?: number | null
           custom_carb_g?: number | null
@@ -1955,7 +1956,6 @@ export type Database = {
           carb_target_g?: number
           client_id?: string
           coach_id?: string
-          coach_notes?: string | null
           created_at?: string
           custom_calories?: number | null
           custom_carb_g?: number | null
@@ -2782,7 +2782,6 @@ export type Database = {
           p_carb_target_g: number
           p_client_id: string
           p_coach_id: string
-          p_coach_notes?: string
           p_custom_calories: number
           p_custom_carb_g: number
           p_custom_fat_g: number
@@ -2796,7 +2795,6 @@ export type Database = {
           p_goal_weight_kg: number
           p_protein_target_g: number
           p_protein_target_g_per_kg: number
-          p_recalc_snapshots?: boolean
           p_regeneration_reason: string
           p_tdee: number
           p_today?: string

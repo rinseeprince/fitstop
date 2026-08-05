@@ -489,7 +489,6 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
       bmr,
       tdee,
       custom_macros_enabled: false,
-      coach_notes: logRng.bool(0.35) ? coachNote(logRng) : null,
       created_at: createdAt,
       updated_at: createdAt,
     });
