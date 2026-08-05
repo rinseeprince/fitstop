@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import type { Client, ActivityLevel, DietType } from "@/types/check-in";
 import {
   Select,
@@ -12,13 +11,18 @@ import {
 import { PROTEIN_TARGETS } from "@/utils/nutrition-helpers";
 import { SECTION_LABEL_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
 
+/**
+ * FULLY CONTROLLED, deliberately. This form used to own a second copy of the
+ * three settings in local state, seeded from an `initialSettings` prop that no
+ * caller ever passed. The builder hook owns another copy, and the hook's is
+ * what the generate request posts — so the two could disagree, and the form
+ * could display one thing while the save sent another. One owner now.
+ */
 type NutritionSettingsFormProps = {
   client: Client;
-  initialSettings?: {
-    workActivityLevel?: ActivityLevel;
-    proteinTargetGPerKg?: number;
-    dietType?: DietType;
-  };
+  workActivityLevel: ActivityLevel;
+  proteinTargetGPerKg: number;
+  dietType: DietType;
   onSettingsChange: (settings: {
     workActivityLevel: ActivityLevel;
     proteinTargetGPerKg: number;
@@ -37,37 +41,17 @@ const selectItemClass =
 
 export function NutritionSettingsForm({
   client,
-  initialSettings,
+  workActivityLevel,
+  proteinTargetGPerKg,
+  dietType,
   onSettingsChange,
 }: NutritionSettingsFormProps) {
   const unitPreference = client.unitPreference || "imperial";
 
-  const [workActivityLevel, setWorkActivityLevel] = useState<ActivityLevel>(
-    initialSettings?.workActivityLevel || "sedentary"
-  );
-  const [proteinTargetGPerKg, setProteinTargetGPerKg] = useState<number>(
-    initialSettings?.proteinTargetGPerKg || PROTEIN_TARGETS.high.gPerKg
-  );
-  const [dietType, setDietType] = useState<DietType>(
-    initialSettings?.dietType || "balanced"
-  );
   const handleChange = (
     field: string,
     value: ActivityLevel | number | DietType | string
   ) => {
-    switch (field) {
-      case "workActivityLevel":
-        setWorkActivityLevel(value as ActivityLevel);
-        break;
-      case "proteinTargetGPerKg":
-        setProteinTargetGPerKg(value as number);
-        break;
-      case "dietType":
-        setDietType(value as DietType);
-        break;
-    }
-
-    // Notify parent of changes
     onSettingsChange({
       workActivityLevel:
         field === "workActivityLevel"

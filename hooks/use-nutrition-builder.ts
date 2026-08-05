@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useNutritionPlan } from "@/hooks/use-nutrition-plan";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
@@ -11,7 +11,11 @@ import {
   getActivityMultiplier,
 } from "@/utils/nutrition-helpers";
 import { addDays } from "date-fns";
-import { useCustomMacros } from "@/hooks/use-custom-macros";
+import { useManualTargets, macroCalories, type MacroTargets } from "@/hooks/use-manual-targets";
+// A PURE module (types + one arithmetic helper, no DB imports), so the browser
+// runs the identical calculator the server does. That is what makes the preview
+// authoritative rather than an approximation.
+import { generateNutritionPlan } from "@/services/nutrition-service";
 
 type UseNutritionBuilderProps = {
   client: Client;
@@ -29,7 +33,6 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
   const nutritionPlan = useNutritionPlan({ client, onUpdate });
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
 
-  // Settings state — defaults from active plan will be loaded via nutritionData
   const [settings, setSettings] = useState<NutritionSettings>({
     workActivityLevel: "sedentary",
     proteinTargetGPerKg: 2.0,
@@ -37,11 +40,72 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
   });
   const [settingsChanged, setSettingsChanged] = useState(false);
 
-  // Custom macros: %-split input stored as grams (◆3). Generation mode drives
-  // whether the footer generate posts custom macros (Custom tab) or not (Auto).
-  const customMacroState = useCustomMacros(nutritionPlan.nutritionData);
-  const customMacros = customMacroState.customMacros; // grams + re-totaled calories
-  const [generationMode, setGenerationMode] = useState<"auto" | "custom">("auto");
+  // Seed the pickers from the ACTIVE PLAN, once per plan load.
+  //
+  // Without this the three settings sat on their hardcoded defaults forever:
+  // opening a keto plan showed "Balanced", and pressing Regenerate without
+  // touching anything silently rewrote the plan to sedentary/2.0/balanced. It
+  // was a quiet bug while the numbers only appeared after saving; with a live
+  // preview it becomes a visible clobber the moment the drawer opens.
+  //
+  // Keyed on the plan's own values so a background refetch cannot overwrite
+  // edits the coach has already made in this session.
+  const nd = nutritionPlan.nutritionData;
+  const settingsSeedKey =
+    nd?.workActivityLevel && nd?.proteinTargetGPerKg && nd?.dietType
+      ? `${nd.workActivityLevel}|${nd.proteinTargetGPerKg}|${nd.dietType}`
+      : null;
+  const settingsSeededRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!settingsSeedKey || settingsSeededRef.current === settingsSeedKey) return;
+    const [workActivityLevel, proteinTargetGPerKg, dietType] = settingsSeedKey.split("|");
+    setSettings({
+      workActivityLevel: workActivityLevel as ActivityLevel,
+      proteinTargetGPerKg: Number(proteinTargetGPerKg),
+      dietType: dietType as DietType,
+    });
+    setSettingsChanged(false);
+    settingsSeededRef.current = settingsSeedKey;
+  }, [settingsSeedKey]);
+
+  // The live preview. Recomputes on every picker change REGARDLESS of manual
+  // mode — that is what powers the "Auto suggests …" hint without ever writing
+  // into the coach's typed numbers.
+  //
+  // The `status === "ready"` gate is load-bearing, not defensive. The server
+  // asserts `bmr!` because validateClientForNutrition ran first; the browser
+  // has no such guarantee, and an undefined bmr makes Math.round(bmr * mult)
+  // NaN — which the minimum-calorie floor does NOT catch, so the field would
+  // render the literal string "NaN". A null bmr is worse: it yields 0, which
+  // looks like a number.
+  const calcInputs = nutritionPlan.nutritionData?.calcInputs ?? null;
+  const autoPlan = useMemo(
+    () =>
+      calcInputs?.status === "ready"
+        ? generateNutritionPlan({ ...calcInputs, ...settings })
+        : null,
+    [calcInputs, settings]
+  );
+
+  const autoTargets: MacroTargets | null = useMemo(
+    () =>
+      autoPlan
+        ? {
+            calories: autoPlan.baselineCalories,
+            proteinG: autoPlan.proteinTargetG,
+            carbG: autoPlan.carbTargetG,
+            fatG: autoPlan.fatTargetG,
+          }
+        : null,
+    [autoPlan]
+  );
+
+  const manual = useManualTargets(nutritionPlan.nutritionData);
+
+  /** What the drawer displays and what Generate posts. */
+  const displayTargets: MacroTargets | null = manual.manualEnabled
+    ? manual.manualTargets
+    : autoTargets;
 
   // Activity burn toggle
   const [includeActivityBurn, setIncludeActivityBurn] = useState(client.includeActivityBurn);
@@ -114,9 +178,11 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
     setSettingsChanged(true);
   }, []);
 
-  // Generate nutrition plan
+  // Generate nutrition plan. `useManual` posts the coach's typed targets as the
+  // custom-macro override; otherwise the server recalculates from the same
+  // pickers the preview used, so the saved numbers match what was on screen.
   const generatePlan = useCallback(
-    async (useCustom = false, effectiveFrom?: string | null) => {
+    async (useManual = false, effectiveFrom?: string | null) => {
       const validation = validateClientForNutrition(client);
       if (!validation.valid) {
         toast({
@@ -140,12 +206,15 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
           ...(effectiveFrom ? { effectiveFrom } : {}),
         };
 
-        if (useCustom) {
+        if (useManual) {
+          const t = manual.manualTargets;
           body.customMacrosEnabled = true;
-          body.customProteinG = customMacros.protein;
-          body.customCarbG = customMacros.carbs;
-          body.customFatG = customMacros.fat;
-          body.customCalories = customMacros.calories;
+          body.customProteinG = t.proteinG;
+          body.customCarbG = t.carbG;
+          body.customFatG = t.fatG;
+          // Always the re-totaled 4/4/9 figure, never a separately-typed
+          // number, so the server's ±50 kcal tolerance cannot trip on rounding.
+          body.customCalories = macroCalories(t);
         }
 
         const res = await fetch(`/api/clients/${client.id}/nutrition`, {
@@ -187,10 +256,7 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
     [
       client,
       settings,
-      customMacros.protein,
-      customMacros.carbs,
-      customMacros.fat,
-      customMacros.calories,
+      manual.manualTargets,
       coachNotes,
       onUpdate,
       toast,
@@ -229,15 +295,22 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
     // Spread base nutrition plan state
     ...nutritionPlan,
 
-    // Settings
+    // Settings pickers (seeded from the active plan)
     settings,
     settingsChanged,
     handleSettingsChange,
 
-    // Custom macros (%-split state) + generation mode (Auto | Custom tabs)
-    ...customMacroState,
-    generationMode,
-    setGenerationMode,
+    // Live preview + manual override. `displayTargets` is the single thing the
+    // UI renders and Generate posts — manual when the coach has taken over,
+    // otherwise the live auto result. `autoTargets` stays available alongside
+    // it so the manual mode can show what auto would have suggested WITHOUT
+    // overwriting the typed numbers.
+    autoPlan,
+    autoTargets,
+    displayTargets,
+    /** null while the resolver could not run — the UI renders `missing`. */
+    calcInputs,
+    ...manual,
 
     // Activity burn toggle
     includeActivityBurn,

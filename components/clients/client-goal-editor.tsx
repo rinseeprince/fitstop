@@ -36,9 +36,21 @@ const SWR_OPTS = {
 type ClientGoalEditorProps = {
   clientId: string;
   unit: "lbs" | "kg";
+  /**
+   * Fired after a successful goal save, IN ADDITION to this component's own
+   * SWR revalidation.
+   *
+   * That local `mutate()` only refreshes `/api/clients/{id}/goals`. Anything
+   * else on screen that was derived from the goal stays stale — and this editor
+   * is mounted inside the nutrition drawer, where the live calorie preview and
+   * the goal-drift banner are both computed from server-resolved inputs that
+   * the goal has just invalidated. Without this callback the drawer would
+   * preview one plan and save another.
+   */
+  onSaved?: () => void;
 };
 
-export function ClientGoalEditor({ clientId, unit }: ClientGoalEditorProps) {
+export function ClientGoalEditor({ clientId, unit, onSaved }: ClientGoalEditorProps) {
   const [open, setOpen] = useState(false);
   const { data, mutate } = useSWR<GoalsResponse>(
     `/api/clients/${clientId}/goals`,
@@ -77,7 +89,10 @@ export function ClientGoalEditor({ clientId, unit }: ClientGoalEditorProps) {
         goal={goal}
         open={open}
         onOpenChange={setOpen}
-        onSaved={() => mutate()}
+        onSaved={() => {
+          void mutate();
+          onSaved?.();
+        }}
       />
     </div>
   );

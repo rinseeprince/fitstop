@@ -2,9 +2,10 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
-import type { Client, UnitPreference, DietType } from "@/types/check-in";
+import type { Client, UnitPreference, DietType, ActivityLevel } from "@/types/check-in";
 import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
 import type { GoalDrift } from "@/lib/goals/detect-goal-drift";
+import type { NutritionCalcInputs } from "@/services/nutrition-calc-inputs";
 import {
   getWeightChange as getWeightChangeUtil,
   formatWeight as formatWeightUtil,
@@ -25,7 +26,17 @@ type NutritionTargetsData = {
   baselineCalories?: number;
   customMacrosEnabled?: boolean;
   customCalories?: number;
+  customProteinG?: number;
+  customCarbG?: number;
+  customFatG?: number;
   dietType?: DietType;
+  /** The plan's stored calculator settings, so the builder's pickers seed from
+   *  it instead of their hardcoded defaults. Absent when there is no plan. */
+  workActivityLevel?: ActivityLevel;
+  proteinTargetGPerKg?: number;
+  /** Server-resolved inputs for the live preview. Present on BOTH the has-plan
+   *  and no-plan responses; null only when the resolver itself failed. */
+  calcInputs?: NutritionCalcInputs | null;
   includeActivityBurn: boolean;
   effectiveFrom?: string;
   dailyTargets?: DailyNutritionTargets[];
@@ -78,10 +89,6 @@ export function useNutritionPlan({ client, onUpdate }: UseNutritionPlanProps) {
   // This is now handled via the plan data, not client fields
   const showRegenerationBanner = false; // Will be computed from plan data when available
 
-  // Legacy flat calorie values (kept for backward compat with display component)
-  const dailyTrainingCalories = 0;
-  const weeklyTrainingCalories = 0;
-  const trainingCaloriesByDay = null;
 
   // The tab used to GET /api/clients/[id]/training — a ~210 kB plan+sessions+
   // exercises payload — and read exactly one thing from it: whether `plan` was
@@ -157,9 +164,6 @@ export function useNutritionPlan({ client, onUpdate }: UseNutritionPlanProps) {
     // wait on. Name kept for the two consumers that already read it.
     hasTrainingPlan,
     isLoadingTrainingPlan: isLoadingNutrition,
-    dailyTrainingCalories,
-    weeklyTrainingCalories,
-    trainingCaloriesByDay,
 
     // Computed values
     showRegenerationBanner,

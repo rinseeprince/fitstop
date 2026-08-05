@@ -5,10 +5,37 @@
 Logged: 2026-07-23 (platform-wide sweep; rule + enforcement in `docs/newdesignsystem.md` → Typography and `npm run check:labels`).
 
 - **Out-of-scope trees carry 3 recorded rule violations** (whitelisted, fix when those trees migrate or are touched): `components/client-portal/metrics/performance/performance-view.tsx` ~L164 (mono number inside a running sentence), `components/lead-card.tsx` ~L25 (mono on an email string).
-- **Un-migrated surfaces still render sans numerics** — apply the mono pass *when each migrates to Teal-Summit*, then delete its `scripts/check-labels-whitelist.ts` entry if listed: `components/clients/nutrition/builder/weekly-budget-indicator.tsx`, `calorie-skewing-day-row.tsx`, the legacy block of `nutrition-training-calories-display.tsx`, `components/clients/history-table/history-chart-dialog.tsx` (sans axis/date ticks), and `components/ui/table.tsx` (whitelisted TableHead).
+- **Un-migrated surfaces still render sans numerics** — apply the mono pass *when each migrates to Teal-Summit*, then delete its `scripts/check-labels-whitelist.ts` entry if listed: `components/clients/history-table/history-chart-dialog.tsx` (sans axis/date ticks), and `components/ui/table.tsx` (whitelisted TableHead). *(2026-08-05: `weekly-budget-indicator.tsx`, `calorie-skewing-day-row.tsx` and `nutrition-training-calories-display.tsx` are struck from this list — all three were deleted with the calorie-skewing sunset and the surplus-settings rewrite.)*
 - **`exercise-insight.ts` emits the word "Stable" into the mono KPI value slot** (`exercise-kpi-strip`). Kept by dominant-case reasoning (the slot is numeral-dominant); a content-level fix belongs in the insight builder, not the class site.
 
 ---
+
+## `useNutritionPlan` is not SWR, so nothing can invalidate it
+
+Logged: 2026-08-05 (surfaced while wiring the builder's live target preview).
+
+`hooks/use-nutrition-plan.ts` fetches `GET /api/clients/[id]/nutrition` with raw
+`useState`/`useEffect`/`fetch` keyed on an internal `refreshKey` counter. It
+predates CONVENTIONS §7 ("Use SWR for all new data fetching") and is worse than
+the anti-pattern that section names: there is no cache to invalidate at all, so
+**no other surface can refresh it** — only a caller holding the hook's own
+`refetchNutrition`.
+
+That already bit once. `ClientGoalEditor` is mounted *inside* the nutrition
+drawer and its save revalidates only `/api/clients/{id}/goals`, so a goal edit
+left the drawer's derived targets and drift banner stale. Fixed narrowly by
+threading an `onSaved` callback through to `refetchNutrition`
+(`drawer-form-body.tsx`), which is correct but does not generalise: the next
+writer of client weight, goals, or metrics will have the same problem and no
+invalidator to call.
+
+Proper fix: migrate the hook to SWR with a co-located key builder + exported
+invalidator, matching `useInvalidateNutritionCalendar`. Deferred because it is a
+whole-tab change (every consumer of the hook's ~20 returned fields) rather than
+part of the builder rework. Mitigating factor: none of the eight `TabsContent`
+in `app/clients/[id]/page.tsx` sets `forceMount`, so Radix unmounts inactive
+tabs and the effect re-runs on tab switch — the in-drawer editor was the only
+writer that could never trigger a remount.
 
 ## Nutrition-calendar invalidation — uninstrumented caller-less routes
 

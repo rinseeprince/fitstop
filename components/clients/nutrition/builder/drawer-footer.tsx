@@ -10,8 +10,13 @@ export function DrawerFooter() {
   const [showApplyDialog, setShowApplyDialog] = useState(false);
 
   const hasPlan = builder.hasPlan;
-  // The Custom tab posts the %-split-derived custom macros; Auto recalculates.
-  const isCustom = builder.generationMode === "custom";
+  // Manual mode posts the coach's typed grams as the custom-macro override;
+  // otherwise the server recalculates from the same pickers the preview used.
+  const isManual = builder.manualEnabled;
+
+  // Nothing to generate from until the client has weight/BMR/gender/unit.
+  const cannotCalculate = builder.calcInputs?.status === "incomplete";
+  const blockingError = isManual ? builder.manualValidationError : null;
 
   const handleClick = () => {
     if (hasPlan) {
@@ -19,12 +24,12 @@ export function DrawerFooter() {
       setShowApplyDialog(true);
     } else {
       // First creation — no popup, effective_from resolves server-side
-      void builder.generatePlan(isCustom);
+      void builder.generatePlan(isManual);
     }
   };
 
   const handleApply = (effectiveFrom: string | null) => {
-    void builder.generatePlan(isCustom, effectiveFrom);
+    void builder.generatePlan(isManual, effectiveFrom);
   };
 
   return (
@@ -33,29 +38,21 @@ export function DrawerFooter() {
         <div className="pointer-events-auto px-6 pb-6 pt-4">
           <button
             onClick={handleClick}
-            disabled={
-              builder.isGenerating ||
-              (isCustom && !!builder.customMacrosValidationError)
-            }
+            disabled={builder.isGenerating || cannotCalculate || !!blockingError}
             title={
-              isCustom && builder.customMacrosValidationError
-                ? builder.customMacrosValidationError
-                : undefined
+              blockingError ??
+              (cannotCalculate
+                ? "This client is missing data the calculator needs"
+                : undefined)
             }
             className="w-full flex items-center justify-center gap-2 bg-[#0d9488] text-white text-[13.5px] font-semibold rounded-[6px] px-4 py-2.5 transition-all hover:-translate-y-px hover:shadow-[0_4px_16px_rgba(13,148,136,0.25)] hover:bg-gradient-to-br hover:from-[#0d9488] hover:to-[#0a7c72] disabled:opacity-50 disabled:pointer-events-none"
           >
             <Sparkles className={`w-4 h-4 ${builder.isGenerating ? "animate-pulse" : ""}`} strokeWidth={1.5} />
             {builder.isGenerating
               ? "Generating..."
-              : isCustom
-                ? builder.hasPlan
-                  ? "Regenerate with Custom Macros"
-                  : "Generate with Custom Macros"
-                : builder.settingsChanged
-                  ? "Save & Regenerate Plan"
-                  : builder.hasPlan
-                    ? "Regenerate Plan"
-                    : "Generate Plan"}
+              : builder.hasPlan
+                ? "Regenerate Plan"
+                : "Generate Plan"}
           </button>
 
           {!builder.client.bmr && (
