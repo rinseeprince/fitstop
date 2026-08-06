@@ -22,15 +22,6 @@ import {
 } from "lucide-react";
 import type { CheckInWithDetails } from "@/types/check-in";
 
-type ExerciseHighlightRow = {
-  exercise_name: string;
-  highlight_type: string;
-  details?: string;
-  weight_value?: number;
-  weight_unit?: string;
-  reps?: number;
-};
-
 export default function CheckInDetailPage() {
   const router = useRouter();
   const params = useParams();
@@ -312,23 +303,23 @@ export default function CheckInDetailPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {(checkIn.exerciseHighlights as unknown as ExerciseHighlightRow[]).map((highlight, index) => (
+              {checkIn.exerciseHighlights.map((highlight, index) => (
                 <div key={index} className="rounded-lg border p-4">
                   <div className="flex items-center gap-2 mb-2">
-                    {highlight.highlight_type === 'pr' && <Trophy className="h-4 w-4 text-warning" />}
-                    {highlight.highlight_type === 'struggle' && <Target className="h-4 w-4 text-destructive" />}
-                    {highlight.highlight_type === 'note' && <Brain className="h-4 w-4 text-primary" />}
-                    <span className="font-medium">{highlight.exercise_name}</span>
+                    {highlight.highlightType === 'pr' && <Trophy className="h-4 w-4 text-warning" />}
+                    {highlight.highlightType === 'struggle' && <Target className="h-4 w-4 text-destructive" />}
+                    {highlight.highlightType === 'note' && <Brain className="h-4 w-4 text-primary" />}
+                    <span className="font-medium">{highlight.exerciseName}</span>
                     <Badge variant="outline" className="capitalize">
-                      {highlight.highlight_type}
+                      {highlight.highlightType}
                     </Badge>
                   </div>
                   {highlight.details && (
                     <p className="text-sm text-muted-foreground mb-2">{highlight.details}</p>
                   )}
                   <div className="flex gap-4 text-xs text-muted-foreground">
-                    {highlight.weight_value && (
-                      <span>{highlight.weight_value} {highlight.weight_unit || 'lbs'}</span>
+                    {highlight.weightValue && (
+                      <span>{highlight.weightValue} {highlight.weightUnit}</span>
                     )}
                     {highlight.reps && (
                       <span>{highlight.reps} reps</span>
