@@ -6,6 +6,12 @@ import type { PeriodSnapshot } from "@/types/schedule";
 import { buildDailyContextForAI } from "@/utils/ai-daily-context-builder";
 import { sanitizeForAIPrompt } from "@/utils/ai-prompt-sanitizer";
 import { buildAnalysisTaskPrompt } from "@/utils/ai-analysis-format";
+import {
+  DEFAULT_UNIT_SYSTEM,
+  formatLoad,
+  formatWeight,
+  type UnitSystem,
+} from "@/utils/unit-conversions";
 
 export { AI_SYSTEM_PROMPT } from "@/utils/ai-system-prompt";
 
@@ -20,8 +26,22 @@ export function buildCheckInAnalysisPrompt(
   weeklySummary?: WeeklyNutritionSummary | null,
   periodSnapshot?: PeriodSnapshot | null,
   trainingEventDetails?: CheckInTrainingEventDetail[],
-  exerciseSummaries?: Map<string, string[]>
+  exerciseSummaries?: Map<string, string[]>,
+  /**
+   * The COACH's unit system — they are who reads the generated summary. Required
+   * rather than defaulted: a silent fallback here produces a plausible summary
+   * in the wrong unit, which is indistinguishable from a correct one.
+   */
+  viewer: UnitSystem = DEFAULT_UNIT_SYSTEM
 ): string {
+  const weight = (kg: number) => {
+    const { value, unit } = formatWeight(kg, viewer);
+    return `${Math.round(value * 10) / 10} ${unit}`;
+  };
+  const load = (kg: number) => {
+    const { value, unit } = formatLoad(kg, viewer);
+    return `${value}${unit}`;
+  };
   let prompt = `Analyze this check-in for ${sanitizeForAIPrompt(clientName)}:\n\n`;
 
   prompt += "**CURRENT CHECK-IN:**\n";
@@ -39,7 +59,7 @@ export function buildCheckInAnalysisPrompt(
   if (current.weight || current.bodyFatPercentage) {
     prompt += "\nBody Metrics:\n";
     if (current.weight)
-      prompt += `- Weight: ${current.weight} ${current.weightUnit || "lbs"}\n`;
+      prompt += `- Weight: ${weight(current.weight)}\n`;
     if (current.bodyFatPercentage)
       prompt += `- Body Fat: ${current.bodyFatPercentage}%\n`;
   }
@@ -101,7 +121,9 @@ export function buildCheckInAnalysisPrompt(
     current.exerciseHighlights.forEach((h) => {
       const type = h.highlightType === "pr" ? "PR" : h.highlightType === "struggle" ? "Struggle" : "Note";
       prompt += `- [${type}] ${sanitizeForAIPrompt(h.exerciseName)}`;
-      if (h.weightValue) prompt += ` @ ${h.weightValue}${h.weightUnit}`;
+      // Was `${h.weightValue}${h.weightUnit}` with NO fallback — an unmapped
+      // highlight emitted "100undefined" straight into the model's context.
+      if (h.weightValue) prompt += ` @ ${load(h.weightValue)}`;
       if (h.reps) prompt += ` x ${h.reps}`;
       prompt += "\n";
       if (h.details) prompt += `  ${sanitizeForAIPrompt(h.details)}\n`;
@@ -160,7 +182,7 @@ export function buildCheckInAnalysisPrompt(
     prompt += "\n**PREVIOUS CHECK-INS (for trend analysis):**\n";
     previous.slice(0, 3).forEach((prev, idx) => {
       prompt += `\n${idx + 1}. ${new Date(prev.createdAt).toLocaleDateString()}\n`;
-      if (prev.weight) prompt += `   Weight: ${prev.weight} ${prev.weightUnit || "lbs"}\n`;
+      if (prev.weight) prompt += `   Weight: ${weight(prev.weight)}\n`;
       if (prev.adherencePercentage) prompt += `   Adherence: ${prev.adherencePercentage}%\n`;
       if (prev.workoutsCompleted) prompt += `   Workouts: ${prev.workoutsCompleted}\n`;
       if (prev.mood) prompt += `   Mood: ${prev.mood}/5\n`;

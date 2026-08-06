@@ -9,6 +9,8 @@ import { BodyFatGoalCard } from "./body-fat-goal-card";
 import { NutritionRegenerationBanner } from "../clients/nutrition/nutrition-regeneration-banner";
 import { useToast } from "@/hooks/use-toast";
 import { useRouter } from "next/navigation";
+import { useUnits } from "@/contexts/units-context";
+import { formatWeight } from "@/utils/unit-conversions";
 
 type GoalProgressViewProps = {
   goalProgress: GoalProgress;
@@ -22,6 +24,7 @@ export const GoalProgressView = ({
   clientData
 }: GoalProgressViewProps) => {
   const { toast } = useToast();
+  const { preference } = useUnits();
   const router = useRouter();
   const [_isRegenerating, setIsRegenerating] = useState(false);
 
@@ -123,8 +126,12 @@ export const GoalProgressView = ({
             {hasWeightGoal && (
               <p>
                 <span className="font-medium">Weight:</span>{" "}
-                {Math.abs(goalProgress.weight!.remaining)}
-                {goalProgress.weight!.unit} to go
+                {Math.abs(
+                  Math.round(
+                    formatWeight(goalProgress.weight!.remaining, preference).value * 10,
+                  ) / 10,
+                )}
+                {formatWeight(0, preference).unit} to go
                 {goalProgress.weight!.weeksToGoal && (
                   <span className="text-[#93b0b4]">
                     {" "}• ~{Math.round(goalProgress.weight!.weeksToGoal)} weeks remaining

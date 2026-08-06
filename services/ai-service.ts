@@ -11,6 +11,7 @@ import type { WeeklyNutritionSummary } from "@/types/weekly-nutrition";
 import type { PeriodSnapshot } from "@/types/schedule";
 import { AI_SYSTEM_PROMPT, buildCheckInAnalysisPrompt } from "@/utils/ai-prompt-builder";
 import { parseCheckInReview } from "@/lib/validations/check-in-review";
+import type { UnitSystem } from "@/utils/unit-conversions";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -27,7 +28,9 @@ export const generateCheckInSummary = async (
   weeklySummary?: WeeklyNutritionSummary | null,
   periodSnapshot?: PeriodSnapshot | null,
   trainingEventDetails?: CheckInTrainingEventDetail[],
-  exerciseSummaries?: Map<string, string[]>
+  exerciseSummaries?: Map<string, string[]>,
+  /** The COACH's unit system — they read the summary, whoever triggered it. */
+  viewer?: UnitSystem
 ): Promise<CheckInReview> => {
   try {
     const prompt = buildCheckInAnalysisPrompt(
@@ -41,7 +44,8 @@ export const generateCheckInSummary = async (
       weeklySummary,
       periodSnapshot,
       trainingEventDetails,
-      exerciseSummaries
+      exerciseSummaries,
+      viewer
     );
 
     const completion = await openai.chat.completions.create({
@@ -74,7 +78,9 @@ export const regenerateAISummary = async (
   endDate?: Date,
   weeklySummary?: WeeklyNutritionSummary | null,
   trainingEventDetails?: CheckInTrainingEventDetail[],
-  exerciseSummaries?: Map<string, string[]>
+  exerciseSummaries?: Map<string, string[]>,
+  /** The COACH's unit system — they read the summary. */
+  viewer?: UnitSystem
 ): Promise<CheckInReview> => {
   try {
     const focusInstructions = {
@@ -87,7 +93,7 @@ export const regenerateAISummary = async (
     const prompt = buildCheckInAnalysisPrompt(
       checkIn, previousCheckIns, clientName,
       dailyLogs, habitLogs, startDate, endDate, weeklySummary,
-      undefined, trainingEventDetails, exerciseSummaries
+      undefined, trainingEventDetails, exerciseSummaries, viewer
     );
     const modifiedPrompt = instruction ? `${instruction}\n\n${prompt}` : prompt;
 

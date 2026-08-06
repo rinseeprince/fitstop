@@ -1,8 +1,15 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { CheckInComparisonView } from "./check-in-comparison-view";
 import type { CheckInComparison, ProgressChartData, CheckIn } from "@/types/check-in";
 import type { SessionSummary } from "@/lib/check-in/adherence";
+
+// Required, not optional: units-context imports auth-context, which constructs
+// the browser Supabase client at module load and throws without env vars.
+vi.mock("@/contexts/units-context", () => ({
+  useUnits: () => ({ preference: "metric", isLoading: false, error: null }),
+}));
+
 
 const checkIn = (overrides: Partial<CheckIn>): CheckIn => ({
   id: "c",

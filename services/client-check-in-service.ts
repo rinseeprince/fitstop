@@ -23,6 +23,7 @@ import {
 import { calculateCheckInPeriod, getDateString } from "@/lib/date-helpers";
 import type { SubmitCheckInRequest, CheckInFormData, Client } from "@/types/check-in";
 import type { PeriodSnapshot } from "@/types/schedule";
+import { getCoachUnitPreference } from "@/lib/viewer-preferences";
 
 /**
  * Triggers AI summary generation for a completed check-in
@@ -115,6 +116,12 @@ export async function triggerAISummaryGeneration(
     // Read period snapshot if it was generated during submission
     const periodSnapshot = currentCheckIn.periodSnapshot as PeriodSnapshot | null ?? null;
 
+    // This path is CLIENT-authenticated (the client just submitted), but the
+    // coach is who reads the summary — so resolve the owning coach's unit, not
+    // the request's principal. getViewerUnitPreference(request) would render a
+    // coach's summary in whichever unit their client happens to prefer.
+    const viewer = await getCoachUnitPreference(client?.coachId);
+
     // Generate AI summary with enhanced data including daily tracking
     const aiSummary = await generateCheckInSummary(
       currentCheckIn,
@@ -127,7 +134,8 @@ export async function triggerAISummaryGeneration(
       weeklySummary,
       periodSnapshot,
       trainingEventDetails,
-      exerciseSummaries
+      exerciseSummaries,
+      viewer
     );
 
     // Update check-in with AI summary (v2 format)

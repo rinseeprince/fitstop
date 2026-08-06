@@ -10,13 +10,28 @@ import {
   TEXT_PRIMARY,
 } from "@/components/clients/training/program-builder/builder-tokens";
 import type { GoalProgress } from "@/types/check-in";
+import { useUnits } from "@/contexts/units-context";
+import { formatWeight } from "@/utils/unit-conversions";
 
 type WeightGoalCardProps = {
   weightGoal: NonNullable<GoalProgress["weight"]>;
 };
 
 export const WeightGoalCard = ({ weightGoal }: WeightGoalCardProps) => {
-  const { paceStatus, requiredRate, safeCeiling, unit } = weightGoal;
+  const { paceStatus, requiredRate, safeCeiling } = weightGoal;
+  // weightGoal.unit came off the client's stored tag; a coach reads their own.
+  // Body weights and weekly RATES of body-weight change — formatWeight, never
+  // formatLoad: snapping a 0.5 kg/week rate to the nearest 5 lb would show 0.
+  //
+  // Only DISPLAY converts. The pace comparisons below stay on canonical
+  // kilograms: both sides scale by the same factor, so converting them would
+  // change nothing except the chance of a rounding artefact flipping a verdict.
+  const { preference } = useUnits();
+  const unit = formatWeight(0, preference).unit;
+  const w = (valueKg: number | undefined): number | undefined =>
+    valueKg === undefined
+      ? undefined
+      : Math.round(formatWeight(valueKg, preference).value * 10) / 10;
 
   // Pace-aware badge (Teal Summit two-colour: teal good, amber attention - no red).
   const badge =
@@ -73,11 +88,11 @@ export const WeightGoalCard = ({ weightGoal }: WeightGoalCardProps) => {
           <Progress value={weightGoal.percentComplete} className="h-3" />
           <div className={cn(MONO_META_CLASS, "flex justify-between text-xs")}>
             <span>
-              Start: {weightGoal.startingWeight}
+              Start: {w(weightGoal.startingWeight)}
               {unit}
             </span>
             <span>
-              Goal: {weightGoal.goal}
+              Goal: {w(weightGoal.goal)}
               {unit}
             </span>
           </div>
@@ -88,14 +103,14 @@ export const WeightGoalCard = ({ weightGoal }: WeightGoalCardProps) => {
           <div>
             <div className="text-xs text-[#93b0b4] mb-1">Current Weight</div>
             <div className={cn("text-lg font-semibold", MONO, TEXT_PRIMARY)}>
-              {weightGoal.current}
+              {w(weightGoal.current)}
               {unit}
             </div>
           </div>
           <div>
             <div className="text-xs text-[#93b0b4] mb-1">Remaining</div>
             <div className={cn("text-lg font-semibold", MONO, TEXT_PRIMARY)}>
-              {Math.abs(weightGoal.remaining)}
+              {Math.abs(w(weightGoal.remaining) ?? 0)}
               {unit}
             </div>
           </div>
@@ -114,7 +129,7 @@ export const WeightGoalCard = ({ weightGoal }: WeightGoalCardProps) => {
                     <TrendingUp className="h-4 w-4 text-[#d97706]" strokeWidth={1.5} />
                   )}
                   <span className={cn("font-medium", MONO, TEXT_PRIMARY)}>
-                    {Math.abs(weightGoal.avgWeeklyChange)}
+                    {Math.abs(w(weightGoal.avgWeeklyChange) ?? 0)}
                     {unit}/week
                   </span>
                 </div>
@@ -140,7 +155,7 @@ export const WeightGoalCard = ({ weightGoal }: WeightGoalCardProps) => {
                 <div className="flex justify-between text-xs mb-0.5">
                   <span className="text-[#93b0b4]">Required</span>
                   <span className={cn("font-medium", requiredFinite && MONO, TEXT_PRIMARY)}>
-                    {requiredFinite ? `${requiredRate}${unit}/week` : "Deadline passed"}
+                    {requiredFinite ? `${w(requiredRate)}${unit}/week` : "Deadline passed"}
                   </span>
                 </div>
                 {/* dynamic bar width (percentage) - inline style as in mini-bar-sparkline */}
@@ -152,7 +167,7 @@ export const WeightGoalCard = ({ weightGoal }: WeightGoalCardProps) => {
                 <div className="flex justify-between text-xs mb-0.5">
                   <span className="text-[#93b0b4]">Safe ceiling</span>
                   <span className={cn("font-medium", MONO, TEXT_PRIMARY)}>
-                    {safeCeiling}
+                    {w(safeCeiling)}
                     {unit}/week
                   </span>
                 </div>

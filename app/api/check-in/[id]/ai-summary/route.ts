@@ -18,6 +18,7 @@ import { aiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { requireCoachOwnsCheckIn } from "@/lib/require-coach-auth";
 import { aiSummaryRequestSchema } from "@/lib/validations/check-in";
+import { getCoachUnitPreference } from "@/lib/viewer-preferences";
 
 export async function POST(
   request: NextRequest,
@@ -117,6 +118,11 @@ export async function POST(
       exerciseSummaries = new Map();
     }
 
+    // The COACH reads this summary, so it renders in THEIR unit — resolved from
+    // the authed principal here, and from the check-in's owning coach on the
+    // client-submit path (services/client-check-in-service.ts).
+    const viewer = await getCoachUnitPreference(auth.coachId);
+
     // Generate or regenerate AI summary
     const aiSummary = focus
       ? await regenerateAISummary(
@@ -130,7 +136,8 @@ export async function POST(
           endDate,
           weeklySummary,
           trainingEventDetails,
-          exerciseSummaries
+          exerciseSummaries,
+          viewer
         )
       : await generateCheckInSummary(
           currentCheckIn,
@@ -143,7 +150,8 @@ export async function POST(
           weeklySummary,
           undefined,
           trainingEventDetails,
-          exerciseSummaries
+          exerciseSummaries,
+          viewer
         );
 
     // Update check-in with new AI summary (v2 format)

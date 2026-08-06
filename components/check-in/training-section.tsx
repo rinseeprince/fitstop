@@ -7,6 +7,8 @@ import type { CheckInWithDetails, CheckInSessionCompletion } from "@/types/check
 import type { SessionStatus, SessionSummary } from "@/lib/check-in/adherence";
 import { classifySession } from "@/lib/check-in/adherence";
 import { cn } from "@/lib/utils";
+import { useUnits } from "@/contexts/units-context";
+import { formatLoad } from "@/utils/unit-conversions";
 import {
   LABEL_CLASS,
   MONO,
@@ -50,6 +52,7 @@ function detailLine(session: CheckInSessionCompletion, status: SessionStatus): s
 }
 
 export const TrainingSection = ({ checkIn, adherence }: TrainingSectionProps) => {
+  const { preference } = useUnits();
   const sessions = checkIn.sessionCompletions ?? [];
   const prHighlights = (checkIn.exerciseHighlights ?? []).filter(
     (h) => h.highlightType === "pr"
@@ -128,7 +131,10 @@ export const TrainingSection = ({ checkIn, adherence }: TrainingSectionProps) =>
                 {(pr.weightValue || pr.reps) && (
                   <span className={cn("font-bold", MONO, "text-[#0d9488]")}>
                     {" "}
-                    {pr.weightValue && `${pr.weightValue}${pr.weightUnit || "kg"}`}
+                    {/* A PR is a barbell load, so formatLoad — it snaps an
+                        imperial conversion to something loadable. */}
+                    {pr.weightValue &&
+                      `${formatLoad(pr.weightValue, preference).value}${formatLoad(pr.weightValue, preference).unit}`}
                     {pr.weightValue && pr.reps && " x "}
                     {pr.reps && `${pr.reps} reps`}
                   </span>

@@ -9,6 +9,10 @@ import {
 import type { CheckIn, GetCheckInComparisonResponse, MetricChange } from "@/types/check-in";
 import type { DailyLog } from "@/types/daily-log";
 import type { SessionSummary } from "@/lib/check-in/adherence";
+import { useUnits } from "@/contexts/units-context";
+import { formatWeight } from "@/utils/unit-conversions";
+
+const round1 = (n: number): number => Math.round(n * 10) / 10;
 
 type FullWeekTarget = {
   calories: number;
@@ -87,6 +91,7 @@ export const KPIRibbon = ({
   fullWeekTarget,
   adherence,
 }: KPIRibbonProps) => {
+  const { preference } = useUnits();
   const changes = comparisonData?.comparison?.changes;
   const hasPreviousCheckIn = comparisonData?.comparison?.previous != null;
   const daysDiff = Math.floor((contextEndDate.getTime() - contextStartDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
@@ -170,8 +175,10 @@ export const KPIRibbon = ({
   const cards: KPICardData[] = [
     {
       label: "Weight",
-      value: checkIn.weight ? String(checkIn.weight) : "--",
-      unit: checkIn.weightUnit || "kg",
+      // Body weight: formatWeight, which converts freely and never snaps.
+      // checkIn.weightUnit is a mapper constant, not the viewer's choice.
+      value: checkIn.weight ? String(round1(formatWeight(checkIn.weight, preference).value)) : "--",
+      unit: formatWeight(0, preference).unit,
       delta: weightComparison?.delta,
       subText: weightComparison?.label,
       accent: checkIn.weight ? accentFromDelta(weightComparison) : "neutral",

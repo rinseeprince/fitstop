@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // Mock the supabase-admin module
+const { getCoachUnitPreferenceMock } = vi.hoisted(() => ({
+  getCoachUnitPreferenceMock: vi.fn(),
+}))
+
 vi.mock('./supabase-admin', () => ({
   supabaseAdmin: {
     from: vi.fn(),
@@ -40,6 +44,10 @@ vi.mock('./client-service', () => ({
   updateClient: vi.fn(),
 }))
 
+vi.mock('@/lib/viewer-preferences', () => ({
+  getCoachUnitPreference: (...a: unknown[]) => getCoachUnitPreferenceMock(...a),
+}))
+
 vi.mock('./bmr-service', () => ({
   updateClientBMR: vi.fn(),
 }))
@@ -70,6 +78,7 @@ describe('Client Check-in Service', () => {
     vi.clearAllMocks()
     // Default mock for getClientById - returns null (no expected check-in day)
     vi.mocked(getClientById).mockResolvedValue(null)
+    getCoachUnitPreferenceMock.mockResolvedValue('metric')
   })
 
   describe('triggerAISummaryGeneration', () => {
@@ -133,7 +142,10 @@ describe('Client Check-in Service', () => {
         // is unmocked), so the catch sets this to the [] default.
         [],
         // exerciseSummaries (Session 6.3): empty Map default from the same catch.
-        expect.any(Map)
+        expect.any(Map),
+        // The COACH's unit — this path is client-authenticated, but the coach is
+        // who reads the summary.
+        'metric'
       )
       expect(updateCheckInAISummary).toHaveBeenCalledWith(
         mockCheckInId,
@@ -185,7 +197,8 @@ describe('Client Check-in Service', () => {
         null,
         null,
         [],
-        expect.any(Map)
+        expect.any(Map),
+        'metric'
       )
     })
 
@@ -253,7 +266,8 @@ describe('Client Check-in Service', () => {
         null,
         null,
         [],
-        expect.any(Map)
+        expect.any(Map),
+        'metric'
       )
     })
   })
@@ -303,5 +317,32 @@ describe('Client Check-in Service', () => {
         updateClientMetricsFromCheckIn(mockClient, { weight: 175 } as any)
       ).resolves.not.toThrow()
     })
+  })
+})
+describe('AI summary unit resolution', () => {
+  it("resolves the OWNING COACH's unit, not the submitting client's", async () => {
+    vi.mocked(getCheckInWithDetails).mockResolvedValue({
+      id: 'check-in-123',
+      clientId: 'client-123',
+    } as never)
+    vi.mocked(getClientCheckIns).mockResolvedValue({ checkIns: [] } as never)
+    vi.mocked(getClientById).mockResolvedValue({
+      id: 'client-123',
+      coachId: 'coach-9',
+    } as never)
+    vi.mocked(generateCheckInSummary).mockResolvedValue({} as never)
+    vi.mocked(updateCheckInAISummary).mockResolvedValue(undefined)
+    vi.mocked(getDailyLogs).mockResolvedValue([])
+    vi.mocked(getHabitLogs).mockResolvedValue([])
+    getCoachUnitPreferenceMock.mockResolvedValue('imperial')
+
+    await triggerAISummaryGeneration('check-in-123', 'client-123', 'John Doe')
+
+    // Keyed on the COACH. This path is client-authenticated, so resolving the
+    // request's principal would have given the client's unit for prose only the
+    // coach ever reads.
+    expect(getCoachUnitPreferenceMock).toHaveBeenCalledWith('coach-9')
+    const args = vi.mocked(generateCheckInSummary).mock.calls.at(-1)!
+    expect(args[args.length - 1]).toBe('imperial')
   })
 })

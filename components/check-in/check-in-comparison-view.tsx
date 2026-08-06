@@ -6,6 +6,8 @@ import { MONO, TEXT_PRIMARY } from "@/components/clients/training/program-builde
 import { TrendSparkline } from "./trend-sparkline";
 import type { CheckInComparison, ProgressChartData, MetricChange } from "@/types/check-in";
 import type { SessionSummary } from "@/lib/check-in/adherence";
+import { useUnits } from "@/contexts/units-context";
+import { formatLength, formatWeight, type UnitSystem } from "@/utils/unit-conversions";
 
 type CheckInComparisonViewProps = {
   comparison: CheckInComparison;
@@ -103,10 +105,42 @@ const cardClass = "bg-white border border-[rgba(13,148,136,0.08)] rounded-[6px] 
 const headingClass = "font-semibold mb-3 text-[#0c1a1e]";
 
 export const CheckInComparisonView = ({ comparison, chartData, adherence }: CheckInComparisonViewProps) => {
-  const { current, previous, changes, timeBetweenCheckIns } = comparison;
+  // `current` was destructured only for current.weightUnit / measurementUnit,
+  // which were mapper constants rather than the coach's choice.
+  const { previous, changes, timeBetweenCheckIns } = comparison;
   const hasPreviousCheckIn = previous !== null;
-  const weightUnit = current.weightUnit || "kg";
-  const measurementUnit = current.measurementUnit || "in";
+  // current.weightUnit / measurementUnit are mapper constants ("kg"/"cm"), not
+  // the coach's choice — the `|| "kg"` and `|| "in"` fallbacks never fired.
+  // Stored weights are kilograms and girths centimetres, so the VALUES convert
+  // here too, not just the labels.
+  const { preference } = useUnits();
+  const weightUnit = formatWeight(0, preference).unit;
+  const measurementUnit = formatLength(0, preference).unit;
+
+  const round1 = (n: number): number => Math.round(n * 10) / 10;
+  const convertChange = (
+    change: MetricChange | undefined,
+    to: (v: number, viewer: UnitSystem) => { value: number },
+  ): MetricChange | undefined => {
+    if (!change) return change;
+    const at = (v: number | undefined) =>
+      v === undefined ? undefined : round1(to(v, preference).value);
+    return {
+      ...change,
+      current: at(change.current),
+      previous: at(change.previous),
+      // Recomputed from the converted endpoints so the delta reconciles with
+      // the two numbers it describes; percentChange and trend are unitless.
+      change:
+        change.current !== undefined && change.previous !== undefined
+          ? round1(to(change.current, preference).value - to(change.previous, preference).value)
+          : at(change.change),
+    };
+  };
+  const asWeight = (c?: MetricChange) => convertChange(c, formatWeight);
+  const asLength = (c?: MetricChange) => convertChange(c, formatLength);
+  const weightSeries = (vals: number[]) =>
+    vals.map((v) => round1(formatWeight(v, preference).value));
 
   // Use the shared (recomputed) adherence for the latest series point so the
   // sparkline and the displayed value agree with the hero card.
@@ -141,10 +175,10 @@ export const CheckInComparisonView = ({ comparison, chartData, adherence }: Chec
         <div className="space-y-1">
           <MetricTrendRow
             label="Weight"
-            current={changes.weight?.current}
+            current={asWeight(changes.weight)?.current}
             unit={` ${weightUnit}`}
-            change={changes.weight}
-            series={values(chartData.weight)}
+            change={asWeight(changes.weight)}
+            series={weightSeries(values(chartData.weight))}
             inverse
           />
           <MetricTrendRow
@@ -155,11 +189,11 @@ export const CheckInComparisonView = ({ comparison, chartData, adherence }: Chec
             series={values(chartData.bodyFat)}
             inverse
           />
-          <MetricRow label="Waist" change={changes.waist} unit={` ${measurementUnit}`} inverse />
-          <MetricRow label="Hips" change={changes.hips} unit={` ${measurementUnit}`} />
-          <MetricRow label="Chest" change={changes.chest} unit={` ${measurementUnit}`} />
-          <MetricRow label="Arms" change={changes.arms} unit={` ${measurementUnit}`} />
-          <MetricRow label="Thighs" change={changes.thighs} unit={` ${measurementUnit}`} />
+          <MetricRow label="Waist" change={asLength(changes.waist)} unit={` ${measurementUnit}`} inverse />
+          <MetricRow label="Hips" change={asLength(changes.hips)} unit={` ${measurementUnit}`} />
+          <MetricRow label="Chest" change={asLength(changes.chest)} unit={` ${measurementUnit}`} />
+          <MetricRow label="Arms" change={asLength(changes.arms)} unit={` ${measurementUnit}`} />
+          <MetricRow label="Thighs" change={asLength(changes.thighs)} unit={` ${measurementUnit}`} />
         </div>
       </div>
 
