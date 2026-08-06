@@ -198,12 +198,12 @@ Phase 4 corrects these lines. Until then, treat them as known-false.
 
 ## Phase overview
 
-| Phase | Delivers | Touches | Risk |
-|---|---|---|---|
-| 1 | Conversion module, `coaches.unit_preference`, viewer resolver, `UnitsProvider` | New files + 1 migration | Low — nothing reads it yet |
-| 2 | All storage converted to kg/cm; unit-tag columns dropped | 1 migration + write paths | Medium — UI shows wrong labels until Phase 3 |
-| 3 | Every render path converts through the helpers | ~40 component files | Medium — wide but mechanical |
-| 4 | Coach + client settings toggles; forms write kg | Settings pages, forms | Low |
+| Phase | Status | Delivers | Touches | Risk |
+|---|---|---|---|---|
+| 1 | ✅ **Shipped** `b9bbfac` 2026-08-06 | Conversion module, `coaches.unit_preference`, viewer resolver, `UnitsProvider` | New files + 1 migration | Low — nothing reads it yet |
+| 2 | Not started | All storage converted to kg/cm; unit-tag columns dropped | 1 migration + write paths | Medium — UI shows wrong labels until Phase 3 |
+| 3 | Not started | Every render path converts through the helpers | ~40 component files | Medium — wide but mechanical |
+| 4 | Not started | Coach + client settings toggles; forms write kg | Settings pages, forms | Low |
 
 **Expect a broken-looking UI between Phase 2 and Phase 3.** After Phase 2 the
 database holds kg but the components still print whatever label they hardcoded,
