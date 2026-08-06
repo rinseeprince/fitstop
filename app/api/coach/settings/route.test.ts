@@ -74,11 +74,57 @@ describe("PATCH /api/coach/settings", () => {
     expect(updateCoachSettings).not.toHaveBeenCalled();
   });
 
-  it("returns 400 on a missing timezone field", async () => {
+  it("returns 400 on an empty body", async () => {
     const response = await PATCH(createMockRequest({}));
 
     expect(response.status).toBe(400);
     expect(updateCoachSettings).not.toHaveBeenCalled();
+  });
+
+  // Both fields are optional so the two writers can send one each — the
+  // timezone auto-sync and the Settings units card. A schema requiring both
+  // would make each clobber the other's field.
+  it("accepts unitPreference alone, with no timezone", async () => {
+    const response = await PATCH(
+      createMockRequest({ unitPreference: "imperial" }),
+    );
+    const data = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(data.success).toBe(true);
+    expect(updateCoachSettings).toHaveBeenCalledWith("coach-1", {
+      unitPreference: "imperial",
+    });
+  });
+
+  it("accepts both fields together", async () => {
+    const response = await PATCH(
+      createMockRequest({ timezone: "Europe/London", unitPreference: "metric" }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(updateCoachSettings).toHaveBeenCalledWith("coach-1", {
+      timezone: "Europe/London",
+      unitPreference: "metric",
+    });
+  });
+
+  it("returns 400 on an unknown unitPreference value", async () => {
+    const response = await PATCH(createMockRequest({ unitPreference: "stone" }));
+
+    expect(response.status).toBe(400);
+    expect(updateCoachSettings).not.toHaveBeenCalled();
+  });
+
+  // Regression: the timezone validity check ran unconditionally, so a
+  // unitPreference-only body would have been rejected by an IANA lookup of
+  // `undefined`.
+  it("does not run the IANA check when timezone is absent", async () => {
+    const response = await PATCH(createMockRequest({ unitPreference: "metric" }));
+    const data = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(data.error).toBeUndefined();
   });
 
   it("returns 400 on invalid JSON", async () => {

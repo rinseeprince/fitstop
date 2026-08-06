@@ -5,6 +5,12 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { SettingsUnitsCard } from "@/components/coach/settings-units-card"
+
+// NOTE: the Profile and Business cards below are still an unwired mock — no
+// fetch, no save handler, hardcoded values. Only the Units card is real
+// (units canonicalization Phase 4). Do not read the mock cards as a working
+// pattern to copy.
 
 const cardClass = "bg-white border-0 shadow-none rounded-[6px]"
 const headerClass = "px-5 py-4 border-b border-[rgba(13,148,136,0.08)] flex items-center justify-between min-h-[64px]"
@@ -71,6 +77,8 @@ export default function SettingsPage() {
               <Button className={primaryButtonClass}>Save Changes</Button>
             </CardContent>
           </Card>
+
+          <SettingsUnitsCard />
         </div>
       </div>
     </AppLayout>

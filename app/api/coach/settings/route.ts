@@ -6,8 +6,11 @@ import { updateCoachSettingsSchema } from "@/lib/validations/coach";
 import { updateCoachSettings } from "@/services/coach-service";
 
 // PATCH /api/coach/settings - Update the authenticated coach's settings.
-// Written for the device timezone auto-sync (Session 7.81); no manual picker
-// exists for this endpoint.
+//
+// Two writers, each sending one field: the device timezone auto-sync
+// (`useTimezoneSync`, Session 7.81 — no manual picker) and the Settings page's
+// units card (units canonicalization Phase 4). The schema takes both optional
+// and the service writes only what was supplied, so neither clobbers the other.
 export async function PATCH(request: NextRequest) {
   const rateLimitResult = await coachApiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
@@ -44,7 +47,10 @@ export async function PATCH(request: NextRequest) {
     );
   }
 
-  if (!Intl.supportedValuesOf("timeZone").includes(parsed.data.timezone)) {
+  if (
+    parsed.data.timezone &&
+    !Intl.supportedValuesOf("timeZone").includes(parsed.data.timezone)
+  ) {
     return NextResponse.json(
       { success: false, error: "Invalid timezone" },
       { status: 400 }
