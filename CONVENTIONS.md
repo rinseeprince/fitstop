@@ -643,3 +643,81 @@
   - .env files: .env.local (dev), .env.production
   - Required vars: there is no `.env.example` to document them in - see §15. The current surface is `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, the optional `ASSISTANT_MODEL` / `ASSISTANT_EFFORT` / `ASSISTANT_THINKING` overrides, and the Supabase + Upstash keys. If you create `.env.example`, backfill it from those.
   - Secrets: Never in code, use vault/secrets manager for prod
+  ## 20. Units
+
+  **Storage is canonical. Every weight is KILOGRAMS, every length is CENTIMETRES.**
+  No per-row unit tags, no exceptions. The `weight_unit` / `height_unit` /
+  `measurement_unit` columns are gone (migrations 140-141).
+
+  **The preference belongs to the VIEWER, never to the record.** A coach has
+  their own (`coaches.unit_preference`), a client has theirs
+  (`clients.unit_preference`), and neither can change the other's. A metric coach
+  and an imperial client work on the same rows and each see their own unit. Both
+  default to `'metric'`. Anything that writes a unit onto someone else's account
+  is a bug, not a feature — that is what the nutrition drawer's toggle did.
+
+  **Convert only at the presentation boundary.** Nothing between the database and
+  the render layer knows about pounds or inches. API responses carry kg/cm.
+
+  ### Reading a value
+
+  Every unit-bearing number renders through `utils/unit-conversions.ts` with the
+  viewer's preference from `useUnits()` (client components) or
+  `getViewerUnitPreference(request)` (server-rendered human-readable text only —
+  AI prompts and calculator warnings). **No unit literal belongs in JSX.** If you
+  are typing `"kg"` or `"lbs"` into markup, you are hardcoding someone else's
+  assumption.
+
+  | Value | Helper | Why |
+  |---|---|---|
+  | Barbell load — prescribed, logged, PR, e1RM, volume | `formatLoad` | Snaps to a loadable increment |
+  | Body weight, goal weight, weight change | `formatWeight` | Converts freely, never snaps |
+  | Girths (waist, hips, chest, arms, thighs) | `formatLength` | Decimal inches are correct here |
+  | Height | `formatHeight` | Imperial height is composite — `5'11"`, never `71 in` |
+
+  **Why `formatLoad` snaps and `formatWeight` does not.** 82.3 kg and 181.4 lbs
+  are both meaningful body weights. A barbell is not: convert a prescribed 100 kg
+  faithfully and an imperial gym reads 220.5 lbs, which cannot be loaded. A
+  precise-looking unloadable number is worse than no conversion, so an imperial
+  viewer gets the nearest 2.5 lb. Metric is the IDENTITY path and is pass-through
+  — snapping there would not round a conversion artefact, it would rewrite stored
+  data at the display layer (a logged 47 kg rendering as 47.5). Never restore a
+  metric snap.
+
+  ### Writing a value
+
+  Forms collect in the viewer's unit and convert on submit via
+  `parseWeightToKg` / `parseLengthToCm` / `parseHeightToCm`. Use
+  `hooks/use-unit-inputs.ts` (`useCanonicalInput`, `useHeightInput`) rather than
+  hand-rolling it — it owns three things that are easy to get wrong:
+
+  1. **An untouched field must not write.** Display rounding is lossy: 178 cm
+     seeds an imperial viewer as 5'10" and parses back to 177.8; 100 kg seeds as
+     "220.5" and parses back to 100.017. A form that re-parses whatever is in the
+     box rewrites values nobody edited, on EVERY save, because the box is
+     pre-populated. Guard by comparing the SEEDED STRING, not an epsilon — only
+     that makes a focus-through an exact no-op. (Same rule, same reason, as
+     `program-builder/commit-input.ts` for prescribed loads.)
+  2. **A unit flip re-renders the value, it does not reinterpret the digits.**
+     Someone who types 180 cm and switches to imperial means 5'11", not 180 in.
+  3. **Bounds describe STORAGE.** Validate the CONVERTED value. `WEIGHT_KG_MIN` /
+     `WEIGHT_KG_MAX` / `GIRTH_TORSO_CM_MAX` / `GIRTH_LIMB_CM_MAX` / `LOAD_KG_MAX`
+     live in `lib/constants.ts`; never write the number inline.
+
+  **Editable load inputs are the exception to the table above: they seed from an
+  UNSNAPPED conversion** (`displayLoad`, not `formatLoad`) behind a field-level
+  dirty guard. Seeding an editor from `formatLoad` round-trips the snap into
+  `set_specs` — an imperial coach opens a 100 kg session, sees 220, tabs past
+  without editing, and stores 99.79 kg. Row-level guards are not enough; a row is
+  dirty the moment its reps change.
+
+  ### Wire tags
+
+  A payload field naming its own unit is a legacy shape. Two survive, both for a
+  non-web client (React Native) that logs in its own unit:
+  `logTrainingEventSchema.weightUnit` and the check-in schema's
+  `weightUnit`/`measurementUnit`. **Both are REQUIRED alongside the value they
+  describe**, and that requiredness is what makes them safe — an optional tag
+  needs a fallback, and a fallback silently decides the unit for a payload that
+  never stated one. That is exactly how pounds got stored as kilograms. Reject an
+  untagged value; never guess it. Do not add a third tag.

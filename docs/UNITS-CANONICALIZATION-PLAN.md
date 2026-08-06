@@ -1,8 +1,16 @@
 # Units canonicalization — implementation plan
 
-**Status**: Phases 1-3 shipped (2026-08-06, migrations 140 + 141) · **Phase 4 is
-all that remains** · **Logged**: 2026-08-05 · **Next migration number**: 143 (142
-was used by the unrelated magic-link check-in removal)
+**Status**: ✅ **ALL FOUR PHASES SHIPPED** (2026-08-07, migrations 140 + 141) ·
+**Logged**: 2026-08-05 · **Next migration number**: 143 (142 was used by the
+unrelated magic-link check-in removal)
+
+> **Phase 4's own plan contained a bug that would have shipped.** Its scope said
+> to delete the intake unit toggle in favour of `useUnits()`. That would have
+> stranded every imperial client: `app/client/layout.tsx` blocks a
+> `pending_intake` client from reaching `/client/settings`, and
+> `clients.unit_preference` defaults to `'metric'` — so they would have had to
+> type kilograms into a form with no switch, on the phase whose stated goal is
+> that each person sets their own unit. See the Phase 4 STATUS block.
 
 > **Phase 3 disproved five of its own claims, two of which would have corrupted
 > data.** They are listed at the top of the Phase 3 section under "What this
@@ -203,7 +211,10 @@ this plan supersedes all four:
 | 453 | `PATCH /api/client/settings` accepts `weight_unit`, `unit_preference`, `reminder_preferences`, `timezone` | The schema (`lib/validations/client.ts:107-112`) accepts only `unitPreference` and `timezone`. `weight_unit` is derived server-side; `reminder_preferences` is a different endpoint. |
 | 422, 484 | Viewer-relative units are "planned Phase 8 work" | Phase 8 is superseded by this plan. Those references are dangling. |
 
-Phase 4 corrects these lines. Until then, treat them as known-false.
+**Phase 4 corrected all four lines (2026-08-07).** The table above is now a
+historical record of what they said, not a live warning — `docs/ARCHITECTURE.md`
+at HEAD is accurate on units. Kept because the corrections are only legible
+next to what they replaced.
 
 ---
 
@@ -214,7 +225,7 @@ Phase 4 corrects these lines. Until then, treat them as known-false.
 | 1 | ✅ **Shipped** `b9bbfac` 2026-08-06 | Conversion module, `coaches.unit_preference`, viewer resolver, `UnitsProvider` | New files + 1 migration | Low — nothing reads it yet |
 | 2 | ✅ **Shipped** `0a99622` 2026-08-06 | All storage converted to kg/cm; unit-tag columns dropped | 1 migration + write paths | Medium — UI shows wrong labels until Phase 3 |
 | 3 | ✅ **Shipped** 2026-08-06 (11 commits, `ebf1bb6`…`9f1fe3a`) | Every render path converts through the helpers | ~60 files | Was NOT mechanical — see its STATUS block |
-| 4 | Not started | Coach + client settings toggles; forms write kg | Settings pages, forms | Low |
+| 4 | ✅ **Shipped** 2026-08-07 (8 commits, `61206da`…`84aafb2`) | Coach + client settings toggles; forms write kg | Settings pages, forms, 6 validation sites | Its own plan would have stranded imperial intake clients — see its STATUS block |
 
 **Expect a broken-looking UI between Phase 2 and Phase 3.** After Phase 2 the
 database holds kg but the components still print whatever label they hardcoded,
@@ -696,7 +707,66 @@ full runs — re-run it before assuming you broke it.
 
 ---
 
-## Phase 4 — Viewer preference UI and write paths
+## Phase 4 — Viewer preference UI and write paths · **SHIPPED** 2026-08-07
+
+Batches A–F: `61206da` `6f3fef8` `f6da84c` `c67cfcb` `469b2f8` `2612a09`
+`7dcdebe` `84aafb2`.
+
+### What this section got wrong — read before trusting any bullet below
+
+1. **"Delete the drawer toggle" was right; "delete the intake toggle" was
+   wrong, and this document never said the second one out loud.** The scope
+   below only says intake "already converts — point it at the shared helper".
+   The executable reading was to replace its localStorage toggle with
+   `useUnits()`. That strands imperial clients: `app/client/layout.tsx:56-62`
+   redirects a `pending_intake` client to the intake form and `:102` returns
+   `null` for every other route, so `/client/settings` is unreachable until
+   activation, and `clients.unit_preference` defaults to `'metric'`. The toggle
+   had to STAY and be repointed at `PATCH /api/client/settings`, which is
+   reachable pre-activation because `getAuthenticatedClientId` gates on
+   `clients.active` (set at creation, `client-service.ts:70`) rather than on
+   `onboarding_status`.
+2. **The `2.20462` this section tells Phase 4 to delete was already gone**,
+   removed by Phase 3. What was actually left in intake was the localStorage
+   toggle.
+3. **`client-goal-editor.tsx` was already done**, including its seeded-string
+   dirty guard. The scope lists it as Phase 4 work.
+4. **The lbs-shaped validation range appears SIX times, not once.** This
+   section names only `metric-entry-definitions.ts:31`. Also live:
+   `client-metrics.ts:4` and `:6`, `client-goals.ts:23` (behind the goal editor,
+   which has sent canonical kg since Phase 3), `metrics/route.ts:62` (a
+   narrower inline copy), and `check-in.ts:89`. All now read
+   `WEIGHT_KG_MIN`/`WEIGHT_KG_MAX` from `lib/constants.ts`.
+5. **`mapClientRow` defaulted a NULL `unit_preference` to IMPERIAL** while the
+   column default, `DEFAULT_UNIT_SYSTEM` and `readClientPreference` all said
+   metric — so such a client saw metric everywhere `useUnits()` reached and
+   imperial in the settings form. Not mentioned anywhere in this plan.
+
+### Decisions taken during execution
+
+- **Check-in unit tags are now conditionally REQUIRED**, not defaulted. Both
+  fallbacks are deleted: an untagged weight or girth is a 400. The girth
+  fallback (`?? "in"`) and the weight branch (converts only on explicit
+  `"lbs"`) disagreed about what the same silence meant. Requiredness is what
+  makes a wire tag safe; this is why `logTrainingEventSchema.weightUnit` was
+  always safe and these were not.
+- **`setSpecSchema.load_value` keeps its literal bound.** It is polymorphic —
+  absolute kilograms when `load_type` is `"absolute"`, a percentage otherwise —
+  so naming it `LOAD_KG_MAX` would assert something false about half its values.
+- **Girth and load ceilings kept their VALUES** (200/100 cm, 2000 kg) and were
+  only named and documented. They were unit-*blind*, not wrong. Only the weight
+  ceiling changed, 700 → 250.
+
+### Coverage note
+
+Five of the seven files this phase touched most had **no test file at all**
+(`lib/mappers.ts`, `log-measurement-dialog.tsx`, `client-metrics.ts`,
+`metric-entries.ts`, the settings pages), so the suite passed identically
+before and after each fix — the same "green proved nothing" shape Phase 3
+recorded. Every behaviour change in this phase was mutation-tested against the
+pre-change code before being trusted.
+
+---
 
 **Goal**: both a coach and a client can set their own unit, and every form
 accepts input in the viewer's unit while storing kg/cm.
