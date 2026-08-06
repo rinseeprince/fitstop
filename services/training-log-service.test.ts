@@ -2081,3 +2081,56 @@ describe("logTrainingSessionForDate", () => {
 function linkEventNotCalled(matcherQ: ReturnType<typeof createMockQuery>): boolean {
   return matcherQ.update.mock.calls.length === 0;
 }
+
+// A local copy of mapExerciseRow lived in training-log-service and omitted
+// set_specs and video_url, so getTrainingEventDetail — the client portal's only
+// source for a workout — lost the per-set prescription entirely. The compact
+// reps/RPE columns still came through, so the payload looked complete: the
+// client saw "4 x 6-10 @ RPE 8" and no prescribed load, for every session.
+describe("mapExerciseRow is the shared mapper, not a lossy local copy", () => {
+  it("carries set_specs and video_url through", async () => {
+    const { mapExerciseRow } = await import("@/services/training-mappers");
+
+    const mapped = mapExerciseRow({
+      id: "te-1",
+      session_id: "ts-1",
+      exercise_id: null,
+      name: "Squats",
+      order_index: 0,
+      sets: 4,
+      reps_min: 6,
+      reps_max: 10,
+      reps_target: null,
+      rpe_target: 8,
+      percentage_1rm: null,
+      tempo: null,
+      rest_seconds: 180,
+      notes: null,
+      superset_group: null,
+      is_warmup: false,
+      video_url: "https://example.test/squat",
+      set_specs: [
+        {
+          set_number: 1,
+          set_type: "working",
+          reps_min: 6,
+          reps_max: 10,
+          reps_target: null,
+          load_type: "absolute",
+          load_value: 100,
+          rpe_target: 8,
+          tempo: null,
+          rest_seconds: 180,
+          drops: null,
+        },
+      ],
+      created_at: "2026-08-06T00:00:00Z",
+      updated_at: "2026-08-06T00:00:00Z",
+    } as never);
+
+    expect(mapped.setSpecs).toHaveLength(1);
+    expect(mapped.setSpecs?.[0].load_value).toBe(100);
+    expect(mapped.setSpecs?.[0].load_type).toBe("absolute");
+    expect(mapped.videoUrl).toBe("https://example.test/squat");
+  });
+});

@@ -50,3 +50,71 @@ describe("ExerciseTrackerBlock", () => {
     expect(screen.getByText("Foam Roll")).toBeInTheDocument();
   });
 });
+
+// The prescribed load has to reach the weight input as its placeholder. This is
+// the editable (FormModeBlock) path — the static path above never had it.
+import { useForm } from "react-hook-form";
+import type { LogFormValues } from "./log-form-types";
+
+function FormHarness({ exercise }: { exercise: PrescribedExerciseView }) {
+  const { control, register, setValue, getValues } = useForm<LogFormValues>({
+    defaultValues: {
+      completionQuality: "",
+      notes: "",
+      exercises: [
+        {
+          trainingExerciseId: exercise.id,
+          exerciseName: exercise.name,
+          isSwapped: false,
+          skipped: false,
+          notes: "",
+          isUnplanned: false,
+          sets: Array.from({ length: exercise.sets }, () => ({
+            reps: "",
+            weight: "",
+            rpe: "",
+            weightKg: null,
+          })),
+        },
+      ],
+    },
+  });
+  return (
+    <ExerciseTrackerBlock
+      index={0}
+      exercise={exercise}
+      formContext={{ control, register, setValue, getValues, isUnplanned: false }}
+    />
+  );
+}
+
+describe("prescribed load placeholder", () => {
+  const withLoad = makeExercise({
+    sets: 4,
+    setSpecs: Array.from({ length: 4 }, (_, i) => ({
+      set_number: i + 1,
+      set_type: "working",
+      reps_min: 6,
+      reps_max: 10,
+      reps_target: null,
+      load_type: "absolute",
+      load_value: 100,
+      rpe_target: 8,
+      tempo: null,
+      rest_seconds: 180,
+      drops: null,
+    })) as never,
+  });
+
+  it("puts the coach's absolute load on the weight input", () => {
+    render(<FormHarness exercise={withLoad} />);
+    const inputs = screen.getAllByLabelText(/weight/i);
+    expect(inputs[0]).toHaveAttribute("placeholder", "100kg");
+  });
+
+  it("shows nothing when the coach prescribed no load", () => {
+    render(<FormHarness exercise={makeExercise({ sets: 2 })} />);
+    const inputs = screen.getAllByLabelText(/weight/i);
+    expect(inputs[0]).toHaveAttribute("placeholder", "");
+  });
+});

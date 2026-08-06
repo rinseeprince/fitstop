@@ -51,11 +51,17 @@ import type {
   TrainingEvent,
   TrainingEventDetail,
   TrainingEventStatus,
-  TrainingExercise,
   TrainingSession,
 } from "@/types/training";
 import type { SessionCompletionQuality } from "@/types/check-in";
 import { toCanonicalWeightKg } from "@/utils/unit-conversions";
+// The shared mapper, deliberately. A local copy of this function lived here and
+// silently omitted set_specs and video_url, so every read through
+// getTrainingEventDetail lost the per-set prescription — loads, per-set rest and
+// set types — while the compact reps/RPE columns still came through and made the
+// payload look complete. CONVENTIONS §8: "A reader that ignores set_specs sees a
+// truthful but lossy summary."
+import { mapExerciseRow } from "@/services/training-mappers";
 
 // =============================================================================
 // Event-keyed training log service.
@@ -212,29 +218,6 @@ function mapEventRow(row: TrainingEventRow): TrainingEvent {
     sessionLogId: row.session_log_id,
     isModified: row.is_modified,
     calorieSurplusPercentage: row.calorie_surplus_percentage,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
-}
-
-function mapExerciseRow(row: TrainingExerciseRow): TrainingExercise {
-  return {
-    id: row.id,
-    sessionId: row.session_id,
-    exerciseId: row.exercise_id,
-    name: row.name,
-    orderIndex: row.order_index,
-    sets: row.sets,
-    repsMin: row.reps_min ?? undefined,
-    repsMax: row.reps_max ?? undefined,
-    repsTarget: row.reps_target ?? undefined,
-    rpeTarget: row.rpe_target ?? undefined,
-    percentage1rm: row.percentage_1rm ?? undefined,
-    tempo: row.tempo ?? undefined,
-    restSeconds: row.rest_seconds ?? undefined,
-    notes: row.notes ?? undefined,
-    supersetGroup: row.superset_group ?? undefined,
-    isWarmup: row.is_warmup ?? false,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
