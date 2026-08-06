@@ -1,5 +1,6 @@
 import type { CheckIn, Client, Coach, AIInsight, AIRecommendation, EnhancedAIData, ReminderPreferences } from "@/types/check-in";
 import type { ClientIntake, ClientIntakeRow, OnboardingStatus } from "@/types/client-intake";
+import { toUnitSystem } from "@/utils/unit-conversions";
 import type { CheckInRow, ClientRow, CoachRow } from "./database-helpers";
 
 /**
@@ -185,6 +186,7 @@ export function mapCoachRow(row: CoachRow): Coach {
     email: row.email,
     avatarUrl: row.avatar_url ?? undefined,
     timezone: row.timezone,
+    unitPreference: toUnitSystem(row.unit_preference),
     createdAt: row.created_at ?? new Date().toISOString(),
     updatedAt: row.updated_at ?? new Date().toISOString(),
   };

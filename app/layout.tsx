@@ -4,6 +4,7 @@ import { Instrument_Sans, JetBrains_Mono } from "next/font/google"
 import "./globals.css"
 import { AuthProvider } from "@/contexts/auth-context"
 import { IntakePanelProvider } from "@/contexts/intake-panel-context"
+import { UnitsProvider } from "@/contexts/units-context"
 import { Toaster } from "@/components/ui/toaster"
 import { Toaster as SonnerToaster } from "sonner"
 import { PersistentSidebar } from "@/components/persistent-sidebar"
@@ -44,13 +45,18 @@ export default function RootLayout({
     <html lang="en">
       <body className={`${instrumentSans.className} ${jetbrainsMono.variable}`}>
         <AuthProvider>
-          <IntakePanelProvider>
-            <PersistentSidebar />
-            {children}
-            <FloatingIntakePanel />
-            <Toaster />
-            <SonnerToaster position="bottom-right" richColors />
-          </IntakePanelProvider>
+          {/* Inside AuthProvider: a trainer's unit preference rides on the
+              /api/auth/me payload, so UnitsProvider reads it from useAuth()
+              rather than fetching it a second time. */}
+          <UnitsProvider>
+            <IntakePanelProvider>
+              <PersistentSidebar />
+              {children}
+              <FloatingIntakePanel />
+              <Toaster />
+              <SonnerToaster position="bottom-right" richColors />
+            </IntakePanelProvider>
+          </UnitsProvider>
         </AuthProvider>
       </body>
     </html>

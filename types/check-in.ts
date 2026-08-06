@@ -352,6 +352,9 @@ export type Coach = {
   // IANA time zone for coach-local "today" computation, auto-synced from the
   // coach's device on app load (Session 7.81). 'UTC' until first sync.
   timezone: string;
+  // The coach's OWN display units, independent of any client's (migration 140).
+  // NOT NULL in the database with a 'metric' default, so this is never optional.
+  unitPreference: UnitPreference;
   createdAt: string;
   updatedAt: string;
 };

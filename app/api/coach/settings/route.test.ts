@@ -46,6 +46,7 @@ describe("PATCH /api/coach/settings", () => {
       name: "Test Coach",
       email: "coach@example.com",
       timezone: "Europe/London",
+      unitPreference: "metric",
       createdAt: "2024-01-01T00:00:00Z",
       updatedAt: "2024-01-01T00:00:00Z",
     });

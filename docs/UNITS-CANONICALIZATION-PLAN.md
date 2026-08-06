@@ -628,6 +628,13 @@ Deliver:
 2. Client settings: rewire app/client/settings/page.tsx to write only the viewer
    preference. services/client-service.ts must stop deriving weight_unit — that
    column no longer exists.
+   LANDMINE (Phase 1): the coach's preference lives in TWO client-side SWR caches
+   — the units route AND /api/auth/me, which carries it inside coach.unitPreference.
+   Every site that writes a preference must call useInvalidateUnitPreference()
+   from contexts/units-context.tsx, which clears both areas. Invalidating one
+   leaves useAuth().coach stale with nothing erroring. A test that factory-mocks
+   @/contexts/auth-context and mounts UnitsProvider must include isMeKey in the
+   mock, or the second invalidation is a silent no-op.
 3. DELETE the drawer unit toggle rather than rewiring it. hooks/use-nutrition-plan.ts:107-119
    currently PATCHes the CLIENT's unit_preference when the coach flips it — a
    cross-user write. Do not repoint it at the coach's preference: once the coach

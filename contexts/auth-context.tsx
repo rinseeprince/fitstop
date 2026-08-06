@@ -31,7 +31,20 @@ type MeResponse = {
 }
 
 const meKey = (userId: string) => [ME_URL, userId] as const
-const isMeKey = (key: unknown): boolean =>
+/**
+ * Area matcher for the /api/auth/me cache. Exported because the coach's unit
+ * preference rides on this payload (`coach.unitPreference`), so it lives in
+ * BOTH this cache and the units cache — `useInvalidateUnitPreference`
+ * (contexts/units-context.tsx) must clear both areas or a settings change
+ * refreshes one and silently leaves `useAuth().coach` stale (CONVENTIONS §7).
+ *
+ * A test that factory-mocks this module AND mounts UnitsProvider must include
+ * `isMeKey` in the mock, or `mutate(undefined)` becomes a silent no-op. The two
+ * existing mocks (app/client/layout.test.tsx,
+ * components/client-portal/nav/client-nav.test.tsx) mount neither, so they are
+ * unaffected today.
+ */
+export const isMeKey = (key: unknown): boolean =>
   Array.isArray(key) && key[0] === ME_URL
 
 interface AuthContextType {

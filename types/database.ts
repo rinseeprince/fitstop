@@ -1229,6 +1229,7 @@ export type Database = {
           id: string
           name: string
           timezone: string
+          unit_preference: string
           updated_at: string | null
           user_id: string | null
         }
@@ -1239,6 +1240,7 @@ export type Database = {
           id?: string
           name: string
           timezone?: string
+          unit_preference?: string
           updated_at?: string | null
           user_id?: string | null
         }
@@ -1249,6 +1251,7 @@ export type Database = {
           id?: string
           name?: string
           timezone?: string
+          unit_preference?: string
           updated_at?: string | null
           user_id?: string | null
         }
