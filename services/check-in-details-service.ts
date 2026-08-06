@@ -139,7 +139,6 @@ export const mapExerciseHighlight = (
   details: row.details ?? undefined,
   weightValue: row.weight_value ? parseFloat(String(row.weight_value)) : undefined,
   // Canonical kilograms since migration 141 — a constant, not a column.
-  weightUnit: "kg",
   reps: row.reps ?? undefined,
 });
 

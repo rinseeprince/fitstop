@@ -37,7 +37,14 @@ export type SubjectiveMetrics = {
   notes?: string;
 };
 
-// Body measurements and metrics
+// Body measurements and metrics.
+//
+// weightUnit / measurementUnit are DELIBERATELY RETAINED. They are not display
+// shims like the ones removed from CheckIn and Client — they are the check-in
+// FORM's wire tags, written by components/check-in/step-metrics.tsx's toggles
+// and consumed by utils/check-in-canonical-metrics.ts, which converts the
+// submission to canonical kg/cm. That form moves to the viewer preference in
+// Phase 4; these go with it.
 export type BodyMetrics = {
   weight?: number;
   weightUnit?: "lbs" | "kg";
@@ -277,14 +284,12 @@ export type CheckIn = {
 
   // Body metrics
   weight?: number;
-  weightUnit?: "lbs" | "kg";
   bodyFatPercentage?: number;
   waist?: number;
   hips?: number;
   chest?: number;
   arms?: number;
   thighs?: number;
-  measurementUnit?: "in" | "cm";
 
   // Photos
   photoFront?: string;
@@ -421,7 +426,6 @@ export type Client = {
   goalWeight?: number;
   goalBodyFatPercentage?: number;
   goalDeadline?: string;
-  weightUnit?: "lbs" | "kg";
 
   // Starting metrics (original intake values for goal tracking)
   startingWeight?: number;
@@ -741,7 +745,6 @@ export type CheckInComparison = {
     goalDeadline?: string;
     currentWeight?: number;
     currentBodyFatPercentage?: number;
-    weightUnit?: "lbs" | "kg";
     unitPreference?: UnitPreference;
     nutritionPlanBaseWeightKg?: number;
     nutritionPlanCreatedDate?: string;
@@ -777,7 +780,6 @@ export type GoalProgress = {
     startingWeight?: number;
     remaining: number;
     percentComplete: number;
-    unit: "lbs" | "kg";
     isOnTrack: boolean;
     projectedCompletionDate?: string;
     avgWeeklyChange?: number;

@@ -7,7 +7,6 @@ export type BodyMetricsEvent = {
   id: string;
   clientId: string;
   weight?: number;
-  weightUnit?: string;
   bodyFatPercentage?: number;
   bmr?: number;
   tdee?: number;

@@ -59,9 +59,7 @@ export type ClientIntake = {
   dateOfBirth?: string;
   gender?: "male" | "female" | "other" | "prefer_not_to_say";
   height?: number;
-  heightUnit?: "in" | "cm";
   currentWeight?: number;
-  weightUnit?: "lbs" | "kg";
   bodyFatPercentage?: number;
   workActivityLevel?: WorkActivityLevel;
 

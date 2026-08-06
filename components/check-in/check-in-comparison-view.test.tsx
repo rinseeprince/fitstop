@@ -18,7 +18,6 @@ const checkIn = (overrides: Partial<CheckIn>): CheckIn => ({
   createdAt: "2026-06-01T00:00:00Z",
   updatedAt: "2026-06-01T00:00:00Z",
   weight: 96.2,
-  weightUnit: "kg",
   ...overrides,
 });
 

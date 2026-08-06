@@ -38,7 +38,6 @@ function makeClient(overrides: Partial<Client> = {}): Client {
     surplusAsCarbs: false,
     timezone: "America/New_York",
     unitPreference: "imperial",
-    weightUnit: "lbs",
     createdAt: "2024-01-01T00:00:00Z",
     updatedAt: "2024-01-01T00:00:00Z",
     ...overrides,
@@ -117,7 +116,7 @@ describe("SettingsPage", () => {
   });
 
   it("submits only the dirty unitPreference field when toggling Imperial → Metric", async () => {
-    const updated = makeClient({ unitPreference: "metric", weightUnit: "kg" });
+    const updated = makeClient({ unitPreference: "metric" });
     const fetchSpy = mockFetchOnce({ body: { success: true, data: updated } });
 
     render(<SettingsPage />);

@@ -9,8 +9,9 @@ import type { TrendDirection } from "@/types/check-in";
 export type ClientMetricSeries = {
   id: string;
   name: string;
+  /** CANONICAL kg/cm. The unit label and the conversion both resolve at the
+   *  render boundary from `id` — the server does not know the viewer. */
   currentValue: number | null;
-  unit: string;
   percentChange: number | null;
   trend: TrendDirection;
   chartData: Array<{ date: string; value: number }>;
@@ -72,7 +73,6 @@ function buildMetricSeries(
   metricKey: keyof ProgressDataPoint,
   id: string,
   name: string,
-  unit: string,
 ): ClientMetricSeries {
   const chartData = history.map((point) => ({
     date: point.date,
@@ -93,7 +93,6 @@ function buildMetricSeries(
     id,
     name,
     currentValue,
-    unit,
     percentChange: calculatePercentChange(currentValue, previousValue),
     trend: getTrend(currentValue, previousValue),
     chartData,
@@ -163,7 +162,6 @@ export async function getClientProgressData(
 
   // Stored values are canonical kg/cm (migration 141), so these describe the
   // STORED unit, not a preference. Phase 3 converts for the viewer at render.
-  const measurementUnit: "in" | "cm" = "cm";
 
   const weightHistory: ProgressDataPoint[] = [];
   const bodyFatHistory: ProgressDataPoint[] = [];
@@ -221,27 +219,27 @@ export async function getClientProgressData(
     }
   }
 
-  // Render-ready series. Units describe what is STORED — canonical kg/cm since
-  // migration 141 — not a preference; Phase 3 converts for the viewer at render.
-  const weightUnit = "kg";
-  const measurementUnitLabel: string = measurementUnit;
+  // Series values stay CANONICAL (kg/cm). The unit label and the conversion are
+  // both resolved at the render boundary from the metric id — the server cannot
+  // know the viewer's preference, and resolving it here is what let girths ship
+  // labelled "in" over centimetre values. See metrics-hub.tsx.
 
   const bodyMetrics: ClientMetricSeries[] = [
-    buildMetricSeries(weightHistory, "weight", "weight", "Weight", weightUnit),
-    buildMetricSeries(bodyFatHistory, "bodyFatPercentage", "bodyFat", "Body Fat", "%"),
-    buildMetricSeries(waistHistory, "waist", "waist", "Waist", measurementUnitLabel),
-    buildMetricSeries(hipsHistory, "hips", "hips", "Hips", measurementUnitLabel),
-    buildMetricSeries(chestHistory, "chest", "chest", "Chest", measurementUnitLabel),
-    buildMetricSeries(armsHistory, "arms", "arms", "Arms", measurementUnitLabel),
-    buildMetricSeries(thighsHistory, "thighs", "thighs", "Thighs", measurementUnitLabel),
+    buildMetricSeries(weightHistory, "weight", "weight", "Weight"),
+    buildMetricSeries(bodyFatHistory, "bodyFatPercentage", "bodyFat", "Body Fat"),
+    buildMetricSeries(waistHistory, "waist", "waist", "Waist"),
+    buildMetricSeries(hipsHistory, "hips", "hips", "Hips"),
+    buildMetricSeries(chestHistory, "chest", "chest", "Chest"),
+    buildMetricSeries(armsHistory, "arms", "arms", "Arms"),
+    buildMetricSeries(thighsHistory, "thighs", "thighs", "Thighs"),
   ];
 
   const wellnessMetrics: ClientMetricSeries[] = [
-    buildMetricSeries(moodHistory, "mood", "mood", "Mood", "/5"),
-    buildMetricSeries(energyHistory, "energy", "energy", "Energy", "/10"),
-    buildMetricSeries(sleepHistory, "sleep", "sleep", "Sleep", "/10"),
-    buildMetricSeries(stressHistory, "stress", "stress", "Stress", "/10"),
-    buildMetricSeries(sorenessHistory, "soreness", "soreness", "Soreness", "/10"),
+    buildMetricSeries(moodHistory, "mood", "mood", "Mood"),
+    buildMetricSeries(energyHistory, "energy", "energy", "Energy"),
+    buildMetricSeries(sleepHistory, "sleep", "sleep", "Sleep"),
+    buildMetricSeries(stressHistory, "stress", "stress", "Stress"),
+    buildMetricSeries(sorenessHistory, "soreness", "soreness", "Soreness"),
   ];
 
   return {
@@ -266,8 +264,6 @@ export async function getClientProgressData(
       startingBodyFatPercentage: clientData?.starting_body_fat_percentage ?? undefined,
       currentWeight: clientData?.current_weight ?? undefined,
       currentBodyFatPercentage: clientData?.current_body_fat_percentage ?? undefined,
-      weightUnit: "kg",
-      measurementUnit,
     },
   };
 }

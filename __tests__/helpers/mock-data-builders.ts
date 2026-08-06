@@ -39,7 +39,6 @@ export function createMockClient(options: MockClientOptions = {}): Client {
     active: options.active ?? true,
     currentWeight: options.currentWeight ?? 180,
     goalWeight: options.goalWeight ?? 170,
-    weightUnit: options.weightUnit ?? 'lbs',
     includeActivityBurn: true,
     surplusAsCarbs: false,
     timezone: 'UTC',

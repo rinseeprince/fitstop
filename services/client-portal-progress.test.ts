@@ -55,8 +55,10 @@ describe("getClientProgressData unit resolution", () => {
 
     const result = await getClientProgressData("c1");
 
-    expect(result.client.weightUnit).toBe("kg");
-    expect(result.client.measurementUnit).toBe("cm");
+    // The payload carries NO unit at all now: values are canonical kg/cm and
+    // the label is resolved at the render boundary from the viewer's preference.
+    expect(result.client).not.toHaveProperty("weightUnit");
+    expect(result.client).not.toHaveProperty("measurementUnit");
     expect(result.currentStreak).toBe(6);
     expect(result.adherenceRate).toBe(92);
     expect(result.client.goalWeight).toBe(78);
@@ -73,8 +75,10 @@ describe("getClientProgressData unit resolution", () => {
 
     const result = await getClientProgressData("c1");
 
-    expect(result.client.weightUnit).toBe("kg");
-    expect(result.client.measurementUnit).toBe("cm");
+    // The payload carries NO unit at all now: values are canonical kg/cm and
+    // the label is resolved at the render boundary from the viewer's preference.
+    expect(result.client).not.toHaveProperty("weightUnit");
+    expect(result.client).not.toHaveProperty("measurementUnit");
   });
 
   // The historic bug: this query selected a column that does not exist, PostgREST
@@ -86,9 +90,7 @@ describe("getClientProgressData unit resolution", () => {
       fakeSupabase({ client: null, clientError: { message: "boom" } }) as never,
     );
 
-    const result = await getClientProgressData("c1");
-
-    expect(result.client.weightUnit).toBe("kg");
+    await getClientProgressData("c1");
     expect(spy).toHaveBeenCalled();
     spy.mockRestore();
   });
@@ -125,7 +127,6 @@ describe("getClientProgressData render-ready series", () => {
     const weight = findSeries(result.bodyMetrics, "weight");
 
     expect(weight.name).toBe("Weight");
-    expect(weight.unit).toBe("kg");
     expect(weight.currentValue).toBe(79); // last point
     // (79 - 80) / 80 * 100 = -1.25, rounded to 1dp by the helper -> -1.3
     expect(weight.percentChange).toBe(-1.3);
@@ -148,8 +149,11 @@ describe("getClientProgressData render-ready series", () => {
 
     const result = await getClientProgressData("c1");
 
-    expect(findSeries(result.bodyMetrics, "weight").unit).toBe("kg");
-    expect(findSeries(result.bodyMetrics, "waist").unit).toBe("cm");
+    // The payload carries no unit at all — that is what stops a preference
+    // leaking into stored-value territory. Values stay canonical.
+    expect(result.client).not.toHaveProperty("weightUnit");
+    expect(result.client).not.toHaveProperty("measurementUnit");
+    expect(result.bodyMetrics[0]).not.toHaveProperty("unit");
   });
 
   it("returns every series present with empty defaults when there is no history", async () => {
@@ -183,18 +187,19 @@ describe("getClientProgressData render-ready series", () => {
     }
   });
 
-  it("assigns the wellness units the hook used (mood /5, the rest /10)", async () => {
+  // The wellness unit labels (mood /5, the rest /10) moved to the render
+  // boundary with everything else — metrics-hub.tsx owns them now, so the
+  // service only has to name and shape the series.
+  it("names every wellness series without attaching a unit", async () => {
     vi.mocked(createPortalClient).mockResolvedValue(
       fakeSupabase({ checkIns: [], client: null }) as never,
     );
 
     const result = await getClientProgressData("c1");
 
-    expect(findSeries(result.wellnessMetrics, "mood").unit).toBe("/5");
-    expect(findSeries(result.wellnessMetrics, "energy").unit).toBe("/10");
-    expect(findSeries(result.wellnessMetrics, "sleep").unit).toBe("/10");
-    expect(findSeries(result.wellnessMetrics, "stress").unit).toBe("/10");
-    expect(findSeries(result.wellnessMetrics, "soreness").unit).toBe("/10");
+    const ids = result.wellnessMetrics.map((m) => m.id).sort();
+    expect(ids).toEqual(["energy", "mood", "sleep", "soreness", "stress"]);
+    expect(result.wellnessMetrics.every((m) => !("unit" in m))).toBe(true);
   });
 
   it("selects soreness from check_ins and builds its series from the rows", async () => {

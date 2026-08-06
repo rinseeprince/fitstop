@@ -308,7 +308,6 @@ describe("SetTracker", () => {
       exerciseName: "Bench Press",
       // Was "lbs" — the client's display unit, sent for the server to apply. The
       // form converts before sending now, so the wire is always canonical.
-      weightUnit: "kg",
       sets: [{ reps: 10, weight: 100 }],
     });
   });
@@ -1003,7 +1002,6 @@ describe("SetTracker", () => {
         trainingExerciseId: REAL_UUID_A,
         exerciseId: null,
         completed: true,
-        weightUnit: "lbs",
         notes: null,
         performedName: "Bench Press",
         prescribedExerciseSnapshot: { name: "Bench Press" },

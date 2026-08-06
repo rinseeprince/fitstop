@@ -82,7 +82,6 @@ const mockCheckIn = {
   id: 'ci-1',
   clientId: 'client-1',
   weight: 178,
-  weightUnit: 'lbs',
   bodyFatPercentage: 19,
   createdAt: '2024-02-01T00:00:00Z',
   mood: 4,
@@ -233,10 +232,10 @@ describe('Comparison Service - read-switch behavior', () => {
       const result = await getCheckInComparison('ci-1')
       const w = result.goalProgress.weight!
 
-      expect(w.goal).toBeCloseTo(165.4, 1) // display units, NOT raw kg
-      expect(w.remaining).toBeCloseTo(-12.6, 1) // 165.4 - 178 (lbs)
-      expect(w.unit).toBe('lbs')
-      // Display-unit pace is sensible; a kg/lbs mix would falsely read "unrealistic".
+      // Passthrough: the service does not convert. Values are canonical
+      // kilograms since migration 141; the render layer converts for the viewer.
+      expect(w.goal).toBeCloseTo(165.4, 1)
+      expect(w.remaining).toBeCloseTo(-12.6, 1) // 165.4 - 178
       expect(w.paceStatus).toBe('on_track')
     } finally {
       vi.useRealTimers()

@@ -21,7 +21,6 @@ const BASE: Client = {
   active: true,
   createdAt: "2026-01-01T00:00:00Z",
   updatedAt: "2026-01-01T00:00:00Z",
-  weightUnit: "kg",
   includeActivityBurn: false,
   surplusAsCarbs: false,
   timezone: "Australia/Sydney",

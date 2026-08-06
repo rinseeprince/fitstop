@@ -137,7 +137,6 @@ function mapExerciseLogRow(row: ExerciseLogRow): ExerciseLog {
     // Logged loads are canonical kilograms since migration 141 — a constant, not
     // a column. The old `?? "lbs"` default was the mechanism that mislabelled
     // every seeded and untouched-form row.
-    weightUnit: "kg",
     notes: row.notes,
     performedName: row.performed_name,
     prescribedExerciseSnapshot:

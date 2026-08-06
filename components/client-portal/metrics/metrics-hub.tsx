@@ -21,6 +21,38 @@ import { GoalsSection } from "./goals-section";
 import { DateRangeSelector } from "./date-range-selector";
 import { HabitsSection } from "./habits-section";
 import { PerformanceView } from "./performance/performance-view";
+import { useUnits } from "@/contexts/units-context";
+import { formatLength, formatWeight, type UnitSystem } from "@/utils/unit-conversions";
+
+// The series arrives canonical (kg/cm) with no unit — the server cannot know the
+// viewer. Both the label and the conversion resolve here, keyed on the metric
+// id, so the client portal and the coach Metrics page cannot disagree.
+const WEIGHT_METRICS = new Set(["weight"]);
+const LENGTH_METRICS = new Set(["waist", "hips", "chest", "arms", "thighs"]);
+
+// Wellness scores and body fat are unitless scales, identical for every viewer.
+const STATIC_UNITS: Record<string, string> = {
+  bodyFat: "%",
+  mood: "/5",
+  energy: "/10",
+  sleep: "/10",
+  stress: "/10",
+  soreness: "/10",
+};
+
+function viewerUnit(id: string, viewer: UnitSystem): string {
+  if (WEIGHT_METRICS.has(id)) return formatWeight(0, viewer).unit;
+  if (LENGTH_METRICS.has(id)) return formatLength(0, viewer).unit;
+  return STATIC_UNITS[id] ?? "";
+}
+
+function toViewerValue(id: string, value: number, viewer: UnitSystem): number {
+  const round1 = (n: number) => Math.round(n * 10) / 10;
+  if (WEIGHT_METRICS.has(id)) return round1(formatWeight(value, viewer).value);
+  if (LENGTH_METRICS.has(id)) return round1(formatLength(value, viewer).value);
+  return value;
+}
+
 
 export type MetricsTab = "physique" | "performance" | "wellness" | "habits";
 
@@ -187,6 +219,7 @@ function MetricList({
   metrics: ReturnType<typeof useClientProgressMetrics>["bodyMetrics"];
   isLoading: boolean;
 }) {
+  const { preference } = useUnits();
   if (isLoading) {
     return (
       <div className="space-y-4">
@@ -202,8 +235,12 @@ function MetricList({
           key={metric.id}
           id={metric.id}
           name={metric.name}
-          currentValue={metric.currentValue}
-          unit={metric.unit}
+          currentValue={
+            metric.currentValue === null
+              ? null
+              : toViewerValue(metric.id, metric.currentValue, preference)
+          }
+          unit={viewerUnit(metric.id, preference)}
           percentChange={metric.percentChange}
           trend={metric.trend}
           chartData={metric.chartData}

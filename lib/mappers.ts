@@ -22,14 +22,12 @@ export function mapCheckInRow(row: CheckInRow): CheckIn {
     // are constants rather than columns. The fields survive only because ~50
     // display sites still read them for a label; Phase 3 deletes the fields and
     // those labels together. Nothing may branch on them.
-    weightUnit: "kg",
     bodyFatPercentage: row.body_fat_percentage ?? undefined,
     waist: row.waist ?? undefined,
     hips: row.hips ?? undefined,
     chest: row.chest ?? undefined,
     arms: row.arms ?? undefined,
     thighs: row.thighs ?? undefined,
-    measurementUnit: "cm",
     photoFront: row.photo_front ?? undefined,
     photoSide: row.photo_side ?? undefined,
     photoBack: row.photo_back ?? undefined,
@@ -70,14 +68,24 @@ export function mapClientRow(row: ClientRow): Client {
     createdAt: row.created_at ?? new Date().toISOString(),
     updatedAt: row.updated_at ?? new Date().toISOString(),
     height: row.height ?? undefined,
-    // Canonical since migration 141 — see mapCheckInRow above.
+    // DELIBERATELY RETAINED — do not remove with the other unit shims.
+    //
+    // Stored height is canonical centimetres, so as a *display* tag this is
+    // dead. But components/clients/overview/client-settings-dialog.tsx is Phase
+    // 4 work and still round-trips it: :80 seeds its unit <Select> from
+    // `client.heightUnit ?? "in"` and :127 sends the result back, where
+    // services/client-service.ts converts on the tag. Drop this and every save
+    // of that dialog reads "in", multiplies the height by 2.54 and stores it —
+    // 178 cm becomes 452. It fires on ANY save, not just a height edit, because
+    // toDefaults() pre-populates the field.
+    //
+    // Retire this and the dialog's height field together, in Phase 4.
     heightUnit: "cm",
     gender: (row.gender ?? undefined) as "male" | "female" | "other" | undefined,
     dateOfBirth: row.date_of_birth ?? undefined,
     phone: row.phone ?? undefined,
     goalWeight: row.goal_weight ?? undefined,
     goalBodyFatPercentage: row.goal_body_fat_percentage ?? undefined,
-    weightUnit: "kg",
     currentWeight: row.current_weight ?? undefined,
     currentBodyFatPercentage: row.current_body_fat_percentage ?? undefined,
     bmr: row.bmr ?? undefined,
@@ -123,7 +131,7 @@ function pickAllowed<T>(source: T, keys: readonly (keyof T)[]): Partial<T> {
 const CLIENT_SELF_KEYS = [
   "id", "coachId", "name", "email", "avatarUrl", "active", "createdAt", "updatedAt",
   "height", "heightUnit", "gender", "dateOfBirth", "goalWeight", "goalBodyFatPercentage",
-  "weightUnit", "currentWeight", "currentBodyFatPercentage", "bmr", "tdee",
+  "currentWeight", "currentBodyFatPercentage", "bmr", "tdee",
   "checkInFrequency", "checkInFrequencyDays", "expectedCheckInDay", "lastReminderSentAt",
   "reminderPreferences", "totalCheckInsExpected", "totalCheckInsCompleted",
   "checkInAdherenceRate", "currentStreak", "longestStreak", "unitPreference",
@@ -141,8 +149,8 @@ export function toClientSelfView(client: Client): Partial<Client> {
 // is client-entered or non-sensitive. Allowlist so a future coach-only field is
 // excluded by default.
 const CLIENT_INTAKE_KEYS = [
-  "id", "clientId", "status", "dateOfBirth", "gender", "height", "heightUnit",
-  "currentWeight", "weightUnit", "bodyFatPercentage", "workActivityLevel", "primaryGoal",
+  "id", "clientId", "status", "dateOfBirth", "gender", "height",
+  "currentWeight", "bodyFatPercentage", "workActivityLevel", "primaryGoal",
   "goalDetails", "targetWeight", "goalBodyFatPercentage", "goalDeadline", "goalDescription",
   "motivation", "trainingExperienceLevel", "trainingTimePreference", "trainingLocation",
   "availableEquipment", "daysPerWeek", "sessionDurationMinutes", "dietaryRequirements",
@@ -166,8 +174,8 @@ export function toClientFacingIntake(intake: ClientIntake): Partial<ClientIntake
 const CLIENT_FACING_CHECKIN_KEYS = [
   "id", "clientId", "clientName", "clientAvatarUrl", "status",
   "mood", "energy", "sleep", "stress", "soreness", "notes",
-  "weight", "weightUnit", "bodyFatPercentage", "waist", "hips", "chest", "arms",
-  "thighs", "measurementUnit",
+  "weight", "bodyFatPercentage", "waist", "hips", "chest", "arms",
+  "thighs",
   "photoFront", "photoSide", "photoBack",
   "workoutsCompleted", "adherencePercentage", "prs", "challenges",
   "nutritionDaysOnTarget", "nutritionNotes",
@@ -208,11 +216,7 @@ export function mapClientIntakeRow(row: ClientIntakeRow): ClientIntake {
     dateOfBirth: row.date_of_birth ?? undefined,
     gender: (row.gender ?? undefined) as ClientIntake["gender"],
     height: row.height ?? undefined,
-    // client_intake always stored kg/cm (intake-step-1.tsx converts before
-    // persisting); migration 141 dropped its never-written tag columns.
-    heightUnit: "cm",
     currentWeight: row.current_weight ?? undefined,
-    weightUnit: "kg",
     bodyFatPercentage: row.body_fat_percentage ?? undefined,
     workActivityLevel: (row.work_activity_level ?? undefined) as ClientIntake["workActivityLevel"],
     primaryGoal: (row.primary_goal ?? undefined) as ClientIntake["primaryGoal"],

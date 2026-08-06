@@ -80,8 +80,8 @@ describe('Check-in Utilities', () => {
 
   describe('calculateProgressComparison', () => {
     it('calculates weight change', () => {
-      const current = createMockCheckIn({ weight: 178, weightUnit: 'lbs' })
-      const previous = createMockCheckIn({ weight: 180, weightUnit: 'lbs' })
+      const current = createMockCheckIn({ weight: 178 })
+      const previous = createMockCheckIn({ weight: 180 })
 
       const result = calculateProgressComparison(current, previous)
 
@@ -192,8 +192,8 @@ describe('Check-in Utilities', () => {
 
     it('prepares weight chart data', () => {
       const checkIns = [
-        createMockCheckIn({ weight: 180, weightUnit: 'lbs', createdAt: '2024-01-01T00:00:00Z' }),
-        createMockCheckIn({ weight: 178, weightUnit: 'lbs', createdAt: '2024-01-08T00:00:00Z' }),
+        createMockCheckIn({ weight: 180, createdAt: '2024-01-01T00:00:00Z' }),
+        createMockCheckIn({ weight: 178, createdAt: '2024-01-08T00:00:00Z' }),
       ]
 
       const result = prepareChartData(checkIns)

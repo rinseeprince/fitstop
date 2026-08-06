@@ -63,7 +63,6 @@ function makeExerciseLog(overrides: Partial<ExerciseLog> = {}): ExerciseLog {
     trainingExerciseId: "te-1",
     exerciseId: "ex-1",
     completed: true,
-    weightUnit: "kg",
     notes: null,
     performedName: null,
     prescribedExerciseSnapshot: { name: "Bench Press", sets: 3, reps_min: 8, reps_max: 12 },

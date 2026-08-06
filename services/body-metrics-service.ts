@@ -26,7 +26,6 @@ function mapBodyMetricsRow(row: BodyMetricsEventRow): BodyMetricsEvent {
     clientId: row.client_id,
     weight: row.weight ?? undefined,
     // Canonical kilograms since migration 141 — a constant, not a column.
-    weightUnit: "kg",
     bodyFatPercentage: row.body_fat_percentage ?? undefined,
     bmr: row.bmr ?? undefined,
     tdee: row.tdee ?? undefined,

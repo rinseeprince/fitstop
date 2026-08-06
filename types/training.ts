@@ -364,7 +364,6 @@ export type ExerciseLog = {
   trainingExerciseId: string | null;
   exerciseId: string | null;
   completed: boolean;
-  weightUnit: 'lbs' | 'kg';
   notes: string | null;
   performedName: string | null;
   prescribedExerciseSnapshot: Record<string, unknown> | null;
