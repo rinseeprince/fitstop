@@ -32,9 +32,12 @@ import {
   SECTION_LABEL_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens";
 import {
+  METRIC_ENTRY_CONVERSION,
   METRIC_VALUE_RANGES,
   type MetricEntryKey,
 } from "@/lib/metrics/metric-entry-definitions";
+import { useUnits } from "@/contexts/units-context";
+import { parseLengthToCm, parseWeightToKg } from "@/utils/unit-conversions";
 import { getTodayDateString } from "@/lib/date-helpers";
 import type { CreateMetricEntryRequest } from "@/types/metric-entries";
 import { formatShortDate } from "./metrics-format";
@@ -73,6 +76,7 @@ export function LogMeasurementDialog({
   onSubmit,
 }: LogMeasurementDialogProps) {
   const { toast } = useToast();
+  const { preference } = useUnits();
   const [metricId, setMetricId] = useState(initialMetricId);
   const [value, setValue] = useState("");
   const [date, setDate] = useState(getTodayDateString());
@@ -102,13 +106,34 @@ export function LogMeasurementDialog({
   const parsed = Number(value);
   const hasValue = value.trim() !== "";
   const showParseError = valueTouched && hasValue && !Number.isFinite(parsed);
+
+  // The coach types in THEIR unit (the suffix beside the box is
+  // `def.getUnit(preference)`); storage is canonical kg/cm. Converting here
+  // rather than at submit means the range check below judges the number that
+  // will actually be stored — METRIC_VALUE_RANGES is kilograms and
+  // centimetres, so validating the typed string would compare 180 lbs against
+  // a 20-250 kg bound and wave it through.
+  const conversion = selected
+    ? METRIC_ENTRY_CONVERSION[selected.id as MetricEntryKey]
+    : null;
+  const canonical = !Number.isFinite(parsed)
+    ? parsed
+    : conversion === "weight"
+      ? parseWeightToKg(parsed, preference)
+      : conversion === "length"
+        ? parseLengthToCm(parsed, preference)
+        : parsed;
+
   const valueValid =
     hasValue &&
-    Number.isFinite(parsed) &&
-    parsed > 0 &&
+    Number.isFinite(canonical) &&
+    canonical > 0 &&
     range !== undefined &&
-    parsed >= range.min &&
-    parsed <= range.max &&
+    canonical >= range.min &&
+    canonical <= range.max &&
+    // Integer-ness is a property of the SCALE, so it is judged on what the
+    // coach typed — a 1-10 wellness score never converts, and asking whether a
+    // converted kilogram value is a whole number would be meaningless.
     (!range.integer || Number.isInteger(parsed));
   const canSubmit =
     selected !== null && valueValid && date !== "" && date <= today && !isSubmitting;
@@ -120,12 +145,15 @@ export function LogMeasurementDialog({
       const trimmedNote = note.trim();
       await onSubmit({
         metricKey: selected.id as MetricEntryKey,
-        value: parsed,
+        // Canonical kg/cm on the wire; the coach typed their own unit.
+        value: canonical,
         entryDate: date,
         note: trimmedNote || undefined,
       });
       onOpenChange(false);
       toast({
+        // Echoed back in what the coach typed, not what was stored — the
+        // confirmation is about their action, not about the column.
         title: `${selected.name} logged`,
         description: `Recorded ${proseValue(parsed, selected.unit)} for ${formatShortDate(date)}.`,
       });
