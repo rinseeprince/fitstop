@@ -1,4 +1,4 @@
-import type { UnitPreference, ActivityLevel, TrainingVolume, DietType } from "@/types/check-in";
+import type { ActivityLevel, TrainingVolume, DietType } from "@/types/check-in";
 import type { TrainingPlan } from "@/types/training";
 
 /**
@@ -186,36 +186,24 @@ export function getSuggestedTrainingVolume(
 // became canonical (migration 141), and their 2.205 was one of the four
 // conflicting lbs<->kg constants utils/unit-conversions.ts exists to replace.
 //
-// kgToLbs survives only because formatWeight below still calls it. Both, plus
-// PROTEIN_TARGETS.gPerLb, are deleted with formatWeight's last two callers (the
-// nutrition banners) — they are the only reason this file still knows about lbs.
-
-function kgToLbs(kg: number): number {
-  return kg * 2.205;
-}
+// Nothing in this file knows about pounds any more. formatWeight, kgToLbs and
+// getWeightChange went with their last callers — the two nutrition banners,
+// which now use utils/unit-conversions.ts against the VIEWER's preference
+// rather than the client's.
 
 /**
- * Format weight with appropriate unit
- */
-export function formatWeight(
-  weight: number,
-  unitPreference: UnitPreference
-): string {
-  const unit = unitPreference === "imperial" ? "lbs" : "kg";
-  const displayWeight =
-    unitPreference === "imperial" ? kgToLbs(weight) : weight;
-  return `${displayWeight.toFixed(1)} ${unit}`;
-}
-
-/**
- * Protein target multiplier conversions
- * These are equivalent values in different units
+ * Protein target multipliers, in grams per KILOGRAM of body weight.
+ *
+ * The gPerLb mirror is gone: it was hand-rounded off the old 2.205 constant
+ * (1.6 -> 0.73), so it could drift from its gPerKg sibling with nothing to
+ * catch it. The render layer derives per-pound with KG_PER_LB when the viewer
+ * is imperial.
  */
 export const PROTEIN_TARGETS = {
-  minimum: { gPerKg: 1.6, gPerLb: 0.73 },
-  moderate: { gPerKg: 1.8, gPerLb: 0.82 },
-  high: { gPerKg: 2.0, gPerLb: 0.91 },
-  veryHigh: { gPerKg: 2.2, gPerLb: 1.0 },
+  minimum: { gPerKg: 1.6 },
+  moderate: { gPerKg: 1.8 },
+  high: { gPerKg: 2.0 },
+  veryHigh: { gPerKg: 2.2 },
 } as const;
 
 /**
@@ -279,22 +267,3 @@ export function shouldShowRegenerationBanner(
   return Math.abs(currentWeightKg - baseWeightKg) >= THRESHOLD_KG;
 }
 
-/**
- * Get weight change in display unit
- */
-export function getWeightChange(
-  currentWeightKg: number,
-  baseWeightKg: number,
-  unitPreference: UnitPreference
-): { value: number; unit: string; isLoss: boolean } {
-  const changeKg = currentWeightKg - baseWeightKg;
-  const unit = unitPreference === "imperial" ? "lbs" : "kg";
-  const value =
-    unitPreference === "imperial" ? kgToLbs(Math.abs(changeKg)) : Math.abs(changeKg);
-
-  return {
-    value: parseFloat(value.toFixed(1)),
-    unit,
-    isLoss: changeKg < 0,
-  };
-}

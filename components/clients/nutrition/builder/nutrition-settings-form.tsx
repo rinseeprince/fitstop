@@ -1,6 +1,6 @@
 "use client";
 
-import type { Client, ActivityLevel, DietType } from "@/types/check-in";
+import type { ActivityLevel, DietType } from "@/types/check-in";
 import {
   Select,
   SelectContent,
@@ -10,6 +10,8 @@ import {
 } from "@/components/ui/select";
 import { PROTEIN_TARGETS } from "@/utils/nutrition-helpers";
 import { SECTION_LABEL_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
+import { useUnits } from "@/contexts/units-context";
+import { KG_PER_LB } from "@/utils/unit-conversions";
 
 /**
  * FULLY CONTROLLED, deliberately. This form used to own a second copy of the
@@ -18,8 +20,9 @@ import { SECTION_LABEL_CLASS } from "@/components/clients/training/program-build
  * what the generate request posts — so the two could disagree, and the form
  * could display one thing while the save sent another. One owner now.
  */
+// No `client` prop: its only use was client.unitPreference for the protein
+// picker's kg/lb labels, and a coach reads their own unit (useUnits()).
 type NutritionSettingsFormProps = {
-  client: Client;
   workActivityLevel: ActivityLevel;
   proteinTargetGPerKg: number;
   dietType: DietType;
@@ -40,13 +43,21 @@ const selectItemClass =
   "rounded-[6px] cursor-pointer text-[13px] text-[#0c1a1e] focus:bg-[rgba(13,148,136,0.05)]";
 
 export function NutritionSettingsForm({
-  client,
   workActivityLevel,
   proteinTargetGPerKg,
   dietType,
   onSettingsChange,
 }: NutritionSettingsFormProps) {
-  const unitPreference = client.unitPreference || "imperial";
+  // The COACH's own unit, not the client's. A protein multiplier is expressed
+  // per unit of BODY WEIGHT, so it flips with whoever is reading the form.
+  const { preference } = useUnits();
+  const perUnit = preference === "metric" ? "kg" : "lb";
+  // Derived, never hand-tabulated: PROTEIN_TARGETS used to carry rounded gPerLb
+  // values (1.6 -> 0.73) computed with the old 2.205 constant.
+  const gPer = (gPerKg: number) =>
+    (preference === "metric" ? gPerKg : gPerKg * KG_PER_LB).toFixed(
+      preference === "metric" ? 1 : 2,
+    );
 
   const handleChange = (
     field: string,
@@ -118,29 +129,21 @@ export function NutritionSettingsForm({
           </SelectTrigger>
           <SelectContent className={selectContentClass}>
             <SelectItem value={PROTEIN_TARGETS.minimum.gPerKg.toString()} className={selectItemClass}>
-              {unitPreference === "metric"
-                ? `${PROTEIN_TARGETS.minimum.gPerKg}g per kg - Minimum`
-                : `${PROTEIN_TARGETS.minimum.gPerLb.toFixed(2)}g per lb - Minimum`}
+              {`${gPer(PROTEIN_TARGETS.minimum.gPerKg)}g per ${perUnit} - Minimum`}
             </SelectItem>
             <SelectItem value={PROTEIN_TARGETS.moderate.gPerKg.toString()} className={selectItemClass}>
-              {unitPreference === "metric"
-                ? `${PROTEIN_TARGETS.moderate.gPerKg}g per kg - Moderate`
-                : `${PROTEIN_TARGETS.moderate.gPerLb.toFixed(2)}g per lb - Moderate`}
+              {`${gPer(PROTEIN_TARGETS.moderate.gPerKg)}g per ${perUnit} - Moderate`}
             </SelectItem>
             <SelectItem value={PROTEIN_TARGETS.high.gPerKg.toString()} className={selectItemClass}>
-              {unitPreference === "metric"
-                ? `${PROTEIN_TARGETS.high.gPerKg}g per kg - High`
-                : `${PROTEIN_TARGETS.high.gPerLb.toFixed(2)}g per lb - High`}
+              {`${gPer(PROTEIN_TARGETS.high.gPerKg)}g per ${perUnit} - High`}
             </SelectItem>
             <SelectItem value={PROTEIN_TARGETS.veryHigh.gPerKg.toString()} className={selectItemClass}>
-              {unitPreference === "metric"
-                ? `${PROTEIN_TARGETS.veryHigh.gPerKg}g per kg - Very High`
-                : `${PROTEIN_TARGETS.veryHigh.gPerLb.toFixed(2)}g per lb - Very High`}
+              {`${gPer(PROTEIN_TARGETS.veryHigh.gPerKg)}g per ${perUnit} - Very High`}
             </SelectItem>
           </SelectContent>
         </Select>
         <p className="text-[11px] text-[#93b0b4] leading-[1.4]">
-          Protein per {unitPreference === "metric" ? "kg" : "lb"} of body weight
+          Protein per {perUnit} of body weight
         </p>
       </div>
 

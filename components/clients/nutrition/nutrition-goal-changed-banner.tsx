@@ -1,8 +1,8 @@
 "use client";
 
 import { Target } from "lucide-react";
-import { formatWeight } from "@/utils/nutrition-helpers";
-import type { UnitPreference } from "@/types/check-in";
+import { useUnits } from "@/contexts/units-context";
+import { formatWeight, type UnitSystem } from "@/utils/unit-conversions";
 import type { GoalDrift } from "@/lib/goals/detect-goal-drift";
 
 // "Goal changed — regenerate" banner (Session 7.8). Distinct from the weight-delta
@@ -10,21 +10,25 @@ import type { GoalDrift } from "@/lib/goals/detect-goal-drift";
 // client_goals) differs from the goal this active plan was built against.
 // Regenerating the plan re-reads the effective goal.
 
+// No unitPreference prop: it carried the CLIENT's preference into a
+// COACH-facing banner. A coach sees their own unit whoever they are looking at
+// (docs/UNITS-CANONICALIZATION-PLAN.md principle 2), so this reads useUnits().
 type NutritionGoalChangedBannerProps = {
   drift: GoalDrift | null | undefined;
-  unitPreference?: UnitPreference;
 };
 
-function describe(weightKg: number | null, deadline: string | null, unitPreference: UnitPreference): string {
+// A goal weight, so formatWeight — converts freely, never snaps.
+function describe(weightKg: number | null, deadline: string | null, viewer: UnitSystem): string {
   if (weightKg == null) return deadline ? `Maintenance by ${deadline}` : "Maintenance";
-  const weight = formatWeight(weightKg, unitPreference);
+  const { value, unit } = formatWeight(weightKg, viewer);
+  const weight = `${value.toFixed(1)} ${unit}`;
   return deadline ? `${weight} by ${deadline}` : weight;
 }
 
 export function NutritionGoalChangedBanner({
   drift,
-  unitPreference = "imperial",
 }: NutritionGoalChangedBannerProps) {
+  const { preference } = useUnits();
   if (!drift?.changed) return null;
 
   return (
@@ -35,8 +39,8 @@ export function NutritionGoalChangedBanner({
           Goal changed since this plan was created — regenerate to apply it.
         </p>
         <p className="text-[11px] text-[#93b0b4] leading-[1.4]">
-          {describe(drift.planGoalWeightKg, drift.planDeadline, unitPreference)} →{" "}
-          {describe(drift.currentGoalWeightKg, drift.currentDeadline, unitPreference)}
+          {describe(drift.planGoalWeightKg, drift.planDeadline, preference)} →{" "}
+          {describe(drift.currentGoalWeightKg, drift.currentDeadline, preference)}
         </p>
       </div>
     </div>

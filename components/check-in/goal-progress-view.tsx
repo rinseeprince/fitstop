@@ -98,7 +98,6 @@ export const GoalProgressView = ({
             currentWeight={clientData.currentWeight}
             nutritionPlanBaseWeightKg={clientData.nutritionPlanBaseWeightKg}
             nutritionPlanCreatedDate={clientData.nutritionPlanCreatedDate}
-            unitPreference={clientData.unitPreference}
             onRegenerate={handleRegenerateNutrition}
             showRegenerateButton={true}
           />

@@ -3,19 +3,21 @@
 import { Button } from "@/components/ui/button";
 import { AlertCircle, RefreshCw } from "lucide-react";
 import { format } from "date-fns";
-import {
-  shouldShowRegenerationBanner,
-  getWeightChange,
-  formatWeight,
-} from "@/utils/nutrition-helpers";
-import type { UnitPreference } from "@/types/check-in";
+import { shouldShowRegenerationBanner } from "@/utils/nutrition-helpers";
+import { useUnits } from "@/contexts/units-context";
+import { formatWeight, type UnitSystem } from "@/utils/unit-conversions";
+
+// Body weights and a body-weight delta: formatWeight, which converts freely.
+const show = (valueKg: number, viewer: UnitSystem): string => {
+  const { value, unit } = formatWeight(valueKg, viewer);
+  return `${value.toFixed(1)} ${unit}`;
+};
 
 type NutritionRegenerationBannerProps = {
   /** KILOGRAMS — canonical since migration 141, so no conversion happens here. */
   currentWeight: number;
   nutritionPlanBaseWeightKg: number;
   nutritionPlanCreatedDate?: string;
-  unitPreference?: UnitPreference;
   onRegenerate?: () => void;
   showRegenerateButton?: boolean;
 };
@@ -24,10 +26,11 @@ export const NutritionRegenerationBanner = ({
   currentWeight,
   nutritionPlanBaseWeightKg,
   nutritionPlanCreatedDate,
-  unitPreference = "imperial",
   onRegenerate,
   showRegenerateButton = true,
 }: NutritionRegenerationBannerProps) => {
+  // The CLIENT's preference used to arrive as a prop; a coach sees their own.
+  const { preference } = useUnits();
   const currentWeightKg = currentWeight;
   const showBanner = shouldShowRegenerationBanner(
     currentWeightKg,
@@ -36,11 +39,11 @@ export const NutritionRegenerationBanner = ({
 
   if (!showBanner) return null;
 
-  const weightChange = getWeightChange(
-    currentWeightKg,
-    nutritionPlanBaseWeightKg,
-    unitPreference
-  );
+  const changeKg = currentWeightKg - nutritionPlanBaseWeightKg;
+  const weightChange = {
+    ...formatWeight(Math.abs(changeKg), preference),
+    isLoss: changeKg < 0,
+  };
 
   return (
     <div className="bg-warning/10 rounded-lg p-5 border border-warning/20">
@@ -71,8 +74,8 @@ export const NutritionRegenerationBanner = ({
               )}
             </p>
             <p className="text-xs text-muted-foreground mt-1">
-              {formatWeight(nutritionPlanBaseWeightKg, unitPreference)} →{" "}
-              {formatWeight(currentWeightKg, unitPreference)}
+              {show(nutritionPlanBaseWeightKg, preference)} →{" "}
+              {show(currentWeightKg, preference)}
             </p>
           </div>
           {showRegenerateButton && onRegenerate && (

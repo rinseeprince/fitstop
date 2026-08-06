@@ -37,7 +37,6 @@ export function DrawerFormBody() {
       <div className="space-y-5">
         <div className="space-y-4">
           <NutritionSettingsForm
-            client={builder.client}
             workActivityLevel={builder.settings.workActivityLevel}
             proteinTargetGPerKg={builder.settings.proteinTargetGPerKg}
             dietType={builder.settings.dietType}
@@ -45,7 +44,6 @@ export function DrawerFormBody() {
           />
           <NutritionGoalChangedBanner
             drift={builder.nutritionData?.goalChanged}
-            unitPreference={builder.unitPreference}
           />
           {/* Editing the goal here invalidates the calorie preview and the
               drift banner above it, and this editor only revalidates its own

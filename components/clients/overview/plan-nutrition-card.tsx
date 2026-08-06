@@ -14,6 +14,8 @@ import {
 } from "./overview-primitives";
 import { pluralize } from "./overview-format";
 import type { OverviewPlanSummary } from "@/types/coach-overview";
+import { useUnits } from "@/contexts/units-context";
+import { KG_PER_LB } from "@/utils/unit-conversions";
 
 type PlanNutritionCardProps = {
   nutrition: OverviewPlanSummary["nutrition"];
@@ -33,6 +35,7 @@ function dietLabel(dietType: string): string {
 }
 
 export function PlanNutritionCard({ nutrition, onOpenNutrition }: PlanNutritionCardProps) {
+  const { preference } = useUnits();
   if (!nutrition) {
     return (
       <OverviewCard animationDelay="0.14s">
@@ -50,7 +53,15 @@ export function PlanNutritionCard({ nutrition, onOpenNutrition }: PlanNutritionC
   const chips: string[] = [];
   if (nutrition.dietType) chips.push(dietLabel(nutrition.dietType));
   chips.push(nutrition.customMacros ? "Custom macros" : "Calculated");
-  if (nutrition.proteinGPerKg !== null) chips.push(`${nutrition.proteinGPerKg} g/kg`);
+  if (nutrition.proteinGPerKg !== null) {
+    // Protein per unit of BODY WEIGHT, so it follows the viewer's unit.
+    const perUnit = preference === "metric" ? "kg" : "lb";
+    const perValue =
+      preference === "metric"
+        ? nutrition.proteinGPerKg
+        : Number((nutrition.proteinGPerKg * KG_PER_LB).toFixed(2));
+    chips.push(`${perValue} g/${perUnit}`);
+  }
 
   const cells: StatCellData[] = [
     {

@@ -11,6 +11,8 @@ import {
 } from "@/components/clients/training/program-builder/builder-tokens";
 import type { MacroTargets, ManualDraft } from "@/hooks/use-manual-targets";
 import type { NutritionPlan } from "@/services/nutrition-service";
+import { useUnits } from "@/contexts/units-context";
+import { formatWeight } from "@/utils/unit-conversions";
 
 type NutritionTargetsBlockProps = {
   /** What the fields show. Values may be null while the coach is mid-edit. */
@@ -66,6 +68,16 @@ export function NutritionTargetsBlock({
   onMatchMacros,
   missing,
 }: NutritionTargetsBlockProps) {
+  // The coach's own unit. This block is "use client" and already inside the
+  // builder tree, so no prop thread is needed — the doc's "missing prop at
+  // drawer-form-body.tsx" is only true if the preference has to travel.
+  const { preference } = useUnits();
+
+  // A weekly rate of body-weight change: formatWeight, which converts freely.
+  // NOT formatLoad — nothing is being loaded on a bar, so snapping to 5 lb
+  // would turn a 0.75 kg/week target into a meaningless 1.5 lbs/week.
+  const weeklyChange = formatWeight(autoPlan?.weeklyWeightChangeKg ?? 0, preference);
+
   // Nothing can be calculated for this client yet. Say which data is missing
   // rather than rendering a plausible-looking zero — a browser has no
   // equivalent of the server's validate-then-assert, so an ungated calculation
@@ -147,9 +159,9 @@ export function NutritionTargetsBlock({
               {" · "}
               <span className={cn(MONO, "text-[#5a7d82]")}>
                 {autoPlan.weeklyWeightChangeKg > 0 ? "+" : "−"}
-                {Math.abs(autoPlan.weeklyWeightChangeKg).toFixed(2)}
+                {Math.abs(weeklyChange.value).toFixed(2)}
               </span>
-              {" kg/week"}
+              {` ${weeklyChange.unit}/week`}
             </>
           )}
         </p>
