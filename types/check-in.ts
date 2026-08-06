@@ -331,17 +331,6 @@ export type CheckInFormData = SubjectiveMetrics &
   ProgressPhotos &
   EnhancedTrainingMetrics;
 
-// Token for magic link authentication
-export type CheckInToken = {
-  id: string;
-  clientId: string;
-  token: string;
-  expiresAt: string;
-  usedAt?: string;
-  checkInId?: string;
-  createdAt: string;
-};
-
 // Coach record from database
 export type Coach = {
   id: string;
@@ -498,18 +487,14 @@ export type CheckInClientInfo = {
 
 // Request/Response types for API
 
-export type CreateCheckInTokenRequest = {
-  clientId: string;
-};
-
-export type CreateCheckInTokenResponse = {
-  token: string;
-  link: string;
-  expiresAt: string;
-};
-
-export type ValidateCheckInTokenResponse = {
-  valid: boolean;
+/**
+ * The client portal's check-in context payload (GET /api/client/check-in-context).
+ *
+ * Was `ValidateCheckInTokenResponse` — it served the magic-link flow, which is
+ * deleted. Its `valid` flag went with it: the token that could be invalid no
+ * longer exists, and the route already discarded the field.
+ */
+export type CheckInContextResponse = {
   clientInfo?: CheckInClientInfo;
   trainingContext?: CheckInTrainingContext;
   nutritionContext?: CheckInNutritionContext;

@@ -12,7 +12,7 @@ import { supabaseAdmin } from "@/services/supabase-admin";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { getCheckInStatus, getDateString, getTodayInTimezone, resolveCheckInWindow } from "@/lib/date-helpers";
 import type { CheckInGateStatus } from "@/lib/date-helpers";
-import type { ValidateCheckInTokenResponse, CheckInTrainingEventDetail } from "@/types/check-in";
+import type { CheckInContextResponse, CheckInTrainingEventDetail } from "@/types/check-in";
 
 /**
  * GET /api/client/check-in-context
@@ -131,7 +131,7 @@ export async function GET(request: NextRequest) {
 
     const coach = coachResult.data;
 
-    const response: Omit<ValidateCheckInTokenResponse, "valid"> & {
+    const response: CheckInContextResponse & {
       periodStart: string;
       periodEnd: string;
       periodDays: number;

@@ -85,12 +85,12 @@ There is **no combined day save**: wellness, nutrition, habits and training each
 ### 5. Weekly Check-ins
 **Locations**: 
 - `/client/check-in` - Authenticated form
-- `/check-in/[token]` - Public magic link form
 
 - Comprehensive weekly progress submission
 - Includes subjective metrics, training adherence, photos
 - AI-powered summary generation for coaches
-- Token-based public access for email reminders
+- Authenticated only. The public token ("magic link") form was removed in
+  migration 142 — there is no unauthenticated check-in path.
 
 ### 6. Habits Management
 **Integrated in Daily Pulse**
@@ -147,7 +147,7 @@ interface AuthContextType {
 - Automatic redirection based on role:
   - Clients → `/client`
   - Trainers → `/dashboard`
-- Public routes: `/check-in/[token]`, `/invite/[token]`
+- Public routes: `/invite/[token]`
 
 ---
 
@@ -227,8 +227,6 @@ All client API endpoints require authentication except where noted.
 - `POST /api/client/check-ins` - Submit new check-in
 - `GET /api/client/check-ins/{id}` - Get specific check-in
 - `GET /api/client/check-in-context` - Get context for check-in form
-- `GET /api/check-in/submit/{token}` - **PUBLIC** - Validate check-in token
-- `POST /api/check-in/submit/{token}` - **PUBLIC** - Submit via magic link
 
 ### Notifications
 - `GET /api/client/notifications` - Get notifications
@@ -478,13 +476,6 @@ graph LR
 3. Upload progress photos
 4. Submit → AI generates summary
 
-**Magic Link Flow**:
-1. Receive email with token link
-2. Click link → `/check-in/[token]`
-3. Token validated server-side
-4. Complete form without login
-5. Submit → Updates client record
-
 ### 3. Training Session Completion
 1. View today's planned session in Daily Pulse
 2. Toggle "Session Complete" 
@@ -707,15 +698,14 @@ Coaches receive alerts when:
 ### Client-Facing Routes
 ```
 /app/
-├── client/                    # All authenticated client pages
-│   ├── dashboard/page.tsx     # Main dashboard with Daily Pulse
-│   ├── training/page.tsx      # Training plans view
-│   ├── nutrition/page.tsx     # Nutrition targets
-│   ├── progress/page.tsx      # Progress tracking
-│   ├── check-in/page.tsx      # Weekly check-in form
-│   ├── resources/page.tsx     # Educational content
-│   └── layout.tsx            # Client portal layout wrapper
-└── check-in/[token]/page.tsx # Public check-in via magic link
+└── client/                    # All authenticated client pages
+    ├── dashboard/page.tsx     # Main dashboard with Daily Pulse
+    ├── training/page.tsx      # Training plans view
+    ├── nutrition/page.tsx     # Nutrition targets
+    ├── progress/page.tsx      # Progress tracking
+    ├── check-in/page.tsx      # Weekly check-in form
+    ├── resources/page.tsx     # Educational content
+    └── layout.tsx             # Client portal layout wrapper
 ```
 
 ### Client Components

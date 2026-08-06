@@ -31,18 +31,18 @@ export async function middleware(request: NextRequest) {
     "/auth/callback",
   ]
 
-  // Check-in routes are public (clients access via magic link)
-  const isCheckInRoute = pathname.startsWith("/check-in/")
-
-  // Check-in API routes are also public (for validating tokens and submitting check-ins)
-  const isCheckInApiRoute = pathname.startsWith("/api/check-in/submit/")
+  // NOTE: /check-in/* and /api/check-in/submit/* used to skip auth here, for the
+  // magic-link check-in flow deleted in migration 142. Both predicates matched by
+  // PREFIX, so leaving them would have let any future route under those paths
+  // bypass middleware auth silently. Clients now check in through the
+  // authenticated portal (/client/check-in); do not re-add a public prefix here.
 
   // Invitation routes are public (clients access via token-based invite links)
   const isInviteRoute = pathname.startsWith("/invite/")
   const isInviteApiRoute = pathname.startsWith("/api/invitations/")
 
   // Skip auth check entirely for these routes
-  if (skipAuthRoutes.includes(pathname) || isCheckInRoute || isCheckInApiRoute || isInviteRoute || isInviteApiRoute) {
+  if (skipAuthRoutes.includes(pathname) || isInviteRoute || isInviteApiRoute) {
     return NextResponse.next()
   }
 

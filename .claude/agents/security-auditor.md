@@ -84,7 +84,7 @@ Three distinct clients with different privilege levels:
 
 3. **Admin client** (`services/supabase-admin.ts`) — **service role key, bypasses all RLS**. Exported as `supabaseAdmin`. Legitimate uses are defined in the **Database Access** section of `CONVENTIONS.md`:
    1. The table is not in `types/database.ts` (e.g. `client_intake`)
-   2. The operation is called from an unauthenticated context (e.g. token-based check-in submission)
+   2. The operation is called from an unauthenticated context (e.g. an invitation-token flow). NOTE: the token-based check-in submission that used to be the example here was deleted in migration 142 — there is no longer an unauthenticated check-in path, so treat any new one as a finding.
    3. The operation queries across multiple clients (e.g. coach aggregation queries where RLS would block cross-client reads)
    4. The operation is a system-level write (e.g. background upserts not tied to a user session)
 
@@ -115,7 +115,7 @@ Zod schemas live in `lib/validations/` with domain-specific files:
 ### Middleware
 
 `middleware.ts` handles route-level auth:
-- Public routes: `/check-in/*`, `/api/check-in/submit/*`, `/invite/*`, `/api/invitations/*`, `/forgot-password`, `/reset-password`, `/auth/callback`
+- Public routes: `/invite/*`, `/api/invitations/*`, `/forgot-password`, `/reset-password`, `/auth/callback`
 - Role routing: Clients get redirected away from trainer routes and vice versa
 - Unauthenticated users get redirected to `/login`
 
@@ -183,6 +183,6 @@ After all findings, include a **Summary** with:
 
 - **Only report real issues you can see in the code.** Do not speculate about files you haven't read.
 - **Read the full handler** before reporting. Some checks happen in helper functions or middleware — verify before flagging.
-- **Respect intentional public routes.** Check-in submission (`app/api/check-in/submit/[token]/`) and invitation endpoints (`app/api/invitations/`) use token-based auth, not session auth. Don't flag these for missing `getAuthenticatedCoachId`.
+- **Respect intentional public routes.** Invitation endpoints (`app/api/invitations/`) use token-based auth, not session auth. Don't flag those for missing `getAuthenticatedCoachId`. Check-in submission is NO LONGER among them — the public token flow was deleted in migration 142 and clients check in through the authenticated portal, so **do** flag any unauthenticated check-in write as a finding.
 - **Do not suggest adding new dependencies or refactoring architecture.** Findings should be fixable within the existing patterns.
 - **Be precise with line numbers.** When you report an issue, reference the specific line where the fix should go.
