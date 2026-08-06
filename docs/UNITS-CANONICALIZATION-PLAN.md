@@ -206,7 +206,7 @@ Phase 4 corrects these lines. Until then, treat them as known-false.
 | Phase | Status | Delivers | Touches | Risk |
 |---|---|---|---|---|
 | 1 | ✅ **Shipped** `b9bbfac` 2026-08-06 | Conversion module, `coaches.unit_preference`, viewer resolver, `UnitsProvider` | New files + 1 migration | Low — nothing reads it yet |
-| 2 | Not started | All storage converted to kg/cm; unit-tag columns dropped | 1 migration + write paths | Medium — UI shows wrong labels until Phase 3 |
+| 2 | ✅ **Shipped** `0a99622` 2026-08-06 | All storage converted to kg/cm; unit-tag columns dropped | 1 migration + write paths | Medium — UI shows wrong labels until Phase 3 |
 | 3 | Not started | Every render path converts through the helpers | ~40 component files | Medium — wide but mechanical |
 | 4 | Not started | Coach + client settings toggles; forms write kg | Settings pages, forms | Low |
 
@@ -337,7 +337,7 @@ in full runs — re-run it before assuming you broke it.
 
 ---
 
-## Phase 2 — Canonical storage
+## Phase 2 — Canonical storage · **SHIPPED** `0a99622` 2026-08-06
 
 **Goal**: every stored weight is kg, every stored length is cm, and the unit-tag
 columns are gone.
