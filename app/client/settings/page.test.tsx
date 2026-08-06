@@ -17,6 +17,7 @@ globalThis.ResizeObserver = ResizeObserverMock as unknown as typeof ResizeObserv
 const toastMock = vi.fn();
 const swrCall = vi.fn();
 const mutateMock = vi.fn();
+const invalidateUnitPreferenceMock = vi.fn();
 
 vi.mock("swr", () => ({
   __esModule: true,
@@ -25,6 +26,15 @@ vi.mock("swr", () => ({
 
 vi.mock("@/hooks/use-toast", () => ({
   useToast: () => ({ toast: toastMock }),
+}));
+
+// units-context reaches auth-context, which constructs the browser Supabase
+// client and throws without env vars — the same mock ~20 other suites carry
+// since Phase 3. The invalidator's own two-cache behaviour is proven against
+// the real provider in components/coach/settings-units-card.test.tsx; what
+// this suite owns is whether THIS page calls it at all.
+vi.mock("@/contexts/units-context", () => ({
+  useInvalidateUnitPreference: () => invalidateUnitPreferenceMock,
 }));
 
 function makeClient(overrides: Partial<Client> = {}): Client {
@@ -79,6 +89,7 @@ describe("SettingsPage", () => {
     toastMock.mockReset();
     swrCall.mockReset();
     mutateMock.mockReset();
+    invalidateUnitPreferenceMock.mockReset();
     setSWR({ data: { success: true, data: makeClient() } });
     cleanup();
   });
@@ -140,6 +151,52 @@ describe("SettingsPage", () => {
       ),
     );
     expect(toastMock).toHaveBeenCalledWith({ title: "Settings saved" });
+  });
+
+  it("invalidates the unit-preference cache after a successful unit change", async () => {
+    mockFetchOnce({
+      body: { success: true, data: makeClient({ unitPreference: "metric" }) },
+    });
+
+    render(<SettingsPage />);
+    const user = userEvent.setup();
+    await user.click(screen.getByLabelText(/metric/i));
+    await user.click(screen.getByRole("button", { name: /^save$/i }));
+
+    // Without this the client saves Metric and the portal keeps rendering
+    // pounds until a full reload, because every unit-bearing number reads
+    // useUnits() → /api/me/unit-preference, not /api/client/me.
+    await waitFor(() =>
+      expect(invalidateUnitPreferenceMock).toHaveBeenCalledTimes(1),
+    );
+  });
+
+  it("does not invalidate the unit-preference cache when the save fails", async () => {
+    mockFetchOnce({
+      ok: false,
+      status: 500,
+      body: { success: false, error: "DB blew up" },
+    });
+
+    render(<SettingsPage />);
+    const user = userEvent.setup();
+    await user.click(screen.getByLabelText(/metric/i));
+    await user.click(screen.getByRole("button", { name: /^save$/i }));
+
+    await waitFor(() => expect(toastMock).toHaveBeenCalled());
+    expect(invalidateUnitPreferenceMock).not.toHaveBeenCalled();
+  });
+
+  it("seeds the radio group from the client's stored preference, not a hardcoded default", () => {
+    // mapClientRow normalizes a NULL column to metric; the page must show what
+    // the rest of the portal is already rendering rather than its own fallback.
+    setSWR({
+      data: { success: true, data: makeClient({ unitPreference: "metric" }) },
+    });
+    render(<SettingsPage />);
+
+    expect(screen.getByLabelText(/metric/i)).toBeChecked();
+    expect(screen.getByLabelText(/imperial/i)).not.toBeChecked();
   });
 
   it("renders the timezone as a read-only device-synced line with no picker", () => {

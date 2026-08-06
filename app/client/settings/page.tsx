@@ -6,6 +6,7 @@ import useSWR, { type SWRResponse } from "swr";
 
 import { useToast } from "@/hooks/use-toast";
 import { swrFetcher } from "@/lib/swr-fetcher";
+import { useInvalidateUnitPreference } from "@/contexts/units-context";
 import {
   updateSettingsSchema,
   type UpdateSettingsInput,
@@ -71,11 +72,18 @@ function SettingsForm({
   mutate: SWRResponse<MeResponse>["mutate"];
 }) {
   const { toast } = useToast();
+  const invalidateUnitPreference = useInvalidateUnitPreference();
 
   const form = useForm<UpdateSettingsInput>({
+    // `client.unitPreference` is never undefined — mapClientRow normalizes it
+    // through toUnitSystem — so there is no `?? "imperial"` fallback here any
+    // more. That fallback contradicted every other default in the system
+    // (the column's, DEFAULT_UNIT_SYSTEM's, and readClientPreference's, all
+    // metric) and could seed this form with the opposite of what the rest of
+    // the portal was already showing.
     resolver: zodResolver(updateSettingsSchema),
     defaultValues: {
-      unitPreference: client.unitPreference ?? "imperial",
+      unitPreference: client.unitPreference,
     },
   });
 
@@ -116,6 +124,13 @@ function SettingsForm({
 
     // Authoritative response — skip the SWR refetch to avoid a second reset.
     await mutate({ success: true, data: json.data }, { revalidate: false });
+
+    // /api/client/me is not the only cache holding this. useUnits() — which
+    // drives every unit-bearing number in the portal — reads
+    // /api/me/unit-preference, so without this the client saves Metric and
+    // keeps seeing pounds until a full reload, with nothing erroring.
+    if (dirty.unitPreference) await invalidateUnitPreference();
+
     form.reset(values);
     toast({ title: "Settings saved" });
   };

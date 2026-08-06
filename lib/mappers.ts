@@ -100,8 +100,17 @@ export function mapClientRow(row: ClientRow): Client {
     checkInAdherenceRate: row.check_in_adherence_rate ?? undefined,
     currentStreak: row.current_streak ?? undefined,
     longestStreak: row.longest_streak ?? undefined,
-    // Display preferences
-    unitPreference: (row.unit_preference ?? "imperial") as "metric" | "imperial",
+    // Display preferences.
+    //
+    // Normalized through toUnitSystem like mapCoachRow, so a NULL column reads
+    // METRIC. It used to read imperial, which disagreed with all three of the
+    // other defaults: the column's own DEFAULT (flipped to 'metric' by
+    // migration 141), DEFAULT_UNIT_SYSTEM, and readClientPreference — which
+    // serves the same client's preference to /api/me/unit-preference through
+    // toUnitSystem. A client with a NULL preference was therefore shown metric
+    // everywhere useUnits() reached, while this mapper told the settings form
+    // and the nutrition drawer imperial.
+    unitPreference: toUnitSystem(row.unit_preference),
     includeActivityBurn: row.include_activity_burn ?? true,
     surplusAsCarbs: row.surplus_as_carbs ?? false,
     startingWeight: row.starting_weight ?? undefined,
