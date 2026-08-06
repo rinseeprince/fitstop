@@ -1,4 +1,14 @@
 import type { ExerciseProgressionPoint } from "@/types/training";
+import { formatLoad, type UnitSystem } from "@/utils/unit-conversions";
+
+// Every weight in ExerciseProgressionPoint is canonical kilograms. This module
+// is pure — no React — so the viewer's unit arrives as a parameter from the
+// nearest client component (exercise-data-view.tsx / exercise-trend-chart.tsx),
+// which reads it from useUnits().
+//
+// These are all READ-ONLY renders, so formatLoad is correct: it snaps an
+// imperial conversion to a loadable 5 lb increment. Never use it to seed an
+// editable field — see set-row-editor.tsx.
 
 type TrendMetric = "weight" | "e1rm" | "volume" | "rpe" | "compliance";
 
@@ -21,16 +31,17 @@ export type KpiCard = {
 export function computeKpis(
   metric: TrendMetric,
   data: ExerciseProgressionPoint[],
+  viewer: UnitSystem,
 ): KpiCard[] {
   if (data.length === 0) return [];
 
   switch (metric) {
     case "weight":
-      return weightKpis(data);
+      return weightKpis(data, viewer);
     case "e1rm":
-      return e1rmKpis(data);
+      return e1rmKpis(data, viewer);
     case "volume":
-      return volumeKpis(data);
+      return volumeKpis(data, viewer);
     case "rpe":
       return rpeKpis(data);
     case "compliance":
@@ -38,23 +49,33 @@ export function computeKpis(
   }
 }
 
-function weightKpis(data: ExerciseProgressionPoint[]): KpiCard[] {
+function weightKpis(
+  data: ExerciseProgressionPoint[],
+  viewer: UnitSystem,
+): KpiCard[] {
   const withWeight = data.filter((p) => p.topSetWeight != null);
   if (withWeight.length === 0) return [];
 
   const latest = withWeight[withWeight.length - 1];
   const first = withWeight[0];
-  const topSet = latest.topSetWeight!;
-  const delta = topSet - (first.topSetWeight ?? topSet);
+  // Every load here is canonical kilograms; formatLoad converts and snaps to a
+  // loadable increment for an imperial viewer. The delta is taken BETWEEN the
+  // displayed values, not converted separately — otherwise the "+5 over period"
+  // line would not equal the difference of the two numbers above it.
+  const topSet = formatLoad(latest.topSetWeight!, viewer);
+  const firstTopSet = formatLoad(first.topSetWeight ?? latest.topSetWeight!, viewer);
+  const delta = topSet.value - firstTopSet.value;
 
-  const bestE1rm = Math.max(
-    ...withWeight.map((p) => p.estimatedOneRepMax ?? 0),
+  const bestE1rm = formatLoad(
+    Math.max(...withWeight.map((p) => p.estimatedOneRepMax ?? 0)),
+    viewer,
   );
 
   // Find most recent PR-worthy session (highest weight)
-  const maxWeight = Math.max(...withWeight.map((p) => p.topSetWeight!));
+  const maxWeightKg = Math.max(...withWeight.map((p) => p.topSetWeight!));
+  const maxWeight = formatLoad(maxWeightKg, viewer);
   const prSession = [...withWeight].reverse().find(
-    (p) => p.topSetWeight === maxWeight,
+    (p) => p.topSetWeight === maxWeightKg,
   );
   const prDaysAgo = prSession
     ? Math.floor(
@@ -65,22 +86,22 @@ function weightKpis(data: ExerciseProgressionPoint[]): KpiCard[] {
   return [
     {
       label: "Top Set",
-      value: String(topSet),
-      unit: "kg",
+      value: String(topSet.value),
+      unit: topSet.unit,
       meta: delta !== 0 ? `${delta > 0 ? "+" : ""}${delta} over period` : undefined,
       trend: delta > 0 ? "up" : delta < 0 ? "down" : "flat",
     },
     {
       label: "Estimated 1RM",
-      value: bestE1rm > 0 ? bestE1rm.toFixed(0) : "-",
-      unit: "kg",
+      value: bestE1rm.value > 0 ? bestE1rm.value.toFixed(0) : "-",
+      unit: bestE1rm.unit,
       meta: blockTrendText(withWeight, (p) => p.estimatedOneRepMax),
       trend: blockTrend(withWeight, (p) => p.estimatedOneRepMax),
     },
     {
       label: "Last PR",
-      value: String(maxWeight),
-      unit: "kg",
+      value: String(maxWeight.value),
+      unit: maxWeight.unit,
       meta:
         prDaysAgo != null
           ? prDaysAgo === 0
@@ -91,24 +112,30 @@ function weightKpis(data: ExerciseProgressionPoint[]): KpiCard[] {
   ];
 }
 
-function e1rmKpis(data: ExerciseProgressionPoint[]): KpiCard[] {
+function e1rmKpis(
+  data: ExerciseProgressionPoint[],
+  viewer: UnitSystem,
+): KpiCard[] {
   const withE1rm = data.filter((p) => p.estimatedOneRepMax != null);
   if (withE1rm.length === 0) return [];
 
-  const latest = withE1rm[withE1rm.length - 1].estimatedOneRepMax!;
-  const best = Math.max(...withE1rm.map((p) => p.estimatedOneRepMax!));
+  const latest = formatLoad(withE1rm[withE1rm.length - 1].estimatedOneRepMax!, viewer);
+  const best = formatLoad(
+    Math.max(...withE1rm.map((p) => p.estimatedOneRepMax!)),
+    viewer,
+  );
 
   return [
     {
       label: "Current e1RM",
-      value: latest.toFixed(0),
-      unit: "kg",
+      value: latest.value.toFixed(0),
+      unit: latest.unit,
     },
     {
       label: "Best e1RM",
-      value: best.toFixed(0),
-      unit: "kg",
-      meta: latest >= best ? "Current best" : undefined,
+      value: best.value.toFixed(0),
+      unit: best.unit,
+      meta: latest.value >= best.value ? "Current best" : undefined,
     },
     {
       label: "Trend",
@@ -119,18 +146,22 @@ function e1rmKpis(data: ExerciseProgressionPoint[]): KpiCard[] {
   ];
 }
 
-function volumeKpis(data: ExerciseProgressionPoint[]): KpiCard[] {
+function volumeKpis(
+  data: ExerciseProgressionPoint[],
+  viewer: UnitSystem,
+): KpiCard[] {
   const withVol = data.filter((p) => p.totalVolume != null);
   if (withVol.length === 0) return [];
 
-  const total = withVol.reduce((s, p) => s + (p.totalVolume ?? 0), 0);
-  const avg = Math.round(total / withVol.length);
-  const peak = Math.max(...withVol.map((p) => p.totalVolume!));
+  const totalKg = withVol.reduce((s, p) => s + (p.totalVolume ?? 0), 0);
+  const total = formatLoad(totalKg, viewer);
+  const avg = formatLoad(Math.round(totalKg / withVol.length), viewer);
+  const peak = formatLoad(Math.max(...withVol.map((p) => p.totalVolume!)), viewer);
 
   return [
-    { label: "Total Volume", value: total.toLocaleString(), unit: "kg" },
-    { label: "Avg per Session", value: avg.toLocaleString(), unit: "kg" },
-    { label: "Peak Session", value: peak.toLocaleString(), unit: "kg" },
+    { label: "Total Volume", value: total.value.toLocaleString(), unit: total.unit },
+    { label: "Avg per Session", value: avg.value.toLocaleString(), unit: avg.unit },
+    { label: "Peak Session", value: peak.value.toLocaleString(), unit: peak.unit },
   ];
 }
 
@@ -196,6 +227,7 @@ function complianceKpis(data: ExerciseProgressionPoint[]): KpiCard[] {
 export function computeInsight(
   metric: TrendMetric,
   data: ExerciseProgressionPoint[],
+  viewer: UnitSystem,
 ): string | null {
   if (data.length < 2) return null;
 
@@ -206,10 +238,11 @@ export function computeInsight(
       const first = withW[0].topSetWeight!;
       const last = withW[withW.length - 1].topSetWeight!;
       const dir = last > first ? "Upward" : last < first ? "Downward" : "Flat";
-      const maxW = Math.max(...withW.map((p) => p.topSetWeight!));
-      const prIdx = withW.findIndex((p) => p.topSetWeight === maxW);
+      const maxWKg = Math.max(...withW.map((p) => p.topSetWeight!));
+      const maxW = formatLoad(maxWKg, viewer);
+      const prIdx = withW.findIndex((p) => p.topSetWeight === maxWKg);
       const isPrRecent = prIdx >= withW.length - 3;
-      return `${dir} trend${isPrRecent ? ` with new PR of ${maxW}kg in recent sessions` : ""}. ${last > first ? "No regression sessions in this block." : ""}`.trim();
+      return `${dir} trend${isPrRecent ? ` with new PR of ${maxW.value}${maxW.unit} in recent sessions` : ""}. ${last > first ? "No regression sessions in this block." : ""}`.trim();
     }
     case "e1rm": {
       const withE = data.filter((p) => p.estimatedOneRepMax != null);

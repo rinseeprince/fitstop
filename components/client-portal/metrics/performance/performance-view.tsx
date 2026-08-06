@@ -27,14 +27,13 @@ const SWR_CONFIG = {
 
 const BASE = "/api/client/training/exercise-history";
 
-type PerformanceViewProps = {
-  weightUnit: "lbs" | "kg";
-};
-
 // Client performance category: pick an exercise, see weight/e1RM/volume
-// progression + personal records. Reuses the neutral chart + PR viz; passes
-// showInsight={false} so the coach-style (kg-hardcoded) insight strip is hidden.
-export function PerformanceView({ weightUnit }: PerformanceViewProps) {
+// progression + personal records. Reuses the neutral chart + PR viz.
+//
+// No weightUnit prop: it threaded a mapper constant down from metrics-hub, so
+// the client always saw kilograms whatever their preference. ExercisePrView and
+// ExerciseTrendChart now read useUnits() for themselves.
+export function PerformanceView() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -151,11 +150,7 @@ export function PerformanceView({ weightUnit }: PerformanceViewProps) {
             <h2 className="text-[14px] font-semibold text-[#0c1a1e]">
               Personal Records
             </h2>
-            <ExercisePrView
-              data={prData?.data}
-              weightUnit={weightUnit}
-              isLoading={prLoading}
-            />
+            <ExercisePrView data={prData?.data} isLoading={prLoading} />
           </section>
 
           {recentCount > 0 && (

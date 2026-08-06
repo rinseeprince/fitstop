@@ -22,6 +22,8 @@ import {
 } from "@/components/clients/training/program-builder/builder-tokens";
 import { ExerciseChartCard, LegendItem } from "./exercise-chart-card";
 import { computeInsight } from "./exercise-insight";
+import { formatLoad } from "@/utils/unit-conversions";
+import { useUnits } from "@/contexts/units-context";
 import type { ExerciseProgressionPoint } from "@/types/training";
 
 type TrendMetric = "weight" | "e1rm" | "volume" | "rpe" | "compliance";
@@ -92,35 +94,37 @@ function formatDateShort(iso: string) {
 // Custom tooltips
 // ---------------------------------------------------------------------------
 
-function MetricTooltip({ active, payload, metric }: Record<string, unknown>) {
+function MetricTooltip({ active, payload, metric, unit }: Record<string, unknown>) {
   if (!active || !Array.isArray(payload) || payload.length === 0) return null;
   const p = payload[0]?.payload as ExerciseProgressionPoint | undefined;
   if (!p) return null;
   const m = metric as TrendMetric;
+  // Values arrive already converted (see filteredData); this only labels them.
+  const u = unit as string;
 
   return (
     <div style={TOOLTIP_STYLE.contentStyle} className="px-3 py-2">
       <p className={cn(MONO, "text-[11px] text-[#93b0b4]")}>{formatDateShort(p.date)}</p>
       {m === "weight" && (
         <p className={TOOLTIP_VALUE_CLASS}>
-          {p.topSetWeight} x {p.topSetReps ?? "?"}
+          {p.topSetWeight}{u} x {p.topSetReps ?? "?"}
         </p>
       )}
       {m === "e1rm" && (
         <>
           <p className={TOOLTIP_VALUE_CLASS}>
-            e1RM: {p.estimatedOneRepMax?.toFixed(1)}
+            e1RM: {p.estimatedOneRepMax?.toFixed(1)}{u}
           </p>
           {p.topSetWeight != null && p.topSetReps != null && (
             <p className="text-[11px] text-[#93b0b4]">
-              from <span className={MONO}>{p.topSetWeight} x {p.topSetReps}</span>
+              from <span className={MONO}>{p.topSetWeight}{u} x {p.topSetReps}</span>
             </p>
           )}
         </>
       )}
       {m === "volume" && (
         <p className={TOOLTIP_VALUE_CLASS}>
-          {p.totalVolume?.toLocaleString()}
+          {p.totalVolume?.toLocaleString()}{u}
         </p>
       )}
       {m === "rpe" && (
@@ -190,16 +194,30 @@ export function ExerciseTrendChart({
   isLoading,
   showInsight = true,
 }: ExerciseTrendChartProps) {
+  const { preference } = useUnits();
   const gradientId = `exercise-trend-${metric}`;
 
+  // Stored loads are canonical kilograms, so the SERIES is converted here — not
+  // just the axis label. Labelling a kg series "lbs" would be worse than the
+  // unlabelled chart this replaces. Read-only render, so formatLoad (which snaps
+  // an imperial conversion to a loadable 5 lb increment) is the right helper.
+  const loadUnit = formatLoad(0, preference).unit;
   const filteredData = useMemo(() => {
     if (!data) return [];
-    if (metric === "rpe") return data.filter((p) => p.topSetRpe != null);
-    if (metric === "weight") return data.filter((p) => p.topSetWeight != null);
-    if (metric === "e1rm") return data.filter((p) => p.estimatedOneRepMax != null);
-    if (metric === "volume") return data.filter((p) => p.totalVolume != null);
-    return data;
-  }, [data, metric]);
+    const toViewer = (kg: number | null | undefined) =>
+      kg == null ? kg : formatLoad(kg, preference).value;
+    const converted = data.map((p) => ({
+      ...p,
+      topSetWeight: toViewer(p.topSetWeight),
+      estimatedOneRepMax: toViewer(p.estimatedOneRepMax),
+      totalVolume: toViewer(p.totalVolume),
+    }));
+    if (metric === "rpe") return converted.filter((p) => p.topSetRpe != null);
+    if (metric === "weight") return converted.filter((p) => p.topSetWeight != null);
+    if (metric === "e1rm") return converted.filter((p) => p.estimatedOneRepMax != null);
+    if (metric === "volume") return converted.filter((p) => p.totalVolume != null);
+    return converted;
+  }, [data, metric, preference]);
 
   const complianceSummary = useMemo(() => {
     if (metric !== "compliance") return null;
@@ -212,8 +230,8 @@ export function ExerciseTrendChart({
   }, [metric, filteredData]);
 
   const insight = useMemo(
-    () => (showInsight && data ? computeInsight(metric, data) : null),
-    [metric, data, showInsight],
+    () => (showInsight && data ? computeInsight(metric, data, preference) : null),
+    [metric, data, showInsight, preference],
   );
 
   if (isLoading) {
@@ -265,10 +283,17 @@ export function ExerciseTrendChart({
       </>
     ) : null;
 
+  // The unit rides on the subtitle rather than the Y axis: the axis is 40-50px
+  // wide and appending "kg" to every tick overflows it. Load-bearing metrics
+  // only — RPE and compliance are unitless.
+  const isLoadMetric =
+    metric === "weight" || metric === "e1rm" || metric === "volume";
   const subtitle =
     metric === "compliance" && complianceSummary
       ? complianceSummary
-      : titles.subtitle;
+      : isLoadMetric
+        ? `${titles.subtitle} · ${loadUnit}`
+        : titles.subtitle;
 
   // Volume and compliance use BarChart
   if (metric === "volume") {
@@ -293,7 +318,7 @@ export function ExerciseTrendChart({
                 width={50}
                 orientation="right"
               />
-              <Tooltip content={<MetricTooltip metric={metric} />} cursor={false} />
+              <Tooltip content={<MetricTooltip metric={metric} unit={loadUnit} />} cursor={false} />
               <Bar dataKey={dataKey} fill={color} radius={[3, 3, 0, 0]} maxBarSize={24} />
             </BarChart>
           </ResponsiveContainer>
@@ -318,7 +343,7 @@ export function ExerciseTrendChart({
                 interval={xInterval}
               />
               <YAxis tick={TICK_STYLE} tickLine={false} axisLine={false} width={40} orientation="right" />
-              <Tooltip content={<MetricTooltip metric={metric} />} cursor={false} />
+              <Tooltip content={<MetricTooltip metric={metric} unit={loadUnit} />} cursor={false} />
               <Legend content={() => null} />
               <Bar dataKey="prescribedSets" fill={PRESCRIBED_FILL} radius={[3, 3, 0, 0]} maxBarSize={20} name="Prescribed" />
               <Bar dataKey="actualSets" fill={color} radius={[3, 3, 0, 0]} maxBarSize={20} name="Completed" />
@@ -360,7 +385,7 @@ export function ExerciseTrendChart({
               orientation="right"
               domain={metric === "rpe" ? [0, 10] : ["auto", "auto"]}
             />
-            <Tooltip content={<MetricTooltip metric={metric} />} cursor={false} />
+            <Tooltip content={<MetricTooltip metric={metric} unit={loadUnit} />} cursor={false} />
             <Area
               type="monotone"
               dataKey={dataKey}

@@ -15,6 +15,14 @@ vi.mock("@/hooks/use-exercise-catalog", () => ({
   useExerciseCatalog: () => ({ ...catalogState, mutate: vi.fn() }),
 }));
 
+// Required, not optional: units-context imports auth-context, which constructs
+// the browser Supabase client at module load and throws without env vars. Any
+// test rendering a component that calls useUnits() must stub this module.
+vi.mock("@/contexts/units-context", () => ({
+  useUnits: () => ({ preference: "metric", isLoading: false, error: null }),
+}));
+
+
 function catalogEntry(over: Partial<Exercise>): Exercise {
   return {
     id: "e-bench",

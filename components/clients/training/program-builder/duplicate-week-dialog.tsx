@@ -30,6 +30,8 @@ import {
 } from "./builder-tokens";
 import { cloneWeek, progressWeek } from "./program-builder-model";
 import { buildIsCompound, buildPreviewRows } from "./progression-preview-model";
+import { useUnits } from "@/contexts/units-context";
+import { formatLoad, parseWeightToKg } from "@/utils/unit-conversions";
 import { ProgressionPreview } from "./progression-preview";
 import type { WeekDraft } from "./program-builder-types";
 
@@ -72,9 +74,18 @@ export function DuplicateWeekDialog({
   const { exercises: catalog, isLoading: isCatalogLoading, error: catalogError } =
     useExerciseCatalog();
 
+  const { preference } = useUnits();
+  // The unit label for an absolute load delta. formatLoad(0) is just the
+  // cheapest way to ask the one helper that owns this mapping.
+  const loadUnit = formatLoad(0, preference).unit;
+
   const [ruleKind, setRuleKind] = useState<RuleKind>("load");
   const [loadMode, setLoadMode] = useState<"absolute" | "percent">("absolute");
-  const [loadAmount, setLoadAmount] = useState("2.5");
+  // 2.5 kg and 5 lb are the smallest plate increments in their own systems, so
+  // the default is expressed in whichever the coach is typing in.
+  const [loadAmount, setLoadAmount] = useState(
+    preference === "imperial" ? "5" : "2.5",
+  );
   const [repsAmount, setRepsAmount] = useState("1");
   const [setsAmount, setSetsAmount] = useState("1");
   const [scopeKind, setScopeKind] = useState<ScopeKind>("all");
@@ -97,7 +108,18 @@ export function DuplicateWeekDialog({
     amount == null || amount === 0
       ? null
       : ruleKind === "load"
-        ? { kind: "load", mode: loadMode, amount }
+        ? {
+            kind: "load",
+            mode: loadMode,
+            // An absolute delta is TYPED in the coach's unit but the engine adds
+            // it to canonical kilograms, so it converts here — the arithmetic
+            // counterpart of the formatLoad display rule. A percent delta is
+            // unitless and must never be converted.
+            amount:
+              loadMode === "absolute"
+                ? parseWeightToKg(amount, preference)
+                : amount,
+          }
         : { kind: ruleKind, amount };
 
   const scope: ProgressionScope =
@@ -118,6 +140,7 @@ export function DuplicateWeekDialog({
     result?.week ?? clone,
     result?.changedExerciseUids ?? new Set(),
     displayRule,
+    preference,
   );
 
   const compoundsDisabled = isCatalogLoading || catalogError != null || catalog.length === 0;
@@ -178,7 +201,7 @@ export function DuplicateWeekDialog({
                   </label>
                   <SegmentedControl
                     options={[
-                      { value: "absolute", label: "kg" },
+                      { value: "absolute", label: loadUnit },
                       { value: "percent", label: "%" },
                     ]}
                     value={loadMode}

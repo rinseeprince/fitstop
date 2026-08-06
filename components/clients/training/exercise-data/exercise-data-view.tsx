@@ -13,6 +13,7 @@ import { ExerciseTrendChart } from "@/components/training/exercise-data/exercise
 import { ExercisePrView } from "@/components/training/exercise-data/exercise-pr-view";
 import { ExerciseKpiStrip } from "./exercise-kpi-strip";
 import { computeKpis } from "@/components/training/exercise-data/exercise-insight";
+import { useUnits } from "@/contexts/units-context";
 import { SectionLabel } from "@/components/programs/shared/section-label";
 import { LABEL_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
 import type {
@@ -52,6 +53,8 @@ export function ExerciseDataView({ clientId }: ExerciseDataViewProps) {
 
   const [selectedMetric, setSelectedMetric] = useState<ExerciseMetric>("weight");
   const [sessionCount, setSessionCount] = useState<number | "all">(12);
+
+  const { preference } = useUnits();
 
   const exerciseParam = selectedExerciseId
     ? `exerciseId=${selectedExerciseId}`
@@ -100,8 +103,8 @@ export function ExerciseDataView({ clientId }: ExerciseDataViewProps) {
   // KPIs
   const kpis = useMemo(() => {
     if (selectedMetric === "prs" || !progressionData?.data) return [];
-    return computeKpis(selectedMetric, progressionData.data);
-  }, [selectedMetric, progressionData]);
+    return computeKpis(selectedMetric, progressionData.data, preference);
+  }, [selectedMetric, progressionData, preference]);
 
   const handleExerciseSelect = (exercise: ExerciseListItem) => {
     setSelectedExerciseId(exercise.exerciseId);

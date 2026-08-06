@@ -17,6 +17,8 @@ import {
 } from "@/components/clients/training/program-builder/builder-tokens";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import type { SessionLog, ExerciseLog } from "@/types/training";
+import { useUnits } from "@/contexts/units-context";
+import { formatLoad } from "@/utils/unit-conversions";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -103,6 +105,7 @@ function ExerciseLogCard({
   log: ExerciseLog;
   onExerciseDrillDown?: (exerciseId: string | null, exerciseName: string) => void;
 }) {
+  const { preference } = useUnits();
   const snapshot = log.prescribedExerciseSnapshot;
   const prescribedName = snapshotString(snapshot, "name");
   const displayName = log.performedName ?? prescribedName ?? "Unknown exercise";
@@ -140,7 +143,11 @@ function ExerciseLogCard({
     prescribedRpe != null ? `RPE ${prescribedRpe}` : null,
   ].filter(Boolean);
 
-  const weightHeader = `Weight (${log.weightUnit})`;
+  // log.weightUnit is a mapper constant ("kg" from training-log-service.ts), not
+  // the viewer's preference — Batch F deletes it. Logged loads are read-only, so
+  // formatLoad is correct here (it snaps an imperial conversion to a loadable
+  // 5 lb increment).
+  const weightHeader = `Weight (${formatLoad(0, preference).unit})`;
 
   return (
     <div className="border border-[rgba(13,148,136,0.08)] rounded-[6px] overflow-hidden">
@@ -200,7 +207,7 @@ function ExerciseLogCard({
                   </td>
                   <td className={cn(MONO, "px-2 py-[9px] tabular-nums text-[#0c1a1e]")}>
                     {set.weight != null ? (
-                      set.weight
+                      formatLoad(set.weight, preference).value
                     ) : (
                       <span className="text-[#b8cfd3]">—</span>
                     )}

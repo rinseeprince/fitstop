@@ -85,7 +85,6 @@ export function MetricsHub({ initialTab = "physique" }: MetricsHubProps) {
   const progressData = progressResp?.data ?? null;
   const habits = habitsResp?.data ?? [];
   const habitLogs = habitLogsResp?.data ?? [];
-  const weightUnit = progressData?.client?.weightUnit ?? "lbs";
 
   const { bodyMetrics, wellnessMetrics } = useClientProgressMetrics(progressData);
 
@@ -165,7 +164,7 @@ export function MetricsHub({ initialTab = "physique" }: MetricsHubProps) {
           </CarouselItem>
 
           <CarouselItem>
-            <PerformanceView weightUnit={weightUnit} />
+            <PerformanceView />
           </CarouselItem>
 
           <CarouselItem>

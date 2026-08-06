@@ -177,7 +177,9 @@ export function exerciseLine(ex: ExerciseDraft, position: number): string {
     `${position}. ${ex.name}`,
     formatSetCount(ex),
     `reps ${formatReps(ex)}`,
-    `load ${formatLoads(ex)}`,
+    // Model-facing: canonical kilograms, never the viewer's unit. See the fork
+    // note on formatLoads in progression-preview-model.ts.
+    `load ${formatLoads(ex, "metric")}`,
   ];
   if (ex.rpeTarget != null) bits.push(`RPE ${ex.rpeTarget}`);
   if (ex.restSeconds != null) bits.push(`rest ${ex.restSeconds}s`);

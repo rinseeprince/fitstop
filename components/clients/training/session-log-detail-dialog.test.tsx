@@ -4,6 +4,14 @@ import userEvent from "@testing-library/user-event";
 import { SessionLogDetailDialog } from "./session-log-detail-dialog";
 import type { SessionLog, ExerciseLog, SetLog } from "@/types/training";
 
+// Required, not optional: units-context imports auth-context, which constructs
+// the browser Supabase client at module load and throws without env vars. Any
+// test rendering a component that calls useUnits() must stub this module.
+vi.mock("@/contexts/units-context", () => ({
+  useUnits: () => ({ preference: "metric", isLoading: false, error: null }),
+}));
+
+
 // ---------------------------------------------------------------------------
 // SWR mock
 // ---------------------------------------------------------------------------

@@ -1,7 +1,15 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { ExerciseTrendChart } from "./exercise-trend-chart";
 import type { ExerciseProgressionPoint } from "@/types/training";
+
+// Required, not optional: units-context imports auth-context, which constructs
+// the browser Supabase client at module load and throws without env vars. Any
+// test rendering a component that calls useUnits() must stub this module.
+vi.mock("@/contexts/units-context", () => ({
+  useUnits: () => ({ preference: "metric", isLoading: false, error: null }),
+}));
+
 
 // Recharts needs ResizeObserver
 class ResizeObserverMock {
@@ -86,7 +94,11 @@ describe("ExerciseTrendChart", () => {
     );
 
     expect(screen.getByText("Top set weight over time")).toBeInTheDocument();
-    expect(screen.getByText("Heaviest weight lifted per session")).toBeInTheDocument();
+    // The subtitle carries the unit: the axis is 40-50px wide and this chart
+    // previously had NO unit label anywhere — axis, tooltip or legend.
+    expect(
+      screen.getByText("Heaviest weight lifted per session · kg"),
+    ).toBeInTheDocument();
   });
 
   it("renders chart card with title for volume metric", () => {

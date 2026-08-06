@@ -84,7 +84,7 @@ describe("diff formatters (working sets only)", () => {
         working(3, { load_type: "absolute", load_value: 90 }),
       ],
     });
-    expect(formatLoads(ex)).toBe("100 / 90 kg");
+    expect(formatLoads(ex, "metric")).toBe("100 / 90 kg");
   });
 
   it("formatLoads: uniform percent loads use per-token %", () => {
@@ -94,7 +94,7 @@ describe("diff formatters (working sets only)", () => {
         working(2, { load_type: "pct_top", load_value: 85 }),
       ],
     });
-    expect(formatLoads(ex)).toBe("70% / 85%");
+    expect(formatLoads(ex, "metric")).toBe("70% / 85%");
   });
 
   it("formatLoads: mixed/missing loads fall back to per-token units", () => {
@@ -105,12 +105,12 @@ describe("diff formatters (working sets only)", () => {
         working(3),
       ],
     });
-    expect(formatLoads(ex)).toBe("100kg / 70% / —");
+    expect(formatLoads(ex, "metric")).toBe("100kg / 70% / —");
   });
 
   it("formatLoads: compact-only exercise renders its synthesized specs", () => {
-    expect(formatLoads(exercise({ percentage1rm: 75 }))).toBe("75% / 75% / 75%");
-    expect(formatLoads(exercise())).toBe("— / — / —");
+    expect(formatLoads(exercise({ percentage1rm: 75 }), "metric")).toBe("75% / 75% / 75%");
+    expect(formatLoads(exercise(), "metric")).toBe("— / — / —");
   });
 
   it("formatReps: collapses uniform ranges, joins mixed, passes reps_target through", () => {
@@ -177,7 +177,7 @@ describe("buildPreviewRows", () => {
     const source = sourceWeek();
     const rule = { kind: "load", mode: "absolute", amount: 2.5 } as const;
     const { week: progressed, changedExerciseUids } = progressWeek(source, rule, () => true);
-    const days = buildPreviewRows(source, progressed, changedExerciseUids, rule);
+    const days = buildPreviewRows(source, progressed, changedExerciseUids, rule, "metric");
 
     expect(days).toHaveLength(1); // rest days emit nothing
     expect(days[0].dayIndex).toBe(2);
@@ -199,5 +199,28 @@ describe("buildPreviewRows", () => {
     });
     // row uid is the CLONE's uid so checkbox state survives commit-side lookups
     expect(bench.uid).toBe(progressed.days[2].session!.exercises[0].uid);
+  });
+});
+
+// formatLoads is the fork point between the coach-facing preview dialog and the
+// model-facing assistant tools. The assistant pins "metric" deliberately (see
+// draft-week-tools.ts) because it speaks canonical kilograms everywhere.
+describe("formatLoads — viewer fork", () => {
+  it("renders absolute loads in the viewer's unit, snapped for imperial", () => {
+    const ex = exercise({
+      setSpecs: [
+        { set_number: 1, load_type: "absolute", load_value: 100 },
+        { set_number: 2, load_type: "absolute", load_value: 100 },
+      ] as never,
+    });
+
+    expect(formatLoads(ex, "metric")).toBe("100 / 100 kg");
+    // 100 kg is 220.46 lbs; formatLoad snaps to a loadable 5 lb increment.
+    expect(formatLoads(ex, "imperial")).toBe("220 / 220 lbs");
+  });
+
+  it("leaves percentage loads untouched for both viewers", () => {
+    const ex = exercise({ percentage1rm: 75 });
+    expect(formatLoads(ex, "imperial")).toBe(formatLoads(ex, "metric"));
   });
 });

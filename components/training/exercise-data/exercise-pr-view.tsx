@@ -8,19 +8,20 @@ import {
   MONO_LABEL_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens";
 import type { ExercisePR } from "@/types/training";
+import { useUnits } from "@/contexts/units-context";
+import { formatLoad } from "@/utils/unit-conversions";
 
+// The `weightUnit` prop is gone. It defaulted to "kg" and the coach caller
+// (exercise-data-view.tsx) never passed it, so every PR rendered as kilograms
+// regardless of who was looking; the client-portal caller passed the same
+// constant down from a mapper shim. Both now read the viewer's own preference.
 type ExercisePrViewProps = {
   data: ExercisePR[] | undefined;
   isLoading: boolean;
-  /** Display unit for the weight value. Defaults to "kg" for the coach caller. */
-  weightUnit?: string;
 };
 
-export function ExercisePrView({
-  data,
-  isLoading,
-  weightUnit = "kg",
-}: ExercisePrViewProps) {
+export function ExercisePrView({ data, isLoading }: ExercisePrViewProps) {
+  const { preference } = useUnits();
   if (isLoading) {
     return (
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-[10px]">
@@ -60,8 +61,10 @@ export function ExercisePrView({
             {pr.reps === 1 ? "1 Rep Max" : `${pr.reps} Rep Max`}
           </p>
           <p className={cn(MONO, "text-[20px] font-semibold text-[#0c1a1e] mt-1 tabular-nums leading-tight")}>
-            {pr.weight}
-            <span className="text-[12px] text-[#93b0b4] ml-1">{weightUnit}</span>
+            {formatLoad(pr.weight, preference).value}
+            <span className="text-[12px] text-[#93b0b4] ml-1">
+              {formatLoad(pr.weight, preference).unit}
+            </span>
           </p>
           <p className={cn(MONO, "text-[11px] text-[#93b0b4] mt-1 leading-tight")}>
             {format(new Date(pr.date), "MMM d, yyyy")}

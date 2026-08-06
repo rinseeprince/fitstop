@@ -44,6 +44,14 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(),
 }));
 
+// Required, not optional: units-context imports auth-context, which constructs
+// the browser Supabase client at module load and throws without env vars. Any
+// test rendering a component that calls useUnits() must stub this module.
+vi.mock("@/contexts/units-context", () => ({
+  useUnits: () => ({ preference: "metric", isLoading: false, error: null }),
+}));
+
+
 const progressData = {
   // Raw history arrays kept for the stat tiles / goals section that read them
   // directly (lastWeight / lastBodyFat).

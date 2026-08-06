@@ -40,8 +40,12 @@ function loadChanges(before: WeekDraft, after: WeekDraft): string[] {
     slot.session.exercises.forEach((ex, i) => {
       const next = afterSession.exercises[i];
       if (!next || seen.has(ex.name)) return;
-      const from = formatLoads(ex);
-      const to = formatLoads(next);
+      // Pinned to metric, NOT the coach's preference: the assistant speaks
+      // canonical kilograms everywhere (this file's own WireRule "load_kg",
+      // draft-agent-service's prompt, draft-exercise-tools' loadKg field). An
+      // lbs string reaching the model would corrupt its arithmetic silently.
+      const from = formatLoads(ex, "metric");
+      const to = formatLoads(next, "metric");
       if (from !== to) seen.set(ex.name, `${ex.name} ${from} → ${to}`);
     });
   });

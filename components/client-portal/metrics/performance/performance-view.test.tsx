@@ -12,6 +12,13 @@ const { mockUseSWR } = vi.hoisted(() => ({ mockUseSWR: vi.fn() }));
 vi.mock("swr", () => ({ default: mockUseSWR }));
 vi.mock("@/lib/swr-fetcher", () => ({ swrFetcher: vi.fn() }));
 
+// Required, not optional: units-context imports auth-context, which constructs
+// the browser Supabase client at module load and throws without env vars. Any
+// test rendering a component that calls useUnits() must stub this module.
+vi.mock("@/contexts/units-context", () => ({
+  useUnits: () => ({ preference: "metric", isLoading: false, error: null }),
+}));
+
 class ResizeObserverMock {
   observe() {}
   unobserve() {}
@@ -86,14 +93,14 @@ describe("PerformanceView", () => {
 
   it("prompts to pick an exercise when none is selected", () => {
     setupSWR({ list: [makeListItem()] });
-    render(<PerformanceView weightUnit="lbs" />);
+    render(<PerformanceView />);
     expect(screen.getByText(/Pick an exercise above/i)).toBeInTheDocument();
   });
 
   it("renders the weight chart once an exercise is selected", () => {
     selectExercise();
     setupSWR({ list: [makeListItem()], progression: [makePoint({ date: "2026-05-01" }), makePoint({ date: "2026-05-08" })] });
-    render(<PerformanceView weightUnit="lbs" />);
+    render(<PerformanceView />);
     expect(screen.getByText("Top set weight over time")).toBeInTheDocument();
   });
 
@@ -101,7 +108,7 @@ describe("PerformanceView", () => {
     const user = userEvent.setup();
     selectExercise();
     setupSWR({ list: [makeListItem()], progression: [makePoint({ date: "2026-05-01" }), makePoint({ date: "2026-05-08" })] });
-    render(<PerformanceView weightUnit="lbs" />);
+    render(<PerformanceView />);
 
     expect(screen.getByText("Top set weight over time")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Volume" }));
@@ -112,7 +119,7 @@ describe("PerformanceView", () => {
     const user = userEvent.setup();
     selectExercise();
     setupSWR({ list: [makeListItem()], progression: [makePoint(), makePoint({ date: "2026-05-08" })] });
-    render(<PerformanceView weightUnit="lbs" />);
+    render(<PerformanceView />);
 
     expect(progressionUrls().some((u) => u.includes("sessionCount=12"))).toBe(true);
 
@@ -130,11 +137,13 @@ describe("PerformanceView", () => {
       progression: [makePoint(), makePoint({ date: "2026-05-08" })],
       prs: [makePR({ reps: 5, weight: 100, isRecent: true })],
     });
-    render(<PerformanceView weightUnit="lbs" />);
+    render(<PerformanceView />);
 
     expect(screen.getByText("5 Rep Max")).toBeInTheDocument();
     expect(screen.getByText("100")).toBeInTheDocument();
-    expect(screen.getByText("lbs")).toBeInTheDocument();
+    // Was "lbs" over a kilogram value: metrics-hub threaded a mapper constant
+    // down, so the label never reflected the client's own preference.
+    expect(screen.getByText("kg")).toBeInTheDocument();
     expect(screen.getByText("New")).toBeInTheDocument();
   });
 
@@ -145,7 +154,7 @@ describe("PerformanceView", () => {
       progression: [makePoint(), makePoint({ date: "2026-05-08" })],
       prs: [makePR({ isRecent: false })],
     });
-    render(<PerformanceView weightUnit="kg" />);
+    render(<PerformanceView />);
     expect(screen.queryByText("New")).not.toBeInTheDocument();
   });
 
@@ -162,7 +171,7 @@ describe("PerformanceView", () => {
         makePoint({ date: "2026-05-15T00:00:00Z" }),
       ],
     });
-    render(<PerformanceView weightUnit="lbs" />);
+    render(<PerformanceView />);
 
     expect(screen.getByText(/in the last 12 weeks/i)).toHaveTextContent(
       "You've logged Bench Press 2 times in the last 12 weeks.",
@@ -172,14 +181,14 @@ describe("PerformanceView", () => {
   it("shows the chart encouragement empty state when there is no progression data", () => {
     selectExercise();
     setupSWR({ list: [makeListItem()], progression: [] });
-    render(<PerformanceView weightUnit="lbs" />);
+    render(<PerformanceView />);
     expect(screen.getByText(/Not enough data yet/i)).toBeInTheDocument();
   });
 
   it("shows the keep-logging PR empty state when there are no PRs", () => {
     selectExercise();
     setupSWR({ list: [makeListItem()], progression: [makePoint(), makePoint({ date: "2026-05-08" })], prs: [] });
-    render(<PerformanceView weightUnit="lbs" />);
+    render(<PerformanceView />);
     expect(screen.getByText(/No personal records yet/i)).toBeInTheDocument();
   });
 });

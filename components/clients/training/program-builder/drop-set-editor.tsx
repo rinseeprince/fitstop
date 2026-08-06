@@ -12,6 +12,9 @@ import {
   MONO_INPUT_CLASS,
   TEXT_MUTED,
 } from "./builder-tokens";
+import { useUnits } from "@/contexts/units-context";
+import { formatLoad } from "@/utils/unit-conversions";
+import { commitLoad, commitNum, displayLoad } from "./commit-input";
 
 // Sub-editor for a drop set's weight/reps pairs, rendered under a set row
 // whose set_type === "drop". ≤20 drops (zod cap enforced in the kernel).
@@ -22,23 +25,8 @@ type DropSetEditorProps = {
   onEdit: (edit: SetSpecEdit) => void;
 };
 
-// Clamp at commit and write the result back so the uncontrolled input shows
-// exactly what entered the draft (HTML min/max don't constrain typed values).
-const commitNum = (
-  e: React.FocusEvent<HTMLInputElement>,
-  opts: { min: number; max: number },
-): number | null => {
-  const t = e.target.value.trim();
-  let result: number | null = null;
-  if (t) {
-    const n = Number(t);
-    if (Number.isFinite(n)) result = Math.min(opts.max, Math.max(opts.min, n));
-  }
-  e.target.value = result == null ? "" : String(result);
-  return result;
-};
-
 export function DropSetEditor({ drops, setIndex, disabled, onEdit }: DropSetEditorProps) {
+  const { preference } = useUnits();
   return (
     <div className="ml-8 mt-1 space-y-1 border-l border-dashed border-[rgba(13,148,136,0.15)] pl-3">
       {drops.map((drop, dropIndex) => (
@@ -52,18 +40,25 @@ export function DropSetEditor({ drops, setIndex, disabled, onEdit }: DropSetEdit
             min={0}
             max={2000}
             disabled={disabled}
-            defaultValue={drop.weight ?? ""}
-            placeholder="kg"
+            defaultValue={displayLoad(drop.weight, preference)}
+            placeholder={formatLoad(0, preference).unit}
             aria-label={`Drop ${dropIndex + 1} weight`}
             className={cn(MONO_INPUT_CLASS, "h-6 w-16 px-1 text-[11px]", FOCUS_RING)}
-            onBlur={(e) =>
+            onBlur={(e) => {
+              // Same guard as set-row-editor: a drop weight is a stored load, so
+              // a blur that changed nothing must write nothing.
+              const commit = commitLoad(e, drop.weight, preference, {
+                min: 0,
+                max: 2000,
+              });
+              if (!commit.changed) return;
               onEdit({
                 kind: "update-drop",
                 setIndex,
                 dropIndex,
-                patch: { weight: commitNum(e, { min: 0, max: 2000 }) },
-              })
-            }
+                patch: { weight: commit.valueKg },
+              });
+            }}
           />
           <span className={cn("text-[10px]", TEXT_MUTED)}>×</span>
           <Input
