@@ -3,6 +3,8 @@ import {
   GIRTH_LIMB_CM_MAX,
   GIRTH_TORSO_CM_MAX,
   LOAD_KG_MAX,
+  WEIGHT_KG_MAX,
+  WEIGHT_KG_MIN,
 } from "@/lib/constants";
 
 const VALID_DAYS =["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] as const;
@@ -70,6 +72,14 @@ export const exerciseHighlightSchema = z.object({
   weightValue: optionalNumber(z.number().positive().max(LOAD_KG_MAX)),
   weightUnit: z.enum(["lbs", "kg"]).optional().nullable().transform((v) => v ?? undefined),
   reps: optionalInt(z.number().int().min(1).max(1000)),
+}).superRefine((data, ctx) => {
+  if (data.weightValue !== undefined && data.weightUnit === undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["weightUnit"],
+      message: "weightUnit is required when weightValue is present",
+    });
+  }
 });
 
 // Nutrition adherence schema
@@ -91,15 +101,11 @@ export const submitCheckInSchema = z.object({
   stress: optionalInt(z.number().int().min(1).max(10)),
   notes: optionalString(5000),
 
-  // Body metrics.
-  //
-  // The `.max(1000) // max 1000 lbs/kg` ceiling is deliberately NOT tightened
-  // to WEIGHT_KG_MAX here: this form still submits in the unit its own toggle
-  // showed and lets the server convert, and a pounds value is numerically
-  // LARGER than the kilograms it becomes — so a kg ceiling applied before the
-  // form converts would reject a 300 lb client outright. The bound moves with
-  // the form's conversion, in the same commit, not before it.
-  weight: optionalNumber(z.number().positive().max(1000)),
+  // Body metrics — canonical KILOGRAMS. The web form converts from the
+  // viewer's preference before submitting (toCanonicalCheckInSubmission), so
+  // the ceiling can finally describe storage rather than standing in for two
+  // units at once ("max 1000 lbs/kg", which is what it said).
+  weight: optionalNumber(z.number().min(WEIGHT_KG_MIN).max(WEIGHT_KG_MAX)),
   weightUnit: z.enum(["lbs", "kg"]).optional().nullable().transform((v) => v ?? undefined),
   bodyFatPercentage: optionalNumber(z.number().min(0).max(100)),
 
@@ -130,6 +136,35 @@ export const submitCheckInSchema = z.object({
   sessionCompletions: z.array(sessionCompletionSchema).max(20).optional().nullable().transform((v) => v ?? undefined),
   exerciseHighlights: z.array(exerciseHighlightSchema).max(10).optional().nullable().transform((v) => v ?? undefined),
   nutritionAdherence: nutritionAdherenceSchema.optional().nullable().transform((v) => v ?? undefined),
+}).superRefine((data, ctx) => {
+  // A unit tag is REQUIRED alongside the value it describes.
+  //
+  // Both tags used to be freely optional, and the server picked a default for
+  // an untagged payload: kg for a weight, INCHES for a girth. Two different
+  // guesses about the same silence, either of which writes a number that is
+  // indistinguishable afterwards from a correct one. Rejecting is the only
+  // honest answer — the sender knows what they measured and we do not.
+  //
+  // Nothing is lost for the web form, which converts to canonical kg/cm and
+  // tags the payload itself (utils/check-in-canonical-metrics.ts). This is
+  // what makes a non-web client's own units safe rather than a coin flip.
+  if (data.weight !== undefined && data.weightUnit === undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["weightUnit"],
+      message: "weightUnit is required when weight is present",
+    });
+  }
+
+  const hasGirth = [data.waist, data.hips, data.chest, data.arms, data.thighs]
+    .some((value) => value !== undefined);
+  if (hasGirth && data.measurementUnit === undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["measurementUnit"],
+      message: "measurementUnit is required when a measurement is present",
+    });
+  }
 });
 
 export const clientSubmitCheckInSchema = submitCheckInSchema.refine(

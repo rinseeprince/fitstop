@@ -18,17 +18,23 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { Trophy, AlertCircle, Plus, X, ChevronDown } from "lucide-react";
+import { useUnits } from "@/contexts/units-context";
+import { formatWeight } from "@/utils/unit-conversions";
 import type {
   CheckInExerciseHighlight,
   CheckInTrainingContext,
   ExerciseHighlightType,
 } from "@/types/check-in";
 
+// `weightValue` stays in the CLIENT's display units for as long as this list is
+// being edited, and is converted once on submit. That keeps the echo faithful:
+// a client who types 225 sees 225 in the list below, not the 102.06 kg it will
+// be stored as, nor a snapped 224.9 round-tripped back out of it.
+
 type ExerciseHighlightsSectionProps = {
   exercises: CheckInTrainingContext["sessions"][0]["exercises"][];
   highlights: CheckInExerciseHighlight[];
   onChange: (highlights: CheckInExerciseHighlight[]) => void;
-  weightUnit: "lbs" | "kg";
 };
 
 type NewHighlight = {
@@ -51,8 +57,9 @@ export const ExerciseHighlightsSection = ({
   exercises,
   highlights,
   onChange,
-  weightUnit,
 }: ExerciseHighlightsSectionProps) => {
+  const { preference } = useUnits();
+  const weightUnit = formatWeight(0, preference).unit;
   const datalistId = useId();
   const [isOpen, setIsOpen] = useState(highlights.length > 0);
   const [newHighlight, setNewHighlight] = useState<NewHighlight>(EMPTY_HIGHLIGHT);
@@ -70,6 +77,8 @@ export const ExerciseHighlightsSection = ({
       weightValue: newHighlight.weightValue
         ? parseFloat(newHighlight.weightValue)
         : undefined,
+      // Display units until submit — toCanonicalCheckInSubmission converts the
+      // value and rewrites this tag to "kg".
       weightUnit: newHighlight.weightValue ? weightUnit : undefined,
       reps: (() => {
         if (!newHighlight.reps) return undefined;

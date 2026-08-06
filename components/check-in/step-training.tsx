@@ -34,7 +34,6 @@ type StepTrainingProps = {
   ) => Promise<void>;
   trainingPeriodStats?: TrainingPeriodStats;
   periodDays?: number;
-  weightUnit?: "lbs" | "kg";
   dailyLogs?: DailyLog[];
 };
 
@@ -47,7 +46,6 @@ export const StepTraining = ({
   onLogEvent,
   trainingPeriodStats,
   periodDays,
-  weightUnit = "lbs",
   dailyLogs = [],
 }: StepTrainingProps) => {
   const hasActivePlan = trainingContext?.hasActivePlan ?? false;
@@ -91,7 +89,6 @@ export const StepTraining = ({
             onChange={(exerciseHighlights) =>
               onChange({ ...data, exerciseHighlights })
             }
-            weightUnit={weightUnit}
           />
           <Separator />
         </>

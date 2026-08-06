@@ -18,6 +18,8 @@ import {
 } from "@/components/client-portal/check-in/past-check-ins-section";
 import { useCheckInForm } from "@/hooks/use-check-in-form";
 import { useClientCheckIn } from "@/hooks/use-client-check-in";
+import { useUnits } from "@/contexts/units-context";
+import { toCanonicalCheckInSubmission } from "@/utils/check-in-canonical-metrics";
 import { toast } from "sonner";
 import type { SessionCompletionQuality } from "@/types/check-in";
 
@@ -36,6 +38,7 @@ export default function ClientCheckInPage() {
   const { mutate } = useSWRConfig();
   const { contextData, isLoadingContext, contextError, nextDueDate, submitCheckIn } =
     useClientCheckIn();
+  const { preference } = useUnits();
 
   const {
     currentStep,
@@ -96,7 +99,15 @@ export default function ClientCheckInPage() {
 
       // The server DERIVES sessionCompletions / nutrition adherence / mood…stress
       // from the spine — the form only sends the qualitative fields it owns.
-      const result = await submitCheckIn(formData);
+      //
+      // The form holds the client's OWN display units while it is being filled
+      // in; this is the single point where it becomes canonical kg/cm. It also
+      // stamps the wire tags, which the schema now requires alongside any value
+      // they describe — no default is applied server-side any more, because a
+      // default silently decides the unit for a payload that never stated one.
+      const result = await submitCheckIn(
+        toCanonicalCheckInSubmission(formData, preference),
+      );
 
       if (!result.success) {
         throw new Error(result.error || "Failed to submit check-in");
@@ -225,7 +236,6 @@ export default function ClientCheckInPage() {
                   onLogEvent={logTrainingEvent}
                   trainingPeriodStats={contextData.trainingPeriodStats}
                   periodDays={contextData.periodDays}
-                  weightUnit={formData.weightUnit || "lbs"}
                   dailyLogs={contextData.dailyLogs}
                 />
               )}

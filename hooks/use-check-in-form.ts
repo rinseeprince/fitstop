@@ -6,7 +6,10 @@ const STORAGE_KEY = "check-in-form-data";
 
 export const useCheckInForm = (token: string) => {
   const [currentStep, setCurrentStep] = useState(1);
-  const [formData, setFormData] = useState<Partial<CheckInFormData>>({ weightUnit: "kg" });
+  // No seeded unit tag. The form holds the client's own display units and
+  // toCanonicalCheckInSubmission stamps the wire tags at submit; seeding one
+  // here would state a unit before the viewer's preference had been consulted.
+  const [formData, setFormData] = useState<Partial<CheckInFormData>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Load saved form data from localStorage on mount

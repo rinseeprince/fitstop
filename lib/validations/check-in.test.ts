@@ -56,7 +56,9 @@ describe('Check-in Validation Schemas', () => {
       const data = {
         mood: '4',
         energy: '7',
-        weight: '180.5',
+        weight: '80.5',
+        // Required alongside the value it describes — see the unit-tag block.
+        weightUnit: 'kg',
       }
 
       const result = submitCheckInSchema.safeParse(data)
@@ -64,8 +66,59 @@ describe('Check-in Validation Schemas', () => {
       if (result.success) {
         expect(result.data.mood).toBe(4)
         expect(result.data.energy).toBe(7)
-        expect(result.data.weight).toBe(180.5)
+        expect(result.data.weight).toBe(80.5)
       }
+    })
+
+    // A unit tag is required whenever the value it describes is present. The
+    // server used to default an untagged payload — kg for a weight, INCHES for
+    // a girth — two different guesses about the same silence, either of which
+    // writes a number indistinguishable afterwards from a correct one.
+    describe('unit tags are required alongside their values', () => {
+      it('rejects a weight with no weightUnit', () => {
+        const result = submitCheckInSchema.safeParse({ weight: 80.5 })
+        expect(result.success).toBe(false)
+        if (!result.success) {
+          expect(result.error.issues[0].path).toEqual(['weightUnit'])
+        }
+      })
+
+      it('rejects any girth with no measurementUnit', () => {
+        for (const key of ['waist', 'hips', 'chest', 'arms', 'thighs']) {
+          const result = submitCheckInSchema.safeParse({ [key]: 86 })
+          expect(result.success, `${key} should require measurementUnit`).toBe(false)
+        }
+      })
+
+      it('accepts a tagged payload', () => {
+        expect(
+          submitCheckInSchema.safeParse({ weight: 80.5, weightUnit: 'kg' }).success,
+        ).toBe(true)
+        expect(
+          submitCheckInSchema.safeParse({ waist: 86, measurementUnit: 'cm' }).success,
+        ).toBe(true)
+      })
+
+      it('requires no tag when no value is present', () => {
+        expect(submitCheckInSchema.safeParse({ mood: 4 }).success).toBe(true)
+      })
+
+      it('rejects a highlight weight with no unit of its own', () => {
+        const result = submitCheckInSchema.safeParse({
+          exerciseHighlights: [
+            { exerciseName: 'Bench', highlightType: 'pr', weightValue: 102 },
+          ],
+        })
+        expect(result.success).toBe(false)
+      })
+    })
+
+    // Body weight is canonical KILOGRAMS, so the ceiling is a kg ceiling. It
+    // was `.max(1000)`, commented "max 1000 lbs/kg" — one number standing in
+    // for two quantities on a column that is unambiguously one of them.
+    it('rejects a pounds-magnitude body weight', () => {
+      const result = submitCheckInSchema.safeParse({ weight: 300, weightUnit: 'kg' })
+      expect(result.success).toBe(false)
     })
 
     it('converts null and empty strings to undefined', () => {

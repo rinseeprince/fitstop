@@ -5,7 +5,18 @@ import { ChevronDown, ChevronUp } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { useUnits } from "@/contexts/units-context";
+import { formatLength, formatWeight } from "@/utils/unit-conversions";
 import type { BodyMetrics } from "@/types/check-in";
+
+// The per-field kg/lbs and in/cm toggles that used to live here are gone.
+//
+// They set a tag on the payload rather than choosing what the client sees, and
+// the two disagreed: the kg button rendered as selected when the toggle was
+// untouched while the server stored `?? "lbs"`, so an untouched form recorded a
+// kilogram number as pounds — 51 rows on Dev. The unit now comes from the
+// client's own preference (Settings, or the intake toggle before activation),
+// and the values convert once on submit.
 
 type StepMetricsProps = {
   data: Partial<BodyMetrics>;
@@ -19,6 +30,9 @@ export const StepMetrics = ({
   previousData,
 }: StepMetricsProps) => {
   const [showMeasurements, setShowMeasurements] = useState(false);
+  const { preference } = useUnits();
+  const weightUnit = formatWeight(0, preference).unit;
+  const measurementUnit = formatLength(0, preference).unit;
 
   const renderComparison = (current?: number, previous?: number) => {
     if (!previous || !current) return null;
@@ -48,7 +62,7 @@ export const StepMetrics = ({
 
       {/* Weight */}
       <div className="space-y-3">
-        <Label htmlFor="weight">Weight</Label>
+        <Label htmlFor="weight">Weight ({weightUnit})</Label>
         <div className="flex gap-2">
           <div className="relative flex-1">
             <Input
@@ -60,32 +74,11 @@ export const StepMetrics = ({
               onChange={(e) =>
                 onChange({ ...data, weight: parseFloat(e.target.value) || undefined })
               }
-              className="pr-20"
+              className="pr-12"
             />
-            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-1">
-              <button
-                type="button"
-                onClick={() => onChange({ ...data, weightUnit: "lbs" })}
-                className={`px-2 py-1 text-xs rounded transition-colors ${
-                  data.weightUnit === "lbs"
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                lbs
-              </button>
-              <button
-                type="button"
-                onClick={() => onChange({ ...data, weightUnit: "kg" })}
-                className={`px-2 py-1 text-xs rounded transition-colors ${
-                  data.weightUnit === "kg" || !data.weightUnit
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                kg
-              </button>
-            </div>
+            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+              {weightUnit}
+            </span>
           </div>
           {previousData?.weight && (
             <div className="flex items-center px-3 bg-card border border-border">
@@ -152,33 +145,6 @@ export const StepMetrics = ({
       {/* Measurements Grid */}
       {showMeasurements && (
         <div className="space-y-6 pt-4 border-t">
-          <div className="flex justify-end">
-            <div className="flex gap-1">
-              <button
-                type="button"
-                onClick={() => onChange({ ...data, measurementUnit: "in" })}
-                className={`px-3 py-1 text-xs rounded transition-colors ${
-                  data.measurementUnit === "in" || !data.measurementUnit
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                inches
-              </button>
-              <button
-                type="button"
-                onClick={() => onChange({ ...data, measurementUnit: "cm" })}
-                className={`px-3 py-1 text-xs rounded transition-colors ${
-                  data.measurementUnit === "cm"
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                cm
-              </button>
-            </div>
-          </div>
-
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {[
               { key: "waist", label: "Waist", prev: previousData?.waist },
@@ -188,7 +154,9 @@ export const StepMetrics = ({
               { key: "thighs", label: "Thighs", prev: previousData?.thighs },
             ].map(({ key, label, prev }) => (
               <div key={key} className="space-y-2">
-                <Label htmlFor={key}>{label}</Label>
+                <Label htmlFor={key}>
+                  {label} ({measurementUnit})
+                </Label>
                 <div className="flex gap-2">
                   <Input
                     id={key}
