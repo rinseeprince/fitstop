@@ -32,7 +32,7 @@ export type NutritionSettings = {
 
 export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderProps) {
   const { toast } = useToast();
-  const nutritionPlan = useNutritionPlan({ client, onUpdate });
+  const nutritionPlan = useNutritionPlan({ client });
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
 
   const [settings, setSettings] = useState<NutritionSettings>({

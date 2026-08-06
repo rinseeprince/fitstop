@@ -1,14 +1,15 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { useToast } from "@/hooks/use-toast";
-import type { Client, UnitPreference, DietType, ActivityLevel } from "@/types/check-in";
+import { useState, useEffect } from "react";
+import type { Client, DietType, ActivityLevel } from "@/types/check-in";
 import type { GoalDrift } from "@/lib/goals/detect-goal-drift";
 import type { NutritionCalcInputs } from "@/services/nutrition-calc-inputs";
 
+// No `onUpdate`: its only consumer here was the deleted unit-change handler.
+// The callback is still live one level up in useNutritionBuilder (plan
+// generate/save/delete all fire it) — it just no longer reaches this hook.
 type UseNutritionPlanProps = {
   client: Client;
-  onUpdate?: () => void;
 };
 
 type NutritionTargetsData = {
@@ -49,15 +50,7 @@ type NutritionTargetsData = {
   trainingPlanName?: string | null;
 };
 
-export function useNutritionPlan({ client, onUpdate }: UseNutritionPlanProps) {
-  const { toast } = useToast();
-
-  // Unit preference
-  const [unitPreference, setUnitPreferenceState] = useState<UnitPreference>(
-    client.unitPreference || "imperial"
-  );
-  const [isSavingUnit, setIsSavingUnit] = useState(false);
-
+export function useNutritionPlan({ client }: UseNutritionPlanProps) {
   // Nutrition targets from API (reads from nutrition_plans tables)
   const [nutritionData, setNutritionData] = useState<NutritionTargetsData | null>(null);
   const [isLoadingNutrition, setIsLoadingNutrition] = useState(true);
@@ -97,43 +90,22 @@ export function useNutritionPlan({ client, onUpdate }: UseNutritionPlanProps) {
   const hasTrainingPlan = nutritionData?.hasTrainingPlan ?? false;
   const trainingPlanName = nutritionData?.trainingPlanName ?? null;
 
-  // Unit preference handler
-  const handleUnitChange = useCallback(
-    async (newUnit: UnitPreference) => {
-      setUnitPreferenceState(newUnit);
-      setIsSavingUnit(true);
-      try {
-        const res = await fetch(`/api/clients/${client.id}/nutrition`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ unitPreference: newUnit }),
-        });
-
-        if (!res.ok) throw new Error("Failed to update unit preference");
-        onUpdate?.();
-      } catch (_error) {
-        toast({
-          title: "Error",
-          description: "Failed to update unit preference",
-          variant: "destructive",
-        });
-        setUnitPreferenceState(client.unitPreference || "imperial");
-      } finally {
-        setIsSavingUnit(false);
-      }
-    },
-    [client.id, client.unitPreference, onUpdate, toast]
-  );
+  // No unit-preference handler here any more. It PATCHed the CLIENT's
+  // unit_preference whenever the coach flipped the drawer's toggle — a
+  // cross-user write from one person's screen onto another person's account,
+  // and the last surviving piece of the model where a unit lived on the client
+  // RECORD rather than on the viewer. The coach now reads their own preference
+  // from useUnits(), so the client's unit was irrelevant to what the coach saw
+  // even before the write was wrong.
+  //
+  // Deleted rather than repointed at the coach's preference: a units control
+  // buried in one client's nutrition drawer that silently changes units across
+  // the whole app is worse than no control. Settings owns this now.
 
   return {
     // Client data
     client,
     hasPlan,
-
-    // Unit preference
-    unitPreference,
-    isSavingUnit,
-    handleUnitChange,
 
     // Training plan. The existence flag now rides on the nutrition response, so
     // its loading state is the nutrition one — there is no second request to

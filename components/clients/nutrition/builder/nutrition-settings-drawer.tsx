@@ -55,9 +55,6 @@ export function NutritionSettingsDrawer({
           proteinG={builder.nutritionData?.proteinTargetG}
           carbsG={builder.nutritionData?.carbTargetG}
           fatG={builder.nutritionData?.fatTargetG}
-          unitPreference={builder.unitPreference}
-          onUnitChange={builder.handleUnitChange}
-          isSavingUnit={builder.isSavingUnit}
         />
 
         <DrawerFormBody />

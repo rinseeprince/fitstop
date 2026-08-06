@@ -19,15 +19,16 @@ export const dietTypeSchema = z.enum([
   "custom",
 ]);
 
-export const unitPreferenceSchema = z.enum(["metric", "imperial"]);
-
+// Calculator toggles the COACH owns for a given client. No `unitPreference`:
+// this is a coach-authenticated route, and a unit preference belongs to the
+// person reading the screen, not to the client record being edited. The coach's
+// lives on coaches.unit_preference (PATCH /api/coach/settings), the client's on
+// clients.unit_preference (PATCH /api/client/settings).
 export const nutritionSettingsPatchSchema = z.object({
-  unitPreference: unitPreferenceSchema.optional(),
   includeActivityBurn: z.boolean().optional(),
   surplusAsCarbs: z.boolean().optional(),
 }).refine(
   (data) =>
-    data.unitPreference !== undefined ||
     data.includeActivityBurn !== undefined ||
     data.surplusAsCarbs !== undefined,
   { message: "No valid updates provided" }
@@ -64,10 +65,6 @@ export const nutritionPlanSchema = z.object({
     path: ["customCalories"],
   }
 );
-
-export const updateUnitPreferenceSchema = z.object({
-  unitPreference: unitPreferenceSchema,
-});
 
 // Coach per-day edit (events-as-SOT, Session 3 D4 / Session 4). Operates on an
 // explicit date LIST (any arrangement — single, scattered, or contiguous), not a

@@ -4,8 +4,12 @@ import { Sparkles, X } from "lucide-react";
 import { SheetClose } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import { MONO } from "@/components/clients/training/program-builder/builder-tokens";
-import { UnitToggle } from "../../shared/unit-toggle";
-import type { UnitPreference } from "@/types/check-in";
+
+// No unit control here. It used to sit beside the close button and PATCH the
+// CLIENT's unit_preference from the coach's screen — a cross-user write. Now
+// that the coach always sees their own unit, it had no job left, and a control
+// inside one client's drawer that changes units app-wide is worse than none.
+// Units are chosen in Settings, and only there.
 
 type DrawerHeaderProps = {
   hasPlan: boolean;
@@ -14,9 +18,6 @@ type DrawerHeaderProps = {
   proteinG?: number;
   carbsG?: number;
   fatG?: number;
-  unitPreference: UnitPreference;
-  onUnitChange: (value: UnitPreference) => void;
-  isSavingUnit?: boolean;
 };
 
 export function DrawerHeader({
@@ -26,9 +27,6 @@ export function DrawerHeader({
   proteinG,
   carbsG,
   fatG,
-  unitPreference,
-  onUnitChange,
-  isSavingUnit,
 }: DrawerHeaderProps) {
   return (
     <div className="bg-[#0f2027] px-6 pt-5 pb-5 flex-shrink-0">
@@ -46,18 +44,10 @@ export function DrawerHeader({
             targets from the effective date forward.
           </p>
         </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <UnitToggle
-            size="sm"
-            value={unitPreference}
-            onChange={onUnitChange}
-            disabled={isSavingUnit}
-          />
-          <SheetClose className="w-[32px] h-[32px] rounded-[6px] bg-[rgba(255,255,255,0.06)] flex items-center justify-center hover:bg-[rgba(255,255,255,0.1)] transition-colors">
-            <X className="w-4 h-4 text-[rgba(255,255,255,0.5)]" strokeWidth={1.5} />
-            <span className="sr-only">Close</span>
-          </SheetClose>
-        </div>
+        <SheetClose className="w-[32px] h-[32px] rounded-[6px] bg-[rgba(255,255,255,0.06)] flex-shrink-0 flex items-center justify-center hover:bg-[rgba(255,255,255,0.1)] transition-colors">
+          <X className="w-4 h-4 text-[rgba(255,255,255,0.5)]" strokeWidth={1.5} />
+          <span className="sr-only">Close</span>
+        </SheetClose>
       </div>
 
       {/* Current plan summary strip */}

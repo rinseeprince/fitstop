@@ -288,11 +288,12 @@ export async function PATCH(
       );
     }
 
-    // Only include_activity_burn and unit_preference remain on clients table
+    // Calculator toggles only. This handler used to accept `unitPreference`
+    // and write clients.unit_preference — a COACH-authenticated route mutating
+    // a display preference that belongs to the client. It is gone: the coach's
+    // own unit lives on coaches.unit_preference and is set in Settings, and a
+    // client sets theirs in their own settings. Nothing here writes a unit.
     const updates: ClientUpdate = {};
-    if (validationResult.data.unitPreference !== undefined) {
-      updates.unit_preference = validationResult.data.unitPreference;
-    }
     if (validationResult.data.includeActivityBurn !== undefined) {
       updates.include_activity_burn = validationResult.data.includeActivityBurn;
     }
